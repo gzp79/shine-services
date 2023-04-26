@@ -1,0 +1,16 @@
+{
+    "slot": "test",
+    "stage": "gzp123",
+	
+    "sharedKeyvault": null,
+    "privateKeyvault": null,
+	
+    "controlPort": 8080,
+    
+    "tracing": {
+        "allowReconfigure": true,
+        "telemetry": {
+            "type": "none"
+        }
+    }
+}

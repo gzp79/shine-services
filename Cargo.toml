@@ -1,0 +1,29 @@
+[package]
+name = "shine-identity"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4"
+thiserror = "1.0"
+anyhow = "1.0"
+config = "0.13"
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+futures = "0.3"
+tokio = {version = "1.27", features = ["macros", "rt-multi-thread", "signal"] }
+
+sqlx = { version = "0.6", features = ["sqlite", "postgres", "any", "chrono", "runtime-tokio-rustls"] }
+sqlx-interpolation = { path = "./shine-service-rs/sqlx/sqlx-interpolation", version = "0.1.0" }
+
+azure_core = { version = "0.11" }
+azure_identity = { version = "0.11" }
+
+tracing = "0.1"
+tracing-log = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tower-http = { version = "0.4", features = ["cors"] }
+axum = "0.6"
+
+shine-service = { path = "./shine-service-rs/shine-service", version = "0.1.0" }

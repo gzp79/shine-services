@@ -1,0 +1,13 @@
+@url = http://localhost:8080
+
+
+GET {{url}}/info/ready
+###
+
+PUT {{url}}/tracing/config 
+Content-Type: application/json
+
+{
+    "filter": "INFO, shine_service=TRACE,sqlx=WARN"
+}
+###
