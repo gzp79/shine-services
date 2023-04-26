@@ -8,6 +8,9 @@ use std::sync::Arc;
 use thiserror::Error as ThisError;
 use tokio::runtime::Handle as RtHandle;
 
+use crate::db::DBConfig;
+use crate::google::GoogleOAthConfig;
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Slot {
@@ -55,6 +58,12 @@ impl From<PreInitConfigError> for ConfigError {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthConfig {
+    pub google: GoogleOAthConfig,
+}
+
 /// The application configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,6 +72,8 @@ pub struct AppConfig {
     pub core: CoreConfig,
     pub tracing: TracingConfig,
     pub control_port: u16,
+    pub oath: OAuthConfig,
+    pub db: DBConfig,
 }
 
 impl AppConfig {

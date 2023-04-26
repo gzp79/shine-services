@@ -3,7 +3,7 @@
     "stage": "gzp123",
 	
     "sharedKeyvault": null,
-    "privateKeyvault": null,
+    "privateKeyvault": "https://shine-keyvault.vault.azure.net/",
 	
     "controlPort": 8080,
     

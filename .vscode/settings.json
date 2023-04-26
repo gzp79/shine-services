@@ -11,7 +11,8 @@
         "rustls",
         "serde",
         "sqlx",
-        "thiserror"
+        "thiserror",
+        "TIMESTAMPTZ"
     ],
     "cmake.configureOnOpen": false
 }

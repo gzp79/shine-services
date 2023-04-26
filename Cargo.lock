@@ -2129,6 +2129,7 @@ dependencies = [
  "axum",
  "azure_core",
  "azure_identity",
+ "chrono",
  "config",
  "futures",
  "log",
@@ -2143,6 +2144,7 @@ dependencies = [
  "tracing",
  "tracing-log",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -2294,6 +2296,7 @@ dependencies = [
  "thiserror",
  "tokio-stream",
  "url",
+ "uuid",
  "webpki-roots",
  "whoami",
 ]

@@ -1,5 +1,20 @@
+mod app_config;
+mod app_error;
+mod app_state;
+mod db;
+
+mod google;
+
+use crate::{
+    app_config::{AppConfig, SERVICE_NAME},
+    app_state::AppState,
+};
 use anyhow::{anyhow, Error as AnyError};
-use axum::{routing::get, Router};
+use axum::{
+    http::{header, HeaderValue, Method},
+    routing::get,
+    Router, Extension,
+};
 use shine_service::axum::tracing::{tracing_layer, TracingService};
 use std::net::SocketAddr;
 use tokio::{
@@ -8,9 +23,6 @@ use tokio::{
 };
 use tower_http::cors::CorsLayer;
 use tracing::Dispatch;
-
-mod app_config;
-use self::app_config::{AppConfig, SERVICE_NAME};
 
 async fn health_check() -> String {
     "Ok".to_string()
@@ -51,14 +63,21 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
     tracing::warn!("warn  - ok(tracing)");
     log::error!("error - ok");
 
-    let cors = CorsLayer::permissive();
+    let cors = CorsLayer::default()
+        .allow_origin("http://localhost:8080".parse::<HeaderValue>().unwrap())
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
+        .allow_credentials(true);
 
     let tracing_router = tracing_service.into_router();
     let tracing_layer = tracing_layer();
 
+    let app_state = AppState::new(&config).await?;
+
     let app = Router::new()
         .route("/info/ready", get(health_check))
         .nest("/tracing", tracing_router)
+        .layer(Extension(app_state))
         .layer(cors)
         .layer(tracing_layer);
 
@@ -76,14 +95,14 @@ pub fn main() {
 
     let handle = rt.handle();
     if let Err(err) = handle.block_on(async_main(handle.clone())) {
-        println!("[ERROR] {}", err);
+        eprintln!("[ERROR] {}", err);
         if let Some(cause) = err.source() {
-            println!();
-            println!("Caused by:");
+            eprintln!();
+            eprintln!("Caused by:");
             let mut cause = Some(cause);
             let mut i = 0;
             while let Some(e) = cause {
-                println!("   {}: {}", i, e);
+                eprintln!("   {}: {}", i, e);
                 cause = e.source();
                 i += 1;
             }
