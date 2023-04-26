@@ -41,18 +41,29 @@ struct State {
 
 type StateExtension = Extension<Arc<State>>;
 
-async fn google_login(Extension(state): StateExtension) -> impl IntoResponse {
+#[derive(Deserialize)]
+pub struct LoginRequest {
+    redirect: Option<String>,
+}
+
+async fn google_login(Extension(state): StateExtension, Query(query): Query<LoginRequest>) -> impl IntoResponse {
     // Google supports Proof Key for Code Exchange (PKCE - https://oauth.net/2/pkce/).
     // Create a PKCE code verifier and SHA-256 encode it as a code challenge.
     let (pkce_code_challenge, _pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
+    // todo: store _pkce_code_verifier for verification
 
     // Generate the authorization URL to which we'll redirect the user.
-    let (authorize_url, _csrf_state) = &state
+    let mut auth = state
         .client
         .authorize_url(CsrfToken::new_random)
         .add_scope(Scope::new("https://www.googleapis.com/auth/plus.me".to_string()))
-        .set_pkce_challenge(pkce_code_challenge)
-        .url();
+        .set_pkce_challenge(pkce_code_challenge);
+
+    if let Some(redirect) = query.redirect {
+        auth = auth.add_extra_param("shine_url", redirect);
+    }
+
+    let (authorize_url, _csrf_state) = &auth.url();
 
     (StatusCode::FOUND, [(header::LOCATION, authorize_url.to_string())])
 }
@@ -65,12 +76,18 @@ pub struct AuthRequest {
 }
 
 async fn auth(Extension(state): StateExtension, Query(query): Query<AuthRequest>) -> impl IntoResponse {
+    log::info!("auth_code: {}", query.code);
+    log::info!("auth_state: {}", query.state);
+
     let auth_code = AuthorizationCode::new(query.code);
     let auth_state = CsrfToken::new(query.state);
     log::info!("scope: {}", query.scope);
+    //todo: validate with _pkce_code_verifier, but what and how ???
 
     // Exchange the code with a token.
     let token = &state.client.exchange_code(auth_code);
+    //todo: request user profile from google by the token
+    //register or update user
 
     //session.set("login", true).unwrap();
     let html = format!(
