@@ -1,7 +1,4 @@
-use crate::{
-    app_error::AppError,
-    db::Migrations, app_config::AppConfig,
-};
+use crate::{app_config::AppConfig, app_error::AppError, db::Migrations};
 use sqlx::{any::AnyPoolOptions, migrate::MigrateDatabase, AnyPool};
 
 #[derive(Clone)]

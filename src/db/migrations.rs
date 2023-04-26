@@ -4,7 +4,7 @@ use sqlx::{
     migrate::{Migration, MigrationSource, MigrationType, Migrator},
     AnyPool,
 };
-use sqlx_interpolation::{sql, types, DBKind};
+use sqlx_interpolation::{sql, DBKind};
 
 use crate::app_error::AppError;
 

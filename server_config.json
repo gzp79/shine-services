@@ -12,5 +12,11 @@
         "telemetry": {
             "type": "none"
         }
+    },
+
+    "oauth": {
+        "google": {
+            "redirectUrl": "http://localhost:8080/oauth/google/auth"
+        }
     }
 }

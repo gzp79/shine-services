@@ -2,8 +2,7 @@ mod app_config;
 mod app_error;
 mod app_state;
 mod db;
-
-mod google;
+mod oauth;
 
 use crate::{
     app_config::{AppConfig, SERVICE_NAME},
@@ -13,7 +12,7 @@ use anyhow::{anyhow, Error as AnyError};
 use axum::{
     http::{header, HeaderValue, Method},
     routing::get,
-    Router, Extension,
+    Extension, Router,
 };
 use shine_service::axum::tracing::{tracing_layer, TracingService};
 use std::net::SocketAddr;
@@ -73,9 +72,11 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
     let tracing_layer = tracing_layer();
 
     let app_state = AppState::new(&config).await?;
+    let google_oauth = oauth::GoogleOAuth::new(&config.oauth.google)?.into_router();
 
     let app = Router::new()
         .route("/info/ready", get(health_check))
+        .nest("/oauth", google_oauth)
         .nest("/tracing", tracing_router)
         .layer(Extension(app_state))
         .layer(cors)

@@ -9,7 +9,7 @@ use thiserror::Error as ThisError;
 use tokio::runtime::Handle as RtHandle;
 
 use crate::db::DBConfig;
-use crate::google::GoogleOAthConfig;
+use crate::oauth::GoogleOAuthConfig;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -60,8 +60,8 @@ impl From<PreInitConfigError> for ConfigError {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OAuthConfig {
-    pub google: GoogleOAthConfig,
+pub struct OAuthConfig {    
+    pub google: GoogleOAuthConfig,
 }
 
 /// The application configuration
@@ -72,7 +72,7 @@ pub struct AppConfig {
     pub core: CoreConfig,
     pub tracing: TracingConfig,
     pub control_port: u16,
-    pub oath: OAuthConfig,
+    pub oauth: OAuthConfig,
     pub db: DBConfig,
 }
 
