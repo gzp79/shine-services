@@ -195,7 +195,6 @@ impl GoogleOAuth {
         Router::new()
             .route("/google/login", get(google_login))
             .route("/google/auth", get(auth))
-            .route("/signin-google", get(auth))
             .with_state(state)
     }
 }

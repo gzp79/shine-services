@@ -84,7 +84,7 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let app = Router::new()
         .route("/info/ready", get(health_check))
-        .nest("/" /*oauth"*/, google_oauth)
+        .nest("/oauth", google_oauth)
         .nest("/tracing", tracing_router)
         .with_state(app_state)
         .layer(session_cookie.into_layer())
