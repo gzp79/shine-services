@@ -5,8 +5,10 @@ use shine_service::axum::session::{Session, SessionMeta};
 pub enum SessionData {
     #[serde(rename = "gl")]
     GoogleLogin {
-        #[serde(rename = "v")]
+        #[serde(rename = "pv")]
         pkce_code_verifier: String,
+        #[serde(rename = "cv")]
+        csrf_state: String,        
         #[serde(rename = "u")]
         redirect_url: Option<String>,
     },

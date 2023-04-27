@@ -7,12 +7,12 @@ mod oauth;
 
 use crate::{
     app_config::{AppConfig, SERVICE_NAME},
-    app_session::AppSessionMeta,
     app_data::AppData,
+    app_session::AppSessionMeta,
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
-    http::{header, HeaderValue, Method},
+    http::{header, Method},
     routing::get,
     Router,
 };
@@ -64,8 +64,13 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
     tracing::warn!("warn  - ok(tracing)");
     log::error!("error - ok");
 
+    let allow_origins = config
+        .allow_origins
+        .iter()
+        .map(|r| r.parse())
+        .collect::<Result<Vec<_>, _>>()?;
     let cors = CorsLayer::default()
-        .allow_origin("http://localhost:8080".parse::<HeaderValue>().unwrap())
+        .allow_origin(allow_origins)
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
         .allow_credentials(true);
@@ -79,7 +84,7 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let app = Router::new()
         .route("/info/ready", get(health_check))
-        .nest("/oauth", google_oauth)
+        .nest("/" /*oauth"*/, google_oauth)
         .nest("/tracing", tracing_router)
         .with_state(app_state)
         .layer(session_cookie.into_layer())
@@ -88,6 +93,17 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.control_port));
     log::info!("listening on {addr:?}");
+
+    /*
+    let config = axum_server::tls_rustls::RustlsConfig::from_pem_file("temp/_wildcard.playcrey.com.pem", "temp/_wildcard.playcrey.com-key.pem")
+        .await
+        .map_err(|e| anyhow!(e))?;
+    axum_server::bind_rustls(addr, config)
+        .serve(app.into_make_service())
+        .await
+        .map_err(|e| anyhow!(e))
+        */
+
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .with_graceful_shutdown(shutdown_signal())

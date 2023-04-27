@@ -47,6 +47,7 @@ impl CoreConfig {
 
 pub const SERVICE_NAME: &str = "shine-identity";
 pub const DEFAULT_CONFIG_FILE: &str = "server_config.json";
+pub const DEFAULT_LOCAL_CONFIG_FILE: &str = "temp/server_config.json";
 
 #[derive(Debug, ThisError)]
 #[error("Pre-init configuration is not matching to the final configuration")]
@@ -75,6 +76,7 @@ pub struct AppConfig {
     pub oauth: OAuthConfig,
     pub db: DBConfig,
 
+    pub allow_origins: Vec<String>,
     pub cookie_secret: String,
 }
 
@@ -109,9 +111,11 @@ impl AppConfig {
             }
         }
 
-        builder = builder
-            .add_source(File::from(Path::new(DEFAULT_CONFIG_FILE)))
-            .add_source(Environment::default().separator("--"));
+        builder = builder.add_source(File::from(Path::new(DEFAULT_CONFIG_FILE)));
+        if Path::new(DEFAULT_LOCAL_CONFIG_FILE).exists() {
+            builder = builder.add_source(File::from(Path::new(DEFAULT_LOCAL_CONFIG_FILE)));
+        }
+        builder = builder.add_source(Environment::default().separator("--"));
 
         let s = builder.build()?;
         let cfg: AppConfig = s.try_deserialize()?;

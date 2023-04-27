@@ -30,6 +30,7 @@ tracing-log = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower-http = { version = "0.4", features = ["cors"] }
 axum = "0.6"
+#axum-server = { version = "0.4", features = ["tls-rustls"] }
 axum-extra = { version = "0.7", features = ["cookie", "cookie-signed", "cookie-private"] }
 
 shine-service = { path = "./shine-service-rs/shine-service", version = "0.1.0" }
