@@ -60,7 +60,7 @@ impl From<PreInitConfigError> for ConfigError {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OAuthConfig {    
+pub struct OAuthConfig {
     pub google: GoogleOAuthConfig,
 }
 
@@ -74,6 +74,8 @@ pub struct AppConfig {
     pub control_port: u16,
     pub oauth: OAuthConfig,
     pub db: DBConfig,
+
+    pub cookie_secret: String,
 }
 
 impl AppConfig {

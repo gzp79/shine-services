@@ -8,13 +8,17 @@
     "cSpell.words": [
         "chrono",
         "keyvault",
+        "opentelemetry",
+        "otconv",
+        "otsdk",
         "Pkce",
         "reqwest",
         "rustls",
         "serde",
         "sqlx",
         "thiserror",
-        "TIMESTAMPTZ"
+        "TIMESTAMPTZ",
+        "zipkin"
     ],
     "cmake.configureOnOpen": false
 }

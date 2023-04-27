@@ -1,17 +1,22 @@
 use axum::{
-    extract::Query,
+    extract::{Query, State},
     http::{header, StatusCode},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::get,
-    Extension, Router,
+    Router,
 };
 use oauth2::{
-    basic::BasicClient, url, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
-    RedirectUrl, Scope, TokenUrl,
+    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
+    PkceCodeVerifier, RedirectUrl, Scope, TokenUrl,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
+
+use crate::{
+    app_error::AppError,
+    app_session::{AppSession, SessionData},
+};
 
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://www.googleapis.com/oauth2/v3/token";
@@ -25,47 +30,63 @@ pub struct GoogleOAuthConfig {
 }
 
 #[derive(Debug, ThisError)]
-pub enum GoogleOAuthError {
-    #[error("Invalid authorization endpoint URL")]
-    AuthUrlError(url::ParseError),
-    #[error("Invalid token endpoint URL")]
-    TokenUrlError(url::ParseError),
-    #[error("Invalid redirect URL")]
-    RedirectUrlError(url::ParseError),
+enum GoogleOAuthError {
+    #[error("Session cookie was missing or corrupted")]
+    MissingSession,
+    #[error("Session cookie is expired")]
+    InvalidSession,
+}
+
+impl IntoResponse for GoogleOAuthError {
+    fn into_response(self) -> Response {
+        let status_code = match &self {
+            GoogleOAuthError::MissingSession => StatusCode::BAD_REQUEST,
+            GoogleOAuthError::InvalidSession => StatusCode::BAD_REQUEST,
+        };
+
+        (status_code, format!("{self:?}")).into_response()
+    }
 }
 
 #[derive(Clone)]
-struct State {
+struct Data {
     client: BasicClient,
 }
-
-type StateExtension = Extension<Arc<State>>;
-
 #[derive(Deserialize)]
 pub struct LoginRequest {
     redirect: Option<String>,
 }
 
-async fn google_login(Extension(state): StateExtension, Query(query): Query<LoginRequest>) -> impl IntoResponse {
+async fn google_login(
+    State(data): State<Arc<Data>>,
+    Query(query): Query<LoginRequest>,
+    mut session: AppSession,
+) -> impl IntoResponse {
     // Google supports Proof Key for Code Exchange (PKCE - https://oauth.net/2/pkce/).
     // Create a PKCE code verifier and SHA-256 encode it as a code challenge.
-    let (pkce_code_challenge, _pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
-    // todo: store _pkce_code_verifier for verification
+    let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
+
+    session.set(SessionData::GoogleLogin {
+        pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
+        redirect_url: query.redirect,
+    });
 
     // Generate the authorization URL to which we'll redirect the user.
-    let mut auth = state
+    let auth = data
         .client
         .authorize_url(CsrfToken::new_random)
         .add_scope(Scope::new("https://www.googleapis.com/auth/plus.me".to_string()))
         .set_pkce_challenge(pkce_code_challenge);
 
-    if let Some(redirect) = query.redirect {
-        auth = auth.add_extra_param("shine_url", redirect);
-    }
-
     let (authorize_url, _csrf_state) = &auth.url();
 
-    (StatusCode::FOUND, [(header::LOCATION, authorize_url.to_string())])
+    log::info!("session: {session:?}");
+    //todo: return an auto-redirect from to store cookie and redirect the user to google
+    (
+        StatusCode::FOUND,
+        [(header::LOCATION, authorize_url.to_string())],
+        session,
+    )
 }
 
 #[derive(Deserialize)]
@@ -75,35 +96,56 @@ pub struct AuthRequest {
     scope: String,
 }
 
-async fn auth(Extension(state): StateExtension, Query(query): Query<AuthRequest>) -> impl IntoResponse {
+async fn auth(
+    State(data): State<Arc<Data>>,
+    Query(query): Query<AuthRequest>,
+    mut session: AppSession,
+) -> Result<String, GoogleOAuthError> {
     log::info!("auth_code: {}", query.code);
     log::info!("auth_state: {}", query.state);
+    log::info!("session: {session:?}");
 
     let auth_code = AuthorizationCode::new(query.code);
     let auth_state = CsrfToken::new(query.state);
     log::info!("scope: {}", query.scope);
-    //todo: validate with _pkce_code_verifier, but what and how ???
+
+    let session_data = session.take().ok_or(GoogleOAuthError::MissingSession)?;
+    let (pkce_code_verifier, redirect_url) = match session_data {
+        SessionData::GoogleLogin {
+            pkce_code_verifier,
+            redirect_url,
+        } => (PkceCodeVerifier::new(pkce_code_verifier), redirect_url),
+        //_ => return Err(GoogleOAuthError::InvalidSession),
+    };
 
     // Exchange the code with a token.
-    let token = &state.client.exchange_code(auth_code);
+    let token = &data
+        .client
+        .exchange_code(auth_code)
+        .set_pkce_verifier(pkce_code_verifier);
+
     //todo: request user profile from google by the token
     //register or update user
 
     //session.set("login", true).unwrap();
     let html = format!(
         r#"<html>
-        <head><title>OAuth2 Test</title></head>
-        <body>
-            Google returned the following state:
-            <pre>{}</pre>
-            Google returned the following token:
-            <pre>{:?}</pre>
-        </body>
-    </html>"#,
+    <head><title>OAuth2 Test</title></head>
+    <body>
+        Google returned the following state:
+        <pre>{}</pre>
+        Google returned the following token:
+        <pre>{:?}</pre>
+        Redirecting to:
+        <pre>{:?}</pre>
+    </body>
+</html>"#,
         auth_state.secret(),
-        token
+        token,
+        redirect_url
     );
-    html
+
+    Ok(html)
 }
 
 pub struct GoogleOAuth {
@@ -115,14 +157,13 @@ pub struct GoogleOAuth {
 }
 
 impl GoogleOAuth {
-    pub fn new(config: &GoogleOAuthConfig) -> Result<GoogleOAuth, GoogleOAuthError> {
+    pub fn new(config: &GoogleOAuthConfig) -> Result<GoogleOAuth, AppError> {
         let client_id = ClientId::new(config.client_id.clone());
         let client_secret = ClientSecret::new(config.client_id.clone());
 
-        let auth_url = AuthUrl::new(AUTH_URL.to_string()).map_err(GoogleOAuthError::AuthUrlError)?;
-        let token_url = TokenUrl::new(TOKEN_URL.to_string()).map_err(GoogleOAuthError::TokenUrlError)?;
-        let redirect_url =
-            RedirectUrl::new(config.redirect_url.to_string()).map_err(GoogleOAuthError::RedirectUrlError)?;
+        let auth_url = AuthUrl::new(AUTH_URL.to_string()).map_err(AppError::AuthUrlError)?;
+        let token_url = TokenUrl::new(TOKEN_URL.to_string()).map_err(AppError::TokenUrlError)?;
+        let redirect_url = RedirectUrl::new(config.redirect_url.to_string()).map_err(AppError::RedirectUrlError)?;
 
         Ok(GoogleOAuth {
             client_id,
@@ -133,7 +174,10 @@ impl GoogleOAuth {
         })
     }
 
-    pub fn into_router(self) -> Router {
+    pub fn into_router<S>(self) -> Router<S>
+    where
+        S: Clone + Send + Sync + 'static,
+    {
         // Set up the config for the Google OAuth2 process.
         let client = BasicClient::new(
             self.client_id,
@@ -143,11 +187,11 @@ impl GoogleOAuth {
         )
         .set_redirect_uri(self.redirect_url);
 
-        let state = Arc::new(State { client });
+        let state = Arc::new(Data { client });
 
         Router::new()
             .route("/google/login", get(google_login))
             .route("/google/auth", get(auth))
-            .layer(Extension(state))
+            .with_state(state)
     }
 }

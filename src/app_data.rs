@@ -2,12 +2,11 @@ use crate::{app_config::AppConfig, app_error::AppError, db::Migrations};
 use sqlx::{any::AnyPoolOptions, migrate::MigrateDatabase, AnyPool};
 
 #[derive(Clone)]
-pub struct AppState {
+pub struct AppData {
     pool: AnyPool,
-    //identity_manager: IdentityManager,
 }
 
-impl AppState {
+impl AppData {
     async fn create_pool(cns: &str) -> Result<AnyPool, AppError> {
         if !sqlx::Any::database_exists(cns).await? {
             sqlx::Any::create_database(cns).await?;

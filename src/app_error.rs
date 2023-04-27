@@ -1,11 +1,23 @@
-use axum::{http::StatusCode, response::IntoResponse};
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+use oauth2::url;
+use shine_service::axum::session::SessionError;
 use sqlx_interpolation::DBBuilderError;
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
 pub enum AppError {
-    #[error("Failed to request access token for provider {0}")]
-    OAuthAccessToken(String),
+    #[error(transparent)]
+    InvalidSessionMeta(#[from] SessionError),
+
+    #[error("Invalid authorization endpoint URL")]
+    AuthUrlError(url::ParseError),
+    #[error("Invalid token endpoint URL")]
+    TokenUrlError(url::ParseError),
+    #[error("Invalid redirect URL")]
+    RedirectUrlError(url::ParseError),
 
     #[error("Database command: {0}")]
     DBCommand(#[from] DBBuilderError),
@@ -18,13 +30,18 @@ pub enum AppError {
 }
 
 impl IntoResponse for AppError {
-    fn into_response(self) -> axum::response::Response {
-        match self {
-            AppError::OAuthAccessToken(_) => (StatusCode::BAD_REQUEST, format!("{self:?}")).into_response(),
-            AppError::DBRetryLimitReached => (StatusCode::INTERNAL_SERVER_ERROR, format!("{self:?}")).into_response(),
-            AppError::DBCommand(_) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{self:?}")).into_response(),
-            AppError::SqlxMigration(_) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{self:?}")).into_response(),
-            AppError::SqlxError(_) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{self:?}")).into_response(),
-        }
+    fn into_response(self) -> Response {
+        let status_code = match &self {
+            AppError::InvalidSessionMeta(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::AuthUrlError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::TokenUrlError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::RedirectUrlError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::DBRetryLimitReached => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::DBCommand(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::SqlxMigration(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::SqlxError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+
+        (status_code, format!("{self:?}")).into_response()
     }
 }
