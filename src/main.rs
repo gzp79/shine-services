@@ -80,7 +80,7 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let app_state = AppData::new(&config).await?;
     let session_cookie = AppSessionMeta::new(&config.cookie_secret)?;
-    let google_oauth = oauth::GoogleOAuth::new(&config.oauth.google)?.into_router();
+    let google_oauth = oauth::GoogleOAuth::new(&config.oauth.google).await?.into_router();
 
     let app = Router::new()
         .route("/info/ready", get(health_check))

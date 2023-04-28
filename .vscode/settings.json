@@ -7,7 +7,9 @@
 
     "cSpell.words": [
         "chrono",
+        "fkey",
         "keyvault",
+        "openidconnect",
         "opentelemetry",
         "otconv",
         "otsdk",

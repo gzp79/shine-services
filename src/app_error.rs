@@ -4,42 +4,30 @@ use axum::{
 };
 use oauth2::url;
 use shine_service::axum::session::SessionError;
-use sqlx_interpolation::DBBuilderError;
 use thiserror::Error as ThisError;
+
+use crate::db::DBError;
 
 #[derive(Debug, ThisError)]
 pub enum AppError {
     #[error(transparent)]
     InvalidSessionMeta(#[from] SessionError),
 
-    #[error("Invalid authorization endpoint URL")]
-    AuthUrlError(url::ParseError),
-    #[error("Invalid token endpoint URL")]
-    TokenUrlError(url::ParseError),
-    #[error("Invalid redirect URL")]
-    RedirectUrlError(url::ParseError),
+    #[error("Error in OpenId initialization: {0}")]
+    ExternalLoginInitializeError(String),
 
-    #[error("Database command: {0}")]
-    DBCommand(#[from] DBBuilderError),
-    #[error("Some retry operation reached the limit")]
-    DBRetryLimitReached,
-    #[error("Database migration error")]
-    SqlxMigration(#[from] sqlx::migrate::MigrateError),
-    #[error("Database error")]
-    SqlxError(#[from] sqlx::Error),
+    //#[error("Database command: {0}")]
+    //DBCommand(#[from] DBBuilderError),
+    #[error(transparent)]
+    DBError(#[from] DBError),    
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status_code = match &self {
             AppError::InvalidSessionMeta(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::AuthUrlError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::TokenUrlError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::RedirectUrlError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::DBRetryLimitReached => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::DBCommand(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::SqlxMigration(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::SqlxError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::ExternalLoginInitializeError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,            
         };
 
         (status_code, format!("{self:?}")).into_response()

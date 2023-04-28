@@ -8,7 +8,9 @@ pub enum SessionData {
         #[serde(rename = "pv")]
         pkce_code_verifier: String,
         #[serde(rename = "cv")]
-        csrf_state: String,        
+        csrf_state: String,
+        #[serde(rename = "n")]
+        nonce: String,        
         #[serde(rename = "u")]
         redirect_url: Option<String>,
     },

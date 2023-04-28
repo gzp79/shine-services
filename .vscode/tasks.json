@@ -69,7 +69,7 @@
         {
             "label": "build",
             "type": "shell",
-            "command": "cargo build --all-targets",
+            "command": "cargo build --release --all-targets",
             "presentation": {
                 "echo": true,
                 "reveal": "always",
