@@ -12,7 +12,6 @@ use crate::db::DBError;
 pub enum AppError {
     #[error(transparent)]
     InvalidSessionMeta(#[from] SessionError),
-
     #[error("Error in OpenId initialization: {0}")]
     ExternalLoginInitializeError(String),
 

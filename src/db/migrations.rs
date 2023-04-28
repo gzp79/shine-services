@@ -50,8 +50,9 @@ impl TryFrom<MigrateCreateIdentity> for Migration {
                 + "  user_id UUID NOT NULL PRIMARY KEY,"
                 + "  kind INTEGER NOT NULL,"
                 + "  created TIMESTAMPTZ NULL,"
-                + "  name VARCHAR(256) NOT NULL,"
-                + "  email VARCHAR(256) NOT NULL"
+                + "  name VARCHAR(64) NOT NULL,"
+                + "  email VARCHAR(256),"
+                + "  profile_image TEXT"
                 + ");"
         );
 
@@ -81,7 +82,6 @@ impl TryFrom<MigrateCreateExternalLogin> for Migration {
                 + "  user_id UUID NOT NULL PRIMARY KEY,"
                 + "  provider TEXT NOT NULL,"
                 + "  id_token TEXT NOT NULL,"
-                + "  access_token TEXT,"
                 + "  CONSTRAINT user_id_fkey FOREIGN KEY(user_id) REFERENCES identities(user_id)"
                 + ");"
                 + "CREATE UNIQUE INDEX externalLogins_provider_id_token ON external_logins(provider, id_token);"
