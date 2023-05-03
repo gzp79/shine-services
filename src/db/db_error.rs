@@ -5,7 +5,9 @@ use thiserror::Error as ThisError;
 pub enum DBError {
     #[error("Operation retry count reached")]
     RetryLimitReached,
-    
+    #[error("Some constraint violated indicating a conflict")]
+    Conflict,
+
     #[error("Database command: {0}")]
     DBCommand(#[from] DBBuilderError),
     #[error("Database migration error")]

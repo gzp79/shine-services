@@ -1,3 +1,8 @@
+use crate::{
+    app_error::AppError,
+    app_session::{AppSession, SessionData},
+    db::{DBError, IdentityManager},
+};
 use axum::{
     extract::{Query, State},
     http::{header, StatusCode},
@@ -16,11 +21,6 @@ use openidconnect::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
-
-use crate::{
-    app_error::AppError,
-    app_session::{AppSession, SessionData},
-};
 
 const OPENID_DISCOVERY_URL: &str = "https://accounts.google.com";
 //const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -48,6 +48,8 @@ enum GoogleOAuthError {
     MissingIdToken,
     #[error("Failed to verify id token: {0}")]
     FailedIdVerification(String),
+    #[error(transparent)]
+    DBError(#[from] DBError),
 }
 
 impl IntoResponse for GoogleOAuthError {
@@ -59,16 +61,18 @@ impl IntoResponse for GoogleOAuthError {
             GoogleOAuthError::FailedTokenExchange(_) => StatusCode::BAD_REQUEST,
             GoogleOAuthError::MissingIdToken => StatusCode::BAD_REQUEST,
             GoogleOAuthError::FailedIdVerification(_) => StatusCode::BAD_REQUEST,
+            GoogleOAuthError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (status_code, format!("{self:?}")).into_response()
     }
 }
 
-#[derive(Clone)]
 struct Data {
     client: CoreClient,
+    identity_manager: IdentityManager,
 }
+
 #[derive(Deserialize)]
 pub struct LoginRequest {
     redirect: Option<String>,
@@ -110,6 +114,24 @@ async fn google_login(
         [(header::LOCATION, authorize_url.to_string())],
         session,
     )
+}
+
+async fn create_user(State(data): State<Arc<Data>>) -> Result<String, GoogleOAuthError> {
+    let user = data.identity_manager.create_user("name".into(), None, None).await?;
+
+    //session.set("login", true).unwrap();
+    let html = format!(
+        r#"<html>
+    <head><title>OAuth2 Test</title></head>
+    <body>
+        User id
+        <pre>{:?}</pre>
+    </body>
+</html>"#,
+        user
+    );
+
+    Ok(html)
 }
 
 #[derive(Deserialize)]
@@ -185,10 +207,11 @@ async fn auth(
 
 pub struct GoogleOAuth {
     client: CoreClient,
+    identity_manager: IdentityManager,
 }
 
 impl GoogleOAuth {
-    pub async fn new(config: &GoogleOAuthConfig) -> Result<GoogleOAuth, AppError> {
+    pub async fn new(config: &GoogleOAuthConfig, identity_manager: IdentityManager) -> Result<GoogleOAuth, AppError> {
         let client_id = ClientId::new(config.client_id.clone());
         let client_secret = ClientSecret::new(config.client_secret.clone());
         let issuer_url = IssuerUrl::new(OPENID_DISCOVERY_URL.to_string())
@@ -204,18 +227,25 @@ impl GoogleOAuth {
         let client = CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret))
             .set_redirect_uri(redirect_url);
 
-        Ok(GoogleOAuth { client })
+        Ok(GoogleOAuth {
+            client,
+            identity_manager,
+        })
     }
 
     pub fn into_router<S>(self) -> Router<S>
     where
         S: Clone + Send + Sync + 'static,
     {
-        let state = Arc::new(Data { client: self.client });
+        let state = Arc::new(Data {
+            client: self.client,
+            identity_manager: self.identity_manager,
+        });
 
         Router::new()
             .route("/google/login", get(google_login))
             .route("/google/auth", get(auth))
+            .route("/google/test", get(create_user))
             .with_state(state)
     }
 }

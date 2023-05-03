@@ -10,3 +10,7 @@ Content-Type: application/json
     "filter": "INFO, shine_service=TRACE,sqlx=WARN"
 }
 ###
+
+
+GET {{url}}/oauth/google/test
+###

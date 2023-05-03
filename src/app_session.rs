@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
 use shine_service::axum::session::{Session, SessionMeta};
 
+//todo: maybe Cookie storing the parameters for the OAuthFlow have to be split to allow linking of logged-in users
+// Now the flow would invalidate the current user and unless we store it in the GoogleLogin variant we loose the
+// target user. Also a failed link attempt would sign out the user (drop the cookie) which might not be a good thing.
+// If they are separated the question is, if it may happen that the signed in user is altered during a linking flow and hence
+// the linking happens to a wrong user.
+
+
 #[derive(Clone, Serialize, Deserialize)]
 pub enum SessionData {
     #[serde(rename = "gl")]

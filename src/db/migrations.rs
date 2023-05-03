@@ -81,10 +81,11 @@ impl TryFrom<MigrateCreateExternalLogin> for Migration {
                 + "("
                 + "  user_id UUID NOT NULL PRIMARY KEY,"
                 + "  provider TEXT NOT NULL,"
-                + "  id_token TEXT NOT NULL,"
+                + "  provider_id TEXT NOT NULL,"
+                + "  linked TIMESTAMPTZ NULL,"
                 + "  CONSTRAINT user_id_fkey FOREIGN KEY(user_id) REFERENCES identities(user_id)"
                 + ");"
-                + "CREATE UNIQUE INDEX externalLogins_provider_id_token ON external_logins(provider, id_token);"
+                + "CREATE UNIQUE INDEX externalLogins_provider_provider_id ON external_logins(provider, provider_id);"
         );
 
         let query = query.into_raw()?;
