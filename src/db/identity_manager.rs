@@ -18,7 +18,7 @@ pub struct Identity {
 #[derive(Debug)]
 pub struct ExternalLogin {
     pub provider: String,
-    pub id_token: String,
+    pub provider_id: String,
 }
 
 #[derive(Clone)]
@@ -66,7 +66,7 @@ impl IdentityManager {
                     let link_response = sql_expr!(
                         self.db_kind(),
                             "INSERT INTO external_logins (user_id, provider, provider_id, linked)"
-                            + "VALUES(${&id_str}, ${&external_login.provider}, ${&external_login.id_token}, ${expr::Now})"
+                            + "VALUES(${&id_str}, ${&external_login.provider}, ${&external_login.provider_id}, ${expr::Now})"
                             + "ON CONFLICT DO NOTHING"
                             + "RETURNING 'ok'"
                     )

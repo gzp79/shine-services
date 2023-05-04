@@ -4,6 +4,7 @@ mod app_error;
 mod app_session;
 mod db;
 mod oauth;
+mod utils;
 
 use crate::{
     app_config::{AppConfig, SERVICE_NAME},
@@ -80,13 +81,14 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let app_state = AppData::new(&config).await?;
     let session_cookie = AppSessionMeta::new(&config.cookie_secret)?;
-    let google_oauth = oauth::GoogleOAuth::new(&config.oauth.google, app_state.identity_manager.clone())
+
+    let oauth = oauth::OAuthConnections::new(&config.oauth, app_state.identity_manager.clone())
         .await?
         .into_router();
 
     let app = Router::new()
         .route("/info/ready", get(health_check))
-        .nest("/oauth", google_oauth)
+        .nest("/oauth", oauth)
         .nest("/tracing", tracing_router)
         .with_state(app_state)
         .layer(session_cookie.into_layer())

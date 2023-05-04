@@ -9,7 +9,7 @@ use thiserror::Error as ThisError;
 use tokio::runtime::Handle as RtHandle;
 
 use crate::db::DBConfig;
-use crate::oauth::GoogleOAuthConfig;
+use crate::oauth::OAuthConfig;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -57,12 +57,6 @@ impl From<PreInitConfigError> for ConfigError {
     fn from(err: PreInitConfigError) -> Self {
         ConfigError::Foreign(Box::new(err))
     }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OAuthConfig {
-    pub google: GoogleOAuthConfig,
 }
 
 /// The application configuration
