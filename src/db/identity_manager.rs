@@ -66,7 +66,7 @@ impl IdentityManager {
                     let link_response = sql_expr!(
                         self.db_kind(),
                             "INSERT INTO external_logins (user_id, provider, provider_id, linked)"
-                            + "VALUES(${&id_str}, ${&external_login.provider}, ${&external_login.provider_id}, ${expr::Now})"
+                            + "VALUES(uuid(${&id_str}), ${&external_login.provider}, ${&external_login.provider_id}, ${expr::Now})"
                             + "ON CONFLICT DO NOTHING"
                             + "RETURNING 'ok'"
                     )

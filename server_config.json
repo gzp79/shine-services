@@ -6,6 +6,7 @@
         "http://localhost:8080"
     ],
     "controlPort": 8080,
+        
     "tracing": {
         "allowReconfigure": true,
         "telemetry": {
@@ -13,7 +14,7 @@
         }
     },
     "oauth": {
-        "openid" : {
+        "openid": {
             "google": {
                 "redirectUrl": "http://localhost:8080/oauth/google/auth",
                 "discoveryUrl": "https://accounts.google.com"

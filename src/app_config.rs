@@ -79,6 +79,7 @@ impl AppConfig {
         let pre_init = CoreConfig::new(DEFAULT_CONFIG_FILE)?;
 
         let mut builder = Config::builder();
+        builder = builder.add_source(File::from(Path::new(DEFAULT_CONFIG_FILE)));
 
         {
             log::warn!("Finding azure credentials...");
@@ -104,8 +105,7 @@ impl AppConfig {
                 builder = builder.add_source(private_keyvault)
             }
         }
-
-        builder = builder.add_source(File::from(Path::new(DEFAULT_CONFIG_FILE)));
+        
         if Path::new(DEFAULT_LOCAL_CONFIG_FILE).exists() {
             builder = builder.add_source(File::from(Path::new(DEFAULT_LOCAL_CONFIG_FILE)));
         }
