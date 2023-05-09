@@ -1,23 +1,23 @@
 {
     "slot": "test",
     "stage": "gzp123",
-	
-    "sharedKeyvault": null,
     "privateKeyvault": "https://shine-keyvault.vault.azure.net/",
-	
-    "allowOrigins": ["http://localhost:8080"],
+    "allowOrigins": [
+        "http://localhost:8080"
+    ],
     "controlPort": 8080,
-    
     "tracing": {
         "allowReconfigure": true,
         "telemetry": {
             "type": "none"
         }
     },
-
     "oauth": {
-        "google": {
-            "redirectUrl": "http://localhost:8080/oauth/google/auth"
+        "openid" : {
+            "google": {
+                "redirectUrl": "http://localhost:8080/oauth/google/auth",
+                "discoveryUrl": "https://accounts.google.com"
+            }
         }
     }
 }

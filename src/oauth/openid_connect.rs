@@ -26,7 +26,6 @@ use thiserror::Error as ThisError;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenIdConnectConfig {
-    pub provider: String,
     pub discovery_url: String,
     pub client_id: String,
     pub client_secret: String,
@@ -228,6 +227,7 @@ pub struct OpenIdConnect {
 
 impl OpenIdConnect {
     pub async fn new(
+        provider: &str,
         config: &OpenIdConnectConfig,
         identity_manager: IdentityManager,
     ) -> Result<OpenIdConnect, AppError> {
@@ -247,7 +247,7 @@ impl OpenIdConnect {
             .set_redirect_uri(redirect_url);
 
         Ok(OpenIdConnect {
-            provider: config.provider.clone(),
+            provider: provider.to_string(),
             client,
             identity_manager,
         })
