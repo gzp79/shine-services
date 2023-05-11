@@ -9,7 +9,7 @@ use axum::{
     http::{header, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
-    Router,
+    Router, Extension,
 };
 use oauth2::{
     reqwest::async_http_client, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
@@ -20,6 +20,7 @@ use openidconnect::{
     IssuerUrl, Nonce, TokenResponse,
 };
 use serde::{Deserialize, Serialize};
+use tera::Tera;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 
@@ -82,6 +83,7 @@ pub struct LoginRequest {
 
 async fn openid_connect_login(
     State(data): State<Arc<Data>>,
+    Extension(tera): Extension<Arc<Tera>>,
     Query(query): Query<LoginRequest>,
     session: AppSession,
     mut external_login: ExternalLoginSession,
@@ -151,6 +153,7 @@ pub struct AuthRequest {
 
 async fn openid_connect_auth(
     State(data): State<Arc<Data>>,
+    Extension(tera): Extension<Arc<Tera>>,
     Query(query): Query<AuthRequest>,
     mut session: AppSession,
     mut external_login: ExternalLoginSession,

@@ -87,8 +87,8 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let db_pool = db::create_pool(&config.db.connection_string).await?;
     let identity_manager = IdentityManager::new(db_pool);
-    let session_cookie = AppSessionMeta::new(&config.cookie_secret)?;
-    let external_login_cookie = ExternalLoginMeta::new(&config.cookie_secret)?;
+    let session_cookie = AppSessionMeta::new(&config.cookie_secret)?.with_cookie_name("sid");
+    let external_login_cookie = ExternalLoginMeta::new(&config.cookie_secret)?.with_cookie_name("exl");
 
     let oauth = oauth::OAuthConnections::new(&config.oauth, identity_manager.clone())
         .await?
