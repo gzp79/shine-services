@@ -1,5 +1,4 @@
 mod app_config;
-mod app_data;
 mod app_error;
 mod app_session;
 mod db;
@@ -8,17 +7,18 @@ mod utils;
 
 use crate::{
     app_config::{AppConfig, SERVICE_NAME},
-    app_data::AppData,
-    app_session::AppSessionMeta,
+    app_session::{AppSessionMeta, ExternalLoginMeta},
+    db::IdentityManager,
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
     http::{header, Method},
     routing::get,
-    Router,
+    Extension, Router,
 };
 use shine_service::axum::tracing::{tracing_layer, TracingService};
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
+use tera::Tera;
 use tokio::{
     runtime::{Handle as RtHandle, Runtime},
     signal,
@@ -79,10 +79,18 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
     let tracing_router = tracing_service.into_router();
     let tracing_layer = tracing_layer();
 
-    let app_state = AppData::new(&config).await?;
-    let session_cookie = AppSessionMeta::new(&config.cookie_secret)?;
+    let tera = {
+        let mut tera = Tera::new("tera_templates/**/*").map_err(|e| anyhow!(e))?;
+        tera.autoescape_on(vec![".html"]);
+        tera
+    };
 
-    let oauth = oauth::OAuthConnections::new(&config.oauth, app_state.identity_manager.clone())
+    let db_pool = db::create_pool(&config.db.connection_string).await?;
+    let identity_manager = IdentityManager::new(db_pool);
+    let session_cookie = AppSessionMeta::new(&config.cookie_secret)?;
+    let external_login_cookie = ExternalLoginMeta::new(&config.cookie_secret)?;
+
+    let oauth = oauth::OAuthConnections::new(&config.oauth, identity_manager.clone())
         .await?
         .into_router();
 
@@ -90,8 +98,9 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
         .route("/info/ready", get(health_check))
         .nest("/oauth", oauth)
         .nest("/tracing", tracing_router)
-        .with_state(app_state)
+        .layer(Extension(Arc::new(tera)))
         .layer(session_cookie.into_layer())
+        .layer(external_login_cookie.into_layer())
         .layer(cors)
         .layer(tracing_layer);
 

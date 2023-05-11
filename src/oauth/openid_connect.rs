@@ -1,6 +1,6 @@
 use crate::{
     app_error::AppError,
-    app_session::{AppSession, SessionData},
+    app_session::{AppSession, ExternalLoginData, ExternalLoginSession, ExternalLoginState, SessionData},
     db::{DBError, ExternalLogin, IdentityManager},
     utils::generate_name,
 };
@@ -40,6 +40,8 @@ enum OpenIdConnectError {
     InvalidSession,
     #[error("Cross Server did not return an ID token")]
     InvalidCsrfState,
+    #[error("Session and external login cookies are not matching")]
+    InconsistentSession,
     #[error("Failed to exchange authorization code to access token: {0}")]
     FailedTokenExchange(String),
     #[error("Cross-Site Request Forgery (Csrf) check failed")]
@@ -55,6 +57,7 @@ impl IntoResponse for OpenIdConnectError {
         let status_code = match &self {
             OpenIdConnectError::MissingSession => StatusCode::BAD_REQUEST,
             OpenIdConnectError::InvalidSession => StatusCode::BAD_REQUEST,
+            OpenIdConnectError::InconsistentSession => StatusCode::BAD_REQUEST,
             OpenIdConnectError::InvalidCsrfState => StatusCode::BAD_REQUEST,
             OpenIdConnectError::FailedTokenExchange(_) => StatusCode::BAD_REQUEST,
             OpenIdConnectError::MissingIdToken => StatusCode::BAD_REQUEST,
@@ -80,7 +83,8 @@ pub struct LoginRequest {
 async fn openid_connect_login(
     State(data): State<Arc<Data>>,
     Query(query): Query<LoginRequest>,
-    mut session: AppSession,
+    session: AppSession,
+    mut external_login: ExternalLoginSession,
 ) -> impl IntoResponse {
     // Proof Key for Code Exchange (PKCE - https://oauth.net/2/pkce/).
     // Create a PKCE code verifier and SHA-256 encode it as a code challenge.
@@ -99,19 +103,23 @@ async fn openid_connect_login(
         .set_pkce_challenge(pkce_code_challenge)
         .url();
 
-    session.set(SessionData::OpenIdConnectLogin {
+    // Connect external login to the current session (or None if there is no session).
+    let session_id = session.as_ref().map(|s| s.session_id.clone());
+    let state = ExternalLoginState::OpenIdConnectLogin {
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
         nonce: nonce.secret().to_owned(),
         redirect_url: query.redirect,
-    });
+    };
+    external_login.set(ExternalLoginData { session_id, state });
 
     log::info!("session: {session:?}");
+    log::info!("external_login: {external_login:?}");
     //todo: return an auto-redirect from to store cookie and redirect the user to the authorize_url
     (
         StatusCode::FOUND,
         [(header::LOCATION, authorize_url.to_string())],
-        session,
+        external_login,
     )
 }
 
@@ -145,15 +153,17 @@ async fn openid_connect_auth(
     State(data): State<Arc<Data>>,
     Query(query): Query<AuthRequest>,
     mut session: AppSession,
-) -> Result<String, OpenIdConnectError> {
+    mut external_login: ExternalLoginSession,
+) -> impl IntoResponse {
     log::info!("session: {session:?}");
+    log::info!("external_login: {external_login:?}");
 
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
 
-    let session_data = session.take().ok_or(OpenIdConnectError::MissingSession)?;
-    let (pkce_code_verifier, csrf_state, nonce, redirect_url) = match session_data {
-        SessionData::OpenIdConnectLogin {
+    let external_login_data = external_login.take().ok_or(OpenIdConnectError::MissingSession)?;
+    let (pkce_code_verifier, csrf_state, nonce, redirect_url) = match external_login_data.state {
+        ExternalLoginState::OpenIdConnectLogin {
             pkce_code_verifier,
             csrf_state,
             nonce,
@@ -167,6 +177,12 @@ async fn openid_connect_auth(
         //_ => return Err(OpenIdConnectError::InvalidSession),
     };
 
+    // check if the cookies belong to the same session, or here was no valid session
+    if external_login_data.session_id.as_ref() != session.as_ref().map(|s| &s.session_id) {
+        return Err(OpenIdConnectError::InconsistentSession);
+    }
+
+    // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
         return Err(OpenIdConnectError::InvalidCsrfState);
     }
@@ -197,10 +213,22 @@ async fn openid_connect_auth(
         provider_id,
     };
 
-    //todo: get or create instead of create
-    data.identity_manager
-        .create_user(name, email, Some(external_login))
-        .await?;
+    let identity = if let Some(identity) = data.identity_manager.find_user_by_link(&external_login).await? {
+        // already linked -> perform a simple login
+        identity
+    } else if let Some(session) = &*session {
+        // linking account to an existing user
+        // todo: ask user if this is what he/she wants
+        data.identity_manager.link_user(session.id, &external_login).await?
+    } else {
+        // account was just created
+        //todo: if data.identity_manager.find_suer_by_email(email).is_some(), ask if he would rather link them. If so,
+        //      login first than go to the link page
+        //todo: if email is new, ask if he/she wants to create a new account
+        data.identity_manager
+            .create_user(name, email, Some(&external_login))
+            .await?
+    };
 
     //session.set("login", true).unwrap();
     let html = format!(
@@ -211,9 +239,11 @@ async fn openid_connect_auth(
         <pre>{:?}</pre>
         Redirecting to:
         <pre>{:?}</pre>
+        Identity to:
+        <pre>{:?}</pre>
     </body>
 </html>"#,
-        claims, redirect_url
+        claims, redirect_url, identity
     );
 
     Ok(html)

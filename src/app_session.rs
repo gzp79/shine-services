@@ -1,16 +1,33 @@
 use serde::{Deserialize, Serialize};
 use shine_service::axum::session::{Session, SessionMeta};
+use sqlx::types::Uuid;
 
-//todo: maybe Cookie storing the parameters for the OAuthFlow have to be split to allow linking of logged-in users
-// Now the flow would invalidate the current user and unless we store it in the OpenIdConnectLogin variant we loose the
-// target user. Also a failed link attempt would sign out the user (drop the cookie) which might not be a good thing.
-// If they are separated the question is, if it may happen that the signed in user is altered during a linking flow and hence
-// the linking happens to a wrong user.
+/// Session information of a user.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct SessionData {
+    #[serde(rename = "id")]
+    pub id: Uuid,
+    #[serde(rename = "sid")]
+    pub session_id: String,
+}
 
+/// External login information:
+/// - creating a new account
+/// - linking an existing account
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ExternalLoginData {
+    /// The id of the session to link this external provider to. If this is a normal login,
+    /// this member should be None.
+    #[serde(rename = "sig")]
+    pub session_id: Option<String>,
+    #[serde(rename = "st")]
+    pub state: ExternalLoginState,
+
+}
 
 #[derive(Clone, Serialize, Deserialize)]
-pub enum SessionData {
-    #[serde(rename = "gl")]
+pub enum ExternalLoginState {
+    #[serde(rename = "oid")]
     OpenIdConnectLogin {
         #[serde(rename = "pv")]
         pkce_code_verifier: String,
@@ -23,7 +40,7 @@ pub enum SessionData {
     },
 }
 
-impl std::fmt::Debug for SessionData {
+impl std::fmt::Debug for ExternalLoginState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::OpenIdConnectLogin { redirect_url, .. } => f
@@ -37,3 +54,5 @@ impl std::fmt::Debug for SessionData {
 
 pub type AppSessionMeta = SessionMeta<SessionData>;
 pub type AppSession = Session<SessionData>;
+pub type ExternalLoginMeta = SessionMeta<ExternalLoginData>;
+pub type ExternalLoginSession = Session<ExternalLoginData>;

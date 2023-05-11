@@ -5,6 +5,8 @@ use thiserror::Error as ThisError;
 pub enum DBError {
     #[error("Operation retry count reached")]
     RetryLimitReached,
+    #[error("DB has some inconsistency")]
+    Inconsistency(String),
     #[error("Some constraint violated indicating a conflict")]
     Conflict,
 

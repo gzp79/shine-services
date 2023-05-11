@@ -6,6 +6,7 @@
     },
 
     "cSpell.words": [
+        "autoescape",
         "chrono",
         "fkey",
         "keyvault",
@@ -18,6 +19,7 @@
         "rustls",
         "serde",
         "sqlx",
+        "tera",
         "thiserror",
         "TIMESTAMPTZ",
         "zipkin"

@@ -8,6 +8,25 @@ pub enum IdentityKind {
     User,
 }
 
+impl TryFrom<i32> for IdentityKind {
+    type Error = DBError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(IdentityKind::User),
+            _ => Err(DBError::Inconsistency(format!("Invalid identity kind: {}", value))),
+        }
+    }
+}
+
+impl From<IdentityKind> for i32 {
+    fn from(value: IdentityKind) -> Self {
+        match value {
+            IdentityKind::User => 0,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Identity {
     pub id: Uuid,
@@ -39,7 +58,7 @@ impl IdentityManager {
         &self,
         name: String,
         email: Option<String>,
-        external_login: Option<ExternalLogin>,
+        external_login: Option<&ExternalLogin>,
     ) -> Result<Identity, DBError> {
         for _ in 0..10 {
             let id = Uuid::new_v4();
@@ -103,7 +122,34 @@ impl IdentityManager {
         todo!()
     }
 
-    pub async fn link_user(&self, user_id: Uuid, external_login: ExternalLogin) -> Result<(), DBError> {
+    pub async fn find_user_by_email(&self, email: String) -> Result<Option<Identity>, DBError> {
+        todo!()
+    }
+
+    pub async fn find_user_by_link(&self, external_login: &ExternalLogin) -> Result<Option<Identity>, DBError> {
+        let identity = sql_expr!(
+            self.db_kind(),
+            "SELECT text(identities.user_id), kind, created from external_logins, identities"
+                + "WHERE external_logins.user_id = identities.user_id"
+                + " AND external_logins.provider = ${&external_login.provider}"
+                + " AND external_logins.provider_id = ${&external_login.provider_id}"
+        )
+        .to_query_as::<_, (String, i32, DateTime<Utc>)>()
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some((user_id, kind, creation)) = identity {
+            Ok(Some(Identity {
+                id: Uuid::parse_str(&user_id).map_err(|err| DBError::Inconsistency(format!("{err:?}")))?,
+                kind: IdentityKind::try_from(kind)?,
+                creation,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<Identity, DBError> {
         todo!()
     }
 
