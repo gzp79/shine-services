@@ -1,14 +1,15 @@
 mod app_config;
 mod app_error;
 mod app_session;
+mod auth;
 mod db;
-mod oauth;
 mod utils;
 
 use crate::{
     app_config::{AppConfig, SERVICE_NAME},
     app_session::{AppSessionMeta, ExternalLoginMeta},
-    db::IdentityManager,
+    auth::AuthServiceBuilder,
+    db::{IdentityManager, SessionManager},
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
@@ -87,10 +88,11 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let db_pool = db::create_pool(&config.db.connection_string).await?;
     let identity_manager = IdentityManager::new(db_pool);
+    let session_manager = SessionManager::new();
     let session_cookie = AppSessionMeta::new(&config.cookie_secret)?.with_cookie_name("sid");
     let external_login_cookie = ExternalLoginMeta::new(&config.cookie_secret)?.with_cookie_name("exl");
 
-    let oauth = oauth::OAuthConnections::new(&config.oauth, identity_manager.clone())
+    let oauth = AuthServiceBuilder::new(&config.oauth, &config.home_url, &identity_manager, &session_manager)
         .await?
         .into_router();
 

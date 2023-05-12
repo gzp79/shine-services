@@ -10,6 +10,7 @@
         "chrono",
         "fkey",
         "keyvault",
+        "oidc",
         "openidconnect",
         "opentelemetry",
         "otconv",

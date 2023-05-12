@@ -1,10 +1,12 @@
 {
     "slot": "test",
     "stage": "gzp123",
+
     "privateKeyvault": "https://shine-keyvault.vault.azure.net/",
     "allowOrigins": [
         "http://localhost:8080"
     ],
+    "homeUrl": "http://localhost:8080",
     "controlPort": 8080,
         
     "tracing": {

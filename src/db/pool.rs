@@ -1,5 +1,5 @@
 use crate::db::{migrations::Migrations, DBError};
-use sqlx::{migrate::MigrateDatabase, AnyPool, any::AnyPoolOptions};
+use sqlx::{any::AnyPoolOptions, migrate::MigrateDatabase, AnyPool};
 
 pub async fn create_pool(cns: &str) -> Result<AnyPool, DBError> {
     if !sqlx::Any::database_exists(cns).await? {

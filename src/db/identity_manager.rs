@@ -149,8 +149,25 @@ impl IdentityManager {
         }
     }
 
-    pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<Identity, DBError> {
-        todo!()
+    pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<(), DBError> {
+        let id_str = user_id.hyphenated().to_string();
+        let link_response = sql_expr!(
+            self.db_kind(),
+            "INSERT INTO external_logins (user_id, provider, provider_id, linked)"
+                + "VALUES(uuid(${&id_str}), ${&external_login.provider}, ${&external_login.provider_id}, ${expr::Now})"
+                + "ON CONFLICT DO NOTHING"
+                + "RETURNING 'ok'"
+        )
+        .to_query_as::<_, (String,)>()
+        .fetch_optional(&self.pool)
+        .await?;
+
+        // check if link could be added
+        if link_response.unwrap_or_default().0 == "ok" {
+            Ok(())
+        } else {
+            Err(DBError::Conflict)
+        }
     }
 
     pub async fn unlink_user(&self, user_id: Uuid, provider: String) -> Result<(), DBError> {

@@ -1,3 +1,4 @@
+use crate::db::SessionId;
 use serde::{Deserialize, Serialize};
 use shine_service::axum::session::{Session, SessionMeta};
 use sqlx::types::Uuid;
@@ -6,47 +7,39 @@ use sqlx::types::Uuid;
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct SessionData {
     #[serde(rename = "id")]
-    pub id: Uuid,
+    pub user_id: Uuid,
     #[serde(rename = "sid")]
-    pub session_id: String,
-}
-
-/// External login information:
-/// - creating a new account
-/// - linking an existing account
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ExternalLoginData {
-    /// The id of the session to link this external provider to. If this is a normal login,
-    /// this member should be None.
-    #[serde(rename = "sig")]
-    pub session_id: Option<String>,
-    #[serde(rename = "st")]
-    pub state: ExternalLoginState,
-
+    pub session_id: SessionId,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub enum ExternalLoginState {
+pub enum ExternalLoginData {
     #[serde(rename = "oid")]
-    OpenIdConnectLogin {
+    OIDCLogin {
         #[serde(rename = "pv")]
         pkce_code_verifier: String,
         #[serde(rename = "cv")]
         csrf_state: String,
         #[serde(rename = "n")]
-        nonce: String,        
+        nonce: String,
         #[serde(rename = "u")]
         redirect_url: Option<String>,
+        // indicates if login was made to link the account to the user of the given session
+        #[serde(rename = "l")]
+        link_session_id: Option<SessionId>,
     },
 }
 
-impl std::fmt::Debug for ExternalLoginState {
+impl std::fmt::Debug for ExternalLoginData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::OpenIdConnectLogin { redirect_url, .. } => f
-                .debug_struct("OpenIdConnectLogin")
+            Self::OIDCLogin { redirect_url, link_session_id, .. } => f
+                .debug_struct("OIDCLogin")
                 .field("pkce_code_verifier", &"[REDACTED]")
-                .field("redirect_url", redirect_url)
+                .field("csrf_state", &"[REDACTED]")
+                .field("nonce", &"[REDACTED]")
+                .field("redirect_url", &redirect_url)
+                .field("link_session", &link_session_id)
                 .finish(),
         }
     }

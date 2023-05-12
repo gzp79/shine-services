@@ -6,5 +6,7 @@ mod pool;
 pub use self::pool::*;
 mod identity_manager;
 pub use self::identity_manager::*;
+mod session_manager;
+pub use self::session_manager::*;
 
 mod migrations;

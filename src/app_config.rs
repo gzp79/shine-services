@@ -7,9 +7,9 @@ use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 use tokio::runtime::Handle as RtHandle;
+use url::Url;
 
-use crate::db::DBConfig;
-use crate::oauth::OAuthConfig;
+use crate::{auth, db::DBConfig};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -65,13 +65,15 @@ impl From<PreInitConfigError> for ConfigError {
 pub struct AppConfig {
     #[serde(flatten)]
     pub core: CoreConfig,
+
     pub tracing: TracingConfig,
-    pub control_port: u16,
-    pub oauth: OAuthConfig,
+    pub oauth: auth::Config,
     pub db: DBConfig,
+    pub control_port: u16,
 
     pub allow_origins: Vec<String>,
     pub cookie_secret: String,
+    pub home_url: Url,
 }
 
 impl AppConfig {
@@ -105,7 +107,7 @@ impl AppConfig {
                 builder = builder.add_source(private_keyvault)
             }
         }
-        
+
         if Path::new(DEFAULT_LOCAL_CONFIG_FILE).exists() {
             builder = builder.add_source(File::from(Path::new(DEFAULT_LOCAL_CONFIG_FILE)));
         }
