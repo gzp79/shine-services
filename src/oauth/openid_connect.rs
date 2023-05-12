@@ -6,22 +6,23 @@ use crate::{
 };
 use axum::{
     extract::{Query, State},
-    http::{header, StatusCode},
-    response::{IntoResponse, Response},
+    http::StatusCode,
+    response::{IntoResponse, Response, Html},
     routing::get,
-    Router, Extension,
+    Extension, Router,
 };
+use chrono::Duration;
 use oauth2::{
     reqwest::async_http_client, AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge,
     PkceCodeVerifier, RedirectUrl, Scope,
 };
 use openidconnect::{
-    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
+    core::{CoreAuthPrompt, CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
     IssuerUrl, Nonce, TokenResponse,
 };
 use serde::{Deserialize, Serialize};
-use tera::Tera;
 use std::sync::Arc;
+use tera::Tera;
 use thiserror::Error as ThisError;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -37,8 +38,6 @@ pub struct OpenIdConnectConfig {
 enum OpenIdConnectError {
     #[error("Session cookie was missing or corrupted")]
     MissingSession,
-    #[error("Session cookie is expired")]
-    InvalidSession,
     #[error("Cross Server did not return an ID token")]
     InvalidCsrfState,
     #[error("Session and external login cookies are not matching")]
@@ -49,28 +48,31 @@ enum OpenIdConnectError {
     MissingIdToken,
     #[error("Failed to verify id token: {0}")]
     FailedIdVerification(String),
+
     #[error(transparent)]
     DBError(#[from] DBError),
+    #[error(transparent)]
+    TeraError(#[from] tera::Error),
 }
 
 impl IntoResponse for OpenIdConnectError {
     fn into_response(self) -> Response {
         let status_code = match &self {
             OpenIdConnectError::MissingSession => StatusCode::BAD_REQUEST,
-            OpenIdConnectError::InvalidSession => StatusCode::BAD_REQUEST,
             OpenIdConnectError::InconsistentSession => StatusCode::BAD_REQUEST,
             OpenIdConnectError::InvalidCsrfState => StatusCode::BAD_REQUEST,
             OpenIdConnectError::FailedTokenExchange(_) => StatusCode::BAD_REQUEST,
             OpenIdConnectError::MissingIdToken => StatusCode::BAD_REQUEST,
             OpenIdConnectError::FailedIdVerification(_) => StatusCode::BAD_REQUEST,
             OpenIdConnectError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OpenIdConnectError::TeraError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (status_code, format!("{self:?}")).into_response()
     }
 }
 
-struct Data {
+struct ServiceState {
     provider: String,
     client: CoreClient,
     identity_manager: IdentityManager,
@@ -82,12 +84,12 @@ pub struct LoginRequest {
 }
 
 async fn openid_connect_login(
-    State(data): State<Arc<Data>>,
+    State(data): State<Arc<ServiceState>>,
     Extension(tera): Extension<Arc<Tera>>,
     Query(query): Query<LoginRequest>,
     session: AppSession,
     mut external_login: ExternalLoginSession,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, OpenIdConnectError> {
     // Proof Key for Code Exchange (PKCE - https://oauth.net/2/pkce/).
     // Create a PKCE code verifier and SHA-256 encode it as a code challenge.
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -103,6 +105,8 @@ async fn openid_connect_login(
         )
         .add_scopes(scopes.into_iter().map(|s| Scope::new(s.to_string())))
         .set_pkce_challenge(pkce_code_challenge)
+        .set_max_age(Duration::minutes(30).to_std().unwrap())
+        .add_prompt(CoreAuthPrompt::Login)
         .url();
 
     // Connect external login to the current session (or None if there is no session).
@@ -117,12 +121,16 @@ async fn openid_connect_login(
 
     log::info!("session: {session:?}");
     log::info!("external_login: {external_login:?}");
-    //todo: return an auto-redirect from to store cookie and redirect the user to the authorize_url
-    (
-        StatusCode::FOUND,
-        [(header::LOCATION, authorize_url.to_string())],
-        external_login,
-    )
+
+    //Return an auto-redirect page that stores cookie before redirecting the user to the authorize_url.
+    // In older browser with a simple StatusCode::FOUND response, no cookie headers could be sent to the client.
+    let mut context = tera::Context::new();
+    context.insert("title", &"External login");
+    context.insert("target", &data.provider);
+    context.insert("redirect_url", &authorize_url.to_string());
+    let html = Html(tera.render("redirect.html", &context)?);
+
+    Ok((external_login, html))
 }
 
 /*
@@ -152,12 +160,12 @@ pub struct AuthRequest {
 }
 
 async fn openid_connect_auth(
-    State(data): State<Arc<Data>>,
+    State(data): State<Arc<ServiceState>>,
     Extension(tera): Extension<Arc<Tera>>,
     Query(query): Query<AuthRequest>,
     mut session: AppSession,
     mut external_login: ExternalLoginSession,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, OpenIdConnectError> {
     log::info!("session: {session:?}");
     log::info!("external_login: {external_login:?}");
 
@@ -221,7 +229,6 @@ async fn openid_connect_auth(
         identity
     } else if let Some(session) = &*session {
         // linking account to an existing user
-        // todo: ask user if this is what he/she wants
         data.identity_manager.link_user(session.id, &external_login).await?
     } else {
         // account was just created
@@ -294,7 +301,7 @@ impl OpenIdConnect {
     where
         S: Clone + Send + Sync + 'static,
     {
-        let state = Arc::new(Data {
+        let state = Arc::new(ServiceState {
             provider: self.provider.clone(),
             client: self.client,
             identity_manager: self.identity_manager,
