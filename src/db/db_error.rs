@@ -1,3 +1,4 @@
+use crate::db::DBConnectionError;
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
@@ -11,4 +12,8 @@ pub enum DBError {
 
     #[error(transparent)]
     PoolError(#[from] bb8_postgres::tokio_postgres::Error),
+    #[error(transparent)]
+    PooledConnectionError(#[from] DBConnectionError),
+    #[error(transparent)]
+    Migration(#[from] refinery::Error),
 }
