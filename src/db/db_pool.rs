@@ -52,6 +52,7 @@ impl DBPool {
 
     async fn migrate(&self) -> Result<(), DBError> {
         let mut backend = self.pool.get().await?;
+        log::info!("migrations: {:?}", embedded::migrations::runner().get_migrations());
         embedded::migrations::runner().run_async(&mut *backend).await?;
         Ok(())
     }
