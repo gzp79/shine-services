@@ -1,5 +1,6 @@
-use crate::db::{DBError, DBPool};
-use chrono::{Utc, DateTime};
+use crate::db::{DBError, DBErrorChecks, DBPool};
+use chrono::{DateTime, Utc};
+use tokio_postgres::error::SqlState;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy)]
@@ -36,62 +37,78 @@ impl IdentityManager {
         email: Option<String>,
         external_login: Option<&ExternalLogin>,
     ) -> Result<Identity, DBError> {
-        /*for _ in 0..10 {
-            let id = Uuid::new_v4();
+        for _ in 0..10 {
+            //let id = Uuid::new_v4();
+            let id = Uuid::parse_str("411da543-051c-4596-9184-412a9a2833a4").unwrap();
             //let email = email.map(|e| e.normalize_email());
 
-            let mut tx = self.pool.begin().await?;
+            let mut client = self.pool.get().await?;
 
-            let user_row = sql_expr!(
-                self.db_kind(),
-                "INSERT INTO identities (user_id, kind, created, name, email)"
-                    + "VALUES(${&id}, 0, ${expr::Now}, ${&name}, ${&email})"
-                    + "ON CONFLICT DO NOTHING"
-                    + "RETURNING user_id, kind, created"
-            )
-            .to_query_as::<_, (DBUuid, i32, DBDateTime)>()
-            .fetch_optional(&mut tx)
-            .await?;
+            let transaction = client.transaction().await?;
 
-            if let Some(row) = user_row {
-                log::info!("row: {:?}", row);
+            let stmt = transaction
+                .prepare(
+                    "INSERT INTO identities (user_id, kind, created, name, email) VALUES ($1, 0, now(), $2, $3)
+                            RETURNING created",
+                )
+                .await?;
 
-                if let Some(external_login) = external_login {
-                    let link_response = sql_expr!(
-                        self.db_kind(),
-                            "INSERT INTO external_logins (user_id, provider, provider_id, linked)"
-                            + "VALUES(${&id}, ${&external_login.provider}, ${&external_login.provider_id}, ${expr::Now})"
-                            + "ON CONFLICT DO NOTHING"
-                            + "RETURNING 'ok'"
-                    )
-                    .to_query_as::<_, (String, )>()
-                    .fetch_optional(&mut tx)
-                    .await?;
-
-                    // check if link could be added
-                    if link_response.unwrap_or_default().0 != "ok" {
-                        tx.rollback().await?;
-                        return Err(DBError::Conflict);
-                    }
+            let row: DateTime<Utc> = match transaction.query_one(&stmt, &[&id, &name, &email]).await {
+                Ok(row) => row.get(0),
+                Err(err) if err.is_constraint("identities", "idx_name") => {
+                    // conflict - name already taken, generate a new
+                    transaction.rollback().await?;
+                    continue;
                 }
+                Err(err) if err.is_constraint("identities", "identities_pkey") => {
+                    // conflict - uuid is not unique
+                    transaction.rollback().await?;
+                    continue;
+                }
+                Err(err) => {
+                    return Err(err.into());
+                }
+            };
 
-                assert_eq!(row.0.0, id);
-                assert_eq!(row.1, 0);
-                log::info!("user created: {:?}, {:?}, {:?}", row.0, row.1, row.2);
-                tx.commit().await?;
-                return Ok(Identity {
-                    id,
-                    kind: IdentityKind::User,
-                    creation: row.2.0,
-                });
-            } else {
-                // retry, user_id had a conflict - very unlikely, but it's safer this way.
-                tx.rollback().await?;
+            if let Some(external_login) = external_login {
+                let stmt = transaction
+                .prepare("INSERT INTO external_logins (user_id, provider, provider_id, linked) VALUES ($1, $2, $3, now())")
+                .await?;
+                transaction
+                    .execute(&stmt, &[&id, &external_login.provider, &external_login.provider_id])
+                    .await?;
+            }
+            log::info!("4");
+
+            match transaction.commit().await {
+                Ok(_) => {
+                    return Ok(Identity {
+                        id,
+                        kind: IdentityKind::User,
+                        creation: row.get(0),
+                    })
+                }
+                Err(err) => {
+                    log::info!("5");
+                    if let Some(err) = err.as_db_error() {
+                        if &SqlState::UNIQUE_VIOLATION == err.code() {
+                            log::info!("{:?}", err);
+                            let detail = err.message().to_lowercase();
+                            if err.table() == Some("identities") && detail.contains("idx_name") {
+                                // conflict - name already taken, generate a new
+                                continue;
+                            } else if err.table() == Some("identities") && detail.contains("identities_pkey") {
+                                // conflict - uuid is not unique
+                                continue;
+                            }
+                        }
+                    }
+                    return Err(err.into());
+                }
             }
         }
 
-        Err(DBError::RetryLimitReached)*/
-        todo!()
+        Err(DBError::RetryLimitReached)
     }
 
     pub async fn find_user_by_id(&self, id: Uuid) -> Result<Option<Identity>, DBError> {

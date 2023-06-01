@@ -7,4 +7,4 @@ CREATE TABLE identities(
     profile_image TEXT
 );
 
-CREATE UNIQUE INDEX idx_identity_name ON identities(name);
+CREATE UNIQUE INDEX idx_name ON identities(name);

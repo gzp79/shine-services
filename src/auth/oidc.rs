@@ -83,6 +83,14 @@ struct ServiceState {
 }
 type Service = Arc<ServiceState>;
 
+async fn create_user(
+    State(service): State<Service>,
+) -> Result<impl IntoResponse, OIDCError> {
+    service.identity_manager.create_user(generate_name(), None, None).await?;
+    Ok(())
+}
+
+
 #[derive(Deserialize)]
 struct LoginRequest {
     redirect: Option<String>,
@@ -317,6 +325,7 @@ impl OIDCServiceBuilder {
         });
 
         Router::new()
+            .route("/create_user", get(create_user))
             .route("/login", get(openid_connect_login))
             .route("/auth", get(openid_connect_auth))
             .with_state(state)
