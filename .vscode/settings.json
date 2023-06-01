@@ -23,6 +23,7 @@
         "tera",
         "thiserror",
         "TIMESTAMPTZ",
+        "TIMESTAMPZ",
         "zipkin"
     ],
     "cmake.configureOnOpen": false

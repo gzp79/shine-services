@@ -9,7 +9,7 @@ use crate::{
     app_config::{AppConfig, SERVICE_NAME},
     app_session::{AppSessionMeta, ExternalLoginMeta},
     auth::AuthServiceBuilder,
-    db::{IdentityManager, SessionManager},
+    db::{IdentityManager, SessionManager, DBPool},
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
@@ -86,7 +86,7 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
         tera
     };
 
-    let db_pool = db::create_pool(&config.db.connection_string).await?;
+    let db_pool = DBPool::new(&config.db).await?;
     let identity_manager = IdentityManager::new(db_pool);
     let session_manager = SessionManager::new();
     let session_cookie = AppSessionMeta::new(&config.cookie_secret)?.with_cookie_name("sid");

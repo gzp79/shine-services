@@ -1,30 +1,10 @@
-use crate::db::DBError;
-use chrono::{DateTime, Utc};
-use sqlx::{types::uuid::Uuid, AnyPool};
-use sqlx_interpolation::{expr, sql_expr, DBKind};
+use crate::db::{DBError, DBPool};
+use chrono::{Utc, DateTime};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy)]
 pub enum IdentityKind {
     User,
-}
-
-impl TryFrom<i32> for IdentityKind {
-    type Error = DBError;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(IdentityKind::User),
-            _ => Err(DBError::Inconsistency(format!("Invalid identity kind: {}", value))),
-        }
-    }
-}
-
-impl From<IdentityKind> for i32 {
-    fn from(value: IdentityKind) -> Self {
-        match value {
-            IdentityKind::User => 0,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -42,16 +22,12 @@ pub struct ExternalLogin {
 
 #[derive(Clone)]
 pub struct IdentityManager {
-    pool: AnyPool,
+    pool: DBPool,
 }
 
 impl IdentityManager {
-    pub fn new(pool: AnyPool) -> Self {
+    pub fn new(pool: DBPool) -> Self {
         Self { pool }
-    }
-
-    pub fn db_kind(&self) -> DBKind {
-        DBKind::from(self.pool.any_kind())
     }
 
     pub async fn create_user(
@@ -60,9 +36,8 @@ impl IdentityManager {
         email: Option<String>,
         external_login: Option<&ExternalLogin>,
     ) -> Result<Identity, DBError> {
-        for _ in 0..10 {
+        /*for _ in 0..10 {
             let id = Uuid::new_v4();
-            let id_str = id.hyphenated().to_string();
             //let email = email.map(|e| e.normalize_email());
 
             let mut tx = self.pool.begin().await?;
@@ -70,11 +45,11 @@ impl IdentityManager {
             let user_row = sql_expr!(
                 self.db_kind(),
                 "INSERT INTO identities (user_id, kind, created, name, email)"
-                    + "VALUES(uuid(${&id_str}), 0, ${expr::Now}, ${&name}, ${&email})"
+                    + "VALUES(${&id}, 0, ${expr::Now}, ${&name}, ${&email})"
                     + "ON CONFLICT DO NOTHING"
-                    + "RETURNING text(user_id), kind, created"
+                    + "RETURNING user_id, kind, created"
             )
-            .to_query_as::<_, (String, i32, DateTime<Utc>)>()
+            .to_query_as::<_, (DBUuid, i32, DBDateTime)>()
             .fetch_optional(&mut tx)
             .await?;
 
@@ -85,7 +60,7 @@ impl IdentityManager {
                     let link_response = sql_expr!(
                         self.db_kind(),
                             "INSERT INTO external_logins (user_id, provider, provider_id, linked)"
-                            + "VALUES(uuid(${&id_str}), ${&external_login.provider}, ${&external_login.provider_id}, ${expr::Now})"
+                            + "VALUES(${&id}, ${&external_login.provider}, ${&external_login.provider_id}, ${expr::Now})"
                             + "ON CONFLICT DO NOTHING"
                             + "RETURNING 'ok'"
                     )
@@ -100,14 +75,14 @@ impl IdentityManager {
                     }
                 }
 
-                assert_eq!(row.0, id_str);
+                assert_eq!(row.0.0, id);
                 assert_eq!(row.1, 0);
                 log::info!("user created: {:?}, {:?}, {:?}", row.0, row.1, row.2);
                 tx.commit().await?;
                 return Ok(Identity {
                     id,
                     kind: IdentityKind::User,
-                    creation: row.2,
+                    creation: row.2.0,
                 });
             } else {
                 // retry, user_id had a conflict - very unlikely, but it's safer this way.
@@ -115,7 +90,8 @@ impl IdentityManager {
             }
         }
 
-        Err(DBError::RetryLimitReached)
+        Err(DBError::RetryLimitReached)*/
+        todo!()
     }
 
     pub async fn find_user_by_id(&self, id: Uuid) -> Result<Option<Identity>, DBError> {
@@ -127,30 +103,31 @@ impl IdentityManager {
     }
 
     pub async fn find_user_by_link(&self, external_login: &ExternalLogin) -> Result<Option<Identity>, DBError> {
-        let identity = sql_expr!(
+        /*let identity = sql_expr!(
             self.db_kind(),
-            "SELECT text(identities.user_id), kind, created from external_logins, identities"
+            "SELECT identities.user_id, kind, created from external_logins, identities"
                 + "WHERE external_logins.user_id = identities.user_id"
                 + " AND external_logins.provider = ${&external_login.provider}"
                 + " AND external_logins.provider_id = ${&external_login.provider_id}"
         )
-        .to_query_as::<_, (String, i32, DateTime<Utc>)>()
+        .to_query_as::<_, (DBUuid, i32, DBDateTime)>()
         .fetch_optional(&self.pool)
         .await?;
 
         if let Some((user_id, kind, creation)) = identity {
             Ok(Some(Identity {
-                id: Uuid::parse_str(&user_id).map_err(|err| DBError::Inconsistency(format!("{err:?}")))?,
+                id: user_id.0,
                 kind: IdentityKind::try_from(kind)?,
-                creation,
+                creation: creation.0,
             }))
         } else {
             Ok(None)
-        }
+        }*/
+        todo!()
     }
 
     pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<(), DBError> {
-        let id_str = user_id.hyphenated().to_string();
+        /*let id_str = user_id.hyphenated().to_string();
         let link_response = sql_expr!(
             self.db_kind(),
             "INSERT INTO external_logins (user_id, provider, provider_id, linked)"
@@ -167,7 +144,8 @@ impl IdentityManager {
             Ok(())
         } else {
             Err(DBError::Conflict)
-        }
+        }*/
+        todo!()
     }
 
     pub async fn unlink_user(&self, user_id: Uuid, provider: String) -> Result<(), DBError> {

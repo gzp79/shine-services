@@ -11,8 +11,8 @@ config = "0.13"
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-chrono = { version = "0.4", features = ["serde"] }
 url = "2.3"
+chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.3", features = ["v4", "serde"] }
 base64 = "0.21"
 futures = "0.3"
@@ -21,8 +21,12 @@ tokio = {version = "1.27", features = ["macros", "rt-multi-thread", "signal"] }
 oauth2 = "4.3"
 openidconnect = "3.0"
 
-sqlx = { version = "0.6", features = ["sqlite", "postgres", "any", "chrono", "uuid", "runtime-tokio-rustls"] }
-sqlx-interpolation = { path = "./shine-service-rs/sqlx/sqlx-interpolation", version = "0.1.0" }
+bb8 = "0.8"
+bb8-postgres = "0.8"
+tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-chrono-0_4", "runtime"] }
+tokio-rustls = "0.24"
+tokio-postgres-rustls = "0.10"
+refinery = { version = "0.8", features = ["tokio-postgres"] }
 
 azure_core = { version = "0.11" }
 azure_identity = { version = "0.11" }

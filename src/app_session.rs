@@ -1,7 +1,7 @@
 use crate::db::SessionId;
 use serde::{Deserialize, Serialize};
 use shine_service::axum::session::{Session, SessionMeta};
-use sqlx::types::Uuid;
+use uuid::Uuid;
 
 /// Session information of a user.
 #[derive(Clone, Serialize, Deserialize, Debug)]

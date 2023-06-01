@@ -1,4 +1,4 @@
-use sqlx::types::Uuid;
+use uuid::Uuid;
 
 pub fn generate_name() -> String {
     let id = Uuid::new_v4();
