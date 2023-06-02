@@ -1,6 +1,6 @@
 use crate::{
     app_session::{AppSession, ExternalLoginData, ExternalLoginSession, SessionData},
-    db::{DBError, ExternalLogin, Identity, IdentityManager, SessionManager},
+    db::{DBError, ExternalLogin, IdentityError, IdentityManager, SessionManager},
     utils::generate_name,
 };
 use axum::{
@@ -24,6 +24,7 @@ use std::sync::Arc;
 use tera::Tera;
 use thiserror::Error as ThisError;
 use url::Url;
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,13 +84,14 @@ struct ServiceState {
 }
 type Service = Arc<ServiceState>;
 
-async fn create_user(
-    State(service): State<Service>,
-) -> Result<impl IntoResponse, OIDCError> {
-    service.identity_manager.create_user(generate_name(), None, None).await?;
-    Ok(())
+async fn create_user(State(service): State<Service>) -> impl IntoResponse {
+    //let user_id = Uuid::parse_str("a2c0c1eb-d2d1-41f1-a293-7d54b72ead1e").unwrap();
+    let user_id = Uuid::new_v4();
+    //let name = "name";
+    let name = Uuid::new_v4().as_hyphenated().to_string();
+    let res = service.identity_manager.create_user(user_id, &name, None, None).await;
+    log::info!("{:?}", res);
 }
-
 
 #[derive(Deserialize)]
 struct LoginRequest {
@@ -204,11 +206,10 @@ async fn openid_connect_auth(
         .claims(&service.client.id_token_verifier(), &nonce)
         .map_err(|err| OIDCError::FailedIdVerification(format!("{err}")))?;
 
-    let name = claims
+    let mut nickname = claims
         .nickname()
         .and_then(|n| n.get(None))
-        .map(|n| n.as_str().to_owned())
-        .unwrap_or_else(generate_name);
+        .map(|n| n.as_str().to_owned());
     let email = claims.email().map(|n| n.as_str().to_owned());
     let provider_id = claims.subject().as_str().to_owned();
     let external_login = ExternalLogin {
@@ -224,15 +225,15 @@ async fn openid_connect_auth(
     let html = Html(tera.render("redirect.html", &context)?);
 
     // find any user linked to this account
-    
+
     if let Some(link_session_id) = link_session_id {
         // not a full login, but linking the user to an external provider
         //todo: if session.is_none() || session.session_id != link_session_id -> the flow was broken, sign out
         //      else if let Some(identity) find_user_by_link() {
         //         if   identity.id != session.user_id -> linked to a different user else ok
         //      } else { link account to ussr)
-        // keep session as it is, 
-        todo!()        
+        // keep session as it is,
+        todo!()
     } else if let Some(identity) = service.identity_manager.find_user_by_link(&external_login).await? {
         // Sign in to an existing (linked) account and redirect to the target
         let session_id = service.session_manager.create(&identity.id);
@@ -243,10 +244,30 @@ async fn openid_connect_auth(
         Ok((external_login_session, session, html).into_response())
     } else {
         // Create a new account, and sign in.
-        let identity = service
-            .identity_manager
-            .create_user(name, email, Some(&external_login))
-            .await?;
+
+        let mut i = 0;
+
+        let identity = loop {
+            if i > 10 {
+                return Err(OIDCError::DBError(DBError::RetryLimitReached));
+            }
+            i += 1;
+
+            let user_id = Uuid::new_v4();
+            let user_name = nickname.take().unwrap_or_else(generate_name);
+
+            match service
+                .identity_manager
+                .create_user(user_id, &user_name, email.as_deref(), Some(&external_login))
+                .await
+            {
+                Ok(identity) => break identity,
+                Err(IdentityError::NameConflict) => continue,
+                Err(IdentityError::UserIdConflict) => continue,
+                Err(IdentityError::LinkConflict) => todo!(),
+                Err(IdentityError::DBError(err)) => return Err(err.into()),
+            };
+        };
 
         let session_id = service.session_manager.create(&identity.id);
         session.set(SessionData {

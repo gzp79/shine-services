@@ -28,7 +28,7 @@ impl DBErrorChecks for tokio_postgres::Error {
     fn is_constraint(&self, table: &str, constraint: &str) -> bool {
         if let Some(err) = self.as_db_error() {
             if &SqlState::UNIQUE_VIOLATION == err.code() {
-                if err.table() == Some("identities") && err.message().contains("idx_name") {
+                if err.table() == Some(table) && err.message().contains(constraint) {
                     return true;
                 }
             }
