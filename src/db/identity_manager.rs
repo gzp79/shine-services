@@ -127,7 +127,7 @@ impl IdentityManager {
         let stmt = client
             .prepare(
                 "SELECT identities.user_id, kind, name, created from external_logins, identities"
-                    + " WHERE external_logins.user_id = identities.user_id"
+                    + "  WHERE external_logins.user_id = identities.user_id"
                     + "  AND external_logins.provider = $1"
                     + "  AND external_logins.provider_id = $2",
             )
