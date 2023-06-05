@@ -58,8 +58,8 @@ impl IdentityManager {
 
         let stmt = transaction
             .prepare(
-                "INSERT INTO identities (user_id, kind, created, name, email) VALUES ($1, 0, now(), $2, $3)
-                            RETURNING created",
+                "INSERT INTO identities (user_id, kind, created, name, email) VALUES ($1, 0, now(), $2, $3)"
+                    + " RETURNING created",
             )
             .await
             .map_err(DBError::from)?;
@@ -122,27 +122,34 @@ impl IdentityManager {
     }
 
     pub async fn find_user_by_link(&self, external_login: &ExternalLogin) -> Result<Option<Identity>, DBError> {
-        /*let identity = sql_expr!(
-            self.db_kind(),
-            "SELECT identities.user_id, kind, created from external_logins, identities"
-                + "WHERE external_logins.user_id = identities.user_id"
-                + " AND external_logins.provider = ${&external_login.provider}"
-                + " AND external_logins.provider_id = ${&external_login.provider_id}"
-        )
-        .to_query_as::<_, (DBUuid, i32, DBDateTime)>()
-        .fetch_optional(&self.pool)
-        .await?;
+        let mut client = self.pool.get().await.map_err(DBError::from)?;
 
-        if let Some((user_id, kind, creation)) = identity {
+        let stmt = client
+            .prepare(
+                "SELECT identities.user_id, kind, name, created from external_logins, identities"
+                    + " WHERE external_logins.user_id = identities.user_id"
+                    + "  AND external_logins.provider = $1"
+                    + "  AND external_logins.provider_id = $2",
+            )
+            .await
+            .map_err(DBError::from)?;
+
+        let identity = client
+            .query_one(&stmt, &[&external_login.provider, &external_login.provider_id])
+            .await?;
+        /*let identity = (identity.get::<Uuid>(0), identity.get::<i32>(1), identity.get::<String>(2), identity.get::<DateTime<Utc>>(3));
+
+        if let Some((user_id, kind, name, creation)) = identity {
             Ok(Some(Identity {
                 id: user_id.0,
                 kind: IdentityKind::try_from(kind)?,
+                name,
                 creation: creation.0,
-            }))
-        } else {
+            }))*/
+        todo!()
+        /*} else {
             Ok(None)
         }*/
-        todo!()
     }
 
     pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<(), DBError> {
