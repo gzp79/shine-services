@@ -10,5 +10,5 @@ To restart the postgres machine and server:
 -  `fly machine start ...`
 -  `fly pg restart -a shine-db`
 
-To proxy it to for local use and developement:
+To proxy it to for local use and development:
 - `fly proxy 15432:5432 -a shine-db`
