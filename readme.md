@@ -1,5 +1,7 @@
 # Identity server
 
+
+
 ## Fly.io
 
 To restart the postgres machine and server:
@@ -8,5 +10,5 @@ To restart the postgres machine and server:
 -  `fly machine start ...`
 -  `fly pg restart -a shine-db`
 
-To proxy it to use locally (without static IP, ingress services can be access only through proxy)
+To proxy it to for local use and developement:
 - `fly proxy 15432:5432 -a shine-db`
