@@ -19,7 +19,6 @@ pub enum DBError {
     PostgresError(#[from] tokio_postgres::Error),
 }
 
-
 pub trait DBErrorChecks {
     fn is_constraint(&self, table: &str, constraint: &str) -> bool;
 }
@@ -27,10 +26,11 @@ pub trait DBErrorChecks {
 impl DBErrorChecks for tokio_postgres::Error {
     fn is_constraint(&self, table: &str, constraint: &str) -> bool {
         if let Some(err) = self.as_db_error() {
-            if &SqlState::UNIQUE_VIOLATION == err.code() {
-                if err.table() == Some(table) && err.message().contains(constraint) {
-                    return true;
-                }
+            if &SqlState::UNIQUE_VIOLATION == err.code()
+                && err.table() == Some(table)
+                && err.message().contains(constraint)
+            {
+                return true;
             }
         }
         false

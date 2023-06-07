@@ -33,7 +33,11 @@ pub enum ExternalLoginData {
 impl std::fmt::Debug for ExternalLoginData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::OIDCLogin { redirect_url, link_session_id, .. } => f
+            Self::OIDCLogin {
+                redirect_url,
+                link_session_id,
+                ..
+            } => f
                 .debug_struct("OIDCLogin")
                 .field("pkce_code_verifier", &"[REDACTED]")
                 .field("csrf_state", &"[REDACTED]")

@@ -9,7 +9,7 @@ use thiserror::Error as ThisError;
 #[derive(Debug, ThisError)]
 pub enum AppError {
     #[error(transparent)]
-    InvalidSessionMeta(#[from] SessionError),    
+    InvalidSessionMeta(#[from] SessionError),
 
     #[error(transparent)]
     DBError(#[from] DBError),
