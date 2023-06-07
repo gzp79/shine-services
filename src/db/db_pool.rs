@@ -14,10 +14,6 @@ mod embedded {
     embed_migrations!("./sql_migrations");
 }
 
-struct DBMigration;
-
-impl DBMigration {}
-
 #[derive(Clone)]
 pub struct DBPool {
     pool: ConnectionPool,

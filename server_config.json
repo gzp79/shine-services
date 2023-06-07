@@ -9,6 +9,7 @@
     "controlPort": 8080,
     "tracing": {
         "allowReconfigure": true,
+        "enableConsoleLog": true,
         "telemetry": {
             "type": "none"
         }

@@ -3,11 +3,14 @@
 GET {{url}}/info/ready
 ###
 
+GET {{url}}/tracing/config 
+###
+
 PUT {{url}}/tracing/config 
 Content-Type: application/json
 
 {
-    "filter": "INFO, shine_service=TRACE,sqlx=WARN"
+    "filter": "TRACE, shine_service=TRACE,hyper=INFO"
 }
 ###
 

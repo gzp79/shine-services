@@ -27,8 +27,8 @@ use tokio::{
 use tower_http::cors::CorsLayer;
 use tracing::Dispatch;
 
-async fn health_check() -> String {
-    "Ok".to_string()
+async fn health_check(Extension(pool): Extension<DBPool>) -> String {
+    format!("state: {:#?}\nOk", pool.state())
 }
 
 async fn shutdown_signal() {
@@ -87,7 +87,7 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
     };
 
     let db_pool = DBPool::new(&config.db).await?;
-    let identity_manager = IdentityManager::new(db_pool).await?;
+    let identity_manager = IdentityManager::new(db_pool.clone()).await?;
     let session_manager = SessionManager::new();
     let session_cookie = AppSessionMeta::new(&config.cookie_secret)?.with_cookie_name("sid");
     let external_login_cookie = ExternalLoginMeta::new(&config.cookie_secret)?.with_cookie_name("exl");
@@ -101,6 +101,7 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
         .nest("/oauth", oauth)
         .nest("/tracing", tracing_router)
         .layer(Extension(Arc::new(tera)))
+        .layer(Extension(db_pool))
         .layer(session_cookie.into_layer())
         .layer(external_login_cookie.into_layer())
         .layer(cors)
