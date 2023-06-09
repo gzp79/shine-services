@@ -1,4 +1,4 @@
-use crate::db::{serde_opt_session_id, serde_session_id, SessionId};
+use crate::db::{serde_session_key, SessionKey, UserSession};
 use serde::{Deserialize, Serialize};
 use shine_service::axum::session::{Session, SessionMeta};
 use uuid::Uuid;
@@ -8,8 +8,17 @@ use uuid::Uuid;
 pub struct SessionData {
     #[serde(rename = "id")]
     pub user_id: Uuid,
-    #[serde(rename = "sid", with = "serde_session_id")]
-    pub session_id: SessionId,
+    #[serde(rename = "sid", with = "serde_session_key")]
+    pub key: SessionKey,
+}
+
+impl From<UserSession> for SessionData {
+    fn from(value: UserSession) -> Self {
+        Self {
+            user_id: value.session_id().user_id,
+            key: value.session_id().key,
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -25,8 +34,8 @@ pub enum ExternalLoginData {
         #[serde(rename = "u")]
         redirect_url: Option<String>,
         // indicates if login was made to link the account to the user of the given session
-        #[serde(rename = "l", with = "serde_opt_session_id")]
-        link_session_id: Option<SessionId>,
+        #[serde(rename = "l")]
+        link_session_id: Option<SessionData>,
     },
 }
 

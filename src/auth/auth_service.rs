@@ -1,10 +1,10 @@
 use crate::{
-    app_session::{AppSession, ExternalLoginSession},
+    app_session::{AppSession, ExternalLoginSession, SessionData},
     auth::{OIDCBuildError, OIDCConfig, OIDCServiceBuilder},
-    db::{IdentityManager, SessionManager},
+    db::{DBError, IdentityManager, SessionManager},
 };
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::get,
@@ -22,45 +22,67 @@ pub struct Config {
     pub openid: HashMap<String, OIDCConfig>,
 }
 
-#[derive(Debug, ThisError)]
-enum AuthError {
-    #[error(transparent)]
-    TeraError(#[from] tera::Error),
-}
-
-impl IntoResponse for AuthError {
-    fn into_response(self) -> Response {
-        let status_code = match &self {
-            AuthError::TeraError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-
-        (status_code, format!("{self:?}")).into_response()
-    }
-}
-
 struct ServiceState {
     home_url: String,
+    session_manager: SessionManager,
 }
 
 type Service = Arc<ServiceState>;
 
-// reset all the
+#[derive(Deserialize)]
+struct LogoutRequest {
+    terminate_all: Option<bool>,
+}
+
 async fn logout(
     Extension(tera): Extension<Arc<Tera>>,
     State(service): State<Service>,
+    Query(query): Query<LogoutRequest>,
     mut session: AppSession,
     mut external_login: ExternalLoginSession,
-) -> Result<Response, AuthError> {
-    let _ = session.take();
+) -> Response {
+    let session_data = session.take();
     let _ = external_login.take();
 
-    let mut context = tera::Context::new();
-    context.insert("title", &"Logout");
-    context.insert("target", &"home");
-    context.insert("redirect_url", &service.home_url.to_string());
-    let html = Html(tera.render("redirect.html", &context)?);
+    let (status, template, context) =
+        if let Err(err) = perform_logout(&service, session_data, query.terminate_all.unwrap_or(false)).await {
+            let mut context = tera::Context::new();
+            context.insert("error", &format!("{err:?}"));
+            (StatusCode::INTERNAL_SERVER_ERROR, "error.html", context)
+        } else {
+            let mut context = tera::Context::new();
+            context.insert("title", &"Logout");
+            context.insert("target", &"home");
+            context.insert("redirect_url", &service.home_url.to_string());
+            (StatusCode::OK, "redirect.html", context)
+        };
 
-    Ok((session, external_login, html).into_response())
+    // make sure dispite of having any server error, the session cookies are cleared
+    match tera.render(template, &context) {
+        Ok(html) => (status, session, external_login, Html(html)).into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            session,
+            external_login,
+            format!("template error: {err:?}"),
+        )
+            .into_response(),
+    }
+}
+
+async fn perform_logout(service: &Service, session_data: Option<SessionData>, remove_all: bool) -> Result<(), DBError> {
+    if let Some(session_data) = session_data {
+        if remove_all {
+            service.session_manager.remove_all(session_data.user_id).await?;
+        } else {
+            service
+                .session_manager
+                .remove(session_data.user_id, session_data.key)
+                .await?;
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, ThisError)]
@@ -72,7 +94,8 @@ pub enum AuthBuildError {
 pub struct AuthServiceBuilder {
     home_url: String,
     openid_connections: Vec<OIDCServiceBuilder>,
-    //identity_manager: IdentityManager,
+    //todo:  user_query: IdentityServiceBuilder, - find/fix existing users
+    session_manager: SessionManager,
 }
 
 impl AuthServiceBuilder {
@@ -92,7 +115,7 @@ impl AuthServiceBuilder {
         Ok(Self {
             home_url: home_url.to_string(),
             openid_connections,
-            //identity_manager,
+            session_manager: session_manager.clone(),
         })
     }
 
@@ -102,6 +125,7 @@ impl AuthServiceBuilder {
     {
         let state = Arc::new(ServiceState {
             home_url: self.home_url,
+            session_manager: self.session_manager,
         });
 
         let mut router = Router::new().route("/logout", get(logout));

@@ -1,5 +1,5 @@
 use crate::{
-    app_session::{AppSession, ExternalLoginData, ExternalLoginSession, SessionData},
+    app_session::{AppSession, ExternalLoginData, ExternalLoginSession},
     db::{CreateIdentityError, DBError, ExternalLogin, FindIdentity, IdentityManager, SessionError, SessionManager},
     utils::generate_name,
 };
@@ -111,10 +111,28 @@ async fn openid_connect_login(
     mut session: AppSession,
     mut external_login_session: ExternalLoginSession,
 ) -> Result<impl IntoResponse, OIDCError> {
-    // if this is not a link-account request, clear the old sessions and perform a simple login
     if !query.allow_link.unwrap_or(false) {
-        let _ = session.take();
+        let session_data = session.take();
         let _ = external_login_session.take();
+
+        // if this is not a link-account request and there is a valid session, skip login and let the user in.
+        if let Some(session_data) = session_data {
+            if service
+                .session_manager
+                .find_session(session_data.user_id, session_data.key)
+                .await
+                .ok()
+                .is_some()
+            {
+                let mut context = tera::Context::new();
+                context.insert("title", "Redirecting to external login");
+                context.insert("target", &service.provider);
+                context.insert("redirect_url", &query.redirect);
+                let html = Html(tera.render("redirect.html", &context)?);
+
+                return Ok((external_login_session, session, html));
+            }
+        }
     }
 
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -137,7 +155,7 @@ async fn openid_connect_login(
         csrf_state: csrf_state.secret().to_owned(),
         nonce: nonce.secret().to_owned(),
         redirect_url: query.redirect,
-        link_session_id: session.as_ref().map(|s| s.session_id.clone()),
+        link_session_id: session.clone(),
     });
 
     log::info!("session: {session:?}");
@@ -245,15 +263,12 @@ async fn openid_connect_auth(
         .await?
     {
         // Sign in to an existing (linked) account and redirect to the target
-        let session_id = service
+        let user_session = service
             .session_manager
-            .create(&identity.id)
+            .create(identity.id)
             .await
             .map_err(OIDCError::CreateSessionError)?;
-        session.set(SessionData {
-            user_id: identity.id,
-            session_id,
-        });
+        session.set(user_session);
         Ok((external_login_session, session, html).into_response())
     } else {
         // Create a new account, and sign in.
@@ -281,15 +296,12 @@ async fn openid_connect_auth(
             };
         };
 
-        let session_id = service
+        let user_session = service
             .session_manager
-            .create(&identity.id)
+            .create(identity.id)
             .await
             .map_err(OIDCError::CreateSessionError)?;
-        session.set(SessionData {
-            user_id: identity.id,
-            session_id,
-        });
+        session.set(user_session);
         Ok((external_login_session, session, html).into_response())
     }
 }

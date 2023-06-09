@@ -1,20 +1,28 @@
-use crate::db::{DBError, DBPool, RedisConnectionPool, SessionId, SessionIdError};
-use ring::rand::{SecureRandom, SystemRandom};
+use crate::db::{DBError, DBPool, RedisConnectionPool, SessionId, SessionKey, SessionKeyError};
+use ring::rand::SystemRandom;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 
 #[derive(Debug, ThisError)]
 pub enum SessionError {
-    #[error("Failed to generate session key: {0}")]
-    KeyError(String),
     #[error("Failed to create session, conflicting keys")]
     KeyConflict,
 
     #[error(transparent)]
-    SessionIdError(#[from] SessionIdError),
+    SessionKeyError(#[from] SessionKeyError),
     #[error(transparent)]
     DBError(#[from] DBError),
+}
+
+pub struct UserSession {
+    id: SessionId,
+}
+
+impl UserSession {
+    pub fn session_id(&self) -> &SessionId {
+        &self.id
+    }
 }
 
 #[derive(Debug, ThisError)]
@@ -39,24 +47,32 @@ impl SessionManager {
         })))
     }
 
-    pub async fn create(&self, user_id: &Uuid) -> Result<SessionId, SessionError> {
+    pub async fn create(&self, user_id: Uuid) -> Result<UserSession, SessionError> {
         let inner = &*self.0;
         let client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
 
-        let session_id = {
-            let mut raw_id = [0; 32];
-            raw_id[..16].copy_from_slice(user_id.as_bytes());
-            inner
-                .random
-                .fill(&mut raw_id[16..])
-                .map_err(|err| SessionError::KeyError(format!("{err:#?}")))?;
-            SessionId::from_raw(raw_id)
-        };
-
-        let key = session_id.to_token();
-
+        let session_key = SessionKey::new_random(&inner.random)?;
         //KeyConflict
 
-        Ok(session_id)
+        Ok(UserSession {
+            id: SessionId {
+                user_id,
+                key: session_key,
+            },
+        })
+    }
+
+    pub async fn find_session(&self, user_id: Uuid, key: SessionKey) -> Result<Option<UserSession>, DBError> {
+        todo!()
+    }
+
+    /// Remove an active session of the given user.
+    pub async fn remove(&self, user_id: Uuid, key: SessionKey) -> Result<(), DBError> {
+        todo!()
+    }
+
+    /// Remove all the active session of the given user.
+    pub async fn remove_all(&self, user_id: Uuid) -> Result<(), DBError> {
+        todo!()
     }
 }
