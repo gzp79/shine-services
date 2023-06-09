@@ -15,8 +15,8 @@ pub struct SessionData {
 impl From<UserSession> for SessionData {
     fn from(value: UserSession) -> Self {
         Self {
-            user_id: value.session_id().user_id,
-            key: value.session_id().key,
+            user_id: value.user_id,
+            key: value.key,
         }
     }
 }

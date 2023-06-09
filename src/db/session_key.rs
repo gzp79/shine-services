@@ -1,6 +1,5 @@
 use ring::rand::SecureRandom;
 use thiserror::Error as ThisError;
-use uuid::Uuid;
 
 #[derive(Debug, ThisError)]
 pub enum SessionKeyError {
@@ -39,13 +38,6 @@ impl SessionKey {
     pub fn to_hex(self) -> String {
         hex::encode(self.0)
     }
-}
-
-/// Session information of a user.
-#[derive(Clone, Debug)]
-pub struct SessionId {
-    pub user_id: Uuid,
-    pub key: SessionKey,
 }
 
 pub mod serde_session_key {

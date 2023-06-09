@@ -1,4 +1,5 @@
-use crate::db::{DBError, DBPool, RedisConnectionPool, SessionId, SessionKey, SessionKeyError};
+use crate::db::{DBError, DBPool, RedisConnectionPool, SessionKey, SessionKeyError};
+use chrono::{DateTime, Utc};
 use ring::rand::SystemRandom;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -16,13 +17,11 @@ pub enum SessionError {
 }
 
 pub struct UserSession {
-    id: SessionId,
-}
+    pub user_id: Uuid,
+    pub key: SessionKey,
 
-impl UserSession {
-    pub fn session_id(&self) -> &SessionId {
-        &self.id
-    }
+    pub created_at: DateTime<Utc>,
+    //pub client_agent: String,
 }
 
 #[derive(Debug, ThisError)]
@@ -48,6 +47,8 @@ impl SessionManager {
     }
 
     pub async fn create(&self, user_id: Uuid) -> Result<UserSession, SessionError> {
+        let created_at = Utc::now();
+
         let inner = &*self.0;
         let client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
 
@@ -55,10 +56,9 @@ impl SessionManager {
         //KeyConflict
 
         Ok(UserSession {
-            id: SessionId {
-                user_id,
-                key: session_key,
-            },
+            user_id,
+            created_at,
+            key: session_key,
         })
     }
 
