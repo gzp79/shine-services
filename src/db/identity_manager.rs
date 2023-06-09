@@ -1,52 +1,57 @@
 use crate::{
-    db::{DBError, DBErrorChecks, DBPool, PGError},
-    prepared_statement,
+    db::{DBError, DBPool, PGConnectionPool, PGError, PGErrorChecks},
+    pg_prepared_statement,
 };
+use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
-use tokio_postgres::types::{private::BytesMut, Format::Binary, IsNull, ToSql, Type};
+use tokio_postgres::{
+    types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type},
+    Row,
+};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy)]
 pub enum IdentityKind {
     User,
+    Studio,
 }
 
 impl ToSql for IdentityKind {
-    fn to_sql(&self, ty: &Type, out: &mut BytesMut) -> Result<IsNull, PGError>
-    where
-        Self: Sized,
-    {
-        todo!()
+    fn to_sql(&self, ty: &Type, out: &mut BytesMut) -> Result<IsNull, PGError> {
+        let value = match self {
+            IdentityKind::User => 1_i16,
+            IdentityKind::Studio => 2_i16,
+        };
+        value.to_sql(ty, out)
     }
 
-    fn accepts(ty: &Type) -> bool
-    where
-        Self: Sized,
-    {
-        todo!()
-    }
-
-    fn to_sql_checked(&self, ty: &Type, out: &mut BytesMut) -> Result<IsNull, PGError> {
-        todo!()
-    }
-
-    fn encode_format(&self, _ty: &Type) -> tokio_postgres::types::Format {
-        Binary
-    }
+    accepts!(INT2);
+    to_sql_checked!();
 }
 
-#[derive(Debug)]
-pub struct Identity {
-    pub id: Uuid,
-    pub name: String,
-    pub kind: IdentityKind,
-    pub creation: DateTime<Utc>,
+impl<'a> FromSql<'a> for IdentityKind {
+    fn from_sql(ty: &Type, raw: &[u8]) -> Result<IdentityKind, PGError> {
+        let value = i16::from_sql(ty, raw)?;
+        match value {
+            1 => Ok(IdentityKind::User),
+            2 => Ok(IdentityKind::Studio),
+            _ => Err(PGError::from("Invalid value for IdentityKind")),
+        }
+    }
+
+    accepts!(INT2);
 }
 
 #[derive(Debug, ThisError)]
-pub enum IdentityError {
+pub enum IdentityBuildError {
+    #[error(transparent)]
+    DBError(#[from] DBError),
+}
+
+#[derive(Debug, ThisError)]
+pub enum CreateIdentityError {
     #[error("User id already taken")]
     UserIdConflict,
     #[error("Name already taken")]
@@ -57,10 +62,23 @@ pub enum IdentityError {
     DBError(#[from] DBError),
 }
 
-#[derive(Debug, ThisError)]
-pub enum IdentityBuildError {
-    #[error(transparent)]
-    DBError(#[from] DBError),
+#[derive(Debug)]
+pub struct Identity {
+    pub id: Uuid,
+    pub kind: IdentityKind,
+    pub name: String,
+    pub creation: DateTime<Utc>,
+}
+
+impl Identity {
+    pub fn from_row(row: &Row) -> Result<Self, DBError> {
+        Ok(Self {
+            id: row.try_get(0)?,
+            kind: row.try_get(1)?,
+            name: row.try_get(2)?,
+            creation: row.try_get(3)?,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -69,19 +87,46 @@ pub struct ExternalLogin {
     pub provider_id: String,
 }
 
-prepared_statement!( InsertIdentity => r#"
+/// Identity query options
+#[derive(Debug)]
+pub enum FindIdentity<'a> {
+    UserId(Uuid),
+    Email(&'a str),
+    Name(&'a str),
+    ExternalLogin(&'a ExternalLogin),
+}
+
+pg_prepared_statement!( InsertIdentity => r#"
     INSERT INTO identities (user_id, kind, created, name, email) 
         VALUES ($1, $2, now(), $3, $4)
         RETURNING created
 "#, [UUID, INT2, VARCHAR, VARCHAR] );
 
-prepared_statement!( InsertExternalLogin => r#"
+pg_prepared_statement!( InsertExternalLogin => r#"
     INSERT INTO external_logins (user_id, provider, provider_id, linked) 
         VALUES ($1, $2, $3, now())
         RETURNING linked
 "#, [UUID, VARCHAR, VARCHAR] );
 
-prepared_statement!( SelectByLink => r#"
+pg_prepared_statement!( FindById => r#"
+    SELECT user_id, kind, name, created 
+        FROM identities
+        WHERE user_id = $1
+"#, [UUID] );
+
+pg_prepared_statement!( FindByEmail => r#"
+    SELECT user_id, kind, name, created 
+        FROM identities
+        WHERE email = $1
+"#, [VARCHAR] );
+
+pg_prepared_statement!( FindByName => r#"
+    SELECT user_id, kind, name, created 
+        FROM identities
+        WHERE name = $1
+"#, [VARCHAR] );
+
+pg_prepared_statement!( FindByLink => r#"
     SELECT identities.user_id, kind, name, created 
         FROM external_logins, identities
         WHERE external_logins.user_id = identities.user_id
@@ -90,26 +135,35 @@ prepared_statement!( SelectByLink => r#"
 "#, [VARCHAR, VARCHAR] );
 
 pub struct Inner {
-    pool: DBPool,
+    postgres: PGConnectionPool,
     stmt_insert_identity: InsertIdentity,
     stmt_link_provider: InsertExternalLogin,
-    stmt_find_by_link: SelectByLink,
+    stmt_find_by_id: FindById,
+    stmt_find_by_email: FindByEmail,
+    stmt_find_by_name: FindByName,
+    stmt_find_by_link: FindByLink,
 }
 
 #[derive(Clone)]
 pub struct IdentityManager(Arc<Inner>);
 
 impl IdentityManager {
-    pub async fn new(pool: DBPool) -> Result<Self, IdentityBuildError> {
-        let client = pool.get().await.map_err(DBError::from)?;
+    pub async fn new(pool: &DBPool) -> Result<Self, IdentityBuildError> {
+        let client = pool.postgres.get().await.map_err(DBError::PostgresPoolError)?;
         let stmt_insert_identity = InsertIdentity::new(&client).await?;
         let stmt_link_provider = InsertExternalLogin::new(&client).await?;
-        let stmt_find_by_link = SelectByLink::new(&client).await?;
+        let stmt_find_by_id = FindById::new(&client).await?;
+        let stmt_find_by_email = FindByEmail::new(&client).await?;
+        let stmt_find_by_name = FindByName::new(&client).await?;
+        let stmt_find_by_link = FindByLink::new(&client).await?;
 
         Ok(Self(Arc::new(Inner {
-            pool: pool.clone(),
+            postgres: pool.postgres.clone(),
             stmt_insert_identity,
             stmt_link_provider,
+            stmt_find_by_id,
+            stmt_find_by_email,
+            stmt_find_by_name,
             stmt_find_by_link,
         })))
     }
@@ -120,11 +174,11 @@ impl IdentityManager {
         user_name: &str,
         email: Option<&str>,
         external_login: Option<&ExternalLogin>,
-    ) -> Result<Identity, IdentityError> {
+    ) -> Result<Identity, CreateIdentityError> {
         //let email = email.map(|e| e.normalize_email());
         let inner = &*self.0;
 
-        let mut client = inner.pool.get().await.map_err(DBError::from)?;
+        let mut client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
         let transaction = client.transaction().await.map_err(DBError::from)?;
 
         let created_at: DateTime<Utc> = match transaction
@@ -135,18 +189,23 @@ impl IdentityManager {
             .await
         {
             Ok(row) => row.get(0),
-            Err(err) if err.is_constraint("identities", "idx_name") => {
-                log::info!("Conflicting name: {}, rolling back user creation", user_name);
-                transaction.rollback().await.map_err(DBError::from)?;
-                return Err(IdentityError::NameConflict);
-            }
             Err(err) if err.is_constraint("identities", "identities_pkey") => {
                 log::info!("Conflicting user id: {}, rolling back user creation", user_id);
                 transaction.rollback().await.map_err(DBError::from)?;
-                return Err(IdentityError::UserIdConflict);
+                return Err(CreateIdentityError::UserIdConflict);
+            }
+            Err(err) if err.is_constraint("identities", "idx_name") => {
+                log::info!("Conflicting name: {}, rolling back user creation", user_name);
+                transaction.rollback().await.map_err(DBError::from)?;
+                return Err(CreateIdentityError::NameConflict);
+            }
+            Err(err) if err.is_constraint("identities", "idx_email") => {
+                log::info!("Conflicting email: {}, rolling back user creation", user_id);
+                transaction.rollback().await.map_err(DBError::from)?;
+                return Err(CreateIdentityError::LinkConflict);
             }
             Err(err) => {
-                return Err(IdentityError::DBError(err.into()));
+                return Err(CreateIdentityError::DBError(err.into()));
             }
         };
 
@@ -160,9 +219,9 @@ impl IdentityManager {
             {
                 if err.is_constraint("external_logins", "idx_provider_provider_id") {
                     transaction.rollback().await.map_err(DBError::from)?;
-                    return Err(IdentityError::LinkConflict);
+                    return Err(CreateIdentityError::LinkConflict);
                 } else {
-                    return Err(IdentityError::DBError(err.into()));
+                    return Err(CreateIdentityError::DBError(err.into()));
                 }
             };
         }
@@ -176,39 +235,32 @@ impl IdentityManager {
         })
     }
 
-    pub async fn find_user_by_id(&self, id: Uuid) -> Result<Option<Identity>, DBError> {
-        todo!()
-    }
-
-    pub async fn find_user_by_email(&self, email: String) -> Result<Option<Identity>, DBError> {
-        todo!()
-    }
-
-    pub async fn find_user_by_link(&self, external_login: &ExternalLogin) -> Result<Option<Identity>, DBError> {
+    pub async fn find(&self, find: FindIdentity<'_>) -> Result<Option<Identity>, DBError> {
         let inner = &*self.0;
-        let client = inner.pool.get().await.map_err(DBError::from)?;
+        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
 
-        let identity = client
-            .query_one(
-                &*inner.stmt_find_by_link,
-                &[&external_login.provider, &external_login.provider_id],
-            )
-            .await?;
-        /*let identity = (identity.get::<Uuid>(0), identity.get::<i32>(1), identity.get::<String>(2), identity.get::<DateTime<Utc>>(3));
+        let identity = match find {
+            FindIdentity::UserId(id) => client.query_opt(&*inner.stmt_find_by_id, &[&id]).await?,
+            FindIdentity::Email(email) => client.query_opt(&*inner.stmt_find_by_email, &[&email]).await?,
+            FindIdentity::Name(name) => client.query_opt(&*inner.stmt_find_by_name, &[&name]).await?,
+            FindIdentity::ExternalLogin(external_login) => {
+                client
+                    .query_opt(
+                        &*inner.stmt_find_by_link,
+                        &[&external_login.provider, &external_login.provider_id],
+                    )
+                    .await?
+            }
+        };
 
-        if let Some((user_id, kind, name, creation)) = identity {
-            Ok(Some(Identity {
-                id: user_id.0,
-                kind: IdentityKind::try_from(kind)?,
-                name,
-                creation: creation.0,
-            }))*/
-        todo!()
-        /*} else {
+        if let Some(identity) = identity {
+            Ok(Some(Identity::from_row(&identity)?))
+        } else {
             Ok(None)
-        }*/
+        }
     }
 
+    /*
     pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<(), DBError> {
         /*let id_str = user_id.hyphenated().to_string();
         let link_response = sql_expr!(
@@ -237,5 +289,5 @@ impl IdentityManager {
 
     pub async fn get_linked_providers(&self, user_id: Uuid) -> Result<Vec<ExternalLogin>, DBError> {
         todo!()
-    }
+    }*/
 }

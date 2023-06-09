@@ -28,7 +28,11 @@ use tower_http::cors::CorsLayer;
 use tracing::Dispatch;
 
 async fn health_check(Extension(pool): Extension<DBPool>) -> String {
-    format!("state: {:#?}\nOk", pool.state())
+    format!(
+        "Postgres: {:#?}\nRedis: {:#?}\nOk",
+        pool.postgres.state(),
+        pool.redis.state()
+    )
 }
 
 async fn shutdown_signal() {
@@ -87,8 +91,8 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
     };
 
     let db_pool = DBPool::new(&config.db).await?;
-    let identity_manager = IdentityManager::new(db_pool.clone()).await?;
-    let session_manager = SessionManager::new();
+    let identity_manager = IdentityManager::new(&db_pool).await?;
+    let session_manager = SessionManager::new(&db_pool).await?;
     let session_cookie = AppSessionMeta::new(&config.cookie_secret)?.with_cookie_name("sid");
     let external_login_cookie = ExternalLoginMeta::new(&config.cookie_secret)?.with_cookie_name("exl");
 

@@ -1,6 +1,6 @@
 use crate::{
     app_session::{AppSession, ExternalLoginData, ExternalLoginSession, SessionData},
-    db::{DBError, ExternalLogin, IdentityError, IdentityManager, SessionManager},
+    db::{CreateIdentityError, DBError, ExternalLogin, FindIdentity, IdentityManager, SessionError, SessionManager},
     utils::generate_name,
 };
 use axum::{
@@ -60,6 +60,9 @@ enum OIDCError {
     #[error("Failed to verify id token: {0}")]
     FailedIdVerification(String),
 
+    #[error("Failed to create session")]
+    CreateSessionError(SessionError),
+
     //#[error(transparent)]
     //Config(#[from] DBError),
     #[error(transparent)]
@@ -79,6 +82,7 @@ impl IntoResponse for OIDCError {
             OIDCError::FailedIdVerification(_) => StatusCode::BAD_REQUEST,
             OIDCError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OIDCError::TeraError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OIDCError::CreateSessionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (status_code, format!("{self:?}")).into_response()
@@ -93,15 +97,6 @@ struct ServiceState {
     default_redirect_url: String,
 }
 type Service = Arc<ServiceState>;
-
-async fn create_user(State(service): State<Service>) -> impl IntoResponse {
-    //let user_id = Uuid::parse_str("a2c0c1eb-d2d1-41f1-a293-7d54b72ead1e").unwrap();
-    let user_id = Uuid::new_v4();
-    //let name = "name";
-    let name = Uuid::new_v4().as_hyphenated().to_string();
-    let res = service.identity_manager.create_user(user_id, &name, None, None).await;
-    log::info!("{:?}", res);
-}
 
 #[derive(Deserialize)]
 struct LoginRequest {
@@ -243,10 +238,18 @@ async fn openid_connect_auth(
         //         if   identity.id != session.user_id -> linked to a different user else ok
         //      } else { link account to ussr)
         // keep session as it is,
-        todo!()
-    } else if let Some(identity) = service.identity_manager.find_user_by_link(&external_login).await? {
+        todo!("Perform linking to the current user/session")
+    } else if let Some(identity) = service
+        .identity_manager
+        .find(FindIdentity::ExternalLogin(&external_login))
+        .await?
+    {
         // Sign in to an existing (linked) account and redirect to the target
-        let session_id = service.session_manager.create(&identity.id);
+        let session_id = service
+            .session_manager
+            .create(&identity.id)
+            .await
+            .map_err(OIDCError::CreateSessionError)?;
         session.set(SessionData {
             user_id: identity.id,
             session_id,
@@ -255,13 +258,12 @@ async fn openid_connect_auth(
     } else {
         // Create a new account, and sign in.
 
-        let mut i = 0;
-
+        let mut retry_count = 10;
         let identity = loop {
-            if i > 10 {
+            if retry_count < 0 {
                 return Err(OIDCError::DBError(DBError::RetryLimitReached));
             }
-            i += 1;
+            retry_count -= 1;
 
             let user_id = Uuid::new_v4();
             let user_name = nickname.take().unwrap_or_else(generate_name);
@@ -272,14 +274,18 @@ async fn openid_connect_auth(
                 .await
             {
                 Ok(identity) => break identity,
-                Err(IdentityError::NameConflict) => continue,
-                Err(IdentityError::UserIdConflict) => continue,
-                Err(IdentityError::LinkConflict) => todo!(),
-                Err(IdentityError::DBError(err)) => return Err(err.into()),
+                Err(CreateIdentityError::NameConflict) => continue,
+                Err(CreateIdentityError::UserIdConflict) => continue,
+                Err(CreateIdentityError::LinkConflict) => todo!("Ask user to log in and link account"),
+                Err(CreateIdentityError::DBError(err)) => return Err(err.into()),
             };
         };
 
-        let session_id = service.session_manager.create(&identity.id);
+        let session_id = service
+            .session_manager
+            .create(&identity.id)
+            .await
+            .map_err(OIDCError::CreateSessionError)?;
         session.set(SessionData {
             user_id: identity.id,
             session_id,
@@ -388,7 +394,6 @@ impl OIDCServiceBuilder {
         });
 
         Router::new()
-            .route("/create_user", get(create_user))
             .route("/login", get(openid_connect_login))
             .route("/auth", get(openid_connect_auth))
             .with_state(state)

@@ -15,5 +15,5 @@ Content-Type: application/json
 ###
 
 
-GET {{url}}/oauth/google/test
+GET {{url}}/oauth/google/create_user
 ###
