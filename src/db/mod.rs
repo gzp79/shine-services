@@ -12,6 +12,9 @@ pub use self::session_key::*;
 mod session_manager;
 pub use self::session_manager::*;
 
+mod query_builder;
+pub use self::query_builder::*;
+
 /// A shorthand used for the return types in the ToSql and FromSql implementations.
 pub type PGError = Box<dyn std::error::Error + Sync + Send>;
 

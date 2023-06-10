@@ -1,15 +1,15 @@
 mod app_config;
 mod app_error;
 mod app_session;
-mod auth;
 mod db;
+mod services;
 mod utils;
 
 use crate::{
     app_config::{AppConfig, SERVICE_NAME},
     app_session::{AppSessionMeta, ExternalLoginMeta},
-    auth::AuthServiceBuilder,
     db::{DBPool, IdentityManager, SessionManager},
+    services::{AuthServiceBuilder, IdentityServiceBuilder},
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
@@ -99,11 +99,13 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
     let oauth = AuthServiceBuilder::new(&config.oauth, &config.home_url, &identity_manager, &session_manager)
         .await?
         .into_router();
+    let identity = IdentityServiceBuilder::new(&identity_manager).into_router();
 
     let app = Router::new()
         .route("/info/ready", get(health_check))
         .nest("/oauth", oauth)
         .nest("/tracing", tracing_router)
+        .nest("/api/identities", identity)
         .layer(Extension(Arc::new(tera)))
         .layer(Extension(db_pool))
         .layer(session_cookie.into_layer())

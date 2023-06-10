@@ -1,7 +1,7 @@
 use crate::{
     app_session::{AppSession, ExternalLoginSession, SessionData},
-    auth::{OIDCBuildError, OIDCConfig, OIDCServiceBuilder},
     db::{DBError, IdentityManager, SessionManager},
+    services::{OIDCBuildError, OIDCConfig, OIDCServiceBuilder},
 };
 use axum::{
     extract::{Query, State},
@@ -18,7 +18,7 @@ use url::Url;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Config {
+pub struct AuthConfig {
     pub openid: HashMap<String, OIDCConfig>,
 }
 
@@ -100,7 +100,7 @@ pub struct AuthServiceBuilder {
 
 impl AuthServiceBuilder {
     pub async fn new(
-        config: &Config,
+        config: &AuthConfig,
         home_url: &Url,
         identity_manager: &IdentityManager,
         session_manager: &SessionManager,

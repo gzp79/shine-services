@@ -17,3 +17,6 @@ Content-Type: application/json
 
 GET {{url}}/oauth/google/create_user
 ###
+
+GET {{url}}/api/identities?count=1
+###

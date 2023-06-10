@@ -1,5 +1,5 @@
 use crate::{
-    db::{DBError, DBPool, PGConnectionPool, PGError, PGErrorChecks},
+    db::{DBError, DBPool, PGConnectionPool, PGError, PGErrorChecks, QueryBuilder},
     pg_prepared_statement,
 };
 use bytes::BytesMut;
@@ -94,6 +94,23 @@ pub enum FindIdentity<'a> {
     Email(&'a str),
     Name(&'a str),
     ExternalLogin(&'a ExternalLogin),
+}
+
+#[derive(Debug)]
+pub enum SearchIdentityOrder {
+    UserId(Option<Uuid>),
+    Email(Option<(String, Uuid)>),
+    Name(Option<(String, Uuid)>),
+}
+
+#[derive(Debug)]
+pub struct SearchIdentity<'a> {
+    pub order: SearchIdentityOrder,
+    pub count: Option<usize>,
+
+    pub user_ids: Option<&'a [Uuid]>,
+    pub emails: Option<&'a [String]>,
+    pub names: Option<&'a [String]>,
 }
 
 pg_prepared_statement!( InsertIdentity => r#"
@@ -258,6 +275,69 @@ impl IdentityManager {
         } else {
             Ok(None)
         }
+    }
+
+    pub async fn search(&self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, DBError> {
+        const MAX_COUNT: usize = 100;
+
+        log::info!("{search:?}");
+
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+
+        let mut builder = QueryBuilder::new("SELECT user_id, kind, name, created FROM identities");
+
+        if let Some(user_ids) = &search.user_ids {
+            builder.and_where(|b| format!("user_id = ANY(${b})"), [user_ids]);
+        }
+
+        if let Some(names) = &search.names {
+            builder.and_where(|b| format!("name = ANY(${b})"), [names]);
+        }
+
+        if let Some(emails) = &search.emails {
+            builder.and_where(|b| format!("email = ANY(${b})"), [emails]);
+        }
+
+        match &search.order {
+            SearchIdentityOrder::UserId(start) => {
+                if let Some(user_id) = start {
+                    builder.and_where(|b| format!("user_id > ${b}"), [user_id]);
+                }
+            }
+            SearchIdentityOrder::Email(start) => {
+                if let Some((email, user_id)) = start {
+                    builder.and_where(
+                        |b1, b2| format!("(email > ${b1} OR (email == ${b1} AND user_id > ${b2}))"),
+                        [email, user_id],
+                    );
+                }
+                builder.order_by("email");
+            }
+            SearchIdentityOrder::Name(start) => {
+                if let Some((name, user_id)) = start {
+                    builder.and_where(
+                        |b1, b2| format!("(name > ${b1} OR (name == ${b1} AND user_id > ${b2}))"),
+                        [name, user_id],
+                    );
+                }
+                builder.order_by("name");
+            }
+        };
+        builder.order_by("user_id");
+
+        let count = usize::min(MAX_COUNT, search.count.unwrap_or(MAX_COUNT));
+        builder.limit(count);
+
+        let (stmt, params) = builder.build();
+        log::info!("{stmt:?}");
+        let rows = client.query(&stmt, &params).await?;
+
+        let identites = rows
+            .into_iter()
+            .map(|row| Identity::from_row(&row))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(identites)
     }
 
     /*

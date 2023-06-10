@@ -9,7 +9,7 @@ use thiserror::Error as ThisError;
 use tokio::runtime::Handle as RtHandle;
 use url::Url;
 
-use crate::{auth, db::DBConfig};
+use crate::{db::DBConfig, services};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -67,7 +67,7 @@ pub struct AppConfig {
     pub core: CoreConfig,
 
     pub tracing: TracingConfig,
-    pub oauth: auth::Config,
+    pub oauth: services::AuthConfig,
     pub db: DBConfig,
     pub control_port: u16,
 
