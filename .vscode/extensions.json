@@ -2,11 +2,11 @@
     "recommendations": [
         "humao.rest-client",
         "rust-lang.rust-analyzer",      
-        "Swellaby.vscode-rust-test-adapter",
         "serayuzgur.crates",
 
         "shd101wyy.markdown-preview-enhanced",        
 
+        "streetsidesoftware.code-spell-checker",
         "adamvoss.vscode-languagetool",
         "adamvoss.vscode-languagetool-en",
     ]

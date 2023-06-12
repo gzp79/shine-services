@@ -9,6 +9,7 @@
         "autoescape",
         "chrono",
         "fkey",
+        "hset",
         "keyvault",
         "oidc",
         "openidconnect",

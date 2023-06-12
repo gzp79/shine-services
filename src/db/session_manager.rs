@@ -1,5 +1,6 @@
 use crate::db::{DBError, DBPool, RedisConnectionPool, SessionKey, SessionKeyError};
 use chrono::{DateTime, Utc};
+use redis::{AsyncCommands, RedisError};
 use ring::rand::SystemRandom;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -53,13 +54,20 @@ impl SessionManager {
         let client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
 
         let session_key = SessionKey::new_random(&inner.random)?;
-        //KeyConflict
+        let key = format!("{}-{}", user_id.as_simple(), session_key.to_hex());
+        let date = Utc::now();
 
-        Ok(UserSession {
-            user_id,
-            created_at,
-            key: session_key,
-        })
+        let created: bool = client.hset_nx(key, "created", date).await.map_err(DBError::RedisError)?;
+        if created {
+            Ok(UserSession {
+                user_id,
+                created_at,
+                key: session_key,
+            })    
+        } else {
+            Err(SessionError::KeyConflict)
+        }
+
     }
 
     pub async fn find_session(&self, user_id: Uuid, key: SessionKey) -> Result<Option<UserSession>, DBError> {
