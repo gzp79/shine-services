@@ -16,7 +16,7 @@ Content-Type: application/json
 ###
 
 
-GET {{url}}/identity/ouath/google/login
+GET {{url}}/ouath/google/login
 ###
 
 GET {{url}}/api/identities?count=3
