@@ -1,11 +1,13 @@
-use crate::db::{serde_session_key, SessionKey, UserSession};
 use serde::{Deserialize, Serialize};
-use shine_service::axum::session::{Session, SessionMeta};
+use shine_service::{
+    axum::session::{Session, SessionMeta},
+    service::{serde_session_key, SessionKey, UserSession},
+};
 use uuid::Uuid;
 
 /// Session information of a user.
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct SessionData {
+pub(in crate::auth) struct SessionData {
     #[serde(rename = "id")]
     pub user_id: Uuid,
     #[serde(rename = "sid", with = "serde_session_key")]
@@ -22,7 +24,7 @@ impl From<UserSession> for SessionData {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub enum ExternalLoginData {
+pub(in crate::auth) enum ExternalLoginData {
     #[serde(rename = "oid")]
     OIDCLogin {
         #[serde(rename = "pv")]
@@ -58,7 +60,7 @@ impl std::fmt::Debug for ExternalLoginData {
     }
 }
 
-pub type AppSessionMeta = SessionMeta<SessionData>;
-pub type AppSession = Session<SessionData>;
-pub type ExternalLoginMeta = SessionMeta<ExternalLoginData>;
-pub type ExternalLoginSession = Session<ExternalLoginData>;
+pub(in crate::auth) type AppSessionMeta = SessionMeta<SessionData>;
+pub(in crate::auth) type AppSession = Session<SessionData>;
+pub(in crate::auth) type ExternalLoginMeta = SessionMeta<ExternalLoginData>;
+pub(in crate::auth) type ExternalLoginSession = Session<ExternalLoginData>;

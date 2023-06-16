@@ -2812,7 +2812,6 @@ dependencies = [
  "chrono",
  "config",
  "futures",
- "hex",
  "log",
  "oauth2",
  "openidconnect",
@@ -2856,8 +2855,10 @@ dependencies = [
  "azure_identity",
  "azure_security_keyvault",
  "base64 0.21.2",
+ "chrono",
  "config",
  "futures",
+ "hex",
  "log",
  "opentelemetry",
  "opentelemetry-application-insights",
@@ -2865,6 +2866,7 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry-zipkin",
  "reqwest",
+ "ring",
  "serde",
  "serde_json",
  "shine-macros",
@@ -2874,6 +2876,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

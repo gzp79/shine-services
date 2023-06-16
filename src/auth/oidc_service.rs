@@ -1,5 +1,5 @@
 use crate::{
-    app_session::{AppSession, ExternalLoginData, ExternalLoginSession},
+    auth::{AppSession, ExternalLoginData, ExternalLoginSession},
     db::{CreateIdentityError, DBError, ExternalLogin, FindIdentity, IdentityManager, SessionError, SessionManager},
     utils::generate_name,
 };
@@ -20,7 +20,7 @@ use openidconnect::{
     IssuerUrl, Nonce, TokenResponse, UserInfoUrl,
 };
 use serde::{Deserialize, Serialize};
-use shine_service::APP_NAME;
+use shine_service::service::APP_NAME;
 use std::sync::Arc;
 use tera::Tera;
 use thiserror::Error as ThisError;

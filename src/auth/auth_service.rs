@@ -1,7 +1,9 @@
 use crate::{
-    app_session::{AppSession, ExternalLoginSession, SessionData},
+    auth::{
+        AppSession, AppSessionMeta, ExternalLoginMeta, ExternalLoginSession, OIDCBuildError, OIDCConfig,
+        OIDCServiceBuilder, SessionData,
+    },
     db::{DBError, IdentityManager, SessionManager},
-    services::{OIDCBuildError, OIDCConfig, OIDCServiceBuilder},
 };
 use axum::{
     extract::{Query, State},
@@ -11,6 +13,7 @@ use axum::{
     Extension, Router,
 };
 use serde::{Deserialize, Serialize};
+use shine_service::{axum::session::SessionError, service::DOMAIN_NAME};
 use std::{collections::HashMap, sync::Arc};
 use tera::Tera;
 use thiserror::Error as ThisError;
@@ -88,10 +91,15 @@ async fn perform_logout(service: &Service, session_data: Option<SessionData>, re
 #[derive(Debug, ThisError)]
 pub enum AuthBuildError {
     #[error(transparent)]
+    InvalidSessionMeta(#[from] SessionError),
+
+    #[error(transparent)]
     OIDCError(#[from] OIDCBuildError),
 }
 
 pub struct AuthServiceBuilder {
+    session_cookie_builder: AppSessionMeta,
+    external_login_cookie_builder: ExternalLoginMeta,
     home_url: String,
     openid_connections: Vec<OIDCServiceBuilder>,
     //todo:  user_query: IdentityServiceBuilder, - find/fix existing users
@@ -101,6 +109,7 @@ pub struct AuthServiceBuilder {
 impl AuthServiceBuilder {
     pub async fn new(
         config: &AuthConfig,
+        cookie_secret: &str,
         home_url: &Url,
         identity_manager: &IdentityManager,
         session_manager: &SessionManager,
@@ -112,8 +121,17 @@ impl AuthServiceBuilder {
             openid_connections.push(connect);
         }
 
+        let session_cookie_builder = AppSessionMeta::new(cookie_secret)?
+            .with_cookie_name("sid")
+            .with_domain(DOMAIN_NAME);
+        let external_login_cookie_builder = ExternalLoginMeta::new(cookie_secret)?
+            .with_cookie_name("exl")
+            .with_domain(DOMAIN_NAME);
+
         Ok(Self {
             home_url: home_url.to_string(),
+            session_cookie_builder,
+            external_login_cookie_builder,
             openid_connections,
             session_manager: session_manager.clone(),
         })
@@ -136,6 +154,9 @@ impl AuthServiceBuilder {
             router = router.nest(&path, connection);
         }
 
-        router.with_state(state)
+        router
+            .layer(self.session_cookie_builder.into_layer())
+            .layer(self.external_login_cookie_builder.into_layer())
+            .with_state(state)
     }
 }

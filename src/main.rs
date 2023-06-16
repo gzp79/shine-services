@@ -1,15 +1,15 @@
 mod app_config;
 mod app_error;
-mod app_session;
+mod auth;
 mod db;
 mod services;
 mod utils;
 
 use crate::{
     app_config::{AppConfig, SERVICE_NAME},
-    app_session::{AppSessionMeta, ExternalLoginMeta},
+    auth::AuthServiceBuilder,
     db::{DBPool, IdentityManager, SessionManager},
-    services::{AuthServiceBuilder, IdentityServiceBuilder},
+    services::IdentityServiceBuilder,
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
@@ -18,10 +18,7 @@ use axum::{
     Extension, Router,
 };
 use chrono::Duration;
-use shine_service::{
-    axum::tracing::{tracing_layer, TracingService},
-    DOMAIN_NAME,
-};
+use shine_service::axum::tracing::{tracing_layer, TracingService};
 use std::{net::SocketAddr, sync::Arc};
 use tera::Tera;
 use tokio::{
@@ -102,27 +99,25 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
     let identity_manager = IdentityManager::new(&db_pool).await?;
     let session_max_duration = Duration::seconds(i64::try_from(config.session_max_duration)?);
     let session_manager = SessionManager::new(&db_pool, session_max_duration).await?;
-    let session_cookie = AppSessionMeta::new(&config.cookie_secret)?
-        .with_cookie_name("sid")
-        .with_domain(DOMAIN_NAME);
-    let external_login_cookie = ExternalLoginMeta::new(&config.cookie_secret)?
-        .with_cookie_name("exl")
-        .with_domain(DOMAIN_NAME);
 
-    let oauth = AuthServiceBuilder::new(&config.oauth, &config.home_url, &identity_manager, &session_manager)
-        .await?
-        .into_router();
+    let oauth = AuthServiceBuilder::new(
+        &config.oauth,
+        &config.cookie_secret,
+        &config.home_url,
+        &identity_manager,
+        &session_manager,
+    )
+    .await?
+    .into_router();
     let identity = IdentityServiceBuilder::new(&identity_manager).into_router();
 
     let app = Router::new()
         .route(&service_path("/info/ready"), get(health_check))
         .nest(&service_path("/oauth"), oauth)
-        .nest(&service_path("/tracing"), tracing_router)
+        .nest(&service_path("/api/tracing"), tracing_router)
         .nest(&service_path("/api/identities"), identity)
         .layer(Extension(Arc::new(tera)))
         .layer(Extension(db_pool))
-        .layer(session_cookie.into_layer())
-        .layer(external_login_cookie.into_layer())
         .layer(cors)
         .layer(tracing_layer);
 
