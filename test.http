@@ -1,4 +1,5 @@
-@url = http://localhost:8080
+//@url = http://localhost:8080
+@url = https://local.scytta.com/identity
 
 GET {{url}}/info/ready
 ###
@@ -15,8 +16,11 @@ Content-Type: application/json
 ###
 
 
-GET {{url}}/oauth/google/create_user
+GET {{url}}/identity/ouath/google/login
 ###
 
-GET {{url}}/api/identities?count=1
+GET {{url}}/api/identities?count=3
+###
+
+GET {{url}}/oauth/logout?terminate_all=true
 ###

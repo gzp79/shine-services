@@ -45,7 +45,7 @@ impl CoreConfig {
     }
 }
 
-pub const SERVICE_NAME: &str = "shine-identity";
+pub const SERVICE_NAME: &str = "identity";
 pub const DEFAULT_CONFIG_FILE: &str = "server_config.json";
 pub const DEFAULT_LOCAL_CONFIG_FILE: &str = "temp/server_config.json";
 
@@ -57,6 +57,14 @@ impl From<PreInitConfigError> for ConfigError {
     fn from(err: PreInitConfigError) -> Self {
         ConfigError::Foreign(Box::new(err))
     }
+}
+
+/// The application configuration
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TlsConfig {
+    pub cert: String,
+    pub key: String,
 }
 
 /// The application configuration
@@ -74,6 +82,9 @@ pub struct AppConfig {
     pub allow_origins: Vec<String>,
     pub cookie_secret: String,
     pub home_url: Url,
+    pub tls: Option<TlsConfig>,
+
+    pub session_max_duration: usize,
 }
 
 impl AppConfig {

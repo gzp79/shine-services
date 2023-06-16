@@ -17,7 +17,11 @@ use axum::{
     routing::get,
     Extension, Router,
 };
-use shine_service::axum::tracing::{tracing_layer, TracingService};
+use chrono::Duration;
+use shine_service::{
+    axum::tracing::{tracing_layer, TracingService},
+    DOMAIN_NAME,
+};
 use std::{net::SocketAddr, sync::Arc};
 use tera::Tera;
 use tokio::{
@@ -38,6 +42,10 @@ async fn health_check(Extension(pool): Extension<DBPool>) -> String {
 async fn shutdown_signal() {
     signal::ctrl_c().await.expect("expect tokio signal ctrl-c");
     log::warn!("Signal shutdown");
+}
+
+fn service_path(path: &str) -> String {
+    format!("/{SERVICE_NAME}{path}")
 }
 
 async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
@@ -92,9 +100,14 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let db_pool = DBPool::new(&config.db).await?;
     let identity_manager = IdentityManager::new(&db_pool).await?;
-    let session_manager = SessionManager::new(&db_pool).await?;
-    let session_cookie = AppSessionMeta::new(&config.cookie_secret)?.with_cookie_name("sid");
-    let external_login_cookie = ExternalLoginMeta::new(&config.cookie_secret)?.with_cookie_name("exl");
+    let session_max_duration = Duration::seconds(i64::try_from(config.session_max_duration)?);
+    let session_manager = SessionManager::new(&db_pool, session_max_duration).await?;
+    let session_cookie = AppSessionMeta::new(&config.cookie_secret)?
+        .with_cookie_name("sid")
+        .with_domain(DOMAIN_NAME);
+    let external_login_cookie = ExternalLoginMeta::new(&config.cookie_secret)?
+        .with_cookie_name("exl")
+        .with_domain(DOMAIN_NAME);
 
     let oauth = AuthServiceBuilder::new(&config.oauth, &config.home_url, &identity_manager, &session_manager)
         .await?
@@ -102,10 +115,10 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
     let identity = IdentityServiceBuilder::new(&identity_manager).into_router();
 
     let app = Router::new()
-        .route("/info/ready", get(health_check))
-        .nest("/oauth", oauth)
-        .nest("/tracing", tracing_router)
-        .nest("/api/identities", identity)
+        .route(&service_path("/info/ready"), get(health_check))
+        .nest(&service_path("/oauth"), oauth)
+        .nest(&service_path("/tracing"), tracing_router)
+        .nest(&service_path("/api/identities"), identity)
         .layer(Extension(Arc::new(tera)))
         .layer(Extension(db_pool))
         .layer(session_cookie.into_layer())
@@ -114,23 +127,27 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
         .layer(tracing_layer);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.control_port));
-    log::info!("listening on {addr:?}");
 
-    /*
-    let config = axum_server::tls_rustls::RustlsConfig::from_pem_file("temp/_wildcard.playcrey.com.pem", "temp/_wildcard.playcrey.com-key.pem")
-        .await
-        .map_err(|e| anyhow!(e))?;
-    axum_server::bind_rustls(addr, config)
-        .serve(app.into_make_service())
-        .await
-        .map_err(|e| anyhow!(e))
-        */
-
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .map_err(|e| anyhow!(e))
+    if let Some(tls_config) = config.tls {
+        log::info!("Starting service on {addr:?} using tls");
+        let cert = tls_config.cert.as_bytes().to_vec();
+        let key = tls_config.key.as_bytes().to_vec();
+        let config = axum_server::tls_rustls::RustlsConfig::from_pem(cert, key)
+            .await
+            .map_err(|e| anyhow!(e))?;
+        axum_server::bind_rustls(addr, config)
+            .serve(app.into_make_service())
+            //.with_graceful_shutdown(shutdown_signal())
+            .await
+            .map_err(|e| anyhow!(e))
+    } else {
+        log::info!("Starting service on {addr:?}");
+        axum::Server::bind(&addr)
+            .serve(app.into_make_service())
+            .with_graceful_shutdown(shutdown_signal())
+            .await
+            .map_err(|e| anyhow!(e))
+    }
 }
 
 pub fn main() {

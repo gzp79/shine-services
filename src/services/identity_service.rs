@@ -1,7 +1,4 @@
-use crate::{
-    app_session::AppSession,
-    db::{IdentityManager, SearchIdentity, SearchIdentityOrder},
-};
+use crate::db::{IdentityManager, SearchIdentity, SearchIdentityOrder};
 use axum::{
     extract::{Query, State},
     response::{IntoResponse, Response},

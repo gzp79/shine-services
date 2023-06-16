@@ -3,10 +3,15 @@
     "stage": "gzp123",
     "privateKeyvault": "https://shine-keyvault.vault.azure.net/",
     "allowOrigins": [
-        "http://localhost:8080"
+        "https://scytta.com",
+        "https://local.scytta.com",
+        "https://cloud.scytta.com"
     ],
-    "homeUrl": "http://localhost:8080",
-    "controlPort": 8080,
+
+    "homeUrl": "http://scytta.com",
+    "controlPort": 443,
+
+    "sessionMaxDuration": 43200,    
     "tracing": {
         "allowReconfigure": true,
         "enableConsoleLog": true,
@@ -17,7 +22,7 @@
     "oauth": {
         "openid": {
             "google": {
-                "redirectUrl": "http://localhost:8080/oauth/google/auth",
+                "redirectUrl": "https://cloud.scytta.com/identity/oauth/google/auth",
                 "discoveryUrl": "https://accounts.google.com",
                 "scopes": [
                     "openid",
@@ -26,7 +31,7 @@
                 ]
             },
             "gitlab": {
-                "redirectUrl": "http://localhost:8080/oauth/gitlab/auth",
+                "redirectUrl": "https://cloud.scytta.com/identity/oauth/gitlab/auth",
                 "discoveryUrl": "https://gitlab.com",
                 "scopes": []
             }

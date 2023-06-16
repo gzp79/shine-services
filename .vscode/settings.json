@@ -27,5 +27,17 @@
         "TIMESTAMPZ",
         "zipkin"
     ],
-    "cmake.configureOnOpen": false
+    "cmake.configureOnOpen": false,
+    "redisXplorer.config": {
+        "profiles": [
+            {
+                "name": "shine",
+                "host": "127.0.0.1",
+                "accessKey": "6853fadbb1c3403e87c5c5bfd4c975a4",
+                "filter": "*",
+                "port": "16379"
+            }
+        ],
+        "scanLimit": 200
+    }
 }

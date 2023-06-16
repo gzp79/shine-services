@@ -20,6 +20,7 @@ use openidconnect::{
     IssuerUrl, Nonce, TokenResponse, UserInfoUrl,
 };
 use serde::{Deserialize, Serialize};
+use shine_service::APP_NAME;
 use std::sync::Arc;
 use tera::Tera;
 use thiserror::Error as ThisError;
@@ -124,12 +125,15 @@ async fn openid_connect_login(
                 .ok()
                 .is_some()
             {
-                let mut context = tera::Context::new();
-                context.insert("title", "Redirecting to external login");
-                context.insert("target", &service.provider);
-                context.insert("redirect_url", &query.redirect);
-                let html = Html(tera.render("redirect.html", &context)?);
+                let html = create_redirect_page(
+                    &tera,
+                    &service,
+                    "Redirecting to target login",
+                    &service.provider,
+                    query.redirect.as_deref(),
+                )?;
 
+                session.set(session_data);
                 return Ok((external_login_session, session, html));
             }
         }
@@ -154,21 +158,20 @@ async fn openid_connect_login(
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
         nonce: nonce.secret().to_owned(),
-        redirect_url: query.redirect,
+        target_url: query.redirect,
         link_session_id: session.clone(),
     });
 
     log::info!("session: {session:?}");
     log::info!("external_login: {external_login_session:?}");
 
-    //Return an auto-redirect page that stores cookie before redirecting the user to the authorize_url.
-    // In older browser with a simple StatusCode::FOUND response, no cookie headers could be sent to the client.
-    let mut context = tera::Context::new();
-    context.insert("title", "Redirecting to external login");
-    context.insert("target", &service.provider);
-    context.insert("redirect_url", &authorize_url.to_string());
-    let html = Html(tera.render("redirect.html", &context)?);
-
+    let html = create_redirect_page(
+        &tera,
+        &service,
+        "Redirecting to external login",
+        &service.provider,
+        Some(authorize_url.as_str()),
+    )?;
     Ok((external_login_session, session, html))
 }
 
@@ -193,18 +196,18 @@ async fn openid_connect_auth(
     let auth_csrf_state = query.state;
 
     let external_login_data = external_login_session.take().ok_or(OIDCError::MissingSession)?;
-    let (pkce_code_verifier, csrf_state, nonce, redirect_url, link_session_id) = match external_login_data {
+    let (pkce_code_verifier, csrf_state, nonce, target_url, link_session_id) = match external_login_data {
         ExternalLoginData::OIDCLogin {
             pkce_code_verifier,
             csrf_state,
             nonce,
-            redirect_url,
+            target_url,
             link_session_id,
         } => (
             PkceCodeVerifier::new(pkce_code_verifier),
             csrf_state,
             Nonce::new(nonce),
-            redirect_url,
+            target_url,
             link_session_id,
         ),
         //_ => return Err(OIDCError::InvalidSession),
@@ -228,6 +231,7 @@ async fn openid_connect_auth(
     let claims = id_token
         .claims(&service.client.id_token_verifier(), &nonce)
         .map_err(|err| OIDCError::FailedIdVerification(format!("{err}")))?;
+    log::debug!("Code exchange completed, claims: {claims:#?}");
 
     let mut nickname = claims
         .nickname()
@@ -239,18 +243,12 @@ async fn openid_connect_auth(
         provider: service.provider.clone(),
         provider_id,
     };
-
-    let redirect_url = redirect_url.as_ref().unwrap_or(&service.default_redirect_url);
-    let mut context = tera::Context::new();
-    context.insert("title", "Redirecting");
-    context.insert("target", "Shine");
-    context.insert("redirect_url", redirect_url);
-    let html = Html(tera.render("redirect.html", &context)?);
+    let html = create_redirect_page(&tera, &service, "Redirecting", APP_NAME, target_url.as_deref())?;
 
     // find any user linked to this account
-
     if let Some(link_session_id) = link_session_id {
-        // not a full login, but linking the user to an external provider
+        // Link the current user an external provider
+
         //todo: if session.is_none() || session.session_id != link_session_id -> the flow was broken, sign out
         //      else if let Some(identity) find_user_by_link() {
         //         if   identity.id != session.user_id -> linked to a different user else ok
@@ -263,11 +261,13 @@ async fn openid_connect_auth(
         .await?
     {
         // Sign in to an existing (linked) account and redirect to the target
+
         let user_session = service
             .session_manager
             .create(identity.id)
             .await
             .map_err(OIDCError::CreateSessionError)?;
+        log::debug!("Session is ready: {user_session:#?}");
         session.set(user_session);
         Ok((external_login_session, session, html).into_response())
     } else {
@@ -301,9 +301,25 @@ async fn openid_connect_auth(
             .create(identity.id)
             .await
             .map_err(OIDCError::CreateSessionError)?;
+        log::debug!("Session is ready: {user_session:#?}");
         session.set(user_session);
         Ok((external_login_session, session, html).into_response())
     }
+}
+
+fn create_redirect_page(
+    tera: &Tera,
+    service: &Service,
+    title: &str,
+    target: &str,
+    target_url: Option<&str>,
+) -> Result<Html<String>, OIDCError> {
+    let mut context = tera::Context::new();
+    context.insert("title", title);
+    context.insert("target", target);
+    context.insert("redirect_url", target_url.unwrap_or(&service.default_redirect_url));
+    let html = Html(tera.render("redirect.html", &context)?);
+    Ok(html)
 }
 
 #[derive(Debug, ThisError)]
