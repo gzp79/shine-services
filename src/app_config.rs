@@ -11,22 +11,11 @@ use url::Url;
 
 use crate::{auth, db::DBConfig};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum Slot {
-    Test,
-    Dev,
-    Live,
-}
-
 /// Partial configuration required for early setup. These parameters shall not be altered
 /// in the other layers.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CoreConfig {
-    pub slot: Slot,
-    pub stage: String,
-
     pub shared_keyvault: Option<String>,
     pub private_keyvault: Option<String>,
 }
