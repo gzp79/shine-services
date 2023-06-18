@@ -2867,6 +2867,8 @@ dependencies = [
  "opentelemetry-zipkin",
  "reqwest",
  "ring",
+ "rustls",
+ "rustls-pemfile",
  "serde",
  "serde_json",
  "shine-macros",

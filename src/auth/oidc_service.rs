@@ -62,7 +62,7 @@ enum OIDCError {
     FailedIdVerification(String),
 
     #[error("Failed to create session")]
-    CreateSessionError(SessionError),
+    CreateSessionError(#[source] SessionError),
 
     //#[error(transparent)]
     //Config(#[from] DBError),

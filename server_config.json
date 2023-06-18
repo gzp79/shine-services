@@ -1,22 +1,21 @@
 {
-    "slot": "test",
-    "stage": "gzp123",
     "privateKeyvault": "https://shine-keyvault.vault.azure.net/",
+    
     "allowOrigins": [
         "https://scytta.com",
         "https://local.scytta.com",
         "https://cloud.scytta.com"
     ],
-
+    
     "homeUrl": "http://scytta.com",
-    "controlPort": 443,
-
-    "sessionMaxDuration": 43200,    
+    "controlPort": 80,
+    
+    "sessionMaxDuration": 43200,
     "tracing": {
         "allowReconfigure": true,
         "enableConsoleLog": true,
         "telemetry": {
-            "type": "none"
+            "type": "stdOut"
         }
     },
     "oauth": {
