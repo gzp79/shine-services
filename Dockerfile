@@ -16,8 +16,14 @@ FROM debian:bullseye-slim
 
 WORKDIR /services/identity
 COPY --from=build /server/target/release/shine-identity ./
+COPY ./docker_scripts ./
+RUN chmod +x ./start.sh
 COPY ./server_config.cloud.json ./server_config.json
 COPY ./tera_templates ./tera_templates
 
+ENV IDENTITY_TANENT_ID=
+ENV IDENTITY_CLIENT_ID=
+ENV IDENTITY_CLIENT_SECRET=
+
 EXPOSE 80
-CMD ["/services/identity/shine-identity"]
+CMD ["/services/identity/start.sh"]

@@ -1,10 +1,11 @@
-use azure_identity::AzureCliCredential;
+use azure_core::auth::TokenCredential;
+use azure_identity::{AzureCliCredential, EnvironmentCredential};
 use config::{Config, ConfigError, Environment, File};
 use serde::{Deserialize, Serialize};
 use shine_service::axum::tracing::TracingConfig;
 use shine_service::azure::azure_keyvault_config::AzureKeyvaultConfigSource;
-use std::path::Path;
 use std::sync::Arc;
+use std::{env, path::Path};
 use thiserror::Error as ThisError;
 use tokio::runtime::Handle as RtHandle;
 use url::Url;
@@ -84,8 +85,13 @@ impl AppConfig {
         builder = builder.add_source(File::from(Path::new(DEFAULT_CONFIG_FILE)));
 
         {
-            log::warn!("Finding azure credentials...");
-            let azure_credentials = Arc::new(AzureCliCredential::new());
+            let azure_credentials: Arc<dyn TokenCredential> = if env::var("AZURE_TENANT_ID").is_ok() {
+                log::info!("Getting azure credentials through environment...");
+                Arc::new(EnvironmentCredential::default())
+            } else {
+                log::info!("Getting azure credentials through azure cli...");
+                Arc::new(AzureCliCredential::new())
+            };
 
             log::info!("Checking shared keyvault...");
             let shared_keyvault = pre_init

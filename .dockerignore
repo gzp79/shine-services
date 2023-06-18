@@ -1,0 +1,5 @@
+/target
+/temp
+server_config_local.json
+.vscode
+.git
