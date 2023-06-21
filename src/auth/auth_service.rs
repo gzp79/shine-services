@@ -1,6 +1,6 @@
 use crate::{
-    auth::{ExternalLoginMeta, ExternalLoginSession, OIDCBuildError, OIDCConfig, OIDCServiceBuilder},
-    db::{DBError, IdentityManager, SessionManager},
+    auth::{ExternalLoginMeta, ExternalLoginSession, OIDCConfig, OIDCServiceBuilder},
+    db::{DBError, DBSessionError, IdentityManager, SessionManager},
 };
 use axum::{
     extract::{Query, State},
@@ -12,7 +12,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::session::SessionError,
-    service::{UserSession, UserSessionData, DOMAIN_NAME},
+    service::{CurrentUser, UserSession, DOMAIN_NAME},
 };
 use std::{collections::HashMap, sync::Arc};
 use tera::Tera;
@@ -23,6 +23,68 @@ use url::Url;
 #[serde(rename_all = "camelCase")]
 pub struct AuthConfig {
     pub openid: HashMap<String, OIDCConfig>,
+}
+
+#[derive(Debug, ThisError)]
+pub enum AuthServiceError {
+    #[error("Session cookie was missing or corrupted")]
+    MissingSession,
+    #[error("Cross Server did not return an ID token")]
+    InvalidCsrfState,
+    #[error("Session and external login cookies are not matching")]
+    InconsistentSession,
+    #[error("Failed to exchange authorization code to access token: {0}")]
+    FailedTokenExchange(String),
+    #[error("Cross-Site Request Forgery (Csrf) check failed")]
+    MissingIdToken,
+    #[error("Failed to verify id token: {0}")]
+    FailedIdVerification(String),
+
+    #[error("Failed to create session")]
+    DBSessionError(#[from] DBSessionError),
+    #[error(transparent)]
+    DBError(#[from] DBError),
+    #[error(transparent)]
+    TeraError(#[from] tera::Error),
+}
+
+impl IntoResponse for AuthServiceError {
+    fn into_response(self) -> Response {
+        let status_code = match &self {
+            AuthServiceError::MissingSession => StatusCode::BAD_REQUEST,
+            AuthServiceError::InconsistentSession => StatusCode::BAD_REQUEST,
+            AuthServiceError::InvalidCsrfState => StatusCode::BAD_REQUEST,
+            AuthServiceError::FailedTokenExchange(_) => StatusCode::BAD_REQUEST,
+            AuthServiceError::MissingIdToken => StatusCode::BAD_REQUEST,
+            AuthServiceError::FailedIdVerification(_) => StatusCode::BAD_REQUEST,
+            AuthServiceError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AuthServiceError::TeraError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AuthServiceError::DBSessionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+
+        (status_code, format!("{self:?}")).into_response()
+    }
+}
+
+#[derive(Debug, ThisError)]
+pub enum AuthBuildError {
+    #[error(transparent)]
+    InvalidSessionMeta(#[from] SessionError),
+
+    #[error("Invalid issuer url: {0}")]
+    InvalidIssuer(String),
+    #[error("Invalid auth url: {0}")]
+    InvalidAuth(String),
+    #[error("Invalid token url: {0}")]
+    InvalidToken(String),
+    #[error("Invalid user info url: {0}")]
+    InvalidUserInfo(String),
+    #[error("Missing OpenId discover or endpoint configuration")]
+    InvalidEndpoints,
+    #[error("Invalid redirect url: {0}")]
+    RedirectUrl(String),
+    #[error("Failed to discover open id: {0}")]
+    Discovery(String),
 }
 
 struct ServiceState {
@@ -73,32 +135,19 @@ async fn logout(
     }
 }
 
-async fn perform_logout(
-    service: &Service,
-    user_session_data: Option<UserSessionData>,
-    remove_all: bool,
-) -> Result<(), DBError> {
-    if let Some(user_session_data) = user_session_data {
+async fn perform_logout(service: &Service, current_user: Option<CurrentUser>, remove_all: bool) -> Result<(), DBError> {
+    if let Some(current_user) = current_user {
         if remove_all {
-            service.session_manager.remove_all(user_session_data.user_id).await?;
+            service.session_manager.remove_all(current_user.user_id).await?;
         } else {
             service
                 .session_manager
-                .remove(user_session_data.user_id, user_session_data.key)
+                .remove(current_user.user_id, current_user.key)
                 .await?;
         }
     }
 
     Ok(())
-}
-
-#[derive(Debug, ThisError)]
-pub enum AuthBuildError {
-    #[error(transparent)]
-    InvalidSessionMeta(#[from] SessionError),
-
-    #[error(transparent)]
-    OIDCError(#[from] OIDCBuildError),
 }
 
 pub struct AuthServiceBuilder {

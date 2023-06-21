@@ -75,12 +75,6 @@ pub struct ExternalLogin {
 }
 
 #[derive(Debug, ThisError)]
-pub enum IdentityBuildError {
-    #[error(transparent)]
-    DBError(#[from] DBError),
-}
-
-#[derive(Debug, ThisError)]
 pub enum CreateIdentityError {
     #[error("User id already taken")]
     UserIdConflict,
@@ -155,6 +149,12 @@ pg_prepared_statement!( FindByLink => r#"
             AND external_logins.provider = $1
             AND external_logins.provider_id = $2
 "#, [VARCHAR, VARCHAR] );
+
+#[derive(Debug, ThisError)]
+pub enum IdentityBuildError {
+    #[error(transparent)]
+    DBError(#[from] DBError),
+}
 
 pub struct Inner {
     postgres: PGConnectionPool,

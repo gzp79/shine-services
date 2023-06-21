@@ -20,7 +20,7 @@ use axum::{
 use chrono::Duration;
 use shine_service::{
     axum::tracing::{tracing_layer, TracingService},
-    service::{UserSessionMeta, DOMAIN_NAME},
+    service::{UserSessionMeta, DOMAIN_NAME, UserSessionValidator},
 };
 use std::{net::SocketAddr, sync::Arc};
 use tera::Tera;
@@ -31,11 +31,11 @@ use tokio::{
 use tower_http::cors::CorsLayer;
 use tracing::Dispatch;
 
-async fn health_check(Extension(pool): Extension<DBPool>) -> String {
+async fn health_check(Extension(db): Extension<DBPool>) -> String {
     format!(
         "Postgres: {:#?}\nRedis: {:#?}\nOk",
-        pool.postgres.state(),
-        pool.redis.state()
+        db.postgres.state(),
+        db.redis.state()
     )
 }
 
@@ -99,9 +99,12 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
     };
 
     let db_pool = DBPool::new(&config.db).await?;
+
     let user_session = UserSessionMeta::new(&config.cookie_secret)?
         .with_cookie_name("sid")
         .with_domain(DOMAIN_NAME);
+    let user_session_validator = UserSessionValidator::new(db_pool.redis.clone());
+
     let identity_manager = IdentityManager::new(&db_pool).await?;
     let session_max_duration = Duration::seconds(i64::try_from(config.session_max_duration)?);
     let session_manager = SessionManager::new(&db_pool, session_max_duration).await?;
@@ -123,6 +126,7 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
         .nest(&service_path("/api/tracing"), tracing_router)
         .nest(&service_path("/api/identities"), identity)
         .layer(user_session.into_layer())
+        .layer(user_session_validator.into_layer())
         .layer(Extension(Arc::new(tera)))
         .layer(Extension(db_pool))
         .layer(cors)

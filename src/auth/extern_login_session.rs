@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::session::{Session, SessionMeta},
-    service::UserSessionData,
+    service::CurrentUser,
 };
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -18,7 +18,7 @@ pub(in crate::auth) enum ExternalLoginData {
         target_url: Option<String>,
         // indicates if login was made to link the account to the user of the given session
         #[serde(rename = "l")]
-        link_session_id: Option<UserSessionData>,
+        link_session_id: Option<CurrentUser>,
     },
 }
 

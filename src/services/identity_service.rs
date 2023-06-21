@@ -1,6 +1,7 @@
-use crate::db::{IdentityManager, SearchIdentity, SearchIdentityOrder};
+use crate::db::{DBError, IdentityManager, SearchIdentity, SearchIdentityOrder};
 use axum::{
     extract::{Query, State},
+    http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
@@ -9,7 +10,28 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::service::CurrentUser;
 use std::sync::Arc;
+use thiserror::Error as ThisError;
 use uuid::Uuid;
+
+#[derive(Debug, ThisError)]
+enum IdentityServiceError {
+    #[error("User ({0}) not found")]
+    UserNotFound(Uuid),
+
+    #[error(transparent)]
+    DBError(#[from] DBError),
+}
+
+impl IntoResponse for IdentityServiceError {
+    fn into_response(self) -> Response {
+        let status_code = match &self {
+            IdentityServiceError::UserNotFound(_) => StatusCode::NOT_FOUND,
+            IdentityServiceError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+
+        (status_code, format!("{self:?}")).into_response()
+    }
+}
 
 struct ServiceState {
     identity_manager: IdentityManager,
@@ -28,13 +50,22 @@ pub struct UserInfo {
 
 /// Get the information about the current user. The cookie is not accessible
 /// from javascript, thus this endpoint can be used to get details about the user.
-async fn user_info(current_user: CurrentUser) -> Json<UserInfo> {
-    Json(UserInfo {
+async fn user_info(
+    State(service): State<Service>,
+    current_user: CurrentUser,
+) -> Result<Json<UserInfo>, IdentityServiceError> {
+    let identity = service
+        .identity_manager
+        .find(crate::db::FindIdentity::UserId(current_user.user_id))
+        .await?
+        .ok_or(IdentityServiceError::UserNotFound(current_user.user_id))?;
+
+    Ok(Json(UserInfo {
         user_id: current_user.user_id,
         name: current_user.name,
-        is_email_confirmed: current_user.is_email_confirmed,
+        is_email_confirmed: identity.is_email_confirmed,
         session_start: current_user.session_start,
-    })
+    }))
 }
 
 #[derive(Deserialize)]

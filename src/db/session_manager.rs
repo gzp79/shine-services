@@ -11,7 +11,7 @@ use thiserror::Error as ThisError;
 use uuid::Uuid;
 
 #[derive(Debug, ThisError)]
-pub enum SessionError {
+pub enum DBSessionError {
     #[error("Failed to create session, conflicting keys")]
     KeyConflict,
 
@@ -40,11 +40,11 @@ impl StoredSession {
 
     fn into_current_user(self, user_id: Uuid, session_key: SessionKey) -> CurrentUser {
         CurrentUser {
+            is_authentic: true,
             user_id,
-            session_start: self.session_start,
             key: session_key,
+            session_start: self.session_start,
             name: self.name,
-            is_email_confirmed: self.is_email_confirmed,
         }
     }
 }
@@ -73,7 +73,7 @@ impl SessionManager {
         })))
     }
 
-    pub async fn create(&self, identity: &Identity) -> Result<CurrentUser, SessionError> {
+    pub async fn create(&self, identity: &Identity) -> Result<CurrentUser, DBSessionError> {
         let created_at = Utc::now();
 
         let inner = &*self.0;
@@ -92,7 +92,7 @@ impl SessionManager {
                 .map_err(DBError::RedisError)?;
             Ok(session.into_current_user(identity.user_id, session_key))
         } else {
-            Err(SessionError::KeyConflict)
+            Err(DBSessionError::KeyConflict)
         }
     }
 

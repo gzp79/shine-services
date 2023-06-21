@@ -1,11 +1,10 @@
 use crate::{
-    auth::{ExternalLoginData, ExternalLoginSession},
-    db::{CreateIdentityError, DBError, ExternalLogin, FindIdentity, IdentityManager, SessionError, SessionManager},
+    auth::{AuthBuildError, AuthServiceError, ExternalLoginData, ExternalLoginSession},
+    db::{CreateIdentityError, DBError, ExternalLogin, FindIdentity, IdentityManager, SessionManager},
     utils::generate_name,
 };
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::get,
     Extension, Router,
@@ -20,10 +19,9 @@ use openidconnect::{
     IssuerUrl, Nonce, TokenResponse, UserInfoUrl,
 };
 use serde::{Deserialize, Serialize};
-use shine_service::service::{UserSession, UserSessionData, APP_NAME};
+use shine_service::service::{UserSession, APP_NAME};
 use std::sync::Arc;
 use tera::Tera;
-use thiserror::Error as ThisError;
 use url::Url;
 use uuid::Uuid;
 
@@ -44,50 +42,6 @@ pub struct OIDCConfig {
     pub client_secret: String,
     pub scopes: Vec<String>,
     pub redirect_url: String,
-}
-
-#[derive(Debug, ThisError)]
-enum OIDCError {
-    #[error("Session cookie was missing or corrupted")]
-    MissingSession,
-    #[error("Cross Server did not return an ID token")]
-    InvalidCsrfState,
-    #[error("Session and external login cookies are not matching")]
-    InconsistentSession,
-    #[error("Failed to exchange authorization code to access token: {0}")]
-    FailedTokenExchange(String),
-    #[error("Cross-Site Request Forgery (Csrf) check failed")]
-    MissingIdToken,
-    #[error("Failed to verify id token: {0}")]
-    FailedIdVerification(String),
-
-    #[error("Failed to create session")]
-    CreateSessionError(#[source] SessionError),
-
-    //#[error(transparent)]
-    //Config(#[from] DBError),
-    #[error(transparent)]
-    DBError(#[from] DBError),
-    #[error(transparent)]
-    TeraError(#[from] tera::Error),
-}
-
-impl IntoResponse for OIDCError {
-    fn into_response(self) -> Response {
-        let status_code = match &self {
-            OIDCError::MissingSession => StatusCode::BAD_REQUEST,
-            OIDCError::InconsistentSession => StatusCode::BAD_REQUEST,
-            OIDCError::InvalidCsrfState => StatusCode::BAD_REQUEST,
-            OIDCError::FailedTokenExchange(_) => StatusCode::BAD_REQUEST,
-            OIDCError::MissingIdToken => StatusCode::BAD_REQUEST,
-            OIDCError::FailedIdVerification(_) => StatusCode::BAD_REQUEST,
-            OIDCError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            OIDCError::TeraError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            OIDCError::CreateSessionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-
-        (status_code, format!("{self:?}")).into_response()
-    }
 }
 
 struct ServiceState {
@@ -111,7 +65,7 @@ async fn openid_connect_login(
     Query(query): Query<LoginRequest>,
     mut user_session: UserSession,
     mut external_login_session: ExternalLoginSession,
-) -> Result<impl IntoResponse, OIDCError> {
+) -> Result<impl IntoResponse, AuthServiceError> {
     if !query.allow_link.unwrap_or(false) {
         let user_session_data = user_session.take();
         let _ = external_login_session.take();
@@ -188,14 +142,14 @@ async fn openid_connect_auth(
     Query(query): Query<AuthRequest>,
     mut user_session: UserSession,
     mut external_login_session: ExternalLoginSession,
-) -> Result<Response, OIDCError> {
+) -> Result<Response, AuthServiceError> {
     log::info!("user_session: {user_session:?}");
     log::info!("external_login: {external_login_session:?}");
 
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
 
-    let external_login_data = external_login_session.take().ok_or(OIDCError::MissingSession)?;
+    let external_login_data = external_login_session.take().ok_or(AuthServiceError::MissingSession)?;
     let (pkce_code_verifier, csrf_state, nonce, target_url, link_session_id) = match external_login_data {
         ExternalLoginData::OIDCLogin {
             pkce_code_verifier,
@@ -210,12 +164,12 @@ async fn openid_connect_auth(
             target_url,
             link_session_id,
         ),
-        //_ => return Err(OIDCError::InvalidSession),
+        //_ => return Err(AuthServiceError::InvalidSession),
     };
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
-        return Err(OIDCError::InvalidCsrfState);
+        return Err(AuthServiceError::InvalidCsrfState);
     }
 
     // Exchange the code with a token.
@@ -225,12 +179,12 @@ async fn openid_connect_auth(
         .set_pkce_verifier(pkce_code_verifier)
         .request_async(async_http_client)
         .await
-        .map_err(|err| OIDCError::FailedTokenExchange(format!("{err:?}")))?;
+        .map_err(|err| AuthServiceError::FailedTokenExchange(format!("{err:?}")))?;
 
-    let id_token = token.id_token().ok_or(OIDCError::MissingIdToken)?;
+    let id_token = token.id_token().ok_or(AuthServiceError::MissingIdToken)?;
     let claims = id_token
         .claims(&service.client.id_token_verifier(), &nonce)
-        .map_err(|err| OIDCError::FailedIdVerification(format!("{err}")))?;
+        .map_err(|err| AuthServiceError::FailedIdVerification(format!("{err}")))?;
     log::debug!("Code exchange completed, claims: {claims:#?}");
 
     let mut nickname = claims
@@ -273,7 +227,7 @@ async fn openid_connect_auth(
                 loop {
                     log::debug!("Creating new user; retry: {retry_count:#?}");
                     if retry_count < 0 {
-                        return Err(OIDCError::DBError(DBError::RetryLimitReached));
+                        return Err(AuthServiceError::DBError(DBError::RetryLimitReached));
                     }
                     retry_count -= 1;
 
@@ -296,17 +250,10 @@ async fn openid_connect_auth(
         };
 
         log::debug!("Identity ready: {identity:#?}");
-        let current_user = service
-            .session_manager
-            .create(&identity)
-            .await
-            .map_err(OIDCError::CreateSessionError)?;
+        let current_user = service.session_manager.create(&identity).await?;
 
         log::debug!("Session is ready: {user_session:#?}");
-        user_session.set(UserSessionData {
-            user_id: current_user.user_id,
-            key: current_user.key,
-        });
+        user_session.set(current_user);
         Ok((external_login_session, user_session, html).into_response())
     }
 }
@@ -317,31 +264,13 @@ fn create_redirect_page(
     title: &str,
     target: &str,
     target_url: Option<&str>,
-) -> Result<Html<String>, OIDCError> {
+) -> Result<Html<String>, AuthServiceError> {
     let mut context = tera::Context::new();
     context.insert("title", title);
     context.insert("target", target);
     context.insert("redirect_url", target_url.unwrap_or(&service.default_redirect_url));
     let html = Html(tera.render("redirect.html", &context)?);
     Ok(html)
-}
-
-#[derive(Debug, ThisError)]
-pub enum OIDCBuildError {
-    #[error("Invalid issuer url: {0}")]
-    InvalidIssuer(String),
-    #[error("Invalid auth url: {0}")]
-    InvalidAuth(String),
-    #[error("Invalid token url: {0}")]
-    InvalidToken(String),
-    #[error("Invalid user info url: {0}")]
-    InvalidUserInfo(String),
-    #[error("Missing OpenId discover or endpoint configuration")]
-    InvalidEndpoints,
-    #[error("Invalid redirect url: {0}")]
-    RedirectUrl(String),
-    #[error("Failed to discover open id: {0}")]
-    Discovery(String),
 }
 
 pub struct OIDCServiceBuilder {
@@ -359,12 +288,12 @@ impl OIDCServiceBuilder {
         home_url: &Url,
         identity_manager: &IdentityManager,
         session_manager: &SessionManager,
-    ) -> Result<Self, OIDCBuildError> {
+    ) -> Result<Self, AuthBuildError> {
         let client_id = ClientId::new(config.client_id.clone());
         let client_secret = ClientSecret::new(config.client_secret.clone());
         let home_url = home_url.to_string();
         let redirect_url = RedirectUrl::new(config.redirect_url.to_string())
-            .map_err(|err| OIDCBuildError::RedirectUrl(format!("{err}")))?;
+            .map_err(|err| AuthBuildError::RedirectUrl(format!("{err}")))?;
 
         log::info!("Redirect url for provider {}: {:?}", provider, redirect_url);
 
@@ -372,20 +301,20 @@ impl OIDCServiceBuilder {
 
         let client = if let Some(discovery_url) = &config.discovery_url {
             let discovery_url =
-                IssuerUrl::new(discovery_url.clone()).map_err(|err| OIDCBuildError::InvalidIssuer(format!("{err}")))?;
+                IssuerUrl::new(discovery_url.clone()).map_err(|err| AuthBuildError::InvalidIssuer(format!("{err}")))?;
             let provider_metadata = CoreProviderMetadata::discover_async(discovery_url, async_http_client)
                 .await
-                .map_err(|err| OIDCBuildError::Discovery(format!("{err}")))?;
+                .map_err(|err| AuthBuildError::Discovery(format!("{err}")))?;
             CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret))
                 .set_redirect_uri(redirect_url)
         } else if let Some(endpoints) = &config.endpoints {
             let issuer_url = IssuerUrl::new("http://github.com".into()).unwrap();
             let auth_url = AuthUrl::new(endpoints.authorization_url.clone())
-                .map_err(|err| OIDCBuildError::InvalidAuth(format!("{err}")))?;
+                .map_err(|err| AuthBuildError::InvalidAuth(format!("{err}")))?;
             let token_url = TokenUrl::new(endpoints.token_url.clone())
-                .map_err(|err| OIDCBuildError::InvalidToken(format!("{err}")))?;
+                .map_err(|err| AuthBuildError::InvalidToken(format!("{err}")))?;
             let userinfo_url = UserInfoUrl::new(endpoints.userinfo_url.clone())
-                .map_err(|err| OIDCBuildError::InvalidUserInfo(format!("{err}")))?;
+                .map_err(|err| AuthBuildError::InvalidUserInfo(format!("{err}")))?;
             CoreClient::new(
                 client_id,
                 Some(client_secret),
@@ -397,7 +326,7 @@ impl OIDCServiceBuilder {
             )
             .set_redirect_uri(redirect_url)
         } else {
-            return Err(OIDCBuildError::InvalidEndpoints);
+            return Err(AuthBuildError::InvalidEndpoints);
         };
 
         Ok(Self {
