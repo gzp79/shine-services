@@ -18,10 +18,10 @@
             "type": "stdOut"
         }
     },
-    "oauth": {
+    "auth": {
         "openid": {
             "google": {
-                "redirectUrl": "https://cloud.scytta.com/identity/oauth/google/auth",
+                "redirectUrl": "https://cloud.scytta.com/identity/auth/google/auth",
                 "discoveryUrl": "https://accounts.google.com",
                 "scopes": [
                     "openid",
@@ -30,7 +30,7 @@
                 ]
             },
             "gitlab": {
-                "redirectUrl": "https://cloud.scytta.com/identity/oauth/gitlab/auth",
+                "redirectUrl": "https://cloud.scytta.com/identity/auth/gitlab/auth",
                 "discoveryUrl": "https://gitlab.com",
                 "scopes": []
             }

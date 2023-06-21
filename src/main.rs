@@ -109,8 +109,8 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
     let session_max_duration = Duration::seconds(i64::try_from(config.session_max_duration)?);
     let session_manager = SessionManager::new(&db_pool, session_max_duration).await?;
 
-    let oauth = AuthServiceBuilder::new(
-        &config.oauth,
+    let auth = AuthServiceBuilder::new(
+        &config.auth,
         &config.cookie_secret,
         &config.home_url,
         &identity_manager,
@@ -122,7 +122,7 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let app = Router::new()
         .route(&service_path("/info/ready"), get(health_check))
-        .nest(&service_path("/oauth"), oauth)
+        .nest(&service_path("/auth"), auth)
         .nest(&service_path("/api/tracing"), tracing_router)
         .nest(&service_path("/api/identities"), identity)
         .layer(user_session.into_layer())

@@ -30,7 +30,7 @@ use uuid::Uuid;
 pub struct OIDCEndpoints {
     pub authorization_url: String,
     pub token_url: String,
-    pub userinfo_url: String,
+    pub user_info_url: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -42,6 +42,94 @@ pub struct OIDCConfig {
     pub client_secret: String,
     pub scopes: Vec<String>,
     pub redirect_url: String,
+}
+
+pub struct OIDCServiceBuilder {
+    provider: String,
+    default_redirect_url: String,
+    client: CoreClient,
+    identity_manager: IdentityManager,
+    session_manager: SessionManager,
+}
+
+impl OIDCServiceBuilder {
+    pub async fn new(
+        provider: &str,
+        config: &OIDCConfig,
+        home_url: &Url,
+        identity_manager: &IdentityManager,
+        session_manager: &SessionManager,
+    ) -> Result<Self, AuthBuildError> {
+        let client_id = ClientId::new(config.client_id.clone());
+        let client_secret = ClientSecret::new(config.client_secret.clone());
+        let home_url = home_url.to_string();
+        let redirect_url = RedirectUrl::new(config.redirect_url.to_string())
+            .map_err(|err| AuthBuildError::RedirectUrl(format!("{err}")))?;
+
+        log::info!("Redirect url for provider {}: {:?}", provider, redirect_url);
+
+        // Use OpenID Connect Discovery to fetch the provider metadata.
+
+        let client = if let Some(discovery_url) = &config.discovery_url {
+            let discovery_url =
+                IssuerUrl::new(discovery_url.clone()).map_err(|err| AuthBuildError::InvalidIssuer(format!("{err}")))?;
+            let provider_metadata = CoreProviderMetadata::discover_async(discovery_url, async_http_client)
+                .await
+                .map_err(|err| AuthBuildError::Discovery(format!("{err}")))?;
+            CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret))
+                .set_redirect_uri(redirect_url)
+        } else if let Some(endpoints) = &config.endpoints {
+            let issuer_url = IssuerUrl::new("http://github.com".into()).unwrap();
+            let auth_url = AuthUrl::new(endpoints.authorization_url.clone())
+                .map_err(|err| AuthBuildError::InvalidAuth(format!("{err}")))?;
+            let token_url = TokenUrl::new(endpoints.token_url.clone())
+                .map_err(|err| AuthBuildError::InvalidToken(format!("{err}")))?;
+            let userinfo_url = UserInfoUrl::new(endpoints.user_info_url.clone())
+                .map_err(|err| AuthBuildError::InvalidUserInfo(format!("{err}")))?;
+            CoreClient::new(
+                client_id,
+                Some(client_secret),
+                issuer_url,
+                auth_url,
+                Some(token_url),
+                Some(userinfo_url),
+                CoreJsonWebKeySet::default(),
+            )
+            .set_redirect_uri(redirect_url)
+        } else {
+            return Err(AuthBuildError::InvalidEndpoints);
+        };
+
+        Ok(Self {
+            provider: provider.to_string(),
+            default_redirect_url: home_url.to_string(),
+            client,
+            identity_manager: identity_manager.clone(),
+            session_manager: session_manager.clone(),
+        })
+    }
+
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+
+    pub fn into_router<S>(self) -> Router<S>
+    where
+        S: Clone + Send + Sync + 'static,
+    {
+        let state = Arc::new(ServiceState {
+            provider: self.provider.clone(),
+            client: self.client,
+            identity_manager: self.identity_manager,
+            session_manager: self.session_manager,
+            default_redirect_url: self.default_redirect_url,
+        });
+
+        Router::new()
+            .route("/login", get(openid_connect_login))
+            .route("/auth", get(openid_connect_auth))
+            .with_state(state)
+    }
 }
 
 struct ServiceState {
@@ -271,92 +359,4 @@ fn create_redirect_page(
     context.insert("redirect_url", target_url.unwrap_or(&service.default_redirect_url));
     let html = Html(tera.render("redirect.html", &context)?);
     Ok(html)
-}
-
-pub struct OIDCServiceBuilder {
-    provider: String,
-    default_redirect_url: String,
-    client: CoreClient,
-    identity_manager: IdentityManager,
-    session_manager: SessionManager,
-}
-
-impl OIDCServiceBuilder {
-    pub async fn new(
-        provider: &str,
-        config: &OIDCConfig,
-        home_url: &Url,
-        identity_manager: &IdentityManager,
-        session_manager: &SessionManager,
-    ) -> Result<Self, AuthBuildError> {
-        let client_id = ClientId::new(config.client_id.clone());
-        let client_secret = ClientSecret::new(config.client_secret.clone());
-        let home_url = home_url.to_string();
-        let redirect_url = RedirectUrl::new(config.redirect_url.to_string())
-            .map_err(|err| AuthBuildError::RedirectUrl(format!("{err}")))?;
-
-        log::info!("Redirect url for provider {}: {:?}", provider, redirect_url);
-
-        // Use OpenID Connect Discovery to fetch the provider metadata.
-
-        let client = if let Some(discovery_url) = &config.discovery_url {
-            let discovery_url =
-                IssuerUrl::new(discovery_url.clone()).map_err(|err| AuthBuildError::InvalidIssuer(format!("{err}")))?;
-            let provider_metadata = CoreProviderMetadata::discover_async(discovery_url, async_http_client)
-                .await
-                .map_err(|err| AuthBuildError::Discovery(format!("{err}")))?;
-            CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret))
-                .set_redirect_uri(redirect_url)
-        } else if let Some(endpoints) = &config.endpoints {
-            let issuer_url = IssuerUrl::new("http://github.com".into()).unwrap();
-            let auth_url = AuthUrl::new(endpoints.authorization_url.clone())
-                .map_err(|err| AuthBuildError::InvalidAuth(format!("{err}")))?;
-            let token_url = TokenUrl::new(endpoints.token_url.clone())
-                .map_err(|err| AuthBuildError::InvalidToken(format!("{err}")))?;
-            let userinfo_url = UserInfoUrl::new(endpoints.userinfo_url.clone())
-                .map_err(|err| AuthBuildError::InvalidUserInfo(format!("{err}")))?;
-            CoreClient::new(
-                client_id,
-                Some(client_secret),
-                issuer_url,
-                auth_url,
-                Some(token_url),
-                Some(userinfo_url),
-                CoreJsonWebKeySet::default(),
-            )
-            .set_redirect_uri(redirect_url)
-        } else {
-            return Err(AuthBuildError::InvalidEndpoints);
-        };
-
-        Ok(Self {
-            provider: provider.to_string(),
-            default_redirect_url: home_url.to_string(),
-            client,
-            identity_manager: identity_manager.clone(),
-            session_manager: session_manager.clone(),
-        })
-    }
-
-    pub fn provider(&self) -> &str {
-        &self.provider
-    }
-
-    pub fn into_router<S>(self) -> Router<S>
-    where
-        S: Clone + Send + Sync + 'static,
-    {
-        let state = Arc::new(ServiceState {
-            provider: self.provider.clone(),
-            client: self.client,
-            identity_manager: self.identity_manager,
-            session_manager: self.session_manager,
-            default_redirect_url: self.default_redirect_url,
-        });
-
-        Router::new()
-            .route("/login", get(openid_connect_login))
-            .route("/auth", get(openid_connect_auth))
-            .with_state(state)
-    }
 }

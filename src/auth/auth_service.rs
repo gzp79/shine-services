@@ -1,6 +1,6 @@
 use crate::{
     auth::{ExternalLoginMeta, ExternalLoginSession, OIDCConfig, OIDCServiceBuilder},
-    db::{DBError, DBSessionError, IdentityManager, SessionManager},
+    db::{DBError, IdentityManager, SessionManager},
 };
 use axum::{
     extract::{Query, State},
@@ -18,53 +18,6 @@ use std::{collections::HashMap, sync::Arc};
 use tera::Tera;
 use thiserror::Error as ThisError;
 use url::Url;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AuthConfig {
-    pub openid: HashMap<String, OIDCConfig>,
-}
-
-#[derive(Debug, ThisError)]
-pub enum AuthServiceError {
-    #[error("Session cookie was missing or corrupted")]
-    MissingSession,
-    #[error("Cross Server did not return an ID token")]
-    InvalidCsrfState,
-    #[error("Session and external login cookies are not matching")]
-    InconsistentSession,
-    #[error("Failed to exchange authorization code to access token: {0}")]
-    FailedTokenExchange(String),
-    #[error("Cross-Site Request Forgery (Csrf) check failed")]
-    MissingIdToken,
-    #[error("Failed to verify id token: {0}")]
-    FailedIdVerification(String),
-
-    #[error("Failed to create session")]
-    DBSessionError(#[from] DBSessionError),
-    #[error(transparent)]
-    DBError(#[from] DBError),
-    #[error(transparent)]
-    TeraError(#[from] tera::Error),
-}
-
-impl IntoResponse for AuthServiceError {
-    fn into_response(self) -> Response {
-        let status_code = match &self {
-            AuthServiceError::MissingSession => StatusCode::BAD_REQUEST,
-            AuthServiceError::InconsistentSession => StatusCode::BAD_REQUEST,
-            AuthServiceError::InvalidCsrfState => StatusCode::BAD_REQUEST,
-            AuthServiceError::FailedTokenExchange(_) => StatusCode::BAD_REQUEST,
-            AuthServiceError::MissingIdToken => StatusCode::BAD_REQUEST,
-            AuthServiceError::FailedIdVerification(_) => StatusCode::BAD_REQUEST,
-            AuthServiceError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AuthServiceError::TeraError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AuthServiceError::DBSessionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-
-        (status_code, format!("{self:?}")).into_response()
-    }
-}
 
 #[derive(Debug, ThisError)]
 pub enum AuthBuildError {
@@ -87,74 +40,16 @@ pub enum AuthBuildError {
     Discovery(String),
 }
 
-struct ServiceState {
-    home_url: String,
-    session_manager: SessionManager,
-}
-
-type Service = Arc<ServiceState>;
-
-#[derive(Deserialize)]
-struct LogoutRequest {
-    terminate_all: Option<bool>,
-}
-
-async fn logout(
-    Extension(tera): Extension<Arc<Tera>>,
-    State(service): State<Service>,
-    Query(query): Query<LogoutRequest>,
-    mut user_session: UserSession,
-    mut external_login: ExternalLoginSession,
-) -> Response {
-    let user_session_data = user_session.take();
-    let _ = external_login.take();
-
-    let (status, template, context) =
-        if let Err(err) = perform_logout(&service, user_session_data, query.terminate_all.unwrap_or(false)).await {
-            let mut context = tera::Context::new();
-            context.insert("error", &format!("{err:?}"));
-            (StatusCode::INTERNAL_SERVER_ERROR, "error.html", context)
-        } else {
-            let mut context = tera::Context::new();
-            context.insert("title", &"Logout");
-            context.insert("target", &"home");
-            context.insert("redirect_url", &service.home_url.to_string());
-            (StatusCode::OK, "redirect.html", context)
-        };
-
-    // make sure dispite of having any server error, the session cookies are cleared
-    match tera.render(template, &context) {
-        Ok(html) => (status, user_session, external_login, Html(html)).into_response(),
-        Err(err) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            user_session,
-            external_login,
-            format!("template error: {err:?}"),
-        )
-            .into_response(),
-    }
-}
-
-async fn perform_logout(service: &Service, current_user: Option<CurrentUser>, remove_all: bool) -> Result<(), DBError> {
-    if let Some(current_user) = current_user {
-        if remove_all {
-            service.session_manager.remove_all(current_user.user_id).await?;
-        } else {
-            service
-                .session_manager
-                .remove(current_user.user_id, current_user.key)
-                .await?;
-        }
-    }
-
-    Ok(())
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthConfig {
+    pub openid: HashMap<String, OIDCConfig>,
 }
 
 pub struct AuthServiceBuilder {
     external_login_cookie_builder: ExternalLoginMeta,
     home_url: String,
     openid_connections: Vec<OIDCServiceBuilder>,
-    //todo:  user_query: IdentityServiceBuilder, - find/fix existing users
     session_manager: SessionManager,
 }
 
@@ -206,4 +101,67 @@ impl AuthServiceBuilder {
             .layer(self.external_login_cookie_builder.into_layer())
             .with_state(state)
     }
+}
+
+struct ServiceState {
+    home_url: String,
+    session_manager: SessionManager,
+}
+
+type Service = Arc<ServiceState>;
+
+#[derive(Deserialize)]
+struct LogoutRequest {
+    terminate_all: Option<bool>,
+}
+
+async fn logout(
+    Extension(tera): Extension<Arc<Tera>>,
+    State(service): State<Service>,
+    Query(query): Query<LogoutRequest>,
+    mut user_session: UserSession,
+    mut external_login: ExternalLoginSession,
+) -> Response {
+    let user_session_data = user_session.take();
+    let _ = external_login.take();
+
+    let (status, template, context) =
+        if let Err(err) = perform_logout(&service, user_session_data, query.terminate_all.unwrap_or(false)).await {
+            let mut context = tera::Context::new();
+            context.insert("error", &format!("{err:?}"));
+            (StatusCode::INTERNAL_SERVER_ERROR, "error.html", context)
+        } else {
+            let mut context = tera::Context::new();
+            context.insert("title", &"Logout");
+            context.insert("target", &"home");
+            context.insert("redirect_url", &service.home_url.to_string());
+            (StatusCode::OK, "redirect.html", context)
+        };
+
+    // make sure despite of having any server error, the session cookies are cleared
+    match tera.render(template, &context) {
+        Ok(html) => (status, user_session, external_login, Html(html)).into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            user_session,
+            external_login,
+            format!("template error: {err:?}"),
+        )
+            .into_response(),
+    }
+}
+
+async fn perform_logout(service: &Service, current_user: Option<CurrentUser>, remove_all: bool) -> Result<(), DBError> {
+    if let Some(current_user) = current_user {
+        if remove_all {
+            service.session_manager.remove_all(current_user.user_id).await?;
+        } else {
+            service
+                .session_manager
+                .remove(current_user.user_id, current_user.key)
+                .await?;
+        }
+    }
+
+    Ok(())
 }

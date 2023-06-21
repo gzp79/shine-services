@@ -1,3 +1,5 @@
+mod auth_error;
+pub use self::auth_error::*;
 mod auth_service;
 pub use self::auth_service::*;
 mod oidc_service;

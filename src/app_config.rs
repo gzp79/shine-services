@@ -65,7 +65,7 @@ pub struct AppConfig {
     pub core: CoreConfig,
 
     pub tracing: TracingConfig,
-    pub oauth: auth::AuthConfig,
+    pub auth: auth::AuthConfig,
     pub db: DBConfig,
     pub control_port: u16,
 
