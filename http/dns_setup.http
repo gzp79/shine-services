@@ -1,0 +1,38 @@
+
+GET http://scytta.com
+###
+
+GET http://scytta.com/index.html
+###
+
+GET http://scytta.com/missing.html
+###
+
+GET http://www.scytta.com
+###
+
+GET http://www.scytta.com/index.html
+###
+
+GET http://www.scytta.com/missing.html
+###
+
+########################################xx
+
+GET https://scytta.com
+###
+
+GET https://scytta.com/index.html
+###
+
+GET https://scytta.com/missing.html
+###
+
+GET https://www.scytta.com
+###
+
+GET https://www.scytta.com/index.html
+###
+
+GET https://www.scytta.com/missing.html
+###

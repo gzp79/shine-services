@@ -44,6 +44,36 @@ impl<'a> FromSql<'a> for IdentityKind {
     accepts!(INT2);
 }
 
+#[derive(Debug)]
+
+pub struct Identity {
+    pub user_id: Uuid,
+    pub kind: IdentityKind,
+    pub name: String,
+    pub email: Option<String>,
+    pub is_email_confirmed: bool,
+    pub creation: DateTime<Utc>,
+}
+
+impl Identity {
+    pub fn from_row(row: &Row) -> Result<Self, DBError> {
+        Ok(Self {
+            user_id: row.try_get(0)?,
+            kind: row.try_get(1)?,
+            name: row.try_get(2)?,
+            email: row.try_get(3)?,
+            is_email_confirmed: row.try_get(4)?,
+            creation: row.try_get(5)?,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct ExternalLogin {
+    pub provider: String,
+    pub provider_id: String,
+}
+
 #[derive(Debug, ThisError)]
 pub enum IdentityBuildError {
     #[error(transparent)]
@@ -60,31 +90,6 @@ pub enum CreateIdentityError {
     LinkConflict,
     #[error(transparent)]
     DBError(#[from] DBError),
-}
-
-#[derive(Debug)]
-pub struct Identity {
-    pub id: Uuid,
-    pub kind: IdentityKind,
-    pub name: String,
-    pub creation: DateTime<Utc>,
-}
-
-impl Identity {
-    pub fn from_row(row: &Row) -> Result<Self, DBError> {
-        Ok(Self {
-            id: row.try_get(0)?,
-            kind: row.try_get(1)?,
-            name: row.try_get(2)?,
-            creation: row.try_get(3)?,
-        })
-    }
-}
-
-#[derive(Debug)]
-pub struct ExternalLogin {
-    pub provider: String,
-    pub provider_id: String,
 }
 
 /// Identity query options
@@ -126,25 +131,25 @@ pg_prepared_statement!( InsertExternalLogin => r#"
 "#, [UUID, VARCHAR, VARCHAR] );
 
 pg_prepared_statement!( FindById => r#"
-    SELECT user_id, kind, name, created 
+    SELECT user_id, kind, name, email, email_confirmed, created 
         FROM identities
         WHERE user_id = $1
 "#, [UUID] );
 
 pg_prepared_statement!( FindByEmail => r#"
-    SELECT user_id, kind, name, created 
+SELECT user_id, kind, name, email, email_confirmed, created 
         FROM identities
         WHERE email = $1
 "#, [VARCHAR] );
 
 pg_prepared_statement!( FindByName => r#"
-    SELECT user_id, kind, name, created 
+SELECT user_id, kind, name, email, email_confirmed, created 
         FROM identities
         WHERE name = $1
 "#, [VARCHAR] );
 
 pg_prepared_statement!( FindByLink => r#"
-    SELECT identities.user_id, kind, name, created 
+    SELECT identities.user_id, kind, name, email, email_confirmed, created 
         FROM external_logins, identities
         WHERE external_logins.user_id = identities.user_id
             AND external_logins.provider = $1
@@ -245,8 +250,10 @@ impl IdentityManager {
 
         transaction.commit().await.map_err(DBError::from)?;
         Ok(Identity {
-            id: user_id,
+            user_id,
             name: user_name.to_owned(),
+            email: email.map(String::from),
+            is_email_confirmed: false,
             kind: IdentityKind::User,
             creation: created_at,
         })

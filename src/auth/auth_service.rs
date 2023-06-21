@@ -1,8 +1,5 @@
 use crate::{
-    auth::{
-        AppSession, AppSessionMeta, ExternalLoginMeta, ExternalLoginSession, OIDCBuildError, OIDCConfig,
-        OIDCServiceBuilder, SessionData,
-    },
+    auth::{ExternalLoginMeta, ExternalLoginSession, OIDCBuildError, OIDCConfig, OIDCServiceBuilder},
     db::{DBError, IdentityManager, SessionManager},
 };
 use axum::{
@@ -13,7 +10,10 @@ use axum::{
     Extension, Router,
 };
 use serde::{Deserialize, Serialize};
-use shine_service::{axum::session::SessionError, service::DOMAIN_NAME};
+use shine_service::{
+    axum::session::SessionError,
+    service::{UserSession, UserSessionData, DOMAIN_NAME},
+};
 use std::{collections::HashMap, sync::Arc};
 use tera::Tera;
 use thiserror::Error as ThisError;
@@ -41,14 +41,14 @@ async fn logout(
     Extension(tera): Extension<Arc<Tera>>,
     State(service): State<Service>,
     Query(query): Query<LogoutRequest>,
-    mut session: AppSession,
+    mut user_session: UserSession,
     mut external_login: ExternalLoginSession,
 ) -> Response {
-    let session_data = session.take();
+    let user_session_data = user_session.take();
     let _ = external_login.take();
 
     let (status, template, context) =
-        if let Err(err) = perform_logout(&service, session_data, query.terminate_all.unwrap_or(false)).await {
+        if let Err(err) = perform_logout(&service, user_session_data, query.terminate_all.unwrap_or(false)).await {
             let mut context = tera::Context::new();
             context.insert("error", &format!("{err:?}"));
             (StatusCode::INTERNAL_SERVER_ERROR, "error.html", context)
@@ -62,10 +62,10 @@ async fn logout(
 
     // make sure dispite of having any server error, the session cookies are cleared
     match tera.render(template, &context) {
-        Ok(html) => (status, session, external_login, Html(html)).into_response(),
+        Ok(html) => (status, user_session, external_login, Html(html)).into_response(),
         Err(err) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            session,
+            user_session,
             external_login,
             format!("template error: {err:?}"),
         )
@@ -73,14 +73,18 @@ async fn logout(
     }
 }
 
-async fn perform_logout(service: &Service, session_data: Option<SessionData>, remove_all: bool) -> Result<(), DBError> {
-    if let Some(session_data) = session_data {
+async fn perform_logout(
+    service: &Service,
+    user_session_data: Option<UserSessionData>,
+    remove_all: bool,
+) -> Result<(), DBError> {
+    if let Some(user_session_data) = user_session_data {
         if remove_all {
-            service.session_manager.remove_all(session_data.user_id).await?;
+            service.session_manager.remove_all(user_session_data.user_id).await?;
         } else {
             service
                 .session_manager
-                .remove(session_data.user_id, session_data.key)
+                .remove(user_session_data.user_id, user_session_data.key)
                 .await?;
         }
     }
@@ -98,7 +102,6 @@ pub enum AuthBuildError {
 }
 
 pub struct AuthServiceBuilder {
-    session_cookie_builder: AppSessionMeta,
     external_login_cookie_builder: ExternalLoginMeta,
     home_url: String,
     openid_connections: Vec<OIDCServiceBuilder>,
@@ -121,16 +124,12 @@ impl AuthServiceBuilder {
             openid_connections.push(connect);
         }
 
-        let session_cookie_builder = AppSessionMeta::new(cookie_secret)?
-            .with_cookie_name("sid")
-            .with_domain(DOMAIN_NAME);
         let external_login_cookie_builder = ExternalLoginMeta::new(cookie_secret)?
             .with_cookie_name("exl")
             .with_domain(DOMAIN_NAME);
 
         Ok(Self {
             home_url: home_url.to_string(),
-            session_cookie_builder,
             external_login_cookie_builder,
             openid_connections,
             session_manager: session_manager.clone(),
@@ -155,7 +154,6 @@ impl AuthServiceBuilder {
         }
 
         router
-            .layer(self.session_cookie_builder.into_layer())
             .layer(self.external_login_cookie_builder.into_layer())
             .with_state(state)
     }

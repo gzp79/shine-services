@@ -1,12 +1,11 @@
-use crate::db::{DBError, DBPool, RedisConnectionPool};
+use crate::db::Identity;
+use crate::db::{DBError, DBPool};
 use chrono::{DateTime, Duration, Utc};
 use redis::{AsyncCommands, Script};
 use ring::rand::SystemRandom;
 use serde::{Deserialize, Serialize};
-use shine_service::{
-    service::{SessionKey, SessionKeyError, UserSession},
-    RedisJsonValue,
-};
+use shine_service::service::{CurrentUser, SessionKey, SessionKeyError};
+use shine_service::service::{RedisConnectionPool, RedisJsonValue};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 use uuid::Uuid;
@@ -23,16 +22,29 @@ pub enum SessionError {
 }
 
 #[derive(Serialize, Deserialize, Debug, RedisJsonValue)]
+#[serde(rename_all = "camelCase")]
 struct StoredSession {
-    pub created_at: DateTime<Utc>,
+    pub session_start: DateTime<Utc>,
+    pub name: String,
+    pub is_email_confirmed: bool,
 }
 
 impl StoredSession {
-    fn into_user_session(self, user_id: Uuid, session_key: SessionKey) -> UserSession {
-        UserSession {
+    fn from_identity(identity: &Identity, session_start: DateTime<Utc>) -> Self {
+        Self {
+            session_start,
+            name: identity.name.clone(),
+            is_email_confirmed: identity.is_email_confirmed,
+        }
+    }
+
+    fn into_current_user(self, user_id: Uuid, session_key: SessionKey) -> CurrentUser {
+        CurrentUser {
             user_id,
+            session_start: self.session_start,
             key: session_key,
-            created_at: self.created_at,
+            name: self.name,
+            is_email_confirmed: self.is_email_confirmed,
         }
     }
 }
@@ -61,16 +73,16 @@ impl SessionManager {
         })))
     }
 
-    pub async fn create(&self, user_id: Uuid) -> Result<UserSession, SessionError> {
+    pub async fn create(&self, identity: &Identity) -> Result<CurrentUser, SessionError> {
         let created_at = Utc::now();
 
         let inner = &*self.0;
         let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
 
         let session_key = SessionKey::new_random(&inner.random)?;
-        let key = format!("session:{}:{}", user_id.as_simple(), session_key.to_hex());
+        let key = format!("session:{}:{}", identity.user_id.as_simple(), session_key.to_hex());
 
-        let session = StoredSession { created_at };
+        let session = StoredSession::from_identity(identity, created_at);
 
         let created: bool = client.set_nx(&key, &session).await.map_err(DBError::RedisError)?;
         if created {
@@ -78,19 +90,19 @@ impl SessionManager {
                 .expire(&key, inner.session_duration)
                 .await
                 .map_err(DBError::RedisError)?;
-            Ok(session.into_user_session(user_id, session_key))
+            Ok(session.into_current_user(identity.user_id, session_key))
         } else {
             Err(SessionError::KeyConflict)
         }
     }
 
-    pub async fn find_session(&self, user_id: Uuid, session_key: SessionKey) -> Result<Option<UserSession>, DBError> {
+    pub async fn find_session(&self, user_id: Uuid, session_key: SessionKey) -> Result<Option<CurrentUser>, DBError> {
         let inner = &*self.0;
         let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
 
         let key = format!("session:{}:{}", user_id.as_simple(), session_key.to_hex());
         let session: Option<StoredSession> = client.get(&key).await.map_err(DBError::RedisError)?;
-        let session = session.map(|session| session.into_user_session(user_id, session_key));
+        let session = session.map(|session| session.into_current_user(user_id, session_key));
 
         Ok(session)
     }

@@ -20,6 +20,7 @@
         "Pkce",
         "reqwest",
         "rustls",
+        "scytta",
         "serde",
         "sqlx",
         "tera",

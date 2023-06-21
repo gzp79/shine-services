@@ -1,4 +1,5 @@
-use crate::db::{PGConnectionError, RedisConnectionError};
+use crate::db::PGConnectionError;
+use shine_service::service::RedisConnectionError;
 use thiserror::Error as ThisError;
 use tokio_postgres::error::SqlState;
 

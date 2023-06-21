@@ -18,7 +18,10 @@ use axum::{
     Extension, Router,
 };
 use chrono::Duration;
-use shine_service::axum::tracing::{tracing_layer, TracingService};
+use shine_service::{
+    axum::tracing::{tracing_layer, TracingService},
+    service::{UserSessionMeta, DOMAIN_NAME},
+};
 use std::{net::SocketAddr, sync::Arc};
 use tera::Tera;
 use tokio::{
@@ -96,6 +99,9 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
     };
 
     let db_pool = DBPool::new(&config.db).await?;
+    let user_session = UserSessionMeta::new(&config.cookie_secret)?
+        .with_cookie_name("sid")
+        .with_domain(DOMAIN_NAME);
     let identity_manager = IdentityManager::new(&db_pool).await?;
     let session_max_duration = Duration::seconds(i64::try_from(config.session_max_duration)?);
     let session_manager = SessionManager::new(&db_pool, session_max_duration).await?;
@@ -116,6 +122,7 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
         .nest(&service_path("/oauth"), oauth)
         .nest(&service_path("/api/tracing"), tracing_router)
         .nest(&service_path("/api/identities"), identity)
+        .layer(user_session.into_layer())
         .layer(Extension(Arc::new(tera)))
         .layer(Extension(db_pool))
         .layer(cors)

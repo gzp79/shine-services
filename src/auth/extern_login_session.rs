@@ -1,27 +1,8 @@
 use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::session::{Session, SessionMeta},
-    service::{serde_session_key, SessionKey, UserSession},
+    service::UserSessionData,
 };
-use uuid::Uuid;
-
-/// Session information of a user.
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub(in crate::auth) struct SessionData {
-    #[serde(rename = "id")]
-    pub user_id: Uuid,
-    #[serde(rename = "sid", with = "serde_session_key")]
-    pub key: SessionKey,
-}
-
-impl From<UserSession> for SessionData {
-    fn from(value: UserSession) -> Self {
-        Self {
-            user_id: value.user_id,
-            key: value.key,
-        }
-    }
-}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(in crate::auth) enum ExternalLoginData {
@@ -37,7 +18,7 @@ pub(in crate::auth) enum ExternalLoginData {
         target_url: Option<String>,
         // indicates if login was made to link the account to the user of the given session
         #[serde(rename = "l")]
-        link_session_id: Option<SessionData>,
+        link_session_id: Option<UserSessionData>,
     },
 }
 
@@ -60,7 +41,5 @@ impl std::fmt::Debug for ExternalLoginData {
     }
 }
 
-pub(in crate::auth) type AppSessionMeta = SessionMeta<SessionData>;
-pub(in crate::auth) type AppSession = Session<SessionData>;
 pub(in crate::auth) type ExternalLoginMeta = SessionMeta<ExternalLoginData>;
 pub(in crate::auth) type ExternalLoginSession = Session<ExternalLoginData>;

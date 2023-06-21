@@ -1,13 +1,14 @@
 //@url = http://localhost:8080
 @url = https://local.scytta.com/identity
+//@url = https://cloud.scytta.com/identity
 
 GET {{url}}/info/ready
 ###
 
-GET {{url}}/tracing/config 
+GET {{url}}/api/tracing/config 
 ###
 
-PUT {{url}}/tracing/config 
+PUT {{url}}/api/tracing/config 
 Content-Type: application/json
 
 {
@@ -19,8 +20,13 @@ Content-Type: application/json
 GET {{url}}/ouath/google/login
 ###
 
+GET {{url}}/oauth/logout?terminate_all=true
+###
+
+
+GET {{url}}/api/identities/userinfo
+###
+
 GET {{url}}/api/identities?count=3
 ###
 
-GET {{url}}/oauth/logout?terminate_all=true
-###

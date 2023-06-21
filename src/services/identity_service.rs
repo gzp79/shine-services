@@ -3,16 +3,39 @@ use axum::{
     extract::{Query, State},
     response::{IntoResponse, Response},
     routing::get,
-    Router,
+    Json, Router,
 };
-use serde::Deserialize;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use shine_service::service::CurrentUser;
 use std::sync::Arc;
+use uuid::Uuid;
 
 struct ServiceState {
     identity_manager: IdentityManager,
 }
 
 type Service = Arc<ServiceState>;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserInfo {
+    user_id: Uuid,
+    name: String,
+    is_email_confirmed: bool,
+    session_start: DateTime<Utc>,
+}
+
+/// Get the information about the current user. The cookie is not accessible
+/// from javascript, thus this endpoint can be used to get details about the user.
+async fn user_info(current_user: CurrentUser) -> Json<UserInfo> {
+    Json(UserInfo {
+        user_id: current_user.user_id,
+        name: current_user.name,
+        is_email_confirmed: current_user.is_email_confirmed,
+        session_start: current_user.session_start,
+    })
+}
 
 #[derive(Deserialize)]
 struct SearchIdentityRequest {
@@ -59,6 +82,9 @@ impl IdentityServiceBuilder {
             identity_manager: self.identity_manager,
         });
 
-        Router::new().route("/", get(search_identity)).with_state(state)
+        Router::new()
+            .route("/userinfo", get(user_info))
+            .route("/", get(search_identity))
+            .with_state(state)
     }
 }

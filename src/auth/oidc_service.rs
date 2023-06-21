@@ -1,5 +1,5 @@
 use crate::{
-    auth::{AppSession, ExternalLoginData, ExternalLoginSession},
+    auth::{ExternalLoginData, ExternalLoginSession},
     db::{CreateIdentityError, DBError, ExternalLogin, FindIdentity, IdentityManager, SessionError, SessionManager},
     utils::generate_name,
 };
@@ -20,7 +20,7 @@ use openidconnect::{
     IssuerUrl, Nonce, TokenResponse, UserInfoUrl,
 };
 use serde::{Deserialize, Serialize};
-use shine_service::service::APP_NAME;
+use shine_service::service::{UserSession, UserSessionData, APP_NAME};
 use std::sync::Arc;
 use tera::Tera;
 use thiserror::Error as ThisError;
@@ -109,18 +109,18 @@ async fn openid_connect_login(
     Extension(tera): Extension<Arc<Tera>>,
     State(service): State<Service>,
     Query(query): Query<LoginRequest>,
-    mut session: AppSession,
+    mut user_session: UserSession,
     mut external_login_session: ExternalLoginSession,
 ) -> Result<impl IntoResponse, OIDCError> {
     if !query.allow_link.unwrap_or(false) {
-        let session_data = session.take();
+        let user_session_data = user_session.take();
         let _ = external_login_session.take();
 
         // if this is not a link-account request and there is a valid session, skip login and let the user in.
-        if let Some(session_data) = session_data {
+        if let Some(user_session_data) = user_session_data {
             if service
                 .session_manager
-                .find_session(session_data.user_id, session_data.key)
+                .find_session(user_session_data.user_id, user_session_data.key)
                 .await
                 .ok()
                 .is_some()
@@ -133,8 +133,8 @@ async fn openid_connect_login(
                     query.redirect.as_deref(),
                 )?;
 
-                session.set(session_data);
-                return Ok((external_login_session, session, html));
+                user_session.set(user_session_data);
+                return Ok((external_login_session, user_session, html));
             }
         }
     }
@@ -159,10 +159,10 @@ async fn openid_connect_login(
         csrf_state: csrf_state.secret().to_owned(),
         nonce: nonce.secret().to_owned(),
         target_url: query.redirect,
-        link_session_id: session.clone(),
+        link_session_id: user_session.clone(),
     });
 
-    log::info!("session: {session:?}");
+    log::info!("user_session: {user_session:?}");
     log::info!("external_login: {external_login_session:?}");
 
     let html = create_redirect_page(
@@ -172,7 +172,7 @@ async fn openid_connect_login(
         &service.provider,
         Some(authorize_url.as_str()),
     )?;
-    Ok((external_login_session, session, html))
+    Ok((external_login_session, user_session, html))
 }
 
 #[derive(Deserialize)]
@@ -186,10 +186,10 @@ async fn openid_connect_auth(
     State(service): State<Service>,
     Extension(tera): Extension<Arc<Tera>>,
     Query(query): Query<AuthRequest>,
-    mut session: AppSession,
+    mut user_session: UserSession,
     mut external_login_session: ExternalLoginSession,
 ) -> Result<Response, OIDCError> {
-    log::info!("session: {session:?}");
+    log::info!("user_session: {user_session:?}");
     log::info!("external_login: {external_login_session:?}");
 
     let auth_code = AuthorizationCode::new(query.code);
@@ -255,55 +255,59 @@ async fn openid_connect_auth(
         //      } else { link account to ussr)
         // keep session as it is,
         todo!("Perform linking to the current user/session")
-    } else if let Some(identity) = service
-        .identity_manager
-        .find(FindIdentity::ExternalLogin(&external_login))
-        .await?
-    {
-        // Sign in to an existing (linked) account and redirect to the target
-
-        let user_session = service
-            .session_manager
-            .create(identity.id)
-            .await
-            .map_err(OIDCError::CreateSessionError)?;
-        log::debug!("Session is ready: {user_session:#?}");
-        session.set(user_session);
-        Ok((external_login_session, session, html).into_response())
     } else {
-        // Create a new account, and sign in.
-
-        let mut retry_count = 10;
-        let identity = loop {
-            if retry_count < 0 {
-                return Err(OIDCError::DBError(DBError::RetryLimitReached));
+        log::debug!("Finding existing user by external login...");
+        let identity = match service
+            .identity_manager
+            .find(FindIdentity::ExternalLogin(&external_login))
+            .await?
+        {
+            Some(identity) => {
+                log::debug!("Found: {identity:#?}");
+                // Sign in to an existing (linked) account
+                identity
             }
-            retry_count -= 1;
+            None => {
+                // Create a new user.
+                let mut retry_count = 10;
+                loop {
+                    log::debug!("Creating new user; retry: {retry_count:#?}");
+                    if retry_count < 0 {
+                        return Err(OIDCError::DBError(DBError::RetryLimitReached));
+                    }
+                    retry_count -= 1;
 
-            let user_id = Uuid::new_v4();
-            let user_name = nickname.take().unwrap_or_else(generate_name);
+                    let user_id = Uuid::new_v4();
+                    let user_name = nickname.take().unwrap_or_else(generate_name);
 
-            match service
-                .identity_manager
-                .create_user(user_id, &user_name, email.as_deref(), Some(&external_login))
-                .await
-            {
-                Ok(identity) => break identity,
-                Err(CreateIdentityError::NameConflict) => continue,
-                Err(CreateIdentityError::UserIdConflict) => continue,
-                Err(CreateIdentityError::LinkConflict) => todo!("Ask user to log in and link account"),
-                Err(CreateIdentityError::DBError(err)) => return Err(err.into()),
-            };
+                    match service
+                        .identity_manager
+                        .create_user(user_id, &user_name, email.as_deref(), Some(&external_login))
+                        .await
+                    {
+                        Ok(identity) => break identity,
+                        Err(CreateIdentityError::NameConflict) => continue,
+                        Err(CreateIdentityError::UserIdConflict) => continue,
+                        Err(CreateIdentityError::LinkConflict) => todo!("Ask user to log in and link account"),
+                        Err(CreateIdentityError::DBError(err)) => return Err(err.into()),
+                    };
+                }
+            }
         };
 
-        let user_session = service
+        log::debug!("Identity ready: {identity:#?}");
+        let current_user = service
             .session_manager
-            .create(identity.id)
+            .create(&identity)
             .await
             .map_err(OIDCError::CreateSessionError)?;
+
         log::debug!("Session is ready: {user_session:#?}");
-        session.set(user_session);
-        Ok((external_login_session, session, html).into_response())
+        user_session.set(UserSessionData {
+            user_id: current_user.user_id,
+            key: current_user.key,
+        });
+        Ok((external_login_session, user_session, html).into_response())
     }
 }
 

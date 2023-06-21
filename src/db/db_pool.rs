@@ -3,8 +3,7 @@ use std::str::FromStr;
 use crate::db::{DBConfig, DBError};
 use bb8::{ManageConnection, Pool as BB8Pool, RunError};
 use bb8_postgres::PostgresConnectionManager;
-use bb8_redis::RedisConnectionManager;
-use shine_service::service::cacerts;
+use shine_service::service::{self, cacerts, RedisConnectionPool};
 use tokio_postgres::Config as PGConfig;
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tokio_rustls::rustls;
@@ -12,10 +11,6 @@ use tokio_rustls::rustls;
 pub type PGConnection = PostgresConnectionManager<MakeRustlsConnect>;
 pub type PGConnectionError = RunError<<PGConnection as ManageConnection>::Error>;
 pub type PGConnectionPool = BB8Pool<PGConnection>;
-
-pub type RedisConnection = RedisConnectionManager;
-pub type RedisConnectionError = RunError<<RedisConnection as ManageConnection>::Error>;
-pub type RedisConnectionPool = BB8Pool<RedisConnection>;
 
 mod embedded {
     use refinery::embed_migrations;
@@ -30,7 +25,7 @@ pub struct DBPool {
 
 impl DBPool {
     pub async fn new(config: &DBConfig) -> Result<Self, DBError> {
-        //todo: make tls optional (from feature as tls is a property of the connection type, see NoTls). 
+        //todo: make tls optional (from feature as tls is a property of the connection type, see NoTls).
         //      It can be disabled when running in cloud on a virtual network.
         let tls_config = rustls::ClientConfig::builder()
             .with_safe_defaults()
@@ -46,11 +41,9 @@ impl DBPool {
             .build(postgres_manager)
             .await?;
 
-        let redis_manager = RedisConnectionManager::new(config.redis_cns.as_str())?;
-        let redis = bb8::Pool::builder()
-            .max_size(10) // Set the maximum number of connections in the pool
-            .build(redis_manager)
-            .await?;
+        let redis = service::create_redis_pool(config.redis_cns.as_str())
+            .await
+            .map_err(DBError::RedisPoolError)?;
 
         let pool = Self { postgres, redis };
         pool.migrate().await?;
