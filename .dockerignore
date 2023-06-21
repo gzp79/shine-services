@@ -1,4 +1,8 @@
 /target
 /temp
+/http
 .vscode
 .git
+
+/shine-service-rs/target
+/shine-service-rs/.vscode
