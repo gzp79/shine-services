@@ -3,12 +3,11 @@ mod app_error;
 mod auth;
 mod db;
 mod services;
-mod utils;
 
 use crate::{
     app_config::{AppConfig, SERVICE_NAME},
     auth::AuthServiceBuilder,
-    db::{DBPool, IdentityManager, SessionManager},
+    db::{DBPool, IdentityManager, NameGenerator, SessionManager, SettingsManager},
     services::IdentityServiceBuilder,
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -20,7 +19,7 @@ use axum::{
 use chrono::Duration;
 use shine_service::{
     axum::tracing::{tracing_layer, TracingService},
-    service::{UserSessionMeta, DOMAIN_NAME, UserSessionValidator},
+    service::{UserSessionMeta, UserSessionValidator, DOMAIN_NAME},
 };
 use std::{net::SocketAddr, sync::Arc};
 use tera::Tera;
@@ -105,20 +104,16 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
         .with_domain(DOMAIN_NAME);
     let user_session_validator = UserSessionValidator::new(db_pool.redis.clone());
 
+    let settings_manager = SettingsManager::new(&config);
     let identity_manager = IdentityManager::new(&db_pool).await?;
     let session_max_duration = Duration::seconds(i64::try_from(config.session_max_duration)?);
     let session_manager = SessionManager::new(&db_pool, session_max_duration).await?;
+    let name_generator = NameGenerator::new();
 
-    let auth = AuthServiceBuilder::new(
-        &config.auth,
-        &config.cookie_secret,
-        &config.home_url,
-        &identity_manager,
-        &session_manager,
-    )
-    .await?
-    .into_router();
-    let identity = IdentityServiceBuilder::new(&identity_manager).into_router();
+    let auth = AuthServiceBuilder::new(&config.auth, &config.cookie_secret)
+        .await?
+        .into_router();
+    let identity = IdentityServiceBuilder.into_router();
 
     let app = Router::new()
         .route(&service_path("/info/ready"), get(health_check))
@@ -128,6 +123,10 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
         .layer(user_session.into_layer())
         .layer(user_session_validator.into_layer())
         .layer(Extension(Arc::new(tera)))
+        .layer(Extension(identity_manager))
+        .layer(Extension(session_manager))
+        .layer(Extension(name_generator))
+        .layer(Extension(settings_manager))
         .layer(Extension(db_pool))
         .layer(cors)
         .layer(tracing_layer);

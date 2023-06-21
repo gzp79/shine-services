@@ -1,4 +1,4 @@
-use crate::db::{DBError, DBSessionError};
+use crate::db::{DBError, DBSessionError, NameGeneratorError};
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -6,7 +6,7 @@ use axum::{
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
-pub enum AuthServiceError {
+pub enum OIDCError {
     #[error("Session cookie was missing or corrupted")]
     MissingSession,
     #[error("Cross Server did not return an ID token")]
@@ -26,20 +26,23 @@ pub enum AuthServiceError {
     DBError(#[from] DBError),
     #[error(transparent)]
     TeraError(#[from] tera::Error),
+    #[error(transparent)]
+    NameGeneratorError(#[from] NameGeneratorError),
 }
 
-impl IntoResponse for AuthServiceError {
+impl IntoResponse for OIDCError {
     fn into_response(self) -> Response {
         let status_code = match &self {
-            AuthServiceError::MissingSession => StatusCode::BAD_REQUEST,
-            AuthServiceError::InconsistentSession => StatusCode::BAD_REQUEST,
-            AuthServiceError::InvalidCsrfState => StatusCode::BAD_REQUEST,
-            AuthServiceError::FailedTokenExchange(_) => StatusCode::BAD_REQUEST,
-            AuthServiceError::MissingIdToken => StatusCode::BAD_REQUEST,
-            AuthServiceError::FailedIdVerification(_) => StatusCode::BAD_REQUEST,
-            AuthServiceError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AuthServiceError::TeraError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AuthServiceError::DBSessionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OIDCError::MissingSession => StatusCode::BAD_REQUEST,
+            OIDCError::InconsistentSession => StatusCode::BAD_REQUEST,
+            OIDCError::InvalidCsrfState => StatusCode::BAD_REQUEST,
+            OIDCError::FailedTokenExchange(_) => StatusCode::BAD_REQUEST,
+            OIDCError::MissingIdToken => StatusCode::BAD_REQUEST,
+            OIDCError::FailedIdVerification(_) => StatusCode::BAD_REQUEST,
+            OIDCError::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OIDCError::TeraError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OIDCError::DBSessionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OIDCError::NameGeneratorError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (status_code, format!("{self:?}")).into_response()

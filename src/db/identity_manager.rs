@@ -1,9 +1,10 @@
-use crate::{
-    db::{DBError, DBPool, PGConnectionPool, PGError, PGErrorChecks, QueryBuilder},
-    pg_prepared_statement,
-};
+use crate::db::{DBError, DBPool, PGError};
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
+use shine_service::{
+    pg_prepared_statement,
+    service::{PGConnectionPool, PGErrorChecks, QueryBuilder},
+};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 use tokio_postgres::{
@@ -156,7 +157,7 @@ pub enum IdentityBuildError {
     DBError(#[from] DBError),
 }
 
-pub struct Inner {
+struct Inner {
     postgres: PGConnectionPool,
     stmt_insert_identity: InsertIdentity,
     stmt_link_provider: InsertExternalLogin,
@@ -172,12 +173,12 @@ pub struct IdentityManager(Arc<Inner>);
 impl IdentityManager {
     pub async fn new(pool: &DBPool) -> Result<Self, IdentityBuildError> {
         let client = pool.postgres.get().await.map_err(DBError::PostgresPoolError)?;
-        let stmt_insert_identity = InsertIdentity::new(&client).await?;
-        let stmt_link_provider = InsertExternalLogin::new(&client).await?;
-        let stmt_find_by_id = FindById::new(&client).await?;
-        let stmt_find_by_email = FindByEmail::new(&client).await?;
-        let stmt_find_by_name = FindByName::new(&client).await?;
-        let stmt_find_by_link = FindByLink::new(&client).await?;
+        let stmt_insert_identity = InsertIdentity::new(&client).await.map_err(DBError::from)?;
+        let stmt_link_provider = InsertExternalLogin::new(&client).await.map_err(DBError::from)?;
+        let stmt_find_by_id = FindById::new(&client).await.map_err(DBError::from)?;
+        let stmt_find_by_email = FindByEmail::new(&client).await.map_err(DBError::from)?;
+        let stmt_find_by_name = FindByName::new(&client).await.map_err(DBError::from)?;
+        let stmt_find_by_link = FindByLink::new(&client).await.map_err(DBError::from)?;
 
         Ok(Self(Arc::new(Inner {
             postgres: pool.postgres.clone(),
