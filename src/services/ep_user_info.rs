@@ -4,7 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use serde::Serialize;
 use shine_service::service::CurrentUser;
 use thiserror::Error as ThisError;
@@ -36,7 +36,7 @@ pub(in crate::services) struct UserInfo {
     user_id: Uuid,
     name: String,
     is_email_confirmed: bool,
-    session_start: DateTime<Utc>,
+    session_length: u64,
 }
 
 /// Get the information about the current user. The cookie is not accessible
@@ -50,10 +50,12 @@ pub(in crate::services) async fn user_info(
         .await?
         .ok_or(Error::UserNotFound(current_user.user_id))?;
 
+    let session_length = (Utc::now() - current_user.session_start).num_seconds();
+    let session_length = if session_length < 0 { 0 } else { session_length as u64 };
     Ok(Json(UserInfo {
         user_id: current_user.user_id,
         name: current_user.name,
         is_email_confirmed: identity.is_email_confirmed,
-        session_start: current_user.session_start,
+        session_length,
     }))
 }
