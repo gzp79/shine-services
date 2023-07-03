@@ -1,26 +1,54 @@
 use crate::{
-    auth::{
-        oidc_client::{create_redirect_page, OIDCClient},
-        oidc_error::OIDCError,
-        ExternalLoginData, ExternalLoginSession,
-    },
+    auth::{create_ooops_page, create_redirect_page, oidc_client::OIDCClient, ExternalLoginData, ExternalLoginSession},
     db::{
-        CreateIdentityError, DBError, ExternalLogin, FindIdentity, IdentityManager, NameGenerator, SessionManager,
-        SettingsManager,
+        CreateIdentityError, DBError, DBSessionError, ExternalLogin, FindIdentity, IdentityManager, NameGenerator,
+        NameGeneratorError, SessionManager, SettingsManager,
     },
 };
 use axum::{
     extract::Query,
-    response::{IntoResponse, Response},
+    http::StatusCode,
+    response::{Html, IntoResponse, Response},
     Extension,
 };
 use oauth2::{reqwest::async_http_client, AuthorizationCode, PkceCodeVerifier};
 use openidconnect::{Nonce, TokenResponse};
 use serde::Deserialize;
-use shine_service::service::{UserSession, APP_NAME};
+use shine_service::service::{CurrentUser, UserSession, APP_NAME};
 use std::sync::Arc;
 use tera::Tera;
+use thiserror::Error as ThisError;
 use uuid::Uuid;
+
+#[derive(Debug, ThisError)]
+enum Error {
+    #[error("Session cookie was missing or corrupted")]
+    MissingSession,
+    #[error("Cross Server did not return an ID token")]
+    InvalidCsrfState,
+    #[error("Session and external login cookies are not matching")]
+    InconsistentSession,
+    #[error("Failed to exchange authorization code to access token: {0}")]
+    FailedTokenExchange(String),
+    #[error("Cross-Site Request Forgery (Csrf) check failed")]
+    MissingIdToken,
+    #[error("Failed to verify id token: {0}")]
+    FailedIdVerification(String),
+
+    #[error("Email already used by an user")]
+    LinkEmailConflict,
+    #[error("Provider already linked to an user")]
+    LinkProviderConflict,
+
+    #[error("Failed to create session")]
+    DBSessionError(#[from] DBSessionError),
+    #[error(transparent)]
+    DBError(#[from] DBError),
+    #[error(transparent)]
+    TeraError(#[from] tera::Error),
+    #[error(transparent)]
+    NameGeneratorError(#[from] NameGeneratorError),
+}
 
 #[derive(Deserialize)]
 pub(in crate::auth) struct AuthRequest {
@@ -29,25 +57,20 @@ pub(in crate::auth) struct AuthRequest {
     //scope: String,
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(in crate::auth) async fn openid_connect_auth(
-    Extension(oidc_client): Extension<Arc<OIDCClient>>,
-    Extension(tera): Extension<Arc<Tera>>,
-    Extension(settings_manager): Extension<SettingsManager>,
-    Extension(identity_manager): Extension<IdentityManager>,
-    Extension(session_manager): Extension<SessionManager>,
-    Extension(name_generator): Extension<NameGenerator>,
-    Query(query): Query<AuthRequest>,
-    mut user_session: UserSession,
-    mut external_login_session: ExternalLoginSession,
-) -> Result<Response, OIDCError> {
-    log::info!("user_session: {user_session:?}");
-    log::info!("external_login: {external_login_session:?}");
-
+async fn openid_connect_auth_impl(
+    oidc_client: &OIDCClient,
+    tera: &Tera,
+    settings_manager: &SettingsManager,
+    identity_manager: &IdentityManager,
+    session_manager: &SessionManager,
+    name_generator: &NameGenerator,
+    query: AuthRequest,
+    external_login_data: Option<ExternalLoginData>,
+) -> Result<(CurrentUser, Html<String>), Error> {
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
 
-    let external_login_data = external_login_session.take().ok_or(OIDCError::MissingSession)?;
+    let external_login_data = external_login_data.ok_or(Error::MissingSession)?;
     let (pkce_code_verifier, csrf_state, nonce, target_url, link_session_id) = match external_login_data {
         ExternalLoginData::OIDCLogin {
             pkce_code_verifier,
@@ -67,7 +90,7 @@ pub(in crate::auth) async fn openid_connect_auth(
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
-        return Err(OIDCError::InvalidCsrfState);
+        return Err(Error::InvalidCsrfState);
     }
 
     // Exchange the code with a token.
@@ -77,12 +100,12 @@ pub(in crate::auth) async fn openid_connect_auth(
         .set_pkce_verifier(pkce_code_verifier)
         .request_async(async_http_client)
         .await
-        .map_err(|err| OIDCError::FailedTokenExchange(format!("{err:?}")))?;
+        .map_err(|err| Error::FailedTokenExchange(format!("{err:?}")))?;
 
-    let id_token = token.id_token().ok_or(OIDCError::MissingIdToken)?;
+    let id_token = token.id_token().ok_or(Error::MissingIdToken)?;
     let claims = id_token
         .claims(&oidc_client.client.id_token_verifier(), &nonce)
-        .map_err(|err| OIDCError::FailedIdVerification(format!("{err}")))?;
+        .map_err(|err| Error::FailedIdVerification(format!("{err}")))?;
     log::debug!("Code exchange completed, claims: {claims:#?}");
 
     let mut nickname = claims
@@ -95,7 +118,6 @@ pub(in crate::auth) async fn openid_connect_auth(
         provider: oidc_client.provider.clone(),
         provider_id,
     };
-    let html = create_redirect_page(&tera, &settings_manager, "Redirecting", APP_NAME, target_url.as_deref())?;
 
     // find any user linked to this account
     if let Some(link_session_id) = link_session_id {
@@ -124,7 +146,7 @@ pub(in crate::auth) async fn openid_connect_auth(
                 loop {
                     log::debug!("Creating new user; retry: {retry_count:#?}");
                     if retry_count < 0 {
-                        return Err(OIDCError::DBError(DBError::RetryLimitReached));
+                        return Err(Error::DBError(DBError::RetryLimitReached));
                     }
                     retry_count -= 1;
 
@@ -141,8 +163,9 @@ pub(in crate::auth) async fn openid_connect_auth(
                         Ok(identity) => break identity,
                         Err(CreateIdentityError::NameConflict) => continue,
                         Err(CreateIdentityError::UserIdConflict) => continue,
-                        Err(CreateIdentityError::LinkConflict) => todo!("Ask user to log in and link account"),
-                        Err(CreateIdentityError::DBError(err)) => return Err(err.into()),
+                        Err(CreateIdentityError::LinkEmailConflict) => return Err(Error::LinkEmailConflict),
+                        Err(CreateIdentityError::LinkProviderConflict) => return Err(Error::LinkProviderConflict),
+                        Err(CreateIdentityError::DBError(err)) => return Err(Error::DBError(err)),
                     };
                 }
             }
@@ -150,9 +173,46 @@ pub(in crate::auth) async fn openid_connect_auth(
 
         log::debug!("Identity ready: {identity:#?}");
         let current_user = session_manager.create(&identity).await?;
+        let html = create_redirect_page(tera, settings_manager, "Redirecting", APP_NAME, target_url.as_deref());
+        Ok((current_user, html))
+    }
+}
 
-        log::debug!("Session is ready: {user_session:#?}");
-        user_session.set(current_user);
-        Ok((external_login_session, user_session, html).into_response())
+#[allow(clippy::too_many_arguments)]
+pub(in crate::auth) async fn openid_connect_auth(
+    Extension(oidc_client): Extension<Arc<OIDCClient>>,
+    Extension(tera): Extension<Arc<Tera>>,
+    Extension(settings_manager): Extension<SettingsManager>,
+    Extension(identity_manager): Extension<IdentityManager>,
+    Extension(session_manager): Extension<SessionManager>,
+    Extension(name_generator): Extension<NameGenerator>,
+    Query(query): Query<AuthRequest>,
+    mut user_session: UserSession,
+    mut external_login_session: ExternalLoginSession,
+) -> Response {
+    log::info!("user_session: {user_session:?}");
+    log::info!("external_login: {external_login_session:?}");
+
+    match openid_connect_auth_impl(
+        &oidc_client,
+        &tera,
+        &settings_manager,
+        &identity_manager,
+        &session_manager,
+        &name_generator,
+        query,
+        external_login_session.take(),
+    )
+    .await
+    {
+        Ok((current_user, html)) => {
+            log::debug!("Session is ready: {user_session:#?}");
+            user_session.set(current_user);
+            (external_login_session, user_session, html).into_response()
+        }
+        Err(err) => {
+            let html = create_ooops_page(&tera, &settings_manager, Some(format!("{err}")));
+            return (StatusCode::INTERNAL_SERVER_ERROR, external_login_session, html).into_response();
+        }
     }
 }

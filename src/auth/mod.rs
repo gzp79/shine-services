@@ -8,4 +8,3 @@ mod ep_logout;
 mod oidc_client;
 mod oidc_ep_auth;
 mod oidc_ep_login;
-mod oidc_error;

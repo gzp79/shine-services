@@ -13,6 +13,7 @@
         "hset",
         "keyvault",
         "oidc",
+        "Ooops",
         "openidconnect",
         "opentelemetry",
         "otconv",

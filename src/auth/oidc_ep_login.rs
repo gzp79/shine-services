@@ -1,12 +1,12 @@
 use crate::{
-    auth::{
-        oidc_client::{create_redirect_page, OIDCClient},
-        oidc_error::OIDCError,
-        ExternalLoginData, ExternalLoginSession,
-    },
+    auth::{create_redirect_page, oidc_client::OIDCClient, ExternalLoginData, ExternalLoginSession},
     db::{SessionManager, SettingsManager},
 };
-use axum::{extract::Query, response::IntoResponse, Extension};
+use axum::{
+    extract::Query,
+    response::{IntoResponse, Response},
+    Extension,
+};
 use chrono::Duration;
 use oauth2::{CsrfToken, PkceCodeChallenge, Scope};
 use openidconnect::{
@@ -32,7 +32,7 @@ pub(in crate::auth) async fn openid_connect_login(
     Query(query): Query<LoginRequest>,
     mut user_session: UserSession,
     mut external_login_session: ExternalLoginSession,
-) -> Result<impl IntoResponse, OIDCError> {
+) -> Response {
     if !query.allow_link.unwrap_or(false) {
         let user_session_data = user_session.take();
         let _ = external_login_session.take();
@@ -51,10 +51,10 @@ pub(in crate::auth) async fn openid_connect_login(
                     "Redirecting to target login",
                     &oidc_client.provider,
                     query.redirect.as_deref(),
-                )?;
+                );
 
                 user_session.set(user_session_data);
-                return Ok((external_login_session, user_session, html));
+                return (external_login_session, user_session, html).into_response();
             }
         }
     }
@@ -91,6 +91,6 @@ pub(in crate::auth) async fn openid_connect_login(
         "Redirecting to external login",
         &oidc_client.provider,
         Some(authorize_url.as_str()),
-    )?;
-    Ok((external_login_session, user_session, html))
+    );
+    (external_login_session, user_session, html).into_response()
 }

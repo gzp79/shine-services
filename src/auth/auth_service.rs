@@ -1,8 +1,12 @@
-use crate::auth::{ep_logout, oidc_client::OIDCClient, oidc_ep_auth, oidc_ep_login, ExternalLoginMeta};
-use axum::{routing::get, Extension, Router};
+use crate::{
+    auth::{ep_logout, oidc_client::OIDCClient, oidc_ep_auth, oidc_ep_login, ExternalLoginMeta},
+    db::SettingsManager,
+};
+use axum::{response::Html, routing::get, Extension, Router};
 use serde::{Deserialize, Serialize};
 use shine_service::{axum::session::SessionError, service::DOMAIN_NAME};
 use std::{collections::HashMap, sync::Arc};
+use tera::Tera;
 use thiserror::Error as ThisError;
 
 use super::ep_get_providers;
@@ -101,4 +105,35 @@ impl AuthServiceBuilder {
 
         (router, api_router)
     }
+}
+
+pub(in crate::auth) fn create_redirect_page(
+    tera: &Tera,
+    settings_manager: &SettingsManager,
+    title: &str,
+    target: &str,
+    target_url: Option<&str>,
+) -> Html<String> {
+    let mut context = tera::Context::new();
+    context.insert("title", title);
+    context.insert("target", target);
+    context.insert("redirect_url", target_url.unwrap_or(settings_manager.home_url()));
+    let html = tera
+        .render("redirect.html", &context)
+        .expect("Failed to generate redirect.html template");
+    Html(html)
+}
+
+pub(in crate::auth) fn create_ooops_page(
+    tera: &Tera,
+    settings_manager: &SettingsManager,
+    detail: Option<String>,
+) -> Html<String> {
+    let mut context = tera::Context::new();
+    context.insert("home_url", settings_manager.home_url());
+    context.insert("detail", &detail.unwrap_or_default());
+    let html = tera
+        .render("ooops.html", &context)
+        .expect("Failed to generate ooops.html template");
+    Html(html)
 }

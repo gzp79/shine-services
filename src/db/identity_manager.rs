@@ -81,8 +81,10 @@ pub enum CreateIdentityError {
     UserIdConflict,
     #[error("Name already taken")]
     NameConflict,
-    #[error("External id already linked")]
-    LinkConflict,
+    #[error("Email already linked to a user")]
+    LinkEmailConflict,
+    #[error("External id already linked to a user")]
+    LinkProviderConflict,
     #[error(transparent)]
     DBError(#[from] DBError),
 }
@@ -225,7 +227,7 @@ impl IdentityManager {
             Err(err) if err.is_constraint("identities", "idx_email") => {
                 log::info!("Conflicting email: {}, rolling back user creation", user_id);
                 transaction.rollback().await.map_err(DBError::from)?;
-                return Err(CreateIdentityError::LinkConflict);
+                return Err(CreateIdentityError::LinkEmailConflict);
             }
             Err(err) => {
                 return Err(CreateIdentityError::DBError(err.into()));
@@ -242,7 +244,7 @@ impl IdentityManager {
             {
                 if err.is_constraint("external_logins", "idx_provider_provider_id") {
                     transaction.rollback().await.map_err(DBError::from)?;
-                    return Err(CreateIdentityError::LinkConflict);
+                    return Err(CreateIdentityError::LinkProviderConflict);
                 } else {
                     return Err(CreateIdentityError::DBError(err.into()));
                 }

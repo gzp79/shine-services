@@ -1,14 +1,9 @@
-use crate::{
-    auth::{AuthBuildError, OIDCConfig},
-    db::SettingsManager,
-};
-use axum::response::Html;
+use crate::auth::{AuthBuildError, OIDCConfig};
 use oauth2::{reqwest::async_http_client, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
 use openidconnect::{
     core::{CoreClient, CoreJsonWebKeySet, CoreProviderMetadata},
     IssuerUrl, UserInfoUrl,
 };
-use tera::{Error as TeraError, Tera};
 
 pub(in crate::auth) struct OIDCClient {
     pub provider: String,
@@ -61,19 +56,4 @@ impl OIDCClient {
             client,
         })
     }
-}
-
-pub(in crate::auth) fn create_redirect_page(
-    tera: &Tera,
-    settings_manager: &SettingsManager,
-    title: &str,
-    target: &str,
-    target_url: Option<&str>,
-) -> Result<Html<String>, TeraError> {
-    let mut context = tera::Context::new();
-    context.insert("title", title);
-    context.insert("target", target);
-    context.insert("redirect_url", target_url.unwrap_or(settings_manager.home_url()));
-    let html = Html(tera.render("redirect.html", &context)?);
-    Ok(html)
 }
