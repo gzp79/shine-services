@@ -16,6 +16,7 @@
         "openidconnect",
         "opentelemetry",
         "otconv",
+        "Otel",
         "otsdk",
         "pemfile",
         "Pkce",

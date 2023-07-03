@@ -5,6 +5,8 @@ use shine_service::{axum::session::SessionError, service::DOMAIN_NAME};
 use std::{collections::HashMap, sync::Arc};
 use thiserror::Error as ThisError;
 
+use super::ep_get_providers;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OIDCEndpoints {
@@ -74,23 +76,29 @@ impl AuthServiceBuilder {
         })
     }
 
-    pub fn into_router<S>(self) -> Router<S>
+    pub fn into_router<S>(self) -> (Router<S>, Router<S>)
     where
         S: Clone + Send + Sync + 'static,
     {
-        let mut router = Router::new().route("/logout", get(ep_logout::logout));
+        let router = {
+            let mut router = Router::new().route("/logout", get(ep_logout::logout));
 
-        for openid_client in self.openid_clients {
-            let path = format!("/{}", openid_client.provider);
+            for openid_client in self.openid_clients {
+                let path = format!("/{}", openid_client.provider);
 
-            let openid_route = Router::new()
-                .route("/login", get(oidc_ep_login::openid_connect_login))
-                .route("/auth", get(oidc_ep_auth::openid_connect_auth))
-                .layer(Extension(Arc::new(openid_client)));
+                let openid_route = Router::new()
+                    .route("/login", get(oidc_ep_login::openid_connect_login))
+                    .route("/auth", get(oidc_ep_auth::openid_connect_auth))
+                    .layer(Extension(Arc::new(openid_client)));
 
-            router = router.nest(&path, openid_route);
-        }
+                router = router.nest(&path, openid_route);
+            }
 
-        router.layer(self.external_login_cookie_builder.into_layer())
+            router.layer(self.external_login_cookie_builder.into_layer())
+        };
+
+        let api_router = Router::new().route("/providers", get(ep_get_providers::get_providers));
+
+        (router, api_router)
     }
 }

@@ -18,7 +18,10 @@ use axum::{
 };
 use chrono::Duration;
 use shine_service::{
-    axum::tracing::{tracing_layer, TracingService},
+    axum::{
+        tracing::{OtelAxumLayer, TracingService},
+        PoweredBy,
+    },
     service::{UserSessionMeta, UserSessionValidator, DOMAIN_NAME},
 };
 use std::{net::SocketAddr, sync::Arc};
@@ -47,7 +50,7 @@ fn service_path(path: &str) -> String {
     format!("/{SERVICE_NAME}{path}")
 }
 
-async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
+async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let (config, tracing_service) = {
         // initialize a pre-init logger
         let pre_init_log = {
@@ -63,7 +66,7 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
         log::warn!("init-warn  - ok");
         log::error!("init-error - ok");
 
-        let config = AppConfig::new(&rt_handle)?;
+        let config = AppConfig::new().await?;
         let tracing_service = TracingService::new(SERVICE_NAME, &config.tracing).await?;
         log::info!("pre-init completed");
         (config, tracing_service)
@@ -87,9 +90,10 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
         .allow_credentials(true);
+    let powered_by = PoweredBy::from_service_info(SERVICE_NAME, &config.core.version)?;
 
     let tracing_router = tracing_service.into_router();
-    let tracing_layer = tracing_layer();
+    let tracing_layer = OtelAxumLayer::default();
 
     let tera = {
         let mut tera = Tera::new("tera_templates/**/*").map_err(|e| anyhow!(e))?;
@@ -110,16 +114,17 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
     let session_manager = SessionManager::new(&db_pool, session_max_duration).await?;
     let name_generator = NameGenerator::new();
 
-    let auth = AuthServiceBuilder::new(&config.auth, &config.cookie_secret)
+    let (auth_pages, auth_api) = AuthServiceBuilder::new(&config.auth, &config.cookie_secret)
         .await?
         .into_router();
-    let identity = IdentityServiceBuilder.into_router();
+    let identity_api = IdentityServiceBuilder.into_router();
 
     let app = Router::new()
         .route(&service_path("/info/ready"), get(health_check))
-        .nest(&service_path("/auth"), auth)
+        .nest(&service_path("/auth"), auth_pages)
         .nest(&service_path("/api/tracing"), tracing_router)
-        .nest(&service_path("/api/identities"), identity)
+        .nest(&service_path("/api/identities"), identity_api)
+        .nest(&service_path("/api/auth"), auth_api)
         .layer(user_session.into_layer())
         .layer(user_session_validator.into_layer())
         .layer(Extension(Arc::new(tera)))
@@ -128,6 +133,7 @@ async fn async_main(rt_handle: RtHandle) -> Result<(), AnyError> {
         .layer(Extension(name_generator))
         .layer(Extension(settings_manager))
         .layer(Extension(db_pool))
+        .layer(powered_by)
         .layer(cors)
         .layer(tracing_layer);
 

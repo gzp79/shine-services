@@ -16,11 +16,13 @@ Content-Type: application/json
 }
 ###
 
-
-GET {{url}}/ouath/google/login
+GET {{url}}/api/auth/providers 
 ###
 
-GET {{url}}/oauth/logout?terminate_all=true
+GET {{url}}/auth/google/login
+###
+
+GET {{url}}/auth/logout?terminate_all=true
 ###
 
 

@@ -1,6 +1,7 @@
 {
+    "version": "custom",
     "privateKeyvault": "https://shine-keyvault.vault.azure.net/",
-    
+
     "allowOrigins": [
         "https://scytta.com",
         "https://local.scytta.com",
