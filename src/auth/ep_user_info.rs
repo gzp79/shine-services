@@ -11,7 +11,7 @@ use thiserror::Error as ThisError;
 use uuid::Uuid;
 
 #[derive(Debug, ThisError)]
-pub(in crate::services) enum Error {
+pub(in crate::auth) enum Error {
     #[error("User ({0}) not found")]
     UserNotFound(Uuid),
 
@@ -32,7 +32,7 @@ impl IntoResponse for Error {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::services) struct UserInfo {
+pub(in crate::auth) struct UserInfo {
     user_id: Uuid,
     name: String,
     is_email_confirmed: bool,
@@ -40,8 +40,8 @@ pub(in crate::services) struct UserInfo {
 }
 
 /// Get the information about the current user. The cookie is not accessible
-/// from javascript, thus this endpoint can be used to get details about the user.
-pub(in crate::services) async fn user_info(
+/// from javascript, thus this endpoint can be used to get details about the current user.
+pub(in crate::auth) async fn user_info(
     Extension(identity_manager): Extension<IdentityManager>,
     current_user: CurrentUser,
 ) -> Result<Json<UserInfo>, Error> {

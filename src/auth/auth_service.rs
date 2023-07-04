@@ -1,20 +1,16 @@
 use crate::{
-    auth::{ep_logout, oidc_client::OIDCClient, oidc_ep_auth, oidc_ep_login, ExternalLoginMeta},
+    auth::{
+        ep_get_providers, ep_logout, ep_user_info, oidc_client::OIDCClient, oidc_ep_auth, oidc_ep_login,
+        ExternalLoginMeta,
+    },
     db::SettingsManager,
 };
-use axum::{
-    http::StatusCode,
-    response::{Html, IntoResponse, Response},
-    routing::get,
-    Extension, Router,
-};
+use axum::{response::Html, routing::get, Extension, Router};
 use serde::{Deserialize, Serialize};
 use shine_service::{axum::session::SessionError, service::DOMAIN_NAME};
 use std::{collections::HashMap, sync::Arc};
 use tera::Tera;
 use thiserror::Error as ThisError;
-
-use super::ep_get_providers;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,7 +103,9 @@ impl AuthServiceBuilder {
             router.layer(self.external_login_cookie_builder.into_layer())
         };
 
-        let api_router = Router::new().route("/providers", get(ep_get_providers::get_providers));
+        let api_router = Router::new()
+            .route("/userinfo", get(ep_user_info::user_info))
+            .route("/providers", get(ep_get_providers::get_providers));
 
         (router, api_router)
     }

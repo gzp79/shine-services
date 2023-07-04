@@ -1,1 +1,2 @@
 large-error-threshold = 512
+enum-variant-name-threshold = 99
