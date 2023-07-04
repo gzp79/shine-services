@@ -89,6 +89,14 @@ pub enum CreateIdentityError {
     DBError(#[from] DBError),
 }
 
+#[derive(Debug, ThisError)]
+pub enum LinkIdentityError {
+    #[error("External id already linked to a user")]
+    LinkProviderConflict,
+    #[error(transparent)]
+    DBError(#[from] DBError),
+}
+
 /// Identity query options
 #[derive(Debug)]
 pub enum FindIdentity<'a> {
@@ -204,11 +212,14 @@ impl IdentityManager {
         let inner = &*self.0;
 
         let mut client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let stmt_insert_identity = inner.stmt_insert_identity.get(&client).await.map_err(DBError::from)?;
+        let stmt_link_provider = inner.stmt_link_provider.get(&client).await.map_err(DBError::from)?;
+
         let transaction = client.transaction().await.map_err(DBError::from)?;
 
         let created_at: DateTime<Utc> = match transaction
             .query_one(
-                &*inner.stmt_insert_identity,
+                &stmt_insert_identity,
                 &[&user_id, &IdentityKind::User, &user_name, &email],
             )
             .await
@@ -237,7 +248,7 @@ impl IdentityManager {
         if let Some(external_login) = external_login {
             if let Err(err) = transaction
                 .execute(
-                    &*inner.stmt_link_provider,
+                    &stmt_link_provider,
                     &[&user_id, &external_login.provider, &external_login.provider_id],
                 )
                 .await
@@ -267,15 +278,22 @@ impl IdentityManager {
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
 
         let identity = match find {
-            FindIdentity::UserId(id) => client.query_opt(&*inner.stmt_find_by_id, &[&id]).await?,
-            FindIdentity::Email(email) => client.query_opt(&*inner.stmt_find_by_email, &[&email]).await?,
-            FindIdentity::Name(name) => client.query_opt(&*inner.stmt_find_by_name, &[&name]).await?,
+            FindIdentity::UserId(id) => {
+                let stmt = inner.stmt_find_by_id.get(&client).await?;
+                client.query_opt(&stmt, &[&id]).await?
+            }
+            FindIdentity::Email(email) => {
+                let stmt = inner.stmt_find_by_email.get(&client).await?;
+                client.query_opt(&stmt, &[&email]).await?
+            }
+            FindIdentity::Name(name) => {
+                let stmt = inner.stmt_find_by_name.get(&client).await?;
+                client.query_opt(&stmt, &[&name]).await?
+            }
             FindIdentity::ExternalLogin(external_login) => {
+                let stmt = inner.stmt_find_by_link.get(&client).await?;
                 client
-                    .query_opt(
-                        &*inner.stmt_find_by_link,
-                        &[&external_login.provider, &external_login.provider_id],
-                    )
+                    .query_opt(&stmt, &[&external_login.provider, &external_login.provider_id])
                     .await?
             }
         };
@@ -350,30 +368,30 @@ impl IdentityManager {
         Ok(identites)
     }
 
-    /*
-    pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<(), DBError> {
-        /*let id_str = user_id.hyphenated().to_string();
-        let link_response = sql_expr!(
-            self.db_kind(),
-            "INSERT INTO external_logins (user_id, provider, provider_id, linked)"
-                + "VALUES(uuid(${&id_str}), ${&external_login.provider}, ${&external_login.provider_id}, ${expr::Now})"
-                + "ON CONFLICT DO NOTHING"
-                + "RETURNING 'ok'"
-        )
-        .to_query_as::<_, (String,)>()
-        .fetch_optional(&self.pool)
-        .await?;
+    pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<(), LinkIdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let stmt_link_provider = inner.stmt_link_provider.get(&client).await.map_err(DBError::from)?;
 
-        // check if link could be added
-        if link_response.unwrap_or_default().0 == "ok" {
-            Ok(())
-        } else {
-            Err(DBError::Conflict)
-        }*/
-        todo!()
+        match client
+            .execute(
+                &stmt_link_provider,
+                &[&user_id, &external_login.provider, &external_login.provider_id],
+            )
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                if err.is_constraint("external_logins", "idx_provider_provider_id") {
+                    Err(LinkIdentityError::LinkProviderConflict)
+                } else {
+                    Err(LinkIdentityError::DBError(err.into()))
+                }
+            }
+        }
     }
 
-    pub async fn unlink_user(&self, user_id: Uuid, provider: String) -> Result<(), DBError> {
+    /*pub async fn unlink_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<(), DBError> {
         todo!()
     }
 

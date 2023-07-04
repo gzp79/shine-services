@@ -2,7 +2,12 @@ use crate::{
     auth::{create_ooops_page, create_redirect_page, extern_login_session::ExternalLoginSession},
     db::{DBError, SessionManager, SettingsManager},
 };
-use axum::{extract::Query, http::StatusCode, response::{Response, IntoResponse}, Extension};
+use axum::{
+    extract::Query,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Extension,
+};
 use serde::Deserialize;
 use shine_service::service::{CurrentUser, UserSession, APP_NAME};
 use std::sync::Arc;
@@ -51,7 +56,7 @@ pub(in crate::auth) async fn logout(
             (user_session, external_login, html).into_response()
         }
         Err(err) => {
-            let html = create_ooops_page(&tera, &settings_manager, Some(format!("{err}")));
+            let html = create_ooops_page(&tera, &settings_manager, Some(&format!("{err}")));
             (StatusCode::INTERNAL_SERVER_ERROR, user_session, external_login, html).into_response()
         }
     }

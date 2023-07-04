@@ -2,7 +2,12 @@ use crate::{
     auth::{ep_logout, oidc_client::OIDCClient, oidc_ep_auth, oidc_ep_login, ExternalLoginMeta},
     db::SettingsManager,
 };
-use axum::{response::Html, routing::get, Extension, Router};
+use axum::{
+    http::StatusCode,
+    response::{Html, IntoResponse, Response},
+    routing::get,
+    Extension, Router,
+};
 use serde::{Deserialize, Serialize};
 use shine_service::{axum::session::SessionError, service::DOMAIN_NAME};
 use std::{collections::HashMap, sync::Arc};
@@ -92,6 +97,7 @@ impl AuthServiceBuilder {
 
                 let openid_route = Router::new()
                     .route("/login", get(oidc_ep_login::openid_connect_login))
+                    .route("/link", get(oidc_ep_login::openid_connect_link))
                     .route("/auth", get(oidc_ep_auth::openid_connect_auth))
                     .layer(Extension(Arc::new(openid_client)));
 
@@ -127,7 +133,7 @@ pub(in crate::auth) fn create_redirect_page(
 pub(in crate::auth) fn create_ooops_page(
     tera: &Tera,
     settings_manager: &SettingsManager,
-    detail: Option<String>,
+    detail: Option<&str>,
 ) -> Html<String> {
     let mut context = tera::Context::new();
     context.insert("home_url", settings_manager.home_url());

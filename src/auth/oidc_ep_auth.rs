@@ -1,8 +1,8 @@
 use crate::{
     auth::{create_ooops_page, create_redirect_page, oidc_client::OIDCClient, ExternalLoginData, ExternalLoginSession},
     db::{
-        CreateIdentityError, DBError, DBSessionError, ExternalLogin, FindIdentity, IdentityManager, NameGenerator,
-        NameGeneratorError, SessionManager, SettingsManager,
+        CreateIdentityError, DBError, DBSessionError, ExternalLogin, FindIdentity, IdentityManager, LinkIdentityError,
+        NameGenerator, NameGeneratorError, SessionManager, SettingsManager,
     },
 };
 use axum::{
@@ -41,7 +41,7 @@ enum Error {
     LinkProviderConflict,
 
     #[error("Failed to create session")]
-    DBSessionError(#[from] DBSessionError),
+    DBSession(#[from] DBSessionError),
     #[error(transparent)]
     DBError(#[from] DBError),
     #[error(transparent)]
@@ -57,6 +57,7 @@ pub(in crate::auth) struct AuthRequest {
     //scope: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn openid_connect_auth_impl(
     oidc_client: &OIDCClient,
     tera: &Tera,
@@ -65,6 +66,7 @@ async fn openid_connect_auth_impl(
     session_manager: &SessionManager,
     name_generator: &NameGenerator,
     query: AuthRequest,
+    current_user: Option<CurrentUser>,
     external_login_data: Option<ExternalLoginData>,
 ) -> Result<(CurrentUser, Html<String>), Error> {
     let auth_code = AuthorizationCode::new(query.code);
@@ -121,14 +123,21 @@ async fn openid_connect_auth_impl(
 
     // find any user linked to this account
     if let Some(link_session_id) = link_session_id {
-        // Link the current user an external provider
+        // Link the current user to an external provider
+        let current_user = current_user.ok_or(Error::InconsistentSession)?;
+        if current_user.user_id != link_session_id.user_id || current_user.key != link_session_id.key {
+            return Err(Error::InconsistentSession);
+        }
 
-        //todo: if session.is_none() || session.session_id != link_session_id -> the flow was broken, sign out
-        //      else if let Some(identity) find_user_by_link() {
-        //         if   identity.id != session.user_id -> linked to a different user else ok
-        //      } else { link account to ussr)
-        // keep session as it is,
-        todo!("Perform linking to the current user/session")
+        match identity_manager.link_user(current_user.user_id, &external_login).await {
+            Ok(()) => {}
+            Err(LinkIdentityError::LinkProviderConflict) => return Err(Error::LinkProviderConflict),
+            Err(LinkIdentityError::DBError(err)) => return Err(Error::DBError(err)),
+        };
+
+        log::debug!("Link ready: {current_user:#?}");
+        let html = create_redirect_page(tera, settings_manager, "Redirecting", APP_NAME, target_url.as_deref());
+        Ok((current_user, html))
     } else {
         log::debug!("Finding existing user by external login...");
         let identity = match identity_manager
@@ -201,6 +210,7 @@ pub(in crate::auth) async fn openid_connect_auth(
         &session_manager,
         &name_generator,
         query,
+        user_session.take(),
         external_login_session.take(),
     )
     .await
@@ -208,11 +218,13 @@ pub(in crate::auth) async fn openid_connect_auth(
         Ok((current_user, html)) => {
             log::debug!("Session is ready: {user_session:#?}");
             user_session.set(current_user);
+            // clear external_login_session and set a new user_session
             (external_login_session, user_session, html).into_response()
         }
         Err(err) => {
-            let html = create_ooops_page(&tera, &settings_manager, Some(format!("{err}")));
-            return (StatusCode::INTERNAL_SERVER_ERROR, external_login_session, html).into_response();
+            let html = create_ooops_page(&tera, &settings_manager, Some(&format!("{err}")));
+            // clear external_login_session, but keep user_session intact
+            (StatusCode::INTERNAL_SERVER_ERROR, external_login_session, html).into_response()
         }
     }
 }
