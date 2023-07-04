@@ -361,11 +361,11 @@ impl IdentityManager {
         log::info!("{stmt:?}");
         let rows = client.query(&stmt, &params).await?;
 
-        let identites = rows
+        let identities = rows
             .into_iter()
             .map(|row| Identity::from_row(&row))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(identites)
+        Ok(identities)
     }
 
     pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<(), LinkIdentityError> {

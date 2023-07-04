@@ -21,6 +21,7 @@
         "otsdk",
         "pemfile",
         "Pkce",
+        "pkey",
         "reqwest",
         "rustls",
         "scytta",
