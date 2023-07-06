@@ -6,9 +6,9 @@ mod services;
 
 use crate::{
     app_config::{AppConfig, SERVICE_NAME},
-    auth::{AuthServiceBuilder, AuthServiceState},
-    db::{DBPool, IdentityManager, NameGenerator, SessionManager, SettingsManager},
-    services::{IdentityServiceBuilder, IdentityServiceState},
+    auth::{AuthServiceBuilder, AuthServiceDependencies},
+    db::{DBPool, IdentityManager, NameGenerator, SessionManager},
+    services::{IdentityServiceBuilder, IdentityServiceDependencies},
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
@@ -24,7 +24,7 @@ use shine_service::{
     },
     service::{UserSessionMeta, UserSessionValidator, DOMAIN_NAME},
 };
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
 use tera::Tera;
 use tokio::{
     runtime::{Handle as RtHandle, Runtime},
@@ -94,7 +94,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let tera = {
         let mut tera = Tera::new("tera_templates/**/*").map_err(|e| anyhow!(e))?;
         tera.autoescape_on(vec![".html"]);
-        Arc::new(tera)
+        tera
     };
 
     let db_pool = DBPool::new(&config.db).await?;
@@ -104,28 +104,25 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         .with_domain(DOMAIN_NAME);
     let user_session_validator = UserSessionValidator::new(db_pool.redis.clone());
 
-    let settings_manager = SettingsManager::new(&config);
     let identity_manager = IdentityManager::new(&db_pool).await?;
     let session_max_duration = Duration::seconds(i64::try_from(config.session_max_duration)?);
     let session_manager = SessionManager::new(&db_pool, session_max_duration).await?;
     let name_generator = NameGenerator::new();
 
     let (auth_pages, auth_api) = {
-        let auth_state = AuthServiceState {
+        let auth_state = AuthServiceDependencies {
             tera: tera.clone(),
-            settings_manager: settings_manager.clone(),
             identity_manager: identity_manager.clone(),
             session_manager: session_manager.clone(),
             name_generator: name_generator.clone(),
         };
-        AuthServiceBuilder::new(auth_state, &config.auth, &config.cookie_secret)
+        AuthServiceBuilder::new(auth_state, &config.auth, &config.home_url, &config.cookie_secret)
             .await?
             .into_router()
     };
 
     let identity_api = {
-        let identity_state = IdentityServiceState {
-            settings_manager: settings_manager.clone(),
+        let identity_state = IdentityServiceDependencies {
             identity_manager: identity_manager.clone(),
             db: db_pool.clone(),
         };

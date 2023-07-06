@@ -34,7 +34,7 @@ pub(in crate::auth) async fn oauth2_connect_login(
     // if there is a valid session, skip login flow and let the user in.
     if let Some(current_user) = current_user {
         if state
-            .session_manager
+            .session_manager()
             .find_session(current_user.user_id, current_user.key)
             .await
             .ok()

@@ -1,17 +1,14 @@
 {
     "version": "custom",
     "privateKeyvault": "https://shine-keyvault.vault.azure.net/",
-
     "allowOrigins": [
         "https://scytta.com",
         "https://www.scytta.com",
         "https://local.scytta.com",
         "https://cloud.scytta.com"
     ],
-    
     "homeUrl": "http://scytta.com",
     "controlPort": 80,
-    
     "sessionMaxDuration": 43200,
     "tracing": {
         "allowReconfigure": true,
@@ -35,6 +32,33 @@
                 "redirectUrl": "https://cloud.scytta.com/identity/auth/gitlab/auth",
                 "discoveryUrl": "https://gitlab.com",
                 "scopes": []
+            }
+        },
+        "oauth2": {
+            "discord": {
+                "redirectUrl": "https://cloud.scytta.com/identity/auth/discord/auth",
+                "authorizationUrl": "https://discord.com/oauth2/authorize",
+                "tokenUrl": "https://discord.com/api/oauth2/token",
+                "userInfoUrl": "https://discord.com/api/users/@me",
+                "userInfoMapping": {
+                    "name": "global_name"
+                },
+                "scopes": [
+                    "identify",
+                    "email"
+                ]
+            },
+            "github": {
+                "redirectUrl": "https://cloud.scytta.com/identity/auth/github/auth",
+                "authorizationUrl": "https://github.com/login/oauth/authorize",
+                "tokenUrl": "https://github.com/login/oauth/access_token",
+                "userInfoUrl": "https://api.github.com/user",
+                "userInfoMapping": {
+                    "name": "login"
+                },
+                "scopes": [
+                    "user:email"
+                ]
             }
         }
     }

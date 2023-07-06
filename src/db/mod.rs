@@ -5,8 +5,6 @@ pub use self::db_error::*;
 mod db_pool;
 pub use self::db_pool::*;
 
-mod settings_manager;
-pub use self::settings_manager::*;
 mod identity_manager;
 pub use self::identity_manager::*;
 mod session_manager;

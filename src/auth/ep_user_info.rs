@@ -47,7 +47,7 @@ pub(in crate::auth) async fn user_info(
     current_user: CurrentUser,
 ) -> Result<Json<UserInfo>, Error> {
     let identity = state
-        .identity_manager
+        .identity_manager()
         .find(crate::db::FindIdentity::UserId(current_user.user_id))
         .await?
         .ok_or(Error::UserNotFound(current_user.user_id))?;

@@ -127,7 +127,7 @@ pub(in crate::auth) async fn external_auth_user(
         }
 
         match state
-            .identity_manager
+            .identity_manager()
             .link_user(current_user.user_id, &external_login)
             .await
         {
@@ -142,7 +142,7 @@ pub(in crate::auth) async fn external_auth_user(
     } else {
         log::debug!("Finding existing user by external login...");
         let identity = match state
-            .identity_manager
+            .identity_manager()
             .find(FindIdentity::ExternalLogin(&external_login))
             .await?
         {
@@ -164,14 +164,14 @@ pub(in crate::auth) async fn external_auth_user(
                     let user_id = Uuid::new_v4();
                     let user_name = match &user_info.name {
                         Some(name) if retry_count == 0 => name.clone(),
-                        _ => state.name_generator.generate_name().await?,
+                        _ => state.name_generator().generate_name().await?,
                     };
                     let email = user_info.email.as_deref();
                     retry_count += 1;
 
                     use CreateIdentityError::*;
                     match state
-                        .identity_manager
+                        .identity_manager()
                         .create_user(user_id, &user_name, email, Some(&external_login))
                         .await
                     {
@@ -187,7 +187,7 @@ pub(in crate::auth) async fn external_auth_user(
         };
 
         log::debug!("Identity ready: {identity:#?}");
-        let current_user = state.session_manager.create(&identity).await?;
+        let current_user = state.session_manager().create(&identity).await?;
         let html = create_redirect_page(state, "Redirecting", APP_NAME, target_url);
         Ok((current_user, html))
     }

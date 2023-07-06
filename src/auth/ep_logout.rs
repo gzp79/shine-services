@@ -22,10 +22,10 @@ async fn logout_impl(
 ) -> Result<(), DBError> {
     if let Some(current_user) = current_user {
         if remove_all {
-            state.session_manager.remove_all(current_user.user_id).await?;
+            state.session_manager().remove_all(current_user.user_id).await?;
         } else {
             state
-                .session_manager
+                .session_manager()
                 .remove(current_user.user_id, current_user.key)
                 .await?;
         }

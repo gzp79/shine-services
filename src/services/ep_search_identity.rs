@@ -38,7 +38,7 @@ pub(in crate::services) async fn search_identity(
 ) -> Result<Response, Error> {
     //let session_data = session.g();
     let identities = state
-        .identity_manager
+        .identity_manager()
         .search(SearchIdentity {
             order: SearchIdentityOrder::UserId(None),
             count: query.count,

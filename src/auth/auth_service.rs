@@ -3,7 +3,7 @@ use crate::{
         ep_get_providers, ep_logout, ep_user_info, oauth2_client::OAuth2Client, oauth2_ep_auth, oauth2_ep_login,
         oidc_client::OIDCClient, oidc_ep_auth, oidc_ep_login, ExternalLoginMeta,
     },
-    db::{IdentityManager, NameGenerator, SessionManager, SettingsManager},
+    db::{IdentityManager, NameGenerator, SessionManager},
 };
 use axum::{response::Html, routing::get, Extension, Router};
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,7 @@ use std::{
 };
 use tera::Tera;
 use thiserror::Error as ThisError;
+use url::Url;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,9 +72,47 @@ pub enum AuthBuildError {
 }
 
 #[derive(Clone)]
-pub struct AuthServiceState {
-    pub tera: Arc<Tera>,
-    pub settings_manager: SettingsManager,
+struct Inner {
+    tera: Tera,
+    identity_manager: IdentityManager,
+    session_manager: SessionManager,
+    name_generator: NameGenerator,
+
+    home_url: Url,
+    providers: Vec<String>,
+}
+
+#[derive(Clone)]
+pub(in crate::auth) struct AuthServiceState(Arc<Inner>);
+
+impl AuthServiceState {
+    pub fn tera(&self) -> &Tera {
+        &self.0.tera
+    }
+
+    pub fn identity_manager(&self) -> &IdentityManager {
+        &self.0.identity_manager
+    }
+
+    pub fn session_manager(&self) -> &SessionManager {
+        &self.0.session_manager
+    }
+
+    pub fn name_generator(&self) -> &NameGenerator {
+        &self.0.name_generator
+    }
+
+    pub fn home_url(&self) -> &Url {
+        &self.0.home_url
+    }
+
+    pub fn providers(&self) -> &[String] {
+        &self.0.providers
+    }
+}
+
+pub struct AuthServiceDependencies {
+    pub tera: Tera,
     pub identity_manager: IdentityManager,
     pub session_manager: SessionManager,
     pub name_generator: NameGenerator,
@@ -88,8 +127,9 @@ pub struct AuthServiceBuilder {
 
 impl AuthServiceBuilder {
     pub async fn new(
-        state: AuthServiceState,
+        dependencies: AuthServiceDependencies,
         config: &AuthConfig,
+        home_url: &Url,
         cookie_secret: &str,
     ) -> Result<Self, AuthBuildError> {
         let mut providers = HashSet::new();
@@ -113,6 +153,15 @@ impl AuthServiceBuilder {
             let connect = OAuth2Client::new(provider, provider_config).await?;
             oauth2_clients.push(connect);
         }
+
+        let state = AuthServiceState(Arc::new(Inner {
+            tera: dependencies.tera,
+            identity_manager: dependencies.identity_manager,
+            session_manager: dependencies.session_manager,
+            name_generator: dependencies.name_generator,
+            home_url: home_url.to_owned(),
+            providers: providers.into_iter().collect(),
+        }));
 
         let external_login_cookie_builder = ExternalLoginMeta::new(cookie_secret)?
             .with_cookie_name("exl")
@@ -180,9 +229,9 @@ pub(in crate::auth) fn create_redirect_page(
     let mut context = tera::Context::new();
     context.insert("title", title);
     context.insert("target", target);
-    context.insert("redirect_url", target_url.unwrap_or(state.settings_manager.home_url()));
+    context.insert("redirect_url", target_url.unwrap_or(state.home_url().as_str()));
     let html = state
-        .tera
+        .tera()
         .render("redirect.html", &context)
         .expect("Failed to generate redirect.html template");
     Html(html)
@@ -190,10 +239,10 @@ pub(in crate::auth) fn create_redirect_page(
 
 pub(in crate::auth) fn create_ooops_page(state: &AuthServiceState, detail: Option<&str>) -> Html<String> {
     let mut context = tera::Context::new();
-    context.insert("home_url", state.settings_manager.home_url());
+    context.insert("home_url", state.home_url());
     context.insert("detail", &detail.unwrap_or_default());
     let html = state
-        .tera
+        .tera()
         .render("ooops.html", &context)
         .expect("Failed to generate ooops.html template");
     Html(html)
