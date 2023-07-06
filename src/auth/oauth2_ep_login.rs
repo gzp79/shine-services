@@ -1,5 +1,5 @@
 use crate::auth::{
-    create_ooops_page, create_redirect_page, oidc_client::OIDCClient, AuthServiceState, ExternalLoginData,
+    create_ooops_page, create_redirect_page, oauth2_client::OAuth2Client, AuthServiceState, ExternalLoginData,
     ExternalLoginSession,
 };
 use axum::{
@@ -8,12 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
     Extension,
 };
-use chrono::Duration;
 use oauth2::{CsrfToken, PkceCodeChallenge};
-use openidconnect::{
-    core::{CoreAuthPrompt, CoreAuthenticationFlow},
-    Nonce,
-};
 use serde::Deserialize;
 use shine_service::service::{UserSession, APP_NAME};
 use std::sync::Arc;
@@ -23,9 +18,9 @@ pub(in crate::auth) struct LoginRequest {
     redirect: Option<String>,
 }
 
-pub(in crate::auth) async fn openid_connect_login(
+pub(in crate::auth) async fn oauth2_connect_login(
     State(state): State<AuthServiceState>,
-    Extension(oidc_client): Extension<Arc<OIDCClient>>,
+    Extension(oauth2_client): Extension<Arc<OAuth2Client>>,
     Query(query): Query<LoginRequest>,
     mut user_session: UserSession,
     mut external_login_session: ExternalLoginSession,
@@ -58,40 +53,34 @@ pub(in crate::auth) async fn openid_connect_login(
     }
 
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
-    let (authorize_url, csrf_state, nonce) = oidc_client
+    let (authorize_url, csrf_state) = oauth2_client
         .client
-        .authorize_url(
-            CoreAuthenticationFlow::AuthorizationCode,
-            CsrfToken::new_random,
-            Nonce::new_random,
-        )
-        .add_scopes(oidc_client.scopes.clone())
+        .authorize_url(CsrfToken::new_random)
+        .add_scopes(oauth2_client.scopes.clone())
         .set_pkce_challenge(pkce_code_challenge)
-        .set_max_age(Duration::minutes(30).to_std().unwrap())
-        .add_prompt(CoreAuthPrompt::Login)
         .url();
 
     external_login_session.set(ExternalLoginData::OIDCLogin {
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
-        nonce: Some(nonce.secret().to_owned()),
+        nonce: None,
         target_url: query.redirect,
         link_session_id: None,
     });
 
-    let html = create_redirect_page(
+    let html: axum::response::Html<String> = create_redirect_page(
         &state,
         "Redirecting to target login",
-        &oidc_client.provider,
+        &oauth2_client.provider,
         Some(authorize_url.as_str()),
     );
     // return a new external_login_session and clear the user_session
     (external_login_session, user_session, html).into_response()
 }
 
-pub(in crate::auth) async fn openid_connect_link(
+pub(in crate::auth) async fn oauth2_connect_link(
     State(state): State<AuthServiceState>,
-    Extension(oidc_client): Extension<Arc<OIDCClient>>,
+    Extension(oauth2_client): Extension<Arc<OAuth2Client>>,
     Query(query): Query<LoginRequest>,
     mut user_session: UserSession,
     mut external_login_session: ExternalLoginSession,
@@ -105,23 +94,17 @@ pub(in crate::auth) async fn openid_connect_link(
     }
 
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
-    let (authorize_url, csrf_state, nonce) = oidc_client
+    let (authorize_url, csrf_state) = oauth2_client
         .client
-        .authorize_url(
-            CoreAuthenticationFlow::AuthorizationCode,
-            CsrfToken::new_random,
-            Nonce::new_random,
-        )
-        .add_scopes(oidc_client.scopes.clone())
+        .authorize_url(CsrfToken::new_random)
+        .add_scopes(oauth2_client.scopes.clone())
         .set_pkce_challenge(pkce_code_challenge)
-        .set_max_age(Duration::minutes(30).to_std().unwrap())
-        .add_prompt(CoreAuthPrompt::Login)
         .url();
 
     external_login_session.set(ExternalLoginData::OIDCLogin {
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
-        nonce: Some(nonce.secret().to_owned()),
+        nonce: None,
         target_url: query.redirect,
         link_session_id: user_session.take(),
     });
@@ -129,7 +112,7 @@ pub(in crate::auth) async fn openid_connect_link(
     let html = create_redirect_page(
         &state,
         "Redirecting to target login",
-        &oidc_client.provider,
+        &oauth2_client.provider,
         Some(authorize_url.as_str()),
     );
     // return a new external_login_session, keep user_session intact

@@ -13,7 +13,7 @@ pub(in crate::auth) enum ExternalLoginData {
         #[serde(rename = "cv")]
         csrf_state: String,
         #[serde(rename = "n")]
-        nonce: String,
+        nonce: Option<String>,
         #[serde(rename = "t")]
         target_url: Option<String>,
         // indicates if login was made to link the account to the user of the given session

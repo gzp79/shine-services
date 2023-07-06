@@ -3,9 +3,6 @@ use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
 pub enum DBError {
-    #[error("Operation retry count reached")]
-    RetryLimitReached,
-
     #[error("Failed to get a PG connection from the pool")]
     PostgresPoolError(#[source] PGConnectionError),
     #[error(transparent)]

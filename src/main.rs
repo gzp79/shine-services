@@ -6,15 +6,15 @@ mod services;
 
 use crate::{
     app_config::{AppConfig, SERVICE_NAME},
-    auth::AuthServiceBuilder,
+    auth::{AuthServiceBuilder, AuthServiceState},
     db::{DBPool, IdentityManager, NameGenerator, SessionManager, SettingsManager},
-    services::IdentityServiceBuilder,
+    services::{IdentityServiceBuilder, IdentityServiceState},
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
     http::{header, Method},
     routing::get,
-    Extension, Router,
+    Router,
 };
 use chrono::Duration;
 use shine_service::{
@@ -33,12 +33,8 @@ use tokio::{
 use tower_http::cors::CorsLayer;
 use tracing::Dispatch;
 
-async fn health_check(Extension(db): Extension<DBPool>) -> String {
-    format!(
-        "Postgres: {:#?}\nRedis: {:#?}\nOk",
-        db.postgres.state(),
-        db.redis.state()
-    )
+async fn health_check() -> String {
+    "Ok".into()
 }
 
 async fn shutdown_signal() {
@@ -98,7 +94,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let tera = {
         let mut tera = Tera::new("tera_templates/**/*").map_err(|e| anyhow!(e))?;
         tera.autoescape_on(vec![".html"]);
-        tera
+        Arc::new(tera)
     };
 
     let db_pool = DBPool::new(&config.db).await?;
@@ -114,25 +110,36 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let session_manager = SessionManager::new(&db_pool, session_max_duration).await?;
     let name_generator = NameGenerator::new();
 
-    let (auth_pages, auth_api) = AuthServiceBuilder::new(&config.auth, &config.cookie_secret)
-        .await?
-        .into_router();
-    let identity_api = IdentityServiceBuilder.into_router();
+    let (auth_pages, auth_api) = {
+        let auth_state = AuthServiceState {
+            tera: tera.clone(),
+            settings_manager: settings_manager.clone(),
+            identity_manager: identity_manager.clone(),
+            session_manager: session_manager.clone(),
+            name_generator: name_generator.clone(),
+        };
+        AuthServiceBuilder::new(auth_state, &config.auth, &config.cookie_secret)
+            .await?
+            .into_router()
+    };
+
+    let identity_api = {
+        let identity_state = IdentityServiceState {
+            settings_manager: settings_manager.clone(),
+            identity_manager: identity_manager.clone(),
+            db: db_pool.clone(),
+        };
+        IdentityServiceBuilder::new(identity_state).into_router()
+    };
 
     let app = Router::new()
         .route(&service_path("/info/ready"), get(health_check))
-        .nest(&service_path("/auth"), auth_pages)
+        .nest(&service_path(""), auth_pages)
         .nest(&service_path("/api/tracing"), tracing_router)
-        .nest(&service_path("/api/identities"), identity_api)
-        .nest(&service_path("/api/auth"), auth_api)
+        .nest(&service_path("/api"), identity_api)
+        .nest(&service_path("/api"), auth_api)
         .layer(user_session.into_layer())
         .layer(user_session_validator.into_layer())
-        .layer(Extension(Arc::new(tera)))
-        .layer(Extension(identity_manager))
-        .layer(Extension(session_manager))
-        .layer(Extension(name_generator))
-        .layer(Extension(settings_manager))
-        .layer(Extension(db_pool))
         .layer(powered_by)
         .layer(cors)
         .layer(tracing_layer);

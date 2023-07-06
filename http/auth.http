@@ -1,0 +1,18 @@
+@url = https://local.scytta.com/identity
+//@url = https://cloud.scytta.com/identity
+
+GET {{url}}/api/auth/providers 
+###
+
+GET {{url}}/auth/google/login
+###
+
+GET {{url}}/auth/logout
+###
+
+GET {{url}}/auth/logout?terminate_all=true
+###
+
+GET {{url}}/api/auth/userinfo
+###
+

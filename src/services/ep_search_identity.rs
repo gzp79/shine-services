@@ -1,9 +1,11 @@
-use crate::db::{DBError, IdentityManager, SearchIdentity, SearchIdentityOrder};
+use crate::{
+    db::{DBError, SearchIdentity, SearchIdentityOrder},
+    services::IdentityServiceState,
+};
 use axum::{
-    extract::Query,
+    extract::{Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
-    Extension,
 };
 use serde::Deserialize;
 use thiserror::Error as ThisError;
@@ -30,12 +32,13 @@ pub(in crate::services) struct SearchIdentityRequest {
 }
 
 pub(in crate::services) async fn search_identity(
-    Extension(identity_manager): Extension<IdentityManager>,
+    State(state): State<IdentityServiceState>,
     Query(query): Query<SearchIdentityRequest>,
     //session: AppSession,
 ) -> Result<Response, Error> {
     //let session_data = session.g();
-    let identities = identity_manager
+    let identities = state
+        .identity_manager
         .search(SearchIdentity {
             order: SearchIdentityOrder::UserId(None),
             count: query.count,

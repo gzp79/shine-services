@@ -70,7 +70,7 @@ impl Identity {
 }
 
 #[derive(Debug)]
-pub struct ExternalLogin {
+pub struct ExternalLoginInfo {
     pub provider: String,
     pub provider_id: String,
 }
@@ -103,7 +103,7 @@ pub enum FindIdentity<'a> {
     UserId(Uuid),
     Email(&'a str),
     Name(&'a str),
-    ExternalLogin(&'a ExternalLogin),
+    ExternalLogin(&'a ExternalLoginInfo),
 }
 
 #[derive(Debug)]
@@ -206,7 +206,7 @@ impl IdentityManager {
         user_id: Uuid,
         user_name: &str,
         email: Option<&str>,
-        external_login: Option<&ExternalLogin>,
+        external_login: Option<&ExternalLoginInfo>,
     ) -> Result<Identity, CreateIdentityError> {
         //let email = email.map(|e| e.normalize_email());
         let inner = &*self.0;
@@ -368,7 +368,7 @@ impl IdentityManager {
         Ok(identities)
     }
 
-    pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<(), LinkIdentityError> {
+    pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLoginInfo) -> Result<(), LinkIdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
         let stmt_link_provider = inner.stmt_link_provider.get(&client).await.map_err(DBError::from)?;

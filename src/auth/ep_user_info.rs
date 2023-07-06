@@ -1,8 +1,9 @@
-use crate::db::{DBError, IdentityManager};
+use crate::{auth::AuthServiceState, db::DBError};
 use axum::{
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Extension, Json,
+    Json,
 };
 use chrono::Utc;
 use serde::Serialize;
@@ -42,10 +43,11 @@ pub(in crate::auth) struct UserInfo {
 /// Get the information about the current user. The cookie is not accessible
 /// from javascript, thus this endpoint can be used to get details about the current user.
 pub(in crate::auth) async fn user_info(
-    Extension(identity_manager): Extension<IdentityManager>,
+    State(state): State<AuthServiceState>,
     current_user: CurrentUser,
 ) -> Result<Json<UserInfo>, Error> {
-    let identity = identity_manager
+    let identity = state
+        .identity_manager
         .find(crate::db::FindIdentity::UserId(current_user.user_id))
         .await?
         .ok_or(Error::UserNotFound(current_user.user_id))?;
