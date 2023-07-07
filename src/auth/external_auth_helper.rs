@@ -1,7 +1,5 @@
-use std::collections::HashMap;
-
 use crate::{
-    auth::{create_redirect_page, AuthServiceState},
+    auth::{create_redirect_page, github_ext, AuthServiceState, ExternalUserInfoExtensions},
     db::{
         CreateIdentityError, DBError, DBSessionError, ExternalLoginInfo, FindIdentity, LinkIdentityError,
         NameGeneratorError,
@@ -11,6 +9,7 @@ use axum::response::Html;
 use reqwest::header;
 use serde_json::Value as JsonValue;
 use shine_service::service::{CurrentUser, APP_NAME};
+use std::collections::HashMap;
 use thiserror::Error as ThisError;
 use url::Url;
 use uuid::Uuid;
@@ -32,12 +31,15 @@ pub(in crate::auth) enum ExternalUserInfoError {
     ResponseContentError(String),
     #[error("Cannot find external user id")]
     MissingExternalId,
+    #[error("{0:?} failed with: {1}")]
+    Extension(ExternalUserInfoExtensions, String),
 }
 
 pub(in crate::auth) async fn get_external_user_info(
     url: Url,
     token: &str,
     id_mapping: &HashMap<String, String>,
+    extensions: &[ExternalUserInfoExtensions],
 ) -> Result<ExternalUserInfo, ExternalUserInfoError> {
     let client = reqwest::Client::new();
     let response = client
@@ -60,7 +62,7 @@ pub(in crate::auth) async fn get_external_user_info(
             response.text().await.unwrap_or_default(),
         )));
     };
-    log::info!("{:?}", user_info);
+    log::info!("userinfo: {:?}", user_info);
 
     let external_id_id = id_mapping.get("id").map(|s| s.as_str()).unwrap_or("id");
     let external_id = user_info
@@ -77,11 +79,24 @@ pub(in crate::auth) async fn get_external_user_info(
     let email_id = id_mapping.get("email").map(|s| s.as_str()).unwrap_or("email");
     let email = user_info.get(email_id).and_then(|v| v.as_str()).map(ToOwned::to_owned);
 
-    Ok(ExternalUserInfo {
+    let mut external_user_info = ExternalUserInfo {
         external_id,
         name,
         email,
-    })
+    };
+
+    log::info!("Checking extensions: {:?}", extensions);
+    for extension in extensions {
+        match extension {
+            ExternalUserInfoExtensions::GithubEmail => {
+                external_user_info = github_ext::get_github_user_email(external_user_info, token)
+                    .await
+                    .map_err(|err| ExternalUserInfoError::Extension(*extension, err))?
+            }
+        };
+    }
+
+    Ok(external_user_info)
 }
 
 #[derive(Debug, ThisError)]

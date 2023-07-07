@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::auth::{AuthBuildError, OAuth2Config};
+use crate::auth::{AuthBuildError, ExternalUserInfoExtensions, OAuth2Config};
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, Scope, TokenUrl};
 use openidconnect::UserInfoUrl;
 
@@ -9,6 +9,7 @@ pub(in crate::auth) struct OAuth2Client {
     pub scopes: Vec<Scope>,
     pub user_info_url: UserInfoUrl,
     pub user_info_mapping: HashMap<String, String>,
+    pub extensions: Vec<ExternalUserInfoExtensions>,
     pub client: BasicClient,
 }
 
@@ -32,6 +33,7 @@ impl OAuth2Client {
             scopes: config.scopes.iter().map(|scope| Scope::new(scope.clone())).collect(),
             user_info_url,
             user_info_mapping: config.user_info_mapping.clone(),
+            extensions: config.extensions.iter().cloned().collect(),
             client,
         })
     }

@@ -43,6 +43,7 @@
                 "userInfoMapping": {
                     "name": "global_name"
                 },
+                "extensions": [],
                 "scopes": [
                     "identify",
                     "email"
@@ -56,6 +57,7 @@
                 "userInfoMapping": {
                     "name": "login"
                 },
+                "extensions": ["githubEmail"],
                 "scopes": [
                     "user:email"
                 ]

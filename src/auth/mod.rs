@@ -5,6 +5,8 @@ use self::extern_login_session::*;
 mod external_auth_helper;
 pub(in crate::auth) use self::external_auth_helper::*;
 
+mod github_ext;
+
 mod ep_get_providers;
 mod ep_logout;
 mod ep_user_info;

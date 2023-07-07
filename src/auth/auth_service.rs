@@ -16,9 +16,11 @@ use tera::Tera;
 use thiserror::Error as ThisError;
 use url::Url;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OIDCEndpoints {}
+pub enum ExternalUserInfoExtensions {
+    GithubEmail,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,6 +29,7 @@ pub struct OAuth2Config {
     pub token_url: String,
     pub user_info_url: String,
     pub user_info_mapping: HashMap<String, String>,
+    pub extensions: HashSet<ExternalUserInfoExtensions>,
     pub client_id: String,
     pub client_secret: String,
     pub scopes: Vec<String>,

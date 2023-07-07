@@ -87,6 +87,7 @@ async fn openid_connect_auth_impl(
         oauth2_client.user_info_url.url().clone(),
         token.access_token().secret(),
         &oauth2_client.user_info_mapping,
+        &oauth2_client.extensions,
     )
     .await?;
     log::info!("{:?}", external_user_info);
