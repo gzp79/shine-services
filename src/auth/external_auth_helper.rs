@@ -1,9 +1,6 @@
 use crate::{
     auth::{create_redirect_page, github_ext, AuthServiceState, ExternalUserInfoExtensions},
-    db::{
-        CreateIdentityError, DBError, DBSessionError, ExternalLoginInfo, FindIdentity, LinkIdentityError,
-        NameGeneratorError,
-    },
+    db::{DBError, DBSessionError, ExternalLoginInfo, FindIdentity, IdentityError, NameGeneratorError},
 };
 use axum::response::Html;
 use reqwest::header;
@@ -147,8 +144,12 @@ pub(in crate::auth) async fn external_auth_user(
             .await
         {
             Ok(()) => {}
-            Err(LinkIdentityError::LinkProviderConflict) => return Err(ExternalAuthError::ProviderConflict),
-            Err(LinkIdentityError::DBError(err)) => return Err(ExternalAuthError::DBError(err)),
+            Err(IdentityError::LinkProviderConflict) => return Err(ExternalAuthError::ProviderConflict),
+            Err(IdentityError::DBError(err)) => return Err(ExternalAuthError::DBError(err)),
+
+            Err(IdentityError::LinkEmailConflict)
+            | Err(IdentityError::NameConflict)
+            | Err(IdentityError::UserIdConflict) => unreachable!(),
         };
 
         log::debug!("Link ready: {current_user:#?}");
@@ -184,18 +185,17 @@ pub(in crate::auth) async fn external_auth_user(
                     let email = user_info.email.as_deref();
                     retry_count += 1;
 
-                    use CreateIdentityError::*;
                     match state
                         .identity_manager()
                         .create_user(user_id, &user_name, email, Some(&external_login))
                         .await
                     {
                         Ok(identity) => break identity,
-                        Err(NameConflict) => continue,
-                        Err(UserIdConflict) => continue,
-                        Err(LinkEmailConflict) => return Err(ExternalAuthError::EmailConflict),
-                        Err(LinkProviderConflict) => return Err(ExternalAuthError::ProviderConflict),
-                        Err(DBError(err)) => return Err(ExternalAuthError::DBError(err)),
+                        Err(IdentityError::NameConflict) => continue,
+                        Err(IdentityError::UserIdConflict) => continue,
+                        Err(IdentityError::LinkEmailConflict) => return Err(ExternalAuthError::EmailConflict),
+                        Err(IdentityError::LinkProviderConflict) => return Err(ExternalAuthError::ProviderConflict),
+                        Err(IdentityError::DBError(err)) => return Err(ExternalAuthError::DBError(err)),
                     };
                 }
             }

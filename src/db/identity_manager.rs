@@ -76,21 +76,13 @@ pub struct ExternalLoginInfo {
 }
 
 #[derive(Debug, ThisError)]
-pub enum CreateIdentityError {
+pub enum IdentityError {
     #[error("User id already taken")]
     UserIdConflict,
     #[error("Name already taken")]
     NameConflict,
     #[error("Email already linked to a user")]
     LinkEmailConflict,
-    #[error("External id already linked to a user")]
-    LinkProviderConflict,
-    #[error(transparent)]
-    DBError(#[from] DBError),
-}
-
-#[derive(Debug, ThisError)]
-pub enum LinkIdentityError {
     #[error("External id already linked to a user")]
     LinkProviderConflict,
     #[error(transparent)]
@@ -130,10 +122,15 @@ pg_prepared_statement!( InsertIdentity => r#"
 "#, [UUID, INT2, VARCHAR, VARCHAR] );
 
 pg_prepared_statement!( InsertExternalLogin => r#"
-    INSERT INTO external_logins (user_id, provider, provider_id, linked) 
-        VALUES ($1, $2, $3, now())
-        RETURNING linked
+INSERT INTO external_logins (user_id, provider, provider_id, linked) 
+VALUES ($1, $2, $3, now())
+RETURNING linked
 "#, [UUID, VARCHAR, VARCHAR] );
+
+pg_prepared_statement!( DeleteIdentityCascaded => r#"
+    -- DELETE FROM external_logins WHERE user_id = $1; fkey constraint shall trigget a cascaded delete
+    DELETE FROM identities WHERE user_id = $1;
+"#, [UUID] );
 
 pg_prepared_statement!( FindById => r#"
     SELECT user_id, kind, name, email, email_confirmed, created 
@@ -170,7 +167,8 @@ pub enum IdentityBuildError {
 struct Inner {
     postgres: PGConnectionPool,
     stmt_insert_identity: InsertIdentity,
-    stmt_link_provider: InsertExternalLogin,
+    stmt_insert_extrenal_link: InsertExternalLogin,
+    stmt_delete_identity_cascaded: DeleteIdentityCascaded,
     stmt_find_by_id: FindById,
     stmt_find_by_email: FindByEmail,
     stmt_find_by_name: FindByName,
@@ -184,7 +182,8 @@ impl IdentityManager {
     pub async fn new(pool: &DBPool) -> Result<Self, IdentityBuildError> {
         let client = pool.postgres.get().await.map_err(DBError::PostgresPoolError)?;
         let stmt_insert_identity = InsertIdentity::new(&client).await.map_err(DBError::from)?;
-        let stmt_link_provider = InsertExternalLogin::new(&client).await.map_err(DBError::from)?;
+        let stmt_insert_extrenal_link = InsertExternalLogin::new(&client).await.map_err(DBError::from)?;
+        let stmt_delete_identity_cascaded = DeleteIdentityCascaded::new(&client).await.map_err(DBError::from)?;
         let stmt_find_by_id = FindById::new(&client).await.map_err(DBError::from)?;
         let stmt_find_by_email = FindByEmail::new(&client).await.map_err(DBError::from)?;
         let stmt_find_by_name = FindByName::new(&client).await.map_err(DBError::from)?;
@@ -193,7 +192,8 @@ impl IdentityManager {
         Ok(Self(Arc::new(Inner {
             postgres: pool.postgres.clone(),
             stmt_insert_identity,
-            stmt_link_provider,
+            stmt_delete_identity_cascaded,
+            stmt_insert_extrenal_link,
             stmt_find_by_id,
             stmt_find_by_email,
             stmt_find_by_name,
@@ -207,13 +207,17 @@ impl IdentityManager {
         user_name: &str,
         email: Option<&str>,
         external_login: Option<&ExternalLoginInfo>,
-    ) -> Result<Identity, CreateIdentityError> {
+    ) -> Result<Identity, IdentityError> {
         //let email = email.map(|e| e.normalize_email());
         let inner = &*self.0;
 
         let mut client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
         let stmt_insert_identity = inner.stmt_insert_identity.get(&client).await.map_err(DBError::from)?;
-        let stmt_link_provider = inner.stmt_link_provider.get(&client).await.map_err(DBError::from)?;
+        let stmt_insert_extrenal_link = inner
+            .stmt_insert_extrenal_link
+            .get(&client)
+            .await
+            .map_err(DBError::from)?;
 
         let transaction = client.transaction().await.map_err(DBError::from)?;
 
@@ -228,36 +232,36 @@ impl IdentityManager {
             Err(err) if err.is_constraint("identities", "identities_pkey") => {
                 log::info!("Conflicting user id: {}, rolling back user creation", user_id);
                 transaction.rollback().await.map_err(DBError::from)?;
-                return Err(CreateIdentityError::UserIdConflict);
+                return Err(IdentityError::UserIdConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_name") => {
                 log::info!("Conflicting name: {}, rolling back user creation", user_name);
                 transaction.rollback().await.map_err(DBError::from)?;
-                return Err(CreateIdentityError::NameConflict);
+                return Err(IdentityError::NameConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_email") => {
                 log::info!("Conflicting email: {}, rolling back user creation", user_id);
                 transaction.rollback().await.map_err(DBError::from)?;
-                return Err(CreateIdentityError::LinkEmailConflict);
+                return Err(IdentityError::LinkEmailConflict);
             }
             Err(err) => {
-                return Err(CreateIdentityError::DBError(err.into()));
+                return Err(IdentityError::DBError(err.into()));
             }
         };
 
         if let Some(external_login) = external_login {
             if let Err(err) = transaction
                 .execute(
-                    &stmt_link_provider,
+                    &stmt_insert_extrenal_link,
                     &[&user_id, &external_login.provider, &external_login.provider_id],
                 )
                 .await
             {
                 if err.is_constraint("external_logins", "idx_provider_provider_id") {
                     transaction.rollback().await.map_err(DBError::from)?;
-                    return Err(CreateIdentityError::LinkProviderConflict);
+                    return Err(IdentityError::LinkProviderConflict);
                 } else {
-                    return Err(CreateIdentityError::DBError(err.into()));
+                    return Err(IdentityError::DBError(err.into()));
                 }
             };
         }
@@ -368,14 +372,34 @@ impl IdentityManager {
         Ok(identities)
     }
 
-    pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLoginInfo) -> Result<(), LinkIdentityError> {
+    pub async fn delete_identity(&self, user_id: Uuid) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
-        let stmt_link_provider = inner.stmt_link_provider.get(&client).await.map_err(DBError::from)?;
+        let stmt_delete_identity_cascaded = inner
+            .stmt_delete_identity_cascaded
+            .get(&client)
+            .await
+            .map_err(DBError::from)?;
+
+        client
+            .execute(&stmt_delete_identity_cascaded, &[&user_id])
+            .await
+            .map_err(|err| IdentityError::DBError(err.into()))?;
+        Ok(())
+    }
+
+    pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLoginInfo) -> Result<(), IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let stmt_insert_extrenal_link = inner
+            .stmt_insert_extrenal_link
+            .get(&client)
+            .await
+            .map_err(DBError::from)?;
 
         match client
             .execute(
-                &stmt_link_provider,
+                &stmt_insert_extrenal_link,
                 &[&user_id, &external_login.provider, &external_login.provider_id],
             )
             .await
@@ -383,9 +407,9 @@ impl IdentityManager {
             Ok(_) => Ok(()),
             Err(err) => {
                 if err.is_constraint("external_logins", "idx_provider_provider_id") {
-                    Err(LinkIdentityError::LinkProviderConflict)
+                    Err(IdentityError::LinkProviderConflict)
                 } else {
-                    Err(LinkIdentityError::DBError(err.into()))
+                    Err(IdentityError::DBError(err.into()))
                 }
             }
         }
