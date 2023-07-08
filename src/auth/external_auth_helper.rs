@@ -1,16 +1,12 @@
-use std::collections::HashMap;
-
 use crate::{
-    auth::{create_redirect_page, AuthServiceState},
-    db::{
-        CreateIdentityError, DBError, DBSessionError, ExternalLoginInfo, FindIdentity, LinkIdentityError,
-        NameGeneratorError,
-    },
+    auth::{create_redirect_page, github_ext, AuthServiceState, ExternalUserInfoExtensions},
+    db::{DBError, DBSessionError, ExternalLoginInfo, FindIdentity, IdentityError, NameGeneratorError},
 };
 use axum::response::Html;
 use reqwest::header;
 use serde_json::Value as JsonValue;
 use shine_service::service::{CurrentUser, APP_NAME};
+use std::collections::HashMap;
 use thiserror::Error as ThisError;
 use url::Url;
 use uuid::Uuid;
@@ -32,12 +28,15 @@ pub(in crate::auth) enum ExternalUserInfoError {
     ResponseContentError(String),
     #[error("Cannot find external user id")]
     MissingExternalId,
+    #[error("{0:?} failed with: {1}")]
+    Extension(ExternalUserInfoExtensions, String),
 }
 
 pub(in crate::auth) async fn get_external_user_info(
     url: Url,
     token: &str,
     id_mapping: &HashMap<String, String>,
+    extensions: &[ExternalUserInfoExtensions],
 ) -> Result<ExternalUserInfo, ExternalUserInfoError> {
     let client = reqwest::Client::new();
     let response = client
@@ -60,7 +59,7 @@ pub(in crate::auth) async fn get_external_user_info(
             response.text().await.unwrap_or_default(),
         )));
     };
-    log::info!("{:?}", user_info);
+    log::info!("userinfo: {:?}", user_info);
 
     let external_id_id = id_mapping.get("id").map(|s| s.as_str()).unwrap_or("id");
     let external_id = user_info
@@ -77,11 +76,24 @@ pub(in crate::auth) async fn get_external_user_info(
     let email_id = id_mapping.get("email").map(|s| s.as_str()).unwrap_or("email");
     let email = user_info.get(email_id).and_then(|v| v.as_str()).map(ToOwned::to_owned);
 
-    Ok(ExternalUserInfo {
+    let mut external_user_info = ExternalUserInfo {
         external_id,
         name,
         email,
-    })
+    };
+
+    log::info!("Checking extensions: {:?}", extensions);
+    for extension in extensions {
+        match extension {
+            ExternalUserInfoExtensions::GithubEmail => {
+                external_user_info = github_ext::get_github_user_email(external_user_info, token)
+                    .await
+                    .map_err(|err| ExternalUserInfoError::Extension(*extension, err))?
+            }
+        };
+    }
+
+    Ok(external_user_info)
 }
 
 #[derive(Debug, ThisError)]
@@ -142,32 +154,31 @@ pub(in crate::auth) async fn external_auth_create_user(
                 let email = user_info.email.as_deref();
                 retry_count += 1;
 
-                use CreateIdentityError::*;
                 match state
                     .identity_manager()
                     .create_user(user_id, &user_name, email, Some(&external_login))
                     .await
                 {
                     Ok(identity) => break identity,
-                    Err(NameConflict) => continue,
-                    Err(UserIdConflict) => continue,
-                    Err(LinkEmailConflict) => return Err(ExternalAuthError::EmailConflict),
-                    Err(LinkProviderConflict) => return Err(ExternalAuthError::ProviderConflict),
-                    Err(DBError(err)) => return Err(ExternalAuthError::DBError(err)),
+                    Err(IdentityError::NameConflict) => continue,
+                    Err(IdentityError::UserIdConflict) => continue,
+                    Err(IdentityError::LinkEmailConflict) => return Err(ExternalAuthError::EmailConflict),
+                    Err(IdentityError::LinkProviderConflict) => return Err(ExternalAuthError::ProviderConflict),
+                    Err(IdentityError::DBError(err)) => return Err(ExternalAuthError::DBError(err)),
                 };
             }
         }
     };
 
     log::debug!("Identity ready: {identity:#?}");
-    let current_user = state.session_manager().create(&identity).await?;
+    let user = state.session_manager().create(&identity).await?;
     let html = create_redirect_page(state, "Redirecting", APP_NAME, target_url);
-    Ok((current_user, html))
+    Ok((user, html))
 }
 
 pub(in crate::auth) async fn external_auth_link_user(
     state: &AuthServiceState,
-    current_user: &CurrentUser,
+    user: &CurrentUser,
     linked_user: &CurrentUser,
     provider: &str,
     user_info: &ExternalUserInfo,
@@ -179,23 +190,22 @@ pub(in crate::auth) async fn external_auth_link_user(
     };
 
     // Link the current user to an external provider
-    if current_user.user_id != linked_user.user_id || current_user.key != linked_user.key {
+    if user.user_id != linked_user.user_id || user.key != linked_user.key {
         return Err(ExternalAuthError::CompromisedSessions(
             "External login is not matching the user session during linking".to_string(),
         ));
     }
 
-    match state
-        .identity_manager()
-        .link_user(current_user.user_id, &external_login)
-        .await
-    {
+    match state.identity_manager().link_user(user.user_id, &external_login).await {
         Ok(()) => {}
-        Err(LinkIdentityError::LinkProviderConflict) => return Err(ExternalAuthError::ProviderConflict),
-        Err(LinkIdentityError::DBError(err)) => return Err(ExternalAuthError::DBError(err)),
+        Err(IdentityError::LinkProviderConflict) => return Err(ExternalAuthError::ProviderConflict),
+        Err(IdentityError::DBError(err)) => return Err(ExternalAuthError::DBError(err)),
+        Err(IdentityError::LinkEmailConflict)
+        | Err(IdentityError::NameConflict)
+        | Err(IdentityError::UserIdConflict) => unreachable!(),
     };
 
-    log::debug!("Link ready: {current_user:#?}");
+    log::debug!("Link ready: {user:#?}");
     let html = create_redirect_page(state, "Redirecting", APP_NAME, target_url);
     Ok(html)
 }

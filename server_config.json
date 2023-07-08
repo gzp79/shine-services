@@ -31,7 +31,11 @@
             "gitlab": {
                 "redirectUrl": "https://cloud.scytta.com/identity/auth/gitlab/auth",
                 "discoveryUrl": "https://gitlab.com",
-                "scopes": []
+                "scopes": [
+                    "openid",
+                    "email",
+                    "profile"
+                ]
             }
         },
         "oauth2": {
@@ -43,6 +47,7 @@
                 "userInfoMapping": {
                     "name": "global_name"
                 },
+                "extensions": [],
                 "scopes": [
                     "identify",
                     "email"
@@ -56,6 +61,7 @@
                 "userInfoMapping": {
                     "name": "login"
                 },
+                "extensions": ["githubEmail"],
                 "scopes": [
                     "user:email"
                 ]

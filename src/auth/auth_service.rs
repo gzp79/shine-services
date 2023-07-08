@@ -1,11 +1,15 @@
 use crate::{
     auth::{
-        ep_get_providers, ep_logout, ep_user_info, oauth2_client::OAuth2Client, oauth2_ep_auth, oauth2_ep_login,
-        oidc_client::OIDCClient, oidc_ep_auth, oidc_ep_login, AuthSessionMeta,
+        ep_get_providers, ep_user_info, oauth2_client::OAuth2Client, oauth2_page_auth, oauth2_page_login,
+        oidc_client::OIDCClient, oidc_page_auth, oidc_page_login, page_delete_user, page_logout, AuthSessionMeta,
     },
     db::{IdentityManager, NameGenerator, SessionManager},
 };
-use axum::{response::Html, routing::get, Extension, Router};
+use axum::{
+    response::Html,
+    routing::{delete, get},
+    Extension, Router,
+};
 use serde::{Deserialize, Serialize};
 use shine_service::service::{API_SUBDOMAIN, DOMAIN_NAME};
 use std::{
@@ -16,9 +20,11 @@ use tera::Tera;
 use thiserror::Error as ThisError;
 use url::Url;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OIDCEndpoints {}
+pub enum ExternalUserInfoExtensions {
+    GithubEmail,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,6 +33,7 @@ pub struct OAuth2Config {
     pub token_url: String,
     pub user_info_url: String,
     pub user_info_mapping: HashMap<String, String>,
+    pub extensions: HashSet<ExternalUserInfoExtensions>,
     pub client_id: String,
     pub client_secret: String,
     pub scopes: Vec<String>,
@@ -188,16 +195,18 @@ impl AuthServiceBuilder {
     where
         S: Clone + Send + Sync + 'static,
     {
-        let router = {
-            let mut router = Router::new().route("/auth/logout", get(ep_logout::logout));
+        let page_router = {
+            let mut router = Router::new()
+                .route("/auth/logout", get(page_logout::logout))
+                .route("/auth/delete", delete(page_delete_user::user_delete));
 
             for openid_client in self.openid_clients {
                 let path = format!("/auth/{}", openid_client.provider);
 
                 let openid_route = Router::new()
-                    .route("/login", get(oidc_ep_login::openid_connect_login))
-                    .route("/link", get(oidc_ep_login::openid_connect_link))
-                    .route("/auth", get(oidc_ep_auth::openid_connect_auth))
+                    .route("/login", get(oidc_page_login::openid_connect_login))
+                    .route("/link", get(oidc_page_login::openid_connect_link))
+                    .route("/auth", get(oidc_page_auth::openid_connect_auth))
                     .layer(Extension(Arc::new(openid_client)));
 
                 router = router.nest(&path, openid_route);
@@ -207,9 +216,9 @@ impl AuthServiceBuilder {
                 let path = format!("/auth/{}", oauth2_client.provider);
 
                 let openid_route = Router::new()
-                    .route("/login", get(oauth2_ep_login::oauth2_connect_login))
-                    .route("/link", get(oauth2_ep_login::oauth2_connect_link))
-                    .route("/auth", get(oauth2_ep_auth::oauth2_connect_auth))
+                    .route("/login", get(oauth2_page_login::oauth2_connect_login))
+                    .route("/link", get(oauth2_page_login::oauth2_connect_link))
+                    .route("/auth", get(oauth2_page_auth::oauth2_connect_auth))
                     .layer(Extension(Arc::new(oauth2_client)));
 
                 router = router.nest(&path, openid_route);
@@ -225,7 +234,7 @@ impl AuthServiceBuilder {
             .route("/auth/providers", get(ep_get_providers::get_providers))
             .with_state(self.state);
 
-        (router, api_router)
+        (page_router, api_router)
     }
 }
 

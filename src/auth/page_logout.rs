@@ -15,19 +15,12 @@ pub(in crate::auth) struct LogoutRequest {
     terminate_all: Option<bool>,
 }
 
-async fn logout_impl(
-    state: &AuthServiceState,
-    current_user: Option<CurrentUser>,
-    remove_all: bool,
-) -> Result<(), DBError> {
-    if let Some(current_user) = current_user {
+async fn logout_impl(state: &AuthServiceState, user: Option<CurrentUser>, remove_all: bool) -> Result<(), DBError> {
+    if let Some(user) = user {
         if remove_all {
-            state.session_manager().remove_all(current_user.user_id).await?;
+            state.session_manager().remove_all(user.user_id).await?;
         } else {
-            state
-                .session_manager()
-                .remove(current_user.user_id, current_user.key)
-                .await?;
+            state.session_manager().remove(user.user_id, user.key).await?;
         }
     }
 
