@@ -1,5 +1,4 @@
 mod app_config;
-mod app_error;
 mod auth;
 mod db;
 mod services;
@@ -22,7 +21,7 @@ use shine_service::{
         tracing::{OtelAxumLayer, TracingService},
         PoweredBy,
     },
-    service::{UserSessionMeta, UserSessionValidator, DOMAIN_NAME},
+    service::UserSessionValidator,
 };
 use std::net::SocketAddr;
 use tera::Tera;
@@ -99,10 +98,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let db_pool = DBPool::new(&config.db).await?;
 
-    let user_session = UserSessionMeta::new(&config.cookie_secret)?
-        .with_cookie_name("sid")
-        .with_domain(DOMAIN_NAME);
-    let user_session_validator = UserSessionValidator::new(db_pool.redis.clone());
+    let user_session = UserSessionValidator::new(None, &config.cookie_secret, db_pool.redis.clone())?;
 
     let identity_manager = IdentityManager::new(&db_pool).await?;
     let session_max_duration = Duration::seconds(i64::try_from(config.session_max_duration)?);
@@ -136,7 +132,6 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         .nest(&service_path("/api"), identity_api)
         .nest(&service_path("/api"), auth_api)
         .layer(user_session.into_layer())
-        .layer(user_session_validator.into_layer())
         .layer(powered_by)
         .layer(cors)
         .layer(tracing_layer);

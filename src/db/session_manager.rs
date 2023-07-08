@@ -4,7 +4,7 @@ use chrono::{DateTime, Duration, Utc};
 use redis::{AsyncCommands, Script};
 use ring::rand::SystemRandom;
 use serde::{Deserialize, Serialize};
-use shine_service::service::{CurrentUser, SessionKey, SessionKeyError};
+use shine_service::service::{CurrentUser, CurrentUserAuthenticity, SessionKey, SessionKeyError};
 use shine_service::service::{RedisConnectionPool, RedisJsonValue};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -40,7 +40,7 @@ impl StoredSession {
 
     fn into_current_user(self, user_id: Uuid, session_key: SessionKey) -> CurrentUser {
         CurrentUser {
-            is_authentic: true,
+            authenticity: CurrentUserAuthenticity::NotValidate,
             user_id,
             key: session_key,
             session_start: self.session_start,

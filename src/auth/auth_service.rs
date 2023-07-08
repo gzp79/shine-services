@@ -5,13 +5,8 @@ use crate::{
     },
     db::{IdentityManager, NameGenerator, SessionManager},
 };
-use axum::{
-    response::Html,
-    routing::{delete, get},
-    Extension, Router,
-};
+use axum::{response::Html, routing::get, Extension, Router};
 use serde::{Deserialize, Serialize};
-use shine_service::service::{API_SUBDOMAIN, DOMAIN_NAME};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -53,6 +48,7 @@ pub struct OIDCConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthConfig {
+    pub api_url: Url,
     pub external_login_secret: String,
     pub token_login_secret: String,
     pub signature_secret: String,
@@ -62,6 +58,8 @@ pub struct AuthConfig {
 
 #[derive(Debug, ThisError)]
 pub enum AuthBuildError {
+    #[error("Missing or invalid domain for application")]
+    MissingHomeDomain,
     #[error("Provider ({0}) already registered")]
     ProviderConflict(String),
     #[error("Auth session error: {0}")]
@@ -143,6 +141,8 @@ impl AuthServiceBuilder {
     ) -> Result<Self, AuthBuildError> {
         let mut providers = HashSet::new();
 
+        let domain = home_url.domain().ok_or(AuthBuildError::MissingHomeDomain)?;
+
         let mut openid_clients = Vec::new();
         for (provider, provider_config) in &config.openid {
             if !providers.insert(provider.clone()) {
@@ -173,8 +173,8 @@ impl AuthServiceBuilder {
         }));
 
         let auth_session_meta = AuthSessionMeta::new(
-            DOMAIN_NAME,
-            API_SUBDOMAIN,
+            domain,
+            config.api_url.clone(),
             None,
             user_secret,
             &config.external_login_secret,
@@ -198,7 +198,7 @@ impl AuthServiceBuilder {
         let page_router = {
             let mut router = Router::new()
                 .route("/auth/logout", get(page_logout::logout))
-                .route("/auth/delete", delete(page_delete_user::user_delete));
+                .route("/auth/delete", get(page_delete_user::user_delete));
 
             for openid_client in self.openid_clients {
                 let path = format!("/auth/{}", openid_client.provider);
@@ -264,4 +264,18 @@ pub(in crate::auth) fn create_ooops_page(state: &AuthServiceState, detail: Optio
         .render("ooops.html", &context)
         .expect("Failed to generate ooops.html template");
     Html(html)
+}
+
+#[cfg(test)]
+mod test {
+    use axum_extra::extract::cookie::Key;
+    use base64::{engine::general_purpose::STANDARD as B64, Engine};
+    use shine_test::test;
+
+    #[test]
+    #[ignore = "This is not a test but a helper to generate secret"]
+    fn generate_secret() {
+        let key = Key::generate();
+        println!("{}", B64.encode(key.master()));
+    }
 }

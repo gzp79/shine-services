@@ -21,8 +21,9 @@ use std::{
 };
 use thiserror::Error as ThisError;
 use time::{Duration, OffsetDateTime};
+use url::Url;
 
-#[derive(Clone, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Hash, Serialize, Deserialize)]
 pub(in crate::auth) struct ExternalLogin {
     #[serde(rename = "pv")]
     pub pkce_code_verifier: String,
@@ -37,31 +38,13 @@ pub(in crate::auth) struct ExternalLogin {
     pub link_session_id: Option<CurrentUser>,
 }
 
-impl std::fmt::Debug for ExternalLogin {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OIDCLogin")
-            .field("pkce_code_verifier", &"[REDACTED]")
-            .field("csrf_state", &"[REDACTED]")
-            .field("nonce", &"[REDACTED]")
-            .field("target_url", &self.target_url)
-            .field("link_session", &self.link_session_id)
-            .finish()
-    }
-}
-
-#[derive(Clone, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Hash, Serialize, Deserialize)]
 pub(in crate::auth) struct TokenLogin {
     #[serde(rename = "t")]
     pub token: String,
 }
 
-impl std::fmt::Debug for TokenLogin {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TokenLogin").field("token", &"[REDACTED]").finish()
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Signature {
     #[serde(rename = "t")]
     signature: u64,
@@ -109,16 +92,14 @@ impl Signature {
     }
 }
 
-impl std::fmt::Debug for Signature {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TokenLogin").field("signature", &"[REDACTED]").finish()
-    }
-}
-
 #[derive(Debug, ThisError)]
 pub(in crate::auth) enum AuthSessionError {
     #[error("Invalid session secret: {0}")]
     InvalidSecret(String),
+    #[error("Missing domain for auth scope")]
+    MissingDomain,
+    #[error("Auth api domain shall be a subdomain of the application")]
+    InvalidApiDomain,
 }
 
 #[derive(Clone)]
@@ -126,6 +107,7 @@ struct CookieSettings {
     name: String,
     secret: Key,
     domain: String,
+    path: String,
 }
 
 /// Layer to configure auth related cookie.
@@ -139,14 +121,26 @@ pub(in crate::auth) struct AuthSessionMeta {
 
 impl AuthSessionMeta {
     pub fn new(
-        domain: &str,
-        auth_subdomain: &str,
+        app_domain: &str,
+        auth_base: Url,
         name_suffix: Option<&str>,
         user_secret: &str,
         external_login_secret: &str,
         token_login_secret: &str,
         signature_secret: &str,
     ) -> Result<Self, AuthSessionError> {
+        let name_suffix = name_suffix.unwrap_or_default();
+        let auth_domain = auth_base.domain().ok_or(AuthSessionError::MissingDomain)?.to_string();
+        let auth_path = auth_base.path().to_string();
+
+        log::info!("app_domain: {}", app_domain);
+        log::info!("auth_domain: {}", auth_domain);
+        log::info!("auth_path: {}", auth_path);
+
+        if !auth_domain.ends_with(app_domain) {
+            return Err(AuthSessionError::InvalidApiDomain);
+        }
+
         let user_secret = {
             let key = B64
                 .decode(user_secret)
@@ -172,28 +166,30 @@ impl AuthSessionMeta {
             Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?
         };
 
-        let name_suffix = name_suffix.unwrap_or_default();
-        let auth_domain = format!("{}.{}", auth_subdomain, domain);
         Ok(Self {
             user: CookieSettings {
                 name: format!("sid{}", name_suffix),
                 secret: user_secret,
-                domain: domain.into(),
+                domain: app_domain.into(),
+                path: "/".into(),
             },
             external_login: CookieSettings {
                 name: format!("eid{}", name_suffix),
                 secret: external_login_secret,
                 domain: auth_domain.clone(),
+                path: auth_path.clone(),
             },
             token_login: CookieSettings {
                 name: format!("tid{}", name_suffix),
                 secret: token_login_secret,
                 domain: auth_domain.clone(),
+                path: auth_path.clone(),
             },
             signature: CookieSettings {
                 name: format!("sig{}", name_suffix),
                 secret: signature_secret,
                 domain: auth_domain,
+                path: auth_path,
             },
         })
     }
@@ -293,9 +289,18 @@ where
             .get(&meta.external_login.name)
             .and_then(|session| serde_json::from_str::<TokenLogin>(session.value()).ok());
 
+        log::info!(
+            "Auth sessions from headers:\n  user:{:#?}\n  external_login:{:#?}\n  token_login:{:#?}\n  signatore:{:#?}",
+            user,
+            external_login,
+            token_login,
+            signature
+        );
+
         if signature.validate(&meta.signature.secret, &user, &external_login, &token_login) {
             Ok(Self::new(meta, user, external_login, token_login))
         } else {
+            log::info!("Auth signature check failed");
             Ok(Self::empty(meta))
         }
     }
@@ -315,9 +320,10 @@ fn create_jar<T: Serialize>(settings: &CookieSettings, data: &Option<T>) -> Sign
 
     cookie.set_secure(true);
     cookie.set_domain(settings.domain.clone());
+    cookie.set_path(settings.path.clone());
     cookie.set_http_only(true);
     cookie.set_same_site(SameSite::Lax);
-    cookie.set_path("/");
+    cookie.set_path(settings.path.clone());
     SignedCookieJar::new(settings.secret.clone()).add(cookie)
 }
 
@@ -335,13 +341,20 @@ impl IntoResponseParts for AuthSession {
             token_login,
         } = self;
         let signature = Signature::new(&meta.signature.secret, &user, &external_login, &token_login);
+        log::info!(
+            "Auth sessions to set headers:\n  user:{:#?}\n  external_login:{:#?}\n  token_login:{:#?}\n  signatore:{:#?}",
+            user,
+            external_login,
+            token_login,
+            signature
+        );
 
-        let user_jar = create_jar(&meta.user, &user);
+        let user = create_jar(&meta.user, &user);
         let external_login = create_jar(&meta.external_login, &external_login);
         let token_login = create_jar(&meta.token_login, &token_login);
         let signature = create_jar(&meta.signature, &signature);
 
-        Ok((user_jar, external_login, token_login, signature)
+        Ok((user, external_login, token_login, signature)
             .into_response_parts(res)
             .unwrap())
     }

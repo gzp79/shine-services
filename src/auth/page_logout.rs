@@ -32,8 +32,6 @@ pub(in crate::auth) async fn logout(
     Query(query): Query<LogoutRequest>,
     mut auth_session: AuthSession,
 ) -> Response {
-    log::info!("auth_session: {auth_session:?}");
-
     let (user, _, _) = auth_session.take();
 
     match logout_impl(&state, user, query.terminate_all.unwrap_or(false)).await {

@@ -18,6 +18,7 @@
         }
     },
     "auth": {
+        "apiUrl": "http://cloud.scytta.com/identity/auth",
         "openid": {
             "google": {
                 "redirectUrl": "https://cloud.scytta.com/identity/auth/google/auth",

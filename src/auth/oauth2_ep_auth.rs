@@ -1,6 +1,10 @@
-use crate::auth::{
-    create_ooops_page, external_auth_create_user, external_auth_helper::ExternalAuthError, external_auth_link_user,
-    oidc_client::OIDCClient, AuthServiceState, AuthSession, ExternalLogin, ExternalUserInfo,
+use crate::{
+    auth::{
+        create_ooops_page, external_auth_create_user, external_auth_link_user, get_external_user_info,
+        oauth2_client::OAuth2Client, AuthServiceState, AuthSession, ExternalAuthError, ExternalLogin,
+        ExternalUserInfoError,
+    },
+    db::NameGeneratorError,
 };
 use axum::{
     extract::{Query, State},
@@ -8,8 +12,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
     Extension,
 };
-use oauth2::{reqwest::async_http_client, AuthorizationCode, PkceCodeVerifier};
-use openidconnect::{Nonce, TokenResponse};
+use oauth2::{reqwest::async_http_client, AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -24,16 +27,14 @@ enum Error {
     InvalidCsrfState,
     #[error("Failed to exchange authorization code to access token: {0}")]
     FailedTokenExchange(String),
-    #[error("Failed to verify id token: {0}")]
-    FailedIdVerification(String),
-    #[error("Missing id token, consider using oauth2 instead of OpenId")]
-    MissingIdToken,
-    #[error("Missing nonce from external session")]
-    MissingNonce,
+    #[error(transparent)]
+    FailedUserInfoQuery(#[from] ExternalUserInfoError),
     #[error(transparent)]
     ExternalAuthError(#[from] ExternalAuthError),
     #[error(transparent)]
     TeraError(#[from] tera::Error),
+    #[error(transparent)]
+    NameGeneratorError(#[from] NameGeneratorError),
 }
 
 #[derive(Deserialize)]
@@ -44,7 +45,7 @@ pub(in crate::auth) struct AuthRequest {
 
 async fn openid_connect_auth_impl(
     state: &AuthServiceState,
-    client: &OIDCClient,
+    client: &OAuth2Client,
     query: AuthRequest,
     auth_session: &mut AuthSession,
 ) -> Result<Html<String>, Error> {
@@ -54,12 +55,10 @@ async fn openid_connect_auth_impl(
     let ExternalLogin {
         pkce_code_verifier,
         csrf_state,
-        nonce,
         target_url,
         link_session_id,
+        ..
     } = auth_session.external_login.take().ok_or(Error::MissingExternalLogin)?;
-
-    let nonce = nonce.ok_or(Error::MissingNonce)?;
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
@@ -76,33 +75,20 @@ async fn openid_connect_auth_impl(
         .await
         .map_err(|err| Error::FailedTokenExchange(format!("{err:?}")))?;
 
-    let id_token = token.id_token().ok_or(Error::MissingIdToken)?;
-    // extract claims from the returned (jwt) token
-    let claims = id_token
-        .claims(&client.client.id_token_verifier(), &Nonce::new(nonce))
-        .map_err(|err| Error::FailedIdVerification(format!("{err}")))?;
-    log::debug!("Code exchange completed, claims: {claims:#?}");
-
-    let external_id = claims.subject().to_string();
-    let name = claims
-        .nickname()
-        .and_then(|n| n.get(None))
-        .map(|n| n.as_str().to_owned());
-    let email = claims.email().map(|n| n.as_str().to_owned());
-
-    let external_user_info = ExternalUserInfo {
-        external_id,
-        name,
-        email,
-    };
+    let external_user_info = get_external_user_info(
+        client.user_info_url.url().clone(),
+        token.access_token().secret(),
+        &client.user_info_mapping,
+    )
+    .await?;
     log::info!("{:?}", external_user_info);
 
     match (&auth_session.user, &link_session_id) {
-        (Some(user), Some(linked_user)) => {
+        (Some(current_user), Some(linked_user)) => {
             // try to link account
             let html = external_auth_link_user(
                 state,
-                user,
+                current_user,
                 linked_user,
                 &client.provider,
                 &external_user_info,
@@ -122,9 +108,9 @@ async fn openid_connect_auth_impl(
     }
 }
 
-pub(in crate::auth) async fn openid_connect_auth(
+pub(in crate::auth) async fn oauth2_connect_auth(
     State(state): State<AuthServiceState>,
-    Extension(client): Extension<Arc<OIDCClient>>,
+    Extension(client): Extension<Arc<OAuth2Client>>,
     Query(query): Query<AuthRequest>,
     mut auth_session: AuthSession,
 ) -> Response {
@@ -136,7 +122,6 @@ pub(in crate::auth) async fn openid_connect_auth(
         err @ Err(Error::MissingExternalLogin)
         | err @ Err(Error::InvalidCsrfState)
         | err @ Err(Error::InconsistentSessionLinking)
-        | err @ Err(Error::MissingNonce)
         | err @ Err(Error::ExternalAuthError(ExternalAuthError::CompromisedSessions(_))) => {
             log::info!("Session is corrupted: {err:?}");
             let html = create_ooops_page(&state, Some("Session is corrupted, clearing stored sessions"));
@@ -145,6 +130,7 @@ pub(in crate::auth) async fn openid_connect_auth(
         }
         Err(err) => {
             let html = create_ooops_page(&state, Some(&format!("{err}")));
+            // Keep only the current_user intact
             (StatusCode::INTERNAL_SERVER_ERROR, auth_session, html).into_response()
         }
     }

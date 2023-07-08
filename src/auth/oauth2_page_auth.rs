@@ -115,8 +115,6 @@ pub(in crate::auth) async fn oauth2_connect_auth(
     Query(query): Query<AuthRequest>,
     mut auth_session: AuthSession,
 ) -> Response {
-    log::info!("auth_session: {auth_session:?}");
-
     match openid_connect_auth_impl(&state, &client, query, &mut auth_session).await {
         Ok(html) => {
             log::debug!("Session is ready: {:#?}", auth_session.user);
