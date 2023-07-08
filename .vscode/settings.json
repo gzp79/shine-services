@@ -10,6 +10,7 @@
         "cacerts",
         "chrono",
         "fkey",
+        "hasher",
         "hset",
         "keyvault",
         "oidc",

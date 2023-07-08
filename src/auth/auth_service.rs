@@ -1,13 +1,13 @@
 use crate::{
     auth::{
         ep_get_providers, ep_logout, ep_user_info, oauth2_client::OAuth2Client, oauth2_ep_auth, oauth2_ep_login,
-        oidc_client::OIDCClient, oidc_ep_auth, oidc_ep_login, ExternalLoginMeta,
+        oidc_client::OIDCClient, oidc_ep_auth, oidc_ep_login, AuthSessionMeta,
     },
     db::{IdentityManager, NameGenerator, SessionManager},
 };
 use axum::{response::Html, routing::get, Extension, Router};
 use serde::{Deserialize, Serialize};
-use shine_service::{axum::session::SessionError, service::DOMAIN_NAME};
+use shine_service::service::{API_SUBDOMAIN, DOMAIN_NAME};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -45,8 +45,10 @@ pub struct OIDCConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-
 pub struct AuthConfig {
+    pub external_login_secret: String,
+    pub token_login_secret: String,
+    pub signature_secret: String,
     pub openid: HashMap<String, OIDCConfig>,
     pub oauth2: HashMap<String, OAuth2Config>,
 }
@@ -55,16 +57,16 @@ pub struct AuthConfig {
 pub enum AuthBuildError {
     #[error("Provider ({0}) already registered")]
     ProviderConflict(String),
-    #[error(transparent)]
-    InvalidSessionMeta(#[from] SessionError),
+    #[error("Auth session error: {0}")]
+    InvalidAuthSession(String),
     #[error("Invalid issuer url: {0}")]
     InvalidIssuer(String),
     #[error("Invalid auth url: {0}")]
-    InvalidAuth(String),
+    InvalidAuthUrl(String),
     #[error("Invalid token url: {0}")]
-    InvalidToken(String),
+    InvalidTokenUrl(String),
     #[error("Invalid user info url: {0}")]
-    InvalidUserInfo(String),
+    InvalidUserInfoUrl(String),
     #[error("Invalid redirect url: {0}")]
     RedirectUrl(String),
     #[error("Failed to discover open id: {0}")]
@@ -120,7 +122,7 @@ pub struct AuthServiceDependencies {
 
 pub struct AuthServiceBuilder {
     state: AuthServiceState,
-    external_login_cookie_builder: ExternalLoginMeta,
+    auth_session_meta: AuthSessionMeta,
     openid_clients: Vec<OIDCClient>,
     oauth2_clients: Vec<OAuth2Client>,
 }
@@ -130,7 +132,7 @@ impl AuthServiceBuilder {
         dependencies: AuthServiceDependencies,
         config: &AuthConfig,
         home_url: &Url,
-        cookie_secret: &str,
+        user_secret: &str,
     ) -> Result<Self, AuthBuildError> {
         let mut providers = HashSet::new();
 
@@ -163,13 +165,20 @@ impl AuthServiceBuilder {
             providers: providers.into_iter().collect(),
         }));
 
-        let external_login_cookie_builder = ExternalLoginMeta::new(cookie_secret)?
-            .with_cookie_name("exl")
-            .with_domain(DOMAIN_NAME);
+        let auth_session_meta = AuthSessionMeta::new(
+            DOMAIN_NAME,
+            API_SUBDOMAIN,
+            None,
+            user_secret,
+            &config.external_login_secret,
+            &config.token_login_secret,
+            &config.signature_secret,
+        )
+        .map_err(|err| AuthBuildError::InvalidAuthSession(format!("{err}")))?;
 
         Ok(Self {
             state,
-            external_login_cookie_builder,
+            auth_session_meta,
             openid_clients,
             oauth2_clients,
         })
@@ -207,7 +216,7 @@ impl AuthServiceBuilder {
             }
 
             router
-                .layer(self.external_login_cookie_builder.into_layer())
+                .layer(self.auth_session_meta.into_layer())
                 .with_state(self.state.clone())
         };
 

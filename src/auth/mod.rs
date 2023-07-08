@@ -1,7 +1,8 @@
 mod auth_service;
 pub use self::auth_service::*;
-mod extern_login_session;
-use self::extern_login_session::*;
+
+mod auth_session;
+pub(in crate::auth) use self::auth_session::*;
 mod external_auth_helper;
 pub(in crate::auth) use self::external_auth_helper::*;
 

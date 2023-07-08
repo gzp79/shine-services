@@ -1,5 +1,5 @@
 use crate::{
-    auth::{create_ooops_page, create_redirect_page, extern_login_session::ExternalLoginSession, AuthServiceState},
+    auth::{create_ooops_page, create_redirect_page, AuthServiceState, AuthSession},
     db::DBError,
 };
 use axum::{
@@ -8,7 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Deserialize;
-use shine_service::service::{CurrentUser, UserSession, APP_NAME};
+use shine_service::service::{CurrentUser, APP_NAME};
 
 #[derive(Deserialize)]
 pub(in crate::auth) struct LogoutRequest {
@@ -37,19 +37,20 @@ async fn logout_impl(
 pub(in crate::auth) async fn logout(
     State(state): State<AuthServiceState>,
     Query(query): Query<LogoutRequest>,
-    mut user_session: UserSession,
-    mut external_login: ExternalLoginSession,
+    mut auth_session: AuthSession,
 ) -> Response {
-    let _ = external_login.take();
+    log::info!("auth_session: {auth_session:?}");
 
-    match logout_impl(&state, user_session.take(), query.terminate_all.unwrap_or(false)).await {
+    let (user, _, _) = auth_session.take();
+
+    match logout_impl(&state, user, query.terminate_all.unwrap_or(false)).await {
         Ok(()) => {
             let html = create_redirect_page(&state, "Redirecting", APP_NAME, None);
-            (user_session, external_login, html).into_response()
+            (auth_session, html).into_response()
         }
         Err(err) => {
             let html = create_ooops_page(&state, Some(&format!("{err}")));
-            (StatusCode::INTERNAL_SERVER_ERROR, user_session, external_login, html).into_response()
+            (StatusCode::INTERNAL_SERVER_ERROR, auth_session, html).into_response()
         }
     }
 }

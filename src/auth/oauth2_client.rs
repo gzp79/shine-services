@@ -19,11 +19,11 @@ impl OAuth2Client {
         let redirect_url = RedirectUrl::new(config.redirect_url.to_string())
             .map_err(|err| AuthBuildError::RedirectUrl(format!("{err}")))?;
         let auth_url = AuthUrl::new(config.authorization_url.clone())
-            .map_err(|err| AuthBuildError::InvalidAuth(format!("{err}")))?;
+            .map_err(|err| AuthBuildError::InvalidAuthUrl(format!("{err}")))?;
         let token_url =
-            TokenUrl::new(config.token_url.clone()).map_err(|err| AuthBuildError::InvalidToken(format!("{err}")))?;
+            TokenUrl::new(config.token_url.clone()).map_err(|err| AuthBuildError::InvalidTokenUrl(format!("{err}")))?;
         let user_info_url = UserInfoUrl::new(config.user_info_url.clone())
-            .map_err(|err| AuthBuildError::InvalidUserInfo(format!("{err}")))?;
+            .map_err(|err| AuthBuildError::InvalidUserInfoUrl(format!("{err}")))?;
         let client =
             BasicClient::new(client_id, Some(client_secret), auth_url, Some(token_url)).set_redirect_uri(redirect_url);
 

@@ -1,6 +1,5 @@
 use crate::auth::{
-    create_ooops_page, create_redirect_page, oidc_client::OIDCClient, AuthServiceState, ExternalLoginData,
-    ExternalLoginSession,
+    create_ooops_page, create_redirect_page, oidc_client::OIDCClient, AuthServiceState, AuthSession, ExternalLogin,
 };
 use axum::{
     extract::{Query, State},
@@ -15,7 +14,6 @@ use openidconnect::{
     Nonce,
 };
 use serde::Deserialize;
-use shine_service::service::{UserSession, APP_NAME};
 use std::sync::Arc;
 
 #[derive(Deserialize)]
@@ -25,81 +23,59 @@ pub(in crate::auth) struct LoginRequest {
 
 pub(in crate::auth) async fn openid_connect_login(
     State(state): State<AuthServiceState>,
-    Extension(oidc_client): Extension<Arc<OIDCClient>>,
+    Extension(client): Extension<Arc<OIDCClient>>,
     Query(query): Query<LoginRequest>,
-    mut user_session: UserSession,
-    mut external_login_session: ExternalLoginSession,
+    mut auth_session: AuthSession,
 ) -> Response {
-    log::info!("user_session: {user_session:?}");
-    log::info!("external_login: {external_login_session:?}");
+    log::info!("auth_session: {auth_session:?}");
 
-    let current_user = user_session.take();
-    let _ = external_login_session.take();
-
-    // if there is a valid session, skip login flow and let the user in.
-    if let Some(current_user) = current_user {
-        if state
-            .session_manager()
-            .find_session(current_user.user_id, current_user.key)
-            .await
-            .ok()
-            .is_some()
-        {
-            let html = create_redirect_page(
-                &state,
-                "Redirecting to target login",
-                APP_NAME,
-                query.redirect.as_deref(),
-            );
-
-            // clear external_login_session, but keep user_session intact
-            return (external_login_session, html).into_response();
-        }
+    if !auth_session.is_empty() {
+        let html = create_ooops_page(&state, Some("A log out is required to switch account"));
+        return (StatusCode::BAD_REQUEST, html).into_response();
     }
 
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
-    let (authorize_url, csrf_state, nonce) = oidc_client
+    let (authorize_url, csrf_state, nonce) = client
         .client
         .authorize_url(
             CoreAuthenticationFlow::AuthorizationCode,
             CsrfToken::new_random,
             Nonce::new_random,
         )
-        .add_scopes(oidc_client.scopes.clone())
+        .add_scopes(client.scopes.clone())
         .set_pkce_challenge(pkce_code_challenge)
         .set_max_age(Duration::minutes(30).to_std().unwrap())
         .add_prompt(CoreAuthPrompt::Login)
         .url();
 
-    external_login_session.set(ExternalLoginData::OIDCLogin {
+    auth_session.external_login = Some(ExternalLogin {
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
         nonce: Some(nonce.secret().to_owned()),
         target_url: query.redirect,
         link_session_id: None,
     });
+    assert!(auth_session.user.is_none() && auth_session.token_login.is_none());
 
     let html = create_redirect_page(
         &state,
         "Redirecting to target login",
-        &oidc_client.provider,
+        &client.provider,
         Some(authorize_url.as_str()),
     );
-    // return a new external_login_session and clear the user_session
-    (external_login_session, user_session, html).into_response()
+
+    (auth_session, html).into_response()
 }
 
 pub(in crate::auth) async fn openid_connect_link(
     State(state): State<AuthServiceState>,
     Extension(oidc_client): Extension<Arc<OIDCClient>>,
     Query(query): Query<LoginRequest>,
-    mut user_session: UserSession,
-    mut external_login_session: ExternalLoginSession,
+    mut auth_session: AuthSession,
 ) -> Response {
-    log::info!("user_session: {user_session:?}");
-    log::info!("external_login: {external_login_session:?}");
+    log::info!("auth_session: {auth_session:?}");
 
-    if user_session.is_none() {
+    if auth_session.user.is_none() {
         let html = create_ooops_page(&state, Some("Login required"));
         return (StatusCode::FORBIDDEN, html).into_response();
     }
@@ -118,12 +94,12 @@ pub(in crate::auth) async fn openid_connect_link(
         .add_prompt(CoreAuthPrompt::Login)
         .url();
 
-    external_login_session.set(ExternalLoginData::OIDCLogin {
+    auth_session.external_login = Some(ExternalLogin {
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
         nonce: Some(nonce.secret().to_owned()),
         target_url: query.redirect,
-        link_session_id: user_session.take(),
+        link_session_id: auth_session.user.clone(),
     });
 
     let html = create_redirect_page(
@@ -132,6 +108,6 @@ pub(in crate::auth) async fn openid_connect_link(
         &oidc_client.provider,
         Some(authorize_url.as_str()),
     );
-    // return a new external_login_session, keep user_session intact
-    (external_login_session, html).into_response()
+
+    (auth_session, html).into_response()
 }

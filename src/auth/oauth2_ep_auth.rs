@@ -1,7 +1,8 @@
 use crate::{
     auth::{
-        create_ooops_page, external_auth_user, get_external_user_info, oauth2_client::OAuth2Client, AuthServiceState,
-        ExternalAuthError, ExternalLoginData, ExternalLoginSession, ExternalUserInfoError,
+        create_ooops_page, external_auth_create_user, external_auth_link_user, get_external_user_info,
+        oauth2_client::OAuth2Client, AuthServiceState, AuthSession, ExternalAuthError, ExternalLogin,
+        ExternalUserInfoError,
     },
     db::NameGeneratorError,
 };
@@ -13,14 +14,15 @@ use axum::{
 };
 use oauth2::{reqwest::async_http_client, AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
-use shine_service::service::{CurrentUser, UserSession};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
 enum Error {
-    #[error("Session cookie was missing or corrupted")]
-    MissingSession,
+    #[error("Missing external login cookie")]
+    MissingExternalLogin,
+    #[error("Linking information is inconsistent with the user session and external login")]
+    InconsistentSessionLinking,
     #[error("Cross-Site Request Forgery (Csrf) check failed")]
     InvalidCsrfState,
     #[error("Failed to exchange authorization code to access token: {0}")]
@@ -43,30 +45,20 @@ pub(in crate::auth) struct AuthRequest {
 
 async fn openid_connect_auth_impl(
     state: &AuthServiceState,
-    oauth2_client: &OAuth2Client,
+    client: &OAuth2Client,
     query: AuthRequest,
-    current_user: Option<CurrentUser>,
-    external_login_data: Option<ExternalLoginData>,
-) -> Result<(CurrentUser, Html<String>), Error> {
+    auth_session: &mut AuthSession,
+) -> Result<Html<String>, Error> {
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
 
-    let external_login_data = external_login_data.ok_or(Error::MissingSession)?;
-    let (pkce_code_verifier, csrf_state, target_url, linked_user) = match external_login_data {
-        ExternalLoginData::OIDCLogin {
-            pkce_code_verifier,
-            csrf_state,
-            target_url,
-            link_session_id,
-            ..
-        } => (
-            PkceCodeVerifier::new(pkce_code_verifier),
-            csrf_state,
-            target_url,
-            link_session_id,
-        ),
-        //_ => return Err(AuthServiceError::InvalidSession),
-    };
+    let ExternalLogin {
+        pkce_code_verifier,
+        csrf_state,
+        target_url,
+        link_session_id,
+        ..
+    } = auth_session.external_login.take().ok_or(Error::MissingExternalLogin)?;
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
@@ -75,64 +67,73 @@ async fn openid_connect_auth_impl(
     }
 
     // Exchange the code with a token.
-    let token = oauth2_client
+    let token = client
         .client
         .exchange_code(auth_code)
-        .set_pkce_verifier(pkce_code_verifier)
+        .set_pkce_verifier(PkceCodeVerifier::new(pkce_code_verifier))
         .request_async(async_http_client)
         .await
         .map_err(|err| Error::FailedTokenExchange(format!("{err:?}")))?;
 
     let external_user_info = get_external_user_info(
-        oauth2_client.user_info_url.url().clone(),
+        client.user_info_url.url().clone(),
         token.access_token().secret(),
-        &oauth2_client.user_info_mapping,
+        &client.user_info_mapping,
     )
     .await?;
     log::info!("{:?}", external_user_info);
 
-    let result = external_auth_user(
-        state,
-        current_user,
-        linked_user,
-        &oauth2_client.provider,
-        external_user_info,
-        target_url.as_deref(),
-    )
-    .await?;
-
-    Ok(result)
+    match (&auth_session.user, &link_session_id) {
+        (Some(current_user), Some(linked_user)) => {
+            // try to link account
+            let html = external_auth_link_user(
+                state,
+                current_user,
+                linked_user,
+                &client.provider,
+                &external_user_info,
+                target_url.as_deref(),
+            )
+            .await?;
+            Ok(html)
+        }
+        (None, None) => {
+            // try to create a new user
+            let (user, html) =
+                external_auth_create_user(state, &client.provider, &external_user_info, target_url.as_deref()).await?;
+            auth_session.user = Some(user);
+            Ok(html)
+        }
+        _ => Err(Error::InconsistentSessionLinking),
+    }
 }
 
 pub(in crate::auth) async fn oauth2_connect_auth(
     State(state): State<AuthServiceState>,
-    Extension(oauth2_client): Extension<Arc<OAuth2Client>>,
+    Extension(client): Extension<Arc<OAuth2Client>>,
     Query(query): Query<AuthRequest>,
-    mut user_session: UserSession,
-    mut external_login_session: ExternalLoginSession,
+    mut auth_session: AuthSession,
 ) -> Response {
-    log::info!("user_session: {user_session:?}");
-    log::info!("external_login: {external_login_session:?}");
+    log::info!("auth_session: {auth_session:?}");
 
-    match openid_connect_auth_impl(
-        &state,
-        &oauth2_client,
-        query,
-        user_session.take(),
-        external_login_session.take(),
-    )
-    .await
-    {
-        Ok((current_user, html)) => {
-            log::debug!("Session is ready: {user_session:#?}");
-            user_session.set(current_user);
-            // clear external_login_session and set a new user_session
-            (external_login_session, user_session, html).into_response()
+    match openid_connect_auth_impl(&state, &client, query, &mut auth_session).await {
+        Ok(html) => {
+            log::debug!("Session is ready: {:#?}", auth_session.user);
+            (auth_session, html).into_response()
+        }
+        err @ Err(Error::MissingExternalLogin)
+        | err @ Err(Error::InvalidCsrfState)
+        | err @ Err(Error::InconsistentSessionLinking)
+        | err @ Err(Error::ExternalAuthError(ExternalAuthError::CompromisedSessions(_))) => {
+            log::info!("Session is corrupted: {err:?}");
+            let html = create_ooops_page(&state, Some("Session is corrupted, clearing stored sessions"));
+            let _ = auth_session.take();
+            (StatusCode::FORBIDDEN, auth_session, html).into_response()
         }
         Err(err) => {
             let html = create_ooops_page(&state, Some(&format!("{err}")));
-            // clear external_login_session, but keep user_session intact
-            (StatusCode::INTERNAL_SERVER_ERROR, external_login_session, html).into_response()
+            // Keep only the current_user intact
+            (StatusCode::INTERNAL_SERVER_ERROR, auth_session, html).into_response()
         }
     }
 }
