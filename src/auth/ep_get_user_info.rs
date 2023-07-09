@@ -42,7 +42,7 @@ pub(in crate::auth) struct UserInfo {
 
 /// Get the information about the current user. The cookie is not accessible
 /// from javascript, thus this endpoint can be used to get details about the current user.
-pub(in crate::auth) async fn user_info(
+pub(in crate::auth) async fn ep_get_user_info(
     State(state): State<AuthServiceState>,
     user: CurrentUser,
 ) -> Result<Json<UserInfo>, Error> {

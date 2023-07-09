@@ -45,7 +45,7 @@ impl BaseGeneratorConfig {
 pub enum IdEncoderConfig {
     #[serde(rename_all = "camelCase")]
     Optimus { prime: u64, random: u64 },
-    
+
     #[serde(rename_all = "camelCase")]
     Harsh { salt: String },
 }

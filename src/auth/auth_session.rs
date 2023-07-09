@@ -1,3 +1,4 @@
+use crate::auth::AuthSessionConfig;
 use async_trait::async_trait;
 use axum::{
     extract::FromRequestParts,
@@ -35,7 +36,7 @@ pub(in crate::auth) struct ExternalLogin {
     pub target_url: Option<String>,
     // indicates if login was made to link the account to the user of the given session
     #[serde(rename = "l")]
-    pub link_session_id: Option<CurrentUser>,
+    pub linked_user: Option<CurrentUser>,
 }
 
 #[derive(Clone, Debug, Hash, Serialize, Deserialize)]
@@ -94,6 +95,10 @@ impl Signature {
 
 #[derive(Debug, ThisError)]
 pub(in crate::auth) enum AuthSessionError {
+    #[error("Missing or invalid domain for application home")]
+    MissingHomeDomain,
+    #[error("Token max duration is invalid: {0}")]
+    InvalidTokenExpiration(String),
     #[error("Invalid session secret: {0}")]
     InvalidSecret(String),
     #[error("Missing domain for auth scope")]
@@ -117,27 +122,37 @@ pub(in crate::auth) struct AuthSessionMeta {
     external_login: CookieSettings,
     token_login: CookieSettings,
     signature: CookieSettings,
+
+    token_max_duration: Duration,
 }
 
 impl AuthSessionMeta {
     pub fn new(
-        app_domain: &str,
+        home_url: Url,
         auth_base: Url,
-        name_suffix: Option<&str>,
+        cookie_name_suffix: Option<&str>,
         user_secret: &str,
-        external_login_secret: &str,
-        token_login_secret: &str,
-        signature_secret: &str,
+        config: &AuthSessionConfig,
     ) -> Result<Self, AuthSessionError> {
-        let name_suffix = name_suffix.unwrap_or_default();
+        let cookie_name_suffix = cookie_name_suffix.unwrap_or_default();
+        let home_domain = home_url.domain().ok_or(AuthSessionError::MissingHomeDomain)?;
         let auth_domain = auth_base.domain().ok_or(AuthSessionError::MissingDomain)?.to_string();
         let auth_path = auth_base.path().to_string();
 
-        log::info!("app_domain: {}", app_domain);
+        let token_max_duration = i64::try_from(config.token_max_duration)
+            .map_err(|err| AuthSessionError::InvalidTokenExpiration(format!("{err}")))?;
+        if !(10..=3024000).contains(&token_max_duration) {
+            return Err(AuthSessionError::InvalidTokenExpiration(
+                "duration is out or range: 10s, 3024000s (5 weeks)".into(),
+            ));
+        }
+        let token_max_duration = Duration::seconds(token_max_duration);
+
+        log::info!("home_domain: {}", home_domain);
         log::info!("auth_domain: {}", auth_domain);
         log::info!("auth_path: {}", auth_path);
 
-        if !auth_domain.ends_with(app_domain) {
+        if !auth_domain.ends_with(home_domain) {
             return Err(AuthSessionError::InvalidApiDomain);
         }
 
@@ -149,48 +164,49 @@ impl AuthSessionMeta {
         };
         let external_login_secret = {
             let key = B64
-                .decode(external_login_secret)
+                .decode(&config.external_login_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?
         };
         let token_login_secret = {
             let key = B64
-                .decode(token_login_secret)
+                .decode(&config.token_login_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?
         };
         let signature_secret = {
             let key = B64
-                .decode(signature_secret)
+                .decode(&config.signature_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?
         };
 
         Ok(Self {
             user: CookieSettings {
-                name: format!("sid{}", name_suffix),
+                name: format!("sid{}", cookie_name_suffix),
                 secret: user_secret,
-                domain: app_domain.into(),
+                domain: home_domain.into(),
                 path: "/".into(),
             },
             external_login: CookieSettings {
-                name: format!("eid{}", name_suffix),
+                name: format!("eid{}", cookie_name_suffix),
                 secret: external_login_secret,
                 domain: auth_domain.clone(),
                 path: auth_path.clone(),
             },
             token_login: CookieSettings {
-                name: format!("tid{}", name_suffix),
+                name: format!("tid{}", cookie_name_suffix),
                 secret: token_login_secret,
                 domain: auth_domain.clone(),
                 path: auth_path.clone(),
             },
             signature: CookieSettings {
-                name: format!("sig{}", name_suffix),
+                name: format!("sig{}", cookie_name_suffix),
                 secret: signature_secret,
                 domain: auth_domain,
                 path: auth_path,
             },
+            token_max_duration,
         })
     }
 
@@ -306,11 +322,15 @@ where
     }
 }
 
-fn create_jar<T: Serialize>(settings: &CookieSettings, data: &Option<T>) -> SignedCookieJar {
+fn create_jar<T: Serialize, X: Into<Expiration>>(
+    settings: &CookieSettings,
+    data: &Option<T>,
+    expiration: X,
+) -> SignedCookieJar {
     let mut cookie = if let Some(data) = data {
         let raw_data = serde_json::to_string(data).expect("Failed to serialize user");
         let mut cookie = Cookie::new(settings.name.clone(), raw_data);
-        cookie.set_expires(Expiration::Session);
+        cookie.set_expires(expiration);
         cookie
     } else {
         let mut cookie = Cookie::named(settings.name.to_string());
@@ -349,10 +369,12 @@ impl IntoResponseParts for AuthSession {
             signature
         );
 
-        let user = create_jar(&meta.user, &user);
-        let external_login = create_jar(&meta.external_login, &external_login);
-        let token_login = create_jar(&meta.token_login, &token_login);
-        let signature = create_jar(&meta.signature, &signature);
+        let token_expiration = OffsetDateTime::now_utc() + meta.token_max_duration;
+
+        let user = create_jar(&meta.user, &user, Expiration::Session);
+        let external_login = create_jar(&meta.external_login, &external_login, Expiration::Session);
+        let token_login = create_jar(&meta.token_login, &token_login, token_expiration);
+        let signature = create_jar(&meta.signature, &signature, Expiration::Session);
 
         Ok((user, external_login, token_login, signature)
             .into_response_parts(res)

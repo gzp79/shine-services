@@ -1,14 +1,12 @@
 use crate::{
-    auth::{
-        ep_get_providers, ep_user_info, oauth2_client::OAuth2Client, oauth2_page_auth, oauth2_page_login,
-        oidc_client::OIDCClient, oidc_page_auth, oidc_page_login, page_delete_user, page_logout, AuthSessionMeta,
-    },
+    auth::{self, AuthSessionMeta, OAuth2Client, OIDCClient},
     db::{IdentityManager, NameGenerator, SessionManager},
 };
-use axum::{response::Html, routing::get, Extension, Router};
+use axum::{routing::get, Extension, Router};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
+    num::TryFromIntError,
     sync::Arc,
 };
 use tera::Tera;
@@ -47,19 +45,29 @@ pub struct OIDCConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AuthConfig {
-    pub api_url: Url,
+pub struct AuthSessionConfig {
     pub external_login_secret: String,
     pub token_login_secret: String,
+    pub token_max_duration: usize,
     pub signature_secret: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthConfig {
+    pub api_url: Url,
+
+    #[serde(flatten)]
+    pub auth_session: AuthSessionConfig,
+
     pub openid: HashMap<String, OIDCConfig>,
     pub oauth2: HashMap<String, OAuth2Config>,
 }
 
 #[derive(Debug, ThisError)]
 pub enum AuthBuildError {
-    #[error("Missing or invalid domain for application")]
-    MissingHomeDomain,
+    #[error("Invalid token duration")]
+    InvalidTokenDuration(#[from] TryFromIntError),
     #[error("Provider ({0}) already registered")]
     ProviderConflict(String),
     #[error("Auth session error: {0}")]
@@ -138,10 +146,9 @@ impl AuthServiceBuilder {
         config: &AuthConfig,
         home_url: &Url,
         user_secret: &str,
+        cookie_postfix: Option<&str>,
     ) -> Result<Self, AuthBuildError> {
         let mut providers = HashSet::new();
-
-        let domain = home_url.domain().ok_or(AuthBuildError::MissingHomeDomain)?;
 
         let mut openid_clients = Vec::new();
         for (provider, provider_config) in &config.openid {
@@ -173,13 +180,11 @@ impl AuthServiceBuilder {
         }));
 
         let auth_session_meta = AuthSessionMeta::new(
-            domain,
+            home_url.clone(),
             config.api_url.clone(),
-            None,
+            cookie_postfix,
             user_secret,
-            &config.external_login_secret,
-            &config.token_login_secret,
-            &config.signature_secret,
+            &config.auth_session,
         )
         .map_err(|err| AuthBuildError::InvalidAuthSession(format!("{err}")))?;
 
@@ -197,16 +202,18 @@ impl AuthServiceBuilder {
     {
         let page_router = {
             let mut router = Router::new()
-                .route("/auth/logout", get(page_logout::logout))
-                .route("/auth/delete", get(page_delete_user::user_delete));
+                .route("/auth/logout", get(auth::page_logout))
+                .route("/auth/delete", get(auth::page_delete_user))
+                /*.route("/auth/token/login", get(token_page_enter::token_login))
+                .route("/auth/token/enter", get(token_page_enter::token_enter))*/;
 
             for openid_client in self.openid_clients {
                 let path = format!("/auth/{}", openid_client.provider);
 
                 let openid_route = Router::new()
-                    .route("/login", get(oidc_page_login::openid_connect_login))
-                    .route("/link", get(oidc_page_login::openid_connect_link))
-                    .route("/auth", get(oidc_page_auth::openid_connect_auth))
+                    .route("/enter", get(auth::page_oidc_enter))
+                    .route("/link", get(auth::page_oidc_link))
+                    .route("/auth", get(auth::page_oidc_auth))
                     .layer(Extension(Arc::new(openid_client)));
 
                 router = router.nest(&path, openid_route);
@@ -216,9 +223,9 @@ impl AuthServiceBuilder {
                 let path = format!("/auth/{}", oauth2_client.provider);
 
                 let openid_route = Router::new()
-                    .route("/login", get(oauth2_page_login::oauth2_connect_login))
-                    .route("/link", get(oauth2_page_login::oauth2_connect_link))
-                    .route("/auth", get(oauth2_page_auth::oauth2_connect_auth))
+                    .route("/enter", get(auth::page_oauth2_enter))
+                    .route("/link", get(auth::page_oauth2_link))
+                    .route("/auth", get(auth::page_oauth2_auth))
                     .layer(Extension(Arc::new(oauth2_client)));
 
                 router = router.nest(&path, openid_route);
@@ -230,40 +237,19 @@ impl AuthServiceBuilder {
         };
 
         let api_router = Router::new()
-            .route("/auth/userinfo", get(ep_user_info::user_info))
-            .route("/auth/providers", get(ep_get_providers::get_providers))
+            .route("/auth/userinfo", get(auth::ep_get_user_info))
+            .route("/auth/providers", get(auth::ep_get_auth_providers))
             .with_state(self.state);
 
         (page_router, api_router)
     }
 }
 
-pub(in crate::auth) fn create_redirect_page(
-    state: &AuthServiceState,
-    title: &str,
-    target: &str,
-    target_url: Option<&str>,
-) -> Html<String> {
-    let mut context = tera::Context::new();
-    context.insert("title", title);
-    context.insert("target", target);
-    context.insert("redirect_url", target_url.unwrap_or(state.home_url().as_str()));
-    let html = state
-        .tera()
-        .render("redirect.html", &context)
-        .expect("Failed to generate redirect.html template");
-    Html(html)
-}
-
-pub(in crate::auth) fn create_ooops_page(state: &AuthServiceState, detail: Option<&str>) -> Html<String> {
-    let mut context = tera::Context::new();
-    context.insert("home_url", state.home_url());
-    context.insert("detail", &detail.unwrap_or_default());
-    let html = state
-        .tera()
-        .render("ooops.html", &context)
-        .expect("Failed to generate ooops.html template");
-    Html(html)
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(in crate::auth) struct EnterRequestParams {
+    pub redirect: Option<String>,
+    pub remember_me: Option<bool>,
 }
 
 #[cfg(test)]

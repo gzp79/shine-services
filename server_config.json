@@ -9,7 +9,7 @@
     ],
     "homeUrl": "http://scytta.com",
     "controlPort": 80,
-    "sessionMaxDuration": 43200,
+    "sessionMaxDuration": 43200,    
     "tracing": {
         "allowReconfigure": true,
         "enableConsoleLog": true,
@@ -24,6 +24,7 @@
     },
     "auth": {
         "apiUrl": "http://cloud.scytta.com/identity/auth",
+        "tokenMaxDuration": 1209600,
         "openid": {
             "google": {
                 "redirectUrl": "https://cloud.scytta.com/identity/auth/google/auth",

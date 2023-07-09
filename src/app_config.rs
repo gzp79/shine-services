@@ -43,6 +43,7 @@ pub struct AppConfig {
     pub control_port: u16,
     pub allow_origins: Vec<String>,
     pub cookie_secret: String,
+    pub cookie_suffix: Option<String>,
     pub session_max_duration: usize,
     pub tls: Option<TlsConfig>,
 }

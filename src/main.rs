@@ -112,9 +112,15 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
             session_manager: session_manager.clone(),
             name_generator: name_generator.clone(),
         };
-        AuthServiceBuilder::new(auth_state, &config.auth, &config.home_url, &config.cookie_secret)
-            .await?
-            .into_router()
+        AuthServiceBuilder::new(
+            auth_state,
+            &config.auth,
+            &config.home_url,
+            &config.cookie_secret,
+            config.cookie_suffix.as_deref(),
+        )
+        .await?
+        .into_router()
     };
 
     let identity_api = {
