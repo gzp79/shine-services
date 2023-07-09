@@ -1,3 +1,4 @@
+use crate::db::NameGeneratorConfig;
 use crate::{auth, db::DBConfig};
 use config::ConfigError;
 use serde::{Deserialize, Serialize};
@@ -34,16 +35,16 @@ pub struct AppConfig {
     pub core: CoreConfig,
 
     pub tracing: TracingConfig,
-    pub auth: auth::AuthConfig,
     pub db: DBConfig,
-    pub control_port: u16,
+    pub auth: auth::AuthConfig,
+    pub user_name: NameGeneratorConfig,
 
+    pub home_url: Url,
+    pub control_port: u16,
     pub allow_origins: Vec<String>,
     pub cookie_secret: String,
-    pub home_url: Url,
-    pub tls: Option<TlsConfig>,
-
     pub session_max_duration: usize,
+    pub tls: Option<TlsConfig>,
 }
 
 impl AppConfig {

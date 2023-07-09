@@ -1,0 +1,1 @@
+CREATE SEQUENCE user_id_counter;

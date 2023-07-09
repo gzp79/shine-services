@@ -103,7 +103,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let identity_manager = IdentityManager::new(&db_pool).await?;
     let session_max_duration = Duration::seconds(i64::try_from(config.session_max_duration)?);
     let session_manager = SessionManager::new(&db_pool, session_max_duration).await?;
-    let name_generator = NameGenerator::new();
+    let name_generator = NameGenerator::new(&config.user_name, &db_pool).await?;
 
     let (auth_pages, auth_api) = {
         let auth_state = AuthServiceDependencies {
@@ -120,6 +120,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let identity_api = {
         let identity_state = IdentityServiceDependencies {
             identity_manager: identity_manager.clone(),
+            name_generator: name_generator.clone(),
             db: db_pool.clone(),
         };
         IdentityServiceBuilder::new(identity_state).into_router()

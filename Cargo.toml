@@ -20,6 +20,7 @@ base64 = "0.21"
 bytes = "1.0"
 rand = "0.8"
 ring = "0.16"
+harsh = "0.2"
 
 futures = "0.3"
 async-trait = "0.1"

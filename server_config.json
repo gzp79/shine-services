@@ -17,6 +17,11 @@
             "type": "stdOut"
         }
     },
+    "userName": {
+        "baseGenerator": "fixed",
+        "baseName": "Freshman",
+        "idEncoder": "harsh"
+    },
     "auth": {
         "apiUrl": "http://cloud.scytta.com/identity/auth",
         "openid": {
@@ -62,7 +67,9 @@
                 "userInfoMapping": {
                     "name": "login"
                 },
-                "extensions": ["githubEmail"],
+                "extensions": [
+                    "githubEmail"
+                ],
                 "scopes": [
                     "user:email"
                 ]
