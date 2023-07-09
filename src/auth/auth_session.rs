@@ -127,14 +127,8 @@ pub(in crate::auth) struct AuthSessionMeta {
 }
 
 impl AuthSessionMeta {
-    pub fn new(
-        home_url: Url,
-        auth_base: Url,
-        cookie_name_suffix: Option<&str>,
-        user_secret: &str,
-        config: &AuthSessionConfig,
-    ) -> Result<Self, AuthSessionError> {
-        let cookie_name_suffix = cookie_name_suffix.unwrap_or_default();
+    pub fn new(home_url: Url, auth_base: Url, config: &AuthSessionConfig) -> Result<Self, AuthSessionError> {
+        let cookie_name_suffix = config.cookie_name_suffix.as_deref().unwrap_or_default();
         let home_domain = home_url.domain().ok_or(AuthSessionError::MissingHomeDomain)?;
         let auth_domain = auth_base.domain().ok_or(AuthSessionError::MissingDomain)?.to_string();
         let auth_path = auth_base.path().to_string();
@@ -158,7 +152,7 @@ impl AuthSessionMeta {
 
         let user_secret = {
             let key = B64
-                .decode(user_secret)
+                .decode(&config.session_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?
         };

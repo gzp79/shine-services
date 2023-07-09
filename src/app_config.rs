@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use shine_service::axum::tracing::TracingConfig;
 use shine_service::service::CoreConfig;
 use thiserror::Error as ThisError;
-use url::Url;
 
 pub const SERVICE_NAME: &str = "identity";
 
@@ -39,12 +38,8 @@ pub struct AppConfig {
     pub auth: auth::AuthConfig,
     pub user_name: NameGeneratorConfig,
 
-    pub home_url: Url,
     pub control_port: u16,
     pub allow_origins: Vec<String>,
-    pub cookie_secret: String,
-    pub cookie_suffix: Option<String>,
-    pub session_max_duration: usize,
     pub tls: Option<TlsConfig>,
 }
 

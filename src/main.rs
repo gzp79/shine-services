@@ -96,12 +96,12 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         tera
     };
 
+    let auth_config = &config.auth.auth_session;
+
     let db_pool = DBPool::new(&config.db).await?;
-
-    let user_session = UserSessionValidator::new(None, &config.cookie_secret, db_pool.redis.clone())?;
-
+    let user_session = UserSessionValidator::new(None, &auth_config.session_secret, db_pool.redis.clone())?;
     let identity_manager = IdentityManager::new(&db_pool).await?;
-    let session_max_duration = Duration::seconds(i64::try_from(config.session_max_duration)?);
+    let session_max_duration = Duration::seconds(i64::try_from(auth_config.session_max_duration)?);
     let session_manager = SessionManager::new(&db_pool, session_max_duration).await?;
     let name_generator = NameGenerator::new(&config.user_name, &db_pool).await?;
 
@@ -112,15 +112,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
             session_manager: session_manager.clone(),
             name_generator: name_generator.clone(),
         };
-        AuthServiceBuilder::new(
-            auth_state,
-            &config.auth,
-            &config.home_url,
-            &config.cookie_secret,
-            config.cookie_suffix.as_deref(),
-        )
-        .await?
-        .into_router()
+        AuthServiceBuilder::new(auth_state, &config.auth).await?.into_router()
     };
 
     let identity_api = {

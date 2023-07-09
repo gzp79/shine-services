@@ -46,15 +46,21 @@ pub struct OIDCConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthSessionConfig {
+    pub cookie_name_suffix: Option<String>,
+
+    pub session_secret: String,
     pub external_login_secret: String,
     pub token_login_secret: String,
-    pub token_max_duration: usize,
     pub signature_secret: String,
+
+    pub session_max_duration: usize,
+    pub token_max_duration: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthConfig {
+    pub home_url: Url,
     pub api_url: Url,
 
     #[serde(flatten)]
@@ -141,13 +147,7 @@ pub struct AuthServiceBuilder {
 }
 
 impl AuthServiceBuilder {
-    pub async fn new(
-        dependencies: AuthServiceDependencies,
-        config: &AuthConfig,
-        home_url: &Url,
-        user_secret: &str,
-        cookie_postfix: Option<&str>,
-    ) -> Result<Self, AuthBuildError> {
+    pub async fn new(dependencies: AuthServiceDependencies, config: &AuthConfig) -> Result<Self, AuthBuildError> {
         let mut providers = HashSet::new();
 
         let mut openid_clients = Vec::new();
@@ -175,18 +175,13 @@ impl AuthServiceBuilder {
             identity_manager: dependencies.identity_manager,
             session_manager: dependencies.session_manager,
             name_generator: dependencies.name_generator,
-            home_url: home_url.to_owned(),
+            home_url: config.home_url.to_owned(),
             providers: providers.into_iter().collect(),
         }));
 
-        let auth_session_meta = AuthSessionMeta::new(
-            home_url.clone(),
-            config.api_url.clone(),
-            cookie_postfix,
-            user_secret,
-            &config.auth_session,
-        )
-        .map_err(|err| AuthBuildError::InvalidAuthSession(format!("{err}")))?;
+        let auth_session_meta =
+            AuthSessionMeta::new(config.home_url.clone(), config.api_url.clone(), &config.auth_session)
+                .map_err(|err| AuthBuildError::InvalidAuthSession(format!("{err}")))?;
 
         Ok(Self {
             state,
