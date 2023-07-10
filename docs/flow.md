@@ -1,6 +1,7 @@
-# Flows to entering the site
+# User flow entering the site
 
 **There is no distinct sign in or register page, just a simple "enter" page.**
+
 User opens the `Enter` page, and meets the following  options:
   - "Just let me in"
   - External, social linking: github, discord, etc
@@ -10,7 +11,7 @@ User opens the `Enter` page, and meets the following  options:
 
 #### New user
 
-It always creates a new user (with the addition describe in the `Returning user` section)
+It always creates a new user (with the addition described in the `Returning user` section)
  - A new user is created 
    - with some generated name 
    - no email
