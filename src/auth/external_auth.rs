@@ -142,7 +142,7 @@ pub(in crate::auth) async fn page_external_auth(
         };
 
         log::debug!("Linked user: {user:#?}");
-        return AuthPage::redirect(state, auth_session, target_url.as_deref());
+        return AuthPage::redirect(state, Some(auth_session), target_url.as_deref());
     } else {
         log::debug!("Login in or register a new user...");
 
@@ -235,6 +235,6 @@ pub(in crate::auth) async fn page_external_auth(
         };
 
         auth_session.user = Some(user);
-        AuthPage::redirect(state, auth_session, target_url.as_deref())
+        AuthPage::redirect(state, Some(auth_session), target_url.as_deref())
     }
 }

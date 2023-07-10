@@ -51,5 +51,5 @@ pub(in crate::auth) async fn page_oidc_enter(
     });
     assert!(auth_session.user.is_none() && auth_session.token_login.is_none());
 
-    AuthPage::external_redirect(&state, auth_session, &client.provider, authorize_url)
+    AuthPage::external_redirect(&state, Some(auth_session), &client.provider, authorize_url)
 }

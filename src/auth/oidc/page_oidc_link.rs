@@ -45,5 +45,5 @@ pub(in crate::auth) async fn page_oidc_link(
         linked_user: auth_session.user.clone(),
     });
 
-    AuthPage::external_redirect(&state, auth_session, &client.provider, authorize_url)
+    AuthPage::external_redirect(&state, Some(auth_session), &client.provider, authorize_url)
 }

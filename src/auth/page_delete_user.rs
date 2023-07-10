@@ -16,12 +16,12 @@ pub(in crate::auth) async fn page_delete_user(
             Err(err) => return AuthPage::internal_error(&state, None, err),
         };
 
-        if let Err(err) = state.identity_manager().delete_identity(user.user_id).await {
+        if let Err(err) = state.identity_manager().cascaded_delete(user.user_id).await {
             AuthPage::internal_error(&state, None, err)
         } else if let Err(err) = state.session_manager().remove_all(user.user_id).await {
-            AuthPage::internal_error(&state, None, err)
+            AuthPage::internal_error(&state, Some(auth_session), err)
         } else {
-            AuthPage::redirect(&state, auth_session, None)
+            AuthPage::redirect(&state, Some(auth_session), None)
         }
     } else {
         AuthPage::invalid_session_logout(&state, auth_session)

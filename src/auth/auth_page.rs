@@ -13,7 +13,7 @@ pub(in crate::auth) struct AuthPage {
 
 impl AuthPage {
     /// Return a redirect page to some url of the application.
-    pub fn redirect(state: &AuthServiceState, auth_session: AuthSession, redirect_url: Option<&str>) -> Self {
+    pub fn redirect(state: &AuthServiceState, auth_session: Option<AuthSession>, redirect_url: Option<&str>) -> Self {
         let mut context = tera::Context::new();
         context.insert("title", "Redirecting...");
         context.insert("target", APP_NAME);
@@ -24,7 +24,7 @@ impl AuthPage {
             .expect("Failed to generate redirect.html template");
 
         Self {
-            auth_session: Some(auth_session),
+            auth_session,
             status: StatusCode::OK,
             html,
         }
@@ -33,7 +33,7 @@ impl AuthPage {
     /// Return a redirect page to some external url.
     pub fn external_redirect<S1: AsRef<str>, S2: AsRef<str>>(
         state: &AuthServiceState,
-        auth_session: AuthSession,
+        auth_session: Option<AuthSession>,
         target: S1,
         redirect_url: S2,
     ) -> Self {
@@ -47,7 +47,7 @@ impl AuthPage {
             .expect("Failed to generate redirect.html template");
 
         Self {
-            auth_session: Some(auth_session),
+            auth_session,
             status: StatusCode::OK,
             html,
         }
