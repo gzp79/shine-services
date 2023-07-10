@@ -1,6 +1,7 @@
 CREATE TABLE login_tokens (
     user_id UUID NOT NULL,
     created TIMESTAMPTZ NULL,
+    expire TIMESTAMPTZ NULL,
     token TEXT NOT NULL,
     CONSTRAINT fkey_user_id FOREIGN KEY(user_id) REFERENCES identities(user_id) ON DELETE CASCADE
 );

@@ -2992,6 +2992,7 @@ dependencies = [
  "config",
  "futures",
  "harsh",
+ "hex",
  "log",
  "oauth2",
  "openidconnect",

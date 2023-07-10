@@ -9,7 +9,6 @@ use shine_service::service::{CurrentUser, APP_NAME};
 use std::collections::HashMap;
 use thiserror::Error as ThisError;
 use url::Url;
-use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 pub(in crate::auth) struct ExternalUserInfo {
@@ -102,7 +101,7 @@ pub(in crate::auth) async fn page_external_auth(
     linked_user: Option<CurrentUser>,
     provider: &str,
     user_info: ExternalUserInfo,
-    target_url: Option<String>,
+    target_url: Option<Url>,
 ) -> AuthPage {
     // Make sure external login is cleared
     let _ = auth_session.external_login.take();
@@ -136,13 +135,13 @@ pub(in crate::auth) async fn page_external_auth(
                 )
             }
             Err(IdentityError::DBError(err)) => return AuthPage::internal_error(state, Some(auth_session), err),
-            Err(IdentityError::LinkEmailConflict)
-            | Err(IdentityError::NameConflict)
-            | Err(IdentityError::UserIdConflict) => unreachable!(),
+            Err(err) => {
+                return AuthPage::internal_error(state, Some(auth_session), format!("Unexpected error: {err:?}"))
+            }
         };
 
         log::debug!("Linked user: {user:#?}");
-        return AuthPage::redirect(state, Some(auth_session), target_url.as_deref());
+        return AuthPage::redirect(state, Some(auth_session), target_url.as_ref());
     } else {
         log::debug!("Login in or register a new user...");
 
@@ -151,7 +150,7 @@ pub(in crate::auth) async fn page_external_auth(
             return AuthPage::invalid_session_logout(state, auth_session);
         }
 
-        log::debug!("Finding existing user by external login...");
+        log::debug!("Check for existing user by external login...");
         let external_login = ExternalLoginInfo {
             provider: provider.to_string(),
             provider_id: user_info.external_id.clone(),
@@ -166,66 +165,20 @@ pub(in crate::auth) async fn page_external_auth(
         };
         let identity = match identity {
             // Sign in to an existing (linked) account
-            Some(identity) => {
-                log::debug!("Found: {identity:#?}");
-                identity
-            }
+            Some(identity) => identity,
 
             // Create a new user.
-            None => {
-                const MAX_RETRY_COUNT: usize = 10;
-                let mut retry_count = 0;
-                loop {
-                    log::debug!("Creating new user; retry: {retry_count:#?}");
-                    if retry_count > MAX_RETRY_COUNT {
-                        return AuthPage::internal_error(
-                            state,
-                            Some(auth_session),
-                            "Number of optimistic concurrency failure limit reached",
-                        );
-                    }
-
-                    let user_id = Uuid::new_v4();
-                    let user_name = match &user_info.name {
-                        Some(name) if retry_count == 0 => name.clone(),
-                        _ => match state.name_generator().generate_name().await {
-                            Ok(name) => name,
-                            Err(err) => return AuthPage::internal_error(state, Some(auth_session), err),
-                        },
-                    };
-                    let email = user_info.email.as_deref();
-                    retry_count += 1;
-
-                    match state
-                        .identity_manager()
-                        .create_user(user_id, &user_name, email, Some(&external_login))
-                        .await
-                    {
-                        Ok(identity) => break identity,
-                        Err(IdentityError::NameConflict) => continue,
-                        Err(IdentityError::UserIdConflict) => continue,
-                        Err(IdentityError::LinkEmailConflict) => {
-                            return AuthPage::error(
-                                state,
-                                Some(auth_session),
-                                StatusCode::CONFLICT,
-                                "Email already in use",
-                            )
-                        }
-                        Err(IdentityError::LinkProviderConflict) => {
-                            return AuthPage::error(
-                                state,
-                                Some(auth_session),
-                                StatusCode::CONFLICT,
-                                "Provider already linked",
-                            )
-                        }
-                        Err(IdentityError::DBError(err)) => {
-                            return AuthPage::internal_error(state, Some(auth_session), err)
-                        }
-                    };
-                }
-            }
+            None => match state
+                .create_user_with_retry(
+                    user_info.name.as_deref(),
+                    user_info.email.as_deref(),
+                    Some(&external_login),
+                )
+                .await
+            {
+                Ok(identity) => identity,
+                Err(err) => return AuthPage::internal_error(state, Some(auth_session), err),
+            },
         };
 
         log::debug!("Identity created: {identity:#?}");
@@ -235,6 +188,6 @@ pub(in crate::auth) async fn page_external_auth(
         };
 
         auth_session.user = Some(user);
-        AuthPage::redirect(state, Some(auth_session), target_url.as_deref())
+        AuthPage::redirect(state, Some(auth_session), target_url.as_ref())
     }
 }

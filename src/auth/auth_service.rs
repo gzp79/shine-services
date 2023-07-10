@@ -3,6 +3,7 @@ use crate::{
     db::{IdentityManager, NameGenerator, SessionManager},
 };
 use axum::{routing::get, Extension, Router};
+use chrono::Duration;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -12,6 +13,8 @@ use std::{
 use tera::Tera;
 use thiserror::Error as ThisError;
 use url::Url;
+
+use super::token::TokenClient;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -142,6 +145,7 @@ pub struct AuthServiceDependencies {
 pub struct AuthServiceBuilder {
     state: AuthServiceState,
     auth_session_meta: AuthSessionMeta,
+    token_client: TokenClient,
     openid_clients: Vec<OIDCClient>,
     oauth2_clients: Vec<OAuth2Client>,
 }
@@ -149,6 +153,9 @@ pub struct AuthServiceBuilder {
 impl AuthServiceBuilder {
     pub async fn new(dependencies: AuthServiceDependencies, config: &AuthConfig) -> Result<Self, AuthBuildError> {
         let mut providers = HashSet::new();
+
+        let token_max_duration = Duration::seconds(i64::try_from(config.auth_session.session_max_duration)?);
+        let token_client = TokenClient::new(token_max_duration);
 
         let mut openid_clients = Vec::new();
         for (provider, provider_config) in &config.openid {
@@ -186,6 +193,7 @@ impl AuthServiceBuilder {
         Ok(Self {
             state,
             auth_session_meta,
+            token_client,
             openid_clients,
             oauth2_clients,
         })
@@ -198,9 +206,15 @@ impl AuthServiceBuilder {
         let page_router = {
             let mut router = Router::new()
                 .route("/auth/logout", get(auth::page_logout))
-                .route("/auth/delete", get(auth::page_delete_user))
-                /*.route("/auth/token/login", get(token_page_enter::token_login))
-                .route("/auth/token/enter", get(token_page_enter::token_enter))*/;
+                .route("/auth/delete", get(auth::page_delete_user));
+
+            router = router.nest(
+                "/auth/token",
+                Router::new()
+                    .route("/login", get(auth::page_token_login))
+                    .route("/register", get(auth::page_token_register))
+                    .layer(Extension(Arc::new(self.token_client))),
+            );
 
             for openid_client in self.openid_clients {
                 let path = format!("/auth/{}", openid_client.provider);
@@ -243,7 +257,7 @@ impl AuthServiceBuilder {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::auth) struct EnterRequestParams {
-    pub redirect: Option<String>,
+    pub redirect_url: Option<Url>,
     pub remember_me: Option<bool>,
 }
 

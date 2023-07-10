@@ -1,5 +1,5 @@
 use crate::{
-    db::{DBError, SearchIdentity, SearchIdentityOrder},
+    db::{IdentityError, SearchIdentity, SearchIdentityOrder},
     services::IdentityServiceState,
 };
 use axum::{
@@ -13,13 +13,13 @@ use thiserror::Error as ThisError;
 #[derive(Debug, ThisError)]
 pub(in crate::services) enum Error {
     #[error(transparent)]
-    DBError(#[from] DBError),
+    IdentityError(#[from] IdentityError),
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let status_code = match &self {
-            Error::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::IdentityError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (status_code, format!("{self:?}")).into_response()

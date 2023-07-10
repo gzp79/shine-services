@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use shine_service::{axum::Page, service::APP_NAME};
+use url::Url;
 
 pub(in crate::auth) struct AuthPage {
     auth_session: Option<AuthSession>,
@@ -13,11 +14,11 @@ pub(in crate::auth) struct AuthPage {
 
 impl AuthPage {
     /// Return a redirect page to some url of the application.
-    pub fn redirect(state: &AuthServiceState, auth_session: Option<AuthSession>, redirect_url: Option<&str>) -> Self {
+    pub fn redirect(state: &AuthServiceState, auth_session: Option<AuthSession>, redirect_url: Option<&Url>) -> Self {
         let mut context = tera::Context::new();
         context.insert("title", "Redirecting...");
         context.insert("target", APP_NAME);
-        context.insert("redirect_url", redirect_url.unwrap_or(state.home_url().as_str()));
+        context.insert("redirect_url", redirect_url.unwrap_or(state.home_url()).as_str());
         let html = state
             .tera()
             .render("redirect.html", &context)
@@ -31,16 +32,16 @@ impl AuthPage {
     }
 
     /// Return a redirect page to some external url.
-    pub fn external_redirect<S1: AsRef<str>, S2: AsRef<str>>(
+    pub fn external_redirect<S: AsRef<str>>(
         state: &AuthServiceState,
         auth_session: Option<AuthSession>,
-        target: S1,
-        redirect_url: S2,
+        target: S,
+        redirect_url: &Url,
     ) -> Self {
         let mut context = tera::Context::new();
         context.insert("title", "Redirecting...");
         context.insert("target", target.as_ref());
-        context.insert("redirect_url", redirect_url.as_ref());
+        context.insert("redirect_url", redirect_url.as_str());
         let html = state
             .tera()
             .render("redirect.html", &context)

@@ -1,6 +1,6 @@
 use crate::db::{DBError, DBPool, PGError};
 use bytes::BytesMut;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use shine_service::{
     pg_prepared_statement,
     service::{PGConnectionPool, PGErrorChecks, QueryBuilder},
@@ -57,7 +57,7 @@ pub struct Identity {
 }
 
 impl Identity {
-    pub fn from_row(row: &Row) -> Result<Self, DBError> {
+    fn from_row(row: &Row) -> Result<Self, IdentityError> {
         Ok(Self {
             user_id: row.try_get(0)?,
             kind: row.try_get(1)?,
@@ -75,6 +75,27 @@ pub struct ExternalLoginInfo {
     pub provider_id: String,
 }
 
+#[derive(Debug)]
+pub struct LoginTokenInfo {
+    pub user_id: Uuid,
+    pub token: String,
+    pub created_at: DateTime<Utc>,
+    pub expire_at: DateTime<Utc>,
+    pub is_expired: bool,
+}
+
+impl LoginTokenInfo {
+    fn from_find_row(row: &Row) -> Result<Self, IdentityError> {
+        Ok(Self {
+            user_id: row.try_get(0)?,
+            token: row.try_get(6)?,
+            created_at: row.try_get(7)?,
+            expire_at: row.try_get(8)?,
+            is_expired: row.try_get(9)?,
+        })
+    }
+}
+
 #[derive(Debug, ThisError)]
 pub enum IdentityError {
     #[error("User id already taken")]
@@ -85,8 +106,16 @@ pub enum IdentityError {
     LinkEmailConflict,
     #[error("External id already linked to a user")]
     LinkProviderConflict,
+    #[error("Failed to generate token")]
+    TokenConflict,
     #[error(transparent)]
     DBError(#[from] DBError),
+}
+
+impl From<tokio_postgres::Error> for IdentityError {
+    fn from(err: tokio_postgres::Error) -> Self {
+        Self::DBError(err.into())
+    }
 }
 
 /// Identity query options
@@ -122,10 +151,16 @@ pg_prepared_statement!( InsertIdentity => r#"
         RETURNING created
 "#, [UUID, INT2, VARCHAR, VARCHAR] );
 
+pg_prepared_statement!( InsertToken => r#"
+    INSERT INTO login_tokens (user_id, token, created, expire) 
+        VALUES ($1, $2, now(), now() + $3 * interval '1 seconds')
+    RETURNING created, expire
+"#, [UUID, VARCHAR, INT4] );
+
 pg_prepared_statement!( InsertExternalLogin => r#"
-INSERT INTO external_logins (user_id, provider, provider_id, linked) 
-VALUES ($1, $2, $3, now())
-RETURNING linked
+    INSERT INTO external_logins (user_id, provider, provider_id, linked) 
+        VALUES ($1, $2, $3, now())
+    RETURNING linked
 "#, [UUID, VARCHAR, VARCHAR] );
 
 pg_prepared_statement!( CascadedDelete => r#"
@@ -140,30 +175,32 @@ pg_prepared_statement!( FindById => r#"
 "#, [UUID] );
 
 pg_prepared_statement!( FindByEmail => r#"
-SELECT user_id, kind, name, email, email_confirmed, created 
-        FROM identities
-        WHERE email = $1
+    SELECT user_id, kind, name, email, email_confirmed, created 
+            FROM identities
+            WHERE email = $1
 "#, [VARCHAR] );
 
 pg_prepared_statement!( FindByName => r#"
-SELECT user_id, kind, name, email, email_confirmed, created 
-        FROM identities
-        WHERE name = $1
+    SELECT user_id, kind, name, email, email_confirmed, created 
+            FROM identities
+            WHERE name = $1
 "#, [VARCHAR] );
 
 pg_prepared_statement!( FindByLink => r#"
-    SELECT identities.user_id, kind, name, email, email_confirmed, created 
-        FROM external_logins, identities
-        WHERE external_logins.user_id = identities.user_id
-            AND external_logins.provider = $1
-            AND external_logins.provider_id = $2
+    SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created,
+           e.provider, e.provider_id, e.linked
+        FROM external_logins e, identities i
+        WHERE e.user_id = i.user_id
+            AND e.provider = $1
+            AND e.provider_id = $2
 "#, [VARCHAR, VARCHAR] );
 
 pg_prepared_statement!( FindByToken => r#"
-    SELECT identities.user_id, kind, name, email, email_confirmed, identities.created 
-        FROM login_tokens, identities
-        WHERE login_tokens.user_id = identities.user_id
-            AND login_tokens.token = $1
+    SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created,
+           t.token, t.created, t.expire, t.expire < now() is_expired
+        FROM login_tokens t, identities i
+        WHERE t.user_id = i.user_id
+            AND t.token = $1
 "#, [VARCHAR] );
 
 pg_prepared_statement!( DeleteToken => r#"
@@ -180,10 +217,17 @@ pub enum IdentityBuildError {
     DBError(#[from] DBError),
 }
 
+impl From<tokio_postgres::Error> for IdentityBuildError {
+    fn from(err: tokio_postgres::Error) -> Self {
+        Self::DBError(err.into())
+    }
+}
+
 struct Inner {
     postgres: PGConnectionPool,
     stmt_insert_identity: InsertIdentity,
     stmt_insert_external_link: InsertExternalLogin,
+    stmt_insert_token: InsertToken,
     stmt_cascaded_delete: CascadedDelete,
     stmt_find_by_id: FindById,
     stmt_find_by_email: FindByEmail,
@@ -200,22 +244,24 @@ pub struct IdentityManager(Arc<Inner>);
 impl IdentityManager {
     pub async fn new(pool: &DBPool) -> Result<Self, IdentityBuildError> {
         let client = pool.postgres.get().await.map_err(DBError::PostgresPoolError)?;
-        let stmt_insert_identity = InsertIdentity::new(&client).await.map_err(DBError::from)?;
-        let stmt_insert_external_link = InsertExternalLogin::new(&client).await.map_err(DBError::from)?;
-        let stmt_cascaded_delete = CascadedDelete::new(&client).await.map_err(DBError::from)?;
-        let stmt_find_by_id = FindById::new(&client).await.map_err(DBError::from)?;
-        let stmt_find_by_email = FindByEmail::new(&client).await.map_err(DBError::from)?;
-        let stmt_find_by_name = FindByName::new(&client).await.map_err(DBError::from)?;
-        let stmt_find_by_link = FindByLink::new(&client).await.map_err(DBError::from)?;
-        let stmt_find_by_token = FindByToken::new(&client).await.map_err(DBError::from)?;
-        let stmt_delete_token = DeleteToken::new(&client).await.map_err(DBError::from)?;
-        let stmt_delete_all_tokens = DeleteAllTokens::new(&client).await.map_err(DBError::from)?;
+        let stmt_insert_identity = InsertIdentity::new(&client).await?;
+        let stmt_insert_external_link = InsertExternalLogin::new(&client).await?;
+        let stmt_insert_token = InsertToken::new(&client).await?;
+        let stmt_cascaded_delete = CascadedDelete::new(&client).await?;
+        let stmt_find_by_id = FindById::new(&client).await?;
+        let stmt_find_by_email = FindByEmail::new(&client).await?;
+        let stmt_find_by_name = FindByName::new(&client).await?;
+        let stmt_find_by_link = FindByLink::new(&client).await?;
+        let stmt_find_by_token = FindByToken::new(&client).await?;
+        let stmt_delete_token = DeleteToken::new(&client).await?;
+        let stmt_delete_all_tokens = DeleteAllTokens::new(&client).await?;
 
         Ok(Self(Arc::new(Inner {
             postgres: pool.postgres.clone(),
             stmt_insert_identity,
-            stmt_cascaded_delete,
             stmt_insert_external_link,
+            stmt_insert_token,
+            stmt_cascaded_delete,
             stmt_find_by_id,
             stmt_find_by_email,
             stmt_find_by_name,
@@ -237,14 +283,10 @@ impl IdentityManager {
         let inner = &*self.0;
 
         let mut client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
-        let stmt_insert_identity = inner.stmt_insert_identity.get(&client).await.map_err(DBError::from)?;
-        let stmt_insert_external_link = inner
-            .stmt_insert_external_link
-            .get(&client)
-            .await
-            .map_err(DBError::from)?;
+        let stmt_insert_identity = inner.stmt_insert_identity.get(&client).await?;
+        let stmt_insert_external_link = inner.stmt_insert_external_link.get(&client).await?;
 
-        let transaction = client.transaction().await.map_err(DBError::from)?;
+        let transaction = client.transaction().await?;
 
         let created_at: DateTime<Utc> = match transaction
             .query_one(
@@ -256,17 +298,17 @@ impl IdentityManager {
             Ok(row) => row.get(0),
             Err(err) if err.is_constraint("identities", "identities_pkey") => {
                 log::info!("Conflicting user id: {}, rolling back user creation", user_id);
-                transaction.rollback().await.map_err(DBError::from)?;
+                transaction.rollback().await?;
                 return Err(IdentityError::UserIdConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_name") => {
                 log::info!("Conflicting name: {}, rolling back user creation", user_name);
-                transaction.rollback().await.map_err(DBError::from)?;
+                transaction.rollback().await?;
                 return Err(IdentityError::NameConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_email") => {
                 log::info!("Conflicting email: {}, rolling back user creation", user_id);
-                transaction.rollback().await.map_err(DBError::from)?;
+                transaction.rollback().await?;
                 return Err(IdentityError::LinkEmailConflict);
             }
             Err(err) => {
@@ -283,7 +325,7 @@ impl IdentityManager {
                 .await
             {
                 if err.is_constraint("external_logins", "idx_provider_provider_id") {
-                    transaction.rollback().await.map_err(DBError::from)?;
+                    transaction.rollback().await?;
                     return Err(IdentityError::LinkProviderConflict);
                 } else {
                     return Err(IdentityError::DBError(err.into()));
@@ -291,7 +333,7 @@ impl IdentityManager {
             };
         }
 
-        transaction.commit().await.map_err(DBError::from)?;
+        transaction.commit().await?;
         Ok(Identity {
             user_id,
             name: user_name.to_owned(),
@@ -302,7 +344,7 @@ impl IdentityManager {
         })
     }
 
-    pub async fn find(&self, find: FindIdentity<'_>) -> Result<Option<Identity>, DBError> {
+    pub async fn find(&self, find: FindIdentity<'_>) -> Result<Option<Identity>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
 
@@ -338,7 +380,7 @@ impl IdentityManager {
         }
     }
 
-    pub async fn search(&self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, DBError> {
+    pub async fn search(&self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, IdentityError> {
         const MAX_COUNT: usize = 100;
 
         log::info!("{search:?}");
@@ -404,7 +446,7 @@ impl IdentityManager {
     pub async fn cascaded_delete(&self, user_id: Uuid) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
-        let stmt = inner.stmt_cascaded_delete.get(&client).await.map_err(DBError::from)?;
+        let stmt = inner.stmt_cascaded_delete.get(&client).await?;
 
         client
             .execute(&stmt, &[&user_id])
@@ -416,11 +458,7 @@ impl IdentityManager {
     pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLoginInfo) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
-        let stmt_insert_external_link = inner
-            .stmt_insert_external_link
-            .get(&client)
-            .await
-            .map_err(DBError::from)?;
+        let stmt_insert_external_link = inner.stmt_insert_external_link.get(&client).await?;
 
         match client
             .execute(
@@ -440,31 +478,76 @@ impl IdentityManager {
         }
     }
 
-    /*pub async fn unlink_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<(), DBError> {
+    /*pub async fn unlink_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<(), IdentityError> {
         todo!()
     }
 
-    pub async fn get_links(&self, user_id: Uuid) -> Result<Vec<ExternalLogin>, DBError> {
+    pub async fn get_links(&self, user_id: Uuid) -> Result<Vec<ExternalLogin>, IdentityError> {
         todo!()
     }*/
 
-    pub async fn create_token(&self, user_id: Uuid) -> Result<String, DBError> {
-        todo!()
+    pub async fn create_token(
+        &self,
+        user_id: Uuid,
+        token: &str,
+        duration: &Duration,
+    ) -> Result<LoginTokenInfo, IdentityError> {
+        let inner = &*self.0;
+
+        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let stmt = inner.stmt_insert_token.get(&client).await?;
+
+        let duration = duration.num_seconds() as i32;
+        assert!(duration > 0);
+        let (created_at, expire_at): (DateTime<Utc>, DateTime<Utc>) =
+            match client.query_one(&stmt, &[&user_id, &token, &duration]).await {
+                Ok(row) => (row.get(0), row.get(1)),
+                Err(err) if err.is_constraint("login_tokens", "idx_token") => {
+                    return Err(IdentityError::TokenConflict);
+                }
+                Err(err) => {
+                    return Err(IdentityError::DBError(err.into()));
+                }
+            };
+
+        Ok(LoginTokenInfo {
+            user_id,
+            token: token.to_owned(),
+            created_at,
+            expire_at,
+            is_expired: false,
+        })
     }
 
-    pub async fn delete_token(&self, user_id: Uuid, token: &str) -> Result<(), DBError> {
+    pub async fn find_token(&self, token: &str) -> Result<Option<(Identity, LoginTokenInfo)>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
-        let stmt = inner.stmt_delete_token.get(&client).await.map_err(DBError::from)?;
+
+        let stmt = inner.stmt_find_by_token.get(&client).await?;
+        let row = client.query_opt(&stmt, &[&token]).await?;
+
+        if let Some(row) = row {
+            let identity = Identity::from_row(&row)?;
+            let token_info = LoginTokenInfo::from_find_row(&row)?;
+            Ok(Some((identity, token_info)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn delete_token(&self, user_id: Uuid, token: &str) -> Result<(), IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let stmt = inner.stmt_delete_token.get(&client).await?;
 
         client.execute(&stmt, &[&user_id, &token]).await?;
         Ok(())
     }
 
-    pub async fn delete_all_tokens(&self, user_id: Uuid) -> Result<(), DBError> {
+    pub async fn delete_all_tokens(&self, user_id: Uuid) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
-        let stmt = inner.stmt_delete_all_tokens.get(&client).await.map_err(DBError::from)?;
+        let stmt = inner.stmt_delete_all_tokens.get(&client).await?;
 
         client.execute(&stmt, &[&user_id]).await?;
         Ok(())

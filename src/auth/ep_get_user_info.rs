@@ -1,4 +1,4 @@
-use crate::{auth::AuthServiceState, db::DBError};
+use crate::{auth::AuthServiceState, db::IdentityError};
 use axum::{
     extract::State,
     http::StatusCode,
@@ -15,16 +15,15 @@ use uuid::Uuid;
 pub(in crate::auth) enum Error {
     #[error("User ({0}) not found")]
     UserNotFound(Uuid),
-
     #[error(transparent)]
-    DBError(#[from] DBError),
+    IdentityError(#[from] IdentityError),
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let status_code = match &self {
             Error::UserNotFound(_) => StatusCode::NOT_FOUND,
-            Error::DBError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::IdentityError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (status_code, format!("{self:?}")).into_response()

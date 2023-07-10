@@ -19,6 +19,7 @@ uuid = { version = "1.3", features = ["v4", "serde"] }
 base64 = "0.21"
 bytes = "1.0"
 rand = "0.8"
+hex = "0.4"
 ring = "0.16"
 harsh = "0.2"
 

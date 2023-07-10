@@ -1,5 +1,7 @@
 mod auth_service;
 pub use self::auth_service::*;
+mod auth_service_utils;
+
 mod auth_page;
 pub(in crate::auth) use self::auth_page::*;
 mod auth_session;
@@ -16,6 +18,8 @@ mod oauth2;
 pub(in crate::auth) use self::oauth2::*;
 mod oidc;
 pub(in crate::auth) use self::oidc::*;
+mod token;
+pub(in crate::auth) use self::token::*;
 mod page_logout;
 pub(in crate::auth) use self::page_logout::*;
 mod page_delete_user;

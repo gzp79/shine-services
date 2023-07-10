@@ -35,10 +35,10 @@ pub(in crate::auth) async fn page_oauth2_enter(
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
         nonce: None,
-        target_url: query.redirect,
+        target_url: query.redirect_url,
         linked_user: None,
     });
     assert!(auth_session.user.is_none() && auth_session.token_login.is_none());
 
-    AuthPage::external_redirect(&state, Some(auth_session), &client.provider, authorize_url)
+    AuthPage::external_redirect(&state, Some(auth_session), &client.provider, &authorize_url)
 }

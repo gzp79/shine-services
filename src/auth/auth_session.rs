@@ -11,6 +11,7 @@ use axum_extra::extract::{
     SignedCookieJar,
 };
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::service::CurrentUser;
 use std::{
@@ -33,7 +34,7 @@ pub(in crate::auth) struct ExternalLogin {
     #[serde(rename = "n")]
     pub nonce: Option<String>,
     #[serde(rename = "t")]
-    pub target_url: Option<String>,
+    pub target_url: Option<Url>,
     // indicates if login was made to link the account to the user of the given session
     #[serde(rename = "l")]
     pub linked_user: Option<CurrentUser>,
@@ -43,6 +44,8 @@ pub(in crate::auth) struct ExternalLogin {
 pub(in crate::auth) struct TokenLogin {
     #[serde(rename = "t")]
     pub token: String,
+    #[serde(rename = "e")]
+    pub expires: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -97,8 +100,6 @@ impl Signature {
 pub(in crate::auth) enum AuthSessionError {
     #[error("Missing or invalid domain for application home")]
     MissingHomeDomain,
-    #[error("Token max duration is invalid: {0}")]
-    InvalidTokenExpiration(String),
     #[error("Invalid session secret: {0}")]
     InvalidSecret(String),
     #[error("Missing domain for auth scope")]
@@ -122,8 +123,6 @@ pub(in crate::auth) struct AuthSessionMeta {
     external_login: CookieSettings,
     token_login: CookieSettings,
     signature: CookieSettings,
-
-    token_max_duration: Duration,
 }
 
 impl AuthSessionMeta {
@@ -132,15 +131,6 @@ impl AuthSessionMeta {
         let home_domain = home_url.domain().ok_or(AuthSessionError::MissingHomeDomain)?;
         let auth_domain = auth_base.domain().ok_or(AuthSessionError::MissingDomain)?.to_string();
         let auth_path = auth_base.path().to_string();
-
-        let token_max_duration = i64::try_from(config.token_max_duration)
-            .map_err(|err| AuthSessionError::InvalidTokenExpiration(format!("{err}")))?;
-        if !(10..=3024000).contains(&token_max_duration) {
-            return Err(AuthSessionError::InvalidTokenExpiration(
-                "duration is out or range: 10s, 3024000s (5 weeks)".into(),
-            ));
-        }
-        let token_max_duration = Duration::seconds(token_max_duration);
 
         log::info!("home_domain: {}", home_domain);
         log::info!("auth_domain: {}", auth_domain);
@@ -200,7 +190,6 @@ impl AuthSessionMeta {
                 domain: auth_domain,
                 path: auth_path,
             },
-            token_max_duration,
         })
     }
 
@@ -278,17 +267,9 @@ where
             .await
             .expect("Missing AuthSessionMeta extension");
 
-        let signature = match SignedCookieJar::from_headers(&parts.headers, meta.signature.secret.clone())
+        let signature = SignedCookieJar::from_headers(&parts.headers, meta.signature.secret.clone())
             .get(&meta.signature.name)
-            .and_then(|session| serde_json::from_str::<Signature>(session.value()).ok())
-        {
-            None => {
-                log::info!("Missing auth signature");
-                return Ok(Self::empty(meta));
-            }
-            Some(signature) => signature,
-        };
-
+            .and_then(|session| serde_json::from_str::<Signature>(session.value()).ok());
         let user = SignedCookieJar::from_headers(&parts.headers, meta.user.secret.clone())
             .get(&meta.user.name)
             .and_then(|session| serde_json::from_str::<CurrentUser>(session.value()).ok());
@@ -296,22 +277,31 @@ where
             .get(&meta.external_login.name)
             .and_then(|session| serde_json::from_str::<ExternalLogin>(session.value()).ok());
         let token_login = SignedCookieJar::from_headers(&parts.headers, meta.token_login.secret.clone())
-            .get(&meta.external_login.name)
+            .get(&meta.token_login.name)
             .and_then(|session| serde_json::from_str::<TokenLogin>(session.value()).ok());
 
         log::info!(
-            "Auth sessions from headers:\n  user:{:#?}\n  external_login:{:#?}\n  token_login:{:#?}\n  signatore:{:#?}",
+            "Auth sessions from headers:\n  user:{:#?}\n  external_login:{:#?}\n  token_login:{:#?}\n  signature:{:#?}",
             user,
             external_login,
             token_login,
             signature
         );
 
-        if signature.validate(&meta.signature.secret, &user, &external_login, &token_login) {
-            Ok(Self::new(meta, user, external_login, token_login))
+        if let Some(signature) = signature {
+            // if there is a signature accept session if all of them are consistent
+            if signature.validate(&meta.signature.secret, &user, &external_login, &token_login) {
+                Ok(Self::new(meta, user, external_login, token_login))
+            } else {
+                Ok(Self::empty(meta))
+            }
         } else {
-            log::info!("Auth signature check failed");
-            Ok(Self::empty(meta))
+            // if there is no signature, only the token_login is considered as that has an extended lifetime
+            if token_login.is_some() {
+                Ok(Self::new(meta, None, None, token_login))
+            } else {
+                Ok(Self::empty(meta))
+            }
         }
     }
 }
@@ -363,7 +353,11 @@ impl IntoResponseParts for AuthSession {
             signature
         );
 
-        let token_expiration = OffsetDateTime::now_utc() + meta.token_max_duration;
+        let token_expiration = {
+            let time = token_login.as_ref().map(|t| t.expires).unwrap_or(Utc::now());
+            let naive_time = time.naive_utc();
+            OffsetDateTime::from_unix_timestamp(naive_time.timestamp()).unwrap()
+        };
 
         let user = create_jar(&meta.user, &user, Expiration::Session);
         let external_login = create_jar(&meta.external_login, &external_login, Expiration::Session);
