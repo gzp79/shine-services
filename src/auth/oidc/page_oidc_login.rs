@@ -13,7 +13,7 @@ use openidconnect::{
 use std::sync::Arc;
 
 /// Login or register a new user with the interactive flow using an OpenID Connect provider.
-pub(in crate::auth) async fn page_oidc_enter(
+pub(in crate::auth) async fn page_oidc_login(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OIDCClient>>,
     Query(query): Query<EnterRequestParams>,

@@ -7,6 +7,9 @@ GET {{url}}/api/auth/providers
 GET {{url}}/auth/google/login
 ###
 
+GET {{url}}/auth/google/login
+###
+
 GET {{url}}/auth/logout
 ###
 

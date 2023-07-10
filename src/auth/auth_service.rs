@@ -211,8 +211,8 @@ impl AuthServiceBuilder {
             router = router.nest(
                 "/auth/token",
                 Router::new()
+                    .route("/use", get(auth::page_token_use))
                     .route("/login", get(auth::page_token_login))
-                    .route("/register", get(auth::page_token_register))
                     .layer(Extension(Arc::new(self.token_client))),
             );
 
@@ -220,7 +220,7 @@ impl AuthServiceBuilder {
                 let path = format!("/auth/{}", openid_client.provider);
 
                 let openid_route = Router::new()
-                    .route("/enter", get(auth::page_oidc_enter))
+                    .route("/login", get(auth::page_oidc_login))
                     .route("/link", get(auth::page_oidc_link))
                     .route("/auth", get(auth::page_oidc_auth))
                     .layer(Extension(Arc::new(openid_client)));
@@ -232,7 +232,7 @@ impl AuthServiceBuilder {
                 let path = format!("/auth/{}", oauth2_client.provider);
 
                 let openid_route = Router::new()
-                    .route("/enter", get(auth::page_oauth2_enter))
+                    .route("/login", get(auth::page_oauth2_login))
                     .route("/link", get(auth::page_oauth2_link))
                     .route("/auth", get(auth::page_oauth2_auth))
                     .layer(Extension(Arc::new(oauth2_client)));

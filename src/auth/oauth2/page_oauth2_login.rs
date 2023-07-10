@@ -8,7 +8,7 @@ use oauth2::{CsrfToken, PkceCodeChallenge};
 use std::sync::Arc;
 
 /// Login or register a new user with the interactive flow using an OAuth2 provider.
-pub(in crate::auth) async fn page_oauth2_enter(
+pub(in crate::auth) async fn page_oauth2_login(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
     Query(query): Query<EnterRequestParams>,
