@@ -25,12 +25,6 @@ impl OIDCClient {
         let client = CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret))
             .set_redirect_uri(redirect_url);
 
-        log::info!(
-            "Redirect url for provider {}: {:?}",
-            provider,
-            config.redirect_url.as_str()
-        );
-
         Ok(Self {
             provider: provider.to_string(),
             scopes: config.scopes.iter().map(|scope| Scope::new(scope.clone())).collect(),

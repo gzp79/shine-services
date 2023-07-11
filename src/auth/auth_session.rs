@@ -14,16 +14,11 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::service::CurrentUser;
-use std::{
-    collections::hash_map::DefaultHasher,
-    convert::Infallible,
-    fmt,
-    hash::{Hash, Hasher},
-    sync::Arc,
-};
+use std::{convert::Infallible, fmt, hash::Hash, sync::Arc};
 use thiserror::Error as ThisError;
 use time::{Duration, OffsetDateTime};
 use url::Url;
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Hash, Serialize, Deserialize)]
 pub(in crate::auth) struct ExternalLogin {
@@ -35,6 +30,7 @@ pub(in crate::auth) struct ExternalLogin {
     pub nonce: Option<String>,
     #[serde(rename = "t")]
     pub target_url: Option<Url>,
+    pub remember_me: bool,
     // indicates if login was made to link the account to the user of the given session
     #[serde(rename = "l")]
     pub linked_user: Option<CurrentUser>,
@@ -42,58 +38,12 @@ pub(in crate::auth) struct ExternalLogin {
 
 #[derive(Clone, Debug, Hash, Serialize, Deserialize)]
 pub(in crate::auth) struct TokenLogin {
+    #[serde(rename = "u")]
+    pub user_id: Uuid,
     #[serde(rename = "t")]
     pub token: String,
     #[serde(rename = "e")]
     pub expires: DateTime<Utc>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Signature {
-    #[serde(rename = "t")]
-    signature: u64,
-}
-
-impl Signature {
-    fn signature(
-        secret: &Key,
-        user: &Option<CurrentUser>,
-        external_login: &Option<ExternalLogin>,
-        token_login: &Option<TokenLogin>,
-    ) -> u64 {
-        let mut hasher = DefaultHasher::default();
-        user.hash(&mut hasher);
-        external_login.hash(&mut hasher);
-        token_login.hash(&mut hasher);
-        hasher.write(secret.master());
-        hasher.finish()
-    }
-
-    fn new(
-        secret: &Key,
-        user: &Option<CurrentUser>,
-        external_login: &Option<ExternalLogin>,
-        token_login: &Option<TokenLogin>,
-    ) -> Option<Self> {
-        if user.is_some() || external_login.is_some() || token_login.is_some() {
-            Some(Self {
-                signature: Self::signature(secret, user, external_login, token_login),
-            })
-        } else {
-            None
-        }
-    }
-
-    fn validate(
-        &self,
-        secret: &Key,
-        user: &Option<CurrentUser>,
-        external_login: &Option<ExternalLogin>,
-        token_login: &Option<TokenLogin>,
-    ) -> bool {
-        let hash = Self::signature(secret, user, external_login, token_login);
-        self.signature == hash
-    }
 }
 
 #[derive(Debug, ThisError)]
@@ -122,7 +72,6 @@ pub(in crate::auth) struct AuthSessionMeta {
     user: CookieSettings,
     external_login: CookieSettings,
     token_login: CookieSettings,
-    signature: CookieSettings,
 }
 
 impl AuthSessionMeta {
@@ -131,65 +80,53 @@ impl AuthSessionMeta {
         let home_domain = home_url.domain().ok_or(AuthSessionError::MissingHomeDomain)?;
         let auth_domain = auth_base.domain().ok_or(AuthSessionError::MissingDomain)?.to_string();
         let auth_path = auth_base.path().to_string();
-
-        log::info!("home_domain: {}", home_domain);
-        log::info!("auth_domain: {}", auth_domain);
-        log::info!("auth_path: {}", auth_path);
-
         if !auth_domain.ends_with(home_domain) {
             return Err(AuthSessionError::InvalidApiDomain);
         }
 
-        let user_secret = {
-            let key = B64
-                .decode(&config.session_secret)
-                .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
-            Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?
-        };
-        let external_login_secret = {
-            let key = B64
-                .decode(&config.external_login_secret)
-                .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
-            Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?
-        };
-        let token_login_secret = {
+        let token_login = {
             let key = B64
                 .decode(&config.token_login_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
-            Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?
+            let secret = Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
+            CookieSettings {
+                name: format!("tid{}", cookie_name_suffix),
+                secret,
+                domain: auth_domain.clone(),
+                path: auth_path.clone(),
+            }
         };
-        let signature_secret = {
+
+        let user = {
             let key = B64
-                .decode(&config.signature_secret)
+                .decode(&config.session_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
-            Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?
+            let secret = Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
+            CookieSettings {
+                name: format!("sid{}", cookie_name_suffix),
+                secret,
+                domain: home_domain.into(),
+                path: "/".into(),
+            }
+        };
+
+        let external_login = {
+            let key = B64
+                .decode(&config.external_login_secret)
+                .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
+            let secret = Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
+            CookieSettings {
+                name: format!("eid{}", cookie_name_suffix),
+                secret,
+                domain: auth_domain,
+                path: auth_path,
+            }
         };
 
         Ok(Self {
-            user: CookieSettings {
-                name: format!("sid{}", cookie_name_suffix),
-                secret: user_secret,
-                domain: home_domain.into(),
-                path: "/".into(),
-            },
-            external_login: CookieSettings {
-                name: format!("eid{}", cookie_name_suffix),
-                secret: external_login_secret,
-                domain: auth_domain.clone(),
-                path: auth_path.clone(),
-            },
-            token_login: CookieSettings {
-                name: format!("tid{}", cookie_name_suffix),
-                secret: token_login_secret,
-                domain: auth_domain.clone(),
-                path: auth_path.clone(),
-            },
-            signature: CookieSettings {
-                name: format!("sig{}", cookie_name_suffix),
-                secret: signature_secret,
-                domain: auth_domain,
-                path: auth_path,
-            },
+            user,
+            external_login,
+            token_login,
         })
     }
 
@@ -208,15 +145,6 @@ pub(in crate::auth) struct AuthSession {
 }
 
 impl AuthSession {
-    fn empty(meta: Arc<AuthSessionMeta>) -> Self {
-        Self {
-            meta,
-            user: None,
-            external_login: None,
-            token_login: None,
-        }
-    }
-
     fn new(
         meta: Arc<AuthSessionMeta>,
         user: Option<CurrentUser>,
@@ -267,42 +195,51 @@ where
             .await
             .expect("Missing AuthSessionMeta extension");
 
-        let signature = SignedCookieJar::from_headers(&parts.headers, meta.signature.secret.clone())
-            .get(&meta.signature.name)
-            .and_then(|session| serde_json::from_str::<Signature>(session.value()).ok());
-        let user = SignedCookieJar::from_headers(&parts.headers, meta.user.secret.clone())
+        let mut user = SignedCookieJar::from_headers(&parts.headers, meta.user.secret.clone())
             .get(&meta.user.name)
             .and_then(|session| serde_json::from_str::<CurrentUser>(session.value()).ok());
-        let external_login = SignedCookieJar::from_headers(&parts.headers, meta.external_login.secret.clone())
+        let mut external_login = SignedCookieJar::from_headers(&parts.headers, meta.external_login.secret.clone())
             .get(&meta.external_login.name)
             .and_then(|session| serde_json::from_str::<ExternalLogin>(session.value()).ok());
-        let token_login = SignedCookieJar::from_headers(&parts.headers, meta.token_login.secret.clone())
+        let mut token_login = SignedCookieJar::from_headers(&parts.headers, meta.token_login.secret.clone())
             .get(&meta.token_login.name)
             .and_then(|session| serde_json::from_str::<TokenLogin>(session.value()).ok());
 
-        log::info!(
-            "Auth sessions from headers:\n  user:{:#?}\n  external_login:{:#?}\n  token_login:{:#?}\n  signature:{:#?}",
+        log::debug!(
+            "Auth sessions before validation:\n  user:{:#?}\n  external_login:{:#?}\n  token_login:{:#?}\n",
             user,
             external_login,
             token_login,
-            signature
         );
 
-        if let Some(signature) = signature {
-            // if there is a signature accept session if all of them are consistent
-            if signature.validate(&meta.signature.secret, &user, &external_login, &token_login) {
-                Ok(Self::new(meta, user, external_login, token_login))
-            } else {
-                Ok(Self::empty(meta))
-            }
-        } else {
-            // if there is no signature, only the token_login is considered as that has an extended lifetime
-            if token_login.is_some() {
-                Ok(Self::new(meta, None, None, token_login))
-            } else {
-                Ok(Self::empty(meta))
-            }
+        // validation:
+        // - if token has expired, it is deleted (browser should do it but it's a client, can be a faulty browser)
+        // - user of token is not matching the user of the session, session is deleted
+        // - if linked_account of the external login is not matching the session, external login is deleted
+
+        if token_login.as_ref().map(|t| t.expires < Utc::now()).unwrap_or(true) {
+            token_login = None;
         }
+        if token_login.as_ref().map(|t| t.user_id) != user.as_ref().map(|u| u.user_id) {
+            user = None;
+        }
+        if external_login
+            .as_ref()
+            .and_then(|e| e.linked_user.as_ref())
+            .map(|l| l.user_id)
+            != user.as_ref().map(|u| u.user_id)
+        {
+            external_login = None;
+        }
+
+        log::debug!(
+            "Auth sessions after validation:\n  user:{:#?}\n  external_login:{:#?}\n  token_login:{:#?}\n",
+            user,
+            external_login,
+            token_login,
+        );
+
+        Ok(Self::new(meta, user, external_login, token_login))
     }
 }
 
@@ -344,13 +281,11 @@ impl IntoResponseParts for AuthSession {
             external_login,
             token_login,
         } = self;
-        let signature = Signature::new(&meta.signature.secret, &user, &external_login, &token_login);
-        log::info!(
-            "Auth sessions to set headers:\n  user:{:#?}\n  external_login:{:#?}\n  token_login:{:#?}\n  signatore:{:#?}",
+        log::debug!(
+            "Auth sessions set headers:\n  user:{:#?}\n  external_login:{:#?}\n  token_login:{:#?}",
             user,
             external_login,
             token_login,
-            signature
         );
 
         let token_expiration = {
@@ -362,11 +297,8 @@ impl IntoResponseParts for AuthSession {
         let user = create_jar(&meta.user, &user, Expiration::Session);
         let external_login = create_jar(&meta.external_login, &external_login, Expiration::Session);
         let token_login = create_jar(&meta.token_login, &token_login, token_expiration);
-        let signature = create_jar(&meta.signature, &signature, Expiration::Session);
 
-        Ok((user, external_login, token_login, signature)
-            .into_response_parts(res)
-            .unwrap())
+        Ok((user, external_login, token_login).into_response_parts(res).unwrap())
     }
 }
 

@@ -1,7 +1,4 @@
-use crate::auth::{
-    external_auth::page_external_auth, AuthPage, AuthServiceState, AuthSession, ExternalLogin, ExternalUserInfo,
-    OIDCClient,
-};
+use crate::auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, ExternalUserInfo, OIDCClient};
 use axum::{
     extract::{Query, State},
     Extension,
@@ -27,32 +24,28 @@ pub(in crate::auth) async fn page_oidc_auth(
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
 
+    // take external_login from session, thus later code don't have to care with it
     let ExternalLogin {
         pkce_code_verifier,
         csrf_state,
         nonce,
         target_url,
+        remember_me,
         linked_user,
     } = match auth_session.external_login.take() {
         Some(external_login) => external_login,
-        None => {
-            log::debug!("Missing external session");
-            return AuthPage::invalid_session_logout(&state, auth_session);
-        }
+        None => return state.page_error(auth_session, AuthError::MissingExternalLogin),
     };
 
     let nonce = match nonce {
         Some(nonce) => nonce,
-        None => {
-            log::debug!("Missing nonce");
-            return AuthPage::invalid_session_logout(&state, auth_session);
-        }
+        None => return state.page_error(auth_session, AuthError::MissingNonce),
     };
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
         log::debug!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
-        return AuthPage::invalid_session_logout(&state, auth_session);
+        return state.page_error(auth_session, AuthError::InvalidCSRF);
     }
 
     // Exchange the code with a token.
@@ -64,21 +57,16 @@ pub(in crate::auth) async fn page_oidc_auth(
         .await
     {
         Ok(token) => token,
-        Err(err) => return AuthPage::internal_error(&state, Some(auth_session), err),
+        Err(err) => return state.page_internal_error(auth_session, err),
     };
 
-    let id_token = match token.id_token() {
-        Some(token) => token,
-        None => return AuthPage::internal_error(&state, Some(auth_session), "Token contains no ID"),
-    };
-
-    // extract claims from the returned (jwt) token
-    let claims = match id_token.claims(&client.client.id_token_verifier(), &Nonce::new(nonce)) {
-        Ok(token) => token,
-        Err(err) => {
-            log::debug!("Failed to extract claims: {:?}", err);
-            return AuthPage::internal_error(&state, Some(auth_session), err);
-        }
+    let claims = match token.id_token().and_then(|id_token| {
+        id_token
+            .claims(&client.client.id_token_verifier(), &Nonce::new(nonce))
+            .ok()
+    }) {
+        Some(claims) => claims,
+        _ => return state.page_error(auth_session, AuthError::FailedExternalUserInfo),
     };
     log::debug!("Code exchange completed, claims: {claims:#?}");
 
@@ -91,20 +79,26 @@ pub(in crate::auth) async fn page_oidc_auth(
         let email = claims.email().map(|n| n.as_str().to_owned());
 
         ExternalUserInfo {
-            external_id,
+            provider: client.provider.clone(),
+            provider_id: external_id,
             name,
             email,
         }
     };
     log::info!("{:?}", external_user_info);
 
-    page_external_auth(
-        &state,
-        auth_session,
-        linked_user,
-        &client.provider,
-        external_user_info,
-        target_url,
-    )
-    .await
+    if linked_user.is_some() {
+        state
+            .page_external_link(
+                auth_session,
+                &client.provider,
+                &external_user_info.provider_id,
+                target_url.as_ref(),
+            )
+            .await
+    } else {
+        state
+            .page_external_login(auth_session, external_user_info, target_url.as_ref(), remember_me)
+            .await
+    }
 }

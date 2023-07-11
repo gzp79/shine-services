@@ -1,5 +1,5 @@
 use crate::{
-    auth::{self, AuthSessionMeta, OAuth2Client, OIDCClient},
+    auth::{self, AuthSessionMeta, OAuth2Client, OIDCClient, TokenGenerator},
     db::{IdentityManager, NameGenerator, SessionManager},
 };
 use axum::{routing::get, Extension, Router};
@@ -13,8 +13,6 @@ use std::{
 use tera::Tera;
 use thiserror::Error as ThisError;
 use url::Url;
-
-use super::token::TokenClient;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,7 +52,6 @@ pub struct AuthSessionConfig {
     pub session_secret: String,
     pub external_login_secret: String,
     pub token_login_secret: String,
-    pub signature_secret: String,
 
     pub session_max_duration: usize,
     pub token_max_duration: usize,
@@ -95,7 +92,6 @@ pub enum AuthBuildError {
     Discovery(String),
 }
 
-#[derive(Clone)]
 struct Inner {
     tera: Tera,
     identity_manager: IdentityManager,
@@ -104,6 +100,7 @@ struct Inner {
 
     home_url: Url,
     providers: Vec<String>,
+    token_generator: TokenGenerator,
 }
 
 #[derive(Clone)]
@@ -126,6 +123,10 @@ impl AuthServiceState {
         &self.0.name_generator
     }
 
+    pub fn token(&self) -> &TokenGenerator {
+        &self.0.token_generator
+    }
+
     pub fn home_url(&self) -> &Url {
         &self.0.home_url
     }
@@ -145,7 +146,6 @@ pub struct AuthServiceDependencies {
 pub struct AuthServiceBuilder {
     state: AuthServiceState,
     auth_session_meta: AuthSessionMeta,
-    token_client: TokenClient,
     openid_clients: Vec<OIDCClient>,
     oauth2_clients: Vec<OAuth2Client>,
 }
@@ -155,7 +155,7 @@ impl AuthServiceBuilder {
         let mut providers = HashSet::new();
 
         let token_max_duration = Duration::seconds(i64::try_from(config.auth_session.session_max_duration)?);
-        let token_client = TokenClient::new(token_max_duration);
+        let token_generator = TokenGenerator::new(token_max_duration);
 
         let mut openid_clients = Vec::new();
         for (provider, provider_config) in &config.openid {
@@ -182,6 +182,7 @@ impl AuthServiceBuilder {
             identity_manager: dependencies.identity_manager,
             session_manager: dependencies.session_manager,
             name_generator: dependencies.name_generator,
+            token_generator,
             home_url: config.home_url.to_owned(),
             providers: providers.into_iter().collect(),
         }));
@@ -193,7 +194,6 @@ impl AuthServiceBuilder {
         Ok(Self {
             state,
             auth_session_meta,
-            token_client,
             openid_clients,
             oauth2_clients,
         })
@@ -210,34 +210,35 @@ impl AuthServiceBuilder {
 
             router = router.nest(
                 "/auth/token",
-                Router::new()
-                    .route("/use", get(auth::page_token_use))
-                    .route("/login", get(auth::page_token_login))
-                    .layer(Extension(Arc::new(self.token_client))),
+                Router::new().route("/login", get(auth::page_token_login)),
             );
 
-            for openid_client in self.openid_clients {
-                let path = format!("/auth/{}", openid_client.provider);
+            for client in self.openid_clients {
+                log::info!("Registering OpenId Connect provider {}", client.provider);
+                let path = format!("/auth/{}", client.provider);
 
-                let openid_route = Router::new()
-                    .route("/login", get(auth::page_oidc_login))
-                    .route("/link", get(auth::page_oidc_link))
-                    .route("/auth", get(auth::page_oidc_auth))
-                    .layer(Extension(Arc::new(openid_client)));
-
-                router = router.nest(&path, openid_route);
+                router = router.nest(
+                    &path,
+                    Router::new()
+                        .route("/login", get(auth::page_oidc_login))
+                        .route("/link", get(auth::page_oidc_link))
+                        .route("/auth", get(auth::page_oidc_auth))
+                        .layer(Extension(Arc::new(client))),
+                );
             }
 
-            for oauth2_client in self.oauth2_clients {
-                let path = format!("/auth/{}", oauth2_client.provider);
+            for client in self.oauth2_clients {
+                log::info!("Registering OAuth2 provider {}", client.provider);
+                let path = format!("/auth/{}", client.provider);
 
-                let openid_route = Router::new()
-                    .route("/login", get(auth::page_oauth2_login))
-                    .route("/link", get(auth::page_oauth2_link))
-                    .route("/auth", get(auth::page_oauth2_auth))
-                    .layer(Extension(Arc::new(oauth2_client)));
-
-                router = router.nest(&path, openid_route);
+                router = router.nest(
+                    &path,
+                    Router::new()
+                        .route("/login", get(auth::page_oauth2_login))
+                        .route("/link", get(auth::page_oauth2_link))
+                        .route("/auth", get(auth::page_oauth2_auth))
+                        .layer(Extension(Arc::new(client))),
+                );
             }
 
             router
@@ -252,13 +253,6 @@ impl AuthServiceBuilder {
 
         (page_router, api_router)
     }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(in crate::auth) struct EnterRequestParams {
-    pub redirect_url: Option<Url>,
-    pub remember_me: Option<bool>,
 }
 
 #[cfg(test)]

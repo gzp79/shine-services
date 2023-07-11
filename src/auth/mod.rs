@@ -1,13 +1,13 @@
 mod auth_service;
 pub use self::auth_service::*;
 mod auth_service_utils;
+pub(in crate::auth) use self::auth_service_utils::*;
+mod auth_service_external_auth;
 
-mod auth_page;
-pub(in crate::auth) use self::auth_page::*;
 mod auth_session;
 pub(in crate::auth) use self::auth_session::*;
-mod external_auth;
-pub(in crate::auth) use self::external_auth::*;
+mod external_user_info;
+pub(in crate::auth) use self::external_user_info::*;
 
 mod ep_get_auth_providers;
 pub(in crate::auth) use self::ep_get_auth_providers::*;
@@ -25,4 +25,4 @@ pub(in crate::auth) use self::page_logout::*;
 mod page_delete_user;
 pub(in crate::auth) use self::page_delete_user::*;
 
-mod github_ext;
+pub(in crate::auth) mod extensions;

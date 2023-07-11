@@ -1,8 +1,7 @@
-use std::collections::HashMap;
-
 use crate::auth::{AuthBuildError, ExternalUserInfoExtensions, OAuth2Config};
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, Scope, TokenUrl};
 use openidconnect::UserInfoUrl;
+use std::collections::HashMap;
 
 pub(in crate::auth) struct OAuth2Client {
     pub provider: String,
