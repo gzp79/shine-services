@@ -6,8 +6,9 @@
 
 <body>
   <h1 class="header-text">Ooops</h1>
-  <p>Something went wrong, <a href='{{home_url | safe}}'> back to safety </a> ...</p>
+  <p>Something went wrong!</p>
   <p>{{detail}}</p>
+  <p>Back to safety <a href='{{ redirect_url | safe }}'> back to safety </a> ... </p>
 </body>
 
 </html>

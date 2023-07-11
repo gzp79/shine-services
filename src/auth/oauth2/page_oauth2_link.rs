@@ -11,7 +11,8 @@ use url::Url;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::auth) struct RequestParams {
-    pub redirect_url: Option<Url>,
+    redirect_url: Option<Url>,
+    error_url: Option<Url>,
 }
 
 /// Link the current user to an OAuth2 provider.
@@ -22,7 +23,7 @@ pub(in crate::auth) async fn page_oauth2_link(
     mut auth_session: AuthSession,
 ) -> AuthPage {
     if auth_session.user.is_none() {
-        return state.page_error(auth_session, AuthError::LoginRequired);
+        return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
     }
 
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -38,6 +39,7 @@ pub(in crate::auth) async fn page_oauth2_link(
         csrf_state: csrf_state.secret().to_owned(),
         nonce: None,
         target_url: query.redirect_url,
+        error_url: query.error_url,
         remember_me: false,
         linked_user: auth_session.user.clone(),
     });

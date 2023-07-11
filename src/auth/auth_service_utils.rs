@@ -6,6 +6,7 @@ use axum::{
     http::StatusCode,
     response::{Html, IntoResponse, Response},
 };
+use shine_service::service::APP_NAME;
 use std::fmt;
 use thiserror::Error as ThisError;
 use url::Url;
@@ -141,9 +142,14 @@ impl IntoResponse for AuthPage {
 }
 
 impl AuthServiceState {
-    pub(in crate::auth) fn page_error(&self, auth_session: AuthSession, response: AuthError) -> AuthPage {
+    pub(in crate::auth) fn page_error(
+        &self,
+        auth_session: AuthSession,
+        response: AuthError,
+        target_url: Option<&Url>,
+    ) -> AuthPage {
         let mut context = tera::Context::new();
-        context.insert("home_url", self.home_url());
+        context.insert("redirect_url", target_url.unwrap_or(self.home_url()));
         //context.insert("response", &response);
         context.insert("detail", &response.to_string());
         let html = self
@@ -158,8 +164,17 @@ impl AuthServiceState {
         }
     }
 
-    pub(in crate::auth) fn page_internal_error<E: fmt::Debug>(&self, auth_session: AuthSession, err: E) -> AuthPage {
-        self.page_error(auth_session, AuthError::InternalServerError(format!("{err:?}")))
+    pub(in crate::auth) fn page_internal_error<E: fmt::Debug>(
+        &self,
+        auth_session: AuthSession,
+        err: E,
+        target_url: Option<&Url>,
+    ) -> AuthPage {
+        self.page_error(
+            auth_session,
+            AuthError::InternalServerError(format!("{err:?}")),
+            target_url,
+        )
     }
 
     pub(in crate::auth) fn page_redirect(
@@ -169,7 +184,7 @@ impl AuthServiceState {
         redirect_url: Option<&Url>,
     ) -> AuthPage {
         let mut context = tera::Context::new();
-        context.insert("title", "Redirecting...");
+        context.insert("title", APP_NAME);
         context.insert("target", target);
         context.insert("redirect_url", redirect_url.unwrap_or(self.home_url()).as_str());
         let html = self

@@ -14,13 +14,13 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::service::CurrentUser;
-use std::{convert::Infallible, fmt, hash::Hash, sync::Arc};
+use std::{convert::Infallible, sync::Arc};
 use thiserror::Error as ThisError;
 use time::{Duration, OffsetDateTime};
 use url::Url;
 use uuid::Uuid;
 
-#[derive(Clone, Debug, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(in crate::auth) struct ExternalLogin {
     #[serde(rename = "pv")]
     pub pkce_code_verifier: String,
@@ -30,13 +30,15 @@ pub(in crate::auth) struct ExternalLogin {
     pub nonce: Option<String>,
     #[serde(rename = "t")]
     pub target_url: Option<Url>,
+    #[serde(rename = "et")]
+    pub error_url: Option<Url>,
     pub remember_me: bool,
     // indicates if login was made to link the account to the user of the given session
     #[serde(rename = "l")]
     pub linked_user: Option<CurrentUser>,
 }
 
-#[derive(Clone, Debug, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(in crate::auth) struct TokenLogin {
     #[serde(rename = "u")]
     pub user_id: Uuid,
@@ -159,23 +161,11 @@ impl AuthSession {
         }
     }
 
-    /// Return and clear all the components.
-    pub fn take(&mut self) -> (Option<CurrentUser>, Option<ExternalLogin>, Option<TokenLogin>) {
-        (self.user.take(), self.external_login.take(), self.token_login.take())
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.user.is_none() && self.external_login.is_none() && self.token_login.is_none()
-    }
-}
-
-impl fmt::Debug for AuthSession {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AuthSession")
-            .field("user", &self.user)
-            .field("external_login", &self.external_login)
-            //.field("token_login", &self.token_login)
-            .finish()
+    /// Clear all the components.
+    pub fn clear(&mut self) {
+        self.user.take();
+        self.external_login.take();
+        self.token_login.take();
     }
 }
 

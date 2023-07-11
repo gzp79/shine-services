@@ -12,6 +12,7 @@ impl AuthServiceState {
         provider: &str,
         provider_id: &str,
         target_url: Option<&Url>,
+        error_url: Option<&Url>,
     ) -> AuthPage {
         // at this point current user, linked_user, etc. should be consistent due to auth_session construction
         assert!(auth_session.token_login.is_none());
@@ -25,9 +26,9 @@ impl AuthServiceState {
         match self.identity_manager().link_user(user.user_id, &external_login).await {
             Ok(()) => {}
             Err(IdentityError::LinkProviderConflict) => {
-                return self.page_error(auth_session, AuthError::ProviderAlreadyUsed)
+                return self.page_error(auth_session, AuthError::ProviderAlreadyUsed, error_url)
             }
-            Err(err) => return self.page_internal_error(auth_session, err),
+            Err(err) => return self.page_internal_error(auth_session, err, error_url),
         };
 
         log::debug!("User {} linked to: {}", user.user_id, provider);
@@ -39,6 +40,7 @@ impl AuthServiceState {
         mut auth_session: AuthSession,
         external_user_info: ExternalUserInfo,
         target_url: Option<&Url>,
+        error_url: Option<&Url>,
         create_token: bool,
     ) -> AuthPage {
         assert!(auth_session.user.is_none());
@@ -69,19 +71,19 @@ impl AuthServiceState {
                 {
                     Ok(identity) => identity,
                     Err(UserCreateError::IdentityError(IdentityError::LinkEmailConflict)) => {
-                        return self.page_error(auth_session, AuthError::EmailAlreadyUsed)
+                        return self.page_error(auth_session, AuthError::EmailAlreadyUsed, error_url)
                     }
-                    Err(err) => return self.page_internal_error(auth_session, err),
+                    Err(err) => return self.page_internal_error(auth_session, err, error_url),
                 }
             }
-            Err(err) => return self.page_internal_error(auth_session, err),
+            Err(err) => return self.page_internal_error(auth_session, err, error_url),
         };
 
         // create a new token
         let token_login = if create_token {
             match self.create_token_with_retry(identity.user_id).await {
                 Ok(token_login) => Some(token_login),
-                Err(err) => return self.page_internal_error(auth_session, err),
+                Err(err) => return self.page_internal_error(auth_session, err, error_url),
             }
         } else {
             None
@@ -90,7 +92,7 @@ impl AuthServiceState {
         log::debug!("Identity created: {identity:#?}");
         let user = match self.session_manager().create(&identity).await {
             Ok(user) => user,
-            Err(err) => return self.page_internal_error(auth_session, err),
+            Err(err) => return self.page_internal_error(auth_session, err, error_url),
         };
 
         auth_session.token_login = token_login;

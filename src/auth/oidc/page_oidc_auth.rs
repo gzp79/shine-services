@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 #[derive(Deserialize)]
-pub(in crate::auth) struct AuthRequest {
+pub(in crate::auth) struct RequestParams {
     code: String,
     state: String,
 }
@@ -18,7 +18,7 @@ pub(in crate::auth) struct AuthRequest {
 pub(in crate::auth) async fn page_oidc_auth(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OIDCClient>>,
-    Query(query): Query<AuthRequest>,
+    Query(query): Query<RequestParams>,
     mut auth_session: AuthSession,
 ) -> AuthPage {
     let auth_code = AuthorizationCode::new(query.code);
@@ -30,22 +30,23 @@ pub(in crate::auth) async fn page_oidc_auth(
         csrf_state,
         nonce,
         target_url,
+        error_url,
         remember_me,
         linked_user,
     } = match auth_session.external_login.take() {
         Some(external_login) => external_login,
-        None => return state.page_error(auth_session, AuthError::MissingExternalLogin),
+        None => return state.page_error(auth_session, AuthError::MissingExternalLogin, None),
     };
 
     let nonce = match nonce {
         Some(nonce) => nonce,
-        None => return state.page_error(auth_session, AuthError::MissingNonce),
+        None => return state.page_error(auth_session, AuthError::MissingNonce, error_url.as_ref()),
     };
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
         log::debug!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
-        return state.page_error(auth_session, AuthError::InvalidCSRF);
+        return state.page_error(auth_session, AuthError::InvalidCSRF, error_url.as_ref());
     }
 
     // Exchange the code with a token.
@@ -57,7 +58,7 @@ pub(in crate::auth) async fn page_oidc_auth(
         .await
     {
         Ok(token) => token,
-        Err(err) => return state.page_internal_error(auth_session, err),
+        Err(err) => return state.page_internal_error(auth_session, err, error_url.as_ref()),
     };
 
     let claims = match token.id_token().and_then(|id_token| {
@@ -66,7 +67,7 @@ pub(in crate::auth) async fn page_oidc_auth(
             .ok()
     }) {
         Some(claims) => claims,
-        _ => return state.page_error(auth_session, AuthError::FailedExternalUserInfo),
+        _ => return state.page_error(auth_session, AuthError::FailedExternalUserInfo, error_url.as_ref()),
     };
     log::debug!("Code exchange completed, claims: {claims:#?}");
 
@@ -94,11 +95,18 @@ pub(in crate::auth) async fn page_oidc_auth(
                 &client.provider,
                 &external_user_info.provider_id,
                 target_url.as_ref(),
+                error_url.as_ref(),
             )
             .await
     } else {
         state
-            .page_external_login(auth_session, external_user_info, target_url.as_ref(), remember_me)
+            .page_external_login(
+                auth_session,
+                external_user_info,
+                target_url.as_ref(),
+                error_url.as_ref(),
+                remember_me,
+            )
             .await
     }
 }
