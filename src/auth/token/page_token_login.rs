@@ -7,7 +7,7 @@ use url::Url;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::auth) struct RequestParams {
-    pub auto_register: bool,
+    pub register: bool,
     pub redirect_url: Option<Url>,
 }
 
@@ -16,13 +16,13 @@ pub(in crate::auth) async fn page_token_login(
     Query(query): Query<RequestParams>,
     mut auth_session: AuthSession,
 ) -> AuthPage {
-    if auth_session.user.is_none() {
+    if auth_session.user.is_some() {
         return state.page_error(auth_session, AuthError::LogoutRequired);
     }
 
     let identity =
         if let Some((user_id, token)) = auth_session.token_login.as_ref().map(|t| (t.user_id, t.token.clone())) {
-            // There is a token, perform a login
+            log::debug!("Token found, performing a simple login...");
 
             let login_info = match state.identity_manager().find_token(&token).await {
                 Ok(login_info) => login_info,
@@ -40,10 +40,10 @@ pub(in crate::auth) async fn page_token_login(
                 None => return state.page_error(auth_session, AuthError::TokenExpired),
             }
         } else {
-            // no token, perform a registration
+            log::debug!("Token not found, performing a regsitration...");
 
-            // skip registration and request a login
-            if !query.auto_register {
+            // skip registration
+            if !query.register {
                 return state.page_error(auth_session, AuthError::LoginRequired);
             }
 
