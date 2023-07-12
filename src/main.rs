@@ -31,6 +31,7 @@ use tokio::{
 };
 use tower_http::cors::CorsLayer;
 use tracing::Dispatch;
+use tracing_subscriber::EnvFilter;
 
 async fn health_check() -> String {
     "Ok".into()
@@ -50,7 +51,8 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         // initialize a pre-init logger
         let pre_init_log = {
             let _ = tracing_log::LogTracer::init();
-            let pre_init_log = tracing_subscriber::fmt().with_env_filter("info").compact().finish();
+            let env_filter = EnvFilter::from_default_env();
+            let pre_init_log = tracing_subscriber::fmt().with_env_filter(env_filter).compact().finish();
             Dispatch::new(pre_init_log)
         };
         let _pre_init_log_guard = tracing::dispatcher::set_default(&pre_init_log);
@@ -68,12 +70,16 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     };
 
     log::trace!("Creating services...");
-    log::trace!("trace - ok");
-    log::debug!("debug - ok");
-    log::info!("info  - ok");
-    log::warn!("warn  - ok");
-    tracing::warn!("warn  - ok(tracing)");
-    log::error!("error - ok");
+    log::trace!("trace - ok:log");
+    log::debug!("debug - ok:log");
+    log::info!("info  - ok:log");
+    log::warn!("warn  - ok:log");
+    log::error!("error - ok:log");
+    tracing::trace!("trace - tracing:ok");
+    tracing::debug!("debug - tracing:ok");
+    tracing::info!("info  - tracing:ok");
+    tracing::warn!("warn  - tracing:ok");
+    tracing::error!("error - tracing:ok");
 
     let allow_origins = config
         .allow_origins
@@ -88,7 +94,10 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let powered_by = PoweredBy::from_service_info(SERVICE_NAME, &config.core.version)?;
 
     let tracing_router = tracing_service.into_router();
-    let tracing_layer = OtelAxumLayer::default();
+    let tracing_layer = OtelAxumLayer::default().filter(|a| {
+        println!("FFFF: {a}");
+        true
+    });
 
     let tera = {
         let mut tera = Tera::new("tera_templates/**/*").map_err(|e| anyhow!(e))?;

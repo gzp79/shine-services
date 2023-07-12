@@ -2,7 +2,7 @@
     "terminal.integrated.env.windows": {
         "_RUST_BACKTRACE": "full",
         "MIRIFLAGS": "-Zmiri-backtrace=full",
-        "RUST_LOG": "info, shine_identity=trace,sqlx=WARN"
+        "RUST_LOG": "INFO,shine_server=TRACE,shine_identity=TRACE"
     },
 
     "cSpell.words": [

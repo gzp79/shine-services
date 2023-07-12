@@ -27,13 +27,13 @@ pub(in crate::auth) async fn page_token_login(
         if let Some((user_id, token)) = auth_session.token_login.as_ref().map(|t| (t.user_id, t.token.clone())) {
             log::debug!("Token found, performing a simple login...");
 
-            let login_info = match state.identity_manager().find_token(&token).await {
-                Ok(login_info) => login_info,
+            let identity = match state.identity_manager().find_token(&token).await {
+                Ok(login_info) => login_info.map(|i| i.0),
                 Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
             };
 
-            match login_info {
-                Some((identity, ..)) => {
+            match identity {
+                Some(identity) => {
                     if identity.user_id != user_id {
                         auth_session.token_login = None;
                         return state.page_error(auth_session, AuthError::TokenInvalid, query.error_url.as_ref());
@@ -43,7 +43,7 @@ pub(in crate::auth) async fn page_token_login(
                 None => return state.page_error(auth_session, AuthError::TokenExpired, query.error_url.as_ref()),
             }
         } else {
-            log::debug!("Token not found, performing a regsitration...");
+            log::debug!("Token not found, performing a registration...");
 
             // skip registration
             if !query.register {
