@@ -4,6 +4,9 @@
 GET {{url}}/api/identities
 ###
 
+GET {{url}}/api/auth/user/info
+###
+
 GET {{url}}/api/identities/6f7c16d3-aa18-442e-9312-38acc6f4ee08/roles
 ###
 

@@ -1,4 +1,4 @@
-use crate::auth::{AuthError, AuthPage, AuthServiceState, AuthSession};
+use crate::auth::{auth_session::TokenLogin, AuthError, AuthPage, AuthServiceState, AuthSession};
 use axum::{
     extract::{Query, State},
     headers::{authorization::Basic, Authorization},
@@ -60,6 +60,18 @@ pub(in crate::auth) async fn page_token_login(
                     auth_session.token_login = None;
                     return state.page_error(auth_session, AuthError::TokenInvalid, query.error_url.as_ref());
                 }
+
+                // refresh existing token
+                let token_login = match state.identity_manager().update_token(token.as_str()).await {
+                    Ok(info) => TokenLogin {
+                        user_id: identity.user_id,
+                        token: info.token,
+                        expires: info.expire_at,
+                    },
+                    Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
+                };
+                auth_session.token_login = Some(token_login);
+                
                 identity
             }
             None => return state.page_error(auth_session, AuthError::TokenExpired, query.error_url.as_ref()),

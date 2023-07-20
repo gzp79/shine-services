@@ -557,6 +557,15 @@ impl IdentityManager {
         }
     }
 
+    pub async fn update_token(&self, token: &str) -> Result<LoginTokenInfo, IdentityError> {
+        // todo:
+        // - update expiration
+        // - update last use
+
+        // workaround while update is not implemented
+        Ok(self.find_token(token).await?.ok_or(IdentityError::TokenConflict)?.1)
+    }
+
     pub async fn delete_token(&self, user_id: Uuid, token: &str) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
