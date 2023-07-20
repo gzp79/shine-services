@@ -89,8 +89,14 @@ impl AuthServiceState {
             None
         };
 
+        // find roles (for new user it will be an empty list)
+        let roles = match self.identity_manager().get_roles(identity.user_id).await {
+            Ok(roles) => roles,
+            Err(err) => return self.page_internal_error(auth_session, err, error_url),
+        };
+
         log::debug!("Identity created: {identity:#?}");
-        let user = match self.session_manager().create(&identity).await {
+        let user = match self.session_manager().create(&identity, roles).await {
             Ok(user) => user,
             Err(err) => return self.page_internal_error(auth_session, err, error_url),
         };

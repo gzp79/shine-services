@@ -27,14 +27,16 @@ struct StoredSession {
     pub session_start: DateTime<Utc>,
     pub name: String,
     pub is_email_confirmed: bool,
+    pub roles: Vec<String>,
 }
 
 impl StoredSession {
-    fn from_identity(identity: &Identity, session_start: DateTime<Utc>) -> Self {
+    fn from_identity(identity: &Identity, roles: Vec<String>, session_start: DateTime<Utc>) -> Self {
         Self {
             session_start,
             name: identity.name.clone(),
             is_email_confirmed: identity.is_email_confirmed,
+            roles,
         }
     }
 
@@ -45,6 +47,7 @@ impl StoredSession {
             key: session_key,
             session_start: self.session_start,
             name: self.name,
+            roles: self.roles,
         }
     }
 }
@@ -73,7 +76,7 @@ impl SessionManager {
         })))
     }
 
-    pub async fn create(&self, identity: &Identity) -> Result<CurrentUser, DBSessionError> {
+    pub async fn create(&self, identity: &Identity, roles: Vec<String>) -> Result<CurrentUser, DBSessionError> {
         let created_at = Utc::now();
 
         let inner = &*self.0;
@@ -82,7 +85,7 @@ impl SessionManager {
         let session_key = SessionKey::new_random(&inner.random)?;
         let key = format!("session:{}:{}", identity.user_id.as_simple(), session_key.to_hex());
 
-        let session = StoredSession::from_identity(identity, created_at);
+        let session = StoredSession::from_identity(identity, roles, created_at);
 
         let created: bool = client.set_nx(&key, &session).await.map_err(DBError::RedisError)?;
         if created {

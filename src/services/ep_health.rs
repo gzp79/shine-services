@@ -19,7 +19,7 @@ impl From<BB8PoolState> for DBState {
     }
 }
 
-pub(in crate::services) async fn status(State(state): State<IdentityServiceState>) -> Json<Value> {
+pub(in crate::services) async fn ep_health(State(state): State<IdentityServiceState>) -> Json<Value> {
     let json = json!
     ( {
         "postgres": DBState::from(state.db().postgres.state()),

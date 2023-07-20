@@ -5,7 +5,7 @@ use shine_service::service::APP_NAME;
 use url::Url;
 
 #[derive(Deserialize)]
-pub(in crate::auth) struct LogoutRequest {
+pub(in crate::auth) struct RequestQuery {
     terminate_all: Option<bool>,
     redirect_url: Option<Url>,
     error_url: Option<Url>,
@@ -13,7 +13,7 @@ pub(in crate::auth) struct LogoutRequest {
 
 pub(in crate::auth) async fn page_logout(
     State(state): State<AuthServiceState>,
-    Query(query): Query<LogoutRequest>,
+    Query(query): Query<RequestQuery>,
     mut auth_session: AuthSession,
 ) -> AuthPage {
     if let Some((user_id, user_key)) = auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {

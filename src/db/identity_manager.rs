@@ -211,6 +211,19 @@ pg_prepared_statement!( DeleteAllTokens => r#"
     DELETE FROM login_tokens WHERE user_id = $1
 "#, [UUID] );
 
+pg_prepared_statement!( AddUserRole => r#"
+    INSERT INTO roles (user_id, role) 
+        VALUES ($1, $2)
+"#, [UUID, VARCHAR] );
+
+pg_prepared_statement!( GetUserRoles => r#"
+    SELECT from roles where user_id = $1
+"#, [UUID] );
+
+pg_prepared_statement!( DeleteUserRole => r#"
+    DELETE FROM roles WHERE user_id = $1 AND role = $2
+"#, [UUID, VARCHAR] );
+
 #[derive(Debug, ThisError)]
 pub enum IdentityBuildError {
     #[error(transparent)]
@@ -236,6 +249,9 @@ struct Inner {
     stmt_find_by_token: FindByToken,
     stmt_delete_token: DeleteToken,
     stmt_delete_all_tokens: DeleteAllTokens,
+    stmt_add_role: AddUserRole,
+    stmt_get_roles: GetUserRoles,
+    stmt_delete_role: DeleteUserRole,
 }
 
 #[derive(Clone)]
@@ -255,6 +271,9 @@ impl IdentityManager {
         let stmt_find_by_token = FindByToken::new(&client).await?;
         let stmt_delete_token = DeleteToken::new(&client).await?;
         let stmt_delete_all_tokens = DeleteAllTokens::new(&client).await?;
+        let stmt_add_role = AddUserRole::new(&client).await?;
+        let stmt_get_roles = GetUserRoles::new(&client).await?;
+        let stmt_delete_role = DeleteUserRole::new(&client).await?;
 
         Ok(Self(Arc::new(Inner {
             postgres: pool.postgres.clone(),
@@ -269,6 +288,9 @@ impl IdentityManager {
             stmt_find_by_token,
             stmt_delete_token,
             stmt_delete_all_tokens,
+            stmt_add_role,
+            stmt_get_roles,
+            stmt_delete_role,
         })))
     }
 
@@ -550,6 +572,42 @@ impl IdentityManager {
         let stmt = inner.stmt_delete_all_tokens.get(&client).await?;
 
         client.execute(&stmt, &[&user_id]).await?;
+        Ok(())
+    }
+
+    pub async fn add_role(&self, user_id: Uuid, role: &str) -> Result<(), IdentityError> {
+        let inner = &*self.0;
+
+        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let stmt = inner.stmt_add_role.get(&client).await?;
+
+        match client.execute(&stmt, &[&user_id, &role]).await {
+            Ok(_) => Ok(()),
+            Err(err) if err.is_constraint("roles", "idx_user_idt_role") => {
+                // role already present, it's ok
+                Ok(())
+            }
+            Err(err) => Err(IdentityError::DBError(err.into())),
+        }
+    }
+
+    pub async fn get_roles(&self, user_id: Uuid) -> Result<Vec<String>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+
+        let stmt = inner.stmt_get_roles.get(&client).await?;
+        let rows = client.query(&stmt, &[&user_id]).await?;
+
+        let roles = rows.into_iter().map(|row| row.get::<_, String>(0)).collect();
+        Ok(roles)
+    }
+
+    pub async fn delete_role(&self, user_id: Uuid, role: &str) -> Result<(), IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let stmt = inner.stmt_delete_role.get(&client).await?;
+
+        client.execute(&stmt, &[&user_id, &role]).await?;
         Ok(())
     }
 }

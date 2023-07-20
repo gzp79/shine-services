@@ -6,7 +6,7 @@ use url::Url;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::auth) struct RequestParams {
+pub(in crate::auth) struct RequestQuery {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
 }
@@ -15,7 +15,7 @@ pub(in crate::auth) struct RequestParams {
 /// Note, it only deletes the user and login credentials, but not the data of the user.
 pub(in crate::auth) async fn page_delete_user(
     State(state): State<AuthServiceState>,
-    Query(query): Query<RequestParams>,
+    Query(query): Query<RequestQuery>,
     mut auth_session: AuthSession,
 ) -> AuthPage {
     let (user_id, user_key) = match auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {

@@ -12,7 +12,7 @@ pub struct UserName {
     name: String,
 }
 
-pub(in crate::services) async fn get_username(
+pub(in crate::services) async fn ep_generate_user_name(
     State(state): State<IdentityServiceState>,
 ) -> Result<Json<UserName>, Response> {
     let name = state

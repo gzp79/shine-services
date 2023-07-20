@@ -3,3 +3,14 @@
 
 GET {{url}}/api/identities
 ###
+
+GET {{url}}/api/identities/123/roles
+###
+
+PUT {{url}}/api/identities/123/roles
+Content-Type: application/json
+
+{
+    "role": "UserAdmin" 
+}
+###

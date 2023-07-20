@@ -10,7 +10,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 #[derive(Deserialize)]
-pub(in crate::auth) struct RequestParams {
+pub(in crate::auth) struct RequestQuery {
     code: String,
     state: String,
 }
@@ -19,7 +19,7 @@ pub(in crate::auth) struct RequestParams {
 pub(in crate::auth) async fn page_oauth2_auth(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
-    Query(query): Query<RequestParams>,
+    Query(query): Query<RequestQuery>,
     mut auth_session: AuthSession,
 ) -> AuthPage {
     let auth_code = AuthorizationCode::new(query.code);

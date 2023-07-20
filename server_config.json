@@ -21,8 +21,8 @@
         "idEncoder": "harsh"
     },
     "auth": {
-        "homeUrl": "http://scytta.com",
-        "apiUrl": "http://cloud.scytta.com/identity/auth",
+        "homeUrl": "https://scytta.com",
+        "apiUrl": "https://cloud.scytta.com/identity/auth",
         "sessionMaxDuration": 43200,
         "tokenMaxDuration": 1209600,
         "openid": {

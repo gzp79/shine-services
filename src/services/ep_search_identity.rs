@@ -27,13 +27,13 @@ impl IntoResponse for Error {
 }
 
 #[derive(Deserialize)]
-pub(in crate::services) struct SearchIdentityRequest {
+pub(in crate::services) struct RequestQuery {
     count: Option<usize>,
 }
 
-pub(in crate::services) async fn search_identity(
+pub(in crate::services) async fn ep_search_identity(
     State(state): State<IdentityServiceState>,
-    Query(query): Query<SearchIdentityRequest>,
+    Query(query): Query<RequestQuery>,
     //session: AppSession,
 ) -> Result<Response, Error> {
     //let session_data = session.g();

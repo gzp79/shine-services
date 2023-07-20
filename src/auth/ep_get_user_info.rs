@@ -37,6 +37,7 @@ pub(in crate::auth) struct UserInfo {
     name: String,
     is_email_confirmed: bool,
     session_length: u64,
+    roles: Vec<String>,
 }
 
 /// Get the information about the current user. The cookie is not accessible
@@ -51,6 +52,8 @@ pub(in crate::auth) async fn ep_get_user_info(
         .await?
         .ok_or(Error::UserNotFound(user.user_id))?;
 
+    let roles = state.identity_manager().get_roles(identity.user_id).await?;
+
     let session_length = (Utc::now() - user.session_start).num_seconds();
     let session_length = if session_length < 0 { 0 } else { session_length as u64 };
     Ok(Json(UserInfo {
@@ -58,5 +61,6 @@ pub(in crate::auth) async fn ep_get_user_info(
         name: user.name,
         is_email_confirmed: identity.is_email_confirmed,
         session_length,
+        roles,
     }))
 }

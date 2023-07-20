@@ -6,7 +6,7 @@ use url::Url;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::auth) struct RequestParams {
+pub(in crate::auth) struct RequestQuery {
     register: bool,
 
     redirect_url: Option<Url>,
@@ -16,7 +16,7 @@ pub(in crate::auth) struct RequestParams {
 
 pub(in crate::auth) async fn page_token_login(
     State(state): State<AuthServiceState>,
-    Query(query): Query<RequestParams>,
+    Query(query): Query<RequestQuery>,
     mut auth_session: AuthSession,
 ) -> AuthPage {
     if auth_session.user.is_some() {
@@ -66,9 +66,15 @@ pub(in crate::auth) async fn page_token_login(
             identity
         };
 
+    // find roles (for new user it will be an empty list)
+    let roles = match state.identity_manager().get_roles(identity.user_id).await {
+        Ok(roles) => roles,
+        Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
+    };
+
     // create session
     log::debug!("Identity created: {identity:#?}");
-    let user = match state.session_manager().create(&identity).await {
+    let user = match state.session_manager().create(&identity, roles).await {
         Ok(user) => user,
         Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
     };

@@ -10,7 +10,7 @@ use url::Url;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::auth) struct RequestParams {
+pub(in crate::auth) struct RequestQuery {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
     remember_me: Option<bool>,
@@ -20,7 +20,7 @@ pub(in crate::auth) struct RequestParams {
 pub(in crate::auth) async fn page_oauth2_login(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
-    Query(query): Query<RequestParams>,
+    Query(query): Query<RequestQuery>,
     mut auth_session: AuthSession,
 ) -> AuthPage {
     if auth_session.user.is_some() {

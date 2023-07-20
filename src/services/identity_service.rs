@@ -1,8 +1,11 @@
 use crate::{
     db::{DBPool, IdentityManager, NameGenerator},
-    services::{ep_generate_user_name, ep_health, ep_search_identity},
+    services,
 };
-use axum::{routing::get, Router};
+use axum::{
+    routing::{delete, get, put},
+    Router,
+};
 use std::sync::Arc;
 
 struct Inner {
@@ -54,9 +57,11 @@ impl IdentityServiceBuilder {
         S: Clone + Send + Sync + 'static,
     {
         Router::new()
-            .route("/identities", get(ep_search_identity::search_identity))
-            .route("/health", get(ep_health::status))
-            .route("/user-name", get(ep_generate_user_name::get_username))
+            .route("/health", get(services::ep_health))
+            .route("/user-name", get(services::ep_generate_user_name))
+            .route("/identities", get(services::ep_search_identity))
+            .route("/identities/:id/roles", put(services::ep_add_user_role))
+            .route("/identities/:id/roles", delete(services::ep_delete_user_role))
             .with_state(self.state)
     }
 }
