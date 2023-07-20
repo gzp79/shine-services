@@ -208,10 +208,20 @@ where
         // - user of token is not matching the user of the session, session is deleted
         // - if linked_account of the external login is not matching the session, external login is deleted
 
+        log::debug!("Validating sessions...");
+        //todo: if let Some(t) = token_login.as_ref().map(|t| t.expires) && t < Utc::now() {
         if token_login.as_ref().map(|t| t.expires < Utc::now()).unwrap_or(true) {
+            log::info!("token expired, dropping token");
             token_login = None;
         }
-        if token_login.as_ref().map(|t| t.user_id) != user.as_ref().map(|u| u.user_id) {
+        /*todo: if let Some(uid) = user.as_ref().map(|u| u.user_id) &&
+        let Some(tid) = token_login.as_ref().map(|t| t.user_id) &&
+        tid != uid {*/
+        if token_login.is_some()
+            && user.is_some()
+            && token_login.as_ref().map(|t| t.user_id) != user.as_ref().map(|u| u.user_id)
+        {
+            log::info!("user session is not matching to the token, dropping user session");
             user = None;
         }
         if external_login
@@ -220,6 +230,7 @@ where
             .map(|l| l.user_id)
             != user.as_ref().map(|u| u.user_id)
         {
+            log::info!("external login is not matching the user session, dropping external login");
             external_login = None;
         }
 
