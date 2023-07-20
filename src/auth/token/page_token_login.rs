@@ -71,7 +71,7 @@ pub(in crate::auth) async fn page_token_login(
                     Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
                 };
                 auth_session.token_login = Some(token_login);
-                
+
                 identity
             }
             None => return state.page_error(auth_session, AuthError::TokenExpired, query.error_url.as_ref()),

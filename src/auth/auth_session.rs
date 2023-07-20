@@ -10,8 +10,9 @@ use axum_extra::extract::{
     cookie::{Cookie, Expiration, Key, SameSite},
     SignedCookieJar,
 };
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Utc};
+use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use shine_service::service::CurrentUser;
 use std::{convert::Infallible, sync::Arc};
@@ -239,12 +240,16 @@ fn create_jar<T: Serialize, X: Into<Expiration>>(
     expiration: X,
 ) -> SignedCookieJar {
     let mut cookie = if let Some(data) = data {
-        let raw_data = serde_json::to_string(data).expect("Failed to serialize user");
+        let raw_data = serde_json::to_string(&data).expect("Failed to serialize user");
         let mut cookie = Cookie::new(settings.name.clone(), raw_data);
         cookie.set_expires(expiration);
         cookie
     } else {
-        let mut cookie = Cookie::named(settings.name.to_string());
+        // for deleted cookie to avoid exposing the key (there could be rainbow tables for empty hmac encoding),
+        // let's encode some dummy nonce
+        let nonce: Vec<u8> = (0..16).map(|_| thread_rng().gen::<u8>()).collect();
+        let nonce = B64.encode(&nonce);
+        let mut cookie = Cookie::new(settings.name.to_string(), nonce);
         cookie.set_expires(OffsetDateTime::now_utc() - Duration::days(1));
         cookie
     };

@@ -259,7 +259,7 @@ impl AuthServiceBuilder {
 #[cfg(test)]
 mod test {
     use axum_extra::extract::cookie::Key;
-    use base64::{engine::general_purpose::STANDARD as B64, Engine};
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
     use shine_test::test;
 
     #[test]
