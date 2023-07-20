@@ -11,5 +11,7 @@ mod ep_generate_user_name;
 pub(in crate::services) use self::ep_generate_user_name::*;
 mod ep_add_user_role;
 pub(in crate::services) use self::ep_add_user_role::*;
+mod ep_get_user_role;
+pub(in crate::services) use self::ep_get_user_role::*;
 mod ep_delete_user_role;
 pub(in crate::services) use self::ep_delete_user_role::*;

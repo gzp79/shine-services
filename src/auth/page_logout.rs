@@ -13,8 +13,8 @@ pub(in crate::auth) struct RequestQuery {
 
 pub(in crate::auth) async fn page_logout(
     State(state): State<AuthServiceState>,
-    Query(query): Query<RequestQuery>,
     mut auth_session: AuthSession,
+    Query(query): Query<RequestQuery>,
 ) -> AuthPage {
     if let Some((user_id, user_key)) = auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {
         match query.terminate_all.unwrap_or(false) {

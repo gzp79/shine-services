@@ -20,8 +20,8 @@ pub(in crate::auth) struct RequestQuery {
 pub(in crate::auth) async fn page_oauth2_login(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
-    Query(query): Query<RequestQuery>,
     mut auth_session: AuthSession,
+    Query(query): Query<RequestQuery>,
 ) -> AuthPage {
     if auth_session.user.is_some() {
         return state.page_error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref());

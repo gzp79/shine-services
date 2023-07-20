@@ -217,7 +217,7 @@ pg_prepared_statement!( AddUserRole => r#"
 "#, [UUID, VARCHAR] );
 
 pg_prepared_statement!( GetUserRoles => r#"
-    SELECT from roles where user_id = $1
+    SELECT role from roles where user_id = $1
 "#, [UUID] );
 
 pg_prepared_statement!( DeleteUserRole => r#"

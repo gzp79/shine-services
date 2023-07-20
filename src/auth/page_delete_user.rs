@@ -15,8 +15,8 @@ pub(in crate::auth) struct RequestQuery {
 /// Note, it only deletes the user and login credentials, but not the data of the user.
 pub(in crate::auth) async fn page_delete_user(
     State(state): State<AuthServiceState>,
-    Query(query): Query<RequestQuery>,
     mut auth_session: AuthSession,
+    Query(query): Query<RequestQuery>,
 ) -> AuthPage {
     let (user_id, user_key) = match auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {
         Some(user_id) => user_id,

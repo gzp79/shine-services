@@ -60,6 +60,7 @@ impl IdentityServiceBuilder {
             .route("/health", get(services::ep_health))
             .route("/user-name", get(services::ep_generate_user_name))
             .route("/identities", get(services::ep_search_identity))
+            .route("/identities/:id/roles", get(services::ep_get_user_roles))
             .route("/identities/:id/roles", put(services::ep_add_user_role))
             .route("/identities/:id/roles", delete(services::ep_delete_user_role))
             .with_state(self.state)

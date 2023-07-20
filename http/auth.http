@@ -4,18 +4,16 @@
 GET {{url}}/api/auth/providers 
 ###
 
-GET {{url}}/auth/google/login
+GET {{url}}/auth/token/login
+Authorization: Basic NmY3YzE2ZDMtYWExOC00NDJlLTkzMTItMzhhY2M2ZjRlZTA4OjA5ODMwMmM4NTk0YjE0NDA0NTkyMDBiODU2ZDI2M2Vk
 ###
 
-GET {{url}}/auth/google/login
+GET {{url}}/api/auth/user/info
 ###
 
 GET {{url}}/auth/logout
 ###
 
 GET {{url}}/auth/logout?terminate_all=true
-###
-
-GET {{url}}/api/auth/userinfo
 ###
 

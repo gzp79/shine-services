@@ -1,4 +1,7 @@
-use crate::{auth::AuthServiceState, db::IdentityError};
+use crate::{
+    auth::AuthServiceState,
+    db::{DBError, IdentityError},
+};
 use axum::{
     extract::State,
     http::StatusCode,
@@ -15,6 +18,10 @@ use uuid::Uuid;
 pub(in crate::auth) enum Error {
     #[error("User ({0}) not found")]
     UserNotFound(Uuid),
+    #[error("User session expired or revoked")]
+    SessionExpired,
+    #[error(transparent)]
+    SessionError(DBError),
     #[error(transparent)]
     IdentityError(#[from] IdentityError),
 }
@@ -22,7 +29,9 @@ pub(in crate::auth) enum Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let status_code = match &self {
-            Error::UserNotFound(_) => StatusCode::NOT_FOUND,
+            Error::UserNotFound(_) => StatusCode::UNAUTHORIZED,
+            Error::SessionExpired => StatusCode::UNAUTHORIZED,
+            Error::SessionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Error::IdentityError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
@@ -46,13 +55,21 @@ pub(in crate::auth) async fn ep_get_user_info(
     State(state): State<AuthServiceState>,
     user: CurrentUser,
 ) -> Result<Json<UserInfo>, Error> {
+    let _ = state
+        .session_manager()
+        .find_session(user.user_id, user.key)
+        .await
+        .map_err(Error::SessionError)?
+        .ok_or(Error::SessionExpired)?;
+
     let identity = state
         .identity_manager()
         .find(crate::db::FindIdentity::UserId(user.user_id))
         .await?
         .ok_or(Error::UserNotFound(user.user_id))?;
 
-    let roles = state.identity_manager().get_roles(identity.user_id).await?;
+    // use roles from session, as other services will use the same information.
+    // let roles = state.identity_manager().get_roles(identity.user_id).await?;
 
     let session_length = (Utc::now() - user.session_start).num_seconds();
     let session_length = if session_length < 0 { 0 } else { session_length as u64 };
@@ -61,6 +78,6 @@ pub(in crate::auth) async fn ep_get_user_info(
         name: user.name,
         is_email_confirmed: identity.is_email_confirmed,
         session_length,
-        roles,
+        roles: user.roles,
     }))
 }

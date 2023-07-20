@@ -4,10 +4,19 @@
 GET {{url}}/api/identities
 ###
 
-GET {{url}}/api/identities/123/roles
+GET {{url}}/api/identities/6f7c16d3-aa18-442e-9312-38acc6f4ee08/roles
 ###
 
-PUT {{url}}/api/identities/123/roles
+PUT {{url}}/api/identities/6f7c16d3-aa18-442e-9312-38acc6f4ee08/roles
+Content-Type: application/json
+
+{
+    "role": "UserAdmin" 
+}
+###
+
+
+DELETE {{url}}/api/identities/6f7c16d3-aa18-442e-9312-38acc6f4ee08/roles
 Content-Type: application/json
 
 {

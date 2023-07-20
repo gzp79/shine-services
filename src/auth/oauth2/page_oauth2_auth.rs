@@ -19,8 +19,8 @@ pub(in crate::auth) struct RequestQuery {
 pub(in crate::auth) async fn page_oauth2_auth(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
-    Query(query): Query<RequestQuery>,
     mut auth_session: AuthSession,
+    Query(query): Query<RequestQuery>,
 ) -> AuthPage {
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;

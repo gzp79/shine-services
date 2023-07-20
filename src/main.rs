@@ -94,10 +94,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let powered_by = PoweredBy::from_service_info(SERVICE_NAME, &config.core.version)?;
 
     let tracing_router = tracing_service.into_router();
-    let tracing_layer = OtelAxumLayer::default().filter(|a| {
-        println!("FFFF: {a}");
-        true
-    });
+    let tracing_layer = OtelAxumLayer::default(); //.filter(|a| true);
 
     let tera = {
         let mut tera = Tera::new("tera_templates/**/*").map_err(|e| anyhow!(e))?;
