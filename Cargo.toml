@@ -54,6 +54,9 @@ axum = { version = "0.6", features = ["headers"] }
 axum-server = { version = "0.5", features = ["tls-rustls"] }
 axum-extra = { version = "0.7", features = ["cookie", "cookie-signed", "cookie-private"] }
 
+utoipa = { version = "3.3", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { version = "3.1", features = ["axum"] }
+
 shine-service = { path = "./shine-service-rs/shine-service", version = "0.1.0" }
 
 [dev-dependencies]

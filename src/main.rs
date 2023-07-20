@@ -32,6 +32,12 @@ use tokio::{
 use tower_http::cors::CorsLayer;
 use tracing::Dispatch;
 use tracing_subscriber::EnvFilter;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
+
+#[derive(OpenApi)]
+#[openapi(paths(), components(), tags())]
+struct ApiDoc;
 
 async fn health_check() -> String {
     "Ok".into()
@@ -130,12 +136,16 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         IdentityServiceBuilder::new(identity_state).into_router()
     };
 
+    let swagger =
+        SwaggerUi::new(service_path("/doc/swagger-ui")).url(service_path("/doc/openapi.json"), ApiDoc::openapi());
+
     let app = Router::new()
         .route(&service_path("/info/ready"), get(health_check))
         .nest(&service_path(""), auth_pages)
         .nest(&service_path("/api/tracing"), tracing_router)
         .nest(&service_path("/api"), identity_api)
         .nest(&service_path("/api"), auth_api)
+        .merge(swagger)
         .layer(user_session.into_layer())
         .layer(powered_by)
         .layer(cors)
