@@ -1,3 +1,4 @@
+use shine_service::axum::Problem;
 use std::collections::HashSet;
 use thiserror::Error as ThisError;
 
@@ -9,14 +10,28 @@ pub mod roles {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Permission {
-    GetUserRole,
-    UpdateUserRole,
+    /// Allow to query the general information of an identity
+    ReadAnyIdentity,
+    /// Allow to get the roles of any user
+    ReadAnyUserRole,
+    /// Allow to update the roles of any user
+    UpdateAnyUserRole,
 }
 
 #[derive(Debug, ThisError)]
 pub enum PermissionError {
     #[error("Missing {0:?} permission to perform the operation")]
     MissingPermission(Permission),
+}
+
+impl From<PermissionError> for Problem {
+    fn from(value: PermissionError) -> Self {
+        match value {
+            PermissionError::MissingPermission(perm) => {
+                Self::forbidden().with_detail(format!("Missing [{:?}] permission", perm))
+            }
+        }
+    }
 }
 
 pub struct PermissionSet {
@@ -29,12 +44,13 @@ impl PermissionSet {
         for role in roles {
             match role.as_str() {
                 roles::SUPER_ADMIN => {
-                    permission.insert(Permission::GetUserRole);
-                    permission.insert(Permission::UpdateUserRole);
+                    permission.insert(Permission::ReadAnyIdentity);
+                    permission.insert(Permission::ReadAnyUserRole);
+                    permission.insert(Permission::UpdateAnyUserRole);
                 }
                 roles::USER_ADMIN => {
-                    permission.insert(Permission::GetUserRole);
-                    permission.insert(Permission::UpdateUserRole);
+                    permission.insert(Permission::ReadAnyUserRole);
+                    permission.insert(Permission::ReadAnyIdentity);
                 }
                 _ => {}
             };

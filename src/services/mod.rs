@@ -1,7 +1,7 @@
 mod identity_service;
 pub use self::identity_service::*;
 mod identity_service_roles;
-pub(in crate::services) use self::identity_service_roles::*;
+//pub(in crate::services) use self::identity_service_roles::*;
 
 mod ep_health;
 pub(in crate::services) use self::ep_health::*;

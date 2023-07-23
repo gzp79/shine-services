@@ -33,12 +33,13 @@ use tower_http::cors::CorsLayer;
 use tracing::Dispatch;
 use tracing_subscriber::EnvFilter;
 use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
+use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
 
 #[derive(OpenApi)]
-#[openapi(paths(), components(), tags())]
+#[openapi(paths(health_check), components(), tags())]
 struct ApiDoc;
 
+#[utoipa::path(get, path = "/info/ready")]
 async fn health_check() -> String {
     "Ok".into()
 }
@@ -136,8 +137,13 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         IdentityServiceBuilder::new(identity_state).into_router()
     };
 
-    let swagger =
-        SwaggerUi::new(service_path("/doc/swagger-ui")).url(service_path("/doc/openapi.json"), ApiDoc::openapi());
+    let swagger = SwaggerUi::new(service_path("/doc/swagger-ui"))
+        .url(service_path("/doc/openapi.json"), ApiDoc::openapi())
+        .config(
+            SwaggerConfig::default()
+                .with_credentials(true)
+                .show_common_extensions(true),
+        );
 
     let app = Router::new()
         .route(&service_path("/info/ready"), get(health_check))

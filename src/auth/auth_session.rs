@@ -259,7 +259,7 @@ fn create_jar<T: Serialize, X: Into<Expiration>>(
         // for deleted cookie to avoid exposing the key (there could be rainbow tables for empty hmac encoding),
         // let's encode some dummy nonce
         let nonce: Vec<u8> = (0..16).map(|_| thread_rng().gen::<u8>()).collect();
-        let nonce = B64.encode(&nonce);
+        let nonce = B64.encode(nonce);
         let mut cookie = Cookie::new(settings.name.to_string(), nonce);
         cookie.set_expires(OffsetDateTime::now_utc() - Duration::days(1));
         cookie

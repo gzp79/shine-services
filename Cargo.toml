@@ -44,6 +44,7 @@ redis = { version = "0.23.0", features = ["tokio-comp", "tokio-rustls-comp"] }
 azure_core = { version = "0.13" }
 azure_identity = { version = "0.13" }
 
+validator = { version = "0.16", features = ["derive"] }
 tera = "1.18"
 
 tracing = "0.1"

@@ -13,6 +13,8 @@ use tokio_postgres::{
 };
 use uuid::Uuid;
 
+pub const MAX_SEARCH_COUNT: usize = 100;
+
 #[derive(Debug, Clone, Copy)]
 pub enum IdentityKind {
     User,
@@ -48,7 +50,7 @@ impl<'a> FromSql<'a> for IdentityKind {
 #[derive(Debug)]
 
 pub struct Identity {
-    pub user_id: Uuid,
+    pub id: Uuid,
     pub kind: IdentityKind,
     pub name: String,
     pub email: Option<String>,
@@ -59,7 +61,7 @@ pub struct Identity {
 impl Identity {
     fn from_row(row: &Row) -> Result<Self, IdentityError> {
         Ok(Self {
-            user_id: row.try_get(0)?,
+            id: row.try_get(0)?,
             kind: row.try_get(1)?,
             name: row.try_get(2)?,
             email: row.try_get(3)?,
@@ -357,7 +359,7 @@ impl IdentityManager {
 
         transaction.commit().await?;
         Ok(Identity {
-            user_id,
+            id: user_id,
             name: user_name.to_owned(),
             email: email.map(String::from),
             is_email_confirmed: false,
@@ -403,14 +405,12 @@ impl IdentityManager {
     }
 
     pub async fn search(&self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, IdentityError> {
-        const MAX_COUNT: usize = 100;
-
         log::info!("{search:?}");
 
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
 
-        let mut builder = QueryBuilder::new("SELECT user_id, kind, name, created FROM identities");
+        let mut builder = QueryBuilder::new("SELECT user_id, kind, name, email, email_confirmed, created FROM identities");
 
         if let Some(user_ids) = &search.user_ids {
             builder.and_where(|b| format!("user_id = ANY(${b})"), [user_ids]);
@@ -451,7 +451,7 @@ impl IdentityManager {
         };
         builder.order_by("user_id");
 
-        let count = usize::min(MAX_COUNT, search.count.unwrap_or(MAX_COUNT));
+        let count = usize::min(MAX_SEARCH_COUNT, search.count.unwrap_or(MAX_SEARCH_COUNT));
         builder.limit(count);
 
         let (stmt, params) = builder.build();
@@ -592,7 +592,7 @@ impl IdentityManager {
 
         match client.execute(&stmt, &[&user_id, &role]).await {
             Ok(_) => Ok(()),
-            Err(err) if err.is_constraint("roles", "idx_user_idt_role") => {
+            Err(err) if err.is_constraint("roles", "roles_idx_user_id_role") => {
                 // role already present, it's ok
                 Ok(())
             }

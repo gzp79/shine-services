@@ -1,43 +1,9 @@
-use crate::{
-    auth::AuthServiceState,
-    db::{DBError, IdentityError},
-};
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    Json,
-};
+use crate::auth::AuthServiceState;
+use axum::{extract::State, Json};
 use chrono::Utc;
 use serde::Serialize;
-use shine_service::service::CurrentUser;
-use thiserror::Error as ThisError;
+use shine_service::{axum::Problem, service::CurrentUser};
 use uuid::Uuid;
-
-#[derive(Debug, ThisError)]
-pub(in crate::auth) enum Error {
-    #[error("User ({0}) not found")]
-    UserNotFound(Uuid),
-    #[error("User session expired or revoked")]
-    SessionExpired,
-    #[error(transparent)]
-    SessionError(DBError),
-    #[error(transparent)]
-    IdentityError(#[from] IdentityError),
-}
-
-impl IntoResponse for Error {
-    fn into_response(self) -> Response {
-        let status_code = match &self {
-            Error::UserNotFound(_) => StatusCode::UNAUTHORIZED,
-            Error::SessionExpired => StatusCode::UNAUTHORIZED,
-            Error::SessionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Error::IdentityError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-
-        (status_code, format!("{self:?}")).into_response()
-    }
-}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,19 +20,20 @@ pub(in crate::auth) struct UserInfo {
 pub(in crate::auth) async fn ep_get_user_info(
     State(state): State<AuthServiceState>,
     user: CurrentUser,
-) -> Result<Json<UserInfo>, Error> {
+) -> Result<Json<UserInfo>, Problem> {
     let _ = state
         .session_manager()
         .find_session(user.user_id, user.key)
         .await
-        .map_err(Error::SessionError)?
-        .ok_or(Error::SessionExpired)?;
+        .map_err(Problem::internal_error_from)?
+        .ok_or(Problem::unauthorized())?;
 
     let identity = state
         .identity_manager()
         .find(crate::db::FindIdentity::UserId(user.user_id))
-        .await?
-        .ok_or(Error::UserNotFound(user.user_id))?;
+        .await
+        .map_err(Problem::internal_error_from)?
+        .ok_or(Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user.user_id)))?;
 
     // use roles from session, as other services will use the same information.
     // let roles = state.identity_manager().get_roles(identity.user_id).await?;

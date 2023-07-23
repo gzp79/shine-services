@@ -56,7 +56,7 @@ pub(in crate::auth) async fn page_token_login(
 
         match identity {
             Some(identity) => {
-                if identity.user_id != user_id {
+                if identity.id != user_id {
                     auth_session.token_login = None;
                     return state.page_error(auth_session, AuthError::TokenInvalid, query.error_url.as_ref());
                 }
@@ -64,7 +64,7 @@ pub(in crate::auth) async fn page_token_login(
                 // refresh existing token
                 let token_login = match state.identity_manager().update_token(token.as_str()).await {
                     Ok(info) => TokenLogin {
-                        user_id: identity.user_id,
+                        user_id: identity.id,
                         token: info.token,
                         expires: info.expire_at,
                     },
@@ -91,7 +91,7 @@ pub(in crate::auth) async fn page_token_login(
         };
 
         // create a new token
-        let token_login = match state.create_token_with_retry(identity.user_id).await {
+        let token_login = match state.create_token_with_retry(identity.id).await {
             Ok(token_login) => token_login,
             Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
         };
@@ -101,7 +101,7 @@ pub(in crate::auth) async fn page_token_login(
     };
 
     // find roles (for new user it will be an empty list)
-    let roles = match state.identity_manager().get_roles(identity.user_id).await {
+    let roles = match state.identity_manager().get_roles(identity.id).await {
         Ok(roles) => roles,
         Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
     };

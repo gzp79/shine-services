@@ -5,7 +5,7 @@ GET {{url}}/api/auth/providers
 ###
 
 GET {{url}}/auth/token/login
-Authorization: Basic NmY3YzE2ZDMtYWExOC00NDJlLTkzMTItMzhhY2M2ZjRlZTA4OjA5ODMwMmM4NTk0YjE0NDA0NTkyMDBiODU2ZDI2M2Vk
+Authorization: Basic NmY3YzE2ZDMtYWExOC00NDJlLTkzMTItMzhhY2M2ZjRlZTA4OjRlNDkzMzMxN2VkMDI4MThmMjAxY2E2ODE0ZDFlYTFh
 ###
 
 GET {{url}}/api/auth/user/info

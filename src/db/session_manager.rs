@@ -83,7 +83,7 @@ impl SessionManager {
         let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
 
         let session_key = SessionKey::new_random(&inner.random)?;
-        let key = format!("session:{}:{}", identity.user_id.as_simple(), session_key.to_hex());
+        let key = format!("session:{}:{}", identity.id.as_simple(), session_key.to_hex());
 
         let session = StoredSession::from_identity(identity, roles, created_at);
 
@@ -93,7 +93,7 @@ impl SessionManager {
                 .expire(&key, inner.session_duration)
                 .await
                 .map_err(DBError::RedisError)?;
-            Ok(session.into_current_user(identity.user_id, session_key))
+            Ok(session.into_current_user(identity.id, session_key))
         } else {
             Err(DBSessionError::KeyConflict)
         }

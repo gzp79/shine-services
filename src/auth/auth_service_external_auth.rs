@@ -81,7 +81,7 @@ impl AuthServiceState {
 
         // create a new token
         let token_login = if create_token {
-            match self.create_token_with_retry(identity.user_id).await {
+            match self.create_token_with_retry(identity.id).await {
                 Ok(token_login) => Some(token_login),
                 Err(err) => return self.page_internal_error(auth_session, err, error_url),
             }
@@ -90,7 +90,7 @@ impl AuthServiceState {
         };
 
         // find roles (for new user it will be an empty list)
-        let roles = match self.identity_manager().get_roles(identity.user_id).await {
+        let roles = match self.identity_manager().get_roles(identity.id).await {
             Ok(roles) => roles,
             Err(err) => return self.page_internal_error(auth_session, err, error_url),
         };

@@ -1,25 +1,22 @@
 use crate::services::IdentityServiceState;
-use axum::{
-    extract::State,
-    response::{IntoResponse, Response},
-    Json,
-};
-use reqwest::StatusCode;
+use axum::{extract::State, Json};
 use serde::Serialize;
+use shine_service::axum::Problem;
 
 #[derive(Serialize)]
-pub struct UserName {
+#[serde(rename_all = "camelCase")]
+pub struct Response {
     name: String,
 }
 
 pub(in crate::services) async fn ep_generate_user_name(
     State(state): State<IdentityServiceState>,
-) -> Result<Json<UserName>, Response> {
+) -> Result<Json<Response>, Problem> {
     let name = state
         .name_generator()
         .generate_name()
         .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, format!("{err:?}")).into_response())?;
+        .map_err(Problem::internal_error_from)?;
 
-    Ok(Json(UserName { name }))
+    Ok(Json(Response { name }))
 }
