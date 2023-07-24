@@ -1,17 +1,15 @@
 use crate::{db::Permission, openapi::ApiKind, services::IdentityServiceState};
-use axum::{
-    body::HttpBody,
-    extract::{Path, State},
-    BoxError, Json,
-};
+use axum::{body::HttpBody, extract::State, BoxError, Json};
 use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem},
+    axum::{ApiEndpoint, ApiMethod, Problem, ValidatedPath},
     service::CurrentUser,
 };
+use utoipa::IntoParams;
 use uuid::Uuid;
+use validator::Validate;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
 struct RequestPath {
     #[serde(rename = "id")]
@@ -29,7 +27,7 @@ pub struct Response {
 async fn get_user_roles(
     State(state): State<IdentityServiceState>,
     user: CurrentUser,
-    Path(path): Path<RequestPath>,
+    ValidatedPath(path): ValidatedPath<RequestPath>,
 ) -> Result<Json<Response>, Problem> {
     state.require_permission(&user, Permission::ReadAnyUserRole).await?;
     let roles = state
@@ -49,4 +47,5 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/identities/:id/roles"), get_user_roles)
         .with_operation_id("ep_get_user_roles")
         .with_tag("identity")
+        .with_parameters(RequestPath::into_params(|| None))
 }

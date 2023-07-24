@@ -10,11 +10,13 @@ use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem, ValidatedQuery},
     service::CurrentUser,
 };
+use utoipa::IntoParams;
 use uuid::Uuid;
 use validator::Validate;
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Query)]
 struct RequestQuery {
     #[validate(range(min = 1, max = "MAX_SEARCH_COUNT"))]
     count: Option<usize>,
@@ -84,4 +86,5 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/identities"), search_identity)
         .with_operation_id("ep_search_identity")
         .with_tag("identity")
+        .with_parameters(RequestQuery::into_params(|| None))
 }

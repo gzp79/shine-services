@@ -3252,6 +3252,7 @@ dependencies = [
  "opentelemetry-zipkin",
  "primal-check",
  "redis",
+ "regex",
  "reqwest",
  "ring",
  "rustls",

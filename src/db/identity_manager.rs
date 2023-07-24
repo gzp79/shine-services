@@ -124,10 +124,7 @@ impl From<tokio_postgres::Error> for IdentityError {
 #[derive(Debug)]
 pub enum FindIdentity<'a> {
     UserId(Uuid),
-    Email(&'a str),
-    Name(&'a str),
     ExternalLogin(&'a ExternalLoginInfo),
-    Token(&'a str),
 }
 
 #[derive(Debug)]
@@ -175,18 +172,6 @@ pg_prepared_statement!( FindById => r#"
         FROM identities
         WHERE user_id = $1
 "#, [UUID] );
-
-pg_prepared_statement!( FindByEmail => r#"
-    SELECT user_id, kind, name, email, email_confirmed, created 
-            FROM identities
-            WHERE email = $1
-"#, [VARCHAR] );
-
-pg_prepared_statement!( FindByName => r#"
-    SELECT user_id, kind, name, email, email_confirmed, created 
-            FROM identities
-            WHERE name = $1
-"#, [VARCHAR] );
 
 pg_prepared_statement!( FindByLink => r#"
     SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created,
@@ -245,8 +230,6 @@ struct Inner {
     stmt_insert_token: InsertToken,
     stmt_cascaded_delete: CascadedDelete,
     stmt_find_by_id: FindById,
-    stmt_find_by_email: FindByEmail,
-    stmt_find_by_name: FindByName,
     stmt_find_by_link: FindByLink,
     stmt_find_by_token: FindByToken,
     stmt_delete_token: DeleteToken,
@@ -267,8 +250,6 @@ impl IdentityManager {
         let stmt_insert_token = InsertToken::new(&client).await?;
         let stmt_cascaded_delete = CascadedDelete::new(&client).await?;
         let stmt_find_by_id = FindById::new(&client).await?;
-        let stmt_find_by_email = FindByEmail::new(&client).await?;
-        let stmt_find_by_name = FindByName::new(&client).await?;
         let stmt_find_by_link = FindByLink::new(&client).await?;
         let stmt_find_by_token = FindByToken::new(&client).await?;
         let stmt_delete_token = DeleteToken::new(&client).await?;
@@ -284,8 +265,6 @@ impl IdentityManager {
             stmt_insert_token,
             stmt_cascaded_delete,
             stmt_find_by_id,
-            stmt_find_by_email,
-            stmt_find_by_name,
             stmt_find_by_link,
             stmt_find_by_token,
             stmt_delete_token,
@@ -377,23 +356,11 @@ impl IdentityManager {
                 let stmt = inner.stmt_find_by_id.get(&client).await?;
                 client.query_opt(&stmt, &[&id]).await?
             }
-            FindIdentity::Email(email) => {
-                let stmt = inner.stmt_find_by_email.get(&client).await?;
-                client.query_opt(&stmt, &[&email]).await?
-            }
-            FindIdentity::Name(name) => {
-                let stmt = inner.stmt_find_by_name.get(&client).await?;
-                client.query_opt(&stmt, &[&name]).await?
-            }
             FindIdentity::ExternalLogin(external_login) => {
                 let stmt = inner.stmt_find_by_link.get(&client).await?;
                 client
                     .query_opt(&stmt, &[&external_login.provider, &external_login.provider_id])
                     .await?
-            }
-            FindIdentity::Token(token) => {
-                let stmt = inner.stmt_find_by_token.get(&client).await?;
-                client.query_opt(&stmt, &[&token]).await?
             }
         };
 

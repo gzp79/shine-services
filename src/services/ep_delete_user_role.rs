@@ -1,18 +1,15 @@
 use crate::{db::Permission, openapi::ApiKind, services::IdentityServiceState};
-use axum::{
-    body::HttpBody,
-    extract::{Path, State},
-    BoxError,
-};
+use axum::{body::HttpBody, extract::State, BoxError};
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem, ValidatedJson},
+    axum::{ApiEndpoint, ApiMethod, Problem, ValidatedJson, ValidatedPath},
     service::CurrentUser,
 };
+use utoipa::IntoParams;
 use uuid::Uuid;
 use validator::Validate;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
 struct RequestPath {
     #[serde(rename = "id")]
@@ -31,7 +28,7 @@ struct RequestParams {
 async fn delete_user_role(
     State(state): State<IdentityServiceState>,
     user: CurrentUser,
-    Path(path): Path<RequestPath>,
+    ValidatedPath(path): ValidatedPath<RequestPath>,
     ValidatedJson(params): ValidatedJson<RequestParams>,
 ) -> Result<(), Problem> {
     state.require_permission(&user, Permission::UpdateAnyUserRole).await?;
@@ -56,4 +53,5 @@ where
     )
     .with_operation_id("ep_delete_user_role")
     .with_tag("identity")
+    .with_parameters(RequestPath::into_params(|| None))
 }
