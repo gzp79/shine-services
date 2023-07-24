@@ -5,7 +5,7 @@ use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem, ValidatedJson, ValidatedPath},
     service::CurrentUser,
 };
-use utoipa::IntoParams;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
 
@@ -16,8 +16,11 @@ struct RequestPath {
     user_id: Uuid,
 }
 
-#[derive(Deserialize, Validate)]
+#[derive(Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(example = json!({
+    "role": "Role"
+}))]
 struct RequestParams {
     #[validate(length(min = 1, max = 32))]
     role: String,
@@ -54,4 +57,5 @@ where
     .with_operation_id("ep_delete_user_role")
     .with_tag("identity")
     .with_parameters(RequestPath::into_params(|| None))
+    .with_json_request::<RequestParams>()
 }

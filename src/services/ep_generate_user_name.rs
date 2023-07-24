@@ -1,10 +1,14 @@
 use crate::{openapi::ApiKind, services::IdentityServiceState};
-use axum::{body::HttpBody, extract::State, BoxError, Json};
+use axum::{http::StatusCode, body::HttpBody, extract::State, BoxError, Json};
 use serde::Serialize;
 use shine_service::axum::{ApiEndpoint, ApiMethod, Problem};
+use utoipa::ToSchema;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[schema(example = json!({
+    "name": "Guest_123"
+}))]
 pub struct Response {
     name: String,
 }
@@ -28,4 +32,5 @@ where
     ApiEndpoint::new(ApiMethod::Post, ApiKind::Api("/user-name"), generate_user_name)
         .with_operation_id("ep_generate_user_name")
         .with_tag("identity")
+        .with_json_response::<Response>(StatusCode::OK)
 }
