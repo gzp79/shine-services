@@ -1,17 +1,24 @@
-use crate::auth::{auth_session::TokenLogin, AuthError, AuthPage, AuthServiceState, AuthSession};
+use crate::{
+    auth::{auth_session::TokenLogin, AuthError, AuthPage, AuthServiceState, AuthSession},
+    openapi::ApiKind,
+};
 use axum::{
+    body::HttpBody,
     extract::{Query, State},
     headers::{authorization::Basic, Authorization},
     TypedHeader,
 };
 use serde::Deserialize;
-use shine_service::service::APP_NAME;
+use shine_service::{
+    axum::{ApiEndpoint, ApiMethod},
+    service::APP_NAME,
+};
 use url::Url;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::auth) struct RequestQuery {
+struct RequestQuery {
     /// Registering a new "quest" user if no token is provided.
     register: Option<bool>,
     redirect_url: Option<Url>,
@@ -32,7 +39,7 @@ fn get_token_from_session(auth_session: &AuthSession) -> Option<(Uuid, String)> 
         .map(|t| (t.user_id, t.token.to_string()))
 }
 
-pub(in crate::auth) async fn page_token_login(
+async fn token_login(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
     auth_header: Option<TypedHeader<Authorization<Basic>>>,
@@ -115,4 +122,13 @@ pub(in crate::auth) async fn page_token_login(
     auth_session.user = Some(user);
 
     state.page_redirect(auth_session, APP_NAME, query.redirect_url.as_ref())
+}
+
+pub fn page_token_login<B>() -> ApiEndpoint<AuthServiceState, B>
+where
+    B: HttpBody + Send + 'static,
+{
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage("token", "/login"), token_login)
+        .with_operation_id("page_token_login")
+        .with_tag("login")
 }

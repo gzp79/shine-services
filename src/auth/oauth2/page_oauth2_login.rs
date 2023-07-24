@@ -1,23 +1,28 @@
-use crate::auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OAuth2Client};
+use crate::{
+    auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OAuth2Client},
+    openapi::ApiKind,
+};
 use axum::{
+    body::HttpBody,
     extract::{Query, State},
     Extension,
 };
 use oauth2::{CsrfToken, PkceCodeChallenge};
 use serde::Deserialize;
+use shine_service::axum::{ApiEndpoint, ApiMethod};
 use std::sync::Arc;
 use url::Url;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::auth) struct RequestQuery {
+struct RequestQuery {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
     remember_me: Option<bool>,
 }
 
 /// Login or register a new user with the interactive flow using an OAuth2 provider.
-pub(in crate::auth) async fn page_oauth2_login(
+async fn oauth2_login(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
     mut auth_session: AuthSession,
@@ -47,4 +52,13 @@ pub(in crate::auth) async fn page_oauth2_login(
     assert!(auth_session.user.is_none() && auth_session.token_login.is_none());
 
     state.page_redirect(auth_session, &client.provider, Some(&authorize_url))
+}
+
+pub fn page_oauth2_login<B>(provider: &str) -> ApiEndpoint<AuthServiceState, B>
+where
+    B: HttpBody + Send + 'static,
+{
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/login"), oauth2_login)
+        .with_operation_id(format!("page_{provider}_login"))
+        .with_tag("login")
 }

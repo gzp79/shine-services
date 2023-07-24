@@ -1,13 +1,16 @@
-use crate::auth::AuthServiceState;
-use axum::{extract::State, Json};
+use crate::{auth::AuthServiceState, openapi::ApiKind};
+use axum::{body::HttpBody, extract::State, Json};
 use chrono::Utc;
 use serde::Serialize;
-use shine_service::{axum::Problem, service::CurrentUser};
+use shine_service::{
+    axum::{ApiEndpoint, ApiMethod, Problem},
+    service::CurrentUser,
+};
 use uuid::Uuid;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::auth) struct UserInfo {
+struct UserInfo {
     user_id: Uuid,
     name: String,
     is_email_confirmed: bool,
@@ -17,10 +20,7 @@ pub(in crate::auth) struct UserInfo {
 
 /// Get the information about the current user. The cookie is not accessible
 /// from javascript, thus this endpoint can be used to get details about the current user.
-pub(in crate::auth) async fn ep_get_user_info(
-    State(state): State<AuthServiceState>,
-    user: CurrentUser,
-) -> Result<Json<UserInfo>, Problem> {
+async fn get_user_info(State(state): State<AuthServiceState>, user: CurrentUser) -> Result<Json<UserInfo>, Problem> {
     let _ = state
         .session_manager()
         .find_session(user.user_id, user.key)
@@ -47,4 +47,13 @@ pub(in crate::auth) async fn ep_get_user_info(
         session_length,
         roles: user.roles,
     }))
+}
+
+pub fn ep_get_user_info<B>() -> ApiEndpoint<AuthServiceState, B>
+where
+    B: HttpBody + Send + 'static,
+{
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/info"), get_user_info)
+        .with_operation_id("ep_get_user_info")
+        .with_tag("auth")
 }

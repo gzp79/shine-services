@@ -1,15 +1,19 @@
-use crate::{db::Permission, services::IdentityServiceState};
+use crate::{db::Permission, openapi::ApiKind, services::IdentityServiceState};
 use axum::{
+    body::HttpBody,
     extract::{Path, State},
-    Json,
+    BoxError, Json,
 };
 use serde::{Deserialize, Serialize};
-use shine_service::{axum::Problem, service::CurrentUser};
+use shine_service::{
+    axum::{ApiEndpoint, ApiMethod, Problem},
+    service::CurrentUser,
+};
 use uuid::Uuid;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::services) struct RequestPath {
+struct RequestPath {
     #[serde(rename = "id")]
     user_id: Uuid,
 }
@@ -22,7 +26,7 @@ pub struct Response {
 
 /// Get the information about the current user. The cookie is not accessible
 /// from javascript, thus this endpoint can be used to get details about the current user.
-pub(in crate::services) async fn ep_get_user_roles(
+async fn get_user_roles(
     State(state): State<IdentityServiceState>,
     user: CurrentUser,
     Path(path): Path<RequestPath>,
@@ -34,4 +38,15 @@ pub(in crate::services) async fn ep_get_user_roles(
         .await
         .map_err(Problem::internal_error_from)?;
     Ok(Json(Response { roles }))
+}
+
+pub fn ep_get_user_roles<B>() -> ApiEndpoint<IdentityServiceState, B>
+where
+    B: HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<BoxError>,
+{
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/identities/:id/roles"), get_user_roles)
+        .with_operation_id("ep_get_user_roles")
+        .with_tag("identity")
 }

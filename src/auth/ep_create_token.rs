@@ -1,16 +1,20 @@
-use crate::auth::AuthServiceState;
+use crate::{auth::AuthServiceState, openapi::ApiKind};
 use axum::{
+    body::HttpBody,
     extract::State,
     headers::{authorization::Credentials, Authorization},
     Json,
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use shine_service::{axum::Problem, service::CurrentUser};
+use shine_service::{
+    axum::{ApiEndpoint, ApiMethod, Problem},
+    service::CurrentUser,
+};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::auth) struct Token {
+struct Token {
     /// Raw token
     token: String,
     /// Authorization header value
@@ -20,10 +24,7 @@ pub(in crate::auth) struct Token {
 
 /// Get the information about the current user. The cookie is not accessible
 /// from javascript, thus this endpoint can be used to get details about the current user.
-pub(in crate::auth) async fn ep_create_token(
-    State(state): State<AuthServiceState>,
-    user: CurrentUser,
-) -> Result<Json<Token>, Problem> {
+async fn create_token(State(state): State<AuthServiceState>, user: CurrentUser) -> Result<Json<Token>, Problem> {
     // check if session is still valid
     let _ = state
         .session_manager()
@@ -50,4 +51,13 @@ pub(in crate::auth) async fn ep_create_token(
         basic_auth,
         expires: token_login.expires,
     }))
+}
+
+pub fn ep_create_token<B>() -> ApiEndpoint<AuthServiceState, B>
+where
+    B: HttpBody + Send + 'static,
+{
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/token"), create_token)
+        .with_operation_id("ep_create_token")
+        .with_tag("auth")
 }

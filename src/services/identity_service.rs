@@ -2,11 +2,10 @@ use crate::{
     db::{DBPool, IdentityManager, NameGenerator},
     services,
 };
-use axum::{
-    routing::{delete, get, put},
-    Router,
-};
+use axum::Router;
+use shine_service::axum::ApiRoute;
 use std::sync::Arc;
+use utoipa::openapi::OpenApi;
 
 struct Inner {
     identity_manager: IdentityManager,
@@ -52,17 +51,17 @@ impl IdentityServiceBuilder {
         Self { state }
     }
 
-    pub fn into_router<S>(self) -> Router<S>
+    pub fn into_router<S>(self, doc: &mut OpenApi) -> Router<S>
     where
         S: Clone + Send + Sync + 'static,
     {
         Router::new()
-            .route("/health", get(services::ep_health))
-            .route("/user-name", get(services::ep_generate_user_name))
-            .route("/identities", get(services::ep_search_identity))
-            .route("/identities/:id/roles", get(services::ep_get_user_roles))
-            .route("/identities/:id/roles", put(services::ep_add_user_role))
-            .route("/identities/:id/roles", delete(services::ep_delete_user_role))
+            .add_api(services::ep_health(), doc)
+            .add_api(services::ep_generate_user_name(), doc)
+            .add_api(services::ep_search_identity(), doc)
+            .add_api(services::ep_get_user_roles(), doc)
+            .add_api(services::ep_add_user_role(), doc)
+            .add_api(services::ep_delete_user_role(), doc)
             .with_state(self.state)
     }
 }

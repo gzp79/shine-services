@@ -1,22 +1,25 @@
-use crate::auth::{
-    get_external_user_info, AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OAuth2Client,
+use crate::{
+    auth::{get_external_user_info, AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OAuth2Client},
+    openapi::ApiKind,
 };
 use axum::{
+    body::HttpBody,
     extract::{Query, State},
     Extension,
 };
 use oauth2::{reqwest::async_http_client, AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
+use shine_service::axum::{ApiEndpoint, ApiMethod};
 use std::sync::Arc;
 
 #[derive(Deserialize)]
-pub(in crate::auth) struct RequestQuery {
+struct RequestQuery {
     code: String,
     state: String,
 }
 
 /// Process the authentication redirect from the OAuth2 provider.
-pub(in crate::auth) async fn page_oauth2_auth(
+async fn oauth2_auth(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
     mut auth_session: AuthSession,
@@ -92,4 +95,13 @@ pub(in crate::auth) async fn page_oauth2_auth(
             )
             .await
     }
+}
+
+pub fn page_oauth2_auth<B>(provider: &str) -> ApiEndpoint<AuthServiceState, B>
+where
+    B: HttpBody + Send + 'static,
+{
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/auth"), oauth2_auth)
+        .with_operation_id(format!("page_{provider}_auth"))
+        .with_tag("login")
 }

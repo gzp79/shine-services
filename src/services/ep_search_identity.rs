@@ -1,12 +1,13 @@
 use crate::{
     db::{IdentityKind, Permission, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_COUNT},
+    openapi::ApiKind,
     services::IdentityServiceState,
 };
-use axum::{extract::State, Json};
+use axum::{body::HttpBody, extract::State, BoxError, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{Problem, ValidatedQuery},
+    axum::{ApiEndpoint, ApiMethod, Problem, ValidatedQuery},
     service::CurrentUser,
 };
 use uuid::Uuid;
@@ -14,14 +15,14 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::services) struct RequestQuery {
+struct RequestQuery {
     #[validate(range(min = 1, max = "MAX_SEARCH_COUNT"))]
     count: Option<usize>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::services) struct IdentityInfo {
+struct IdentityInfo {
     id: Uuid,
     kind: String,
     name: String,
@@ -32,11 +33,11 @@ pub(in crate::services) struct IdentityInfo {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::services) struct Response {
+struct Response {
     identities: Vec<IdentityInfo>,
 }
 
-pub(in crate::services) async fn ep_search_identity(
+async fn search_identity(
     State(state): State<IdentityServiceState>,
     ValidatedQuery(query): ValidatedQuery<RequestQuery>,
     user: CurrentUser,
@@ -72,4 +73,15 @@ pub(in crate::services) async fn ep_search_identity(
         .collect();
 
     Ok(Json(Response { identities }))
+}
+
+pub fn ep_search_identity<B>() -> ApiEndpoint<IdentityServiceState, B>
+where
+    B: HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<BoxError>,
+{
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/identities"), search_identity)
+        .with_operation_id("ep_search_identity")
+        .with_tag("identity")
 }

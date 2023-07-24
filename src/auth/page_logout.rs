@@ -1,17 +1,26 @@
-use crate::auth::{AuthPage, AuthServiceState, AuthSession};
-use axum::extract::{Query, State};
+use crate::{
+    auth::{AuthPage, AuthServiceState, AuthSession},
+    openapi::ApiKind,
+};
+use axum::{
+    body::HttpBody,
+    extract::{Query, State},
+};
 use serde::Deserialize;
-use shine_service::service::APP_NAME;
+use shine_service::{
+    axum::{ApiEndpoint, ApiMethod},
+    service::APP_NAME,
+};
 use url::Url;
 
 #[derive(Deserialize)]
-pub(in crate::auth) struct RequestQuery {
+struct RequestQuery {
     terminate_all: Option<bool>,
     redirect_url: Option<Url>,
     error_url: Option<Url>,
 }
 
-pub(in crate::auth) async fn page_logout(
+async fn logout(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
     Query(query): Query<RequestQuery>,
@@ -48,4 +57,13 @@ pub(in crate::auth) async fn page_logout(
     }
 
     state.page_redirect(auth_session, APP_NAME, query.redirect_url.as_ref())
+}
+
+pub fn page_logout<B>() -> ApiEndpoint<AuthServiceState, B>
+where
+    B: HttpBody + Send + 'static,
+{
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/logout"), logout)
+        .with_operation_id("page_logout")
+        .with_tag("login")
 }

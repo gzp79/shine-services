@@ -1,5 +1,9 @@
-use crate::auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OIDCClient};
+use crate::{
+    auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OIDCClient},
+    openapi::ApiKind,
+};
 use axum::{
+    body::HttpBody,
     extract::{Query, State},
     Extension,
 };
@@ -10,18 +14,19 @@ use openidconnect::{
     Nonce,
 };
 use serde::Deserialize;
+use shine_service::axum::{ApiEndpoint, ApiMethod};
 use std::sync::Arc;
 use url::Url;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::auth) struct RequestQuery {
+struct RequestQuery {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
 }
 
 /// Link the current user to an OpenId Connect provider.
-pub(in crate::auth) async fn page_oidc_link(
+async fn oidc_link(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OIDCClient>>,
     mut auth_session: AuthSession,
@@ -56,4 +61,13 @@ pub(in crate::auth) async fn page_oidc_link(
     });
 
     state.page_redirect(auth_session, &client.provider, Some(&authorize_url))
+}
+
+pub fn page_oidc_link<B>(provider: &str) -> ApiEndpoint<AuthServiceState, B>
+where
+    B: HttpBody + Send + 'static,
+{
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/link"), oidc_link)
+        .with_operation_id(format!("page_{provider}_link"))
+        .with_tag("login")
 }

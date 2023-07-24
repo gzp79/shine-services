@@ -4,10 +4,10 @@ use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
 #[error("Failed to generate token: {0}")]
-pub(in crate::auth) struct TokenGeneratorError(String);
+pub struct TokenGeneratorError(String);
 
 #[derive(Clone)]
-pub(in crate::auth) struct TokenGenerator {
+pub struct TokenGenerator {
     token_max_duration: Duration,
     random: SystemRandom,
 }

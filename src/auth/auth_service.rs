@@ -2,9 +2,10 @@ use crate::{
     auth::{self, AuthSessionMeta, OAuth2Client, OIDCClient, TokenGenerator},
     db::{IdentityManager, NameGenerator, SessionManager},
 };
-use axum::{routing::get, Extension, Router};
+use axum::{Extension, Router};
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
+use shine_service::axum::ApiRoute;
 use std::{
     collections::{HashMap, HashSet},
     num::TryFromIntError,
@@ -13,6 +14,7 @@ use std::{
 use tera::Tera;
 use thiserror::Error as ThisError;
 use url::Url;
+use utoipa::openapi::OpenApi;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -116,7 +118,7 @@ struct Inner {
 }
 
 #[derive(Clone)]
-pub(in crate::auth) struct AuthServiceState(Arc<Inner>);
+pub struct AuthServiceState(Arc<Inner>);
 
 impl AuthServiceState {
     pub fn tera(&self) -> &Tera {
@@ -224,44 +226,39 @@ impl AuthServiceBuilder {
         })
     }
 
-    pub fn into_router<S>(self) -> (Router<S>, Router<S>)
+    pub fn into_router<S>(self, doc: &mut OpenApi) -> (Router<S>, Router<S>)
     where
         S: Clone + Send + Sync + 'static,
     {
         let page_router = {
             let mut router = Router::new()
-                .route("/auth/logout", get(auth::page_logout))
-                .route("/auth/delete", get(auth::page_delete_user));
+                .add_api(auth::page_logout(), doc)
+                .add_api(auth::page_delete_user(), doc);
 
-            router = router.nest(
-                "/auth/token",
-                Router::new().route("/login", get(auth::page_token_login)),
-            );
+            router = router.nest("", Router::new().add_api(auth::page_token_login(), doc));
 
             for client in self.openid_clients {
                 log::info!("Registering OpenId Connect provider {}", client.provider);
-                let path = format!("/auth/{}", client.provider);
 
                 router = router.nest(
-                    &path,
+                    "",
                     Router::new()
-                        .route("/login", get(auth::page_oidc_login))
-                        .route("/link", get(auth::page_oidc_link))
-                        .route("/auth", get(auth::page_oidc_auth))
+                        .add_api(auth::page_oidc_login(&client.provider), doc)
+                        .add_api(auth::page_oidc_link(&client.provider), doc)
+                        .add_api(auth::page_oidc_auth(&client.provider), doc)
                         .layer(Extension(Arc::new(client))),
                 );
             }
 
             for client in self.oauth2_clients {
                 log::info!("Registering OAuth2 provider {}", client.provider);
-                let path = format!("/auth/{}", client.provider);
 
                 router = router.nest(
-                    &path,
+                    "",
                     Router::new()
-                        .route("/login", get(auth::page_oauth2_login))
-                        .route("/link", get(auth::page_oauth2_link))
-                        .route("/auth", get(auth::page_oauth2_auth))
+                        .add_api(auth::page_oauth2_login(&client.provider), doc)
+                        .add_api(auth::page_oauth2_link(&client.provider), doc)
+                        .add_api(auth::page_oauth2_auth(&client.provider), doc)
                         .layer(Extension(Arc::new(client))),
                 );
             }
@@ -272,9 +269,9 @@ impl AuthServiceBuilder {
         };
 
         let api_router = Router::new()
-            .route("/auth/user/info", get(auth::ep_get_user_info))
-            .route("/auth/providers", get(auth::ep_get_auth_providers))
-            .route("/auth/user/token", get(auth::ep_create_token))
+            .add_api(auth::ep_get_user_info(), doc)
+            .add_api(auth::ep_get_auth_providers(), doc)
+            .add_api(auth::ep_create_token(), doc)
             .with_state(self.state);
 
         (page_router, api_router)

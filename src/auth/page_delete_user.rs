@@ -1,19 +1,28 @@
-use crate::auth::{AuthError, AuthPage, AuthServiceState, AuthSession};
-use axum::extract::{Query, State};
+use crate::{
+    auth::{AuthError, AuthPage, AuthServiceState, AuthSession},
+    openapi::ApiKind,
+};
+use axum::{
+    body::HttpBody,
+    extract::{Query, State},
+};
 use serde::Deserialize;
-use shine_service::service::APP_NAME;
+use shine_service::{
+    axum::{ApiEndpoint, ApiMethod},
+    service::APP_NAME,
+};
 use url::Url;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(in crate::auth) struct RequestQuery {
+struct RequestQuery {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
 }
 
 /// Delete he current user. This is not a soft delete, once executed there is no way back.
 /// Note, it only deletes the user and login credentials, but not the data of the user.
-pub(in crate::auth) async fn page_delete_user(
+async fn delete_user(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
     Query(query): Query<RequestQuery>,
@@ -42,4 +51,13 @@ pub(in crate::auth) async fn page_delete_user(
     }
 
     state.page_redirect(auth_session, APP_NAME, query.redirect_url.as_ref())
+}
+
+pub fn page_delete_user<B>() -> ApiEndpoint<AuthServiceState, B>
+where
+    B: HttpBody + Send + 'static,
+{
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/delete"), delete_user)
+        .with_operation_id("page_delete_user")
+        .with_tag("login")
 }
