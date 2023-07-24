@@ -2,13 +2,15 @@
 <html>
 
 <head>
-  <!-- <meta http-equiv="refresh" content="0; url='{{ redirect_url | safe }}'" /> -->
+  {% if timeout >= 0 %}
+  <meta http-equiv="refresh" content="{{timeout}}; url='{{ redirect_url | safe }}'" />
+  {% endif %}
 </head>
 
 <body>
-  <h1 class="header-text">Ooops {{type}}</h1>
-  <h2>Something went wrong!</h2>
-  <h2>{{statusCode}}</h2>
+  <h1 class="header-text">Something went wrong!</h1>
+  <h2>Code: {{statusCode}}</h2>
+  <h2>Type: {{type}}</h2>
   <p>Back to <a href='{{ redirect_url | safe }}'> safety </a> ... </p>
 </body>
 

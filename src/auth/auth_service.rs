@@ -66,6 +66,9 @@ pub struct AuthConfig {
     /// - source for some cookie protection parameters (domain, path)
     /// - redirect url base for external logins
     pub auth_base_url: Url,
+    /// Time before redirection to user from the embedded pages. If not given, no redirect happens
+    /// and a value of 0 implies an immediate redirect.
+    page_redirect_time: Option<u32>,
 
     /// Auth related cookie parameters.
     #[serde(flatten)]
@@ -107,6 +110,7 @@ struct Inner {
 
     home_url: Url,
     error_url: Url,
+    page_redirect_time: i64,
     providers: Vec<String>,
     token_generator: TokenGenerator,
 }
@@ -141,6 +145,10 @@ impl AuthServiceState {
 
     pub fn error_url(&self) -> &Url {
         &self.0.error_url
+    }
+
+    pub fn page_redirect_time(&self) -> i64 {
+        self.0.page_redirect_time
     }
 
     pub fn providers(&self) -> &[String] {
@@ -197,6 +205,7 @@ impl AuthServiceBuilder {
             token_generator,
             home_url: config.home_url.to_owned(),
             error_url: config.error_url.to_owned(),
+            page_redirect_time: config.page_redirect_time.map(i64::from).unwrap_or(-1),
             providers: providers.into_iter().collect(),
         }));
 

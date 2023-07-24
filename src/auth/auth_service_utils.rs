@@ -169,6 +169,7 @@ impl AuthServiceState {
             .append_pair("status", &detail.1.as_u16().to_string());
 
         let mut context = tera::Context::new();
+        context.insert("timeout", &self.page_redirect_time());
         context.insert("redirect_url", target.as_str());
         context.insert("statusCode", &detail.1.as_u16());
         context.insert("type", detail.0);
@@ -204,6 +205,7 @@ impl AuthServiceState {
         redirect_url: Option<&Url>,
     ) -> AuthPage {
         let mut context = tera::Context::new();
+        context.insert("timeout", &self.page_redirect_time());
         context.insert("title", APP_NAME);
         context.insert("target", target);
         context.insert("redirect_url", redirect_url.unwrap_or(self.home_url()).as_str());

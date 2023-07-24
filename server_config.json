@@ -24,6 +24,7 @@
         "homeUrl": "https://scytta.com",
         "errorUrl": "https://scytta.com/error",
         "authBaseUrl": "https://cloud.scytta.com/identity/auth",
+        "pageRedirectTime": 0,
         "sessionMaxDuration": 43200,
         "tokenMaxDuration": 1209600,
         "openid": {
