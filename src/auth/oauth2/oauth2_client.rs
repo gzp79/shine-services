@@ -2,6 +2,7 @@ use crate::auth::{AuthBuildError, ExternalUserInfoExtensions, OAuth2Config};
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, Scope, TokenUrl};
 use openidconnect::UserInfoUrl;
 use std::collections::HashMap;
+use url::Url;
 
 pub(in crate::auth) struct OAuth2Client {
     pub provider: String,
@@ -13,11 +14,14 @@ pub(in crate::auth) struct OAuth2Client {
 }
 
 impl OAuth2Client {
-    pub async fn new(provider: &str, config: &OAuth2Config) -> Result<Self, AuthBuildError> {
+    pub async fn new(provider: &str, auth_base_url: &Url, config: &OAuth2Config) -> Result<Self, AuthBuildError> {
         let client_id = ClientId::new(config.client_id.clone());
         let client_secret = ClientSecret::new(config.client_secret.clone());
-        let redirect_url = RedirectUrl::new(config.redirect_url.to_string())
+        let redirect_url = auth_base_url
+            .join(&format!("{provider}/auth"))
             .map_err(|err| AuthBuildError::RedirectUrl(format!("{err}")))?;
+        let redirect_url =
+            RedirectUrl::new(redirect_url.to_string()).map_err(|err| AuthBuildError::RedirectUrl(format!("{err}")))?;
         let auth_url = AuthUrl::new(config.authorization_url.clone())
             .map_err(|err| AuthBuildError::InvalidAuthUrl(format!("{err}")))?;
         let token_url =

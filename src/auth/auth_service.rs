@@ -31,7 +31,6 @@ pub struct OAuth2Config {
     pub client_id: String,
     pub client_secret: String,
     pub scopes: Vec<String>,
-    pub redirect_url: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -41,7 +40,6 @@ pub struct OIDCConfig {
     pub client_id: String,
     pub client_secret: String,
     pub scopes: Vec<String>,
-    pub redirect_url: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -60,13 +58,22 @@ pub struct AuthSessionConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthConfig {
+    /// Default url where user is redirected to
     pub home_url: Url,
-    pub api_url: Url,
+    /// Default url where user is redirected to in case of error
+    pub error_url: Url,
+    /// The url base for the authentication services:
+    /// - source for some cookie protection parameters (domain, path)
+    /// - redirect url base for external logins
+    pub auth_base_url: Url,
 
+    /// Auth related cookie parameters.
     #[serde(flatten)]
     pub auth_session: AuthSessionConfig,
 
+    /// List of external providers using the OpenId Connect protocol
     pub openid: HashMap<String, OIDCConfig>,
+    /// List of external providers using OAuth2 protocols
     pub oauth2: HashMap<String, OAuth2Config>,
 }
 
@@ -99,6 +106,7 @@ struct Inner {
     name_generator: NameGenerator,
 
     home_url: Url,
+    error_url: Url,
     providers: Vec<String>,
     token_generator: TokenGenerator,
 }
@@ -129,6 +137,10 @@ impl AuthServiceState {
 
     pub fn home_url(&self) -> &Url {
         &self.0.home_url
+    }
+
+    pub fn error_url(&self) -> &Url {
+        &self.0.error_url
     }
 
     pub fn providers(&self) -> &[String] {
@@ -163,7 +175,7 @@ impl AuthServiceBuilder {
                 return Err(AuthBuildError::ProviderConflict(provider.clone()));
             }
 
-            let connect = OIDCClient::new(provider, provider_config).await?;
+            let connect = OIDCClient::new(provider, &config.auth_base_url, provider_config).await?;
             openid_clients.push(connect);
         }
 
@@ -173,7 +185,7 @@ impl AuthServiceBuilder {
                 return Err(AuthBuildError::ProviderConflict(provider.clone()));
             }
 
-            let connect = OAuth2Client::new(provider, provider_config).await?;
+            let connect = OAuth2Client::new(provider, &config.auth_base_url, provider_config).await?;
             oauth2_clients.push(connect);
         }
 
@@ -184,12 +196,16 @@ impl AuthServiceBuilder {
             name_generator: dependencies.name_generator,
             token_generator,
             home_url: config.home_url.to_owned(),
+            error_url: config.error_url.to_owned(),
             providers: providers.into_iter().collect(),
         }));
 
-        let auth_session_meta =
-            AuthSessionMeta::new(config.home_url.clone(), config.api_url.clone(), &config.auth_session)
-                .map_err(|err| AuthBuildError::InvalidAuthSession(format!("{err}")))?;
+        let auth_session_meta = AuthSessionMeta::new(
+            config.home_url.clone(),
+            config.auth_base_url.clone(),
+            &config.auth_session,
+        )
+        .map_err(|err| AuthBuildError::InvalidAuthSession(format!("{err}")))?;
 
         Ok(Self {
             state,

@@ -22,12 +22,12 @@
     },
     "auth": {
         "homeUrl": "https://scytta.com",
-        "apiUrl": "https://cloud.scytta.com/identity/auth",
+        "errorUrl": "https://scytta.com/error",
+        "authBaseUrl": "https://cloud.scytta.com/identity/auth",
         "sessionMaxDuration": 43200,
         "tokenMaxDuration": 1209600,
         "openid": {
             "google": {
-                "redirectUrl": "https://cloud.scytta.com/identity/auth/google/auth",
                 "discoveryUrl": "https://accounts.google.com",
                 "scopes": [
                     "openid",
@@ -36,7 +36,6 @@
                 ]
             },
             "gitlab": {
-                "redirectUrl": "https://cloud.scytta.com/identity/auth/gitlab/auth",
                 "discoveryUrl": "https://gitlab.com",
                 "scopes": [
                     "openid",
@@ -47,7 +46,6 @@
         },
         "oauth2": {
             "discord": {
-                "redirectUrl": "https://cloud.scytta.com/identity/auth/discord/auth",
                 "authorizationUrl": "https://discord.com/oauth2/authorize",
                 "tokenUrl": "https://discord.com/api/oauth2/token",
                 "userInfoUrl": "https://discord.com/api/users/@me",
@@ -61,7 +59,6 @@
                 ]
             },
             "github": {
-                "redirectUrl": "https://cloud.scytta.com/identity/auth/github/auth",
                 "authorizationUrl": "https://github.com/login/oauth/authorize",
                 "tokenUrl": "https://github.com/login/oauth/access_token",
                 "userInfoUrl": "https://api.github.com/user",

@@ -130,14 +130,13 @@ pub(in crate::auth) enum AuthError {
 }
 
 pub(in crate::auth) struct AuthPage {
-    pub status: StatusCode,
     pub auth_session: Option<AuthSession>,
     pub html: String,
 }
 
 impl IntoResponse for AuthPage {
     fn into_response(self) -> Response {
-        (self.status, self.auth_session, Html(self.html)).into_response()
+        (self.auth_session, Html(self.html)).into_response()
     }
 }
 
@@ -148,17 +147,38 @@ impl AuthServiceState {
         response: AuthError,
         target_url: Option<&Url>,
     ) -> AuthPage {
+        let detail = match response {
+            AuthError::LogoutRequired => ("logoutRequired", StatusCode::BAD_REQUEST),
+            AuthError::LoginRequired => ("loginRequired", StatusCode::UNAUTHORIZED),
+            AuthError::MissingExternalLogin => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::MissingNonce => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::InvalidCSRF => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::FailedExternalUserInfo => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::TokenInvalid => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::TokenExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
+            AuthError::SessionExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
+            AuthError::InternalServerError(_) => ("internalError", StatusCode::INTERNAL_SERVER_ERROR),
+            AuthError::ProviderAlreadyUsed => ("providerAlreadyUsed", StatusCode::CONFLICT),
+            AuthError::EmailAlreadyUsed => ("emailAlreadyUsed", StatusCode::CONFLICT),
+        };
+
+        let mut target = target_url.unwrap_or(self.error_url()).clone();
+        target
+            .query_pairs_mut()
+            .append_pair("type", detail.0)
+            .append_pair("status", &detail.1.as_u16().to_string());
+
         let mut context = tera::Context::new();
-        context.insert("redirect_url", target_url.unwrap_or(self.home_url()));
-        //context.insert("response", &response);
-        context.insert("detail", &response.to_string());
+        context.insert("redirect_url", target.as_str());
+        context.insert("statusCode", &detail.1.as_u16());
+        context.insert("type", detail.0);
+        context.insert("detail", "");
         let html = self
             .tera()
             .render("ooops.html", &context)
             .expect("Failed to generate ooops.html template");
 
         AuthPage {
-            status: StatusCode::OK,
             auth_session: Some(auth_session),
             html,
         }
@@ -193,7 +213,6 @@ impl AuthServiceState {
             .expect("Failed to generate redirect.html template");
 
         AuthPage {
-            status: StatusCode::OK,
             auth_session: Some(auth_session),
             html,
         }

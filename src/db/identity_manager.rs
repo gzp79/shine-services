@@ -410,7 +410,8 @@ impl IdentityManager {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
 
-        let mut builder = QueryBuilder::new("SELECT user_id, kind, name, email, email_confirmed, created FROM identities");
+        let mut builder =
+            QueryBuilder::new("SELECT user_id, kind, name, email, email_confirmed, created FROM identities");
 
         if let Some(user_ids) = &search.user_ids {
             builder.and_where(|b| format!("user_id = ANY(${b})"), [user_ids]);
