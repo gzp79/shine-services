@@ -1,11 +1,12 @@
 use crate::{openapi::ApiKind, services::IdentityServiceState};
-use axum::{body::HttpBody, extract::State, BoxError, Json};
+use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
 use bb8::State as BB8PoolState;
 use serde::Serialize;
-use serde_json::{json, Value};
 use shine_service::axum::{ApiEndpoint, ApiMethod};
+use utoipa::ToSchema;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 struct DBState {
     pub connections: u32,
     pub idle_connections: u32,
@@ -20,14 +21,18 @@ impl From<BB8PoolState> for DBState {
     }
 }
 
-async fn health(State(state): State<IdentityServiceState>) -> Json<Value> {
-    let json = json!
-    ( {
-        "postgres": DBState::from(state.db().postgres.state()),
-        "redis": DBState::from(state.db().redis.state())
-    });
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+struct Response {
+    pub postgres: DBState,
+    pub redis: DBState,
+}
 
-    Json(json)
+async fn health(State(state): State<IdentityServiceState>) -> Json<Response> {
+    Json(Response {
+        postgres: DBState::from(state.db().postgres.state()),
+        redis: DBState::from(state.db().redis.state()),
+    })
 }
 
 pub fn ep_health<B>() -> ApiEndpoint<IdentityServiceState, B>
@@ -39,4 +44,7 @@ where
     ApiEndpoint::new(ApiMethod::Put, ApiKind::Api("/health"), health)
         .with_operation_id("ep_health")
         .with_tag("status")
+        .with_json_response::<Response, _>(StatusCode::OK, "")
+        .with_status_response(StatusCode::UNAUTHORIZED, "Login required")
+        .with_status_response(StatusCode::FORBIDDEN, "Insufficient permission")
 }

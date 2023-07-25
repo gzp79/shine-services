@@ -2,19 +2,18 @@ use crate::{
     auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OAuth2Client},
     openapi::ApiKind,
 };
-use axum::{
-    body::HttpBody,
-    extract::{Query, State},
-    Extension,
-};
+use axum::{body::HttpBody, extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod};
+use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery};
 use std::sync::Arc;
 use url::Url;
+use utoipa::IntoParams;
+use validator::Validate;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Query)]
 struct RequestQuery {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
@@ -26,7 +25,7 @@ async fn oauth2_login(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
     mut auth_session: AuthSession,
-    Query(query): Query<RequestQuery>,
+    ValidatedQuery(query): ValidatedQuery<RequestQuery>,
 ) -> AuthPage {
     if auth_session.user.is_some() {
         return state.page_error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref());
@@ -61,4 +60,5 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/login"), oauth2_login)
         .with_operation_id(format!("page_{provider}_login"))
         .with_tag("login")
+        .with_parameters(RequestQuery::into_params(|| None))
 }

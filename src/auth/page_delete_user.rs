@@ -2,20 +2,24 @@ use crate::{
     auth::{AuthError, AuthPage, AuthServiceState, AuthSession},
     openapi::ApiKind,
 };
-use axum::{
-    body::HttpBody,
-    extract::{Query, State},
-};
+use axum::{body::HttpBody, extract::State};
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod},
+    axum::{ApiEndpoint, ApiMethod, ValidatedQuery},
     service::APP_NAME,
 };
 use url::Url;
+use utoipa::IntoParams;
+use validator::Validate;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Query)]
 struct RequestQuery {
+    /// Set to true. Mainly used to avoid some accidental automated deletion.
+    /// It is suggested to have some confirmation on the UI (for example enter the name of the user to be deleted) and
+    /// set the value of the property to the result of the confirmation.
+    confirmed: bool,
     redirect_url: Option<Url>,
     error_url: Option<Url>,
 }
@@ -25,12 +29,17 @@ struct RequestQuery {
 async fn delete_user(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
-    Query(query): Query<RequestQuery>,
+    ValidatedQuery(query): ValidatedQuery<RequestQuery>,
 ) -> AuthPage {
     let (user_id, user_key) = match auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {
         Some(user_id) => user_id,
         None => return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref()),
     };
+
+    // some agting mainly used for swagger ui
+    if !query.confirmed {
+        return state.page_error(auth_session, AuthError::MissingPrecondition, query.error_url.as_ref());
+    }
 
     // validate session as this is a very risky operation
     match state.session_manager().find_session(user_id, user_key).await {
@@ -60,4 +69,5 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/delete"), delete_user)
         .with_operation_id("page_delete_user")
         .with_tag("login")
+        .with_parameters(RequestQuery::into_params(|| None))
 }

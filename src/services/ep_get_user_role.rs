@@ -11,6 +11,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Path)]
 struct RequestPath {
     #[serde(rename = "id")]
     user_id: Uuid,
@@ -53,5 +54,5 @@ where
         .with_operation_id("ep_get_user_roles")
         .with_tag("identity")
         .with_parameters(RequestPath::into_params(|| None))
-    .with_json_response::<Response>(StatusCode::OK)
+        .with_json_response::<Response, _>(StatusCode::OK, "")
 }

@@ -127,6 +127,8 @@ pub(in crate::auth) enum AuthError {
     ProviderAlreadyUsed,
     #[error("Email has already been linked to another user already")]
     EmailAlreadyUsed,
+    #[error("Missing some protection gate to perform operation")]
+    MissingPrecondition,
 }
 
 pub(in crate::auth) struct AuthPage {
@@ -160,6 +162,7 @@ impl AuthServiceState {
             AuthError::InternalServerError(_) => ("internalError", StatusCode::INTERNAL_SERVER_ERROR),
             AuthError::ProviderAlreadyUsed => ("providerAlreadyUsed", StatusCode::CONFLICT),
             AuthError::EmailAlreadyUsed => ("emailAlreadyUsed", StatusCode::CONFLICT),
+            AuthError::MissingPrecondition => ("preconditionFailed", StatusCode::PRECONDITION_FAILED),
         };
 
         let mut target = target_url.unwrap_or(self.error_url()).clone();

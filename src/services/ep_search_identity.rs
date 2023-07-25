@@ -18,6 +18,7 @@ use validator::Validate;
 #[serde(rename_all = "camelCase")]
 #[into_params(parameter_in = Query)]
 struct RequestQuery {
+    /// The maximum number of items returned in a single response
     #[validate(range(min = 1, max = "MAX_SEARCH_COUNT"))]
     count: Option<usize>,
 }

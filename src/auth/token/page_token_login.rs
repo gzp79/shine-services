@@ -4,20 +4,23 @@ use crate::{
 };
 use axum::{
     body::HttpBody,
-    extract::{Query, State},
+    extract::State,
     headers::{authorization::Basic, Authorization},
     TypedHeader,
 };
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod},
+    axum::{ApiEndpoint, ApiMethod, ValidatedQuery},
     service::APP_NAME,
 };
 use url::Url;
+use utoipa::IntoParams;
 use uuid::Uuid;
+use validator::Validate;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Query)]
 struct RequestQuery {
     /// Registering a new "quest" user if no token is provided.
     register: Option<bool>,
@@ -43,7 +46,7 @@ async fn token_login(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
     auth_header: Option<TypedHeader<Authorization<Basic>>>,
-    Query(query): Query<RequestQuery>,
+    ValidatedQuery(query): ValidatedQuery<RequestQuery>,
 ) -> AuthPage {
     if auth_session.user.is_some() {
         return state.page_error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref());
@@ -131,4 +134,5 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage("token", "/login"), token_login)
         .with_operation_id("page_token_login")
         .with_tag("login")
+        .with_parameters(RequestQuery::into_params(|| None))
 }

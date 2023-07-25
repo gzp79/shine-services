@@ -2,18 +2,19 @@ use crate::{
     auth::{AuthPage, AuthServiceState, AuthSession},
     openapi::ApiKind,
 };
-use axum::{
-    body::HttpBody,
-    extract::{Query, State},
-};
+use axum::{body::HttpBody, extract::State};
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod},
+    axum::{ApiEndpoint, ApiMethod, ValidatedQuery},
     service::APP_NAME,
 };
 use url::Url;
+use utoipa::IntoParams;
+use validator::Validate;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, IntoParams)]
+#[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Query)]
 struct RequestQuery {
     terminate_all: Option<bool>,
     redirect_url: Option<Url>,
@@ -23,7 +24,7 @@ struct RequestQuery {
 async fn logout(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
-    Query(query): Query<RequestQuery>,
+    ValidatedQuery(query): ValidatedQuery<RequestQuery>,
 ) -> AuthPage {
     if let Some((user_id, user_key)) = auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {
         match query.terminate_all.unwrap_or(false) {
@@ -66,4 +67,5 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/logout"), logout)
         .with_operation_id("page_logout")
         .with_tag("login")
+        .with_parameters(RequestQuery::into_params(|| None))
 }

@@ -2,11 +2,7 @@ use crate::{
     auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OIDCClient},
     openapi::ApiKind,
 };
-use axum::{
-    body::HttpBody,
-    extract::{Query, State},
-    Extension,
-};
+use axum::{body::HttpBody, extract::State, Extension};
 use chrono::Duration;
 use oauth2::{CsrfToken, PkceCodeChallenge};
 use openidconnect::{
@@ -14,12 +10,15 @@ use openidconnect::{
     Nonce,
 };
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod};
+use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery};
 use std::sync::Arc;
 use url::Url;
+use utoipa::IntoParams;
+use validator::Validate;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Query)]
 struct RequestQuery {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
@@ -30,7 +29,7 @@ async fn oidc_link(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OIDCClient>>,
     mut auth_session: AuthSession,
-    Query(query): Query<RequestQuery>,
+    ValidatedQuery(query): ValidatedQuery<RequestQuery>,
 ) -> AuthPage {
     if auth_session.user.is_none() {
         return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
@@ -70,4 +69,5 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/link"), oidc_link)
         .with_operation_id(format!("page_{provider}_link"))
         .with_tag("login")
+        .with_parameters(RequestQuery::into_params(|| None))
 }

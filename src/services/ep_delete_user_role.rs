@@ -1,5 +1,5 @@
 use crate::{db::Permission, openapi::ApiKind, services::IdentityServiceState};
-use axum::{body::HttpBody, extract::State, BoxError};
+use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError};
 use serde::Deserialize;
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem, ValidatedJson, ValidatedPath},
@@ -11,6 +11,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
+#[into_params(parameter_in = Path)]
 struct RequestPath {
     #[serde(rename = "id")]
     user_id: Uuid,
@@ -58,4 +59,7 @@ where
     .with_tag("identity")
     .with_parameters(RequestPath::into_params(|| None))
     .with_json_request::<RequestParams>()
+    .with_status_response(StatusCode::OK, "Completed")
+    .with_status_response(StatusCode::UNAUTHORIZED, "Login required")
+    .with_status_response(StatusCode::FORBIDDEN, "Insufficient permission")
 }
