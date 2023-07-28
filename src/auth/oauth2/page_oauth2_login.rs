@@ -13,8 +13,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[into_params(parameter_in = Query)]
-struct RequestQuery {
+struct Query {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
     remember_me: Option<bool>,
@@ -25,7 +24,7 @@ async fn oauth2_login(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
     mut auth_session: AuthSession,
-    ValidatedQuery(query): ValidatedQuery<RequestQuery>,
+    ValidatedQuery(query): ValidatedQuery<Query>,
 ) -> AuthPage {
     if auth_session.user.is_some() {
         return state.page_error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref());
@@ -60,5 +59,8 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/login"), oauth2_login)
         .with_operation_id(format!("page_{provider}_login"))
         .with_tag("login")
-        .with_parameters(RequestQuery::into_params(|| None))
+        .with_query_parameter::<Query>()
+        .with_page_response(
+            "Html page to update client cookies and redirect user to start interactive oauth2 login flow",
+        )
 }

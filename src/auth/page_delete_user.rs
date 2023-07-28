@@ -14,8 +14,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[into_params(parameter_in = Query)]
-struct RequestQuery {
+struct Query {
     /// Set to true. Mainly used to avoid some accidental automated deletion.
     /// It is suggested to have some confirmation on the UI (for example enter the name of the user to be deleted) and
     /// set the value of the property to the result of the confirmation.
@@ -29,7 +28,7 @@ struct RequestQuery {
 async fn delete_user(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
-    ValidatedQuery(query): ValidatedQuery<RequestQuery>,
+    ValidatedQuery(query): ValidatedQuery<Query>,
 ) -> AuthPage {
     let (user_id, user_key) = match auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {
         Some(user_id) => user_id,
@@ -69,5 +68,6 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/delete"), delete_user)
         .with_operation_id("page_delete_user")
         .with_tag("login")
-        .with_parameters(RequestQuery::into_params(|| None))
+        .with_query_parameter::<Query>()
+        .with_page_response("Html page to update clear client cookies and complete user deletion")
 }

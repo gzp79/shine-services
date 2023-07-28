@@ -10,6 +10,8 @@ pub mod roles {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Permission {
+    /// Allow to update tracing configuration
+    UpdateTrace,
     /// Allow to query the general information of an identity
     ReadAnyIdentity,
     /// Allow to get the roles of any user

@@ -3,27 +3,26 @@ use crate::{
     openapi::ApiKind,
     services::IdentityServiceState,
 };
-use axum::{body::HttpBody, extract::State, BoxError, Json};
+use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem, ValidatedQuery},
     service::CurrentUser,
 };
-use utoipa::IntoParams;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[into_params(parameter_in = Query)]
-struct RequestQuery {
+struct Query {
     /// The maximum number of items returned in a single response
     #[validate(range(min = 1, max = "MAX_SEARCH_COUNT"))]
     count: Option<usize>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 struct IdentityInfo {
     id: Uuid,
@@ -34,17 +33,17 @@ struct IdentityInfo {
     creation: DateTime<Utc>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct Response {
+struct IdentitySearchPage {
     identities: Vec<IdentityInfo>,
 }
 
 async fn search_identity(
     State(state): State<IdentityServiceState>,
-    ValidatedQuery(query): ValidatedQuery<RequestQuery>,
+    ValidatedQuery(query): ValidatedQuery<Query>,
     user: CurrentUser,
-) -> Result<Json<Response>, Problem> {
+) -> Result<Json<IdentitySearchPage>, Problem> {
     state.require_permission(&user, Permission::ReadAnyIdentity).await?;
 
     let identities = state
@@ -75,7 +74,7 @@ async fn search_identity(
         })
         .collect();
 
-    Ok(Json(Response { identities }))
+    Ok(Json(IdentitySearchPage { identities }))
 }
 
 pub fn ep_search_identity<B>() -> ApiEndpoint<IdentityServiceState, B>
@@ -87,5 +86,7 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/identities"), search_identity)
         .with_operation_id("ep_search_identity")
         .with_tag("identity")
-        .with_parameters(RequestQuery::into_params(|| None))
+        .with_query_parameter::<Query>()
+        .with_schema::<IdentityInfo>()
+        .with_json_response::<IdentitySearchPage>(StatusCode::OK)
 }

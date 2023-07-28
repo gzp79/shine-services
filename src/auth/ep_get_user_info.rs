@@ -1,16 +1,17 @@
 use crate::{auth::AuthServiceState, openapi::ApiKind};
-use axum::{body::HttpBody, extract::State, Json};
+use axum::{body::HttpBody, extract::State, http::StatusCode, Json};
 use chrono::Utc;
 use serde::Serialize;
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem},
     service::CurrentUser,
 };
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct UserInfo {
+struct CurrentUserInfo {
     user_id: Uuid,
     name: String,
     is_email_confirmed: bool,
@@ -20,7 +21,10 @@ struct UserInfo {
 
 /// Get the information about the current user. The cookie is not accessible
 /// from javascript, thus this endpoint can be used to get details about the current user.
-async fn get_user_info(State(state): State<AuthServiceState>, user: CurrentUser) -> Result<Json<UserInfo>, Problem> {
+async fn get_user_info(
+    State(state): State<AuthServiceState>,
+    user: CurrentUser,
+) -> Result<Json<CurrentUserInfo>, Problem> {
     let _ = state
         .session_manager()
         .find_session(user.user_id, user.key)
@@ -40,7 +44,7 @@ async fn get_user_info(State(state): State<AuthServiceState>, user: CurrentUser)
 
     let session_length = (Utc::now() - user.session_start).num_seconds();
     let session_length = if session_length < 0 { 0 } else { session_length as u64 };
-    Ok(Json(UserInfo {
+    Ok(Json(CurrentUserInfo {
         user_id: user.user_id,
         name: user.name,
         is_email_confirmed: identity.is_email_confirmed,
@@ -56,4 +60,5 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/info"), get_user_info)
         .with_operation_id("ep_get_user_info")
         .with_tag("auth")
+        .with_json_response::<CurrentUserInfo>(StatusCode::OK)
 }

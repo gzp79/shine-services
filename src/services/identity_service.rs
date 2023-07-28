@@ -3,11 +3,12 @@ use crate::{
     services,
 };
 use axum::Router;
-use shine_service::axum::ApiRoute;
+use shine_service::axum::{tracing::TracingManager, ApiRoute};
 use std::sync::Arc;
 use utoipa::openapi::OpenApi;
 
 struct Inner {
+    tracing_manager: TracingManager,
     identity_manager: IdentityManager,
     name_generator: NameGenerator,
     db: DBPool,
@@ -17,6 +18,10 @@ struct Inner {
 pub struct IdentityServiceState(Arc<Inner>);
 
 impl IdentityServiceState {
+    pub fn tracing_manager(&self) -> &TracingManager {
+        &self.0.tracing_manager
+    }
+
     pub fn identity_manager(&self) -> &IdentityManager {
         &self.0.identity_manager
     }
@@ -31,6 +36,7 @@ impl IdentityServiceState {
 }
 
 pub struct IdentityServiceDependencies {
+    pub tracing_manager: TracingManager,
     pub identity_manager: IdentityManager,
     pub name_generator: NameGenerator,
     pub db: DBPool,
@@ -43,6 +49,7 @@ pub struct IdentityServiceBuilder {
 impl IdentityServiceBuilder {
     pub fn new(dependencies: IdentityServiceDependencies) -> Self {
         let state = IdentityServiceState(Arc::new(Inner {
+            tracing_manager: dependencies.tracing_manager,
             identity_manager: dependencies.identity_manager,
             name_generator: dependencies.name_generator,
             db: dependencies.db,
@@ -57,6 +64,7 @@ impl IdentityServiceBuilder {
     {
         Router::new()
             .add_api(services::ep_health(), doc)
+            .add_api(services::ep_tracing_reconfigure(), doc)
             .add_api(services::ep_generate_user_name(), doc)
             .add_api(services::ep_search_identity(), doc)
             .add_api(services::ep_get_user_roles(), doc)

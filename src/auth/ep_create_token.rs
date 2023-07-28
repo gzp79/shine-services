@@ -3,6 +3,7 @@ use axum::{
     body::HttpBody,
     extract::State,
     headers::{authorization::Credentials, Authorization},
+    http::StatusCode,
     Json,
 };
 use chrono::{DateTime, Utc};
@@ -11,20 +12,22 @@ use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem},
     service::CurrentUser,
 };
+use utoipa::ToSchema;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct Token {
+struct CreatedToken {
     /// Raw token
     token: String,
     /// Authorization header value
     basic_auth: String,
+    /// Date of the expiration of the token
     expires: DateTime<Utc>,
 }
 
 /// Get the information about the current user. The cookie is not accessible
 /// from javascript, thus this endpoint can be used to get details about the current user.
-async fn create_token(State(state): State<AuthServiceState>, user: CurrentUser) -> Result<Json<Token>, Problem> {
+async fn create_token(State(state): State<AuthServiceState>, user: CurrentUser) -> Result<Json<CreatedToken>, Problem> {
     // check if session is still valid
     let _ = state
         .session_manager()
@@ -46,7 +49,7 @@ async fn create_token(State(state): State<AuthServiceState>, user: CurrentUser) 
         .unwrap()
         .to_string();
 
-    Ok(Json(Token {
+    Ok(Json(CreatedToken {
         token: token_login.token,
         basic_auth,
         expires: token_login.expires,
@@ -60,4 +63,5 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/token"), create_token)
         .with_operation_id("ep_create_token")
         .with_tag("auth")
+        .with_json_response::<CreatedToken>(StatusCode::OK)
 }

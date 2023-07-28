@@ -20,8 +20,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[into_params(parameter_in = Query)]
-struct RequestQuery {
+struct Query {
     /// Registering a new "quest" user if no token is provided.
     register: Option<bool>,
     redirect_url: Option<Url>,
@@ -46,7 +45,7 @@ async fn token_login(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
     auth_header: Option<TypedHeader<Authorization<Basic>>>,
-    ValidatedQuery(query): ValidatedQuery<RequestQuery>,
+    ValidatedQuery(query): ValidatedQuery<Query>,
 ) -> AuthPage {
     if auth_session.user.is_some() {
         return state.page_error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref());
@@ -134,5 +133,6 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage("token", "/login"), token_login)
         .with_operation_id("page_token_login")
         .with_tag("login")
-        .with_parameters(RequestQuery::into_params(|| None))
+        .with_query_parameter::<Query>()
+        .with_page_response("Html page to update client cookies and redirect user according to the login result")
 }

@@ -18,8 +18,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[into_params(parameter_in = Query)]
-struct RequestQuery {
+struct Query {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
 }
@@ -29,7 +28,7 @@ async fn oidc_link(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OIDCClient>>,
     mut auth_session: AuthSession,
-    ValidatedQuery(query): ValidatedQuery<RequestQuery>,
+    ValidatedQuery(query): ValidatedQuery<Query>,
 ) -> AuthPage {
     if auth_session.user.is_none() {
         return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
@@ -69,5 +68,8 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/link"), oidc_link)
         .with_operation_id(format!("page_{provider}_link"))
         .with_tag("login")
-        .with_parameters(RequestQuery::into_params(|| None))
+        .with_query_parameter::<Query>()
+        .with_page_response(
+            "Html page to update client cookies and redirect user to start interactive OpenIdConnect login flow",
+        )
 }

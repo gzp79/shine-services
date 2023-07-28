@@ -13,6 +13,7 @@ use crate::{
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
     body::HttpBody,
+    http::StatusCode,
     http::{header, Method},
     Router,
 };
@@ -20,7 +21,8 @@ use chrono::Duration;
 use openapi::ApiKind;
 use shine_service::{
     axum::{
-        tracing::{OtelAxumLayer, TracingService},
+        add_default_components,
+        tracing::{OtelAxumLayer, TracingManager},
         ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy,
     },
     service::UserSessionValidator,
@@ -52,6 +54,7 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Absolute("/info/ready"), health_check)
         .with_operation_id("ep_health_check")
         .with_tag("status")
+        .with_status_response(StatusCode::OK, "Ok.")
 }
 
 async fn shutdown_signal() {
@@ -60,7 +63,7 @@ async fn shutdown_signal() {
 }
 
 async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
-    let (config, tracing_service) = {
+    let (config, tracing_manager) = {
         // initialize a pre-init logger
         let pre_init_log = {
             let _ = tracing_log::LogTracer::init();
@@ -77,9 +80,9 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         log::error!("init-error - ok");
 
         let config = AppConfig::new().await?;
-        let tracing_service = TracingService::new(SERVICE_NAME, &config.tracing).await?;
+        let tracing_manager = TracingManager::new(SERVICE_NAME, &config.tracing).await?;
         log::info!("pre-init completed");
-        (config, tracing_service)
+        (config, tracing_manager)
     };
 
     log::trace!("Creating services...");
@@ -107,6 +110,8 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let powered_by = PoweredBy::from_service_info(SERVICE_NAME, &config.core.version)?;
 
     let mut doc = ApiDoc::openapi();
+    add_default_components(&mut doc);
+
     let auth_config = &config.auth.auth_session;
     let tera = {
         let mut tera = Tera::new("tera_templates/**/*").map_err(|e| anyhow!(e))?;
@@ -121,7 +126,6 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let session_manager = SessionManager::new(&db_pool, session_max_duration).await?;
     let name_generator = NameGenerator::new(&config.user_name, &db_pool).await?;
 
-    let tracing_router = tracing_service.into_router(ApiKind::Api("/tracing").path(), Some(&mut doc));
     let tracing_layer = OtelAxumLayer::default(); //.filter(|a| true);
     let health_check = Router::new().add_api(ep_health_check(), &mut doc);
 
@@ -139,6 +143,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let identity_api = {
         let identity_state = IdentityServiceDependencies {
+            tracing_manager,
             identity_manager: identity_manager.clone(),
             name_generator: name_generator.clone(),
             db: db_pool.clone(),
@@ -155,7 +160,6 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         );
 
     let app = Router::new()
-        .merge(tracing_router) //todo: api endpoint
         .merge(health_check)
         .merge(auth_pages)
         .merge(identity_api)

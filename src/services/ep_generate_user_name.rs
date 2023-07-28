@@ -9,18 +9,18 @@ use utoipa::ToSchema;
 #[schema(example = json!({
     "name": "Guest_123"
 }))]
-pub struct Response {
+pub struct GeneratedUserName {
     name: String,
 }
 
-async fn generate_user_name(State(state): State<IdentityServiceState>) -> Result<Json<Response>, Problem> {
+async fn generate_user_name(State(state): State<IdentityServiceState>) -> Result<Json<GeneratedUserName>, Problem> {
     let name = state
         .name_generator()
         .generate_name()
         .await
         .map_err(Problem::internal_error_from)?;
 
-    Ok(Json(Response { name }))
+    Ok(Json(GeneratedUserName { name }))
 }
 
 pub fn ep_generate_user_name<B>() -> ApiEndpoint<IdentityServiceState, B>
@@ -32,5 +32,5 @@ where
     ApiEndpoint::new(ApiMethod::Post, ApiKind::Api("/user-name"), generate_user_name)
         .with_operation_id("ep_generate_user_name")
         .with_tag("identity")
-        .with_json_response::<Response, _>(StatusCode::OK, "")
+        .with_json_response::<GeneratedUserName>(StatusCode::OK)
 }

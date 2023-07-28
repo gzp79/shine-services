@@ -29,6 +29,7 @@
         "Pkce",
         "pkey",
         "reqwest",
+        "rsplit",
         "rustls",
         "scytta",
         "serde",

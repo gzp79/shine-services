@@ -5,8 +5,7 @@
         "https://scytta.com",
         "https://www.scytta.com",
         "https://local.scytta.com",
-        "https://cloud.scytta.com",
-        "https://validator.swagger.io"
+        "https://cloud.scytta.com"
     ],
     "controlPort": 80,
     "tracing": {

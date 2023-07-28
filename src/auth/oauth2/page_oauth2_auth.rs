@@ -12,8 +12,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[into_params(parameter_in = Query)]
-struct RequestQuery {
+struct Query {
     code: String,
     state: String,
 }
@@ -23,7 +22,7 @@ async fn oauth2_auth(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
     mut auth_session: AuthSession,
-    ValidatedQuery(query): ValidatedQuery<RequestQuery>,
+    ValidatedQuery(query): ValidatedQuery<Query>,
 ) -> AuthPage {
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
@@ -104,5 +103,6 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/auth"), oauth2_auth)
         .with_operation_id(format!("page_{provider}_auth"))
         .with_tag("login")
-        .with_parameters(RequestQuery::into_params(|| None))
+        .with_query_parameter::<Query>()
+        .with_page_response("Html page to update client cookies and complete the oauth2 login flow")
 }
