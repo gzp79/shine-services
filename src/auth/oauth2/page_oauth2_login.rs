@@ -38,6 +38,7 @@ async fn oauth2_login(
         .set_pkce_challenge(pkce_code_challenge)
         .url();
 
+    auth_session.token_login = None;
     auth_session.external_login = Some(ExternalLogin {
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
@@ -47,7 +48,7 @@ async fn oauth2_login(
         remember_me: query.remember_me.unwrap_or(false),
         linked_user: None,
     });
-    assert!(auth_session.user.is_none() && auth_session.token_login.is_none());
+    assert!(auth_session.user.is_none());
 
     state.page_redirect(auth_session, &client.provider, Some(&authorize_url))
 }
