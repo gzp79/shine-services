@@ -77,6 +77,41 @@ pub struct ExternalLoginInfo {
     pub provider_id: String,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum TokenKind {
+    SingleAccess,
+    Persistent,
+    AutoRenewal,
+}
+
+impl ToSql for TokenKind {
+    fn to_sql(&self, ty: &Type, out: &mut BytesMut) -> Result<IsNull, PGError> {
+        let value = match self {
+            TokenKind::SingleAccess => 1_i16,
+            TokenKind::Persistent => 2_i16,
+            TokenKind::AutoRenewal => 3_i16,
+        };
+        value.to_sql(ty, out)
+    }
+
+    accepts!(INT2);
+    to_sql_checked!();
+}
+
+impl<'a> FromSql<'a> for TokenKind {
+    fn from_sql(ty: &Type, raw: &[u8]) -> Result<TokenKind, PGError> {
+        let value = i16::from_sql(ty, raw)?;
+        match value {
+            1 => Ok(TokenKind::SingleAccess),
+            2 => Ok(TokenKind::Persistent),
+            3 => Ok(TokenKind::AutoRenewal),
+            _ => Err(PGError::from("Invalid value for TokenKind")),
+        }
+    }
+
+    accepts!(INT2);
+}
+
 #[derive(Debug)]
 pub struct LoginTokenInfo {
     pub user_id: Uuid,
@@ -84,6 +119,9 @@ pub struct LoginTokenInfo {
     pub created_at: DateTime<Utc>,
     pub expire_at: DateTime<Utc>,
     pub is_expired: bool,
+
+    pub kind: TokenKind,
+    pub fingerprint: Option<String>,
 }
 
 impl LoginTokenInfo {
@@ -93,7 +131,9 @@ impl LoginTokenInfo {
             token: row.try_get(6)?,
             created_at: row.try_get(7)?,
             expire_at: row.try_get(8)?,
-            is_expired: row.try_get(9)?,
+            fingerprint: row.try_get(9)?,
+            kind: row.try_get(10)?,
+            is_expired: row.try_get(11)?,
         })
     }
 }
@@ -151,10 +191,10 @@ pg_prepared_statement!( InsertIdentity => r#"
 "#, [UUID, INT2, VARCHAR, VARCHAR] );
 
 pg_prepared_statement!( InsertToken => r#"
-    INSERT INTO login_tokens (user_id, token, created, expire) 
-        VALUES ($1, $2, now(), now() + $3 * interval '1 seconds')
+    INSERT INTO login_tokens (user_id, token, created, fingerprint, kind, expire) 
+        VALUES ($1, $2, now(), $3, $4, now() + $5 * interval '1 seconds')
     RETURNING created, expire
-"#, [UUID, VARCHAR, INT4] );
+"#, [UUID, VARCHAR, VARCHAR, INT2, INT4] );
 
 pg_prepared_statement!( InsertExternalLogin => r#"
     INSERT INTO external_logins (user_id, provider, provider_id, linked) 
@@ -184,7 +224,7 @@ pg_prepared_statement!( FindByLink => r#"
 
 pg_prepared_statement!( FindByToken => r#"
     SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created,
-           t.token, t.created, t.expire, t.expire < now() is_expired
+           t.token, t.created, t.expire, t.fingerprint, t.kind, t.expire < now() is_expired
         FROM login_tokens t, identities i
         WHERE t.user_id = i.user_id
             AND t.token = $1
@@ -247,7 +287,7 @@ impl IdentityManager {
         let client = pool.postgres.get().await.map_err(DBError::PostgresPoolError)?;
         let stmt_insert_identity = InsertIdentity::new(&client).await?;
         let stmt_insert_external_link = InsertExternalLogin::new(&client).await?;
-        let stmt_insert_token = InsertToken::new(&client).await?;
+        let stmt_insert_token: InsertToken = InsertToken::new(&client).await?;
         let stmt_cascaded_delete = CascadedDelete::new(&client).await?;
         let stmt_find_by_id = FindById::new(&client).await?;
         let stmt_find_by_link = FindByLink::new(&client).await?;
@@ -481,6 +521,8 @@ impl IdentityManager {
         user_id: Uuid,
         token: &str,
         duration: &Duration,
+        fingerprint: Option<&str>,
+        kind: TokenKind,
     ) -> Result<LoginTokenInfo, IdentityError> {
         let inner = &*self.0;
 
@@ -489,22 +531,26 @@ impl IdentityManager {
 
         let duration = duration.num_seconds() as i32;
         assert!(duration > 0);
-        let (created_at, expire_at): (DateTime<Utc>, DateTime<Utc>) =
-            match client.query_one(&stmt, &[&user_id, &token, &duration]).await {
-                Ok(row) => (row.get(0), row.get(1)),
-                Err(err) if err.is_constraint("login_tokens", "idx_token") => {
-                    return Err(IdentityError::TokenConflict);
-                }
-                Err(err) => {
-                    return Err(IdentityError::DBError(err.into()));
-                }
-            };
+        let (created_at, expire_at): (DateTime<Utc>, DateTime<Utc>) = match client
+            .query_one(&stmt, &[&user_id, &token, &fingerprint, &kind, &duration])
+            .await
+        {
+            Ok(row) => (row.get(0), row.get(1)),
+            Err(err) if err.is_constraint("login_tokens", "idx_token") => {
+                return Err(IdentityError::TokenConflict);
+            }
+            Err(err) => {
+                return Err(IdentityError::DBError(err.into()));
+            }
+        };
 
         Ok(LoginTokenInfo {
             user_id,
             token: token.to_owned(),
             created_at,
             expire_at,
+            fingerprint: fingerprint.map(|x| x.to_string()),
+            kind,
             is_expired: false,
         })
     }
@@ -525,10 +571,16 @@ impl IdentityManager {
         }
     }
 
-    pub async fn update_token(&self, token: &str) -> Result<LoginTokenInfo, IdentityError> {
+    pub async fn update_token(&self, token: &str, duration: &Duration) -> Result<LoginTokenInfo, IdentityError> {
         // todo:
         // - update expiration
         // - update last use
+
+        let duration = duration.num_seconds() as i32;
+        assert!(duration > 0);
+        //todo: delete token where kind is SingleAccess
+        //todo: update expire date where type is renewal
+        //todo: delete token where expired
 
         // workaround while update is not implemented
         Ok(self.find_token(token).await?.ok_or(IdentityError::TokenConflict)?.1)

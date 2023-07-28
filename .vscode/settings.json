@@ -13,6 +13,7 @@
         "fkey",
         "hasher",
         "hashids",
+        "hmac",
         "hset",
         "keyvault",
         "nextval",

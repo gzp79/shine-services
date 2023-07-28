@@ -1,8 +1,11 @@
 use crate::{
-    auth::{auth_service_utils::UserCreateError, AuthError, AuthPage, AuthServiceState, AuthSession, ExternalUserInfo},
+    auth::{
+        auth_service_utils::{CreateTokenKind, UserCreateError},
+        AuthError, AuthPage, AuthServiceState, AuthSession, ExternalUserInfo,
+    },
     db::{ExternalLoginInfo, FindIdentity, IdentityError},
 };
-use shine_service::service::APP_NAME;
+use shine_service::service::{ClientFingerprint, APP_NAME};
 use url::Url;
 
 impl AuthServiceState {
@@ -38,6 +41,7 @@ impl AuthServiceState {
     pub(in crate::auth) async fn page_external_login(
         &self,
         mut auth_session: AuthSession,
+        fingerprint: ClientFingerprint,
         external_user_info: ExternalUserInfo,
         target_url: Option<&Url>,
         error_url: Option<&Url>,
@@ -79,9 +83,12 @@ impl AuthServiceState {
             Err(err) => return self.page_internal_error(auth_session, err, error_url),
         };
 
-        // create a new token
+        // create a new remember me token
         let token_login = if create_token {
-            match self.create_token_with_retry(identity.id).await {
+            match self
+                .create_token_with_retry(identity.id, Some(&fingerprint), CreateTokenKind::AutoRenewal)
+                .await
+            {
                 Ok(token_login) => Some(token_login),
                 Err(err) => return self.page_internal_error(auth_session, err, error_url),
             }
@@ -96,7 +103,7 @@ impl AuthServiceState {
         };
 
         log::debug!("Identity created: {identity:#?}");
-        let user = match self.session_manager().create(&identity, roles).await {
+        let user = match self.session_manager().create(&identity, roles, &fingerprint).await {
             Ok(user) => user,
             Err(err) => return self.page_internal_error(auth_session, err, error_url),
         };

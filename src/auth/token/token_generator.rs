@@ -8,20 +8,26 @@ pub struct TokenGeneratorError(String);
 
 #[derive(Clone)]
 pub struct TokenGenerator {
-    token_max_duration: Duration,
+    ttl_remember_me: Duration,
+    ttl_single_access: Duration,
     random: SystemRandom,
 }
 
 impl TokenGenerator {
-    pub fn new(token_max_duration: Duration) -> Self {
+    pub fn new(ttl_remember_me: Duration, ttl_single_access: Duration) -> Self {
         Self {
-            token_max_duration,
+            ttl_remember_me,
+            ttl_single_access,
             random: SystemRandom::new(),
         }
     }
 
-    pub fn max_duration(&self) -> Duration {
-        self.token_max_duration
+    pub fn ttl_remember_me(&self) -> Duration {
+        self.ttl_remember_me
+    }
+
+    pub fn ttl_single_access(&self) -> Duration {
+        self.ttl_single_access
     }
 
     pub fn generate_token(&self) -> Result<String, TokenGeneratorError> {

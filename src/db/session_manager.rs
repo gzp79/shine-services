@@ -4,7 +4,7 @@ use chrono::{DateTime, Duration, Utc};
 use redis::{AsyncCommands, Script};
 use ring::rand::SystemRandom;
 use serde::{Deserialize, Serialize};
-use shine_service::service::{CurrentUser, CurrentUserAuthenticity, SessionKey, SessionKeyError};
+use shine_service::service::{ClientFingerprint, CurrentUser, CurrentUserAuthenticity, SessionKey, SessionKeyError};
 use shine_service::service::{RedisConnectionPool, RedisJsonValue};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -28,15 +28,22 @@ struct StoredSession {
     pub name: String,
     pub is_email_confirmed: bool,
     pub roles: Vec<String>,
+    pub fingerprint_hash: String,
 }
 
 impl StoredSession {
-    fn from_identity(identity: &Identity, roles: Vec<String>, session_start: DateTime<Utc>) -> Self {
+    fn from_identity(
+        identity: &Identity,
+        roles: Vec<String>,
+        session_start: DateTime<Utc>,
+        fingerprint: &ClientFingerprint,
+    ) -> Self {
         Self {
             session_start,
             name: identity.name.clone(),
             is_email_confirmed: identity.is_email_confirmed,
             roles,
+            fingerprint_hash: fingerprint.hash(),
         }
     }
 
@@ -48,6 +55,7 @@ impl StoredSession {
             session_start: self.session_start,
             name: self.name,
             roles: self.roles,
+            fingerprint_hash: self.fingerprint_hash,
         }
     }
 }
@@ -60,7 +68,7 @@ pub enum SessionBuildError {
 
 pub struct Inner {
     redis: RedisConnectionPool,
-    session_duration: usize,
+    ttl_session: usize,
     random: SystemRandom,
 }
 
@@ -68,15 +76,20 @@ pub struct Inner {
 pub struct SessionManager(Arc<Inner>);
 
 impl SessionManager {
-    pub async fn new(pool: &DBPool, session_duration: Duration) -> Result<Self, SessionBuildError> {
+    pub async fn new(pool: &DBPool, ttl_session: Duration) -> Result<Self, SessionBuildError> {
         Ok(SessionManager(Arc::new(Inner {
             redis: pool.redis.clone(),
             random: SystemRandom::new(),
-            session_duration: session_duration.num_seconds() as usize,
+            ttl_session: ttl_session.num_seconds() as usize,
         })))
     }
 
-    pub async fn create(&self, identity: &Identity, roles: Vec<String>) -> Result<CurrentUser, DBSessionError> {
+    pub async fn create(
+        &self,
+        identity: &Identity,
+        roles: Vec<String>,
+        fingerprint: &ClientFingerprint,
+    ) -> Result<CurrentUser, DBSessionError> {
         let created_at = Utc::now();
 
         let inner = &*self.0;
@@ -85,12 +98,12 @@ impl SessionManager {
         let session_key = SessionKey::new_random(&inner.random)?;
         let key = format!("session:{}:{}", identity.id.as_simple(), session_key.to_hex());
 
-        let session = StoredSession::from_identity(identity, roles, created_at);
+        let session = StoredSession::from_identity(identity, roles, created_at, fingerprint);
 
         let created: bool = client.set_nx(&key, &session).await.map_err(DBError::RedisError)?;
         if created {
             client
-                .expire(&key, inner.session_duration)
+                .expire(&key, inner.ttl_session)
                 .await
                 .map_err(DBError::RedisError)?;
             Ok(session.into_current_user(identity.id, session_key))

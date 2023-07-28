@@ -5,7 +5,10 @@ use crate::{
 use axum::{body::HttpBody, extract::State, Extension};
 use oauth2::{reqwest::async_http_client, AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery};
+use shine_service::{
+    axum::{ApiEndpoint, ApiMethod, ValidatedQuery},
+    service::ClientFingerprint,
+};
 use std::sync::Arc;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -22,6 +25,7 @@ async fn oauth2_auth(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
     mut auth_session: AuthSession,
+    fingerprint: ClientFingerprint,
     ValidatedQuery(query): ValidatedQuery<Query>,
 ) -> AuthPage {
     let auth_code = AuthorizationCode::new(query.code);
@@ -87,6 +91,7 @@ async fn oauth2_auth(
         state
             .page_external_login(
                 auth_session,
+                fingerprint,
                 external_user_info,
                 target_url.as_ref(),
                 error_url.as_ref(),

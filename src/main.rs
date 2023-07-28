@@ -122,8 +122,8 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let db_pool = DBPool::new(&config.db).await?;
     let user_session = UserSessionValidator::new(None, &auth_config.session_secret, db_pool.redis.clone())?;
     let identity_manager = IdentityManager::new(&db_pool).await?;
-    let session_max_duration = Duration::seconds(i64::try_from(auth_config.session_max_duration)?);
-    let session_manager = SessionManager::new(&db_pool, session_max_duration).await?;
+    let ttl_session = Duration::seconds(i64::try_from(auth_config.ttl_session)?);
+    let session_manager = SessionManager::new(&db_pool, ttl_session).await?;
     let name_generator = NameGenerator::new(&config.user_name, &db_pool).await?;
 
     let tracing_layer = OtelAxumLayer::default(); //.filter(|a| true);

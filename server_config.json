@@ -25,8 +25,9 @@
         "errorUrl": "https://scytta.com/error",
         "authBaseUrl": "https://cloud.scytta.com/identity/auth",
         "pageRedirectTime": 0,
-        "sessionMaxDuration": 43200,
-        "tokenMaxDuration": 1209600,
+        "ttlSession": 43200,
+        "ttlRememberMe": 1209600,
+        "ttlSingleAccess": 600,
         "openid": {
             "google": {
                 "discoveryUrl": "https://accounts.google.com",

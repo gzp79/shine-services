@@ -53,8 +53,9 @@ pub struct AuthSessionConfig {
     pub external_login_secret: String,
     pub token_login_secret: String,
 
-    pub session_max_duration: usize,
-    pub token_max_duration: usize,
+    pub ttl_session: usize,
+    pub ttl_remember_me: usize,
+    pub ttl_single_access: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -176,8 +177,9 @@ impl AuthServiceBuilder {
     pub async fn new(dependencies: AuthServiceDependencies, config: &AuthConfig) -> Result<Self, AuthBuildError> {
         let mut providers = HashSet::new();
 
-        let token_max_duration = Duration::seconds(i64::try_from(config.auth_session.session_max_duration)?);
-        let token_generator = TokenGenerator::new(token_max_duration);
+        let ttl_remember_me = Duration::seconds(i64::try_from(config.auth_session.ttl_remember_me)?);
+        let ttl_single_access = Duration::seconds(i64::try_from(config.auth_session.ttl_single_access)?);
+        let token_generator = TokenGenerator::new(ttl_remember_me, ttl_single_access);
 
         let mut openid_clients = Vec::new();
         for (provider, provider_config) in &config.openid {

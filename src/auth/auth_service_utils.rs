@@ -1,12 +1,13 @@
 use crate::{
     auth::{auth_session::TokenLogin, AuthServiceState, AuthSession, TokenGeneratorError},
-    db::{ExternalLoginInfo, Identity, IdentityError, NameGeneratorError},
+    db::{ExternalLoginInfo, Identity, IdentityError, NameGeneratorError, TokenKind},
 };
 use axum::{
     http::StatusCode,
     response::{Html, IntoResponse, Response},
 };
-use shine_service::service::APP_NAME;
+use chrono::Duration;
+use shine_service::service::{ClientFingerprint, APP_NAME};
 use std::fmt;
 use thiserror::Error as ThisError;
 use url::Url;
@@ -58,6 +59,12 @@ impl AuthServiceState {
     }
 }
 
+pub(in crate::auth) enum CreateTokenKind {
+    SingleAccess,
+    Persistent(Duration),
+    AutoRenewal,
+}
+
 #[derive(Debug, ThisError)]
 pub(in crate::auth) enum TokenCreateError {
     #[error("Retry limit reach for token creation")]
@@ -70,7 +77,19 @@ pub(in crate::auth) enum TokenCreateError {
 
 impl AuthServiceState {
     // Create a new login token for the given user.
-    pub(in crate::auth) async fn create_token_with_retry(&self, user_id: Uuid) -> Result<TokenLogin, TokenCreateError> {
+    pub(in crate::auth) async fn create_token_with_retry(
+        &self,
+        user_id: Uuid,
+        fingerprint: Option<&ClientFingerprint>,
+        kind: CreateTokenKind,
+    ) -> Result<TokenLogin, TokenCreateError> {
+        let (duration, kind) = match kind {
+            CreateTokenKind::SingleAccess => (self.token().ttl_single_access(), TokenKind::SingleAccess),
+            CreateTokenKind::AutoRenewal => (self.token().ttl_remember_me(), TokenKind::AutoRenewal),
+            CreateTokenKind::Persistent(duration) => (duration, TokenKind::Persistent),
+        };
+        let fingerprint = fingerprint.map(|f| f.to_compact_string());
+
         const MAX_RETRY_COUNT: usize = 10;
         let mut retry_count = 0;
         loop {
@@ -83,7 +102,7 @@ impl AuthServiceState {
             let token = self.token().generate_token()?;
             match self
                 .identity_manager()
-                .create_token(user_id, &token, &self.token().max_duration())
+                .create_token(user_id, &token, &duration, fingerprint.as_deref(), kind)
                 .await
             {
                 Ok(token) => {
