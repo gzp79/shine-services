@@ -138,6 +138,15 @@
             ],
             "group": "build"
         },
-      
+        {
+            "label": "integration test",
+            "type": "npm",
+            "script": "start",
+            "group": "build",
+            "options": {
+                "cwd": "integration-test"
+            },
+            "problemMatcher": ["$tsc"]
+        }
     ]
 }

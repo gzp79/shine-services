@@ -26,6 +26,7 @@
         "otconv",
         "Otel",
         "otsdk",
+        "pactum",
         "pemfile",
         "Pkce",
         "pkey",
@@ -39,6 +40,7 @@
         "thiserror",
         "TIMESTAMPTZ",
         "TIMESTAMPZ",
+        "tsflow",
         "utoipa",
         "zipkin"
     ],
