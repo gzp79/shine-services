@@ -1,0 +1,30 @@
+{
+    "mappings": [
+        {
+            "request": {
+                "method": "GET",
+                "url": "/openid/.well-known/openid-configuration"
+            },
+            "response": {
+                "status": 200,
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "bodyFileName": "openid_discovery_response.json"
+            }
+        },
+        {
+            "request": {
+                "method": "GET",
+                "url": "/openid/certs"
+            },
+            "response": {
+                "status": 200,
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "bodyFileName": "openid_certs_response.json"
+            }
+        }
+    ]
+}

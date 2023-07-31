@@ -23,7 +23,7 @@ services:
 
   mock:
     image: wiremock/wiremock:latest
-    command: --https-port 8443 --verbose
+    command: --https-port 8443
     ports:
       - 8090:8443    
       - 8083:8080
@@ -40,11 +40,11 @@ services:
       context: .
       target: test
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=info,shine_identity=trace
       - WAIT_FOR_SERVICES=postgres:5432,redis:6379,mock:8080,mock:8443
       - TARGET_SERVICE_IP=mock 
     ports:
-      - "443:443"
+      - "80:80"
     networks:
       my_network:
         aliases:

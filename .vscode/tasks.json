@@ -7,37 +7,47 @@
             "label": "format",
             "type": "shell",
             "command": "cargo fmt",
-            "problemMatcher": [ "$rustc" ],
+            "problemMatcher": [
+                "$rustc"
+            ],
             "group": "build"
         },
         {
             "label": "clippy",
             "type": "shell",
             "command": "cargo clippy --all-targets",
-            "problemMatcher": [ "$rustc" ],
+            "problemMatcher": [
+                "$rustc"
+            ],
             "group": "build"
         },
         {
             "label": "udeps",
             "type": "shell",
             "command": "cargo udeps",
-            "problemMatcher": [ "$rustc" ],
+            "problemMatcher": [
+                "$rustc"
+            ],
             "group": "build"
         },
         {
             "label": "outdated",
             "type": "shell",
             "command": "cargo outdated -R",
-            "problemMatcher": [ "$rustc" ],
+            "problemMatcher": [
+                "$rustc"
+            ],
             "group": "build"
         },
         {
             "label": "build",
             "type": "shell",
             "command": "cargo build --release --all-targets",
-            "problemMatcher": [ "$rustc" ],
+            "problemMatcher": [
+                "$rustc"
+            ],
             "group": "build"
-        },      
+        },
         {
             "label": "test ",
             "type": "shell",
@@ -48,7 +58,9 @@
                     "RUST_BACKTRACE": "full"
                 },
             },
-            "problemMatcher": [ "$rustc" ],
+            "problemMatcher": [
+                "$rustc"
+            ],
             "group": "build"
         },
         {
@@ -61,11 +73,13 @@
                     "RUST_BACKTRACE": "full"
                 },
             },
-            "problemMatcher": [ "$rustc" ],
+            "problemMatcher": [
+                "$rustc"
+            ],
             "group": "build"
         },
         {
-            "label": "start env",
+            "label": "start dev environment",
             "type": "shell",
             "command": "docker-compose -f ./docker-devenv.yml up",
             "group": "build",
@@ -74,9 +88,18 @@
         {
             "label": "run",
             "type": "shell",
-            "command": "cargo run --release",           
-            "problemMatcher": [ "$rustc" ],
+            "command": "cargo run --release",
+            "problemMatcher": [
+                "$rustc"
+            ],
             "group": "build",
+        },
+        {
+            "label": "start integration test environment",
+            "type": "shell",
+            "command": "docker-compose -f ./docker-integration-test.yml up",
+            "group": "build",
+            "isBackground": true,
         },
         {
             "label": "run integration test",
@@ -84,9 +107,14 @@
             "script": "start",
             "group": "build",
             "options": {
-                "cwd": "integration-test"
+                "cwd": "integration-test",
+                "env": {
+                    "SHINE_BASE_API_URL" : "http://test.scytta.com"
+                }
             },
-            "problemMatcher": ["$tsc"]
+            "problemMatcher": [
+                "$tsc"
+            ]
         },
         {
             "label": "format integration test",
@@ -96,7 +124,9 @@
             "options": {
                 "cwd": "integration-test"
             },
-            "problemMatcher": ["$tsc"]
+            "problemMatcher": [
+                "$tsc"
+            ]
         }
     ]
 }

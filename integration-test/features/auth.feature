@@ -8,10 +8,8 @@ Feature: Auth Status
       """
       {
         "providers": [
-          "github",
-          "discord",
-          "gitlab",
-          "google"
+          "openid_flow",
+          "oauth2_flow"
         ]
       }
       """

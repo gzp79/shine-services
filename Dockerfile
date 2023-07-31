@@ -37,7 +37,7 @@ CMD ["/services/identity/start.sh"]
 #######################################################
 FROM prod as test
 
-RUN apt install -y --no-install-recommends netcat curl
+RUN apt install -y --no-install-recommends netcat
 
 WORKDIR /services/identity
 COPY ./server_config.test.json ./server_config.json

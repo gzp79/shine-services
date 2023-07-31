@@ -3,6 +3,7 @@
 /http
 .vscode
 .git
+**/node_modules
 
 /shine-service-rs/target
 /shine-service-rs/.vscode
