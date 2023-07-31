@@ -1,6 +1,17 @@
 Feature: Auth Status
 
-  Scenario: Get provider
-    Given a GET request to /api/auth/provider
-     When the response is received
-     Then the response should have a status 200
+  Scenario: Get providers
+    Given a GET request to the API at "/auth/providers"
+    When the response is received
+    Then the response should have a status 200
+    And the response should have a json like
+      """
+      {
+        "providers": [
+          "github",
+          "discord",
+          "gitlab",
+          "google"
+        ]
+      }
+      """
