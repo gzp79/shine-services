@@ -65,7 +65,7 @@ where
 {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/logout"), logout)
         .with_operation_id("page_logout")
-        .with_tag("login")
+        .with_tag("page")
         .with_query_parameter::<Query>()
         .with_page_response("Html page to update clear client cookies and complete user logout")
 }

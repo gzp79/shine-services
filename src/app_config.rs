@@ -29,23 +29,29 @@ pub struct TlsConfig {
 /// The application configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ServiceConfig {
+    pub tls: Option<TlsConfig>,
+    pub port: u16,
+    pub allow_origins: Vec<String>,
+}
+
+/// The application configuration
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     #[serde(flatten)]
     pub core: CoreConfig,
 
+    pub service: ServiceConfig,
     pub tracing: TracingConfig,
     pub db: DBConfig,
     pub auth: auth::AuthConfig,
     pub user_name: NameGeneratorConfig,
-
-    pub control_port: u16,
-    pub allow_origins: Vec<String>,
-    pub tls: Option<TlsConfig>,
 }
 
 impl AppConfig {
-    pub async fn new() -> Result<AppConfig, ConfigError> {
-        let pre_init = CoreConfig::new()?;
+    pub async fn new(stage: &str) -> Result<AppConfig, ConfigError> {
+        let pre_init = CoreConfig::new(stage)?;
         let builder = pre_init.create_config_builder()?;
         let config = builder.build().await?;
         log::debug!("configuration values: {:#?}", config);

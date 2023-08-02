@@ -67,7 +67,7 @@ where
 {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/delete"), delete_user)
         .with_operation_id("page_delete_user")
-        .with_tag("login")
+        .with_tag("page")
         .with_query_parameter::<Query>()
         .with_page_response("Html page to update clear client cookies and complete user deletion")
 }

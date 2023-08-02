@@ -27,7 +27,7 @@ use shine_service::{
     },
     service::UserSessionValidator,
 };
-use std::net::SocketAddr;
+use std::{env, net::SocketAddr};
 use tera::Tera;
 use tokio::{
     runtime::{Handle as RtHandle, Runtime},
@@ -63,6 +63,9 @@ async fn shutdown_signal() {
 }
 
 async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
+    let args: Vec<String> = env::args().collect();
+    let stage = args.get(1).ok_or(anyhow!("Missing stage parameter"))?.clone();
+
     let (config, tracing_manager) = {
         // initialize a pre-init logger
         let pre_init_log = {
@@ -79,7 +82,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         log::warn!("init-warn  - ok");
         log::error!("init-error - ok");
 
-        let config = AppConfig::new().await?;
+        let config = AppConfig::new(&stage).await?;
         let tracing_manager = TracingManager::new(SERVICE_NAME, &config.tracing).await?;
         log::info!("pre-init completed");
         (config, tracing_manager)
@@ -98,6 +101,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     tracing::error!("error - tracing:ok");
 
     let allow_origins = config
+        .service
         .allow_origins
         .iter()
         .map(|r| r.parse())
@@ -171,9 +175,9 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         .layer(tracing_layer);
 
     log::trace!("{app:#?}");
-    let addr = SocketAddr::from(([0, 0, 0, 0], config.control_port));
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
 
-    if let Some(tls_config) = config.tls {
+    if let Some(tls_config) = &config.service.tls {
         log::info!("Starting service on {addr:?} using tls");
         let cert = tls_config.cert.as_bytes().to_vec();
         let key = tls_config.key.as_bytes().to_vec();

@@ -81,14 +81,14 @@
         {
             "label": "start dev environment",
             "type": "shell",
-            "command": "docker-compose -f ./docker-devenv.yml up",
+            "command": "docker-compose -f ./docker-devenv.yml up --build",
             "group": "build",
             "isBackground": true,
         },
         {
             "label": "run",
             "type": "shell",
-            "command": "cargo run --release",
+            "command": "cargo run --release -- dev",
             "problemMatcher": [
                 "$rustc"
             ],
@@ -97,7 +97,7 @@
         {
             "label": "start integration test environment",
             "type": "shell",
-            "command": "docker-compose -f ./docker-integration-test.yml up",
+            "command": "docker-compose -f ./docker-integration-test.yml up --build",
             "group": "build",
             "isBackground": true,
         },

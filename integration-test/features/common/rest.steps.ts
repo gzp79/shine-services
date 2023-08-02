@@ -81,6 +81,11 @@ export class RESTSteps {
         this.spec!.response().should.have.body(body);
     }
 
+    @then('the response should have an body with {string}')
+    bodyContain(value: string) {
+        this.spec!.response().should.have.bodyContains(value);
+    }
+
     @then('the response should have a json')
     jsonBody(json: string) {
         this.spec!.response().should.have.json(JSON.parse(json));

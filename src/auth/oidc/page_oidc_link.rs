@@ -67,7 +67,7 @@ where
 {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/link"), oidc_link)
         .with_operation_id(format!("page_{provider}_link"))
-        .with_tag("login")
+        .with_tag("page")
         .with_query_parameter::<Query>()
         .with_page_response(
             "Html page to update client cookies and redirect user to start interactive OpenIdConnect login flow",

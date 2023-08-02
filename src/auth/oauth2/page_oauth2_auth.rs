@@ -107,7 +107,7 @@ where
 {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/auth"), oauth2_auth)
         .with_operation_id(format!("page_{provider}_auth"))
-        .with_tag("login")
+        .with_tag("page")
         .with_query_parameter::<Query>()
         .with_page_response("Html page to update client cookies and complete the oauth2 login flow")
 }

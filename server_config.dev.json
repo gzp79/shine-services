@@ -1,18 +1,27 @@
 {
-	"tls": {
-        "cert": "-----BEGIN CERTIFICATE-----\nMIIDazCCAlOgAwIBAgIUD1B1nRzyuLM2pUxQ1mDnERDRprkwDQYJKoZIhvcNAQEL\nBQAwRTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM\nGEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDAeFw0yMzA2MTYxMTExNDZaFw0zMzA2\nMTMxMTExNDZaMEUxCzAJBgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEw\nHwYDVQQKDBhJbnRlcm5ldCBXaWRnaXRzIFB0eSBMdGQwggEiMA0GCSqGSIb3DQEB\nAQUAA4IBDwAwggEKAoIBAQDmmLmCc+rRoMGqSlrPHt0yXdGXrU8BR9rmxyLfGML7\npDPhZjY4RetDcpEPgM8Tq661+Ycb/Gou0UYIhgOOawqVb2WfDCRGPt8dUu+qknnl\nv8lyIPiYRPpjpqSvh6PcRzk5Jamzmv79JVUUX+oGtvovEvwmQxOvmpJ1iVcCIRu9\nZMdmgt1mH5J+JaybjbAPqeNG28XfIq6Q4oMSgeG3TQxFB/Zu2d/DAqanp4ZmPSvy\nrfGB/REK0EHkFwwF3qdHyd33FhlO+GVq7WD52JFgN1yQC++Z2iGbsSZvLDWvnUwt\nOawY12dTPavOBbK7mbXWVWpoYLzEY6OXJ57HG7pXLwITAgMBAAGjUzBRMB0GA1Ud\nDgQWBBTLz7Zbc+xzgC+pUd1Srbc9fHqTuTAfBgNVHSMEGDAWgBTLz7Zbc+xzgC+p\nUd1Srbc9fHqTuTAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQBM\nDUVEt9xvlkGYZTv7EjUQyfRsQflBqWIjhNFjBYPYyTjBRTijwSrU+WjFsMg74FeQ\nprRgda3E9qU82773hYPNMTR5zHA0vtGriZsQs9b1bGHEnqz1QCSEXkIm8KDJ3YBD\nnxz+a97QTg/06K55kdGjH3Kxu2BjZXrudFbIBYQ9wvCHRpeZHIi45qS3GQB+MwPc\nI3JmGkWUO6UqBG2NjRIbgo/RD2ynlxtSvWQB3wX+3CtjErKfVmGF//eaGX7etlSL\nDZZxqguyyEmjKGhj3UUZi91++gXiPf9IOl5KV1CkoYwsbTyExKg1ixWwWvNwjdz+\nL1vp8jZOKPeJs0PR1q3f\n-----END CERTIFICATE-----",
-        "key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDmmLmCc+rRoMGq\nSlrPHt0yXdGXrU8BR9rmxyLfGML7pDPhZjY4RetDcpEPgM8Tq661+Ycb/Gou0UYI\nhgOOawqVb2WfDCRGPt8dUu+qknnlv8lyIPiYRPpjpqSvh6PcRzk5Jamzmv79JVUU\nX+oGtvovEvwmQxOvmpJ1iVcCIRu9ZMdmgt1mH5J+JaybjbAPqeNG28XfIq6Q4oMS\ngeG3TQxFB/Zu2d/DAqanp4ZmPSvyrfGB/REK0EHkFwwF3qdHyd33FhlO+GVq7WD5\n2JFgN1yQC++Z2iGbsSZvLDWvnUwtOawY12dTPavOBbK7mbXWVWpoYLzEY6OXJ57H\nG7pXLwITAgMBAAECggEBAM6QkuVEF16PZcy47J3LJRSgLEd17WbVSkceraMx2EB5\nOCw6VmmUYIo7z6wWk+koCspia2BrfWbQ+q5Z9keWpZV1g4+03a27Vjw7dgvTSLTB\nV6AP3wDwEWhA+BdxJx0FBEKn9Vu5hZ+Y2Jz2ynoXYQfYNt3DipfsnDQDwlha9jFx\nqUdkLQPQ7nf6kMyKTWys2sYv+y3r0MVHi/JsGPLFlglJ+NW3a0oH0PEXOzfNFOrF\nwNMFHuUjFzLoW2zfTcle2X4cVq9o7TG+4DdVLEavdXfUiwaNjkzOrLsueaVgCbSc\n/g7HZgIeH2gBrteM0dEK8xzLqoNatycI+dN8RKB48iECgYEA9YTqS74x0gxz8taq\nE0KepwGQMf1Q9ODoCSdb5lU/KhxYLO+DftwD8Z+S2j7Cum/fiYmAMi7mkXMY/oU1\n8iBSwchaqyQxllBk/VTES2MG47OiJmeoyxtxgmGKqmmXbGfSWxo0YuQmTAEq2ZVO\n70S0V72l/p+Bi1v5sIaI6cx7MAMCgYEA8HC7YM//tSVmfhbEtFb7lUjCNisFc9wv\naLdJf2x5TMSzmQaiQygNBNYFFhHScllNm5NP/t6OMnv96oZfZMn85AWlnouMsS/N\nvJRDS73HMUr9gNA7mV/HhlKywrYCh3YCwLX7cXpqUetz/Xs9IkzDPONB5AMDWvsF\nUhZImtMA8LECgYBUj47Sv5MRMVDOFrlFIPDbvGIZlZHIhZ3laTTxw/KZYmHMOEIl\n80k4cyl1GaCf7eAj0sPghN7MwcOeBetqlU9rhsITp8ecadwelI93F4hL7Jawe4tb\nSPxzV30W7H9GywtcbU4VsVavXsePYSlqp1Ml1R/S7sUDZo49ClkljVPwWQKBgH+X\nszfq6Q1d7YfX2UbCKfvMgpNwPRKAs//j0/L0w2IDuDLqnEz7Af2g/U364yyfS1nV\n0Mu1mswblGFSMWkw7yyp+nuqHl0guxLpstSMvxnfa6th1V7Mvvr/A7HkGG9+JnPR\nnr9XcPhL9F99eLGs/qZfCuZO2wb60pX/EURn2MXhAoGBANDbfazIi2ixTLkGvx94\nVaMqbqU4D7/d7gtJnSjPX4kjulEC2wncxtzRMeGeJAldOZvHEBgDxa81jiNuxQDA\njHl+79ctUag9bkf85y5ZINlsIenloHirV8xUHkk8zitoI6metbXTKguBr4Gn9gn9\n3n3I16V18W19/FdEt202HJe5\n-----END PRIVATE KEY-----"
+    "stage": "dev",
+    "layers": [
+        "file://server_config.json",
+        "azk://shine-keyvault.vault.azure.net/",
+        "self",
+        "file?://temp/server_config.json",
+        "environment"
+    ],
+    
+    "service": {
+        "tls": {
+            "cert": "-----BEGIN CERTIFICATE-----\nMIIDazCCAlOgAwIBAgIUD1B1nRzyuLM2pUxQ1mDnERDRprkwDQYJKoZIhvcNAQEL\nBQAwRTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM\nGEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDAeFw0yMzA2MTYxMTExNDZaFw0zMzA2\nMTMxMTExNDZaMEUxCzAJBgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEw\nHwYDVQQKDBhJbnRlcm5ldCBXaWRnaXRzIFB0eSBMdGQwggEiMA0GCSqGSIb3DQEB\nAQUAA4IBDwAwggEKAoIBAQDmmLmCc+rRoMGqSlrPHt0yXdGXrU8BR9rmxyLfGML7\npDPhZjY4RetDcpEPgM8Tq661+Ycb/Gou0UYIhgOOawqVb2WfDCRGPt8dUu+qknnl\nv8lyIPiYRPpjpqSvh6PcRzk5Jamzmv79JVUUX+oGtvovEvwmQxOvmpJ1iVcCIRu9\nZMdmgt1mH5J+JaybjbAPqeNG28XfIq6Q4oMSgeG3TQxFB/Zu2d/DAqanp4ZmPSvy\nrfGB/REK0EHkFwwF3qdHyd33FhlO+GVq7WD52JFgN1yQC++Z2iGbsSZvLDWvnUwt\nOawY12dTPavOBbK7mbXWVWpoYLzEY6OXJ57HG7pXLwITAgMBAAGjUzBRMB0GA1Ud\nDgQWBBTLz7Zbc+xzgC+pUd1Srbc9fHqTuTAfBgNVHSMEGDAWgBTLz7Zbc+xzgC+p\nUd1Srbc9fHqTuTAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQBM\nDUVEt9xvlkGYZTv7EjUQyfRsQflBqWIjhNFjBYPYyTjBRTijwSrU+WjFsMg74FeQ\nprRgda3E9qU82773hYPNMTR5zHA0vtGriZsQs9b1bGHEnqz1QCSEXkIm8KDJ3YBD\nnxz+a97QTg/06K55kdGjH3Kxu2BjZXrudFbIBYQ9wvCHRpeZHIi45qS3GQB+MwPc\nI3JmGkWUO6UqBG2NjRIbgo/RD2ynlxtSvWQB3wX+3CtjErKfVmGF//eaGX7etlSL\nDZZxqguyyEmjKGhj3UUZi91++gXiPf9IOl5KV1CkoYwsbTyExKg1ixWwWvNwjdz+\nL1vp8jZOKPeJs0PR1q3f\n-----END CERTIFICATE-----",
+            "key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDmmLmCc+rRoMGq\nSlrPHt0yXdGXrU8BR9rmxyLfGML7pDPhZjY4RetDcpEPgM8Tq661+Ycb/Gou0UYI\nhgOOawqVb2WfDCRGPt8dUu+qknnlv8lyIPiYRPpjpqSvh6PcRzk5Jamzmv79JVUU\nX+oGtvovEvwmQxOvmpJ1iVcCIRu9ZMdmgt1mH5J+JaybjbAPqeNG28XfIq6Q4oMS\ngeG3TQxFB/Zu2d/DAqanp4ZmPSvyrfGB/REK0EHkFwwF3qdHyd33FhlO+GVq7WD5\n2JFgN1yQC++Z2iGbsSZvLDWvnUwtOawY12dTPavOBbK7mbXWVWpoYLzEY6OXJ57H\nG7pXLwITAgMBAAECggEBAM6QkuVEF16PZcy47J3LJRSgLEd17WbVSkceraMx2EB5\nOCw6VmmUYIo7z6wWk+koCspia2BrfWbQ+q5Z9keWpZV1g4+03a27Vjw7dgvTSLTB\nV6AP3wDwEWhA+BdxJx0FBEKn9Vu5hZ+Y2Jz2ynoXYQfYNt3DipfsnDQDwlha9jFx\nqUdkLQPQ7nf6kMyKTWys2sYv+y3r0MVHi/JsGPLFlglJ+NW3a0oH0PEXOzfNFOrF\nwNMFHuUjFzLoW2zfTcle2X4cVq9o7TG+4DdVLEavdXfUiwaNjkzOrLsueaVgCbSc\n/g7HZgIeH2gBrteM0dEK8xzLqoNatycI+dN8RKB48iECgYEA9YTqS74x0gxz8taq\nE0KepwGQMf1Q9ODoCSdb5lU/KhxYLO+DftwD8Z+S2j7Cum/fiYmAMi7mkXMY/oU1\n8iBSwchaqyQxllBk/VTES2MG47OiJmeoyxtxgmGKqmmXbGfSWxo0YuQmTAEq2ZVO\n70S0V72l/p+Bi1v5sIaI6cx7MAMCgYEA8HC7YM//tSVmfhbEtFb7lUjCNisFc9wv\naLdJf2x5TMSzmQaiQygNBNYFFhHScllNm5NP/t6OMnv96oZfZMn85AWlnouMsS/N\nvJRDS73HMUr9gNA7mV/HhlKywrYCh3YCwLX7cXpqUetz/Xs9IkzDPONB5AMDWvsF\nUhZImtMA8LECgYBUj47Sv5MRMVDOFrlFIPDbvGIZlZHIhZ3laTTxw/KZYmHMOEIl\n80k4cyl1GaCf7eAj0sPghN7MwcOeBetqlU9rhsITp8ecadwelI93F4hL7Jawe4tb\nSPxzV30W7H9GywtcbU4VsVavXsePYSlqp1Ml1R/S7sUDZo49ClkljVPwWQKBgH+X\nszfq6Q1d7YfX2UbCKfvMgpNwPRKAs//j0/L0w2IDuDLqnEz7Af2g/U364yyfS1nV\n0Mu1mswblGFSMWkw7yyp+nuqHl0guxLpstSMvxnfa6th1V7Mvvr/A7HkGG9+JnPR\nnr9XcPhL9F99eLGs/qZfCuZO2wb60pX/EURn2MXhAoGBANDbfazIi2ixTLkGvx94\nVaMqbqU4D7/d7gtJnSjPX4kjulEC2wncxtzRMeGeJAldOZvHEBgDxa81jiNuxQDA\njHl+79ctUag9bkf85y5ZINlsIenloHirV8xUHkk8zitoI6metbXTKguBr4Gn9gn9\n3n3I16V18W19/FdEt202HJe5\n-----END PRIVATE KEY-----"
+        },
+        "port": 443,
+        "allowOrigins": [
+            "https://local.scytta.com"
+        ]
     },
-    "controlPort": 443,
     "db": {
         "redisCns": "redis://localhost:6379",
         "sqlCns": "postgres://username:password@localhost:5432/database-name?sslmode=disable"
     },
-    "tracing": {
-        "telemetry": {
-            "type": "stdOut"
-        }
-    },   
     "auth": {
         "authBaseUrl": "https://local.scytta.com/identity/auth",
         "pageRedirectTime": null

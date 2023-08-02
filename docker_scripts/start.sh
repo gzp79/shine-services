@@ -6,4 +6,5 @@ export AZURE_CLIENT_SECRET="${IDENTITY_CLIENT_SECRET}"
 
 source ./wait-for-services.sh
 
-/services/identity/shine-identity
+echo "Starting service for stage: ${1}..."
+/services/identity/shine-identity $1

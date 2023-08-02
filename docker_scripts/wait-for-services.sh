@@ -25,8 +25,8 @@ wait_for_service() {
 
 # Check if WAIT_FOR_SERVICES environment variable is set
 if [ -z "$WAIT_FOR_SERVICES" ]; then
-  echo "Error: Environment variable WAIT_FOR_SERVICES is not set."
-  exit 1
+  echo "Warning: Environment variable WAIT_FOR_SERVICES is not set."
+  return
 fi
 
 # Convert the comma-separated list of services into an array

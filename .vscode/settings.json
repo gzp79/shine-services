@@ -35,6 +35,7 @@
         "rustls",
         "scytta",
         "serde",
+        "splitn",
         "sqlx",
         "tera",
         "thiserror",

@@ -1,14 +1,14 @@
 {
-    "version": "test",
-	"allowOrigins": [
-        "http://test.scytta.com",
-        "http://test.scytta.com:8080",
-        "https://scytta.com"
-    ],
-    "controlPort": 80,
-    "db": {
-        "redisCns": "redis://redis:6379",
-		"sqlCns": "postgres://username:password@postgres:5432/database-name?sslmode=disable"
+    "stage": "test",
+    "layers": [],
+
+    "service": {
+        "port": 80,
+        "allowOrigins": [
+            "http://test.scytta.com",
+            "http://test.scytta.com:8080",
+            "https://scytta.com"
+        ]
     },
     "tracing": {
         "allowReconfigure": true,
@@ -17,10 +17,14 @@
             "type": "stdOut"
         }
     },
+    "db": {
+        "redisCns": "redis://redis:6379",
+        "sqlCns": "postgres://username:password@postgres:5432/database-name?sslmode=disable"
+    },
     "userName": {
         "baseGenerator": "fixed",
         "baseName": "Freshman",
-		"salt": "salt",
+        "salt": "salt",
         "idEncoder": "harsh"
     },
     "auth": {
@@ -28,9 +32,9 @@
         "errorUrl": "http://test.scytta.com:8080/scytta.com/error",
         "authBaseUrl": "https://test.scytta.com/identity/auth",
         "pageRedirectTime": 0,
-		"sessionSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
-		"externalLoginSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
-		"tokenLoginSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",		
+        "sessionSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
+        "externalLoginSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
+        "tokenLoginSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
         "ttlSession": 43200,
         "ttlRememberMe": 1209600,
         "ttlSingleAccess": 600,
@@ -42,8 +46,8 @@
                     "email",
                     "profile"
                 ],
-				"clientId": "someClientId",
-				"clientSecret": "someClientSecret"
+                "clientId": "someClientId",
+                "clientSecret": "someClientSecret"
             }
         },
         "oauth2": {
@@ -59,8 +63,8 @@
                     "identify",
                     "email"
                 ],
-				"clientId": "someClientId2",
-				"clientSecret": "someClientSecret2"
+                "clientId": "someClientId2",
+                "clientSecret": "someClientSecret2"
             }
         }
     }

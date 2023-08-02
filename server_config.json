@@ -1,13 +1,13 @@
 {
     "version": "custom",
-    "privateKeyvault": "https://shine-keyvault.vault.azure.net/",
-    "allowOrigins": [
-        "https://scytta.com",
-        "https://www.scytta.com",
-        "https://local.scytta.com",
-        "https://cloud.scytta.com"
-    ],
-    "controlPort": 80,
+    "service": {
+        "port": 80,
+        "allowOrigins": [
+            "https://scytta.com",
+            "https://www.scytta.com",
+            "https://cloud.scytta.com"
+        ]
+    },
     "tracing": {
         "allowReconfigure": true,
         "enableConsoleLog": true,

@@ -178,7 +178,7 @@ where
 {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage("token", "/login"), token_login)
         .with_operation_id("page_token_login")
-        .with_tag("login")
+        .with_tag("page")
         .with_query_parameter::<Query>()
         .with_page_response("Html page to update client cookies and redirect user according to the login result")
 }
