@@ -1,4 +1,4 @@
 /target
 /temp
 server_config_local.json
-
+**/node_modules

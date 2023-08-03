@@ -6,8 +6,7 @@
         "port": 80,
         "allowOrigins": [
             "http://test.scytta.com",
-            "http://test.scytta.com:8080",
-            "https://scytta.com"
+            "http://test.scytta.com:8080"
         ]
     },
     "tracing": {
@@ -38,7 +37,8 @@
         "ttlSession": 43200,
         "ttlRememberMe": 1209600,
         "ttlSingleAccess": 600,
-        "openid": {
+        "openid": {},
+        "_openid": {
             "openid_flow": {
                 "discoveryUrl": "http://mock.external.com:8080/openid",
                 "scopes": [
