@@ -20,20 +20,6 @@ services:
       - 6379:6379
     networks:
       my_network:
-
-  mock:
-    image: wiremock/wiremock:latest
-    command: --https-port 8443
-    ports:
-      - 8090:8443    
-      - 8083:8080
-    volumes:
-      - ./integration-test/mocking:/home/wiremock
-    networks:
-      my_network:
-        aliases:
-          - mock.external.com
-          - test.scytta.com
       
   service:
     build:
@@ -41,19 +27,14 @@ services:
       target: test
     environment:
       - RUST_LOG=info,shine_identity=trace
-      - WAIT_FOR_SERVICES=postgres:5432,redis:6379,mock:8080,mock:8443
-      - TARGET_SERVICE_IP=mock 
+      - WAIT_FOR_SERVICES=postgres:5432,redis:6379
     ports:
       - "80:80"
     networks:
       my_network:
-        aliases:
-          - mock.external.com
-          - test.scytta.com
     depends_on:
       - postgres
       - redis
-      - mock
 
 networks:
   my_network:
