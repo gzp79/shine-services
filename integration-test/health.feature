@@ -1,7 +1,7 @@
 Feature: fetching User Details
 
   Background:
-    * url 'http://test.scytta.com'
+    * url karate.properties['serviceUrl']
  
   Scenario: testing the get call for User Details
     * path '/info/ready'

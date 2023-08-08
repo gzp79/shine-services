@@ -86,7 +86,7 @@
             "isBackground": true,
         },
         {
-            "label": "run",
+            "label": "run stage:dev",
             "type": "shell",
             "command": "cargo run --release -- dev",
             "problemMatcher": [
@@ -95,34 +95,24 @@
             "group": "build",
         },
         {
-            "label": "start integration test environment",
+            "label": "run stage:test",
             "type": "shell",
-            "command": "docker-compose -f ./docker-integration-test.yml up --build",
+            "command": "cargo run --release -- test",
+            "problemMatcher": [
+                "$rustc"
+            ],
             "group": "build",
-            "isBackground": true,
         },
         {
             "label": "run integration test",
             "type": "npm",
-            "script": "start",
+            "script": "test",
             "group": "build",
             "options": {
                 "cwd": "integration-test",
                 "env": {
                     "SHINE_BASE_API_URL" : "http://test.scytta.com"
                 }
-            },
-            "problemMatcher": [
-                "$tsc"
-            ]
-        },
-        {
-            "label": "format integration test",
-            "type": "npm",
-            "script": "format",
-            "group": "build",
-            "options": {
-                "cwd": "integration-test"
             },
             "problemMatcher": [
                 "$tsc"

@@ -29,7 +29,7 @@ async function setup() {
 
     console.log('Starting service...');
     await dockerCompose.upAll({
-        //commandOptions: ['--build'],
+        commandOptions: ['--build'],
         ...dockerOptions
     });
 
@@ -52,10 +52,12 @@ async function tearDown() {
 
 async function main() {
     try {
+        console.log('Running setup...');
         await setup();
         console.log('Running karate tests...');
         karate.exec();
     } finally {
+        console.log('Running tear down...');
         await tearDown();
     }
 }

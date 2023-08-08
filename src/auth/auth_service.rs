@@ -77,6 +77,9 @@ pub struct AuthConfig {
     #[serde(flatten)]
     pub auth_session: AuthSessionConfig,
 
+    /// If enabled, when openid discovery fails, continue, but skip the provider. It is mainly used for testing where
+    /// mocking of openid is not complete.
+    openid_ignore_discovery_error: Option<bool>,
     /// List of external providers using the OpenId Connect protocol
     pub openid: HashMap<String, OIDCConfig>,
     /// List of external providers using OAuth2 protocols
@@ -181,14 +184,18 @@ impl AuthServiceBuilder {
         let ttl_single_access = Duration::seconds(i64::try_from(config.auth_session.ttl_single_access)?);
         let token_generator = TokenGenerator::new(ttl_remember_me, ttl_single_access);
 
+        let openid_ignore_discovery_error = config.openid_ignore_discovery_error.unwrap_or(false);
         let mut openid_clients = Vec::new();
         for (provider, provider_config) in &config.openid {
             if !providers.insert(provider.clone()) {
                 return Err(AuthBuildError::ProviderConflict(provider.clone()));
             }
 
-            let connect = OIDCClient::new(provider, &config.auth_base_url, provider_config).await?;
-            openid_clients.push(connect);
+            if let Some(connect) = OIDCClient::new(provider, &config.auth_base_url, provider_config, openid_ignore_discovery_error).await? {
+                openid_clients.push(connect);
+            } else {
+                log::error!("Skipping {provider} provider");
+            }
         }
 
         let mut oauth2_clients = Vec::new();
