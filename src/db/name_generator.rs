@@ -1,7 +1,7 @@
 use crate::db::{DBError, DBPool};
 use harsh::Harsh;
 use serde::{Deserialize, Serialize};
-use shine_service::{pg_prepared_statement, service::PGConnectionPool, utils::Optimus};
+use shine_service::{pg_query, service::PGConnectionPool, utils::Optimus};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 
@@ -108,9 +108,13 @@ impl IdEncoder for Harsh {
     }
 }
 
-pg_prepared_statement!( GetNextId => r#"
-    SELECT nextval('user_id_counter')
-"#, [] );
+pg_query!( GetNextId =>
+    in = ;
+    out = id: i32;
+    sql = r#"
+        SELECT nextval('user_id_counter')
+    "#
+);
 
 struct Inner {
     postgres: PGConnectionPool,
@@ -147,9 +151,7 @@ impl NameGenerator {
 
         let prefix = inner.base.generate();
         let suffix = {
-            let stmt_next_id = inner.stmt_next_id.get(&client).await.map_err(DBError::from)?;
-            let row = client.query_one(&stmt_next_id, &[]).await.map_err(DBError::from)?;
-            let id: i64 = row.get(0);
+            let id = inner.stmt_next_id.query_one(&client).await.map_err(DBError::from)?;
             inner.id_encoder.encode(id as u64)
         };
 

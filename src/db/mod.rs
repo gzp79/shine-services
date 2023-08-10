@@ -13,6 +13,3 @@ mod session_manager;
 pub use self::session_manager::*;
 mod name_generator;
 pub use self::name_generator::*;
-
-/// A shorthand used for the return types in the ToSql and FromSql implementations.
-pub type PGError = Box<dyn std::error::Error + Sync + Send>;

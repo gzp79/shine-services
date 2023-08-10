@@ -213,7 +213,7 @@ where
 
         //todo: check session expiration too to be consistent to redis ttl
         // this check should allow a bit shorter lifetime (ex 30 sec) as by the time redis expires the cookie is invalidated for sure
-        // also in user info there should be some info info: instead of sessionLength 
+        // also in user info there should be some info info: instead of sessionLength
         // we should have some sessionTTL (10min) (also slightly reduced b/c of time drift)
         // For testing it would be good to directly alter the DB from the test framework as that could simplify it a lot.
 

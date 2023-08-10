@@ -191,7 +191,14 @@ impl AuthServiceBuilder {
                 return Err(AuthBuildError::ProviderConflict(provider.clone()));
             }
 
-            if let Some(connect) = OIDCClient::new(provider, &config.auth_base_url, provider_config, openid_ignore_discovery_error).await? {
+            if let Some(connect) = OIDCClient::new(
+                provider,
+                &config.auth_base_url,
+                provider_config,
+                openid_ignore_discovery_error,
+            )
+            .await?
+            {
                 openid_clients.push(connect);
             } else {
                 log::error!("Skipping {provider} provider");

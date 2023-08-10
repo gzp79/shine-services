@@ -49,6 +49,7 @@ async fn add_user_role(
         .add_role(path.user_id, &params.role)
         .await
         .map_err(Problem::internal_error_from)?;
+    // todo: update roles in the session
     let roles = state
         .identity_manager()
         .get_roles(path.user_id)
@@ -128,6 +129,7 @@ async fn delete_user_role(
         .delete_role(path.user_id, &params.role)
         .await
         .map_err(Problem::internal_error_from)?;
+    // todo: update roles in the session
     let roles = state
         .identity_manager()
         .get_roles(path.user_id)
