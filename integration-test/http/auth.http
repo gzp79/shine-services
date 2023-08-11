@@ -1,8 +1,12 @@
-@url = https://local.scytta.com/identity
+@url = http://local.scytta.com/identity
 //@url = https://cloud.scytta.com/identity
 
 GET {{url}}/api/auth/providers 
+### 
+
+GET {{url}}/auth/token/login?rememberMe=true
 ###
+
 
 GET {{url}}/auth/token/login
 Authorization: Basic NmY3YzE2ZDMtYWExOC00NDJlLTkzMTItMzhhY2M2ZjRlZTA4OjRlNDkzMzMxN2VkMDI4MThmMjAxY2E2ODE0ZDFlYTFh

@@ -109,7 +109,7 @@ impl AuthServiceState {
                     return Ok(TokenLogin {
                         user_id,
                         token: token.token,
-                        expires: token.expire_at,
+                        expires: token.expire,
                     })
                 }
                 Err(IdentityError::TokenConflict) => continue,
@@ -168,6 +168,8 @@ impl AuthServiceState {
         response: AuthError,
         target_url: Option<&Url>,
     ) -> AuthPage {
+        log::error!("{response:?}");
+
         let detail = match response {
             AuthError::LogoutRequired => ("logoutRequired", StatusCode::BAD_REQUEST),
             AuthError::LoginRequired => ("loginRequired", StatusCode::UNAUTHORIZED),

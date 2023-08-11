@@ -60,12 +60,12 @@ Feature: Token credentials
       * configure cookies = null
       * method get
     Then status 200
-      * match responseCookies contains deep cookieDefaults
-      * match responseCookies.tid contains {"max-age": #? _ > 0}
-      * match responseCookies.sid contains {"max-age": #(SESSION_SCOPE)}
       * match response contains 'http://redirect.com'
       * match response !contains 'http://login.com'
       * match response !contains 'http://error.com'
+      * match responseCookies contains deep cookieDefaults
+      * match responseCookies.tid contains {"max-age": #? _ > 0}
+      * match responseCookies.sid contains {"max-age": #(SESSION_SCOPE)}
     And def userA_SID = responseCookies.sid.value
 
     # Waiting to check session length too
@@ -80,12 +80,12 @@ Feature: Token credentials
       * configure cookies = null
       * method get
     Then status 200
-      * match responseCookies contains deep cookieDefaults
-      * match responseCookies.tid contains {"max-age": #? _ > 0}
-      * match responseCookies.sid contains {"max-age": #(SESSION_SCOPE)}
       * match response contains 'http://redirect.com'
       * match response !contains 'http://login.com'
       * match response !contains 'http://error.com'
+      * match responseCookies contains deep cookieDefaults
+      * match responseCookies.tid contains {"max-age": #? _ > 0}
+      * match responseCookies.sid contains {"max-age": #(SESSION_SCOPE)}
     And def userA_SID = responseCookies.sid.value
       * def userA_TID = responseCookies.tid.value
     
@@ -101,12 +101,12 @@ Feature: Token credentials
       * configure cookies = { sid: #(userA_SID) }
       * method get
     Then status 200
-      * match responseCookies contains deep cookieDefaults
-      * match responseCookies.tid contains {"max-age": #? _ < 0}
-      * match responseCookies.sid contains {value: #(userA_SID), "max-age": #(SESSION_SCOPE)}
       * match response contains 'http://error.com'
       * match response !contains 'http://redirect.com'
       * match response !contains 'http://login.com'
+      * match responseCookies contains deep cookieDefaults
+      * match responseCookies.tid contains {"max-age": #? _ < 0}
+      * match responseCookies.sid contains {value: #(userA_SID), "max-age": #(SESSION_SCOPE)}
     
     # but user shall not be changed.
     Given def utils = call read('utils/userinfo.feature') {userSession: #(userA_SID)}
@@ -118,12 +118,12 @@ Feature: Token credentials
       * configure cookies = { sid: #(userA_SID), tid: #(userA_TID) }
       * method get
     Then status 200
-      * match responseCookies contains deep cookieDefaults
-      * match responseCookies.tid contains {value: #(userA_TID), "max-age": #? _ > 0}
-      * match responseCookies.sid contains {value: #(userA_SID), "max-age": #(SESSION_SCOPE)}
       * match response contains 'http://error.com'
       * match response !contains 'http://redirect.com'
       * match response !contains 'http://login.com'
+      * match responseCookies contains deep cookieDefaults
+      * match responseCookies.tid contains {value: #(userA_TID), "max-age": #? _ > 0}
+      * match responseCookies.sid contains {value: #(userA_SID), "max-age": #(SESSION_SCOPE)}
     
     # but user shall not be changed.
     Given def utils = call read('utils/userinfo.feature') {userSession: #(userA_SID)}
@@ -135,12 +135,12 @@ Feature: Token credentials
       * configure cookies = { tid: #(userA_TID) }
       * method get
     Then status 200
-      * match responseCookies contains deep cookieDefaults
-      * match responseCookies.tid contains {value: #(userA_TID), "max-age": #? _ > 0}
-      * match responseCookies.sid contains {"max-age": #(SESSION_SCOPE)}
       * match response contains 'http://redirect.com'
       * match response !contains 'http://error.com'
       * match response !contains 'http://login.com'
+      * match responseCookies contains deep cookieDefaults
+      * match responseCookies.tid contains {value: #(userA_TID), "max-age": #? _ > 0}
+      * match responseCookies.sid contains {"max-age": #(SESSION_SCOPE)}
     # but session shall have been updated
     And match responseCookies.sid.value != userA_SID
       * def userA_SID = responseCookies.sid.value
@@ -156,13 +156,13 @@ Feature: Token credentials
       * configure cookies = { tid: #(userA_TID) }
       * method get
     Then status 200
+      * match response contains 'http://redirect.com'
+      * match response !contains 'http://error.com'
+      * match response !contains 'http://login.com'
       # no new token should be generated
       * match responseCookies contains deep cookieDefaults
       * match responseCookies.tid contains {value: #(userA_TID), "max-age": #? _ > 0}
       * match responseCookies.sid contains {"max-age": #(SESSION_SCOPE)}
-      * match response contains 'http://redirect.com'
-      * match response !contains 'http://error.com'
-      * match response !contains 'http://login.com'
     # but session shall have been changed
     And match responseCookies.sid.value != userA_SID
       * def userA_SID = responseCookies.sid.value

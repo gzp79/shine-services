@@ -116,7 +116,7 @@ async fn token_login(
                     Ok(info) => TokenLogin {
                         user_id: identity.id,
                         token: info.token,
-                        expires: info.expire_at,
+                        expires: info.expire,
                     },
                     Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
                 };

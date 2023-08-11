@@ -59,7 +59,7 @@ pub struct Identity {
     pub name: String,
     pub email: Option<String>,
     pub is_email_confirmed: bool,
-    pub creation: DateTime<Utc>,
+    pub created: DateTime<Utc>,
 }
 
 impl From<FindByIdRow> for Identity {
@@ -70,7 +70,7 @@ impl From<FindByIdRow> for Identity {
             name: value.name,
             email: value.email,
             is_email_confirmed: value.is_email_confirmed,
-            creation: value.created,
+            created: value.created,
         }
     }
 }
@@ -83,7 +83,7 @@ impl From<FindByLinkRow> for Identity {
             name: value.name,
             email: value.email,
             is_email_confirmed: value.is_email_confirmed,
-            creation: value.created,
+            created: value.created,
         }
     }
 }
@@ -93,8 +93,8 @@ impl From<FindByTokenRow> for (Identity, LoginTokenInfo) {
         let token = LoginTokenInfo {
             user_id: value.user_id,
             token: value.token,
-            created_at: value.token_created_at,
-            expire_at: value.token_expire_at,
+            created: value.token_created,
+            expire: value.token_expire,
             fingerprint: value.token_fingerprint,
             kind: value.token_kind,
             is_expired: value.token_is_expired,
@@ -105,7 +105,7 @@ impl From<FindByTokenRow> for (Identity, LoginTokenInfo) {
             name: value.name,
             email: value.email,
             is_email_confirmed: value.is_email_confirmed,
-            creation: value.created_at,
+            created: value.created,
         };
         (identity, token)
     }
@@ -160,8 +160,8 @@ impl ToPGType for TokenKind {
 pub struct LoginTokenInfo {
     pub user_id: Uuid,
     pub token: String,
-    pub created_at: DateTime<Utc>,
-    pub expire_at: DateTime<Utc>,
+    pub created: DateTime<Utc>,
+    pub expire: DateTime<Utc>,
     pub is_expired: bool,
 
     pub kind: TokenKind,
@@ -229,13 +229,13 @@ pg_query!( InsertIdentity =>
 pg_query!( InsertToken =>
     in = user_id: Uuid, token: &str, fingerprint: Option<&str>, kind: TokenKind, expire_s: i32;
     out = InsertTokenRow{
-        created_at: DateTime<Utc>,
-        expire_at: DateTime<Utc>
+        created: DateTime<Utc>,
+        expire: DateTime<Utc>
     };
     sql =  r#"
         INSERT INTO login_tokens (user_id, token, created, fingerprint, kind, expire) 
             VALUES ($1, $2, now(), $3, $4, now() + $5 * interval '1 seconds')
-        RETURNING created_at, expire_at
+        RETURNING created, expire
     "#
 );
 
@@ -268,7 +268,7 @@ pg_query!( FindById =>
         created: DateTime<Utc>
     };
     sql = r#"
-        SELECT user_id, kind, name, email, is_email_confirmed, created 
+        SELECT user_id, kind, name, email, email_confirmed, created 
             FROM identities
             WHERE user_id = $1
     "#
@@ -297,10 +297,10 @@ pg_query!( FindByToken =>
         name: String,
         email: Option<String>,
         is_email_confirmed: bool,
-        created_at: DateTime<Utc>,
+        created: DateTime<Utc>,
         token: String,
-        token_created_at: DateTime<Utc>,
-        token_expire_at: DateTime<Utc>,
+        token_created: DateTime<Utc>,
+        token_expire: DateTime<Utc>,
         token_fingerprint: Option<String>,
         token_kind: TokenKind,
         token_is_expired: bool
@@ -332,14 +332,14 @@ pg_query!( GetDataVersion =>
     in = user_id: Uuid;
     out = version: i32;
     sql = r#"
-        SELECT data_version from identities WHERE user_id = $1
+        SELECT data_version FROM identities WHERE user_id = $1
     "#
 );
 
 pg_query!( UpdateDataVersion =>
     in = user_id: Uuid, version: i32;
     sql = r#"
-        UPDATE data_version = data_version + 1 from identities WHERE user_id = $1 and data_version = $2
+        UPDATE identities SET data_version = data_version + 1 WHERE user_id = $1 AND data_version = $2
     "#
 );
 
@@ -449,12 +449,12 @@ impl IdentityManager {
         let mut client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
         let transaction = client.transaction().await?;
 
-        let created_at = match inner
+        let created = match inner
             .stmt_insert_identity
             .query_one(&transaction, &user_id, &IdentityKind::User, &user_name, &email)
             .await
         {
-            Ok(created_at) => created_at,
+            Ok(created) => created,
             Err(err) if err.is_constraint("identities", "identities_pkey") => {
                 log::info!("Conflicting user id: {}, rolling back user creation", user_id);
                 transaction.rollback().await?;
@@ -502,7 +502,7 @@ impl IdentityManager {
             email: email.map(String::from),
             is_email_confirmed: false,
             kind: IdentityKind::User,
-            creation: created_at,
+            created,
         })
     }
 
@@ -511,11 +511,7 @@ impl IdentityManager {
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
 
         Ok(match find {
-            FindIdentity::UserId(id) => inner
-                .stmt_find_by_id
-                .query_opt(&client, &id)
-                .await?
-                .map(Identity::from),
+            FindIdentity::UserId(id) => inner.stmt_find_by_id.query_opt(&client, &id).await?.map(Identity::from),
 
             FindIdentity::ExternalLogin(external_login) => inner
                 .stmt_find_by_link
@@ -545,7 +541,7 @@ impl IdentityManager {
                 name: r.try_get(2)?,
                 email: r.try_get(3)?,
                 is_email_confirmed: r.try_get(4)?,
-                creation: r.try_get(5)?,
+                created: r.try_get(5)?,
             })
         }
 
@@ -670,8 +666,8 @@ impl IdentityManager {
         Ok(LoginTokenInfo {
             user_id,
             token: token.to_owned(),
-            created_at: row.created_at,
-            expire_at: row.expire_at,
+            created: row.created,
+            expire: row.expire,
             fingerprint: fingerprint.map(|x| x.to_string()),
             kind,
             is_expired: false,
