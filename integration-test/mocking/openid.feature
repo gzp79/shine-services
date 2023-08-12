@@ -2,7 +2,7 @@
 Feature: OpenId Connect mocker server
 
   Background:
-    * def base = 'http:/test.scytta.mock:8080'
+    * def base = 'http://test.scytta.mock:8090'
 
   Scenario: pathMatches('/openid/.well-known/openid-configuration') && methodIs('get')
     * def response = 

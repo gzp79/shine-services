@@ -1,6 +1,8 @@
 {
     "stage": "test",
-    "layers": [],
+    "beforeLayers": [],
+    "afterLayers": [],
+    
     "service": {
         "port": 80,
         "allowOrigins": [
@@ -30,7 +32,7 @@
     "auth": {
         "homeUrl": "http://test.scytta.com:8080/scytta.com",
         "errorUrl": "http://test.scytta.com:8080/scytta.com/error",
-        "authBaseUrl": "https://test.scytta.com/identity/auth",
+        "authBaseUrl": "http://test.scytta.com/identity/auth",
         "pageRedirectTime": 0,
         "sessionSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
         "externalLoginSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
@@ -41,7 +43,7 @@
         "openidIgnoreDiscoveryError": true,
         "openid": {
             "openid_flow": {
-                "discoveryUrl": "http://mock.external.com:8080/openid",
+                "discoveryUrl": "http://test.external-scytta.com:8090/openid",
                 "scopes": [
                     "openid",
                     "email",
@@ -53,15 +55,15 @@
         },
         "oauth2": {
             "oauth2_flow": {
-                "authorizationUrl": "http://mock.external.com:8080/oauth2/authorize",
-                "tokenUrl": "http://mock.external.com:8080/oauth2/token",
-                "userInfoUrl": "http://mock.external.com:8080/oauth2/users",
+                "authorizationUrl": "http://test.external-scytta.com:8090/oauth2/authorize",
+                "tokenUrl": "http://test.external-scytta.com:8090/oauth2/token",
+                "userInfoUrl": "http://test.external-scytta.com:8090/oauth2/users",
                 "userInfoMapping": {
                     "name": "global_name"
                 },
                 "extensions": [],
                 "scopes": [
-                    "identify",
+                    "identity",
                     "email"
                 ],
                 "clientId": "someClientId2",

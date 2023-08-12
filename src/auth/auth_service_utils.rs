@@ -7,7 +7,10 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use chrono::Duration;
-use shine_service::service::{ClientFingerprint, APP_NAME};
+use shine_service::{
+    axum::ValidationError,
+    service::{ClientFingerprint, APP_NAME},
+};
 use std::fmt;
 use thiserror::Error as ThisError;
 use url::Url;
@@ -121,6 +124,8 @@ impl AuthServiceState {
 
 #[derive(Debug, ThisError)]
 pub(in crate::auth) enum AuthError {
+    #[error("Input validation error")]
+    ValidationError(ValidationError),
     #[error("Logout required")]
     LogoutRequired,
     #[error("Login required")]
@@ -171,6 +176,7 @@ impl AuthServiceState {
         log::error!("{response:?}");
 
         let detail = match response {
+            AuthError::ValidationError(_) => ("invalidInput", StatusCode::BAD_REQUEST),
             AuthError::LogoutRequired => ("logoutRequired", StatusCode::BAD_REQUEST),
             AuthError::LoginRequired => ("loginRequired", StatusCode::UNAUTHORIZED),
             AuthError::MissingExternalLogin => ("authError", StatusCode::BAD_REQUEST),

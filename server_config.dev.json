@@ -1,9 +1,10 @@
 {
     "stage": "dev",
-    "layers": [
+    "beforeLayers": [
         "file://server_config.json",
-        "azk://shine-keyvault.vault.azure.net/",
-        "self",
+        "azk://shine-keyvault.vault.azure.net/"
+    ],
+    "afterLayers": [
         "file?://temp/server_config.json",
         "environment"
     ],
