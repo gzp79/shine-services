@@ -56,6 +56,7 @@ impl AuthServiceState {
         };
 
         log::debug!("Checking if this is a login or registration...");
+        log::debug!("{external_user_info:#?}");
         let identity = match self
             .identity_manager()
             .find(FindIdentity::ExternalLogin(&external_login))

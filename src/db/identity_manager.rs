@@ -115,6 +115,8 @@ impl From<FindByTokenRow> for (Identity, LoginTokenInfo) {
 pub struct ExternalLoginInfo {
     pub provider: String,
     pub provider_id: String,
+
+    //todo: add name and email to know what is linked to the account 
 }
 
 #[derive(Debug, Clone, Copy)]

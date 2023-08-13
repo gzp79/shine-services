@@ -67,11 +67,14 @@ pub(in crate::auth) async fn get_external_user_info(
             _ => None,
         })
         .ok_or(ExternalUserInfoError::MissingExternalId)?;
+    log::debug!("{external_id_id} - {external_id:?}");
 
-    let name_id = id_mapping.get("name").map(|s| s.as_str()).unwrap_or("name");
+    let name_id = id_mapping.get("name").map(|s| s.as_str()).unwrap_or("name");    
     let name = user_info.get(name_id).and_then(|v| v.as_str()).map(ToOwned::to_owned);
+    log::debug!("{name_id} - {name:?}");
     let email_id = id_mapping.get("email").map(|s| s.as_str()).unwrap_or("email");
     let email = user_info.get(email_id).and_then(|v| v.as_str()).map(ToOwned::to_owned);
+    log::debug!("{email_id} - {email:?}");
 
     let mut external_user_info = ExternalUserInfo {
         provider: provider.to_string(),

@@ -65,7 +65,10 @@ async fn oauth2_auth(
         .await
     {
         Ok(token) => token,
-        Err(err) => return state.page_internal_error(auth_session, err, error_url.as_ref()),
+        Err(err) => {
+            log::warn!("Token exchange error: {err:?}");
+            return state.page_error(auth_session, AuthError::TokenExchangeFailed, error_url.as_ref());
+        }
     };
 
     let external_user_info = match get_external_user_info(

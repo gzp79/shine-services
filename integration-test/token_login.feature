@@ -11,7 +11,7 @@ Feature: Token credentials
       * configure cookies = null
       * method get
     Then status 200
-      * match utils.getRedirectUrl(response) == 'http://login.com/'
+      * match utils.getRedirectUrl(response) == redirects.loginUrl
       * match responseCookies contains deep cookieNone
 
   Scenario: Login without invalid input should redirect to the default error page
@@ -31,7 +31,7 @@ Feature: Token credentials
       * configure cookies = null
       * method get
     Then status 200
-      * match utils.getRedirectUrl(response) == 'http://login.com/'
+      * match utils.getRedirectUrl(response) == redirects.loginUrl
       * match responseCookies contains deep cookieNone
       
   Scenario: Login with 'rememberMe' should register a new user
@@ -41,7 +41,7 @@ Feature: Token credentials
       * configure cookies = null
       * method get
     Then status 200
-      * match utils.getRedirectUrl(response) == 'http://redirect.com/'
+      * match utils.getRedirectUrl(response) == redirects.redirectUrl
       * match responseCookies contains deep cookieDefaults
       * match responseCookies.tid contains {"max-age": #? _ > 0}
       * match responseCookies.sid contains {"max-age": #(SESSION_SCOPE)}
@@ -60,7 +60,7 @@ Feature: Token credentials
       * configure cookies = null
       * method get
     Then status 200
-      * match utils.getRedirectUrl(response) == 'http://redirect.com/'
+      * match utils.getRedirectUrl(response) == redirects.redirectUrl
       * match responseCookies contains deep cookieDefaults
       * match responseCookies.tid contains {"max-age": #? _ > 0}
       * match responseCookies.sid contains {"max-age": #(SESSION_SCOPE)}
@@ -80,7 +80,7 @@ Feature: Token credentials
       * configure cookies = { sid: #(userA_SID) }
       * method get
     Then status 200
-      * match utils.getRedirectUrl(response) == 'http://error.com/?type=logoutRequired&status=400'
+      * match utils.getRedirectUrl(response) == redirects.errorUrl + '?type=logoutRequired&status=400'
       * match responseCookies contains deep cookieDefaults
       * match responseCookies.tid contains {"max-age": #? _ < 0}
       * match responseCookies.sid contains {value: #(userA_SID), "max-age": #(SESSION_SCOPE)}
@@ -96,7 +96,7 @@ Feature: Token credentials
       * configure cookies = { sid: #(userA_SID), tid: #(userA_TID) }
       * method get
     Then status 200
-      * match utils.getRedirectUrl(response) == 'http://error.com/?type=logoutRequired&status=400'
+      * match utils.getRedirectUrl(response) == redirects.errorUrl + '?type=logoutRequired&status=400'
       * match responseCookies contains deep cookieDefaults
       * match responseCookies.tid contains {value: #(userA_TID), "max-age": #? _ > 0}
       * match responseCookies.sid contains {value: #(userA_SID), "max-age": #(SESSION_SCOPE)}
@@ -112,7 +112,7 @@ Feature: Token credentials
       * configure cookies = { tid: #(userA_TID) }
       * method get
     Then status 200
-      * match utils.getRedirectUrl(response) == 'http://redirect.com/'
+      * match utils.getRedirectUrl(response) == redirects.redirectUrl
       * match responseCookies contains deep cookieDefaults
       * match responseCookies.tid contains {value: #(userA_TID), "max-age": #? _ > 0}
       * match responseCookies.sid contains {"max-age": #(SESSION_SCOPE)}
@@ -132,7 +132,7 @@ Feature: Token credentials
       * configure cookies = { tid: #(userA_TID) }
       * method get
     Then status 200
-      * match utils.getRedirectUrl(response) == 'http://redirect.com/'
+      * match utils.getRedirectUrl(response) == redirects.redirectUrl
       # no new token should be generated
       * match responseCookies contains deep cookieDefaults
       * match responseCookies.tid contains {value: #(userA_TID), "max-age": #? _ > 0}

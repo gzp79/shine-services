@@ -22,13 +22,17 @@ function fn() {
             )[1];
         },
 
-        getUrlQueryParams: function (url) {
+        parseQueryParams: function (queryString) {
             let o = {};
-            url.split('?')[1]
-                .split('&')
-                .map((x) => x.split('='))
-                .forEach((x) => (o[x[0]] = karate.urlDecode(x[1])));
+            queryString
+            .split('&')
+            .map((x) => x.split('='))
+            .forEach((x) => (o[x[0]] = karate.urlDecode(x[1])));
             return o;
+        },
+        
+        getUrlQueryParams: function (url) {
+            return utils.parseQueryParams(url.split('?')[1]);
         },
 
         createUrlQueryString: function (params) {

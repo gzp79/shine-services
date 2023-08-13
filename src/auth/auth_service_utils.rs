@@ -136,6 +136,8 @@ pub(in crate::auth) enum AuthError {
     MissingNonce,
     #[error("Invalid CSRF state")]
     InvalidCSRF,
+    #[error("Failed to exchange authentication token")]
+    TokenExchangeFailed,
     #[error("Failed to get user info from provider")]
     FailedExternalUserInfo,
     #[error("Login token is invalid")]
@@ -175,6 +177,7 @@ impl AuthServiceState {
     ) -> AuthPage {
         log::error!("{response:?}");
 
+        //todo: give some more detail and add a few more error sources
         let detail = match response {
             AuthError::ValidationError(_) => ("invalidInput", StatusCode::BAD_REQUEST),
             AuthError::LogoutRequired => ("logoutRequired", StatusCode::BAD_REQUEST),
@@ -182,6 +185,7 @@ impl AuthServiceState {
             AuthError::MissingExternalLogin => ("authError", StatusCode::BAD_REQUEST),
             AuthError::MissingNonce => ("authError", StatusCode::BAD_REQUEST),
             AuthError::InvalidCSRF => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::TokenExchangeFailed => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
             AuthError::FailedExternalUserInfo => ("authError", StatusCode::BAD_REQUEST),
             AuthError::TokenInvalid => ("authError", StatusCode::BAD_REQUEST),
             AuthError::TokenExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),

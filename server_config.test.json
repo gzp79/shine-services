@@ -58,9 +58,7 @@
                 "authorizationUrl": "http://test.external-scytta.com:8090/oauth2/authorize",
                 "tokenUrl": "http://test.external-scytta.com:8090/oauth2/token",
                 "userInfoUrl": "http://test.external-scytta.com:8090/oauth2/users",
-                "userInfoMapping": {
-                    "name": "global_name"
-                },
+                "userInfoMapping": {},
                 "extensions": [],
                 "scopes": [
                     "identity",

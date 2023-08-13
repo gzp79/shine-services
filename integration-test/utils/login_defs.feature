@@ -7,9 +7,9 @@ Feature: Default for login
     * def redirects = 
     """ 
     {
-        loginUrl: 'http://login.com',
-        redirectUrl: 'http://redirect.com',
-        errorUrl: 'http://error.com'
+        loginUrl: 'http://login.com/',
+        redirectUrl: 'http://redirect.com/',
+        errorUrl: 'http://error.com/'
     } 
     """
     # common properties of the cookies
