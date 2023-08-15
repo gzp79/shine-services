@@ -1,6 +1,6 @@
 use crate::{
     auth::{auth_session::TokenLogin, AuthServiceState, AuthSession, TokenGeneratorError},
-    db::{ExternalLoginInfo, Identity, IdentityError, NameGeneratorError, TokenKind},
+    db::{ExternalUserInfo, Identity, IdentityError, NameGeneratorError, TokenKind},
 };
 use axum::{
     http::StatusCode,
@@ -29,11 +29,12 @@ pub(in crate::auth) enum UserCreateError {
 impl AuthServiceState {
     pub(in crate::auth) async fn create_user_with_retry(
         &self,
-        mut default_name: Option<&str>,
-        email: Option<&str>,
-        external_login: Option<&ExternalLoginInfo>,
+        external_user: Option<&ExternalUserInfo>,
     ) -> Result<Identity, UserCreateError> {
         const MAX_RETRY_COUNT: usize = 10;
+
+        let mut default_name = external_user.as_ref().and_then(|u| u.name.clone());
+        let email = external_user.as_ref().and_then(|u| u.email.as_deref());
         let mut retry_count = 0;
         loop {
             log::debug!("Creating new user; retry: {retry_count:#?}");
@@ -44,13 +45,13 @@ impl AuthServiceState {
 
             let user_id = Uuid::new_v4();
             let user_name = match default_name.take() {
-                Some(name) => name.to_string(),
+                Some(name) => name,
                 None => self.name_generator().generate_name().await?,
             };
 
             match self
                 .identity_manager()
-                .create_user(user_id, &user_name, email, external_login)
+                .create_user(user_id, &user_name, email, external_user)
                 .await
             {
                 Ok(identity) => return Ok(identity),

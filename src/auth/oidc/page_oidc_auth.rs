@@ -1,5 +1,6 @@
 use crate::{
-    auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, ExternalUserInfo, OIDCClient},
+    auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OIDCClient},
+    db::ExternalUserInfo,
     openapi::ApiKind,
 };
 use axum::{body::HttpBody, extract::State, Extension};
@@ -79,7 +80,7 @@ async fn oidc_auth(
     };
     log::debug!("Code exchange completed, claims: {claims:#?}");
 
-    let external_user_info = {
+    let external_user = {
         let external_id = claims.subject().to_string();
         let name = claims
             .nickname()
@@ -94,24 +95,18 @@ async fn oidc_auth(
             email,
         }
     };
-    log::info!("{:?}", external_user_info);
+    log::info!("{:?}", external_user);
 
     if linked_user.is_some() {
         state
-            .page_external_link(
-                auth_session,
-                &client.provider,
-                &external_user_info.provider_id,
-                target_url.as_ref(),
-                error_url.as_ref(),
-            )
+            .page_external_link(auth_session, &external_user, target_url.as_ref(), error_url.as_ref())
             .await
     } else {
         state
             .page_external_login(
                 auth_session,
                 fingerprint,
-                external_user_info,
+                &external_user,
                 target_url.as_ref(),
                 error_url.as_ref(),
                 remember_me,

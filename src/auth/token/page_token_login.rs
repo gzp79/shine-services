@@ -140,7 +140,7 @@ async fn token_login(
         }
 
         // create a new user
-        let identity = match state.create_user_with_retry(None, None, None).await {
+        let identity = match state.create_user_with_retry(None).await {
             Ok(identity) => identity,
             Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
         };

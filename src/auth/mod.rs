@@ -6,8 +6,6 @@ mod auth_service_external_auth;
 
 mod auth_session;
 pub(in crate::auth) use self::auth_session::*;
-mod external_user_info;
-pub(in crate::auth) use self::external_user_info::*;
 
 mod ep_get_auth_providers;
 pub use self::ep_get_auth_providers::*;

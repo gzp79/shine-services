@@ -111,12 +111,12 @@ impl From<FindByTokenRow> for (Identity, LoginTokenInfo) {
     }
 }
 
-#[derive(Debug)]
-pub struct ExternalLoginInfo {
+#[derive(Clone, Debug)]
+pub struct ExternalUserInfo {
     pub provider: String,
     pub provider_id: String,
-
-    //todo: add name and email to know what is linked to the account 
+    pub name: Option<String>,
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -198,7 +198,7 @@ impl From<PGError> for IdentityError {
 #[derive(Debug)]
 pub enum FindIdentity<'a> {
     UserId(Uuid),
-    ExternalLogin(&'a ExternalLoginInfo),
+    ExternalProvider(&'a str, &'a str),
 }
 
 #[derive(Debug)]
@@ -242,11 +242,11 @@ pg_query!( InsertToken =>
 );
 
 pg_query!( InsertExternalLogin =>
-    in = user_id: Uuid, provider: &str, provider_id: &str;
+    in = user_id: Uuid, provider: &str, provider_id: &str, name: Option<&str>, email: Option<&str>;
     out = linked: DateTime<Utc>;
     sql = r#"
-        INSERT INTO external_logins (user_id, provider, provider_id, linked) 
-            VALUES ($1, $2, $3, now())
+        INSERT INTO external_logins (user_id, provider, provider_id, name, email, linked) 
+            VALUES ($1, $2, $3, $4, $5, now())
         RETURNING linked
     "#
 );
@@ -278,12 +278,13 @@ pg_query!( FindById =>
 
 pg_query!( FindByLink =>
     in = provider: &str, provider_id: &str;
-    out = FindByLinkRow{user_id: Uuid, kind: IdentityKind, name: String,
-            email: Option<String>, is_email_confirmed: bool, created: DateTime<Utc>,
-            provider: String, provider_id: String, linked: DateTime<Utc>};
+    out = FindByLinkRow{
+            user_id: Uuid, kind: IdentityKind, name: String, email: Option<String>, is_email_confirmed: bool, created: DateTime<Utc>,
+            provider: String, provider_id: String, external_name: Option<String>, external_email: Option<String>, linked: DateTime<Utc>
+        };
     sql = r#"
         SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created,
-            e.provider, e.provider_id, e.linked
+            e.provider, e.provider_id, e.name, e.email, e.linked
             FROM external_logins e, identities i
             WHERE e.user_id = i.user_id
                 AND e.provider = $1
@@ -443,7 +444,7 @@ impl IdentityManager {
         user_id: Uuid,
         user_name: &str,
         email: Option<&str>,
-        external_login: Option<&ExternalLoginInfo>,
+        external_login: Option<&ExternalUserInfo>,
     ) -> Result<Identity, IdentityError> {
         //let email = email.map(|e| e.normalize_email());
         let inner = &*self.0;
@@ -477,14 +478,16 @@ impl IdentityManager {
             }
         };
 
-        if let Some(external_login) = external_login {
+        if let Some(external_user) = external_login {
             if let Err(err) = inner
                 .stmt_insert_external_link
                 .query_one(
                     &transaction,
                     &user_id,
-                    &external_login.provider.as_str(),
-                    &external_login.provider_id.as_str(),
+                    &external_user.provider.as_str(),
+                    &external_user.provider_id.as_str(),
+                    &external_user.name.as_deref(),
+                    &external_user.email.as_deref(),
                 )
                 .await
             {
@@ -515,13 +518,9 @@ impl IdentityManager {
         Ok(match find {
             FindIdentity::UserId(id) => inner.stmt_find_by_id.query_opt(&client, &id).await?.map(Identity::from),
 
-            FindIdentity::ExternalLogin(external_login) => inner
+            FindIdentity::ExternalProvider(provider, provider_id) => inner
                 .stmt_find_by_link
-                .query_opt(
-                    &client,
-                    &external_login.provider.as_str(),
-                    &external_login.provider_id.as_str(),
-                )
+                .query_opt(&client, &provider, &provider_id)
                 .await?
                 .map(Identity::from),
         })
@@ -604,7 +603,7 @@ impl IdentityManager {
         Ok(())
     }
 
-    pub async fn link_user(&self, user_id: Uuid, external_login: &ExternalLoginInfo) -> Result<(), IdentityError> {
+    pub async fn link_user(&self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
 
@@ -613,8 +612,10 @@ impl IdentityManager {
             .query_one(
                 &client,
                 &user_id,
-                &external_login.provider.as_str(),
-                &external_login.provider_id.as_str(),
+                &external_user.provider.as_str(),
+                &external_user.provider_id.as_str(),
+                &external_user.name.as_deref(),
+                &external_user.email.as_deref(),
             )
             .await
         {
@@ -649,8 +650,9 @@ impl IdentityManager {
 
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
 
+        // todo: check what time is used during testing and make sure a time drift causes no issue.
         let duration = duration.num_seconds() as i32;
-        assert!(duration > 0);
+        assert!(duration > 2);
         let row = match inner
             .stmt_insert_token
             .query_one(&client, &user_id, &token, &fingerprint, &kind, &duration)

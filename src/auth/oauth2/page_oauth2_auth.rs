@@ -1,5 +1,5 @@
 use crate::{
-    auth::{get_external_user_info, AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OAuth2Client},
+    auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OAuth2Client},
     openapi::ApiKind,
 };
 use axum::{body::HttpBody, extract::State, Extension};
@@ -71,36 +71,31 @@ async fn oauth2_auth(
         }
     };
 
-    let external_user_info = match get_external_user_info(
-        client.user_info_url.url().clone(),
-        &client.provider,
-        token.access_token().secret(),
-        &client.user_info_mapping,
-        &client.extensions,
-    )
-    .await
+    let external_user = match state
+        .get_external_user_info(
+            client.user_info_url.url().clone(),
+            &client.provider,
+            token.access_token().secret(),
+            &client.user_info_mapping,
+            &client.extensions,
+        )
+        .await
     {
         Ok(external_user_info) => external_user_info,
         _ => return state.page_error(auth_session, AuthError::FailedExternalUserInfo, error_url.as_ref()),
     };
-    log::info!("{:?}", external_user_info);
+    log::info!("{:?}", external_user);
 
     if linked_user.is_some() {
         state
-            .page_external_link(
-                auth_session,
-                &client.provider,
-                &external_user_info.provider_id,
-                target_url.as_ref(),
-                error_url.as_ref(),
-            )
+            .page_external_link(auth_session, &external_user, target_url.as_ref(), error_url.as_ref())
             .await
     } else {
         state
             .page_external_login(
                 auth_session,
                 fingerprint,
-                external_user_info,
+                &external_user,
                 target_url.as_ref(),
                 error_url.as_ref(),
                 remember_me,
