@@ -650,7 +650,8 @@ impl IdentityManager {
 
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
 
-        // todo: check what time is used during testing and make sure a time drift causes no issue.
+        // todo: check what time is used during cookie validation and cookie expiration and make sure
+        // a time drift of few seconds causes no issue.
         let duration = duration.num_seconds() as i32;
         assert!(duration > 2);
         let row = match inner

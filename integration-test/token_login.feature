@@ -47,11 +47,10 @@ Feature: Token credentials
       * match responseCookies.sid contains {"max-age": #(SESSION_SCOPE)}
       * match responseCookies.eid contains {"max-age": #? _ < 0}
     And def userA_SID = responseCookies.sid.value
-
     # Waiting to check session length too
     Given eval java.lang.Thread.sleep(1000)
-      * def userInfo = call read('utils/userinfo.feature') {userSession: #(userA_SID)}
-      * match userInfo.userInfo contains {name: #? _.startsWith('Freshman_'), sessionLength: #? _ >= 1}
+      * def userInfo = (karate.call('utils/userinfo.feature', {userSession: userA_SID}).userInfo)
+      * match userInfo contains {name: #? _.startsWith('Freshman_'), sessionLength: #? _ >= 1}
 
   Scenario: Registering a new user should be able to log in
     Given path '/auth/token/login'
@@ -66,11 +65,9 @@ Feature: Token credentials
       * match responseCookies.sid contains {"max-age": #(SESSION_SCOPE)}
       * match responseCookies.eid contains {"max-age": #? _ < 0}
     And def userA_SID = responseCookies.sid.value
-      * def userA_TID = responseCookies.tid.value
-    
+      * def userA_TID = responseCookies.tid.value    
     # Getting user info shall be success
-    Given def userInfo = call read('utils/userinfo.feature') {userSession: #(userA_SID)}
-      * def userA = userInfo.userInfo
+    Given def userA = (karate.call('utils/userinfo.feature', {userSession: userA_SID}).userInfo)
       # and different login methods should give the exact same user info but the session length
       * remove userA.sessionLength
 
@@ -84,11 +81,10 @@ Feature: Token credentials
       * match responseCookies contains deep cookieDefaults
       * match responseCookies.tid contains {"max-age": #? _ < 0}
       * match responseCookies.sid contains {value: #(userA_SID), "max-age": #(SESSION_SCOPE)}
-      * match responseCookies.eid contains {"max-age": #? _ < 0}
-    
+      * match responseCookies.eid contains {"max-age": #? _ < 0}   
     # but user shall not be changed.
-    Given def userInfo = call read('utils/userinfo.feature') {userSession: #(userA_SID)}
-      * match userInfo.userInfo contains userA
+    Given def userInfo = (karate.call('utils/userinfo.feature', {userSession: userA_SID}).userInfo)
+      * match userInfo contains userA
 
     # Trying to register again with a session and a token is an error,
     Given path '/auth/token/login'
@@ -100,13 +96,14 @@ Feature: Token credentials
       * match responseCookies contains deep cookieDefaults
       * match responseCookies.tid contains {value: #(userA_TID), "max-age": #? _ > 0}
       * match responseCookies.sid contains {value: #(userA_SID), "max-age": #(SESSION_SCOPE)}
-      * match responseCookies.eid contains {"max-age": #? _ < 0}
-    
+      * match responseCookies.eid contains {"max-age": #? _ < 0} 
     # but user shall not be changed.
-    Given def userInfo = call read('utils/userinfo.feature') {userSession: #(userA_SID)}
-      * match userInfo.userInfo contains userA
+    Given def userInfo = (karate.call('utils/userinfo.feature', {userSession: userA_SID}).userInfo)
+      * match userInfo contains userA
 
     # Login with the token shall be a success
+    # For test with mismatching token and session please check the auth session test cases 
+    # that ensures the consistency of the different cookies
     Given path '/auth/token/login'
       * params redirects
       * configure cookies = { tid: #(userA_TID) }
@@ -120,10 +117,9 @@ Feature: Token credentials
     # but session shall have been updated
     And match responseCookies.sid.value != userA_SID
       * def userA_SID = responseCookies.sid.value
-
     # while user shall be the same
-    Given def userInfo = call read('utils/userinfo.feature') {userSession: #(userA_SID)}
-      * match userInfo.userInfo contains userA
+    Given def userInfo = (karate.call('utils/userinfo.feature', {userSession: userA_SID}).userInfo)
+      * match userInfo contains userA
 
     # Login with the token shall be a success when rememberMe is set,
     Given path '/auth/token/login'
@@ -141,7 +137,6 @@ Feature: Token credentials
     # but session shall have been changed
     And match responseCookies.sid.value != userA_SID
       * def userA_SID = responseCookies.sid.value
-
     # while user shall be the same
-    Given def userInfo = call read('utils/userinfo.feature') {userSession: #(userA_SID)}
-      * match userInfo.userInfo contains userA
+    Given def userInfo = (karate.call('utils/userinfo.feature', {userSession: userA_SID}).userInfo)
+      * match userInfo contains userA
