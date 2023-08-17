@@ -21,7 +21,7 @@ services:
     build:
       context: .
       target: test
-    args:
+      args:
         DOCKER_BUILDKIT: 1
     environment:
       - RUST_LOG=info,shine_identity=trace
