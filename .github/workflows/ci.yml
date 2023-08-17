@@ -14,6 +14,7 @@ jobs:
     - uses: actions/setup-node@v3
       with:
         node-version: 18.x
+    - run: curl -Ls https://sh.jbang.dev | bash -s - app setup
     - run: npm ci
       working-directory: ./integration-test
     
