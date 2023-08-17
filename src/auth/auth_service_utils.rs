@@ -138,7 +138,7 @@ pub(in crate::auth) enum AuthError {
     #[error("Invalid CSRF state")]
     InvalidCSRF,
     #[error("Failed to exchange authentication token")]
-    TokenExchangeFailed,
+    TokenExchangeFailed(String),
     #[error("Failed to get user info from provider")]
     FailedExternalUserInfo,
     #[error("Login token is invalid")]
@@ -179,36 +179,36 @@ impl AuthServiceState {
         log::error!("{response:?}");
 
         //todo: give some more detail and add a few more error sources
-        let detail = match response {
-            AuthError::ValidationError(_) => ("invalidInput", StatusCode::BAD_REQUEST),
-            AuthError::LogoutRequired => ("logoutRequired", StatusCode::BAD_REQUEST),
-            AuthError::LoginRequired => ("loginRequired", StatusCode::UNAUTHORIZED),
-            AuthError::MissingExternalLogin => ("authError", StatusCode::BAD_REQUEST),
-            AuthError::MissingNonce => ("authError", StatusCode::BAD_REQUEST),
-            AuthError::InvalidCSRF => ("authError", StatusCode::BAD_REQUEST),
-            AuthError::TokenExchangeFailed => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
-            AuthError::FailedExternalUserInfo => ("authError", StatusCode::BAD_REQUEST),
-            AuthError::TokenInvalid => ("authError", StatusCode::BAD_REQUEST),
-            AuthError::TokenExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
-            AuthError::SessionExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
-            AuthError::InternalServerError(_) => ("internalError", StatusCode::INTERNAL_SERVER_ERROR),
-            AuthError::ProviderAlreadyUsed => ("providerAlreadyUsed", StatusCode::CONFLICT),
-            AuthError::EmailAlreadyUsed => ("emailAlreadyUsed", StatusCode::CONFLICT),
-            AuthError::MissingPrecondition => ("preconditionFailed", StatusCode::PRECONDITION_FAILED),
+        let (kind, status, detail) = match response {
+            AuthError::ValidationError(_) => ("invalidInput", StatusCode::BAD_REQUEST, String::new()),
+            AuthError::LogoutRequired => ("logoutRequired", StatusCode::BAD_REQUEST, String::new()),
+            AuthError::LoginRequired => ("loginRequired", StatusCode::UNAUTHORIZED, String::new()),
+            AuthError::MissingExternalLogin => ("authError", StatusCode::BAD_REQUEST, String::new()),
+            AuthError::MissingNonce => ("authError", StatusCode::BAD_REQUEST, String::new()),
+            AuthError::InvalidCSRF => ("authError", StatusCode::BAD_REQUEST, String::new()),
+            AuthError::TokenExchangeFailed(err) => ("authError", StatusCode::INTERNAL_SERVER_ERROR, err),
+            AuthError::FailedExternalUserInfo => ("authError", StatusCode::BAD_REQUEST, String::new()),
+            AuthError::TokenInvalid => ("authError", StatusCode::BAD_REQUEST, String::new()),
+            AuthError::TokenExpired => ("sessionExpired", StatusCode::UNAUTHORIZED, String::new()),
+            AuthError::SessionExpired => ("sessionExpired", StatusCode::UNAUTHORIZED, String::new()),
+            AuthError::InternalServerError(_) => ("internalError", StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            AuthError::ProviderAlreadyUsed => ("providerAlreadyUsed", StatusCode::CONFLICT, String::new()),
+            AuthError::EmailAlreadyUsed => ("emailAlreadyUsed", StatusCode::CONFLICT, String::new()),
+            AuthError::MissingPrecondition => ("preconditionFailed", StatusCode::PRECONDITION_FAILED, String::new()),
         };
 
         let mut target = target_url.unwrap_or(self.error_url()).clone();
         target
             .query_pairs_mut()
-            .append_pair("type", detail.0)
-            .append_pair("status", &detail.1.as_u16().to_string());
+            .append_pair("type", kind)
+            .append_pair("status", &status.as_u16().to_string());
 
         let mut context = tera::Context::new();
         context.insert("timeout", &self.page_redirect_time());
         context.insert("redirect_url", target.as_str());
-        context.insert("statusCode", &detail.1.as_u16());
-        context.insert("type", detail.0);
-        context.insert("detail", "");
+        context.insert("statusCode", &status.as_u16());
+        context.insert("type", kind);
+        context.insert("detail", &detail);
         let html = self
             .tera()
             .render("ooops.html", &context)

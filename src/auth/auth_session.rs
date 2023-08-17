@@ -57,7 +57,7 @@ pub(in crate::auth) enum AuthSessionError {
     InvalidSecret(String),
     #[error("Missing domain for auth scope")]
     MissingDomain,
-    #[error("Auth api domain shall be a subdomain of the application")]
+    #[error("Auth and web should have the same domain (without subdomains)")]
     InvalidApiDomain,
 }
 
@@ -81,9 +81,15 @@ impl AuthSessionMeta {
     pub fn new(home_url: Url, auth_base: Url, config: &AuthSessionConfig) -> Result<Self, AuthSessionError> {
         let cookie_name_suffix = config.cookie_name_suffix.as_deref().unwrap_or_default();
         let home_domain = home_url.domain().ok_or(AuthSessionError::MissingHomeDomain)?;
+        let domain = {
+            let mut parts = home_domain.split('.').rev().take(2).collect::<Vec<_>>();
+            parts.reverse();
+            parts.join(".")
+        };
         let auth_domain = auth_base.domain().ok_or(AuthSessionError::MissingDomain)?.to_string();
         let auth_path = auth_base.path().to_string();
-        if !auth_domain.ends_with(home_domain) {
+        if !auth_domain.ends_with(&domain) {
+            log::error!("Non-matching domains, home:{home_domain}, auth: {auth_domain}, common:{domain}");
             return Err(AuthSessionError::InvalidApiDomain);
         }
 
@@ -108,7 +114,7 @@ impl AuthSessionMeta {
             CookieSettings {
                 name: format!("sid{}", cookie_name_suffix),
                 secret,
-                domain: home_domain.into(),
+                domain,
                 path: "/".into(),
             }
         };

@@ -1,5 +1,10 @@
 # Identity server
 
+## VS code test
+
+- start dev environment
+- run stage:test
+- run any test 
 
 
 ## Fly.io

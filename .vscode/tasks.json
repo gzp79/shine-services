@@ -1,122 +1,99 @@
 {
-    // See https://go.microsoft.com/fwlink/?LinkId=733558 
-    // for the documentation about the tasks.json format
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "format",
-            "type": "shell",
-            "command": "cargo fmt",
-            "problemMatcher": [
-                "$rustc"
-            ],
-            "group": "build"
-        },
-        {
-            "label": "clippy",
-            "type": "shell",
-            "command": "cargo clippy --all-targets",
-            "problemMatcher": [
-                "$rustc"
-            ],
-            "group": "build"
-        },
-        {
-            "label": "udeps",
-            "type": "shell",
-            "command": "cargo udeps",
-            "problemMatcher": [
-                "$rustc"
-            ],
-            "group": "build"
-        },
-        {
-            "label": "outdated",
-            "type": "shell",
-            "command": "cargo outdated -R",
-            "problemMatcher": [
-                "$rustc"
-            ],
-            "group": "build"
-        },
-        {
-            "label": "build",
-            "type": "shell",
-            "command": "cargo build --release --all-targets",
-            "problemMatcher": [
-                "$rustc"
-            ],
-            "group": "build"
-        },
-        {
-            "label": "test ",
-            "type": "shell",
-            "command": "cargo test",
-            "options": {
-                "env": {
-                    "_RUST_LOG": "debug",
-                    "RUST_BACKTRACE": "full"
-                },
-            },
-            "problemMatcher": [
-                "$rustc"
-            ],
-            "group": "build"
-        },
-        {
-            "label": "test miri",
-            "type": "shell",
-            "command": "cargo miri test",
-            "options": {
-                "env": {
-                    "_RUST_LOG": "debug",
-                    "RUST_BACKTRACE": "full"
-                },
-            },
-            "problemMatcher": [
-                "$rustc"
-            ],
-            "group": "build"
-        },
-        {
-            "label": "start dev environment",
-            "type": "shell",
-            "command": "docker-compose -f ./docker-devenv.yml up --build",
-            "group": "build",
-            "isBackground": true,
-        },
-        {
-            "label": "run stage:dev",
-            "type": "shell",
-            "command": "cargo run --release -- dev",
-            "problemMatcher": [
-                "$rustc"
-            ],
-            "group": "build",
-        },
-        {
-            "label": "run stage:test",
-            "type": "shell",
-            "command": "cargo run --release -- test",
-            "problemMatcher": [
-                "$rustc"
-            ],
-            "group": "build",
-        },
-        {
-            "label": "run integration test",
-            "type": "npm",
-            "script": "test",
-            "group": "build",
-            "options": {
-                "cwd": "integration-test",
-                "env": {
-                    "SHINE_BASE_API_URL" : "http://test.scytta.com"
-                }
-            },
-            "problemMatcher": [
-                "$tsc"
-            ]
+  // See https://go.microsoft.com/fwlink/?LinkId=733558
+  // for the documentation about the tasks.json format
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "format",
+      "type": "shell",
+      "command": "cargo fmt",
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "clippy",
+      "type": "shell",
+      "command": "cargo clippy --all-targets",
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "udeps",
+      "type": "shell",
+      "command": "cargo udeps",
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "outdated",
+      "type": "shell",
+      "command": "cargo outdated -R",
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "cargo build --release --all-targets",
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "test unit",
+      "type": "shell",
+      "command": "cargo test",
+      "options": {
+        "env": {
+          "_RUST_LOG": "debug",
+          "RUST_BACKTRACE": "full"
         }
-    ]
+      },
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "test miri-unit",
+      "type": "shell",
+      "command": "cargo miri test",
+      "options": {
+        "env": {
+          "_RUST_LOG": "debug",
+          "RUST_BACKTRACE": "full"
+        }
+      },
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "start dev environment",
+      "type": "shell",
+      "command": "docker-compose -f ./docker-devenv.yml up --build --force-recreate",
+      "group": "build",
+      "isBackground": true
+    },
+    {
+      "label": "run stage:dev",
+      "type": "shell",
+      "command": "cargo run --release -- dev",
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "run stage:test",
+      "type": "shell",
+      "command": "cargo run --release -- test",
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "test integration",
+      "type": "npm",
+      "script": "regression",
+      "group": "build",
+      "options": {
+        "cwd": "integration-test"
+      },
+      "problemMatcher": ["$tsc"]
+    }
+  ]
 }

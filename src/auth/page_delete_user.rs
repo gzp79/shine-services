@@ -5,7 +5,7 @@ use crate::{
 use axum::{body::HttpBody, extract::State};
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, ValidatedQuery},
+    axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError},
     service::APP_NAME,
 };
 use url::Url;
@@ -28,8 +28,13 @@ struct Query {
 async fn delete_user(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
-    ValidatedQuery(query): ValidatedQuery<Query>,
+    query: Result<ValidatedQuery<Query>, ValidationError>,
 ) -> AuthPage {
+    let query = match query {
+        Ok(ValidatedQuery(query)) => query,
+        Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), None),
+    };
+
     let (user_id, user_key) = match auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {
         Some(user_id) => user_id,
         None => return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref()),

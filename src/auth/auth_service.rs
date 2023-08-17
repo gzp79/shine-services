@@ -249,6 +249,7 @@ impl AuthServiceBuilder {
         let page_router = {
             let mut router = Router::new()
                 .add_api(auth::page_logout(), doc)
+                .add_api(auth::page_validate(), doc)
                 .add_api(auth::page_delete_user(), doc);
 
             router = router.nest("", Router::new().add_api(auth::page_token_login(), doc));

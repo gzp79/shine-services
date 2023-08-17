@@ -1,4 +1,4 @@
-@url = https://local.scytta.com/identity
+@url = http://cloud.scytta-test.com/identity
 //@url = https://cloud.scytta.com/identity
 
 GET {{url}}/info/ready

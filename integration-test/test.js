@@ -4,16 +4,17 @@ import shell from 'shelljs';
 import dockerCompose from 'docker-compose';
 
 const dockerOptions = {
-    config: '../docker-integration-test.yml'
+    config: '../docker-integration-test.yml',
+    log: true
 };
 
 const mocks = ['mocking/openid.feature'];
 
 async function setup() {
     // start up mock server required for service initialization
-    let sh = await new Promise((resolve, _reject) => {
+    await new Promise((resolve, _reject) => {
         console.log('Starting mock server...');
-        const args = '-p 8080 -m ' + mocks.join(',');
+        const args = '-p 8090 -m ' + mocks.join(',');
 
         // some ugly hack to start karate in the background using jbang
         process.env['KARATE_META'] = 'npm:' + process.env.npm_package_version;
@@ -22,7 +23,7 @@ async function setup() {
         const sh = shell.exec('jbang ' + argLine, { async: true });
         sh.stdout.on('data', (data) => {
             if (data.includes('server started')) {
-                resolve(sh);
+                resolve('');
             }
         });
     });
@@ -35,7 +36,7 @@ async function setup() {
 
     console.log('Stopping mock server...');
     try {
-        await fetch('http://localhost:8080/stop');
+        await fetch('http://localhost:8090/stop');
     } catch {
         /* it should be an ECONNRESET as karate has been stopped */
     }
@@ -60,6 +61,7 @@ async function main() {
         console.log('Running tear down...');
         await tearDown();
     }
+    console.log('Bye.');
 }
 
 await main();

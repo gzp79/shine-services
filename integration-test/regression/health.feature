@@ -1,7 +1,7 @@
 Feature: fetching User Details
 
   Background:
-    * url karate.properties['serviceUrl']
+    * url karate.properties['utils'].serviceUrl
  
   Scenario: testing the get call for User Details
     * path '/info/ready'

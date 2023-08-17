@@ -15,10 +15,12 @@
         "hashids",
         "hmac",
         "hset",
+        "httponly",
         "jbang",
         "karatelabs",
         "keyvault",
         "nextval",
+        "notnull",
         "oidc",
         "Ooops",
         "openapi",
@@ -35,6 +37,7 @@
         "reqwest",
         "rsplit",
         "rustls",
+        "samesite",
         "scytta",
         "serde",
         "splitn",
@@ -47,18 +50,5 @@
         "utoipa",
         "zipkin"
     ],
-    "cmake.configureOnOpen": false,
-    "redisXplorer.config": {
-        "profiles": [
-            {
-                "name": "shine",
-                "host": "127.0.0.1",
-                "accessKey": "6853fadbb1c3403e87c5c5bfd4c975a4",
-                "filter": "*",
-                "port": "16379"
-            }
-        ],
-        "scanLimit": 200
-    },
     "karatelabs-karate.run.classpathPrefix": "./integration-test"
 }

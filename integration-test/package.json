@@ -4,7 +4,8 @@
   "description": "",
   "main": "test.js",
   "scripts": {
-    "test": "node test.js test"
+    "health": "node test.js -T=1 regression/health.feature",
+    "regression": "node test.js -T=1 regression"
   },
   "author": "",
   "license": "MIT",

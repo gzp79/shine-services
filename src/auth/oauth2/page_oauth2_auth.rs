@@ -67,7 +67,11 @@ async fn oauth2_auth(
         Ok(token) => token,
         Err(err) => {
             log::warn!("Token exchange error: {err:?}");
-            return state.page_error(auth_session, AuthError::TokenExchangeFailed, error_url.as_ref());
+            return state.page_error(
+                auth_session,
+                AuthError::TokenExchangeFailed(format!("{err:#?}")),
+                error_url.as_ref(),
+            );
         }
     };
 

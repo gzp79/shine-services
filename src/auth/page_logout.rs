@@ -1,11 +1,11 @@
 use crate::{
-    auth::{AuthPage, AuthServiceState, AuthSession},
+    auth::{AuthError, AuthPage, AuthServiceState, AuthSession},
     openapi::ApiKind,
 };
 use axum::{body::HttpBody, extract::State};
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, ValidatedQuery},
+    axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError},
     service::APP_NAME,
 };
 use url::Url;
@@ -23,8 +23,13 @@ struct Query {
 async fn logout(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
-    ValidatedQuery(query): ValidatedQuery<Query>,
+    query: Result<ValidatedQuery<Query>, ValidationError>,
 ) -> AuthPage {
+    let query = match query {
+        Ok(ValidatedQuery(query)) => query,
+        Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), None),
+    };
+
     if let Some((user_id, user_key)) = auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {
         match query.terminate_all.unwrap_or(false) {
             false => {

@@ -6,8 +6,9 @@
     "service": {
         "port": 80,
         "allowOrigins": [
-            "http://test.scytta.com",
-            "http://test.scytta.com:8080"
+            "http://scytta-test.com",
+            "http://cloud.scytta-test.com",
+            "http://web.scytta-test.com:8080"
         ]
     },
     "tracing": {
@@ -18,10 +19,8 @@
         }
     },
     "db": {
-        "_redisCns": "redis://redis:6379",
-        "_sqlCns": "postgres://username:password@postgres:5432/database-name?sslmode=disable",
-        "redisCns": "redis://test.scytta.com:6379",
-        "sqlCns": "postgres://username:password@test.scytta.com:5432/database-name?sslmode=disable"
+        "redisCns": "redis://redis.localhost.com:6379",
+        "sqlCns": "postgres://username:password@postgres.localhost.com:5432/database-name?sslmode=disable"
     },
     "userName": {
         "baseGenerator": "fixed",
@@ -30,9 +29,9 @@
         "idEncoder": "harsh"
     },
     "auth": {
-        "homeUrl": "http://test.scytta.com:8080/scytta.com",
-        "errorUrl": "http://test.scytta.com:8080/scytta.com/error",
-        "authBaseUrl": "http://test.scytta.com/identity/auth",
+        "homeUrl": "http://web.scytta-test.com:8080/",
+        "errorUrl": "http://web.scytta-test.com:8080/error",
+        "authBaseUrl": "http://cloud.scytta-test.com/identity/auth",
         "pageRedirectTime": 0,
         "sessionSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
         "externalLoginSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
@@ -43,7 +42,7 @@
         "openidIgnoreDiscoveryError": true,
         "openid": {
             "openid_flow": {
-                "discoveryUrl": "http://test.external-scytta.com:8090/openid",
+                "discoveryUrl": "http://mock.localhost.com:8090/openid",
                 "scopes": [
                     "openid",
                     "email",
@@ -55,9 +54,9 @@
         },
         "oauth2": {
             "oauth2_flow": {
-                "authorizationUrl": "http://test.external-scytta.com:8090/oauth2/authorize",
-                "tokenUrl": "http://test.external-scytta.com:8090/oauth2/token",
-                "userInfoUrl": "http://test.external-scytta.com:8090/oauth2/users",
+                "authorizationUrl": "http://mock.localhost.com:8090/oauth2/authorize",
+                "tokenUrl": "http://mock.localhost.com:8090/oauth2/token",
+                "userInfoUrl": "http://mock.localhost.com:8090/oauth2/users",
                 "userInfoMapping": {},
                 "extensions": [],
                 "scopes": [

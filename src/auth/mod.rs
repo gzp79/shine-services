@@ -24,5 +24,7 @@ mod page_logout;
 pub(in crate::auth) use self::page_logout::*;
 mod page_delete_user;
 pub(in crate::auth) use self::page_delete_user::*;
+mod page_validate;
+pub(in crate::auth) use self::page_validate::*;
 
 pub(in crate::auth) mod extensions;
