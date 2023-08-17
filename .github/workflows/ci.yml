@@ -43,10 +43,10 @@ jobs:
         context: .
         target: test
         push: false
+        load: true
         cache-from: type=gha
         cache-to: type=gha,mode=max
-    - name: Inspect
-      run: docker image ls
+        tags: ${{ env.IMAGE }}:test
     - name: Add hosts to /etc/hosts
       run: |
         sudo echo "127.0.0.1 scytta-test.com" | sudo tee -a /etc/hosts
@@ -58,10 +58,7 @@ jobs:
     - run: npm ci
       working-directory: ./integration-test      
     - name: Integartion test
-      run: |
-        export DOCKER_BUILDKIT=1
-        docker-compose -f ../docker-integration-test.yml up
-        #npm run regression
+      run: npm run regression
       working-directory: ./integration-test
 
     - name: Build prod
