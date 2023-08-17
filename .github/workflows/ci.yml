@@ -4,6 +4,10 @@ on:
   push:
     branches: [ "master" ]
 
+env:
+  REGISTRY: ${{ github.repository }}
+  IMAGE: shine-identity
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -11,18 +15,37 @@ jobs:
     - uses: actions/checkout@v3
       with:
         submodules: recursive
-    - name: Collect info
-      id: vars
-      run: |
-        echo "::set-output name=sha_short::$(git rev-parse --short HEAD)"
-        echo "::set-output name=image::${{github.event.repository.name}}"
     - name: Docker Setup Buildx
       uses: docker/setup-buildx-action@v2      
     - uses: actions/setup-node@v3
       with:
         node-version: 18.x
     - name: Setup JBang
-      uses: jbangdev/setup-jbang@main
+      uses: jbangdev/setup-jbang@main   
+      
+    - name: Log in to the Container registry
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}    
+
+    - name: Docker meta
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        tags: type=sha
+    - name: Build
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        load: true
+        tags: ${{ steps.meta.outputs.tags }}
+
+    - name: Inspect
+      run: docker image ls
     - name: Add hosts to /etc/hosts
       run: |
         sudo echo "127.0.0.1 scytta-test.com" | sudo tee -a /etc/hosts
@@ -32,33 +55,12 @@ jobs:
         sudo echo "127.0.0.1 postgres.localhost.com" | sudo tee -a /etc/hosts
         sudo echo "127.0.0.1 redis.localhost.com" | sudo tee -a /etc/hosts
     - run: npm ci
-      working-directory: ./integration-test
-
-      
-    - name: Log in to the Container registry
-      uses: docker/login-action@v2
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}    
-
-    - name: Build
-      uses: docker/build-push-action@v4
-      with:
-        context: .
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        load: true
-        tag: ${{steps.vars.outputs.image}}:${{steps.vars.outputs.sha_short}}
-
-    - name: Inspect
-      run: docker image ls
-      
+      working-directory: ./integration-test      
     - name: Integartion test
       run: npm run regression
       working-directory: ./integration-test
 
-    - name: Test Reports
+    - name: Publish Test Reports
       uses: actions/upload-artifact@v3
       if: ${{ always() }}
       with:
