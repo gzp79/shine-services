@@ -34,7 +34,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v4
       with:
-        images: ${{ env.IMAGE }}         
+        images: ${{ env.IMAGE }}
         tags: type=sha
         
     - name: Build test
@@ -43,7 +43,6 @@ jobs:
         context: .
         target: test
         push: false
-        load: true
         cache-from: type=gha
         cache-to: type=gha,mode=max
     - name: Inspect
@@ -59,7 +58,10 @@ jobs:
     - run: npm ci
       working-directory: ./integration-test      
     - name: Integartion test
-      run: npm run regression
+      run: |
+        export COMPOSE_DOCKER_CLI_BUILD=1
+        export DOCKER_BUILDKIT=1
+        npm run regression
       working-directory: ./integration-test
 
     - name: Build prod
