@@ -5,7 +5,7 @@ on:
     branches: [ "master" ]
 
 env:
-  REGISTRY: ${{ github.repository }}
+  REGISTRY: ghcr.io
   IMAGE: shine-identity
 
 jobs:
@@ -34,6 +34,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v4
       with:
+        images: ${{ env.IMAGE }}         
         tags: type=sha
     - name: Build
       uses: docker/build-push-action@v4
@@ -43,9 +44,13 @@ jobs:
         cache-to: type=gha,mode=max
         load: true
         tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
 
     - name: Inspect
-      run: docker image ls
+      run: |
+        docker image ls
+        echo "tags: ${{ steps.meta.outputs.tags }}"
+        echo "labels: ${{ steps.meta.outputs.labels }}"
     - name: Add hosts to /etc/hosts
       run: |
         sudo echo "127.0.0.1 scytta-test.com" | sudo tee -a /etc/hosts
