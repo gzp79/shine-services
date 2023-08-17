@@ -16,6 +16,14 @@ jobs:
         node-version: 18.x
     - name: Setup JBang
       uses: jbangdev/setup-jbang@main
+    - name: Add hosts to /etc/hosts
+      run: |
+        sudo echo "127.0.0.1 scytta-test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 web.scytta-test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 cloud.scytta-test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 mock.localhost.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 postgres.localhost.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 redis.localhost.com" | sudo tee -a /etc/hosts
     - run: npm ci
       working-directory: ./integration-test
     
