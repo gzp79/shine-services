@@ -59,9 +59,9 @@ jobs:
       working-directory: ./integration-test      
     - name: Integartion test
       run: |
-        export COMPOSE_DOCKER_CLI_BUILD=1
         export DOCKER_BUILDKIT=1
-        npm run regression
+        docker-compose -f ../docker-integration-test.yml up
+        #npm run regression
       working-directory: ./integration-test
 
     - name: Build prod
