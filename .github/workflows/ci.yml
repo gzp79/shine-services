@@ -49,11 +49,11 @@ jobs:
           ${{ runner.os }}-docker-
           
     - name: Build
-      run: |
+      run: >
         docker buildx build . --file Dockerfile
-        --cache-from "type=local,src=$GITHUB_WORKSPACE/cache"
-        --cache-to "type=local,dest=$GITHUB_WORKSPACE/cache"
-        --output "type=image, name=your_image:CI,push=false"
+          --cache-from "type=local,src=$GITHUB_WORKSPACE/cache"
+          --cache-to "type=local,dest=$GITHUB_WORKSPACE/cache"
+          --output "type=image, name=your_image:CI,push=false"
       
     - name: Integartion test
       run: npm run regression
