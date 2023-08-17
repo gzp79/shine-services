@@ -14,12 +14,11 @@ jobs:
     - uses: actions/setup-node@v3
       with:
         node-version: 18.x
+    - run: npm ci
+      working-directory: ./integration-test
     
     - name: Build 
       run: docker build . --file Dockerfile --tag identity:$(date +%s)
-    - run: npm ci
-      working-directory: ./integration-test
-
     - name: Integartion test
       run: npm run regression
       working-directory: ./integration-test
