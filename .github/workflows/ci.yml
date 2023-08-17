@@ -23,4 +23,3 @@ jobs:
     - name: Integartion test
       run: npm run test
       working-directory: ./integrates-test
-    - name: Prepare test
