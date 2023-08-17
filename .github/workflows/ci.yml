@@ -49,10 +49,10 @@ jobs:
           ${{ runner.os }}-docker-
           
     - name: Build
-      run: >
-        docker buildx build . --file Dockerfile
-          --cache-from "type=local,src=$GITHUB_WORKSPACE/cache"
-          --cache-to "type=local,dest=$GITHUB_WORKSPACE/cache"
+      run: |
+        docker buildx build . --file Dockerfile \
+          --cache-from "type=local,src=$GITHUB_WORKSPACE/cache" \
+          --cache-to "type=local,dest=$GITHUB_WORKSPACE/cache" \
           --output "type=image, name=your_image:CI,push=false"
       
     - name: Integartion test
