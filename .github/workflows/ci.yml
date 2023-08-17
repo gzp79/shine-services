@@ -9,17 +9,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    
-    - name: Build 
-      run: docker build . --file Dockerfile --tag identity:$(date +%s)
-
+      with:
+        submodules: recursive
+        
     - name: Install node
       uses: actions/setup-node@v3
       with:
         node-version: 18.x
+    
+    - name: Build 
+      run: docker build . --file Dockerfile --tag identity:$(date +%s)
     - run: npm install
-      working-directory: ./integrates-test
-      
+      working-directory: ./integration-test      
     - name: Integartion test
       run: npm run test
-      working-directory: ./integrates-test
+      working-directory: ./integration-test
