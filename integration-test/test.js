@@ -4,7 +4,7 @@ import shell from 'shelljs';
 import dockerCompose from 'docker-compose';
 
 const dockerOptions = {
-    config: '../docker-integration-test.yml',
+    config: '../docker.yml',
     log: true
 };
 
