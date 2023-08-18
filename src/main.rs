@@ -174,7 +174,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         .layer(cors)
         .layer(tracing_layer);
 
-    log::trace!("{app:#?}");
+    //log::trace!("{app:#?}");
     let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
 
     if let Some(tls_config) = &config.service.tls {

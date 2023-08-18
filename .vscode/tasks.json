@@ -67,7 +67,7 @@
     {
       "label": "start dev environment",
       "type": "shell",
-      "command": "docker-compose -f ./docker-devenv.yml up --build --force-recreate",
+      "command": "docker compose -f ./docker.yml --profile dev up --build --force-recreate",
       "group": "build",
       "isBackground": true
     },
@@ -88,7 +88,7 @@
     {
       "label": "test integration",
       "type": "npm",
-      "script": "regression",
+      "script": "regression:local",
       "group": "build",
       "options": {
         "cwd": "integration-test"

@@ -1,14 +1,24 @@
 FROM rust:bullseye as build
 
 RUN USER=root
-WORKDIR /server
 
+# create a layer of the dependencies (including submodules)
+RUN cargo new --bin shine-identity
+WORKDIR /shine-identity
 COPY ./shine-service-rs ./shine-service-rs
+COPY ./Cargo.lock ./Cargo.lock
+COPY ./Cargo.toml ./Cargo.toml
+RUN cargo build --release --no-default-features
+RUN rm -rf ./src \
+    && rm -f ./target/release/deps/shine_identity* \
+    && rm -f ./target/release/deps/shine-identity* \
+    && rm -f ./target/release/shine_identity* \
+    && rm -f ./target/release/shine-identity*
+
+# perform the actual build
+WORKDIR /shine-identity
 COPY ./src ./src
 COPY ./sql_migrations ./sql_migrations
-COPY ./Cargo.toml ./Cargo.toml
-COPY ./Cargo.lock ./Cargo.lock
-
 RUN cargo build --release --no-default-features
 
 #######################################################
@@ -19,7 +29,7 @@ RUN apt update \
     && apt install -y --no-install-recommends ca-certificates
 
 WORKDIR /services/identity
-COPY --from=build /server/target/release/shine-identity ./
+COPY --from=build /shine-identity/target/release/shine-identity ./
 COPY ./docker_scripts ./
 COPY ./server_config.json ./
 COPY ./server_version.json ./
