@@ -6,11 +6,15 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE: shine-identity
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      
     steps:
     - uses: actions/checkout@v3
       with:
@@ -22,19 +26,12 @@ jobs:
         node-version: 18.x
     - name: Setup JBang
       uses: jbangdev/setup-jbang@main   
-      
-    - name: Log in to the Container registry
-      uses: docker/login-action@v2
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}    
 
     - name: Docker meta
       id: meta
       uses: docker/metadata-action@v4
       with:
-        images: ${{ env.IMAGE }}
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: type=sha
         
     - name: Build test
@@ -46,7 +43,7 @@ jobs:
         load: true
         cache-from: type=gha
         cache-to: type=gha,mode=max
-        tags: ${{ env.IMAGE }}:test
+        tags: ${{ env.IMAGE_NAME }}:test
     - name: Add hosts to /etc/hosts
       run: |
         sudo echo "127.0.0.1 scytta-test.com" | sudo tee -a /etc/hosts
@@ -61,6 +58,12 @@ jobs:
       run: npm run regression
       working-directory: ./integration-test
 
+    - name: Log in to the Container registry
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     - name: Build prod
       uses: docker/build-push-action@v4
       with:
