@@ -18,7 +18,7 @@ services:
       - 6379:6379
       
   service:
-    image: shine-identity:test
+    image: gzp79/shine-identity:test
     #build:
       #context: .
       #target: test
