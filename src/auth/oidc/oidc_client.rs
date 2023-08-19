@@ -1,15 +1,30 @@
 use crate::auth::{AuthBuildError, OIDCConfig};
+use async_once_cell::OnceCell;
 use oauth2::{reqwest::async_http_client, ClientId, ClientSecret, RedirectUrl, Scope};
 use openidconnect::{
     core::{CoreClient, CoreProviderMetadata},
     IssuerUrl,
 };
+use std::sync::Arc;
+use thiserror::Error as ThisError;
 use url::Url;
+
+struct ClientInfo {
+    client_id: ClientId,
+    client_secret: ClientSecret,
+    discovery_url: IssuerUrl,
+    redirect_url: RedirectUrl,
+}
+
+#[derive(ThisError, Debug)]
+#[error("OpenId Connect discovery failed")]
+pub struct OIDCDiscoveryError(pub String);
 
 pub(in crate::auth) struct OIDCClient {
     pub provider: String,
     pub scopes: Vec<Scope>,
-    pub client: CoreClient,
+    client_info: ClientInfo,
+    client: Arc<OnceCell<CoreClient>>,
 }
 
 impl OIDCClient {
@@ -28,25 +43,48 @@ impl OIDCClient {
             RedirectUrl::new(redirect_url.to_string()).map_err(|err| AuthBuildError::RedirectUrl(format!("{err}")))?;
         let discovery_url = IssuerUrl::new(config.discovery_url.clone())
             .map_err(|err| AuthBuildError::InvalidIssuer(format!("{err}")))?;
-        // todo: For a slightly better solution discovery could be moved into the request as a InitOnce cell, thus
-        // a failure of discovery at startup can be ignored without disabling the provider completely.
-        let provider_metadata = match CoreProviderMetadata::discover_async(discovery_url, async_http_client).await {
-            Ok(meta) => meta,
-            Err(err) => match err {
-                openidconnect::DiscoveryError::Request(err) if ignore_discovery_error => {
-                    log::error!("Discovery failed for: {provider}: {err}");
-                    return Ok(None);
-                }
-                _ => return Err(AuthBuildError::Discovery(format!("{err}"))),
-            },
-        };
-        let client = CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret))
-            .set_redirect_uri(redirect_url);
 
-        Ok(Some(Self {
+        let client = Self {
             provider: provider.to_string(),
             scopes: config.scopes.iter().map(|scope| Scope::new(scope.clone())).collect(),
-            client,
-        }))
+            client_info: ClientInfo {
+                client_id,
+                client_secret,
+                discovery_url,
+                redirect_url,
+            },
+            client: Arc::new(OnceCell::new()),
+        };
+
+        if let Err(err) = client.client().await {
+            if ignore_discovery_error {
+                log::warn!("Discovery failed for {provider}: {err}");
+            } else {
+                return Err(AuthBuildError::OIDCDiscovery(err));
+            }
+        }
+
+        Ok(Some(client))
+    }
+
+    pub async fn client(&self) -> Result<&CoreClient, OIDCDiscoveryError> {
+        let client_info = &self.client_info;
+        self.client
+            .get_or_try_init(async {
+                let provider_metadata =
+                    match CoreProviderMetadata::discover_async(client_info.discovery_url.clone(), async_http_client)
+                        .await
+                    {
+                        Ok(meta) => meta,
+                        Err(err) => return Err(OIDCDiscoveryError(format!("{err}"))),
+                    };
+                Ok(CoreClient::from_provider_metadata(
+                    provider_metadata,
+                    client_info.client_id.clone(),
+                    Some(client_info.client_secret.clone()),
+                )
+                .set_redirect_uri(client_info.redirect_url.clone()))
+            })
+            .await
     }
 }
