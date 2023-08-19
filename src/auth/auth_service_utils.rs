@@ -1,5 +1,5 @@
 use crate::{
-    auth::{auth_session::TokenLogin, AuthServiceState, AuthSession, TokenGeneratorError},
+    auth::{auth_session::TokenLogin, AuthServiceState, AuthSession, OIDCDiscoveryError, TokenGeneratorError},
     db::{ExternalUserInfo, Identity, IdentityError, NameGeneratorError, TokenKind},
 };
 use axum::{
@@ -15,8 +15,6 @@ use std::fmt;
 use thiserror::Error as ThisError;
 use url::Url;
 use uuid::Uuid;
-
-use super::oidc::OIDCDiscoveryError;
 
 #[derive(Debug, ThisError)]
 pub(in crate::auth) enum UserCreateError {
