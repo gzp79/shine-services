@@ -47,6 +47,11 @@ async fn oidc_auth(
         None => return state.page_error(auth_session, AuthError::MissingExternalLogin, None),
     };
 
+    let core_client = match client.client().await {
+        Ok(client) => client,
+        Err(err) => return state.page_error(auth_session, AuthError::OIDCDiscovery(err), error_url.as_ref()),
+    };
+
     let nonce = match nonce {
         Some(nonce) => nonce,
         None => return state.page_error(auth_session, AuthError::MissingNonce, error_url.as_ref()),
@@ -59,8 +64,7 @@ async fn oidc_auth(
     }
 
     // Exchange the code with a token.
-    let token = match client
-        .client
+    let token = match core_client
         .exchange_code(auth_code)
         .set_pkce_verifier(PkceCodeVerifier::new(pkce_code_verifier))
         .request_async(async_http_client)
@@ -72,7 +76,7 @@ async fn oidc_auth(
 
     let claims = match token.id_token().and_then(|id_token| {
         id_token
-            .claims(&client.client.id_token_verifier(), &Nonce::new(nonce))
+            .claims(&core_client.id_token_verifier(), &Nonce::new(nonce))
             .ok()
     }) {
         Some(claims) => claims,

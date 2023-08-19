@@ -1,5 +1,5 @@
 use crate::{
-    auth::{self, AuthSessionMeta, OAuth2Client, OIDCClient, TokenGenerator},
+    auth::{self, AuthSessionMeta, OAuth2Client, OIDCClient, OIDCDiscoveryError, TokenGenerator},
     db::{IdentityManager, NameGenerator, SessionManager},
 };
 use axum::{Extension, Router};
@@ -77,8 +77,7 @@ pub struct AuthConfig {
     #[serde(flatten)]
     pub auth_session: AuthSessionConfig,
 
-    /// If enabled, when openid discovery fails, continue, but skip the provider. It is mainly used for testing where
-    /// mocking of openid is not complete.
+    /// If enabled, the openid discovery errors are ignored during startup and won't prohibit service startup.
     openid_ignore_discovery_error: Option<bool>,
     /// List of external providers using the OpenId Connect protocol
     pub openid: HashMap<String, OIDCConfig>,
@@ -105,7 +104,7 @@ pub enum AuthBuildError {
     #[error("Invalid redirect url: {0}")]
     RedirectUrl(String),
     #[error("Failed to discover open id: {0}")]
-    Discovery(String),
+    OIDCDiscovery(OIDCDiscoveryError),
 }
 
 struct Inner {

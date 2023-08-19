@@ -8,38 +8,12 @@ const dockerOptions = {
     log: true
 };
 
-const mocks = ['mocking/openid.feature'];
-
 async function setup() {
-    // start up mock server required for service initialization
-    await new Promise((resolve, _reject) => {
-        console.log('Starting mock server...');
-        const args = '-p 8090 -m ' + mocks.join(',');
-
-        // some ugly hack to start karate in the background using jbang
-        process.env['KARATE_META'] = 'npm:' + process.env.npm_package_version;
-        const argLine =
-            karate.jvm.args + ' ' + karate.executable() + ' ' + args;
-        const sh = shell.exec('jbang ' + argLine, { async: true });
-        sh.stdout.on('data', (data) => {
-            if (data.includes('server started')) {
-                resolve('');
-            }
-        });
-    });
-
     console.log('Starting service...');
     await dockerCompose.upAll({
         commandOptions: ['--build'],
         ...dockerOptions
     });
-
-    console.log('Stopping mock server...');
-    try {
-        await fetch('http://localhost:8090/stop');
-    } catch {
-        /* it should be an ECONNRESET as karate has been stopped */
-    }
     console.log('Setup completed.');
 }
 

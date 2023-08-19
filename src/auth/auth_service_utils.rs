@@ -1,5 +1,5 @@
 use crate::{
-    auth::{auth_session::TokenLogin, AuthServiceState, AuthSession, TokenGeneratorError},
+    auth::{auth_session::TokenLogin, AuthServiceState, AuthSession, OIDCDiscoveryError, TokenGeneratorError},
     db::{ExternalUserInfo, Identity, IdentityError, NameGeneratorError, TokenKind},
 };
 use axum::{
@@ -150,6 +150,9 @@ pub(in crate::auth) enum AuthError {
     #[error("Internal server error: {0}")]
     InternalServerError(String),
 
+    #[error("OpenId discovery failed")]
+    OIDCDiscovery(OIDCDiscoveryError),
+
     #[error("External provider has already been linked to another user already")]
     ProviderAlreadyUsed,
     #[error("Email has already been linked to another user already")]
@@ -192,6 +195,7 @@ impl AuthServiceState {
             AuthError::TokenExpired => ("sessionExpired", StatusCode::UNAUTHORIZED, String::new()),
             AuthError::SessionExpired => ("sessionExpired", StatusCode::UNAUTHORIZED, String::new()),
             AuthError::InternalServerError(_) => ("internalError", StatusCode::INTERNAL_SERVER_ERROR, String::new()),
+            AuthError::OIDCDiscovery(err) => ("authError", StatusCode::INTERNAL_SERVER_ERROR, err.0),
             AuthError::ProviderAlreadyUsed => ("providerAlreadyUsed", StatusCode::CONFLICT, String::new()),
             AuthError::EmailAlreadyUsed => ("emailAlreadyUsed", StatusCode::CONFLICT, String::new()),
             AuthError::MissingPrecondition => ("preconditionFailed", StatusCode::PRECONDITION_FAILED, String::new()),

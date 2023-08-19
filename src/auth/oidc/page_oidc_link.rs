@@ -34,9 +34,13 @@ async fn oidc_link(
         return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
     }
 
+    let core_client = match client.client().await {
+        Ok(client) => client,
+        Err(err) => return state.page_error(auth_session, AuthError::OIDCDiscovery(err), query.error_url.as_ref()),
+    };
+
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
-    let (authorize_url, csrf_state, nonce) = client
-        .client
+    let (authorize_url, csrf_state, nonce) = core_client
         .authorize_url(
             CoreAuthenticationFlow::AuthorizationCode,
             CsrfToken::new_random,
