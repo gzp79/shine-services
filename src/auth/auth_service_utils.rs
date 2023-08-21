@@ -229,6 +229,8 @@ impl AuthServiceState {
         context.insert("type", kind);
         if self.page_error_detail() {
             context.insert("detail", &detail);
+        } else {
+            context.insert("detail","");
         }
         let html = self
             .tera()
