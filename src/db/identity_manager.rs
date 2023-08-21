@@ -630,14 +630,6 @@ impl IdentityManager {
         }
     }
 
-    /*pub async fn unlink_user(&self, user_id: Uuid, external_login: &ExternalLogin) -> Result<(), IdentityError> {
-        todo!()
-    }
-
-    pub async fn get_links(&self, user_id: Uuid) -> Result<Vec<ExternalLogin>, IdentityError> {
-        todo!()
-    }*/
-
     pub async fn create_token(
         &self,
         user_id: Uuid,
@@ -650,8 +642,6 @@ impl IdentityManager {
 
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
 
-        // todo: check what time is used during cookie validation and cookie expiration and make sure
-        // a time drift of few seconds causes no issue.
         let duration = duration.num_seconds() as i32;
         assert!(duration > 2);
         let row = match inner
@@ -690,15 +680,16 @@ impl IdentityManager {
     }
 
     pub async fn update_token(&self, token: &str, duration: &Duration) -> Result<LoginTokenInfo, IdentityError> {
-        // todo:
+        // issue#11:
         // - update expiration
         // - update last use
 
         let duration = duration.num_seconds() as i32;
         assert!(duration > 0);
-        //todo: delete token where kind is SingleAccess
-        //todo: update expire date where type is renewal
-        //todo: delete token where expired
+        //issue#11:
+        //  delete token where kind is SingleAccess
+        //  update expire date where type is renewal
+        //  delete token where expired
 
         // workaround while update is not implemented
         Ok(self.find_token(token).await?.ok_or(IdentityError::TokenConflict)?.1)

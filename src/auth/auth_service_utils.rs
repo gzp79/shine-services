@@ -181,21 +181,36 @@ impl AuthServiceState {
     ) -> AuthPage {
         log::error!("{response:?}");
 
-        //todo: give some more detail and add a few more error sources
         let (kind, status, detail) = match response {
-            AuthError::ValidationError(_) => ("invalidInput", StatusCode::BAD_REQUEST, String::new()),
+            AuthError::ValidationError(err) => (
+                "invalidInput",
+                StatusCode::BAD_REQUEST,
+                serde_json::to_string(&err).unwrap(),
+            ),
             AuthError::LogoutRequired => ("logoutRequired", StatusCode::BAD_REQUEST, String::new()),
             AuthError::LoginRequired => ("loginRequired", StatusCode::UNAUTHORIZED, String::new()),
             AuthError::MissingExternalLogin => ("authError", StatusCode::BAD_REQUEST, String::new()),
             AuthError::MissingNonce => ("authError", StatusCode::BAD_REQUEST, String::new()),
             AuthError::InvalidCSRF => ("authError", StatusCode::BAD_REQUEST, String::new()),
-            AuthError::TokenExchangeFailed(err) => ("authError", StatusCode::INTERNAL_SERVER_ERROR, err),
+            AuthError::TokenExchangeFailed(err) => (
+                "authError",
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::to_string(&err).unwrap(),
+            ),
             AuthError::FailedExternalUserInfo => ("authError", StatusCode::BAD_REQUEST, String::new()),
             AuthError::TokenInvalid => ("authError", StatusCode::BAD_REQUEST, String::new()),
             AuthError::TokenExpired => ("sessionExpired", StatusCode::UNAUTHORIZED, String::new()),
             AuthError::SessionExpired => ("sessionExpired", StatusCode::UNAUTHORIZED, String::new()),
-            AuthError::InternalServerError(_) => ("internalError", StatusCode::INTERNAL_SERVER_ERROR, String::new()),
-            AuthError::OIDCDiscovery(err) => ("authError", StatusCode::INTERNAL_SERVER_ERROR, err.0),
+            AuthError::InternalServerError(err) => (
+                "internalError",
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::to_string(&err).unwrap(),
+            ),
+            AuthError::OIDCDiscovery(err) => (
+                "authError",
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::to_string(&err).unwrap(),
+            ),
             AuthError::ProviderAlreadyUsed => ("providerAlreadyUsed", StatusCode::CONFLICT, String::new()),
             AuthError::EmailAlreadyUsed => ("emailAlreadyUsed", StatusCode::CONFLICT, String::new()),
             AuthError::MissingPrecondition => ("preconditionFailed", StatusCode::PRECONDITION_FAILED, String::new()),
@@ -212,7 +227,9 @@ impl AuthServiceState {
         context.insert("redirect_url", target.as_str());
         context.insert("statusCode", &status.as_u16());
         context.insert("type", kind);
-        context.insert("detail", &detail);
+        if self.page_error_detail() {
+            context.insert("detail", &detail);
+        }
         let html = self
             .tera()
             .render("ooops.html", &context)

@@ -217,20 +217,14 @@ where
             token_login = None;
         }
 
-        //todo: check session expiration too to be consistent to redis ttl
-        // this check should allow a bit shorter lifetime (ex 30 sec) as by the time redis expires the cookie is invalidated for sure
-        // also in user info there should be some info info: instead of sessionLength
-        // we should have some sessionTTL (10min) (also slightly reduced b/c of time drift)
-        // For testing it would be good to directly alter the DB from the test framework as that could simplify it a lot.
-
         // Perform cross-validation
         // - user of token is not matching the user of the session, session is deleted
         // - if linked_account of the external login is not matching the session, external login is deleted
 
         log::debug!("Validating sessions...");
-        /*todo: if let Some(uid) = user.as_ref().map(|u| u.user_id) &&
-        let Some(tid) = token_login.as_ref().map(|t| t.user_id) &&
-        tid != uid {*/
+        //todo: if let Some(uid) = user.as_ref().map(|u| u.user_id) &&
+        //let Some(tid) = token_login.as_ref().map(|t| t.user_id) &&
+        //tid != uid {
         if token_login.is_some()
             && user.is_some()
             && token_login.as_ref().map(|t| t.user_id) != user.as_ref().map(|u| u.user_id)

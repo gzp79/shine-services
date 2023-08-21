@@ -61,27 +61,31 @@ pub struct AuthSessionConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthConfig {
-    /// Default url where user is redirected to
+    /// The default redirection URL for users
     pub home_url: Url,
-    /// Default url where user is redirected to in case of error
+    /// The default redirection URL for users in case of an err
     pub error_url: Url,
-    /// The url base for the authentication services:
-    /// - source for some cookie protection parameters (domain, path)
-    /// - redirect url base for external logins
+    /// The URL base for authentication services. This serves as:
+    /// - The source for certain cookie protection parameters, including domain and path.
+    /// - The base URL for managing the redirection of external login authentication flows.
     pub auth_base_url: Url,
-    /// Time before redirection to user from the embedded pages. If not given, no redirect happens
-    /// and a value of 0 implies an immediate redirect.
-    page_redirect_time: Option<u32>,
-
-    /// Auth related cookie parameters.
+    /// Authentication related cookie configuration.
     #[serde(flatten)]
     pub auth_session: AuthSessionConfig,
 
-    /// If enabled, the openid discovery errors are ignored during startup and won't prohibit service startup.
+    /// The time interval before redirecting the user from embedded pages. If not provided, no redirection occurs,
+    /// and a value of 0 signifies an immediate redirect.
+    page_redirect_time: Option<u32>,
+    /// Enable to display error details on pages. From a security standpoint, it is not advisable to enable this feature
+    /// as it may expose unwanted information. Therefore, it is recommended to disable this feature in production.
+    page_error_detail: Option<bool>,
+
+    /// When enabled, startup errors related to OpenID discovery will be ignored, allowing the service to
+    /// start without interruption.
     openid_ignore_discovery_error: Option<bool>,
-    /// List of external providers using the OpenId Connect protocol
+    /// A list of external providers utilizing the (interactive) OpenID Connect login flow.
     pub openid: HashMap<String, OIDCConfig>,
-    /// List of external providers using OAuth2 protocols
+    /// List of external providers utilizing the (interactive) OAuth2 login flow
     pub oauth2: HashMap<String, OAuth2Config>,
 }
 
@@ -116,6 +120,7 @@ struct Inner {
     home_url: Url,
     error_url: Url,
     page_redirect_time: i64,
+    page_error_detail: bool,
     providers: Vec<String>,
     token_generator: TokenGenerator,
 }
@@ -154,6 +159,10 @@ impl AuthServiceState {
 
     pub fn page_redirect_time(&self) -> i64 {
         self.0.page_redirect_time
+    }
+
+    pub fn page_error_detail(&self) -> bool {
+        self.0.page_error_detail
     }
 
     pub fn providers(&self) -> &[String] {
@@ -223,6 +232,7 @@ impl AuthServiceBuilder {
             home_url: config.home_url.to_owned(),
             error_url: config.error_url.to_owned(),
             page_redirect_time: config.page_redirect_time.map(i64::from).unwrap_or(-1),
+            page_error_detail: config.page_error_detail.unwrap_or(false),
             providers: providers.into_iter().collect(),
         }));
 
