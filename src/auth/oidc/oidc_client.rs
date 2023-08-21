@@ -5,6 +5,7 @@ use openidconnect::{
     core::{CoreClient, CoreProviderMetadata},
     IssuerUrl,
 };
+use serde::Serialize;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 use url::Url;
@@ -16,8 +17,9 @@ struct ClientInfo {
     redirect_url: RedirectUrl,
 }
 
-#[derive(ThisError, Debug)]
+#[derive(ThisError, Debug, Serialize)]
 #[error("OpenId Connect discovery failed")]
+#[serde(rename_all = "camelCase")]
 pub struct OIDCDiscoveryError(pub String);
 
 pub(in crate::auth) struct OIDCClient {
