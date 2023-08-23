@@ -1,7 +1,8 @@
 Feature: Token credentials
 
   Background:
-    * def utils = karate.properties['utils']    
+    * def utils = call read("../utils/utils.js") 
+    * def cookie_matchers = call read("../utils/cookie_matchers.js")
     * url utils.identityUrl
     
   Scenario: Login without a token should redirect user to the login page
@@ -11,7 +12,7 @@ Feature: Token credentials
       * method get
     Then status 200
       * match utils.getRedirectUrl(response) == utils.defaultRedirects.loginUrl
-      * match responseCookies contains deep utils.matchAuthCookiesValidate
+      * match responseCookies contains deep cookie_matchers.matchAuthCookiesValidate
 
   Scenario: Login without invalid input should redirect to the default error page
     Given path '/auth/token/login'
@@ -31,7 +32,7 @@ Feature: Token credentials
       * method get
     Then status 200
       * match utils.getRedirectUrl(response) == utils.defaultRedirects.loginUrl
-      * match responseCookies contains deep utils.matchClearAuthCookies
+      * match responseCookies contains deep cookie_matchers.matchClearAuthCookies
       
   Scenario: Login with 'rememberMe' should register a new user
     Given path '/auth/token/login'
@@ -41,9 +42,9 @@ Feature: Token credentials
       * method get
     Then status 200
       * match utils.getRedirectUrl(response) == utils.defaultRedirects.redirectUrl
-      * match responseCookies contains deep utils.matchAuthCookiesValidate
+      * match responseCookies contains deep cookie_matchers.matchAuthCookiesValidate
       * match responseCookies.tid contains {"max-age": #? _ > 0}
-      * match responseCookies.sid contains {"max-age": #(utils.SESSION_SCOPE)}
+      * match responseCookies.sid contains {"max-age": #(cookie_matchers.SESSION_SCOPE)}
       * match responseCookies.eid contains {"max-age": #? _ < 0}
     And def userA_SID = responseCookies.sid.value
     # Waiting to check session length too
@@ -59,9 +60,9 @@ Feature: Token credentials
       * method get
     Then status 200
       * match utils.getRedirectUrl(response) == utils.defaultRedirects.redirectUrl
-      * match responseCookies contains deep utils.matchAuthCookiesValidate
+      * match responseCookies contains deep cookie_matchers.matchAuthCookiesValidate
       * match responseCookies.tid contains {"max-age": #? _ > 0}
-      * match responseCookies.sid contains {"max-age": #(utils.SESSION_SCOPE)}
+      * match responseCookies.sid contains {"max-age": #(cookie_matchers.SESSION_SCOPE)}
       * match responseCookies.eid contains {"max-age": #? _ < 0}
     And def userA_SID = responseCookies.sid.value
       * def userA_TID = responseCookies.tid.value    
@@ -77,9 +78,9 @@ Feature: Token credentials
       * method get
     Then status 200
       * match utils.getRedirectUrl(response) == utils.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
-      * match responseCookies contains deep utils.matchAuthCookiesValidate
+      * match responseCookies contains deep cookie_matchers.matchAuthCookiesValidate
       * match responseCookies.tid contains {"max-age": #? _ < 0}
-      * match responseCookies.sid contains {value: #(userA_SID), "max-age": #(utils.SESSION_SCOPE)}
+      * match responseCookies.sid contains {value: #(userA_SID), "max-age": #(cookie_matchers.SESSION_SCOPE)}
       * match responseCookies.eid contains {"max-age": #? _ < 0}   
     # but user shall not be changed.
     Given def userInfo = (karate.call('../utils/userinfo.feature', {userSession: userA_SID}).userInfo)
@@ -92,9 +93,9 @@ Feature: Token credentials
       * method get
     Then status 200
       * match utils.getRedirectUrl(response) == utils.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
-      * match responseCookies contains deep utils.matchAuthCookiesValidate
+      * match responseCookies contains deep cookie_matchers.matchAuthCookiesValidate
       * match responseCookies.tid contains {value: #(userA_TID), "max-age": #? _ > 0}
-      * match responseCookies.sid contains {value: #(userA_SID), "max-age": #(utils.SESSION_SCOPE)}
+      * match responseCookies.sid contains {value: #(userA_SID), "max-age": #(cookie_matchers.SESSION_SCOPE)}
       * match responseCookies.eid contains {"max-age": #? _ < 0} 
     # but user shall not be changed.
     Given def userInfo = (karate.call('../utils/userinfo.feature', {userSession: userA_SID}).userInfo)
@@ -109,9 +110,9 @@ Feature: Token credentials
       * method get
     Then status 200
       * match utils.getRedirectUrl(response) == utils.defaultRedirects.redirectUrl
-      * match responseCookies contains deep utils.matchAuthCookiesValidate
+      * match responseCookies contains deep cookie_matchers.matchAuthCookiesValidate
       * match responseCookies.tid contains {value: #(userA_TID), "max-age": #? _ > 0}
-      * match responseCookies.sid contains {"max-age": #(utils.SESSION_SCOPE)}
+      * match responseCookies.sid contains {"max-age": #(cookie_matchers.SESSION_SCOPE)}
       * match responseCookies.eid contains {"max-age": #? _ < 0}
     # but session shall have been updated
     And match responseCookies.sid.value != userA_SID
@@ -129,9 +130,9 @@ Feature: Token credentials
     Then status 200
       * match utils.getRedirectUrl(response) == utils.defaultRedirects.redirectUrl
       # no new token should be generated
-      * match responseCookies contains deep utils.matchAuthCookiesValidate
+      * match responseCookies contains deep cookie_matchers.matchAuthCookiesValidate
       * match responseCookies.tid contains {value: #(userA_TID), "max-age": #? _ > 0}
-      * match responseCookies.sid contains {"max-age": #(utils.SESSION_SCOPE)}
+      * match responseCookies.sid contains {"max-age": #(cookie_matchers.SESSION_SCOPE)}
       * match responseCookies.eid contains {"max-age": #? _ < 0}
     # but session shall have been changed
     And match responseCookies.sid.value != userA_SID

@@ -1,7 +1,7 @@
 Feature: Check auth cookie validation
 
   Background:
-    * def utils = karate.properties['utils']  
+    * def utils = call read("../utils/utils.js")  
     * url utils.identityUrl    
         
   Scenario Outline: tid: ${tid}, sid: ${sid}, eid: ${eid}

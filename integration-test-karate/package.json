@@ -1,0 +1,23 @@
+{
+  "name": "integration-test",
+  "version": "1.0.0",
+  "description": "",
+  "main": "test.js",
+  "scripts": {
+    "health": "cross-env COMPOSE_PROFILES='test' node test.js -T=1 regression/health.feature",
+    "regression": "cross-env COMPOSE_PROFILES='test' node test.js -T=1 regression",
+    "test:build_service": "docker build --target test -t gzp79/shine-identity:test ..",
+    "health:local": "npm run test:build_service && npm run health",
+    "regression:local": "npm run test:build_service && npm run regression"
+  },
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "@jbangdev/jbang": "^0.2.0",
+    "@karatelabs/karate": "^0.3.1",
+    "cross-env": "^7.0.3",
+    "docker-compose": "^0.24.2",
+    "prettier": "^3.0.1"
+  }
+}

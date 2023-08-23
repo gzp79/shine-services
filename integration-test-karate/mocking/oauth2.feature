@@ -2,18 +2,8 @@
 Feature: Oauth2 mocker server
 
   Background:
-    * def parseCode = 
-    """
-      function(code) {
-        const user = {};
-        code.split('&').map((x) => x.split('=')).forEach((x) => { 
-          if(x.length == 2) {
-            user[x[0]] = karate.urlDecode(x[1])
-          }
-        });
-        return user;
-      }
-    """
+    * def utils = call read("../utils/utils.js")
+    * print utils
 
   Scenario: pathMatches('/oauth2/token') && methodIs('post')
     * def process =
@@ -23,7 +13,7 @@ Feature: Oauth2 mocker server
           const grant_type = paramValue('grant_type');
           const redirect_uri = paramValue('redirect_uri');
           const code_verifier = paramValue('code_verifier');
-          const user = parseCode(code);
+          const user = utils.parseQueryParams(code);
 
           if (!user || !user.id || !grant_type || !redirect_uri || !code_verifier) {
             return [400, null];

@@ -10,7 +10,7 @@ use openidconnect::{
     Nonce,
 };
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery};
+use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError};
 use std::sync::Arc;
 use url::Url;
 use utoipa::IntoParams;
@@ -28,8 +28,13 @@ async fn oidc_link(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OIDCClient>>,
     mut auth_session: AuthSession,
-    ValidatedQuery(query): ValidatedQuery<Query>,
+    query: Result<ValidatedQuery<Query>, ValidationError>,
 ) -> AuthPage {
+    let query = match query {
+        Ok(ValidatedQuery(query)) => query,
+        Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), None),
+    };
+
     if auth_session.user.is_none() {
         return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
     }

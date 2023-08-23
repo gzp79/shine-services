@@ -2,7 +2,7 @@ Feature: Utils to create new users
 
     @ignore @create_guest
   Scenario: Create a new guest user
-    * def utils = karate.properties['utils']    
+    * def utils = call read("../utils/utils.js")    
     
     Given url utils.identityUrl
       * path '/auth/token/login'

@@ -1,11 +1,10 @@
-function fn() {
+function utils() {
     const appDomain = 'scytta-test.com';
     const serviceDomain = 'cloud.' + appDomain;
     const serviceUrl = 'http://' + serviceDomain;
     const identityUrl = serviceUrl + '/identity';
 
-    const utils = {
-        SESSION_SCOPE: -9223372036854775808,
+    const utils = {        
         appDomain: appDomain,
         serviceDomain: serviceDomain,
         serviceUrl: serviceUrl,
@@ -15,41 +14,6 @@ function fn() {
             loginUrl: 'http://login.com/',
             redirectUrl: 'http://redirect.com/',
             errorUrl: 'http://error.com/'
-        },
-
-        matchAuthCookiesValidate: {
-            tid: {
-                path: '/identity/auth',
-                domain: serviceDomain,
-                httponly: true,
-                secure: true,
-                value: '#notnull',
-                samesite: 'Lax'
-            },
-            sid: {
-                path: '/',
-                domain: appDomain,
-                httponly: true,
-                secure: true,
-                value: '#notnull',
-                samesite: 'Lax'
-            },
-            eid: {
-                path: '/identity/auth',
-                domain: serviceDomain,
-                httponly: true,
-                secure: true,
-                value: '#notnull',
-                samesite: 'Lax'
-            }
-        },
-        get matchClearAuthCookies() {
-            return {
-                ...utils.matchAuthCookiesValidate,
-                tid: { 'max-age': '#? _ < 0' },
-                sid: { 'max-age': '#? _ < 0' },
-                eid: { 'max-age': '#? _ < 0' }
-            };
         },
 
         uuid: function () {
@@ -96,6 +60,5 @@ function fn() {
         }
     };
 
-    karate.properties['utils'] = utils;
-    karate.configure('logPrettyResponse', true);
+    return utils;
 }

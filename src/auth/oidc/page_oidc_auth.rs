@@ -8,7 +8,7 @@ use oauth2::{reqwest::async_http_client, AuthorizationCode, PkceCodeVerifier};
 use openidconnect::{Nonce, TokenResponse};
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, ValidatedQuery},
+    axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError},
     service::ClientFingerprint,
 };
 use std::sync::Arc;
@@ -28,8 +28,13 @@ async fn oidc_auth(
     Extension(client): Extension<Arc<OIDCClient>>,
     mut auth_session: AuthSession,
     fingerprint: ClientFingerprint,
-    ValidatedQuery(query): ValidatedQuery<Query>,
+    query: Result<ValidatedQuery<Query>, ValidationError>,
 ) -> AuthPage {
+    let query = match query {
+        Ok(ValidatedQuery(query)) => query,
+        Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), None),
+    };
+
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
 
@@ -61,7 +66,7 @@ async fn oidc_auth(
     if csrf_state != auth_csrf_state {
         log::debug!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
         return state.page_error(auth_session, AuthError::InvalidCSRF, error_url.as_ref());
-    }
+    }    
 
     // Exchange the code with a token.
     let token = match core_client
@@ -71,7 +76,15 @@ async fn oidc_auth(
         .await
     {
         Ok(token) => token,
-        Err(err) => return state.page_internal_error(auth_session, err, error_url.as_ref()),
+        Err(err) => {
+            let a:openidconnect::core::CoreTokenResponse = serde_json::from_str("").unwrap();
+            log::warn!("Token exchange error: {err:#?}");
+            return state.page_error(
+                auth_session,
+                AuthError::TokenExchangeFailed(format!("{err:#?}")),
+                error_url.as_ref(),
+            );
+        }
     };
 
     let claims = match token.id_token().and_then(|id_token| {

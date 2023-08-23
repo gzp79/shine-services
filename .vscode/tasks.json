@@ -72,14 +72,14 @@
       "isBackground": true
     },
     {
-      "label": "run stage:dev",
+      "label": "run stage: dev",
       "type": "shell",
       "command": "cargo run --release -- dev",
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
     {
-      "label": "run stage:test",
+      "label": "run stage: test",
       "type": "shell",
       "command": "cargo run --release -- test",
       "problemMatcher": ["$rustc"],

@@ -1,14 +1,15 @@
 Feature: fetching User Details
 
   Scenario: testing the get call for User Details
-    Given url '${serviceUrl}'
+    Given url karate.properties['utils'].serviceUrl
     * path '/info/ready'
-    When method GET
+    * method GET
     Then status 200
 
   Scenario: testing the get call for User Details
-    Given url '${identityUrl}'
+    Given url karate.properties['utils'].identityUrl
     * path '/api/auth/providers'
     * method GET
     Then status 200
-    * match json response contains only { "providers": ["oauth2_flow", "openid_flow"] }
+    * def expectedProviders = ["oauth2_flow", "openid_flow"]
+    * match response == { "providers": #(^^expectedProviders) }

@@ -1,7 +1,7 @@
-Feature: Oauth2 credentials
+Feature: Oauth2 flow
 
   Background:
-    * def utils = karate.properties['utils']      
+    * def utils = call read("../utils/utils.js")
     * url utils.identityUrl
     * def port = 8090
     * def fallbackErrorUrl = 'http://web.scytta-test.com:8080/error'
@@ -132,6 +132,7 @@ Feature: Oauth2 credentials
     Then status 200
       * match utils.getRedirectUrl(response) == utils.defaultRedirects.errorUrl + '?type=authError&status=500'
       * match responseCookies contains deep utils.matchClearAuthCookies
+      * match response contains 'Server returned empty error response'
 
   Scenario: Auth (unreachable 3rd party) should be an error 
     Given path '/auth/oauth2_flow/login'
@@ -157,8 +158,8 @@ Feature: Oauth2 credentials
     Then status 200
       * match utils.getRedirectUrl(response) == utils.defaultRedirects.errorUrl + '?type=authError&status=500'
       * match responseCookies contains deep utils.matchClearAuthCookies
+      * match response contains 'No connection could be made because the target machine actively refused it.'
 
-      @aaa
   Scenario: Login should register a new user
     Given def mock = karate.start({mock:'../mocking/oauth2.feature', port: port})
     
