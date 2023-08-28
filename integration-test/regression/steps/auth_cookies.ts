@@ -1,0 +1,78 @@
+import { expect, KarateState } from '$lib/karate';
+import { Cookie } from 'cookiejar';
+import { binding, then } from 'cucumber-tsflow';
+
+@binding([KarateState])
+export class CookiesSteps {
+    constructor(private readonly karate: KarateState) {}
+
+    @then("match response 'tid' cookie is valid")
+    async step_validTID() {
+        let cookieName = 'tid';
+        let cookie = expect(
+            this.karate.lastResponseCookies,
+            `Missing ${cookieName} cookie`
+        ).to.have.property(cookieName).subject<Cookie>;
+
+        expect(cookie).to.have.property('secure', true);
+        expect(cookie).to.have.property('noscript', true);
+        expect(cookie).to.have.property('path', '/identity/auth');
+        expect(cookie).to.have.property('domain', 'cloud.scytta-test.com');
+        expect(cookie)
+            .to.have.property('expiration_date')
+            .that.is.afterTime(new Date());
+    }
+
+    @then("match response 'sid' cookie is valid")
+    async step_validSID() {
+        let cookieName = 'sid';
+        let cookie = expect(
+            this.karate.lastResponseCookies,
+            `Missing ${cookieName} cookie`
+        ).to.have.property(cookieName).subject<Cookie>;
+
+        expect(cookie).to.have.property('secure', true);
+        expect(cookie).to.have.property('noscript', true);
+        expect(cookie).to.have.property('path', '/');
+        expect(cookie).to.have.property('domain', 'scytta-test.com');
+        expect(cookie).to.have.property('expiration_date', Infinity); // session scoped
+    }
+
+    @then("match response 'eid' cookie is valid")
+    async step_validEID() {
+        let cookieName = 'eid';
+        let cookie = expect(
+            this.karate.lastResponseCookies,
+            `Missing ${cookieName} cookie`
+        ).to.have.property(cookieName).subject<Cookie>;
+
+        expect(cookie).to.have.property('secure', true);
+        expect(cookie).to.have.property('noscript', true);
+        expect(cookie).to.have.property('path', '/identity/auth');
+        expect(cookie).to.have.property('domain', 'cloud.scytta-test.com');
+        expect(cookie).to.not.have.property('expiration_date', Infinity);
+    }
+
+    // Check if response contains a cookie to be remove it from the client
+    @then('match response {string} cookie is removed')
+    async step_Removed(cookieName: string) {
+        let cookie = expect(
+            this.karate.lastResponseCookies,
+            `Missing ${cookieName} cookie`
+        ).to.have.property(cookieName).subject<Cookie>;
+
+        expect(cookie)
+            .to.have.property('expiration_date')
+            .that.is.beforeTime(new Date());
+    }
+
+    // Check if response contains a cookie to be remove it from the client
+    @then('match response {string} cookie has value {stringExpr}')
+    async step_MatchValue(cookieName: string, value: string) {
+        let cookie = expect(
+            this.karate.lastResponseCookies,
+            `Missing ${cookieName} cookie`
+        ).to.have.property(cookieName).subject<Cookie>;
+        expect(cookie).to.have.property('value', value);
+    }
+}

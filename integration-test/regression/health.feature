@@ -1,13 +1,16 @@
 Feature: fetching User Details
 
-  Scenario: testing the get call for User Details
-    Given url '${serviceUrl}'
+  Background: Background name
+    Given use karate
+
+  Scenario: Service health check should work
+    Given url (serviceUrl)
     * path '/info/ready'
     When method GET
     Then status 200
 
-  Scenario: testing the get call for User Details
-    Given url '${identityUrl}'
+  Scenario: Getting registered providers should work
+    Given url (identityUrl)
     * path '/api/auth/providers'
     * method GET
     Then status 200

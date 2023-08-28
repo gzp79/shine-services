@@ -6,15 +6,18 @@
     },
     "cucumberautocomplete.steps": [
         "integration-test/steps/**/*.js",
-        "integration-test/steps/**/*.ts"
+        "integration-test/steps/**/*.ts",
+        "integration-test/regression/**/*.js",
+        "integration-test/regression/**/*.ts"
     ],
     "cucumberautocomplete.strictGherkinCompletion": true,
-    "cucumber-tsflow.projectPath": "integration-test",
+    "cucumber-tsflow.projectPath": "",
     "cSpell.words": [
         "autoescape",
         "cacerts",
         "cfhistu",
         "chrono",
+        "cookiejar",
         "fkey",
         "hasher",
         "hashids",
