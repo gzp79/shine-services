@@ -1,4 +1,4 @@
-import { MockServer, TypedRequest, TypedResponse } from '$lib/karate';
+import { MockServer, TypedRequest, TypedResponse } from '../../karate/karate';
 import bodyParser from 'body-parser';
 import express from 'express';
 import { body, query, validationResult } from 'express-validator';
@@ -58,7 +58,7 @@ export default class Server extends MockServer {
             async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
                 const code = req.headers.authorization?.split(' ')[1] ?? '';
                 const user = (code as string).parseAsQueryParams();
-                this.log(`user: ${JSON.stringify(user)}`)
+                this.log(`user: ${JSON.stringify(user)}`);
 
                 if (!user || !user.id) {
                     res.status(400);

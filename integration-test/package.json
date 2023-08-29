@@ -4,12 +4,13 @@
   "description": "",
   "main": "test.js",
   "scripts": {
+    "start_service": "docker compose -f ../docker.yml --profile test up --build -d",
+    "build_service": "docker build --target test -t gzp79/shine-identity:test ..",
     "test": "npx cucumber",
-    "health": "npx cucumber regression/health.feature",
-    "regression": "npx cucumber regression/**/*.feature",
-    "test:build_service": "docker build --target test -t gzp79/shine-identity:test ..",
-    "health:local": "npm run test:build_service && npm run health",
-    "regression:local": "npm run test:build_service && npm run regression"
+    "health:local": "npx cucumber regression/health.feature",
+    "regression:local": "npx cucumber regression/**/*.feature",
+    "health": "npm run start_service && npm run health:local",
+    "regression": "npm run start_service && npm run regression:local"
   },
   "author": "",
   "license": "MIT",
@@ -41,6 +42,7 @@
     "cucumber-pretty": "^6.0.1",
     "cucumber-tsflow": "^4.0.6",
     "deep-equal-in-any-order": "^2.0.6",
+    "express": "^4.18.2",
     "express-validator": "^7.0.1",
     "prettier": "^3.0.2",
     "superagent": "^8.1.2",

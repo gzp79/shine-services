@@ -1,6 +1,6 @@
 import { given, binding, after } from 'cucumber-tsflow';
 import { CucumberLog, CucumberAttachments } from 'cucumber-tsflow';
-import { KarateState, KarateCore, expect } from '$lib/karate';
+import { KarateState, KarateCore, expect } from './karate';
 import { MockServer } from './karate';
 
 @binding([CucumberLog, CucumberAttachments, KarateState])

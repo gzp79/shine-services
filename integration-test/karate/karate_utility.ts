@@ -5,7 +5,7 @@ import {
     then,
     CucumberAttachments
 } from 'cucumber-tsflow';
-import { KarateState, KarateCore, expect } from '$lib/karate';
+import { KarateState, KarateCore, expect } from './karate';
 
 @binding([CucumberLog, CucumberAttachments, KarateState])
 class KarateUtility extends KarateCore {
@@ -17,8 +17,11 @@ class KarateUtility extends KarateCore {
         super(logger, logAttachments, karate);
     }
 
-    @given('use karate')
-    step_init() {}
+    @given('use karate with config {string}')
+    async step_init(configFile: string) {
+        console.log(configFile);
+        this.karate.config = new (await import(configFile)).Config();
+    }
 
     @given('wait {int}ms')
     async set_wait(ms: number) {

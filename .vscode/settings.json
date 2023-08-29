@@ -5,9 +5,7 @@
         "RUST_LOG": "INFO,shine_server=TRACE,shine_identity=TRACE"
     },
     "cucumberautocomplete.steps": [
-        "integration-test/steps/**/*.js",
-        "integration-test/steps/**/*.ts",
-        "integration-test/regression/**/*.js",
+        "integration-test/karate/**/*.ts",
         "integration-test/regression/**/*.ts"
     ],
     "cucumberautocomplete.strictGherkinCompletion": true,

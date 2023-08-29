@@ -1,8 +1,9 @@
-import { Config, KarateCore, KarateLogger, KarateState } from '$lib/karate';
-import { request, expect } from '$lib/karate';
+import { KarateCore, KarateLogger, KarateState } from '../../karate/karate';
+import { request, expect } from '../../karate/karate';
 import { binding, given, then } from 'cucumber-tsflow';
 import { CucumberAttachments, CucumberLog } from 'cucumber-tsflow';
 import { Cookie } from 'tough-cookie';
+import { Config } from '$regression/config';
 
 let data: Record<string, string> = {};
 
@@ -106,7 +107,7 @@ export class AuthCookieMatrixSteps extends KarateCore {
 
     @given('auth cookie matrix {string} {string} {string}')
     async step_setupCookies(tid: string, sid: string, eid: string) {
-        const data = await createCachedData(this.karate.config, this);
+        const data = await createCachedData(this.karate.config as Config, this);
 
         for (const x of [
             [tid, 'tid', 't'],

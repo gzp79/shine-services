@@ -1,7 +1,7 @@
-Feature: Token crede
+Feature: Token (interactive) flow
 
   Background:
-    Given use karate
+    * use karate with config '$regression/config'
     * with karate plugin userinfo
 
   Scenario: Login without invalid input should redirect to the default error page

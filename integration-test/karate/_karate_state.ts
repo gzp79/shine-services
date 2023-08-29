@@ -1,19 +1,15 @@
-import { Config } from './_config';
 import { Response } from 'superagent';
 import { Cookie } from 'tough-cookie';
 import { MockServer } from './_mock_server';
 import { KarateLogger } from './karate';
 
 export class KarateState {
-    private _config = new Config();
-    get config() {
-        return this._config;
-    }
+    public config: Record<string, any> = {};
 
     private _properties: any = {};
     get properties(): Record<string, any> {
         return {
-            ...this._config,
+            ...this.config,
             response: this._lastResponse,
             responseError: this._lastResponseError,
             responseCookies: this._lastResponseCookies,
@@ -43,7 +39,7 @@ export class KarateState {
         const uuidModule = await import('uuid');
         const { v4: uuidV4 } = uuidModule;
 
-        const stringUtils = await import('$lib/string_utils');
+        const stringUtils = await import('./string_utils');
         const { createUrlQueryString, generateRandomString } = stringUtils;
 
         return await eval(script)();

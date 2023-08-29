@@ -29,7 +29,6 @@ export class KarateCore implements KarateLogger {
     }
 }
 
-export { Config } from './_config';
 export { KarateState } from './_karate_state';
 export { HttpMethod } from './_karate_types';
 export { MockServer, TypedResponse, TypedRequest } from './_mock_server';

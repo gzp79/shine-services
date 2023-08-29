@@ -84,16 +84,6 @@
       "command": "cargo run --release -- test",
       "problemMatcher": ["$rustc"],
       "group": "build"
-    },
-    {
-      "label": "test integration",
-      "type": "npm",
-      "script": "regression:local",
-      "group": "build",
-      "options": {
-        "cwd": "integration-test"
-      },
-      "problemMatcher": ["$tsc"]
     }
   ]
 }

@@ -1,7 +1,7 @@
-Feature: Oauth2 flow
+Feature: Oauth2 (interactive) flow
 
   Background:
-    * use karate
+    * use karate with config '$regression/config'
     * with karate plugin userinfo
     * with karate plugin page
 
@@ -148,7 +148,8 @@ Feature: Oauth2 flow
     When method GET
     Then status 200
     * match page response redirect is (defaultRedirects.errorUrl + '?type=authError&status=500')
-    * match page response contains 'No connection could be made because the target machine actively refused it.'
+    # * match page response contains 'No connection could be made because the target machine actively refused it.'
+    * match page response contains 'ConnectionRefused'
     * match response 'tid' cookie is removed
     * match response 'sid' cookie is removed
     * match response 'eid' cookie is removed

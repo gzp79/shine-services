@@ -7,13 +7,7 @@ import {
     CucumberAttachments
 } from 'cucumber-tsflow';
 import { SuperAgentRequest } from 'superagent';
-import {
-    expect,
-    request,
-    HttpMethod,
-    KarateState,
-    KarateCore
-} from '$lib/karate';
+import { expect, request, HttpMethod, KarateState, KarateCore } from './karate';
 
 @binding([CucumberLog, CucumberAttachments, KarateState])
 class KarateRequests extends KarateCore {

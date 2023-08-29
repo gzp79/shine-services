@@ -1,4 +1,4 @@
-import { chai } from '$lib/karate';
+import { chai } from './karate';
 
 declare global {
     interface String {

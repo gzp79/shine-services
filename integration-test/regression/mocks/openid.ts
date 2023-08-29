@@ -1,4 +1,4 @@
-import { MockServer, TypedRequest, TypedResponse } from '$lib/karate';
+import { MockServer, TypedRequest, TypedResponse } from '../../karate/karate';
 import bodyParser from 'body-parser';
 import express from 'express';
 import { body, validationResult } from 'express-validator';

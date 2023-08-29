@@ -1,4 +1,4 @@
-import { KarateState, request, expect } from '$lib/karate';
+import { KarateState, request, expect } from '../../karate/karate';
 import { binding, given, then } from 'cucumber-tsflow';
 
 @binding([KarateState])

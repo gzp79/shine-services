@@ -1,7 +1,7 @@
-Feature: Check auth cookie validation
+Feature: Check auth cookie consistency
 
   Background:
-    * use karate
+    * use karate with config '$regression/config'
     * with karate plugin userinfo
     * with karate plugin page
 

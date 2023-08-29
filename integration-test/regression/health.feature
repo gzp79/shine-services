@@ -1,7 +1,7 @@
-Feature: fetching User Details
+Feature: Performing minimal user sanity check
 
   Background: Background name
-    Given use karate
+    * use karate with config '$regression/config'
 
   Scenario: Service health check should work
     Given url (serviceUrl)

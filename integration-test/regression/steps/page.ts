@@ -1,4 +1,4 @@
-import { expect, KarateState } from '$lib/karate';
+import { expect, KarateState } from '../../karate/karate';
 import { binding, given, then } from 'cucumber-tsflow';
 
 @binding([KarateState])
@@ -20,7 +20,7 @@ export class PageSteps {
     step_registerPage() {
         this.karate.setProperty('getPageRedirectUrl', (response: any) =>
             this.getPageRedirectUrl(response?.text ?? '')
-        );        
+        );
     }
 
     @then('match page response redirect is {stringExpr}')

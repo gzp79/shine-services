@@ -1,4 +1,4 @@
-import { expect, KarateCore, KarateState } from '$lib/karate';
+import { expect, KarateCore, KarateState } from '../../karate/karate';
 import { Cookie } from 'tough-cookie';
 import { binding, then } from 'cucumber-tsflow';
 import { CucumberAttachments, CucumberLog } from 'cucumber-tsflow';
