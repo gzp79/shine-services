@@ -6,12 +6,16 @@ import { Cookie } from 'tough-cookie';
 
 let data: Record<string, string> = {};
 
-async function createData(
+async function createCachedData(
     config: Config,
     logger: KarateLogger
 ): Promise<Record<string, string>> {
     // some ugly hack to create cookies only once and used by the scenario outline
     if (!!data['ok']) {
+        expect(data, 'Cached data generation failed').to.have.property(
+            'ok',
+            'Done.'
+        );
         logger.log('Using cached data');
         logger.logAttach(JSON.stringify(data), 'application/json');
         return data;
@@ -22,32 +26,36 @@ async function createData(
     const create_cookies = async (): Promise<Record<string, string>> => {
         let cookies: Record<string, string> = {};
 
-        const resToken = await request(config.serviceUrl)
-            .get('/identity/auth/token/login')
-            .query({ rememberMe: true })
-            .send();
-        expect(resToken).to.be.status(200);
-        const cookieToken = (resToken.headers['set-cookie'] ?? [])
-            .map((cookieStr: string) => Cookie.parse(cookieStr))
-            .reduce((cookies: Record<string, Cookie>, cookie: Cookie) => {
-                cookies[cookie.key] = cookie;
-                return cookies;
-            }, {});
-        cookies.tid = cookieToken.tid.value;
-        cookies.sid = cookieToken.tid.value;
+        {
+            const resToken = await request(config.serviceUrl)
+                .get('/identity/auth/token/login')
+                .query({ rememberMe: true })
+                .send();
+            expect(resToken).to.be.status(200);
+            const cookieToken = (resToken.headers['set-cookie'] ?? [])
+                .map((cookieStr: string) => Cookie.parse(cookieStr))
+                .reduce((cookies: Record<string, Cookie>, cookie: Cookie) => {
+                    cookies[cookie.key] = cookie;
+                    return cookies;
+                }, {});
+            cookies.tid = cookieToken.tid.value;
+            cookies.sid = cookieToken.sid.value;
+        }
 
-        const resOAuth = await request(config.serviceUrl)
-            .get('/identity/auth/oauth2_flow/link')
-            .set('Cookie', [`sid=${cookies.sid}`])
-            .send();
-        expect(resOAuth).to.be.status(200);
-        const cookieOAuth = (resToken.headers['set-cookie'] ?? [])
-            .map((cookieStr: string) => Cookie.parse(cookieStr))
-            .reduce((cookies: Record<string, Cookie>, cookie: Cookie) => {
-                cookies[cookie.key] = cookie;
-                return cookies;
-            }, {});
-        cookies.eid = cookieOAuth.eid.value;
+        {
+            const resOAuth = await request(config.serviceUrl)
+                .get('/identity/auth/oauth2_flow/link')
+                .set('Cookie', [`sid=${cookies.sid}`])
+                .send();
+            expect(resOAuth).to.be.status(200);
+            const cookieOAuth = (resOAuth.headers['set-cookie'] ?? [])
+                .map((cookieStr: string) => Cookie.parse(cookieStr))
+                .reduce((cookies: Record<string, Cookie>, cookie: Cookie) => {
+                    cookies[cookie.key] = cookie;
+                    return cookies;
+                }, {});
+            cookies.eid = cookieOAuth.eid.value;
+        }
 
         expect(cookies.tid).to.be.a('string');
         expect(cookies.sid).to.be.a('string');
@@ -78,6 +86,14 @@ async function createData(
     return data;
 }
 
+function getCachedData(logger: KarateLogger): Record<string, string> {
+    expect(data, 'Cached data generation failed').to.have.property(
+        'ok',
+        'Done.'
+    );
+    return data;
+}
+
 @binding([CucumberLog, CucumberAttachments, KarateState])
 export class AuthCookieMatrixSteps extends KarateCore {
     public constructor(
@@ -90,7 +106,7 @@ export class AuthCookieMatrixSteps extends KarateCore {
 
     @given('auth cookie matrix {string} {string} {string}')
     async step_setupCookies(tid: string, sid: string, eid: string) {
-        const data = await createData(this.karate.config, this);
+        const data = await createCachedData(this.karate.config, this);
 
         for (const x of [
             [tid, 'tid', 't'],
@@ -118,5 +134,67 @@ export class AuthCookieMatrixSteps extends KarateCore {
     }
 
     @then('match auth cookie matrix {string}')
-    step_checkCookies(expected: string) {}
+    step_checkCookies(expected: string) {
+        const data = getCachedData(this);
+
+        const now = new Date().getTime();
+
+        const isValid = function (c?: Cookie): boolean {
+            if (!c) return false;
+            if (c.expires == 'Infinity') return true;
+            return c.expires.getTime() > now;
+        };
+
+        const t = isValid(this.karate.lastResponseCookies?.tid)
+            ? this.karate.lastResponseCookies?.tid?.value
+            : undefined;
+        const s = isValid(this.karate.lastResponseCookies?.sid)
+            ? this.karate.lastResponseCookies?.sid?.value
+            : undefined;
+        const e = isValid(this.karate.lastResponseCookies?.eid)
+            ? this.karate.lastResponseCookies?.eid?.value
+            : undefined;
+
+        const matched = new Set<string>(['t', 's', 'e']);
+
+        // all expected cookies are matching
+        for (const exp of expected.split(',')) {
+            switch (exp) {
+                case 's':
+                    expect(s).to.be.equal(data['s']);
+                    break;
+                case 'S':
+                    expect(s).to.be.equal(data['s2']);
+                    break;
+                case 't':
+                    expect(t).to.be.equal(data['t']);
+                    break;
+                case 'T':
+                    expect(t).to.be.equal(data['t2']);
+                    break;
+                case 'e':
+                    expect(e).to.be.equal(data['e']);
+                    break;
+                case 'E':
+                    expect(e).to.be.equal(data['e2']);
+                    break;
+            }
+            matched.delete(exp.toLowerCase());
+        }
+
+        // and no other cookies are valid
+        matched.forEach((exp) => {
+            switch (exp) {
+                case 's':
+                    expect(s).to.be.undefined;
+                    break;
+                case 't':
+                    expect(t).to.be.undefined;
+                    break;
+                case 'e':
+                    expect(e).to.be.undefined;
+                    break;
+            }
+        });
+    }
 }
