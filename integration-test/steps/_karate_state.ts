@@ -128,7 +128,7 @@ export class KarateState {
             throw new Error(`Mock server '${server.name}' is already present`);
         }
 
-        await server.start(logger);
+        await server.start(this.config, logger);
         this.mockServers[server.name] = server;
     }
 

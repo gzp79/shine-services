@@ -85,7 +85,13 @@ async fn oauth2_auth(
         .await
     {
         Ok(external_user_info) => external_user_info,
-        _ => return state.page_error(auth_session, AuthError::FailedExternalUserInfo, error_url.as_ref()),
+        Err(err) => {
+            return state.page_error(
+                auth_session,
+                AuthError::FailedExternalUserInfo(format!("{err:?}")),
+                error_url.as_ref(),
+            )
+        }
     };
     log::info!("{:?}", external_user);
 

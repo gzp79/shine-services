@@ -39,10 +39,8 @@ export default class Server extends MockServer {
                     );
                 }
 
-                const { code, grant_type, redirect_uri, code_verifier } =
-                    req.body;
-                const user = (code as string).parseAsQueryParams();
-
+                const code: string = req.body.code;
+                const user = code.parseAsQueryParams();
                 if (!user || !user.id) {
                     res.status(400).end();
                     return;

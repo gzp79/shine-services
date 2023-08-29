@@ -85,13 +85,19 @@ async fn oidc_auth(
         }
     };
 
-    let claims = match token.id_token().and_then(|id_token| {
-        id_token
-            .claims(&core_client.id_token_verifier(), &Nonce::new(nonce))
-            .ok()
-    }) {
-        Some(claims) => claims,
-        _ => return state.page_error(auth_session, AuthError::FailedExternalUserInfo, error_url.as_ref()),
+    let claims = match token
+        .id_token()
+        .ok_or("Missing id_token".to_string())
+        .and_then(|id_token| {
+            id_token
+                .claims(&core_client.id_token_verifier(), &Nonce::new(nonce))
+                .map_err(|err| format!("{err:?}"))
+        }) {
+        Ok(claims) => claims,
+        Err(err) => {
+            log::error!("{err:?}");
+            return state.page_error(auth_session, AuthError::FailedExternalUserInfo(err), error_url.as_ref());
+        }
     };
     log::debug!("Code exchange completed, claims: {claims:#?}");
 

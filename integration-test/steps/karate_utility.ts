@@ -28,7 +28,7 @@ class KarateUtility extends KarateCore {
     @given('def {ident} = {expr}')
     async step_storeValue(ident: string, expr: string) {
         const value = await this.karate.evalAsyncExpr(expr);
-        this.log(`${ident} = ${JSON.stringify(value)}`);
+        this.logAttach(JSON.stringify(value), 'application/json');
         this.karate.setProperty(ident, value);
     }
 

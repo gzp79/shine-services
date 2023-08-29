@@ -18,6 +18,7 @@ export class MockServer {
     logger?: KarateLogger;
     app: Express = undefined!;
     server: Server = undefined!;
+    config: any;
 
     constructor(
         public readonly name: string,
@@ -36,11 +37,12 @@ export class MockServer {
         }
     }
 
-    public async start(logger?: KarateLogger) {
+    public async start(config: any, logger: KarateLogger | undefined) {
         if (this.isRunning) {
             throw new Error('Server has already been started');
         }
 
+        this.config = config;
         this.logger = logger;
         this.log('Starting application');
         this.app = express();
