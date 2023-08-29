@@ -18,7 +18,7 @@ class KarateMock extends KarateCore {
         const module = await import(mockPath);
         const server = new module.default();
         expect(server).to.be.instanceof(MockServer);
-        await this.karate.startMock(server);
+        await this.karate.startMock(server, undefined);
     }
 
     @given('Stop mock server {string}')

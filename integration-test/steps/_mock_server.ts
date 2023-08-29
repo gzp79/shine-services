@@ -1,8 +1,7 @@
 import express, { Express } from 'express';
 import { Send, Request, Response, Query } from 'express-serve-static-core';
 import { Server, createServer } from 'http';
-
-export type MockServerLogger = (message: string, mime?: string) => void;
+import { KarateLogger } from './karate';
 
 // TypedRequest, TypedResponse based on https://plainenglish.io/blog/typed-express-request-and-response-with-typescript
 
@@ -16,7 +15,7 @@ export interface TypedResponse<ResBody> extends Response {
 }
 
 export class MockServer {
-    logger?: MockServerLogger;
+    logger?: KarateLogger;
     app: Express = undefined!;
     server: Server = undefined!;
 
@@ -31,13 +30,13 @@ export class MockServer {
 
     protected log(message: string) {
         if (this.logger) {
-            this.logger(`[${this.name}] ${message}`);
+            this.logger.log(`[${this.name}] ${message}`);
         } else {
             console.log(`[${this.name}] ${message}`);
         }
     }
 
-    public async start(logger?: MockServerLogger) {
+    public async start(logger?: KarateLogger) {
         if (this.isRunning) {
             throw new Error('Server has already been started');
         }
@@ -59,11 +58,17 @@ export class MockServer {
             throw err;
         });
 
-        this.app.use(async (req: TypedRequest<any,any>, res: TypedResponse<any>, next) => {
-            this.log(`[${req.method}] ${req.url} ...`);
-            await next();
-            this.log(`[${req.method}] ${req.url} completed.`);
-        });
+        this.app.use(
+            async (
+                req: TypedRequest<any, any>,
+                res: TypedResponse<any>,
+                next
+            ) => {
+                this.log(`[${req.method}] ${req.url} ...`);
+                await next();
+                this.log(`[${req.method}] ${req.url} completed.`);
+            }
+        );
     }
 
     /// Override in extends to implement the logic

@@ -1,10 +1,17 @@
-import { expect, KarateState } from '$lib/karate';
+import { expect, KarateCore, KarateState } from '$lib/karate';
 import { Cookie } from 'tough-cookie';
 import { binding, then } from 'cucumber-tsflow';
+import { CucumberAttachments, CucumberLog } from 'cucumber-tsflow';
 
-@binding([KarateState])
-export class CookiesSteps {
-    constructor(private readonly karate: KarateState) {}
+@binding([CucumberLog, CucumberAttachments, KarateState])
+export class AuthCookiesSteps extends KarateCore {
+    public constructor(
+        logger: CucumberLog,
+        logAttachments: CucumberAttachments,
+        karate: KarateState
+    ) {
+        super(logger, logAttachments, karate);
+    }
 
     @then("match response 'tid' cookie is valid")
     async step_validTID() {
@@ -16,7 +23,7 @@ export class CookiesSteps {
 
         expect(cookie).to.have.property('secure', true);
         expect(cookie).to.have.property('httpOnly', true);
-        expect(cookie).to.have.property('sameSite', "lax");
+        expect(cookie).to.have.property('sameSite', 'lax');
         expect(cookie).to.have.property('path', '/identity/auth');
         expect(cookie).to.have.property('domain', 'cloud.scytta-test.com');
         expect(cookie)
@@ -34,7 +41,7 @@ export class CookiesSteps {
 
         expect(cookie).to.have.property('secure', true);
         expect(cookie).to.have.property('httpOnly', true);
-        expect(cookie).to.have.property('sameSite', "lax");
+        expect(cookie).to.have.property('sameSite', 'lax');
         expect(cookie).to.have.property('path', '/');
         expect(cookie).to.have.property('domain', 'scytta-test.com');
         expect(cookie).to.have.property('expires', 'Infinity'); // session scoped
@@ -50,7 +57,7 @@ export class CookiesSteps {
 
         expect(cookie).to.have.property('secure', true);
         expect(cookie).to.have.property('httpOnly', true);
-        expect(cookie).to.have.property('sameSite', "lax");
+        expect(cookie).to.have.property('sameSite', 'lax');
         expect(cookie).to.have.property('path', '/identity/auth');
         expect(cookie).to.have.property('domain', 'cloud.scytta-test.com');
         expect(cookie).to.have.property('expires', 'Infinity'); // session scoped

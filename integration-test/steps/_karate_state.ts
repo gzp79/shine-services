@@ -1,7 +1,8 @@
 import { Config } from './_config';
 import { Response } from 'superagent';
 import { Cookie } from 'tough-cookie';
-import { MockServer, MockServerLogger } from './_mock_server';
+import { MockServer } from './_mock_server';
+import { KarateLogger } from './karate';
 
 export class KarateState {
     private _config = new Config();
@@ -122,7 +123,7 @@ export class KarateState {
 
     mockServers: Record<string, MockServer> = {};
 
-    async startMock(server: MockServer, logger?: MockServerLogger) {
+    async startMock(server: MockServer, logger?: KarateLogger) {
         if (this.mockServers[server.name]) {
             throw new Error(`Mock server '${server.name}' is already present`);
         }

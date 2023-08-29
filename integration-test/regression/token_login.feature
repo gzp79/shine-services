@@ -107,7 +107,7 @@ Feature: Token crede
     * match response 'sid' cookie is valid
     * match response 'eid' cookie is removed
     * match user (await getUserInfo(responseCookies.sid.value)) equals to (userA)
-    * assert (responseCookies.sid.value != userA_SID)
+    * assert (responseCookies.sid.value !== userA_SID)
 
     Given log ('Login with the token shall be a success when rememberMe is set')
     * url (identityUrl)
@@ -121,4 +121,4 @@ Feature: Token crede
     * match response 'sid' cookie is valid
     * match response 'eid' cookie is removed
     * match user (await getUserInfo(responseCookies.sid.value)) equals to (userA)
-    * assert (responseCookies.sid.value != userA_SID)
+    * assert (responseCookies.sid.value !== userA_SID)

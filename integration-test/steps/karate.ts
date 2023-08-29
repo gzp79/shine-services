@@ -7,7 +7,12 @@ export interface KarateWorld extends World {
     [key: string]: any;
 }
 
-export class KarateCore {
+export interface KarateLogger {
+    log(message: any): void;
+    logAttach(data: any, mime: string): void;
+}
+
+export class KarateCore implements KarateLogger {
     public constructor(
         private readonly logger: CucumberLog,
         private readonly logAttachments: CucumberAttachments,
