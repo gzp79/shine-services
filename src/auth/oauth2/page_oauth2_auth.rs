@@ -28,14 +28,6 @@ async fn oauth2_auth(
     fingerprint: ClientFingerprint,
     query: Result<ValidatedQuery<Query>, ValidationError>,
 ) -> AuthPage {
-    let query = match query {
-        Ok(ValidatedQuery(query)) => query,
-        Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), None),
-    };
-
-    let auth_code = AuthorizationCode::new(query.code);
-    let auth_csrf_state = query.state;
-
     // take external_login from session, thus later code don't have to care with it
     let ExternalLogin {
         pkce_code_verifier,
@@ -49,6 +41,13 @@ async fn oauth2_auth(
         Some(external_login) => external_login,
         None => return state.page_error(auth_session, AuthError::MissingExternalLogin, None),
     };
+
+    let query = match query {
+        Ok(ValidatedQuery(query)) => query,
+        Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), error_url.as_ref()),
+    };
+    let auth_code = AuthorizationCode::new(query.code);
+    let auth_csrf_state = query.state;
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
@@ -86,7 +85,13 @@ async fn oauth2_auth(
         .await
     {
         Ok(external_user_info) => external_user_info,
-        _ => return state.page_error(auth_session, AuthError::FailedExternalUserInfo, error_url.as_ref()),
+        Err(err) => {
+            return state.page_error(
+                auth_session,
+                AuthError::FailedExternalUserInfo(format!("{err:?}")),
+                error_url.as_ref(),
+            )
+        }
     };
     log::info!("{:?}", external_user);
 

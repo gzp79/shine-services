@@ -1,0 +1,22 @@
+{
+    "compilerOptions": {
+        "allowJs": true,
+        "checkJs": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "strict": true,
+        "sourceMap": false,
+
+        "experimentalDecorators": true,
+        "resolveJsonModule": true,
+        "allowSyntheticDefaultImports": true,
+
+        "paths": {
+            "$lib": ["./karate"],
+            "$lib/*": ["./karate/*"],
+            "$regression": ["./regression"],
+            "$regression/*": ["./regression/*"]
+        }
+    }
+}

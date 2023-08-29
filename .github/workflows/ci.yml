@@ -87,6 +87,5 @@ jobs:
       with:
         name: Test Reports
         path: | 
-          ./integration-test/target/karate-reports/
-          ./integration-test/target/karate.log
+          ./integration-test/reports/
           

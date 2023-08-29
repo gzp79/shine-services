@@ -1,15 +1,17 @@
-Feature: fetching User Details
+Feature: Performing minimal user sanity check
 
-  Scenario: testing the get call for User Details
-    Given url karate.properties['utils'].serviceUrl
+  Background: Background name
+    * use karate with config '$regression/config'
+
+  Scenario: Service health check should work
+    Given url (serviceUrl)
     * path '/info/ready'
-    * method GET
+    When method GET
     Then status 200
 
-  Scenario: testing the get call for User Details
-    Given url karate.properties['utils'].identityUrl
+  Scenario: Getting registered providers should work
+    Given url (identityUrl)
     * path '/api/auth/providers'
     * method GET
     Then status 200
-    * def expectedProviders = ["oauth2_flow", "openid_flow"]
-    * match response == { "providers": #(^^expectedProviders) }
+    * match json response contains only { "providers": ["oauth2_flow", "openid_flow"] }

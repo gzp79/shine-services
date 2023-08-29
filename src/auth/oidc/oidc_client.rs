@@ -78,7 +78,10 @@ impl OIDCClient {
                         .await
                     {
                         Ok(meta) => meta,
-                        Err(err) => return Err(OIDCDiscoveryError(format!("{err}"))),
+                        Err(err) => {
+                            log::warn!("Discovery failed for {}: {:#?}", self.provider, err);
+                            return Err(OIDCDiscoveryError(format!("{err:#?}")));
+                        }
                     };
                 Ok(CoreClient::from_provider_metadata(
                     provider_metadata,

@@ -33,6 +33,7 @@
         "errorUrl": "http://web.scytta-test.com:8080/error",
         "authBaseUrl": "http://cloud.scytta-test.com/identity/auth",
         "pageRedirectTime": 0,
+        "pageErrorDetail": true,
         "sessionSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
         "externalLoginSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
         "tokenLoginSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",

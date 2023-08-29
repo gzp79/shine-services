@@ -4,12 +4,18 @@
         "MIRIFLAGS": "-Zmiri-backtrace=full",
         "RUST_LOG": "INFO,shine_server=TRACE,shine_identity=TRACE"
     },
-
+    "cucumberautocomplete.steps": [
+        "integration-test/karate/**/*.ts",
+        "integration-test/regression/**/*.ts"
+    ],
+    "cucumberautocomplete.strictGherkinCompletion": true,
+    "cucumber-tsflow.projectPath": "",
     "cSpell.words": [
         "autoescape",
         "cacerts",
         "cfhistu",
         "chrono",
+        "cookiejar",
         "fkey",
         "hasher",
         "hashids",
@@ -18,7 +24,9 @@
         "httponly",
         "jbang",
         "jbangdev",
+        "jwks",
         "karatelabs",
+        "keyid",
         "keyvault",
         "nextval",
         "notnull",
@@ -51,6 +59,5 @@
         "tsflow",
         "utoipa",
         "zipkin"
-    ],
-    "karatelabs-karate.run.classpathPrefix": "./integration-test"
+    ]
 }
