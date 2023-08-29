@@ -1,5 +1,5 @@
 import { expect, KarateState } from '$lib/karate';
-import { Cookie } from 'cookiejar';
+import { Cookie } from 'tough-cookie';
 import { binding, then } from 'cucumber-tsflow';
 
 @binding([KarateState])
@@ -15,11 +15,12 @@ export class CookiesSteps {
         ).to.have.property(cookieName).subject<Cookie>;
 
         expect(cookie).to.have.property('secure', true);
-        expect(cookie).to.have.property('noscript', true);
+        expect(cookie).to.have.property('httpOnly', true);
+        expect(cookie).to.have.property('sameSite', "lax");
         expect(cookie).to.have.property('path', '/identity/auth');
         expect(cookie).to.have.property('domain', 'cloud.scytta-test.com');
         expect(cookie)
-            .to.have.property('expiration_date')
+            .to.have.property('expires')
             .that.is.afterTime(new Date());
     }
 
@@ -32,10 +33,11 @@ export class CookiesSteps {
         ).to.have.property(cookieName).subject<Cookie>;
 
         expect(cookie).to.have.property('secure', true);
-        expect(cookie).to.have.property('noscript', true);
+        expect(cookie).to.have.property('httpOnly', true);
+        expect(cookie).to.have.property('sameSite', "lax");
         expect(cookie).to.have.property('path', '/');
         expect(cookie).to.have.property('domain', 'scytta-test.com');
-        expect(cookie).to.have.property('expiration_date', Infinity); // session scoped
+        expect(cookie).to.have.property('expires', 'Infinity'); // session scoped
     }
 
     @then("match response 'eid' cookie is valid")
@@ -47,10 +49,11 @@ export class CookiesSteps {
         ).to.have.property(cookieName).subject<Cookie>;
 
         expect(cookie).to.have.property('secure', true);
-        expect(cookie).to.have.property('noscript', true);
+        expect(cookie).to.have.property('httpOnly', true);
+        expect(cookie).to.have.property('sameSite', "lax");
         expect(cookie).to.have.property('path', '/identity/auth');
         expect(cookie).to.have.property('domain', 'cloud.scytta-test.com');
-        expect(cookie).to.not.have.property('expiration_date', Infinity);
+        expect(cookie).to.have.property('expires', 'Infinity'); // session scoped
     }
 
     // Check if response contains a cookie to be remove it from the client
@@ -62,7 +65,7 @@ export class CookiesSteps {
         ).to.have.property(cookieName).subject<Cookie>;
 
         expect(cookie)
-            .to.have.property('expiration_date')
+            .to.have.property('expires')
             .that.is.beforeTime(new Date());
     }
 

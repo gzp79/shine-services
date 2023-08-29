@@ -1,10 +1,20 @@
-import { binding, given, CucumberLog, then, when } from 'cucumber-tsflow';
+import {
+    binding,
+    given,
+    CucumberLog,
+    then,
+    CucumberAttachments
+} from 'cucumber-tsflow';
 import { KarateState, KarateCore, expect } from '$lib/karate';
 
-@binding([CucumberLog, KarateState])
-export class KarateUtility extends KarateCore {
-    public constructor(logger: CucumberLog, karate: KarateState) {
-        super(logger, karate);
+@binding([CucumberLog, CucumberAttachments, KarateState])
+class KarateUtility extends KarateCore {
+    public constructor(
+        logger: CucumberLog,
+        logAttachments: CucumberAttachments,
+        karate: KarateState
+    ) {
+        super(logger, logAttachments, karate);
     }
 
     @given('use karate')
@@ -34,3 +44,5 @@ export class KarateUtility extends KarateCore {
         expect(value, `Expression: ${expr}`).to.be.true;
     }
 }
+
+export = KarateUtility;

@@ -7,6 +7,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use chrono::Duration;
+use serde::Serialize;
 use shine_service::{
     axum::ValidationError,
     service::{ClientFingerprint, APP_NAME},
@@ -123,7 +124,7 @@ impl AuthServiceState {
     }
 }
 
-#[derive(Debug, ThisError)]
+#[derive(Debug, ThisError, Serialize)]
 pub(in crate::auth) enum AuthError {
     #[error("Input validation error")]
     ValidationError(ValidationError),
@@ -181,39 +182,23 @@ impl AuthServiceState {
     ) -> AuthPage {
         log::error!("{response:?}");
 
-        let (kind, status, detail) = match response {
-            AuthError::ValidationError(err) => (
-                "invalidInput",
-                StatusCode::BAD_REQUEST,
-                serde_json::to_string(&err).unwrap(),
-            ),
-            AuthError::LogoutRequired => ("logoutRequired", StatusCode::BAD_REQUEST, String::new()),
-            AuthError::LoginRequired => ("loginRequired", StatusCode::UNAUTHORIZED, String::new()),
-            AuthError::MissingExternalLogin => ("authError", StatusCode::BAD_REQUEST, String::new()),
-            AuthError::MissingNonce => ("authError", StatusCode::BAD_REQUEST, String::new()),
-            AuthError::InvalidCSRF => ("authError", StatusCode::BAD_REQUEST, String::new()),
-            AuthError::TokenExchangeFailed(err) => (
-                "authError",
-                StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::to_string(&err).unwrap(),
-            ),
-            AuthError::FailedExternalUserInfo => ("authError", StatusCode::BAD_REQUEST, String::new()),
-            AuthError::TokenInvalid => ("authError", StatusCode::BAD_REQUEST, String::new()),
-            AuthError::TokenExpired => ("sessionExpired", StatusCode::UNAUTHORIZED, String::new()),
-            AuthError::SessionExpired => ("sessionExpired", StatusCode::UNAUTHORIZED, String::new()),
-            AuthError::InternalServerError(err) => (
-                "internalError",
-                StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::to_string(&err).unwrap(),
-            ),
-            AuthError::OIDCDiscovery(err) => (
-                "authError",
-                StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::to_string(&err).unwrap(),
-            ),
-            AuthError::ProviderAlreadyUsed => ("providerAlreadyUsed", StatusCode::CONFLICT, String::new()),
-            AuthError::EmailAlreadyUsed => ("emailAlreadyUsed", StatusCode::CONFLICT, String::new()),
-            AuthError::MissingPrecondition => ("preconditionFailed", StatusCode::PRECONDITION_FAILED, String::new()),
+        let (kind, status) = match response {
+            AuthError::ValidationError(_) => ("invalidInput", StatusCode::BAD_REQUEST),
+            AuthError::LogoutRequired => ("logoutRequired", StatusCode::BAD_REQUEST),
+            AuthError::LoginRequired => ("loginRequired", StatusCode::UNAUTHORIZED),
+            AuthError::MissingExternalLogin => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::MissingNonce => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::InvalidCSRF => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::TokenExchangeFailed(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
+            AuthError::FailedExternalUserInfo => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::TokenInvalid => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::TokenExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
+            AuthError::SessionExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
+            AuthError::InternalServerError(_) => ("internalError", StatusCode::INTERNAL_SERVER_ERROR),
+            AuthError::OIDCDiscovery(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
+            AuthError::ProviderAlreadyUsed => ("providerAlreadyUsed", StatusCode::CONFLICT),
+            AuthError::EmailAlreadyUsed => ("emailAlreadyUsed", StatusCode::CONFLICT),
+            AuthError::MissingPrecondition => ("preconditionFailed", StatusCode::PRECONDITION_FAILED),
         };
 
         let mut target = target_url.unwrap_or(self.error_url()).clone();
@@ -228,9 +213,10 @@ impl AuthServiceState {
         context.insert("statusCode", &status.as_u16());
         context.insert("type", kind);
         if self.page_error_detail() {
+            let detail = serde_json::to_string(&response).unwrap();
             context.insert("detail", &detail);
         } else {
-            context.insert("detail","");
+            context.insert("detail", "");
         }
         let html = self
             .tera()

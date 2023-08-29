@@ -1,11 +1,28 @@
-import { given, when, then, CucumberLog, binding } from 'cucumber-tsflow';
+import {
+    given,
+    when,
+    then,
+    CucumberLog,
+    binding,
+    CucumberAttachments
+} from 'cucumber-tsflow';
 import { SuperAgentRequest } from 'superagent';
-import { expect, request, HttpMethod, KarateState, KarateCore } from '$lib/karate';
+import {
+    expect,
+    request,
+    HttpMethod,
+    KarateState,
+    KarateCore
+} from '$lib/karate';
 
-@binding([CucumberLog, KarateState])
-export class KarateRequests extends KarateCore {
-    public constructor(logger: CucumberLog, karate: KarateState) {
-        super(logger, karate);
+@binding([CucumberLog, CucumberAttachments, KarateState])
+class KarateRequests extends KarateCore {
+    public constructor(
+        logger: CucumberLog,
+        logAttachments: CucumberAttachments,
+        karate: KarateState
+    ) {
+        super(logger, logAttachments, karate);
     }
 
     @given('url {stringExpr}')
@@ -21,6 +38,11 @@ export class KarateRequests extends KarateCore {
     @given('params {paramExpr}')
     step_params(expr: Record<string, string>) {
         this.karate.setQueryParams(expr);
+    }
+
+    @given('param {ident} = {stringExpr}')
+    step_param(ident: string, value: string) {
+        this.karate.setQueryParam(ident, value);
     }
 
     @given('cookies {paramExpr}')
@@ -41,27 +63,39 @@ export class KarateRequests extends KarateCore {
             ](this.karate.path)
             .query(this.karate.params)
             .set('Cookie', cookies);
-        this.log(`url: ${req.url}`);
-        this.log(`query: ${JSON.stringify(this.karate.params)}`);
-        this.log(`cookies: ${cookies}`);
+        this.log(`Request url: ${req.url}`);
+        this.logAttach(JSON.stringify(this.karate.params), 'application/json');
+        this.logAttach(JSON.stringify(cookies), 'application/json');
 
+        let resp;
         try {
-            this.karate.setResponse(await req.send());
-            this.log(`Status: ${this.karate.lastResponse?.status}`);
-            this.log(`Headers: ${this.karate.lastResponse?.headers}`);
-            this.log(`Response: ${this.karate.lastResponse?.text}`);
+            resp = await req.send();
         } catch (error: any) {
-            this.karate.setError(error /*, error.response*/);
-            this.log(`Exception occurred during ${method} request`, error);
+            this.log(
+                `Exception occurred during ${method} request: ${JSON.stringify(
+                    error
+                )}`
+            );
+            this.karate.setError(error);
+        }
+
+        if (resp) {
+            this.log(`Response status: ${resp.status}`);
+            this.logAttach(JSON.stringify(resp.headers), 'application/json');
+            if (!resp.noContent) {
+                this.logAttach(
+                    resp.text,
+                    resp.get('content-type') ?? 'text/plain'
+                );
+            }
+            this.karate.setResponse(resp);
         }
     }
 
     @then('status {int}')
     async step_status(expectedStatusCode: number) {
         expect(this.karate.lastResponseError).to.be.undefined;
-        expect(this.karate.lastResponse).to.have.status(
-            expectedStatusCode
-        );
+        expect(this.karate.lastResponse).to.have.status(expectedStatusCode);
     }
 
     // Check if response has an exact match to the given object
@@ -80,3 +114,5 @@ export class KarateRequests extends KarateCore {
         expect(body).to.be.to.deep.equalInAnyOrder(expected);
     }
 }
+
+export = KarateRequests;

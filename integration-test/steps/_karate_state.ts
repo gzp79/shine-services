@@ -1,6 +1,7 @@
 import { Config } from './_config';
 import { Response } from 'superagent';
-import { Cookie } from 'cookiejar';
+import { Cookie } from 'tough-cookie';
+import { MockServer, MockServerLogger } from './_mock_server';
 
 export class KarateState {
     private _config = new Config();
@@ -17,6 +18,34 @@ export class KarateState {
             responseCookies: this._lastResponseCookies,
             ...this._properties
         };
+    }
+
+    setProperty(key: string, value: any) {
+        this._properties[key] = value;
+    }
+
+    async evalAsyncExpr(expr: string, extraProps: object = {}): Promise<any> {
+        const __karate = {
+            ...this.properties,
+            ...extraProps
+        };
+        const assignments = Object.keys(__karate).map(
+            (key) => `const ${key} = __karate.${key};`
+        );
+
+        const script = `
+          ${assignments.join('\n')}
+            async () => { return ${expr}; }
+        `;
+
+        // import some utility to use in the eval
+        const uuidModule = await import('uuid');
+        const { v4: uuidV4 } = uuidModule;
+
+        const stringUtils = await import('$lib/string_utils');
+        const { createUrlQueryString, generateRandomString } = stringUtils;
+
+        return await eval(script)();
     }
 
     url: string = '';
@@ -37,40 +66,6 @@ export class KarateState {
     private _lastResponseCookies: Record<string, Cookie> | undefined;
     public get lastResponseCookies(): Record<string, Cookie> | undefined {
         return this._lastResponseCookies;
-    }
-
-    setProperty(key: string, value: any) {
-        this._properties[key] = value;
-    }
-
-    evalExpr(expr: string, extraProps: object = {}): any {
-        const __karate = {
-            ...this.properties,
-            ...extraProps
-        };
-        const assignments = Object.keys(__karate).map((key) => {
-            return `const ${key} = __karate.${key};`;
-        });
-        const script = `
-            ${assignments.join('\n')}
-            () => { return ${expr}; }
-        `;
-        return eval(script)();
-    }
-
-    async evalAsyncExpr(expr: string, extraProps: object = {}): Promise<any> {
-        const __karate = {
-            ...this.properties,
-            ...extraProps
-        };
-        const assignments = Object.keys(__karate).map((key) => {
-            return `const ${key} = __karate.${key};`;
-        });
-        const script = `
-            ${assignments.join('\n')}
-            async () => { return ${expr}; }
-        `;
-        return await eval(script)();
     }
 
     setQueryParam(key: string, value: string) {
@@ -118,10 +113,39 @@ export class KarateState {
 
         this._lastResponse = res;
         this._lastResponseCookies = (res.headers['set-cookie'] ?? [])
-            .map((cookieStr: string) => new Cookie(cookieStr))
+            .map((cookieStr: string) => Cookie.parse(cookieStr))
             .reduce((cookies: Record<string, Cookie>, cookie: Cookie) => {
-                cookies[cookie.name] = cookie;
+                cookies[cookie.key] = cookie;
                 return cookies;
             }, {});
+    }
+
+    mockServers: Record<string, MockServer> = {};
+
+    async startMock(server: MockServer, logger?: MockServerLogger) {
+        if (this.mockServers[server.name]) {
+            throw new Error(`Mock server '${server.name}' is already present`);
+        }
+
+        await server.start(logger);
+        this.mockServers[server.name] = server;
+    }
+
+    stopMock(name: string) {
+        const server = this.mockServers[name];
+        if (!server) {
+            throw new Error(`Mock server '${name}' is not present`);
+        }
+
+        server.stop();
+        delete this.mockServers[name];
+    }
+
+    async stopAllMocks() {
+        for (const name in this.mockServers) {
+            const server = this.mockServers[name];
+            await server.stop();
+        }
+        this.mockServers = {};
     }
 }

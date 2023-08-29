@@ -14,7 +14,9 @@
 
         "paths": {
             "$lib": ["./steps"],
-            "$lib/*": ["./steps/*"]
+            "$lib/*": ["./steps/*"],
+            "$regression": ["./regression"],
+            "$regression/*": ["./regression/*"]
         }
     }
 }

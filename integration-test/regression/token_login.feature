@@ -11,6 +11,7 @@ Feature: Token crede
     When method GET
     Then status 200
     * match page response redirect is 'http://web.scytta-test.com:8080/error?type=invalidInput&status=400'
+    * match page response contains 'Failed to deserialize query string'
     * match response 'tid' cookie is removed
     * match response 'sid' cookie is removed
     * match response 'eid' cookie is removed
@@ -72,11 +73,12 @@ Feature: Token crede
     When method GET
     Then status 200
     * match page response redirect is (defaultRedirects.errorUrl + '?type=logoutRequired&status=400')
+    * match page response contains '&quot;LogoutRequired&quot;'
     * match response 'tid' cookie is removed
     * match response 'sid' cookie has value (userA_SID)
     * match response 'eid' cookie is removed
     * match user (await getUserInfo(responseCookies.sid.value)) equals to (userA)
-
+    
     Given log ('Trying to register again with a session and a token is an error')
     * url (identityUrl)
     * path '/auth/token/login'
@@ -85,6 +87,7 @@ Feature: Token crede
     When method GET
     Then status 200
     * match page response redirect is (defaultRedirects.errorUrl + '?type=logoutRequired&status=400')
+    * match page response contains '&quot;LogoutRequired&quot;'
     * match response 'tid' cookie has value (userA_TID)
     * match response 'sid' cookie has value (userA_SID)
     * match response 'eid' cookie is removed
