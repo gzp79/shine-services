@@ -59,10 +59,11 @@ jobs:
         sudo echo "127.0.0.1 mock.localhost.com" | sudo tee -a /etc/hosts
         sudo echo "127.0.0.1 postgres.localhost.com" | sudo tee -a /etc/hosts
         sudo echo "127.0.0.1 redis.localhost.com" | sudo tee -a /etc/hosts
-    - run: npm ci
-      working-directory: ./integration-test      
     - name: Integartion test
-      run: npm run regression
+      run: |
+        npm ci
+        npm run regression
+        npm run report
       working-directory: ./integration-test
 
     - name: Log in to the Container registry

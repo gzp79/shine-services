@@ -4,7 +4,8 @@ const config = [
     '--require karate/**/*.ts',
     '--require regression/**/*.ts',
     '--format @cucumber/pretty-formatter',
-    '--format html:reports/cucumber_report.html'
+    '--format html:reports/cucumber_report_simple.html',
+    '--format json:reports/cucumber_report.json'
 ].join(' ');
 
 module.exports = {
