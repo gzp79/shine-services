@@ -750,8 +750,10 @@ impl IdentityManager {
             .await?
             != 1
         {
+            transaction.rollback().await?;
             Err(IdentityError::UpdateConflict)
         } else {
+            transaction.commit().await?;
             Ok(())
         }
     }
@@ -778,8 +780,10 @@ impl IdentityManager {
             .await?
             != 1
         {
+            transaction.rollback().await?;
             Err(IdentityError::UpdateConflict)
         } else {
+            transaction.commit().await?;
             Ok(())
         }
     }
