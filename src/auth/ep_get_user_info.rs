@@ -27,7 +27,7 @@ async fn get_user_info(
 ) -> Result<Json<CurrentUserInfo>, Problem> {
     let _ = state
         .session_manager()
-        .find_session(user.user_id, user.key)
+        .find(user.user_id, user.key)
         .await
         .map_err(Problem::internal_error_from)?
         .ok_or(Problem::unauthorized())?;

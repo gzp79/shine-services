@@ -1,4 +1,4 @@
-use crate::db::{DBError, DBPool};
+use crate::db::DBError;
 use harsh::Harsh;
 use serde::{Deserialize, Serialize};
 use shine_service::{pg_query, service::PGConnectionPool, utils::Optimus};
@@ -127,12 +127,12 @@ struct Inner {
 pub struct NameGenerator(Arc<Inner>);
 
 impl NameGenerator {
-    pub async fn new(config: &NameGeneratorConfig, pool: &DBPool) -> Result<Self, NameGeneratorError> {
-        let client = pool.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+    pub async fn new(config: &NameGeneratorConfig, postgres: &PGConnectionPool) -> Result<Self, NameGeneratorError> {
+        let client = postgres.get().await.map_err(DBError::PostgresPoolError)?;
         let stmt_next_id = GetNextId::new(&client).await.map_err(DBError::from)?;
 
         Ok(Self(Arc::new(Inner {
-            postgres: pool.postgres.clone(),
+            postgres: postgres.clone(),
             stmt_next_id,
             base: config.base_generator.create_generator()?,
             id_encoder: config.id_encoder.create_encoder()?,
