@@ -93,16 +93,21 @@ impl SessionManager {
         let (sentinel_key, key) = self.keys(identity.id, &session_key);
 
         // Session management in redis:
-        // First it tries to create the sentinel with a distinct key. In case of failure we have some key conflict and
-        // login should be restarted - very unlikely
-        // This sentinel is used to manage the lifetime of the session, once created it is immutable and has an expiration
-        // The session data is stored in a hset with a different key for each data-update happening during the session and
-        // gets also an expiration time (the same as the sentinel)
-        // To find the current session data, sentinel must be present (and not expired) and the largest session data shall be used:
-        // A version indicates the stored data is NOT older than the given version, but can be newer depending on the concurrent
-        // updates. If an update happens during a logout (session deletion) it may happen that the sentinel is removed, but a session
-        // data is stored. It causes no issue as data also has an expiration thus it will be deleted eventually and the sentinel
-        // protects against keeping the session open due to storing a new data after the deletion.
+        // The initial step involves attempting to create a sentinel using a unique key. If this operation 
+        // fails, it indicates an exceptionally rare key conflict scenario, and the login process should be
+        // restarted (although the likelihood of this occurring is exceedingly low).
+        // Once established, this sentinel takes on the responsibility of managing the session's lifespan.
+        // It remains immutable and is set to expire after a certain period.
+        // Session data is stored within a hash set (hset), where each field corresponds to a different
+        // version of the data. A version number signifies that the stored data is no older than the 
+        // specified version, though it may be newer due to concurrent updates.
+        // To access the current session data, one must retrieve both the sentinel and the data with 
+        // the latest version. If either of them has expired or is missing, the session is considered 
+        // expired. For instance, during a logout (when the session is deleted), it is possible for a 
+        // concurrent update to occur, leading to the removal of the sentinel while new session data has
+        // been recently stored. The requirement for both sentinel and data ensures that the session 
+        // cannot be extended beyond the default period. Nevertheless, this situation may result in
+        // lingering session data, but the expiration mechanism guarantees their eventual deletion.
 
         let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
 
@@ -241,7 +246,7 @@ impl SessionManager {
 
         let pattern = format!("{}session:{}:*", inner.key_prefix, user_id.as_simple());
         //log::debug!("pattern: {pattern}");
-        
+
         let keys = {
             let mut keys = vec![];
             let mut iter: redis::AsyncIter<String> = client.scan_match(pattern).await.map_err(DBError::RedisError)?;
