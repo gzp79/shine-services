@@ -1,7 +1,6 @@
 import { defineParameterType, World } from '@cucumber/cucumber';
 import chai from './_chai';
 import { KarateState } from './_karate_state';
-import { KarateWorld } from './karate';
 
 /// Helper to get KarateState from this (World) where @binding is not working for some reason
 /// A common use is the transformer function of registered types
