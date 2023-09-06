@@ -2,6 +2,9 @@ FROM rust:bullseye as build
 
 RUN USER=root
 
+RUN apt update \
+    && apt install -y jq
+
 # create a layer of the dependencies (including submodules)
 RUN cargo new --bin shine-identity
 WORKDIR /shine-identity
@@ -15,11 +18,17 @@ RUN rm -rf ./src \
     && rm -f ./target/release/shine_identity* \
     && rm -f ./target/release/shine-identity*
 
-# perform the actual build
+# perform the build
 WORKDIR /shine-identity
 COPY ./src ./src
 COPY ./sql_migrations ./sql_migrations
-RUN cargo build --release --no-default-features
+RUN cargo build --release --no-default-features 
+
+# run the unit tests asuming the local (dockerizd) resources are available
+ENV SHINE_TEST_REDIS_CNS="redis://redis.localhost.com:6379"
+ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.localhost.com:5432/database-name?sslmode=disable"
+
+RUN cargo test --release
 
 #######################################################
 FROM debian:bullseye-slim as base
