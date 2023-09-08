@@ -60,3 +60,4 @@ services:
       - scytta-test.com:127.0.0.1
       - web.scytta-test.com:127.0.0.1
       - cloud.scytta-test.com:127.0.0.1
+

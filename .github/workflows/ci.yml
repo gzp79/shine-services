@@ -41,13 +41,16 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: type=sha
         
-    - name: Build test
+    - name: Build
       uses: docker/build-push-action@v4
       with:
         context: .
         target: test
         push: false
         load: true
+        add-hosts:
+         - postgres.localhost.com:host-gateway
+         - redis.localhost.com:host-gateway
         cache-from: type=gha
         cache-to: type=gha,mode=max
         tags: ${{ env.IMAGE_NAME }}:test

@@ -5,6 +5,8 @@ RUN USER=root
 RUN apt update \
     && apt install -y jq
 
+RUN cat /etc/hosts
+
 # create a layer of the dependencies (including submodules)
 RUN cargo new --bin shine-identity
 WORKDIR /shine-identity
@@ -25,6 +27,7 @@ COPY ./sql_migrations ./sql_migrations
 RUN cargo build --release --no-default-features 
 
 # run the unit tests asuming the local (dockerizd) resources are available
+ENV RUST_BACKTRACE=1
 ENV SHINE_TEST_REDIS_CNS="redis://redis.localhost.com:6379"
 ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.localhost.com:5432/database-name?sslmode=disable"
 
