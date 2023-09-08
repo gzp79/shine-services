@@ -74,6 +74,7 @@ jobs:
     - name: Integartion test
       run: |
         npm ci
+        docker compose -f ../docker.yml --profile test up -d
         npm run regression
         npm run report
       working-directory: ./integration-test
