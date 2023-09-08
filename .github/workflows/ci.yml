@@ -44,6 +44,10 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: type=sha
 
+    - name: Start test resources
+      run: |
+        docker compose -f docker.yml up --build
+        
     - name: Docker build
       uses: docker/build-push-action@v4
       with:
