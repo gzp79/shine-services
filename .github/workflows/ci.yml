@@ -26,9 +26,14 @@ jobs:
     - uses: actions/checkout@v3
       with:
         submodules: recursive
-    - name: Docker Setup Buildx
+        
+    - name: Setup Docker Buildx
       uses: docker/setup-buildx-action@v2
-    - uses: actions/setup-node@v3
+      with:
+        driver: docker
+        
+    - name: Setup Node
+      uses: actions/setup-node@v3
       with:
         node-version: 18.x
 
@@ -39,7 +44,7 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: type=sha
 
-    - name: Build
+    - name: Docekr build
       uses: docker/build-push-action@v4
       with:
         context: .
@@ -52,6 +57,7 @@ jobs:
         cache-from: type=gha,scope=workflow,mode=max
         cache-to: type=gha,scope=workflow,mode=max
         tags: ${{ env.IMAGE_NAME }}:test
+        
     - name: Add hosts to /etc/hosts
       run: |
         sudo echo "127.0.0.1 scytta-test.com" | sudo tee -a /etc/hosts
@@ -73,6 +79,7 @@ jobs:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+        
     - name: Build prod
       if: github.event_name != 'pull_request'
       uses: docker/build-push-action@v4
@@ -90,4 +97,3 @@ jobs:
         name: Test Reports
         path: | 
           ./integration-test/reports/
-          
