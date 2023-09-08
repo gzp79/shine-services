@@ -54,8 +54,9 @@ jobs:
         add-hosts: |
          postgres.localhost.com:host-gateway
          redis.localhost.com:host-gateway
-        cache-from: type=gha,scope=workflow,mode=max
-        cache-to: type=gha,scope=workflow,mode=max
+        # it seems as I have either host-gateway with docker driver or cache with docker-container, but not both at the same time
+        #cache-from: type=gha,scope=workflow,mode=max
+        #cache-to: type=gha,scope=workflow,mode=max
         tags: ${{ env.IMAGE_NAME }}:test
         
     - name: Add hosts to /etc/hosts
