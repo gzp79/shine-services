@@ -27,12 +27,10 @@ jobs:
       with:
         submodules: recursive
     - name: Docker Setup Buildx
-      uses: docker/setup-buildx-action@v2      
+      uses: docker/setup-buildx-action@v2
     - uses: actions/setup-node@v3
       with:
         node-version: 18.x
-    - name: Setup JBang
-      uses: jbangdev/setup-jbang@main   
 
     - name: Docker meta
       id: meta
@@ -51,8 +49,8 @@ jobs:
         add-hosts: |
          postgres.localhost.com:host-gateway
          redis.localhost.com:host-gateway
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-from: type=gha,scope=workflow,mode=max
+        cache-to: type=gha,scope=workflow,mode=max
         tags: ${{ env.IMAGE_NAME }}:test
     - name: Add hosts to /etc/hosts
       run: |
