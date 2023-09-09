@@ -298,7 +298,7 @@ pg_query!( FindByLink =>
         linked: DateTime<Utc>
     };
     sql = r#"
-        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version
+        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
             e.provider, e.provider_id, e.name, e.email, e.linked
             FROM external_logins e, identities i
             WHERE e.user_id = i.user_id
@@ -325,7 +325,7 @@ pg_query!( FindByToken =>
         token_is_expired: bool
     };
     sql = r#"
-        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version
+        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
             t.token, t.created, t.expire, t.fingerprint, t.kind, t.expire < now() is_expired
             FROM login_tokens t, identities i
             WHERE t.user_id = i.user_id
