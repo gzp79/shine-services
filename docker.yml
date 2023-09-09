@@ -10,6 +10,8 @@ services:
     ports:
       - 5432:5432
     restart: on-failure:3
+    networks:
+      - shine
     
 #  pgweb:
 #    image: sosedoff/pgweb
@@ -28,6 +30,8 @@ services:
     command: redis-server
     ports:
       - 6379:6379
+    networks:
+      - shine
 
 #  redis-commander:
 #    image: rediscommander/redis-commander:latest
@@ -60,4 +64,9 @@ services:
       - scytta-test.com:127.0.0.1
       - web.scytta-test.com:127.0.0.1
       - cloud.scytta-test.com:127.0.0.1
+    networks:
+      - shine
 
+networks:
+  shine:
+    external: true

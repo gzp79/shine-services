@@ -23,6 +23,7 @@ RUN rm -rf ./src \
 WORKDIR /shine-identity
 COPY ./src ./src
 COPY ./sql_migrations ./sql_migrations
+COPY ./rustfmt.toml ./
 
 # Perform quality checks - code format
 RUN cargo fmt --check

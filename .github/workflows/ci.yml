@@ -26,11 +26,15 @@ jobs:
     - uses: actions/checkout@v3
       with:
         submodules: recursive
-        
-    - name: Setup Docker Buildx
+    
+    - name: Setup Docker Buildx (1)
+      run: |
+        docker network create shine
+    - name: Setup Docker Buildx (2)
       uses: docker/setup-buildx-action@v2
       with:
-        driver: docker
+        driver: docker-container
+        driver-opts: network=shine
         
     - name: Setup Node
       uses: actions/setup-node@v3
@@ -47,6 +51,10 @@ jobs:
     - name: Start test resources
       run: |
         docker compose -f docker.yml up -d
+        pg_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-postgres-1
+        redis_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-redis-1
+        echo "pg_host=$pg_host" >> $GITHUB_OUTPUT
+        echo "redis_host=$redis_host" >> $GITHUB_OUTPUT
         
     - name: Docker build
       uses: docker/build-push-action@v4
@@ -56,11 +64,10 @@ jobs:
         push: false
         load: true
         add-hosts: |
-         postgres.localhost.com:host-gateway
-         redis.localhost.com:host-gateway
-        # it seems as I have either host-gateway with docker driver or cache with docker-container, but not both at the same time
-        #cache-from: type=gha,scope=workflow,mode=max
-        #cache-to: type=gha,scope=workflow,mode=max
+          postgres.localhost.com:${{ steps.vars.outputs.pg_host }}
+          redis.localhost.com:${{ steps.vars.outputs.redis_host }}
+        cache-from: type=gha,scope=workflow,mode=max
+        cache-to: type=gha,scope=workflow,mode=max
         tags: ${{ env.IMAGE_NAME }}:test
         
     - name: Add hosts to /etc/hosts
