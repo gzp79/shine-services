@@ -51,6 +51,7 @@ jobs:
     - name: Start test resources
       run: |
         docker compose -f docker.yml up -d
+        docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-postgres-1
         pg_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-postgres-1
         redis_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-redis-1
         echo "pg_host=$pg_host" >> $GITHUB_OUTPUT
