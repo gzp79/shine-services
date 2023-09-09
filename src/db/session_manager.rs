@@ -93,19 +93,19 @@ impl SessionManager {
         let (sentinel_key, key) = self.keys(identity.id, &session_key);
 
         // Session management in redis:
-        // The initial step involves attempting to create a sentinel using a unique key. If this operation 
+        // The initial step involves attempting to create a sentinel using a unique key. If this operation
         // fails, it indicates an exceptionally rare key conflict scenario, and the login process should be
         // restarted (although the likelihood of this occurring is exceedingly low).
         // Once established, this sentinel takes on the responsibility of managing the session's lifespan.
         // It remains immutable and is set to expire after a certain period.
         // Session data is stored within a hash set (hset), where each field corresponds to a different
-        // version of the data. A version number signifies that the stored data is no older than the 
+        // version of the data. A version number signifies that the stored data is no older than the
         // specified version, though it may be newer due to concurrent updates.
-        // To access the current session data, one must retrieve both the sentinel and the data with 
-        // the latest version. If either of them has expired or is missing, the session is considered 
-        // expired. For instance, during a logout (when the session is deleted), it is possible for a 
+        // To access the current session data, one must retrieve both the sentinel and the data with
+        // the latest version. If either of them has expired or is missing, the session is considered
+        // expired. For instance, during a logout (when the session is deleted), it is possible for a
         // concurrent update to occur, leading to the removal of the sentinel while new session data has
-        // been recently stored. The requirement for both sentinel and data ensures that the session 
+        // been recently stored. The requirement for both sentinel and data ensures that the session
         // cannot be extended beyond the default period. Nevertheless, this situation may result in
         // lingering session data, but the expiration mechanism guarantees their eventual deletion.
 

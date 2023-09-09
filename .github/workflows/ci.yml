@@ -74,12 +74,19 @@ jobs:
     - name: Integartion test
       run: |
         npm ci
+        echo "::group::Starting service"
         docker compose -f ../docker.yml --profile test up -d
+        echo "::endgroup::"
+        echo "::group::Runing test"
         npm run regression
+        echo "::endgroup::"
+        echo "::group::Generating report"
         npm run report
+        echo "::endgroup::"
       working-directory: ./integration-test
 
     - name: Log in to the Container registry
+      if: github.event_name != 'pull_request'
       uses: docker/login-action@v2
       with:
         registry: ${{ env.REGISTRY }}

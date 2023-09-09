@@ -20,18 +20,23 @@ RUN rm -rf ./src \
     && rm -f ./target/release/shine_identity* \
     && rm -f ./target/release/shine-identity*
 
-# perform the build
+# Prepare for build
 WORKDIR /shine-identity
 COPY ./src ./src
 COPY ./sql_migrations ./sql_migrations
-RUN cargo build --release --no-default-features 
 
-# run the unit tests asuming the local (dockerizd) resources are available
+# Perform quality checks - code format
+RUN cargo fmt --check
+
+# Perform quality checks - unit tests
 ENV RUST_BACKTRACE=1
 ENV SHINE_TEST_REDIS_CNS="redis://redis.localhost.com:6379"
 ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.localhost.com:5432/database-name?sslmode=disable"
-
 RUN cargo test --release
+
+# Perform the build (only if checks are ok)
+RUN cargo build --release --no-default-features 
+
 
 #######################################################
 FROM debian:bullseye-slim as base
