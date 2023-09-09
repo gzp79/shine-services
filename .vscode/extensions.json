@@ -10,6 +10,7 @@
         "adamvoss.vscode-languagetool-en",
         "streetsidesoftware.code-spell-checker",
         "alexkrechik.cucumberautocomplete",
-        "abhinabaghosh.cucumberquick"
+        "abhinabaghosh.cucumberquick",
+        "cweijan.vscode-redis-client"
     ]
 }

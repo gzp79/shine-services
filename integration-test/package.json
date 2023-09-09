@@ -4,14 +4,11 @@
   "description": "",
   "main": "test.js",
   "scripts": {
-    "start_service": "docker compose -f ../docker.yml --profile test up --build -d",
-    "build_service": "docker build --target test -t gzp79/shine-identity:test ..",
+    "build_service": "docker build --target test -t gzp79/shine-identity:test --progress=plain ..",
     "test": "npx cucumber",
     "report": "npx ts-node cucumber.reporter.ts",
-    "health:local": "npx cucumber regression/health.feature",
-    "regression:local": "npx cucumber regression/**/*.feature",
-    "health": "npm run start_service && npm run health:local",
-    "regression": "npm run start_service && npm run regression:local"
+    "health": "npx cucumber regression/health.feature",
+    "regression": "npx cucumber regression/**/*.feature"
   },
   "author": "",
   "license": "MIT",

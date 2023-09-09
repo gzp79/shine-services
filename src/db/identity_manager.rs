@@ -1,4 +1,4 @@
-use crate::db::{DBError, DBPool};
+use crate::db::DBError;
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use shine_service::{
@@ -51,7 +51,7 @@ impl ToPGType for IdentityKind {
     const PG_TYPE: Type = Type::INT2;
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 
 pub struct Identity {
     pub id: Uuid,
@@ -60,6 +60,7 @@ pub struct Identity {
     pub email: Option<String>,
     pub is_email_confirmed: bool,
     pub created: DateTime<Utc>,
+    pub version: i32,
 }
 
 impl From<FindByIdRow> for Identity {
@@ -71,6 +72,7 @@ impl From<FindByIdRow> for Identity {
             email: value.email,
             is_email_confirmed: value.is_email_confirmed,
             created: value.created,
+            version: value.version,
         }
     }
 }
@@ -84,6 +86,7 @@ impl From<FindByLinkRow> for Identity {
             email: value.email,
             is_email_confirmed: value.is_email_confirmed,
             created: value.created,
+            version: value.version,
         }
     }
 }
@@ -106,6 +109,7 @@ impl From<FindByTokenRow> for (Identity, LoginTokenInfo) {
             email: value.email,
             is_email_confirmed: value.is_email_confirmed,
             created: value.created,
+            version: value.version,
         };
         (identity, token)
     }
@@ -267,10 +271,11 @@ pg_query!( FindById =>
         name: String,
         email: Option<String>,
         is_email_confirmed: bool,
-        created: DateTime<Utc>
+        created: DateTime<Utc>,
+        version: i32
     };
     sql = r#"
-        SELECT user_id, kind, name, email, email_confirmed, created 
+        SELECT user_id, kind, name, email, email_confirmed, created, data_version
             FROM identities
             WHERE user_id = $1
     "#
@@ -278,12 +283,22 @@ pg_query!( FindById =>
 
 pg_query!( FindByLink =>
     in = provider: &str, provider_id: &str;
-    out = FindByLinkRow{
-            user_id: Uuid, kind: IdentityKind, name: String, email: Option<String>, is_email_confirmed: bool, created: DateTime<Utc>,
-            provider: String, provider_id: String, external_name: Option<String>, external_email: Option<String>, linked: DateTime<Utc>
-        };
+    out = FindByLinkRow {
+        user_id: Uuid,
+        kind: IdentityKind,
+        name: String,
+        email: Option<String>,
+        is_email_confirmed: bool,
+        created: DateTime<Utc>,
+        version: i32,
+        provider: String,
+        provider_id: String,
+        external_name: Option<String>,
+        external_email: Option<String>,
+        linked: DateTime<Utc>
+    };
     sql = r#"
-        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created,
+        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
             e.provider, e.provider_id, e.name, e.email, e.linked
             FROM external_logins e, identities i
             WHERE e.user_id = i.user_id
@@ -301,6 +316,7 @@ pg_query!( FindByToken =>
         email: Option<String>,
         is_email_confirmed: bool,
         created: DateTime<Utc>,
+        version: i32,
         token: String,
         token_created: DateTime<Utc>,
         token_expire: DateTime<Utc>,
@@ -309,7 +325,7 @@ pg_query!( FindByToken =>
         token_is_expired: bool
     };
     sql = r#"
-        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created,
+        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
             t.token, t.created, t.expire, t.fingerprint, t.kind, t.expire < now() is_expired
             FROM login_tokens t, identities i
             WHERE t.user_id = i.user_id
@@ -403,8 +419,8 @@ struct Inner {
 pub struct IdentityManager(Arc<Inner>);
 
 impl IdentityManager {
-    pub async fn new(pool: &DBPool) -> Result<Self, IdentityBuildError> {
-        let client = pool.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+    pub async fn new(postgres: &PGConnectionPool) -> Result<Self, IdentityBuildError> {
+        let client = postgres.get().await.map_err(DBError::PostgresPoolError)?;
         let stmt_insert_identity = InsertIdentity::new(&client).await?;
         let stmt_insert_external_link = InsertExternalLogin::new(&client).await?;
         let stmt_insert_token = InsertToken::new(&client).await?;
@@ -421,7 +437,7 @@ impl IdentityManager {
         let stmt_delete_role = DeleteUserRole::new(&client).await?;
 
         Ok(Self(Arc::new(Inner {
-            postgres: pool.postgres.clone(),
+            postgres: postgres.clone(),
             stmt_insert_identity,
             stmt_insert_external_link,
             stmt_insert_token,
@@ -508,6 +524,7 @@ impl IdentityManager {
             is_email_confirmed: false,
             kind: IdentityKind::User,
             created,
+            version: 0,
         })
     }
 
@@ -532,8 +549,9 @@ impl IdentityManager {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
 
-        let mut builder =
-            QueryBuilder::new("SELECT user_id, kind, name, email, email_confirmed, created FROM identities");
+        let mut builder = QueryBuilder::new(
+            "SELECT user_id, kind, name, email, email_confirmed, created, data_version FROM identities",
+        );
 
         fn into_identity(r: Row) -> Result<Identity, IdentityError> {
             Ok(Identity {
@@ -543,6 +561,7 @@ impl IdentityManager {
                 email: r.try_get(3)?,
                 is_email_confirmed: r.try_get(4)?,
                 created: r.try_get(5)?,
+                version: r.try_get(6)?,
             })
         }
 
@@ -731,8 +750,10 @@ impl IdentityManager {
             .await?
             != 1
         {
+            transaction.rollback().await?;
             Err(IdentityError::UpdateConflict)
         } else {
+            transaction.commit().await?;
             Ok(())
         }
     }
@@ -759,8 +780,10 @@ impl IdentityManager {
             .await?
             != 1
         {
+            transaction.rollback().await?;
             Err(IdentityError::UpdateConflict)
         } else {
+            transaction.commit().await?;
             Ok(())
         }
     }

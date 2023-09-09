@@ -46,7 +46,7 @@ async fn delete_user(
     }
 
     // validate session as this is a very risky operation
-    match state.session_manager().find_session(user_id, user_key).await {
+    match state.session_manager().find(user_id, user_key).await {
         Ok(None) => return state.page_error(auth_session, AuthError::SessionExpired, query.error_url.as_ref()),
         Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
         Ok(Some(_)) => {}
