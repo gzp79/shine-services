@@ -49,6 +49,7 @@ jobs:
         tags: type=sha
 
     - name: Start test resources
+      id: test_resources
       run: |
         docker compose -f docker.yml up -d
         echo "pg_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-postgres-1)" >> $GITHUB_OUTPUT
@@ -62,8 +63,8 @@ jobs:
         push: false
         load: true
         add-hosts: |
-          postgres.localhost.com:${{ steps.vars.outputs.pg_host }}
-          redis.localhost.com:${{ steps.vars.outputs.redis_host }}
+          postgres.localhost.com:${{ steps.test_resources.outputs.pg_host }}
+          redis.localhost.com:${{ steps.test_resources.outputs.redis_host }}
         cache-from: type=gha,scope=workflow,mode=max
         cache-to: type=gha,scope=workflow,mode=max
         tags: ${{ env.IMAGE_NAME }}:test
