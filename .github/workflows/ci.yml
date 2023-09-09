@@ -106,6 +106,10 @@ jobs:
         context: .
         target: prod
         push: true
+        # only to have the layers reused from the initial build
+        add-hosts: |
+          postgres.localhost.com:${{ steps.test_resources.outputs.pg_host }}
+          redis.localhost.com:${{ steps.test_resources.outputs.redis_host }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
 
