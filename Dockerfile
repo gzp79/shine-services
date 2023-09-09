@@ -3,11 +3,10 @@ FROM rust:bullseye as build
 RUN USER=root
 
 RUN apt update \
-    && apt install -y jq
+    && apt install -y jq \
+    && rustup component add rustfmt
 
-RUN cat /etc/hosts
-
-# create a layer of the dependencies (including submodules)
+# Create a layer of the dependencies (including submodules)
 RUN cargo new --bin shine-identity
 WORKDIR /shine-identity
 COPY ./shine-service-rs ./shine-service-rs
