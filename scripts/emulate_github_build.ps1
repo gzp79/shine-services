@@ -4,8 +4,8 @@ docker buildx create --driver=docker-container --driver-opt=network=shine --use
 
 echo Setup environment
 docker compose -f docker.yml up -d
-set pg_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-postgres-1
-set redis_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-redis-1
+$pg_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-postgres-1
+$redis_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-redis-1
 
 echo Build action
 echo build is runing in the created buildx workflow (docker container) and for this 
