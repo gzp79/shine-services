@@ -220,7 +220,7 @@ impl SessionManager {
 
         Ok(Some(CurrentUser {
             authenticity: CurrentUserAuthenticity::NotValidate,
-            user_id: user_id,
+            user_id,
             key: session_key,
             name: data.name,
             roles: data.roles,

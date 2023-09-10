@@ -67,7 +67,7 @@
     {
       "label": "start dev environment",
       "type": "shell",
-      "command": "docker compose -f ./docker.yml --profile dev up --build --force-recreate",
+      "command": "docker compose -f ./docker.yml up",
       "group": "build",
       "isBackground": true
     },

@@ -4,7 +4,7 @@ use chrono::Utc;
 use serde::Serialize;
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem},
-    service::CurrentUser,
+    service::CheckedCurrentUser,
 };
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -23,25 +23,18 @@ struct CurrentUserInfo {
 /// from javascript, thus this endpoint can be used to get details about the current user.
 async fn get_user_info(
     State(state): State<AuthServiceState>,
-    user: CurrentUser,
+    user: CheckedCurrentUser,
 ) -> Result<Json<CurrentUserInfo>, Problem> {
-    let _ = state
-        .session_manager()
-        .find(user.user_id, user.key)
-        .await
-        .map_err(Problem::internal_error_from)?
-        .ok_or(Problem::unauthorized())?;
-
+    // find extra information not present in the session data
     let identity = state
         .identity_manager()
         .find(crate::db::FindIdentity::UserId(user.user_id))
         .await
         .map_err(Problem::internal_error_from)?
+        //in the very unlikely case, when the identity is deleted just after session validation, a not found is returned.
         .ok_or(Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user.user_id)))?;
 
-    // use roles from session, as other services will use the same information.
-    // let roles = state.identity_manager().get_roles(identity.user_id).await?;
-
+    let user = user.into_user();
     let session_length = (Utc::now() - user.session_start).num_seconds();
     let session_length = if session_length < 0 { 0 } else { session_length as u64 };
     Ok(Json(CurrentUserInfo {

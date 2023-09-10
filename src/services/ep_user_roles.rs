@@ -3,7 +3,7 @@ use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
 use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem, ValidatedJson, ValidatedPath},
-    service::CurrentUser,
+    service::CheckedCurrentUser,
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -39,7 +39,7 @@ struct AddUserRole {
 /// from javascript, thus this endpoint can be used to get details about the current user.
 async fn add_user_role(
     State(state): State<IdentityServiceState>,
-    user: CurrentUser,
+    user: CheckedCurrentUser,
     ValidatedPath(path): ValidatedPath<Path>,
     ValidatedJson(params): ValidatedJson<AddUserRole>,
 ) -> Result<Json<UserRoles>, Problem> {
@@ -78,7 +78,7 @@ where
 /// from javascript, thus this endpoint can be used to get details about the current user.
 async fn get_user_roles(
     State(state): State<IdentityServiceState>,
-    user: CurrentUser,
+    user: CheckedCurrentUser,
     ValidatedPath(path): ValidatedPath<Path>,
 ) -> Result<Json<UserRoles>, Problem> {
     state.require_permission(&user, Permission::ReadAnyUserRole).await?;
@@ -119,7 +119,7 @@ struct DeleteUserRole {
 /// from javascript, thus this endpoint can be used to get details about the current user.
 async fn delete_user_role(
     State(state): State<IdentityServiceState>,
-    user: CurrentUser,
+    user: CheckedCurrentUser,
     ValidatedPath(path): ValidatedPath<Path>,
     ValidatedJson(params): ValidatedJson<DeleteUserRole>,
 ) -> Result<Json<UserRoles>, Problem> {

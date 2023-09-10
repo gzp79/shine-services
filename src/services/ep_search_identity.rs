@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem, ValidatedQuery},
-    service::CurrentUser,
+    service::CheckedCurrentUser,
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -42,7 +42,7 @@ struct IdentitySearchPage {
 async fn search_identity(
     State(state): State<IdentityServiceState>,
     ValidatedQuery(query): ValidatedQuery<Query>,
-    user: CurrentUser,
+    user: CheckedCurrentUser,
 ) -> Result<Json<IdentitySearchPage>, Problem> {
     state.require_permission(&user, Permission::ReadAnyIdentity).await?;
 

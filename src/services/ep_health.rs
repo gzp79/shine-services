@@ -4,7 +4,7 @@ use bb8::State as BB8PoolState;
 use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem},
-    service::CurrentUser,
+    service::CheckedCurrentUser,
 };
 use utoipa::ToSchema;
 
@@ -58,7 +58,7 @@ pub struct UpdateTraceConfig {
 
 async fn reconfigure(
     State(state): State<IdentityServiceState>,
-    user: CurrentUser,
+    user: CheckedCurrentUser,
     Json(format): Json<UpdateTraceConfig>,
 ) -> Result<(), Problem> {
     state

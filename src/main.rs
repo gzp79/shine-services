@@ -124,7 +124,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     };
 
     let db_pool = DBPool::new(&config.db).await?;
-    let user_session = UserSessionValidator::new(None, &auth_config.session_secret, db_pool.redis.clone())?;
+    let user_session = UserSessionValidator::new(None, &auth_config.session_secret, "", db_pool.redis.clone())?;
     let identity_manager = IdentityManager::new(&db_pool.postgres).await?;
     let ttl_session = Duration::seconds(i64::try_from(auth_config.ttl_session)?);
     let session_manager = SessionManager::new(&db_pool.redis, String::new(), ttl_session).await?;

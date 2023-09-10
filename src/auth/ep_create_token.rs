@@ -13,7 +13,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem, ValidatedQuery},
-    service::CurrentUser,
+    service::CheckedCurrentUser,
 };
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
@@ -44,7 +44,7 @@ struct CreatedToken {
 /// from javascript, thus this endpoint can be used to get details about the current user.
 async fn create_token(
     State(state): State<AuthServiceState>,
-    user: CurrentUser,
+    user: CheckedCurrentUser,
     ValidatedQuery(query): ValidatedQuery<Query>,
 ) -> Result<Json<CreatedToken>, Problem> {
     // check if session is still valid
@@ -87,6 +87,7 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/token"), create_token)
         .with_operation_id("ep_create_token")
         .with_tag("auth")
+        //.with_checked_user()
         .with_query_parameter::<Query>()
         .with_json_response::<CreatedToken>(StatusCode::OK)
 }
