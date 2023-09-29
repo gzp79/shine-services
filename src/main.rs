@@ -149,6 +149,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         let identity_state = IdentityServiceDependencies {
             tracing_manager,
             identity_manager: identity_manager.clone(),
+            session_manager: session_manager.clone(),
             name_generator: name_generator.clone(),
             db: db_pool.clone(),
         };

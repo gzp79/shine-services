@@ -1,5 +1,5 @@
 use crate::{
-    db::{DBPool, IdentityManager, NameGenerator},
+    db::{DBPool, IdentityManager, NameGenerator, SessionManager},
     services,
 };
 use axum::Router;
@@ -10,6 +10,7 @@ use utoipa::openapi::OpenApi;
 struct Inner {
     tracing_manager: TracingManager,
     identity_manager: IdentityManager,
+    session_manager: SessionManager,
     name_generator: NameGenerator,
     db: DBPool,
 }
@@ -26,6 +27,10 @@ impl IdentityServiceState {
         &self.0.identity_manager
     }
 
+    pub fn session_manager(&self) -> &SessionManager {
+        &self.0.session_manager
+    }
+
     pub fn name_generator(&self) -> &NameGenerator {
         &self.0.name_generator
     }
@@ -38,6 +43,7 @@ impl IdentityServiceState {
 pub struct IdentityServiceDependencies {
     pub tracing_manager: TracingManager,
     pub identity_manager: IdentityManager,
+    pub session_manager: SessionManager,
     pub name_generator: NameGenerator,
     pub db: DBPool,
 }
@@ -51,6 +57,7 @@ impl IdentityServiceBuilder {
         let state = IdentityServiceState(Arc::new(Inner {
             tracing_manager: dependencies.tracing_manager,
             identity_manager: dependencies.identity_manager,
+            session_manager: dependencies.session_manager,
             name_generator: dependencies.name_generator,
             db: dependencies.db,
         }));

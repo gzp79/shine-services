@@ -71,7 +71,7 @@ async fn create_get_remove() {
     log::info!("Remove session...");
     session_manager.remove(identity.id, session.key).await.unwrap();
     {
-        let (_, key) = session_manager.keys(identity.id, &session.key);
+        let (_, key) = session_manager.to_redis_keys(identity.id, &session.key);
         let client = &mut *redis.get().await.unwrap();
         let versions: Vec<String> = client.hkeys(&key).await.unwrap();
         assert!(
@@ -108,7 +108,7 @@ async fn no_create_update() {
     let roles = vec!["R1".into(), "R2".into()];
 
     let session = session_manager
-        .update(SessionKey::new_random(&random).unwrap(), &identity, roles.clone())
+        .update(SessionKey::new_random(&random).unwrap(), &identity, &roles)
         .await
         .unwrap();
     assert!(session.is_none());
@@ -145,10 +145,7 @@ async fn create_update() {
     let mut identity5 = identity1.clone();
     identity5.version = 5;
     let roles5 = vec!["R2".into(), "R5".into()];
-    let updated_session = session_manager
-        .update(session.key, &identity5, roles5.clone())
-        .await
-        .unwrap();
+    let updated_session = session_manager.update(session.key, &identity5, &roles5).await.unwrap();
     let updated_session = updated_session.expect("Session should be available");
     assert_eq!(session.key, updated_session.key);
     assert_eq!(identity5.id, updated_session.user_id);
@@ -177,7 +174,7 @@ async fn create_update() {
         let mut identity3 = identity1.clone();
         let roles3 = vec!["R2".into(), "R3".into()];
         identity3.version = 3;
-        let updated_session = session_manager.update(session.key, &identity3, roles3).await.unwrap();
+        let updated_session = session_manager.update(session.key, &identity3, &roles3).await.unwrap();
         let updated_session = updated_session.expect("Session should be available");
         // it should have no effect on the update
         assert_eq!(session.key, updated_session.key);
@@ -204,7 +201,7 @@ async fn create_update() {
     {
         log::info!("Update to version 5 again with different roles should have no effect");
         let roles5b = vec!["R2".into(), "R52".into()];
-        let updated_session = session_manager.update(session.key, &identity5, roles5b).await.unwrap();
+        let updated_session = session_manager.update(session.key, &identity5, &roles5b).await.unwrap();
         let updated_session = updated_session.expect("Session should be available");
         assert_eq!(session.key, updated_session.key);
         assert_eq!(identity5.id, updated_session.user_id);
@@ -270,7 +267,7 @@ async fn create_many_remove_all() {
     // delete sessions of user1
     session_manager.remove_all(identity.id).await.unwrap();
     for key in keys {
-        let (_, key) = session_manager.keys(identity.id, &key);
+        let (_, key) = session_manager.to_redis_keys(identity.id, &key);
         let client = &mut *redis.get().await.unwrap();
         let versions: Vec<String> = client.hkeys(&key).await.unwrap();
         assert!(

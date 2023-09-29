@@ -8,6 +8,8 @@ pub mod roles {
     pub const USER_ADMIN: &str = "UserAdmin";
 }
 
+pub type Role = String;
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Permission {
     /// Allow to update tracing configuration
@@ -41,7 +43,7 @@ pub struct PermissionSet {
 }
 
 impl PermissionSet {
-    pub fn from_roles(roles: &[String]) -> Self {
+    pub fn from_roles(roles: &[Role]) -> Self {
         let mut permission = HashSet::new();
         for role in roles {
             match role.as_str() {

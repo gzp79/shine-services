@@ -102,7 +102,6 @@ export default class Server extends MockServer {
 
                 this.log(`id-token: ${idToken}`);
 
-                // todo create a signed jwk
                 res.status(200).json({
                     access_token: idToken,
                     id_token: idToken,

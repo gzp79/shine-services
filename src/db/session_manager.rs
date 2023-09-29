@@ -1,5 +1,4 @@
-use crate::db::DBError;
-use crate::db::Identity;
+use crate::db::{DBError, Identity, Role};
 use chrono::{DateTime, Duration, Utc};
 use redis::AsyncCommands;
 use ring::rand::SystemRandom;
@@ -14,6 +13,8 @@ use uuid::Uuid;
 pub enum DBSessionError {
     #[error("Failed to create session, conflicting keys")]
     KeyConflict,
+    #[error("Error in the stored key")]
+    InvalidRedisKeyUser(#[source] uuid::Error),
 
     #[error(transparent)]
     SessionKeyError(#[from] SessionKeyError),
@@ -33,7 +34,7 @@ struct SessionSentinel {
 struct SessionData {
     pub name: String,
     pub is_email_confirmed: bool,
-    pub roles: Vec<String>,
+    pub roles: Vec<Role>,
 }
 
 #[derive(Debug, ThisError)]
@@ -66,7 +67,7 @@ impl SessionManager {
         })))
     }
 
-    fn keys(&self, user_id: Uuid, session_key: &SessionKey) -> (String, String) {
+    fn to_redis_keys(&self, user_id: Uuid, session_key: &SessionKey) -> (String, String) {
         let inner = &*self.0;
         let prefix = format!(
             "{}session:{}:{}",
@@ -79,10 +80,38 @@ impl SessionManager {
         (sentinel_key, key)
     }
 
+    #[allow(clippy::wrong_self_convention)]
+    fn from_redis_key(&self, key: &str) -> Result<(Uuid, SessionKey), DBSessionError> {
+        let inner = &*self.0;
+        let user_and_key = match key.strip_prefix(&format!("{}session:", inner.key_prefix)) {
+            Some(user_and_key) => user_and_key,
+            None => {
+                return Err(DBSessionError::from(SessionKeyError::KeyError(
+                    "Invalid key format".into(),
+                )))
+            }
+        };
+        let mut parts = user_and_key.splitn(2, ':');
+        let user = parts
+            .next()
+            .ok_or_else(|| SessionKeyError::KeyError("Invalid key format".into()))?;
+        let user = Uuid::parse_str(user).map_err(DBSessionError::InvalidRedisKeyUser)?;
+        let key = parts
+            .next()
+            .ok_or_else(|| SessionKeyError::KeyError("Invalid key format".into()))?;
+        let key = SessionKey::from_hex(key)?;
+        if parts.next().is_some() {
+            return Err(DBSessionError::from(SessionKeyError::KeyError(
+                "Invalid key format".into(),
+            )));
+        }
+        Ok((user, key))
+    }
+
     pub async fn create(
         &self,
         identity: &Identity,
-        roles: Vec<String>,
+        roles: Vec<Role>,
         fingerprint: &ClientFingerprint,
     ) -> Result<CurrentUser, DBSessionError> {
         let created_at = Utc::now();
@@ -90,7 +119,7 @@ impl SessionManager {
         let inner = &*self.0;
 
         let session_key = SessionKey::new_random(&inner.random)?;
-        let (sentinel_key, key) = self.keys(identity.id, &session_key);
+        let (sentinel_key, key) = self.to_redis_keys(identity.id, &session_key);
 
         // Session management in redis:
         // The initial step involves attempting to create a sentinel using a unique key. If this operation
@@ -152,10 +181,10 @@ impl SessionManager {
         &self,
         session_key: SessionKey,
         identity: &Identity,
-        roles: Vec<String>,
-    ) -> Result<Option<CurrentUser>, DBError> {
+        roles: &[Role],
+    ) -> Result<Option<CurrentUser>, DBSessionError> {
         let inner = &*self.0;
-        let (sentinel_key, key) = self.keys(identity.id, &session_key);
+        let (sentinel_key, key) = self.to_redis_keys(identity.id, &session_key);
 
         let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
 
@@ -164,7 +193,7 @@ impl SessionManager {
             let data = SessionData {
                 name: identity.name.clone(),
                 is_email_confirmed: identity.is_email_confirmed,
-                roles,
+                roles: roles.to_vec(),
             };
             redis::pipe()
                 .hset_nx(&key, format!("{}", identity.version), &data)
@@ -176,16 +205,46 @@ impl SessionManager {
                 .map_err(DBError::RedisError)?;
 
             // Perform a full query as this update may had no effect due to the 'nx' flag.
-            self.find(identity.id, session_key).await
+            let session = self.find(identity.id, session_key).await?;
+            Ok(session)
         } else {
             // sentinel is gone, session is closed.
             Ok(None)
         }
     }
 
+    async fn find_stored_keys(&self, user_id: Uuid) -> Result<Vec<String>, DBSessionError> {
+        let inner = &*self.0;
+        let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
+
+        let pattern = format!("{}session:{}:*", inner.key_prefix, user_id.as_simple());
+        //log::debug!("pattern: {pattern}");
+
+        let mut keys = vec![];
+        let mut iter: redis::AsyncIter<String> = client.scan_match(pattern).await.map_err(DBError::RedisError)?;
+        while let Some(key) = iter.next_item().await {
+            keys.push(key);
+        }
+        Ok(keys)
+    }
+
+    /// Update all the session of a user. This is not an atomic operation, if new 
+    /// sessions are created they are not touched.
+    pub async fn update_all(&self, identity: &Identity, roles: &[Role]) -> Result<(), DBSessionError> {
+        let keys = self.find_stored_keys(identity.id).await?;
+
+        for key in keys {
+            let (user, session_key) = self.from_redis_key(&key)?;
+            assert_eq!(user, identity.id);
+            self.update(session_key, identity, roles).await?;
+        }
+
+        Ok(())
+    }
+
     pub async fn find(&self, user_id: Uuid, session_key: SessionKey) -> Result<Option<CurrentUser>, DBError> {
         let inner = &*self.0;
-        let (sentinel_key, key) = self.keys(user_id, &session_key);
+        let (sentinel_key, key) = self.to_redis_keys(user_id, &session_key);
         let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
 
         // query sentinel and the available data versions
@@ -233,31 +292,21 @@ impl SessionManager {
     /// Remove an active session of the given user.
     pub async fn remove(&self, user_id: Uuid, session_key: SessionKey) -> Result<(), DBError> {
         let inner = &*self.0;
-        let (sentinel_key, key) = self.keys(user_id, &session_key);
+        let (sentinel_key, key) = self.to_redis_keys(user_id, &session_key);
         let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
         client.del(&[sentinel_key, key]).await.map_err(DBError::RedisError)?;
         Ok(())
     }
 
     /// Remove all the active session of the given user.
-    pub async fn remove_all(&self, user_id: Uuid) -> Result<(), DBError> {
-        let inner = &*self.0;
-        let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
+    pub async fn remove_all(&self, user_id: Uuid) -> Result<(), DBSessionError> {
+        let keys = self.find_stored_keys(user_id).await?;
 
-        let pattern = format!("{}session:{}:*", inner.key_prefix, user_id.as_simple());
-        //log::debug!("pattern: {pattern}");
-
-        let keys = {
-            let mut keys = vec![];
-            let mut iter: redis::AsyncIter<String> = client.scan_match(pattern).await.map_err(DBError::RedisError)?;
-            while let Some(key) = iter.next_item().await {
-                keys.push(key);
-            }
-            keys
-        };
-
-        //log::debug!("deleting keys: {keys:?}");
         if !keys.is_empty() {
+            let inner = &*self.0;
+            let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
+
+            //log::debug!("deleting keys: {keys:?}");
             client.del(keys).await.map_err(DBError::RedisError)?;
         }
 

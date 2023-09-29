@@ -1,4 +1,8 @@
-use crate::{db::Permission, openapi::ApiKind, services::IdentityServiceState};
+use crate::{
+    db::{Permission, Role},
+    openapi::ApiKind,
+    services::IdentityServiceState,
+};
 use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
 use serde::{Deserialize, Serialize};
 use shine_service::{
@@ -22,7 +26,7 @@ struct Path {
     "roles": ["Role1", "Role2"]
 }))]
 pub struct UserRoles {
-    roles: Vec<String>,
+    roles: Vec<Role>,
 }
 
 #[derive(Deserialize, Validate, ToSchema)]
@@ -35,8 +39,6 @@ struct AddUserRole {
     role: String,
 }
 
-/// Get the information about the current user. The cookie is not accessible
-/// from javascript, thus this endpoint can be used to get details about the current user.
 async fn add_user_role(
     State(state): State<IdentityServiceState>,
     user: CheckedCurrentUser,
@@ -49,12 +51,7 @@ async fn add_user_role(
         .add_role(path.user_id, &params.role)
         .await
         .map_err(Problem::internal_error_from)?;
-    // issue#12: update session in redis (use the roles from this update)
-    let roles = state
-        .identity_manager()
-        .get_roles(path.user_id)
-        .await
-        .map_err(Problem::internal_error_from)?;
+    let (_, roles) = state.update_session(path.user_id).await?;
     Ok(Json(UserRoles { roles }))
 }
 
@@ -74,8 +71,6 @@ where
     //.with_problem_response()
 }
 
-/// Get the information about the current user. The cookie is not accessible
-/// from javascript, thus this endpoint can be used to get details about the current user.
 async fn get_user_roles(
     State(state): State<IdentityServiceState>,
     user: CheckedCurrentUser,
@@ -115,8 +110,6 @@ struct DeleteUserRole {
     role: String,
 }
 
-/// Get the information about the current user. The cookie is not accessible
-/// from javascript, thus this endpoint can be used to get details about the current user.
 async fn delete_user_role(
     State(state): State<IdentityServiceState>,
     user: CheckedCurrentUser,
@@ -129,12 +122,7 @@ async fn delete_user_role(
         .delete_role(path.user_id, &params.role)
         .await
         .map_err(Problem::internal_error_from)?;
-    // issue#12: update session in redis (use the roles from this update)
-    let roles = state
-        .identity_manager()
-        .get_roles(path.user_id)
-        .await
-        .map_err(Problem::internal_error_from)?;
+    let (_, roles) = state.update_session(path.user_id).await?;
     Ok(Json(UserRoles { roles }))
 }
 
