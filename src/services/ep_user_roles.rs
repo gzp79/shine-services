@@ -1,9 +1,15 @@
 use crate::{
-    db::{Permission, Role},
+    db::{Permission, PermissionError, Role},
     openapi::ApiKind,
     services::IdentityServiceState,
 };
-use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
+use axum::{
+    body::HttpBody,
+    extract::State,
+    headers::{authorization::Bearer, Authorization},
+    http::StatusCode,
+    BoxError, Json, TypedHeader,
+};
 use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem, ValidatedJson, ValidatedPath},
@@ -42,10 +48,18 @@ struct AddUserRole {
 async fn add_user_role(
     State(state): State<IdentityServiceState>,
     user: CheckedCurrentUser,
+    auth_key: Option<TypedHeader<Authorization<Bearer>>>,
     ValidatedPath(path): ValidatedPath<Path>,
     ValidatedJson(params): ValidatedJson<AddUserRole>,
 ) -> Result<Json<UserRoles>, Problem> {
-    state.require_permission(&user, Permission::UpdateAnyUserRole).await?;
+    if let (Some(auth_key), Some(master_key)) = (auth_key.map(|auth| auth.token().to_owned()), state.master_api_key()) {
+        if !bcrypt::verify(auth_key, master_key).unwrap_or(false) {
+            return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into());
+        }
+    } else {
+        state.require_permission(&user, Permission::UpdateAnyUserRole).await?;
+    }
+
     state
         .identity_manager()
         .add_role(path.user_id, &params.role)
@@ -113,10 +127,17 @@ struct DeleteUserRole {
 async fn delete_user_role(
     State(state): State<IdentityServiceState>,
     user: CheckedCurrentUser,
+    auth_key: Option<TypedHeader<Authorization<Bearer>>>,
     ValidatedPath(path): ValidatedPath<Path>,
     ValidatedJson(params): ValidatedJson<DeleteUserRole>,
 ) -> Result<Json<UserRoles>, Problem> {
-    state.require_permission(&user, Permission::UpdateAnyUserRole).await?;
+    if let (Some(auth_key), Some(master_key)) = (auth_key.map(|auth| auth.token().to_owned()), state.master_api_key()) {
+        if !bcrypt::verify(auth_key, master_key).unwrap_or(false) {
+            return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into());
+        }
+    } else {
+        state.require_permission(&user, Permission::UpdateAnyUserRole).await?;
+    }
     state
         .identity_manager()
         .delete_role(path.user_id, &params.role)
@@ -144,4 +165,13 @@ where
     .with_json_request::<DeleteUserRole>()
     .with_json_response::<UserRoles>(StatusCode::OK)
     //.with_problem_response()
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    #[ignore = "This is not a test but a helper to generate master key"]
+    fn generate_master_key() {
+        todo!()
+    }
 }

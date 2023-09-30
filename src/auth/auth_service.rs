@@ -69,6 +69,11 @@ pub struct AuthConfig {
     /// - The source for certain cookie protection parameters, including domain and path.
     /// - The base URL for managing the redirection of external login authentication flows.
     pub auth_base_url: Url,
+
+    /// Master key to manage user roles. In production once a user is created it's highly
+    /// recommended to disable this feature. 
+    pub super_user_api_key: Option<String>,
+
     /// Authentication related cookie configuration.
     #[serde(flatten)]
     pub auth_session: AuthSessionConfig,

@@ -1,6 +1,5 @@
 use crate::db::{Identity, IdentityKind, SessionManager};
 use chrono::{Duration, Utc};
-use redis::AsyncCommands;
 use ring::rand::SystemRandom;
 use shine_service::service::{self, ClientFingerprint, RedisConnectionPool, SessionKey};
 use shine_test::test;
@@ -27,7 +26,7 @@ async fn create_manager(scope: &str) -> Option<(SessionManager, RedisConnectionP
 async fn create_get_remove() {
     let scope = &Uuid::new_v4().to_string()[..5];
     log::debug!("test scope: {scope}");
-    let (session_manager, redis) = match create_manager(scope).await {
+    let (session_manager, _redis) = match create_manager(scope).await {
         Some(session_manager) => session_manager,
         None => return,
     };
@@ -71,11 +70,9 @@ async fn create_get_remove() {
     log::info!("Remove session...");
     session_manager.remove(identity.id, session.key).await.unwrap();
     {
-        let (_, key) = session_manager.to_redis_keys(identity.id, &session.key);
-        let client = &mut *redis.get().await.unwrap();
-        let versions: Vec<String> = client.hkeys(&key).await.unwrap();
+        let keys = session_manager.find_key_hashes(identity.id).await.unwrap();
         assert!(
-            versions.is_empty(),
+            keys.is_empty(),
             "without concurrency after remove, no session data shall remain"
         );
     }
@@ -229,7 +226,7 @@ async fn create_update() {
 async fn create_many_remove_all() {
     let scope = &Uuid::new_v4().to_string()[..5];
     log::debug!("test scope: {scope}");
-    let (session_manager, redis) = match create_manager(scope).await {
+    let (session_manager, _redis) = match create_manager(scope).await {
         Some(session_manager) => session_manager,
         None => return,
     };
@@ -266,15 +263,11 @@ async fn create_many_remove_all() {
 
     // delete sessions of user1
     session_manager.remove_all(identity.id).await.unwrap();
-    for key in keys {
-        let (_, key) = session_manager.to_redis_keys(identity.id, &key);
-        let client = &mut *redis.get().await.unwrap();
-        let versions: Vec<String> = client.hkeys(&key).await.unwrap();
-        assert!(
-            versions.is_empty(),
-            "without concurrency after remove_all, no session should be present"
-        );
-    }
+    let keys = session_manager.find_key_hashes(identity.id).await.unwrap();
+    assert!(
+        keys.is_empty(),
+        "without concurrency after remove, no session data shall remain"
+    );
 
     // check session of user2, it shall not be deleted
     let found_session = session_manager

@@ -153,7 +153,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
             name_generator: name_generator.clone(),
             db: db_pool.clone(),
         };
-        IdentityServiceBuilder::new(identity_state).into_router(&mut doc)
+        IdentityServiceBuilder::new(identity_state, config.auth.super_user_api_key.as_deref()).into_router(&mut doc)
     };
 
     let swagger = SwaggerUi::new(ApiKind::Doc("/swagger-ui").path())
