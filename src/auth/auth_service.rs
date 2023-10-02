@@ -71,7 +71,7 @@ pub struct AuthConfig {
     pub auth_base_url: Url,
 
     /// Master key to manage user roles. In production once a user is created it's highly
-    /// recommended to disable this feature. 
+    /// recommended to disable this feature.
     pub super_user_api_key: Option<String>,
 
     /// Authentication related cookie configuration.

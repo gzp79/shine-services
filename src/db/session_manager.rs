@@ -1,6 +1,7 @@
 use crate::db::{DBError, Identity, Role};
 use chrono::{DateTime, Duration, Utc};
 use redis::AsyncCommands;
+use ring::digest;
 use ring::rand::SystemRandom;
 use serde::{Deserialize, Serialize};
 use shine_service::service::{ClientFingerprint, CurrentUser, CurrentUserAuthenticity, SessionKey, SessionKeyError};
@@ -227,7 +228,7 @@ impl SessionManager {
         let inner = &*self.0;
 
         let session_key = SessionKey::new_random(&inner.random)?;
-        let session_key_hash = hash_key(&identity.id, &session_key);
+        let session_key_hash = hash_key(&session_key);
         let (sentinel_key, key) = self.to_redis_keys(identity.id, &session_key_hash);
         log::debug!(
             "Storing session, user:[{}], sentinel: [{sentinel_key}], data:[{key}]",
@@ -297,7 +298,7 @@ impl SessionManager {
         identity: &Identity,
         roles: &[Role],
     ) -> Result<Option<CurrentUser>, DBSessionError> {
-        let session_key_hash = hash_key(&identity.id, &session_key);
+        let session_key_hash = hash_key(&session_key);
 
         if self.update_by_hash(session_key_hash, identity, roles).await? {
             self.find(identity.id, session_key).await
@@ -324,7 +325,7 @@ impl SessionManager {
     }
 
     pub async fn find(&self, user_id: Uuid, session_key: SessionKey) -> Result<Option<CurrentUser>, DBSessionError> {
-        let session_key_hash = hash_key(&user_id, &session_key);
+        let session_key_hash = hash_key(&session_key);
 
         match self.find_by_hash(user_id, session_key_hash).await? {
             Some((sentinel, version, data)) => Ok(Some(CurrentUser {
@@ -343,7 +344,7 @@ impl SessionManager {
 
     /// Remove an active session of the given user.
     pub async fn remove(&self, user_id: Uuid, session_key: SessionKey) -> Result<(), DBError> {
-        let session_key_hash = hash_key(&user_id, &session_key);
+        let session_key_hash = hash_key(&session_key);
 
         let inner = &*self.0;
         let (sentinel_key, key) = self.to_redis_keys(user_id, &session_key_hash);
@@ -374,12 +375,11 @@ impl SessionManager {
 }
 
 /// Generate a (crypto) hashed version of a session key to protect data in rest.
-fn hash_key(user_id: &Uuid, key: &SessionKey) -> String {
-    // todo: bcrypt is not requires as it key already has a large entropy (random token)
-    let hash = bcrypt::hash_with_salt(key.to_hex(), bcrypt::DEFAULT_COST, *user_id.as_bytes())
-        .unwrap()
-        
-        .to_string();
+fn hash_key(key: &SessionKey) -> String {
+    // there is no need for a complex hash as key has a big entropy already
+    // and it!d be too expensive to invert the hashing.
+    let hash = digest::digest(&digest::SHA256, key.as_bytes());
+    let hash = hex::encode(hash);
     log::debug!("Hashing session key: {key:?} -> [{hash}]");
     hash
 }

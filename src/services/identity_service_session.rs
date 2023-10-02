@@ -15,7 +15,7 @@ impl IdentityServiceState {
             .await
             .map_err(Problem::internal_error_from)?
             .ok_or_else(Problem::not_found)?;
-        
+
         let roles = self
             .identity_manager()
             .get_roles(user_id)

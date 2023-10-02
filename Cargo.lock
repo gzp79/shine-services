@@ -3271,7 +3271,6 @@ dependencies = [
  "bb8",
  "bb8-postgres",
  "bb8-redis",
- "bcrypt",
  "chrono",
  "config",
  "futures",
