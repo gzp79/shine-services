@@ -55,7 +55,7 @@ services:
       - RUST_LOG=info,shine_identity=trace
       - WAIT_FOR_SERVICES=postgres.localhost.com:5432,redis.localhost.com:6379
     ports:
-      - "80:80"
+      - "7080:7080"
     links:
       - postgres:postgres.localhost.com
       - redis:redis.localhost.com
