@@ -1,8 +1,8 @@
 export class Config {
     appDomain = 'scytta-test.com';
     serviceDomain = 'cloud.scytta-test.com';
-    serviceUrl = 'http://cloud.scytta-test.com';
-    identityUrl = 'http://cloud.scytta-test.com/identity';
+    serviceUrl = 'http://cloud.scytta-test.com:7080';
+    identityUrl = 'http://cloud.scytta-test.com:7080/identity';
 
     defaultRedirects = {
         loginUrl: 'http://login.com/',

@@ -20,7 +20,7 @@ base64 = "0.21"
 bytes = "1.0"
 rand = "0.8"
 hex = "0.4"
-ring = "0.16"
+ring = "0.17"
 bcrypt = "0.15"
 harsh = "0.2"
 
@@ -43,8 +43,8 @@ refinery = { version = "0.8", features = ["tokio-postgres"] }
 bb8-redis = "0.13"
 redis = { version = "0.23.0", features = ["tokio-comp", "tokio-rustls-comp"] }
 
-azure_core = { version = "0.13" }
-azure_identity = { version = "0.13" }
+azure_core = { version = "0.16" }
+azure_identity = { version = "0.16" }
 
 validator = { version = "0.16", features = ["derive"] }
 tera = "1.18"
@@ -55,7 +55,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower-http = { version = "0.4", features = ["cors"] }
 axum = { version = "0.6", features = ["headers"] }
 axum-server = { version = "0.5", features = ["tls-rustls"] }
-axum-extra = { version = "0.7", features = ["cookie", "cookie-signed", "cookie-private"] }
+axum-extra = { version = "0.8", features = ["cookie", "cookie-signed", "cookie-private"] }
 
 utoipa = { version = "3.3", features = ["axum_extras", "uuid", "chrono"] }
 utoipa-swagger-ui = { version = "3.1", features = ["axum"] }

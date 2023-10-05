@@ -4,7 +4,7 @@
     "afterLayers": [],
     
     "service": {
-        "port": 80,
+        "port": 7080,
         "allowOrigins": [
             "http://scytta-test.com",
             "http://cloud.scytta-test.com",

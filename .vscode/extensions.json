@@ -4,13 +4,8 @@
         "rust-lang.rust-analyzer",
         "vadimcn.vscode-lldb",
         "serayuzgur.crates",
-        "philhindle.errorlens",
         "shd101wyy.markdown-preview-enhanced",
-        "adamvoss.vscode-languagetool",
-        "adamvoss.vscode-languagetool-en",
         "streetsidesoftware.code-spell-checker",
-        "alexkrechik.cucumberautocomplete",
-        "abhinabaghosh.cucumberquick",
-        "cweijan.vscode-redis-client"
+        "alexkrechik.cucumberautocomplete"
     ]
 }
