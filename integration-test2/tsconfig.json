@@ -12,17 +12,11 @@
         "resolveJsonModule": true,
         "allowSyntheticDefaultImports": true,
 
-        "outDir": "build",
-
         "paths": {
             "$lib": ["./karate"],
             "$lib/*": ["./karate/*"],
             "$regression": ["./regression"],
             "$regression/*": ["./regression/*"]
         }
-    },
-    "exclude": [
-        "node_modules",
-        "build"
-      ]
+    }
 }

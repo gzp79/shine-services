@@ -1,4 +1,4 @@
-@url = http://local.scytta.com/identity
+@url = http://local.scytta.com:7080/identity
 //@url = https://cloud.scytta.com/identity
 
 GET {{url}}/api/identities?count=100
