@@ -1,5 +1,7 @@
 {
     "compilerOptions": {
+        "target": "es6",
+        "module": "commonjs",
         "allowJs": true,
         "checkJs": true,
         "esModuleInterop": true,
@@ -15,14 +17,9 @@
         "outDir": "build",
 
         "paths": {
-            "$lib": ["./karate"],
-            "$lib/*": ["./karate/*"],
-            "$regression": ["./regression"],
-            "$regression/*": ["./regression/*"]
+            "$lib": ["./src"],
+            "$lib/*": ["./src/*"]
         }
     },
-    "exclude": [
-        "node_modules",
-        "build"
-      ]
+    "exclude": ["node_modules", "build"]
 }

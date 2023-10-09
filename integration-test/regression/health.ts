@@ -1,5 +1,5 @@
-import config from '../test.config';
 import * as request from 'superagent';
+import config from '../test.config';
 //import requestLogger from 'superagent-logger';
 
 describe('Sanity check', () => {
@@ -17,6 +17,8 @@ describe('Sanity check', () => {
             //.use(requestLogger)
             .send();
         expect(response.statusCode).toBe(200);
-        expect(response.body.providers).toEqual(expect.arrayContaining(['oauth2_flow', 'openid_flow']));
+        expect(response.body.providers).toEqual(
+            expect.arrayContaining(['oauth2_flow', 'openid_flow'])
+        );
     });
 });

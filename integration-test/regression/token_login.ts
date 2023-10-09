@@ -1,31 +1,79 @@
 import * as request from 'superagent';
-import { getPageRedirectUrl } from '../src/page_utils';
+import '$lib/time_matchers';
+import { getPageRedirectUrl } from '$lib/page_utils';
+import { getCookies, getUserInfo } from '$lib/auth_utils';
 import config from '../test.config';
-import { Cookie } from 'tough-cookie';
 
 describe('Interactive token flow', () => {
     it('Login with invalid input should redirect to the default error page', async () => {
-      const response = await request
+        const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
-            .query({rememberMe: "invalid value"})
+            .query({ rememberMe: 'invalid value' })
             //.use(requestLogger)
             .send();
+        const cookies = getCookies(response);
+
         expect(response.statusCode).toBe(200);
-        expect(getPageRedirectUrl(response.text)).toBe('http://web.scytta-test.com:8080/error?type=invalidInput&status=400');
+        expect(getPageRedirectUrl(response.text)).toBe(
+            'http://web.scytta-test.com:8080/error?type=invalidInput&status=400'
+        );
         expect(response.text).toContain('Failed to deserialize query string');
+        expect(cookies.tid).toBeClearCookie();
+        expect(cookies.sid).toBeClearCookie();
+        expect(cookies.eid).toBeClearCookie();
+    });
 
-        const cookies = (response.headers['set-cookie'] ?? [])
-            .map((cookieStr: string) => Cookie.parse(cookieStr))
-            .reduce((cookies: Record<string, Cookie>, cookie: Cookie) => {
-                cookies[cookie.key] = cookie;
-                return cookies;
-            }, {});
+    it('Login without a token should redirect user to the login page', async () => {
+        const response = await request
+            .get(config.getUrlFor('identity/auth/token/login'))
+            .query(config.defaultRedirects)
+            //.use(requestLogger)
+            .send();
+        const cookies = getCookies(response);
 
-        //expect(cookies.tid).toContains(expect.objectContaining({"expires" before new Date())))
+        expect(response.statusCode).toBe(200);
+        expect(getPageRedirectUrl(response.text)).toBe(
+            config.defaultRedirects.loginUrl
+        );
+        expect(cookies.tid).toBeClearCookie();
+        expect(cookies.sid).toBeClearCookie();
+        expect(cookies.eid).toBeClearCookie();
+    });
 
-        //* match response 'tid' cookie is removed
-        //* match response 'sid' cookie is removed
-        //* match response 'eid' cookie is removed
+    it('Login without a token and with explicit no-rememberMe should redirect user to the login page', async () => {
+        const response = await request
+            .get(config.getUrlFor('identity/auth/token/login'))
+            .query({ rememberMe: false, ...config.defaultRedirects })
+            //.use(requestLogger)
+            .send();
+        const cookies = getCookies(response);
+
+        expect(response.statusCode).toBe(200);
+        expect(getPageRedirectUrl(response.text)).toBe(
+            config.defaultRedirects.loginUrl
+        );
+        expect(cookies.tid).toBeClearCookie();
+        expect(cookies.sid).toBeClearCookie();
+        expect(cookies.eid).toBeClearCookie();
+    });
+
+    it("Login with 'rememberMe' should register a new user", async () => {
+        const response = await request
+            .get(config.getUrlFor('identity/auth/token/login'))
+            .query({ rememberMe: true, ...config.defaultRedirects })
+            //.use(requestLogger)
+            .send();
+        const cookies = getCookies(response);
+
+        expect(response.statusCode).toBe(200);
+        expect(getPageRedirectUrl(response.text)).toBe(
+            config.defaultRedirects.redirectUrl
+        );
+
+        expect(cookies.tid).toBeValidTID();
+        expect(cookies.sid).toBeValidSID();
+        expect(cookies.eid).toBeClearCookie();
+        expect(await getUserInfo(cookies.sid)).toBeGuestUser();
     });
 });
 
@@ -33,41 +81,8 @@ describe('Interactive token flow', () => {
     * use karate with config '$regression/config'
     * with karate plugin userinfo
 
- 
 
-  Scenario: Login without a token should redirect user to the login page
-    Given url (identityUrl)
-    * path '/auth/token/login'
-    * params (defaultRedirects)
-    When method GET
-    Then status 200
-    * match page response redirect is (defaultRedirects.loginUrl)
-    * match response 'tid' cookie is removed
-    * match response 'sid' cookie is removed
-    * match response 'eid' cookie is removed
 
-  Scenario: Login without a token with explicit no-rememberMe should redirect user to the login page
-    Given url (identityUrl)
-    * path '/auth/token/login'
-    * params ({ rememberMe: false, ...defaultRedirects })
-    When method GET
-    Then status 200
-    * match page response redirect is (defaultRedirects.loginUrl)
-    * match response 'tid' cookie is removed
-    * match response 'sid' cookie is removed
-    * match response 'eid' cookie is removed
-
-  Scenario: Login with 'rememberMe' should register a new user
-    Given url (identityUrl)
-    * path '/auth/token/login'
-    * params ({ rememberMe: true, ...defaultRedirects })
-    When method GET
-    Then status 200
-    * match page response redirect is (defaultRedirects.redirectUrl)
-    * match response 'tid' cookie is valid
-    * match response 'sid' cookie is valid
-    * match response 'eid' cookie is removed
-    * match user (await getUserInfo(responseCookies.sid.value)) is a guest account
 
   Scenario: Registering a new user should be able to log in
     Given url (identityUrl)
