@@ -6,7 +6,7 @@ const config = {
     transform: {
         '^.+\\.(ts|tsx)$': 'ts-jest'
     },    
-    moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths, {prefix: "<rootDir>"})
+    moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths, {prefix: "<rootDir>"}),    
 };
 
 module.exports = config;

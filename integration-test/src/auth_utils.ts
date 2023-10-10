@@ -1,9 +1,10 @@
-import '$lib/time_matchers';
+//import '$lib/jest_ext';
 import * as request from 'superagent';
 import config from '../test.config';
 import { Response } from 'superagent';
 import { Cookie } from 'tough-cookie';
-import { userInfo } from 'os';
+import uuidValidate from 'uuid-validate';
+
 
 interface CustomMatchers<R = unknown> {
     toBeClearCookie(): R;
@@ -44,7 +45,7 @@ function intoMatcherResult(
                 expected
             )}\nReceived: ${self.utils.printReceived(
                 received
-            )}\n\n${self.utils.diff(expected, received)}`,
+            )}\n\n${self.utils.diff(expected, received, {})}`,
         pass: false
     };
 }
@@ -55,7 +56,7 @@ expect.extend({
             secure: true,
             httpOnly: true,
             sameSite: 'lax',
-            expires: expect.toBeEarlier(new Date())
+            expires: expect.toBeBefore(new Date())
         });
         return intoMatcherResult(this, received, expected);
     },
@@ -68,7 +69,7 @@ expect.extend({
             sameSite: 'lax',
             path: '/identity/auth',
             domain: 'cloud.scytta-test.com',
-            expires: expect.toBeLater(new Date())
+            expires: expect.toBeAfter(new Date())
         });
         return intoMatcherResult(this, received, expected);
     },
@@ -101,9 +102,9 @@ expect.extend({
 
     toBeGuestUser(received: UserInfo) {
         const expected = expect.objectContaining({
-            userId: expect.any(String), //todo: uuid()
-            name: expect.stringMatching(/^Freshman_.*/),
-            sessionLength: expect.any(Number),//todo: .greaterThanOrEqual(0),
+            userId: expect.toSatisfy((id:any) => uuidValidate(id)),
+            name: expect.toStartWith("Freshman_"),
+            sessionLength: expect.not.toBeNegative(),
             roles: []
         });
         return intoMatcherResult(this, received, expected);
