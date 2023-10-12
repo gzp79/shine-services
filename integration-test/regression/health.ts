@@ -8,7 +8,7 @@ describe('Sanity check', () => {
             .get(config.getUrlFor('/info/ready'))
             //.use(requestLogger)
             .send();
-        expect(response.statusCode).toBe(200);
+        expect(response.statusCode).toEqual(200);
     });
 
     it('Registered providers', async () => {
@@ -16,7 +16,7 @@ describe('Sanity check', () => {
             .get(config.getUrlFor('/identity/api/auth/providers'))
             //.use(requestLogger)
             .send();
-        expect(response.statusCode).toBe(200);
+        expect(response.statusCode).toEqual(200);
         expect(response.body.providers).toEqual(
             expect.arrayContaining(['oauth2_flow', 'openid_flow'])
         );

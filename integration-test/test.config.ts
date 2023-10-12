@@ -4,8 +4,8 @@ export class Config {
     serviceUrl = 'http://cloud.scytta-test.com:7080';
     identityUrl = 'http://cloud.scytta-test.com:7080/identity';
 
-    getUrlFor(path: string) : string {
-        return (new URL(path, this.serviceUrl)).toString();
+    getUrlFor(path: string): string {
+        return new URL(path, this.serviceUrl).toString();
     }
 
     defaultRedirects = {

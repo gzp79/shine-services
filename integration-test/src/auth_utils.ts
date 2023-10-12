@@ -5,7 +5,6 @@ import { Response } from 'superagent';
 import { Cookie } from 'tough-cookie';
 import uuidValidate from 'uuid-validate';
 
-
 interface CustomMatchers<R = unknown> {
     toBeClearCookie(): R;
     toBeValidTID(): R;
@@ -23,11 +22,7 @@ declare global {
     }
 }
 
-function intoMatcherResult(
-    self: jest.MatcherContext,
-    received: any,
-    expected: object
-) {
+function intoMatcherResult(self: jest.MatcherContext, received: any, expected: object) {
     const pass = self.equals(received, expected);
 
     if (pass) {
@@ -41,9 +36,7 @@ function intoMatcherResult(
     }
     return {
         message: () =>
-            `Expected: ${self.utils.printExpected(
-                expected
-            )}\nReceived: ${self.utils.printReceived(
+            `Expected: ${self.utils.printExpected(expected)}\nReceived: ${self.utils.printReceived(
                 received
             )}\n\n${self.utils.diff(expected, received, {})}`,
         pass: false
@@ -102,8 +95,8 @@ expect.extend({
 
     toBeGuestUser(received: UserInfo) {
         const expected = expect.objectContaining({
-            userId: expect.toSatisfy((id:any) => uuidValidate(id)),
-            name: expect.toStartWith("Freshman_"),
+            userId: expect.toSatisfy((id: any) => uuidValidate(id)),
+            name: expect.toStartWith('Freshman_'),
             sessionLength: expect.not.toBeNegative(),
             roles: []
         });
@@ -128,12 +121,12 @@ export interface UserInfo {
 }
 
 export async function getUserInfo(cookie: Cookie): Promise<UserInfo> {
-    expect(cookie.key).toBe('sid');
+    expect(cookie.key).toEqual('sid');
     let response = await request
         .get(config.getUrlFor('identity/api/auth/user/info'))
         .set('Cookie', [`sid=${cookie.value}`])
         .send();
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toEqual(200);
     //expect(response.body).toBeInstanceOf(UserInfo);
     return response.body;
 }
