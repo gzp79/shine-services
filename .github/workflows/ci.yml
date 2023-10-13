@@ -84,7 +84,7 @@ jobs:
         echo "::group::Starting service"
         docker compose -f ../docker.yml --profile test up -d
         echo "::endgroup::"
-        echo "::group::Runing test"
+        echo "::group::Running test"
         npm run jest regression
         echo "::endgroup::"
       working-directory: ./integration-test
