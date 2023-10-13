@@ -153,7 +153,7 @@ describe('Validate (interactive) OAuth2 auth', () => {
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=500'
         );
-        console.log('os:', os.platform());
+        console.log('current os.platform:', os.platform());
         if (os.platform() === 'win32') {
             expect(response.text).toContain(
                 'No connection could be made because the target machine actively refused it.'
