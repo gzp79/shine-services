@@ -1,11 +1,17 @@
 import * as request from 'superagent';
+import * as os from 'os';
 import { getPageRedirectUrl } from '$lib/page_utils';
 import { UserInfo, getCookies, getUserInfo } from '$lib/auth_utils';
 import config from '../test.config';
 import { MockServer } from '$lib/mock_server';
 import Oauth2MockServer from '$lib/mocks/oauth2';
 import { ExternalUser } from '$lib/models/external_user';
-import { createGuestUser, loginWithOAuth2, loginWithToken, startLoginWithOAuth2 } from '$lib/login_utils';
+import {
+    createGuestUser,
+    loginWithOAuth2,
+    loginWithToken,
+    startLoginWithOAuth2
+} from '$lib/login_utils';
 import { Cookie } from 'tough-cookie';
 
 describe('Validate (interactive) OAuth2 auth', () => {
@@ -147,9 +153,13 @@ describe('Validate (interactive) OAuth2 auth', () => {
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=500'
         );
-        expect(response.text).toContain(
-            'No connection could be made because the target machine actively refused it.'
-        );
+        if (os.platform() === 'win32') {
+            expect(response.text).toContain(
+                'No connection could be made because the target machine actively refused it.'
+            );
+        } else {
+            expect(response.text).toContain('Connection refused');
+        }
 
         const cookies = getCookies(response);
         expect(cookies.tid).toBeClearCookie();
