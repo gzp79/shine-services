@@ -81,8 +81,8 @@ jobs:
     - name: Integration test
       run: |
         npm ci
-        echo "::group::Starting service"
-        docker compose -f ../docker.yml --profile test up -d
+        echo "::group::Starting service in the test environment"
+        docker compose -f ../service/docker.yml -p shine-identity --profile test up -d
         echo "::endgroup::"
         echo "::group::Running test"
         npm run jest regression
