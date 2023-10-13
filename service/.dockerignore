@@ -1,0 +1,7 @@
+/target
+docker.yml
+fly.toml
+
+/shine-service-rs/target
+/shine-service-rs/.vscode
+

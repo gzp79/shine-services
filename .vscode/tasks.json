@@ -7,6 +7,7 @@
       "label": "format",
       "type": "shell",
       "command": "cargo fmt",
+      "options": { "cwd": "service" },
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
@@ -14,6 +15,7 @@
       "label": "clippy",
       "type": "shell",
       "command": "cargo clippy --all-targets",
+      "options": { "cwd": "service" },
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
@@ -21,6 +23,7 @@
       "label": "udeps",
       "type": "shell",
       "command": "cargo udeps",
+      "options": { "cwd": "service" },
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
@@ -28,6 +31,7 @@
       "label": "outdated",
       "type": "shell",
       "command": "cargo outdated -R",
+      "options": { "cwd": "service" },
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
@@ -35,6 +39,7 @@
       "label": "build",
       "type": "shell",
       "command": "cargo build --release --all-targets",
+      "options": { "cwd": "service" },
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
@@ -43,6 +48,7 @@
       "type": "shell",
       "command": "cargo test",
       "options": {
+        "cwd": "service",
         "env": {
           "_RUST_LOG": "debug",
           "RUST_BACKTRACE": "full"
@@ -56,6 +62,7 @@
       "type": "shell",
       "command": "cargo miri test",
       "options": {
+        "cwd": "service",
         "env": {
           "_RUST_LOG": "debug",
           "RUST_BACKTRACE": "full"
@@ -67,7 +74,8 @@
     {
       "label": "start dev environment",
       "type": "shell",
-      "command": "docker compose -f ./docker.yml --profile dev up --build --force-recreate",
+      "command": "docker compose -f docker.yml -p shine-identity up",
+      "options": { "cwd": "service" },
       "group": "build",
       "isBackground": true
     },
@@ -75,6 +83,7 @@
       "label": "run stage: dev",
       "type": "shell",
       "command": "cargo run --release -- dev",
+      "options": { "cwd": "service" },
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
@@ -82,7 +91,15 @@
       "label": "run stage: test",
       "type": "shell",
       "command": "cargo run --release -- test",
+      "options": { "cwd": "service" },
       "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "test integration",
+      "type": "shell",
+      "command": "npm run jest regression",
+      "options": { "cwd": "integration-test" },
       "group": "build"
     }
   ]

@@ -54,12 +54,12 @@ If there is no remember me token, the user completes the authorization of the ex
 As user account is linked to some external provider, the sign out is a valid operation. We may include a sign out from all host option
 as in this flow a user can be signed in from multiple sites.
 
-## Complete user creation
+## Finalizing user creation
 
 After user is let into the game we may display some page to complete some missing information:
  - Encourage to link to social provider
  - Set or confirm email
- - Accepting End User Agreements
+ - Accept End User Agreements
  - etc.
 
 ## Account modification

@@ -1,0 +1,66 @@
+[package]
+name = "shine-identity"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4"
+thiserror = "1.0"
+anyhow = "1.0"
+config = "0.13"
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+time = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+url = "2.3"
+uuid = { version = "1.3", features = ["v4", "serde"] }
+base64 = "0.21"
+bytes = "1.0"
+rand = "0.8"
+hex = "0.4"
+ring = "0.17"
+bcrypt = "0.15"
+harsh = "0.2"
+
+futures = "0.3"
+async-trait = "0.1"
+async-once-cell = "0.5"
+tokio = {version = "1.27", features = ["macros", "rt-multi-thread", "signal"] }
+
+bb8 = "0.8"
+oauth2 = "4.3"
+reqwest = { version = "0.11", features = ["json"] }
+openidconnect = "3.0"
+
+bb8-postgres = "0.8"
+tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-chrono-0_4", "runtime"] }
+tokio-rustls = "0.24"
+tokio-postgres-rustls = "0.10"
+refinery = { version = "0.8", features = ["tokio-postgres"] }
+
+bb8-redis = "0.13"
+redis = { version = "0.23.0", features = ["tokio-comp", "tokio-rustls-comp"] }
+
+azure_core = { version = "0.16" }
+azure_identity = { version = "0.16" }
+
+validator = { version = "0.16", features = ["derive"] }
+tera = "1.18"
+
+tracing = "0.1"
+tracing-log = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tower-http = { version = "0.4", features = ["cors"] }
+axum = { version = "0.6", features = ["headers"] }
+axum-server = { version = "0.5", features = ["tls-rustls"] }
+axum-extra = { version = "0.8", features = ["cookie", "cookie-signed", "cookie-private"] }
+
+utoipa = { version = "3.3", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { version = "3.1", features = ["axum"] }
+
+shine-service = { path = "./shine-service-rs/shine-service", version = "0.1.0" }
+
+[dev-dependencies]
+shine-test = { path = "./shine-service-rs/shine-test", version = "0.1.0" }

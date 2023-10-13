@@ -48,17 +48,18 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: type=sha
 
-    - name: Start test resources
+    - name: Init test environment
       id: test_resources
       run: |
-        docker compose -f docker.yml up -d
+        docker compose -f docker.yml -p shine-identity up -d
         echo "pg_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-postgres-1)" >> $GITHUB_OUTPUT
         echo "redis_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-redis-1)" >> $GITHUB_OUTPUT
+      working-directory: ./service
         
     - name: Docker build
       uses: docker/build-push-action@v4
       with:
-        context: .
+        context: service
         target: test
         push: false
         load: true
@@ -77,17 +78,14 @@ jobs:
         sudo echo "127.0.0.1 mock.localhost.com" | sudo tee -a /etc/hosts
         sudo echo "127.0.0.1 postgres.localhost.com" | sudo tee -a /etc/hosts
         sudo echo "127.0.0.1 redis.localhost.com" | sudo tee -a /etc/hosts
-    - name: Integartion test
+    - name: Integration test
       run: |
         npm ci
-        echo "::group::Starting service"
-        docker compose -f ../docker.yml --profile test up -d
+        echo "::group::Starting service in the test environment"
+        docker compose -f ../service/docker.yml -p shine-identity --profile test up -d
         echo "::endgroup::"
-        echo "::group::Runing test"
-        npm run regression
-        echo "::endgroup::"
-        echo "::group::Generating report"
-        npm run report
+        echo "::group::Running test"
+        npm run jest regression
         echo "::endgroup::"
       working-directory: ./integration-test
 

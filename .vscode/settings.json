@@ -15,10 +15,12 @@
     "cucumber-tsflow.projectPath": "",
     "cSpell.words": [
         "autoescape",
+        "Buildx",
         "cacerts",
         "cfhistu",
         "chrono",
         "cookiejar",
+        "endgroup",
         "fkey",
         "hasher",
         "hashids",
