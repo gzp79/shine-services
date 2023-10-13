@@ -1,4 +1,3 @@
-//import '$lib/jest_ext';
 import * as request from 'superagent';
 import config from '../test.config';
 import { Response } from 'superagent';

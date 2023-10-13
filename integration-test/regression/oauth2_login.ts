@@ -1,4 +1,3 @@
-import '$lib/jest_ext';
 import * as request from 'superagent';
 import { getPageRedirectUrl } from '$lib/page_utils';
 import { UserInfo, getCookies, getUserInfo } from '$lib/auth_utils';

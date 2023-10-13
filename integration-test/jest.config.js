@@ -7,6 +7,7 @@ const config = {
         '^.+\\.(ts|tsx)$': 'ts-jest'
     },
     moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths, { prefix: '<rootDir>' }),
+    setupFilesAfterEnv: ['<rootDir>/jest-setup/extensions.ts'],
     reporters: [
         'default',
         [
