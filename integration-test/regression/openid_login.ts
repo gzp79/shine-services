@@ -1,4 +1,5 @@
 import * as request from 'superagent';
+import * as os from 'os';
 import { getPageRedirectUrl } from '$lib/page_utils';
 import { UserInfo, getCookies, getUserInfo } from '$lib/auth_utils';
 import config from '../test.config';
@@ -152,9 +153,13 @@ describe('Validate (interactive) OpenId auth', () => {
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=500'
         );
-        expect(response.text).toContain(
-            'No connection could be made because the target machine actively refused it.'
-        );
+        if (os.platform() === 'win32') {
+            expect(response.text).toContain(
+                'No connection could be made because the target machine actively refused it.'
+            );
+        } else {
+            expect(response.text).toContain('Connection refused');
+        }
 
         const cookies = getCookies(response);
         expect(cookies.tid).toBeClearCookie();
