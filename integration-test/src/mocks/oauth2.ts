@@ -25,9 +25,13 @@ export default class Server extends MockServer {
             '/oauth2/token',
             validate,
             async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
+                console.log("GZPPPPPPPPPPPPPPPPPPPPPPPP");
                 if (!req.is('application/x-www-form-urlencoded')) {
                     this.log(`Unexpected content type`);
-                    throw new Error(`Unexpected content type`);
+                    res.status(201).json({                        
+                    });
+                    return;
+                    //throw new Error(`Unexpected content type`);
                 }
 
                 const errors = validationResult(req);

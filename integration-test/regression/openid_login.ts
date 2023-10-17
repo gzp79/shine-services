@@ -5,7 +5,7 @@ import { UserInfo, getCookies, getUserInfo } from '$lib/auth_utils';
 import config from '../test.config';
 import { MockServer } from '$lib/mock_server';
 import OpenIdMockServer from '$lib/mocks/openid';
-import { ExternalUser } from '$lib/models/external_user';
+import { ExternalUser } from '$lib/user';
 import {
     createGuestUser,
     loginWithOpenId,
@@ -31,7 +31,7 @@ describe('Validate (interactive) OpenId auth', () => {
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'http://web.scytta-test.com:8080/error?type=authError&status=400'
+            'https://web.scytta-test.com:8080/error?type=authError&status=400'
         );
         expect(response.text).toContain('&quot;MissingExternalLogin&quot;');
 
@@ -55,7 +55,7 @@ describe('Validate (interactive) OpenId auth', () => {
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'http://web.scytta-test.com:8080/error?type=authError&status=400'
+            'https://web.scytta-test.com:8080/error?type=authError&status=400'
         );
         expect(response.text).toContain('&quot;MissingExternalLogin&quot;');
 
@@ -215,7 +215,7 @@ describe('Validate (interactive) OpenId login', () => {
 
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
-        expect(redirectUrl).toStartWith('http://mock.localhost.com:8090/openid/authorize');
+        expect(redirectUrl).toStartWith('https://mock.localhost.com:8090/openid/authorize');
 
         const authCookies = getCookies(response);
         expect(authCookies.tid).toBeClearCookie();

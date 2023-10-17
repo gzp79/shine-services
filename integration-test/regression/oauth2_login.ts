@@ -5,7 +5,7 @@ import { UserInfo, getCookies, getUserInfo } from '$lib/auth_utils';
 import config from '../test.config';
 import { MockServer } from '$lib/mock_server';
 import Oauth2MockServer from '$lib/mocks/oauth2';
-import { ExternalUser } from '$lib/models/external_user';
+import { ExternalUser } from '$lib/user';
 import {
     createGuestUser,
     loginWithOAuth2,
@@ -31,7 +31,7 @@ describe('Validate (interactive) OAuth2 auth', () => {
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'http://web.scytta-test.com:8080/error?type=authError&status=400'
+            'https://web.scytta-test.com:8080/error?type=authError&status=400'
         );
         expect(response.text).toContain('&quot;MissingExternalLogin&quot;');
 
@@ -55,7 +55,7 @@ describe('Validate (interactive) OAuth2 auth', () => {
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'http://web.scytta-test.com:8080/error?type=authError&status=400'
+            'https://web.scytta-test.com:8080/error?type=authError&status=400'
         );
         expect(response.text).toContain('&quot;MissingExternalLogin&quot;');
 
@@ -113,6 +113,15 @@ describe('Validate (interactive) OAuth2 auth', () => {
 
     it('Auth (parameters: INVALID code, cookie: VALID) should be an error', async () => {
         mock = await new Oauth2MockServer().start();
+        const response2 = await request
+        .post('https://mock.localhost.com:8090/oauth2/token')
+        //.use(requestLogger)
+        .send();
+        console.log(response2.statusCode);
+        console.log('EEEEEEEEEEEEEEEEEEEEEEND');
+        console.log(response2.text);
+        console.log('EEEEEEEEEEEEEEEEEEEEEEND2');
+
         const { authParams, eid } = await startLoginWithOAuth2();
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
@@ -215,7 +224,7 @@ describe('Validate (interactive) OAuth2 login', () => {
 
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
-        expect(redirectUrl).toStartWith('http://mock.localhost.com:8090/oauth2/authorize');
+        expect(redirectUrl).toStartWith('https://mock.localhost.com:8090/oauth2/authorize');
 
         const authCookies = getCookies(response);
         expect(authCookies.tid).toBeClearCookie();

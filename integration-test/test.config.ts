@@ -1,20 +1,20 @@
 export class Config {
     appDomain = 'scytta-test.com';
     serviceDomain = 'cloud.scytta-test.com';
-    serviceUrl = 'http://cloud.scytta-test.com:7080';
-    identityUrl = 'http://cloud.scytta-test.com:7080/identity';
+    serviceUrl = 'https://cloud.scytta-test.com:7080';
+    identityUrl = 'https://cloud.scytta-test.com:7080/identity';
 
     getUrlFor(path: string): string {
         return new URL(path, this.serviceUrl).toString();
     }
 
     defaultRedirects = {
-        loginUrl: 'http://login.com/',
-        redirectUrl: 'http://redirect.com/',
-        errorUrl: 'http://error.com/'
+        loginUrl: 'https://login.com/',
+        redirectUrl: 'https://redirect.com/',
+        errorUrl: 'https://error.com/'
     };
 
-    openid_mock_url = 'http://mock.localhost.com:8090/openid';
+    openid_mock_url = 'https://mock.localhost.com:8090/openid';
 
     // new key set can be generated at https://mkjwk.org/ quite easily
     // (RSA, size:2048 (smaller is rejected by the jose module as of specification), Use:Signature, Alg:RS256, ID:Sha-1 )

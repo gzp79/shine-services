@@ -2,13 +2,16 @@
     "stage": "test",
     "beforeLayers": [],
     "afterLayers": [],
-    
     "service": {
+        "tls": {
+            "cert": "integration-test/certs/ca.crt",
+            "key": "integration-test/certs/ca.key"
+        },
         "port": 7080,
         "allowOrigins": [
-            "http://scytta-test.com",
-            "http://cloud.scytta-test.com",
-            "http://web.scytta-test.com:8080"
+            "https://scytta-test.com",
+            "https://cloud.scytta-test.com",
+            "https://web.scytta-test.com:8080"
         ]
     },
     "tracing": {
@@ -29,9 +32,9 @@
         "idEncoder": "harsh"
     },
     "auth": {
-        "homeUrl": "http://web.scytta-test.com:8080/",
-        "errorUrl": "http://web.scytta-test.com:8080/error",
-        "authBaseUrl": "http://cloud.scytta-test.com/identity/auth",
+        "homeUrl": "https://web.scytta-test.com:8080/",
+        "errorUrl": "https://web.scytta-test.com:8080/error",
+        "authBaseUrl": "https://cloud.scytta-test.com/identity/auth",
         "superUserApiKey": "master key",
         "pageRedirectTime": 0,
         "pageErrorDetail": true,
@@ -44,7 +47,7 @@
         "openidIgnoreDiscoveryError": true,
         "openid": {
             "openid_flow": {
-                "discoveryUrl": "http://mock.localhost.com:8090/openid",
+                "discoveryUrl": "https://mock.localhost.com:8090/openid",
                 "scopes": [
                     "openid",
                     "email",
@@ -56,9 +59,9 @@
         },
         "oauth2": {
             "oauth2_flow": {
-                "authorizationUrl": "http://mock.localhost.com:8090/oauth2/authorize",
-                "tokenUrl": "http://mock.localhost.com:8090/oauth2/token",
-                "userInfoUrl": "http://mock.localhost.com:8090/oauth2/users",
+                "authorizationUrl": "https://mock.localhost.com:8090/oauth2/authorize",
+                "tokenUrl": "https://mock.localhost.com:8090/oauth2/token",
+                "userInfoUrl": "https://mock.localhost.com:8090/oauth2/users",
                 "userInfoMapping": {},
                 "extensions": [],
                 "scopes": [

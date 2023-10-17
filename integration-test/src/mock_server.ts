@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import * as https from 'https';
 import express, { Express } from 'express';
 import { Send, Request, Response, Query } from 'express-serve-static-core';
 import { Server, createServer } from 'http';
@@ -39,7 +42,15 @@ export class MockServer {
         this.initCommon();
         this.init();
         this.log('Start listening...');
-        this.server = await createServer(this.app).listen(this.port);
+        this.server = await https
+            .createServer(
+                {
+                    key: fs.readFileSync(path.join(__dirname, '../certs/key.pem')),
+                    cert: fs.readFileSync(path.join(__dirname,'../certs/cert.pem'))
+                },
+                this.app
+            )
+            .listen(this.port);
         this.log('Server started.');
 
         return this;

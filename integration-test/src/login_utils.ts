@@ -3,7 +3,7 @@ import { getPageRedirectUrl } from '$lib/page_utils';
 import config from '../test.config';
 import { Cookie } from 'tough-cookie';
 import { getCookies } from './auth_utils';
-import { ExternalUser } from './models/external_user';
+import { ExternalUser } from './user';
 
 export async function createGuestUser(): Promise<Record<string, Cookie>> {
     const response = await request
@@ -54,7 +54,7 @@ export async function startLoginWithOAuth2(rememberMe?: boolean): Promise<StartL
 
     expect(response.statusCode).toEqual(200);
     const redirectUrl = getPageRedirectUrl(response.text);
-    expect(redirectUrl).toStartWith('http://mock.localhost.com:8090/oauth2/authorize');
+    expect(redirectUrl).toStartWith('https://mock.localhost.com:8090/oauth2/authorize');
 
     const cookies = getCookies(response);
     expect(cookies.tid).toBeClearCookie();
@@ -103,7 +103,7 @@ export async function startLoginWithOpenId(rememberMe?: boolean): Promise<StartL
 
     expect(response.statusCode).toEqual(200);
     const redirectUrl = getPageRedirectUrl(response.text);
-    expect(redirectUrl).toStartWith('http://mock.localhost.com:8090/openid/authorize');
+    expect(redirectUrl).toStartWith('https://mock.localhost.com:8090/openid/authorize');
 
     const cookies = getCookies(response);
     expect(cookies.tid).toBeClearCookie();

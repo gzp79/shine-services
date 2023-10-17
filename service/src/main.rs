@@ -180,8 +180,8 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
 
     if let Some(tls_config) = &config.service.tls {
         log::info!("Starting service on {addr:?} using tls");
-        let cert = tls_config.cert.as_bytes().to_vec();
-        let key = tls_config.key.as_bytes().to_vec();
+        let cert = tls_config.cert.as_bytes().to_vec(); // todo: load from file
+        let key = tls_config.key.as_bytes().to_vec(); // todo: load from file
         let config = axum_server::tls_rustls::RustlsConfig::from_pem(cert, key)
             .await
             .map_err(|e| anyhow!(e))?;

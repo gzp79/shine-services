@@ -4,6 +4,7 @@
   "description": "",
   "main": "test.js",
   "scripts": {
+    "mkcert": "npx mkcert create-ca --cert ./certs/ca.crt --key ./certs/ca.key",
     "build_service": "docker build --target test -t gzp79/shine-identity:test --progress=plain ..",
     "jest": "npx jest -i --verbose=false"
   },
@@ -19,6 +20,7 @@
     "@types/uuid": "^9.0.5",
     "@types/uuid-validate": "^0.0.1",
     "cross-env": "^7.0.3",
+    "mkcert": "^3.1.0",
     "prettier": "^3.0.3",
     "ts-jest": "^29.1.1",
     "ts-node": "^10.9.1",
