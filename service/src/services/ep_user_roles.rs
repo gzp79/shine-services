@@ -41,7 +41,7 @@ pub struct UserRoles {
     "role": "Role"
 }))]
 struct AddUserRole {
-    #[validate(length(min = 1, max = 32))]
+    #[validate(length(min = 1, max = 63))]
     role: String,
 }
 
@@ -52,6 +52,7 @@ async fn add_user_role(
     ValidatedPath(path): ValidatedPath<Path>,
     ValidatedJson(params): ValidatedJson<AddUserRole>,
 ) -> Result<Json<UserRoles>, Problem> {
+    log::info!("add_user_role ep called");
     if let (Some(auth_key), Some(master_key_hash)) = (auth_key.map(|auth| auth.token().to_owned()), state.master_api_key_hash()) {
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
             return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into());
@@ -60,6 +61,7 @@ async fn add_user_role(
         state.require_permission(&user, Permission::UpdateAnyUserRole).await?;
     }
 
+    log::info!("perm check passed");
     state
         .identity_manager()
         .add_role(path.user_id, &params.role)

@@ -7,7 +7,7 @@ GET {{url}}/api/identities?count=100
 GET {{url}}/api/auth/user/info
 ###
 
-@userId = 44cad3f4-ce7b-4b12-990f-49d07d199661
+@userId = 8ecbd862-cbc3-4e93-a0ee-74a44cf9816f
 
 GET {{url}}/api/identities/{{userId}}/roles
 Authorization: Bearer 2vazg4Rwe2uKkHABcbL8WdEAbqvPA49M
@@ -22,8 +22,8 @@ Content-Type: application/json
 }
 ###
 
-
 DELETE {{url}}/api/identities/6f7c16d3-aa18-442e-9312-38acc6f4ee08/roles
+Authorization: Bearer 2vazg4Rwe2uKkHABcbL8WdEAbqvPA49M
 Content-Type: application/json
 
 {

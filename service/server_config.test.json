@@ -17,8 +17,7 @@
     "tracing": {
         "allowReconfigure": true,
         "enableConsoleLog": true,
-        "_defaultLevel": "INFO,shine_service=TRACE,shine_identity=TRACE,tower_http=TRACE",
-        "defaultLevel": "INFO",
+        "defaultLevel": "INFO,shine_service=TRACE,shine_identity=TRACE,tower_http=TRACE",
         "telemetry": {
             "type": "none"
         }

@@ -9,7 +9,6 @@ export async function createGuestUser(): Promise<Record<string, Cookie>> {
     const response = await request
         .get(config.getUrlFor('identity/auth/token/login'))
         .query({ rememberMe: true, ...config.defaultRedirects })
-        //.use(requestLogger)
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -26,7 +25,6 @@ export async function loginWithToken(tid: Cookie): Promise<Record<string, Cookie
         .get(config.getUrlFor('identity/auth/token/login'))
         .query(config.defaultRedirects)
         .set('Cookie', [`tid=${tid.value}`])
-        //.use(requestLogger)
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -49,7 +47,6 @@ export async function startLoginWithOAuth2(rememberMe?: boolean): Promise<StartL
     const response = await request
         .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
         .query({ rememberMe: rememberMe, ...config.defaultRedirects })
-        //.use(requestLogger)
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -78,7 +75,6 @@ export async function loginWithOAuth2(
             state: authParams.state
         })
         .set('Cookie', [`eid=${eid.value}`])
-        //.use(requestLogger)
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -98,7 +94,6 @@ export async function startLoginWithOpenId(rememberMe?: boolean): Promise<StartL
     const response = await request
         .get(config.getUrlFor('identity/auth/openid_flow/login'))
         .query({ rememberMe: rememberMe, ...config.defaultRedirects })
-        //.use(requestLogger)
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -127,7 +122,6 @@ export async function loginWithOpenId(
             state: authParams.state
         })
         .set('Cookie', [`eid=${eid.value}`])
-        //.use(requestLogger)
         .send();
 
     expect(response.statusCode).toEqual(200);

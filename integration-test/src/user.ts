@@ -1,3 +1,5 @@
+import request from 'superagent';
+import config from '../test.config';
 import { createUrlQueryString, generateRandomString } from '$lib/string_utils';
 import { createGuestUser } from './login_utils';
 import { getUserInfo } from './auth_utils';
@@ -50,7 +52,19 @@ export class TestUser {
 
     public static async create(roles: string[]): Promise<TestUser> {
         const cookies = await createGuestUser();
-        //todo: add roles using api key - this is not a role test, only a way to get roles for a user
+        {
+            // add roles using api key
+            const info = await getUserInfo(cookies.sid);
+            for (const role of roles) {
+                const response = await request
+                    .put(config.getUrlFor(`/identity/api/identities/${info.userId}/roles`))
+                    .set('Cookie', [`sid=${cookies.sid.value}`])
+                    .set('Authorization', `Bearer ${config.masterKey}`)
+                    .type('json')
+                    .send({ role: role });
+                expect(response.statusCode).toEqual(200);
+            }
+        }
         const info = await getUserInfo(cookies.sid);
         const testUser = new TestUser(info.userId);
         testUser.name = info.name;

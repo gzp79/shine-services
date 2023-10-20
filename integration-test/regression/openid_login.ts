@@ -37,7 +37,6 @@ describe('Validate (interactive) OpenId auth', () => {
 
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -61,7 +60,6 @@ describe('Validate (interactive) OpenId auth', () => {
                 code: ExternalUser.newRandomUser().toCode({ nonce: authParams.nonce }),
                 state: authParams.state
             })
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -82,7 +80,6 @@ describe('Validate (interactive) OpenId auth', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
             .set('Cookie', [`eid=${eid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -107,7 +104,6 @@ describe('Validate (interactive) OpenId auth', () => {
                 state: 'invalid'
             })
             .set('Cookie', [`eid=${eid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -132,7 +128,6 @@ describe('Validate (interactive) OpenId auth', () => {
                 state: authParams.state
             })
             .set('Cookie', [`eid=${eid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -157,7 +152,6 @@ describe('Validate (interactive) OpenId auth', () => {
                 state: authParams.state
             })
             .set('Cookie', [`eid=${eid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -202,7 +196,6 @@ describe('Validate (interactive) OpenId login', () => {
             .get(config.getUrlFor('identity/auth/openid_flow/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`sid=${sid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -225,7 +218,6 @@ describe('Validate (interactive) OpenId login', () => {
             .get(config.getUrlFor('identity/auth/openid_flow/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`tid=${tid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);

@@ -6,7 +6,6 @@ describe('Sanity check', () => {
     it('Health check', async () => {
         const response = await request
             .get(config.getUrlFor('/info/ready'))
-            //.use(requestLogger)
             .send();
         expect(response.statusCode).toEqual(200);
     });
@@ -14,7 +13,6 @@ describe('Sanity check', () => {
     it('Registered providers', async () => {
         const response = await request
             .get(config.getUrlFor('/identity/api/auth/providers'))
-            //.use(requestLogger)
             .send();
         expect(response.statusCode).toEqual(200);
         expect(response.body.providers).toEqual(

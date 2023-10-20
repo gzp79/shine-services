@@ -32,7 +32,6 @@ describe('Validate (interactive) OAuth2 auth', () => {
         await startMock();
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -56,7 +55,6 @@ describe('Validate (interactive) OAuth2 auth', () => {
                 code: ExternalUser.newRandomUser().toCode(),
                 state: authParams.state
             })
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -77,7 +75,6 @@ describe('Validate (interactive) OAuth2 auth', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
             .set('Cookie', [`eid=${eid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -102,7 +99,6 @@ describe('Validate (interactive) OAuth2 auth', () => {
                 state: 'invalid'
             })
             .set('Cookie', [`eid=${eid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -121,7 +117,6 @@ describe('Validate (interactive) OAuth2 auth', () => {
         await startMock();
         const response2 = await request
             .post(config.getMockUrlFor('oauth2/token'))
-            //.use(requestLogger)
             .send();
 
         const { authParams, eid } = await startLoginWithOAuth2();
@@ -132,7 +127,6 @@ describe('Validate (interactive) OAuth2 auth', () => {
                 state: authParams.state
             })
             .set('Cookie', [`eid=${eid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -157,7 +151,6 @@ describe('Validate (interactive) OAuth2 auth', () => {
                 state: authParams.state
             })
             .set('Cookie', [`eid=${eid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -198,7 +191,6 @@ describe('Validate (interactive) OAuth2 login', () => {
             .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`sid=${sid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -221,7 +213,6 @@ describe('Validate (interactive) OAuth2 login', () => {
             .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`tid=${tid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);

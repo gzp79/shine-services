@@ -9,7 +9,6 @@ describe('Validate (interactive) token flow', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: 'invalid value' })
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -28,7 +27,6 @@ describe('Validate (interactive) token flow', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query(config.defaultRedirects)
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -44,7 +42,6 @@ describe('Validate (interactive) token flow', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: false, ...config.defaultRedirects })
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -60,7 +57,6 @@ describe('Validate (interactive) token flow', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: true, ...config.defaultRedirects })
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -83,7 +79,6 @@ describe('(Interactive) token flow', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: true, ...config.defaultRedirects })
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -105,7 +100,7 @@ describe('(Interactive) token flow', () => {
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: true, ...config.defaultRedirects })
             .set('Cookie', [`sid=${cookies.sid.value}`])
-            //.use(requestLogger)
+
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -127,7 +122,6 @@ describe('(Interactive) token flow', () => {
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: true, ...config.defaultRedirects })
             .set('Cookie', [`sid=${cookies.sid.value}`, `tid=${cookies.tid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -150,7 +144,7 @@ describe('(Interactive) token flow', () => {
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`tid=${cookies.tid.value}`])
-            //.use(requestLogger)
+
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -170,7 +164,6 @@ describe('(Interactive) token flow', () => {
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: false, ...config.defaultRedirects })
             .set('Cookie', [`tid=${cookies.tid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -190,7 +183,6 @@ describe('(Interactive) token flow', () => {
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: true, ...config.defaultRedirects })
             .set('Cookie', [`tid=${cookies.tid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
