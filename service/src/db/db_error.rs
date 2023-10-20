@@ -1,12 +1,14 @@
-use shine_service::service::{PGConnectionError, RedisConnectionError};
+use shine_service::service::{PGConnectionError, PGCreatePoolError, PGError, RedisConnectionError};
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
 pub enum DBError {
     #[error("Failed to get a PG connection from the pool")]
-    PostgresPoolError(#[source] PGConnectionError),
+    PGCreatePoolError(#[source] PGCreatePoolError),
+    #[error("Failed to get a PG connection from the pool")]
+    PGPoolError(#[source] PGConnectionError),
     #[error(transparent)]
-    PostgresError(#[from] tokio_postgres::Error),
+    PGError(#[from] PGError),
     #[error(transparent)]
     SqlMigration(#[from] refinery::Error),
 

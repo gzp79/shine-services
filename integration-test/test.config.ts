@@ -1,11 +1,18 @@
+import fs from 'fs';
+
 export class Config {
-    appDomain = 'scytta-test.com';
-    serviceDomain = 'cloud.scytta-test.com';
-    serviceUrl = 'https://cloud.scytta-test.com:7080';
-    identityUrl = 'https://cloud.scytta-test.com:7080/identity';
+    appDomain = 'test.com';
+    serviceDomain = 'cloud.test.com';
+    serviceUrl = 'https://cloud.test.com:7080';
+    identityUrl = 'https://cloud.test.com:7080/identity';
+    mockUrl = 'https://mock-test.com:8090';
 
     getUrlFor(path: string): string {
         return new URL(path, this.serviceUrl).toString();
+    }
+
+    getMockUrlFor(path: string): string {
+        return new URL(path, this.mockUrl).toString();
     }
 
     defaultRedirects = {
@@ -14,12 +21,18 @@ export class Config {
         errorUrl: 'https://error.com/'
     };
 
-    openid_mock_url = 'https://mock.localhost.com:8090/openid';
+    mockTLS = {
+        cert: fs.readFileSync('../service/certs/test.crt', 'utf8'),
+        key: fs.readFileSync('../service/certs/test.key', 'utf8')
+    };
+
+    masterKey = '2vazg4Rwe2uKkHABcbL8WdEAbqvPA49M';
+    masterKeyHash = '$2b$05$0OWeMQAQuh9kmD642a0ZHeVl6VNa2g.z1HTI2rrQ3RPkmxoCNUohG';
 
     // new key set can be generated at https://mkjwk.org/ quite easily
     // (RSA, size:2048 (smaller is rejected by the jose module as of specification), Use:Signature, Alg:RS256, ID:Sha-1 )
     //spell-checker:disable
-    openid_jwks = {
+    openidJWKS = {
         p: '21pzZgFcZqxR3CXwJ4uaXhAZHPHCi2MdNwe6MFUr8i85ehj9-za1qlnW1Jb5XmusJQhu-iFMPhlR0h51n5rM_O_XRVBSp9uu-yh-cAYNwYFxMbtlkXvCnRhpAwKimNehokJ2YyRpLlW6Kn47dd3JjxYH3DRBBSPohQnHNzozARU',
         kty: 'RSA',
         q: 'xW3XRPacjFnGXt6x1RbFV48wIGfeYEAKrFPbcQRL2uY1pq2htGDmso8umEK7lIFUFonqBJKR3dw8t3NuQN8P9rZSGdXVhQ52DKnKvLAQT4IKoyXOGdOuugBbRh57VEpTw8fMfyzdJwccLmWSTPtVj_0GCa6T6oZCDCDuEnPJfPk',

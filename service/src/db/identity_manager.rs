@@ -420,7 +420,7 @@ pub struct IdentityManager(Arc<Inner>);
 
 impl IdentityManager {
     pub async fn new(postgres: &PGConnectionPool) -> Result<Self, IdentityBuildError> {
-        let client = postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let client = postgres.get().await.map_err(DBError::PGPoolError)?;
         let stmt_insert_identity = InsertIdentity::new(&client).await?;
         let stmt_insert_external_link = InsertExternalLogin::new(&client).await?;
         let stmt_insert_token = InsertToken::new(&client).await?;
@@ -465,7 +465,7 @@ impl IdentityManager {
         //let email = email.map(|e| e.normalize_email());
         let inner = &*self.0;
 
-        let mut client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let mut client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         let transaction = client.transaction().await?;
 
         let created = match inner
@@ -530,7 +530,7 @@ impl IdentityManager {
 
     pub async fn find(&self, find: FindIdentity<'_>) -> Result<Option<Identity>, IdentityError> {
         let inner = &*self.0;
-        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
 
         Ok(match find {
             FindIdentity::UserId(id) => inner.stmt_find_by_id.query_opt(&client, &id).await?.map(Identity::from),
@@ -547,7 +547,7 @@ impl IdentityManager {
         log::info!("{search:?}");
 
         let inner = &*self.0;
-        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
 
         let mut builder = QueryBuilder::new(
             "SELECT user_id, kind, name, email, email_confirmed, created, data_version FROM identities",
@@ -617,14 +617,14 @@ impl IdentityManager {
 
     pub async fn cascaded_delete(&self, user_id: Uuid) -> Result<(), IdentityError> {
         let inner = &*self.0;
-        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         inner.stmt_cascaded_delete.execute(&client, &user_id).await?;
         Ok(())
     }
 
     pub async fn link_user(&self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError> {
         let inner = &*self.0;
-        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
 
         match inner
             .stmt_insert_external_link
@@ -659,7 +659,7 @@ impl IdentityManager {
     ) -> Result<LoginTokenInfo, IdentityError> {
         let inner = &*self.0;
 
-        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
 
         let duration = duration.num_seconds() as i32;
         assert!(duration > 2);
@@ -690,7 +690,7 @@ impl IdentityManager {
 
     pub async fn find_token(&self, token: &str) -> Result<Option<(Identity, LoginTokenInfo)>, IdentityError> {
         let inner = &*self.0;
-        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         Ok(inner
             .stmt_find_by_token
             .query_opt(&client, &token)
@@ -716,14 +716,14 @@ impl IdentityManager {
 
     pub async fn delete_token(&self, user_id: Uuid, token: &str) -> Result<(), IdentityError> {
         let inner = &*self.0;
-        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         inner.stmt_delete_token.execute(&client, &user_id, &token).await?;
         Ok(())
     }
 
     pub async fn delete_all_tokens(&self, user_id: Uuid) -> Result<(), IdentityError> {
         let inner = &*self.0;
-        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         inner.stmt_delete_all_tokens.execute(&client, &user_id).await?;
         Ok(())
     }
@@ -731,7 +731,7 @@ impl IdentityManager {
     pub async fn add_role(&self, user_id: Uuid, role: &str) -> Result<(), IdentityError> {
         let inner = &*self.0;
 
-        let mut client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let mut client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         let transaction = client.transaction().await?;
         let version: i32 = inner.stmt_get_version.query_one(&transaction, &user_id).await?;
 
@@ -760,7 +760,7 @@ impl IdentityManager {
 
     pub async fn get_roles(&self, user_id: Uuid) -> Result<Vec<String>, IdentityError> {
         let inner = &*self.0;
-        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         let roles = inner.stmt_get_roles.query(&client, &user_id).await?;
         Ok(roles)
     }
@@ -768,7 +768,7 @@ impl IdentityManager {
     pub async fn delete_role(&self, user_id: Uuid, role: &str) -> Result<(), IdentityError> {
         let inner = &*self.0;
 
-        let mut client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let mut client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         let transaction = client.transaction().await?;
         let version: i32 = inner.stmt_get_version.query_one(&transaction, &user_id).await?;
 

@@ -128,7 +128,7 @@ pub struct NameGenerator(Arc<Inner>);
 
 impl NameGenerator {
     pub async fn new(config: &NameGeneratorConfig, postgres: &PGConnectionPool) -> Result<Self, NameGeneratorError> {
-        let client = postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let client = postgres.get().await.map_err(DBError::PGPoolError)?;
         let stmt_next_id = GetNextId::new(&client).await.map_err(DBError::from)?;
 
         Ok(Self(Arc::new(Inner {
@@ -147,7 +147,7 @@ impl NameGenerator {
 
         let inner = &*self.0;
 
-        let client = inner.postgres.get().await.map_err(DBError::PostgresPoolError)?;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
 
         let prefix = inner.base.generate();
         let suffix = {

@@ -72,16 +72,17 @@ jobs:
         
     - name: Add hosts to /etc/hosts
       run: |
-        sudo echo "127.0.0.1 scytta-test.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 web.scytta-test.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 cloud.scytta-test.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 mock.localhost.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 postgres.localhost.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 redis.localhost.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 web.test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 cloud.test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 mock-test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 postgres.mock-test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 redis.mock-test.com" | sudo tee -a /etc/hosts
     - name: Integration test
       run: |
         npm ci
         echo "::group::Starting service in the test environment"
+        npm run mkcert
         docker compose -f ../service/docker.yml -p shine-identity --profile test up -d
         echo "::endgroup::"
         echo "::group::Running test"

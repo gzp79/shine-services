@@ -1,4 +1,4 @@
-@url = https://local.scytta.com:7080/identity
+@url = https://cloud.test.com:7080/identity
 //@url = https://cloud.scytta.com/identity
 
 GET {{url}}/api/identities?count=100
@@ -7,12 +7,14 @@ GET {{url}}/api/identities?count=100
 GET {{url}}/api/auth/user/info
 ###
 
-@userId =  44cad3f4-ce7b-4b12-990f-49d07d199666
+@userId = 44cad3f4-ce7b-4b12-990f-49d07d199661
 
 GET {{url}}/api/identities/{{userId}}/roles
+Authorization: Bearer 2vazg4Rwe2uKkHABcbL8WdEAbqvPA49M
 ###
 
 PUT {{url}}/api/identities/{{userId}}/roles
+Authorization: Bearer 2vazg4Rwe2uKkHABcbL8WdEAbqvPA49M
 Content-Type: application/json
 
 {

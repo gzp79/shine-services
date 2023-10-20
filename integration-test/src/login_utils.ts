@@ -1,4 +1,4 @@
-import * as request from 'superagent';
+import request from 'superagent';
 import { getPageRedirectUrl } from '$lib/page_utils';
 import config from '../test.config';
 import { Cookie } from 'tough-cookie';
@@ -54,7 +54,7 @@ export async function startLoginWithOAuth2(rememberMe?: boolean): Promise<StartL
 
     expect(response.statusCode).toEqual(200);
     const redirectUrl = getPageRedirectUrl(response.text);
-    expect(redirectUrl).toStartWith('https://mock.localhost.com:8090/oauth2/authorize');
+    expect(redirectUrl).toStartWith(config.getMockUrlFor('oauth2/authorize'));
 
     const cookies = getCookies(response);
     expect(cookies.tid).toBeClearCookie();
@@ -103,7 +103,7 @@ export async function startLoginWithOpenId(rememberMe?: boolean): Promise<StartL
 
     expect(response.statusCode).toEqual(200);
     const redirectUrl = getPageRedirectUrl(response.text);
-    expect(redirectUrl).toStartWith('https://mock.localhost.com:8090/openid/authorize');
+    expect(redirectUrl).toStartWith(config.getMockUrlFor('openid/authorize'));
 
     const cookies = getCookies(response);
     expect(cookies.tid).toBeClearCookie();

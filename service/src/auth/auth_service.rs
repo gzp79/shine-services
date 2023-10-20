@@ -4,6 +4,8 @@ use crate::{
 };
 use axum::{Extension, Router};
 use chrono::Duration;
+use oauth2::{reqwest::AsyncHttpClientError, HttpRequest, HttpResponse};
+use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use shine_service::axum::ApiRoute;
 use std::{
@@ -33,6 +35,7 @@ pub struct OAuth2Config {
     pub client_id: String,
     pub client_secret: String,
     pub scopes: Vec<String>,
+    pub ignore_certificates: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -42,6 +45,7 @@ pub struct OIDCConfig {
     pub client_id: String,
     pub client_secret: String,
     pub scopes: Vec<String>,
+    pub ignore_certificates: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -70,9 +74,9 @@ pub struct AuthConfig {
     /// - The base URL for managing the redirection of external login authentication flows.
     pub auth_base_url: Url,
 
-    /// Master key to manage user roles. In production once a user is created it's highly
+    /// Hash of the master key to manage user roles. In production once a user is created it's highly
     /// recommended to disable this feature.
-    pub super_user_api_key: Option<String>,
+    pub super_user_api_key_hash: Option<String>,
 
     /// Authentication related cookie configuration.
     #[serde(flatten)]
@@ -114,6 +118,8 @@ pub enum AuthBuildError {
     RedirectUrl(String),
     #[error("Failed to discover open id: {0}")]
     OIDCDiscovery(OIDCDiscoveryError),
+    #[error("Failed to create http client")]
+    HttpClient(#[source] reqwest::Error),
 }
 
 struct Inner {
@@ -124,6 +130,7 @@ struct Inner {
 
     home_url: Url,
     error_url: Url,
+
     page_redirect_time: i64,
     page_error_detail: bool,
     providers: Vec<String>,
@@ -207,8 +214,8 @@ impl AuthServiceBuilder {
             if let Some(connect) = OIDCClient::new(
                 provider,
                 &config.auth_base_url,
-                provider_config,
                 openid_ignore_discovery_error,
+                provider_config,
             )
             .await?
             {
@@ -307,6 +314,33 @@ impl AuthServiceBuilder {
 
         (page_router, api_router)
     }
+}
+
+pub async fn async_http_client(
+    http_client: &HttpClient,
+    request: HttpRequest,
+) -> Result<HttpResponse, AsyncHttpClientError> {
+    let mut request_builder = http_client
+        .request(request.method, request.url.as_str())
+        .body(request.body);
+    for (name, value) in &request.headers {
+        request_builder = request_builder.header(name.as_str(), value.as_bytes());
+    }
+    let request = request_builder.build().map_err(AsyncHttpClientError::Reqwest)?;
+
+    let response = http_client
+        .execute(request)
+        .await
+        .map_err(AsyncHttpClientError::Reqwest)?;
+
+    let status_code = response.status();
+    let headers = response.headers().to_owned();
+    let chunks = response.bytes().await.map_err(AsyncHttpClientError::Reqwest)?;
+    Ok(HttpResponse {
+        status_code,
+        headers,
+        body: chunks.to_vec(),
+    })
 }
 
 #[cfg(test)]

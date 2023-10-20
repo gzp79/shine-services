@@ -27,14 +27,17 @@ use shine_service::{
     },
     service::UserSessionValidator,
 };
-use std::{env, net::SocketAddr};
+use std::{env, fs, net::SocketAddr};
 use tera::Tera;
 use tokio::{
     runtime::{Handle as RtHandle, Runtime},
     signal,
 };
-use tower_http::cors::CorsLayer;
-use tracing::Dispatch;
+use tower_http::{
+    cors::CorsLayer,
+    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
+};
+use tracing::{Dispatch, Level};
 use tracing_subscriber::EnvFilter;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
@@ -131,6 +134,10 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let name_generator = NameGenerator::new(&config.user_name, &db_pool.postgres).await?;
 
     let tracing_layer = OtelAxumLayer::default(); //.filter(|a| true);
+    let log_layer = TraceLayer::new_for_http()
+        .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+        .on_response(DefaultOnResponse::new().level(Level::INFO));
+    
     let health_check = Router::new().add_api(ep_health_check(), &mut doc);
 
     let (auth_pages, auth_api) = {
@@ -153,7 +160,8 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
             name_generator: name_generator.clone(),
             db: db_pool.clone(),
         };
-        IdentityServiceBuilder::new(identity_state, config.auth.super_user_api_key.as_deref()).into_router(&mut doc)
+        IdentityServiceBuilder::new(identity_state, config.auth.super_user_api_key_hash.as_deref())
+            .into_router(&mut doc)
     };
 
     let swagger = SwaggerUi::new(ApiKind::Doc("/swagger-ui").path())
@@ -173,15 +181,16 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         .layer(user_session.into_layer())
         .layer(powered_by)
         .layer(cors)
-        .layer(tracing_layer);
+        .layer(tracing_layer)
+        .layer(log_layer);
 
     //log::trace!("{app:#?}");
     let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
 
     if let Some(tls_config) = &config.service.tls {
         log::info!("Starting service on {addr:?} using tls");
-        let cert = tls_config.cert.as_bytes().to_vec(); // todo: load from file
-        let key = tls_config.key.as_bytes().to_vec(); // todo: load from file
+        let cert = fs::read(&tls_config.cert)?;
+        let key = fs::read(&tls_config.key)?;
         let config = axum_server::tls_rustls::RustlsConfig::from_pem(cert, key)
             .await
             .map_err(|e| anyhow!(e))?;

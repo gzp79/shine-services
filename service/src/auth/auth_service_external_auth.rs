@@ -7,7 +7,7 @@ use crate::{
     },
     db::{ExternalUserInfo, FindIdentity, IdentityError},
 };
-use reqwest::header;
+use reqwest::{header, Client as HttpClient};
 use serde_json::Value as JsonValue;
 use shine_service::service::{ClientFingerprint, APP_NAME};
 use thiserror::Error as ThisError;
@@ -30,13 +30,13 @@ pub(in crate::auth) enum ExternalUserInfoError {
 impl AuthServiceState {
     pub(in crate::auth) async fn get_external_user_info(
         &self,
+        client: &HttpClient,
         url: Url,
         provider: &str,
         token: &str,
         id_mapping: &HashMap<String, String>,
         extensions: &[ExternalUserInfoExtensions],
     ) -> Result<ExternalUserInfo, ExternalUserInfoError> {
-        let client = reqwest::Client::new();
         let response = client
             .get(url)
             .bearer_auth(token)
@@ -88,7 +88,7 @@ impl AuthServiceState {
         for extension in extensions {
             match extension {
                 ExternalUserInfoExtensions::GithubEmail => {
-                    external_user_info = extensions::get_github_user_email(external_user_info, token)
+                    external_user_info = extensions::get_github_user_email(client, external_user_info, token)
                         .await
                         .map_err(|err| ExternalUserInfoError::Extension(*extension, err))?
                 }

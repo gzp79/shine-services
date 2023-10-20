@@ -4,7 +4,7 @@ use crate::{
     openapi::ApiKind,
 };
 use axum::{body::HttpBody, extract::State, Extension};
-use oauth2::{reqwest::async_http_client, AuthorizationCode, PkceCodeVerifier};
+use oauth2::{AuthorizationCode, PkceCodeVerifier};
 use openidconnect::{Nonce, TokenResponse};
 use serde::Deserialize;
 use shine_service::{
@@ -71,7 +71,7 @@ async fn oidc_auth(
     let token = match core_client
         .exchange_code(auth_code)
         .set_pkce_verifier(PkceCodeVerifier::new(pkce_code_verifier))
-        .request_async(async_http_client)
+        .request_async(|r| async { client.send_request(r).await })
         .await
     {
         Ok(token) => token,

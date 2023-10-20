@@ -1,4 +1,4 @@
-import * as request from 'superagent';
+import request from 'superagent';
 import config from '../test.config';
 //import requestLogger from 'superagent-logger';
 

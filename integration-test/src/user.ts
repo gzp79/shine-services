@@ -1,8 +1,7 @@
 import { createUrlQueryString, generateRandomString } from '$lib/string_utils';
-import { userInfo } from 'os';
-import { v4 as uuidV4 } from 'uuid';
 import { createGuestUser } from './login_utils';
 import { getUserInfo } from './auth_utils';
+import { randomUUID } from 'crypto';
 
 export interface UserInfo {
     userId: string;
@@ -24,7 +23,7 @@ export class ExternalUser {
 
     static newRandomUser(): ExternalUser {
         const name = 'Random_' + generateRandomString(5);
-        return new ExternalUser(uuidV4(), name, name + '@example.com');
+        return new ExternalUser(randomUUID(), name, name + '@example.com');
     }
 
     toCode(params?: any): string {
@@ -49,8 +48,9 @@ export class TestUser {
         this.userId = userId;
     }
 
-    public static async create(): Promise<TestUser> {
+    public static async create(roles: string[]): Promise<TestUser> {
         const cookies = await createGuestUser();
+        //todo: add roles using api key - this is not a role test, only a way to get roles for a user
         const info = await getUserInfo(cookies.sid);
         const testUser = new TestUser(info.userId);
         testUser.name = info.name;

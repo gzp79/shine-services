@@ -1,7 +1,9 @@
-@url = http://cloud.scytta-test.com:7080/identity
-//@url = https://cloud.scytta.com/identity
+@baseUrl = https://cloud.test.com:7080
+//@baseUrl = https://cloud.scytta.com
 
-GET {{url}}/info/ready
+@url = {{baseUrl}}/identity
+
+GET {{baseUrl}}/info/ready
 ###
 
 GET {{url}}/api/health

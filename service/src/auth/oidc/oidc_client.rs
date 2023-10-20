@@ -1,10 +1,11 @@
-use crate::auth::{AuthBuildError, OIDCConfig};
+use crate::auth::{async_http_client, AuthBuildError, OIDCConfig};
 use async_once_cell::OnceCell;
-use oauth2::{reqwest::async_http_client, ClientId, ClientSecret, RedirectUrl, Scope};
+use oauth2::{reqwest::AsyncHttpClientError, ClientId, ClientSecret, HttpRequest, HttpResponse, RedirectUrl, Scope};
 use openidconnect::{
     core::{CoreClient, CoreProviderMetadata},
     IssuerUrl,
 };
+use reqwest::Client as HttpClient;
 use serde::Serialize;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -26,6 +27,7 @@ pub(in crate::auth) struct OIDCClient {
     pub provider: String,
     pub scopes: Vec<Scope>,
     client_info: ClientInfo,
+    http_client: HttpClient,
     client: Arc<OnceCell<CoreClient>>,
 }
 
@@ -33,8 +35,8 @@ impl OIDCClient {
     pub async fn new(
         provider: &str,
         auth_base_url: &Url,
-        config: &OIDCConfig,
         ignore_discovery_error: bool,
+        config: &OIDCConfig,
     ) -> Result<Option<Self>, AuthBuildError> {
         let client_id = ClientId::new(config.client_id.clone());
         let client_secret = ClientSecret::new(config.client_secret.clone());
@@ -46,6 +48,13 @@ impl OIDCClient {
         let discovery_url = IssuerUrl::new(config.discovery_url.clone())
             .map_err(|err| AuthBuildError::InvalidIssuer(format!("{err}")))?;
 
+        let ignore_certificates = config.ignore_certificates.unwrap_or(false);
+        let http_client = HttpClient::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .danger_accept_invalid_certs(ignore_certificates)
+            .build()
+            .map_err(AuthBuildError::HttpClient)?;
+
         let client = Self {
             provider: provider.to_string(),
             scopes: config.scopes.iter().map(|scope| Scope::new(scope.clone())).collect(),
@@ -55,6 +64,7 @@ impl OIDCClient {
                 discovery_url,
                 redirect_url,
             },
+            http_client,
             client: Arc::new(OnceCell::new()),
         };
 
@@ -74,8 +84,10 @@ impl OIDCClient {
         self.client
             .get_or_try_init(async {
                 let provider_metadata =
-                    match CoreProviderMetadata::discover_async(client_info.discovery_url.clone(), async_http_client)
-                        .await
+                    match CoreProviderMetadata::discover_async(client_info.discovery_url.clone(), |request| async {
+                        async_http_client(&self.http_client, request).await
+                    })
+                    .await
                     {
                         Ok(meta) => meta,
                         Err(err) => {
@@ -91,5 +103,9 @@ impl OIDCClient {
                 .set_redirect_uri(client_info.redirect_url.clone()))
             })
             .await
+    }
+
+    pub async fn send_request(&self, request: HttpRequest) -> Result<HttpResponse, AsyncHttpClientError> {
+        async_http_client(&self.http_client, request).await
     }
 }

@@ -1,5 +1,5 @@
-import * as request from 'superagent';
-import * as os from 'os';
+import request from 'superagent';
+import os from 'os';
 import { getPageRedirectUrl } from '$lib/page_utils';
 import { UserInfo, getCookies, getUserInfo } from '$lib/auth_utils';
 import config from '../test.config';
@@ -16,13 +16,24 @@ import { Cookie } from 'tough-cookie';
 
 describe('Validate (interactive) OpenId auth', () => {
     let mock: MockServer | undefined;
+
     afterEach(async () => {
         await mock?.stop();
         mock = undefined;
     });
 
+    async function startMock() {
+        if (!mock) {
+            mock = await new OpenIdMockServer({
+                tls: config.mockTLS,
+                mockUrl: config.mockUrl,
+                openidJWKS: config.openidJWKS
+            }).start();
+        }
+    }
+
     it('Auth (parameters: NO, cookie: NO) should be an error', async () => {
-        mock = await new OpenIdMockServer(config).start();
+        await startMock();
 
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
@@ -31,7 +42,7 @@ describe('Validate (interactive) OpenId auth', () => {
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'https://web.scytta-test.com:8080/error?type=authError&status=400'
+            'https://web.test.com:8080/error?type=authError&status=400'
         );
         expect(response.text).toContain('&quot;MissingExternalLogin&quot;');
 
@@ -42,7 +53,7 @@ describe('Validate (interactive) OpenId auth', () => {
     });
 
     it('Auth (parameters: VALID, cookie: NO) should be an error', async () => {
-        mock = await new OpenIdMockServer(config).start();
+        await startMock();
         const { authParams } = await startLoginWithOpenId();
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
@@ -55,7 +66,7 @@ describe('Validate (interactive) OpenId auth', () => {
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'https://web.scytta-test.com:8080/error?type=authError&status=400'
+            'https://web.test.com:8080/error?type=authError&status=400'
         );
         expect(response.text).toContain('&quot;MissingExternalLogin&quot;');
 
@@ -66,7 +77,7 @@ describe('Validate (interactive) OpenId auth', () => {
     });
 
     it('Auth (parameters: NO, cookie: VALID) should be an error', async () => {
-        mock = await new OpenIdMockServer(config).start();
+        await startMock();
         const { authParams, eid } = await startLoginWithOpenId();
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
@@ -87,7 +98,7 @@ describe('Validate (interactive) OpenId auth', () => {
     });
 
     it('Auth (parameters: INVALID state, cookie: VALID) should be an error', async () => {
-        mock = await new OpenIdMockServer(config).start();
+        await startMock();
         const { authParams, eid } = await startLoginWithOpenId();
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
@@ -112,7 +123,7 @@ describe('Validate (interactive) OpenId auth', () => {
     });
 
     it('Auth (parameters: INVALID code, cookie: VALID) should be an error', async () => {
-        mock = await new OpenIdMockServer(config).start();
+        await startMock();
         const { authParams, eid } = await startLoginWithOpenId();
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
@@ -137,7 +148,7 @@ describe('Validate (interactive) OpenId auth', () => {
     });
 
     it('Auth with failing 3rd party (token service) should be an error', async () => {
-        // intentionally not started: mock = await new OpenIdMockServer(config).start();
+        // intentionally not started: await startMock()
         const { authParams, eid } = await startLoginWithOpenId();
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
@@ -172,7 +183,11 @@ describe('Validate (interactive) OpenId login', () => {
     let mock!: MockServer;
 
     beforeEach(async () => {
-        mock = await new OpenIdMockServer(config).start();
+        mock = await new OpenIdMockServer({
+            tls: config.mockTLS,
+            mockUrl: config.mockUrl,
+            openidJWKS: config.openidJWKS
+        }).start();
     });
 
     afterEach(async () => {
@@ -215,7 +230,7 @@ describe('Validate (interactive) OpenId login', () => {
 
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
-        expect(redirectUrl).toStartWith('https://mock.localhost.com:8090/openid/authorize');
+        expect(redirectUrl).toStartWith(config.getMockUrlFor('openid/authorize'));
 
         const authCookies = getCookies(response);
         expect(authCookies.tid).toBeClearCookie();
@@ -264,7 +279,11 @@ describe('(Interactive) OpenId flow', () => {
     let userInfo!: Omit<UserInfo, 'sessionLength'>;
 
     beforeEach(async () => {
-        mock = await new OpenIdMockServer(config).start();
+        mock = await new OpenIdMockServer({
+            tls: config.mockTLS,
+            mockUrl: config.mockUrl,
+            openidJWKS: config.openidJWKS
+        }).start();
         user = ExternalUser.newRandomUser();
         userCookies = await loginWithOpenId(user, true);
         const { sessionLength, ...info } = await getUserInfo(userCookies.sid);

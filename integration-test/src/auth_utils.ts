@@ -1,4 +1,4 @@
-import * as request from 'superagent';
+import request from 'superagent';
 import config from '../test.config';
 import { Response } from 'superagent';
 import { Cookie } from 'tough-cookie';
@@ -60,7 +60,7 @@ expect.extend({
             httpOnly: true,
             sameSite: 'lax',
             path: '/identity/auth',
-            domain: 'cloud.scytta-test.com',
+            domain: 'cloud.test.com',
             expires: expect.toBeAfter(new Date())
         });
         return intoMatcherResult(this, received, expected);
@@ -73,7 +73,7 @@ expect.extend({
             httpOnly: true,
             sameSite: 'lax',
             path: '/',
-            domain: 'scytta-test.com',
+            domain: 'test.com',
             expires: 'Infinity' //session scoped
         });
         return intoMatcherResult(this, received, expected);
@@ -86,7 +86,7 @@ expect.extend({
             httpOnly: true,
             sameSite: 'lax',
             path: '/identity/auth',
-            domain: 'cloud.scytta-test.com',
+            domain: 'cloud.test.com',
             expires: 'Infinity'
         });
         return intoMatcherResult(this, received, expected);

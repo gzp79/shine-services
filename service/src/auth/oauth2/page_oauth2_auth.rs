@@ -3,7 +3,7 @@ use crate::{
     openapi::ApiKind,
 };
 use axum::{body::HttpBody, extract::State, Extension};
-use oauth2::{reqwest::async_http_client, AuthorizationCode, PkceCodeVerifier, TokenResponse};
+use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError},
@@ -60,7 +60,7 @@ async fn oauth2_auth(
         .client
         .exchange_code(auth_code)
         .set_pkce_verifier(PkceCodeVerifier::new(pkce_code_verifier))
-        .request_async(async_http_client)
+        .request_async(|r| async { client.send_request(r).await })
         .await
     {
         Ok(token) => token,
@@ -76,6 +76,7 @@ async fn oauth2_auth(
 
     let external_user = match state
         .get_external_user_info(
+            &client.http_client,
             client.user_info_url.url().clone(),
             &client.provider,
             token.access_token().secret(),

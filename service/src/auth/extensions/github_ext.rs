@@ -1,15 +1,15 @@
 use crate::db::ExternalUserInfo;
-use reqwest::header;
+use reqwest::{header, Client as HttpClient};
 use serde::Deserialize;
 use shine_service::service::APP_NAME;
 use url::Url;
 
 pub(in crate::auth) async fn get_github_user_email(
+    client: &HttpClient,
     mut external_user_info: ExternalUserInfo,
     token: &str,
 ) -> Result<ExternalUserInfo, String> {
     if external_user_info.email.is_none() {
-        let client = reqwest::Client::new();
         let url = Url::parse("https://api.github.com/user/emails").unwrap();
         let response = client
             .get(url)

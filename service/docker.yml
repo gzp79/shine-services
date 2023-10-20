@@ -60,10 +60,10 @@ services:
       - postgres:postgres.localhost.com
       - redis:redis.localhost.com
     extra_hosts:
-      - mock.localhost.com:host-gateway
-      - scytta-test.com:127.0.0.1
-      - web.scytta-test.com:127.0.0.1
-      - cloud.scytta-test.com:127.0.0.1
+      - mock-test.com:host-gateway
+      - test.com:127.0.0.1
+      - web.test.com:127.0.0.1
+      - cloud.test.com:127.0.0.1
     networks:
       - shine
 

@@ -11,8 +11,8 @@
     
     "service": {
         "tls": {
-            "cert": "integration-test/certs/ca.crt",
-            "key": "integration-test/certs/ca.key"
+            "cert": "certs/scytta.crt",
+            "key": "certs/scytta.key"
         },
         "port": 443,
         "allowOrigins": [
