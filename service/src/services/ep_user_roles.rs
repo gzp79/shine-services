@@ -67,7 +67,9 @@ async fn add_user_role(
         .identity_manager()
         .add_role(path.user_id, &params.role)
         .await
-        .map_err(Problem::internal_error_from)?;
+        .map_err(Problem::internal_error_from)?
+        .ok_or_else(|| Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", path.user_id)))?;
+
     let (_, roles) = state.update_session(path.user_id).await?;
     Ok(Json(UserRoles { roles }))
 }
@@ -109,7 +111,9 @@ async fn get_user_roles(
         .identity_manager()
         .get_roles(path.user_id)
         .await
-        .map_err(Problem::internal_error_from)?;
+        .map_err(Problem::internal_error_from)?
+        .ok_or_else(|| Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", path.user_id)))?;
+
     Ok(Json(UserRoles { roles }))
 }
 
@@ -160,7 +164,9 @@ async fn delete_user_role(
         .identity_manager()
         .delete_role(path.user_id, &params.role)
         .await
-        .map_err(Problem::internal_error_from)?;
+        .map_err(Problem::internal_error_from)?
+        .ok_or_else(|| Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", path.user_id)))?;
+
     let (_, roles) = state.update_session(path.user_id).await?;
     Ok(Json(UserRoles { roles }))
 }

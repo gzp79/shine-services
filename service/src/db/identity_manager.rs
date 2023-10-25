@@ -188,6 +188,8 @@ pub enum IdentityError {
     TokenConflict,
     #[error("Operation failed with conflict, no change was made")]
     UpdateConflict,
+    #[error("User was removed during the operation")]
+    UserDeleted,
     #[error(transparent)]
     DBError(#[from] DBError),
 }
@@ -372,9 +374,20 @@ pg_query!( AddUserRole =>
 
 pg_query!( GetUserRoles =>
     in = user_id: Uuid;
-    out = role: String;
+    out = UserRoles {
+        user_id: Option<Uuid>,
+        roles: Vec<String>
+    };
     sql = r#"
-        SELECT role from roles where user_id = $1
+        SELECT i.user_id, 
+            CASE 
+                WHEN array_agg(r.role) = ARRAY[NULL]::text[] THEN ARRAY[]::text[] 
+                ELSE array_agg(r.role) 
+            END AS roles
+        FROM identities i
+        LEFT JOIN roles r ON i.user_id = r.user_id
+        WHERE i.user_id = $1
+        GROUP BY i.user_id
     "#
 );
 
@@ -433,7 +446,7 @@ impl IdentityManager {
         let stmt_get_version = GetDataVersion::new(&client).await?;
         let stmt_update_version = UpdateDataVersion::new(&client).await?;
         let stmt_add_role = AddUserRole::new(&client).await?;
-        let stmt_get_roles = GetUserRoles::new(&client).await?;
+        let stmt_get_roles: GetUserRoles = GetUserRoles::new(&client).await?;
         let stmt_delete_role = DeleteUserRole::new(&client).await?;
 
         Ok(Self(Arc::new(Inner {
@@ -728,18 +741,25 @@ impl IdentityManager {
         Ok(())
     }
 
-    pub async fn add_role(&self, user_id: Uuid, role: &str) -> Result<(), IdentityError> {
+    pub async fn add_role(&self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
         let inner = &*self.0;
 
         let mut client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         let transaction = client.transaction().await?;
-        let version: i32 = inner.stmt_get_version.query_one(&transaction, &user_id).await?;
+        let version: i32 = match inner.stmt_get_version.query_opt(&transaction, &user_id).await? {
+            Some(version) => version,
+            None => return Ok(None),
+        };
 
         match inner.stmt_add_role.execute(&transaction, &user_id, &role).await {
             Ok(_) => {}
+            Err(err) if err.is_constraint("roles", "fkey_user_id") => {
+                // user not found, deleted meanwhile
+                return Ok(None);
+            }
             Err(err) if err.is_constraint("roles", "roles_idx_user_id_role") => {
                 // role already present, it's ok
-                return Ok(());
+                return Ok(Some(()));
             }
             Err(err) => return Err(err.into()),
         };
@@ -754,23 +774,30 @@ impl IdentityManager {
             Err(IdentityError::UpdateConflict)
         } else {
             transaction.commit().await?;
-            Ok(())
+            Ok(Some(()))
         }
     }
 
-    pub async fn get_roles(&self, user_id: Uuid) -> Result<Vec<String>, IdentityError> {
+    pub async fn get_roles(&self, user_id: Uuid) -> Result<Option<Vec<String>>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        let roles = inner.stmt_get_roles.query(&client, &user_id).await?;
-        Ok(roles)
+        let roles = inner.stmt_get_roles.query_opt(&client, &user_id).await?;
+        if let Some(roles) = roles {
+            Ok(Some(roles.roles))
+        } else {
+            Ok(None)
+        }
     }
 
-    pub async fn delete_role(&self, user_id: Uuid, role: &str) -> Result<(), IdentityError> {
+    pub async fn delete_role(&self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
         let inner = &*self.0;
 
         let mut client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         let transaction = client.transaction().await?;
-        let version: i32 = inner.stmt_get_version.query_one(&transaction, &user_id).await?;
+        let version: i32 = match inner.stmt_get_version.query_opt(&transaction, &user_id).await? {
+            Some(version) => version,
+            None => return Ok(None),
+        };
 
         inner.stmt_delete_role.execute(&transaction, &user_id, &role).await?;
 
@@ -784,7 +811,7 @@ impl IdentityManager {
             Err(IdentityError::UpdateConflict)
         } else {
             transaction.commit().await?;
-            Ok(())
+            Ok(Some(()))
         }
     }
 }
