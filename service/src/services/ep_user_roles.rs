@@ -53,7 +53,10 @@ async fn add_user_role(
     ValidatedJson(params): ValidatedJson<AddUserRole>,
 ) -> Result<Json<UserRoles>, Problem> {
     log::info!("add_user_role ep called");
-    if let (Some(auth_key), Some(master_key_hash)) = (auth_key.map(|auth| auth.token().to_owned()), state.master_api_key_hash()) {
+    if let (Some(auth_key), Some(master_key_hash)) = (
+        auth_key.map(|auth| auth.token().to_owned()),
+        state.master_api_key_hash(),
+    ) {
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
             return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into());
         }
@@ -93,7 +96,10 @@ async fn get_user_roles(
     auth_key: Option<TypedHeader<Authorization<Bearer>>>,
     ValidatedPath(path): ValidatedPath<Path>,
 ) -> Result<Json<UserRoles>, Problem> {
-    if let (Some(auth_key), Some(master_key_hash)) = (auth_key.map(|auth| auth.token().to_owned()), state.master_api_key_hash()) {
+    if let (Some(auth_key), Some(master_key_hash)) = (
+        auth_key.map(|auth| auth.token().to_owned()),
+        state.master_api_key_hash(),
+    ) {
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
             return Err(PermissionError::MissingPermission(Permission::ReadAnyUserRole).into());
         }
@@ -141,7 +147,10 @@ async fn delete_user_role(
     ValidatedPath(path): ValidatedPath<Path>,
     ValidatedJson(params): ValidatedJson<DeleteUserRole>,
 ) -> Result<Json<UserRoles>, Problem> {
-    if let (Some(auth_key), Some(master_key)) = (auth_key.map(|auth| auth.token().to_owned()), state.master_api_key_hash()) {
+    if let (Some(auth_key), Some(master_key)) = (
+        auth_key.map(|auth| auth.token().to_owned()),
+        state.master_api_key_hash(),
+    ) {
         if !bcrypt::verify(auth_key, master_key).unwrap_or(false) {
             return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into());
         }

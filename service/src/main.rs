@@ -137,7 +137,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let log_layer = TraceLayer::new_for_http()
         .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
         .on_response(DefaultOnResponse::new().level(Level::INFO));
-    
+
     let health_check = Router::new().add_api(ep_health_check(), &mut doc);
 
     let (auth_pages, auth_api) = {

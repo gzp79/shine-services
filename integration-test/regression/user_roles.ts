@@ -115,7 +115,7 @@ describe('User role features', () => {
             .put(config.getUrlFor(`/identity/api/identities/${randomUUID()}/roles`))
             .set('Cookie', admin.getCookies())
             .type('json')
-            .send({ role: 'Role2' })
+            .send({ role: 'Role1' })
             .catch((err) => err.response);
         expect(response.statusCode).toEqual(404);
     });
@@ -125,7 +125,7 @@ describe('User role features', () => {
             .delete(config.getUrlFor(`/identity/api/identities/${randomUUID()}/roles`))
             .set('Cookie', admin.getCookies())
             .type('json')
-            .send({ role: 'Role2' })
+            .send({ role: 'Role1' })
             .catch((err) => err.response);
         expect(response.statusCode).toEqual(404);
     });
