@@ -52,7 +52,6 @@ async fn add_user_role(
     ValidatedPath(path): ValidatedPath<Path>,
     ValidatedJson(params): ValidatedJson<AddUserRole>,
 ) -> Result<Json<UserRoles>, Problem> {
-    log::info!("add_user_role ep called");
     if let (Some(auth_key), Some(master_key_hash)) = (
         auth_key.map(|auth| auth.token().to_owned()),
         state.master_api_key_hash(),
@@ -64,7 +63,6 @@ async fn add_user_role(
         state.require_permission(&user, Permission::UpdateAnyUserRole).await?;
     }
 
-    log::info!("perm check passed");
     state
         .identity_manager()
         .add_role(path.user_id, &params.role)
