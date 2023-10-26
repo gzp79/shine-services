@@ -66,6 +66,8 @@ FROM base as test
 RUN apt install -y --no-install-recommends netcat
 
 WORKDIR /services/identity
+COPY ./certs/test.crt ./certs/test.crt
+COPY ./certs/test.key ./certs/test.key
 COPY ./server_config.test.json ./
 
 CMD ["/services/identity/start.sh", "test"]
