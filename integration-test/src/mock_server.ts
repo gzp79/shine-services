@@ -1,6 +1,9 @@
+import https from 'https';
+import http from 'http';
 import express, { Express } from 'express';
 import { Send, Request, Response, Query } from 'express-serve-static-core';
-import { Server, createServer } from 'http';
+import { Server } from 'http';
+import { Socket } from 'net';
 
 export interface TypedRequest<T extends Query, U> extends Request {
     body: U;
@@ -11,13 +14,20 @@ export interface TypedResponse<ResBody> extends Response {
     json: Send<ResBody, this>;
 }
 
+export interface Certificates {
+    cert: string;
+    key: string;
+}
+
 export class MockServer {
     app: Express = undefined!;
     server: Server = undefined!;
+    connections: Socket[] = [];
 
     constructor(
         public readonly name: string,
-        public readonly port: number
+        public readonly port: number,
+        public readonly tls?: Certificates
     ) {}
 
     public get isRunning(): boolean {
@@ -39,18 +49,39 @@ export class MockServer {
         this.initCommon();
         this.init();
         this.log('Start listening...');
-        this.server = await createServer(this.app).listen(this.port);
+        if (this.tls) {
+            this.server = await https.createServer(this.tls, this.app).listen(this.port);
+        } else {
+            this.server = await http.createServer(this.app).listen(this.port);
+        }
+
+        // keep track of the open connections
+        this.server.on('connection', (connection) => {
+            this.connections.push(connection);
+            connection.on('close', () => {
+                // Remove closed connection from the array
+                const index = this.connections.indexOf(connection);
+                if (index !== -1) {
+                    this.connections.splice(index, 1);
+                }
+            });
+        });
+
         this.log('Server started.');
 
         return this;
     }
 
     public async stop() {
-        this.log('Stopping server.');
+        this.log('Stopping server ...');
         await this.server?.close();
+        this.log(`Closing open(${this.connections.length}) connections ...`);
+        for (const connection of this.connections) {
+            await connection.end();
+        }
         this.server = undefined!;
         this.app = undefined!;
-        this.log('Stopping stopped.');
+        this.log('Server stopped.');
     }
 
     private initCommon() {

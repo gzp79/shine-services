@@ -3,6 +3,7 @@ use crate::{
         auth_service_utils::CreateTokenKind, auth_session::TokenLogin, AuthError, AuthPage, AuthServiceState,
         AuthSession,
     },
+    db::IdentityError,
     openapi::ApiKind,
 };
 use axum::{
@@ -162,7 +163,10 @@ async fn token_login(
 
     // find roles (for new user it will be an empty list)
     let roles = match state.identity_manager().get_roles(identity.id).await {
-        Ok(roles) => roles,
+        Ok(Some(roles)) => roles,
+        Ok(None) => {
+            return state.page_internal_error(auth_session, IdentityError::UserDeleted, query.error_url.as_ref())
+        }
         Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
     };
 

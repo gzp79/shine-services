@@ -12,7 +12,7 @@ struct Inner {
     identity_manager: IdentityManager,
     session_manager: SessionManager,
     name_generator: NameGenerator,
-    master_api_key: Option<String>,
+    master_api_key_hash: Option<String>,
     db: DBPool,
 }
 
@@ -36,8 +36,8 @@ impl IdentityServiceState {
         &self.0.name_generator
     }
 
-    pub fn master_api_key(&self) -> Option<&str> {
-        self.0.master_api_key.as_deref()
+    pub fn master_api_key_hash(&self) -> Option<&str> {
+        self.0.master_api_key_hash.as_deref()
     }
 
     pub fn db(&self) -> &DBPool {
@@ -58,13 +58,13 @@ pub struct IdentityServiceBuilder {
 }
 
 impl IdentityServiceBuilder {
-    pub fn new(dependencies: IdentityServiceDependencies, master_api_key: Option<&str>) -> Self {
+    pub fn new(dependencies: IdentityServiceDependencies, master_api_key_hash: Option<&str>) -> Self {
         let state = IdentityServiceState(Arc::new(Inner {
             tracing_manager: dependencies.tracing_manager,
             identity_manager: dependencies.identity_manager,
             session_manager: dependencies.session_manager,
             name_generator: dependencies.name_generator,
-            master_api_key: master_api_key.map(|x| x.to_owned()),
+            master_api_key_hash: master_api_key_hash.map(|x| x.to_owned()),
             db: dependencies.db,
         }));
 

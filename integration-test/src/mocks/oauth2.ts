@@ -1,12 +1,16 @@
 import '$lib/string_utils';
-import { MockServer, TypedRequest, TypedResponse } from '$lib/mock_server';
+import { Certificates, MockServer, TypedRequest, TypedResponse } from '$lib/mock_server';
 import bodyParser from 'body-parser';
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 
+export interface ServerConfig {
+    tls?: Certificates;
+}
+
 export default class Server extends MockServer {
-    constructor() {
-        super('oauth2', 8090);
+    constructor(public readonly config: ServerConfig) {
+        super('oauth2', 8090, config.tls);
     }
 
     protected init() {
@@ -27,7 +31,9 @@ export default class Server extends MockServer {
             async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
                 if (!req.is('application/x-www-form-urlencoded')) {
                     this.log(`Unexpected content type`);
-                    throw new Error(`Unexpected content type`);
+                    res.status(201).json({});
+                    return;
+                    //throw new Error(`Unexpected content type`);
                 }
 
                 const errors = validationResult(req);

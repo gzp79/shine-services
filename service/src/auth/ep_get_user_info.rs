@@ -40,7 +40,7 @@ async fn get_user_info(
         .await
         .map_err(Problem::internal_error_from)?
         //in the very unlikely case, when the identity is deleted just after session validation, a not found is returned.
-        .ok_or(Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user.user_id)))?;
+        .ok_or_else(|| Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user.user_id)))?;
 
     // make sure the redis is updated
     let user = if query.refresh.unwrap_or(false) {
@@ -48,14 +48,19 @@ async fn get_user_info(
             .identity_manager()
             .get_roles(user.user_id)
             .await
-            .map_err(Problem::internal_error_from)?;
+            .map_err(Problem::internal_error_from)?
+            .ok_or_else(|| {
+                Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user.user_id))
+            })?;
 
         state
             .session_manager()
             .update(user.key, &identity, &roles)
             .await
             .map_err(Problem::internal_error_from)?
-            .ok_or(Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user.user_id)))?
+            .ok_or_else(|| {
+                Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user.user_id))
+            })?
     } else {
         user.into_user()
     };

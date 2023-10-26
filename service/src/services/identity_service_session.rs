@@ -14,13 +14,14 @@ impl IdentityServiceState {
             .find(crate::db::FindIdentity::UserId(user_id))
             .await
             .map_err(Problem::internal_error_from)?
-            .ok_or_else(Problem::not_found)?;
+            .ok_or_else(|| Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user_id)))?;
 
         let roles = self
             .identity_manager()
             .get_roles(user_id)
             .await
-            .map_err(Problem::internal_error_from)?;
+            .map_err(Problem::internal_error_from)?
+            .ok_or_else(|| Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user_id)))?;
 
         Ok((identity, roles))
     }

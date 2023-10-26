@@ -1,4 +1,4 @@
-import * as request from 'superagent';
+import request from 'superagent';
 import config from '../test.config';
 import { getCookies } from '$lib/auth_utils';
 import { Cookie } from 'tough-cookie';
@@ -131,7 +131,6 @@ describe('Check auth cookie consistency', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/validate'))
             .set('Cookie', requestCookies)
-            //.use(requestLogger)
             .send();
         expect(response.statusCode).toEqual(200);
 

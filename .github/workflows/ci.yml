@@ -54,6 +54,11 @@ jobs:
         docker compose -f docker.yml -p shine-identity up -d
         echo "pg_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-postgres-1)" >> $GITHUB_OUTPUT
         echo "redis_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-redis-1)" >> $GITHUB_OUTPUT
+        echo "::group::Create certificates"
+        cd ../integration-test
+        npm ci
+        npm run mkcert
+        echo "::endgroup::"
       working-directory: ./service
         
     - name: Docker build
@@ -64,23 +69,22 @@ jobs:
         push: false
         load: true
         add-hosts: |
-          postgres.localhost.com:${{ steps.test_resources.outputs.pg_host }}
-          redis.localhost.com:${{ steps.test_resources.outputs.redis_host }}
+          postgres.mock-test.com:${{ steps.test_resources.outputs.pg_host }}
+          redis.mock-test.com:${{ steps.test_resources.outputs.redis_host }}
         cache-from: type=gha,mode=max
         cache-to: type=gha,mode=max
         tags: ${{ env.IMAGE_NAME }}:test
         
     - name: Add hosts to /etc/hosts
       run: |
-        sudo echo "127.0.0.1 scytta-test.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 web.scytta-test.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 cloud.scytta-test.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 mock.localhost.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 postgres.localhost.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 redis.localhost.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 web.test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 cloud.test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 mock-test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 postgres.mock-test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 redis.mock-test.com" | sudo tee -a /etc/hosts
     - name: Integration test
       run: |
-        npm ci
         echo "::group::Starting service in the test environment"
         docker compose -f ../service/docker.yml -p shine-identity --profile test up -d
         echo "::endgroup::"
@@ -104,10 +108,11 @@ jobs:
         context: service
         target: prod
         push: true
-        # only to have the layers reused from the initial build
+        # these setting are here to allow the reuse of the layer from the build step
+        # without host parameters it would trigger a new build
         add-hosts: |
-          postgres.localhost.com:${{ steps.test_resources.outputs.pg_host }}
-          redis.localhost.com:${{ steps.test_resources.outputs.redis_host }}
+          postgres.mock-test.com:${{ steps.test_resources.outputs.pg_host }}
+          redis.mock-test.com:${{ steps.test_resources.outputs.redis_host }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
 

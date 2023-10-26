@@ -1,15 +1,14 @@
-import * as request from 'superagent';
+import request from 'superagent';
 import { getPageRedirectUrl } from '$lib/page_utils';
 import config from '../test.config';
 import { Cookie } from 'tough-cookie';
 import { getCookies } from './auth_utils';
-import { ExternalUser } from './models/external_user';
+import { ExternalUser } from './user';
 
 export async function createGuestUser(): Promise<Record<string, Cookie>> {
     const response = await request
         .get(config.getUrlFor('identity/auth/token/login'))
         .query({ rememberMe: true, ...config.defaultRedirects })
-        //.use(requestLogger)
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -26,7 +25,6 @@ export async function loginWithToken(tid: Cookie): Promise<Record<string, Cookie
         .get(config.getUrlFor('identity/auth/token/login'))
         .query(config.defaultRedirects)
         .set('Cookie', [`tid=${tid.value}`])
-        //.use(requestLogger)
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -49,12 +47,11 @@ export async function startLoginWithOAuth2(rememberMe?: boolean): Promise<StartL
     const response = await request
         .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
         .query({ rememberMe: rememberMe, ...config.defaultRedirects })
-        //.use(requestLogger)
         .send();
 
     expect(response.statusCode).toEqual(200);
     const redirectUrl = getPageRedirectUrl(response.text);
-    expect(redirectUrl).toStartWith('http://mock.localhost.com:8090/oauth2/authorize');
+    expect(redirectUrl).toStartWith(config.getMockUrlFor('oauth2/authorize'));
 
     const cookies = getCookies(response);
     expect(cookies.tid).toBeClearCookie();
@@ -78,7 +75,6 @@ export async function loginWithOAuth2(
             state: authParams.state
         })
         .set('Cookie', [`eid=${eid.value}`])
-        //.use(requestLogger)
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -98,12 +94,11 @@ export async function startLoginWithOpenId(rememberMe?: boolean): Promise<StartL
     const response = await request
         .get(config.getUrlFor('identity/auth/openid_flow/login'))
         .query({ rememberMe: rememberMe, ...config.defaultRedirects })
-        //.use(requestLogger)
         .send();
 
     expect(response.statusCode).toEqual(200);
     const redirectUrl = getPageRedirectUrl(response.text);
-    expect(redirectUrl).toStartWith('http://mock.localhost.com:8090/openid/authorize');
+    expect(redirectUrl).toStartWith(config.getMockUrlFor('openid/authorize'));
 
     const cookies = getCookies(response);
     expect(cookies.tid).toBeClearCookie();
@@ -127,7 +122,6 @@ export async function loginWithOpenId(
             state: authParams.state
         })
         .set('Cookie', [`eid=${eid.value}`])
-        //.use(requestLogger)
         .send();
 
     expect(response.statusCode).toEqual(200);

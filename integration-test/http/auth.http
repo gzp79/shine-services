@@ -1,18 +1,20 @@
-@url = http://local.scytta.com:7080/identity
+@url = https://cloud.test.com:7080/identity
 //@url = https://cloud.scytta.com/identity
 
 GET {{url}}/api/auth/providers 
-### 
+###
 
 GET {{url}}/auth/token/login?rememberMe=true
 ###
 
+GET {{url}}/auth/validate
+### 
+
+GET {{url}}/api/auth/user/info
+###
 
 GET {{url}}/auth/token/login
 Authorization: Basic NmY3YzE2ZDMtYWExOC00NDJlLTkzMTItMzhhY2M2ZjRlZTA4OjRlNDkzMzMxN2VkMDI4MThmMjAxY2E2ODE0ZDFlYTFh
-###
-
-GET {{url}}/api/auth/user/info
 ###
 
 GET {{url}}/auth/logout

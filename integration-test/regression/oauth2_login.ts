@@ -1,11 +1,11 @@
-import * as request from 'superagent';
-import * as os from 'os';
+import request from 'superagent';
+import os from 'os';
 import { getPageRedirectUrl } from '$lib/page_utils';
 import { UserInfo, getCookies, getUserInfo } from '$lib/auth_utils';
 import config from '../test.config';
 import { MockServer } from '$lib/mock_server';
 import Oauth2MockServer from '$lib/mocks/oauth2';
-import { ExternalUser } from '$lib/models/external_user';
+import { ExternalUser } from '$lib/user';
 import {
     createGuestUser,
     loginWithOAuth2,
@@ -16,22 +16,27 @@ import { Cookie } from 'tough-cookie';
 
 describe('Validate (interactive) OAuth2 auth', () => {
     let mock: MockServer | undefined;
+
     afterEach(async () => {
         await mock?.stop();
         mock = undefined;
     });
 
-    it('Auth (parameters: NO, cookie: NO) should be an error', async () => {
-        mock = await new Oauth2MockServer().start();
+    async function startMock() {
+        if (!mock) {
+            mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
+        }
+    }
 
+    it('Auth (parameters: NO, cookie: NO) should be an error', async () => {
+        await startMock();
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'http://web.scytta-test.com:8080/error?type=authError&status=400'
+            'https://web.test.com:8080/error?type=authError&status=400'
         );
         expect(response.text).toContain('&quot;MissingExternalLogin&quot;');
 
@@ -42,7 +47,7 @@ describe('Validate (interactive) OAuth2 auth', () => {
     });
 
     it('Auth (parameters: VALID, cookie: NO) should be an error', async () => {
-        mock = await new Oauth2MockServer().start();
+        await startMock();
         const { authParams } = await startLoginWithOAuth2();
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
@@ -50,12 +55,11 @@ describe('Validate (interactive) OAuth2 auth', () => {
                 code: ExternalUser.newRandomUser().toCode(),
                 state: authParams.state
             })
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'http://web.scytta-test.com:8080/error?type=authError&status=400'
+            'https://web.test.com:8080/error?type=authError&status=400'
         );
         expect(response.text).toContain('&quot;MissingExternalLogin&quot;');
 
@@ -66,12 +70,11 @@ describe('Validate (interactive) OAuth2 auth', () => {
     });
 
     it('Auth (parameters: NO, cookie: VALID) should be an error', async () => {
-        mock = await new Oauth2MockServer().start();
+        await startMock();
         const { authParams, eid } = await startLoginWithOAuth2();
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
             .set('Cookie', [`eid=${eid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -87,7 +90,7 @@ describe('Validate (interactive) OAuth2 auth', () => {
     });
 
     it('Auth (parameters: INVALID state, cookie: VALID) should be an error', async () => {
-        mock = await new Oauth2MockServer().start();
+        await startMock();
         const { authParams, eid } = await startLoginWithOAuth2();
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
@@ -96,7 +99,6 @@ describe('Validate (interactive) OAuth2 auth', () => {
                 state: 'invalid'
             })
             .set('Cookie', [`eid=${eid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -112,7 +114,11 @@ describe('Validate (interactive) OAuth2 auth', () => {
     });
 
     it('Auth (parameters: INVALID code, cookie: VALID) should be an error', async () => {
-        mock = await new Oauth2MockServer().start();
+        await startMock();
+        const response2 = await request
+            .post(config.getMockUrlFor('oauth2/token'))
+            .send();
+
         const { authParams, eid } = await startLoginWithOAuth2();
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
@@ -121,7 +127,6 @@ describe('Validate (interactive) OAuth2 auth', () => {
                 state: authParams.state
             })
             .set('Cookie', [`eid=${eid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -137,7 +142,7 @@ describe('Validate (interactive) OAuth2 auth', () => {
     });
 
     it('Auth with failing 3rd party (token service) should be an error', async () => {
-        // intentionally not started: mock = await new Oauth2MockServer().start();
+        // intentionally not started: await startMock();
         const { authParams, eid } = await startLoginWithOAuth2();
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
@@ -146,7 +151,6 @@ describe('Validate (interactive) OAuth2 auth', () => {
                 state: authParams.state
             })
             .set('Cookie', [`eid=${eid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -172,7 +176,7 @@ describe('Validate (interactive) OAuth2 login', () => {
     let mock!: MockServer;
 
     beforeEach(async () => {
-        mock = await new Oauth2MockServer().start();
+        mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
     });
 
     afterEach(async () => {
@@ -187,7 +191,6 @@ describe('Validate (interactive) OAuth2 login', () => {
             .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`sid=${sid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
@@ -210,12 +213,11 @@ describe('Validate (interactive) OAuth2 login', () => {
             .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`tid=${tid.value}`])
-            //.use(requestLogger)
             .send();
 
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
-        expect(redirectUrl).toStartWith('http://mock.localhost.com:8090/oauth2/authorize');
+        expect(redirectUrl).toStartWith(config.getMockUrlFor('oauth2/authorize'));
 
         const authCookies = getCookies(response);
         expect(authCookies.tid).toBeClearCookie();
@@ -264,7 +266,7 @@ describe('(Interactive) OAuth2 flow', () => {
     let userInfo!: Omit<UserInfo, 'sessionLength'>;
 
     beforeEach(async () => {
-        mock = await new Oauth2MockServer().start();
+        mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
         user = ExternalUser.newRandomUser();
         userCookies = await loginWithOAuth2(user, true);
         const { sessionLength, ...info } = await getUserInfo(userCookies.sid);

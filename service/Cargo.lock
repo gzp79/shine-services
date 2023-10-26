@@ -3218,6 +3218,7 @@ dependencies = [
  "reqwest",
  "ring 0.17.0",
  "rustls",
+ "rustls-native-certs",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -3760,6 +3761,7 @@ dependencies = [
  "pin-project-lite",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]

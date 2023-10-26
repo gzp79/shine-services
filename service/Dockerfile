@@ -30,8 +30,8 @@ RUN cargo fmt --check
 
 # Perform quality checks - unit tests
 ENV RUST_BACKTRACE=1
-ENV SHINE_TEST_REDIS_CNS="redis://redis.localhost.com:6379"
-ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.localhost.com:5432/database-name?sslmode=disable"
+ENV SHINE_TEST_REDIS_CNS="redis://redis.mock-test.com:6379"
+ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.mock-test.com:5432/database-name?sslmode=disable"
 RUN cargo test --release
 
 # Perform the build (only if checks are ok)
@@ -66,6 +66,8 @@ FROM base as test
 RUN apt install -y --no-install-recommends netcat
 
 WORKDIR /services/identity
+COPY ./certs/test.crt ./certs/test.crt
+COPY ./certs/test.key ./certs/test.key
 COPY ./server_config.test.json ./
 
 CMD ["/services/identity/start.sh", "test"]
