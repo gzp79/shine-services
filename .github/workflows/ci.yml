@@ -69,8 +69,8 @@ jobs:
         push: false
         load: true
         add-hosts: |
-          postgres.localhost.com:${{ steps.test_resources.outputs.pg_host }}
-          redis.localhost.com:${{ steps.test_resources.outputs.redis_host }}
+          postgres.mock-test.com:${{ steps.test_resources.outputs.pg_host }}
+          redis.mock-test.com:${{ steps.test_resources.outputs.redis_host }}
         cache-from: type=gha,mode=max
         cache-to: type=gha,mode=max
         tags: ${{ env.IMAGE_NAME }}:test
@@ -108,10 +108,11 @@ jobs:
         context: service
         target: prod
         push: true
-        # only to have the layers reused from the initial build
+        # these setting are here to allow the reuse of the layer from the build step
+        # without host parameters it would trigger a new build
         add-hosts: |
-          postgres.localhost.com:${{ steps.test_resources.outputs.pg_host }}
-          redis.localhost.com:${{ steps.test_resources.outputs.redis_host }}
+          postgres.mock-test.com:${{ steps.test_resources.outputs.pg_host }}
+          redis.mock-test.com:${{ steps.test_resources.outputs.redis_host }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
 
