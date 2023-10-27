@@ -237,7 +237,7 @@ describe('Validate (interactive) OpenId login', () => {
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
 
-        const userInfo = await getUserInfo(cookies.sid);
+        const userInfo = await getUserInfo(cookies.sid.value);
         expect(userInfo.name).toEqual(user.name);
     });
 
@@ -248,7 +248,7 @@ describe('Validate (interactive) OpenId login', () => {
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
 
-        const userInfo = await getUserInfo(cookies.sid);
+        const userInfo = await getUserInfo(cookies.sid.value);
         expect(userInfo.name).toEqual(user.name);
     });
 
@@ -259,7 +259,7 @@ describe('Validate (interactive) OpenId login', () => {
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
 
-        const userInfo = await getUserInfo(cookies.sid);
+        const userInfo = await getUserInfo(cookies.sid.value);
         expect(userInfo.name).toEqual(user.name);
     });
 });
@@ -278,7 +278,7 @@ describe('(Interactive) OpenId flow', () => {
         }).start();
         user = ExternalUser.newRandomUser();
         userCookies = await loginWithOpenId(user, true);
-        const { sessionLength, ...info } = await getUserInfo(userCookies.sid);
+        const { sessionLength, ...info } = await getUserInfo(userCookies.sid.value);
         userInfo = info;
         expect(userInfo.name).toEqual(user.name);
     });
@@ -297,17 +297,17 @@ describe('(Interactive) OpenId flow', () => {
             userCookies.sid.value
         );
 
-        const newUserInfo = await getUserInfo(newUserCookies.sid);
+        const newUserInfo = await getUserInfo(newUserCookies.sid.value);
         expect(newUserInfo).toEqual(expect.objectContaining(userInfo));
     });
 
     it('Login with the token should be a success', async () => {
-        const newUserCookies = await loginWithToken(userCookies.tid);
+        const newUserCookies = await loginWithToken(userCookies.tid.value);
         expect(newUserCookies.sid.value, 'It shall be a new session').not.toEqual(
             userCookies.sid.value
         );
 
-        const newUserInfo = await getUserInfo(newUserCookies.sid);
+        const newUserInfo = await getUserInfo(newUserCookies.sid.value);
         expect(newUserInfo).toEqual(expect.objectContaining(userInfo));
     });
 });

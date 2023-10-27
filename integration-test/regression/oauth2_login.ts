@@ -115,9 +115,7 @@ describe('Validate (interactive) OAuth2 auth', () => {
 
     it('Auth (parameters: INVALID code, cookie: VALID) should be an error', async () => {
         await startMock();
-        const response2 = await request
-            .post(config.getMockUrlFor('oauth2/token'))
-            .send();
+        const response2 = await request.post(config.getMockUrlFor('oauth2/token')).send();
 
         const { authParams, eid } = await startLoginWithOAuth2();
         const response = await request
@@ -232,7 +230,7 @@ describe('Validate (interactive) OAuth2 login', () => {
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
 
-        const userInfo = await getUserInfo(cookies.sid);
+        const userInfo = await getUserInfo(cookies.sid.value);
         expect(userInfo.name).toEqual(user.name);
     });
 
@@ -243,7 +241,7 @@ describe('Validate (interactive) OAuth2 login', () => {
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
 
-        const userInfo = await getUserInfo(cookies.sid);
+        const userInfo = await getUserInfo(cookies.sid.value);
         expect(userInfo.name).toEqual(user.name);
     });
 
@@ -254,7 +252,7 @@ describe('Validate (interactive) OAuth2 login', () => {
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
 
-        const userInfo = await getUserInfo(cookies.sid);
+        const userInfo = await getUserInfo(cookies.sid.value);
         expect(userInfo.name).toEqual(user.name);
     });
 });
@@ -269,7 +267,7 @@ describe('(Interactive) OAuth2 flow', () => {
         mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
         user = ExternalUser.newRandomUser();
         userCookies = await loginWithOAuth2(user, true);
-        const { sessionLength, ...info } = await getUserInfo(userCookies.sid);
+        const { sessionLength, ...info } = await getUserInfo(userCookies.sid.value);
         userInfo = info;
         expect(userInfo.name).toEqual(user.name);
     });
@@ -288,17 +286,17 @@ describe('(Interactive) OAuth2 flow', () => {
             userCookies.sid.value
         );
 
-        const newUserInfo = await getUserInfo(newUserCookies.sid);
+        const newUserInfo = await getUserInfo(newUserCookies.sid.value);
         expect(newUserInfo).toEqual(expect.objectContaining(userInfo));
     });
 
     it('Login with the token should be a success', async () => {
-        const newUserCookies = await loginWithToken(userCookies.tid);
+        const newUserCookies = await loginWithToken(userCookies.tid.value);
         expect(newUserCookies.sid.value, 'It shall be a new session').not.toEqual(
             userCookies.sid.value
         );
 
-        const newUserInfo = await getUserInfo(newUserCookies.sid);
+        const newUserInfo = await getUserInfo(newUserCookies.sid.value);
         expect(newUserInfo).toEqual(expect.objectContaining(userInfo));
     });
 });
