@@ -30,8 +30,8 @@ RUN cargo fmt --check
 
 # Perform quality checks - unit tests
 ENV RUST_BACKTRACE=1
-ENV SHINE_TEST_REDIS_CNS="redis://redis.mock-test.com:6379"
-ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.mock-test.com:5432/database-name?sslmode=disable"
+ENV SHINE_TEST_REDIS_CNS="redis://redis.mockbox.com:6379"
+ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.mockbox.com:5432/database-name?sslmode=disable"
 RUN cargo test --release
 
 # Perform the build (only if checks are ok)

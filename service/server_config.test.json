@@ -9,9 +9,9 @@
         },
         "port": 7080,
         "allowOrigins": [
-            "https://test.com",
-            "https://cloud.test.com",
-            "https://web.test.com:8080"
+            "https://sandbox.com",
+            "https://cloud.sandbox.com",
+            "https://web.sandbox.com:8080"
         ]
     },
     "tracing": {
@@ -23,8 +23,8 @@
         }
     },
     "db": {
-        "redisCns": "redis://redis.mock-test.com:6379",
-        "sqlCns": "postgres://username:password@postgres.mock-test.com:5432/database-name?sslmode=disable"
+        "redisCns": "redis://redis.mockbox.com:6379",
+        "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-name?sslmode=disable"
     },
     "userName": {
         "baseGenerator": "fixed",
@@ -33,9 +33,9 @@
         "idEncoder": "harsh"
     },
     "auth": {
-        "homeUrl": "https://web.test.com:8080/",
-        "errorUrl": "https://web.test.com:8080/error",
-        "authBaseUrl": "https://cloud.test.com/identity/auth",
+        "homeUrl": "https://web.sandbox.com:8080/",
+        "errorUrl": "https://web.sandbox.com:8080/error",
+        "authBaseUrl": "https://cloud.sandbox.com/identity/auth",
         "superUserApiKeyHash": "$2b$05$0OWeMQAQuh9kmD642a0ZHeVl6VNa2g.z1HTI2rrQ3RPkmxoCNUohG",
         "pageRedirectTime": 0,
         "pageErrorDetail": true,
@@ -48,7 +48,7 @@
         "openidIgnoreDiscoveryError": true,
         "openid": {
             "openid_flow": {
-                "discoveryUrl": "https://mock-test.com:8090/openid",
+                "discoveryUrl": "https://mockbox.com:8090/openid",
                 "scopes": [
                     "openid",
                     "email",
@@ -61,9 +61,9 @@
         },
         "oauth2": {
             "oauth2_flow": {
-                "authorizationUrl": "https://mock-test.com:8090/oauth2/authorize",
-                "tokenUrl": "https://mock-test.com:8090/oauth2/token",
-                "userInfoUrl": "https://mock-test.com:8090/oauth2/users",
+                "authorizationUrl": "https://mockbox.com:8090/oauth2/authorize",
+                "tokenUrl": "https://mockbox.com:8090/oauth2/token",
+                "userInfoUrl": "https://mockbox.com:8090/oauth2/users",
                 "userInfoMapping": {},
                 "extensions": [],
                 "scopes": [

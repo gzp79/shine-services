@@ -20,11 +20,11 @@ export async function createGuestUser(): Promise<Record<string, Cookie>> {
     return cookies;
 }
 
-export async function loginWithToken(tid: Cookie): Promise<Record<string, Cookie>> {
+export async function loginWithToken(tid: string): Promise<Record<string, Cookie>> {
     const response = await request
         .get(config.getUrlFor('identity/auth/token/login'))
         .query(config.defaultRedirects)
-        .set('Cookie', [`tid=${tid.value}`])
+        .set('Cookie', [`tid=${tid}`])
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -32,7 +32,7 @@ export async function loginWithToken(tid: Cookie): Promise<Record<string, Cookie
 
     const cookies = getCookies(response);
     expect(cookies.tid).toBeValidTID();
-    expect(cookies.tid.value).toEqual(tid.value);
+    expect(cookies.tid.value).toEqual(tid);
     expect(cookies.sid).toBeValidSID();
     expect(cookies.eid).toBeClearCookie();
     return cookies;

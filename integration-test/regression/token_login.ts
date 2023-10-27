@@ -13,7 +13,7 @@ describe('Validate (interactive) token flow', () => {
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'https://web.test.com:8080/error?type=invalidInput&status=400'
+            'https://web.sandbox.com:8080/error?type=invalidInput&status=400'
         );
         expect(response.text).toContain('Failed to deserialize query string');
 
@@ -66,7 +66,7 @@ describe('Validate (interactive) token flow', () => {
         expect(cookies.tid).toBeValidTID();
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
-        expect(await getUserInfo(cookies.sid)).toBeGuestUser();
+        expect(await getUserInfo(cookies.sid.value)).toBeGuestUser();
     });
 });
 
@@ -89,7 +89,7 @@ describe('(Interactive) token flow', () => {
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
 
-        const fullUserInfo = await getUserInfo(cookies.sid);
+        const fullUserInfo = await getUserInfo(cookies.sid.value);
         expect(fullUserInfo).toBeGuestUser();
         const { sessionLength, ...partialUserInfo } = fullUserInfo;
         userInfo = partialUserInfo;
@@ -114,7 +114,7 @@ describe('(Interactive) token flow', () => {
         expect(newCookies.sid).toBeValidSID();
         expect(newCookies.sid.value, 'it shall be the same session').toEqual(cookies.sid.value);
         expect(newCookies.eid).toBeClearCookie();
-        expect(await getUserInfo(cookies.sid)).toEqual(expect.objectContaining(userInfo));
+        expect(await getUserInfo(cookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 
     it('Login with a session and a token is an error', async () => {
@@ -136,7 +136,7 @@ describe('(Interactive) token flow', () => {
         expect(newCookies.sid).toBeValidSID();
         expect(newCookies.sid.value, 'it shall be the same session').toEqual(cookies.sid.value);
         expect(newCookies.eid).toBeClearCookie();
-        expect(await getUserInfo(cookies.sid)).toEqual(expect.objectContaining(userInfo));
+        expect(await getUserInfo(cookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 
     it('Login with the token and without rememberMe shall be a success', async () => {
@@ -156,7 +156,7 @@ describe('(Interactive) token flow', () => {
         expect(newCookies.sid).toBeValidSID();
         expect(newCookies.sid.value, 'it shall be a new session').not.toEqual(cookies.sid.value);
         expect(newCookies.eid).toBeClearCookie();
-        expect(await getUserInfo(newCookies.sid)).toEqual(expect.objectContaining(userInfo));
+        expect(await getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 
     it('Login with the token and with false rememberMe shall be a success', async () => {
@@ -175,7 +175,7 @@ describe('(Interactive) token flow', () => {
         expect(newCookies.sid).toBeValidSID();
         expect(newCookies.sid.value, 'it shall be a new session').not.toEqual(cookies.sid.value);
         expect(newCookies.eid).toBeClearCookie();
-        expect(await getUserInfo(newCookies.sid)).toEqual(expect.objectContaining(userInfo));
+        expect(await getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 
     it('Login with the token and with rememberMe shall be a success', async () => {
@@ -194,6 +194,6 @@ describe('(Interactive) token flow', () => {
         expect(newCookies.sid).toBeValidSID();
         expect(newCookies.sid.value, 'it shall be a new session').not.toEqual(cookies.sid.value);
         expect(newCookies.eid).toBeClearCookie();
-        expect(await getUserInfo(newCookies.sid)).toEqual(expect.objectContaining(userInfo));
+        expect(await getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 });

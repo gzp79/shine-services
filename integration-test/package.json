@@ -4,12 +4,17 @@
   "description": "",
   "main": "test.js",
   "scripts": {
-    "mkcert:ca": "npx mkcert create-ca --cert ../service/certs/ca.crt --key ../service/certs/ca.key",
-    "mkcert:test": "npx mkcert create-cert --ca-cert ../service/certs/ca.crt --ca-key ../service/certs/ca.key --cert ../service/certs/test.crt --key ../service/certs/test.key --domain test.com,*.test.com,mock-test.com,localhost",
-    "mkcert:dev": "npx mkcert create-cert --ca-cert ../service/certs/ca.crt --ca-key ../service/certs/ca.key --cert ../service/certs/scytta.crt --key ../service/certs/scytta.key --domain local.scytta.com,localhost",
+    "mkcert:ca": "mkcert create-ca --cert ../service/certs/ca.crt --key ../service/certs/ca.key",
+    "mkcert:test": "mkcert create-cert --ca-cert ../service/certs/ca.crt --ca-key ../service/certs/ca.key --cert ../service/certs/test.crt --key ../service/certs/test.key --domain sandbox.com,*.sandbox.com,mockbox.com,localhost",
+    "mkcert:dev": "mkcert create-cert --ca-cert ../service/certs/ca.crt --ca-key ../service/certs/ca.key --cert ../service/certs/scytta.crt --key ../service/certs/scytta.key --domain local.scytta.com,localhost",
     "mkcert": "npm run mkcert:ca && npm run mkcert:test",
+
     "build_service": "docker build --target test -t gzp79/shine-identity:test --progress=plain ..",
-    "jest": "npx jest -i --verbose=false"
+    "jest": "jest -i --verbose=false",
+    
+    "check:format": "prettier 'src/**/*.{ts,tsx,js}' --check",
+    "check": "npm run check:format",
+    "format": "prettier 'src/**/*.{ts,tsx,js}' --write"
   },
   "author": "",
   "license": "MIT",

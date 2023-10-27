@@ -27,17 +27,17 @@ services:
       - test
     environment:
       - RUST_LOG=info,shine_identity=trace
-      - WAIT_FOR_SERVICES=postgres.mock-test.com:5432,redis.mock-test.com:6379
+      - WAIT_FOR_SERVICES=postgres.mockbox.com:5432,redis.mockbox.com:6379
     ports:
       - "7080:7080"
     links:
-      - postgres:postgres.mock-test.com
-      - redis:redis.mock-test.com
+      - postgres:postgres.mockbox.com
+      - redis:redis.mockbox.com
     extra_hosts:
-      - mock-test.com:host-gateway
-      - test.com:127.0.0.1
-      - web.test.com:127.0.0.1
-      - cloud.test.com:127.0.0.1
+      - mockbox.com:host-gateway
+      - sandbox.com:127.0.0.1
+      - web.sandbox.com:127.0.0.1
+      - cloud.sandbox.com:127.0.0.1
     networks:
       - shine
 

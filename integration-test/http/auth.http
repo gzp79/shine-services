@@ -1,4 +1,4 @@
-@url = https://cloud.test.com:7080/identity
+@url = https://cloud.sandbox.com:7080/identity
 //@url = https://cloud.scytta.com/identity
 
 GET {{url}}/api/auth/providers 

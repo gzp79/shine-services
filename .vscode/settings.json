@@ -4,8 +4,8 @@
         "MIRIFLAGS": "-Zmiri-backtrace=full",
         "RUST_LOG": "INFO,shine_server=TRACE,shine_identity=TRACE",
 
-        "SHINE_TEST_REDIS_CNS": "redis://redis.mock-test.com:6379",
-        "SHINE_TEST_PG_CNS": "postgres://username:password@postgres.mock-test.com:5432/database-name?sslmode=disable"
+        "SHINE_TEST_REDIS_CNS": "redis://redis.mockbox.com:6379",
+        "SHINE_TEST_PG_CNS": "postgres://username:password@postgres.mockbox.com:5432/database-name?sslmode=disable"
     },
     "cucumberautocomplete.steps": [
         "integration-test/karate/**/*.ts",
@@ -36,6 +36,8 @@
         "karatelabs",
         "keyid",
         "keyvault",
+        "mkcert",
+        "mockbox",
         "nextval",
         "notnull",
         "oidc",
