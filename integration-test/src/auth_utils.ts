@@ -60,7 +60,7 @@ expect.extend({
             httpOnly: true,
             sameSite: 'lax',
             path: '/identity/auth',
-            domain: 'cloud.test.com',
+            domain: 'cloud.sandbox.com',
             expires: expect.toBeAfter(new Date())
         });
         return intoMatcherResult(this, received, expected);
@@ -73,7 +73,7 @@ expect.extend({
             httpOnly: true,
             sameSite: 'lax',
             path: '/',
-            domain: 'test.com',
+            domain: 'sandbox.com',
             expires: 'Infinity' //session scoped
         });
         return intoMatcherResult(this, received, expected);
@@ -86,7 +86,7 @@ expect.extend({
             httpOnly: true,
             sameSite: 'lax',
             path: '/identity/auth',
-            domain: 'cloud.test.com',
+            domain: 'cloud.sandbox.com',
             expires: 'Infinity'
         });
         return intoMatcherResult(this, received, expected);

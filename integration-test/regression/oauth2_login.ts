@@ -36,7 +36,7 @@ describe('Validate (interactive) OAuth2 auth', () => {
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'https://web.test.com:8080/error?type=authError&status=400'
+            'https://web.sandbox.com:8080/error?type=authError&status=400'
         );
         expect(response.text).toContain('&quot;MissingExternalLogin&quot;');
 
@@ -59,7 +59,7 @@ describe('Validate (interactive) OAuth2 auth', () => {
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'https://web.test.com:8080/error?type=authError&status=400'
+            'https://web.sandbox.com:8080/error?type=authError&status=400'
         );
         expect(response.text).toContain('&quot;MissingExternalLogin&quot;');
 

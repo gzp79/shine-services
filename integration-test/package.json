@@ -5,7 +5,7 @@
   "main": "test.js",
   "scripts": {
     "mkcert:ca": "npx mkcert create-ca --cert ../service/certs/ca.crt --key ../service/certs/ca.key",
-    "mkcert:test": "npx mkcert create-cert --ca-cert ../service/certs/ca.crt --ca-key ../service/certs/ca.key --cert ../service/certs/test.crt --key ../service/certs/test.key --domain test.com,*.test.com,mock-test.com,localhost",
+    "mkcert:test": "npx mkcert create-cert --ca-cert ../service/certs/ca.crt --ca-key ../service/certs/ca.key --cert ../service/certs/test.crt --key ../service/certs/test.key --domain sandbox.com,*.sandbox.com,mockbox.com,localhost",
     "mkcert:dev": "npx mkcert create-cert --ca-cert ../service/certs/ca.crt --ca-key ../service/certs/ca.key --cert ../service/certs/scytta.crt --key ../service/certs/scytta.key --domain local.scytta.com,localhost",
     "mkcert": "npm run mkcert:ca && npm run mkcert:test",
     "build_service": "docker build --target test -t gzp79/shine-identity:test --progress=plain ..",

@@ -1,11 +1,11 @@
 import fs from 'fs';
 
 export class Config {
-    appDomain = 'test.com';
-    serviceDomain = 'cloud.test.com';
-    serviceUrl = 'https://cloud.test.com:7080';
-    identityUrl = 'https://cloud.test.com:7080/identity';
-    mockUrl = 'https://mock-test.com:8090';
+    appDomain = 'sandbox.com';
+    serviceDomain = 'cloud.sandbox.com';
+    serviceUrl = 'https://cloud.sandbox.com:7080';
+    identityUrl = 'https://cloud.sandbox.com:7080/identity';
+    mockUrl = 'https://mockbox.com:8090';
 
     getUrlFor(path: string): string {
         return new URL(path, this.serviceUrl).toString();

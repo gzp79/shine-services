@@ -13,7 +13,7 @@ describe('Validate (interactive) token flow', () => {
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'https://web.test.com:8080/error?type=invalidInput&status=400'
+            'https://web.sandbox.com:8080/error?type=invalidInput&status=400'
         );
         expect(response.text).toContain('Failed to deserialize query string');
 

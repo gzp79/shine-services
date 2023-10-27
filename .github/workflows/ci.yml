@@ -69,20 +69,20 @@ jobs:
         push: false
         load: true
         add-hosts: |
-          postgres.mock-test.com:${{ steps.test_resources.outputs.pg_host }}
-          redis.mock-test.com:${{ steps.test_resources.outputs.redis_host }}
+          postgres.mockbox.com:${{ steps.test_resources.outputs.pg_host }}
+          redis.mockbox.com:${{ steps.test_resources.outputs.redis_host }}
         cache-from: type=gha,mode=max
         cache-to: type=gha,mode=max
         tags: ${{ env.IMAGE_NAME }}:test
         
     - name: Add hosts to /etc/hosts
       run: |
-        sudo echo "127.0.0.1 test.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 web.test.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 cloud.test.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 mock-test.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 postgres.mock-test.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 redis.mock-test.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 sandbox.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 web.sandbox.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 cloud.sandbox.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 mockbox.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 postgres.mockbox.com" | sudo tee -a /etc/hosts
+        sudo echo "127.0.0.1 redis.mockbox.com" | sudo tee -a /etc/hosts
     - name: Integration test
       run: |
         echo "::group::Starting service in the test environment"
@@ -111,8 +111,8 @@ jobs:
         # these setting are here to allow the reuse of the layer from the build step
         # without host parameters it would trigger a new build
         add-hosts: |
-          postgres.mock-test.com:${{ steps.test_resources.outputs.pg_host }}
-          redis.mock-test.com:${{ steps.test_resources.outputs.redis_host }}
+          postgres.mockbox.com:${{ steps.test_resources.outputs.pg_host }}
+          redis.mockbox.com:${{ steps.test_resources.outputs.redis_host }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
 

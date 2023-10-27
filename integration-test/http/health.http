@@ -1,4 +1,4 @@
-@baseUrl = https://cloud.test.com:7080
+@baseUrl = https://cloud.sandbox.com:7080
 //@baseUrl = https://cloud.scytta.com
 
 @url = {{baseUrl}}/identity
