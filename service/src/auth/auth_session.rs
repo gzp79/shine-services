@@ -198,7 +198,7 @@ where
         let mut external_login = SignedCookieJar::from_headers(&parts.headers, meta.external_login.secret.clone())
             .get(&meta.external_login.name)
             .and_then(|session| serde_json::from_str::<ExternalLogin>(session.value()).ok());
-        let mut token_login = SignedCookieJar::from_headers(&parts.headers, meta.token_login.secret.clone())
+        let token_login = SignedCookieJar::from_headers(&parts.headers, meta.token_login.secret.clone())
             .get(&meta.token_login.name)
             .and_then(|session| serde_json::from_str::<TokenLogin>(session.value()).ok());
 
@@ -209,19 +209,11 @@ where
             token_login,
         );
 
-        // Perform validation on each cookie independently
-        //todo: if let Some(t) = token_login.as_ref().map(|t| t.expires) && t < Utc::now() {
-        if token_login.as_ref().map(|t| t.expires < Utc::now()).unwrap_or(true) {
-            // It should have been done by the browser, but never trust the clients.
-            log::info!("token expired, dropping token");
-            token_login = None;
-        }
-
         // Perform cross-validation
         // - user of token is not matching the user of the session, session is deleted
         // - if linked_account of the external login is not matching the session, external login is deleted
 
-        log::debug!("Validating sessions...");
+        log::debug!("Validating cookies...");
         //todo: if let Some(uid) = user.as_ref().map(|u| u.user_id) &&
         //let Some(tid) = token_login.as_ref().map(|t| t.user_id) &&
         //tid != uid {
@@ -255,10 +247,9 @@ where
 
 fn create_jar<T: Serialize, X: Into<Expiration>>(
     settings: &CookieSettings,
-    data: &Option<T>,
-    expiration: X,
+    data_and_expiration: Option<(&T, X)>,
 ) -> SignedCookieJar {
-    let mut cookie = if let Some(data) = data {
+    let mut cookie = if let Some((data, expiration)) = data_and_expiration {
         let raw_data = serde_json::to_string(&data).expect("Failed to serialize user");
         let mut cookie = Cookie::new(settings.name.clone(), raw_data);
         cookie.set_expires(expiration);
@@ -302,15 +293,23 @@ impl IntoResponseParts for AuthSession {
             token_login,
         );
 
-        let token_expiration = {
-            let time = token_login.as_ref().map(|t| t.expires).unwrap_or(Utc::now());
-            let naive_time = time.naive_utc();
-            OffsetDateTime::from_unix_timestamp(naive_time.timestamp()).unwrap()
-        };
+        let user = create_jar(&meta.user, user.as_ref().map(|d| (d, Expiration::Session)));
 
-        let user = create_jar(&meta.user, &user, Expiration::Session);
-        let external_login = create_jar(&meta.external_login, &external_login, Expiration::Session);
-        let token_login = create_jar(&meta.token_login, &token_login, token_expiration);
+        let external_login = create_jar(
+            &meta.external_login,
+            external_login.as_ref().map(|d| (d, Expiration::Session)),
+        );
+
+        let token_login = create_jar(
+            &meta.token_login,
+            token_login.as_ref().map(|d| {
+                let naive_time = d.expires.naive_utc();
+                // disable cookie a few minutes before the token expiration
+                let token_expiration =
+                    OffsetDateTime::from_unix_timestamp(naive_time.timestamp()).unwrap() - Duration::minutes(5);
+                (d, token_expiration)
+            }),
+        );
 
         Ok((user, external_login, token_login).into_response_parts(res).unwrap())
     }

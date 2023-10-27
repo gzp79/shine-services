@@ -127,7 +127,7 @@ describe('Check auth cookie consistency', () => {
             }
         }
         //console.log(requestCookies);
-        
+
         const response = await request
             .get(config.getUrlFor('identity/auth/validate'))
             .set('Cookie', requestCookies)
