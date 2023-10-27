@@ -27,20 +27,28 @@ jobs:
       with:
         submodules: recursive
     
+    - name: Setup Node
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18.x
+
+    - name: Prepare tests
+      run: |
+        npm ci
+        npm run check
+        npm run mkcert
+      working-directory: ./integration-test
+
     - name: Setup Docker Buildx (1)
       run: |
         docker network create shine
+
     - name: Setup Docker Buildx (2)
       uses: docker/setup-buildx-action@v2
       with:
         driver: docker-container
         driver-opts: network=shine
         
-    - name: Setup Node
-      uses: actions/setup-node@v3
-      with:
-        node-version: 18.x
-
     - name: Docker meta
       id: meta
       uses: docker/metadata-action@v4
@@ -48,17 +56,12 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: type=sha
 
-    - name: Init test environment
-      id: test_resources
+    - name: Prepare MockBox
+      id: mockbox
       run: |
         docker compose -f docker.yml -p shine-identity up -d
         echo "pg_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-postgres-1)" >> $GITHUB_OUTPUT
         echo "redis_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-redis-1)" >> $GITHUB_OUTPUT
-        echo "::group::Create certificates"
-        cd ../integration-test
-        npm ci
-        npm run mkcert
-        echo "::endgroup::"
       working-directory: ./service
         
     - name: Docker build
@@ -69,8 +72,8 @@ jobs:
         push: false
         load: true
         add-hosts: |
-          postgres.mockbox.com:${{ steps.test_resources.outputs.pg_host }}
-          redis.mockbox.com:${{ steps.test_resources.outputs.redis_host }}
+          postgres.mockbox.com:${{ steps.mockbox.outputs.pg_host }}
+          redis.mockbox.com:${{ steps.mockbox.outputs.redis_host }}
         cache-from: type=gha,mode=max
         cache-to: type=gha,mode=max
         tags: ${{ env.IMAGE_NAME }}:test
@@ -83,6 +86,7 @@ jobs:
         sudo echo "127.0.0.1 mockbox.com" | sudo tee -a /etc/hosts
         sudo echo "127.0.0.1 postgres.mockbox.com" | sudo tee -a /etc/hosts
         sudo echo "127.0.0.1 redis.mockbox.com" | sudo tee -a /etc/hosts
+
     - name: Integration test
       run: |
         echo "::group::Starting service in the test environment"
@@ -101,7 +105,7 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
         
-    - name: Build prod
+    - name: Build production
       if: github.event_name != 'pull_request'
       uses: docker/build-push-action@v4
       with:
@@ -111,12 +115,12 @@ jobs:
         # these setting are here to allow the reuse of the layer from the build step
         # without host parameters it would trigger a new build
         add-hosts: |
-          postgres.mockbox.com:${{ steps.test_resources.outputs.pg_host }}
-          redis.mockbox.com:${{ steps.test_resources.outputs.redis_host }}
+          postgres.mockbox.com:${{ steps.mockbox.outputs.pg_host }}
+          redis.mockbox.com:${{ steps.mockbox.outputs.redis_host }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
 
-    - name: Publish Test Reports
+    - name: Publish test results
       if: github.event_name != 'pull_request' || failure()
       uses: actions/upload-artifact@v3
       with:

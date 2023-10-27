@@ -36,6 +36,8 @@
         "karatelabs",
         "keyid",
         "keyvault",
+        "mkcert",
+        "mockbox",
         "nextval",
         "notnull",
         "oidc",
