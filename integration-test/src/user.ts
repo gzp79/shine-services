@@ -54,7 +54,7 @@ export class TestUser {
         const cookies = await createGuestUser();
         {
             // add roles using api key
-            const info = await getUserInfo(cookies.sid);
+            const info = await getUserInfo(cookies.sid.value);
             for (const role of roles) {
                 const response = await request
                     .put(config.getUrlFor(`/identity/api/identities/${info.userId}/roles`))
@@ -65,7 +65,7 @@ export class TestUser {
                 expect(response.statusCode).toEqual(200);
             }
         }
-        const info = await getUserInfo(cookies.sid);
+        const info = await getUserInfo(cookies.sid.value);
         const testUser = new TestUser(info.userId);
         testUser.name = info.name;
         testUser.roles = info.roles;

@@ -3,6 +3,7 @@ import config from '../test.config';
 import { Response } from 'superagent';
 import { Cookie } from 'tough-cookie';
 import uuidValidate from 'uuid-validate';
+import { TestUser } from './user';
 
 interface CustomMatchers<R = unknown> {
     toBeClearCookie(): R;
@@ -119,11 +120,10 @@ export interface UserInfo {
     roles: string[];
 }
 
-export async function getUserInfo(cookie: Cookie): Promise<UserInfo> {
-    expect(cookie.key).toEqual('sid');
+export async function getUserInfo(cookieValue: string): Promise<UserInfo> {
     let response = await request
         .get(config.getUrlFor('identity/api/auth/user/info'))
-        .set('Cookie', [`sid=${cookie.value}`])
+        .set('Cookie', [`sid=${cookieValue}`])
         .send();
     expect(response.statusCode).toEqual(200);
     //expect(response.body).toBeInstanceOf(UserInfo);

@@ -2,6 +2,7 @@ import request from 'superagent';
 import config from '../test.config';
 import { TestUser } from '$lib/user';
 import { randomUUID } from 'crypto';
+import { getUserInfo } from '$lib/auth_utils';
 //import requestLogger from 'superagent-logger';
 
 // It checks only for the access of the feature, but not if it does what it have to.
@@ -97,6 +98,37 @@ describe('User role access', () => {
 describe('User role features', () => {
     let admin: TestUser = undefined!;
 
+    const getUserRoles = async function (userId: string): Promise<string[]> {
+        let response = await request
+            .get(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
+            .set('Cookie', admin.getCookies())
+            .send();
+        expect(response.statusCode).toEqual(200);
+        return response.body.roles;
+    };
+
+    const addUserRole = async function (userId: string, role: string): Promise<string[]> {
+        const response = await request
+            .put(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
+            .set('Cookie', admin.getCookies())
+            .type('json')
+            .send({ role: role });
+        expect(response.statusCode).toEqual(200);
+
+        return response.body.roles;
+    };
+
+    const removeUserRole = async function (userId: string, role: string): Promise<string[]> {
+        const response = await request
+            .delete(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
+            .set('Cookie', admin.getCookies())
+            .type('json')
+            .send({ role: role });
+        expect(response.statusCode).toEqual(200);
+
+        return response.body.roles;
+    };
+
     beforeAll(async () => {
         admin = await TestUser.create(['SuperAdmin']);
     });
@@ -128,5 +160,42 @@ describe('User role features', () => {
             .send({ role: 'Role1' })
             .catch((err) => err.response);
         expect(response.statusCode).toEqual(404);
+    });
+
+    it('Complex flow', async () => {
+        const user = await TestUser.create([]);
+
+        expect(await getUserRoles(user.userId)).toIncludeSameMembers([]);
+        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers([]);
+
+        // remove Role3 (not existing)
+        expect(await removeUserRole(user.userId, 'Role3')).toIncludeSameMembers([]);
+        expect(await getUserRoles(user.userId)).toIncludeSameMembers([]);
+        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers([]);
+
+        // add Role1
+        expect(await addUserRole(user.userId, 'Role1')).toIncludeSameMembers(['Role1']);
+        expect(await getUserRoles(user.userId)).toIncludeSameMembers(['Role1']);
+        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers(['Role1']);
+
+        //add Role2
+        expect(await addUserRole(user.userId, 'Role2')).toIncludeSameMembers(['Role1', 'Role2']);
+        expect(await getUserRoles(user.userId)).toIncludeSameMembers(['Role1', 'Role2']);
+        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers(['Role1', 'Role2']);
+
+        // remove Role1
+        expect(await removeUserRole(user.userId, 'Role1')).toIncludeSameMembers(['Role2']);
+        expect(await getUserRoles(user.userId)).toIncludeSameMembers(['Role2']);
+        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers(['Role2']);
+
+        // remove Role3 (not existing)
+        expect(await removeUserRole(user.userId, 'Role3')).toIncludeSameMembers(['Role2']);
+        expect(await getUserRoles(user.userId)).toIncludeSameMembers(['Role2']);
+        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers(['Role2']);
+
+        // remove Role2
+        expect(await removeUserRole(user.userId, 'Role2')).toIncludeSameMembers([]);
+        expect(await getUserRoles(user.userId)).toIncludeSameMembers([]);
+        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers([]);
     });
 });
