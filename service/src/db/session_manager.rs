@@ -203,6 +203,7 @@ impl SessionManager {
             redis::pipe()
                 .hset_nx(&key, format!("{}", identity.version), &data)
                 .ignore()
+                // it extends to session ttl, but the sentinel is still there to limit the session
                 .expire(&key, inner.ttl_session)
                 .ignore()
                 .query_async::<_, ()>(&mut *client)
