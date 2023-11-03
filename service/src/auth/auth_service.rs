@@ -308,6 +308,7 @@ impl AuthServiceBuilder {
 
         let api_router = Router::new()
             .add_api(auth::ep_get_user_info(), doc)
+            .add_api(auth::ep_get_active_sessions(), doc)
             .add_api(auth::ep_get_auth_providers(), doc)
             .add_api(auth::ep_create_token(), doc)
             .with_state(self.state);

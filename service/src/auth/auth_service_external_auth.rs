@@ -5,7 +5,7 @@ use crate::{
         auth_service_utils::{CreateTokenKind, UserCreateError},
         extensions, AuthError, AuthPage, AuthServiceState, AuthSession, ExternalUserInfoExtensions,
     },
-    db::{ExternalUserInfo, FindIdentity, IdentityError},
+    db::{ExternalUserInfo, FindIdentity, IdentityError, SiteInfo},
 };
 use reqwest::{header, Client as HttpClient};
 use serde_json::Value as JsonValue;
@@ -132,6 +132,7 @@ impl AuthServiceState {
         &self,
         mut auth_session: AuthSession,
         fingerprint: ClientFingerprint,
+        site_info: &SiteInfo,
         external_user: &ExternalUserInfo,
         target_url: Option<&Url>,
         error_url: Option<&Url>,
@@ -166,7 +167,7 @@ impl AuthServiceState {
         // create a new remember me token
         let token_login = if create_token {
             match self
-                .create_token_with_retry(identity.id, Some(&fingerprint), CreateTokenKind::AutoRenewal)
+                .create_token_with_retry(identity.id, Some(&fingerprint), site_info, CreateTokenKind::AutoRenewal)
                 .await
             {
                 Ok(token_login) => Some(token_login),
@@ -184,7 +185,11 @@ impl AuthServiceState {
         };
 
         log::debug!("Identity created: {identity:#?}");
-        let user = match self.session_manager().create(&identity, roles, &fingerprint).await {
+        let user = match self
+            .session_manager()
+            .create(&identity, roles, &fingerprint, &site_info)
+            .await
+        {
             Ok(user) => user,
             Err(err) => return self.page_internal_error(auth_session, err, error_url),
         };

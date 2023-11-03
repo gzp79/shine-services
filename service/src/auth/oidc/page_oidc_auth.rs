@@ -1,6 +1,6 @@
 use crate::{
     auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OIDCClient},
-    db::ExternalUserInfo,
+    db::{ExternalUserInfo, SiteInfo},
     openapi::ApiKind,
 };
 use axum::{body::HttpBody, extract::State, Extension};
@@ -28,6 +28,7 @@ async fn oidc_auth(
     Extension(client): Extension<Arc<OIDCClient>>,
     mut auth_session: AuthSession,
     fingerprint: ClientFingerprint,
+    site_info: SiteInfo,
     query: Result<ValidatedQuery<Query>, ValidationError>,
 ) -> AuthPage {
     // take external_login from session, thus later code don't have to care with it
@@ -127,6 +128,7 @@ async fn oidc_auth(
             .page_external_login(
                 auth_session,
                 fingerprint,
+                &site_info,
                 &external_user,
                 target_url.as_ref(),
                 error_url.as_ref(),

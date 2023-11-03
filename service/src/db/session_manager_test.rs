@@ -1,4 +1,4 @@
-use crate::db::{Identity, IdentityKind, SessionManager};
+use crate::db::{Identity, IdentityKind, SessionManager, SiteInfo};
 use chrono::{Duration, Utc};
 use ring::rand::SystemRandom;
 use shine_service::service::{self, ClientFingerprint, RedisConnectionPool, SessionKey};
@@ -41,17 +41,23 @@ async fn create_get_remove() {
         version: 1,
     };
     let roles = vec!["R1".into(), "R2".into()];
-    let fingerprint = ClientFingerprint { agent: "test".into() };
+    let fingerprint = ClientFingerprint::from_agent("test".into());
+    let site_info = SiteInfo {
+        agent: "test".into(),
+        country: None,
+        region: None,
+        city: None,
+    };
 
     log::info!("Creating a new session...");
     let session = session_manager
-        .create(&identity, roles.clone(), &fingerprint)
+        .create(&identity, roles.clone(), &fingerprint, &site_info)
         .await
         .unwrap();
     log::debug!("session: {session:#?}");
     assert_eq!(identity.id, session.user_id);
     assert_eq!(identity.name, session.name);
-    assert_eq!(fingerprint.hash(), session.fingerprint_hash);
+    assert_eq!(fingerprint.as_str(), session.fingerprint);
     assert_eq!(roles, session.roles);
 
     log::info!("Finding the session...");
@@ -64,7 +70,7 @@ async fn create_get_remove() {
     assert_eq!(session.key, found_session.key);
     assert_eq!(identity.id, found_session.user_id);
     assert_eq!(identity.name, found_session.name);
-    assert_eq!(fingerprint.hash(), found_session.fingerprint_hash);
+    assert_eq!(fingerprint.as_str(), found_session.fingerprint);
     assert_eq!(roles, found_session.roles);
 
     log::info!("Remove session...");
@@ -130,11 +136,17 @@ async fn create_update() {
         version: 1,
     };
     let roles1 = vec!["R1".into(), "R2".into()];
-    let fingerprint = ClientFingerprint { agent: "test".into() };
+    let fingerprint = ClientFingerprint::from_agent("test".into());
+    let site_info = SiteInfo {
+        agent: "test".into(),
+        country: None,
+        region: None,
+        city: None,
+    };
 
     log::info!("Creating a new session...");
     let session = session_manager
-        .create(&identity1, roles1.clone(), &fingerprint)
+        .create(&identity1, roles1.clone(), &fingerprint, &site_info)
         .await
         .unwrap();
 
@@ -148,7 +160,7 @@ async fn create_update() {
     assert_eq!(identity5.id, updated_session.user_id);
     assert_eq!(identity5.name, updated_session.name);
     assert_eq!(identity5.version, updated_session.version);
-    assert_eq!(fingerprint.hash(), updated_session.fingerprint_hash);
+    assert_eq!(fingerprint.as_str(), updated_session.fingerprint);
     assert_eq!(roles5, updated_session.roles);
 
     {
@@ -162,7 +174,7 @@ async fn create_update() {
         assert_eq!(session.key, found_session.key);
         assert_eq!(identity5.id, found_session.user_id);
         assert_eq!(identity5.name, found_session.name);
-        assert_eq!(fingerprint.hash(), found_session.fingerprint_hash);
+        assert_eq!(fingerprint.as_str(), found_session.fingerprint);
         assert_eq!(roles5, found_session.roles);
     }
 
@@ -178,7 +190,7 @@ async fn create_update() {
         assert_eq!(identity5.id, updated_session.user_id);
         assert_eq!(identity5.name, updated_session.name);
         assert_eq!(identity5.version, updated_session.version);
-        assert_eq!(fingerprint.hash(), updated_session.fingerprint_hash);
+        assert_eq!(fingerprint.as_str(), updated_session.fingerprint);
         assert_eq!(roles5, updated_session.roles);
 
         log::info!("Finding the session with version 5 after storing version 3 ...");
@@ -191,7 +203,7 @@ async fn create_update() {
         assert_eq!(session.key, found_session.key);
         assert_eq!(identity5.id, found_session.user_id);
         assert_eq!(identity5.name, found_session.name);
-        assert_eq!(fingerprint.hash(), found_session.fingerprint_hash);
+        assert_eq!(fingerprint.as_str(), found_session.fingerprint);
         assert_eq!(roles5, found_session.roles);
     }
 
@@ -204,7 +216,7 @@ async fn create_update() {
         assert_eq!(identity5.id, updated_session.user_id);
         assert_eq!(identity5.name, updated_session.name);
         assert_eq!(identity5.version, updated_session.version);
-        assert_eq!(fingerprint.hash(), updated_session.fingerprint_hash);
+        assert_eq!(fingerprint.as_str(), updated_session.fingerprint);
         assert_eq!(roles5, updated_session.roles);
 
         log::info!("Finding the session with version 5 after storing version 3 ...");
@@ -217,7 +229,7 @@ async fn create_update() {
         assert_eq!(session.key, found_session.key);
         assert_eq!(identity5.id, found_session.user_id);
         assert_eq!(identity5.name, found_session.name);
-        assert_eq!(fingerprint.hash(), found_session.fingerprint_hash);
+        assert_eq!(fingerprint.as_str(), found_session.fingerprint);
         assert_eq!(roles5, found_session.roles);
     }
 }
@@ -241,13 +253,19 @@ async fn create_many_remove_all() {
         version: 1,
     };
     let roles = vec!["R1".into(), "R2".into()];
-    let fingerprint = ClientFingerprint { agent: "test".into() };
+    let fingerprint = ClientFingerprint::from_agent("test".into());
+    let site_info = SiteInfo {
+        agent: "test".into(),
+        country: None,
+        region: None,
+        city: None,
+    };
 
     // generate a few sessions for user1
     let mut keys = vec![];
     for _ in 0..10 {
         let session = session_manager
-            .create(&identity, roles.clone(), &fingerprint)
+            .create(&identity, roles.clone(), &fingerprint, &site_info)
             .await
             .unwrap();
         keys.push(session.key);
@@ -257,7 +275,7 @@ async fn create_many_remove_all() {
     let mut identity2 = identity.clone();
     identity2.id = Uuid::new_v4();
     let session2 = session_manager
-        .create(&identity2, roles.clone(), &fingerprint)
+        .create(&identity2, roles.clone(), &fingerprint, &site_info)
         .await
         .unwrap();
 

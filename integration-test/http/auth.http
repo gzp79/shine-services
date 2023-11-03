@@ -13,6 +13,9 @@ GET {{url}}/auth/validate
 GET {{url}}/api/auth/user/info
 ###
 
+GET {{url}}/api/auth/user/sessions
+###
+
 GET {{url}}/auth/token/login
 Authorization: Basic NmY3YzE2ZDMtYWExOC00NDJlLTkzMTItMzhhY2M2ZjRlZTA4OjRlNDkzMzMxN2VkMDI4MThmMjAxY2E2ODE0ZDFlYTFh
 ###

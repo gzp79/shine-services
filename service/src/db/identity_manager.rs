@@ -1,9 +1,9 @@
-use crate::db::DBError;
+use crate::db::{DBError, SiteInfo};
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use shine_service::{
     pg_query,
-    service::{PGConnectionPool, PGConvertError, PGError, PGErrorChecks, QueryBuilder, ToPGType},
+    service::{ClientFingerprint, PGConnectionPool, PGConvertError, PGError, PGErrorChecks, QueryBuilder, ToPGType},
 };
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -91,15 +91,13 @@ impl From<FindByLinkRow> for Identity {
     }
 }
 
-impl From<FindByTokenRow> for (Identity, LoginTokenInfo) {
+impl From<FindByTokenRow> for (Identity, CurrentToken) {
     fn from(value: FindByTokenRow) -> Self {
-        let token = LoginTokenInfo {
+        let token = CurrentToken {
             user_id: value.user_id,
             token: value.token,
-            created: value.token_created,
             expire: value.token_expire,
             fingerprint: value.token_fingerprint,
-            kind: value.token_kind,
             is_expired: value.token_is_expired,
         };
         let identity = Identity {
@@ -163,15 +161,12 @@ impl ToPGType for TokenKind {
 }
 
 #[derive(Debug)]
-pub struct LoginTokenInfo {
+pub struct CurrentToken {
     pub user_id: Uuid,
     pub token: String,
-    pub created: DateTime<Utc>,
+    pub fingerprint: Option<String>,
     pub expire: DateTime<Utc>,
     pub is_expired: bool,
-
-    pub kind: TokenKind,
-    pub fingerprint: Option<String>,
 }
 
 #[derive(Debug, ThisError)]
@@ -235,14 +230,25 @@ pg_query!( InsertIdentity =>
 );
 
 pg_query!( InsertToken =>
-    in = user_id: Uuid, token: &str, fingerprint: Option<&str>, kind: TokenKind, expire_s: i32;
+    in = user_id: Uuid, token: &str,
+        fingerprint: Option<&str>, kind: TokenKind,
+        expire_s: i32,
+        agent: &str, country: Option<&str>, region: Option<&str>, city: Option<&str>;
     out = InsertTokenRow{
         created: DateTime<Utc>,
         expire: DateTime<Utc>
     };
     sql =  r#"
-        INSERT INTO login_tokens (user_id, token, created, fingerprint, kind, expire) 
-            VALUES ($1, $2, now(), $3, $4, now() + $5 * interval '1 seconds')
+        INSERT INTO login_tokens (
+                user_id, token, created, 
+                fingerprint, kind,  
+                expire, 
+                agent, country, region, city)
+            VALUES (
+                $1, $2, now(), 
+                $3, $4, 
+                now() + $5 * interval '1 seconds',
+                $5, $6, $7, $8)
         RETURNING created, expire
     "#
 );
@@ -343,9 +349,10 @@ pg_query!( DeleteToken =>
 );
 
 pg_query!( DeleteAllTokens =>
-    in = user_id: Uuid;
+    in = user_id: Uuid, kind: TokenKind;
     sql = r#"
-        DELETE FROM login_tokens WHERE user_id = $1
+        DELETE FROM login_tokens 
+        WHERE user_id = $1 AND kind = $2
     "#
 );
 
@@ -667,9 +674,10 @@ impl IdentityManager {
         user_id: Uuid,
         token: &str,
         duration: &Duration,
-        fingerprint: Option<&str>,
+        fingerprint: Option<&ClientFingerprint>,
+        site_info: &SiteInfo,
         kind: TokenKind,
-    ) -> Result<LoginTokenInfo, IdentityError> {
+    ) -> Result<CurrentToken, IdentityError> {
         let inner = &*self.0;
 
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
@@ -678,7 +686,18 @@ impl IdentityManager {
         assert!(duration > 2);
         let row = match inner
             .stmt_insert_token
-            .query_one(&client, &user_id, &token, &fingerprint, &kind, &duration)
+            .query_one(
+                &client,
+                &user_id,
+                &token,
+                &fingerprint.map(|f| f.as_str()),
+                &kind,
+                &duration,
+                &site_info.agent.as_str(),
+                &site_info.country.as_deref(),
+                &site_info.region.as_deref(),
+                &site_info.city.as_deref(),
+            )
             .await
         {
             Ok(row) => row,
@@ -690,18 +709,16 @@ impl IdentityManager {
             }
         };
 
-        Ok(LoginTokenInfo {
+        Ok(CurrentToken {
             user_id,
             token: token.to_owned(),
-            created: row.created,
             expire: row.expire,
-            fingerprint: fingerprint.map(|x| x.to_string()),
-            kind,
+            fingerprint: fingerprint.map(|f| f.to_string()),
             is_expired: false,
         })
     }
 
-    pub async fn find_token(&self, token: &str) -> Result<Option<(Identity, LoginTokenInfo)>, IdentityError> {
+    pub async fn find_token(&self, token: &str) -> Result<Option<(Identity, CurrentToken)>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         Ok(inner
@@ -711,7 +728,7 @@ impl IdentityManager {
             .map(|r| r.into()))
     }
 
-    pub async fn update_token(&self, token: &str, duration: &Duration) -> Result<LoginTokenInfo, IdentityError> {
+    pub async fn update_token(&self, token: &str, duration: &Duration) -> Result<CurrentToken, IdentityError> {
         // issue#11:
         // - update expiration
         // - update last use
@@ -727,6 +744,13 @@ impl IdentityManager {
         Ok(self.find_token(token).await?.ok_or(IdentityError::TokenConflict)?.1)
     }
 
+    /*  pub async fn list_tokens(&self, user_id: Uuid) -> Result<Vec::<TokenInfo>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        inner.stmt_delete_token.execute(&client, &user_id, &token).await?;
+        Ok(())
+    }*/
+
     pub async fn delete_token(&self, user_id: Uuid, token: &str) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
@@ -734,10 +758,12 @@ impl IdentityManager {
         Ok(())
     }
 
-    pub async fn delete_all_tokens(&self, user_id: Uuid) -> Result<(), IdentityError> {
+    pub async fn delete_all_tokens(&self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        inner.stmt_delete_all_tokens.execute(&client, &user_id).await?;
+        for kind in kinds {
+            inner.stmt_delete_all_tokens.execute(&client, &user_id, kind).await?;
+        }
         Ok(())
     }
 

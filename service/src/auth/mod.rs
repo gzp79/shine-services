@@ -9,6 +9,8 @@ pub(in crate::auth) use self::auth_session::*;
 
 mod ep_get_auth_providers;
 pub use self::ep_get_auth_providers::*;
+mod ep_get_active_sessions;
+pub use self::ep_get_active_sessions::*;
 mod ep_get_user_info;
 pub use self::ep_get_user_info::*;
 mod ep_create_token;

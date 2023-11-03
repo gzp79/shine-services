@@ -144,6 +144,9 @@ describe('Validate (interactive) OpenId auth', () => {
 
     it('Auth with failing 3rd party (token service) should be an error', async () => {
         // intentionally not started: await startMock()
+        await startMock();
+        await mock?.stop();
+        mock = undefined;
         const { authParams, eid } = await startLoginWithOpenId();
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))

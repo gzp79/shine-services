@@ -1,4 +1,4 @@
-use crate::db::{DBError, Identity, Role};
+use crate::db::{DBError, Identity, Role, SiteInfo};
 use chrono::{DateTime, Duration, Utc};
 use redis::AsyncCommands;
 use ring::digest;
@@ -25,9 +25,13 @@ pub enum DBSessionError {
 
 #[derive(Serialize, Deserialize, Debug, RedisJsonValue)]
 #[serde(rename_all = "camelCase")]
-struct SessionSentinel {
+pub struct SessionSentinel {
     pub start_date: DateTime<Utc>,
-    pub fingerprint_hash: String,
+    pub fingerprint: String,
+    pub agent: String,
+    pub country: Option<String>,
+    pub region: Option<String>,
+    pub city: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, RedisJsonValue)]
@@ -223,6 +227,7 @@ impl SessionManager {
         identity: &Identity,
         roles: Vec<Role>,
         fingerprint: &ClientFingerprint,
+        site_info: &SiteInfo,
     ) -> Result<CurrentUser, DBSessionError> {
         let created_at = Utc::now();
 
@@ -257,7 +262,11 @@ impl SessionManager {
 
         let sentinel = SessionSentinel {
             start_date: created_at,
-            fingerprint_hash: fingerprint.hash(),
+            fingerprint: fingerprint.to_string(),
+            agent: site_info.agent.clone(),
+            country: site_info.country.clone(),
+            region: site_info.region.clone(),
+            city: site_info.city.clone(),
         };
         let created = client
             .set_nx(&sentinel_key, &sentinel)
@@ -284,7 +293,7 @@ impl SessionManager {
                 name: data.name,
                 roles: data.roles,
                 session_start: sentinel.start_date,
-                fingerprint_hash: sentinel.fingerprint_hash,
+                fingerprint: sentinel.fingerprint,
                 version: identity.version,
             })
         } else {
@@ -325,6 +334,26 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Get all the active session of the given user.
+    pub async fn find_all(&self, user_id: Uuid) -> Result<Vec<SessionSentinel>, DBSessionError> {
+        let keys = self.find_key_hashes(user_id).await?;
+
+        let inner = &*self.0;
+        let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
+        let mut sentinels = vec![];
+
+        for key in keys {
+            if key.ends_with("openness") {
+                let sentinel: Option<SessionSentinel> = client.get(key).await.map_err(DBError::RedisError)?;
+                if let Some(sentinel) = sentinel {
+                    sentinels.push(sentinel);
+                }
+            }
+        }
+
+        Ok(sentinels)
+    }
+
     pub async fn find(&self, user_id: Uuid, session_key: SessionKey) -> Result<Option<CurrentUser>, DBSessionError> {
         let session_key_hash = hash_key(&session_key);
 
@@ -336,7 +365,7 @@ impl SessionManager {
                 name: data.name,
                 roles: data.roles,
                 session_start: sentinel.start_date,
-                fingerprint_hash: sentinel.fingerprint_hash,
+                fingerprint: sentinel.fingerprint,
                 version,
             })),
             None => Ok(None),
@@ -367,7 +396,7 @@ impl SessionManager {
             let inner = &*self.0;
             let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
 
-            //log::debug!("deleting keys: {keys:?}");
+            log::debug!("Removing session, user:[{user_id}], keys: {keys:?}");
             client.del(keys).await.map_err(DBError::RedisError)?;
         }
 

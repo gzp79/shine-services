@@ -1,6 +1,6 @@
 use crate::{
     auth::{auth_session::TokenLogin, AuthServiceState, AuthSession, OIDCDiscoveryError, TokenGeneratorError},
-    db::{ExternalUserInfo, Identity, IdentityError, NameGeneratorError, TokenKind},
+    db::{ExternalUserInfo, Identity, IdentityError, NameGeneratorError, SiteInfo, TokenKind},
 };
 use axum::{
     http::StatusCode,
@@ -86,6 +86,7 @@ impl AuthServiceState {
         &self,
         user_id: Uuid,
         fingerprint: Option<&ClientFingerprint>,
+        site_info: &SiteInfo,
         kind: CreateTokenKind,
     ) -> Result<TokenLogin, TokenCreateError> {
         let (duration, kind) = match kind {
@@ -93,8 +94,6 @@ impl AuthServiceState {
             CreateTokenKind::AutoRenewal => (self.token().ttl_remember_me(), TokenKind::AutoRenewal),
             CreateTokenKind::Persistent(duration) => (duration, TokenKind::Persistent),
         };
-        let fingerprint = fingerprint.map(|f| f.to_compact_string());
-
         const MAX_RETRY_COUNT: usize = 10;
         let mut retry_count = 0;
         loop {
@@ -107,7 +106,7 @@ impl AuthServiceState {
             let token = self.token().generate_token()?;
             match self
                 .identity_manager()
-                .create_token(user_id, &token, &duration, fingerprint.as_deref(), kind)
+                .create_token(user_id, &token, &duration, fingerprint, site_info, kind)
                 .await
             {
                 Ok(token) => {
@@ -143,7 +142,7 @@ pub(in crate::auth) enum AuthError {
     #[error("Failed to get user info from provider")]
     FailedExternalUserInfo(String),
     #[error("Login token is invalid")]
-    TokenInvalid,
+    InvalidToken,
     #[error("Login token has been revoked")]
     TokenExpired,
     #[error("User session has expired")]
@@ -191,7 +190,7 @@ impl AuthServiceState {
             AuthError::InvalidCSRF => ("authError", StatusCode::BAD_REQUEST),
             AuthError::TokenExchangeFailed(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
             AuthError::FailedExternalUserInfo(_) => ("authError", StatusCode::BAD_REQUEST),
-            AuthError::TokenInvalid => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::InvalidToken => ("authError", StatusCode::BAD_REQUEST),
             AuthError::TokenExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
             AuthError::SessionExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
             AuthError::InternalServerError(_) => ("internalError", StatusCode::INTERNAL_SERVER_ERROR),
