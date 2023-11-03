@@ -27,7 +27,7 @@ pub enum DBSessionError {
 #[serde(rename_all = "camelCase")]
 struct SessionSentinel {
     pub start_date: DateTime<Utc>,
-    pub fingerprint_hash: String,
+    pub fingerprint: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, RedisJsonValue)]
@@ -257,7 +257,7 @@ impl SessionManager {
 
         let sentinel = SessionSentinel {
             start_date: created_at,
-            fingerprint_hash: fingerprint.hash(),
+            fingerprint: fingerprint.to_string(),
         };
         let created = client
             .set_nx(&sentinel_key, &sentinel)
@@ -284,7 +284,7 @@ impl SessionManager {
                 name: data.name,
                 roles: data.roles,
                 session_start: sentinel.start_date,
-                fingerprint_hash: sentinel.fingerprint_hash,
+                fingerprint: sentinel.fingerprint,
                 version: identity.version,
             })
         } else {
@@ -336,7 +336,7 @@ impl SessionManager {
                 name: data.name,
                 roles: data.roles,
                 session_start: sentinel.start_date,
-                fingerprint_hash: sentinel.fingerprint_hash,
+                fingerprint: sentinel.fingerprint,
                 version,
             })),
             None => Ok(None),

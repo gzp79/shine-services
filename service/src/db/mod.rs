@@ -7,6 +7,8 @@ pub use self::db_pool::*;
 
 mod identity_manager;
 pub use self::identity_manager::*;
+mod site_info;
+pub use self::site_info::*;
 mod permission;
 pub use self::permission::*;
 mod session_manager;

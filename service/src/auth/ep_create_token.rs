@@ -1,5 +1,6 @@
 use crate::{
     auth::{AuthServiceState, CreateTokenKind},
+    db::SiteInfo,
     openapi::ApiKind,
 };
 use axum::{
@@ -45,6 +46,7 @@ struct CreatedToken {
 async fn create_token(
     State(state): State<AuthServiceState>,
     user: CheckedCurrentUser,
+    site_info: SiteInfo,
     ValidatedQuery(query): ValidatedQuery<Query>,
 ) -> Result<Json<CreatedToken>, Problem> {
     // check if session is still valid
@@ -61,7 +63,7 @@ async fn create_token(
         .map(|t| CreateTokenKind::Persistent(Duration::seconds(t as i64)))
         .unwrap_or(CreateTokenKind::SingleAccess);
     let token_login = state
-        .create_token_with_retry(user.user_id, None, token_kind)
+        .create_token_with_retry(user.user_id, None, &site_info, token_kind)
         .await
         .map_err(Problem::internal_error_from)?;
 

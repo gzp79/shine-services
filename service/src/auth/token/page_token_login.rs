@@ -3,7 +3,7 @@ use crate::{
         auth_service_utils::CreateTokenKind, auth_session::TokenLogin, AuthError, AuthPage, AuthServiceState,
         AuthSession,
     },
-    db::IdentityError,
+    db::{IdentityError, SiteInfo},
     openapi::ApiKind,
 };
 use axum::{
@@ -62,6 +62,7 @@ async fn token_login(
     mut auth_session: AuthSession,
     auth_header: Option<TypedHeader<Authorization<Basic>>>,
     fingerprint: ClientFingerprint,
+    site_info: SiteInfo,
     query: Result<ValidatedQuery<Query>, ValidationError>,
 ) -> AuthPage {
     let query = match query {
@@ -97,13 +98,13 @@ async fn token_login(
                 if identity.id != user_id {
                     valid = false;
                 }
-                if let Some(token_fingerprint) = login_token.fingerprint.map(ClientFingerprint::from_compact_string) {
+                if let Some(token_fingerprint) = login_token.fingerprint {
                     log::info!(
                         "Client fingerprint changed [{:?}] -> [{:?}]",
                         token_fingerprint,
                         fingerprint
                     );
-                    if token_fingerprint != fingerprint {
+                    if token_fingerprint != fingerprint.as_str() {
                         valid = false;
                     }
                 }
@@ -152,7 +153,12 @@ async fn token_login(
     if let RememberMe::Yes = remember_me {
         // create a new remember me token
         let token_login = match state
-            .create_token_with_retry(identity.id, Some(&fingerprint), CreateTokenKind::AutoRenewal)
+            .create_token_with_retry(
+                identity.id,
+                Some(&fingerprint),
+                &site_info,
+                CreateTokenKind::AutoRenewal,
+            )
             .await
         {
             Ok(token_login) => token_login,

@@ -1,5 +1,6 @@
 use crate::{
     auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OAuth2Client},
+    db::SiteInfo,
     openapi::ApiKind,
 };
 use axum::{body::HttpBody, extract::State, Extension};
@@ -26,6 +27,7 @@ async fn oauth2_auth(
     Extension(client): Extension<Arc<OAuth2Client>>,
     mut auth_session: AuthSession,
     fingerprint: ClientFingerprint,
+    site_info: SiteInfo,
     query: Result<ValidatedQuery<Query>, ValidationError>,
 ) -> AuthPage {
     // take external_login from session, thus later code don't have to care with it
@@ -105,6 +107,7 @@ async fn oauth2_auth(
             .page_external_login(
                 auth_session,
                 fingerprint,
+                &site_info,
                 &external_user,
                 target_url.as_ref(),
                 error_url.as_ref(),

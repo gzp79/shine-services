@@ -41,7 +41,7 @@ async fn create_get_remove() {
         version: 1,
     };
     let roles = vec!["R1".into(), "R2".into()];
-    let fingerprint = ClientFingerprint { agent: "test".into() };
+    let fingerprint = ClientFingerprint::from_agent("test".into());
 
     log::info!("Creating a new session...");
     let session = session_manager
@@ -51,7 +51,7 @@ async fn create_get_remove() {
     log::debug!("session: {session:#?}");
     assert_eq!(identity.id, session.user_id);
     assert_eq!(identity.name, session.name);
-    assert_eq!(fingerprint.hash(), session.fingerprint_hash);
+    assert_eq!(fingerprint.as_str(), session.fingerprint);
     assert_eq!(roles, session.roles);
 
     log::info!("Finding the session...");
@@ -64,7 +64,7 @@ async fn create_get_remove() {
     assert_eq!(session.key, found_session.key);
     assert_eq!(identity.id, found_session.user_id);
     assert_eq!(identity.name, found_session.name);
-    assert_eq!(fingerprint.hash(), found_session.fingerprint_hash);
+    assert_eq!(fingerprint.as_str(), found_session.fingerprint);
     assert_eq!(roles, found_session.roles);
 
     log::info!("Remove session...");
@@ -130,7 +130,7 @@ async fn create_update() {
         version: 1,
     };
     let roles1 = vec!["R1".into(), "R2".into()];
-    let fingerprint = ClientFingerprint { agent: "test".into() };
+    let fingerprint = ClientFingerprint::from_agent("test".into());
 
     log::info!("Creating a new session...");
     let session = session_manager
@@ -148,7 +148,7 @@ async fn create_update() {
     assert_eq!(identity5.id, updated_session.user_id);
     assert_eq!(identity5.name, updated_session.name);
     assert_eq!(identity5.version, updated_session.version);
-    assert_eq!(fingerprint.hash(), updated_session.fingerprint_hash);
+    assert_eq!(fingerprint.as_str(), updated_session.fingerprint);
     assert_eq!(roles5, updated_session.roles);
 
     {
@@ -162,7 +162,7 @@ async fn create_update() {
         assert_eq!(session.key, found_session.key);
         assert_eq!(identity5.id, found_session.user_id);
         assert_eq!(identity5.name, found_session.name);
-        assert_eq!(fingerprint.hash(), found_session.fingerprint_hash);
+        assert_eq!(fingerprint.as_str(), found_session.fingerprint);
         assert_eq!(roles5, found_session.roles);
     }
 
@@ -178,7 +178,7 @@ async fn create_update() {
         assert_eq!(identity5.id, updated_session.user_id);
         assert_eq!(identity5.name, updated_session.name);
         assert_eq!(identity5.version, updated_session.version);
-        assert_eq!(fingerprint.hash(), updated_session.fingerprint_hash);
+        assert_eq!(fingerprint.as_str(), updated_session.fingerprint);
         assert_eq!(roles5, updated_session.roles);
 
         log::info!("Finding the session with version 5 after storing version 3 ...");
@@ -191,7 +191,7 @@ async fn create_update() {
         assert_eq!(session.key, found_session.key);
         assert_eq!(identity5.id, found_session.user_id);
         assert_eq!(identity5.name, found_session.name);
-        assert_eq!(fingerprint.hash(), found_session.fingerprint_hash);
+        assert_eq!(fingerprint.as_str(), found_session.fingerprint);
         assert_eq!(roles5, found_session.roles);
     }
 
@@ -204,7 +204,7 @@ async fn create_update() {
         assert_eq!(identity5.id, updated_session.user_id);
         assert_eq!(identity5.name, updated_session.name);
         assert_eq!(identity5.version, updated_session.version);
-        assert_eq!(fingerprint.hash(), updated_session.fingerprint_hash);
+        assert_eq!(fingerprint.as_str(), updated_session.fingerprint);
         assert_eq!(roles5, updated_session.roles);
 
         log::info!("Finding the session with version 5 after storing version 3 ...");
@@ -217,7 +217,7 @@ async fn create_update() {
         assert_eq!(session.key, found_session.key);
         assert_eq!(identity5.id, found_session.user_id);
         assert_eq!(identity5.name, found_session.name);
-        assert_eq!(fingerprint.hash(), found_session.fingerprint_hash);
+        assert_eq!(fingerprint.as_str(), found_session.fingerprint);
         assert_eq!(roles5, found_session.roles);
     }
 }
@@ -241,7 +241,7 @@ async fn create_many_remove_all() {
         version: 1,
     };
     let roles = vec!["R1".into(), "R2".into()];
-    let fingerprint = ClientFingerprint { agent: "test".into() };
+    let fingerprint = ClientFingerprint::from_agent("test".into());
 
     // generate a few sessions for user1
     let mut keys = vec![];

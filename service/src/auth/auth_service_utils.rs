@@ -1,6 +1,6 @@
 use crate::{
     auth::{auth_session::TokenLogin, AuthServiceState, AuthSession, OIDCDiscoveryError, TokenGeneratorError},
-    db::{ExternalUserInfo, Identity, IdentityError, NameGeneratorError, TokenKind},
+    db::{ExternalUserInfo, Identity, IdentityError, NameGeneratorError, SiteInfo, TokenKind},
 };
 use axum::{
     http::StatusCode,
@@ -86,6 +86,7 @@ impl AuthServiceState {
         &self,
         user_id: Uuid,
         fingerprint: Option<&ClientFingerprint>,
+        site_info: &SiteInfo,
         kind: CreateTokenKind,
     ) -> Result<TokenLogin, TokenCreateError> {
         let (duration, kind) = match kind {
@@ -93,8 +94,6 @@ impl AuthServiceState {
             CreateTokenKind::AutoRenewal => (self.token().ttl_remember_me(), TokenKind::AutoRenewal),
             CreateTokenKind::Persistent(duration) => (duration, TokenKind::Persistent),
         };
-        let fingerprint = fingerprint.map(|f| f.to_compact_string());
-
         const MAX_RETRY_COUNT: usize = 10;
         let mut retry_count = 0;
         loop {
@@ -107,7 +106,7 @@ impl AuthServiceState {
             let token = self.token().generate_token()?;
             match self
                 .identity_manager()
-                .create_token(user_id, &token, &duration, fingerprint.as_deref(), kind)
+                .create_token(user_id, &token, &duration, fingerprint, site_info, kind)
                 .await
             {
                 Ok(token) => {

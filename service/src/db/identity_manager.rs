@@ -1,9 +1,9 @@
-use crate::db::DBError;
+use crate::db::{DBError, SiteInfo};
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use shine_service::{
     pg_query,
-    service::{PGConnectionPool, PGConvertError, PGError, PGErrorChecks, QueryBuilder, ToPGType},
+    service::{ClientFingerprint, PGConnectionPool, PGConvertError, PGError, PGErrorChecks, QueryBuilder, ToPGType},
 };
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -235,14 +235,25 @@ pg_query!( InsertIdentity =>
 );
 
 pg_query!( InsertToken =>
-    in = user_id: Uuid, token: &str, fingerprint: Option<&str>, kind: TokenKind, expire_s: i32;
+    in = user_id: Uuid, token: &str,
+        fingerprint: Option<&str>, kind: TokenKind,
+        expire_s: i32,
+        agent: &str, country: Option<&str>, region: Option<&str>, city: Option<&str>;
     out = InsertTokenRow{
         created: DateTime<Utc>,
         expire: DateTime<Utc>
     };
     sql =  r#"
-        INSERT INTO login_tokens (user_id, token, created, fingerprint, kind, expire) 
-            VALUES ($1, $2, now(), $3, $4, now() + $5 * interval '1 seconds')
+        INSERT INTO login_tokens (
+                user_id, token, created, 
+                fingerprint, kind,  
+                expire, 
+                agent, country, region, city)
+            VALUES (
+                $1, $2, now(), 
+                $3, $4, 
+                now() + $5 * interval '1 seconds',
+                $5, $6, $7, $8)
         RETURNING created, expire
     "#
 );
@@ -667,7 +678,8 @@ impl IdentityManager {
         user_id: Uuid,
         token: &str,
         duration: &Duration,
-        fingerprint: Option<&str>,
+        fingerprint: Option<&ClientFingerprint>,
+        site_info: &SiteInfo,
         kind: TokenKind,
     ) -> Result<LoginTokenInfo, IdentityError> {
         let inner = &*self.0;
@@ -678,7 +690,18 @@ impl IdentityManager {
         assert!(duration > 2);
         let row = match inner
             .stmt_insert_token
-            .query_one(&client, &user_id, &token, &fingerprint, &kind, &duration)
+            .query_one(
+                &client,
+                &user_id,
+                &token,
+                &fingerprint.map(|f| f.as_str()),
+                &kind,
+                &duration,
+                &site_info.agent.as_str(),
+                &site_info.country.as_deref(),
+                &site_info.region.as_deref(),
+                &site_info.city.as_deref(),
+            )
             .await
         {
             Ok(row) => row,
@@ -695,7 +718,7 @@ impl IdentityManager {
             token: token.to_owned(),
             created: row.created,
             expire: row.expire,
-            fingerprint: fingerprint.map(|x| x.to_string()),
+            fingerprint: fingerprint.map(|f| f.to_string()),
             kind,
             is_expired: false,
         })
