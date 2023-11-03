@@ -11,12 +11,13 @@ const config = {
     reporters: [
         'default',
         [
-            'jest-html-reporters',
+            'jest-stare',
             {
-                publicPath: './reports/html-report',
-                filename: 'report.html',
-                openReport: false,
-                includeConsoleLog: true,
+                resultDir: './reports',
+                reportTitle: 'Test Report',
+                reportSummary: true,
+                additionalResultsProcessors: ['jest-junit'],
+                log: true
             }
         ]
     ]

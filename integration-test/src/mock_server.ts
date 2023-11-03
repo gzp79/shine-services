@@ -4,6 +4,7 @@ import express, { Express } from 'express';
 import { Send, Request, Response, Query } from 'express-serve-static-core';
 import { Server } from 'http';
 import { Socket } from 'net';
+import { delay } from './utils';
 
 export interface TypedRequest<T extends Query, U> extends Request {
     body: U;
@@ -75,12 +76,14 @@ export class MockServer {
     public async stop() {
         this.log('Stopping server ...');
         await this.server?.close();
+        await delay(100);
         this.log(`Closing open(${this.connections.length}) connections ...`);
         for (const connection of this.connections) {
             await connection.end();
         }
         this.server = undefined!;
         this.app = undefined!;
+        await delay(100);
         this.log('Server stopped.');
     }
 
