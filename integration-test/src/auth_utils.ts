@@ -129,3 +129,28 @@ export async function getUserInfo(cookieValue: string): Promise<UserInfo> {
     //expect(response.body).toBeInstanceOf(UserInfo);
     return response.body;
 }
+
+export interface ActiveSession {
+    agent: string;
+    country?: string;
+    region?: string;
+    city?: string;
+}
+
+export async function getSessions(cookieValue: string): Promise<ActiveSession[]> {
+    let response = await request
+        .get(config.getUrlFor('identity/api/auth/user/sessions'))
+        .set('Cookie', [`sid=${cookieValue}`])
+        .send();
+    expect(response.statusCode).toEqual(200);
+
+    return response.body?.sessions ?? [];
+}
+
+export async function logout(cookieValue: string, everywhere: boolean): Promise<void> {
+    let response = await request
+        .get(config.getUrlFor(`/identity/auth/logout?terminateAll=${everywhere}`))
+        .set('Cookie', [`sid=${cookieValue}`])
+        .send();
+    expect(response.statusCode).toEqual(200);
+}

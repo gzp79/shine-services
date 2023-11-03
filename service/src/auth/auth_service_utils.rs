@@ -142,7 +142,7 @@ pub(in crate::auth) enum AuthError {
     #[error("Failed to get user info from provider")]
     FailedExternalUserInfo(String),
     #[error("Login token is invalid")]
-    TokenInvalid,
+    InvalidToken,
     #[error("Login token has been revoked")]
     TokenExpired,
     #[error("User session has expired")]
@@ -190,7 +190,7 @@ impl AuthServiceState {
             AuthError::InvalidCSRF => ("authError", StatusCode::BAD_REQUEST),
             AuthError::TokenExchangeFailed(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
             AuthError::FailedExternalUserInfo(_) => ("authError", StatusCode::BAD_REQUEST),
-            AuthError::TokenInvalid => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::InvalidToken => ("authError", StatusCode::BAD_REQUEST),
             AuthError::TokenExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
             AuthError::SessionExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
             AuthError::InternalServerError(_) => ("internalError", StatusCode::INTERNAL_SERVER_ERROR),

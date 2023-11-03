@@ -349,9 +349,10 @@ pg_query!( DeleteToken =>
 );
 
 pg_query!( DeleteAllTokens =>
-    in = user_id: Uuid;
+    in = user_id: Uuid, kind: TokenKind;
     sql = r#"
-        DELETE FROM login_tokens WHERE user_id = $1
+        DELETE FROM login_tokens 
+        WHERE user_id = $1 AND kind = $2
     "#
 );
 
@@ -757,10 +758,12 @@ impl IdentityManager {
         Ok(())
     }
 
-    pub async fn delete_all_tokens(&self, user_id: Uuid) -> Result<(), IdentityError> {
+    pub async fn delete_all_tokens(&self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        inner.stmt_delete_all_tokens.execute(&client, &user_id).await?;
+        for kind in kinds {
+            inner.stmt_delete_all_tokens.execute(&client, &user_id, kind).await?;
+        }
         Ok(())
     }
 

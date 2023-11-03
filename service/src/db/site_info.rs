@@ -1,5 +1,9 @@
 use axum::{
-    async_trait, extract::FromRequestParts, headers::UserAgent, http::request::Parts, RequestPartsExt, TypedHeader,
+    async_trait,
+    extract::FromRequestParts,
+    headers::UserAgent,
+    http::{request::Parts, HeaderMap},
+    RequestPartsExt, TypedHeader,
 };
 use std::convert::Infallible;
 
@@ -26,11 +30,19 @@ where
             .map(|u| u.to_string())
             .unwrap_or_default();
 
+        let headers = parts.extract::<HeaderMap>().await.unwrap_or_default();
+
         Ok(SiteInfo {
             agent,
-            country: None,
-            region: None,
-            city: None,
+            country: headers
+                .get("cf-ipcountry")
+                .map(|c| c.to_str().unwrap_or_default().to_string()),
+            region: headers
+                .get("cf-region")
+                .map(|c| c.to_str().unwrap_or_default().to_string()),
+            city: headers
+                .get("cf-ipcity")
+                .map(|c| c.to_str().unwrap_or_default().to_string()),
         })
     }
 }

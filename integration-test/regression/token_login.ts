@@ -159,6 +159,27 @@ describe('(Interactive) token flow', () => {
         expect(await getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 
+    it('Login with the token but altered agent shall be a failure', async () => {
+        const response = await request
+            .get(config.getUrlFor('identity/auth/token/login'))
+            .query({ ...config.defaultRedirects })
+            .set('Cookie', [`tid=${cookies.tid.value}`])
+            .set('User-Agent', 'integration-test')
+            .send();
+
+        expect(response.statusCode).toEqual(200);
+        console.log(response.text);
+        expect(getPageRedirectUrl(response.text)).toEqual(
+            config.defaultRedirects.errorUrl + '?type=authError&status=400'
+        );
+        expect(response.text).toContain('&quot;InvalidToken&quot;');
+
+        const newCookies = getCookies(response);
+        expect(newCookies.tid).toBeClearCookie();
+        expect(newCookies.sid).toBeClearCookie();
+        expect(newCookies.eid).toBeClearCookie();
+    });
+
     it('Login with the token and with false rememberMe shall be a success', async () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))

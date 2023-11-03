@@ -111,7 +111,7 @@ async fn token_login(
 
                 if !valid {
                     auth_session.token_login = None;
-                    return state.page_error(auth_session, AuthError::TokenInvalid, query.error_url.as_ref());
+                    return state.page_error(auth_session, AuthError::InvalidToken, query.error_url.as_ref());
                 }
 
                 // refresh existing token

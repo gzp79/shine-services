@@ -224,11 +224,12 @@ where
             log::info!("user session is not matching to the token, dropping user session");
             user = None;
         }
-        if external_login
-            .as_ref()
-            .and_then(|e| e.linked_user.as_ref())
-            .map(|l| l.user_id)
-            != user.as_ref().map(|u| u.user_id)
+        if external_login.is_some()
+            && external_login
+                .as_ref()
+                .and_then(|e| e.linked_user.as_ref())
+                .map(|l| l.user_id)
+                != user.as_ref().map(|u| u.user_id)
         {
             log::info!("external login is not matching the user session, dropping external login");
             external_login = None;

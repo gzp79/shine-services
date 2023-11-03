@@ -396,7 +396,7 @@ impl SessionManager {
             let inner = &*self.0;
             let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
 
-            //log::debug!("deleting keys: {keys:?}");
+            log::debug!("Removing session, user:[{user_id}], keys: {keys:?}");
             client.del(keys).await.map_err(DBError::RedisError)?;
         }
 

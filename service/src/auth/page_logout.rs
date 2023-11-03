@@ -1,5 +1,6 @@
 use crate::{
     auth::{AuthError, AuthPage, AuthServiceState, AuthSession},
+    db::TokenKind,
     openapi::ApiKind,
 };
 use axum::{body::HttpBody, extract::State};
@@ -32,8 +33,13 @@ async fn logout(
 
     if let Some((user_id, user_key)) = auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {
         match query.terminate_all.unwrap_or(false) {
-            false => {
-                if let Err(err) = state.identity_manager().delete_all_tokens(user_id).await {
+            true => {
+                //remove all non-api-key tokens
+                if let Err(err) = state
+                    .identity_manager()
+                    .delete_all_tokens(user_id, &[TokenKind::AutoRenewal, TokenKind::SingleAccess])
+                    .await
+                {
                     return state.page_internal_error(auth_session, err, query.error_url.as_ref());
                 }
 
@@ -44,7 +50,7 @@ async fn logout(
                     log::warn!("Failed to clear all sessions for user {}: {:?}", user_id, err);
                 }
             }
-            true => {
+            false => {
                 if let Some(token) = auth_session.token_login.as_ref().map(|t| t.token.clone()) {
                     if let Err(err) = state.identity_manager().delete_token(user_id, &token).await {
                         return state.page_internal_error(auth_session, err, query.error_url.as_ref());

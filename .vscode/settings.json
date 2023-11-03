@@ -25,6 +25,8 @@
     "hmac",
     "hset",
     "httponly",
+    "ipcity",
+    "ipcountry",
     "jbang",
     "jbangdev",
     "jwks",
