@@ -1,4 +1,4 @@
-use crate::db::{Identity, IdentityKind, SessionManager};
+use crate::db::{Identity, IdentityKind, SessionManager, SiteInfo};
 use chrono::{Duration, Utc};
 use ring::rand::SystemRandom;
 use shine_service::service::{self, ClientFingerprint, RedisConnectionPool, SessionKey};
@@ -42,10 +42,16 @@ async fn create_get_remove() {
     };
     let roles = vec!["R1".into(), "R2".into()];
     let fingerprint = ClientFingerprint::from_agent("test".into());
+    let site_info = SiteInfo {
+        agent: "test".into(),
+        country: None,
+        region: None,
+        city: None,
+    };
 
     log::info!("Creating a new session...");
     let session = session_manager
-        .create(&identity, roles.clone(), &fingerprint)
+        .create(&identity, roles.clone(), &fingerprint, &site_info)
         .await
         .unwrap();
     log::debug!("session: {session:#?}");
@@ -131,10 +137,16 @@ async fn create_update() {
     };
     let roles1 = vec!["R1".into(), "R2".into()];
     let fingerprint = ClientFingerprint::from_agent("test".into());
+    let site_info = SiteInfo {
+        agent: "test".into(),
+        country: None,
+        region: None,
+        city: None,
+    };
 
     log::info!("Creating a new session...");
     let session = session_manager
-        .create(&identity1, roles1.clone(), &fingerprint)
+        .create(&identity1, roles1.clone(), &fingerprint, &site_info)
         .await
         .unwrap();
 
@@ -242,12 +254,18 @@ async fn create_many_remove_all() {
     };
     let roles = vec!["R1".into(), "R2".into()];
     let fingerprint = ClientFingerprint::from_agent("test".into());
+    let site_info = SiteInfo {
+        agent: "test".into(),
+        country: None,
+        region: None,
+        city: None,
+    };
 
     // generate a few sessions for user1
     let mut keys = vec![];
     for _ in 0..10 {
         let session = session_manager
-            .create(&identity, roles.clone(), &fingerprint)
+            .create(&identity, roles.clone(), &fingerprint, &site_info)
             .await
             .unwrap();
         keys.push(session.key);
@@ -257,7 +275,7 @@ async fn create_many_remove_all() {
     let mut identity2 = identity.clone();
     identity2.id = Uuid::new_v4();
     let session2 = session_manager
-        .create(&identity2, roles.clone(), &fingerprint)
+        .create(&identity2, roles.clone(), &fingerprint, &site_info)
         .await
         .unwrap();
 

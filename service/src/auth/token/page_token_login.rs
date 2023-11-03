@@ -178,7 +178,11 @@ async fn token_login(
 
     // create session
     log::debug!("Identity created: {identity:#?}");
-    let user = match state.session_manager().create(&identity, roles, &fingerprint).await {
+    let user = match state
+        .session_manager()
+        .create(&identity, roles, &fingerprint, &site_info)
+        .await
+    {
         Ok(user) => user,
         Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
     };

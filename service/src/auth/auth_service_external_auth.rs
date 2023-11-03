@@ -185,7 +185,11 @@ impl AuthServiceState {
         };
 
         log::debug!("Identity created: {identity:#?}");
-        let user = match self.session_manager().create(&identity, roles, &fingerprint).await {
+        let user = match self
+            .session_manager()
+            .create(&identity, roles, &fingerprint, &site_info)
+            .await
+        {
             Ok(user) => user,
             Err(err) => return self.page_internal_error(auth_session, err, error_url),
         };

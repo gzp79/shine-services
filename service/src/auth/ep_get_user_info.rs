@@ -18,7 +18,8 @@ struct Query {
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct CurrentUserInfo {
+#[schema(as=CurrentUserInfo)]
+struct Response {
     user_id: Uuid,
     name: String,
     is_email_confirmed: bool,
@@ -32,7 +33,7 @@ async fn get_user_info(
     State(state): State<AuthServiceState>,
     user: CheckedCurrentUser,
     ValidatedQuery(query): ValidatedQuery<Query>,
-) -> Result<Json<CurrentUserInfo>, Problem> {
+) -> Result<Json<Response>, Problem> {
     // find extra information not present in the session data
     let identity = state
         .identity_manager()
@@ -40,7 +41,7 @@ async fn get_user_info(
         .await
         .map_err(Problem::internal_error_from)?
         //in the very unlikely case, when the identity is deleted just after session validation, a not found is returned.
-        .ok_or_else(|| Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user.user_id)))?;
+        .ok_or_else(|| Problem::not_found().with_instance(format!("{{auth_api}}/identities/{}", user.user_id)))?;
 
     // make sure the redis is updated
     let user = if query.refresh.unwrap_or(false) {
@@ -49,25 +50,21 @@ async fn get_user_info(
             .get_roles(user.user_id)
             .await
             .map_err(Problem::internal_error_from)?
-            .ok_or_else(|| {
-                Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user.user_id))
-            })?;
+            .ok_or_else(|| Problem::not_found().with_instance(format!("{{auth_api}}/identities/{}", user.user_id)))?;
 
         state
             .session_manager()
             .update(user.key, &identity, &roles)
             .await
             .map_err(Problem::internal_error_from)?
-            .ok_or_else(|| {
-                Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user.user_id))
-            })?
+            .ok_or_else(|| Problem::not_found().with_instance(format!("{{auth_api}}/identities/{}", user.user_id)))?
     } else {
         user.into_user()
     };
 
     let session_length = (Utc::now() - user.session_start).num_seconds();
     let session_length = if session_length < 0 { 0 } else { session_length as u64 };
-    Ok(Json(CurrentUserInfo {
+    Ok(Json(Response {
         user_id: user.user_id,
         name: user.name,
         is_email_confirmed: identity.is_email_confirmed,
@@ -83,5 +80,5 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/info"), get_user_info)
         .with_operation_id("ep_get_user_info")
         .with_tag("auth")
-        .with_json_response::<CurrentUserInfo>(StatusCode::OK)
+        .with_json_response::<Response>(StatusCode::OK)
 }

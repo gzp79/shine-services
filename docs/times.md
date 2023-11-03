@@ -39,7 +39,7 @@ Token creation time:
 - Usages:
   - Output of the sql insert: `InsertToken::created`
   - Output of sql queries: `FindByToken::token_created`
-  - Internal model: `LoginTokenInfo`
+  - Internal model: `CurrentToken`
   - API model: **TBD after revoke issue has been done**
 
 Token expire time:
@@ -48,7 +48,7 @@ Token expire time:
 - Usages:
   - Output of the sql insert: `InsertToken::expire`
   - Output of sql queries: `FindByToken::token_expire`
-  - Internal model: `LoginTokenInfo`
+  - Internal model: `CurrentToken`
   - API `tid` cookie: `TokenLogin::expire`
   - API model: `CreatedToken`, **TBD after revoke issue has been done**
   - The time to live for the `tid` cookie is derived from this (see below)
