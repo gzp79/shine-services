@@ -8,7 +8,7 @@ import Oauth2MockServer from '$lib/mocks/oauth2';
 import { loginWithOAuth2 } from '$lib/login_utils';
 import { MockServer } from '$lib/mock_server';
 
-describe('Active session handling', () => {
+describe('Active session', () => {
     let mock!: MockServer;
 
     afterEach(async () => {
