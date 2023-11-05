@@ -187,7 +187,7 @@ impl AuthServiceState {
         log::debug!("Identity created: {identity:#?}");
         let user = match self
             .session_manager()
-            .create(&identity, roles, &fingerprint, &site_info)
+            .create(&identity, roles, &fingerprint, site_info)
             .await
         {
             Ok(user) => user,

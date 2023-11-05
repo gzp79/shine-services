@@ -14,7 +14,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Utc};
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
-use shine_service::service::CurrentUser;
+use shine_service::service::{CheckedCurrentUser, CurrentUser};
 use std::{convert::Infallible, sync::Arc};
 use thiserror::Error as ThisError;
 use time::{Duration, OffsetDateTime};
@@ -192,9 +192,7 @@ where
             .await
             .expect("Missing AuthSessionMeta extension");
 
-        let mut user = SignedCookieJar::from_headers(&parts.headers, meta.user.secret.clone())
-            .get(&meta.user.name)
-            .and_then(|session| serde_json::from_str::<CurrentUser>(session.value()).ok());
+        let mut user = parts.extract::<CheckedCurrentUser>().await.ok().map(|x| x.into_user());
         let mut external_login = SignedCookieJar::from_headers(&parts.headers, meta.external_login.secret.clone())
             .get(&meta.external_login.name)
             .and_then(|session| serde_json::from_str::<ExternalLogin>(session.value()).ok());

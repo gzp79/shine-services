@@ -16,7 +16,6 @@ const config = {
                 resultDir: './reports',
                 reportTitle: 'Test Report',
                 reportSummary: true,
-                additionalResultsProcessors: ['jest-junit'],
                 log: true
             }
         ]
