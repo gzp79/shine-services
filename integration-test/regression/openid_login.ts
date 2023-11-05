@@ -1,7 +1,7 @@
 import request from 'superagent';
 import os from 'os';
 import { getPageRedirectUrl } from '$lib/page_utils';
-import { UserInfo, getCookies, getUserInfo } from '$lib/auth_utils';
+import { UserInfo, getCookies, getUserInfo, logout } from '$lib/auth_utils';
 import config from '../test.config';
 import { MockServer } from '$lib/mock_server';
 import OpenIdMockServer from '$lib/mocks/openid';
@@ -192,7 +192,7 @@ describe('Validate (interactive) OpenId login', () => {
         mock = undefined!;
     });
 
-    it('Login with a user and with a session should be an error', async () => {
+    it('Login with a session should be an error', async () => {
         const { sid } = await createGuestUser();
 
         const response = await request
@@ -212,6 +212,26 @@ describe('Validate (interactive) OpenId login', () => {
         expect(authCookies.sid).toBeValidSID();
         expect(authCookies.sid.value).toEqual(sid.value);
         expect(authCookies.eid).toBeClearCookie();
+    });
+
+    it('Login with with an expired session should be a success', async () => {
+        const { sid } = await createGuestUser();
+        await logout(sid.value, false);
+
+        const response = await request
+            .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
+            .query({ ...config.defaultRedirects })
+            .set('Cookie', [`sid=${sid.value}`])
+            .send();
+
+        expect(response.statusCode).toEqual(200);
+        const redirectUrl = getPageRedirectUrl(response.text);
+        expect(redirectUrl).toStartWith(config.getMockUrlFor('oauth2/authorize'));
+
+        const authCookies = getCookies(response);
+        expect(authCookies.tid).toBeClearCookie();
+        expect(authCookies.sid).toBeClearCookie();
+        expect(authCookies.eid).toBeValidEID();
     });
 
     it('Login with a user and with a token should be a success', async () => {

@@ -4,7 +4,7 @@ use redis::AsyncCommands;
 use ring::digest;
 use ring::rand::SystemRandom;
 use serde::{Deserialize, Serialize};
-use shine_service::service::{ClientFingerprint, CurrentUser, CurrentUserAuthenticity, SessionKey, SessionKeyError};
+use shine_service::service::{ClientFingerprint, CurrentUser, SessionKey, SessionKeyError};
 use shine_service::service::{RedisConnectionPool, RedisJsonValue};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -287,7 +287,6 @@ impl SessionManager {
                 .map_err(DBError::RedisError)?;
 
             Ok(CurrentUser {
-                authenticity: CurrentUserAuthenticity::NotValidate,
                 user_id: identity.id,
                 key: session_key,
                 name: data.name,
@@ -359,7 +358,6 @@ impl SessionManager {
 
         match self.find_by_hash(user_id, session_key_hash).await? {
             Some((sentinel, version, data)) => Ok(Some(CurrentUser {
-                authenticity: CurrentUserAuthenticity::NotValidate,
                 user_id,
                 key: session_key,
                 name: data.name,
