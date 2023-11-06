@@ -1,17 +1,20 @@
-use crate::db::{DBError, SiteInfo};
+use crate::db::{
+    DBError, IdentityBuildError, IdentityError, IdentityVersionStatements, RolesStatements, SiteInfo,
+};
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use shine_service::{
     pg_query,
-    service::{ClientFingerprint, PGConnectionPool, PGConvertError, PGError, PGErrorChecks, QueryBuilder, ToPGType},
+    service::{ClientFingerprint, PGConnectionPool, PGConvertError, PGErrorChecks, QueryBuilder, ToPGType},
 };
 use std::sync::Arc;
-use thiserror::Error as ThisError;
 use tokio_postgres::{
     types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type},
     Row,
 };
 use uuid::Uuid;
+
+use super::RolesDAO;
 
 pub const MAX_SEARCH_COUNT: usize = 100;
 
@@ -167,32 +170,6 @@ pub struct CurrentToken {
     pub fingerprint: Option<String>,
     pub expire: DateTime<Utc>,
     pub is_expired: bool,
-}
-
-#[derive(Debug, ThisError)]
-pub enum IdentityError {
-    #[error("User id already taken")]
-    UserIdConflict,
-    #[error("Name already taken")]
-    NameConflict,
-    #[error("Email already linked to a user")]
-    LinkEmailConflict,
-    #[error("External id already linked to a user")]
-    LinkProviderConflict,
-    #[error("Failed to generate token")]
-    TokenConflict,
-    #[error("Operation failed with conflict, no change was made")]
-    UpdateConflict,
-    #[error("User was removed during the operation")]
-    UserDeleted,
-    #[error(transparent)]
-    DBError(#[from] DBError),
-}
-
-impl From<PGError> for IdentityError {
-    fn from(err: PGError) -> Self {
-        Self::DBError(err.into())
-    }
 }
 
 /// Identity query options
@@ -356,69 +333,10 @@ pg_query!( DeleteAllTokens =>
     "#
 );
 
-pg_query!( GetDataVersion =>
-    in = user_id: Uuid;
-    out = version: i32;
-    sql = r#"
-        SELECT data_version FROM identities WHERE user_id = $1
-    "#
-);
-
-pg_query!( UpdateDataVersion =>
-    in = user_id: Uuid, version: i32;
-    sql = r#"
-        UPDATE identities SET data_version = data_version + 1 WHERE user_id = $1 AND data_version = $2
-    "#
-);
-
-pg_query!( AddUserRole =>
-    in = user_id: Uuid, role: &str;
-    sql = r#"
-        INSERT INTO roles (user_id, role) 
-            VALUES ($1, $2)
-    "#
-);
-
-pg_query!( GetUserRoles =>
-    in = user_id: Uuid;
-    out = UserRoles {
-        user_id: Option<Uuid>,
-        roles: Vec<String>
-    };
-    sql = r#"
-        SELECT i.user_id, 
-            CASE 
-                WHEN array_agg(r.role) = ARRAY[NULL]::text[] THEN ARRAY[]::text[] 
-                ELSE array_agg(r.role) 
-            END AS roles
-        FROM identities i
-        LEFT JOIN roles r ON i.user_id = r.user_id
-        WHERE i.user_id = $1
-        GROUP BY i.user_id
-    "#
-);
-
-pg_query!( DeleteUserRole =>
-    in = user_id: Uuid, role: &str;
-    sql = r#"
-        DELETE FROM roles WHERE user_id = $1 AND role = $2
-    "#
-);
-
-#[derive(Debug, ThisError)]
-pub enum IdentityBuildError {
-    #[error(transparent)]
-    DBError(#[from] DBError),
-}
-
-impl From<tokio_postgres::Error> for IdentityBuildError {
-    fn from(err: tokio_postgres::Error) -> Self {
-        Self::DBError(err.into())
-    }
-}
-
 struct Inner {
     postgres: PGConnectionPool,
+    stmt_version: IdentityVersionStatements,
+    stmt_roles: RolesStatements,
     stmt_insert_identity: InsertIdentity,
     stmt_insert_external_link: InsertExternalLogin,
     stmt_insert_token: InsertToken,
@@ -428,11 +346,6 @@ struct Inner {
     stmt_find_by_token: FindByToken,
     stmt_delete_token: DeleteToken,
     stmt_delete_all_tokens: DeleteAllTokens,
-    stmt_get_version: GetDataVersion,
-    stmt_update_version: UpdateDataVersion,
-    stmt_add_role: AddUserRole,
-    stmt_get_roles: GetUserRoles,
-    stmt_delete_role: DeleteUserRole,
 }
 
 #[derive(Clone)]
@@ -441,6 +354,8 @@ pub struct IdentityManager(Arc<Inner>);
 impl IdentityManager {
     pub async fn new(postgres: &PGConnectionPool) -> Result<Self, IdentityBuildError> {
         let client = postgres.get().await.map_err(DBError::PGPoolError)?;
+        let stmt_version = IdentityVersionStatements::new(&client).await?;
+        let stmt_roles = RolesStatements::new(&client).await?;
         let stmt_insert_identity = InsertIdentity::new(&client).await?;
         let stmt_insert_external_link = InsertExternalLogin::new(&client).await?;
         let stmt_insert_token = InsertToken::new(&client).await?;
@@ -450,14 +365,11 @@ impl IdentityManager {
         let stmt_find_by_token = FindByToken::new(&client).await?;
         let stmt_delete_token = DeleteToken::new(&client).await?;
         let stmt_delete_all_tokens: DeleteAllTokens = DeleteAllTokens::new(&client).await?;
-        let stmt_get_version = GetDataVersion::new(&client).await?;
-        let stmt_update_version = UpdateDataVersion::new(&client).await?;
-        let stmt_add_role = AddUserRole::new(&client).await?;
-        let stmt_get_roles: GetUserRoles = GetUserRoles::new(&client).await?;
-        let stmt_delete_role = DeleteUserRole::new(&client).await?;
 
         Ok(Self(Arc::new(Inner {
             postgres: postgres.clone(),
+            stmt_version,
+            stmt_roles,
             stmt_insert_identity,
             stmt_insert_external_link,
             stmt_insert_token,
@@ -467,11 +379,6 @@ impl IdentityManager {
             stmt_find_by_token,
             stmt_delete_token,
             stmt_delete_all_tokens,
-            stmt_get_version,
-            stmt_update_version,
-            stmt_add_role,
-            stmt_get_roles,
-            stmt_delete_role,
         })))
     }
 
@@ -769,75 +676,25 @@ impl IdentityManager {
 
     pub async fn add_role(&self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
         let inner = &*self.0;
-
-        let mut client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        let transaction = client.transaction().await?;
-        let version: i32 = match inner.stmt_get_version.query_opt(&transaction, &user_id).await? {
-            Some(version) => version,
-            None => return Ok(None),
-        };
-
-        match inner.stmt_add_role.execute(&transaction, &user_id, &role).await {
-            Ok(_) => {}
-            Err(err) if err.is_constraint("roles", "fkey_user_id") => {
-                // user not found, deleted meanwhile
-                return Ok(None);
-            }
-            Err(err) if err.is_constraint("roles", "roles_idx_user_id_role") => {
-                // role already present, it's ok
-                return Ok(Some(()));
-            }
-            Err(err) => return Err(err.into()),
-        };
-
-        if inner
-            .stmt_update_version
-            .execute(&transaction, &user_id, &version)
-            .await?
-            != 1
-        {
-            transaction.rollback().await?;
-            Err(IdentityError::UpdateConflict)
-        } else {
-            transaction.commit().await?;
-            Ok(Some(()))
-        }
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        RolesDAO::new(client, &inner.stmt_version, &inner.stmt_roles)
+            .add_role(user_id, role)
+            .await
     }
 
     pub async fn get_roles(&self, user_id: Uuid) -> Result<Option<Vec<String>>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        let roles = inner.stmt_get_roles.query_opt(&client, &user_id).await?;
-        if let Some(roles) = roles {
-            Ok(Some(roles.roles))
-        } else {
-            Ok(None)
-        }
+        RolesDAO::new(client, &inner.stmt_version, &inner.stmt_roles)
+            .get_roles(user_id)
+            .await
     }
 
     pub async fn delete_role(&self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
         let inner = &*self.0;
-
-        let mut client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        let transaction = client.transaction().await?;
-        let version: i32 = match inner.stmt_get_version.query_opt(&transaction, &user_id).await? {
-            Some(version) => version,
-            None => return Ok(None),
-        };
-
-        inner.stmt_delete_role.execute(&transaction, &user_id, &role).await?;
-
-        if inner
-            .stmt_update_version
-            .execute(&transaction, &user_id, &version)
-            .await?
-            != 1
-        {
-            transaction.rollback().await?;
-            Err(IdentityError::UpdateConflict)
-        } else {
-            transaction.commit().await?;
-            Ok(Some(()))
-        }
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        RolesDAO::new(client, &inner.stmt_version, &inner.stmt_roles)
+            .delete_role(user_id, role)
+            .await
     }
 }

@@ -5,6 +5,12 @@ pub use self::db_error::*;
 mod db_pool;
 pub use self::db_pool::*;
 
+mod identity_error;
+pub use self::identity_error::*;
+mod identity_uow;
+pub use self::identity_uow::*;
+mod identity_roles;
+pub use self::identity_roles::*;
 mod identity_manager;
 pub use self::identity_manager::*;
 mod site_info;
