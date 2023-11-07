@@ -7,10 +7,14 @@ pub use self::db_pool::*;
 
 mod identity_error;
 pub use self::identity_error::*;
+mod identity_identities;
+pub use self::identity_identities::*;
 mod identity_uow;
 pub use self::identity_uow::*;
 mod identity_roles;
 pub use self::identity_roles::*;
+mod identity_tokens;
+pub use self::identity_tokens::*;
 mod identity_manager;
 pub use self::identity_manager::*;
 mod site_info;

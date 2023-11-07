@@ -1,7 +1,7 @@
 use crate::db::{IdentityBuildError, IdentityError, IdentityUOW, IdentityVersionStatements};
 use shine_service::{
     pg_query,
-    service::{PGErrorChecks as _, PGPooledConnection},
+    service::{PGClient, PGConnection, PGErrorChecks as _, PGRawConnection},
 };
 use uuid::Uuid;
 
@@ -46,7 +46,7 @@ pub struct RolesStatements {
 }
 
 impl RolesStatements {
-    pub async fn new(client: &PGPooledConnection<'_>) -> Result<Self, IdentityBuildError> {
+    pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
         Ok(Self {
             add: AddUserRole::new(client).await?,
             get: GetUserRoles::new(client).await?,
@@ -55,15 +55,22 @@ impl RolesStatements {
     }
 }
 
-pub struct RolesDAO<'a> {
-    client: PGPooledConnection<'a>,
+/// Roles Data Access Object.
+pub struct RolesDAO<'a, T>
+where
+    T: PGRawConnection,
+{
+    client: &'a mut PGConnection<T>,
     stmts_version: &'a IdentityVersionStatements,
     stmts_role: &'a RolesStatements,
 }
 
-impl<'a> RolesDAO<'a> {
+impl<'a, T> RolesDAO<'a, T>
+where
+    T: PGRawConnection,
+{
     pub fn new(
-        client: PGPooledConnection<'a>,
+        client: &'a mut PGConnection<T>,
         stmts_version: &'a IdentityVersionStatements,
         stmts_role: &'a RolesStatements,
     ) -> Self {
@@ -75,13 +82,12 @@ impl<'a> RolesDAO<'a> {
     }
 
     pub async fn add_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
-        let transaction = self.client.transaction().await?;
-        let update = match IdentityUOW::new(transaction, self.stmts_version, user_id).await? {
+        let update = match IdentityUOW::new(self.client, self.stmts_version, user_id).await? {
             Some(update) => update,
             None => return Ok(None),
         };
 
-        match self.stmts_role.add.execute(&update, &user_id, &role).await {
+        match self.stmts_role.add.execute(update.client(), &user_id, &role).await {
             Ok(_) => {}
             Err(err) if err.is_constraint("roles", "fkey_user_id") => {
                 // user not found, deleted meanwhile
@@ -108,13 +114,12 @@ impl<'a> RolesDAO<'a> {
     }
 
     pub async fn delete_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
-        let transaction = self.client.transaction().await?;
-        let update = match IdentityUOW::new(transaction, self.stmts_version, user_id).await? {
+        let update = match IdentityUOW::new(self.client, self.stmts_version, user_id).await? {
             Some(update) => update,
             None => return Ok(None),
         };
 
-        self.stmts_role.delete.execute(&update, &user_id, &role).await?;
+        self.stmts_role.delete.execute(update.client(), &user_id, &role).await?;
 
         update.finish().await?;
         Ok(Some(()))

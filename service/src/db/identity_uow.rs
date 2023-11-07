@@ -1,7 +1,7 @@
 use crate::db::{IdentityBuildError, IdentityError};
 use shine_service::{
     pg_query,
-    service::{PGClientOrTransaction, PGPooledConnection, PGTransaction},
+    service::{PGClient, PGConnection, PGRawConnection, PGTransaction},
 };
 use uuid::Uuid;
 
@@ -26,7 +26,7 @@ pub struct IdentityVersionStatements {
 }
 
 impl IdentityVersionStatements {
-    pub async fn new(client: &PGPooledConnection<'_>) -> Result<Self, IdentityBuildError> {
+    pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
         Ok(Self {
             get_version: GetDataVersion::new(client).await?,
             update_version: UpdateDataVersion::new(client).await?,
@@ -34,6 +34,7 @@ impl IdentityVersionStatements {
     }
 }
 
+/// Unit of work for identity data. It keeps track of version and handle transaction with version check.
 pub struct IdentityUOW<'a> {
     transaction: PGTransaction<'a>,
     stmts: &'a IdentityVersionStatements,
@@ -42,11 +43,15 @@ pub struct IdentityUOW<'a> {
 }
 
 impl<'a> IdentityUOW<'a> {
-    pub async fn new(
-        transaction: PGTransaction<'a>,
+    pub async fn new<T>(
+        client: &'a mut PGConnection<T>,
         stmts: &'a IdentityVersionStatements,
         user_id: Uuid,
-    ) -> Result<Option<IdentityUOW<'a>>, IdentityError> {
+    ) -> Result<Option<IdentityUOW<'a>>, IdentityError>
+    where
+        T: PGRawConnection,
+    {
+        let transaction = client.transaction().await?;
         let version: i32 = match stmts.get_version.query_opt(&transaction, &user_id).await? {
             Some(version) => version,
             None => return Ok(None),
@@ -58,6 +63,10 @@ impl<'a> IdentityUOW<'a> {
             user_id,
             version,
         }))
+    }
+
+    pub fn client(&self) -> &PGTransaction<'a> {
+        &self.transaction
     }
 
     pub async fn finish(self) -> Result<(), IdentityError> {
@@ -74,11 +83,5 @@ impl<'a> IdentityUOW<'a> {
             self.transaction.commit().await?;
             Ok(())
         }
-    }
-}
-
-impl<'a> From<&'a IdentityUOW<'a>> for PGClientOrTransaction<'a> {
-    fn from(value: &'a IdentityUOW<'a>) -> Self {
-        PGClientOrTransaction::Transaction(&value.transaction)
     }
 }

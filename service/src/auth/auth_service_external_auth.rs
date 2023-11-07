@@ -5,7 +5,7 @@ use crate::{
         auth_service_utils::{CreateTokenKind, UserCreateError},
         extensions, AuthError, AuthPage, AuthServiceState, AuthSession, ExternalUserInfoExtensions,
     },
-    db::{ExternalUserInfo, FindIdentity, IdentityError, SiteInfo},
+    db::{ExternalUserInfo, IdentityError, SiteInfo},
 };
 use reqwest::{header, Client as HttpClient};
 use serde_json::Value as JsonValue;
@@ -145,10 +145,7 @@ impl AuthServiceState {
         log::debug!("{external_user:#?}");
         let identity = match self
             .identity_manager()
-            .find(FindIdentity::ExternalProvider(
-                external_user.provider.as_str(),
-                external_user.provider_id.as_str(),
-            ))
+            .find_by_external_link(external_user.provider.as_str(), external_user.provider_id.as_str())
             .await
         {
             // Found an existing (linked) account

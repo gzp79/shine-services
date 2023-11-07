@@ -37,7 +37,7 @@ async fn get_user_info(
     // find extra information not present in the session data
     let identity = state
         .identity_manager()
-        .find(crate::db::FindIdentity::UserId(user.user_id))
+        .find_by_id(user.user_id)
         .await
         .map_err(Problem::internal_error_from)?
         //in the very unlikely case, when the identity is deleted just after session validation, a not found is returned.

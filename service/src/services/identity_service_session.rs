@@ -11,7 +11,7 @@ impl IdentityServiceState {
         // this order ensures the role and other data are at least as fresh as the version
         let identity = self
             .identity_manager()
-            .find(crate::db::FindIdentity::UserId(user_id))
+            .find_by_id(user_id)
             .await
             .map_err(Problem::internal_error_from)?
             .ok_or_else(|| Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user_id)))?;
