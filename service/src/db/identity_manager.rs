@@ -1,6 +1,7 @@
 use crate::db::{
-    CurrentToken, DBError, ExternalUserInfo, IdentitiesStatements, Identity, IdentityBuildError, IdentityError,
-    IdentityVersionStatements, RolesDAO, RolesStatements, SiteInfo, TokenKind, TokensDAO, TokensStatements,
+    CurrentToken, DBError, ExternalLinksDAO, ExternalLinksStatements, ExternalUserInfo, IdentitiesStatements, Identity,
+    IdentityBuildError, IdentityError, IdentitySearchDAO, IdentityVersionStatements, RolesDAO, RolesStatements,
+    SiteInfo, TokenKind, TokensDAO, TokensStatements,
 };
 use chrono::Duration;
 use shine_service::service::{ClientFingerprint, PGConnectionPool};
@@ -11,10 +12,11 @@ use super::{IdentitiesDAO, SearchIdentity};
 
 struct Inner {
     postgres: PGConnectionPool,
-    stmts_version: IdentityVersionStatements,
-    stmts_tokens: TokensStatements,
-    stmts_roles: RolesStatements,
     stmts_identities: IdentitiesStatements,
+    stmts_external_links: ExternalLinksStatements,
+    stmts_tokens: TokensStatements,
+    stmts_version: IdentityVersionStatements,
+    stmts_roles: RolesStatements,
 }
 
 #[derive(Clone)]
@@ -26,10 +28,11 @@ impl IdentityManager {
 
         Ok(Self(Arc::new(Inner {
             postgres: postgres.clone(),
-            stmts_version: IdentityVersionStatements::new(&client).await?,
-            stmts_tokens: TokensStatements::new(&client).await?,
-            stmts_roles: RolesStatements::new(&client).await?,
             stmts_identities: IdentitiesStatements::new(&client).await?,
+            stmts_external_links: ExternalLinksStatements::new(&client).await?,
+            stmts_tokens: TokensStatements::new(&client).await?,
+            stmts_version: IdentityVersionStatements::new(&client).await?,
+            stmts_roles: RolesStatements::new(&client).await?,
         })))
     }
 
@@ -44,19 +47,13 @@ impl IdentityManager {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
 
-        let identity = IdentitiesDAO::new(&client, &inner.stmts_identities)
-            .create_user(user_id, user_name, email)
-            .await?;
+        let mut identities_dao = IdentitiesDAO::new(&client, &inner.stmts_identities);
+        let mut external_links_dao = ExternalLinksDAO::new(&client, &inner.stmts_external_links);
 
+        let identity = identities_dao.create_user(user_id, user_name, email).await?;
         if let Some(external_login) = external_login {
-            if let Err(err) = IdentitiesDAO::new(&client, &inner.stmts_identities)
-                .link_user(user_id, external_login)
-                .await
-            {
-                if let Err(err) = IdentitiesDAO::new(&client, &inner.stmts_identities)
-                    .cascaded_delete(user_id)
-                    .await
-                {
+            if let Err(err) = external_links_dao.link_user(user_id, external_login).await {
+                if let Err(err) = identities_dao.cascaded_delete(user_id).await {
                     log::error!("Failed to delete user ({}) after failed link: {}", user_id, err);
                 }
                 return Err(err);
@@ -68,6 +65,7 @@ impl IdentityManager {
     pub async fn find_by_id(&self, user_id: Uuid) -> Result<Option<Identity>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+
         IdentitiesDAO::new(&client, &inner.stmts_identities)
             .find_by_id(user_id)
             .await
@@ -80,7 +78,8 @@ impl IdentityManager {
     ) -> Result<Option<Identity>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        IdentitiesDAO::new(&client, &inner.stmts_identities)
+
+        ExternalLinksDAO::new(&client, &inner.stmts_external_links)
             .find_by_external_link(provider, provider_id)
             .await
     }
@@ -88,14 +87,14 @@ impl IdentityManager {
     pub async fn search(&self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        IdentitiesDAO::new(&client, &inner.stmts_identities)
-            .search(search)
-            .await
+
+        IdentitySearchDAO::new(&client).search(search).await
     }
 
     pub async fn cascaded_delete(&self, user_id: Uuid) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+
         IdentitiesDAO::new(&client, &inner.stmts_identities)
             .cascaded_delete(user_id)
             .await
@@ -104,7 +103,8 @@ impl IdentityManager {
     pub async fn link_user(&self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        IdentitiesDAO::new(&client, &inner.stmts_identities)
+
+        ExternalLinksDAO::new(&client, &inner.stmts_external_links)
             .link_user(user_id, external_user)
             .await
     }
