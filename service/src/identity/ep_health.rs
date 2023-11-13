@@ -1,4 +1,4 @@
-use crate::{openapi::ApiKind, services::IdentityServiceState};
+use crate::{identity::IdentityServiceState, openapi::ApiKind};
 use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
 use bb8::State as BB8PoolState;
 use serde::Serialize;

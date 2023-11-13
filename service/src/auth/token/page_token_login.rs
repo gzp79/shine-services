@@ -4,7 +4,7 @@ use crate::{
         AuthSession,
     },
     openapi::ApiKind,
-    repositories::{IdentityError, SiteInfo},
+    repositories::IdentityError,
 };
 use axum::{
     body::HttpBody,
@@ -14,8 +14,8 @@ use axum::{
 };
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError},
-    service::{ClientFingerprint, APP_NAME},
+    axum::{ApiEndpoint, ApiMethod, SiteInfo, ValidatedQuery, ValidationError},
+    service::ClientFingerprint,
 };
 use url::Url;
 use utoipa::IntoParams;
@@ -87,18 +87,18 @@ async fn token_login(
         };
 
         match login_info {
-            Some((identity, login_token)) => {
-                if login_token.is_expired {
+            Some((identity, token_info)) => {
+                if token_info.is_expired {
                     // token has expired, request some login
                     auth_session.token_login = None;
-                    return state.page_redirect(auth_session, APP_NAME, query.login_url.as_ref());
+                    return state.page_redirect(auth_session, state.app_name(), query.login_url.as_ref());
                 }
 
                 let mut valid = true;
                 if identity.id != user_id {
                     valid = false;
                 }
-                if let Some(token_fingerprint) = login_token.fingerprint {
+                if let Some(token_fingerprint) = token_info.fingerprint {
                     log::info!(
                         "Client fingerprint changed [{:?}] -> [{:?}]",
                         token_fingerprint,
@@ -117,13 +117,13 @@ async fn token_login(
                 // refresh existing token
                 let token_login = match state
                     .identity_manager()
-                    .update_token(token.as_str(), &state.token().ttl_remember_me())
+                    .update_token(&token, &state.token().ttl_remember_me())
                     .await
                 {
                     Ok(info) => TokenLogin {
                         user_id: identity.id,
-                        token: info.token,
-                        expires: info.expire,
+                        token,
+                        expire_at: info.expire_at,
                     },
                     Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
                 };
@@ -138,7 +138,7 @@ async fn token_login(
 
         // skip registration, request some kind of login
         if !query.remember_me.unwrap_or(false) {
-            return state.page_redirect(auth_session, APP_NAME, query.login_url.as_ref());
+            return state.page_redirect(auth_session, state.app_name(), query.login_url.as_ref());
         }
 
         // create a new user
@@ -188,7 +188,7 @@ async fn token_login(
     };
     auth_session.user = Some(user);
 
-    state.page_redirect(auth_session, APP_NAME, query.redirect_url.as_ref())
+    state.page_redirect(auth_session, state.app_name(), query.redirect_url.as_ref())
 }
 
 pub fn page_token_login<B>() -> ApiEndpoint<AuthServiceState, B>

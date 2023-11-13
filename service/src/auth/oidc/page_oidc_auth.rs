@@ -1,14 +1,14 @@
 use crate::{
     auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OIDCClient},
     openapi::ApiKind,
-    repositories::{ExternalUserInfo, SiteInfo},
+    repositories::ExternalUserInfo,
 };
 use axum::{body::HttpBody, extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier};
 use openidconnect::{Nonce, TokenResponse};
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError},
+    axum::{ApiEndpoint, ApiMethod, SiteInfo, ValidatedQuery, ValidationError},
     service::ClientFingerprint,
 };
 use std::sync::Arc;

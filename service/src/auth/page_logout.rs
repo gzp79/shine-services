@@ -5,10 +5,7 @@ use crate::{
 };
 use axum::{body::HttpBody, extract::State};
 use serde::Deserialize;
-use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError},
-    service::APP_NAME,
-};
+use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -34,6 +31,7 @@ async fn logout(
     if let Some((user_id, user_key)) = auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {
         match query.terminate_all.unwrap_or(false) {
             true => {
+                log::debug!("Removing all the (non-api-key) tokens for user {}", user_id);
                 //remove all non-api-key tokens
                 if let Err(err) = state
                     .identity_manager()
@@ -43,23 +41,20 @@ async fn logout(
                     return state.page_internal_error(auth_session, err, query.error_url.as_ref());
                 }
 
-                // from this point there is no reason to keep session
-                // errors beyond these points are irrelevant for the users and mostly just warnings.
-                auth_session.clear();
+                log::debug!("Removing all the session for user {}", user_id);
                 if let Err(err) = state.session_manager().remove_all(user_id).await {
                     log::warn!("Failed to clear all sessions for user {}: {:?}", user_id, err);
                 }
             }
             false => {
+                log::debug!("Removing remember me tokens for user {}", user_id);
                 if let Some(token) = auth_session.token_login.as_ref().map(|t| t.token.clone()) {
                     if let Err(err) = state.identity_manager().delete_token(user_id, &token).await {
                         return state.page_internal_error(auth_session, err, query.error_url.as_ref());
                     }
                 }
 
-                // from this point there is no reason to keep session
-                // errors beyond these points are irrelevant for the users and mostly just warnings.
-                auth_session.clear();
+                log::debug!("Removing session for user {}", user_id);
                 if let Err(err) = state.session_manager().remove(user_id, user_key).await {
                     log::warn!("Failed to clear session for user {}: {:?}", user_id, err);
                 }
@@ -67,7 +62,8 @@ async fn logout(
         };
     }
 
-    state.page_redirect(auth_session, APP_NAME, query.redirect_url.as_ref())
+    auth_session.clear();
+    state.page_redirect(auth_session, state.app_name(), query.redirect_url.as_ref())
 }
 
 pub fn page_logout<B>() -> ApiEndpoint<AuthServiceState, B>

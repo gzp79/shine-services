@@ -1,4 +1,4 @@
-use crate::{openapi::ApiKind, repositories::Permission, services::IdentityServiceState};
+use crate::{identity::IdentityServiceState, openapi::ApiKind, repositories::Permission};
 use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
 use serde::Deserialize;
 use shine_service::{

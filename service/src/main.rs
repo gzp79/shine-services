@@ -1,14 +1,14 @@
 mod app_config;
 mod auth;
+mod identity;
 mod openapi;
 mod repositories;
-mod services;
 
 use crate::{
     app_config::{AppConfig, SERVICE_NAME},
     auth::{AuthServiceBuilder, AuthServiceDependencies},
+    identity::{IdentityServiceBuilder, IdentityServiceDependencies},
     repositories::{AutoNameManager, DBPool, IdentityManager, SessionManager},
-    services::{IdentityServiceBuilder, IdentityServiceDependencies},
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{

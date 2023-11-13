@@ -1,7 +1,6 @@
 use crate::{
     auth::{AuthServiceState, CreateTokenKind},
     openapi::ApiKind,
-    repositories::SiteInfo,
 };
 use axum::{
     body::HttpBody,
@@ -13,7 +12,7 @@ use axum::{
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem, ValidatedQuery},
+    axum::{ApiEndpoint, ApiMethod, Problem, SiteInfo, ValidatedQuery},
     service::CheckedCurrentUser,
 };
 use utoipa::{IntoParams, ToSchema};
@@ -36,7 +35,7 @@ struct CreatedToken {
     /// Authorization header value
     basic_auth: String,
     /// Date of the expiration of the token
-    expires: DateTime<Utc>,
+    expire_at: DateTime<Utc>,
     /// Indicates if token is revoked after use
     is_single_access: bool,
 }
@@ -77,7 +76,7 @@ async fn create_token(
     Ok(Json(CreatedToken {
         token: token_login.token,
         basic_auth,
-        expires: token_login.expires,
+        expire_at: token_login.expire_at,
         is_single_access: query.timeout.is_none(),
     }))
 }

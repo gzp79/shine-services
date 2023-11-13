@@ -1,7 +1,9 @@
-use crate::repositories::{Identity, IdentityBuildError, IdentityError, IdentityKind, SiteInfo};
+use crate::repositories::{Identity, IdentityBuildError, IdentityError, IdentityKind};
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
+use serde::{Deserialize, Serialize};
 use shine_service::{
+    axum::SiteInfo,
     pg_query,
     service::{
         ClientFingerprint, PGClient, PGConnection, PGConvertError, PGErrorChecks as _, PGRawConnection, ToPGType,
@@ -10,7 +12,8 @@ use shine_service::{
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type as PGType};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum TokenKind {
     SingleAccess,
     Persistent,
@@ -50,12 +53,18 @@ impl ToPGType for TokenKind {
 }
 
 #[derive(Debug)]
-pub struct CurrentToken {
+pub struct TokenInfo {
     pub user_id: Uuid,
-    pub token: String,
-    pub fingerprint: Option<String>,
-    pub expire: DateTime<Utc>,
+    pub kind: TokenKind,
+    pub token_hash: String,
+    pub created_at: DateTime<Utc>,
+    pub expire_at: DateTime<Utc>,
     pub is_expired: bool,
+    pub fingerprint: Option<String>,
+    pub agent: String,
+    pub country: Option<String>,
+    pub region: Option<String>,
+    pub city: Option<String>,
 }
 
 pg_query!( InsertToken =>
@@ -77,7 +86,7 @@ pg_query!( InsertToken =>
                 $1, $2, now(), 
                 $3, $4, 
                 now() + $5 * interval '1 seconds',
-                $5, $6, $7, $8)
+                $6, $7, $8, $9)
         RETURNING created, expire
     "#
 );
@@ -97,14 +106,42 @@ pg_query!( FindToken =>
         token_expire: DateTime<Utc>,
         token_fingerprint: Option<String>,
         token_kind: TokenKind,
-        token_is_expired: bool
+        token_is_expired: bool,
+        token_agent: String,
+        token_country: Option<String>,
+        token_region: Option<String>,
+        token_city: Option<String>
     };
     sql = r#"
         SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
-            t.token, t.created, t.expire, t.fingerprint, t.kind, t.expire < now() is_expired
+                t.token, t.created, t.expire, t.fingerprint, t.kind, t.expire < now() is_expired,
+                t.agent, t.country, t.region, t.city
             FROM login_tokens t, identities i
             WHERE t.user_id = i.user_id
                 AND t.token = $1
+    "#
+);
+
+pg_query!( ListTokens =>
+    in = user_id: Uuid;
+    out = TokenRow{
+        user_id: Uuid,
+        token: String,
+        created: DateTime<Utc>,
+        expire: DateTime<Utc>,
+        fingerprint: Option<String>,
+        kind: TokenKind,
+        is_expired: bool,
+        agent: String,
+        country: Option<String>,
+        region: Option<String>,
+        city: Option<String>
+    };
+    sql = r#"
+        SELECT t.user_id, t.token, t.created, t.expire, t.fingerprint, t.kind, t.expire < now() is_expired,
+                t.agent, t.country, t.region, t.city
+            FROM login_tokens t
+            WHERE t.user_id = $1
     "#
 );
 
@@ -126,6 +163,7 @@ pg_query!( DeleteAllTokens =>
 pub struct TokensStatements {
     insert: InsertToken,
     find: FindToken,
+    list: ListTokens,
     delete: DeleteToken,
     delete_all: DeleteAllTokens,
 }
@@ -135,6 +173,7 @@ impl TokensStatements {
         Ok(Self {
             insert: InsertToken::new(client).await?,
             find: FindToken::new(client).await?,
+            list: ListTokens::new(client).await?,
             delete: DeleteToken::new(client).await?,
             delete_all: DeleteAllTokens::new(client).await?,
         })
@@ -158,15 +197,15 @@ where
         Self { client, stmts_tokens }
     }
 
-    pub async fn create_token(
+    pub async fn store_token(
         &mut self,
         user_id: Uuid,
-        token: &str,
+        token_hash: &str,
         duration: &Duration,
         fingerprint: Option<&ClientFingerprint>,
         site_info: &SiteInfo,
         kind: TokenKind,
-    ) -> Result<CurrentToken, IdentityError> {
+    ) -> Result<TokenInfo, IdentityError> {
         let duration = duration.num_seconds() as i32;
         assert!(duration > 2);
         let row = match self
@@ -175,7 +214,7 @@ where
             .query_one(
                 self.client,
                 &user_id,
-                &token,
+                &token_hash,
                 &fingerprint.map(|f| f.as_str()),
                 &kind,
                 &duration,
@@ -195,24 +234,36 @@ where
             }
         };
 
-        Ok(CurrentToken {
+        Ok(TokenInfo {
             user_id,
-            token: token.to_owned(),
-            expire: row.expire,
-            fingerprint: fingerprint.map(|f| f.to_string()),
+            kind,
+            token_hash: token_hash.to_owned(),
+            created_at: row.created,
+            expire_at: row.expire,
             is_expired: false,
+            fingerprint: fingerprint.map(|f| f.to_string()),
+            agent: site_info.agent.clone(),
+            country: site_info.country.clone(),
+            region: site_info.region.clone(),
+            city: site_info.city.clone(),
         })
     }
 
-    pub async fn find_token(&mut self, token: &str) -> Result<Option<(Identity, CurrentToken)>, IdentityError> {
-        let row = self.stmts_tokens.find.query_opt(self.client, &token).await?;
+    pub async fn find_token(&mut self, token_hash: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+        let row = self.stmts_tokens.find.query_opt(self.client, &token_hash).await?;
         Ok(row.map(|row| {
-            let token = CurrentToken {
+            let token = TokenInfo {
                 user_id: row.user_id,
-                token: row.token,
-                expire: row.token_expire,
-                fingerprint: row.token_fingerprint,
+                kind: row.token_kind,
+                token_hash: row.token,
+                created_at: row.token_created,
+                expire_at: row.token_expire,
                 is_expired: row.token_is_expired,
+                fingerprint: row.token_fingerprint,
+                agent: row.token_agent,
+                country: row.token_country,
+                region: row.token_region,
+                city: row.token_city,
             };
             let identity = Identity {
                 id: row.user_id,
@@ -227,7 +278,30 @@ where
         }))
     }
 
-    pub async fn update_token(&mut self, token: &str, duration: &Duration) -> Result<CurrentToken, IdentityError> {
+    pub async fn find_by_user(&mut self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
+        Ok(self
+            .stmts_tokens
+            .list
+            .query(self.client, user_id)
+            .await?
+            .into_iter()
+            .map(|row| TokenInfo {
+                user_id: row.user_id,
+                kind: row.kind,
+                token_hash: row.token,
+                created_at: row.created,
+                expire_at: row.expire,
+                is_expired: row.is_expired,
+                fingerprint: row.fingerprint,
+                agent: row.agent,
+                country: row.country,
+                region: row.region,
+                city: row.city,
+            })
+            .collect())
+    }
+
+    pub async fn update_token(&mut self, token_hash: &str, duration: &Duration) -> Result<TokenInfo, IdentityError> {
         // issue#11:
         // - update expiration
         // - update last use
@@ -240,18 +314,18 @@ where
         //  delete token where expired
 
         // workaround while update is not implemented
-        Ok(self.find_token(token).await?.ok_or(IdentityError::TokenConflict)?.1)
+        Ok(self
+            .find_token(token_hash)
+            .await?
+            .ok_or(IdentityError::TokenConflict)?
+            .1)
     }
 
-    /*  pub async fn list_tokens(&self, user_id: Uuid) -> Result<Vec::<TokenInfo>, IdentityError> {
-        let inner = &*self.0;
-        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        inner.stmt_delete_token.execute(&client, &user_id, &token).await?;
-        Ok(())
-    }*/
-
-    pub async fn delete_token(&mut self, user_id: Uuid, token: &str) -> Result<(), IdentityError> {
-        self.stmts_tokens.delete.execute(self.client, &user_id, &token).await?;
+    pub async fn delete_token(&mut self, user_id: Uuid, token_hash: &str) -> Result<(), IdentityError> {
+        self.stmts_tokens
+            .delete
+            .execute(self.client, &user_id, &token_hash)
+            .await?;
         Ok(())
     }
 

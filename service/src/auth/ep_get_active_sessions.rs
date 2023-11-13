@@ -27,12 +27,11 @@ async fn get_active_sessions(
     State(state): State<AuthServiceState>,
     user: CheckedCurrentUser,
 ) -> Result<Json<Response>, Problem> {
-    let sentinels = state
+    let sessions = state
         .session_manager()
         .find_all(user.user_id)
         .await
-        .map_err(Problem::internal_error_from)?;
-    let sessions = sentinels
+        .map_err(Problem::internal_error_from)?
         .into_iter()
         .map(|s| ActiveSession {
             agent: s.agent,

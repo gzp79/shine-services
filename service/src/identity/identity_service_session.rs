@@ -1,6 +1,6 @@
 use crate::{
+    identity::IdentityServiceState,
     repositories::{Identity, Role},
-    services::IdentityServiceState,
 };
 use shine_service::axum::Problem;
 use uuid::Uuid;
@@ -26,7 +26,7 @@ impl IdentityServiceState {
         Ok((identity, roles))
     }
 
-    pub(in crate::services) async fn update_session(&self, user_id: Uuid) -> Result<(Identity, Vec<Role>), Problem> {
+    pub(in crate::identity) async fn update_session(&self, user_id: Uuid) -> Result<(Identity, Vec<Role>), Problem> {
         match self.get_user_info(user_id).await {
             Ok((identity, roles)) => {
                 // at this point the DB has been updated, thus any new session will contain the information

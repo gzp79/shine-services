@@ -16,6 +16,9 @@ GET {{url}}/api/auth/user/info
 GET {{url}}/api/auth/user/sessions
 ###
 
+GET {{url}}/api/auth/user/tokens
+###
+
 GET {{url}}/auth/token/login
 Authorization: Basic NmY3YzE2ZDMtYWExOC00NDJlLTkzMTItMzhhY2M2ZjRlZTA4OjRlNDkzMzMxN2VkMDI4MThmMjAxY2E2ODE0ZDFlYTFh
 ###
@@ -23,6 +26,6 @@ Authorization: Basic NmY3YzE2ZDMtYWExOC00NDJlLTkzMTItMzhhY2M2ZjRlZTA4OjRlNDkzMzM
 GET {{url}}/auth/logout
 ###
 
-GET {{url}}/auth/logout?terminate_all=true
+GET {{url}}/auth/logout?terminateAll=true
 ###
 

@@ -1,6 +1,3 @@
-mod site_info;
-pub use self::site_info::*;
-
 mod db;
 pub use self::db::*;
 mod auto_name_manager;

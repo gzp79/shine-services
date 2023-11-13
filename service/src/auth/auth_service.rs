@@ -65,6 +65,8 @@ pub struct AuthSessionConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthConfig {
+    /// The name of the application
+    pub app_name: String,
     /// The default redirection URL for users
     pub home_url: Url,
     /// The default redirection URL for users in case of an err
@@ -128,6 +130,7 @@ struct Inner {
     session_manager: SessionManager,
     auto_name_manager: AutoNameManager,
 
+    app_name: String,
     home_url: Url,
     error_url: Url,
 
@@ -159,6 +162,10 @@ impl AuthServiceState {
 
     pub fn token(&self) -> &TokenGenerator {
         &self.0.token_generator
+    }
+
+    pub fn app_name(&self) -> &str {
+        &self.0.app_name
     }
 
     pub fn home_url(&self) -> &Url {
@@ -241,6 +248,7 @@ impl AuthServiceBuilder {
             session_manager: dependencies.session_manager,
             auto_name_manager: dependencies.auto_name_manager,
             token_generator,
+            app_name: config.app_name.to_owned(),
             home_url: config.home_url.to_owned(),
             error_url: config.error_url.to_owned(),
             page_redirect_time: config.page_redirect_time.map(i64::from).unwrap_or(-1),
@@ -309,6 +317,7 @@ impl AuthServiceBuilder {
         let api_router = Router::new()
             .add_api(auth::ep_get_user_info(), doc)
             .add_api(auth::ep_get_active_sessions(), doc)
+            .add_api(auth::ep_get_active_tokens(), doc)
             .add_api(auth::ep_get_auth_providers(), doc)
             .add_api(auth::ep_create_token(), doc)
             .with_state(self.state);

@@ -1,8 +1,12 @@
 use crate::repositories::{
-    CurrentToken, DBError, ExternalUserInfo, Identity, IdentityBuildError, IdentityError, SiteInfo, TokenKind,
+    DBError, ExternalUserInfo, Identity, IdentityBuildError, IdentityError, TokenInfo, TokenKind,
 };
 use chrono::Duration;
-use shine_service::service::{ClientFingerprint, PGConnectionPool};
+use ring::digest;
+use shine_service::{
+    axum::SiteInfo,
+    service::{ClientFingerprint, PGConnectionPool},
+};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -122,25 +126,34 @@ impl IdentityManager {
         fingerprint: Option<&ClientFingerprint>,
         site_info: &SiteInfo,
         kind: TokenKind,
-    ) -> Result<CurrentToken, IdentityError> {
+    ) -> Result<TokenInfo, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
         Tokens::new(&client, &inner.stmts_tokens)
-            .create_token(user_id, token, duration, fingerprint, site_info, kind)
+            .store_token(user_id, &token_hash, duration, fingerprint, site_info, kind)
             .await
     }
 
-    pub async fn find_token(&self, token: &str) -> Result<Option<(Identity, CurrentToken)>, IdentityError> {
+    pub async fn find_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        Tokens::new(&client, &inner.stmts_tokens).find_token(token).await
+        let token_hash = hash_token(token);
+        Tokens::new(&client, &inner.stmts_tokens).find_token(&token_hash).await
     }
 
-    pub async fn update_token(&self, token: &str, duration: &Duration) -> Result<CurrentToken, IdentityError> {
+    pub async fn list_all_tokens(&self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        Tokens::new(&client, &inner.stmts_tokens).find_by_user(user_id).await
+    }
+
+    pub async fn update_token(&self, token: &str, duration: &Duration) -> Result<TokenInfo, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
         Tokens::new(&client, &inner.stmts_tokens)
-            .update_token(token, duration)
+            .update_token(&token_hash, duration)
             .await
     }
 
@@ -183,4 +196,14 @@ impl IdentityManager {
             .delete_role(user_id, role)
             .await
     }
+}
+
+/// Generate a (crypto) hashed version of a token to protect data in rest.
+fn hash_token(token: &str) -> String {
+    // there is no need for a complex hash as key has a big entropy already
+    // and it'd be too expensive to invert the hashing.
+    let hash = digest::digest(&digest::SHA256, token.as_bytes());
+    let hash = hex::encode(hash);
+    log::debug!("Hashing token: {token:?} -> [{hash}]");
+    hash
 }

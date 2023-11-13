@@ -1,7 +1,7 @@
 use crate::{
+    identity::IdentityServiceState,
     openapi::ApiKind,
     repositories::{Permission, PermissionError, Role},
-    services::IdentityServiceState,
 };
 use axum::{
     body::HttpBody,

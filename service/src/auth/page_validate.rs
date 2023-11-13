@@ -4,10 +4,7 @@ use crate::{
 };
 use axum::{body::HttpBody, extract::State};
 use serde::Deserialize;
-use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError},
-    service::APP_NAME,
-};
+use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -28,7 +25,7 @@ async fn validate(
         Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), None),
     };
 
-    state.page_redirect(auth_session, APP_NAME, query.redirect_url.as_ref())
+    state.page_redirect(auth_session, state.app_name(), query.redirect_url.as_ref())
 }
 
 pub fn page_validate<B>() -> ApiEndpoint<AuthServiceState, B>

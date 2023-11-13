@@ -3,11 +3,11 @@ use crate::{
         auth_service_utils::{CreateTokenKind, UserCreateError},
         extensions, AuthError, AuthPage, AuthServiceState, AuthSession, ExternalUserInfoExtensions,
     },
-    repositories::{ExternalUserInfo, IdentityError, SiteInfo},
+    repositories::{ExternalUserInfo, IdentityError},
 };
 use reqwest::{header, Client as HttpClient};
 use serde_json::Value as JsonValue;
-use shine_service::service::{ClientFingerprint, APP_NAME};
+use shine_service::{axum::SiteInfo, service::ClientFingerprint};
 use std::collections::HashMap;
 use thiserror::Error as ThisError;
 use url::Url;
@@ -39,7 +39,7 @@ impl AuthServiceState {
         let response = client
             .get(url)
             .bearer_auth(token)
-            .header(header::USER_AGENT, APP_NAME)
+            .header(header::USER_AGENT, self.app_name())
             .send()
             .await
             .map_err(|err| ExternalUserInfoError::RequestError(format!("{err}")))?;
@@ -87,9 +87,10 @@ impl AuthServiceState {
         for extension in extensions {
             match extension {
                 ExternalUserInfoExtensions::GithubEmail => {
-                    external_user_info = extensions::get_github_user_email(client, external_user_info, token)
-                        .await
-                        .map_err(|err| ExternalUserInfoError::Extension(*extension, err))?
+                    external_user_info =
+                        extensions::get_github_user_email(client, external_user_info, self.app_name(), token)
+                            .await
+                            .map_err(|err| ExternalUserInfoError::Extension(*extension, err))?
                 }
             };
         }
@@ -124,7 +125,7 @@ impl AuthServiceState {
             external_user.provider,
             external_user.provider_id
         );
-        self.page_redirect(auth_session, APP_NAME, target_url)
+        self.page_redirect(auth_session, self.app_name(), target_url)
     }
 
     pub(in crate::auth) async fn page_external_login(
@@ -192,6 +193,6 @@ impl AuthServiceState {
 
         auth_session.token_login = token_login;
         auth_session.user = Some(user);
-        self.page_redirect(auth_session, APP_NAME, target_url)
+        self.page_redirect(auth_session, self.app_name(), target_url)
     }
 }

@@ -39,7 +39,7 @@ Token creation time:
 - Usages:
   - Output of the sql insert: `InsertToken::created`
   - Output of sql queries: `FindByToken::token_created`
-  - Internal model: `CurrentToken`
+  - Internal model: `TokenInfo`
   - API model: **TBD after revoke issue has been done**
 
 Token expire time:
@@ -48,7 +48,7 @@ Token expire time:
 - Usages:
   - Output of the sql insert: `InsertToken::expire`
   - Output of sql queries: `FindByToken::token_expire`
-  - Internal model: `CurrentToken`
+  - Internal model: `TokenInfo`
   - API `tid` cookie: `TokenLogin::expire`
   - API model: `CreatedToken`, **TBD after revoke issue has been done**
   - The time to live for the `tid` cookie is derived from this (see below)
@@ -68,7 +68,7 @@ Session sentinel creation date:
 - Critical time, session expiration is derived from this through redis
 - Based on the local server time 
 - Usage:
-  - Internal model: `SessionSentinel::start_date`, `CurrentUser::session_start`
+  - Internal model: `SessionSentinel::created_at`, `CurrentUser::session_start`
   - These models are also present in the shared session handler codes
   - Redis key expiration settings is derived from this (see below)
   - Session length is derived from this value
@@ -86,7 +86,7 @@ Redis session data TTL:
   1. On session creation a new redis entry is added with a relative ttl.
   2. Session cookie has a scope of `session`, but this is only for convenience for the good clients. Cookie lifetime does not effect the validity of a session, but
   dropping a session on the client side reduces the chance for compromised cookies. Also whenever possible client should log out.
-  3. During session validation only the redis key existence is considered. The start_date from the sentinel is used only for an approximate session length information.
+  3. During session validation only the redis key existence is considered. The `created_at` from the sentinel is used only for an approximate session length information.
   4. Session length uses only the server clocks (multiple instance may exist at once) and session validation uses only the redis clock through the key expiration.
   5. For multi region redis the existence of the key in the used node counts and servers should check it only once for a request at the beginning (entry point) even for a longer, multi-service operation. In this case pass the result of the session validation to the other parties as usual.
 

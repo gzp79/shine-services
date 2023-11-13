@@ -46,7 +46,7 @@ pub(in crate::auth) struct TokenLogin {
     #[serde(rename = "t")]
     pub token: String,
     #[serde(rename = "e")]
-    pub expires: DateTime<Utc>,
+    pub expire_at: DateTime<Utc>,
 }
 
 #[derive(Debug, ThisError)]
@@ -302,7 +302,7 @@ impl IntoResponseParts for AuthSession {
         let token_login = create_jar(
             &meta.token_login,
             token_login.as_ref().map(|d| {
-                let naive_time = d.expires.naive_utc();
+                let naive_time = d.expire_at.naive_utc();
                 // disable cookie a few minutes before the token expiration
                 let token_expiration =
                     OffsetDateTime::from_unix_timestamp(naive_time.timestamp()).unwrap() - Duration::minutes(5);
