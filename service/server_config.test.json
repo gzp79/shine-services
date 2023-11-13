@@ -32,6 +32,7 @@
         "salt": "salt"
     },
     "auth": {
+        "appName": "Scytta",
         "homeUrl": "https://web.sandbox.com:8080/",
         "errorUrl": "https://web.sandbox.com:8080/error",
         "authBaseUrl": "https://cloud.sandbox.com/identity/auth",

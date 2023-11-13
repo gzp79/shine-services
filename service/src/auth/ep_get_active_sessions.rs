@@ -1,5 +1,6 @@
 use crate::{auth::AuthServiceState, openapi::ApiKind};
 use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem},
@@ -10,6 +11,7 @@ use utoipa::ToSchema;
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveSession {
+    created_at: DateTime<Utc>,
     agent: String,
     country: Option<String>,
     region: Option<String>,
@@ -34,6 +36,7 @@ async fn get_active_sessions(
         .map_err(Problem::internal_error_from)?
         .into_iter()
         .map(|s| ActiveSession {
+            created_at: s.created_at,
             agent: s.agent,
             country: s.country,
             region: s.region,
