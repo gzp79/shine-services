@@ -27,10 +27,9 @@
         "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-name?sslmode=disable"
     },
     "userName": {
-        "baseGenerator": "fixed",
         "baseName": "Freshman",
-        "salt": "salt",
-        "idEncoder": "harsh"
+        "idEncoder": "harsh",
+        "salt": "salt"
     },
     "auth": {
         "homeUrl": "https://web.sandbox.com:8080/",

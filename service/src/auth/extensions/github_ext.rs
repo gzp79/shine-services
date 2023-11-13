@@ -1,4 +1,4 @@
-use crate::db::ExternalUserInfo;
+use crate::repositories::ExternalUserInfo;
 use reqwest::{header, Client as HttpClient};
 use serde::Deserialize;
 use shine_service::service::APP_NAME;

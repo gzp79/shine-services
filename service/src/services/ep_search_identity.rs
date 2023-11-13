@@ -1,6 +1,6 @@
 use crate::{
-    db::{IdentityKind, Permission, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_COUNT},
     openapi::ApiKind,
+    repositories::{IdentityKind, Permission, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_COUNT},
     services::IdentityServiceState,
 };
 use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};

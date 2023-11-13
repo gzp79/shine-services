@@ -1,13 +1,13 @@
 mod app_config;
 mod auth;
-mod db;
 mod openapi;
+mod repositories;
 mod services;
 
 use crate::{
     app_config::{AppConfig, SERVICE_NAME},
     auth::{AuthServiceBuilder, AuthServiceDependencies},
-    db::{DBPool, IdentityManager, NameGenerator, SessionManager},
+    repositories::{AutoNameManager, DBPool, IdentityManager, SessionManager},
     services::{IdentityServiceBuilder, IdentityServiceDependencies},
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -131,7 +131,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let identity_manager = IdentityManager::new(&db_pool.postgres).await?;
     let ttl_session = Duration::seconds(i64::try_from(auth_config.ttl_session)?);
     let session_manager = SessionManager::new(&db_pool.redis, String::new(), ttl_session).await?;
-    let name_generator = NameGenerator::new(&config.user_name, &db_pool.postgres).await?;
+    let auto_name_manager = AutoNameManager::new(&config.user_name, &db_pool.postgres).await?;
 
     let tracing_layer = OtelAxumLayer::default(); //.filter(|a| true);
     let log_layer = TraceLayer::new_for_http()
@@ -145,7 +145,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
             tera: tera.clone(),
             identity_manager: identity_manager.clone(),
             session_manager: session_manager.clone(),
-            name_generator: name_generator.clone(),
+            auto_name_manager: auto_name_manager.clone(),
         };
         AuthServiceBuilder::new(auth_state, &config.auth)
             .await?
@@ -157,7 +157,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
             tracing_manager,
             identity_manager: identity_manager.clone(),
             session_manager: session_manager.clone(),
-            name_generator: name_generator.clone(),
+            auto_name_manager: auto_name_manager.clone(),
             db: db_pool.clone(),
         };
         IdentityServiceBuilder::new(identity_state, config.auth.super_user_api_key_hash.as_deref())

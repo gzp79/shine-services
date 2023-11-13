@@ -1,4 +1,4 @@
-use crate::db::DBError;
+use crate::repositories::DBError;
 use shine_service::service::PGError;
 use thiserror::Error as ThisError;
 

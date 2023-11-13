@@ -1,4 +1,4 @@
-use crate::db::{IdentityBuildError, IdentityError};
+use crate::repositories::{IdentityBuildError, IdentityError};
 use shine_service::{
     pg_query,
     service::{PGClient, PGConnection, PGRawConnection, PGTransaction},
@@ -20,12 +20,12 @@ pg_query!( UpdateDataVersion =>
     "#
 );
 
-pub struct IdentityVersionStatements {
+pub struct VersionedUpdateStatements {
     get_version: GetDataVersion,
     update_version: UpdateDataVersion,
 }
 
-impl IdentityVersionStatements {
+impl VersionedUpdateStatements {
     pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
         Ok(Self {
             get_version: GetDataVersion::new(client).await?,
@@ -35,19 +35,19 @@ impl IdentityVersionStatements {
 }
 
 /// Unit of work for identity data. It keeps track of version and handle transaction with version check.
-pub struct IdentityUOW<'a> {
+pub struct VersionedUpdate<'a> {
     transaction: PGTransaction<'a>,
-    stmts: &'a IdentityVersionStatements,
+    stmts: &'a VersionedUpdateStatements,
     user_id: Uuid,
     version: i32,
 }
 
-impl<'a> IdentityUOW<'a> {
+impl<'a> VersionedUpdate<'a> {
     pub async fn new<T>(
         client: &'a mut PGConnection<T>,
-        stmts: &'a IdentityVersionStatements,
+        stmts: &'a VersionedUpdateStatements,
         user_id: Uuid,
-    ) -> Result<Option<IdentityUOW<'a>>, IdentityError>
+    ) -> Result<Option<VersionedUpdate<'a>>, IdentityError>
     where
         T: PGRawConnection,
     {

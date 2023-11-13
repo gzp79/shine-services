@@ -1,4 +1,4 @@
-use crate::db::{Identity, IdentityError};
+use crate::repositories::{Identity, IdentityError};
 use shine_service::service::{PGConnection, PGRawConnection, QueryBuilder};
 use tokio_postgres::Row;
 use uuid::Uuid;
@@ -23,14 +23,14 @@ pub struct SearchIdentity<'a> {
 }
 
 /// Identities Data Access Object.
-pub struct IdentitySearchDAO<'a, T>
+pub struct IdentitySearch<'a, T>
 where
     T: PGRawConnection,
 {
     client: &'a PGConnection<T>,
 }
 
-impl<'a, T> IdentitySearchDAO<'a, T>
+impl<'a, T> IdentitySearch<'a, T>
 where
     T: PGRawConnection,
 {

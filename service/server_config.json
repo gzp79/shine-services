@@ -16,7 +16,6 @@
         }
     },
     "userName": {
-        "baseGenerator": "fixed",
         "baseName": "Freshman",
         "idEncoder": "harsh"
     },

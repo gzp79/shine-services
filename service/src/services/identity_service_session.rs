@@ -1,5 +1,5 @@
 use crate::{
-    db::{Identity, Role},
+    repositories::{Identity, Role},
     services::IdentityServiceState,
 };
 use shine_service::axum::Problem;

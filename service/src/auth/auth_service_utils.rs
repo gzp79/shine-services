@@ -1,6 +1,6 @@
 use crate::{
     auth::{auth_session::TokenLogin, AuthServiceState, AuthSession, OIDCDiscoveryError, TokenGeneratorError},
-    db::{ExternalUserInfo, Identity, IdentityError, NameGeneratorError, SiteInfo, TokenKind},
+    repositories::{AutoNameError, ExternalUserInfo, Identity, IdentityError, SiteInfo, TokenKind},
 };
 use axum::{
     http::StatusCode,
@@ -22,7 +22,7 @@ pub(in crate::auth) enum UserCreateError {
     #[error("Retry limit reach for user creation")]
     RetryLimitReached,
     #[error(transparent)]
-    NameGeneratorError(#[from] NameGeneratorError),
+    AutoNameError(#[from] AutoNameError),
     #[error(transparent)]
     IdentityError(#[from] IdentityError),
 }
@@ -47,7 +47,7 @@ impl AuthServiceState {
             let user_id = Uuid::new_v4();
             let user_name = match default_name.take() {
                 Some(name) => name,
-                None => self.name_generator().generate_name().await?,
+                None => self.auto_name_manager().generate_name().await?,
             };
 
             match self

@@ -1,4 +1,4 @@
-use crate::db::{IdentityBuildError, IdentityError};
+use crate::repositories::{IdentityBuildError, IdentityError};
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use shine_service::{
@@ -109,7 +109,7 @@ impl IdentitiesStatements {
 }
 
 /// Identities Data Access Object.
-pub struct IdentitiesDAO<'a, T>
+pub struct Identities<'a, T>
 where
     T: PGRawConnection,
 {
@@ -117,7 +117,7 @@ where
     stmts_identities: &'a IdentitiesStatements,
 }
 
-impl<'a, T> IdentitiesDAO<'a, T>
+impl<'a, T> Identities<'a, T>
 where
     T: PGRawConnection,
 {

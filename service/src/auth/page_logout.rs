@@ -1,7 +1,7 @@
 use crate::{
     auth::{AuthError, AuthPage, AuthServiceState, AuthSession},
-    db::TokenKind,
     openapi::ApiKind,
+    repositories::TokenKind,
 };
 use axum::{body::HttpBody, extract::State};
 use serde::Deserialize;

@@ -1,4 +1,4 @@
-use crate::db::{Identity, IdentityBuildError, IdentityError, IdentityKind};
+use crate::repositories::{Identity, IdentityBuildError, IdentityError, IdentityKind};
 use chrono::{DateTime, Utc};
 use shine_service::{
     pg_query,
@@ -65,7 +65,7 @@ impl ExternalLinksStatements {
 }
 
 /// External Links Data Access Object.
-pub struct ExternalLinksDAO<'a, T>
+pub struct ExternalLinks<'a, T>
 where
     T: PGRawConnection,
 {
@@ -73,7 +73,7 @@ where
     stmts_external_links: &'a ExternalLinksStatements,
 }
 
-impl<'a, T> ExternalLinksDAO<'a, T>
+impl<'a, T> ExternalLinks<'a, T>
 where
     T: PGRawConnection,
 {

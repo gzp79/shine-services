@@ -1,9 +1,13 @@
-use crate::db::{IdentityBuildError, IdentityError, IdentityUOW, IdentityVersionStatements};
+use crate::repositories::{IdentityBuildError, IdentityError};
 use shine_service::{
     pg_query,
     service::{PGClient, PGConnection, PGErrorChecks as _, PGRawConnection},
 };
 use uuid::Uuid;
+
+use super::{versioned_update::VersionedUpdate, versioned_update::VersionedUpdateStatements};
+
+pub type Role = String;
 
 pg_query!( AddUserRole =>
     in = user_id: Uuid, role: &str;
@@ -56,22 +60,22 @@ impl RolesStatements {
 }
 
 /// Roles Data Access Object.
-pub struct RolesDAO<'a, T>
+pub struct Roles<'a, T>
 where
     T: PGRawConnection,
 {
     client: &'a mut PGConnection<T>,
-    stmts_version: &'a IdentityVersionStatements,
+    stmts_version: &'a VersionedUpdateStatements,
     stmts_role: &'a RolesStatements,
 }
 
-impl<'a, T> RolesDAO<'a, T>
+impl<'a, T> Roles<'a, T>
 where
     T: PGRawConnection,
 {
     pub fn new(
         client: &'a mut PGConnection<T>,
-        stmts_version: &'a IdentityVersionStatements,
+        stmts_version: &'a VersionedUpdateStatements,
         stmts_role: &'a RolesStatements,
     ) -> Self {
         Self {
@@ -82,7 +86,7 @@ where
     }
 
     pub async fn add_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
-        let update = match IdentityUOW::new(self.client, self.stmts_version, user_id).await? {
+        let update = match VersionedUpdate::new(self.client, self.stmts_version, user_id).await? {
             Some(update) => update,
             None => return Ok(None),
         };
@@ -114,7 +118,7 @@ where
     }
 
     pub async fn delete_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
-        let update = match IdentityUOW::new(self.client, self.stmts_version, user_id).await? {
+        let update = match VersionedUpdate::new(self.client, self.stmts_version, user_id).await? {
             Some(update) => update,
             None => return Ok(None),
         };

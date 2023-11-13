@@ -3,8 +3,8 @@ use crate::{
         auth_service_utils::CreateTokenKind, auth_session::TokenLogin, AuthError, AuthPage, AuthServiceState,
         AuthSession,
     },
-    db::{IdentityError, SiteInfo},
     openapi::ApiKind,
+    repositories::{IdentityError, SiteInfo},
 };
 use axum::{
     body::HttpBody,

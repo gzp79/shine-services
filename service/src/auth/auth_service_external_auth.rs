@@ -1,15 +1,14 @@
-use std::collections::HashMap;
-
 use crate::{
     auth::{
         auth_service_utils::{CreateTokenKind, UserCreateError},
         extensions, AuthError, AuthPage, AuthServiceState, AuthSession, ExternalUserInfoExtensions,
     },
-    db::{ExternalUserInfo, IdentityError, SiteInfo},
+    repositories::{ExternalUserInfo, IdentityError, SiteInfo},
 };
 use reqwest::{header, Client as HttpClient};
 use serde_json::Value as JsonValue;
 use shine_service::service::{ClientFingerprint, APP_NAME};
+use std::collections::HashMap;
 use thiserror::Error as ThisError;
 use url::Url;
 

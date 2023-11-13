@@ -1,7 +1,7 @@
 use crate::{
     auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OAuth2Client},
-    db::SiteInfo,
     openapi::ApiKind,
+    repositories::SiteInfo,
 };
 use axum::{body::HttpBody, extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};

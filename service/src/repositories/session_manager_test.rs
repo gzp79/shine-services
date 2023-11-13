@@ -1,4 +1,4 @@
-use crate::db::{Identity, IdentityKind, SessionManager, SiteInfo};
+use crate::repositories::{Identity, IdentityKind, SessionManager, SiteInfo};
 use chrono::{Duration, Utc};
 use ring::rand::SystemRandom;
 use shine_service::service::{self, ClientFingerprint, RedisConnectionPool, SessionKey};

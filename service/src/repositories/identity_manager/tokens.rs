@@ -1,4 +1,4 @@
-use crate::db::{Identity, IdentityBuildError, IdentityError, IdentityKind, SiteInfo};
+use crate::repositories::{Identity, IdentityBuildError, IdentityError, IdentityKind, SiteInfo};
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use shine_service::{
@@ -142,7 +142,7 @@ impl TokensStatements {
 }
 
 /// Tokens Data Access Object.
-pub struct TokensDAO<'a, T>
+pub struct Tokens<'a, T>
 where
     T: PGRawConnection,
 {
@@ -150,7 +150,7 @@ where
     stmts_tokens: &'a TokensStatements,
 }
 
-impl<'a, T> TokensDAO<'a, T>
+impl<'a, T> Tokens<'a, T>
 where
     T: PGRawConnection,
 {

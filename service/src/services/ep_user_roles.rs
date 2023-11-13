@@ -1,6 +1,6 @@
 use crate::{
-    db::{Permission, PermissionError, Role},
     openapi::ApiKind,
+    repositories::{Permission, PermissionError, Role},
     services::IdentityServiceState,
 };
 use axum::{

@@ -1,4 +1,4 @@
-use crate::{openapi::ApiKind, services::IdentityServiceState};
+use crate::{openapi::ApiKind, repositories::Permission, services::IdentityServiceState};
 use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
 use serde::Deserialize;
 use shine_service::{
@@ -18,9 +18,7 @@ async fn reconfigure(
     user: CheckedCurrentUser,
     Json(format): Json<Request>,
 ) -> Result<(), Problem> {
-    state
-        .require_permission(&user, crate::db::Permission::UpdateTrace)
-        .await?;
+    state.require_permission(&user, Permission::UpdateTrace).await?;
     log::trace!("config: {:#?}", format);
     state
         .tracing_manager()

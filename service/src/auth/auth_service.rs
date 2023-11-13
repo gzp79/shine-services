@@ -1,6 +1,6 @@
 use crate::{
     auth::{self, AuthSessionMeta, OAuth2Client, OIDCClient, OIDCDiscoveryError, TokenGenerator},
-    db::{IdentityManager, NameGenerator, SessionManager},
+    repositories::{AutoNameManager, IdentityManager, SessionManager},
 };
 use axum::{Extension, Router};
 use chrono::Duration;
@@ -126,7 +126,7 @@ struct Inner {
     tera: Tera,
     identity_manager: IdentityManager,
     session_manager: SessionManager,
-    name_generator: NameGenerator,
+    auto_name_manager: AutoNameManager,
 
     home_url: Url,
     error_url: Url,
@@ -153,8 +153,8 @@ impl AuthServiceState {
         &self.0.session_manager
     }
 
-    pub fn name_generator(&self) -> &NameGenerator {
-        &self.0.name_generator
+    pub fn auto_name_manager(&self) -> &AutoNameManager {
+        &self.0.auto_name_manager
     }
 
     pub fn token(&self) -> &TokenGenerator {
@@ -186,7 +186,7 @@ pub struct AuthServiceDependencies {
     pub tera: Tera,
     pub identity_manager: IdentityManager,
     pub session_manager: SessionManager,
-    pub name_generator: NameGenerator,
+    pub auto_name_manager: AutoNameManager,
 }
 
 pub struct AuthServiceBuilder {
@@ -239,7 +239,7 @@ impl AuthServiceBuilder {
             tera: dependencies.tera,
             identity_manager: dependencies.identity_manager,
             session_manager: dependencies.session_manager,
-            name_generator: dependencies.name_generator,
+            auto_name_manager: dependencies.auto_name_manager,
             token_generator,
             home_url: config.home_url.to_owned(),
             error_url: config.error_url.to_owned(),

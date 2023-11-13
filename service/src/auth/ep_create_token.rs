@@ -1,7 +1,7 @@
 use crate::{
     auth::{AuthServiceState, CreateTokenKind},
-    db::SiteInfo,
     openapi::ApiKind,
+    repositories::SiteInfo,
 };
 use axum::{
     body::HttpBody,

@@ -1,4 +1,4 @@
-use crate::db::DBError;
+use crate::repositories::DBError;
 use harsh::Harsh;
 use serde::{Deserialize, Serialize};
 use shine_service::{pg_query, service::PGConnectionPool, utils::Optimus};
@@ -6,37 +6,19 @@ use std::sync::Arc;
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
-pub enum NameGeneratorError {
+pub enum AutoNameBuildError {
     #[error(transparent)]
     DBError(#[from] DBError),
     #[error("Base name generator error: {0}")]
-    BaseGenerator(String),
+    NameGenerator(String),
     #[error("Id encoder error: {0}")]
     IdEncoder(String),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(tag = "baseGenerator")]
-pub enum BaseGeneratorConfig {
-    #[serde(rename_all = "camelCase")]
-    Fixed { base_name: String },
-}
-
-impl BaseGeneratorConfig {
-    fn create_generator(&self) -> Result<Box<dyn BaseGenerator>, NameGeneratorError> {
-        match self {
-            BaseGeneratorConfig::Fixed { base_name } => {
-                if !(3..10).contains(&base_name.len()) {
-                    Err(NameGeneratorError::BaseGenerator(
-                        "Base name length should be in the range [3,10)".into(),
-                    ))
-                } else {
-                    Ok(Box::new(base_name.clone()))
-                }
-            }
-        }
-    }
+#[derive(Debug, ThisError)]
+pub enum AutoNameError {
+    #[error(transparent)]
+    DBError(#[from] DBError),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -51,7 +33,7 @@ pub enum IdEncoderConfig {
 }
 
 impl IdEncoderConfig {
-    fn create_encoder(&self) -> Result<Box<dyn IdEncoder>, NameGeneratorError> {
+    fn create_encoder(&self) -> Result<Box<dyn IdEncoder>, AutoNameBuildError> {
         match self {
             IdEncoderConfig::Optimus { prime, random } => Ok(Box::new(Optimus::new(*prime, *random))),
             IdEncoderConfig::Harsh { salt } => {
@@ -64,7 +46,7 @@ impl IdEncoderConfig {
                     .alphabet(ALPHABET)
                     .separators(SEPARATORS)
                     .build()
-                    .map_err(|err| NameGeneratorError::IdEncoder(format!("{err}")))?;
+                    .map_err(|err| AutoNameBuildError::IdEncoder(format!("{err}")))?;
                 Ok(Box::new(harsh))
             }
         }
@@ -73,22 +55,10 @@ impl IdEncoderConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NameGeneratorConfig {
-    #[serde(flatten)]
-    base_generator: BaseGeneratorConfig,
+pub struct AutoNameConfig {
+    base_name: String,
     #[serde(flatten)]
     id_encoder: IdEncoderConfig,
-}
-
-/// Trait to generate some base name use as the prefix
-trait BaseGenerator: 'static + Send + Sync {
-    fn generate(&self) -> String;
-}
-
-impl BaseGenerator for String {
-    fn generate(&self) -> String {
-        self.clone()
-    }
 }
 
 /// Trait to generate some obfuscated id for a sequence number
@@ -119,27 +89,33 @@ pg_query!( GetNextId =>
 struct Inner {
     postgres: PGConnectionPool,
     stmt_next_id: GetNextId,
-    base: Box<dyn BaseGenerator>,
+    base_name: String,
     id_encoder: Box<dyn IdEncoder>,
 }
 
 #[derive(Clone)]
-pub struct NameGenerator(Arc<Inner>);
+pub struct AutoNameManager(Arc<Inner>);
 
-impl NameGenerator {
-    pub async fn new(config: &NameGeneratorConfig, postgres: &PGConnectionPool) -> Result<Self, NameGeneratorError> {
+impl AutoNameManager {
+    pub async fn new(config: &AutoNameConfig, postgres: &PGConnectionPool) -> Result<Self, AutoNameBuildError> {
         let client = postgres.get().await.map_err(DBError::PGPoolError)?;
         let stmt_next_id = GetNextId::new(&client).await.map_err(DBError::from)?;
+
+        if !(3..10).contains(&config.base_name.len()) {
+            return Err(AutoNameBuildError::NameGenerator(
+                "Base name length should be in the range [3,10)".into(),
+            ));
+        }
 
         Ok(Self(Arc::new(Inner {
             postgres: postgres.clone(),
             stmt_next_id,
-            base: config.base_generator.create_generator()?,
+            base_name: config.base_name.clone(),
             id_encoder: config.id_encoder.create_encoder()?,
         })))
     }
 
-    pub async fn generate_name(&self) -> Result<String, NameGeneratorError> {
+    pub async fn generate_name(&self) -> Result<String, AutoNameError> {
         // some alternatives and sources:
         // - <https://datatracker.ietf.org/doc/html/rfc1751>
         // - <https://github.com/archer884/harsh>
@@ -149,7 +125,7 @@ impl NameGenerator {
 
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
 
-        let prefix = inner.base.generate();
+        let prefix = &inner.base_name;
         let suffix = {
             let id = inner.stmt_next_id.query_one(&client).await.map_err(DBError::from)?;
             inner.id_encoder.encode(id as u64)
