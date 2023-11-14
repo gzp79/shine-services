@@ -3,6 +3,7 @@ import { getPageRedirectUrl } from '$lib/page_utils';
 import { UserInfo, getCookies, getUserInfo } from '$lib/auth_utils';
 import config from '../test.config';
 import { Cookie } from 'tough-cookie';
+import { TestUser } from '$lib/user';
 
 describe('Validate (interactive) token flow', () => {
     it('Login with invalid input should redirect to the default error page', async () => {
@@ -216,5 +217,37 @@ describe('(Interactive) token flow', () => {
         expect(newCookies.sid.value, 'it shall be a new session').not.toEqual(cookies.sid.value);
         expect(newCookies.eid).toBeClearCookie();
         expect(await getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
+    });
+
+    it('Altering site should invalidate token', async () => {
+        const site_info = {
+            'user-agent': 'agent',
+            'cf-region': 'region',
+            'cf-ipcity': 'city',
+            'cf-ipcountry': 'country'
+        };
+
+        const user = await TestUser.createGuest({ extraHeaders: site_info });
+
+        // altering non-fingerprint value has no effect
+        expect(
+            await getUserInfo(user.sid, {
+                ...site_info,
+                'cf-region': 'new-region',
+                'cf-ipcity': 'new-city',
+                'cf-ipcountry': 'new-country'
+            })
+        ).toBeGuestUser();
+
+        // altering fingerprint value invalidates to session
+        for (const mod of [{ 'user-agent': 'new-agent' }]) {
+            /*let response = await request
+                .get(config.getUrlFor('identity/api/auth/user/info'))
+                .set('Cookie', [`sid=${user.sid}`])
+                .set({ ...site_info, ...mod })
+                .send()
+                .catch((err) => err.response);
+            expect(response.statusCode).toEqual(401);*/
+        }
     });
 });

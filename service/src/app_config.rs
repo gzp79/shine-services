@@ -1,5 +1,7 @@
-use crate::db::NameGeneratorConfig;
-use crate::{auth, db::DBConfig};
+use crate::{
+    auth,
+    repositories::{AutoNameConfig, DBConfig},
+};
 use config::ConfigError;
 use serde::{Deserialize, Serialize};
 use shine_service::axum::tracing::TracingConfig;
@@ -46,7 +48,7 @@ pub struct AppConfig {
     pub tracing: TracingConfig,
     pub db: DBConfig,
     pub auth: auth::AuthConfig,
-    pub user_name: NameGeneratorConfig,
+    pub user_name: AutoNameConfig,
 }
 
 impl AppConfig {

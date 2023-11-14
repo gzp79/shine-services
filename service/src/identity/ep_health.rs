@@ -1,11 +1,8 @@
-use crate::{openapi::ApiKind, services::IdentityServiceState};
+use crate::{identity::IdentityServiceState, openapi::ApiKind};
 use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
 use bb8::State as BB8PoolState;
-use serde::{Deserialize, Serialize};
-use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem},
-    service::CheckedCurrentUser,
-};
+use serde::Serialize;
+use shine_service::axum::{ApiEndpoint, ApiMethod};
 use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
@@ -49,39 +46,4 @@ where
         .with_tag("status")
         .with_schema::<DBState>()
         .with_json_response::<ServiceHealth>(StatusCode::OK)
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct UpdateTraceConfig {
-    filter: String,
-}
-
-async fn reconfigure(
-    State(state): State<IdentityServiceState>,
-    user: CheckedCurrentUser,
-    Json(format): Json<UpdateTraceConfig>,
-) -> Result<(), Problem> {
-    state
-        .require_permission(&user, crate::db::Permission::UpdateTrace)
-        .await?;
-    log::trace!("config: {:#?}", format);
-    state
-        .tracing_manager()
-        .reconfigure(format.filter)
-        .map_err(Problem::internal_error_from)?;
-
-    Ok(())
-}
-
-pub fn ep_tracing_reconfigure<B>() -> ApiEndpoint<IdentityServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
-{
-    ApiEndpoint::new(ApiMethod::Put, ApiKind::Api("/tracing/config"), reconfigure)
-        .with_operation_id("ep_trace_config")
-        .with_tag("status")
-        .with_json_request::<UpdateTraceConfig>()
-        .with_status_response(StatusCode::OK, "Configuration is update")
 }

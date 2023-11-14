@@ -5,10 +5,13 @@ import { Cookie } from 'tough-cookie';
 import { getCookies } from './auth_utils';
 import { ExternalUser } from './user';
 
-export async function createGuestUser(): Promise<Record<string, Cookie>> {
+export async function createGuestUser(
+    extraHeaders?: Record<string, string>
+): Promise<Record<string, Cookie>> {
     const response = await request
         .get(config.getUrlFor('identity/auth/token/login'))
         .query({ rememberMe: true, ...config.defaultRedirects })
+        .set(extraHeaders ?? {})
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -20,11 +23,15 @@ export async function createGuestUser(): Promise<Record<string, Cookie>> {
     return cookies;
 }
 
-export async function loginWithToken(tid: string): Promise<Record<string, Cookie>> {
+export async function loginWithToken(
+    tid: string,
+    extraHeaders?: Record<string, string>
+): Promise<Record<string, Cookie>> {
     const response = await request
         .get(config.getUrlFor('identity/auth/token/login'))
         .query(config.defaultRedirects)
         .set('Cookie', [`tid=${tid}`])
+        .set(extraHeaders ?? {})
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -43,10 +50,14 @@ type StartLoginResult = {
     eid: Cookie;
 };
 
-export async function startLoginWithOAuth2(rememberMe?: boolean): Promise<StartLoginResult> {
+export async function startLoginWithOAuth2(
+    rememberMe?: boolean,
+    extraHeaders?: Record<string, string>
+): Promise<StartLoginResult> {
     const response = await request
         .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
         .query({ rememberMe: rememberMe, ...config.defaultRedirects })
+        .set(extraHeaders ?? {})
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -64,9 +75,10 @@ export async function startLoginWithOAuth2(rememberMe?: boolean): Promise<StartL
 
 export async function loginWithOAuth2(
     user: ExternalUser,
-    rememberMe?: boolean
+    rememberMe?: boolean,
+    extraHeaders?: Record<string, string>
 ): Promise<Record<string, Cookie>> {
-    const { authParams, eid } = await startLoginWithOAuth2(rememberMe);
+    const { authParams, eid } = await startLoginWithOAuth2(rememberMe, extraHeaders);
 
     const response = await request
         .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
@@ -75,6 +87,7 @@ export async function loginWithOAuth2(
             state: authParams.state
         })
         .set('Cookie', [`eid=${eid.value}`])
+        .set(extraHeaders ?? {})
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -90,10 +103,14 @@ export async function loginWithOAuth2(
     return cookies;
 }
 
-export async function startLoginWithOpenId(rememberMe?: boolean): Promise<StartLoginResult> {
+export async function startLoginWithOpenId(
+    rememberMe?: boolean,
+    extraHeaders?: Record<string, string>
+): Promise<StartLoginResult> {
     const response = await request
         .get(config.getUrlFor('identity/auth/openid_flow/login'))
         .query({ rememberMe: rememberMe, ...config.defaultRedirects })
+        .set(extraHeaders ?? {})
         .send();
 
     expect(response.statusCode).toEqual(200);
@@ -111,7 +128,8 @@ export async function startLoginWithOpenId(rememberMe?: boolean): Promise<StartL
 
 export async function loginWithOpenId(
     user: ExternalUser,
-    rememberMe?: boolean
+    rememberMe?: boolean,
+    extraHeaders?: Record<string, string>
 ): Promise<Record<string, Cookie>> {
     const { authParams, eid } = await startLoginWithOpenId(rememberMe);
 
@@ -122,6 +140,7 @@ export async function loginWithOpenId(
             state: authParams.state
         })
         .set('Cookie', [`eid=${eid.value}`])
+        .set(extraHeaders ?? {})
         .send();
 
     expect(response.statusCode).toEqual(200);

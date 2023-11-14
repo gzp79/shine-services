@@ -28,9 +28,9 @@ function intoMatcherResult(self: jest.MatcherContext, received: any, expected: o
     if (pass) {
         return {
             message: () =>
-                `Expected: ${self.utils.printExpected(
-                    expected
-                )}\nReceived: ${self.utils.printReceived(received)}`,
+                `Expected: ${self.utils.printExpected(expected)}\nReceived: ${self.utils.printReceived(
+                    received
+                )}`,
             pass: true
         };
     }
@@ -120,10 +120,14 @@ export interface UserInfo {
     roles: string[];
 }
 
-export async function getUserInfo(cookieValue: string): Promise<UserInfo> {
+export async function getUserInfo(
+    cookieValue: string,
+    extraHeaders?: Record<string, string>
+): Promise<UserInfo> {
     let response = await request
         .get(config.getUrlFor('identity/api/auth/user/info'))
         .set('Cookie', [`sid=${cookieValue}`])
+        .set(extraHeaders ?? {})
         .send();
     expect(response.statusCode).toEqual(200);
     //expect(response.body).toBeInstanceOf(UserInfo);
@@ -131,20 +135,60 @@ export async function getUserInfo(cookieValue: string): Promise<UserInfo> {
 }
 
 export interface ActiveSession {
+    userId: string;
+    createdAt: Date;
     agent: string;
-    country?: string;
-    region?: string;
-    city?: string;
+    country: string | null;
+    region: string | null;
+    city: string | null;
 }
 
-export async function getSessions(cookieValue: string): Promise<ActiveSession[]> {
+export async function getSessions(
+    cookieValue: string,
+    extraHeaders?: Record<string, string>
+): Promise<ActiveSession[]> {
     let response = await request
         .get(config.getUrlFor('identity/api/auth/user/sessions'))
         .set('Cookie', [`sid=${cookieValue}`])
+        .set(extraHeaders ?? {})
         .send();
     expect(response.statusCode).toEqual(200);
 
+    response.body?.sessions?.forEach((session: ActiveSession) => {
+        session.createdAt = new Date(session.createdAt);
+    });
     return response.body?.sessions ?? [];
+}
+
+export interface ActiveToken {
+    userId: string;
+    kind: string;
+    createdAt: Date;
+    expireAt: Date;
+    isExpired: boolean;
+    agent: string;
+    country: string | null;
+    region: string | null;
+    city: string | null;
+}
+
+export async function getTokens(
+    cookieValue: string,
+    extraHeaders?: Record<string, string>
+): Promise<ActiveToken[]> {
+    let response = await request
+        .get(config.getUrlFor('identity/api/auth/user/tokens'))
+        .set('Cookie', [`sid=${cookieValue}`])
+        .set(extraHeaders ?? {})
+        .send();
+    expect(response.statusCode).toEqual(200);
+
+    response.body?.tokens?.forEach((session: ActiveToken) => {
+        session.createdAt = new Date(session.createdAt);
+        session.expireAt = new Date(session.expireAt);
+    });
+
+    return response.body?.tokens ?? [];
 }
 
 export async function logout(cookieValue: string, everywhere: boolean): Promise<void> {

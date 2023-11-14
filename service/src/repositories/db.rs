@@ -1,5 +1,32 @@
-use crate::db::{DBConfig, DBError};
-use shine_service::service::{self, PGConnectionPool, RedisConnectionPool};
+use serde::{Deserialize, Serialize};
+use shine_service::service::{
+    self, PGConnectionError, PGConnectionPool, PGCreatePoolError, PGError, RedisConnectionError, RedisConnectionPool,
+};
+use thiserror::Error as ThisError;
+
+#[derive(Debug, ThisError)]
+pub enum DBError {
+    #[error("Failed to get a PG connection from the pool")]
+    PGCreatePoolError(#[source] PGCreatePoolError),
+    #[error("Failed to get a PG connection from the pool")]
+    PGPoolError(#[source] PGConnectionError),
+    #[error(transparent)]
+    PGError(#[from] PGError),
+    #[error(transparent)]
+    SqlMigration(#[from] refinery::Error),
+
+    #[error("Failed to get pooled redis connection")]
+    RedisPoolError(#[source] RedisConnectionError),
+    #[error(transparent)]
+    RedisError(#[from] redis::RedisError),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DBConfig {
+    pub sql_cns: String,
+    pub redis_cns: String,
+}
 
 mod embedded {
     use refinery::embed_migrations;

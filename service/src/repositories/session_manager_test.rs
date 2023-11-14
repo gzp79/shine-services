@@ -1,7 +1,10 @@
-use crate::db::{Identity, IdentityKind, SessionManager, SiteInfo};
+use crate::repositories::{Identity, IdentityKind, SessionManager};
 use chrono::{Duration, Utc};
 use ring::rand::SystemRandom;
-use shine_service::service::{self, ClientFingerprint, RedisConnectionPool, SessionKey};
+use shine_service::{
+    axum::SiteInfo,
+    service::{self, ClientFingerprint, RedisConnectionPool, SessionKey},
+};
 use shine_test::test;
 use std::env;
 use uuid::Uuid;

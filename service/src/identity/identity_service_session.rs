@@ -1,6 +1,6 @@
 use crate::{
-    db::{Identity, Role},
-    services::IdentityServiceState,
+    identity::IdentityServiceState,
+    repositories::{Identity, Role},
 };
 use shine_service::axum::Problem;
 use uuid::Uuid;
@@ -11,7 +11,7 @@ impl IdentityServiceState {
         // this order ensures the role and other data are at least as fresh as the version
         let identity = self
             .identity_manager()
-            .find(crate::db::FindIdentity::UserId(user_id))
+            .find_by_id(user_id)
             .await
             .map_err(Problem::internal_error_from)?
             .ok_or_else(|| Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", user_id)))?;
@@ -26,7 +26,7 @@ impl IdentityServiceState {
         Ok((identity, roles))
     }
 
-    pub(in crate::services) async fn update_session(&self, user_id: Uuid) -> Result<(Identity, Vec<Role>), Problem> {
+    pub(in crate::identity) async fn update_session(&self, user_id: Uuid) -> Result<(Identity, Vec<Role>), Problem> {
         match self.get_user_info(user_id).await {
             Ok((identity, roles)) => {
                 // at this point the DB has been updated, thus any new session will contain the information

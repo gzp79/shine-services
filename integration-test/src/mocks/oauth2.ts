@@ -25,36 +25,32 @@ export default class Server extends MockServer {
             body('code_verifier').isString().notEmpty()
         ];
 
-        app.post(
-            '/oauth2/token',
-            validate,
-            async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
-                if (!req.is('application/x-www-form-urlencoded')) {
-                    this.log(`Unexpected content type`);
-                    res.status(201).json({});
-                    return;
-                    //throw new Error(`Unexpected content type`);
-                }
-
-                const errors = validationResult(req);
-                if (!errors.isEmpty()) {
-                    this.log(`Unexpected query parameters: ${JSON.stringify(errors)}`);
-                    throw new Error(`Unexpected query parameters: ${JSON.stringify(errors)}`);
-                }
-
-                const code: string = req.body.code;
-                const user = code.parseAsQueryParams();
-                if (!user || !user.id) {
-                    res.status(400).end();
-                    return;
-                }
-
-                res.status(200).json({
-                    access_token: code,
-                    token_type: 'Bearer'
-                });
+        app.post('/oauth2/token', validate, async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
+            if (!req.is('application/x-www-form-urlencoded')) {
+                this.log(`Unexpected content type`);
+                res.status(201).json({});
+                return;
+                //throw new Error(`Unexpected content type`);
             }
-        );
+
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                this.log(`Unexpected query parameters: ${JSON.stringify(errors)}`);
+                throw new Error(`Unexpected query parameters: ${JSON.stringify(errors)}`);
+            }
+
+            const code: string = req.body.code;
+            const user = code.parseAsQueryParams();
+            if (!user || !user.id) {
+                res.status(400).end();
+                return;
+            }
+
+            res.status(200).json({
+                access_token: code,
+                token_type: 'Bearer'
+            });
+        });
 
         app.get('/oauth2/users', async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
             const code = req.headers.authorization?.split(' ')[1] ?? '';

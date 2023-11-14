@@ -1,11 +1,12 @@
-use crate::db::{DBError, Identity, Role, SiteInfo};
+use crate::repositories::{DBError, Identity, Role};
 use chrono::{DateTime, Duration, Utc};
-use redis::AsyncCommands;
-use ring::digest;
-use ring::rand::SystemRandom;
+use redis::AsyncCommands as _;
+use ring::{digest, rand::SystemRandom};
 use serde::{Deserialize, Serialize};
-use shine_service::service::{ClientFingerprint, CurrentUser, SessionKey, SessionKeyError};
-use shine_service::service::{RedisConnectionPool, RedisJsonValue};
+use shine_service::{
+    axum::SiteInfo,
+    service::{ClientFingerprint, CurrentUser, RedisConnectionPool, RedisJsonValue, SessionKey, SessionKeyError},
+};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 use uuid::Uuid;
@@ -26,7 +27,7 @@ pub enum DBSessionError {
 #[derive(Serialize, Deserialize, Debug, RedisJsonValue)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionSentinel {
-    pub start_date: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
     pub fingerprint: String,
     pub agent: String,
     pub country: Option<String>,
@@ -261,7 +262,7 @@ impl SessionManager {
         let mut client = inner.redis.get().await.map_err(DBError::RedisPoolError)?;
 
         let sentinel = SessionSentinel {
-            start_date: created_at,
+            created_at,
             fingerprint: fingerprint.to_string(),
             agent: site_info.agent.clone(),
             country: site_info.country.clone(),
@@ -291,7 +292,7 @@ impl SessionManager {
                 key: session_key,
                 name: data.name,
                 roles: data.roles,
-                session_start: sentinel.start_date,
+                session_start: sentinel.created_at,
                 fingerprint: sentinel.fingerprint,
                 version: identity.version,
             })
@@ -362,7 +363,7 @@ impl SessionManager {
                 key: session_key,
                 name: data.name,
                 roles: data.roles,
-                session_start: sentinel.start_date,
+                session_start: sentinel.created_at,
                 fingerprint: sentinel.fingerprint,
                 version,
             })),
@@ -405,7 +406,7 @@ impl SessionManager {
 /// Generate a (crypto) hashed version of a session key to protect data in rest.
 fn hash_key(key: &SessionKey) -> String {
     // there is no need for a complex hash as key has a big entropy already
-    // and it!d be too expensive to invert the hashing.
+    // and it'd be too expensive to invert the hashing.
     let hash = digest::digest(&digest::SHA256, key.as_bytes());
     let hash = hex::encode(hash);
     log::debug!("Hashing session key: {key:?} -> [{hash}]");

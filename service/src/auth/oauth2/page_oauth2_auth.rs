@@ -1,13 +1,12 @@
 use crate::{
     auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OAuth2Client},
-    db::SiteInfo,
     openapi::ApiKind,
 };
 use axum::{body::HttpBody, extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError},
+    axum::{ApiEndpoint, ApiMethod, SiteInfo, ValidatedQuery, ValidationError},
     service::ClientFingerprint,
 };
 use std::sync::Arc;

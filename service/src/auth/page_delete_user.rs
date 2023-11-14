@@ -4,10 +4,7 @@ use crate::{
 };
 use axum::{body::HttpBody, extract::State};
 use serde::Deserialize;
-use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError},
-    service::APP_NAME,
-};
+use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -63,7 +60,7 @@ async fn delete_user(
         log::warn!("Failed to clear all sessions for user {}: {:?}", user_id, err);
     }
 
-    state.page_redirect(auth_session, APP_NAME, query.redirect_url.as_ref())
+    state.page_redirect(auth_session, state.app_name(), query.redirect_url.as_ref())
 }
 
 pub fn page_delete_user<B>() -> ApiEndpoint<AuthServiceState, B>

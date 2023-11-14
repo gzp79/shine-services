@@ -50,60 +50,56 @@ export default class Server extends MockServer {
             body('redirect_uri').isString().notEmpty(),
             body('code_verifier').isString().notEmpty()
         ];
-        app.post(
-            '/openid/token',
-            validate,
-            async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
-                if (!req.is('application/x-www-form-urlencoded')) {
-                    this.log(`Unexpected content type`);
-                    throw new Error(`Unexpected content type`);
-                }
-
-                const errors = validationResult(req);
-                if (!errors.isEmpty()) {
-                    this.log(`Unexpected query parameters: ${JSON.stringify(errors)}`);
-                    throw new Error(`Unexpected query parameters: ${JSON.stringify(errors)}`);
-                }
-
-                const code: string = req.body.code;
-                const user = code.parseAsQueryParams();
-
-                if (!user || !user.id) {
-                    res.status(400).end();
-                    return;
-                }
-
-                const issuer = this.baseUrl;
-                const audience = 'someClientId';
-
-                const payload = {
-                    sub: user.id,
-                    iss: issuer,
-                    aud: audience,
-                    exp: Math.floor(Date.now() / 1000) + 3600, // Set expiration to 1 hour from now
-                    iat: Math.floor(Date.now() / 1000), // Issued at time
-                    nonce: user.nonce,
-                    nickname: user.name,
-                    email: user.email
-                };
-
-                const key = await JWK.fromObject(this.config.openidJWKS);
-                const idToken = await JWT.sign(payload, key, {
-                    alg: this.config.openidJWKS.alg,
-                    issuer: issuer,
-                    audience: audience,
-                    //expiresIn: '1h',
-                    kid: this.config.openidJWKS.kid
-                });
-
-                this.log(`id-token: ${idToken}`);
-
-                res.status(200).json({
-                    access_token: idToken,
-                    id_token: idToken,
-                    token_type: 'Bearer'
-                });
+        app.post('/openid/token', validate, async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
+            if (!req.is('application/x-www-form-urlencoded')) {
+                this.log(`Unexpected content type`);
+                throw new Error(`Unexpected content type`);
             }
-        );
+
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
+                this.log(`Unexpected query parameters: ${JSON.stringify(errors)}`);
+                throw new Error(`Unexpected query parameters: ${JSON.stringify(errors)}`);
+            }
+
+            const code: string = req.body.code;
+            const user = code.parseAsQueryParams();
+
+            if (!user || !user.id) {
+                res.status(400).end();
+                return;
+            }
+
+            const issuer = this.baseUrl;
+            const audience = 'someClientId';
+
+            const payload = {
+                sub: user.id,
+                iss: issuer,
+                aud: audience,
+                exp: Math.floor(Date.now() / 1000) + 3600, // Set expiration to 1 hour from now
+                iat: Math.floor(Date.now() / 1000), // Issued at time
+                nonce: user.nonce,
+                nickname: user.name,
+                email: user.email
+            };
+
+            const key = await JWK.fromObject(this.config.openidJWKS);
+            const idToken = await JWT.sign(payload, key, {
+                alg: this.config.openidJWKS.alg,
+                issuer: issuer,
+                audience: audience,
+                //expiresIn: '1h',
+                kid: this.config.openidJWKS.kid
+            });
+
+            this.log(`id-token: ${idToken}`);
+
+            res.status(200).json({
+                access_token: idToken,
+                id_token: idToken,
+                token_type: 'Bearer'
+            });
+        });
     }
 }

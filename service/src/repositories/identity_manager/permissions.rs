@@ -1,4 +1,5 @@
-use shine_service::axum::Problem;
+use crate::repositories::Role;
+use shine_service::{axum::Problem, service::CurrentUser};
 use std::collections::HashSet;
 use thiserror::Error as ThisError;
 
@@ -7,8 +8,6 @@ pub mod roles {
     pub const SUPER_ADMIN: &str = "SuperAdmin";
     pub const USER_ADMIN: &str = "UserAdmin";
 }
-
-pub type Role = String;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Permission {
@@ -69,5 +68,11 @@ impl PermissionSet {
         } else {
             Err(PermissionError::MissingPermission(permission))
         }
+    }
+}
+
+impl From<&CurrentUser> for PermissionSet {
+    fn from(value: &CurrentUser) -> Self {
+        Self::from_roles(&value.roles)
     }
 }

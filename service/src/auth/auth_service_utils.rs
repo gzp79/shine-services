@@ -1,6 +1,6 @@
 use crate::{
     auth::{auth_session::TokenLogin, AuthServiceState, AuthSession, OIDCDiscoveryError, TokenGeneratorError},
-    db::{ExternalUserInfo, Identity, IdentityError, NameGeneratorError, SiteInfo, TokenKind},
+    repositories::{AutoNameError, ExternalUserInfo, Identity, IdentityError, TokenKind},
 };
 use axum::{
     http::StatusCode,
@@ -9,8 +9,8 @@ use axum::{
 use chrono::Duration;
 use serde::Serialize;
 use shine_service::{
-    axum::ValidationError,
-    service::{ClientFingerprint, APP_NAME},
+    axum::{SiteInfo, ValidationError},
+    service::ClientFingerprint,
 };
 use std::fmt;
 use thiserror::Error as ThisError;
@@ -22,7 +22,7 @@ pub(in crate::auth) enum UserCreateError {
     #[error("Retry limit reach for user creation")]
     RetryLimitReached,
     #[error(transparent)]
-    NameGeneratorError(#[from] NameGeneratorError),
+    AutoNameError(#[from] AutoNameError),
     #[error(transparent)]
     IdentityError(#[from] IdentityError),
 }
@@ -47,7 +47,7 @@ impl AuthServiceState {
             let user_id = Uuid::new_v4();
             let user_name = match default_name.take() {
                 Some(name) => name,
-                None => self.name_generator().generate_name().await?,
+                None => self.auto_name_manager().generate_name().await?,
             };
 
             match self
@@ -109,11 +109,11 @@ impl AuthServiceState {
                 .create_token(user_id, &token, &duration, fingerprint, site_info, kind)
                 .await
             {
-                Ok(token) => {
+                Ok(info) => {
                     return Ok(TokenLogin {
                         user_id,
-                        token: token.token,
-                        expires: token.expire,
+                        token,
+                        expire_at: info.expire_at,
                     })
                 }
                 Err(IdentityError::TokenConflict) => continue,
@@ -249,7 +249,7 @@ impl AuthServiceState {
     ) -> AuthPage {
         let mut context = tera::Context::new();
         context.insert("timeout", &self.page_redirect_time());
-        context.insert("title", APP_NAME);
+        context.insert("title", self.app_name());
         context.insert("target", target);
         context.insert("redirect_url", redirect_url.unwrap_or(self.home_url()).as_str());
         let html = self

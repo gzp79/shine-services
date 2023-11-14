@@ -16,11 +16,11 @@
         }
     },
     "userName": {
-        "baseGenerator": "fixed",
         "baseName": "Freshman",
         "idEncoder": "harsh"
     },
     "auth": {
+        "appName": "Scytta",
         "homeUrl": "https://scytta.com",
         "errorUrl": "https://scytta.com/error",
         "authBaseUrl": "https://cloud.scytta.com/identity/auth",

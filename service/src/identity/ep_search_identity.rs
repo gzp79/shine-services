@@ -1,7 +1,7 @@
 use crate::{
-    db::{IdentityKind, Permission, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_COUNT},
+    identity::IdentityServiceState,
     openapi::ApiKind,
-    services::IdentityServiceState,
+    repositories::{IdentityKind, Permission, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_COUNT},
 };
 use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
 use chrono::{DateTime, Utc};
