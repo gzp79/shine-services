@@ -7,6 +7,10 @@ GET {{url}}/api/auth/providers
 GET {{url}}/auth/token/login?rememberMe=true
 ###
 
+GET {{url}}/auth/token/login?rememberMe=true
+User-Agent: ag
+###
+
 GET {{url}}/auth/validate
 ### 
 

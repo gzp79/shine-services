@@ -7,10 +7,12 @@ use shine_service::{
     service::CheckedCurrentUser,
 };
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveSession {
+    user_id: Uuid,
     created_at: DateTime<Utc>,
     agent: String,
     country: Option<String>,
@@ -36,6 +38,7 @@ async fn get_active_sessions(
         .map_err(Problem::internal_error_from)?
         .into_iter()
         .map(|s| ActiveSession {
+            user_id: user.user_id,
             created_at: s.created_at,
             agent: s.agent,
             country: s.country,

@@ -10,9 +10,9 @@ describe('User role access', () => {
     let users: Record<string, TestUser> = {};
 
     beforeAll(async () => {
-        users.target = await TestUser.create([]);
-        users.general = await TestUser.create([]);
-        users.admin = await TestUser.create(['SuperAdmin']);
+        users.target = await TestUser.createGuest();
+        users.general = await TestUser.createGuest();
+        users.admin = await TestUser.createGuest({ roles: ['SuperAdmin'] });
     });
 
     class TestCase {
@@ -130,7 +130,7 @@ describe('User role features', () => {
     };
 
     beforeAll(async () => {
-        admin = await TestUser.create(['SuperAdmin']);
+        admin = await TestUser.createGuest({ roles: ['SuperAdmin'] });
     });
 
     it('Getting role of non-existing user', async () => {
@@ -163,39 +163,39 @@ describe('User role features', () => {
     });
 
     it('Complex flow', async () => {
-        const user = await TestUser.create([]);
+        const user = await TestUser.createGuest();
 
         expect(await getUserRoles(user.userId)).toIncludeSameMembers([]);
-        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers([]);
+        expect((await getUserInfo(user.sid)).roles).toIncludeSameMembers([]);
 
         // remove Role3 (not existing)
         expect(await removeUserRole(user.userId, 'Role3')).toIncludeSameMembers([]);
         expect(await getUserRoles(user.userId)).toIncludeSameMembers([]);
-        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers([]);
+        expect((await getUserInfo(user.sid)).roles).toIncludeSameMembers([]);
 
         // add Role1
         expect(await addUserRole(user.userId, 'Role1')).toIncludeSameMembers(['Role1']);
         expect(await getUserRoles(user.userId)).toIncludeSameMembers(['Role1']);
-        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers(['Role1']);
+        expect((await getUserInfo(user.sid)).roles).toIncludeSameMembers(['Role1']);
 
         //add Role2
         expect(await addUserRole(user.userId, 'Role2')).toIncludeSameMembers(['Role1', 'Role2']);
         expect(await getUserRoles(user.userId)).toIncludeSameMembers(['Role1', 'Role2']);
-        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers(['Role1', 'Role2']);
+        expect((await getUserInfo(user.sid)).roles).toIncludeSameMembers(['Role1', 'Role2']);
 
         // remove Role1
         expect(await removeUserRole(user.userId, 'Role1')).toIncludeSameMembers(['Role2']);
         expect(await getUserRoles(user.userId)).toIncludeSameMembers(['Role2']);
-        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers(['Role2']);
+        expect((await getUserInfo(user.sid)).roles).toIncludeSameMembers(['Role2']);
 
         // remove Role3 (not existing)
         expect(await removeUserRole(user.userId, 'Role3')).toIncludeSameMembers(['Role2']);
         expect(await getUserRoles(user.userId)).toIncludeSameMembers(['Role2']);
-        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers(['Role2']);
+        expect((await getUserInfo(user.sid)).roles).toIncludeSameMembers(['Role2']);
 
         // remove Role2
         expect(await removeUserRole(user.userId, 'Role2')).toIncludeSameMembers([]);
         expect(await getUserRoles(user.userId)).toIncludeSameMembers([]);
-        expect((await getUserInfo(user.sid!)).roles).toIncludeSameMembers([]);
+        expect((await getUserInfo(user.sid)).roles).toIncludeSameMembers([]);
     });
 });
