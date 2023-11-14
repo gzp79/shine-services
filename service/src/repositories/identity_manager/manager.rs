@@ -160,8 +160,9 @@ impl IdentityManager {
     pub async fn delete_token(&self, user_id: Uuid, token: &str) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
         Tokens::new(&client, &inner.stmts_tokens)
-            .delete_token(user_id, token)
+            .delete_token(user_id, &token_hash)
             .await
     }
 

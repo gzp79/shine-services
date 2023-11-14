@@ -85,7 +85,7 @@ Redis session data TTL:
 - Validity:
   1. On session creation a new redis entry is added with a relative ttl.
   2. Session cookie has a scope of `session`, but this is only for convenience for the good clients. Cookie lifetime does not effect the validity of a session, but
-  dropping a session on the client side reduces the chance for compromised cookies. Also whenever possible client should log out.
+  dropping a session on the client side reduces the chance for compromised cookies. Also whenever possible client should logout.
   3. During session validation only the redis key existence is considered. The `created_at` from the sentinel is used only for an approximate session length information.
   4. Session length uses only the server clocks (multiple instance may exist at once) and session validation uses only the redis clock through the key expiration.
   5. For multi region redis the existence of the key in the used node counts and servers should check it only once for a request at the beginning (entry point) even for a longer, multi-service operation. In this case pass the result of the session validation to the other parties as usual.

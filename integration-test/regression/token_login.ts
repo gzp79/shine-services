@@ -223,8 +223,8 @@ describe('(Interactive) token flow', () => {
         const site_info = {
             'user-agent': 'agent',
             'cf-region': 'region',
-            'cf-city': 'city',
-            'cf-country': 'country'
+            'cf-ipcity': 'city',
+            'cf-ipcountry': 'country'
         };
 
         const user = await TestUser.createGuest({ extraHeaders: site_info });
@@ -234,8 +234,8 @@ describe('(Interactive) token flow', () => {
             await getUserInfo(user.sid, {
                 ...site_info,
                 'cf-region': 'new-region',
-                'cf-city': 'new-city',
-                'cf-country': 'new-country'
+                'cf-ipcity': 'new-city',
+                'cf-ipcountry': 'new-country'
             })
         ).toBeGuestUser();
 

@@ -1,14 +1,12 @@
 import request from 'superagent';
-import { getPageRedirectUrl } from '$lib/page_utils';
-import { ActiveSession, UserInfo, getCookies, getSessions, getUserInfo, logout } from '$lib/auth_utils';
+import { ActiveSession, getSessions, logout } from '$lib/auth_utils';
 import config from '../test.config';
-import { Cookie } from 'tough-cookie';
-import { ExternalUser, TestUser } from '$lib/user';
 import Oauth2MockServer from '$lib/mocks/oauth2';
 import { loginWithOAuth2, loginWithToken } from '$lib/login_utils';
 import { MockServer } from '$lib/mock_server';
+import { TestUser } from '$lib/user';
 
-describe('Active session', () => {
+describe('Active sessions', () => {
     let mock!: MockServer;
 
     // assume server is not off more than a few seconds and the test is fast enough
@@ -40,9 +38,9 @@ describe('Active session', () => {
     it('Session should keep site-info', async () => {
         const extraHeaders = {
             'user-agent': 'agent',
-            'cf-country': 'country',
+            'cf-ipcountry': 'country',
             'cf-region': 'region',
-            'cf-city': 'city'
+            'cf-ipcity': 'city'
         };
 
         const user = await TestUser.createGuest({ extraHeaders });
@@ -65,7 +63,7 @@ describe('Active session', () => {
         // initial session for a new user
         expect(await getSessions(user.sid)).toIncludeSameMembers([{ ...anySession, region: 'r1' }]);
 
-        // log in from a new country (agent is not altered, to bypass fingerprint check)
+        // login from a new country (agent is not altered, to bypass fingerprint check)
         const userCookies2 = await loginWithToken(user.tid!, { 'cf-region': 'r2' });
         const sid2 = userCookies2.sid.value;
         expect(await getSessions(sid2)).toIncludeSameMembers([
@@ -86,7 +84,7 @@ describe('Active session', () => {
             extraHeaders: { 'cf-region': 'r1' }
         });
 
-        // log in a few more times
+        // login a few more times
         await loginWithOAuth2(user.externalUser!, false, { 'cf-region': 'r2' });
         await loginWithOAuth2(user.externalUser!, false, { 'cf-region': 'r3' });
         expect(await getSessions(user.sid)).toIncludeSameMembers([
@@ -98,7 +96,7 @@ describe('Active session', () => {
         //logout from the all the session
         await logout(user.sid, true);
 
-        //logo in again and check sessions
+        //login again and check sessions
         const newUserCookies = await loginWithOAuth2(user.externalUser!, false, { 'cf-region': 'r4' });
         expect(await getSessions(newUserCookies.sid.value)).toIncludeSameMembers([
             { ...anySession, region: 'r4' }

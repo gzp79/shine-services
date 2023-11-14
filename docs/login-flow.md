@@ -44,7 +44,7 @@ After completing the authorization of the external provider
   - Enters the game
 
 If there is a user in the system with an email and the new login would use the same email, the user is requested to log in with the other provider and perform a link. Optionally
-we could send a one-time token to log in to the email.
+we could send a one-time token to login to the email.
 
 #### Returning user
 
