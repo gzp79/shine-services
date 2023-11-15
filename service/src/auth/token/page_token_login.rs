@@ -6,12 +6,7 @@ use crate::{
     openapi::ApiKind,
     repositories::IdentityError,
 };
-use axum::{
-    body::HttpBody,
-    extract::State,
-    headers::{authorization::Basic, Authorization},
-    TypedHeader,
-};
+use axum::{body::HttpBody, extract::State};
 use serde::Deserialize;
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, SiteInfo, ValidatedQuery, ValidationError},
@@ -40,16 +35,6 @@ enum RememberMe {
     No,
 }
 
-fn get_token_from_header(header: Authorization<Basic>, remember_me: bool) -> Option<(Uuid, String, RememberMe)> {
-    let user_id = Uuid::parse_str(header.username()).ok()?;
-    let token = header.password().to_owned();
-    Some((
-        user_id,
-        token,
-        if remember_me { RememberMe::Yes } else { RememberMe::No },
-    ))
-}
-
 fn get_token_from_session(auth_session: &AuthSession) -> Option<(Uuid, String, RememberMe)> {
     auth_session
         .token_login
@@ -60,7 +45,6 @@ fn get_token_from_session(auth_session: &AuthSession) -> Option<(Uuid, String, R
 async fn token_login(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
-    auth_header: Option<TypedHeader<Authorization<Basic>>>,
     fingerprint: ClientFingerprint,
     site_info: SiteInfo,
     query: Result<ValidatedQuery<Query>, ValidationError>,
@@ -70,13 +54,17 @@ async fn token_login(
         Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), None),
     };
 
+    // todo:
+    //  query token is present, clear cookies, perform a login and create new remember me token. Make sure token is a single access token or reject as if token were invalid
+    //  if bearer token is present same as for query token but allow any type of token (exchange token for session cookie).
+    //  if session is present, reject with logout required
+    //  use token cookie as a last chance with token rotation (primary, secondary tokens)
+
     if auth_session.user.is_some() {
         return state.page_error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref());
     }
 
-    let token = auth_header
-        .and_then(|header| get_token_from_header(header.0, query.remember_me.unwrap_or(false)))
-        .or_else(|| get_token_from_session(&auth_session));
+    let token = get_token_from_session(&auth_session);
 
     let (identity, remember_me) = if let Some((user_id, token, remember_me)) = token {
         log::debug!("Token found, performing a simple login...");

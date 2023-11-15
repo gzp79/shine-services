@@ -163,6 +163,7 @@ export async function getSessions(
 export interface ActiveToken {
     userId: string;
     kind: string;
+    tokenFingerprint: string;
     createdAt: Date;
     expireAt: Date;
     isExpired: boolean;

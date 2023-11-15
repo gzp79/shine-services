@@ -321,12 +321,17 @@ where
             .1)
     }
 
-    pub async fn delete_token(&mut self, user_id: Uuid, token_hash: &str) -> Result<(), IdentityError> {
-        self.stmts_tokens
+    pub async fn delete_token(&mut self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
+        let count = self
+            .stmts_tokens
             .delete
             .execute(self.client, &user_id, &token_hash)
             .await?;
-        Ok(())
+        if count == 1 {
+            Ok(Some(()))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn delete_all_tokens(&mut self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {

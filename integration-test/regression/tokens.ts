@@ -1,12 +1,13 @@
 import request from 'superagent';
 import { ActiveToken, getTokens, logout } from '$lib/auth_utils';
 import config from '../test.config';
-import { ExternalUser, TestUser } from '$lib/user';
+import { TestUser } from '$lib/user';
 import Oauth2MockServer from '$lib/mocks/oauth2';
 import { loginWithOAuth2 } from '$lib/login_utils';
 import { MockServer } from '$lib/mock_server';
+import { getPageRedirectUrl } from '$lib/page_utils';
 
-describe('Active remember me tokens', () => {
+describe('Tokens', () => {
     let mock!: MockServer;
 
     // assume server is not off more than a few seconds and the test is fast enough
@@ -15,6 +16,7 @@ describe('Active remember me tokens', () => {
     const expireRange = [new Date(now + 13 * 24 * 60 * 60 * 1000), new Date(now + 15 * 24 * 60 * 60 * 1000)];
     const anyToken: ActiveToken = {
         userId: expect.toBeString(),
+        tokenFingerprint: expect.toBeString(),
         kind: 'autoRenewal',
         createdAt: expect.toBeBetween(createRange[0], createRange[1]),
         expireAt: expect.toBeBetween(expireRange[0], expireRange[1]),
@@ -61,7 +63,7 @@ describe('Active remember me tokens', () => {
         ]);
     });
 
-    it('Multiple remember-me login should create multiple tokens', async () => {
+    it('Multiple login with remember-me should create multiple tokens', async () => {
         mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
 
         const user = await TestUser.createLinked({ rememberMe: true, extraHeaders: { 'cf-ipcity': 'r1' } });
@@ -117,5 +119,50 @@ describe('Active remember me tokens', () => {
         //login again and check if no token is present
         const newUserCookies = await loginWithOAuth2(user.externalUser!, false, { 'cf-region': 'r4' });
         expect(await getTokens(newUserCookies.sid.value)).toBeEmpty();
+    });
+
+    it('Revoke token', async () => {
+        mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
+
+        const user = await TestUser.createLinked({
+            rememberMe: true,
+            extraHeaders: { 'cf-ipcity': 'r1' }
+        });
+        const cookies2 = await loginWithOAuth2(user.externalUser!, true, { 'cf-ipcity': 'r2' });
+        const tid2 = cookies2.tid.value;
+        await loginWithOAuth2(user.externalUser!, true, { 'cf-ipcity': 'r3' });
+
+        let tokens = await getTokens(user.sid);
+        expect(tokens).toIncludeSameMembers([
+            { ...anyToken, city: 'r1' },
+            { ...anyToken, city: 'r2' },
+            { ...anyToken, city: 'r3' }
+        ]);
+
+        // find the 2nd token and revoke it
+        const tokenId = tokens.find((x) => x.city === 'r2')!.tokenFingerprint;
+        let responseDelete = await request
+            .delete(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
+            .set('Cookie', [`sid=${user.sid}`])
+            .send();
+        expect(responseDelete.statusCode).toEqual(200);
+
+        // not in the list
+        expect(await getTokens(user.sid)).toIncludeSameMembers([
+            { ...anyToken, city: 'r1' },
+            { ...anyToken, city: 'r3' }
+        ]);
+
+        // login should fail with the revoked token
+        const responseLogin = await request
+            .get(config.getUrlFor('identity/auth/token/login'))
+            .query(config.defaultRedirects)
+            .set('Cookie', [`tid=${tid2}`])
+            .send()
+            .catch((err) => err.response);
+        expect(responseLogin.statusCode).toEqual(200);
+        expect(getPageRedirectUrl(responseLogin.text)).toEqual(
+            config.defaultRedirects.errorUrl + '?type=sessionExpired&status=401'
+        );
     });
 });

@@ -6,7 +6,7 @@ import { loginWithOAuth2, loginWithToken } from '$lib/login_utils';
 import { MockServer } from '$lib/mock_server';
 import { TestUser } from '$lib/user';
 
-describe('Active sessions', () => {
+describe('Sessions', () => {
     let mock!: MockServer;
 
     // assume server is not off more than a few seconds and the test is fast enough
