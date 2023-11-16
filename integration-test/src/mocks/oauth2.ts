@@ -6,11 +6,14 @@ import { body, validationResult } from 'express-validator';
 
 export interface ServerConfig {
     tls?: Certificates;
+    url: string;
 }
 
 export default class Server extends MockServer {
-    constructor(public readonly config: ServerConfig) {
-        super('oauth2', 8090, config.tls);
+    constructor(config: ServerConfig) {
+        const url = new URL('oauth2', config.url);
+        url.port = '8090';
+        super('openid', url, config.tls);
     }
 
     protected init() {

@@ -128,7 +128,8 @@ export async function getUserInfo(
         .get(config.getUrlFor('identity/api/auth/user/info'))
         .set('Cookie', [`sid=${cookieValue}`])
         .set(extraHeaders ?? {})
-        .send();
+        .send()
+        .catch((err) => err.response);
     expect(response.statusCode).toEqual(200);
     //expect(response.body).toBeInstanceOf(UserInfo);
     return response.body;
@@ -151,7 +152,8 @@ export async function getSessions(
         .get(config.getUrlFor('identity/api/auth/user/sessions'))
         .set('Cookie', [`sid=${cookieValue}`])
         .set(extraHeaders ?? {})
-        .send();
+        .send()
+        .catch((err) => err.response);
     expect(response.statusCode).toEqual(200);
 
     response.body?.sessions?.forEach((s: ActiveSession) => {
@@ -181,7 +183,8 @@ export async function getTokens(
         .get(config.getUrlFor('identity/api/auth/user/tokens'))
         .set('Cookie', [`sid=${cookieValue}`])
         .set(extraHeaders ?? {})
-        .send();
+        .send()
+        .catch((err) => err.response);
     expect(response.statusCode).toEqual(200);
 
     response.body?.tokens?.forEach((t: ActiveToken) => {
@@ -209,7 +212,8 @@ export async function getExternalLinks(
         .get(config.getUrlFor('identity/api/auth/user/links'))
         .set('Cookie', [`sid=${cookieValue}`])
         .set(extraHeaders ?? {})
-        .send();
+        .send()
+        .catch((err) => err.response);
     expect(response.statusCode).toEqual(200);
 
     response.body?.links?.forEach((l: ExternalLink) => {
@@ -219,10 +223,11 @@ export async function getExternalLinks(
     return response.body?.links ?? [];
 }
 
-export async function logout(cookieValue: string, everywhere: boolean): Promise<void> {
+export async function logout(cookieValue: string, terminateAll: boolean): Promise<void> {
     let response = await request
-        .get(config.getUrlFor(`/identity/auth/logout?terminateAll=${everywhere}`))
+        .get(config.getUrlFor(`/identity/auth/logout?terminateAll=${terminateAll}`))
         .set('Cookie', [`sid=${cookieValue}`])
-        .send();
+        .send()
+        .catch((err) => err.response);
     expect(response.statusCode).toEqual(200);
 }

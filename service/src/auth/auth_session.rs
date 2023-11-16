@@ -215,6 +215,8 @@ where
         //todo: if let Some(uid) = user.as_ref().map(|u| u.user_id) &&
         //let Some(tid) = token_login.as_ref().map(|t| t.user_id) &&
         //tid != uid {
+
+        // check if the users are matching in the session and token
         if token_login.is_some()
             && user.is_some()
             && token_login.as_ref().map(|t| t.user_id) != user.as_ref().map(|u| u.user_id)
@@ -222,6 +224,8 @@ where
             log::info!("user session is not matching to the token, dropping user session");
             user = None;
         }
+
+        // check if the users are matching in the session and external login
         if external_login.is_some()
             && external_login
                 .as_ref()

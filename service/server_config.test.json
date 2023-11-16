@@ -45,20 +45,7 @@
         "ttlSession": 43200,
         "ttlRememberMe": 1209600,
         "ttlSingleAccess": 600,
-        "openidIgnoreDiscoveryError": true,
-        "openid": {
-            "openid_flow": {
-                "discoveryUrl": "https://mockbox.com:8090/openid",
-                "scopes": [
-                    "openid",
-                    "email",
-                    "profile"
-                ],
-                "ignoreCertificates": true,
-                "clientId": "someClientId",
-                "clientSecret": "someClientSecret"
-            }
-        },
+        "openidIgnoreDiscoveryError": true,        
         "oauth2": {
             "oauth2_flow": {
                 "authorizationUrl": "https://mockbox.com:8090/oauth2/authorize",
@@ -73,6 +60,19 @@
                 "ignoreCertificates": true,
                 "clientId": "someClientId2",
                 "clientSecret": "someClientSecret2"
+            }
+        },
+        "openid": {
+            "openid_flow": {
+                "discoveryUrl": "https://mockbox.com:8091/openid",
+                "scopes": [
+                    "openid",
+                    "email",
+                    "profile"
+                ],
+                "ignoreCertificates": true,
+                "clientId": "someClientId",
+                "clientSecret": "someClientSecret"
             }
         }
     }

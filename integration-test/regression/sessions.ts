@@ -1,14 +1,12 @@
 import request from 'superagent';
 import { ActiveSession, getSessions, logout } from '$lib/auth_utils';
 import config from '../test.config';
-import Oauth2MockServer from '$lib/mocks/oauth2';
+import OAuth2MockServer from '$lib/mocks/oauth2';
 import { loginWithOAuth2, loginWithToken } from '$lib/login_utils';
-import { MockServer } from '$lib/mock_server';
 import { TestUser } from '$lib/user';
+import { MockServer } from '$lib/mock_server';
 
 describe('Sessions', () => {
-    let mock!: MockServer;
-
     // assume server is not off more than a few seconds and the test is fast enough
     const now = new Date().getTime();
     const dateRange = [new Date(now - 60 * 1000), new Date(now + 60 * 1000)];
@@ -21,13 +19,19 @@ describe('Sessions', () => {
         city: null
     };
 
+    let mock!: MockServer;
+    const startMock = async (): Promise<OAuth2MockServer> => {
+        mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
+        await mock.start();
+        return mock as OAuth2MockServer;
+    };
+
     afterEach(async () => {
         await mock?.stop();
         mock = undefined!;
     });
 
-    it('Get session without user should fail', async () => {
-        // initial session for a new user
+    it('Get token without a session shall fail', async () => {
         let response = await request
             .get(config.getUrlFor('identity/api/auth/user/sessions'))
             .send()
@@ -35,7 +39,7 @@ describe('Sessions', () => {
         expect(response.statusCode).toEqual(401);
     });
 
-    it('Session should keep site-info', async () => {
+    it('Session shall keep the site info', async () => {
         const extraHeaders = {
             'user-agent': 'agent',
             'cf-ipcountry': 'country',
@@ -57,7 +61,7 @@ describe('Sessions', () => {
         ]);
     });
 
-    it('Multiple login should create multiple sessions', async () => {
+    it('Multiple login shall create multiple session and logout from a session shall invalidate the connected session', async () => {
         const user = await TestUser.createGuest({ extraHeaders: { 'cf-region': 'r1' } });
 
         // initial session for a new user
@@ -76,17 +80,16 @@ describe('Sessions', () => {
         expect(await getSessions(user.sid)).toIncludeSameMembers([{ ...anySession, region: 'r1' }]);
     });
 
-    it('Logout from all session', async () => {
-        mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
-
-        const user = await TestUser.createLinked({
+    it('Multiple login shall create multiple session and logout with terminateAll shall invalidate all of them', async () => {
+        const mock = await startMock();
+        const user = await TestUser.createLinked(mock, {
             rememberMe: true,
             extraHeaders: { 'cf-region': 'r1' }
         });
 
         // login a few more times
-        await loginWithOAuth2(user.externalUser!, false, { 'cf-region': 'r2' });
-        await loginWithOAuth2(user.externalUser!, false, { 'cf-region': 'r3' });
+        await loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r2' });
+        await loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r3' });
         expect(await getSessions(user.sid)).toIncludeSameMembers([
             { ...anySession, region: 'r1' },
             { ...anySession, region: 'r2' },
@@ -97,7 +100,7 @@ describe('Sessions', () => {
         await logout(user.sid, true);
 
         //login again and check sessions
-        const newUserCookies = await loginWithOAuth2(user.externalUser!, false, { 'cf-region': 'r4' });
+        const newUserCookies = await loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r4' });
         expect(await getSessions(newUserCookies.sid.value)).toIncludeSameMembers([
             { ...anySession, region: 'r4' }
         ]);
