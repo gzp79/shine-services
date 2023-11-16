@@ -9,7 +9,7 @@ mod tokens;
 mod versioned_update;
 
 pub use self::{
-    external_links::ExternalUserInfo,
+    external_links::{ExternalLink, ExternalUserInfo},
     identities::{Identity, IdentityKind},
     identity_error::*,
     manager::IdentityManager,

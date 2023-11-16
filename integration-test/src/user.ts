@@ -1,7 +1,7 @@
 import request from 'superagent';
 import config from '../test.config';
 import { createUrlQueryString, generateRandomString } from '$lib/string_utils';
-import { createGuestUser, loginWithOAuth2 } from './login_utils';
+import { createGuestUser, loginWithOAuth2, loginWithOpenId } from './login_utils';
 import { getUserInfo } from './auth_utils';
 import { randomUUID } from 'crypto';
 
@@ -37,6 +37,8 @@ export class ExternalUser {
         });
     }
 }
+
+export type AuthProvider = 'oauth2' | 'oidc';
 
 export class TestUser {
     public externalUser?: ExternalUser;
@@ -85,6 +87,7 @@ export class TestUser {
         name?: string;
         email?: string;
         rememberMe?: boolean;
+        provider?: AuthProvider;
         extraHeaders?: Record<string, string>;
     }): Promise<TestUser> {
         const id = randomUUID().toString();
@@ -92,7 +95,16 @@ export class TestUser {
         const email = props?.email ?? name + '@example.com';
         const user = new ExternalUser(id, name, email);
 
-        const cookies = await loginWithOAuth2(user, props?.rememberMe ?? false, props?.extraHeaders);
+        let cookies;
+        switch (props?.provider ?? 'oauth2') {
+            case 'oauth2':
+                cookies = await loginWithOAuth2(user, props?.rememberMe ?? false, props?.extraHeaders);
+                break;
+            case 'oidc':
+                cookies = await loginWithOpenId(user, props?.rememberMe ?? false, props?.extraHeaders);
+                break;
+        }
+
         {
             // add roles using api key
             const info = await getUserInfo(cookies.sid.value, props?.extraHeaders);

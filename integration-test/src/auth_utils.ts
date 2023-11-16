@@ -154,8 +154,8 @@ export async function getSessions(
         .send();
     expect(response.statusCode).toEqual(200);
 
-    response.body?.sessions?.forEach((session: ActiveSession) => {
-        session.createdAt = new Date(session.createdAt);
+    response.body?.sessions?.forEach((s: ActiveSession) => {
+        s.createdAt = new Date(s.createdAt);
     });
     return response.body?.sessions ?? [];
 }
@@ -184,12 +184,39 @@ export async function getTokens(
         .send();
     expect(response.statusCode).toEqual(200);
 
-    response.body?.tokens?.forEach((session: ActiveToken) => {
-        session.createdAt = new Date(session.createdAt);
-        session.expireAt = new Date(session.expireAt);
+    response.body?.tokens?.forEach((t: ActiveToken) => {
+        t.createdAt = new Date(t.createdAt);
+        t.expireAt = new Date(t.expireAt);
     });
 
     return response.body?.tokens ?? [];
+}
+
+export interface ExternalLink {
+    userId: string;
+    provider: string;
+    providerUserId: string;
+    linkedAt: Date;
+    name: string | null;
+    email: string | null;
+}
+
+export async function getExternalLinks(
+    cookieValue: string,
+    extraHeaders?: Record<string, string>
+): Promise<ExternalLink[]> {
+    let response = await request
+        .get(config.getUrlFor('identity/api/auth/user/links'))
+        .set('Cookie', [`sid=${cookieValue}`])
+        .set(extraHeaders ?? {})
+        .send();
+    expect(response.statusCode).toEqual(200);
+
+    response.body?.links?.forEach((l: ExternalLink) => {
+        l.linkedAt = new Date(l.linkedAt);
+    });
+
+    return response.body?.links ?? [];
 }
 
 export async function logout(cookieValue: string, everywhere: boolean): Promise<void> {

@@ -322,6 +322,7 @@ impl AuthServiceBuilder {
             .add_api(auth::ep_token_get(), doc)
             .add_api(auth::ep_token_list(), doc)
             .add_api(auth::ep_token_delete(), doc)
+            .add_api(auth::ep_external_link_list(), doc)
             .with_state(self.state);
 
         (page_router, api_router)

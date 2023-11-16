@@ -1,5 +1,5 @@
 use crate::repositories::{
-    DBError, ExternalUserInfo, Identity, IdentityBuildError, IdentityError, TokenInfo, TokenKind,
+    DBError, ExternalLink, ExternalUserInfo, Identity, IdentityBuildError, IdentityError, TokenInfo, TokenKind,
 };
 use chrono::Duration;
 use ring::digest;
@@ -115,6 +115,15 @@ impl IdentityManager {
 
         ExternalLinks::new(&client, &inner.stmts_external_links)
             .link_user(user_id, external_user)
+            .await
+    }
+
+    pub async fn list_find_links(&self, user_id: Uuid) -> Result<Vec<ExternalLink>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+
+        ExternalLinks::new(&client, &inner.stmts_external_links)
+            .find_all(user_id)
             .await
     }
 
