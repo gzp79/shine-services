@@ -118,6 +118,20 @@ impl IdentityManager {
             .await
     }
 
+    pub async fn unlink_user(
+        &self,
+        user_id: Uuid,
+        provider: &str,
+        provider_id: &str,
+    ) -> Result<Option<()>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+
+        ExternalLinks::new(&client, &inner.stmts_external_links)
+            .delete_link(user_id, provider, provider_id)
+            .await
+    }
+
     pub async fn list_find_links(&self, user_id: Uuid) -> Result<Vec<ExternalLink>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;

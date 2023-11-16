@@ -77,10 +77,21 @@ pg_query!( ListByUserId =>
     "#
 );
 
+pg_query!( DeleteLink =>
+    in = user_id: Uuid, provider: &str, provider_id: &str;
+    sql = r#"
+        DELETE FROM external_logins
+            WHERE user_id = $1
+                AND provider = $2
+                AND provider_id = $3
+    "#
+);
+
 pub struct ExternalLinksStatements {
     insert: InsertExternalLogin,
     find_by_provider_id: FindByProviderId,
     list_by_user_id: ListByUserId,
+    delete_link: DeleteLink,
 }
 
 impl ExternalLinksStatements {
@@ -89,6 +100,7 @@ impl ExternalLinksStatements {
             insert: InsertExternalLogin::new(client).await?,
             find_by_provider_id: FindByProviderId::new(client).await?,
             list_by_user_id: ListByUserId::new(client).await?,
+            delete_link: DeleteLink::new(client).await?,
         })
     }
 }
@@ -177,5 +189,24 @@ where
                 created: row.created,
                 version: row.version,
             }))
+    }
+
+    pub async fn delete_link(
+        &mut self,
+        user_id: Uuid,
+        provider: &str,
+        provider_id: &str,
+    ) -> Result<Option<()>, IdentityError> {
+        let count = self
+            .stmts_external_links
+            .delete_link
+            .execute(self.client, &user_id, &provider, &provider_id)
+            .await?;
+
+        if count == 1 {
+            Ok(Some(()))
+        } else {
+            Ok(None)
+        }
     }
 }

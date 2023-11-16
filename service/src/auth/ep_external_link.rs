@@ -1,13 +1,14 @@
 use crate::{auth::AuthServiceState, openapi::ApiKind, repositories::ExternalLink};
 use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem},
+    axum::{ApiEndpoint, ApiMethod, Problem, ValidatedPath},
     service::CheckedCurrentUser,
 };
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
+use validator::Validate;
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -65,4 +66,49 @@ where
         .with_tag("auth")
         .with_schema::<LinkedExternalProvider>()
         .with_json_response::<LinkedExternalProviders>(StatusCode::OK)
+}
+
+#[derive(Deserialize, Validate, IntoParams)]
+#[serde(rename_all = "camelCase")]
+struct ProviderSelectPathParam {
+    provider: String,
+    provider_id: String,
+}
+
+async fn external_link_delete(
+    State(state): State<AuthServiceState>,
+    user: CheckedCurrentUser,
+    ValidatedPath(params): ValidatedPath<ProviderSelectPathParam>,
+) -> Result<(), Problem> {
+    let link = state
+        .identity_manager()
+        .unlink_user(user.user_id, &params.provider, &params.provider_id)
+        .await
+        .map_err(Problem::internal_error_from)?;
+
+    if link.is_none() {
+        Err(Problem::not_found().with_instance(format!(
+            "{{auth_api}}/user/links/{}/{}",
+            params.provider, params.provider_id
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+pub fn ep_external_link_delete<B>() -> ApiEndpoint<AuthServiceState, B>
+where
+    B: HttpBody + Send + 'static,
+    B::Data: Send,
+    B::Error: Into<BoxError>,
+{
+    ApiEndpoint::new(
+        ApiMethod::Delete,
+        ApiKind::Api("/auth/user/links/:provider/:providerId"),
+        external_link_delete,
+    )
+    .with_operation_id("external_link_delete")
+    .with_tag("auth")
+    .with_path_parameter::<ProviderSelectPathParam>()
+    .with_status_response(StatusCode::OK, "Token revoked")
 }

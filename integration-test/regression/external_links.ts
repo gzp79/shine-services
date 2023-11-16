@@ -4,6 +4,7 @@ import OpenIdMockServer from '$lib/mocks/openid';
 import { ExternalUser, TestUser } from '$lib/user';
 import { ExternalLink, getExternalLinks } from '$lib/auth_utils';
 import { linkWithOAuth2, linkWithOpenId } from '$lib/login_utils';
+import request from 'superagent';
 
 describe('External links', () => {
     const now = new Date().getTime();
@@ -15,6 +16,21 @@ describe('External links', () => {
         linkedAt: expect.toBeBetween(linkRange[0], linkRange[1]),
         name: expect.anything(),
         email: expect.anything()
+    };
+
+    const unlink = async (
+        cookieValue: string,
+        provider: string,
+        providerUserId: string,
+        extraHeaders?: Record<string, string>
+    ): Promise<number> => {
+        let response = await request
+            .delete(config.getUrlFor(`identity/api/auth/user/links/${provider}/${providerUserId}`))
+            .set('Cookie', [`sid=${cookieValue}`])
+            .set(extraHeaders ?? {})
+            .send()
+            .catch((err) => err.response);
+        return response.statusCode;
     };
 
     let mockOAuth2: OAuth2MockServer;
@@ -49,7 +65,8 @@ describe('External links', () => {
 
     it('Sign up with OAuth2 shall create a link and delete link shall work', async () => {
         const user = await TestUser.createLinked(mockOAuth2);
-        expect(await getExternalLinks(user.sid)).toIncludeSameMembers([
+        const links = await getExternalLinks(user.sid);
+        expect(links).toIncludeSameMembers([
             {
                 ...anyLink,
                 provider: 'oauth2_flow',
@@ -59,13 +76,15 @@ describe('External links', () => {
             }
         ]);
 
-        //todo: unlink
-        //expect(await getExternalLinks(user.sid)).toBeEmpty();
+        expect(await unlink(user.sid, links[0].provider, links[0].providerUserId)).toEqual(200);
+        expect(await getExternalLinks(user.sid)).toBeEmpty();
+        expect(await unlink(user.sid, links[0].provider, links[0].providerUserId)).toEqual(404);
     });
 
     it('Sign up with OpenId shall create a link and delete link shall work', async () => {
         const user = await TestUser.createLinked(mockOpenId);
-        expect(await getExternalLinks(user.sid)).toIncludeSameMembers([
+        const links = await getExternalLinks(user.sid);
+        expect(links).toIncludeSameMembers([
             {
                 ...anyLink,
                 provider: 'openid_flow',
@@ -75,8 +94,9 @@ describe('External links', () => {
             }
         ]);
 
-        //todo: unlink
-        //expect(await getExternalLinks(user.sid)).toBeEmpty();
+        expect(await unlink(user.sid, links[0].provider, links[0].providerUserId)).toEqual(200);
+        expect(await getExternalLinks(user.sid)).toBeEmpty();
+        expect(await unlink(user.sid, links[0].provider, links[0].providerUserId)).toEqual(404);
     });
 
     it('Link to multiple provider and delete links shall work', async () => {
@@ -86,7 +106,8 @@ describe('External links', () => {
         const l1 = ExternalUser.newRandomUser();
         await linkWithOAuth2(mockOAuth2, user.sid, l1);
         const links1 = await getExternalLinks(user.sid);
-        const t1 = links1.find((l) => l.userId === l1.id)!;
+        console.log(links1);
+        const t1 = links1.find((l) => l.providerUserId === l1.id)!;
         expect(links1).toIncludeSameMembers([
             { ...anyLink, provider: 'oauth2_flow', email: l1.email, name: l1.name }
         ]);
@@ -94,7 +115,7 @@ describe('External links', () => {
         const l2 = ExternalUser.newRandomUser();
         await linkWithOpenId(mockOpenId, user.sid, l2);
         const links2 = await getExternalLinks(user.sid);
-        const t2 = links2.find((l) => l.userId === l2.id)!;
+        const t2 = links2.find((l) => l.providerUserId === l2.id)!;        
         expect(links2).toIncludeSameMembers([
             { ...anyLink, provider: 'oauth2_flow', email: l1.email, name: l1.name },
             { ...anyLink, provider: 'openid_flow', email: l2.email, name: l2.name }
@@ -117,7 +138,19 @@ describe('External links', () => {
             { ...anyLink, provider: 'openid_flow', email: l4.email, name: l4.name }
         ]);
 
-        //delete t1
-        //delete t2
+        expect(await unlink(user.sid, t1.provider, t1.providerUserId)).toEqual(200);
+        expect(await getExternalLinks(user.sid)).toIncludeSameMembers([
+            { ...anyLink, provider: 'openid_flow', email: l2.email, name: l2.name },
+            { ...anyLink, provider: 'oauth2_flow', email: l3.email, name: l3.name },
+            { ...anyLink, provider: 'openid_flow', email: l4.email, name: l4.name }
+        ]);
+        expect(await unlink(user.sid, t1.provider, t1.providerUserId)).toEqual(404);
+
+        expect(await unlink(user.sid, t2.provider, t2.providerUserId)).toEqual(200);
+        expect(await getExternalLinks(user.sid)).toIncludeSameMembers([
+            { ...anyLink, provider: 'oauth2_flow', email: l3.email, name: l3.name },
+            { ...anyLink, provider: 'openid_flow', email: l4.email, name: l4.name }
+        ]);
+        expect(await unlink(user.sid, t2.provider, t2.providerUserId)).toEqual(404);
     });
 });
