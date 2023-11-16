@@ -20,24 +20,25 @@ import { randomUUID } from 'crypto';
 describe('Check OpenId auth', () => {
     let mock: MockServer | undefined;
 
+    const startMock = async (): Promise<OpenIdMockServer> => {
+        if (!mock) {
+            mock = new OpenIdMockServer({
+                tls: config.mockTLS,
+                url: config.mockUrl,
+                jwks: config.openidJWKS
+            });
+            await mock.start();
+        }
+        return mock as OpenIdMockServer;
+    };
+
     afterEach(async () => {
         await mock?.stop();
         mock = undefined;
     });
 
-    async function startMock() {
-        if (!mock) {
-            mock = await new OpenIdMockServer({
-                tls: config.mockTLS,
-                mockUrl: config.mockUrl,
-                openidJWKS: config.openidJWKS
-            }).start();
-        }
-    }
-
     it('Auth with (parameters: NO, cookie: NO) shall fail', async () => {
         await startMock();
-
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
             .send()
@@ -56,8 +57,8 @@ describe('Check OpenId auth', () => {
     });
 
     it('Auth with (parameters: VALID, cookie: NO) shall fail', async () => {
-        await startMock();
-        const { authParams } = await startLoginWithOpenId();
+        const mock = await startMock();
+        const { authParams } = await startLoginWithOpenId(mock);
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
             .query({
@@ -80,8 +81,8 @@ describe('Check OpenId auth', () => {
     });
 
     it('Auth with (parameters: NO, cookie: VALID) shall fail', async () => {
-        await startMock();
-        const { authParams, eid } = await startLoginWithOpenId();
+        const mock = await startMock();
+        const { authParams, eid } = await startLoginWithOpenId(mock);
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
             .set('Cookie', [`eid=${eid.value}`])
@@ -101,8 +102,8 @@ describe('Check OpenId auth', () => {
     });
 
     it('Auth with (parameters: INVALID state, cookie: VALID) shall fail', async () => {
-        await startMock();
-        const { authParams, eid } = await startLoginWithOpenId();
+        const mock = await startMock();
+        const { authParams, eid } = await startLoginWithOpenId(mock);
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
             .query({
@@ -126,8 +127,8 @@ describe('Check OpenId auth', () => {
     });
 
     it('Auth with (parameters: INVALID code, cookie: VALID) shall fail', async () => {
-        await startMock();
-        const { authParams, eid } = await startLoginWithOpenId();
+        const mock = await startMock();
+        const { authParams, eid } = await startLoginWithOpenId(mock);
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
             .query({
@@ -151,11 +152,13 @@ describe('Check OpenId auth', () => {
     });
 
     it('Auth with failing 3rd party token service shall fail', async () => {
-        // intentionally not started: await startMock()
-        await startMock();
-        await mock?.stop();
-        mock = undefined;
-        const { authParams, eid } = await startLoginWithOpenId();
+        // mock is intentionally not started
+        const mock = new OpenIdMockServer({
+            tls: config.mockTLS,
+            url: config.mockUrl,
+            jwks: config.openidJWKS
+        });
+        const { authParams, eid } = await startLoginWithOpenId(mock);
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
             .query({
@@ -186,14 +189,15 @@ describe('Check OpenId auth', () => {
 });
 
 describe('Login with OpenId', () => {
-    let mock!: MockServer;
+    let mock!: OpenIdMockServer;
 
     beforeEach(async () => {
-        mock = await new OpenIdMockServer({
+        mock = new OpenIdMockServer({
             tls: config.mockTLS,
-            mockUrl: config.mockUrl,
-            openidJWKS: config.openidJWKS
-        }).start();
+            url: config.mockUrl,
+            jwks: config.openidJWKS
+        });
+        await mock.start();
     });
 
     afterEach(async () => {
@@ -237,7 +241,7 @@ describe('Login with OpenId', () => {
 
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
-        expect(redirectUrl).toStartWith(config.getMockUrlFor('openid/authorize'));
+        expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
 
         const authCookies = getCookies(response);
         expect(authCookies.tid).toBeClearCookie();
@@ -257,7 +261,7 @@ describe('Login with OpenId', () => {
 
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
-        expect(redirectUrl).toStartWith(config.getMockUrlFor('openid/authorize'));
+        expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
 
         const authCookies = getCookies(response);
         expect(authCookies.tid).toBeClearCookie();
@@ -267,7 +271,7 @@ describe('Login with OpenId', () => {
 
     it('Login with (token cookie: NO, session: NO, rememberMe: false) shall succeed and register a new user', async () => {
         const user = ExternalUser.newRandomUser();
-        const cookies = await loginWithOpenId(user, false);
+        const cookies = await loginWithOpenId(mock, user, false);
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
@@ -278,7 +282,7 @@ describe('Login with OpenId', () => {
 
     it('Login with (token cookie: NO, session: NO, rememberMe: true) shall succeed and register a new user', async () => {
         const user = ExternalUser.newRandomUser();
-        const cookies = await loginWithOpenId(user, true);
+        const cookies = await loginWithOpenId(mock, user, true);
         expect(cookies.tid).toBeValidTID();
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
@@ -288,12 +292,10 @@ describe('Login with OpenId', () => {
     });
 
     it('Login with occupied email shall fail', async () => {
-        const user = await TestUser.createLinked({
-            provider: 'openId',
-            email: generateRandomString(5) + '@example.com'
-        });
+        const user = await TestUser.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
 
         const response = await requestLoginWithOpenId(
+            mock,
             new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email)
         );
         expect(response.statusCode).toEqual(200);
@@ -303,15 +305,15 @@ describe('Login with OpenId', () => {
     });
 
     it('Login with the same external user shall succeed', async () => {
-        const user = await TestUser.createLinked({ provider: 'openId' });
+        const user = await TestUser.createLinked(mock);
 
-        const newUserCookies = await loginWithOpenId(user.externalUser!);
+        const newUserCookies = await loginWithOpenId(mock, user.externalUser!);
         expect(newUserCookies.sid.value, 'It shall be a new session').not.toEqual(user.sid);
         expect((await getUserInfo(newUserCookies.sid.value)).userId).toEqual(user.userId);
     });
 
     it('Login with the returned token shall be a success', async () => {
-        const user = await TestUser.createLinked({ provider: 'openId', rememberMe: true });
+        const user = await TestUser.createLinked(mock, { rememberMe: true });
 
         const newUserCookies = await loginWithToken(user.tid!);
         expect(newUserCookies.sid.value, 'It shall be a new session').not.toEqual(user.sid);
@@ -320,14 +322,15 @@ describe('Login with OpenId', () => {
 });
 
 describe('Link to OpenId account', () => {
-    let mock!: MockServer;
+    let mock!: OpenIdMockServer;
 
     beforeEach(async () => {
-        mock = await new OpenIdMockServer({
+        mock = new OpenIdMockServer({
             tls: config.mockTLS,
-            mockUrl: config.mockUrl,
-            openidJWKS: config.openidJWKS
-        }).start();
+            url: config.mockUrl,
+            jwks: config.openidJWKS
+        });
+        await mock.start();
     });
 
     afterEach(async () => {
@@ -341,7 +344,6 @@ describe('Link to OpenId account', () => {
             .query({ ...config.defaultRedirects })
             .send()
             .catch((err) => err.response);
-
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=loginRequired&status=401'
@@ -349,12 +351,9 @@ describe('Link to OpenId account', () => {
     });
 
     it('Linking with occupied email shall succeed', async () => {
-        const user = await TestUser.createLinked({
-            provider: 'openId',
-            email: generateRandomString(5) + '@example.com'
-        });
-
+        const user = await TestUser.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
         const response = await requestLinkWithOpenId(
+            mock,
             user.sid,
             new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email)
         );
@@ -363,12 +362,8 @@ describe('Link to OpenId account', () => {
     });
 
     it('Linking with occupied external user shall fail', async () => {
-        const user = await TestUser.createLinked({
-            provider: 'openId',
-            email: generateRandomString(5) + '@example.com'
-        });
-
-        const response = await requestLinkWithOpenId(user.sid, user.externalUser!);
+        const user = await TestUser.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
+        const response = await requestLinkWithOpenId(mock, user.sid, user.externalUser!);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=providerAlreadyUsed&status=409'

@@ -2,14 +2,12 @@ import request from 'superagent';
 import { ActiveToken, getTokens, logout } from '$lib/auth_utils';
 import config from '../test.config';
 import { TestUser } from '$lib/user';
-import Oauth2MockServer from '$lib/mocks/oauth2';
+import OAuth2MockServer from '$lib/mocks/oauth2';
 import { loginWithOAuth2 } from '$lib/login_utils';
-import { MockServer } from '$lib/mock_server';
 import { getPageRedirectUrl } from '$lib/page_utils';
+import { MockServer } from '$lib/mock_server';
 
 describe('Tokens', () => {
-    let mock!: MockServer;
-
     // assume server is not off more than a few seconds and the test is fast enough
     const now = new Date().getTime();
     const createRange = [new Date(now - 60 * 1000), new Date(now + 60 * 1000)];
@@ -25,6 +23,13 @@ describe('Tokens', () => {
         country: null,
         region: null,
         city: null
+    };
+
+    let mock!: MockServer;
+    const startMock = async (): Promise<OAuth2MockServer> => {
+        mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
+        await mock.start();
+        return mock as OAuth2MockServer;
     };
 
     afterEach(async () => {
@@ -64,15 +69,17 @@ describe('Tokens', () => {
     });
 
     it('Multiple login with rememberMe shall create multiple tokens and logout from a session shall invalidate the connected token', async () => {
-        mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
-
-        const user = await TestUser.createLinked({ rememberMe: true, extraHeaders: { 'cf-ipcity': 'r1' } });
+        const mock = await startMock();
+        const user = await TestUser.createLinked(mock, {
+            rememberMe: true,
+            extraHeaders: { 'cf-ipcity': 'r1' }
+        });
 
         // initial session for a new user
         expect(await getTokens(user.sid)).toIncludeSameMembers([{ ...anyToken, city: 'r1' }]);
 
         // login and create new token
-        const userCookies2 = await loginWithOAuth2(user.externalUser!, true, { 'cf-ipcity': 'r2' });
+        const userCookies2 = await loginWithOAuth2(mock, user.externalUser!, true, { 'cf-ipcity': 'r2' });
         const sid2 = userCookies2.sid.value;
         const tid2 = userCookies2.tid.value;
         expect(await getTokens(user.sid)).toIncludeSameMembers([
@@ -81,7 +88,7 @@ describe('Tokens', () => {
         ]);
 
         // login but don't create new token
-        await loginWithOAuth2(user.externalUser!, false, { 'cf-ipcity': 'r3' });
+        await loginWithOAuth2(mock, user.externalUser!, false, { 'cf-ipcity': 'r3' });
         expect(await getTokens(user.sid)).toIncludeSameMembers([
             { ...anyToken, city: 'r1' },
             { ...anyToken, city: 'r2' }
@@ -100,16 +107,15 @@ describe('Tokens', () => {
     });
 
     it('Multiple login with rememberMe shall create multiple tokens and logout with terminateAll shall invalidate all of them', async () => {
-        mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
-
-        const user = await TestUser.createLinked({
+        const mock = await startMock();
+        const user = await TestUser.createLinked(mock, {
             rememberMe: true,
             extraHeaders: { 'cf-ipcity': 'r1' }
         });
 
         // login a few more times
-        await loginWithOAuth2(user.externalUser!, true, { 'cf-ipcity': 'r2' });
-        await loginWithOAuth2(user.externalUser!, true, { 'cf-ipcity': 'r3' });
+        await loginWithOAuth2(mock, user.externalUser!, true, { 'cf-ipcity': 'r2' });
+        await loginWithOAuth2(mock, user.externalUser!, true, { 'cf-ipcity': 'r3' });
         expect(await getTokens(user.sid)).toIncludeSameMembers([
             { ...anyToken, city: 'r1' },
             { ...anyToken, city: 'r2' },
@@ -120,20 +126,19 @@ describe('Tokens', () => {
         await logout(user.sid, true);
 
         //login again and check if no token is present
-        const newUserCookies = await loginWithOAuth2(user.externalUser!, false, { 'cf-region': 'r4' });
+        const newUserCookies = await loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r4' });
         expect(await getTokens(newUserCookies.sid.value)).toBeEmpty();
     });
 
     it('Delete token by hash shall revoke the token', async () => {
-        mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
-
-        const user = await TestUser.createLinked({
+        const mock = await startMock();
+        const user = await TestUser.createLinked(mock, {
             rememberMe: true,
             extraHeaders: { 'cf-ipcity': 'r1' }
         });
-        const cookies2 = await loginWithOAuth2(user.externalUser!, true, { 'cf-ipcity': 'r2' });
+        const cookies2 = await loginWithOAuth2(mock, user.externalUser!, true, { 'cf-ipcity': 'r2' });
         const tid2 = cookies2.tid.value;
-        await loginWithOAuth2(user.externalUser!, true, { 'cf-ipcity': 'r3' });
+        await loginWithOAuth2(mock, user.externalUser!, true, { 'cf-ipcity': 'r3' });
 
         let tokens = await getTokens(user.sid);
         expect(tokens).toIncludeSameMembers([

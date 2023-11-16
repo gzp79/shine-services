@@ -4,6 +4,9 @@ import { createUrlQueryString, generateRandomString } from '$lib/string_utils';
 import { createGuestUser, loginWithOAuth2, loginWithOpenId } from './login_utils';
 import { getUserInfo } from './auth_utils';
 import { randomUUID } from 'crypto';
+import { MockServer } from './mock_server';
+import OAuth2MockServer from '$lib/mocks/oauth2';
+import OpenIdMockServer from '$lib/mocks/openid';
 
 export interface UserInfo {
     userId: string;
@@ -82,27 +85,28 @@ export class TestUser {
         return testUser;
     }
 
-    public static async createLinked(props?: {
-        roles?: string[];
-        name?: string;
-        email?: string;
-        rememberMe?: boolean;
-        provider?: AuthProvider;
-        extraHeaders?: Record<string, string>;
-    }): Promise<TestUser> {
+    public static async createLinked(
+        mock: MockServer,
+        props?: {
+            roles?: string[];
+            name?: string;
+            email?: string;
+            rememberMe?: boolean;
+            extraHeaders?: Record<string, string>;
+        }
+    ): Promise<TestUser> {
         const id = randomUUID().toString();
         const name = props?.name ?? 'Random_' + generateRandomString(5);
         const email = props?.email ?? name + '@example.com';
         const user = new ExternalUser(id, name, email);
 
         let cookies;
-        switch (props?.provider ?? 'oauth2') {
-            case 'oauth2':
-                cookies = await loginWithOAuth2(user, props?.rememberMe ?? false, props?.extraHeaders);
-                break;
-            case 'openId':
-                cookies = await loginWithOpenId(user, props?.rememberMe ?? false, props?.extraHeaders);
-                break;
+        if (mock instanceof OAuth2MockServer) {
+            cookies = await loginWithOAuth2(mock, user, props?.rememberMe ?? false, props?.extraHeaders);
+        } else if (mock instanceof OpenIdMockServer) {
+            cookies = await loginWithOpenId(mock, user, props?.rememberMe ?? false, props?.extraHeaders);
+        } else {
+            throw new Error('Invalid mock server type');
         }
 
         {

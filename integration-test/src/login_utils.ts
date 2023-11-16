@@ -4,6 +4,8 @@ import config from '../test.config';
 import { Cookie } from 'tough-cookie';
 import { getCookies } from './auth_utils';
 import { ExternalUser } from './user';
+import OAuth2MockServer from '$lib/mocks/oauth2';
+import OpenIdMockServer from '$lib/mocks/openid';
 
 export async function createGuestUser(
     extraHeaders?: Record<string, string>
@@ -72,6 +74,7 @@ export async function requestStartLoginWithOAuth2(
 }
 
 export async function startLoginWithOAuth2(
+    mock: OAuth2MockServer,
     rememberMe?: boolean,
     extraHeaders?: Record<string, string>
 ): Promise<StartLoginResult> {
@@ -79,7 +82,7 @@ export async function startLoginWithOAuth2(
 
     expect(response.statusCode).toEqual(200);
     const redirectUrl = getPageRedirectUrl(response.text);
-    expect(redirectUrl).toStartWith(config.getMockUrlFor('oauth2/authorize'));
+    expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
 
     const cookies = getCookies(response);
     expect(cookies.tid).toBeClearCookie();
@@ -91,11 +94,12 @@ export async function startLoginWithOAuth2(
 }
 
 export async function requestLoginWithOAuth2(
+    mock: OAuth2MockServer,
     user: ExternalUser,
     rememberMe?: boolean,
     extraHeaders?: Record<string, string>
 ): Promise<any> {
-    const start = await startLoginWithOAuth2(rememberMe, extraHeaders);
+    const start = await startLoginWithOAuth2(mock, rememberMe, extraHeaders);
 
     return await request
         .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
@@ -110,11 +114,12 @@ export async function requestLoginWithOAuth2(
 }
 
 export async function loginWithOAuth2(
+    mock: OAuth2MockServer,
     user: ExternalUser,
     rememberMe?: boolean,
     extraHeaders?: Record<string, string>
 ): Promise<Record<string, Cookie>> {
-    const response = await requestLoginWithOAuth2(user, rememberMe, extraHeaders);
+    const response = await requestLoginWithOAuth2(mock, user, rememberMe, extraHeaders);
 
     expect(response.statusCode).toEqual(200);
     expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
@@ -143,6 +148,7 @@ export async function requestStartLinkWithOAuth2(
 }
 
 export async function startLinkWithOAuth2(
+    mock: OAuth2MockServer,
     sid: string,
     extraHeaders?: Record<string, string>
 ): Promise<StartLoginResult> {
@@ -150,7 +156,7 @@ export async function startLinkWithOAuth2(
 
     expect(response.statusCode).toEqual(200);
     const redirectUrl = getPageRedirectUrl(response.text);
-    expect(redirectUrl).toStartWith(config.getMockUrlFor('oauth2/authorize'));
+    expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
 
     const cookies = getCookies(response);
     expect(cookies.tid).toBeClearCookie();
@@ -163,11 +169,12 @@ export async function startLinkWithOAuth2(
 }
 
 export async function requestLinkWithOAuth2(
+    mock: OAuth2MockServer,
     sid: string,
     user: ExternalUser,
     extraHeaders?: Record<string, string>
 ): Promise<any> {
-    const { authParams, eid } = await startLinkWithOAuth2(sid, extraHeaders);
+    const { authParams, eid } = await startLinkWithOAuth2(mock, sid, extraHeaders);
 
     return await request
         .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
@@ -182,11 +189,12 @@ export async function requestLinkWithOAuth2(
 }
 
 export async function linkWithOAuth2(
+    mock: OAuth2MockServer,
     sid: string,
     user: ExternalUser,
     extraHeaders?: Record<string, string>
 ): Promise<Record<string, Cookie>> {
-    const response = await requestLinkWithOAuth2(sid, user, extraHeaders);
+    const response = await requestLinkWithOAuth2(mock, sid, user, extraHeaders);
 
     expect(response.statusCode).toEqual(200);
     expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
@@ -210,13 +218,14 @@ export async function requestStartLoginWithOpenId(
 }
 
 export async function startLoginWithOpenId(
+    mock: OpenIdMockServer,
     rememberMe?: boolean,
     extraHeaders?: Record<string, string>
 ): Promise<StartLoginResult> {
     const response = await requestStartLoginWithOpenId(rememberMe, extraHeaders);
     expect(response.statusCode).toEqual(200);
     const redirectUrl = getPageRedirectUrl(response.text);
-    expect(redirectUrl).toStartWith(config.getMockUrlFor('openid/authorize'));
+    expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
 
     const cookies = getCookies(response);
     expect(cookies.tid).toBeClearCookie();
@@ -228,11 +237,12 @@ export async function startLoginWithOpenId(
 }
 
 export async function requestLoginWithOpenId(
+    mock: OpenIdMockServer,
     user: ExternalUser,
     rememberMe?: boolean,
     extraHeaders?: Record<string, string>
 ): Promise<any> {
-    const { authParams, eid } = await startLoginWithOpenId(rememberMe);
+    const { authParams, eid } = await startLoginWithOpenId(mock, rememberMe);
 
     return await request
         .get(config.getUrlFor('identity/auth/openid_flow/auth'))
@@ -247,11 +257,12 @@ export async function requestLoginWithOpenId(
 }
 
 export async function loginWithOpenId(
+    mock: OpenIdMockServer,
     user: ExternalUser,
     rememberMe?: boolean,
     extraHeaders?: Record<string, string>
 ): Promise<Record<string, Cookie>> {
-    const response = await requestLoginWithOpenId(user, rememberMe, extraHeaders);
+    const response = await requestLoginWithOpenId(mock, user, rememberMe, extraHeaders);
 
     expect(response.statusCode).toEqual(200);
     expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
@@ -280,6 +291,7 @@ export async function requestStartLinkWithOpenId(
 }
 
 export async function startLinkWithOpenId(
+    mock: OpenIdMockServer,
     sid: string,
     extraHeaders?: Record<string, string>
 ): Promise<StartLoginResult> {
@@ -287,7 +299,7 @@ export async function startLinkWithOpenId(
 
     expect(response.statusCode).toEqual(200);
     const redirectUrl = getPageRedirectUrl(response.text);
-    expect(redirectUrl).toStartWith(config.getMockUrlFor('openid/authorize'));
+    expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
 
     const cookies = getCookies(response);
     expect(cookies.tid).toBeClearCookie();
@@ -300,11 +312,12 @@ export async function startLinkWithOpenId(
 }
 
 export async function requestLinkWithOpenId(
+    mock: OpenIdMockServer,
     sid: string,
     user: ExternalUser,
     extraHeaders?: Record<string, string>
 ): Promise<any> {
-    const { authParams, eid } = await startLinkWithOpenId(sid);
+    const { authParams, eid } = await startLinkWithOpenId(mock, sid);
 
     return await request
         .get(config.getUrlFor('identity/auth/openid_flow/auth'))
@@ -319,11 +332,12 @@ export async function requestLinkWithOpenId(
 }
 
 export async function linkWithOpenId(
+    mock: OpenIdMockServer,
     sid: string,
     user: ExternalUser,
     extraHeaders?: Record<string, string>
 ): Promise<Record<string, Cookie>> {
-    const response = await requestLinkWithOpenId(sid, user, extraHeaders);
+    const response = await requestLinkWithOpenId(mock, sid, user, extraHeaders);
 
     expect(response.statusCode).toEqual(200);
     expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);

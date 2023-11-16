@@ -4,7 +4,7 @@ import express, { Express } from 'express';
 import { Send, Request, Response, Query } from 'express-serve-static-core';
 import { Server } from 'http';
 import { Socket } from 'net';
-import { delay } from './utils';
+import { delay, joinURL } from './utils';
 
 export interface TypedRequest<T extends Query, U> extends Request {
     body: U;
@@ -24,22 +24,32 @@ export class MockServer {
     app: Express = undefined!;
     server: Server = undefined!;
     connections: Socket[] = [];
+    port: string;
 
     constructor(
         public readonly name: string,
-        public readonly port: number,
+        public readonly baseUrl: URL,
         public readonly tls?: Certificates
-    ) {}
+    ) {
+        if (this.baseUrl.port === '' || this.baseUrl.port === '0' || this.baseUrl.port === undefined) {
+            throw new Error(`Port is not defined in the base use (${this.baseUrl})`);
+        }
+        this.port = this.baseUrl.port;
+    }
 
     public get isRunning(): boolean {
         return this.app !== undefined;
+    }
+
+    public getUrlFor(path: string): string {
+        return joinURL(this.baseUrl, path);
     }
 
     protected log(message: string) {
         console.log(`[${this.name}] ${message}`);
     }
 
-    public async start(): Promise<MockServer> {
+    public async start() {
         if (this.isRunning) {
             throw new Error('Server has already been started');
         }
@@ -69,8 +79,6 @@ export class MockServer {
         });
 
         this.log('Server started.');
-
-        return this;
     }
 
     public async stop() {

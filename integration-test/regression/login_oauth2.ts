@@ -3,8 +3,7 @@ import os from 'os';
 import { getPageRedirectUrl } from '$lib/page_utils';
 import { getCookies, getUserInfo, logout } from '$lib/auth_utils';
 import config from '../test.config';
-import { MockServer } from '$lib/mock_server';
-import Oauth2MockServer from '$lib/mocks/oauth2';
+import OAuth2MockServer from '$lib/mocks/oauth2';
 import { ExternalUser, TestUser } from '$lib/user';
 import {
     createGuestUser,
@@ -16,20 +15,23 @@ import {
 } from '$lib/login_utils';
 import { randomUUID } from 'crypto';
 import { generateRandomString } from '$lib/string_utils';
+import { MockServer } from '$lib/mock_server';
 
 describe('Check OAuth2 auth', () => {
     let mock: MockServer | undefined;
+
+    const startMock = async (): Promise<OAuth2MockServer> => {
+        if (!mock) {
+            mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
+            await mock.start();
+        }
+        return mock as OAuth2MockServer;
+    };
 
     afterEach(async () => {
         await mock?.stop();
         mock = undefined;
     });
-
-    async function startMock() {
-        if (!mock) {
-            mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
-        }
-    }
 
     it('Auth with (parameters: NO, cookie: NO) shall fail', async () => {
         await startMock();
@@ -51,8 +53,8 @@ describe('Check OAuth2 auth', () => {
     });
 
     it('Auth with (parameters: VALID, cookie: NO) shall fail', async () => {
-        await startMock();
-        const { authParams } = await startLoginWithOAuth2();
+        const mock = await startMock();
+        const { authParams } = await startLoginWithOAuth2(mock);
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
             .query({
@@ -75,8 +77,8 @@ describe('Check OAuth2 auth', () => {
     });
 
     it('Auth with (parameters: NO, cookie: VALID) shall fail', async () => {
-        await startMock();
-        const { authParams, eid } = await startLoginWithOAuth2();
+        const mock = await startMock();
+        const { eid } = await startLoginWithOAuth2(mock);
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
             .set('Cookie', [`eid=${eid.value}`])
@@ -96,8 +98,8 @@ describe('Check OAuth2 auth', () => {
     });
 
     it('Auth with (parameters: INVALID state, cookie: VALID) shall fail', async () => {
-        await startMock();
-        const { authParams, eid } = await startLoginWithOAuth2();
+        const mock = await startMock();
+        const { eid } = await startLoginWithOAuth2(mock);
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
             .query({
@@ -121,13 +123,8 @@ describe('Check OAuth2 auth', () => {
     });
 
     it('Auth with (parameters: INVALID code, cookie: VALID) shall fail', async () => {
-        await startMock();
-        const response2 = await request
-            .post(config.getMockUrlFor('oauth2/token'))
-            .send()
-            .catch((err) => err.response);
-
-        const { authParams, eid } = await startLoginWithOAuth2();
+        const mock = await startMock();
+        const { authParams, eid } = await startLoginWithOAuth2(mock);
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
             .query({
@@ -151,8 +148,9 @@ describe('Check OAuth2 auth', () => {
     });
 
     it('Auth with failing 3rd party token service shall fail', async () => {
-        // intentionally not started: await startMock();
-        const { authParams, eid } = await startLoginWithOAuth2();
+        // mock is intentionally not started
+        const mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
+        const { authParams, eid } = await startLoginWithOAuth2(mock);
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
             .query({
@@ -183,10 +181,11 @@ describe('Check OAuth2 auth', () => {
 });
 
 describe('Login with OAuth2', () => {
-    let mock!: MockServer;
+    let mock!: OAuth2MockServer;
 
     beforeEach(async () => {
-        mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
+        mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
+        await mock.start();
     });
 
     afterEach(async () => {
@@ -230,7 +229,7 @@ describe('Login with OAuth2', () => {
 
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
-        expect(redirectUrl).toStartWith(config.getMockUrlFor('oauth2/authorize'));
+        expect(redirectUrl).toStartWith(mock!.getUrlFor('authorize'));
 
         const authCookies = getCookies(response);
         expect(authCookies.tid).toBeClearCookie();
@@ -250,7 +249,7 @@ describe('Login with OAuth2', () => {
 
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
-        expect(redirectUrl).toStartWith(config.getMockUrlFor('oauth2/authorize'));
+        expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
 
         const authCookies = getCookies(response);
         expect(authCookies.tid).toBeClearCookie();
@@ -260,7 +259,7 @@ describe('Login with OAuth2', () => {
 
     it('Login with (token cookie: NO, session: NO, rememberMe: false) shall succeed and register a new user', async () => {
         const user = ExternalUser.newRandomUser();
-        const cookies = await loginWithOAuth2(user, false);
+        const cookies = await loginWithOAuth2(mock, user, false);
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
@@ -271,7 +270,7 @@ describe('Login with OAuth2', () => {
 
     it('Login with (token cookie: NO, session: NO, rememberMe: true) shall succeed and register a new user', async () => {
         const user = ExternalUser.newRandomUser();
-        const cookies = await loginWithOAuth2(user, true);
+        const cookies = await loginWithOAuth2(mock, user, true);
         expect(cookies.tid).toBeValidTID();
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
@@ -281,12 +280,9 @@ describe('Login with OAuth2', () => {
     });
 
     it('Login with occupied email shall fail', async () => {
-        const user = await TestUser.createLinked({
-            provider: 'oauth2',
-            email: generateRandomString(5) + '@example.com'
-        });
-
+        const user = await TestUser.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
         const response = await requestLoginWithOAuth2(
+            mock,
             new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email)
         );
         expect(response.statusCode).toEqual(200);
@@ -296,16 +292,14 @@ describe('Login with OAuth2', () => {
     });
 
     it('Login with the same external user shall succeed', async () => {
-        const user = await TestUser.createLinked({ provider: 'oauth2' });
-
-        const newUserCookies = await loginWithOAuth2(user.externalUser!);
+        const user = await TestUser.createLinked(mock);
+        const newUserCookies = await loginWithOAuth2(mock, user.externalUser!);
         expect(newUserCookies.sid.value, 'It shall be a new session').not.toEqual(user.sid);
         expect((await getUserInfo(newUserCookies.sid.value)).userId).toEqual(user.userId);
     });
 
     it('Login with the returned token shall be a success', async () => {
-        const user = await TestUser.createLinked({ provider: 'oauth2', rememberMe: true });
-
+        const user = await TestUser.createLinked(mock, { rememberMe: true });
         const newUserCookies = await loginWithToken(user.tid!);
         expect(newUserCookies.sid.value, 'It shall be a new session').not.toEqual(user.sid);
         expect((await getUserInfo(newUserCookies.sid.value)).userId).toEqual(user.userId);
@@ -313,10 +307,11 @@ describe('Login with OAuth2', () => {
 });
 
 describe('Link to OAuth2 account', () => {
-    let mock!: MockServer;
+    let mock!: OAuth2MockServer;
 
     beforeEach(async () => {
-        mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
+        mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
+        await mock.start();
     });
 
     afterEach(async () => {
@@ -330,7 +325,6 @@ describe('Link to OAuth2 account', () => {
             .query({ ...config.defaultRedirects })
             .send()
             .catch((err) => err.response);
-
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=loginRequired&status=401'
@@ -338,12 +332,9 @@ describe('Link to OAuth2 account', () => {
     });
 
     it('Linking with occupied email shall succeed', async () => {
-        const user = await TestUser.createLinked({
-            provider: 'oauth2',
-            email: generateRandomString(5) + '@example.com'
-        });
-
+        const user = await TestUser.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
         const response = await requestLinkWithOAuth2(
+            mock,
             user.sid,
             new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email)
         );
@@ -352,12 +343,8 @@ describe('Link to OAuth2 account', () => {
     });
 
     it('Linking with occupied external user shall fail', async () => {
-        const user = await TestUser.createLinked({
-            provider: 'oauth2',
-            email: generateRandomString(5) + '@example.com'
-        });
-
-        const response = await requestLinkWithOAuth2(user.sid, user.externalUser!);
+        const user = await TestUser.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
+        const response = await requestLinkWithOAuth2(mock, user.sid, user.externalUser!);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=providerAlreadyUsed&status=409'

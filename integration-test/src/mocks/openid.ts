@@ -7,16 +7,18 @@ import { JWK, JWT } from 'ts-jose';
 
 interface ServerConfig {
     tls?: Certificates;
-    mockUrl: string;
-    openidJWKS: any;
+    url: string;
+    jwks: any;
 }
 
 export default class Server extends MockServer {
-    private readonly baseUrl: string;
+    public readonly config: ServerConfig;
 
-    constructor(public readonly config: ServerConfig) {
-        super('openid', 8090, config.tls);
-        this.baseUrl = new URL('openid', this.config.mockUrl).toString();
+    constructor(config: ServerConfig) {
+        const url = new URL('openid', config.url);
+        url.port = '8091';
+        super('openid', url, config.tls);
+        this.config = config;
     }
 
     protected init() {
@@ -41,7 +43,7 @@ export default class Server extends MockServer {
         );
 
         app.get('/openid/jwks', (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
-            res.status(200).json({ keys: [this.config.openidJWKS] });
+            res.status(200).json({ keys: [this.config.jwks] });
         });
 
         const validate = [
@@ -70,7 +72,7 @@ export default class Server extends MockServer {
                 return;
             }
 
-            const issuer = this.baseUrl;
+            const issuer = this.baseUrl.toString();
             const audience = 'someClientId';
 
             const payload = {
@@ -84,13 +86,13 @@ export default class Server extends MockServer {
                 email: user.email
             };
 
-            const key = await JWK.fromObject(this.config.openidJWKS);
+            const key = await JWK.fromObject(this.config.jwks);
             const idToken = await JWT.sign(payload, key, {
-                alg: this.config.openidJWKS.alg,
+                alg: this.config.jwks.alg,
                 issuer: issuer,
                 audience: audience,
                 //expiresIn: '1h',
-                kid: this.config.openidJWKS.kid
+                kid: this.config.jwks.kid
             });
 
             this.log(`id-token: ${idToken}`);

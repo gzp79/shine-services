@@ -1,3 +1,4 @@
+import { joinURL } from '$lib/utils';
 import fs from 'fs';
 
 export class Config {
@@ -5,14 +6,9 @@ export class Config {
     serviceDomain = 'cloud.sandbox.com';
     serviceUrl = 'https://cloud.sandbox.com:7080';
     identityUrl = 'https://cloud.sandbox.com:7080/identity';
-    mockUrl = 'https://mockbox.com:8090';
 
     getUrlFor(path: string): string {
-        return new URL(path, this.serviceUrl).toString();
-    }
-
-    getMockUrlFor(path: string): string {
-        return new URL(path, this.mockUrl).toString();
+        return joinURL(new URL(this.serviceUrl), path);
     }
 
     defaultRedirects = {
@@ -21,6 +17,7 @@ export class Config {
         errorUrl: 'https://error.com/'
     };
 
+    mockUrl = 'https://mockbox.com';
     mockTLS = {
         cert: fs.readFileSync('../service/certs/test.crt', 'utf8'),
         key: fs.readFileSync('../service/certs/test.key', 'utf8')
