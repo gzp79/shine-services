@@ -18,8 +18,7 @@ struct Query {
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(as=CurrentUserInfo)]
-struct Response {
+struct CurrentUserInfo {
     user_id: Uuid,
     name: String,
     is_email_confirmed: bool,
@@ -29,11 +28,11 @@ struct Response {
 
 /// Get the information about the current user. The cookie is not accessible
 /// from javascript, thus this endpoint can be used to get details about the current user.
-async fn get_user_info(
+async fn user_info_get(
     State(state): State<AuthServiceState>,
     user: CheckedCurrentUser,
     ValidatedQuery(query): ValidatedQuery<Query>,
-) -> Result<Json<Response>, Problem> {
+) -> Result<Json<CurrentUserInfo>, Problem> {
     // find extra information not present in the session data
     let identity = state
         .identity_manager()
@@ -64,7 +63,7 @@ async fn get_user_info(
 
     let session_length = (Utc::now() - user.session_start).num_seconds();
     let session_length = if session_length < 0 { 0 } else { session_length as u64 };
-    Ok(Json(Response {
+    Ok(Json(CurrentUserInfo {
         user_id: user.user_id,
         name: user.name,
         is_email_confirmed: identity.is_email_confirmed,
@@ -73,12 +72,13 @@ async fn get_user_info(
     }))
 }
 
-pub fn ep_get_user_info<B>() -> ApiEndpoint<AuthServiceState, B>
+pub fn ep_user_info_get<B>() -> ApiEndpoint<AuthServiceState, B>
 where
     B: HttpBody + Send + 'static,
 {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/info"), get_user_info)
-        .with_operation_id("ep_get_user_info")
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/info"), user_info_get)
+        .with_operation_id("user_info_get")
         .with_tag("auth")
-        .with_json_response::<Response>(StatusCode::OK)
+        .with_query_parameter::<Query>()
+        .with_json_response::<CurrentUserInfo>(StatusCode::OK)
 }

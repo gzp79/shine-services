@@ -4,11 +4,20 @@
 GET {{url}}/api/auth/providers 
 ###
 
+
+##########################################################
+// Login, logout
 GET {{url}}/auth/token/login?rememberMe=true
 ###
 
-GET {{url}}/auth/token/login?rememberMe=true
-User-Agent: ag
+GET {{url}}/auth/token/login
+Authorization: Bearer 531fd7448dcc58d30122e054e2ad3f01
+###
+
+GET {{url}}/auth/logout
+###
+
+GET {{url}}/auth/logout?terminateAll=true
 ###
 
 GET {{url}}/auth/validate
@@ -17,19 +26,21 @@ GET {{url}}/auth/validate
 GET {{url}}/api/auth/user/info
 ###
 
+##########################################################
+// Sessions
 GET {{url}}/api/auth/user/sessions
 ###
 
+##########################################################
+// Tokens
 GET {{url}}/api/auth/user/tokens
 ###
 
-GET {{url}}/auth/token/login
-Authorization: Basic NmY3YzE2ZDMtYWExOC00NDJlLTkzMTItMzhhY2M2ZjRlZTA4OjRlNDkzMzMxN2VkMDI4MThmMjAxY2E2ODE0ZDFlYTFh
+@token = 7ed962cf3adc3086259a9053e59c9f13a6f919da656c93c0dace3bd3710578a3
+
+GET {{url}}/api/auth/user/tokens/{{token}}
 ###
 
-GET {{url}}/auth/logout
-###
-
-GET {{url}}/auth/logout?terminateAll=true
+DELETE {{url}}/api/auth/user/tokens/{{token}}
 ###
 

@@ -315,11 +315,13 @@ impl AuthServiceBuilder {
         };
 
         let api_router = Router::new()
-            .add_api(auth::ep_get_user_info(), doc)
-            .add_api(auth::ep_get_active_sessions(), doc)
-            .add_api(auth::ep_get_active_tokens(), doc)
-            .add_api(auth::ep_get_auth_providers(), doc)
-            .add_api(auth::ep_create_token(), doc)
+            .add_api(auth::ep_provider_list(), doc)
+            .add_api(auth::ep_user_info_get(), doc)
+            .add_api(auth::ep_session_list(), doc)
+            .add_api(auth::ep_token_create(), doc)
+            .add_api(auth::ep_token_get(), doc)
+            .add_api(auth::ep_token_list(), doc)
+            .add_api(auth::ep_token_delete(), doc)
             .with_state(self.state);
 
         (page_router, api_router)

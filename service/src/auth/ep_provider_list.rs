@@ -11,17 +11,17 @@ struct Response {
     providers: Vec<String>,
 }
 
-async fn get_auth_providers(State(state): State<AuthServiceState>) -> Json<Response> {
+async fn provider_list(State(state): State<AuthServiceState>) -> Json<Response> {
     let providers = state.providers().to_vec();
     Json(Response { providers })
 }
 
-pub fn ep_get_auth_providers<B>() -> ApiEndpoint<AuthServiceState, B>
+pub fn ep_provider_list<B>() -> ApiEndpoint<AuthServiceState, B>
 where
     B: HttpBody + Send + 'static,
 {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/providers"), get_auth_providers)
-        .with_operation_id("ep_get_auth_providers")
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/providers"), provider_list)
+        .with_operation_id("provider_list")
         .with_tag("auth")
         .with_json_response::<Response>(StatusCode::OK)
 }
