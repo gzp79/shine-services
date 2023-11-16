@@ -6,14 +6,13 @@ use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(as=AuthProviders)]
-struct Response {
+struct AuthProviders {
     providers: Vec<String>,
 }
 
-async fn provider_list(State(state): State<AuthServiceState>) -> Json<Response> {
+async fn provider_list(State(state): State<AuthServiceState>) -> Json<AuthProviders> {
     let providers = state.providers().to_vec();
-    Json(Response { providers })
+    Json(AuthProviders { providers })
 }
 
 pub fn ep_provider_list<B>() -> ApiEndpoint<AuthServiceState, B>
@@ -23,5 +22,5 @@ where
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/providers"), provider_list)
         .with_operation_id("provider_list")
         .with_tag("auth")
-        .with_json_response::<Response>(StatusCode::OK)
+        .with_json_response::<AuthProviders>(StatusCode::OK)
 }

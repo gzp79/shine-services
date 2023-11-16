@@ -44,3 +44,14 @@ GET {{url}}/api/auth/user/tokens/{{token}}
 DELETE {{url}}/api/auth/user/tokens/{{token}}
 ###
 
+##########################################################
+// Links
+
+GET {{url}}/api/auth/user/links
+###
+
+@provider = 7ed962cf3adc3086259a9053e59c9f13a6f919da656c93c0dace3bd3710578a3
+@providerId = 7ed962cf3adc3086259a9053e59c9f13a6f919da656c93c0dace3bd3710578a3
+
+DELETE {{url}}/api/auth/user/links/{{provider}}/{{providerId}}
+###

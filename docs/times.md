@@ -23,13 +23,12 @@ Identity creation time
   - API model: `IdentityInfo`
 
 Identity linking to external provider:
-- Mainly for information, not really used in application logic.
+- Only for information, not really used in application logic.
 - Based on the postgres server
 - Usages:
   - Output of the sql insert: `InsertExternalLogin`
   - Output of sql queries: `FindByLink::linked`
-  - Internal model: **TBD after (un)link issue has been done**
-  - API model: **TBD after (un)link issue has been done**
+  - model: 'ExternalLink'
  
 ## Token
 

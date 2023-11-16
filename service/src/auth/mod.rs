@@ -13,6 +13,8 @@ mod ep_session_list;
 pub use self::ep_session_list::*;
 mod ep_token;
 pub use self::ep_token::*;
+mod ep_external_link;
+pub use self::ep_external_link::*;
 mod ep_user_info_get;
 pub use self::ep_user_info_get::*;
 
