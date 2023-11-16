@@ -141,13 +141,28 @@ describe('Tokens', () => {
 
         // find the 2nd token and revoke it
         const tokenId = tokens.find((x) => x.city === 'r2')!.tokenFingerprint;
+        let responseGet = await request
+            .get(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
+            .set('Cookie', [`sid=${user.sid}`])
+            .send();
+        expect(responseGet.statusCode).toEqual(200);
+        expect(responseGet.body.userId).toEqual(user.userId);
+        expect(responseGet.body.city).toEqual('r2');
+        expect(responseGet.body.tokenFingerprint).toEqual(tokenId);
+
+        // revoke
         let responseDelete = await request
             .delete(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
             .set('Cookie', [`sid=${user.sid}`])
             .send();
         expect(responseDelete.statusCode).toEqual(200);
 
-        // not in the list
+        // it should be gone
+        let responseGet2 = await request
+            .get(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
+            .set('Cookie', [`sid=${user.sid}`])
+            .send().catch((err) => err.response);
+        expect(responseGet2.statusCode).toEqual(404);
         expect(await getTokens(user.sid)).toIncludeSameMembers([
             { ...anyToken, city: 'r1' },
             { ...anyToken, city: 'r3' }
