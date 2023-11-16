@@ -15,7 +15,7 @@ const config = {
             {
                 resultDir: './reports',
                 reportTitle: 'Test Report',
-                //reportSummary: true,
+                reportSummary: true,
                 log: true
             }
         ]

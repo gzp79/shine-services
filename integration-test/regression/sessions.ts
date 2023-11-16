@@ -26,8 +26,7 @@ describe('Sessions', () => {
         mock = undefined!;
     });
 
-    it('Get session without user should fail', async () => {
-        // initial session for a new user
+    it('Get token without a session shall fail', async () => {
         let response = await request
             .get(config.getUrlFor('identity/api/auth/user/sessions'))
             .send()
@@ -35,7 +34,7 @@ describe('Sessions', () => {
         expect(response.statusCode).toEqual(401);
     });
 
-    it('Session should keep site-info', async () => {
+    it('Session shall keep the site info', async () => {
         const extraHeaders = {
             'user-agent': 'agent',
             'cf-ipcountry': 'country',
@@ -57,7 +56,7 @@ describe('Sessions', () => {
         ]);
     });
 
-    it('Multiple login should create multiple sessions', async () => {
+    it('Multiple login shall create multiple session and logout from a session shall invalidate the connected session', async () => {
         const user = await TestUser.createGuest({ extraHeaders: { 'cf-region': 'r1' } });
 
         // initial session for a new user
@@ -76,7 +75,7 @@ describe('Sessions', () => {
         expect(await getSessions(user.sid)).toIncludeSameMembers([{ ...anySession, region: 'r1' }]);
     });
 
-    it('Logout from all session', async () => {
+    it('Multiple login shall create multiple session and logout with terminateAll shall invalidate all of them', async () => {
         mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
 
         const user = await TestUser.createLinked({

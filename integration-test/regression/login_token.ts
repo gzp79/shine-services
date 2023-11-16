@@ -5,12 +5,13 @@ import config from '../test.config';
 import { Cookie } from 'tough-cookie';
 import { TestUser } from '$lib/user';
 
-describe('Validate (interactive) token flow', () => {
-    it('Login with invalid input should redirect to the default error page', async () => {
+describe('Login with token', () => {
+    it('Login with (token: NO, rememberMe: INVALID) shall fail and redirect to the default error page', async () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: 'invalid value' })
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -24,11 +25,12 @@ describe('Validate (interactive) token flow', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Login without token and redirectMe should redirect user to the login page', async () => {
+    it('Login with (token: NO, redirectMe: NO) shall fail and redirect to the login page', async () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query(config.defaultRedirects)
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.loginUrl);
@@ -39,11 +41,12 @@ describe('Validate (interactive) token flow', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Login without token and with false rememberMe should redirect user to the login page', async () => {
+    it('Login with (token: NO, rememberMe: false) shall fail and redirect to the login page', async () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: false, ...config.defaultRedirects })
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.loginUrl);
@@ -54,11 +57,12 @@ describe('Validate (interactive) token flow', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Login without token with true rememberMe should register a new user', async () => {
+    it('Login with (token: NO, rememberMe: true) shall succeed and register a new user', async () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: true, ...config.defaultRedirects })
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
@@ -71,7 +75,7 @@ describe('Validate (interactive) token flow', () => {
     });
 });
 
-describe('(Interactive) token flow', () => {
+describe('Login with token for returning user', () => {
     let cookies: Record<string, Cookie> = undefined!;
     let userInfo: Omit<UserInfo, 'sessionLength'> = undefined!;
 
@@ -80,7 +84,8 @@ describe('(Interactive) token flow', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: true, ...config.defaultRedirects })
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
@@ -96,13 +101,13 @@ describe('(Interactive) token flow', () => {
         userInfo = partialUserInfo;
     });
 
-    it('Login with a session shall be an error', async () => {
+    it('Login with (session: VALID, token: NO) shall fail with logout required', async () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: true, ...config.defaultRedirects })
             .set('Cookie', [`sid=${cookies.sid.value}`])
-
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -118,12 +123,13 @@ describe('(Interactive) token flow', () => {
         expect(await getUserInfo(cookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 
-    it('Login with a session and a token is an error', async () => {
+    it('Login with (session: VALID, token: VALID) shall fail with logout required', async () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: true, ...config.defaultRedirects })
             .set('Cookie', [`sid=${cookies.sid.value}`, `tid=${cookies.tid.value}`])
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -140,13 +146,13 @@ describe('(Interactive) token flow', () => {
         expect(await getUserInfo(cookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 
-    it('Login with the token and without rememberMe shall be a success', async () => {
+    it('Login with (session: NO, token: VALID, rememberMe: None) shall succeed and login the user', async () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`tid=${cookies.tid.value}`])
-
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
@@ -160,33 +166,13 @@ describe('(Interactive) token flow', () => {
         expect(await getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 
-    it('Login with the token but altered agent shall be a failure', async () => {
-        const response = await request
-            .get(config.getUrlFor('identity/auth/token/login'))
-            .query({ ...config.defaultRedirects })
-            .set('Cookie', [`tid=${cookies.tid.value}`])
-            .set('User-Agent', 'integration-test')
-            .send();
-
-        expect(response.statusCode).toEqual(200);
-        console.log(response.text);
-        expect(getPageRedirectUrl(response.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=authError&status=400'
-        );
-        expect(response.text).toContain('&quot;InvalidToken&quot;');
-
-        const newCookies = getCookies(response);
-        expect(newCookies.tid).toBeClearCookie();
-        expect(newCookies.sid).toBeClearCookie();
-        expect(newCookies.eid).toBeClearCookie();
-    });
-
-    it('Login with the token and with false rememberMe shall be a success', async () => {
+    it('Login with (session: NO, token: VALID, rememberMe: false) shall succeed and login the user', async () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: false, ...config.defaultRedirects })
             .set('Cookie', [`tid=${cookies.tid.value}`])
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
@@ -200,12 +186,13 @@ describe('(Interactive) token flow', () => {
         expect(await getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 
-    it('Login with the token and with rememberMe shall be a success', async () => {
+    it('Login with (session: NO, token: VALID, rememberMe: true) shall succeed and login the user', async () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query({ rememberMe: true, ...config.defaultRedirects })
             .set('Cookie', [`tid=${cookies.tid.value}`])
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
@@ -219,7 +206,7 @@ describe('(Interactive) token flow', () => {
         expect(await getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 
-    it('Altering site should invalidate token', async () => {
+    it('Login with (session: NO, token: VALID, site: altered) shall succeed only if fingerprint is not altered', async () => {
         const site_info = {
             'user-agent': 'agent',
             'cf-region': 'region',
@@ -239,15 +226,15 @@ describe('(Interactive) token flow', () => {
             })
         ).toBeGuestUser();
 
-        // altering fingerprint value invalidates to session
+        // altering fingerprint value invalidates the session
         for (const mod of [{ 'user-agent': 'new-agent' }]) {
-            /*let response = await request
+            let response = await request
                 .get(config.getUrlFor('identity/api/auth/user/info'))
                 .set('Cookie', [`sid=${user.sid}`])
                 .set({ ...site_info, ...mod })
                 .send()
                 .catch((err) => err.response);
-            expect(response.statusCode).toEqual(401);*/
+            expect(response.statusCode).toEqual(401);
         }
     });
 });

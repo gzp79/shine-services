@@ -38,7 +38,7 @@ export class ExternalUser {
     }
 }
 
-export type AuthProvider = 'oauth2' | 'oidc';
+export type AuthProvider = 'oauth2' | 'openId';
 
 export class TestUser {
     public externalUser?: ExternalUser;
@@ -100,7 +100,7 @@ export class TestUser {
             case 'oauth2':
                 cookies = await loginWithOAuth2(user, props?.rememberMe ?? false, props?.extraHeaders);
                 break;
-            case 'oidc':
+            case 'openId':
                 cookies = await loginWithOpenId(user, props?.rememberMe ?? false, props?.extraHeaders);
                 break;
         }

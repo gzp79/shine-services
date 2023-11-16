@@ -6,7 +6,7 @@ import { getUserInfo } from '$lib/auth_utils';
 //import requestLogger from 'superagent-logger';
 
 // It checks only for the access of the feature, but not if it does what it have to.
-describe('User role access', () => {
+describe('Access to user role management', () => {
     let users: Record<string, TestUser> = {};
 
     beforeAll(async () => {
@@ -35,12 +35,10 @@ describe('User role access', () => {
     ];
 
     it.each(testCases)(
-        '$# Get roles. user:$user, apiKey:$apiKey, target:$targetUser',
+        'Get roles ($#) with (user:$user, apiKey:$apiKey, target:$targetUser) shall return $expectedCode',
         async (test) => {
             let target = users[test.targetUser];
-            let req = request.get(
-                config.getUrlFor(`/identity/api/identities/${target.userId}/roles`)
-            );
+            let req = request.get(config.getUrlFor(`/identity/api/identities/${target.userId}/roles`));
             if (test.user) {
                 req.set('Cookie', users[test.user].getCookies());
             }
@@ -53,12 +51,10 @@ describe('User role access', () => {
     );
 
     it.each(testCases)(
-        '$# Add role. user:$user, apiKey:$apiKey, target:$targetUser',
+        'Add role ($#) with (user:$user, apiKey:$apiKey, target:$targetUser) shall return $expectedCode',
         async (test) => {
             let target = users[test.targetUser];
-            let req = request.put(
-                config.getUrlFor(`/identity/api/identities/${target.userId}/roles`)
-            );
+            let req = request.put(config.getUrlFor(`/identity/api/identities/${target.userId}/roles`));
             if (test.user) {
                 req.set('Cookie', users[test.user].getCookies());
             }
@@ -74,12 +70,10 @@ describe('User role access', () => {
     );
 
     it.each(testCases)(
-        '$# Delete role. user:$user, apiKey:$apiKey, target:$targetUser',
+        'Delete role ($#) with (user:$user, apiKey:$apiKey, target:$targetUser) shall return $expectedCode',
         async (test) => {
             let target = users[test.targetUser];
-            let req = request.delete(
-                config.getUrlFor(`/identity/api/identities/${target.userId}/roles`)
-            );
+            let req = request.delete(config.getUrlFor(`/identity/api/identities/${target.userId}/roles`));
             if (test.user) {
                 req.set('Cookie', users[test.user].getCookies());
             }
@@ -95,14 +89,15 @@ describe('User role access', () => {
     );
 });
 
-describe('User role features', () => {
+describe('User roles', () => {
     let admin: TestUser = undefined!;
 
     const getUserRoles = async function (userId: string): Promise<string[]> {
         let response = await request
             .get(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
             .set('Cookie', admin.getCookies())
-            .send();
+            .send()
+            .catch((err) => err.response);
         expect(response.statusCode).toEqual(200);
         return response.body.roles;
     };
@@ -133,7 +128,7 @@ describe('User role features', () => {
         admin = await TestUser.createGuest({ roles: ['SuperAdmin'] });
     });
 
-    it('Getting role of non-existing user', async () => {
+    it('Getting role of non-existing user shall fail', async () => {
         let response = await request
             .get(config.getUrlFor(`/identity/api/identities/${randomUUID()}/roles`))
             .set('Cookie', admin.getCookies())
@@ -142,7 +137,7 @@ describe('User role features', () => {
         expect(response.statusCode).toEqual(404);
     });
 
-    it('Setting role of non-existing user', async () => {
+    it('Setting role of non-existing user shall fail', async () => {
         let response = await request
             .put(config.getUrlFor(`/identity/api/identities/${randomUUID()}/roles`))
             .set('Cookie', admin.getCookies())
@@ -152,7 +147,7 @@ describe('User role features', () => {
         expect(response.statusCode).toEqual(404);
     });
 
-    it('Deleting role of non-existing user', async () => {
+    it('Deleting role of non-existing user shall fail', async () => {
         let response = await request
             .delete(config.getUrlFor(`/identity/api/identities/${randomUUID()}/roles`))
             .set('Cookie', admin.getCookies())
@@ -162,7 +157,7 @@ describe('User role features', () => {
         expect(response.statusCode).toEqual(404);
     });
 
-    it('Complex flow', async () => {
+    it('A complex flow with add, get, delete shall work', async () => {
         const user = await TestUser.createGuest();
 
         expect(await getUserRoles(user.userId)).toIncludeSameMembers([]);

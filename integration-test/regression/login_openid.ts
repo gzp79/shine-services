@@ -1,20 +1,23 @@
 import request from 'superagent';
 import os from 'os';
 import { getPageRedirectUrl } from '$lib/page_utils';
-import { UserInfo, getCookies, getUserInfo, logout } from '$lib/auth_utils';
+import { getCookies, getUserInfo, logout } from '$lib/auth_utils';
 import config from '../test.config';
 import { MockServer } from '$lib/mock_server';
 import OpenIdMockServer from '$lib/mocks/openid';
-import { ExternalUser } from '$lib/user';
+import { ExternalUser, TestUser } from '$lib/user';
 import {
     createGuestUser,
     loginWithOpenId,
     loginWithToken,
+    requestLinkWithOpenId,
+    requestLoginWithOpenId,
     startLoginWithOpenId
 } from '$lib/login_utils';
-import { Cookie } from 'tough-cookie';
+import { generateRandomString } from '$lib/string_utils';
+import { randomUUID } from 'crypto';
 
-describe('Validate (interactive) OpenId auth', () => {
+describe('Check OpenId auth', () => {
     let mock: MockServer | undefined;
 
     afterEach(async () => {
@@ -32,12 +35,13 @@ describe('Validate (interactive) OpenId auth', () => {
         }
     }
 
-    it('Auth (parameters: NO, cookie: NO) should be an error', async () => {
+    it('Auth with (parameters: NO, cookie: NO) shall fail', async () => {
         await startMock();
 
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -51,7 +55,7 @@ describe('Validate (interactive) OpenId auth', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Auth (parameters: VALID, cookie: NO) should be an error', async () => {
+    it('Auth with (parameters: VALID, cookie: NO) shall fail', async () => {
         await startMock();
         const { authParams } = await startLoginWithOpenId();
         const response = await request
@@ -60,7 +64,8 @@ describe('Validate (interactive) OpenId auth', () => {
                 code: ExternalUser.newRandomUser().toCode({ nonce: authParams.nonce }),
                 state: authParams.state
             })
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -74,13 +79,14 @@ describe('Validate (interactive) OpenId auth', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Auth (parameters: NO, cookie: VALID) should be an error', async () => {
+    it('Auth with (parameters: NO, cookie: VALID) shall fail', async () => {
         await startMock();
         const { authParams, eid } = await startLoginWithOpenId();
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
             .set('Cookie', [`eid=${eid.value}`])
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -94,7 +100,7 @@ describe('Validate (interactive) OpenId auth', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Auth (parameters: INVALID state, cookie: VALID) should be an error', async () => {
+    it('Auth with (parameters: INVALID state, cookie: VALID) shall fail', async () => {
         await startMock();
         const { authParams, eid } = await startLoginWithOpenId();
         const response = await request
@@ -104,7 +110,8 @@ describe('Validate (interactive) OpenId auth', () => {
                 state: 'invalid'
             })
             .set('Cookie', [`eid=${eid.value}`])
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -118,7 +125,7 @@ describe('Validate (interactive) OpenId auth', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Auth (parameters: INVALID code, cookie: VALID) should be an error', async () => {
+    it('Auth with (parameters: INVALID code, cookie: VALID) shall fail', async () => {
         await startMock();
         const { authParams, eid } = await startLoginWithOpenId();
         const response = await request
@@ -128,7 +135,8 @@ describe('Validate (interactive) OpenId auth', () => {
                 state: authParams.state
             })
             .set('Cookie', [`eid=${eid.value}`])
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -142,7 +150,7 @@ describe('Validate (interactive) OpenId auth', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Auth with failing 3rd party (token service) should be an error', async () => {
+    it('Auth with failing 3rd party token service shall fail', async () => {
         // intentionally not started: await startMock()
         await startMock();
         await mock?.stop();
@@ -155,7 +163,8 @@ describe('Validate (interactive) OpenId auth', () => {
                 state: authParams.state
             })
             .set('Cookie', [`eid=${eid.value}`])
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -176,7 +185,7 @@ describe('Validate (interactive) OpenId auth', () => {
     });
 });
 
-describe('Validate (interactive) OpenId login', () => {
+describe('Login with OpenId', () => {
     let mock!: MockServer;
 
     beforeEach(async () => {
@@ -192,14 +201,15 @@ describe('Validate (interactive) OpenId login', () => {
         mock = undefined!;
     });
 
-    it('Login with a session should be an error', async () => {
+    it('Login with (token cookie: NO, session: VALID) shall fail', async () => {
         const { sid } = await createGuestUser();
 
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`sid=${sid.value}`])
-            .send();
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -214,34 +224,16 @@ describe('Validate (interactive) OpenId login', () => {
         expect(authCookies.eid).toBeClearCookie();
     });
 
-    it('Login with with an expired session should be a success', async () => {
+    it('Login with (token cookie: NO, session: EXPIRED) shall succeed', async () => {
         const { sid } = await createGuestUser();
         await logout(sid.value, false);
 
         const response = await request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
-            .query({ ...config.defaultRedirects })
-            .set('Cookie', [`sid=${sid.value}`])
-            .send();
-
-        expect(response.statusCode).toEqual(200);
-        const redirectUrl = getPageRedirectUrl(response.text);
-        expect(redirectUrl).toStartWith(config.getMockUrlFor('oauth2/authorize'));
-
-        const authCookies = getCookies(response);
-        expect(authCookies.tid).toBeClearCookie();
-        expect(authCookies.sid).toBeClearCookie();
-        expect(authCookies.eid).toBeValidEID();
-    });
-
-    it('Login with a user and with a token should be a success', async () => {
-        const { tid } = await createGuestUser();
-
-        const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/login'))
             .query({ ...config.defaultRedirects })
-            .set('Cookie', [`tid=${tid.value}`])
-            .send();
+            .set('Cookie', [`sid=${sid.value}`])
+            .send()
+            .catch((err) => err.response);
 
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
@@ -253,18 +245,27 @@ describe('Validate (interactive) OpenId login', () => {
         expect(authCookies.eid).toBeValidEID();
     });
 
-    it('Login with a new user should register the user', async () => {
-        const user = ExternalUser.newRandomUser();
-        const cookies = await loginWithOpenId(user);
-        expect(cookies.tid).toBeClearCookie();
-        expect(cookies.sid).toBeValidSID();
-        expect(cookies.eid).toBeClearCookie();
+    it('Login with (token cookie: VALID, session: VALID) shall succeed', async () => {
+        const { tid } = await createGuestUser();
 
-        const userInfo = await getUserInfo(cookies.sid.value);
-        expect(userInfo.name).toEqual(user.name);
+        const response = await request
+            .get(config.getUrlFor('identity/auth/openid_flow/login'))
+            .query({ ...config.defaultRedirects })
+            .set('Cookie', [`tid=${tid.value}`])
+            .send()
+            .catch((err) => err.response);
+
+        expect(response.statusCode).toEqual(200);
+        const redirectUrl = getPageRedirectUrl(response.text);
+        expect(redirectUrl).toStartWith(config.getMockUrlFor('openid/authorize'));
+
+        const authCookies = getCookies(response);
+        expect(authCookies.tid).toBeClearCookie();
+        expect(authCookies.sid).toBeClearCookie();
+        expect(authCookies.eid).toBeValidEID();
     });
 
-    it('Login with a new user and with false rememberMe should register the user', async () => {
+    it('Login with (token cookie: NO, session: NO, rememberMe: false) shall succeed and register a new user', async () => {
         const user = ExternalUser.newRandomUser();
         const cookies = await loginWithOpenId(user, false);
         expect(cookies.tid).toBeClearCookie();
@@ -275,7 +276,7 @@ describe('Validate (interactive) OpenId login', () => {
         expect(userInfo.name).toEqual(user.name);
     });
 
-    it('Login with a new user and with true rememberMe should register the user', async () => {
+    it('Login with (token cookie: NO, session: NO, rememberMe: true) shall succeed and register a new user', async () => {
         const user = ExternalUser.newRandomUser();
         const cookies = await loginWithOpenId(user, true);
         expect(cookies.tid).toBeValidTID();
@@ -285,13 +286,41 @@ describe('Validate (interactive) OpenId login', () => {
         const userInfo = await getUserInfo(cookies.sid.value);
         expect(userInfo.name).toEqual(user.name);
     });
+
+    it('Login with occupied email shall fail', async () => {
+        const user = await TestUser.createLinked({
+            provider: 'openId',
+            email: generateRandomString(5) + '@example.com'
+        });
+
+        const response = await requestLoginWithOpenId(
+            new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email)
+        );
+        expect(response.statusCode).toEqual(200);
+        expect(getPageRedirectUrl(response.text)).toEqual(
+            config.defaultRedirects.errorUrl + '?type=emailAlreadyUsed&status=409'
+        );
+    });
+
+    it('Login with the same external user shall succeed', async () => {
+        const user = await TestUser.createLinked({ provider: 'openId' });
+
+        const newUserCookies = await loginWithOpenId(user.externalUser!);
+        expect(newUserCookies.sid.value, 'It shall be a new session').not.toEqual(user.sid);
+        expect((await getUserInfo(newUserCookies.sid.value)).userId).toEqual(user.userId);
+    });
+
+    it('Login with the returned token shall be a success', async () => {
+        const user = await TestUser.createLinked({ provider: 'openId', rememberMe: true });
+
+        const newUserCookies = await loginWithToken(user.tid!);
+        expect(newUserCookies.sid.value, 'It shall be a new session').not.toEqual(user.sid);
+        expect((await getUserInfo(newUserCookies.sid.value)).userId).toEqual(user.userId);
+    });
 });
 
-describe('(Interactive) OpenId flow', () => {
+describe('Link to OpenId account', () => {
     let mock!: MockServer;
-    let user!: ExternalUser;
-    let userCookies!: Record<string, Cookie>;
-    let userInfo!: Omit<UserInfo, 'sessionLength'>;
 
     beforeEach(async () => {
         mock = await new OpenIdMockServer({
@@ -299,38 +328,50 @@ describe('(Interactive) OpenId flow', () => {
             mockUrl: config.mockUrl,
             openidJWKS: config.openidJWKS
         }).start();
-        user = ExternalUser.newRandomUser();
-        userCookies = await loginWithOpenId(user, true);
-        const { sessionLength, ...info } = await getUserInfo(userCookies.sid.value);
-        userInfo = info;
-        expect(userInfo.name).toEqual(user.name);
     });
 
     afterEach(async () => {
-        await mock.stop();
+        await mock?.stop();
         mock = undefined!;
-        user = undefined!;
-        userCookies = undefined!;
-        userInfo = undefined!;
     });
 
-    it('Login with the same user should be a success', async () => {
-        const newUserCookies = await loginWithOpenId(user);
-        expect(newUserCookies.sid.value, 'It shall be a new session').not.toEqual(
-            userCookies.sid.value
-        );
+    it('Linking without a session shall fail', async () => {
+        const response = await request
+            .get(config.getUrlFor('identity/auth/openid_flow/link'))
+            .query({ ...config.defaultRedirects })
+            .send()
+            .catch((err) => err.response);
 
-        const newUserInfo = await getUserInfo(newUserCookies.sid.value);
-        expect(newUserInfo).toEqual(expect.objectContaining(userInfo));
+        expect(response.statusCode).toEqual(200);
+        expect(getPageRedirectUrl(response.text)).toEqual(
+            config.defaultRedirects.errorUrl + '?type=loginRequired&status=401'
+        );
     });
 
-    it('Login with the token should be a success', async () => {
-        const newUserCookies = await loginWithToken(userCookies.tid.value);
-        expect(newUserCookies.sid.value, 'It shall be a new session').not.toEqual(
-            userCookies.sid.value
-        );
+    it('Linking with occupied email shall succeed', async () => {
+        const user = await TestUser.createLinked({
+            provider: 'openId',
+            email: generateRandomString(5) + '@example.com'
+        });
 
-        const newUserInfo = await getUserInfo(newUserCookies.sid.value);
-        expect(newUserInfo).toEqual(expect.objectContaining(userInfo));
+        const response = await requestLinkWithOpenId(
+            user.sid,
+            new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email)
+        );
+        expect(response.statusCode).toEqual(200);
+        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
+    });
+
+    it('Linking with occupied external user shall fail', async () => {
+        const user = await TestUser.createLinked({
+            provider: 'openId',
+            email: generateRandomString(5) + '@example.com'
+        });
+
+        const response = await requestLinkWithOpenId(user.sid, user.externalUser!);
+        expect(response.statusCode).toEqual(200);
+        expect(getPageRedirectUrl(response.text)).toEqual(
+            config.defaultRedirects.errorUrl + '?type=providerAlreadyUsed&status=409'
+        );
     });
 });

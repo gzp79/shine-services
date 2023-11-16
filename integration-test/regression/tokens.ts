@@ -32,7 +32,7 @@ describe('Tokens', () => {
         mock = undefined!;
     });
 
-    it('Get token without user should fail', async () => {
+    it('Get token without a session shall fail', async () => {
         // initial session for a new user
         let response = await request
             .get(config.getUrlFor('identity/api/auth/user/tokens'))
@@ -41,7 +41,7 @@ describe('Tokens', () => {
         expect(response.statusCode).toEqual(401);
     });
 
-    it('Token should keep site-info', async () => {
+    it('Token shall keep the site info', async () => {
         const extraHeaders = {
             'user-agent': 'agent',
             'cf-ipcountry': 'country',
@@ -63,7 +63,7 @@ describe('Tokens', () => {
         ]);
     });
 
-    it('Multiple login with remember-me should create multiple tokens', async () => {
+    it('Multiple login with rememberMe shall create multiple tokens and logout from a session shall invalidate the connected token', async () => {
         mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
 
         const user = await TestUser.createLinked({ rememberMe: true, extraHeaders: { 'cf-ipcity': 'r1' } });
@@ -87,16 +87,19 @@ describe('Tokens', () => {
             { ...anyToken, city: 'r2' }
         ]);
 
-        //logout from the second session with tid. Note without tid the token would not be deleted as sessions and tokens are not linked
+        //logout from the second session with tid.
+        // Some notes:
+        // - without tid the token would not be deleted as sessions and tokens are not linked
         let response = await request
             .get(config.getUrlFor(`/identity/auth/logout`))
             .set('Cookie', [`sid=${sid2}`, `tid=${tid2}`])
-            .send();
+            .send()
+            .catch((err) => err.response);
         expect(response.statusCode).toEqual(200);
         expect(await getTokens(user.sid)).toIncludeSameMembers([{ ...anyToken, city: 'r1' }]);
     });
 
-    it('Logout from all sessions', async () => {
+    it('Multiple login with rememberMe shall create multiple tokens and logout with terminateAll shall invalidate all of them', async () => {
         mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
 
         const user = await TestUser.createLinked({
@@ -121,7 +124,7 @@ describe('Tokens', () => {
         expect(await getTokens(newUserCookies.sid.value)).toBeEmpty();
     });
 
-    it('Revoke token', async () => {
+    it('Delete token by hash shall revoke the token', async () => {
         mock = await new Oauth2MockServer({ tls: config.mockTLS }).start();
 
         const user = await TestUser.createLinked({
@@ -144,7 +147,8 @@ describe('Tokens', () => {
         let responseGet = await request
             .get(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
             .set('Cookie', [`sid=${user.sid}`])
-            .send();
+            .send()
+            .catch((err) => err.response);
         expect(responseGet.statusCode).toEqual(200);
         expect(responseGet.body.userId).toEqual(user.userId);
         expect(responseGet.body.city).toEqual('r2');
@@ -154,21 +158,23 @@ describe('Tokens', () => {
         let responseDelete = await request
             .delete(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
             .set('Cookie', [`sid=${user.sid}`])
-            .send();
+            .send()
+            .catch((err) => err.response);
         expect(responseDelete.statusCode).toEqual(200);
 
-        // it should be gone
+        // it shall be gone
         let responseGet2 = await request
             .get(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
             .set('Cookie', [`sid=${user.sid}`])
-            .send().catch((err) => err.response);
+            .send()
+            .catch((err) => err.response);
         expect(responseGet2.statusCode).toEqual(404);
         expect(await getTokens(user.sid)).toIncludeSameMembers([
             { ...anyToken, city: 'r1' },
             { ...anyToken, city: 'r3' }
         ]);
 
-        // login should fail with the revoked token
+        // login shall fail with the revoked token
         const responseLogin = await request
             .get(config.getUrlFor('identity/auth/token/login'))
             .query(config.defaultRedirects)

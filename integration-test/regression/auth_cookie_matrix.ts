@@ -4,7 +4,7 @@ import { getCookies } from '$lib/auth_utils';
 import { Cookie } from 'tough-cookie';
 //import requestLogger from 'superagent-logger';
 
-describe('Check auth cookie consistency', () => {
+describe('Auth cookie consistency matrix', () => {
     const testCases = [
         //-: missing
         //!: not matching (ex different user id). When multiple ! are present in a row it's assumed all of them are different
@@ -58,7 +58,8 @@ describe('Check auth cookie consistency', () => {
                 const response = await request
                     .get(config.getUrlFor('/identity/auth/token/login'))
                     .query({ rememberMe: true })
-                    .send();
+                    .send()
+                    .catch((err) => err.response);
                 expect(response.statusCode).toEqual(200);
                 const cookies = getCookies(response);
                 expect(cookies.tid).toBeValidTID();
@@ -72,7 +73,8 @@ describe('Check auth cookie consistency', () => {
                 const response = await request
                     .get(config.getUrlFor('/identity/auth/oauth2_flow/link'))
                     .set('Cookie', [`sid=${sid}`])
-                    .send();
+                    .send()
+                    .catch((err) => err.response);
                 expect(response.statusCode).toEqual(200);
                 const cookies = getCookies(response);
                 expect(cookies.eid).toBeValidEID();
@@ -103,7 +105,7 @@ describe('Check auth cookie consistency', () => {
         };
     });
 
-    it.each(testCases)('Testing cookie matrix [%p,%p,%p]', async (tid, sid, eid, expected) => {
+    it.each(testCases)('Cookie matrix [%p,%p,%p] shall pass', async (tid, sid, eid, expected) => {
         let requestCookies: string[] = [];
         for (const [c, name] of [
             [tid, 'tid'],
@@ -131,7 +133,8 @@ describe('Check auth cookie consistency', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/validate'))
             .set('Cookie', requestCookies)
-            .send();
+            .send()
+            .catch((err) => err.response);
         expect(response.statusCode).toEqual(200);
 
         const cookies = getCookies(response);
