@@ -44,7 +44,7 @@ describe('Check OAuth2 auth', () => {
         expect(getPageRedirectUrl(response.text)).toEqual(
             'https://web.sandbox.com:8080/error?type=authError&status=400'
         );
-        expect(response.text).toContain('&quot;MissingExternalLogin&quot;');
+        expect(response.text).toContain('&quot;MissingExternalLoginCookie&quot;');
 
         const cookies = getCookies(response);
         expect(cookies.tid).toBeClearCookie();
@@ -68,7 +68,7 @@ describe('Check OAuth2 auth', () => {
         expect(getPageRedirectUrl(response.text)).toEqual(
             'https://web.sandbox.com:8080/error?type=authError&status=400'
         );
-        expect(response.text).toContain('&quot;MissingExternalLogin&quot;');
+        expect(response.text).toContain('&quot;MissingExternalLoginCookie&quot;');
 
         const cookies = getCookies(response);
         expect(cookies.tid).toBeClearCookie();

@@ -108,9 +108,9 @@ impl AuthServiceState {
         error_url: Option<&Url>,
     ) -> AuthPage {
         // at this point current user, linked_user, etc. should be consistent due to auth_session construction
-        assert!(auth_session.token_login.is_none());
+        assert!(auth_session.token_cookie.is_none());
 
-        let user = auth_session.user.clone().unwrap();
+        let user = auth_session.user_session.clone().unwrap();
         match self.identity_manager().link_user(user.user_id, external_user).await {
             Ok(()) => {}
             Err(IdentityError::LinkProviderConflict) => {
@@ -138,8 +138,8 @@ impl AuthServiceState {
         error_url: Option<&Url>,
         create_token: bool,
     ) -> AuthPage {
-        assert!(auth_session.user.is_none());
-        assert!(auth_session.token_login.is_none());
+        assert!(auth_session.user_session.is_none());
+        assert!(auth_session.token_cookie.is_none());
 
         log::debug!("Checking if this is a login or registration...");
         log::debug!("{external_user:#?}");
@@ -162,12 +162,12 @@ impl AuthServiceState {
         };
 
         // create a new remember me token
-        let token_login = if create_token {
+        let token_cookie = if create_token {
             match self
-                .create_token_with_retry(identity.id, Some(&fingerprint), site_info, CreateTokenKind::AutoRenewal)
+                .create_token_with_retry(identity.id, Some(&fingerprint), site_info, CreateTokenKind::Access)
                 .await
             {
-                Ok(token_login) => Some(token_login),
+                Ok(token_cookie) => Some(token_cookie),
                 Err(err) => return self.page_internal_error(auth_session, err, error_url),
             }
         } else {
@@ -191,8 +191,8 @@ impl AuthServiceState {
             Err(err) => return self.page_internal_error(auth_session, err, error_url),
         };
 
-        auth_session.token_login = token_login;
-        auth_session.user = Some(user);
+        auth_session.token_cookie = token_cookie;
+        auth_session.user_session = Some(user);
         self.page_redirect(auth_session, self.app_name(), target_url)
     }
 }

@@ -50,7 +50,7 @@ impl IdentityManager {
         user_id: Uuid,
         user_name: &str,
         email: Option<&str>,
-        external_login: Option<&ExternalUserInfo>,
+        external_user_info: Option<&ExternalUserInfo>,
     ) -> Result<Identity, IdentityError> {
         //let email = email.map(|e| e.normalize_email());
         let inner = &*self.0;
@@ -60,8 +60,8 @@ impl IdentityManager {
         let mut external_links_dao = ExternalLinks::new(&client, &inner.stmts_external_links);
 
         let identity = identities_dao.create_user(user_id, user_name, email).await?;
-        if let Some(external_login) = external_login {
-            if let Err(err) = external_links_dao.link_user(user_id, external_login).await {
+        if let Some(external_user_info) = external_user_info {
+            if let Err(err) = external_links_dao.link_user(user_id, external_user_info).await {
                 if let Err(err) = identities_dao.cascaded_delete(user_id).await {
                     log::error!("Failed to delete user ({}) after failed link: {}", user_id, err);
                 }
@@ -173,15 +173,6 @@ impl IdentityManager {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         Tokens::new(&client, &inner.stmts_tokens).find_by_user(user_id).await
-    }
-
-    pub async fn update_token(&self, token: &str, duration: &Duration) -> Result<TokenInfo, IdentityError> {
-        let inner = &*self.0;
-        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        let token_hash = hash_token(token);
-        Tokens::new(&client, &inner.stmts_tokens)
-            .update_token(&token_hash, duration)
-            .await
     }
 
     pub async fn delete_token(&self, user_id: Uuid, token: &str) -> Result<Option<()>, IdentityError> {

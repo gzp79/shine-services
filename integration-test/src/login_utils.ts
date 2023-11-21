@@ -50,7 +50,9 @@ export async function loginWithToken(
 
     const cookies = getCookies(response);
     expect(cookies.tid).toBeValidTID();
-    expect(cookies.tid.value).toEqual(tid);
+    //tid should have been rotated
+    //todo: check that old token is the deprecated token
+    expect(cookies.tid.value).not.toEqual(tid);
     expect(cookies.sid).toBeValidSID();
     expect(cookies.eid).toBeClearCookie();
     return cookies;

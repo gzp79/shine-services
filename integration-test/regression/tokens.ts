@@ -15,7 +15,7 @@ describe('Tokens', () => {
     const anyToken: ActiveToken = {
         userId: expect.toBeString(),
         tokenFingerprint: expect.toBeString(),
-        kind: 'autoRenewal',
+        kind: 'access',
         createdAt: expect.toBeBetween(createRange[0], createRange[1]),
         expireAt: expect.toBeBetween(expireRange[0], expireRange[1]),
         isExpired: false,
@@ -151,7 +151,7 @@ describe('Tokens', () => {
         const tokenId = tokens.find((x) => x.city === 'r2')!.tokenFingerprint;
         let responseGet = await request
             .get(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
-            .set('Cookie', [`sid=${user.sid}`])
+            .set('Cookie', user.getSessionCookie())
             .send()
             .catch((err) => err.response);
         expect(responseGet.statusCode).toEqual(200);
@@ -162,7 +162,7 @@ describe('Tokens', () => {
         // revoke
         let responseDelete = await request
             .delete(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
-            .set('Cookie', [`sid=${user.sid}`])
+            .set('Cookie', user.getSessionCookie())
             .send()
             .catch((err) => err.response);
         expect(responseDelete.statusCode).toEqual(200);
@@ -170,7 +170,7 @@ describe('Tokens', () => {
         // it shall be gone
         let responseGet2 = await request
             .get(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
-            .set('Cookie', [`sid=${user.sid}`])
+            .set('Cookie', user.getSessionCookie())
             .send()
             .catch((err) => err.response);
         expect(responseGet2.statusCode).toEqual(404);

@@ -159,7 +159,7 @@ describe('Login with token for returning user', () => {
 
         const newCookies = getCookies(response);
         expect(newCookies.tid).toBeValidTID();
-        expect(newCookies.tid.value, 'it shall be the same token').toEqual(cookies.tid.value);
+        expect(newCookies.tid.value, 'token shall be rotated').not.toEqual(cookies.tid.value);
         expect(newCookies.sid).toBeValidSID();
         expect(newCookies.sid.value, 'it shall be a new session').not.toEqual(cookies.sid.value);
         expect(newCookies.eid).toBeClearCookie();
@@ -179,7 +179,7 @@ describe('Login with token for returning user', () => {
 
         const newCookies = getCookies(response);
         expect(newCookies.tid).toBeValidTID();
-        expect(newCookies.tid.value, 'it shall be the same token').toEqual(cookies.tid.value);
+        expect(newCookies.tid.value, 'token shall be rotated').not.toEqual(cookies.tid.value);
         expect(newCookies.sid).toBeValidSID();
         expect(newCookies.sid.value, 'it shall be a new session').not.toEqual(cookies.sid.value);
         expect(newCookies.eid).toBeClearCookie();
@@ -199,7 +199,7 @@ describe('Login with token for returning user', () => {
 
         const newCookies = getCookies(response);
         expect(newCookies.tid).toBeValidTID();
-        expect(newCookies.tid.value, 'it shall be the same token').toEqual(cookies.tid.value);
+        expect(newCookies.tid.value, 'token shall be rotated').not.toEqual(cookies.tid.value);
         expect(newCookies.sid).toBeValidSID();
         expect(newCookies.sid.value, 'it shall be a new session').not.toEqual(cookies.sid.value);
         expect(newCookies.eid).toBeClearCookie();

@@ -1,7 +1,7 @@
 import request from 'superagent';
 import config from '../test.config';
 import { createUrlQueryString, generateRandomString } from '$lib/string_utils';
-import { createGuestUser, loginWithOAuth2, loginWithOpenId } from './login_utils';
+import { createGuestUser, loginWithOAuth2, loginWithOpenId, loginWithToken } from './login_utils';
 import { getUserInfo } from './auth_utils';
 import { randomUUID } from 'crypto';
 import { MockServer } from './mock_server';
@@ -133,7 +133,14 @@ export class TestUser {
         return testUser;
     }
 
-    public getCookies(): string[] {
+    public async rotateTID(extraHeaders?: Record<string, string>) {
+        if (this.tid) {
+            const newCookies = await loginWithToken(this.tid, extraHeaders);
+            this.tid = newCookies.tid.value;
+        }
+    }
+
+    public getSessionCookie(): string[] {
         return [`sid=${this.sid}`];
     }
 }

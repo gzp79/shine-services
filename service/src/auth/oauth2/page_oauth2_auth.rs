@@ -1,5 +1,5 @@
 use crate::{
-    auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OAuth2Client},
+    auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLoginCookie, OAuth2Client},
     openapi::ApiKind,
 };
 use axum::{body::HttpBody, extract::State, Extension};
@@ -29,8 +29,8 @@ async fn oauth2_auth(
     site_info: SiteInfo,
     query: Result<ValidatedQuery<Query>, ValidationError>,
 ) -> AuthPage {
-    // take external_login from session, thus later code don't have to care with it
-    let ExternalLogin {
+    // take external_login_cookie from session, thus later code don't have to care with it
+    let ExternalLoginCookie {
         pkce_code_verifier,
         csrf_state,
         target_url,
@@ -38,9 +38,9 @@ async fn oauth2_auth(
         remember_me,
         linked_user,
         ..
-    } = match auth_session.external_login.take() {
-        Some(external_login) => external_login,
-        None => return state.page_error(auth_session, AuthError::MissingExternalLogin, None),
+    } = match auth_session.external_login_cookie.take() {
+        Some(external_login_cookie) => external_login_cookie,
+        None => return state.page_error(auth_session, AuthError::MissingExternalLoginCookie, None),
     };
 
     let query = match query {

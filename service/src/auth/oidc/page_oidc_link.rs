@@ -1,5 +1,5 @@
 use crate::{
-    auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OIDCClient},
+    auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLoginCookie, OIDCClient},
     openapi::ApiKind,
 };
 use axum::{body::HttpBody, extract::State, Extension};
@@ -35,7 +35,7 @@ async fn oidc_link(
         Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), None),
     };
 
-    if auth_session.user.is_none() {
+    if auth_session.user_session.is_none() {
         return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
     }
 
@@ -57,14 +57,14 @@ async fn oidc_link(
         .add_prompt(CoreAuthPrompt::Login)
         .url();
 
-    auth_session.external_login = Some(ExternalLogin {
+    auth_session.external_login_cookie = Some(ExternalLoginCookie {
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
         nonce: Some(nonce.secret().to_owned()),
         target_url: query.redirect_url,
         error_url: query.error_url,
         remember_me: false,
-        linked_user: auth_session.user.clone(),
+        linked_user: auth_session.user_session.clone(),
     });
 
     state.page_redirect(auth_session, &client.provider, Some(&authorize_url))

@@ -40,7 +40,7 @@ describe('Access to user role management', () => {
             let target = users[test.targetUser];
             let req = request.get(config.getUrlFor(`/identity/api/identities/${target.userId}/roles`));
             if (test.user) {
-                req.set('Cookie', users[test.user].getCookies());
+                req.set('Cookie', users[test.user].getSessionCookie());
             }
             if (test.apiKey) {
                 req.set('Authorization', `Bearer ${config.masterKey}`);
@@ -56,7 +56,7 @@ describe('Access to user role management', () => {
             let target = users[test.targetUser];
             let req = request.put(config.getUrlFor(`/identity/api/identities/${target.userId}/roles`));
             if (test.user) {
-                req.set('Cookie', users[test.user].getCookies());
+                req.set('Cookie', users[test.user].getSessionCookie());
             }
             if (test.apiKey) {
                 req.set('Authorization', `Bearer ${config.masterKey}`);
@@ -75,7 +75,7 @@ describe('Access to user role management', () => {
             let target = users[test.targetUser];
             let req = request.delete(config.getUrlFor(`/identity/api/identities/${target.userId}/roles`));
             if (test.user) {
-                req.set('Cookie', users[test.user].getCookies());
+                req.set('Cookie', users[test.user].getSessionCookie());
             }
             if (test.apiKey) {
                 req.set('Authorization', `Bearer ${config.masterKey}`);
@@ -95,7 +95,7 @@ describe('User roles', () => {
     const getUserRoles = async function (userId: string): Promise<string[]> {
         let response = await request
             .get(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
-            .set('Cookie', admin.getCookies())
+            .set('Cookie', admin.getSessionCookie())
             .send()
             .catch((err) => err.response);
         expect(response.statusCode).toEqual(200);
@@ -105,7 +105,7 @@ describe('User roles', () => {
     const addUserRole = async function (userId: string, role: string): Promise<string[]> {
         const response = await request
             .put(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
-            .set('Cookie', admin.getCookies())
+            .set('Cookie', admin.getSessionCookie())
             .type('json')
             .send({ role: role });
         expect(response.statusCode).toEqual(200);
@@ -116,7 +116,7 @@ describe('User roles', () => {
     const removeUserRole = async function (userId: string, role: string): Promise<string[]> {
         const response = await request
             .delete(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
-            .set('Cookie', admin.getCookies())
+            .set('Cookie', admin.getSessionCookie())
             .type('json')
             .send({ role: role });
         expect(response.statusCode).toEqual(200);
@@ -131,7 +131,7 @@ describe('User roles', () => {
     it('Getting role of non-existing user shall fail', async () => {
         let response = await request
             .get(config.getUrlFor(`/identity/api/identities/${randomUUID()}/roles`))
-            .set('Cookie', admin.getCookies())
+            .set('Cookie', admin.getSessionCookie())
             .send()
             .catch((err) => err.response);
         expect(response.statusCode).toEqual(404);
@@ -140,7 +140,7 @@ describe('User roles', () => {
     it('Setting role of non-existing user shall fail', async () => {
         let response = await request
             .put(config.getUrlFor(`/identity/api/identities/${randomUUID()}/roles`))
-            .set('Cookie', admin.getCookies())
+            .set('Cookie', admin.getSessionCookie())
             .type('json')
             .send({ role: 'Role1' })
             .catch((err) => err.response);
@@ -150,7 +150,7 @@ describe('User roles', () => {
     it('Deleting role of non-existing user shall fail', async () => {
         let response = await request
             .delete(config.getUrlFor(`/identity/api/identities/${randomUUID()}/roles`))
-            .set('Cookie', admin.getCookies())
+            .set('Cookie', admin.getSessionCookie())
             .type('json')
             .send({ role: 'Role1' })
             .catch((err) => err.response);

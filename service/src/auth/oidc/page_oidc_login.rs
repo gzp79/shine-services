@@ -1,5 +1,5 @@
 use crate::{
-    auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OIDCClient},
+    auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLoginCookie, OIDCClient},
     openapi::ApiKind,
 };
 use axum::{body::HttpBody, extract::State, Extension};
@@ -38,7 +38,7 @@ async fn oidc_login(
 
     // Note: having a token login is not an error, on successful start of the flow, the token cookie is cleared
     // It has some potential issue: if tid is connected to a guest user, the guest may loose all the progress
-    if auth_session.user.is_some() {
+    if auth_session.user_session.is_some() {
         return state.page_error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref());
     }
 
@@ -60,9 +60,9 @@ async fn oidc_login(
         .add_prompt(CoreAuthPrompt::Login)
         .url();
 
-    auth_session.token_login = None;
+    auth_session.token_cookie = None;
 
-    auth_session.external_login = Some(ExternalLogin {
+    auth_session.external_login_cookie = Some(ExternalLoginCookie {
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
         nonce: Some(nonce.secret().to_owned()),
@@ -72,7 +72,7 @@ async fn oidc_login(
         linked_user: None,
     });
 
-    assert!(auth_session.user.is_none());
+    assert!(auth_session.user_session.is_none());
 
     state.page_redirect(auth_session, &client.provider, Some(&authorize_url))
 }

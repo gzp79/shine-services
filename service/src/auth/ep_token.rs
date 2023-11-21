@@ -57,15 +57,15 @@ async fn token_create(
         .timeout
         .map(|t| CreateTokenKind::Persistent(Duration::seconds(t as i64)))
         .unwrap_or(CreateTokenKind::SingleAccess);
-    let token_login = state
+    let token_cookie = state
         .create_token_with_retry(user.user_id, None, &site_info, token_kind)
         .await
         .map_err(Problem::internal_error_from)?;
 
     Ok(Json(CreatedToken {
-        token: token_login.token,
+        token: token_cookie.token,
         token_type: "Bearer".into(),
-        expire_at: token_login.expire_at,
+        expire_at: token_cookie.expire_at,
         is_single_access: query.timeout.is_none(),
     }))
 }

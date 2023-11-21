@@ -12,20 +12,20 @@ use shine_service::{
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type as PGType};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum TokenKind {
+    Access,
     SingleAccess,
     Persistent,
-    AutoRenewal,
 }
 
 impl ToSql for TokenKind {
     fn to_sql(&self, ty: &PGType, out: &mut BytesMut) -> Result<IsNull, PGConvertError> {
         let value = match self {
+            TokenKind::Access => 3_i16,
             TokenKind::SingleAccess => 1_i16,
             TokenKind::Persistent => 2_i16,
-            TokenKind::AutoRenewal => 3_i16,
         };
         value.to_sql(ty, out)
     }
@@ -40,7 +40,7 @@ impl<'a> FromSql<'a> for TokenKind {
         match value {
             1 => Ok(TokenKind::SingleAccess),
             2 => Ok(TokenKind::Persistent),
-            3 => Ok(TokenKind::AutoRenewal),
+            3 => Ok(TokenKind::Access),
             _ => Err(PGConvertError::from("Invalid value for TokenKind")),
         }
     }
@@ -299,26 +299,6 @@ where
                 city: row.city,
             })
             .collect())
-    }
-
-    pub async fn update_token(&mut self, token_hash: &str, duration: &Duration) -> Result<TokenInfo, IdentityError> {
-        // issue#11:
-        // - update expiration
-        // - update last use
-
-        let duration = duration.num_seconds() as i32;
-        assert!(duration > 0);
-        //issue#11:
-        //  delete token where kind is SingleAccess
-        //  update expire date where type is renewal
-        //  delete token where expired
-
-        // workaround while update is not implemented
-        Ok(self
-            .find_token(token_hash)
-            .await?
-            .ok_or(IdentityError::TokenConflict)?
-            .1)
     }
 
     pub async fn delete_token(&mut self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {

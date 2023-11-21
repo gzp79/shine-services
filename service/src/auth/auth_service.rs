@@ -54,8 +54,8 @@ pub struct AuthSessionConfig {
     pub cookie_name_suffix: Option<String>,
 
     pub session_secret: String,
-    pub external_login_secret: String,
-    pub token_login_secret: String,
+    pub external_login_cookie_secret: String,
+    pub token_cookie_secret: String,
 
     pub ttl_session: usize,
     pub ttl_remember_me: usize,

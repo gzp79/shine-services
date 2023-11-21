@@ -32,7 +32,7 @@ async fn delete_user(
         Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), None),
     };
 
-    let (user_id, user_key) = match auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {
+    let (user_id, user_key) = match auth_session.user_session.as_ref().map(|u| (u.user_id, u.key)) {
         Some(user_id) => user_id,
         None => return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref()),
     };

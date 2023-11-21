@@ -22,7 +22,7 @@ use url::Url;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(in crate::auth) struct ExternalLogin {
+pub(in crate::auth) struct ExternalLoginCookie {
     #[serde(rename = "pv")]
     pub pkce_code_verifier: String,
     #[serde(rename = "cv")]
@@ -40,13 +40,17 @@ pub(in crate::auth) struct ExternalLogin {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(in crate::auth) struct TokenLogin {
+pub(in crate::auth) struct TokenCookie {
     #[serde(rename = "u")]
     pub user_id: Uuid,
     #[serde(rename = "t")]
     pub token: String,
     #[serde(rename = "e")]
     pub expire_at: DateTime<Utc>,
+
+    /// This token is not used, only stored to revoke once the client confirmed the received new token
+    #[serde(rename = "rt")]
+    pub revoked_token: Option<String>,
 }
 
 #[derive(Debug, ThisError)]
@@ -72,9 +76,9 @@ struct CookieSettings {
 /// Layer to configure auth related cookie.
 #[derive(Clone)]
 pub(in crate::auth) struct AuthSessionMeta {
-    user: CookieSettings,
-    external_login: CookieSettings,
-    token_login: CookieSettings,
+    session_settings: CookieSettings,
+    external_login_cookie_settings: CookieSettings,
+    token_cookie_settings: CookieSettings,
 }
 
 impl AuthSessionMeta {
@@ -93,9 +97,9 @@ impl AuthSessionMeta {
             return Err(AuthSessionError::InvalidApiDomain);
         }
 
-        let token_login = {
+        let token_cookie_settings = {
             let key = B64
-                .decode(&config.token_login_secret)
+                .decode(&config.token_cookie_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             let secret = Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             CookieSettings {
@@ -106,7 +110,7 @@ impl AuthSessionMeta {
             }
         };
 
-        let user = {
+        let session_settings = {
             let key = B64
                 .decode(&config.session_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
@@ -119,9 +123,9 @@ impl AuthSessionMeta {
             }
         };
 
-        let external_login = {
+        let external_login_cookie_settings = {
             let key = B64
-                .decode(&config.external_login_secret)
+                .decode(&config.external_login_cookie_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             let secret = Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             CookieSettings {
@@ -133,9 +137,9 @@ impl AuthSessionMeta {
         };
 
         Ok(Self {
-            user,
-            external_login,
-            token_login,
+            session_settings,
+            external_login_cookie_settings,
+            token_cookie_settings,
         })
     }
 
@@ -146,33 +150,34 @@ impl AuthSessionMeta {
 
 /// Handle all auth related cookie as an atomic entity. During authorization flow this
 /// structure the consistency between the auth related cookie.
+#[derive(Clone)]
 pub(in crate::auth) struct AuthSession {
-    meta: Arc<AuthSessionMeta>,
-    pub user: Option<CurrentUser>,
-    pub external_login: Option<ExternalLogin>,
-    pub token_login: Option<TokenLogin>,
+    pub meta: Arc<AuthSessionMeta>,
+    pub token_cookie: Option<TokenCookie>,
+    pub user_session: Option<CurrentUser>,
+    pub external_login_cookie: Option<ExternalLoginCookie>,
 }
 
 impl AuthSession {
-    fn new(
+    pub fn new(
         meta: Arc<AuthSessionMeta>,
+        token_cookie: Option<TokenCookie>,
         user: Option<CurrentUser>,
-        external_login: Option<ExternalLogin>,
-        token_login: Option<TokenLogin>,
+        external_login_cookie: Option<ExternalLoginCookie>,
     ) -> Self {
         Self {
             meta,
-            user,
-            external_login,
-            token_login,
+            token_cookie,
+            user_session: user,
+            external_login_cookie,
         }
     }
 
     /// Clear all the components.
     pub fn clear(&mut self) {
-        self.user.take();
-        self.external_login.take();
-        self.token_login.take();
+        self.token_cookie.take();
+        self.user_session.take();
+        self.external_login_cookie.take();
     }
 }
 
@@ -193,18 +198,19 @@ where
             .expect("Missing AuthSessionMeta extension");
 
         let mut user = parts.extract::<CheckedCurrentUser>().await.ok().map(|x| x.into_user());
-        let mut external_login = SignedCookieJar::from_headers(&parts.headers, meta.external_login.secret.clone())
-            .get(&meta.external_login.name)
-            .and_then(|session| serde_json::from_str::<ExternalLogin>(session.value()).ok());
-        let token_login = SignedCookieJar::from_headers(&parts.headers, meta.token_login.secret.clone())
-            .get(&meta.token_login.name)
-            .and_then(|session| serde_json::from_str::<TokenLogin>(session.value()).ok());
+        let mut external_login_cookie =
+            SignedCookieJar::from_headers(&parts.headers, meta.external_login_cookie_settings.secret.clone())
+                .get(&meta.external_login_cookie_settings.name)
+                .and_then(|session| serde_json::from_str::<ExternalLoginCookie>(session.value()).ok());
+        let token_cookie = SignedCookieJar::from_headers(&parts.headers, meta.token_cookie_settings.secret.clone())
+            .get(&meta.token_cookie_settings.name)
+            .and_then(|session| serde_json::from_str::<TokenCookie>(session.value()).ok());
 
         log::debug!(
-            "Auth sessions before validation:\n  user:{:#?}\n  external_login:{:#?}\n  token_login:{:#?}\n",
+            "Auth sessions before validation:\n  user:{:#?}\n  external_login_cookie:{:#?}\n  token_cookie:{:#?}\n",
             user,
-            external_login,
-            token_login,
+            external_login_cookie,
+            token_cookie,
         );
 
         // Perform cross-validation
@@ -213,38 +219,38 @@ where
 
         log::debug!("Validating cookies...");
         //todo: if let Some(uid) = user.as_ref().map(|u| u.user_id) &&
-        //let Some(tid) = token_login.as_ref().map(|t| t.user_id) &&
+        //let Some(tid) = token_cookie.as_ref().map(|t| t.user_id) &&
         //tid != uid {
 
         // check if the users are matching in the session and token
-        if token_login.is_some()
+        if token_cookie.is_some()
             && user.is_some()
-            && token_login.as_ref().map(|t| t.user_id) != user.as_ref().map(|u| u.user_id)
+            && token_cookie.as_ref().map(|t| t.user_id) != user.as_ref().map(|u| u.user_id)
         {
             log::info!("user session is not matching to the token, dropping user session");
             user = None;
         }
 
         // check if the users are matching in the session and external login
-        if external_login.is_some()
-            && external_login
+        if external_login_cookie.is_some()
+            && external_login_cookie
                 .as_ref()
                 .and_then(|e| e.linked_user.as_ref())
                 .map(|l| l.user_id)
                 != user.as_ref().map(|u| u.user_id)
         {
             log::info!("external login is not matching the user session, dropping external login");
-            external_login = None;
+            external_login_cookie = None;
         }
 
         log::debug!(
-            "Auth sessions after validation:\n  user:{:#?}\n  external_login:{:#?}\n  token_login:{:#?}\n",
+            "Auth sessions after validation:\n  user:{:#?}\n  external_login_cookie:{:#?}\n  token_cookie:{:#?}\n",
             user,
-            external_login,
-            token_login,
+            external_login_cookie,
+            token_cookie,
         );
 
-        Ok(Self::new(meta, user, external_login, token_login))
+        Ok(Self::new(meta, token_cookie, user, external_login_cookie))
     }
 }
 
@@ -285,27 +291,30 @@ impl IntoResponseParts for AuthSession {
     fn into_response_parts(self, res: ResponseParts) -> Result<ResponseParts, Self::Error> {
         let Self {
             meta,
-            user,
-            external_login,
-            token_login,
+            user_session,
+            external_login_cookie,
+            token_cookie,
         } = self;
         log::debug!(
-            "Auth sessions set headers:\n  user:{:#?}\n  external_login:{:#?}\n  token_login:{:#?}",
-            user,
-            external_login,
-            token_login,
+            "Auth sessions set headers:\n  user:{:#?}\n  external_login_cookie:{:#?}\n  token_cookie:{:#?}",
+            user_session,
+            external_login_cookie,
+            token_cookie,
         );
 
-        let user = create_jar(&meta.user, user.as_ref().map(|d| (d, Expiration::Session)));
-
-        let external_login = create_jar(
-            &meta.external_login,
-            external_login.as_ref().map(|d| (d, Expiration::Session)),
+        let session = create_jar(
+            &meta.session_settings,
+            user_session.as_ref().map(|d| (d, Expiration::Session)),
         );
 
-        let token_login = create_jar(
-            &meta.token_login,
-            token_login.as_ref().map(|d| {
+        let external_login_cookie = create_jar(
+            &meta.external_login_cookie_settings,
+            external_login_cookie.as_ref().map(|d| (d, Expiration::Session)),
+        );
+
+        let token_cookie = create_jar(
+            &meta.token_cookie_settings,
+            token_cookie.as_ref().map(|d| {
                 let naive_time = d.expire_at.naive_utc();
                 // disable cookie a few minutes before the token expiration
                 let token_expiration =
@@ -314,7 +323,9 @@ impl IntoResponseParts for AuthSession {
             }),
         );
 
-        Ok((user, external_login, token_login).into_response_parts(res).unwrap())
+        Ok((session, external_login_cookie, token_cookie)
+            .into_response_parts(res)
+            .unwrap())
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::{
-    auth::{auth_session::TokenLogin, AuthServiceState, AuthSession, OIDCDiscoveryError, TokenGeneratorError},
+    auth::{auth_session::TokenCookie, AuthServiceState, AuthSession, OIDCDiscoveryError, TokenGeneratorError},
     repositories::{AutoNameError, ExternalUserInfo, Identity, IdentityError, TokenKind},
 };
 use axum::{
@@ -67,7 +67,7 @@ impl AuthServiceState {
 pub(in crate::auth) enum CreateTokenKind {
     SingleAccess,
     Persistent(Duration),
-    AutoRenewal,
+    Access,
 }
 
 #[derive(Debug, ThisError)]
@@ -88,10 +88,10 @@ impl AuthServiceState {
         fingerprint: Option<&ClientFingerprint>,
         site_info: &SiteInfo,
         kind: CreateTokenKind,
-    ) -> Result<TokenLogin, TokenCreateError> {
+    ) -> Result<TokenCookie, TokenCreateError> {
         let (duration, kind) = match kind {
             CreateTokenKind::SingleAccess => (self.token().ttl_single_access(), TokenKind::SingleAccess),
-            CreateTokenKind::AutoRenewal => (self.token().ttl_remember_me(), TokenKind::AutoRenewal),
+            CreateTokenKind::Access => (self.token().ttl_remember_me(), TokenKind::Access),
             CreateTokenKind::Persistent(duration) => (duration, TokenKind::Persistent),
         };
         const MAX_RETRY_COUNT: usize = 10;
@@ -110,10 +110,11 @@ impl AuthServiceState {
                 .await
             {
                 Ok(info) => {
-                    return Ok(TokenLogin {
+                    return Ok(TokenCookie {
                         user_id,
                         token,
                         expire_at: info.expire_at,
+                        revoked_token: None,
                     })
                 }
                 Err(IdentityError::TokenConflict) => continue,
@@ -132,7 +133,7 @@ pub(in crate::auth) enum AuthError {
     #[error("Login required")]
     LoginRequired,
     #[error("Missing external login")]
-    MissingExternalLogin,
+    MissingExternalLoginCookie,
     #[error("Missing Nonce")]
     MissingNonce,
     #[error("Invalid CSRF state")]
@@ -185,7 +186,7 @@ impl AuthServiceState {
             AuthError::ValidationError(_) => ("invalidInput", StatusCode::BAD_REQUEST),
             AuthError::LogoutRequired => ("logoutRequired", StatusCode::BAD_REQUEST),
             AuthError::LoginRequired => ("loginRequired", StatusCode::UNAUTHORIZED),
-            AuthError::MissingExternalLogin => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::MissingExternalLoginCookie => ("authError", StatusCode::BAD_REQUEST),
             AuthError::MissingNonce => ("authError", StatusCode::BAD_REQUEST),
             AuthError::InvalidCSRF => ("authError", StatusCode::BAD_REQUEST),
             AuthError::TokenExchangeFailed(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
