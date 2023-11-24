@@ -1,5 +1,5 @@
 use crate::{
-    auth::{auth_service_utils::CreateTokenKind, AuthError, AuthPage, AuthServiceState, AuthSession},
+    auth::{AuthError, AuthPage, AuthServiceState, AuthSession},
     openapi::ApiKind,
     repositories::{Identity, IdentityError, TokenKind},
 };
@@ -53,8 +53,8 @@ async fn try_authenticate_with_access_token(
         Ok(None) => {
             log::debug!("Token expired, not found in DB ...");
             auth_session.token_cookie = None;
-            return Err(state.page_error(auth_session, AuthError::TokenExpired, query.error_url.as_ref()))
-        },
+            return Err(state.page_error(auth_session, AuthError::TokenExpired, query.error_url.as_ref()));
+        }
         Err(err) => return Err(state.page_internal_error(auth_session, err, query.error_url.as_ref())),
     };
 
@@ -168,7 +168,13 @@ async fn token_login(
             log::debug!("Creating access token for identity: {:#?}", identity);
             // create a new remember me token
             let mut token_cookie = match state
-                .create_token_with_retry(identity.id, Some(&fingerprint), &site_info, CreateTokenKind::Access)
+                .create_token_with_retry(
+                    identity.id,
+                    Some(&fingerprint),
+                    &site_info,
+                    TokenKind::Access,
+                    state.token().ttl_access_token(),
+                )
                 .await
             {
                 Ok(token_cookie) => token_cookie,

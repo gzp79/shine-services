@@ -58,7 +58,7 @@ pub struct AuthSessionConfig {
     pub token_cookie_secret: String,
 
     pub ttl_session: usize,
-    pub ttl_remember_me: usize,
+    pub ttl_access_token: usize,
     pub ttl_single_access: usize,
 }
 
@@ -207,9 +207,9 @@ impl AuthServiceBuilder {
     pub async fn new(dependencies: AuthServiceDependencies, config: &AuthConfig) -> Result<Self, AuthBuildError> {
         let mut providers = HashSet::new();
 
-        let ttl_remember_me = Duration::seconds(i64::try_from(config.auth_session.ttl_remember_me)?);
+        let ttl_access_token = Duration::seconds(i64::try_from(config.auth_session.ttl_access_token)?);
         let ttl_single_access = Duration::seconds(i64::try_from(config.auth_session.ttl_single_access)?);
-        let token_generator = TokenGenerator::new(ttl_remember_me, ttl_single_access);
+        let token_generator = TokenGenerator::new(ttl_access_token, ttl_single_access);
 
         let openid_ignore_discovery_error = config.openid_ignore_discovery_error.unwrap_or(false);
         let mut openid_clients = Vec::new();

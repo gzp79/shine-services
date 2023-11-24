@@ -64,12 +64,6 @@ impl AuthServiceState {
     }
 }
 
-pub(in crate::auth) enum CreateTokenKind {
-    SingleAccess,
-    Persistent(Duration),
-    Access,
-}
-
 #[derive(Debug, ThisError)]
 pub(in crate::auth) enum TokenCreateError {
     #[error("Retry limit reach for token creation")]
@@ -87,13 +81,9 @@ impl AuthServiceState {
         user_id: Uuid,
         fingerprint: Option<&ClientFingerprint>,
         site_info: &SiteInfo,
-        kind: CreateTokenKind,
+        kind: TokenKind,
+        time_to_live: Duration,
     ) -> Result<TokenCookie, TokenCreateError> {
-        let (duration, kind) = match kind {
-            CreateTokenKind::SingleAccess => (self.token().ttl_single_access(), TokenKind::SingleAccess),
-            CreateTokenKind::Access => (self.token().ttl_remember_me(), TokenKind::Access),
-            CreateTokenKind::Persistent(duration) => (duration, TokenKind::Persistent),
-        };
         const MAX_RETRY_COUNT: usize = 10;
         let mut retry_count = 0;
         loop {
@@ -106,7 +96,7 @@ impl AuthServiceState {
             let token = self.token().generate_token()?;
             match self
                 .identity_manager()
-                .create_token(user_id, &token, &duration, fingerprint, site_info, kind)
+                .create_token(user_id, &token, &time_to_live, fingerprint, site_info, kind)
                 .await
             {
                 Ok(info) => {

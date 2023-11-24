@@ -26,6 +26,8 @@ pub enum IdentityError {
     LinkProviderConflict,
     #[error("Failed to generate token")]
     TokenConflict,
+    #[error("Fingerprint is missing for the requested token kind")]
+    MissingFingerprint,
     #[error("Operation failed with conflict, no change was made")]
     UpdateConflict,
     #[error("User was removed during the operation")]

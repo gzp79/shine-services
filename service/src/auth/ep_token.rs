@@ -1,5 +1,5 @@
 use crate::{
-    auth::{AuthServiceState, CreateTokenKind},
+    auth::AuthServiceState,
     openapi::ApiKind,
     repositories::{TokenInfo, TokenKind},
 };
@@ -8,32 +8,53 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem, SiteInfo, ValidatedPath, ValidatedQuery},
-    service::CheckedCurrentUser,
+    service::{CheckedCurrentUser, ClientFingerprint},
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
-use validator::Validate;
+use validator::{Validate, ValidationError};
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
+#[validate(schema(function = "validate_token_spec"))]
 struct CreateQuery {
+    /// The kind of token to create, Allowed kinds are persistent or singleAccess
+    #[validate(custom = "validate_allowed_kind")]
+    kind: TokenKind,
     /// If set a persistent token will be created with the given timeout,
     /// otherwise a single access token is created
     #[validate(range(min = 30, max = 7_890_000))]
-    timeout: Option<usize>,
+    timeout: usize,
+    /// If set to true, the token is bound to the current site
+    bind_to_site: bool,
+}
+
+fn validate_allowed_kind(kind: &TokenKind) -> Result<(), ValidationError> {
+    match kind {
+        TokenKind::SingleAccess => Ok(()),
+        TokenKind::Persistent => Ok(()),
+        TokenKind::Access => Err(ValidationError::new("Access tokens are not allowed")),
+    }
+}
+
+fn validate_token_spec(query: &CreateQuery) -> Result<(), ValidationError> {
+    if query.kind == TokenKind::SingleAccess && !(30..30 * 60).contains(&query.timeout) {
+        return Err(ValidationError::new("timeout is required for persistent tokens"));
+    }
+    Ok(())
 }
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 struct CreatedToken {
+    /// The kind of the created token
+    kind: TokenKind,
     /// The token
     token: String,
     /// Authorization type
     token_type: String,
     /// Date of the expiration of the token
     expire_at: DateTime<Utc>,
-    /// Indicates if token is revoked after use
-    is_single_access: bool,
 }
 
 /// Get the information about the current user. The cookie is not accessible
@@ -41,6 +62,7 @@ struct CreatedToken {
 async fn token_create(
     State(state): State<AuthServiceState>,
     user: CheckedCurrentUser,
+    fingerprint: ClientFingerprint,
     site_info: SiteInfo,
     ValidatedQuery(query): ValidatedQuery<CreateQuery>,
 ) -> Result<Json<CreatedToken>, Problem> {
@@ -53,20 +75,18 @@ async fn token_create(
         .ok_or(Problem::unauthorized())?;
 
     // create a new persistent or single access token
-    let token_kind = query
-        .timeout
-        .map(|t| CreateTokenKind::Persistent(Duration::seconds(t as i64)))
-        .unwrap_or(CreateTokenKind::SingleAccess);
+    let ttl = Duration::seconds(query.timeout as i64);
+    let fingerprint = if query.bind_to_site { Some(&fingerprint) } else { None };
     let token_cookie = state
-        .create_token_with_retry(user.user_id, None, &site_info, token_kind)
+        .create_token_with_retry(user.user_id, fingerprint, &site_info, query.kind, ttl)
         .await
         .map_err(Problem::internal_error_from)?;
 
     Ok(Json(CreatedToken {
+        kind: query.kind,
         token: token_cookie.token,
         token_type: "Bearer".into(),
         expire_at: token_cookie.expire_at,
-        is_single_access: query.timeout.is_none(),
     }))
 }
 

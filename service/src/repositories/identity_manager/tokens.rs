@@ -15,17 +15,17 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum TokenKind {
-    Access,
     SingleAccess,
     Persistent,
+    Access,
 }
 
 impl ToSql for TokenKind {
     fn to_sql(&self, ty: &PGType, out: &mut BytesMut) -> Result<IsNull, PGConvertError> {
         let value = match self {
-            TokenKind::Access => 3_i16,
             TokenKind::SingleAccess => 1_i16,
             TokenKind::Persistent => 2_i16,
+            TokenKind::Access => 3_i16,
         };
         value.to_sql(ty, out)
     }
@@ -228,6 +228,9 @@ where
             Ok(row) => row,
             Err(err) if err.is_constraint("login_tokens", "idx_token") => {
                 return Err(IdentityError::TokenConflict);
+            }
+            Err(err) if err.is_constraint("login_tokens", "chk_fingerprint") => {
+                return Err(IdentityError::MissingFingerprint);
             }
             Err(err) => {
                 return Err(IdentityError::DBError(err.into()));

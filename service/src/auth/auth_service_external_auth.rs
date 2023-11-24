@@ -1,9 +1,9 @@
 use crate::{
     auth::{
-        auth_service_utils::{CreateTokenKind, UserCreateError},
-        extensions, AuthError, AuthPage, AuthServiceState, AuthSession, ExternalUserInfoExtensions,
+        auth_service_utils::UserCreateError, extensions, AuthError, AuthPage, AuthServiceState, AuthSession,
+        ExternalUserInfoExtensions,
     },
-    repositories::{ExternalUserInfo, IdentityError},
+    repositories::{ExternalUserInfo, IdentityError, TokenKind},
 };
 use reqwest::{header, Client as HttpClient};
 use serde_json::Value as JsonValue;
@@ -164,7 +164,13 @@ impl AuthServiceState {
         // create a new remember me token
         let token_cookie = if create_token {
             match self
-                .create_token_with_retry(identity.id, Some(&fingerprint), site_info, CreateTokenKind::Access)
+                .create_token_with_retry(
+                    identity.id,
+                    Some(&fingerprint),
+                    site_info,
+                    TokenKind::Access,
+                    self.token().ttl_access_token(),
+                )
                 .await
             {
                 Ok(token_cookie) => Some(token_cookie),
