@@ -3,9 +3,11 @@ import { ActiveToken, getTokens, logout } from '$lib/auth_utils';
 import config from '../test.config';
 import { TestUser } from '$lib/user';
 import OAuth2MockServer from '$lib/mocks/oauth2';
-import { loginWithOAuth2 } from '$lib/login_utils';
+import { loginWithOAuth2, loginWithToken, requestLoginWithToken } from '$lib/login_utils';
 import { getPageRedirectUrl } from '$lib/page_utils';
 import { MockServer } from '$lib/mock_server';
+import crypto from 'crypto';
+import { getSHA256Hash, parseSignedCookie } from '$lib/utils';
 
 describe('Tokens', () => {
     // assume server is not off more than a few seconds and the test is fast enough
@@ -190,5 +192,52 @@ describe('Tokens', () => {
         expect(getPageRedirectUrl(responseLogin.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=sessionExpired&status=401'
         );
+    });
+
+    it('Token rotation with lost response shall work', async () => {
+        const user = await TestUser.createGuest();
+        const c0 = parseSignedCookie(user.tid!); //active: t1, revoke: -
+        console.log('c0', c0);
+        expect(c0.rt).toBeNull();
+        const tid = user.tid!;
+
+        await user.rotateTID();
+        const c1 = parseSignedCookie(user.tid!); // active: t2, revoke: t1
+        console.log('c1', c1);
+        expect(c1.rt).toEqual(c0.t);
+
+        // Emulate a few lost responses by using the
+        const l2 = await loginWithToken(user.tid!);
+        const c2 = parseSignedCookie(l2.tid.value); // active: t3, revoke: t2
+        console.log('c2', c2);
+        expect(c2.rt).toEqual(c1.t);
+
+        const l3 = await loginWithToken(user.tid!);
+        const c3 = parseSignedCookie(l3.tid.value); // active: t4, revoke: t2
+        console.log('c3', c3);
+        expect(c3.rt).toEqual(c1.t);
+
+        // Get back to the normal operation
+        await user.rotateTID();
+        const c4 = parseSignedCookie(user.tid!); // active: t5, revoke: t2
+        console.log('c4', c4);
+        expect(c4.rt).toEqual(c1.t);
+
+        await user.rotateTID();
+        const c5 = parseSignedCookie(user.tid!); // active: t6, revoke: t5
+        console.log('c5', c5);
+        expect(c5.rt).toEqual(c4.t);
+
+        // Token rotated out shall not work
+        const request = await requestLoginWithToken(tid);
+        expect(request.statusCode).toEqual(200);
+        expect(getPageRedirectUrl(request.text)).toEqual(
+            config.defaultRedirects.errorUrl + '?type=sessionExpired&status=401'
+        );
+
+        // live tokens: t3,t4,t5,t6
+        const tokens = (await getTokens(user.sid)).map((x) => x.tokenFingerprint);
+        const expectedTokens = [c2.t, c3.t, c4.t, c5.t].map((x) => getSHA256Hash(x));
+        expect(tokens).toIncludeSameMembers(expectedTokens);
     });
 });
