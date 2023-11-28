@@ -1,8 +1,7 @@
-import request from 'superagent';
+import request from '$lib/request';
 import config from '../test.config';
-import { getCookies } from '$lib/auth_utils';
 import { Cookie } from 'tough-cookie';
-//import requestLogger from 'superagent-logger';
+import { getCookies } from '$lib/user_utils';
 
 describe('Auth cookie consistency matrix', () => {
     const testCases = [
@@ -58,8 +57,7 @@ describe('Auth cookie consistency matrix', () => {
                 const response = await request
                     .get(config.getUrlFor('/identity/auth/token/login'))
                     .query({ rememberMe: true })
-                    .send()
-                    .catch((err) => err.response);
+                    .send();
                 expect(response.statusCode).toEqual(200);
                 const cookies = getCookies(response);
                 expect(cookies.tid).toBeValidTID();
@@ -73,8 +71,7 @@ describe('Auth cookie consistency matrix', () => {
                 const response = await request
                     .get(config.getUrlFor('/identity/auth/oauth2_flow/link'))
                     .set('Cookie', [`sid=${sid}`])
-                    .send()
-                    .catch((err) => err.response);
+                    .send();
                 expect(response.statusCode).toEqual(200);
                 const cookies = getCookies(response);
                 expect(cookies.eid).toBeValidEID();
@@ -133,8 +130,7 @@ describe('Auth cookie consistency matrix', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/validate'))
             .set('Cookie', requestCookies)
-            .send()
-            .catch((err) => err.response);
+            .send();
         expect(response.statusCode).toEqual(200);
 
         const cookies = getCookies(response);

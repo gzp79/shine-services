@@ -1,6 +1,7 @@
 use crate::repositories::{Identity, IdentityBuildError, IdentityError, IdentityKind};
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
+use ring::digest;
 use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::SiteInfo,
@@ -200,14 +201,14 @@ where
     pub async fn store_token(
         &mut self,
         user_id: Uuid,
+        kind: TokenKind,
         token_hash: &str,
-        duration: &Duration,
+        time_to_live: &Duration,
         fingerprint: Option<&ClientFingerprint>,
         site_info: &SiteInfo,
-        kind: TokenKind,
     ) -> Result<TokenInfo, IdentityError> {
-        let duration = duration.num_seconds() as i32;
-        assert!(duration > 2);
+        let time_to_live = time_to_live.num_seconds() as i32;
+        assert!(time_to_live > 2);
         let row = match self
             .stmts_tokens
             .insert
@@ -217,7 +218,7 @@ where
                 &token_hash,
                 &fingerprint.map(|f| f.as_str()),
                 &kind,
-                &duration,
+                &time_to_live,
                 &site_info.agent.as_str(),
                 &site_info.country.as_deref(),
                 &site_info.region.as_deref(),
@@ -326,4 +327,14 @@ where
         }
         Ok(())
     }
+}
+
+/// Generate a (crypto) hashed version of a token to protect data in rest.
+pub fn hash_token(token: &str) -> String {
+    // there is no need for a complex hash as key has a big entropy already
+    // and it'd be too expensive to invert the hashing.
+    let hash = digest::digest(&digest::SHA256, token.as_bytes());
+    let hash = hex::encode(hash);
+    log::debug!("Hashing token: {token:?} -> [{hash}]");
+    hash
 }

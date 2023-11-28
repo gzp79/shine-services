@@ -1,8 +1,8 @@
 use crate::repositories::{
-    DBError, ExternalLink, ExternalUserInfo, Identity, IdentityBuildError, IdentityError, TokenInfo, TokenKind,
+    hash_token, DBError, ExternalLink, ExternalUserInfo, Identity, IdentityBuildError, IdentityError, TokenInfo,
+    TokenKind,
 };
 use chrono::Duration;
-use ring::digest;
 use shine_service::{
     axum::SiteInfo,
     service::{ClientFingerprint, PGConnectionPool},
@@ -141,20 +141,20 @@ impl IdentityManager {
             .await
     }
 
-    pub async fn create_token(
+    pub async fn add_token(
         &self,
         user_id: Uuid,
+        kind: TokenKind,
         token: &str,
-        duration: &Duration,
+        time_to_live: &Duration,
         fingerprint: Option<&ClientFingerprint>,
         site_info: &SiteInfo,
-        kind: TokenKind,
     ) -> Result<TokenInfo, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         let token_hash = hash_token(token);
         Tokens::new(&client, &inner.stmts_tokens)
-            .store_token(user_id, &token_hash, duration, fingerprint, site_info, kind)
+            .store_token(user_id, kind, &token_hash, time_to_live, fingerprint, site_info)
             .await
     }
 
@@ -219,14 +219,4 @@ impl IdentityManager {
             .delete_role(user_id, role)
             .await
     }
-}
-
-/// Generate a (crypto) hashed version of a token to protect data in rest.
-fn hash_token(token: &str) -> String {
-    // there is no need for a complex hash as key has a big entropy already
-    // and it'd be too expensive to invert the hashing.
-    let hash = digest::digest(&digest::SHA256, token.as_bytes());
-    let hash = hex::encode(hash);
-    log::debug!("Hashing token: {token:?} -> [{hash}]");
-    hash
 }

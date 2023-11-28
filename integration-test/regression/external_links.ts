@@ -2,9 +2,9 @@ import config from '../test.config';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIdMockServer from '$lib/mocks/openid';
 import { ExternalUser, TestUser } from '$lib/user';
-import { ExternalLink, getExternalLinks } from '$lib/auth_utils';
 import { linkWithOAuth2, linkWithOpenId } from '$lib/login_utils';
-import request from 'superagent';
+import { ExternalLink, getExternalLinks } from '$lib/user_utils';
+import request from '$lib/request';
 
 describe('External links', () => {
     const now = new Date().getTime();
@@ -28,8 +28,7 @@ describe('External links', () => {
             .delete(config.getUrlFor(`identity/api/auth/user/links/${provider}/${providerUserId}`))
             .set('Cookie', [`sid=${cookieValue}`])
             .set(extraHeaders ?? {})
-            .send()
-            .catch((err) => err.response);
+            .send();
         return response.statusCode;
     };
 
@@ -115,7 +114,7 @@ describe('External links', () => {
         const l2 = ExternalUser.newRandomUser();
         await linkWithOpenId(mockOpenId, user.sid, l2);
         const links2 = await getExternalLinks(user.sid);
-        const t2 = links2.find((l) => l.providerUserId === l2.id)!;        
+        const t2 = links2.find((l) => l.providerUserId === l2.id)!;
         expect(links2).toIncludeSameMembers([
             { ...anyLink, provider: 'oauth2_flow', email: l1.email, name: l1.name },
             { ...anyLink, provider: 'openid_flow', email: l2.email, name: l2.name }

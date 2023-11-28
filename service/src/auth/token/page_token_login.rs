@@ -170,10 +170,10 @@ async fn token_login(
             let mut token_cookie = match state
                 .create_token_with_retry(
                     identity.id,
+                    TokenKind::Access,
+                    state.ttl_access_token(),
                     Some(&fingerprint),
                     &site_info,
-                    TokenKind::Access,
-                    state.token().ttl_access_token(),
                 )
                 .await
             {

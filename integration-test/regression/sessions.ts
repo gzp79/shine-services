@@ -1,10 +1,10 @@
-import request from 'superagent';
-import { ActiveSession, getSessions, logout } from '$lib/auth_utils';
+import request from '$lib/request';
 import config from '../test.config';
 import OAuth2MockServer from '$lib/mocks/oauth2';
-import { loginWithOAuth2, loginWithToken } from '$lib/login_utils';
+import { loginWithOAuth2, loginWithToken, logout } from '$lib/login_utils';
 import { TestUser } from '$lib/user';
 import { MockServer } from '$lib/mock_server';
+import { ActiveSession, getSessions } from '$lib/user_utils';
 
 describe('Sessions', () => {
     // assume server is not off more than a few seconds and the test is fast enough
@@ -32,10 +32,7 @@ describe('Sessions', () => {
     });
 
     it('Get token without a session shall fail', async () => {
-        let response = await request
-            .get(config.getUrlFor('identity/api/auth/user/sessions'))
-            .send()
-            .catch((err) => err.response);
+        let response = await request.get(config.getUrlFor('identity/api/auth/user/sessions')).send();
         expect(response.statusCode).toEqual(401);
     });
 

@@ -1,5 +1,8 @@
 use crate::{
-    auth::{auth_session::TokenCookie, AuthServiceState, AuthSession, OIDCDiscoveryError, TokenGeneratorError},
+    auth::{
+        auth_session::TokenCookie, token::TokenGenerator, AuthServiceState, AuthSession, OIDCDiscoveryError,
+        TokenGeneratorError,
+    },
     repositories::{AutoNameError, ExternalUserInfo, Identity, IdentityError, TokenKind},
 };
 use axum::{
@@ -79,10 +82,10 @@ impl AuthServiceState {
     pub(in crate::auth) async fn create_token_with_retry(
         &self,
         user_id: Uuid,
+        kind: TokenKind,
+        time_to_live: &Duration,
         fingerprint: Option<&ClientFingerprint>,
         site_info: &SiteInfo,
-        kind: TokenKind,
-        time_to_live: Duration,
     ) -> Result<TokenCookie, TokenCreateError> {
         const MAX_RETRY_COUNT: usize = 10;
         let mut retry_count = 0;
@@ -93,10 +96,10 @@ impl AuthServiceState {
             }
             retry_count += 1;
 
-            let token = self.token().generate_token()?;
+            let token = TokenGenerator::new(self.random()).generate_token()?;
             match self
                 .identity_manager()
-                .create_token(user_id, &token, &time_to_live, fingerprint, site_info, kind)
+                .add_token(user_id, kind, &token, time_to_live, fingerprint, site_info)
                 .await
             {
                 Ok(info) => {

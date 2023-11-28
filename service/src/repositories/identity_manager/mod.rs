@@ -16,5 +16,5 @@ pub use self::{
     permissions::{Permission, PermissionError, PermissionSet},
     roles::Role,
     search_identities::{SearchIdentity, SearchIdentityOrder, MAX_SEARCH_COUNT},
-    tokens::{TokenInfo, TokenKind},
+    tokens::{hash_token, TokenInfo, TokenKind},
 };

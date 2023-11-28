@@ -1,13 +1,12 @@
-import request from 'superagent';
-import { ActiveToken, getTokens, logout } from '$lib/auth_utils';
+import request from '$lib/request';
 import config from '../test.config';
 import { TestUser } from '$lib/user';
 import OAuth2MockServer from '$lib/mocks/oauth2';
-import { loginWithOAuth2, loginWithToken, requestLoginWithToken } from '$lib/login_utils';
+import { loginWithOAuth2, loginWithToken, logout, requestLoginWithToken } from '$lib/login_utils';
 import { getPageRedirectUrl } from '$lib/page_utils';
 import { MockServer } from '$lib/mock_server';
-import crypto from 'crypto';
 import { getSHA256Hash, parseSignedCookie } from '$lib/utils';
+import { ActiveToken, getTokens } from '$lib/user_utils';
 
 describe('Tokens', () => {
     // assume server is not off more than a few seconds and the test is fast enough
@@ -27,7 +26,7 @@ describe('Tokens', () => {
         city: null
     };
 
-    let mock!: MockServer;
+    let mock: MockServer;
     const startMock = async (): Promise<OAuth2MockServer> => {
         mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
         await mock.start();
@@ -41,10 +40,7 @@ describe('Tokens', () => {
 
     it('Get token without a session shall fail', async () => {
         // initial session for a new user
-        let response = await request
-            .get(config.getUrlFor('identity/api/auth/user/tokens'))
-            .send()
-            .catch((err) => err.response);
+        let response = await request.get(config.getUrlFor('identity/api/auth/user/tokens')).send();
         expect(response.statusCode).toEqual(401);
     });
 
@@ -102,8 +98,7 @@ describe('Tokens', () => {
         let response = await request
             .get(config.getUrlFor(`/identity/auth/logout`))
             .set('Cookie', [`sid=${sid2}`, `tid=${tid2}`])
-            .send()
-            .catch((err) => err.response);
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(await getTokens(user.sid)).toIncludeSameMembers([{ ...anyToken, city: 'r1' }]);
     });
@@ -154,8 +149,7 @@ describe('Tokens', () => {
         let responseGet = await request
             .get(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
             .set('Cookie', user.getSessionCookie())
-            .send()
-            .catch((err) => err.response);
+            .send();
         expect(responseGet.statusCode).toEqual(200);
         expect(responseGet.body.userId).toEqual(user.userId);
         expect(responseGet.body.city).toEqual('r2');
@@ -165,16 +159,14 @@ describe('Tokens', () => {
         let responseDelete = await request
             .delete(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
             .set('Cookie', user.getSessionCookie())
-            .send()
-            .catch((err) => err.response);
+            .send();
         expect(responseDelete.statusCode).toEqual(200);
 
         // it shall be gone
         let responseGet2 = await request
             .get(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
             .set('Cookie', user.getSessionCookie())
-            .send()
-            .catch((err) => err.response);
+            .send();
         expect(responseGet2.statusCode).toEqual(404);
         expect(await getTokens(user.sid)).toIncludeSameMembers([
             { ...anyToken, city: 'r1' },
@@ -186,8 +178,7 @@ describe('Tokens', () => {
             .get(config.getUrlFor('identity/auth/token/login'))
             .query(config.defaultRedirects)
             .set('Cookie', [`tid=${tid2}`])
-            .send()
-            .catch((err) => err.response);
+            .send();
         expect(responseLogin.statusCode).toEqual(200);
         expect(getPageRedirectUrl(responseLogin.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=sessionExpired&status=401'
@@ -239,5 +230,31 @@ describe('Tokens', () => {
         const tokens = (await getTokens(user.sid)).map((x) => x.tokenFingerprint);
         const expectedTokens = [c2.t, c3.t, c4.t, c5.t].map((x) => getSHA256Hash(x));
         expect(tokens).toIncludeSameMembers(expectedTokens);
+    });
+});
+
+describe('Single access token', () => {
+    const now = new Date().getTime();
+
+    let mock: OAuth2MockServer = undefined!;
+    let user: TestUser = undefined!;
+
+    beforeEach(async () => {
+        mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
+        await mock.start();
+        const user = await TestUser.createLinked(mock);
+    });
+
+    afterEach(async () => {
+        await mock?.stop();
+        mock = undefined!;
+        user = undefined!;
+    });
+
+    it('Too long time to live shall be rejected with bad request', async () => {
+        const user = await TestUser.createLinked(mock);
+        expect(await getTokens(user.sid)).toBeEmpty();
+
+        //const request = requestSAToken(user.sid, 20);
     });
 });

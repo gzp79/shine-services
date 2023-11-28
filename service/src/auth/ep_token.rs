@@ -1,7 +1,7 @@
 use crate::{
     auth::AuthServiceState,
     openapi::ApiKind,
-    repositories::{TokenInfo, TokenKind},
+    repositories::{hash_token, TokenInfo, TokenKind},
 };
 use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
 use chrono::{DateTime, Duration, Utc};
@@ -16,15 +16,14 @@ use validator::{Validate, ValidationError};
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-#[validate(schema(function = "validate_token_spec"))]
 struct CreateQuery {
     /// The kind of token to create, Allowed kinds are persistent or singleAccess
     #[validate(custom = "validate_allowed_kind")]
     kind: TokenKind,
-    /// If set a persistent token will be created with the given timeout,
-    /// otherwise a single access token is created
-    #[validate(range(min = 30, max = 7_890_000))]
-    timeout: usize,
+    /// The expiration The valid range is 30s .. 1 year, but server config
+    /// may reduce it.
+    #[validate(range(min = 30, max = 31_536_000))]
+    time_to_live: usize,
     /// If set to true, the token is bound to the current site
     bind_to_site: bool,
 }
@@ -37,20 +36,15 @@ fn validate_allowed_kind(kind: &TokenKind) -> Result<(), ValidationError> {
     }
 }
 
-fn validate_token_spec(query: &CreateQuery) -> Result<(), ValidationError> {
-    if query.kind == TokenKind::SingleAccess && !(30..30 * 60).contains(&query.timeout) {
-        return Err(ValidationError::new("timeout is required for persistent tokens"));
-    }
-    Ok(())
-}
-
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 struct CreatedToken {
     /// The kind of the created token
     kind: TokenKind,
-    /// The token
+    /// The token, accessible only once, backend is not storing it in plain format
     token: String,
+    /// The unique id of the token
+    token_hash: String,
     /// Authorization type
     token_type: String,
     /// Date of the expiration of the token
@@ -66,25 +60,39 @@ async fn token_create(
     site_info: SiteInfo,
     ValidatedQuery(query): ValidatedQuery<CreateQuery>,
 ) -> Result<Json<CreatedToken>, Problem> {
-    // check if session is still valid
-    let _ = state
-        .session_manager()
-        .find(user.user_id, user.key)
-        .await
-        .map_err(Problem::internal_error_from)?
-        .ok_or(Problem::unauthorized())?;
+    let time_to_live = Duration::seconds(query.time_to_live as i64);
+    // validate time_to_live against server config
+    match query.kind {
+        TokenKind::SingleAccess => {
+            if &time_to_live > state.ttl_single_access() {
+                return Err(Problem::bad_request().with_title(format!(
+                    "timeToLive exceeds maximum limit ({})",
+                    state.ttl_single_access().num_seconds()
+                )));
+            }
+        }
+        TokenKind::Persistent => {
+            if &time_to_live > state.ttl_api_key() {
+                return Err(Problem::bad_request().with_title(format!(
+                    "timeToLive exceeds maximum limit ({})",
+                    state.ttl_single_access().num_seconds()
+                )));
+            }
+        }
+        TokenKind::Access => unreachable!(),
+    };
 
-    // create a new persistent or single access token
-    let ttl = Duration::seconds(query.timeout as i64);
     let fingerprint = if query.bind_to_site { Some(&fingerprint) } else { None };
     let token_cookie = state
-        .create_token_with_retry(user.user_id, fingerprint, &site_info, query.kind, ttl)
+        .create_token_with_retry(user.user_id, query.kind, &time_to_live, fingerprint, &site_info)
         .await
         .map_err(Problem::internal_error_from)?;
 
+    let token_hash = hash_token(&token_cookie.token);
     Ok(Json(CreatedToken {
         kind: query.kind,
         token: token_cookie.token,
+        token_hash,
         token_type: "Bearer".into(),
         expire_at: token_cookie.expire_at,
     }))

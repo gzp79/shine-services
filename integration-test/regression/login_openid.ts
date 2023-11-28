@@ -1,7 +1,7 @@
-import request from 'superagent';
+import request from '$lib/request';
 import os from 'os';
 import { getPageRedirectUrl } from '$lib/page_utils';
-import { getCookies, getUserInfo, logout } from '$lib/auth_utils';
+import { getCookies, getUserInfo } from '$lib/user_utils';
 import config from '../test.config';
 import { MockServer } from '$lib/mock_server';
 import OpenIdMockServer from '$lib/mocks/openid';
@@ -10,6 +10,7 @@ import {
     createGuestUser,
     loginWithOpenId,
     loginWithToken,
+    logout,
     requestLinkWithOpenId,
     requestLoginWithOpenId,
     startLoginWithOpenId
@@ -39,11 +40,7 @@ describe('Check OpenId auth', () => {
 
     it('Auth with (parameters: NO, cookie: NO) shall fail', async () => {
         await startMock();
-        const response = await request
-            .get(config.getUrlFor('identity/auth/openid_flow/auth'))
-            .send()
-            .catch((err) => err.response);
-
+        const response = await request.get(config.getUrlFor('identity/auth/openid_flow/auth')).send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             'https://web.sandbox.com:8080/error?type=authError&status=400'
@@ -65,9 +62,7 @@ describe('Check OpenId auth', () => {
                 code: ExternalUser.newRandomUser().toCode({ nonce: authParams.nonce }),
                 state: authParams.state
             })
-            .send()
-            .catch((err) => err.response);
-
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             'https://web.sandbox.com:8080/error?type=authError&status=400'
@@ -86,9 +81,7 @@ describe('Check OpenId auth', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/auth'))
             .set('Cookie', [`eid=${eid.value}`])
-            .send()
-            .catch((err) => err.response);
-
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=invalidInput&status=400'
@@ -111,9 +104,7 @@ describe('Check OpenId auth', () => {
                 state: 'invalid'
             })
             .set('Cookie', [`eid=${eid.value}`])
-            .send()
-            .catch((err) => err.response);
-
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=400'
@@ -136,9 +127,7 @@ describe('Check OpenId auth', () => {
                 state: authParams.state
             })
             .set('Cookie', [`eid=${eid.value}`])
-            .send()
-            .catch((err) => err.response);
-
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=500'
@@ -166,9 +155,7 @@ describe('Check OpenId auth', () => {
                 state: authParams.state
             })
             .set('Cookie', [`eid=${eid.value}`])
-            .send()
-            .catch((err) => err.response);
-
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=500'
@@ -212,9 +199,7 @@ describe('Login with OpenId', () => {
             .get(config.getUrlFor('identity/auth/openid_flow/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`sid=${sid.value}`])
-            .send()
-            .catch((err) => err.response);
-
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
@@ -236,9 +221,7 @@ describe('Login with OpenId', () => {
             .get(config.getUrlFor('identity/auth/openid_flow/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`sid=${sid.value}`])
-            .send()
-            .catch((err) => err.response);
-
+            .send();
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -256,9 +239,7 @@ describe('Login with OpenId', () => {
             .get(config.getUrlFor('identity/auth/openid_flow/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`tid=${tid.value}`])
-            .send()
-            .catch((err) => err.response);
-
+            .send();
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -342,8 +323,7 @@ describe('Link to OpenId account', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/openid_flow/link'))
             .query({ ...config.defaultRedirects })
-            .send()
-            .catch((err) => err.response);
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=loginRequired&status=401'

@@ -1,12 +1,12 @@
-import request from 'superagent';
+import request from '$lib/request';
 import config from '../test.config';
 import { createUrlQueryString, generateRandomString } from '$lib/string_utils';
 import { createGuestUser, loginWithOAuth2, loginWithOpenId, loginWithToken } from './login_utils';
-import { getUserInfo } from './auth_utils';
 import { randomUUID } from 'crypto';
 import { MockServer } from './mock_server';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIdMockServer from '$lib/mocks/openid';
+import { getUserInfo } from './user_utils';
 
 export interface UserInfo {
     userId: string;

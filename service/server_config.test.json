@@ -45,6 +45,7 @@
         "ttlSession": 43200,
         "ttlAccessToken": 1209600,
         "ttlSingleAccess": 600,
+        "ttlApiKey": 31536000,
         "openidIgnoreDiscoveryError": true,        
         "oauth2": {
             "oauth2_flow": {

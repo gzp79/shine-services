@@ -166,10 +166,10 @@ impl AuthServiceState {
             match self
                 .create_token_with_retry(
                     identity.id,
+                    TokenKind::Access,
+                    self.ttl_access_token(),
                     Some(&fingerprint),
                     site_info,
-                    TokenKind::Access,
-                    self.token().ttl_access_token(),
                 )
                 .await
             {

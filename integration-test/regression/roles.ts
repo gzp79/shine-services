@@ -1,9 +1,8 @@
-import request from 'superagent';
+import request from '$lib/request';
 import config from '../test.config';
 import { TestUser } from '$lib/user';
 import { randomUUID } from 'crypto';
-import { getUserInfo } from '$lib/auth_utils';
-//import requestLogger from 'superagent-logger';
+import { getUserInfo } from '$lib/user_utils';
 
 // It checks only for the access of the feature, but not if it does what it have to.
 describe('Access to user role management', () => {
@@ -45,7 +44,7 @@ describe('Access to user role management', () => {
             if (test.apiKey) {
                 req.set('Authorization', `Bearer ${config.masterKey}`);
             }
-            let response = await req.send().catch((err) => err.response);
+            let response = await req.send();
             expect(response.statusCode).toEqual(test.expectedCode);
         }
     );
@@ -61,10 +60,7 @@ describe('Access to user role management', () => {
             if (test.apiKey) {
                 req.set('Authorization', `Bearer ${config.masterKey}`);
             }
-            let response = await req
-                .type('json')
-                .send({ role: 'Role_' + randomUUID() })
-                .catch((err) => err.response);
+            let response = await req.type('json').send({ role: 'Role_' + randomUUID() });
             expect(response.statusCode).toEqual(test.expectedCode);
         }
     );
@@ -80,10 +76,7 @@ describe('Access to user role management', () => {
             if (test.apiKey) {
                 req.set('Authorization', `Bearer ${config.masterKey}`);
             }
-            let response = await req
-                .type('json')
-                .send({ role: 'Role2' })
-                .catch((err) => err.response);
+            let response = await req.type('json').send({ role: 'Role2' });
             expect(response.statusCode).toEqual(test.expectedCode);
         }
     );
@@ -96,8 +89,7 @@ describe('User roles', () => {
         let response = await request
             .get(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
             .set('Cookie', admin.getSessionCookie())
-            .send()
-            .catch((err) => err.response);
+            .send();
         expect(response.statusCode).toEqual(200);
         return response.body.roles;
     };
@@ -132,8 +124,7 @@ describe('User roles', () => {
         let response = await request
             .get(config.getUrlFor(`/identity/api/identities/${randomUUID()}/roles`))
             .set('Cookie', admin.getSessionCookie())
-            .send()
-            .catch((err) => err.response);
+            .send();
         expect(response.statusCode).toEqual(404);
     });
 
@@ -142,8 +133,7 @@ describe('User roles', () => {
             .put(config.getUrlFor(`/identity/api/identities/${randomUUID()}/roles`))
             .set('Cookie', admin.getSessionCookie())
             .type('json')
-            .send({ role: 'Role1' })
-            .catch((err) => err.response);
+            .send({ role: 'Role1' });
         expect(response.statusCode).toEqual(404);
     });
 
@@ -152,8 +142,7 @@ describe('User roles', () => {
             .delete(config.getUrlFor(`/identity/api/identities/${randomUUID()}/roles`))
             .set('Cookie', admin.getSessionCookie())
             .type('json')
-            .send({ role: 'Role1' })
-            .catch((err) => err.response);
+            .send({ role: 'Role1' });
         expect(response.statusCode).toEqual(404);
     });
 

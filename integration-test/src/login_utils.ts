@@ -1,11 +1,11 @@
-import request from 'superagent';
-import { getPageRedirectUrl } from '$lib/page_utils';
-import config from '../test.config';
+import request from '$lib/request';
 import { Cookie } from 'tough-cookie';
-import { getCookies } from './auth_utils';
-import { ExternalUser } from './user';
+import { getPageRedirectUrl } from '$lib/page_utils';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIdMockServer from '$lib/mocks/openid';
+import config from '../test.config';
+import { ExternalUser } from './user';
+import { getCookies } from './user_utils';
 
 export async function createGuestUser(
     extraHeaders?: Record<string, string>
@@ -14,9 +14,7 @@ export async function createGuestUser(
         .get(config.getUrlFor('identity/auth/token/login'))
         .query({ rememberMe: true, ...config.defaultRedirects })
         .set(extraHeaders ?? {})
-        .send()
-        .catch((err) => err.response);
-
+        .send();
     expect(response.statusCode).toEqual(200);
     expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
     const cookies = getCookies(response);
@@ -35,8 +33,7 @@ export async function requestLoginWithToken(
         .query(config.defaultRedirects)
         .set('Cookie', [`tid=${tid}`])
         .set(extraHeaders ?? {})
-        .send()
-        .catch((err) => err.response);
+        .send();
 }
 
 export async function loginWithToken(
@@ -71,8 +68,7 @@ export async function requestStartLoginWithOAuth2(
         .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
         .query({ rememberMe: rememberMe, ...config.defaultRedirects })
         .set(extraHeaders ?? {})
-        .send()
-        .catch((err) => err.response);
+        .send();
 }
 
 export async function startLoginWithOAuth2(
@@ -111,8 +107,7 @@ export async function requestLoginWithOAuth2(
         })
         .set('Cookie', [`eid=${start.eid.value}`])
         .set(extraHeaders ?? {})
-        .send()
-        .catch((err) => err.response);
+        .send();
 }
 
 export async function loginWithOAuth2(
@@ -145,8 +140,7 @@ export async function requestStartLinkWithOAuth2(
         .query({ ...config.defaultRedirects })
         .set('Cookie', [`sid=${sid}`])
         .set(extraHeaders ?? {})
-        .send()
-        .catch((err) => err.response);
+        .send();
 }
 
 export async function startLinkWithOAuth2(
@@ -186,8 +180,7 @@ export async function requestLinkWithOAuth2(
         })
         .set('Cookie', [`eid=${eid.value}`, `sid=${sid}`])
         .set(extraHeaders ?? {})
-        .send()
-        .catch((err) => err.response);
+        .send();
 }
 
 export async function linkWithOAuth2(
@@ -215,8 +208,7 @@ export async function requestStartLoginWithOpenId(
         .get(config.getUrlFor('identity/auth/openid_flow/login'))
         .query({ rememberMe: rememberMe, ...config.defaultRedirects })
         .set(extraHeaders ?? {})
-        .send()
-        .catch((err) => err.response);
+        .send();
 }
 
 export async function startLoginWithOpenId(
@@ -254,8 +246,7 @@ export async function requestLoginWithOpenId(
         })
         .set('Cookie', [`eid=${eid.value}`])
         .set(extraHeaders ?? {})
-        .send()
-        .catch((err) => err.response);
+        .send();
 }
 
 export async function loginWithOpenId(
@@ -288,8 +279,7 @@ export async function requestStartLinkWithOpenId(
         .query({ ...config.defaultRedirects })
         .set('Cookie', [`sid=${sid}`])
         .set(extraHeaders ?? {})
-        .send()
-        .catch((err) => err.response);
+        .send();
 }
 
 export async function startLinkWithOpenId(
@@ -329,8 +319,7 @@ export async function requestLinkWithOpenId(
         })
         .set('Cookie', [`eid=${eid.value}`, `sid=${sid}`])
         .set(extraHeaders ?? {})
-        .send()
-        .catch((err) => err.response);
+        .send();
 }
 
 export async function linkWithOpenId(
@@ -349,4 +338,12 @@ export async function linkWithOpenId(
     expect(cookies.sid.value).toEqual(sid);
     expect(cookies.eid).toBeClearCookie();
     return cookies;
+}
+
+export async function logout(cookieValue: string, terminateAll: boolean): Promise<void> {
+    let response = await request
+        .get(config.getUrlFor(`/identity/auth/logout?terminateAll=${terminateAll}`))
+        .set('Cookie', [`sid=${cookieValue}`])
+        .send();
+    expect(response.statusCode).toEqual(200);
 }

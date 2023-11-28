@@ -1,7 +1,7 @@
-import request from 'superagent';
+import request from '$lib/request';
 import os from 'os';
 import { getPageRedirectUrl } from '$lib/page_utils';
-import { getCookies, getUserInfo, logout } from '$lib/auth_utils';
+import { getCookies, getUserInfo } from '$lib/user_utils';
 import config from '../test.config';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import { ExternalUser, TestUser } from '$lib/user';
@@ -9,6 +9,7 @@ import {
     createGuestUser,
     loginWithOAuth2,
     loginWithToken,
+    logout,
     requestLinkWithOAuth2,
     requestLoginWithOAuth2,
     startLoginWithOAuth2
@@ -35,10 +36,7 @@ describe('Check OAuth2 auth', () => {
 
     it('Auth with (parameters: NO, cookie: NO) shall fail', async () => {
         await startMock();
-        const response = await request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
-            .send()
-            .catch((err) => err.response);
+        const response = await request.get(config.getUrlFor('identity/auth/oauth2_flow/auth')).send();
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -61,8 +59,7 @@ describe('Check OAuth2 auth', () => {
                 code: ExternalUser.newRandomUser().toCode(),
                 state: authParams.state
             })
-            .send()
-            .catch((err) => err.response);
+            .send();
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -82,8 +79,7 @@ describe('Check OAuth2 auth', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
             .set('Cookie', [`eid=${eid.value}`])
-            .send()
-            .catch((err) => err.response);
+            .send();
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -107,8 +103,7 @@ describe('Check OAuth2 auth', () => {
                 state: 'invalid'
             })
             .set('Cookie', [`eid=${eid.value}`])
-            .send()
-            .catch((err) => err.response);
+            .send();
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -132,8 +127,7 @@ describe('Check OAuth2 auth', () => {
                 state: authParams.state
             })
             .set('Cookie', [`eid=${eid.value}`])
-            .send()
-            .catch((err) => err.response);
+            .send();
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -158,8 +152,7 @@ describe('Check OAuth2 auth', () => {
                 state: authParams.state
             })
             .set('Cookie', [`eid=${eid.value}`])
-            .send()
-            .catch((err) => err.response);
+            .send();
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -200,8 +193,7 @@ describe('Login with OAuth2', () => {
             .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`sid=${sid.value}`])
-            .send()
-            .catch((err) => err.response);
+            .send();
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -224,8 +216,7 @@ describe('Login with OAuth2', () => {
             .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`sid=${sid.value}`])
-            .send()
-            .catch((err) => err.response);
+            .send();
 
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
@@ -244,9 +235,7 @@ describe('Login with OAuth2', () => {
             .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', [`tid=${tid.value}`])
-            .send()
-            .catch((err) => err.response);
-
+            .send();
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -323,8 +312,7 @@ describe('Link to OAuth2 account', () => {
         const response = await request
             .get(config.getUrlFor('identity/auth/oauth2_flow/link'))
             .query({ ...config.defaultRedirects })
-            .send()
-            .catch((err) => err.response);
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=loginRequired&status=401'
