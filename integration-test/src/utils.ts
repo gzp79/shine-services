@@ -17,7 +17,8 @@ export function joinURL(baseUrl: URL, path: string): string {
 
 export function parseSignedCookie(value: string): any {
     const json = decodeURIComponent(value);
-    return JSON.parse(json.substring(44));
+    const payload = json.substring(44);
+    return JSON.parse(payload);
 }
 
 export function getSHA256Hash(text: string): string {

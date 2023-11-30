@@ -1,30 +1,24 @@
-import request from '$lib/request';
 import os from 'os';
-import { getPageRedirectUrl } from '$lib/page_utils';
-import { getCookies, getUserInfo } from '$lib/user_utils';
+import { getCookies, getPageRedirectUrl } from '$lib/response_utils';
 import config from '../test.config';
 import OAuth2MockServer from '$lib/mocks/oauth2';
-import { ExternalUser, TestUser } from '$lib/user';
-import {
-    createGuestUser,
-    loginWithOAuth2,
-    loginWithToken,
-    logout,
-    requestLinkWithOAuth2,
-    requestLoginWithOAuth2,
-    startLoginWithOAuth2
-} from '$lib/login_utils';
+import { TestUser } from '$lib/test_user';
 import { randomUUID } from 'crypto';
 import { generateRandomString } from '$lib/string_utils';
 import { MockServer } from '$lib/mock_server';
+import api from '$lib/api/api';
+import { ExternalUser } from '$lib/api/external_user';
+import { parseSignedCookie } from '$lib/utils';
 
 describe('Check OAuth2 auth', () => {
     let mock: MockServer | undefined;
 
-    const startMock = async (): Promise<OAuth2MockServer> => {
+    const startMock = async (start = true): Promise<OAuth2MockServer> => {
         if (!mock) {
             mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
-            await mock.start();
+            if (start) {
+                await mock.start();
+            }
         }
         return mock as OAuth2MockServer;
     };
@@ -34,9 +28,9 @@ describe('Check OAuth2 auth', () => {
         mock = undefined;
     });
 
-    it('Auth with (parameters: NO, cookie: NO) shall fail', async () => {
+    it('Auth with (parameters: NULL, session: NULL, external: NULL) shall fail', async () => {
         await startMock();
-        const response = await request.get(config.getUrlFor('identity/auth/oauth2_flow/auth')).send();
+        const response = await api.request.authorizeWithOAuth2(null, null, null, null).send();
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -50,17 +44,13 @@ describe('Check OAuth2 auth', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Auth with (parameters: VALID, cookie: NO) shall fail', async () => {
+    it('Auth with (parameters: VALID, session: NULL, external: NULL) shall fail', async () => {
         const mock = await startMock();
-        const { authParams } = await startLoginWithOAuth2(mock);
-        const response = await request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
-            .query({
-                code: ExternalUser.newRandomUser().toCode(),
-                state: authParams.state
-            })
-            .send();
+        const { authParams } = await api.auth.startLoginWithOAuth2(mock, null);
 
+        const response = await api.request
+            .authorizeWithOAuth2(null, null, authParams.state, ExternalUser.newRandomUser().toCode())
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             'https://web.sandbox.com:8080/error?type=authError&status=400'
@@ -73,14 +63,11 @@ describe('Check OAuth2 auth', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Auth with (parameters: NO, cookie: VALID) shall fail', async () => {
+    it('Auth with (parameters: NULL, session: NULL, external: VALID) shall fail', async () => {
         const mock = await startMock();
-        const { eid } = await startLoginWithOAuth2(mock);
-        const response = await request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
-            .set('Cookie', [`eid=${eid.value}`])
-            .send();
+        const { eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
+        const response = await api.request.authorizeWithOAuth2(null, eid, null, null).send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=invalidInput&status=400'
@@ -93,18 +80,13 @@ describe('Check OAuth2 auth', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Auth with (parameters: INVALID state, cookie: VALID) shall fail', async () => {
+    it('Auth with (parameters: INVALID state, session: NULL, external: VALID) shall fail', async () => {
         const mock = await startMock();
-        const { eid } = await startLoginWithOAuth2(mock);
-        const response = await request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
-            .query({
-                code: ExternalUser.newRandomUser().toCode(),
-                state: 'invalid'
-            })
-            .set('Cookie', [`eid=${eid.value}`])
-            .send();
+        const { eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
+        const response = await api.request
+            .authorizeWithOAuth2(null, eid, 'invalid', ExternalUser.newRandomUser().toCode())
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=400'
@@ -117,18 +99,11 @@ describe('Check OAuth2 auth', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Auth with (parameters: INVALID code, cookie: VALID) shall fail', async () => {
+    it('Auth with (parameters: INVALID code, session: NULL, external: VALID) shall fail', async () => {
         const mock = await startMock();
-        const { authParams, eid } = await startLoginWithOAuth2(mock);
-        const response = await request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
-            .query({
-                code: 'invalid',
-                state: authParams.state
-            })
-            .set('Cookie', [`eid=${eid.value}`])
-            .send();
+        const { authParams, eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
+        const response = await api.request.authorizeWithOAuth2(null, eid, authParams.state, 'invalid').send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=500'
@@ -143,17 +118,12 @@ describe('Check OAuth2 auth', () => {
 
     it('Auth with failing 3rd party token service shall fail', async () => {
         // mock is intentionally not started
-        const mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
-        const { authParams, eid } = await startLoginWithOAuth2(mock);
-        const response = await request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
-            .query({
-                code: ExternalUser.newRandomUser().toCode(),
-                state: authParams.state
-            })
-            .set('Cookie', [`eid=${eid.value}`])
-            .send();
+        const mock = await startMock(false);
+        const { authParams, eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
+        const response = await api.request
+            .authorizeWithOAuth2(null, eid, authParams.state, ExternalUser.newRandomUser().toCode())
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=500'
@@ -186,15 +156,10 @@ describe('Login with OAuth2', () => {
         mock = undefined!;
     });
 
-    it('Login with (token cookie: NO, session: VALID) shall fail', async () => {
-        const { sid } = await createGuestUser();
+    it('Start login with (token: NULL, session: VALID) shall fail', async () => {
+        const { sid } = await api.auth.loginAsGuestUser();
 
-        const response = await request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
-            .query({ ...config.defaultRedirects })
-            .set('Cookie', [`sid=${sid.value}`])
-            .send();
-
+        const response = await api.request.loginWithOAuth2(null, sid, null).send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
@@ -204,20 +169,15 @@ describe('Login with OAuth2', () => {
         const authCookies = getCookies(response);
         expect(authCookies.tid).toBeClearCookie();
         expect(authCookies.sid).toBeValidSID();
-        expect(authCookies.sid.value).toEqual(sid.value);
+        expect(authCookies.sid.value).toEqual(sid);
         expect(authCookies.eid).toBeClearCookie();
     });
 
-    it('Login with (token cookie: NO, session: EXPIRED) shall succeed', async () => {
-        const { sid } = await createGuestUser();
-        await logout(sid.value, false);
+    it('Start login with (token: NULL, session: EXPIRED) shall succeed', async () => {
+        const { sid } = await api.auth.loginAsGuestUser();
+        await api.auth.logout(sid, false);
 
-        const response = await request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
-            .query({ ...config.defaultRedirects })
-            .set('Cookie', [`sid=${sid.value}`])
-            .send();
-
+        const response = await api.request.loginWithOAuth2(null, sid, null).send();
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock!.getUrlFor('authorize'));
@@ -228,14 +188,10 @@ describe('Login with OAuth2', () => {
         expect(authCookies.eid).toBeValidEID();
     });
 
-    it('Login with (token cookie: VALID, session: VALID) shall succeed', async () => {
-        const { tid } = await createGuestUser();
+    it('Start login with (token: VALID, session: NULL) shall succeed', async () => {
+        const { tid } = await api.auth.loginAsGuestUser();
 
-        const response = await request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
-            .query({ ...config.defaultRedirects })
-            .set('Cookie', [`tid=${tid.value}`])
-            .send();
+        const response = await api.request.loginWithOAuth2(tid, null, null).send();
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -246,34 +202,54 @@ describe('Login with OAuth2', () => {
         expect(authCookies.eid).toBeValidEID();
     });
 
-    it('Login with (token cookie: NO, session: NO, rememberMe: false) shall succeed and register a new user', async () => {
-        const user = ExternalUser.newRandomUser();
-        const cookies = await loginWithOAuth2(mock, user, false);
-        expect(cookies.tid).toBeClearCookie();
-        expect(cookies.sid).toBeValidSID();
-        expect(cookies.eid).toBeClearCookie();
+    it('Start login with (token: VALID, session: VALID) shall succeed', async () => {
+        const { tid, sid } = await api.auth.loginAsGuestUser();
 
-        const userInfo = await getUserInfo(cookies.sid.value);
+        const response = await api.request.loginWithOAuth2(tid, sid, null).send();
+        expect(response.statusCode).toEqual(200);
+        expect(getPageRedirectUrl(response.text)).toEqual(
+            config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
+        );
+
+        const authCookies = getCookies(response);
+        expect(authCookies.tid).toBeValidTID();
+        expect(authCookies.tid.value).toEqual(tid);
+        expect(authCookies.sid).toBeValidSID();
+        expect(authCookies.sid.value).toEqual(sid);
+        expect(authCookies.eid).toBeClearCookie();
+    });
+
+    it('Login with (token: NULL, session: NULL, rememberMe: false) shall succeed and register a new user', async () => {
+        const user = ExternalUser.newRandomUser();
+
+        const cookies = await api.auth.loginWithOAuth2(mock, user, false);
+        expect(parseSignedCookie(cookies.tid).key).toBeUndefined();
+        expect(parseSignedCookie(cookies.sid).key).toBeString();
+        expect(parseSignedCookie(cookies.eid).key).toBeUndefined();
+        const userInfo = await api.user.getUserInfo(cookies.sid);
         expect(userInfo.name).toEqual(user.name);
     });
 
-    it('Login with (token cookie: NO, session: NO, rememberMe: true) shall succeed and register a new user', async () => {
+    it('Login with (token cookie: NULL, session: NULL, rememberMe: true) shall succeed and register a new user', async () => {
         const user = ExternalUser.newRandomUser();
-        const cookies = await loginWithOAuth2(mock, user, true);
-        expect(cookies.tid).toBeValidTID();
-        expect(cookies.sid).toBeValidSID();
-        expect(cookies.eid).toBeClearCookie();
 
-        const userInfo = await getUserInfo(cookies.sid.value);
+        const cookies = await api.auth.loginWithOAuth2(mock, user, true);
+        expect(parseSignedCookie(cookies.tid).key).toBeString();
+        expect(parseSignedCookie(cookies.sid).key).toBeString();
+        expect(parseSignedCookie(cookies.eid).key).toBeUndefined();
+        const userInfo = await api.user.getUserInfo(cookies.sid);
         expect(userInfo.name).toEqual(user.name);
     });
 
     it('Login with occupied email shall fail', async () => {
         const user = await TestUser.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
-        const response = await requestLoginWithOAuth2(
-            mock,
-            new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email)
-        );
+        const newUser = new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email);
+
+        const start = await api.auth.startLoginWithOAuth2(mock, false);
+        const response = await api.request
+            .authorizeWithOAuth2(start.sid, start.eid, start.authParams.state, newUser.toCode())
+            .send();
+
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=emailAlreadyUsed&status=409'
@@ -282,16 +258,16 @@ describe('Login with OAuth2', () => {
 
     it('Login with the same external user shall succeed', async () => {
         const user = await TestUser.createLinked(mock);
-        const newUserCookies = await loginWithOAuth2(mock, user.externalUser!);
-        expect(newUserCookies.sid.value, 'It shall be a new session').not.toEqual(user.sid);
-        expect((await getUserInfo(newUserCookies.sid.value)).userId).toEqual(user.userId);
+        const newUserCookies = await api.auth.loginWithOAuth2(mock, user.externalUser!, null);
+        expect(newUserCookies.sid, 'It shall be a new session').not.toEqual(user.sid);
+        expect((await api.user.getUserInfo(newUserCookies.sid)).userId).toEqual(user.userId);
     });
 
     it('Login with the returned token shall be a success', async () => {
         const user = await TestUser.createLinked(mock, { rememberMe: true });
-        const newUserCookies = await loginWithToken(user.tid!);
-        expect(newUserCookies.sid.value, 'It shall be a new session').not.toEqual(user.sid);
-        expect((await getUserInfo(newUserCookies.sid.value)).userId).toEqual(user.userId);
+        const newUserCookies = await api.auth.loginWithToken(user.tid!, null);
+        expect(newUserCookies.sid, 'It shall be a new session').not.toEqual(user.sid);
+        expect((await api.user.getUserInfo(newUserCookies.sid)).userId).toEqual(user.userId);
     });
 });
 
@@ -309,10 +285,7 @@ describe('Link to OAuth2 account', () => {
     });
 
     it('Linking without a session shall fail', async () => {
-        const response = await request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/link'))
-            .query({ ...config.defaultRedirects })
-            .send();
+        const response = await api.request.linkWithOAuth2(null).send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=loginRequired&status=401'
@@ -321,18 +294,23 @@ describe('Link to OAuth2 account', () => {
 
     it('Linking with occupied email shall succeed', async () => {
         const user = await TestUser.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
-        const response = await requestLinkWithOAuth2(
-            mock,
-            user.sid,
-            new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email)
-        );
+        const newUser = new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email);
+
+        const start = await api.auth.startLinkWithOAuth2(mock, user.sid);
+        const response = await api.request
+            .authorizeWithOAuth2(start.sid, start.eid, start.authParams.state, newUser.toCode())
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
     });
 
     it('Linking with occupied external user shall fail', async () => {
         const user = await TestUser.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
-        const response = await requestLinkWithOAuth2(mock, user.sid, user.externalUser!);
+
+        const start = await api.auth.startLinkWithOAuth2(mock, user.sid);
+        const response = await api.request
+            .authorizeWithOAuth2(start.sid, start.eid, start.authParams.state, user.externalUser!.toCode())
+            .send();
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=providerAlreadyUsed&status=409'

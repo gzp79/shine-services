@@ -96,7 +96,7 @@ impl AuthServiceState {
             }
             retry_count += 1;
 
-            let token = TokenGenerator::new(self.random()).generate_token()?;
+            let token = TokenGenerator::new(self.random()).generate()?;
             match self
                 .identity_manager()
                 .add_token(user_id, kind, &token, time_to_live, fingerprint, site_info)
@@ -105,7 +105,7 @@ impl AuthServiceState {
                 Ok(info) => {
                     return Ok(TokenCookie {
                         user_id,
-                        token,
+                        key: token,
                         expire_at: info.expire_at,
                         revoked_token: None,
                     })

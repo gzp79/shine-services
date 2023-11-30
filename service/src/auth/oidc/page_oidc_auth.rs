@@ -33,6 +33,7 @@ async fn oidc_auth(
 ) -> AuthPage {
     // take external_login_cookie from session, thus later code don't have to care with it
     let ExternalLoginCookie {
+        key,
         pkce_code_verifier,
         csrf_state,
         nonce,
@@ -44,6 +45,9 @@ async fn oidc_auth(
         Some(external_login_cookie) => external_login_cookie,
         None => return state.page_error(auth_session, AuthError::MissingExternalLoginCookie, None),
     };
+
+    log::debug!("eid with key {}", key);
+    log::debug!("eid with key {:?}", nonce);
 
     let query = match query {
         Ok(ValidatedQuery(query)) => query,

@@ -88,10 +88,10 @@ async fn token_create(
         .await
         .map_err(Problem::internal_error_from)?;
 
-    let token_hash = hash_token(&token_cookie.token);
+    let token_hash = hash_token(&token_cookie.key);
     Ok(Json(CreatedToken {
         kind: query.kind,
-        token: token_cookie.token,
+        token: token_cookie.key,
         token_hash,
         token_type: "Bearer".into(),
         expire_at: token_cookie.expire_at,

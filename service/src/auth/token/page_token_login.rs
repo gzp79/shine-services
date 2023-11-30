@@ -48,7 +48,7 @@ async fn try_authenticate_with_access_token(
     };
 
     log::debug!("Retrieving the (primary) token ...");
-    let (identity, token_info) = match state.identity_manager().find_token(token_cookie.token.as_str()).await {
+    let (identity, token_info) = match state.identity_manager().find_token(token_cookie.key.as_str()).await {
         Ok(Some(info)) => info,
         Ok(None) => {
             log::debug!("Token expired, not found in DB ...");
@@ -81,7 +81,7 @@ async fn try_authenticate_with_access_token(
         Ok(Some(AuthenticationResult {
             identity,
             create_token: true,
-            active_token: Some(token_cookie.token),
+            active_token: Some(token_cookie.key),
             deprecated_token: token_cookie.revoked_token,
         }))
     }

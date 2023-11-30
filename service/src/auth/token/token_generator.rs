@@ -15,7 +15,7 @@ impl<'a> TokenGenerator<'a> {
         Self { random }
     }
 
-    pub fn generate_token(&self) -> Result<String, TokenGeneratorError> {
+    pub fn generate(&self) -> Result<String, TokenGeneratorError> {
         let mut raw = [0_u8; 16];
         self.random
             .fill(&mut raw)

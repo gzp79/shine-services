@@ -1,6 +1,6 @@
 import uuidValidate from 'uuid-validate';
-import { UserInfo } from '../user';
 import { intoMatcherResult } from './utils';
+import { UserInfo } from '$lib/api/user_api';
 
 interface CustomMatchers<R = unknown> {
     toBeGuestUser(): R;

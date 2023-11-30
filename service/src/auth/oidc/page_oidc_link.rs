@@ -1,5 +1,7 @@
 use crate::{
-    auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLoginCookie, OIDCClient},
+    auth::{
+        token::TokenGenerator, AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLoginCookie, OIDCClient,
+    },
     openapi::ApiKind,
 };
 use axum::{body::HttpBody, extract::State, Extension};
@@ -44,6 +46,11 @@ async fn oidc_link(
         Err(err) => return state.page_error(auth_session, AuthError::OIDCDiscovery(err), query.error_url.as_ref()),
     };
 
+    let key = match TokenGenerator::new(state.random()).generate() {
+        Ok(key) => key,
+        Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
+    };
+
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
     let (authorize_url, csrf_state, nonce) = core_client
         .authorize_url(
@@ -58,6 +65,7 @@ async fn oidc_link(
         .url();
 
     auth_session.external_login_cookie = Some(ExternalLoginCookie {
+        key,
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
         nonce: Some(nonce.secret().to_owned()),

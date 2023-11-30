@@ -1,7 +1,6 @@
-import request from '$lib/request';
-import config from '../test.config';
+import api from '$lib/api/api';
 import { Cookie } from 'tough-cookie';
-import { getCookies } from '$lib/user_utils';
+import { getCookies } from '$lib/response_utils';
 
 describe('Auth cookie consistency matrix', () => {
     const testCases = [
@@ -54,10 +53,7 @@ describe('Auth cookie consistency matrix', () => {
             let tid, sid, eid: string;
 
             {
-                const response = await request
-                    .get(config.getUrlFor('/identity/auth/token/login'))
-                    .query({ rememberMe: true })
-                    .send();
+                const response = await api.request.loginWithToken(null, null, true).send();
                 expect(response.statusCode).toEqual(200);
                 const cookies = getCookies(response);
                 expect(cookies.tid).toBeValidTID();
@@ -68,10 +64,7 @@ describe('Auth cookie consistency matrix', () => {
 
             //eid
             {
-                const response = await request
-                    .get(config.getUrlFor('/identity/auth/oauth2_flow/link'))
-                    .set('Cookie', [`sid=${sid}`])
-                    .send();
+                const response = await api.request.linkWithOAuth2(sid).send();
                 expect(response.statusCode).toEqual(200);
                 const cookies = getCookies(response);
                 expect(cookies.eid).toBeValidEID();
@@ -103,7 +96,12 @@ describe('Auth cookie consistency matrix', () => {
     });
 
     it.each(testCases)('Cookie matrix [%p,%p,%p] shall pass', async (tid, sid, eid, expected) => {
-        let requestCookies: string[] = [];
+        let requestCookies: Record<string, string | null> = {
+            tid: null,
+            sid: null,
+            eid: null
+        };
+
         for (const [c, name] of [
             [tid, 'tid'],
             [sid, 'sid'],
@@ -111,15 +109,15 @@ describe('Auth cookie consistency matrix', () => {
         ]) {
             switch (c) {
                 case '+':
-                    requestCookies.push(`${name}=${cookieData[name]}`);
+                    requestCookies[name] = cookieData[name];
                     break;
                 case '-':
                     /* noop */ break;
                 case '!':
-                    requestCookies.push(`${name}=${cookieData[name + '2']}`);
+                    requestCookies[name] = cookieData[name + '2'];
                     break;
                 case 's':
-                    requestCookies.push(`${name}=${cookieData[name + 'InvalidSig']}`);
+                    requestCookies[name] = cookieData[name + 'InvalidSig'];
                     break;
                 default:
                     throw new Error(`Unhandled cookie mod for ${c}`);
@@ -127,9 +125,8 @@ describe('Auth cookie consistency matrix', () => {
         }
         //console.log(requestCookies);
 
-        const response = await request
-            .get(config.getUrlFor('identity/auth/validate'))
-            .set('Cookie', requestCookies)
+        const response = await api.request
+            .validate(requestCookies.tid, requestCookies.sid, requestCookies.eid)
             .send();
         expect(response.statusCode).toEqual(200);
 

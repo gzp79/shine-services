@@ -23,19 +23,23 @@ use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(in crate::auth) struct ExternalLoginCookie {
+    // used for tracing the login flow
+    #[serde(rename = "key")]
+    pub key: String,
     #[serde(rename = "pv")]
     pub pkce_code_verifier: String,
     #[serde(rename = "cv")]
     pub csrf_state: String,
-    #[serde(rename = "n")]
+    #[serde(rename = "nc")]
     pub nonce: Option<String>,
-    #[serde(rename = "t")]
+    #[serde(rename = "tu")]
     pub target_url: Option<Url>,
-    #[serde(rename = "et")]
+    #[serde(rename = "eu")]
     pub error_url: Option<Url>,
+    #[serde(rename = "rm")]
     pub remember_me: bool,
     // indicates if login was made to link the account to the user of the given session
-    #[serde(rename = "l")]
+    #[serde(rename = "lnk")]
     pub linked_user: Option<CurrentUser>,
 }
 
@@ -43,13 +47,13 @@ pub(in crate::auth) struct ExternalLoginCookie {
 pub(in crate::auth) struct TokenCookie {
     #[serde(rename = "u")]
     pub user_id: Uuid,
-    #[serde(rename = "t")]
-    pub token: String,
+    #[serde(rename = "key")]
+    pub key: String,
     #[serde(rename = "e")]
     pub expire_at: DateTime<Utc>,
 
     /// This token is not used, only stored to revoke once the client confirmed the received new token
-    #[serde(rename = "rt")]
+    #[serde(rename = "rk")]
     pub revoked_token: Option<String>,
 }
 
@@ -266,9 +270,15 @@ fn create_jar<T: Serialize, X: Into<Expiration>>(
     } else {
         // for deleted cookie to avoid exposing the key (there could be rainbow tables for empty hmac encoding),
         // let's encode some dummy nonce
+        #[derive(Serialize)]
+        struct Dummy {
+            n: String,
+        }
+
         let nonce: Vec<u8> = (0..16).map(|_| thread_rng().gen::<u8>()).collect();
         let nonce = B64.encode(nonce);
-        let mut cookie = Cookie::new(settings.name.to_string(), nonce);
+        let raw_data = serde_json::to_string(&Dummy { n: nonce }).expect("Failed to serialize user");
+        let mut cookie = Cookie::new(settings.name.to_string(), raw_data);
         cookie.set_expires(OffsetDateTime::now_utc() - Duration::days(1));
         cookie
     };

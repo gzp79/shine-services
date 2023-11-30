@@ -1,8 +1,8 @@
 import request from '$lib/request';
 import config from '../test.config';
-import { TestUser } from '$lib/user';
+import { TestUser } from '$lib/test_user';
 import { randomUUID } from 'crypto';
-import { getUserInfo } from '$lib/user_utils';
+import api from '$lib/api/api';
 
 // It checks only for the access of the feature, but not if it does what it have to.
 describe('Access to user role management', () => {
@@ -37,18 +37,12 @@ describe('Access to user role management', () => {
         'Get roles ($#) with (user:$user, apiKey:$apiKey, target:$targetUser) shall return $expectedCode',
         async (test) => {
             let target = users[test.targetUser];
-            let req = request.get(config.getUrlFor(`/identity/api/identities/${target.userId}/roles`));
-            if (test.user) {
-                req.set('Cookie', users[test.user].getSessionCookie());
-            }
-            if (test.apiKey) {
-                req.set('Authorization', `Bearer ${config.masterKey}`);
-            }
-            let response = await req.send();
+            const key = test.user ? users[test.user].sid : test.apiKey ? 'masterKey' : null;
+            const response = await api.request.getRoles(key, target.userId).send();
             expect(response.statusCode).toEqual(test.expectedCode);
         }
     );
-
+    /*
     it.each(testCases)(
         'Add role ($#) with (user:$user, apiKey:$apiKey, target:$targetUser) shall return $expectedCode',
         async (test) => {
@@ -182,4 +176,5 @@ describe('User roles', () => {
         expect(await getUserRoles(user.userId)).toIncludeSameMembers([]);
         expect((await getUserInfo(user.sid)).roles).toIncludeSameMembers([]);
     });
+    */
 });

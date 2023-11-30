@@ -1,6 +1,4 @@
 import { Cookie } from 'tough-cookie';
-import uuidValidate from 'uuid-validate';
-import { UserInfo } from '../user';
 import { intoMatcherResult } from './utils';
 
 interface CustomMatchers<R = unknown> {
@@ -68,16 +66,6 @@ const matchers: jest.ExpectExtendMap = {
         });
         return intoMatcherResult(this, received, expected);
     }
-
-    /*toBeGuestUser(received: UserInfo) {
-        const expected = expect.objectContaining({
-            userId: expect.toSatisfy((id: any) => uuidValidate(id)),
-            name: expect.toStartWith('Freshman_'),
-            sessionLength: expect.not.toBeNegative(),
-            roles: []
-        });
-        return intoMatcherResult(this, received, expected);
-    }*/
 };
 
 export default matchers;
