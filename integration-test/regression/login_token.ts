@@ -54,19 +54,19 @@ describe('Login with token for new user', () => {
     });
 
     it('Login with (token: VALID, site: altered) shall succeed only if fingerprint is not altered', async () => {
-        const site_info = {
+        const extraHeaders = {
             'user-agent': 'agent',
             'cf-region': 'region',
             'cf-ipcity': 'city',
             'cf-ipcountry': 'country'
         };
 
-        const user = await TestUser.createGuest({}, site_info);
+        const user = await TestUser.createGuest({}, extraHeaders);
 
         // altering non-fingerprint value has no effect
         expect(
             await api.user.getUserInfo(user.sid, {
-                ...site_info,
+                ...extraHeaders,
                 'cf-region': 'new-region',
                 'cf-ipcity': 'new-city',
                 'cf-ipcountry': 'new-country'
@@ -75,7 +75,7 @@ describe('Login with token for new user', () => {
 
         // altering fingerprint value invalidates the session
         for (const mod of [{ 'user-agent': 'new-agent' }]) {
-            const response = await api.request.getUserInfo(user.sid).set({ ...site_info, ...mod });
+            const response = await api.request.getUserInfo(user.sid).set({ ...extraHeaders, ...mod });
             expect(response.statusCode).toEqual(401);
         }
     });

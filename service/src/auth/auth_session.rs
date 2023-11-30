@@ -53,7 +53,7 @@ pub(in crate::auth) struct TokenCookie {
     pub expire_at: DateTime<Utc>,
 
     /// This token is not used, only stored to revoke once the client confirmed the received new token
-    #[serde(rename = "rk")]
+    #[serde(rename = "rky")]
     pub revoked_token: Option<String>,
 }
 

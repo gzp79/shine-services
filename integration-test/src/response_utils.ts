@@ -15,12 +15,3 @@ export function getPageRedirectUrl(page: string): string | undefined {
     const match = regexp.exec(page) ?? [];
     return match[1];
 }
-
-
-
-
-
-
-
-
-

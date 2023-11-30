@@ -156,6 +156,18 @@ export class RequestAPI {
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
+    getToken(sid: string | null, tokenId: string) {
+        return request
+            .get(config.getUrlFor(`identity/api/auth/user/tokens/${tokenId}`))
+            .set('Cookie', sid ? [`sid=${sid}`] : []);
+    }
+
+    revokeToken(sid: string | null, tokenId: string) {
+        return request
+            .delete(config.getUrlFor(`identity/api/auth/user/tokens/${tokenId}`))
+            .set('Cookie', sid ? [`sid=${sid}`] : []);
+    }
+
     createSAToken(sid: string | null, duration: number): Request {
         return request
             .post(this.config.getUrlFor('identity/api/auth/user/tokens'))
