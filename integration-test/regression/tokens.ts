@@ -76,7 +76,9 @@ describe('Tokens', () => {
         expect(await api.token.getTokens(user.sid)).toIncludeSameMembers([{ ...anyToken, city: 'r1' }]);
 
         // login and create new token
-        const userCookies2 = await api.auth.loginWithOAuth2(mock, user.externalUser!, true, { 'cf-ipcity': 'r2' });
+        const userCookies2 = await api.auth.loginWithOAuth2(mock, user.externalUser!, true, {
+            'cf-ipcity': 'r2'
+        });
         const sid2 = userCookies2.sid.value;
         const tid2 = userCookies2.tid.value;
         expect(await api.token.getTokens(user.sid)).toIncludeSameMembers([
@@ -96,8 +98,7 @@ describe('Tokens', () => {
         // - without tid the token would not be deleted as sessions and tokens are not linked
         let response = await request
             .get(config.getUrlFor(`/identity/auth/logout`))
-            .set('Cookie', [`sid=${sid2}`, `tid=${tid2}`])
-            .send();
+            .set('Cookie', [`sid=${sid2}`, `tid=${tid2}`]);
         expect(response.statusCode).toEqual(200);
         expect(await api.token.getTokens(user.sid)).toIncludeSameMembers([{ ...anyToken, city: 'r1' }]);
     });
@@ -122,10 +123,12 @@ describe('Tokens', () => {
         await api.auth.logout(user.sid, true);
 
         //login again and check if no token is present
-        const newUserCookies = await api.auth.loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r4' });
+        const newUserCookies = await api.auth.loginWithOAuth2(mock, user.externalUser!, false, {
+            'cf-region': 'r4'
+        });
         expect(await api.token.getTokens(newUserCookies.sid.value)).toBeEmpty();
     });
-/*
+    /*
     it('Delete token by hash shall revoke the token', async () => {
         const mock = await startMock();
         const user = await TestUser.createLinked(mock, {
@@ -155,14 +158,14 @@ describe('Tokens', () => {
         let responseDelete = await request
             .delete(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
             .set('Cookie', user.getSessionCookie())
-            .send();
+            ;
         expect(responseDelete.statusCode).toEqual(200);
 
         // it shall be gone
         let responseGet2 = await request
             .get(config.getUrlFor('identity/api/auth/user/tokens/' + tokenId))
             .set('Cookie', user.getSessionCookie())
-            .send();
+            ;
         expect(responseGet2.statusCode).toEqual(404);
         expect(await getTokens(user.sid)).toIncludeSameMembers([
             { ...anyToken, city: 'r1' },
@@ -174,7 +177,7 @@ describe('Tokens', () => {
             .get(config.getUrlFor('identity/auth/token/login'))
             .query(config.defaultRedirects)
             .set('Cookie', [`tid=${tid2}`])
-            .send();
+            ;
         expect(responseLogin.statusCode).toEqual(200);
         expect(getPageRedirectUrl(responseLogin.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=sessionExpired&status=401'

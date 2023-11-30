@@ -32,7 +32,7 @@ describe('Sessions', () => {
     });
 
     it('Get token without a session shall fail', async () => {
-        let response = await api.request.getSessions(null).send();
+        let response = await api.request.getSessions(null);
         expect(response.statusCode).toEqual(401);
     });
 

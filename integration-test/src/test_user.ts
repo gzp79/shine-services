@@ -30,7 +30,7 @@ export class TestUser {
         {
             // add roles using api key
             const info = await api.user.getUserInfo(cookies.sid, extraHeaders);
-            await api.user.addRole('masterKey', info.userId, props?.roles ?? [], extraHeaders);
+            await api.user.addRole(cookies.sid, true, info.userId, props?.roles ?? [], extraHeaders);
         }
         const info = await api.user.getUserInfo(cookies.sid, extraHeaders);
         const testUser = new TestUser(info.userId);
@@ -68,7 +68,7 @@ export class TestUser {
         {
             // add roles using api key
             const info = await api.user.getUserInfo(cookies.sid, extraHeaders);
-            await api.user.addRole('masterKey', info.userId, props?.roles ?? [], extraHeaders);
+            await api.user.addRole(cookies.sid, true, info.userId, props?.roles ?? [], extraHeaders);
         }
         const info = await api.user.getUserInfo(cookies.sid, extraHeaders);
         const testUser = new TestUser(info.userId);

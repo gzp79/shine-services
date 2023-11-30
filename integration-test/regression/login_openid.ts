@@ -34,7 +34,7 @@ describe('Check OpenId auth', () => {
 
     it('Auth with (parameters: NULL, session: NULL, external: NULL) shall fail', async () => {
         await startMock();
-        const response = await api.request.authorizeWithOpenId(null, null, null, null).send();
+        const response = await api.request.authorizeWithOpenId(null, null, null, null);
 
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
@@ -52,14 +52,12 @@ describe('Check OpenId auth', () => {
         const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
-        const response = await api.request
-            .authorizeWithOpenId(
-                null,
-                null,
-                start.authParams.state,
-                ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
-            )
-            .send();
+        const response = await api.request.authorizeWithOpenId(
+            null,
+            null,
+            start.authParams.state,
+            ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
+        );
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             'https://web.sandbox.com:8080/error?type=authError&status=400'
@@ -76,7 +74,7 @@ describe('Check OpenId auth', () => {
         const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
-        const response = await api.request.authorizeWithOpenId(null, start.eid, null, null).send();
+        const response = await api.request.authorizeWithOpenId(null, start.eid, null, null);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=invalidInput&status=400'
@@ -93,14 +91,12 @@ describe('Check OpenId auth', () => {
         const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
-        const response = await api.request
-            .authorizeWithOpenId(
-                null,
-                start.eid,
-                'invalid',
-                ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
-            )
-            .send();
+        const response = await api.request.authorizeWithOpenId(
+            null,
+            start.eid,
+            'invalid',
+            ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
+        );
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=400'
@@ -117,9 +113,12 @@ describe('Check OpenId auth', () => {
         const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
-        const response = await api.request
-            .authorizeWithOpenId(null, start.eid, start.authParams.state, 'invalid')
-            .send();
+        const response = await api.request.authorizeWithOpenId(
+            null,
+            start.eid,
+            start.authParams.state,
+            'invalid'
+        );
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=500'
@@ -136,14 +135,12 @@ describe('Check OpenId auth', () => {
         const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
-        const response = await api.request
-            .authorizeWithOpenId(
-                null,
-                start.eid,
-                start.authParams.state,
-                ExternalUser.newRandomUser().toCode({ nonce: 'invalid' })
-            )
-            .send();
+        const response = await api.request.authorizeWithOpenId(
+            null,
+            start.eid,
+            start.authParams.state,
+            ExternalUser.newRandomUser().toCode({ nonce: 'invalid' })
+        );
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=400'
@@ -161,14 +158,12 @@ describe('Check OpenId auth', () => {
         const mock = await startMock(false);
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
-        const response = await api.request
-            .authorizeWithOpenId(
-                null,
-                start.eid,
-                start.authParams.state,
-                ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
-            )
-            .send();
+        const response = await api.request.authorizeWithOpenId(
+            null,
+            start.eid,
+            start.authParams.state,
+            ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
+        );
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=500'
@@ -208,7 +203,7 @@ describe('Login with OpenId', () => {
     it('Start login with (token: NULL, session: VALID) shall fail', async () => {
         const { sid } = await api.auth.loginAsGuestUser();
 
-        const response = await api.request.loginWithOpenId(null, sid, null).send();
+        const response = await api.request.loginWithOpenId(null, sid, null);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
@@ -226,7 +221,7 @@ describe('Login with OpenId', () => {
         const { sid } = await api.auth.loginAsGuestUser();
         await api.auth.logout(sid, false);
 
-        const response = await api.request.loginWithOpenId(null, sid, null).send();
+        const response = await api.request.loginWithOpenId(null, sid, null);
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock!.getUrlFor('authorize'));
@@ -240,7 +235,7 @@ describe('Login with OpenId', () => {
     it('Start login with (token: VALID, session: NULL) shall succeed', async () => {
         const { tid } = await api.auth.loginAsGuestUser();
 
-        const response = await api.request.loginWithOpenId(tid, null, null).send();
+        const response = await api.request.loginWithOpenId(tid, null, null);
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -254,7 +249,7 @@ describe('Login with OpenId', () => {
     it('Start login with (token: VALID, session: VALID) shall succeed', async () => {
         const { tid, sid } = await api.auth.loginAsGuestUser();
 
-        const response = await api.request.loginWithOpenId(tid, sid, null).send();
+        const response = await api.request.loginWithOpenId(tid, sid, null);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
@@ -295,15 +290,12 @@ describe('Login with OpenId', () => {
         const newUser = new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email);
 
         const start = await api.auth.startLoginWithOpenId(mock, false);
-        const response = await api.request
-            .authorizeWithOpenId(
-                start.sid,
-                start.eid,
-                start.authParams.state,
-                newUser.toCode({ nonce: start.authParams.nonce })
-            )
-            .send();
-
+        const response = await api.request.authorizeWithOpenId(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            newUser.toCode({ nonce: start.authParams.nonce })
+        );
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=emailAlreadyUsed&status=409'
@@ -343,7 +335,7 @@ describe('Link to OpenId account', () => {
     });
 
     it('Linking without a session shall fail', async () => {
-        const response = await api.request.linkWithOpenId(null).send();
+        const response = await api.request.linkWithOpenId(null);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=loginRequired&status=401'
@@ -355,14 +347,12 @@ describe('Link to OpenId account', () => {
         const newUser = new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email);
 
         const start = await api.auth.startLinkWithOpenId(mock, user.sid);
-        const response = await api.request
-            .authorizeWithOpenId(
-                start.sid,
-                start.eid,
-                start.authParams.state,
-                newUser.toCode({ nonce: start.authParams.nonce })
-            )
-            .send();
+        const response = await api.request.authorizeWithOpenId(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            newUser.toCode({ nonce: start.authParams.nonce })
+        );
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
     });
@@ -371,14 +361,12 @@ describe('Link to OpenId account', () => {
         const user = await TestUser.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
 
         const start = await api.auth.startLinkWithOpenId(mock, user.sid);
-        const response = await api.request
-            .authorizeWithOpenId(
-                start.sid,
-                start.eid,
-                start.authParams.state,
-                user.externalUser!.toCode({ nonce: start.authParams.nonce })
-            )
-            .send();
+        const response = await api.request.authorizeWithOpenId(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            user.externalUser!.toCode({ nonce: start.authParams.nonce })
+        );
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=providerAlreadyUsed&status=409'

@@ -23,10 +23,7 @@ export class AuthAPI {
     }
 
     async loginAsGuestUser(extraHeaders?: Record<string, string>): Promise<UserCookies> {
-        const response = await this.request
-            .loginWithToken(null, null, true)
-            .set(extraHeaders ?? {})
-            .send();
+        const response = await this.request.loginWithToken(null, null, true).set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(this.config.defaultRedirects.redirectUrl);
         const cookies = getCookies(response);
@@ -46,11 +43,7 @@ export class AuthAPI {
         rememberMe: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
-        const response = await this.request
-            .loginWithToken(tid, null, rememberMe)
-            .set(extraHeaders ?? {})
-            .send();
-
+        const response = await this.request.loginWithToken(tid, null, rememberMe).set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(this.config.defaultRedirects.redirectUrl);
 
@@ -72,11 +65,7 @@ export class AuthAPI {
         rememberMe: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request
-            .loginWithOAuth2(null, null, rememberMe)
-            .set(extraHeaders ?? {})
-            .send();
-
+        const response = await this.request.loginWithOAuth2(null, null, rememberMe).set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -104,9 +93,7 @@ export class AuthAPI {
         const start = await this.startLoginWithOAuth2(mock, rememberMe, extraHeaders);
         const response = await this.request
             .authorizeWithOAuth2(start.sid, start.eid, start.authParams.state, user.toCode())
-            .set(extraHeaders ?? {})
-            .send();
-
+            .set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(this.config.defaultRedirects.redirectUrl);
         const cookies = getCookies(response);
@@ -130,11 +117,7 @@ export class AuthAPI {
         sid: string,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request
-            .linkWithOAuth2(sid)
-            .set(extraHeaders ?? {})
-            .send();
-
+        const response = await this.request.linkWithOAuth2(sid).set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -163,9 +146,7 @@ export class AuthAPI {
         const start = await this.startLinkWithOAuth2(mock, sid, extraHeaders);
         const response = await this.request
             .authorizeWithOAuth2(start.sid, start.eid, start.authParams.state, user.toCode())
-            .set(extraHeaders ?? {})
-            .send();
-
+            .set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(this.config.defaultRedirects.redirectUrl);
         const cookies = getCookies(response);
@@ -185,11 +166,7 @@ export class AuthAPI {
         rememberMe: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request
-            .loginWithOpenId(null, null, rememberMe)
-            .set(extraHeaders ?? {})
-            .send();
-
+        const response = await this.request.loginWithOpenId(null, null, rememberMe).set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -222,9 +199,7 @@ export class AuthAPI {
                 start.authParams.state,
                 user.toCode({ nonce: start.authParams.nonce })
             )
-            .set(extraHeaders ?? {})
-            .send();
-
+            .set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(this.config.defaultRedirects.redirectUrl);
         const cookies = getCookies(response);
@@ -248,11 +223,7 @@ export class AuthAPI {
         sid: string,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request
-            .linkWithOpenId(sid)
-            .set(extraHeaders ?? {})
-            .send();
-
+        const response = await this.request.linkWithOpenId(sid).set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -286,9 +257,7 @@ export class AuthAPI {
                 start.authParams.state,
                 user.toCode({ nonce: start.authParams.nonce })
             )
-            .set(extraHeaders ?? {})
-            .send();
-
+            .set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(this.config.defaultRedirects.redirectUrl);
         const cookies = getCookies(response);
@@ -308,10 +277,7 @@ export class AuthAPI {
         terminateAll: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<void> {
-        let response = await this.request
-            .logout(sid, terminateAll)
-            .set(extraHeaders ?? {})
-            .send();
+        let response = await this.request.logout(sid, terminateAll).set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
     }
 }

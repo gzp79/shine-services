@@ -53,7 +53,7 @@ describe('Auth cookie consistency matrix', () => {
             let tid, sid, eid: string;
 
             {
-                const response = await api.request.loginWithToken(null, null, true).send();
+                const response = await api.request.loginWithToken(null, null, true);
                 expect(response.statusCode).toEqual(200);
                 const cookies = getCookies(response);
                 expect(cookies.tid).toBeValidTID();
@@ -64,7 +64,7 @@ describe('Auth cookie consistency matrix', () => {
 
             //eid
             {
-                const response = await api.request.linkWithOAuth2(sid).send();
+                const response = await api.request.linkWithOAuth2(sid);
                 expect(response.statusCode).toEqual(200);
                 const cookies = getCookies(response);
                 expect(cookies.eid).toBeValidEID();
@@ -125,9 +125,11 @@ describe('Auth cookie consistency matrix', () => {
         }
         //console.log(requestCookies);
 
-        const response = await api.request
-            .validate(requestCookies.tid, requestCookies.sid, requestCookies.eid)
-            .send();
+        const response = await api.request.validate(
+            requestCookies.tid,
+            requestCookies.sid,
+            requestCookies.eid
+        );
         expect(response.statusCode).toEqual(200);
 
         const cookies = getCookies(response);

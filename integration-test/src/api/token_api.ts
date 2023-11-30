@@ -18,10 +18,7 @@ export class TokenAPI {
     constructor(public readonly request: RequestAPI) {}
 
     async getTokens(sid: string, extraHeaders?: Record<string, string>): Promise<ActiveToken[]> {
-        let response = await this.request
-            .getTokens(sid)
-            .set(extraHeaders ?? {})
-            .send();
+        let response = await this.request.getTokens(sid).set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
 
         response.body?.tokens?.forEach((t: ActiveToken) => {
@@ -37,10 +34,7 @@ export class TokenAPI {
         duration: number,
         extraHeaders?: Record<string, string>
     ): Promise<Response> {
-        let response = await this.request
-            .createSAToken(sid, duration)
-            .set(extraHeaders ?? {})
-            .send();
+        let response = await this.request.createSAToken(sid, duration).set(extraHeaders ?? {});
         return response;
     }
 }

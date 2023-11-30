@@ -13,10 +13,7 @@ export class SessionAPI {
     constructor(public readonly request: RequestAPI) {}
 
     async getSessions(sid: string, extraHeaders?: Record<string, string>): Promise<ActiveSession[]> {
-        let response = await this.request
-            .getSessions(sid)
-            .set(extraHeaders ?? {})
-            .send();
+        let response = await this.request.getSessions(sid).set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
 
         response.body?.sessions?.forEach((s: ActiveSession) => {

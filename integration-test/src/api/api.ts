@@ -113,23 +113,32 @@ export class RequestAPI {
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
-    getRoles(sidOrKey: string | 'masterKey' | null, userId: string): Request {
-        let cv = sidOrKey === 'masterKey' ? null : sidOrKey;
-        let av = sidOrKey === 'masterKey' ? `Bearer ${config.masterKey}` : null;
+    getRoles(sid: string | null, masterKey: boolean, userId: string): Request {
+        let av = masterKey ? `Bearer ${config.masterKey}` : null;
 
         return request
             .get(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
-            .set('Cookie', cv ? [`sid=${cv}`] : [])
+            .set('Cookie', sid ? [`sid=${sid}`] : [])
             .set(av ? { Authorization: av } : {});
     }
 
-    addRole(sidOrKey: string | 'masterKey' | null, userId: string, role: string): Request {
-        let cv = sidOrKey === 'masterKey' ? null : sidOrKey;
-        let av = sidOrKey === 'masterKey' ? `Bearer ${config.masterKey}` : null;
+    addRole(sid: string | null, masterKey: boolean, userId: string, role: string): Request {
+        let av = masterKey ? `Bearer ${config.masterKey}` : null;
 
         return request
             .put(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
-            .set('Cookie', cv ? [`sid=${cv}`] : [])
+            .set('Cookie', sid ? [`sid=${sid}`] : [])
+            .set(av ? { Authorization: av } : {})
+            .type('json')
+            .send({ role: role });
+    }
+
+    deleteRole(sid: string | 'masterKey' | null, masterKey: boolean, userId: string, role: string): Request {
+        let av = masterKey ? `Bearer ${config.masterKey}` : null;
+
+        return request
+            .delete(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
+            .set('Cookie', sid ? [`sid=${sid}`] : [])
             .set(av ? { Authorization: av } : {})
             .type('json')
             .send({ role: role });

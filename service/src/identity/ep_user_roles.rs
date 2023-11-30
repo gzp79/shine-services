@@ -56,10 +56,12 @@ async fn add_user_role(
         auth_key.map(|auth| auth.token().to_owned()),
         state.master_api_key_hash(),
     ) {
+        log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
             return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into());
         }
     } else {
+        log::trace!("Using cookie");
         state.require_permission(&user, Permission::UpdateAnyUserRole).await?;
     }
 
@@ -100,10 +102,12 @@ async fn get_user_roles(
         auth_key.map(|auth| auth.token().to_owned()),
         state.master_api_key_hash(),
     ) {
+        log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
             return Err(PermissionError::MissingPermission(Permission::ReadAnyUserRole).into());
         }
     } else {
+        log::trace!("Using cookie");
         state.require_permission(&user, Permission::ReadAnyUserRole).await?;
     }
 
@@ -153,10 +157,12 @@ async fn delete_user_role(
         auth_key.map(|auth| auth.token().to_owned()),
         state.master_api_key_hash(),
     ) {
+        log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key).unwrap_or(false) {
             return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into());
         }
     } else {
+        log::trace!("Using cookie");
         state.require_permission(&user, Permission::UpdateAnyUserRole).await?;
     }
 
