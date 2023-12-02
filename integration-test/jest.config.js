@@ -2,7 +2,7 @@ const { pathsToModuleNameMapper } = require('ts-jest');
 const { compilerOptions } = require('./tsconfig.json');
 
 const config = {
-    testMatch: ['**/regression/*.ts', '**/regression/**/*.ts'],
+    testMatch: ['**/regression/*.ts', '**/regression/**/*.ts', '**/advent/**/*.ts', '**/advent/*.ts'],
     transform: {
         '^.+\\.(ts|tsx)$': 'ts-jest'
     },
