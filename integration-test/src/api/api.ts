@@ -6,6 +6,8 @@ import { SessionAPI } from './session_api';
 import { TokenAPI } from './token_api';
 import { UserAPI } from './user_api';
 
+type TokenKind = 'access' | 'apiKey' | 'singleAccess';
+
 export class RequestAPI {
     constructor(public readonly config: Config) {}
 
@@ -168,10 +170,12 @@ export class RequestAPI {
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
-    createSAToken(sid: string | null, duration: number): Request {
+    createToken(sid: string | null, kind: TokenKind, duration: number): Request {
         return request
             .post(this.config.getUrlFor('identity/api/auth/user/tokens'))
-            .set('Cookie', sid ? [`sid=${sid}`] : []);
+            .set('Cookie', sid ? [`sid=${sid}`] : [])
+            .type('json')
+            .send({ kind, duration });
     }
 
     getExternalLinks(sid: string | null): Request {

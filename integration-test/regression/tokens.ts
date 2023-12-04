@@ -235,10 +235,8 @@ describe('Tokens', () => {
         expect(tokens).toIncludeSameMembers(expectedTokens);
     });
 });
-/*
-describe('Single access token', () => {
-    const now = new Date().getTime();
 
+describe('Single access token', () => {    
     let mock: OAuth2MockServer = undefined!;
     let user: TestUser = undefined!;
 
@@ -254,10 +252,17 @@ describe('Single access token', () => {
         user = undefined!;
     });
 
-    it('Too long time to live shall be rejected with bad request', async () => {
-        expect(await getTokens(user.sid)).toBeEmpty();
-
-        //const request = requestSAToken(user.sid, 20);
+    it('Creating token without session shall fail', async () => {
+        const response = await api.request.createToken(null, 'singleAccess', 20);
+        expect(response.statusCode).toEqual(401);        
     });
+/*
+    it('Too long time to live shall be rejected with bad request', async () => {
+        expect(await api.token.getTokens(user.sid)).toBeEmpty();
+
+        const response = await api.request.createToken(user.sid, 'singleAccess', 20);
+
+    });
+    */
 });
-*/
+

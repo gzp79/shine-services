@@ -34,7 +34,7 @@ export class TokenAPI {
         duration: number,
         extraHeaders?: Record<string, string>
     ): Promise<Response> {
-        let response = await this.request.createSAToken(sid, duration).set(extraHeaders ?? {});
+        let response = await this.request.createToken(sid, 'singleAccess', duration).set(extraHeaders ?? {});        
         return response;
     }
 }
