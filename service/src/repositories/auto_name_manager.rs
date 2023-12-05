@@ -82,7 +82,7 @@ pg_query!( GetNextId =>
     in = ;
     out = id: i64;
     sql = r#"
-        SELECT nextval('user_id_counter')
+        SELECT nextval('user_id_counter') as id
     "#
 );
 

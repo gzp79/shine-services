@@ -3,7 +3,7 @@ use crate::{
     openapi::ApiKind,
     repositories::{hash_token, TokenInfo, TokenKind},
 };
-use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
+use axum::{extract::State, http::StatusCode, Json};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
@@ -98,10 +98,7 @@ async fn token_create(
     }))
 }
 
-pub fn ep_token_create<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn ep_token_create() -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/token"), token_create)
         .with_operation_id("token_create")
         .with_tag("auth")
@@ -113,7 +110,7 @@ where
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
 struct TokenPathParam {
-    token: String,
+    fingerprint: String,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -155,18 +152,18 @@ async fn token_get(
 ) -> Result<Json<ActiveToken>, Problem> {
     let token = state
         .identity_manager()
-        .find_token_hash(&params.token)
+        .find_token_by_hash(&params.fingerprint)
         .await
         .map_err(Problem::internal_error_from)?
-        .and_then(|(i, t)| {
-            if i.id == user.user_id {
+        .and_then(|t| {
+            if t.user_id == user.user_id {
                 Some(ActiveToken::from(t))
             } else {
                 log::warn!(
-                    "User {} tried to access token ({}) of user {}",
+                    "User {} tried to access token-hash ({}) of user {}",
                     user.user_id,
-                    params.token,
-                    i.id
+                    params.fingerprint,
+                    t.user_id
                 );
                 None
             }
@@ -175,22 +172,21 @@ async fn token_get(
     if let Some(token) = token {
         Ok(Json(token))
     } else {
-        Err(Problem::not_found().with_instance(format!("{{auth_api}}/user/tokens/{}", params.token)))
+        Err(Problem::not_found().with_instance(format!("{{auth_api}}/user/tokens/{}", params.fingerprint)))
     }
 }
 
-pub fn ep_token_get<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
-{
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/tokens/:token"), token_get)
-        .with_operation_id("token_get")
-        .with_tag("auth")
-        .with_schema::<ActiveToken>()
-        .with_path_parameter::<TokenPathParam>()
-        .with_json_response::<ActiveTokens>(StatusCode::OK)
+pub fn ep_token_get() -> ApiEndpoint<AuthServiceState> {
+    ApiEndpoint::new(
+        ApiMethod::Get,
+        ApiKind::Api("/auth/user/tokens/:fingerprint"),
+        token_get,
+    )
+    .with_operation_id("token_get")
+    .with_tag("auth")
+    .with_schema::<ActiveToken>()
+    .with_path_parameter::<TokenPathParam>()
+    .with_json_response::<ActiveTokens>(StatusCode::OK)
 }
 
 async fn token_delete(
@@ -200,26 +196,21 @@ async fn token_delete(
 ) -> Result<(), Problem> {
     let token = state
         .identity_manager()
-        .delete_token_hash(user.user_id, &params.token)
+        .delete_token_by_hash(user.user_id, &params.fingerprint)
         .await
         .map_err(Problem::internal_error_from)?;
 
     if token.is_none() {
-        Err(Problem::not_found().with_instance(format!("{{auth_api}}/user/tokens/{}", params.token)))
+        Err(Problem::not_found().with_instance(format!("{{auth_api}}/user/tokens/{}", params.fingerprint)))
     } else {
         Ok(())
     }
 }
 
-pub fn ep_token_delete<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
-{
+pub fn ep_token_delete() -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(
         ApiMethod::Delete,
-        ApiKind::Api("/auth/user/tokens/:token"),
+        ApiKind::Api("/auth/user/tokens/:fingerprint"),
         token_delete,
     )
     .with_operation_id("token_delete")
@@ -240,7 +231,7 @@ async fn token_list(
 ) -> Result<Json<ActiveTokens>, Problem> {
     let tokens = state
         .identity_manager()
-        .list_all_tokens(&user.user_id)
+        .list_all_tokens_by_user(&user.user_id)
         .await
         .map_err(Problem::internal_error_from)?
         .into_iter()
@@ -249,12 +240,7 @@ async fn token_list(
     Ok(Json(ActiveTokens { tokens }))
 }
 
-pub fn ep_token_list<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
-{
+pub fn ep_token_list() -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/tokens"), token_list)
         .with_operation_id("token_list")
         .with_tag("auth")

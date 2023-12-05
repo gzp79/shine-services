@@ -1,5 +1,6 @@
 use crate::repositories::{Identity, IdentityBuildError, IdentityError, IdentityKind};
 use chrono::{DateTime, Utc};
+use postgres_from_row::FromRow;
 use shine_service::{
     pg_query,
     service::{PGClient, PGConnection, PGErrorChecks as _, PGRawConnection},
@@ -34,25 +35,22 @@ pg_query!( InsertExternalLogin =>
     "#
 );
 
+#[derive(FromRow)]
+struct FindByProviderIdRow {
+    user_id: Uuid,
+    kind: IdentityKind,
+    name: String,
+    email: Option<String>,
+    is_email_confirmed: bool,
+    created: DateTime<Utc>,
+    version: i32,
+}
+
 pg_query!( FindByProviderId =>
     in = provider: &str, provider_id: &str;
-    out = FindByLinkRow {
-        user_id: Uuid,
-        kind: IdentityKind,
-        name: String,
-        email: Option<String>,
-        is_email_confirmed: bool,
-        created: DateTime<Utc>,
-        version: i32,
-        provider: String,
-        provider_id: String,
-        external_name: Option<String>,
-        external_email: Option<String>,
-        linked: DateTime<Utc>
-    };
+    out = FindByProviderIdRow;
     sql = r#"
-        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
-            e.provider, e.provider_id, e.name, e.email, e.linked
+        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version            
             FROM external_logins e, identities i
             WHERE e.user_id = i.user_id
                 AND e.provider = $1
@@ -60,16 +58,19 @@ pg_query!( FindByProviderId =>
     "#
 );
 
+#[derive(FromRow)]
+struct ListByUserIdRow {
+    user_id: Uuid,
+    provider: String,
+    provider_id: String,
+    name: Option<String>,
+    email: Option<String>,
+    linked_at: DateTime<Utc>,
+}
+
 pg_query!( ListByUserId =>
     in = user_id: Uuid;
-    out = ListByUserIdRow {
-        user_id: Uuid,
-        provider: String,
-        provider_id: String,
-        name: Option<String>,
-        email: Option<String>,
-        linked_at: DateTime<Utc>
-    };
+    out = ListByUserIdRow;
     sql = r#"
         SELECT e.user_id, e.provider, e.provider_id, e.name, e.email, e.linked
             FROM external_logins e
@@ -158,7 +159,7 @@ where
             .await?
             .into_iter()
             .map(|row| ExternalLink {
-                user_id,
+                user_id: row.user_id,
                 provider: row.provider,
                 provider_id: row.provider_id,
                 name: row.name,

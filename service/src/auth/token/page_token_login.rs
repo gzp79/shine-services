@@ -3,7 +3,7 @@ use crate::{
     openapi::ApiKind,
     repositories::{Identity, IdentityError, TokenKind},
 };
-use axum::{body::HttpBody, extract::State};
+use axum::extract::State;
 use serde::Deserialize;
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, SiteInfo, ValidatedQuery, ValidationError},
@@ -48,7 +48,11 @@ async fn try_authenticate_with_access_token(
     };
 
     log::debug!("Retrieving the (primary) token ...");
-    let (identity, token_info) = match state.identity_manager().find_token(token_cookie.key.as_str()).await {
+    let (identity, token_info) = match state
+        .identity_manager()
+        .test_access_token(token_cookie.key.as_str())
+        .await
+    {
         Ok(Some(info)) => info,
         Ok(None) => {
             log::debug!("Token expired, not found in DB ...");
@@ -135,7 +139,7 @@ async fn authenticate(
         return Ok(result);
     }
 
-    Ok(try_authenticate_with_registration(state, query, auth_session).await?)
+    try_authenticate_with_registration(state, query, auth_session).await
 }
 
 async fn token_login(
@@ -236,10 +240,7 @@ async fn token_login(
     Ok(state.page_redirect(auth_session, state.app_name(), query.redirect_url.as_ref()))
 }
 
-pub fn page_token_login<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn page_token_login() -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage("token", "/login"), token_login)
         .with_operation_id("page_token_login")
         .with_tag("page")

@@ -1,6 +1,7 @@
 use crate::repositories::{Identity, IdentityBuildError, IdentityError, IdentityKind};
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
+use postgres_from_row::FromRow;
 use ring::digest;
 use serde::{Deserialize, Serialize};
 use shine_service::{
@@ -11,6 +12,7 @@ use shine_service::{
     },
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type as PGType};
+use tracing::instrument;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -68,15 +70,18 @@ pub struct TokenInfo {
     pub city: Option<String>,
 }
 
+#[derive(FromRow)]
+struct InsertTokenRow {
+    created: DateTime<Utc>,
+    expire: DateTime<Utc>,
+}
+
 pg_query!( InsertToken =>
     in = user_id: Uuid, token: &str,
         fingerprint: Option<&str>, kind: TokenKind,
         expire_s: i32,
         agent: &str, country: Option<&str>, region: Option<&str>, city: Option<&str>;
-    out = InsertTokenRow{
-        created: DateTime<Utc>,
-        expire: DateTime<Utc>
-    };
+    out = InsertTokenRow;
     sql =  r#"
         INSERT INTO login_tokens (
                 user_id, token, created, 
@@ -92,52 +97,35 @@ pg_query!( InsertToken =>
     "#
 );
 
-pg_query!( FindToken =>
+#[derive(FromRow)]
+struct TokenRow {
+    user_id: Uuid,
+    token: String,
+    created: DateTime<Utc>,
+    expire: DateTime<Utc>,
+    fingerprint: Option<String>,
+    kind: TokenKind,
+    is_expired: bool,
+    agent: String,
+    country: Option<String>,
+    region: Option<String>,
+    city: Option<String>,
+}
+
+pg_query!( FindByHashToken =>
     in = token: &str;
-    out = FindByTokenRow{
-        user_id: Uuid,
-        kind: IdentityKind,
-        name: String,
-        email: Option<String>,
-        is_email_confirmed: bool,
-        created: DateTime<Utc>,
-        version: i32,
-        token: String,
-        token_created: DateTime<Utc>,
-        token_expire: DateTime<Utc>,
-        token_fingerprint: Option<String>,
-        token_kind: TokenKind,
-        token_is_expired: bool,
-        token_agent: String,
-        token_country: Option<String>,
-        token_region: Option<String>,
-        token_city: Option<String>
-    };
+    out = TokenRow;
     sql = r#"
-        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
-                t.token, t.created, t.expire, t.fingerprint, t.kind, t.expire < now() is_expired,
+        SELECT t.user_id, t.token, t.created, t.expire, t.fingerprint, t.kind, t.expire < now() is_expired,
                 t.agent, t.country, t.region, t.city
-            FROM login_tokens t, identities i
-            WHERE t.user_id = i.user_id
-                AND t.token = $1
+            FROM login_tokens t
+            WHERE t.token = $1
     "#
 );
 
-pg_query!( ListTokens =>
+pg_query!( ListByUser =>
     in = user_id: Uuid;
-    out = TokenRow{
-        user_id: Uuid,
-        token: String,
-        created: DateTime<Utc>,
-        expire: DateTime<Utc>,
-        fingerprint: Option<String>,
-        kind: TokenKind,
-        is_expired: bool,
-        agent: String,
-        country: Option<String>,
-        region: Option<String>,
-        city: Option<String>
-    };
+    out = TokenRow;
     sql = r#"
         SELECT t.user_id, t.token, t.created, t.expire, t.fingerprint, t.kind, t.expire < now() is_expired,
                 t.agent, t.country, t.region, t.city
@@ -161,22 +149,60 @@ pg_query!( DeleteAllTokens =>
     "#
 );
 
+#[derive(FromRow)]
+struct TestTokenRow {
+    user_id: Uuid,
+    kind: IdentityKind,
+    name: String,
+    email: Option<String>,
+    email_confirmed: bool,
+    created: DateTime<Utc>,
+    data_version: i32,
+    token: String,
+    token_created: DateTime<Utc>,
+    token_expire: DateTime<Utc>,
+    token_fingerprint: Option<String>,
+    token_kind: TokenKind,
+    token_is_expired: bool,
+    agent: String,
+    country: Option<String>,
+    region: Option<String>,
+    city: Option<String>,
+}
+
+// Test token for use. Compared to find it also returns the identity
+pg_query!( TestToken =>
+    in = token: &str, kind: TokenKind;
+    out = TestTokenRow;
+    sql = r#"
+        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
+                t.token, t.created token_created, t.expire token_expire, t.fingerprint token_fingerprint, t.kind token_kind, t.expire < now() token_is_expired,
+                t.agent, t.country, t.region, t.city
+            FROM login_tokens t, identities i
+            WHERE t.user_id = i.user_id
+                AND t.token = $1
+                AND t.kind = $2
+    "#
+);
+
 pub struct TokensStatements {
     insert: InsertToken,
-    find: FindToken,
-    list: ListTokens,
+    find_by_hash: FindByHashToken,
+    list_by_user: ListByUser,
     delete: DeleteToken,
     delete_all: DeleteAllTokens,
+    test: TestToken,
 }
 
 impl TokensStatements {
     pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
         Ok(Self {
             insert: InsertToken::new(client).await?,
-            find: FindToken::new(client).await?,
-            list: ListTokens::new(client).await?,
+            find_by_hash: FindByHashToken::new(client).await?,
+            list_by_user: ListByUser::new(client).await?,
             delete: DeleteToken::new(client).await?,
             delete_all: DeleteAllTokens::new(client).await?,
+            test: TestToken::new(client).await?,
         })
     }
 }
@@ -198,6 +224,7 @@ where
         Self { client, stmts_tokens }
     }
 
+    #[instrument(skip(self))]
     pub async fn store_token(
         &mut self,
         user_id: Uuid,
@@ -253,8 +280,87 @@ where
         })
     }
 
-    pub async fn find_token(&mut self, token_hash: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
-        let row = self.stmts_tokens.find.query_opt(self.client, &token_hash).await?;
+    #[instrument(skip(self))]
+    pub async fn find_by_hash(&mut self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError> {
+        Ok(self
+            .stmts_tokens
+            .find_by_hash
+            .query_opt(self.client, &token_hash)
+            .await?
+            .map(|row| TokenInfo {
+                user_id: row.user_id,
+                kind: row.kind,
+                token_hash: row.token,
+                created_at: row.created,
+                expire_at: row.expire,
+                is_expired: row.is_expired,
+                fingerprint: row.fingerprint,
+                agent: row.agent,
+                country: row.country,
+                region: row.region,
+                city: row.city,
+            }))
+    }
+
+    #[instrument(skip(self))]
+    pub async fn find_by_user(&mut self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
+        Ok(self
+            .stmts_tokens
+            .list_by_user
+            .query(self.client, user_id)
+            .await?
+            .into_iter()
+            .map(|row| TokenInfo {
+                user_id: row.user_id,
+                kind: row.kind,
+                token_hash: row.token,
+                created_at: row.created,
+                expire_at: row.expire,
+                is_expired: row.is_expired,
+                fingerprint: row.fingerprint,
+                agent: row.agent,
+                country: row.country,
+                region: row.region,
+                city: row.city,
+            })
+            .collect())
+    }
+
+    #[instrument(skip(self))]
+    pub async fn delete_token(&mut self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
+        let count = self
+            .stmts_tokens
+            .delete
+            .execute(self.client, &user_id, &token_hash)
+            .await?;
+        if count == 1 {
+            Ok(Some(()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    #[instrument(skip(self))]
+    pub async fn delete_all_tokens(&mut self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
+        for kind in kinds {
+            self.stmts_tokens
+                .delete_all
+                .execute(self.client, &user_id, kind)
+                .await?;
+        }
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
+    pub async fn test_access_token(
+        &mut self,
+        token_hash: &str,
+    ) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+        let row = self
+            .stmts_tokens
+            .test
+            .query_opt(self.client, &token_hash, &TokenKind::Access)
+            .await?;
         Ok(row.map(|row| {
             let token = TokenInfo {
                 user_id: row.user_id,
@@ -280,52 +386,6 @@ where
             };
             (identity, token)
         }))
-    }
-
-    pub async fn find_by_user(&mut self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
-        Ok(self
-            .stmts_tokens
-            .list
-            .query(self.client, user_id)
-            .await?
-            .into_iter()
-            .map(|row| TokenInfo {
-                user_id: row.user_id,
-                kind: row.kind,
-                token_hash: row.token,
-                created_at: row.created,
-                expire_at: row.expire,
-                is_expired: row.is_expired,
-                fingerprint: row.fingerprint,
-                agent: row.agent,
-                country: row.country,
-                region: row.region,
-                city: row.city,
-            })
-            .collect())
-    }
-
-    pub async fn delete_token(&mut self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
-        let count = self
-            .stmts_tokens
-            .delete
-            .execute(self.client, &user_id, &token_hash)
-            .await?;
-        if count == 1 {
-            Ok(Some(()))
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub async fn delete_all_tokens(&mut self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
-        for kind in kinds {
-            self.stmts_tokens
-                .delete_all
-                .execute(self.client, &user_id, kind)
-                .await?;
-        }
-        Ok(())
     }
 }
 

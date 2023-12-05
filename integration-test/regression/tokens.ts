@@ -262,7 +262,7 @@ describe('Single access token', () => {
 
         const response = await api.request.createToken(user.sid, 'singleAccess', 20);
 
-    });
+    });s
     */
 });
 

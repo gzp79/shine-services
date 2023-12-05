@@ -1,5 +1,5 @@
 use crate::{auth::AuthServiceState, openapi::ApiKind};
-use axum::{body::HttpBody, extract::State, http::StatusCode, Json};
+use axum::{extract::State, http::StatusCode, Json};
 use serde::Serialize;
 use shine_service::axum::{ApiEndpoint, ApiMethod};
 use utoipa::ToSchema;
@@ -15,10 +15,7 @@ async fn provider_list(State(state): State<AuthServiceState>) -> Json<AuthProvid
     Json(AuthProviders { providers })
 }
 
-pub fn ep_provider_list<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn ep_provider_list() -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/providers"), provider_list)
         .with_operation_id("provider_list")
         .with_tag("auth")

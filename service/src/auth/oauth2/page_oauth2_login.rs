@@ -4,7 +4,7 @@ use crate::{
     },
     openapi::ApiKind,
 };
-use axum::{body::HttpBody, extract::State, Extension};
+use axum::{extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};
 use serde::Deserialize;
 use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError};
@@ -68,10 +68,7 @@ async fn oauth2_login(
     state.page_redirect(auth_session, &client.provider, Some(&authorize_url))
 }
 
-pub fn page_oauth2_login<B>(provider: &str) -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn page_oauth2_login(provider: &str) -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/login"), oauth2_login)
         .with_operation_id(format!("page_{provider}_login"))
         .with_tag("page")

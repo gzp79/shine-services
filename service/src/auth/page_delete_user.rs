@@ -2,7 +2,7 @@ use crate::{
     auth::{AuthError, AuthPage, AuthServiceState, AuthSession},
     openapi::ApiKind,
 };
-use axum::{body::HttpBody, extract::State};
+use axum::extract::State;
 use serde::Deserialize;
 use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError};
 use url::Url;
@@ -63,10 +63,7 @@ async fn delete_user(
     state.page_redirect(auth_session, state.app_name(), query.redirect_url.as_ref())
 }
 
-pub fn page_delete_user<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn page_delete_user() -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/delete"), delete_user)
         .with_operation_id("page_delete_user")
         .with_tag("page")

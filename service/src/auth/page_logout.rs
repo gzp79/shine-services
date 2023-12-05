@@ -3,7 +3,7 @@ use crate::{
     openapi::ApiKind,
     repositories::TokenKind,
 };
-use axum::{body::HttpBody, extract::State};
+use axum::extract::State;
 use serde::Deserialize;
 use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError};
 use url::Url;
@@ -35,7 +35,7 @@ async fn logout(
                 //remove all non-api-key tokens
                 if let Err(err) = state
                     .identity_manager()
-                    .delete_all_tokens(user_id, &[TokenKind::Access, TokenKind::SingleAccess])
+                    .delete_all_tokens_by_user(user_id, &[TokenKind::Access, TokenKind::SingleAccess])
                     .await
                 {
                     return state.page_internal_error(auth_session, err, query.error_url.as_ref());
@@ -67,10 +67,7 @@ async fn logout(
     state.page_redirect(auth_session, state.app_name(), query.redirect_url.as_ref())
 }
 
-pub fn page_logout<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn page_logout() -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/logout"), logout)
         .with_operation_id("page_logout")
         .with_tag("page")

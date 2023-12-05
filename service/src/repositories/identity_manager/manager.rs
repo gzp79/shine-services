@@ -141,6 +141,15 @@ impl IdentityManager {
             .await
     }
 
+    pub async fn test_access_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
+        Tokens::new(&client, &inner.stmts_tokens)
+            .test_access_token(&token_hash)
+            .await
+    }
+
     pub async fn add_token(
         &self,
         user_id: Uuid,
@@ -158,18 +167,15 @@ impl IdentityManager {
             .await
     }
 
-    pub async fn find_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
-        let token_hash = hash_token(token);
-        self.find_token_hash(&token_hash).await
-    }
-
-    pub async fn find_token_hash(&self, token_hash: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+    pub async fn find_token_by_hash(&self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        Tokens::new(&client, &inner.stmts_tokens).find_token(token_hash).await
+        Tokens::new(&client, &inner.stmts_tokens)
+            .find_by_hash(&token_hash)
+            .await
     }
 
-    pub async fn list_all_tokens(&self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
+    pub async fn list_all_tokens_by_user(&self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         Tokens::new(&client, &inner.stmts_tokens).find_by_user(user_id).await
@@ -177,10 +183,10 @@ impl IdentityManager {
 
     pub async fn delete_token(&self, user_id: Uuid, token: &str) -> Result<Option<()>, IdentityError> {
         let token_hash = hash_token(token);
-        self.delete_token_hash(user_id, &token_hash).await
+        self.delete_token_by_hash(user_id, &token_hash).await
     }
 
-    pub async fn delete_token_hash(&self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
+    pub async fn delete_token_by_hash(&self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         Tokens::new(&client, &inner.stmts_tokens)
@@ -188,7 +194,7 @@ impl IdentityManager {
             .await
     }
 
-    pub async fn delete_all_tokens(&self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
+    pub async fn delete_all_tokens_by_user(&self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         Tokens::new(&client, &inner.stmts_tokens)

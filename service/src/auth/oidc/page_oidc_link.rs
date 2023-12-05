@@ -4,7 +4,7 @@ use crate::{
     },
     openapi::ApiKind,
 };
-use axum::{body::HttpBody, extract::State, Extension};
+use axum::{extract::State, Extension};
 use chrono::Duration;
 use oauth2::{CsrfToken, PkceCodeChallenge};
 use openidconnect::{
@@ -78,10 +78,7 @@ async fn oidc_link(
     state.page_redirect(auth_session, &client.provider, Some(&authorize_url))
 }
 
-pub fn page_oidc_link<B>(provider: &str) -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn page_oidc_link(provider: &str) -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/link"), oidc_link)
         .with_operation_id(format!("page_{provider}_link"))
         .with_tag("page")

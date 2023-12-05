@@ -1,5 +1,5 @@
 use crate::{identity::IdentityServiceState, openapi::ApiKind};
-use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
+use axum::{extract::State, http::StatusCode, Json};
 use bb8::State as BB8PoolState;
 use serde::Serialize;
 use shine_service::axum::{ApiEndpoint, ApiMethod};
@@ -35,12 +35,7 @@ async fn health(State(state): State<IdentityServiceState>) -> Json<ServiceHealth
     })
 }
 
-pub fn ep_health<B>() -> ApiEndpoint<IdentityServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
-{
+pub fn ep_health() -> ApiEndpoint<IdentityServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/health"), health)
         .with_operation_id("ep_health")
         .with_tag("status")

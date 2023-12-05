@@ -3,12 +3,10 @@ use crate::{
     openapi::ApiKind,
     repositories::{Permission, PermissionError, Role},
 };
-use axum::{
-    body::HttpBody,
-    extract::State,
+use axum::{extract::State, http::StatusCode, Json};
+use axum_extra::{
     headers::{authorization::Bearer, Authorization},
-    http::StatusCode,
-    BoxError, Json, TypedHeader,
+    TypedHeader,
 };
 use serde::{Deserialize, Serialize};
 use shine_service::{
@@ -76,12 +74,7 @@ async fn add_user_role(
     Ok(Json(UserRoles { roles }))
 }
 
-pub fn ep_add_user_role<B>() -> ApiEndpoint<IdentityServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
-{
+pub fn ep_add_user_role() -> ApiEndpoint<IdentityServiceState> {
     ApiEndpoint::new(ApiMethod::Put, ApiKind::Api("/identities/:id/roles"), add_user_role)
         .with_operation_id("ep_add_user_role")
         .with_tag("identity")
@@ -121,12 +114,7 @@ async fn get_user_roles(
     Ok(Json(UserRoles { roles }))
 }
 
-pub fn ep_get_user_roles<B>() -> ApiEndpoint<IdentityServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
-{
+pub fn ep_get_user_roles() -> ApiEndpoint<IdentityServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/identities/:id/roles"), get_user_roles)
         .with_operation_id("ep_get_user_roles")
         .with_tag("identity")
@@ -177,12 +165,7 @@ async fn delete_user_role(
     Ok(Json(UserRoles { roles }))
 }
 
-pub fn ep_delete_user_role<B>() -> ApiEndpoint<IdentityServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
-{
+pub fn ep_delete_user_role() -> ApiEndpoint<IdentityServiceState> {
     ApiEndpoint::new(
         ApiMethod::Delete,
         ApiKind::Api("/identities/:id/roles"),

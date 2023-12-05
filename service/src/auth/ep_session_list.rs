@@ -1,5 +1,5 @@
 use crate::{auth::AuthServiceState, openapi::ApiKind};
-use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
+use axum::{extract::State, http::StatusCode, Json};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use shine_service::{
@@ -49,12 +49,7 @@ async fn session_list(
     Ok(Json(Response { sessions }))
 }
 
-pub fn ep_session_list<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
-{
+pub fn ep_session_list() -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/sessions"), session_list)
         .with_operation_id("session_list")
         .with_tag("auth")

@@ -4,7 +4,7 @@ use crate::{
     },
     openapi::ApiKind,
 };
-use axum::{body::HttpBody, extract::State, Extension};
+use axum::{extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};
 use serde::Deserialize;
 use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError};
@@ -63,10 +63,7 @@ async fn oauth2_link(
     state.page_redirect(auth_session, &client.provider, Some(&authorize_url))
 }
 
-pub fn page_oauth2_link<B>(provider: &str) -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn page_oauth2_link(provider: &str) -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/link"), oauth2_link)
         .with_operation_id(format!("page_{provider}_link"))
         .with_tag("page")

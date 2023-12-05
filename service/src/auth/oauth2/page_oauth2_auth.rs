@@ -2,7 +2,7 @@ use crate::{
     auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLoginCookie, OAuth2Client},
     openapi::ApiKind,
 };
-use axum::{body::HttpBody, extract::State, Extension};
+use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
 use shine_service::{
@@ -116,10 +116,7 @@ async fn oauth2_auth(
     }
 }
 
-pub fn page_oauth2_auth<B>(provider: &str) -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn page_oauth2_auth(provider: &str) -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/auth"), oauth2_auth)
         .with_operation_id(format!("page_{provider}_auth"))
         .with_tag("page")

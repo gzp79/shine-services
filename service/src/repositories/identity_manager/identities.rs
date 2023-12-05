@@ -1,11 +1,13 @@
 use crate::repositories::{IdentityBuildError, IdentityError};
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
+use postgres_from_row::FromRow;
 use shine_service::{
     pg_query,
     service::{PGClient, PGConnection, PGConvertError, PGErrorChecks, PGRawConnection, ToPGType},
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type};
+use tracing::instrument;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy)]
@@ -74,17 +76,20 @@ pg_query!( CascadedDelete =>
     "#
 );
 
+#[derive(FromRow)]
+struct FindByIdRow {
+    user_id: Uuid,
+    kind: IdentityKind,
+    name: String,
+    email: Option<String>,
+    email_confirmed: bool,
+    created: DateTime<Utc>,
+    data_version: i32,
+}
+
 pg_query!( FindById =>
     in = user_id: Uuid;
-    out = FindByIdRow{
-        user_id: Uuid,
-        kind: IdentityKind,
-        name: String,
-        email: Option<String>,
-        is_email_confirmed: bool,
-        created: DateTime<Utc>,
-        version: i32
-    };
+    out = FindByIdRow;
     sql = r#"
         SELECT user_id, kind, name, email, email_confirmed, created, data_version
             FROM identities
@@ -128,6 +133,7 @@ where
         }
     }
 
+    #[instrument(skip(self))]
     pub async fn create_user(
         &mut self,
         user_id: Uuid,
@@ -171,6 +177,7 @@ where
         })
     }
 
+    #[instrument(skip(self))]
     pub async fn find_by_id(&mut self, user_id: Uuid) -> Result<Option<Identity>, IdentityError> {
         Ok(self
             .stmts_identities
@@ -182,12 +189,13 @@ where
                 kind: row.kind,
                 name: row.name,
                 email: row.email,
-                is_email_confirmed: row.is_email_confirmed,
+                is_email_confirmed: row.email_confirmed,
                 created: row.created,
-                version: row.version,
+                version: row.data_version,
             }))
     }
 
+    #[instrument(skip(self))]
     pub async fn cascaded_delete(&mut self, user_id: Uuid) -> Result<(), IdentityError> {
         self.stmts_identities
             .cascaded_delete

@@ -3,7 +3,7 @@ use crate::{
     openapi::ApiKind,
     repositories::ExternalUserInfo,
 };
-use axum::{body::HttpBody, extract::State, Extension};
+use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier};
 use openidconnect::{Nonce, TokenResponse};
 use serde::Deserialize;
@@ -142,10 +142,7 @@ async fn oidc_auth(
     }
 }
 
-pub fn page_oidc_auth<B>(provider: &str) -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn page_oidc_auth(provider: &str) -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/auth"), oidc_auth)
         .with_operation_id(format!("page_{provider}_auth"))
         .with_tag("page")

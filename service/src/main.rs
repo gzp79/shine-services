@@ -12,7 +12,6 @@ use crate::{
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
-    body::HttpBody,
     http::StatusCode,
     http::{header, Method},
     Router,
@@ -30,6 +29,7 @@ use shine_service::{
 use std::{env, fs, net::SocketAddr};
 use tera::Tera;
 use tokio::{
+    net::TcpListener,
     runtime::{Handle as RtHandle, Runtime},
     signal,
 };
@@ -50,10 +50,7 @@ async fn health_check() -> String {
     "Ok".into()
 }
 
-fn ep_health_check<B>() -> ApiEndpoint<(), B>
-where
-    B: HttpBody + Send + 'static,
-{
+fn ep_health_check() -> ApiEndpoint<()> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Absolute("/info/ready"), health_check)
         .with_operation_id("ep_health_check")
         .with_tag("status")
@@ -181,7 +178,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         .layer(user_session.into_layer())
         .layer(powered_by)
         .layer(cors)
-        .layer(tracing_layer)
+        //.layer(tracing_layer)
         .layer(log_layer);
 
     //log::trace!("{app:#?}");
@@ -201,9 +198,9 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
             .map_err(|e| anyhow!(e))
     } else {
         log::info!("Starting service on {addr:?}");
-        axum::Server::bind(&addr)
-            .serve(app.into_make_service())
-            .with_graceful_shutdown(shutdown_signal())
+        let listener = TcpListener::bind(&addr).await.unwrap();
+        axum::serve(listener, app)
+            //.with_graceful_shutdown(shutdown_signal())
             .await
             .map_err(|e| anyhow!(e))
     }

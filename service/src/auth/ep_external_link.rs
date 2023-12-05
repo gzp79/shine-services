@@ -1,5 +1,5 @@
 use crate::{auth::AuthServiceState, openapi::ApiKind, repositories::ExternalLink};
-use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
+use axum::{extract::State, http::StatusCode, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
@@ -55,12 +55,7 @@ async fn external_link_list(
     Ok(Json(LinkedExternalProviders { links }))
 }
 
-pub fn ep_external_link_list<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
-{
+pub fn ep_external_link_list() -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/links"), external_link_list)
         .with_operation_id("external_link_list")
         .with_tag("auth")
@@ -96,12 +91,7 @@ async fn external_link_delete(
     }
 }
 
-pub fn ep_external_link_delete<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
-{
+pub fn ep_external_link_delete() -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(
         ApiMethod::Delete,
         ApiKind::Api("/auth/user/links/:provider/:providerId"),
