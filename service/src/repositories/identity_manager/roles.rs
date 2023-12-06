@@ -94,6 +94,7 @@ where
             None => return Ok(None),
         };
 
+        log::debug!("Adding role {} to user {}", role, user_id);
         match self.stmts_role.add.execute(update.client(), &user_id, &role).await {
             Ok(_) => {}
             Err(err) if err.is_constraint("roles", "fkey_user_id") => {

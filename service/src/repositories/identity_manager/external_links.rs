@@ -41,9 +41,9 @@ struct FindByProviderIdRow {
     kind: IdentityKind,
     name: String,
     email: Option<String>,
-    is_email_confirmed: bool,
+    email_confirmed: bool,
     created: DateTime<Utc>,
-    version: i32,
+    data_version: i32,
 }
 
 pg_query!( FindByProviderId =>
@@ -65,7 +65,7 @@ struct ListByUserIdRow {
     provider_id: String,
     name: Option<String>,
     email: Option<String>,
-    linked_at: DateTime<Utc>,
+    linked: DateTime<Utc>,
 }
 
 pg_query!( ListByUserId =>
@@ -164,7 +164,7 @@ where
                 provider_id: row.provider_id,
                 name: row.name,
                 email: row.email,
-                linked_at: row.linked_at,
+                linked_at: row.linked,
             })
             .collect();
 
@@ -186,9 +186,9 @@ where
                 kind: row.kind,
                 name: row.name,
                 email: row.email,
-                is_email_confirmed: row.is_email_confirmed,
+                is_email_confirmed: row.email_confirmed,
                 created: row.created,
-                version: row.version,
+                version: row.data_version,
             }))
     }
 

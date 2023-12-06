@@ -158,16 +158,16 @@ struct TestTokenRow {
     email_confirmed: bool,
     created: DateTime<Utc>,
     data_version: i32,
-    token: String,
+    token_hash: String,
     token_created: DateTime<Utc>,
     token_expire: DateTime<Utc>,
     token_fingerprint: Option<String>,
     token_kind: TokenKind,
     token_is_expired: bool,
-    agent: String,
-    country: Option<String>,
-    region: Option<String>,
-    city: Option<String>,
+    token_agent: String,
+    token_country: Option<String>,
+    token_region: Option<String>,
+    token_city: Option<String>,
 }
 
 // Test token for use. Compared to find it also returns the identity
@@ -176,8 +176,16 @@ pg_query!( TestToken =>
     out = TestTokenRow;
     sql = r#"
         SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
-                t.token, t.created token_created, t.expire token_expire, t.fingerprint token_fingerprint, t.kind token_kind, t.expire < now() token_is_expired,
-                t.agent, t.country, t.region, t.city
+                t.token token_hash, 
+                t.created token_created, 
+                t.expire token_expire, 
+                t.fingerprint token_fingerprint, 
+                t.kind token_kind, 
+                t.expire < now() token_is_expired,
+                t.agent token_agent,
+                t.country token_country,
+                t.region token_region,
+                t.city token_city
             FROM login_tokens t, identities i
             WHERE t.user_id = i.user_id
                 AND t.token = $1
@@ -365,7 +373,7 @@ where
             let token = TokenInfo {
                 user_id: row.user_id,
                 kind: row.token_kind,
-                token_hash: row.token,
+                token_hash: row.token_hash,
                 created_at: row.token_created,
                 expire_at: row.token_expire,
                 is_expired: row.token_is_expired,
@@ -380,9 +388,9 @@ where
                 kind: row.kind,
                 name: row.name,
                 email: row.email,
-                is_email_confirmed: row.is_email_confirmed,
+                is_email_confirmed: row.email_confirmed,
                 created: row.created,
-                version: row.version,
+                version: row.data_version,
             };
             (identity, token)
         }))

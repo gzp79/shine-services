@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 pg_query!( GetDataVersion =>
     in = user_id: Uuid;
-    out = version: i32;
+    out = data_version: i32;
     sql = r#"
         SELECT data_version FROM identities WHERE user_id = $1
     "#
