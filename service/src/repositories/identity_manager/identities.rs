@@ -113,7 +113,7 @@ impl IdentitiesStatements {
     }
 }
 
-/// Identities Data Access Object.
+/// Handle identities.
 pub struct Identities<'a, T>
 where
     T: PGRawConnection,

@@ -19,7 +19,7 @@
         "enableConsoleLog": true,
         "defaultLevel": "INFO,shine_service=TRACE,shine_identity=TRACE,tower_http=TRACE",
         "telemetry": {
-            "type": "none"
+            "type": "stdOut"
         }
     },
     "db": {

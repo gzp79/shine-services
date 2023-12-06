@@ -22,7 +22,7 @@ pub struct SearchIdentity<'a> {
     pub names: Option<&'a [String]>,
 }
 
-/// Identities Data Access Object.
+/// Search for identities.
 pub struct IdentitySearch<'a, T>
 where
     T: PGRawConnection,

@@ -27,7 +27,7 @@ harsh = "0.2"
 futures = "0.3"
 async-trait = "0.1"
 async-once-cell = "0.5"
-tokio = {version = "1.27", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = {version = "1.34", features = ["macros", "rt-multi-thread", "signal"] }
 
 bb8 = "0.8"
 oauth2 = "4.3"
@@ -41,8 +41,8 @@ tokio-postgres-rustls = "0.10"
 postgres-from-row = "0.5"
 refinery = { version = "0.8", features = ["tokio-postgres"] }
 
-bb8-redis = "0.13"
-redis = { version = "0.23.0", features = ["tokio-comp", "tokio-rustls-comp"] }
+bb8-redis = "0.14"
+redis = { version = "0.24.0", features = ["tokio-comp", "tokio-rustls-comp"] }
 
 azure_core = { version = "0.17" }
 azure_identity = { version = "0.17" }

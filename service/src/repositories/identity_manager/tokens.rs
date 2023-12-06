@@ -215,7 +215,7 @@ impl TokensStatements {
     }
 }
 
-/// Tokens Data Access Object.
+/// Handle tokens: Access, SingleAccess and Persistent.
 pub struct Tokens<'a, T>
 where
     T: PGRawConnection,

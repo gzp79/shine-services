@@ -75,7 +75,7 @@ async fn token_create(
             if &time_to_live > state.ttl_api_key() {
                 return Err(Problem::bad_request().with_title(format!(
                     "timeToLive exceeds maximum limit ({})",
-                    state.ttl_single_access().num_seconds()
+                    state.ttl_api_key().num_seconds()
                 )));
             }
         }

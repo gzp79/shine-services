@@ -19,11 +19,7 @@ use axum::{
 use chrono::Duration;
 use openapi::ApiKind;
 use shine_service::{
-    axum::{
-        add_default_components,
-        tracing::{OtelAxumLayer, TracingManager},
-        ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy,
-    },
+    axum::{add_default_components, tracing::TracingManager, ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy},
     service::UserSessionValidator,
 };
 use std::{env, fs, net::SocketAddr};
@@ -130,10 +126,10 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let session_manager = SessionManager::new(&db_pool.redis, String::new(), ttl_session).await?;
     let auto_name_manager = AutoNameManager::new(&config.user_name, &db_pool.postgres).await?;
 
-    let tracing_layer = OtelAxumLayer::default(); //.filter(|a| true);
     let log_layer = TraceLayer::new_for_http()
         .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
         .on_response(DefaultOnResponse::new().level(Level::INFO));
+    let tracing_layer = tracing_manager.to_layer();
 
     let health_check = Router::new().add_api(ep_health_check(), &mut doc);
 
@@ -178,7 +174,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         .layer(user_session.into_layer())
         .layer(powered_by)
         .layer(cors)
-        //.layer(tracing_layer)
+        .layer(tracing_layer)
         .layer(log_layer);
 
     //log::trace!("{app:#?}");

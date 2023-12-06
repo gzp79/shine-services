@@ -171,7 +171,7 @@ impl IdentityManager {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         Tokens::new(&client, &inner.stmts_tokens)
-            .find_by_hash(&token_hash)
+            .find_by_hash(token_hash)
             .await
     }
 

@@ -62,7 +62,7 @@ impl RolesStatements {
     }
 }
 
-/// Roles Data Access Object.
+/// Handel user roles.
 pub struct Roles<'a, T>
 where
     T: PGRawConnection,

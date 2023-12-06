@@ -106,7 +106,7 @@ impl ExternalLinksStatements {
     }
 }
 
-/// External Links Data Access Object.
+/// Handle external links
 pub struct ExternalLinks<'a, T>
 where
     T: PGRawConnection,
