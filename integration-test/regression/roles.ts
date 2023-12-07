@@ -1,8 +1,8 @@
-import request from '$lib/request';
-import config from '../test.config';
-import { TestUser } from '$lib/test_user';
 import { randomUUID } from 'crypto';
 import api from '$lib/api/api';
+import request from '$lib/request';
+import { TestUser } from '$lib/test_user';
+import config from '../test.config';
 
 // It checks only for the access of the feature, but not if it does what it have to.
 describe('Access to user role management', () => {

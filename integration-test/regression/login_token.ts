@@ -1,8 +1,8 @@
-import config from '../test.config';
-import { TestUser } from '$lib/test_user';
-import { getCookies, getPageRedirectUrl } from '$lib/response_utils';
 import api from '$lib/api/api';
 import { UserInfo } from '$lib/api/user_api';
+import { getCookies, getPageRedirectUrl } from '$lib/response_utils';
+import { TestUser } from '$lib/test_user';
+import config from '../test.config';
 
 describe('Login with token for new user', () => {
     it('Login with (token: NO, rememberMe: INVALID) shall fail and redirect to the default error page', async () => {

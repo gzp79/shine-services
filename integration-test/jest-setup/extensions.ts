@@ -1,13 +1,12 @@
-import * as matchers from 'jest-extended';
+import console from 'console';
 import debug from 'debug';
-import process from 'process';
 import 'jest-expect-message';
+import * as matchers from 'jest-extended';
+import process from 'process';
 import authExts from '$lib/expect/auth_exts';
 import userExts from '$lib/expect/user_exts';
 
-import console from 'console';
-global.console = console
-
+global.console = console;
 
 expect.extend(matchers);
 expect.extend(authExts);

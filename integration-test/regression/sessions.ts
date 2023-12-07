@@ -1,10 +1,10 @@
-import request from '$lib/request';
-import config from '../test.config';
-import OAuth2MockServer from '$lib/mocks/oauth2';
-import { TestUser } from '$lib/test_user';
-import { MockServer } from '$lib/mock_server';
-import { ActiveSession } from '$lib/api/session_api';
 import api from '$lib/api/api';
+import { ActiveSession } from '$lib/api/session_api';
+import { MockServer } from '$lib/mock_server';
+import OAuth2MockServer from '$lib/mocks/oauth2';
+import request from '$lib/request';
+import { TestUser } from '$lib/test_user';
+import config from '../test.config';
 
 describe('Sessions', () => {
     // assume server is not off more than a few seconds and the test is fast enough

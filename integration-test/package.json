@@ -9,11 +9,11 @@
     "mkcert:dev": "mkcert create-cert --ca-cert ../service/certs/ca.crt --ca-key ../service/certs/ca.key --cert ../service/certs/scytta.crt --key ../service/certs/scytta.key --domain local.scytta.com,localhost",
     "mkcert": "npm run mkcert:ca && npm run mkcert:test",
     "build_service": "docker build --target test -t gzp79/shine-identity:test --progress=plain ..",
-    "format": "prettier 'src/**/*.{ts,tsx,js}' --write",
+    "format": "prettier '{jest-setup,src,regression}/**/*.{ts,tsx,js}' --write",
     "jest": "jest -i --verbose=false",
     "report": "xunit-viewer -r ./reports/junit.xml -o ./reports/index.html",
     "test:regression": "npm run jest regression || npm run report",
-    "test:format": "prettier 'src/**/*.{ts,tsx,js}' --check",
+    "test:format": "prettier '{jest-setup,src,regression}/**/*.{ts,tsx,js}' --check",
     "test": "npm run test:format && npm run test:regression"
   },
   "author": "",

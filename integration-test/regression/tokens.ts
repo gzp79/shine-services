@@ -1,12 +1,12 @@
-import request from '$lib/request';
-import config from '../test.config';
-import { TestUser } from '$lib/test_user';
-import OAuth2MockServer from '$lib/mocks/oauth2';
-import { MockServer } from '$lib/mock_server';
-import { getSHA256Hash, parseSignedCookie } from '$lib/utils';
 import api from '$lib/api/api';
 import { ActiveToken } from '$lib/api/token_api';
+import { MockServer } from '$lib/mock_server';
+import OAuth2MockServer from '$lib/mocks/oauth2';
+import request from '$lib/request';
 import { getPageRedirectUrl } from '$lib/response_utils';
+import { TestUser } from '$lib/test_user';
+import { getSHA256Hash, parseSignedCookie } from '$lib/utils';
+import config from '../test.config';
 
 describe('Tokens', () => {
     // assume server is not off more than a few seconds and the test is fast enough
@@ -264,7 +264,7 @@ describe('Single access token', () => {
     });
 
     it('Using a single access token twice shall fail', async () => {
-        expect(1).fail("not implemented")
+        expect(1).fail('not implemented');
         /*const token = await api.auth.createToken(user.sid, 'singleAccess', 20000);
 
         const response = await api.request.loginWithToken(null, null, token, true);
@@ -278,12 +278,12 @@ describe('Single access token', () => {
     });
 
     it('A failed login with a single access token shall clear the current user', async () => {
-        expect(1).fail("not implemented")
+        expect(1).fail('not implemented');
         //test: tid,sid,eid are all cleared
     });
 
-    it('A successful login with a single access token shall change the current user', async () => {        
-        expect(1).fail("not implemented")
+    it('A successful login with a single access token shall change the current user', async () => {
+        expect(1).fail('not implemented');
         //test: tid,sid,eid are all changed
     });
 });

@@ -1,14 +1,14 @@
-import os from 'os';
-import { getCookies, getPageRedirectUrl } from '$lib/response_utils';
-import config from '../test.config';
-import OAuth2MockServer from '$lib/mocks/oauth2';
-import { TestUser } from '$lib/test_user';
 import { randomUUID } from 'crypto';
-import { generateRandomString } from '$lib/string_utils';
-import { MockServer } from '$lib/mock_server';
+import os from 'os';
 import api from '$lib/api/api';
 import { ExternalUser } from '$lib/api/external_user';
+import { MockServer } from '$lib/mock_server';
+import OAuth2MockServer from '$lib/mocks/oauth2';
+import { getCookies, getPageRedirectUrl } from '$lib/response_utils';
+import { generateRandomString } from '$lib/string_utils';
+import { TestUser } from '$lib/test_user';
 import { parseSignedCookie } from '$lib/utils';
+import config from '../test.config';
 
 describe('Check OAuth2 auth', () => {
     let mock: MockServer | undefined;

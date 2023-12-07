@@ -1,5 +1,5 @@
-import api from '$lib/api/api';
 import { Cookie } from 'tough-cookie';
+import api from '$lib/api/api';
 import { getCookies } from '$lib/response_utils';
 
 describe('Auth cookie consistency matrix', () => {

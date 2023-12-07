@@ -1,5 +1,5 @@
-import { Response } from '$lib/request';
 import { Cookie } from 'tough-cookie';
+import { Response } from '$lib/request';
 
 export function getCookies(response?: Response): Record<string, Cookie> {
     return (response?.headers['set-cookie'] ?? [])

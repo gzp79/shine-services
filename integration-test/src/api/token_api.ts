@@ -1,5 +1,5 @@
-import { RequestAPI } from './api';
 import { Response } from '../request';
+import { RequestAPI } from './api';
 
 export interface ActiveToken {
     userId: string;

@@ -1,8 +1,8 @@
-import { RequestAPI } from './api';
-import { Config } from '../../test.config';
-import { getCookies, getPageRedirectUrl } from '$lib/response_utils';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIdMockServer from '$lib/mocks/openid';
+import { getCookies, getPageRedirectUrl } from '$lib/response_utils';
+import { Config } from '../../test.config';
+import { RequestAPI } from './api';
 import { ExternalUser } from './external_user';
 
 interface UserCookies {

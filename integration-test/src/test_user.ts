@@ -1,10 +1,10 @@
-import { generateRandomString } from '$lib/string_utils';
 import { randomUUID } from 'crypto';
-import { MockServer } from './mock_server';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIdMockServer from '$lib/mocks/openid';
-import { ExternalUser } from './api/external_user';
+import { generateRandomString } from '$lib/string_utils';
 import api from './api/api';
+import { ExternalUser } from './api/external_user';
+import { MockServer } from './mock_server';
 
 export class TestUser {
     public externalUser?: ExternalUser;
