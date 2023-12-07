@@ -7,16 +7,16 @@ use axum::{extract::State, http::StatusCode, Json};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem, SiteInfo, ValidatedPath, ValidatedQuery},
+    axum::{ApiEndpoint, ApiMethod, Problem, SiteInfo, ValidatedJson, ValidatedPath},
     service::{CheckedCurrentUser, ClientFingerprint},
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::{Validate, ValidationError};
 
-#[derive(Deserialize, Validate, IntoParams)]
+#[derive(Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct CreateQuery {
+struct CreateTokenRequest {
     /// The kind of token to create, Allowed kinds are persistent or singleAccess
     #[validate(custom = "validate_allowed_kind")]
     kind: TokenKind,
@@ -58,11 +58,11 @@ async fn token_create(
     user: CheckedCurrentUser,
     fingerprint: ClientFingerprint,
     site_info: SiteInfo,
-    ValidatedQuery(query): ValidatedQuery<CreateQuery>,
+    ValidatedJson(params): ValidatedJson<CreateTokenRequest>,
 ) -> Result<Json<CreatedToken>, Problem> {
-    let time_to_live = Duration::seconds(query.time_to_live as i64);
+    let time_to_live = Duration::seconds(params.time_to_live as i64);
     // validate time_to_live against server config
-    match query.kind {
+    match params.kind {
         TokenKind::SingleAccess => {
             if &time_to_live > state.ttl_single_access() {
                 return Err(Problem::bad_request().with_title(format!(
@@ -82,15 +82,15 @@ async fn token_create(
         TokenKind::Access => unreachable!(),
     };
 
-    let fingerprint = if query.bind_to_site { Some(&fingerprint) } else { None };
+    let fingerprint = if params.bind_to_site { Some(&fingerprint) } else { None };
     let token_cookie = state
-        .create_token_with_retry(user.user_id, query.kind, &time_to_live, fingerprint, &site_info)
+        .create_token_with_retry(user.user_id, params.kind, &time_to_live, fingerprint, &site_info)
         .await
         .map_err(Problem::internal_error_from)?;
 
     let token_hash = hash_token(&token_cookie.key);
     Ok(Json(CreatedToken {
-        kind: query.kind,
+        kind: params.kind,
         token: token_cookie.key,
         token_hash,
         token_type: "Bearer".into(),
@@ -99,11 +99,11 @@ async fn token_create(
 }
 
 pub fn ep_token_create() -> ApiEndpoint<AuthServiceState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/token"), token_create)
+    ApiEndpoint::new(ApiMethod::Post, ApiKind::Api("/auth/user/tokens"), token_create)
         .with_operation_id("token_create")
         .with_tag("auth")
         //.with_checked_user()
-        .with_query_parameter::<CreateQuery>()
+        .with_json_request::<CreateTokenRequest>()
         .with_json_response::<CreatedToken>(StatusCode::OK)
 }
 

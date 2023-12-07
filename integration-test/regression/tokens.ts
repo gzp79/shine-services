@@ -236,7 +236,7 @@ describe('Tokens', () => {
     });
 });
 
-describe('Single access token', () => {    
+describe('Single access token', () => {
     let mock: OAuth2MockServer = undefined!;
     let user: TestUser = undefined!;
 
@@ -254,15 +254,36 @@ describe('Single access token', () => {
 
     it('Creating token without session shall fail', async () => {
         const response = await api.request.createToken(null, 'singleAccess', 20);
-        expect(response.statusCode).toEqual(401);        
+        expect(response.statusCode).toEqual(401);
     });
-/*
+
     it('Too long time to live shall be rejected with bad request', async () => {
-        expect(await api.token.getTokens(user.sid)).toBeEmpty();
+        const response = await api.request.createToken(user.sid, 'singleAccess', 20000);
+        console.log(response.body);
+        expect(response.statusCode).toEqual(400);
+    });
 
-        const response = await api.request.createToken(user.sid, 'singleAccess', 20);
+    it('Using a single access token twice shall fail', async () => {
+        expect(1).fail("not implemented")
+        /*const token = await api.auth.createToken(user.sid, 'singleAccess', 20000);
 
-    });s
-    */
+        const response = await api.request.loginWithToken(null, null, token, true);
+        expect(response.statusCode).toEqual(200);
+        //test: tid,sid,eid are valid
+
+        const response = await api.request.loginWithToken(null, null, token, false);
+        expect(response.statusCode).toEqual(401);
+        //test: tid,sid,eid are all cleared
+        */
+    });
+
+    it('A failed login with a single access token shall clear the current user', async () => {
+        expect(1).fail("not implemented")
+        //test: tid,sid,eid are all cleared
+    });
+
+    it('A successful login with a single access token shall change the current user', async () => {        
+        expect(1).fail("not implemented")
+        //test: tid,sid,eid are all changed
+    });
 });
-
