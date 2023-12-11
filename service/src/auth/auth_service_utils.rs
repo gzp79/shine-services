@@ -12,7 +12,7 @@ use axum::{
 use chrono::Duration;
 use serde::Serialize;
 use shine_service::{
-    axum::{SiteInfo, ValidationError},
+    axum::{InputError, SiteInfo},
     service::ClientFingerprint,
 };
 use std::fmt;
@@ -120,7 +120,7 @@ impl AuthServiceState {
 #[derive(Debug, ThisError, Serialize)]
 pub(in crate::auth) enum AuthError {
     #[error("Input validation error")]
-    ValidationError(ValidationError),
+    InputError(InputError),
     #[error("Logout required")]
     LogoutRequired,
     #[error("Login required")]
@@ -176,7 +176,7 @@ impl AuthServiceState {
         log::error!("{response:?}");
 
         let (kind, status) = match response {
-            AuthError::ValidationError(_) => ("invalidInput", StatusCode::BAD_REQUEST),
+            AuthError::InputError(_) => ("invalidInput", StatusCode::BAD_REQUEST),
             AuthError::LogoutRequired => ("logoutRequired", StatusCode::BAD_REQUEST),
             AuthError::LoginRequired => ("loginRequired", StatusCode::UNAUTHORIZED),
             AuthError::MissingExternalLoginCookie => ("authError", StatusCode::BAD_REQUEST),
@@ -185,7 +185,7 @@ impl AuthServiceState {
             AuthError::TokenExchangeFailed(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
             AuthError::FailedExternalUserInfo(_) => ("authError", StatusCode::BAD_REQUEST),
             AuthError::InvalidToken => ("authError", StatusCode::BAD_REQUEST),
-            AuthError::TokenExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
+            AuthError::TokenExpired => ("tokenExpired", StatusCode::UNAUTHORIZED),
             AuthError::SessionExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
             AuthError::InternalServerError(_) => ("internalError", StatusCode::INTERNAL_SERVER_ERROR),
             AuthError::OIDCDiscovery(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),

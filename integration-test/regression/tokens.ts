@@ -1,11 +1,12 @@
-import api from '$lib/api/api';
+import exp from 'constants';
+import api, { TokenKind } from '$lib/api/api';
 import { ActiveToken } from '$lib/api/token_api';
 import { MockServer } from '$lib/mock_server';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import request from '$lib/request';
-import { getPageRedirectUrl } from '$lib/response_utils';
+import { getCookies, getPageRedirectUrl } from '$lib/response_utils';
 import { TestUser } from '$lib/test_user';
-import { getSHA256Hash, parseSignedCookie } from '$lib/utils';
+import { delay, getSHA256Hash, parseSignedCookie } from '$lib/utils';
 import config from '../test.config';
 
 describe('Tokens', () => {
@@ -184,7 +185,7 @@ describe('Tokens', () => {
             .set('Cookie', [`tid=${tid2}`]);
         expect(responseLogin.statusCode).toEqual(200);
         expect(getPageRedirectUrl(responseLogin.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=sessionExpired&status=401'
+            config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
     });
 
@@ -223,10 +224,10 @@ describe('Tokens', () => {
         expect(c5.rky).toEqual(c4.key);
 
         // Token rotated out shall not work
-        const request = await api.request.loginWithToken(tid, null, null);
+        const request = await api.request.loginWithToken(tid, null, null, null);
         expect(request.statusCode).toEqual(200);
         expect(getPageRedirectUrl(request.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=sessionExpired&status=401'
+            config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
 
         // live tokens: t3,t4,t5,t6
@@ -253,37 +254,110 @@ describe('Single access token', () => {
     });
 
     it('Creating token without session shall fail', async () => {
-        const response = await api.request.createToken(null, 'singleAccess', 20);
+        const response = await api.request.createToken(null, 'singleAccess', 20, false);
         expect(response.statusCode).toEqual(401);
     });
 
-    it('Too long time to live shall be rejected with bad request', async () => {
-        const response = await api.request.createToken(user.sid, 'singleAccess', 20000);
-        console.log(response.body);
-        expect(response.statusCode).toEqual(400);
-    });
-
-    it('Using a single access token twice shall fail', async () => {
-        expect(1).fail('not implemented');
-        /*const token = await api.auth.createToken(user.sid, 'singleAccess', 20000);
-
-        const response = await api.request.loginWithToken(null, null, token, true);
-        expect(response.statusCode).toEqual(200);
-        //test: tid,sid,eid are valid
-
-        const response = await api.request.loginWithToken(null, null, token, false);
-        expect(response.statusCode).toEqual(401);
-        //test: tid,sid,eid are all cleared
-        */
-    });
+    class InputValidation {
+        constructor(
+            public kind: TokenKind,
+            public duration: number,
+            public bindToSite: boolean,
+            public expectedError: any
+        ) {}
+    }
+    const inputValidationCases: InputValidation[] = [
+        new InputValidation('singleAccess', 20000, false, {
+            time_to_live: [expect.objectContaining({ code: 'range', message: null })]
+        }),
+        new InputValidation('access', 200, false, {
+            kind: [expect.objectContaining({ code: 'oneOf', message: 'Access tokens are not allowed' })]
+        })
+    ];
+    it.each(inputValidationCases)(
+        'Token creation with(kind: $kind, duration:$duration, bindToSite: $bindToSite) shall be rejected with $expectedError',
+        async (test) => {
+            const response = await api.request.createToken(
+                user.sid,
+                test.kind,
+                test.duration,
+                test.bindToSite
+            );
+            expect(response.statusCode).toEqual(400);
+            expect(response.body).toEqual({
+                type: 'validation_error',
+                detail: test.expectedError
+            });
+        }
+    );
 
     it('A failed login with a single access token shall clear the current user', async () => {
-        expect(1).fail('not implemented');
-        //test: tid,sid,eid are all cleared
+        const response = await api.request.loginWithToken(null, null, 'invalid', false);
+        expect(response.statusCode).toEqual(200);
+        expect(getPageRedirectUrl(response.text)).toEqual(
+            config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
+        );
+
+        const cookies = getCookies(response);
+        expect(cookies.tid).toBeClearCookie();
+        expect(cookies.sid).toBeClearCookie();
+        expect(cookies.eid).toBeClearCookie();
     });
 
     it('A successful login with a single access token shall change the current user', async () => {
-        expect(1).fail('not implemented');
-        //test: tid,sid,eid are all changed
+        const token = await api.token.createSAToken(user.sid, 120, false);
+        console.log('token:', token);
+
+        const response = await api.request.loginWithToken(null, null, token.token, false);
+        expect(response.statusCode).toEqual(200);
+        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
+        const cookies = getCookies(response);
+        expect(cookies.tid).toBeClearCookie();
+        expect(cookies.sid).toBeValidSID();
+        expect(cookies.eid).toBeClearCookie();
+    });
+
+    it(
+        'The single access token shall expire after the specified time',
+        async () => {
+            const now = new Date().getTime();
+            const token = await api.token.createSAToken(user.sid, 30, false);
+            expect(token.expireAt).toBeAfter(new Date(now + 30 * 1000));
+            expect(token.expireAt).toBeBefore(new Date(now + 35 * 1000));
+
+            console.log('Waiting for the token to expire...');
+            await delay(30 * 1000);
+            const response = await api.request.loginWithToken(null, null, token.token, false);
+            expect(response.statusCode).toEqual(200);
+            expect(getPageRedirectUrl(response.text)).toEqual(
+                config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
+            );
+        },
+        35 * 1000
+    );
+
+    it('The single access token shall be used only once', async () => {
+        const now = new Date().getTime();
+        const token = await api.token.createSAToken(user.sid, 120, false);
+        expect(token.expireAt).toBeAfter(new Date(now + 120 * 1000));
+        expect(token.expireAt).toBeBefore(new Date(now + 130 * 1000));
+
+        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
+        expect(tokens).toIncludeSameMembers([token.tokenFingerprint]);
+
+        const response1 = await api.request.loginWithToken(null, null, token.token, false);
+        expect(response1.statusCode).toEqual(200);
+        const sid1 = getCookies(response1).sid.value;
+        const user1 = await api.user.getUserInfo(sid1);
+        expect(user1.userId, 'It shall be the same use').toEqual(user.userId);
+
+        const tokens1 = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
+        expect(tokens1, 'Token shall be removed').toIncludeSameMembers([]);
+
+        const response2 = await api.request.loginWithToken(null, null, token.token, false);
+        expect(response2.statusCode).toEqual(200);
+        expect(getPageRedirectUrl(response2.text)).toEqual(
+            config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
+        );
     });
 });

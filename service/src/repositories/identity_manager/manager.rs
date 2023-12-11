@@ -141,12 +141,25 @@ impl IdentityManager {
             .await
     }
 
+    /// Get the identity associated to an access token.
+    /// The provided token is not removed from the DB.
     pub async fn test_access_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         let token_hash = hash_token(token);
         Tokens::new(&client, &inner.stmts_tokens)
-            .test_access_token(&token_hash)
+            .test_token(TokenKind::Access, &token_hash)
+            .await
+    }
+
+    /// Get the identity associated to a single access token.
+    /// Independent of the result the provided toke is removed from the DB
+    pub async fn take_single_access_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
+        Tokens::new(&client, &inner.stmts_tokens)
+            .take_token(TokenKind::SingleAccess, &token_hash)
             .await
     }
 
@@ -170,9 +183,7 @@ impl IdentityManager {
     pub async fn find_token_by_hash(&self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        Tokens::new(&client, &inner.stmts_tokens)
-            .find_by_hash(token_hash)
-            .await
+        Tokens::new(&client, &inner.stmts_tokens).find_by_hash(token_hash).await
     }
 
     pub async fn list_all_tokens_by_user(&self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {

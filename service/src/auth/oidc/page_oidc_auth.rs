@@ -8,7 +8,7 @@ use oauth2::{AuthorizationCode, PkceCodeVerifier};
 use openidconnect::{Nonce, TokenResponse};
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, SiteInfo, ValidatedQuery, ValidationError},
+    axum::{ApiEndpoint, ApiMethod, InputError, SiteInfo, ValidatedQuery},
     service::ClientFingerprint,
 };
 use std::sync::Arc;
@@ -29,7 +29,7 @@ async fn oidc_auth(
     mut auth_session: AuthSession,
     fingerprint: ClientFingerprint,
     site_info: SiteInfo,
-    query: Result<ValidatedQuery<Query>, ValidationError>,
+    query: Result<ValidatedQuery<Query>, InputError>,
 ) -> AuthPage {
     // take external_login_cookie from session, thus later code don't have to care with it
     let ExternalLoginCookie {
@@ -51,7 +51,7 @@ async fn oidc_auth(
 
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), error_url.as_ref()),
+        Err(error) => return state.page_error(auth_session, AuthError::InputError(error), error_url.as_ref()),
     };
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;

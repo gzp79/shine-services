@@ -7,7 +7,7 @@ use axum::{extract::State, http::StatusCode, Json};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem, SiteInfo, ValidatedJson, ValidatedPath},
+    axum::{ApiEndpoint, ApiMethod, Problem, SiteInfo, ValidatedJson, ValidatedPath, ValidationErrorEx as _},
     service::{CheckedCurrentUser, ClientFingerprint},
 };
 use utoipa::{IntoParams, ToSchema};
@@ -32,7 +32,7 @@ fn validate_allowed_kind(kind: &TokenKind) -> Result<(), ValidationError> {
     match kind {
         TokenKind::SingleAccess => Ok(()),
         TokenKind::Persistent => Ok(()),
-        TokenKind::Access => Err(ValidationError::new("Access tokens are not allowed")),
+        TokenKind::Access => Err(ValidationError::new("oneOf").with_message("Access tokens are not allowed")),
     }
 }
 
@@ -44,7 +44,7 @@ struct CreatedToken {
     /// The token, accessible only once, backend is not storing it in plain format
     token: String,
     /// The unique id of the token
-    token_hash: String,
+    token_fingerprint: String,
     /// Authorization type
     token_type: String,
     /// Date of the expiration of the token
@@ -61,30 +61,24 @@ async fn token_create(
     ValidatedJson(params): ValidatedJson<CreateTokenRequest>,
 ) -> Result<Json<CreatedToken>, Problem> {
     let time_to_live = Duration::seconds(params.time_to_live as i64);
+
     // validate time_to_live against server config
-    match params.kind {
-        TokenKind::SingleAccess => {
-            if &time_to_live > state.ttl_single_access() {
-                return Err(Problem::bad_request().with_title(format!(
-                    "timeToLive exceeds maximum limit ({})",
-                    state.ttl_single_access().num_seconds()
-                )));
-            }
-        }
-        TokenKind::Persistent => {
-            if &time_to_live > state.ttl_api_key() {
-                return Err(Problem::bad_request().with_title(format!(
-                    "timeToLive exceeds maximum limit ({})",
-                    state.ttl_api_key().num_seconds()
-                )));
-            }
-        }
+    let max_time_to_live = match params.kind {
+        TokenKind::SingleAccess => state.ttl_single_access(),
+        TokenKind::Persistent => state.ttl_api_key(),
         TokenKind::Access => unreachable!(),
     };
+    if &time_to_live > max_time_to_live {
+        return Err(ValidationError::new("range")
+            .with_param("min", &30)
+            .with_param("max", &max_time_to_live.num_seconds())
+            .with_param("value", &params.time_to_live)
+            .into_constraint_problem("time_to_live"));
+    }
 
-    let fingerprint = if params.bind_to_site { Some(&fingerprint) } else { None };
+    let site_fingerprint = if params.bind_to_site { Some(&fingerprint) } else { None };
     let token_cookie = state
-        .create_token_with_retry(user.user_id, params.kind, &time_to_live, fingerprint, &site_info)
+        .create_token_with_retry(user.user_id, params.kind, &time_to_live, site_fingerprint, &site_info)
         .await
         .map_err(Problem::internal_error_from)?;
 
@@ -92,7 +86,7 @@ async fn token_create(
     Ok(Json(CreatedToken {
         kind: params.kind,
         token: token_cookie.key,
-        token_hash,
+        token_fingerprint: token_hash,
         token_type: "Bearer".into(),
         expire_at: token_cookie.expire_at,
     }))

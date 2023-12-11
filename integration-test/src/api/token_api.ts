@@ -14,6 +14,14 @@ export interface ActiveToken {
     city: string | null;
 }
 
+export interface Token {
+    kind: string;
+    token: string;
+    tokenFingerprint: string;
+    tokenType: string;
+    expireAt: Date;
+}
+
 export class TokenAPI {
     constructor(public readonly request: RequestAPI) {}
 
@@ -32,9 +40,17 @@ export class TokenAPI {
     async createSAToken(
         sid: string,
         duration: number,
+        bindToSite: boolean,
         extraHeaders?: Record<string, string>
-    ): Promise<Response> {
-        let response = await this.request.createToken(sid, 'singleAccess', duration).set(extraHeaders ?? {});
-        return response;
+    ): Promise<Token> {
+        let response = await this.request
+            .createToken(sid, 'singleAccess', duration, bindToSite)
+            .set(extraHeaders ?? {});
+
+        expect(response.statusCode).toEqual(200);
+        expect(response.body.kind).toEqual('singleAccess');
+
+        response.body.expireAt = new Date(response.body.expireAt as string);
+        return response.body as Token;
     }
 }

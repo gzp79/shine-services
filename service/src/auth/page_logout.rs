@@ -5,7 +5,7 @@ use crate::{
 };
 use axum::extract::State;
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError};
+use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, ValidatedQuery};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -21,11 +21,11 @@ struct Query {
 async fn logout(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
-    query: Result<ValidatedQuery<Query>, ValidationError>,
+    query: Result<ValidatedQuery<Query>, InputError>,
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), None),
+        Err(error) => return state.page_error(auth_session, AuthError::InputError(error), None),
     };
 
     if let Some((user_id, user_key)) = auth_session.user_session.as_ref().map(|u| (u.user_id, u.key)) {

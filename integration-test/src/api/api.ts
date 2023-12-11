@@ -6,7 +6,7 @@ import { SessionAPI } from './session_api';
 import { TokenAPI } from './token_api';
 import { UserAPI } from './user_api';
 
-type TokenKind = 'access' | 'apiKey' | 'singleAccess';
+export type TokenKind = 'access' | 'apiKey' | 'singleAccess';
 
 export class RequestAPI {
     constructor(public readonly config: Config) {}
@@ -21,14 +21,20 @@ export class RequestAPI {
             .set('Cookie', [...ct, ...cs, ...ce]);
     }
 
-    loginWithToken(tid: string | null, sid: string | null, rememberMe: boolean | null): Request {
+    loginWithToken(
+        tid: string | null,
+        sid: string | null,
+        queryToken: string | null,
+        rememberMe: boolean | null
+    ): Request {
         const qs = rememberMe ? { rememberMe } : {};
+        const qt = queryToken ? { token: queryToken } : {};
         const ct = tid ? [`tid=${tid}`] : [];
         const cs = sid ? [`sid=${sid}`] : [];
 
         return request
             .get(this.config.getUrlFor('identity/auth/token/login'))
-            .query({ ...qs, ...config.defaultRedirects })
+            .query({ ...qs, ...qt, ...config.defaultRedirects })
             .set('Cookie', [...ct, ...cs]);
     }
 
@@ -170,12 +176,16 @@ export class RequestAPI {
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
-    createToken(sid: string | null, kind: TokenKind, duration: number): Request {
+    createToken(sid: string | null, kind: TokenKind, duration: number, bindToSite: boolean): Request {
         return request
             .post(this.config.getUrlFor('identity/api/auth/user/tokens'))
             .set('Cookie', sid ? [`sid=${sid}`] : [])
             .type('json')
-            .send({ kind, duration });
+            .send({
+                kind,
+                timeToLive: duration,
+                bindToSite: bindToSite
+            });
     }
 
     getExternalLinks(sid: string | null): Request {

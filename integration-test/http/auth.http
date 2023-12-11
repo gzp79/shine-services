@@ -36,7 +36,17 @@ GET {{url}}/api/auth/user/sessions
 GET {{url}}/api/auth/user/tokens
 ###
 
-@token = 7ed962cf3adc3086259a9053e59c9f13a6f919da656c93c0dace3bd3710578a3
+POST {{url}}/api/auth/user/tokens
+Content-Type: application/json
+
+{
+    "kind": "access",
+    "timeToLive": 3000000000,
+    "bindToSite": false
+}
+###
+
+@token = 2e2c2993b50a69de42a29eccb14ab8f5fceeea1981cbb9b6f01f6dee6914e3df
 
 GET {{url}}/api/auth/user/tokens/{{token}}
 ###

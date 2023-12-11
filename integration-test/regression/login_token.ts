@@ -6,7 +6,9 @@ import config from '../test.config';
 
 describe('Login with token for new user', () => {
     it('Login with (token: NO, rememberMe: INVALID) shall fail and redirect to the default error page', async () => {
-        const response = await api.request.loginWithToken(null, null, null).query({ rememberMe: 'invalid' });
+        const response = await api.request
+            .loginWithToken(null, null, null, null)
+            .query({ rememberMe: 'invalid' });
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             'https://web.sandbox.com:8080/error?type=invalidInput&status=400'
@@ -20,7 +22,7 @@ describe('Login with token for new user', () => {
     });
 
     it('Login with (token: NO, redirectMe: NO) shall fail and redirect to the login page', async () => {
-        const response = await api.request.loginWithToken(null, null, null);
+        const response = await api.request.loginWithToken(null, null, null, null);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.loginUrl);
 
@@ -31,7 +33,7 @@ describe('Login with token for new user', () => {
     });
 
     it('Login with (token: NO, rememberMe: false) shall fail and redirect to the login page', async () => {
-        const response = await api.request.loginWithToken(null, null, false);
+        const response = await api.request.loginWithToken(null, null, null, false);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.loginUrl);
 
@@ -42,7 +44,7 @@ describe('Login with token for new user', () => {
     });
 
     it('Login with (token: NONE, rememberMe: true) shall succeed and register a new user', async () => {
-        const response = await api.request.loginWithToken(null, null, true);
+        const response = await api.request.loginWithToken(null, null, null, true);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
 
@@ -87,7 +89,7 @@ describe('Login with token for returning user', () => {
 
     beforeEach(async () => {
         console.log('Register a new user...');
-        const response = await api.request.loginWithToken(null, null, true);
+        const response = await api.request.loginWithToken(null, null, null, true);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
 
@@ -108,7 +110,7 @@ describe('Login with token for returning user', () => {
     });
 
     it('Login with (token: NULL, session: VALID, rememberMe: true) shall fail with logout required', async () => {
-        const response = await api.request.loginWithToken(null, userCookies.sid, true);
+        const response = await api.request.loginWithToken(null, userCookies.sid, null, true);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
@@ -124,7 +126,7 @@ describe('Login with token for returning user', () => {
     });
 
     it('Login with (token: VALID, session: VALID, rememberMe: true) shall fail with logout required', async () => {
-        const response = await api.request.loginWithToken(userCookies.tid, userCookies.sid, true);
+        const response = await api.request.loginWithToken(userCookies.tid, userCookies.sid, null, true);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
@@ -141,7 +143,7 @@ describe('Login with token for returning user', () => {
     });
 
     it('Login with (token: VALID, session: NULL, rememberMe: NULL) shall succeed and login the user', async () => {
-        const response = await api.request.loginWithToken(userCookies.tid, null, null);
+        const response = await api.request.loginWithToken(userCookies.tid, null, null, null);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
 
@@ -155,7 +157,7 @@ describe('Login with token for returning user', () => {
     });
 
     it('Login with (token: VALID, session: NULL, rememberMe: false) shall succeed and login the user', async () => {
-        const response = await api.request.loginWithToken(userCookies.tid, null, false);
+        const response = await api.request.loginWithToken(userCookies.tid, null, null, false);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
 
@@ -169,7 +171,7 @@ describe('Login with token for returning user', () => {
     });
 
     it('Login with (token: VALID, session: NULL, rememberMe: true) shall succeed and login the user', async () => {
-        const response = await api.request.loginWithToken(userCookies.tid, null, true);
+        const response = await api.request.loginWithToken(userCookies.tid, null, null, true);
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
 

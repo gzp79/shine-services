@@ -53,7 +53,7 @@ describe('Auth cookie consistency matrix', () => {
             let tid, sid, eid: string;
 
             {
-                const response = await api.request.loginWithToken(null, null, true);
+                const response = await api.request.loginWithToken(null, null, null, true);
                 expect(response.statusCode).toEqual(200);
                 const cookies = getCookies(response);
                 expect(cookies.tid).toBeValidTID();

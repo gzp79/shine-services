@@ -150,7 +150,7 @@ pg_query!( DeleteAllTokens =>
 );
 
 #[derive(FromRow)]
-struct TestTokenRow {
+struct IdentityTokenRow {
     user_id: Uuid,
     kind: IdentityKind,
     name: String,
@@ -173,7 +173,7 @@ struct TestTokenRow {
 // Test token for use. Compared to find it also returns the identity
 pg_query!( TestToken =>
     in = token: &str, kind: TokenKind;
-    out = TestTokenRow;
+    out = IdentityTokenRow;
     sql = r#"
         SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
                 t.token token_hash, 
@@ -193,6 +193,32 @@ pg_query!( TestToken =>
     "#
 );
 
+// Test token for use. Compared to find it also returns the identity
+pg_query!( TakeToken =>
+    in = token: &str, kind: TokenKind;
+    out = IdentityTokenRow;
+    sql = r#"
+    WITH t AS (
+        DELETE FROM login_tokens lt
+        WHERE lt.token = $1 AND lt.kind = $2
+        RETURNING *        
+    )
+    SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
+        t.token token_hash, 
+        t.created token_created, 
+        t.expire token_expire, 
+        t.fingerprint token_fingerprint, 
+        t.kind token_kind, 
+        t.expire < now() token_is_expired,
+        t.agent token_agent,
+        t.country token_country,
+        t.region token_region,
+        t.city token_city
+    FROM t, identities i
+    WHERE t.user_id = i.user_id
+    "#
+);
+
 pub struct TokensStatements {
     insert: InsertToken,
     find_by_hash: FindByHashToken,
@@ -200,6 +226,7 @@ pub struct TokensStatements {
     delete: DeleteToken,
     delete_all: DeleteAllTokens,
     test: TestToken,
+    take: TakeToken,
 }
 
 impl TokensStatements {
@@ -211,11 +238,12 @@ impl TokensStatements {
             delete: DeleteToken::new(client).await?,
             delete_all: DeleteAllTokens::new(client).await?,
             test: TestToken::new(client).await?,
+            take: TakeToken::new(client).await?,
         })
     }
 }
 
-/// Handle tokens: Access, SingleAccess and Persistent.
+/// Handle tokens: Access, SingleAccess and Persistent.'
 pub struct Tokens<'a, T>
 where
     T: PGRawConnection,
@@ -359,15 +387,57 @@ where
         Ok(())
     }
 
+    /// Test the presence of a token and return the identity if found.
     #[instrument(skip(self))]
-    pub async fn test_access_token(
+    pub async fn test_token(
         &mut self,
+        kind: TokenKind,
         token_hash: &str,
     ) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
         let row = self
             .stmts_tokens
             .test
-            .query_opt(self.client, &token_hash, &TokenKind::Access)
+            .query_opt(self.client, &token_hash, &kind)
+            .await?;
+        Ok(row.map(|row| {
+            let token = TokenInfo {
+                user_id: row.user_id,
+                kind: row.token_kind,
+                token_hash: row.token_hash,
+                created_at: row.token_created,
+                expire_at: row.token_expire,
+                is_expired: row.token_is_expired,
+                fingerprint: row.token_fingerprint,
+                agent: row.token_agent,
+                country: row.token_country,
+                region: row.token_region,
+                city: row.token_city,
+            };
+            let identity = Identity {
+                id: row.user_id,
+                kind: row.kind,
+                name: row.name,
+                email: row.email,
+                is_email_confirmed: row.email_confirmed,
+                created: row.created,
+                version: row.data_version,
+            };
+            (identity, token)
+        }))
+    }
+
+    /// Take a token and return the identity if found.
+    /// The token is deleted from the database.
+    #[instrument(skip(self))]
+    pub async fn take_token(
+        &mut self,
+        kind: TokenKind,
+        token_hash: &str,
+    ) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+        let row = self
+            .stmts_tokens
+            .take
+            .query_opt(self.client, &token_hash, &kind)
             .await?;
         Ok(row.map(|row| {
             let token = TokenInfo {
