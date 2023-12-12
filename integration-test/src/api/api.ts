@@ -6,7 +6,7 @@ import { SessionAPI } from './session_api';
 import { TokenAPI } from './token_api';
 import { UserAPI } from './user_api';
 
-export type TokenKind = 'access' | 'apiKey' | 'singleAccess';
+export type TokenKind = 'access' | 'persistent' | 'singleAccess';
 
 export class RequestAPI {
     constructor(public readonly config: Config) {}
@@ -25,17 +25,20 @@ export class RequestAPI {
         tid: string | null,
         sid: string | null,
         queryToken: string | null,
+        apiKey: string | null,
         rememberMe: boolean | null
     ): Request {
         const qs = rememberMe ? { rememberMe } : {};
         const qt = queryToken ? { token: queryToken } : {};
         const ct = tid ? [`tid=${tid}`] : [];
         const cs = sid ? [`sid=${sid}`] : [];
+        const ht = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
 
         return request
             .get(this.config.getUrlFor('identity/auth/token/login'))
             .query({ ...qs, ...qt, ...config.defaultRedirects })
-            .set('Cookie', [...ct, ...cs]);
+            .set('Cookie', [...ct, ...cs])
+            .set({ ...ht });
     }
 
     loginWithOAuth2(tid: string | null, sid: string | null, rememberMe: boolean | null): Request {

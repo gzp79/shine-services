@@ -18,7 +18,7 @@ It always creates a new user (with the addition described in the `Returning user
    - no link to any external provider
  - A token is created and stored in a persistent storage 
    - in browser it is a cookie
-   - in non-browser it can be any persistent (secure?) storage.
+   - in non-browser it can be any persistent (secure!) storage.
  - Player is let into the game and he/she is ready to play. Some information is displayed for the user, where optionally some more actions are required (Also see: `Complete user creation` section)
    - Encourage to link the account to an external provider not to loose progress
    - Warn about the time left before the token expires (at most 5 weeks) and without a social link the account will be deactivated.

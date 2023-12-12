@@ -141,28 +141,6 @@ impl IdentityManager {
             .await
     }
 
-    /// Get the identity associated to an access token.
-    /// The provided token is not removed from the DB.
-    pub async fn test_access_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
-        let inner = &*self.0;
-        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        let token_hash = hash_token(token);
-        Tokens::new(&client, &inner.stmts_tokens)
-            .test_token(TokenKind::Access, &token_hash)
-            .await
-    }
-
-    /// Get the identity associated to a single access token.
-    /// Independent of the result the provided toke is removed from the DB
-    pub async fn take_single_access_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
-        let inner = &*self.0;
-        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        let token_hash = hash_token(token);
-        Tokens::new(&client, &inner.stmts_tokens)
-            .take_token(TokenKind::SingleAccess, &token_hash)
-            .await
-    }
-
     pub async fn add_token(
         &self,
         user_id: Uuid,
@@ -192,6 +170,57 @@ impl IdentityManager {
         Tokens::new(&client, &inner.stmts_tokens).find_by_user(user_id).await
     }
 
+    /// Get the identity associated to an access token.
+    /// The provided token is not removed from the DB.
+    pub async fn test_access_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
+        Tokens::new(&client, &inner.stmts_tokens)
+            .test_token(TokenKind::Access, &token_hash)
+            .await
+    }
+
+    /// Get the identity associated to an api key.
+    /// The provided token is not removed from the DB.
+    pub async fn test_api_key(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
+        Tokens::new(&client, &inner.stmts_tokens)
+            .test_token(TokenKind::Persistent, &token_hash)
+            .await
+    }
+
+    /// Get the identity associated to a single access token.
+    /// Independent of the result the provided toke is removed from the DB
+    pub async fn take_single_access_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
+        Tokens::new(&client, &inner.stmts_tokens)
+            .take_token(TokenKind::SingleAccess, &token_hash)
+            .await
+    }
+
+    pub async fn delete_access_token(&self, token: &str) -> Result<Option<()>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
+        Tokens::new(&client, &inner.stmts_tokens)
+            .delete_token(TokenKind::Access, &token_hash)
+            .await
+    }
+
+    pub async fn delete_persistent_token(&self, token: &str) -> Result<Option<()>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
+        Tokens::new(&client, &inner.stmts_tokens)
+            .delete_token(TokenKind::Persistent, &token_hash)
+            .await
+    }
+
     pub async fn delete_token(&self, user_id: Uuid, token: &str) -> Result<Option<()>, IdentityError> {
         let token_hash = hash_token(token);
         self.delete_token_by_hash(user_id, &token_hash).await
@@ -201,7 +230,7 @@ impl IdentityManager {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         Tokens::new(&client, &inner.stmts_tokens)
-            .delete_token(user_id, token_hash)
+            .delete_by_user(user_id, token_hash)
             .await
     }
 
@@ -209,7 +238,7 @@ impl IdentityManager {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         Tokens::new(&client, &inner.stmts_tokens)
-            .delete_all_tokens(user_id, kinds)
+            .delete_all_by_user(user_id, kinds)
             .await
     }
 

@@ -23,7 +23,9 @@ export class AuthAPI {
     }
 
     async loginAsGuestUser(extraHeaders?: Record<string, string>): Promise<UserCookies> {
-        const response = await this.request.loginWithToken(null, null, null, true).set(extraHeaders ?? {});
+        const response = await this.request
+            .loginWithToken(null, null, null, null, true)
+            .set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(this.config.defaultRedirects.redirectUrl);
         const cookies = getCookies(response);
@@ -44,7 +46,7 @@ export class AuthAPI {
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
         const response = await this.request
-            .loginWithToken(tid, null, null, rememberMe)
+            .loginWithToken(tid, null, null, null, rememberMe)
             .set(extraHeaders ?? {});
         expect(response.statusCode).toEqual(200);
         expect(getPageRedirectUrl(response.text)).toEqual(this.config.defaultRedirects.redirectUrl);

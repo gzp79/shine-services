@@ -121,6 +121,8 @@ impl AuthServiceState {
 pub(in crate::auth) enum AuthError {
     #[error("Input validation error")]
     InputError(InputError),
+    #[error("Authorization header is malformed")]
+    InvalidAuthorizationHeader,
     #[error("Logout required")]
     LogoutRequired,
     #[error("Login required")]
@@ -177,6 +179,7 @@ impl AuthServiceState {
 
         let (kind, status) = match response {
             AuthError::InputError(_) => ("invalidInput", StatusCode::BAD_REQUEST),
+            AuthError::InvalidAuthorizationHeader => ("authError", StatusCode::BAD_REQUEST),
             AuthError::LogoutRequired => ("logoutRequired", StatusCode::BAD_REQUEST),
             AuthError::LoginRequired => ("loginRequired", StatusCode::UNAUTHORIZED),
             AuthError::MissingExternalLoginCookie => ("authError", StatusCode::BAD_REQUEST),

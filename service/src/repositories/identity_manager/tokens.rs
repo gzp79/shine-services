@@ -135,13 +135,20 @@ pg_query!( ListByUser =>
 );
 
 pg_query!( DeleteToken =>
+    in = token: &str, kind: TokenKind;
+    sql = r#"
+        DELETE FROM login_tokens WHERE token = $1 AND kind = $2
+    "#
+);
+
+pg_query!( DeleteByUser =>
     in = user_id: Uuid, token: &str;
     sql = r#"
         DELETE FROM login_tokens WHERE user_id = $1 AND token = $2
     "#
 );
 
-pg_query!( DeleteAllTokens =>
+pg_query!( DeleteAllByUser =>
     in = user_id: Uuid, kind: TokenKind;
     sql = r#"
         DELETE FROM login_tokens 
@@ -224,7 +231,8 @@ pub struct TokensStatements {
     find_by_hash: FindByHashToken,
     list_by_user: ListByUser,
     delete: DeleteToken,
-    delete_all: DeleteAllTokens,
+    delete_by_user: DeleteByUser,
+    delete_all_by_user: DeleteAllByUser,
     test: TestToken,
     take: TakeToken,
 }
@@ -236,14 +244,15 @@ impl TokensStatements {
             find_by_hash: FindByHashToken::new(client).await?,
             list_by_user: ListByUser::new(client).await?,
             delete: DeleteToken::new(client).await?,
-            delete_all: DeleteAllTokens::new(client).await?,
+            delete_by_user: DeleteByUser::new(client).await?,
+            delete_all_by_user: DeleteAllByUser::new(client).await?,
             test: TestToken::new(client).await?,
             take: TakeToken::new(client).await?,
         })
     }
 }
 
-/// Handle tokens: Access, SingleAccess and Persistent.'
+/// Handle tokens
 pub struct Tokens<'a, T>
 where
     T: PGRawConnection,
@@ -363,10 +372,24 @@ where
     }
 
     #[instrument(skip(self))]
-    pub async fn delete_token(&mut self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
+    pub async fn delete_token(&mut self, kind: TokenKind, token_hash: &str) -> Result<Option<()>, IdentityError> {
         let count = self
             .stmts_tokens
             .delete
+            .execute(self.client, &token_hash, &kind)
+            .await?;
+        if count == 1 {
+            Ok(Some(()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    #[instrument(skip(self))]
+    pub async fn delete_by_user(&mut self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
+        let count = self
+            .stmts_tokens
+            .delete_by_user
             .execute(self.client, &user_id, &token_hash)
             .await?;
         if count == 1 {
@@ -377,10 +400,10 @@ where
     }
 
     #[instrument(skip(self))]
-    pub async fn delete_all_tokens(&mut self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
+    pub async fn delete_all_by_user(&mut self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
         for kind in kinds {
             self.stmts_tokens
-                .delete_all
+                .delete_all_by_user
                 .execute(self.client, &user_id, kind)
                 .await?;
         }

@@ -37,8 +37,7 @@ Supported functions:
       - On return, it generates (primary, without secondary - see key rotation) **access** key, only on request
       - It ignores and invalidates all the other token sources, clears cookies on return.
     2. In `Authorization` header as Bearer token
-      - Accepted tokens:
-        - **single access** revoked
+      - Accepted tokens:        
         - **api key** used, but not invalidated
       - **access** token is rejected as key rotation (see below) could be complicated and adds no value. 
       - On return, it generates (primary, without secondary - see key rotation) **access** key, only on request

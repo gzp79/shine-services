@@ -53,4 +53,22 @@ export class TokenAPI {
         response.body.expireAt = new Date(response.body.expireAt as string);
         return response.body as Token;
     }
+
+    async createPersistentToken(
+        sid: string,
+        duration: number,
+        bindToSite: boolean,
+        extraHeaders?: Record<string, string>
+    ): Promise<Token> {
+        let response = await this.request
+            .createToken(sid, 'persistent', duration, bindToSite)
+            .set(extraHeaders ?? {});
+
+        expect(response.statusCode).toEqual(200);
+        expect(response.body.tokenType).toEqual('Bearer');
+        expect(response.body.kind).toEqual('persistent');
+
+        response.body.expireAt = new Date(response.body.expireAt as string);
+        return response.body as Token;
+    }
 }

@@ -17,7 +17,8 @@ use validator::{Validate, ValidationError};
 #[derive(Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
 struct CreateTokenRequest {
-    /// The kind of token to create, Allowed kinds are persistent or singleAccess
+    /// The kind of token to create, Allowed kinds are apiKey or singleAccess.
+    /// access token can be created only through the login endpoint with enabled remember-me.
     #[validate(custom = "validate_allowed_kind")]
     kind: TokenKind,
     /// The expiration The valid range is 30s .. 1 year, but server config
