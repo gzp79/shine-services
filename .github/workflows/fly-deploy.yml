@@ -2,7 +2,7 @@ name: Deploy Fly
 
 on:
   workflow_run:
-    workflows: [Master CI]
+    workflows: ["Master CI"]
     types: [completed]
     branches: [main]
     
