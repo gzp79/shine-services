@@ -132,9 +132,7 @@ jobs:
       run: |
         echo "[build]" >> fly.toml
         echo "  image = \"${{ steps.meta.outputs.tags }}\"" >> fly.toml        
-        mkdir release
         cp fly.toml release/
-        cat release/fly.toml
       working-directory: ./service
         
     - name: Publish release artifacts
