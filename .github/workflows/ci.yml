@@ -96,6 +96,14 @@ jobs:
         npm run test:regression
         echo "::endgroup::"
       working-directory: ./integration-test
+      
+    - name: Publish test results
+      if: github.event_name != 'pull_request' || failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-reports
+        path: | 
+          ./integration-test/reports/
 
     - name: Log in to the Container registry
       if: github.event_name != 'pull_request'
@@ -112,18 +120,25 @@ jobs:
         context: service
         target: prod
         push: true
-        # these setting are here to allow the reuse of the layer from the build step
+        # these setting are added to allow the reuse of the layer from the build step
         # without host parameters it would trigger a new build
         add-hosts: |
           postgres.mockbox.com:${{ steps.mockbox.outputs.pg_host }}
           redis.mockbox.com:${{ steps.mockbox.outputs.redis_host }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-
-    - name: Publish test results
-      if: github.event_name != 'pull_request' || failure()
+        
+    - name: Create release artifacts
+      run: |
+        echo "[build]" >> fly.toml
+        echo "  image = \"${{ steps.meta.outputs.tags }}\"" >> fly.toml        
+        cp fly.toml release/
+      working-directory: ./service
+        
+    - name: Publish release artifacts
+      if: github.event_name != 'pull_request'
       uses: actions/upload-artifact@v3
       with:
-        name: Test Reports
+        name: release-artifacts
         path: | 
-          ./integration-test/reports/
+          ./service/release/
