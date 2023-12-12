@@ -35,7 +35,7 @@ jobs:
     - name: Prepare tests
       run: |
         npm ci
-        npm run check
+        npm run test:format
         npm run mkcert
       working-directory: ./integration-test
 
@@ -93,7 +93,7 @@ jobs:
         docker compose -f ../service/docker.yml -p shine-identity --profile test up -d
         echo "::endgroup::"
         echo "::group::Running test"
-        npm run jest regression
+        npm run test:regression
         echo "::endgroup::"
       working-directory: ./integration-test
 

@@ -1,5 +1,5 @@
 use crate::{auth::AuthServiceState, openapi::ApiKind};
-use axum::{body::HttpBody, extract::State, http::StatusCode, Json};
+use axum::{extract::State, http::StatusCode, Json};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use shine_service::{
@@ -72,10 +72,7 @@ async fn user_info_get(
     }))
 }
 
-pub fn ep_user_info_get<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn ep_user_info_get() -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/info"), user_info_get)
         .with_operation_id("user_info_get")
         .with_tag("auth")

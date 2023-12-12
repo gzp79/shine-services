@@ -1,5 +1,8 @@
 use crate::{
-    auth::{auth_session::TokenLogin, AuthServiceState, AuthSession, OIDCDiscoveryError, TokenGeneratorError},
+    auth::{
+        auth_session::TokenCookie, token::TokenGenerator, AuthServiceState, AuthSession, OIDCDiscoveryError,
+        TokenGeneratorError,
+    },
     repositories::{AutoNameError, ExternalUserInfo, Identity, IdentityError, TokenKind},
 };
 use axum::{
@@ -9,7 +12,7 @@ use axum::{
 use chrono::Duration;
 use serde::Serialize;
 use shine_service::{
-    axum::{SiteInfo, ValidationError},
+    axum::{InputError, SiteInfo},
     service::ClientFingerprint,
 };
 use std::fmt;
@@ -64,12 +67,6 @@ impl AuthServiceState {
     }
 }
 
-pub(in crate::auth) enum CreateTokenKind {
-    SingleAccess,
-    Persistent(Duration),
-    AutoRenewal,
-}
-
 #[derive(Debug, ThisError)]
 pub(in crate::auth) enum TokenCreateError {
     #[error("Retry limit reach for token creation")]
@@ -85,15 +82,11 @@ impl AuthServiceState {
     pub(in crate::auth) async fn create_token_with_retry(
         &self,
         user_id: Uuid,
+        kind: TokenKind,
+        time_to_live: &Duration,
         fingerprint: Option<&ClientFingerprint>,
         site_info: &SiteInfo,
-        kind: CreateTokenKind,
-    ) -> Result<TokenLogin, TokenCreateError> {
-        let (duration, kind) = match kind {
-            CreateTokenKind::SingleAccess => (self.token().ttl_single_access(), TokenKind::SingleAccess),
-            CreateTokenKind::AutoRenewal => (self.token().ttl_remember_me(), TokenKind::AutoRenewal),
-            CreateTokenKind::Persistent(duration) => (duration, TokenKind::Persistent),
-        };
+    ) -> Result<TokenCookie, TokenCreateError> {
         const MAX_RETRY_COUNT: usize = 10;
         let mut retry_count = 0;
         loop {
@@ -103,17 +96,18 @@ impl AuthServiceState {
             }
             retry_count += 1;
 
-            let token = self.token().generate_token()?;
+            let token = TokenGenerator::new(self.random()).generate()?;
             match self
                 .identity_manager()
-                .create_token(user_id, &token, &duration, fingerprint, site_info, kind)
+                .add_token(user_id, kind, &token, time_to_live, fingerprint, site_info)
                 .await
             {
                 Ok(info) => {
-                    return Ok(TokenLogin {
+                    return Ok(TokenCookie {
                         user_id,
-                        token,
+                        key: token,
                         expire_at: info.expire_at,
+                        revoked_token: None,
                     })
                 }
                 Err(IdentityError::TokenConflict) => continue,
@@ -126,13 +120,15 @@ impl AuthServiceState {
 #[derive(Debug, ThisError, Serialize)]
 pub(in crate::auth) enum AuthError {
     #[error("Input validation error")]
-    ValidationError(ValidationError),
+    InputError(InputError),
+    #[error("Authorization header is malformed")]
+    InvalidAuthorizationHeader,
     #[error("Logout required")]
     LogoutRequired,
     #[error("Login required")]
     LoginRequired,
     #[error("Missing external login")]
-    MissingExternalLogin,
+    MissingExternalLoginCookie,
     #[error("Missing Nonce")]
     MissingNonce,
     #[error("Invalid CSRF state")]
@@ -182,16 +178,17 @@ impl AuthServiceState {
         log::error!("{response:?}");
 
         let (kind, status) = match response {
-            AuthError::ValidationError(_) => ("invalidInput", StatusCode::BAD_REQUEST),
+            AuthError::InputError(_) => ("invalidInput", StatusCode::BAD_REQUEST),
+            AuthError::InvalidAuthorizationHeader => ("authError", StatusCode::BAD_REQUEST),
             AuthError::LogoutRequired => ("logoutRequired", StatusCode::BAD_REQUEST),
             AuthError::LoginRequired => ("loginRequired", StatusCode::UNAUTHORIZED),
-            AuthError::MissingExternalLogin => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::MissingExternalLoginCookie => ("authError", StatusCode::BAD_REQUEST),
             AuthError::MissingNonce => ("authError", StatusCode::BAD_REQUEST),
             AuthError::InvalidCSRF => ("authError", StatusCode::BAD_REQUEST),
             AuthError::TokenExchangeFailed(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
             AuthError::FailedExternalUserInfo(_) => ("authError", StatusCode::BAD_REQUEST),
             AuthError::InvalidToken => ("authError", StatusCode::BAD_REQUEST),
-            AuthError::TokenExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
+            AuthError::TokenExpired => ("tokenExpired", StatusCode::UNAUTHORIZED),
             AuthError::SessionExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
             AuthError::InternalServerError(_) => ("internalError", StatusCode::INTERNAL_SERVER_ERROR),
             AuthError::OIDCDiscovery(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),

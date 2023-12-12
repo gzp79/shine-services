@@ -26,8 +26,9 @@
         "authBaseUrl": "https://cloud.scytta.com/identity/auth",
         "pageRedirectTime": 0,
         "ttlSession": 43200,
-        "ttlRememberMe": 1209600,
+        "ttlAccessToken": 1209600,
         "ttlSingleAccess": 600,
+        "ttlApiKey": 31536000,
         "openid": {
             "google": {
                 "discoveryUrl": "https://accounts.google.com",

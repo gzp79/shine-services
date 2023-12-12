@@ -52,7 +52,7 @@ pub enum SessionBuildError {
 pub struct Inner {
     redis: RedisConnectionPool,
     key_prefix: String,
-    ttl_session: usize,
+    ttl_session: i64,
     random: SystemRandom,
 }
 
@@ -69,7 +69,7 @@ impl SessionManager {
             redis: redis.clone(),
             key_prefix,
             random: SystemRandom::new(),
-            ttl_session: ttl_session.num_seconds() as usize,
+            ttl_session: ttl_session.num_seconds(),
         })))
     }
 

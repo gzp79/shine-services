@@ -40,11 +40,12 @@
         "pageRedirectTime": 0,
         "pageErrorDetail": true,
         "sessionSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
-        "externalLoginSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
-        "tokenLoginSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
+        "externalLoginCookieSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
+        "tokenCookieSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
         "ttlSession": 43200,
-        "ttlRememberMe": 1209600,
+        "ttlAccessToken": 1209600,
         "ttlSingleAccess": 600,
+        "ttlApiKey": 31536000,
         "openidIgnoreDiscoveryError": true,        
         "oauth2": {
             "oauth2_flow": {

@@ -1,5 +1,5 @@
 use crate::{identity::IdentityServiceState, openapi::ApiKind};
-use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
+use axum::{extract::State, http::StatusCode, Json};
 use serde::Serialize;
 use shine_service::axum::{ApiEndpoint, ApiMethod, Problem};
 use utoipa::ToSchema;
@@ -23,12 +23,7 @@ async fn generate_user_name(State(state): State<IdentityServiceState>) -> Result
     Ok(Json(GeneratedUserName { name }))
 }
 
-pub fn ep_generate_user_name<B>() -> ApiEndpoint<IdentityServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
-{
+pub fn ep_generate_user_name() -> ApiEndpoint<IdentityServiceState> {
     ApiEndpoint::new(ApiMethod::Post, ApiKind::Api("/user-name"), generate_user_name)
         .with_operation_id("ep_generate_user_name")
         .with_tag("identity")

@@ -44,7 +44,7 @@ async fn create_get_remove() {
         version: 1,
     };
     let roles = vec!["R1".into(), "R2".into()];
-    let fingerprint = ClientFingerprint::from_agent("test".into());
+    let fingerprint = ClientFingerprint::from_agent("test".into()).unwrap();
     let site_info = SiteInfo {
         agent: "test".into(),
         country: None,
@@ -139,7 +139,7 @@ async fn create_update() {
         version: 1,
     };
     let roles1 = vec!["R1".into(), "R2".into()];
-    let fingerprint = ClientFingerprint::from_agent("test".into());
+    let fingerprint = ClientFingerprint::from_agent("test".into()).unwrap();
     let site_info = SiteInfo {
         agent: "test".into(),
         country: None,
@@ -256,7 +256,7 @@ async fn create_many_remove_all() {
         version: 1,
     };
     let roles = vec!["R1".into(), "R2".into()];
-    let fingerprint = ClientFingerprint::from_agent("test".into());
+    let fingerprint = ClientFingerprint::from_agent("test".into()).unwrap();
     let site_info = SiteInfo {
         agent: "test".into(),
         country: None,

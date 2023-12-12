@@ -27,7 +27,7 @@ harsh = "0.2"
 futures = "0.3"
 async-trait = "0.1"
 async-once-cell = "0.5"
-tokio = {version = "1.27", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = {version = "1.34", features = ["macros", "rt-multi-thread", "signal"] }
 
 bb8 = "0.8"
 oauth2 = "4.3"
@@ -36,29 +36,31 @@ openidconnect = "3.0"
 
 bb8-postgres = "0.8"
 tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-chrono-0_4", "runtime"] }
-tokio-rustls = "0.24"
+tokio-rustls = "0.25"
 tokio-postgres-rustls = "0.10"
+postgres-from-row = "0.5"
 refinery = { version = "0.8", features = ["tokio-postgres"] }
 
-bb8-redis = "0.13"
-redis = { version = "0.23.0", features = ["tokio-comp", "tokio-rustls-comp"] }
+bb8-redis = "0.14"
+redis = { version = "0.24.0", features = ["tokio-comp", "tokio-rustls-comp"] }
 
-azure_core = { version = "0.16" }
-azure_identity = { version = "0.16" }
+azure_core = { version = "0.17" }
+azure_identity = { version = "0.17" }
 
 validator = { version = "0.16", features = ["derive"] }
 tera = "1.18"
 
 tracing = "0.1"
-tracing-log = "0.1"
+tracing-log = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tower-http = { version = "0.4", features = ["cors", "trace"] }
-axum = { version = "0.6", features = ["headers"] }
-axum-server = { version = "0.5", features = ["tls-rustls"] }
-axum-extra = { version = "0.8", features = ["cookie", "cookie-signed", "cookie-private"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+axum = "0.7"
+#axum-server = { version = "0.5", features = ["tls-rustls"] }
+axum-server = { git = "https://github.com/programatik29/axum-server.git", features = ["tls-rustls"] }
+axum-extra = { version = "0.9", features = ["cookie", "cookie-signed", "cookie-private", "typed-header"] }
 
-utoipa = { version = "3.3", features = ["axum_extras", "uuid", "chrono"] }
-utoipa-swagger-ui = { version = "3.1", features = ["axum"] }
+utoipa = { version = "4.1", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { version = "5.0", features = ["axum"] }
 
 shine-service = { path = "./shine-service-rs/shine-service", version = "0.1.0" }
 

@@ -1,8 +1,8 @@
 use crate::repositories::{
-    DBError, ExternalLink, ExternalUserInfo, Identity, IdentityBuildError, IdentityError, TokenInfo, TokenKind,
+    hash_token, DBError, ExternalLink, ExternalUserInfo, Identity, IdentityBuildError, IdentityError, TokenInfo,
+    TokenKind,
 };
 use chrono::Duration;
-use ring::digest;
 use shine_service::{
     axum::SiteInfo,
     service::{ClientFingerprint, PGConnectionPool},
@@ -50,7 +50,7 @@ impl IdentityManager {
         user_id: Uuid,
         user_name: &str,
         email: Option<&str>,
-        external_login: Option<&ExternalUserInfo>,
+        external_user_info: Option<&ExternalUserInfo>,
     ) -> Result<Identity, IdentityError> {
         //let email = email.map(|e| e.normalize_email());
         let inner = &*self.0;
@@ -60,8 +60,8 @@ impl IdentityManager {
         let mut external_links_dao = ExternalLinks::new(&client, &inner.stmts_external_links);
 
         let identity = identities_dao.create_user(user_id, user_name, email).await?;
-        if let Some(external_login) = external_login {
-            if let Err(err) = external_links_dao.link_user(user_id, external_login).await {
+        if let Some(external_user_info) = external_user_info {
+            if let Err(err) = external_links_dao.link_user(user_id, external_user_info).await {
                 if let Err(err) = identities_dao.cascaded_delete(user_id).await {
                     log::error!("Failed to delete user ({}) after failed link: {}", user_id, err);
                 }
@@ -141,67 +141,104 @@ impl IdentityManager {
             .await
     }
 
-    pub async fn create_token(
+    pub async fn add_token(
         &self,
         user_id: Uuid,
+        kind: TokenKind,
         token: &str,
-        duration: &Duration,
+        time_to_live: &Duration,
         fingerprint: Option<&ClientFingerprint>,
         site_info: &SiteInfo,
-        kind: TokenKind,
     ) -> Result<TokenInfo, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         let token_hash = hash_token(token);
         Tokens::new(&client, &inner.stmts_tokens)
-            .store_token(user_id, &token_hash, duration, fingerprint, site_info, kind)
+            .store_token(user_id, kind, &token_hash, time_to_live, fingerprint, site_info)
             .await
     }
 
-    pub async fn find_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
-        let token_hash = hash_token(token);
-        self.find_token_hash(&token_hash).await
-    }
-
-    pub async fn find_token_hash(&self, token_hash: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+    pub async fn find_token_by_hash(&self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
-        Tokens::new(&client, &inner.stmts_tokens).find_token(token_hash).await
+        Tokens::new(&client, &inner.stmts_tokens).find_by_hash(token_hash).await
     }
 
-    pub async fn list_all_tokens(&self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
+    pub async fn list_all_tokens_by_user(&self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         Tokens::new(&client, &inner.stmts_tokens).find_by_user(user_id).await
     }
 
-    pub async fn update_token(&self, token: &str, duration: &Duration) -> Result<TokenInfo, IdentityError> {
+    /// Get the identity associated to an access token.
+    /// The provided token is not removed from the DB.
+    pub async fn test_access_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         let token_hash = hash_token(token);
         Tokens::new(&client, &inner.stmts_tokens)
-            .update_token(&token_hash, duration)
+            .test_token(TokenKind::Access, &token_hash)
+            .await
+    }
+
+    /// Get the identity associated to an api key.
+    /// The provided token is not removed from the DB.
+    pub async fn test_api_key(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
+        Tokens::new(&client, &inner.stmts_tokens)
+            .test_token(TokenKind::Persistent, &token_hash)
+            .await
+    }
+
+    /// Get the identity associated to a single access token.
+    /// Independent of the result the provided toke is removed from the DB
+    pub async fn take_single_access_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
+        Tokens::new(&client, &inner.stmts_tokens)
+            .take_token(TokenKind::SingleAccess, &token_hash)
+            .await
+    }
+
+    pub async fn delete_access_token(&self, token: &str) -> Result<Option<()>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
+        Tokens::new(&client, &inner.stmts_tokens)
+            .delete_token(TokenKind::Access, &token_hash)
+            .await
+    }
+
+    pub async fn delete_persistent_token(&self, token: &str) -> Result<Option<()>, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+        let token_hash = hash_token(token);
+        Tokens::new(&client, &inner.stmts_tokens)
+            .delete_token(TokenKind::Persistent, &token_hash)
             .await
     }
 
     pub async fn delete_token(&self, user_id: Uuid, token: &str) -> Result<Option<()>, IdentityError> {
         let token_hash = hash_token(token);
-        self.delete_token_hash(user_id, &token_hash).await
+        self.delete_token_by_hash(user_id, &token_hash).await
     }
 
-    pub async fn delete_token_hash(&self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
+    pub async fn delete_token_by_hash(&self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         Tokens::new(&client, &inner.stmts_tokens)
-            .delete_token(user_id, token_hash)
+            .delete_by_user(user_id, token_hash)
             .await
     }
 
-    pub async fn delete_all_tokens(&self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
+    pub async fn delete_all_tokens_by_user(&self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
         Tokens::new(&client, &inner.stmts_tokens)
-            .delete_all_tokens(user_id, kinds)
+            .delete_all_by_user(user_id, kinds)
             .await
     }
 
@@ -228,14 +265,4 @@ impl IdentityManager {
             .delete_role(user_id, role)
             .await
     }
-}
-
-/// Generate a (crypto) hashed version of a token to protect data in rest.
-fn hash_token(token: &str) -> String {
-    // there is no need for a complex hash as key has a big entropy already
-    // and it'd be too expensive to invert the hashing.
-    let hash = digest::digest(&digest::SHA256, token.as_bytes());
-    let hash = hex::encode(hash);
-    log::debug!("Hashing token: {token:?} -> [{hash}]");
-    hash
 }

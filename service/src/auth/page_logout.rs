@@ -3,9 +3,9 @@ use crate::{
     openapi::ApiKind,
     repositories::TokenKind,
 };
-use axum::{body::HttpBody, extract::State};
+use axum::extract::State;
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError};
+use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, ValidatedQuery};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -21,21 +21,21 @@ struct Query {
 async fn logout(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
-    query: Result<ValidatedQuery<Query>, ValidationError>,
+    query: Result<ValidatedQuery<Query>, InputError>,
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), None),
+        Err(error) => return state.page_error(auth_session, AuthError::InputError(error), None),
     };
 
-    if let Some((user_id, user_key)) = auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {
+    if let Some((user_id, user_key)) = auth_session.user_session.as_ref().map(|u| (u.user_id, u.key)) {
         match query.terminate_all.unwrap_or(false) {
             true => {
                 log::debug!("Removing all the (non-api-key) tokens for user {}", user_id);
                 //remove all non-api-key tokens
                 if let Err(err) = state
                     .identity_manager()
-                    .delete_all_tokens(user_id, &[TokenKind::AutoRenewal, TokenKind::SingleAccess])
+                    .delete_all_tokens_by_user(user_id, &[TokenKind::Access, TokenKind::SingleAccess])
                     .await
                 {
                     return state.page_internal_error(auth_session, err, query.error_url.as_ref());
@@ -48,7 +48,7 @@ async fn logout(
             }
             false => {
                 log::debug!("Removing remember me token for user, if cookie is present {}", user_id);
-                if let Some(token) = auth_session.token_login.as_ref().map(|t| t.token.clone()) {
+                if let Some(token) = auth_session.token_cookie.as_ref().map(|t| t.key.clone()) {
                     log::debug!("Removing token {} for user {}", token, user_id);
                     if let Err(err) = state.identity_manager().delete_token(user_id, &token).await {
                         return state.page_internal_error(auth_session, err, query.error_url.as_ref());
@@ -67,10 +67,7 @@ async fn logout(
     state.page_redirect(auth_session, state.app_name(), query.redirect_url.as_ref())
 }
 
-pub fn page_logout<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn page_logout() -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/logout"), logout)
         .with_operation_id("page_logout")
         .with_tag("page")

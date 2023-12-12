@@ -1,8 +1,10 @@
 use crate::{
-    auth::{AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLogin, OIDCClient},
+    auth::{
+        token::TokenGenerator, AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLoginCookie, OIDCClient,
+    },
     openapi::ApiKind,
 };
-use axum::{body::HttpBody, extract::State, Extension};
+use axum::{extract::State, Extension};
 use chrono::Duration;
 use oauth2::{CsrfToken, PkceCodeChallenge};
 use openidconnect::{
@@ -10,7 +12,7 @@ use openidconnect::{
     Nonce,
 };
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError};
+use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, ValidatedQuery};
 use std::sync::Arc;
 use url::Url;
 use utoipa::IntoParams;
@@ -29,22 +31,27 @@ async fn oidc_login(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OIDCClient>>,
     mut auth_session: AuthSession,
-    query: Result<ValidatedQuery<Query>, ValidationError>,
+    query: Result<ValidatedQuery<Query>, InputError>,
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), None),
+        Err(error) => return state.page_error(auth_session, AuthError::InputError(error), None),
     };
 
     // Note: having a token login is not an error, on successful start of the flow, the token cookie is cleared
     // It has some potential issue: if tid is connected to a guest user, the guest may loose all the progress
-    if auth_session.user.is_some() {
+    if auth_session.user_session.is_some() {
         return state.page_error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref());
     }
 
     let core_client = match client.client().await {
         Ok(client) => client,
         Err(err) => return state.page_error(auth_session, AuthError::OIDCDiscovery(err), query.error_url.as_ref()),
+    };
+
+    let key = match TokenGenerator::new(state.random()).generate() {
+        Ok(key) => key,
+        Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
     };
 
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -60,9 +67,10 @@ async fn oidc_login(
         .add_prompt(CoreAuthPrompt::Login)
         .url();
 
-    auth_session.token_login = None;
+    auth_session.token_cookie = None;
 
-    auth_session.external_login = Some(ExternalLogin {
+    auth_session.external_login_cookie = Some(ExternalLoginCookie {
+        key,
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
         nonce: Some(nonce.secret().to_owned()),
@@ -72,15 +80,12 @@ async fn oidc_login(
         linked_user: None,
     });
 
-    assert!(auth_session.user.is_none());
+    assert!(auth_session.user_session.is_none());
 
     state.page_redirect(auth_session, &client.provider, Some(&authorize_url))
 }
 
-pub fn page_oidc_login<B>(provider: &str) -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn page_oidc_login(provider: &str) -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/login"), oidc_login)
         .with_operation_id(format!("page_{provider}_login"))
         .with_tag("page")

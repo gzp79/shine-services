@@ -1,8 +1,8 @@
-import '$lib/string_utils';
-import { Certificates, MockServer, TypedRequest, TypedResponse } from '$lib/mock_server';
 import bodyParser from 'body-parser';
 import express from 'express';
 import { body, validationResult } from 'express-validator';
+import { Certificates, MockServer, TypedRequest, TypedResponse } from '$lib/mock_server';
+import '$lib/string_utils';
 
 export interface ServerConfig {
     tls?: Certificates;

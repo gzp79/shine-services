@@ -1,11 +1,12 @@
 use crate::{
-    auth::{self, AuthSessionMeta, OAuth2Client, OIDCClient, OIDCDiscoveryError, TokenGenerator},
+    auth::{self, AuthSessionMeta, OAuth2Client, OIDCClient, OIDCDiscoveryError},
     repositories::{AutoNameManager, IdentityManager, SessionManager},
 };
 use axum::{Extension, Router};
 use chrono::Duration;
 use oauth2::{reqwest::AsyncHttpClientError, HttpRequest, HttpResponse};
 use reqwest::Client as HttpClient;
+use ring::rand::SystemRandom;
 use serde::{Deserialize, Serialize};
 use shine_service::axum::ApiRoute;
 use std::{
@@ -54,12 +55,13 @@ pub struct AuthSessionConfig {
     pub cookie_name_suffix: Option<String>,
 
     pub session_secret: String,
-    pub external_login_secret: String,
-    pub token_login_secret: String,
+    pub external_login_cookie_secret: String,
+    pub token_cookie_secret: String,
 
     pub ttl_session: usize,
-    pub ttl_remember_me: usize,
+    pub ttl_access_token: usize,
     pub ttl_single_access: usize,
+    pub ttl_api_key: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -129,15 +131,19 @@ struct Inner {
     identity_manager: IdentityManager,
     session_manager: SessionManager,
     auto_name_manager: AutoNameManager,
+    random: SystemRandom,
 
     app_name: String,
     home_url: Url,
     error_url: Url,
 
+    ttl_access_token: Duration,
+    ttl_single_access: Duration,
+    ttl_api_key: Duration,
+
     page_redirect_time: i64,
     page_error_detail: bool,
     providers: Vec<String>,
-    token_generator: TokenGenerator,
 }
 
 #[derive(Clone)]
@@ -160,8 +166,8 @@ impl AuthServiceState {
         &self.0.auto_name_manager
     }
 
-    pub fn token(&self) -> &TokenGenerator {
-        &self.0.token_generator
+    pub fn random(&self) -> &SystemRandom {
+        &self.0.random
     }
 
     pub fn app_name(&self) -> &str {
@@ -174,6 +180,18 @@ impl AuthServiceState {
 
     pub fn error_url(&self) -> &Url {
         &self.0.error_url
+    }
+
+    pub fn ttl_access_token(&self) -> &Duration {
+        &self.0.ttl_access_token
+    }
+
+    pub fn ttl_single_access(&self) -> &Duration {
+        &self.0.ttl_single_access
+    }
+
+    pub fn ttl_api_key(&self) -> &Duration {
+        &self.0.ttl_api_key
     }
 
     pub fn page_redirect_time(&self) -> i64 {
@@ -207,9 +225,9 @@ impl AuthServiceBuilder {
     pub async fn new(dependencies: AuthServiceDependencies, config: &AuthConfig) -> Result<Self, AuthBuildError> {
         let mut providers = HashSet::new();
 
-        let ttl_remember_me = Duration::seconds(i64::try_from(config.auth_session.ttl_remember_me)?);
+        let ttl_access_token = Duration::seconds(i64::try_from(config.auth_session.ttl_access_token)?);
         let ttl_single_access = Duration::seconds(i64::try_from(config.auth_session.ttl_single_access)?);
-        let token_generator = TokenGenerator::new(ttl_remember_me, ttl_single_access);
+        let ttl_api_key = Duration::seconds(i64::try_from(config.auth_session.ttl_api_key)?);
 
         let openid_ignore_discovery_error = config.openid_ignore_discovery_error.unwrap_or(false);
         let mut openid_clients = Vec::new();
@@ -247,10 +265,13 @@ impl AuthServiceBuilder {
             identity_manager: dependencies.identity_manager,
             session_manager: dependencies.session_manager,
             auto_name_manager: dependencies.auto_name_manager,
-            token_generator,
+            random: SystemRandom::new(),
             app_name: config.app_name.to_owned(),
             home_url: config.home_url.to_owned(),
             error_url: config.error_url.to_owned(),
+            ttl_access_token,
+            ttl_single_access,
+            ttl_api_key,
             page_redirect_time: config.page_redirect_time.map(i64::from).unwrap_or(-1),
             page_error_detail: config.page_error_detail.unwrap_or(false),
             providers: providers.into_iter().collect(),

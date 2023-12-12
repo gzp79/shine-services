@@ -12,7 +12,6 @@ use crate::{
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
-    body::HttpBody,
     http::StatusCode,
     http::{header, Method},
     Router,
@@ -20,16 +19,13 @@ use axum::{
 use chrono::Duration;
 use openapi::ApiKind;
 use shine_service::{
-    axum::{
-        add_default_components,
-        tracing::{OtelAxumLayer, TracingManager},
-        ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy,
-    },
+    axum::{add_default_components, tracing::TracingManager, ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy},
     service::UserSessionValidator,
 };
 use std::{env, fs, net::SocketAddr};
 use tera::Tera;
 use tokio::{
+    net::TcpListener,
     runtime::{Handle as RtHandle, Runtime},
     signal,
 };
@@ -50,10 +46,7 @@ async fn health_check() -> String {
     "Ok".into()
 }
 
-fn ep_health_check<B>() -> ApiEndpoint<(), B>
-where
-    B: HttpBody + Send + 'static,
-{
+fn ep_health_check() -> ApiEndpoint<()> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Absolute("/info/ready"), health_check)
         .with_operation_id("ep_health_check")
         .with_tag("status")
@@ -133,10 +126,10 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let session_manager = SessionManager::new(&db_pool.redis, String::new(), ttl_session).await?;
     let auto_name_manager = AutoNameManager::new(&config.user_name, &db_pool.postgres).await?;
 
-    let tracing_layer = OtelAxumLayer::default(); //.filter(|a| true);
     let log_layer = TraceLayer::new_for_http()
         .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
         .on_response(DefaultOnResponse::new().level(Level::INFO));
+    let tracing_layer = tracing_manager.to_layer();
 
     let health_check = Router::new().add_api(ep_health_check(), &mut doc);
 
@@ -201,9 +194,9 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
             .map_err(|e| anyhow!(e))
     } else {
         log::info!("Starting service on {addr:?}");
-        axum::Server::bind(&addr)
-            .serve(app.into_make_service())
-            .with_graceful_shutdown(shutdown_signal())
+        let listener = TcpListener::bind(&addr).await.unwrap();
+        axum::serve(listener, app)
+            //.with_graceful_shutdown(shutdown_signal())
             .await
             .map_err(|e| anyhow!(e))
     }

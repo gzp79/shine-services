@@ -3,7 +3,7 @@ use crate::{
     openapi::ApiKind,
     repositories::{IdentityKind, Permission, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_COUNT},
 };
-use axum::{body::HttpBody, extract::State, http::StatusCode, BoxError, Json};
+use axum::{extract::State, http::StatusCode, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
@@ -77,12 +77,7 @@ async fn search_identity(
     Ok(Json(IdentitySearchPage { identities }))
 }
 
-pub fn ep_search_identity<B>() -> ApiEndpoint<IdentityServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-    B::Data: Send,
-    B::Error: Into<BoxError>,
-{
+pub fn ep_search_identity() -> ApiEndpoint<IdentityServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/identities"), search_identity)
         .with_operation_id("ep_search_identity")
         .with_tag("identity")

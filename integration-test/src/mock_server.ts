@@ -1,8 +1,8 @@
-import https from 'https';
-import http from 'http';
 import express, { Express } from 'express';
-import { Send, Request, Response, Query } from 'express-serve-static-core';
+import { Query, Request, Response, Send } from 'express-serve-static-core';
+import http from 'http';
 import { Server } from 'http';
+import https from 'https';
 import { Socket } from 'net';
 import { delay, joinURL } from './utils';
 

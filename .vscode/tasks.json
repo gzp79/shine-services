@@ -98,7 +98,7 @@
     {
       "label": "test integration",
       "type": "shell",
-      "command": "npm run jest regression",
+      "command": "npm test",
       "options": { "cwd": "integration-test" },
       "group": "build"
     }

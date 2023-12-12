@@ -2,9 +2,9 @@ use crate::{
     auth::{AuthError, AuthPage, AuthServiceState, AuthSession},
     openapi::ApiKind,
 };
-use axum::{body::HttpBody, extract::State};
+use axum::extract::State;
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, ValidatedQuery, ValidationError};
+use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, ValidatedQuery};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -25,14 +25,14 @@ struct Query {
 async fn delete_user(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
-    query: Result<ValidatedQuery<Query>, ValidationError>,
+    query: Result<ValidatedQuery<Query>, InputError>,
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return state.page_error(auth_session, AuthError::ValidationError(error), None),
+        Err(error) => return state.page_error(auth_session, AuthError::InputError(error), None),
     };
 
-    let (user_id, user_key) = match auth_session.user.as_ref().map(|u| (u.user_id, u.key)) {
+    let (user_id, user_key) = match auth_session.user_session.as_ref().map(|u| (u.user_id, u.key)) {
         Some(user_id) => user_id,
         None => return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref()),
     };
@@ -63,10 +63,7 @@ async fn delete_user(
     state.page_redirect(auth_session, state.app_name(), query.redirect_url.as_ref())
 }
 
-pub fn page_delete_user<B>() -> ApiEndpoint<AuthServiceState, B>
-where
-    B: HttpBody + Send + 'static,
-{
+pub fn page_delete_user() -> ApiEndpoint<AuthServiceState> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/delete"), delete_user)
         .with_operation_id("page_delete_user")
         .with_tag("page")

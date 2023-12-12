@@ -1,10 +1,10 @@
-import request from 'superagent';
-import { ActiveSession, getSessions, logout } from '$lib/auth_utils';
-import config from '../test.config';
-import OAuth2MockServer from '$lib/mocks/oauth2';
-import { loginWithOAuth2, loginWithToken } from '$lib/login_utils';
-import { TestUser } from '$lib/user';
+import api from '$lib/api/api';
+import { ActiveSession } from '$lib/api/session_api';
 import { MockServer } from '$lib/mock_server';
+import OAuth2MockServer from '$lib/mocks/oauth2';
+import request from '$lib/request';
+import { TestUser } from '$lib/test_user';
+import config from '../test.config';
 
 describe('Sessions', () => {
     // assume server is not off more than a few seconds and the test is fast enough
@@ -32,10 +32,7 @@ describe('Sessions', () => {
     });
 
     it('Get token without a session shall fail', async () => {
-        let response = await request
-            .get(config.getUrlFor('identity/api/auth/user/sessions'))
-            .send()
-            .catch((err) => err.response);
+        let response = await api.request.getSessions(null);
         expect(response.statusCode).toEqual(401);
     });
 
@@ -47,10 +44,10 @@ describe('Sessions', () => {
             'cf-ipcity': 'city'
         };
 
-        const user = await TestUser.createGuest({ extraHeaders });
+        const user = await TestUser.createGuest({}, extraHeaders);
 
         // initial session for a new user
-        expect(await getSessions(user.sid, extraHeaders)).toIncludeSameMembers([
+        expect(await api.session.getSessions(user.sid, extraHeaders)).toIncludeSameMembers([
             {
                 ...anySession,
                 agent: 'agent',
@@ -62,46 +59,49 @@ describe('Sessions', () => {
     });
 
     it('Multiple login shall create multiple session and logout from a session shall invalidate the connected session', async () => {
-        const user = await TestUser.createGuest({ extraHeaders: { 'cf-region': 'r1' } });
+        const user = await TestUser.createGuest({}, { 'cf-region': 'r1' });
 
         // initial session for a new user
-        expect(await getSessions(user.sid)).toIncludeSameMembers([{ ...anySession, region: 'r1' }]);
+        expect(await api.session.getSessions(user.sid)).toIncludeSameMembers([
+            { ...anySession, region: 'r1' }
+        ]);
 
         // login from a new country (agent is not altered, to bypass fingerprint check)
-        const userCookies2 = await loginWithToken(user.tid!, { 'cf-region': 'r2' });
-        const sid2 = userCookies2.sid.value;
-        expect(await getSessions(sid2)).toIncludeSameMembers([
+        const userCookies2 = await api.auth.loginWithToken(user.tid!, false, { 'cf-region': 'r2' });
+        const sid2 = userCookies2.sid;
+        expect(await api.session.getSessions(sid2)).toIncludeSameMembers([
             { ...anySession, region: 'r1' },
             { ...anySession, region: 'r2' }
         ]);
 
         //logout from the second session
-        await logout(sid2, false);
-        expect(await getSessions(user.sid)).toIncludeSameMembers([{ ...anySession, region: 'r1' }]);
+        await api.auth.logout(sid2, false);
+        expect(await api.session.getSessions(user.sid)).toIncludeSameMembers([
+            { ...anySession, region: 'r1' }
+        ]);
     });
 
     it('Multiple login shall create multiple session and logout with terminateAll shall invalidate all of them', async () => {
         const mock = await startMock();
-        const user = await TestUser.createLinked(mock, {
-            rememberMe: true,
-            extraHeaders: { 'cf-region': 'r1' }
-        });
+        const user = await TestUser.createLinked(mock, { rememberMe: true }, { 'cf-region': 'r1' });
 
         // login a few more times
-        await loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r2' });
-        await loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r3' });
-        expect(await getSessions(user.sid)).toIncludeSameMembers([
+        await api.auth.loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r2' });
+        await api.auth.loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r3' });
+        expect(await api.session.getSessions(user.sid)).toIncludeSameMembers([
             { ...anySession, region: 'r1' },
             { ...anySession, region: 'r2' },
             { ...anySession, region: 'r3' }
         ]);
 
         //logout from the all the session
-        await logout(user.sid, true);
+        await api.auth.logout(user.sid, true);
 
         //login again and check sessions
-        const newUserCookies = await loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r4' });
-        expect(await getSessions(newUserCookies.sid.value)).toIncludeSameMembers([
+        const newUserCookies = await api.auth.loginWithOAuth2(mock, user.externalUser!, false, {
+            'cf-region': 'r4'
+        });
+        expect(await api.session.getSessions(newUserCookies.sid)).toIncludeSameMembers([
             { ...anySession, region: 'r4' }
         ]);
     });

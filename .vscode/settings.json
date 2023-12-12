@@ -52,6 +52,7 @@
     "Pkce",
     "pkey",
     "reqwest",
+    "rkey",
     "rsplit",
     "rustls",
     "samesite",

@@ -1,4 +1,5 @@
 use crate::repositories::{IdentityBuildError, IdentityError};
+use postgres_from_row::FromRow;
 use shine_service::{
     pg_query,
     service::{PGClient, PGConnection, PGErrorChecks as _, PGRawConnection},
@@ -17,14 +18,16 @@ pg_query!( AddUserRole =>
     "#
 );
 
+#[derive(FromRow)]
+struct UserRolesRow {
+    roles: Vec<String>,
+}
+
 pg_query!( GetUserRoles =>
     in = user_id: Uuid;
-    out = UserRoles {
-        user_id: Option<Uuid>,
-        roles: Vec<String>
-    };
+    out = UserRolesRow;
     sql = r#"
-        SELECT i.user_id, 
+        SELECT 
             CASE 
                 WHEN array_agg(r.role) = ARRAY[NULL]::text[] THEN ARRAY[]::text[] 
                 ELSE array_agg(r.role) 
@@ -59,7 +62,7 @@ impl RolesStatements {
     }
 }
 
-/// Roles Data Access Object.
+/// Handel user roles.
 pub struct Roles<'a, T>
 where
     T: PGRawConnection,
@@ -91,6 +94,7 @@ where
             None => return Ok(None),
         };
 
+        log::debug!("Adding role {} to user {}", role, user_id);
         match self.stmts_role.add.execute(update.client(), &user_id, &role).await {
             Ok(_) => {}
             Err(err) if err.is_constraint("roles", "fkey_user_id") => {
