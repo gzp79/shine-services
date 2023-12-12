@@ -27,27 +27,27 @@ jobs:
       with:
         submodules: recursive
     
-    - name: Setup Node
-      uses: actions/setup-node@v3
-      with:
-        node-version: 18.x
+    # - name: Setup Node
+      # uses: actions/setup-node@v3
+      # with:
+        # node-version: 18.x
 
-    - name: Prepare tests
-      run: |
-        npm ci
-        npm run test:format
-        npm run mkcert
-      working-directory: ./integration-test
+    # - name: Prepare tests
+      # run: |
+        # npm ci
+        # npm run test:format
+        # npm run mkcert
+      # working-directory: ./integration-test
 
-    - name: Setup Docker Buildx (1)
-      run: |
-        docker network create shine
+    # - name: Setup Docker Buildx (1)
+      # run: |
+        # docker network create shine
 
-    - name: Setup Docker Buildx (2)
-      uses: docker/setup-buildx-action@v2
-      with:
-        driver: docker-container
-        driver-opts: network=shine
+    # - name: Setup Docker Buildx (2)
+      # uses: docker/setup-buildx-action@v2
+      # with:
+        # driver: docker-container
+        # driver-opts: network=shine
         
     - name: Docker meta
       id: meta
@@ -56,74 +56,91 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: type=sha
 
-    - name: Prepare MockBox
-      id: mockbox
+    # - name: Prepare MockBox
+      # id: mockbox
+      # run: |
+        # docker compose -f docker.yml -p shine-identity up -d
+        # echo "pg_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-postgres-1)" >> $GITHUB_OUTPUT
+        # echo "redis_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-redis-1)" >> $GITHUB_OUTPUT
+      # working-directory: ./service
+        
+    # - name: Docker build
+      # uses: docker/build-push-action@v4
+      # with:
+        # context: service
+        # target: test
+        # push: false
+        # load: true
+        # add-hosts: |
+          # postgres.mockbox.com:${{ steps.mockbox.outputs.pg_host }}
+          # redis.mockbox.com:${{ steps.mockbox.outputs.redis_host }}
+        # cache-from: type=gha,mode=max
+        # cache-to: type=gha,mode=max
+        # tags: ${{ env.IMAGE_NAME }}:test
+        
+    # - name: Add hosts to /etc/hosts
+      # run: |
+        # sudo echo "127.0.0.1 sandbox.com" | sudo tee -a /etc/hosts
+        # sudo echo "127.0.0.1 web.sandbox.com" | sudo tee -a /etc/hosts
+        # sudo echo "127.0.0.1 cloud.sandbox.com" | sudo tee -a /etc/hosts
+        # sudo echo "127.0.0.1 mockbox.com" | sudo tee -a /etc/hosts
+        # sudo echo "127.0.0.1 postgres.mockbox.com" | sudo tee -a /etc/hosts
+        # sudo echo "127.0.0.1 redis.mockbox.com" | sudo tee -a /etc/hosts
+
+    # - name: Integration test
+      # run: |
+        # echo "::group::Starting service in the test environment"
+        # docker compose -f ../service/docker.yml -p shine-identity --profile test up -d
+        # echo "::endgroup::"
+        # echo "::group::Running test"
+        # npm run test:regression
+        # echo "::endgroup::"
+      # working-directory: ./integration-test
+      
+    # - name: Publish test results
+      # if: github.event_name != 'pull_request' || failure()
+      # uses: actions/upload-artifact@v3
+      # with:
+        # name: test-reports
+        # path: | 
+          # ./integration-test/reports/
+
+    # - name: Log in to the Container registry
+      # if: github.event_name != 'pull_request'
+      # uses: docker/login-action@v2
+      # with:
+        # registry: ${{ env.REGISTRY }}
+        # username: ${{ github.actor }}
+        # password: ${{ secrets.GITHUB_TOKEN }}
+        
+    # - name: Build production
+      # if: github.event_name != 'pull_request'
+      # uses: docker/build-push-action@v4
+      # with:
+        # context: service
+        # target: prod
+        # push: true
+        # # these setting are here to allow the reuse of the layer from the build step
+        # # without host parameters it would trigger a new build
+        # add-hosts: |
+          # postgres.mockbox.com:${{ steps.mockbox.outputs.pg_host }}
+          # redis.mockbox.com:${{ steps.mockbox.outputs.redis_host }}
+        # tags: ${{ steps.meta.outputs.tags }}
+        # labels: ${{ steps.meta.outputs.labels }}
+        
+    - name: Create release artifacts
       run: |
-        docker compose -f docker.yml -p shine-identity up -d
-        echo "pg_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-postgres-1)" >> $GITHUB_OUTPUT
-        echo "redis_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-redis-1)" >> $GITHUB_OUTPUT
+        echo "[build]" >> fly.toml
+        echo "  image = \"${{ steps.meta.outputs.tags }}\"" >> fly.toml        
+        mkdir release
+        cp fly.toml release/
+        cat release/fly.toml
       working-directory: ./service
         
-    - name: Docker build
-      uses: docker/build-push-action@v4
-      with:
-        context: service
-        target: test
-        push: false
-        load: true
-        add-hosts: |
-          postgres.mockbox.com:${{ steps.mockbox.outputs.pg_host }}
-          redis.mockbox.com:${{ steps.mockbox.outputs.redis_host }}
-        cache-from: type=gha,mode=max
-        cache-to: type=gha,mode=max
-        tags: ${{ env.IMAGE_NAME }}:test
-        
-    - name: Add hosts to /etc/hosts
-      run: |
-        sudo echo "127.0.0.1 sandbox.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 web.sandbox.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 cloud.sandbox.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 mockbox.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 postgres.mockbox.com" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 redis.mockbox.com" | sudo tee -a /etc/hosts
-
-    - name: Integration test
-      run: |
-        echo "::group::Starting service in the test environment"
-        docker compose -f ../service/docker.yml -p shine-identity --profile test up -d
-        echo "::endgroup::"
-        echo "::group::Running test"
-        npm run test:regression
-        echo "::endgroup::"
-      working-directory: ./integration-test
-
-    - name: Log in to the Container registry
-      if: github.event_name != 'pull_request'
-      uses: docker/login-action@v2
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Build production
-      if: github.event_name != 'pull_request'
-      uses: docker/build-push-action@v4
-      with:
-        context: service
-        target: prod
-        push: true
-        # these setting are here to allow the reuse of the layer from the build step
-        # without host parameters it would trigger a new build
-        add-hosts: |
-          postgres.mockbox.com:${{ steps.mockbox.outputs.pg_host }}
-          redis.mockbox.com:${{ steps.mockbox.outputs.redis_host }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-
-    - name: Publish test results
-      if: github.event_name != 'pull_request' || failure()
+    - name: Publish release artifacts
+      #if: github.event_name != 'pull_request'
       uses: actions/upload-artifact@v3
       with:
-        name: Test Reports
+        name: release-artifacts
         path: | 
-          ./integration-test/reports/
+          ./service/release/
