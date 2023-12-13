@@ -1,13 +1,14 @@
 name: Deploy Fly
 
-on: [workflow_dispatch]
-  #workflow_run:
-  #  workflows: [Master CI]
-  #  types: [completed]
-  #  branches: [master]
+on:
+  workflow_run:
+    workflows: [Master CI]
+    types: [completed]
+    branches: [master]
 
 jobs:
-  download:
+  deploy:
+    concurrency: deploy
     runs-on: ubuntu-latest
     steps:
       - name: Download release
