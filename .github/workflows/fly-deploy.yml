@@ -19,6 +19,7 @@ jobs:
           
       - name: Init fly
         uses: superfly/flyctl-actions/setup-flyctl@master
+
       - name: Deploy to fly
         run: flyctl deploy
         env:
