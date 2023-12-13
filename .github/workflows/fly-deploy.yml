@@ -1,16 +1,25 @@
 name: Deploy Fly
 
-on:
-  workflow_run:
-    workflows: [Master CI]
-    types: [completed]
-    branches: [master]
+on: [workflow_dispatch]
+    
+  #workflow_run:
+  #  workflows: [Master CI]
+  #  types: [completed]
+  #  branches: [master]
     
 jobs:
   deploy:
     concurrency: deploy
     runs-on: ubuntu-latest
     steps:
+      - name: Init fly
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Test fly
+        run: flyctl apps list
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
       - name: Download artifact
         uses: actions/github-script@v6
         with:
@@ -34,8 +43,7 @@ jobs:
 
       - name: Unzip artifact
         run: unzip release-artifacts.zip
-      - name: Init fly
-        uses: superfly/flyctl-actions/setup-flyctl@master
+
       - name: Deploy to fly
         run: flyctl deploy
         env:
