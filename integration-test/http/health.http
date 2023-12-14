@@ -6,16 +6,16 @@
 GET {{baseUrl}}/info/ready
 ###
 
-GET {{url}}/api/health
+GET {{url}}/api/telemetry/health
 ###
 
-GET {{url}}/api/metrics
+GET {{url}}/api/telemetry/metrics
 ###
 
-GET {{url}}/api/tracing/config 
+GET {{url}}/api/telemetry/config 
 ###
 
-PUT {{url}}/api/tracing/config 
+PUT {{url}}/api/telemetry/config 
 Content-Type: application/json
 
 {
