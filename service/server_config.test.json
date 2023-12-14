@@ -14,11 +14,12 @@
             "https://web.sandbox.com:8080"
         ]
     },
-    "tracing": {
+    "telemetry": {
         "allowReconfigure": true,
         "enableConsoleLog": true,
         "defaultLevel": "INFO,shine_service=TRACE,shine_identity=TRACE,tower_http=TRACE",
-        "telemetry": {
+        "metrics": true,
+        "tracing": {
             "type": "none"
         }
     },
