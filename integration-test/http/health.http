@@ -9,6 +9,9 @@ GET {{baseUrl}}/info/ready
 GET {{url}}/api/health
 ###
 
+GET {{url}}/api/metrics
+###
+
 GET {{url}}/api/tracing/config 
 ###
 

@@ -8,10 +8,11 @@
             "https://cloud.scytta.com"
         ]
     },
-    "tracing": {
+    "telemetry": {
         "allowReconfigure": true,
         "enableConsoleLog": true,
-        "telemetry": {
+        "metrics": true,
+        "tracing": {
             "type": "stdOut"
         }
     },

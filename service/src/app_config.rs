@@ -4,7 +4,7 @@ use crate::{
 };
 use config::ConfigError;
 use serde::{Deserialize, Serialize};
-use shine_service::axum::tracing::TracingConfig;
+use shine_service::axum::telemetry::TelemetryConfig;
 use shine_service::service::CoreConfig;
 use thiserror::Error as ThisError;
 
@@ -45,7 +45,7 @@ pub struct AppConfig {
     pub core: CoreConfig,
 
     pub service: ServiceConfig,
-    pub tracing: TracingConfig,
+    pub telemetry: TelemetryConfig,
     pub db: DBConfig,
     pub auth: auth::AuthConfig,
     pub user_name: AutoNameConfig,

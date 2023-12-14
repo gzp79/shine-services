@@ -19,7 +19,7 @@ use axum::{
 use chrono::Duration;
 use openapi::ApiKind;
 use shine_service::{
-    axum::{add_default_components, tracing::TracingManager, ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy},
+    axum::{add_default_components, telemetry::TelemetryManager, ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy},
     service::UserSessionValidator,
 };
 use std::{env, fs, net::SocketAddr};
@@ -48,7 +48,7 @@ async fn health_check() -> String {
 
 fn ep_health_check() -> ApiEndpoint<()> {
     ApiEndpoint::new(ApiMethod::Get, ApiKind::Absolute("/info/ready"), health_check)
-        .with_operation_id("ep_health_check")
+        .with_operation_id("health_check")
         .with_tag("status")
         .with_status_response(StatusCode::OK, "Ok.")
 }
@@ -62,7 +62,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let args: Vec<String> = env::args().collect();
     let stage = args.get(1).ok_or(anyhow!("Missing stage parameter"))?.clone();
 
-    let (config, tracing_manager) = {
+    let (config, telemetry_manager) = {
         // initialize a pre-init logger
         let pre_init_log = {
             let _ = tracing_log::LogTracer::init();
@@ -79,9 +79,9 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         log::error!("init-error - ok");
 
         let config = AppConfig::new(&stage).await?;
-        let tracing_manager = TracingManager::new(SERVICE_NAME, &config.tracing).await?;
+        let telemetry_manager = TelemetryManager::new(SERVICE_NAME, &config.telemetry).await?;
         log::info!("pre-init completed");
-        (config, tracing_manager)
+        (config, telemetry_manager)
     };
 
     log::trace!("Creating services...");
@@ -129,7 +129,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let log_layer = TraceLayer::new_for_http()
         .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
         .on_response(DefaultOnResponse::new().level(Level::INFO));
-    let tracing_layer = tracing_manager.to_layer();
+    let telemetry_layer = telemetry_manager.to_layer();
 
     let health_check = Router::new().add_api(ep_health_check(), &mut doc);
 
@@ -147,7 +147,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let identity_api = {
         let identity_state = IdentityServiceDependencies {
-            tracing_manager,
+            telemetry_manager,
             identity_manager: identity_manager.clone(),
             session_manager: session_manager.clone(),
             auto_name_manager: auto_name_manager.clone(),
@@ -174,7 +174,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         .layer(user_session.into_layer())
         .layer(powered_by)
         .layer(cors)
-        .layer(tracing_layer)
+        .layer(telemetry_layer)
         .layer(log_layer);
 
     //log::trace!("{app:#?}");
