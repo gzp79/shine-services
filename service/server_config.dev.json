@@ -5,7 +5,7 @@
         "azk://shine-keyvault.vault.azure.net/"
     ],
     "afterLayers": [
-        "file?://temp/server_config.json",
+        "file?://../temp/server_config.json",
         "environment"
     ],
     
@@ -18,10 +18,6 @@
         "allowOrigins": [
             "https://local.scytta.com"
         ]
-    },
-    "db": {
-        "redisCns": "redis://localhost:6379",
-        "sqlCns": "postgres://username:password@localhost:5432/database-name?sslmode=disable"
     },
     "auth": {
         "authBaseUrl": "https://local.scytta.com/identity/auth",
