@@ -1,8 +1,3 @@
-# fly.toml app configuration file generated for shine-app on 2023-06-18T11:55:29+02:00
-#
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
-
 app = "shine-app"
 primary_region = "cdg"
 
