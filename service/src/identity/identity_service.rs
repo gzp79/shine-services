@@ -4,7 +4,7 @@ use crate::{
 };
 use axum::Router;
 use shine_service::{
-    axum::{tracing::TracingManager, ApiRoute, Problem},
+    axum::{telemetry::TelemetryManager, ApiRoute, Problem},
     service::CurrentUser,
 };
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use utoipa::openapi::OpenApi;
 
 struct Inner {
     db: DBPool,
-    tracing_manager: TracingManager,
+    telemetry_manager: TelemetryManager,
     identity_manager: IdentityManager,
     session_manager: SessionManager,
     auto_name_manager: AutoNameManager,
@@ -23,8 +23,8 @@ struct Inner {
 pub struct IdentityServiceState(Arc<Inner>);
 
 impl IdentityServiceState {
-    pub fn tracing_manager(&self) -> &TracingManager {
-        &self.0.tracing_manager
+    pub fn telemetry_manager(&self) -> &TelemetryManager {
+        &self.0.telemetry_manager
     }
 
     pub fn identity_manager(&self) -> &IdentityManager {
@@ -57,7 +57,7 @@ impl IdentityServiceState {
 
 pub struct IdentityServiceDependencies {
     pub db: DBPool,
-    pub tracing_manager: TracingManager,
+    pub telemetry_manager: TelemetryManager,
     pub identity_manager: IdentityManager,
     pub session_manager: SessionManager,
     pub auto_name_manager: AutoNameManager,
@@ -71,7 +71,7 @@ impl IdentityServiceBuilder {
     pub fn new(dependencies: IdentityServiceDependencies, master_api_key_hash: Option<&str>) -> Self {
         let state = IdentityServiceState(Arc::new(Inner {
             db: dependencies.db,
-            tracing_manager: dependencies.tracing_manager,
+            telemetry_manager: dependencies.telemetry_manager,
             identity_manager: dependencies.identity_manager,
             session_manager: dependencies.session_manager,
             auto_name_manager: dependencies.auto_name_manager,
@@ -87,7 +87,8 @@ impl IdentityServiceBuilder {
     {
         Router::new()
             .add_api(identity::ep_health(), doc)
-            .add_api(identity::ep_tracing_reconfigure(), doc)
+            .add_api(identity::ep_metrics(), doc)
+            .add_api(identity::ep_reconfigure_telemetry(), doc)
             .add_api(identity::ep_generate_user_name(), doc)
             .add_api(identity::ep_search_identity(), doc)
             .add_api(identity::ep_get_user_roles(), doc)
