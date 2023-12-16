@@ -1,5 +1,5 @@
-@url = https://cloud.sandbox.com:7080/identity
-//@url = https://cloud.scytta.com/identity
+//@url = https://cloud.sandbox.com:7080/identity
+@url = https://cloud.scytta.com/identity
 
 GET {{url}}/api/auth/providers 
 ###
@@ -25,6 +25,12 @@ GET {{url}}/auth/validate
 
 GET {{url}}/api/auth/user/info
 ###
+
+##########################################################
+// 3rd party login
+GET {{url}}/auth/google/login
+###
+
 
 ##########################################################
 // Sessions
