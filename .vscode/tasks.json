@@ -101,6 +101,13 @@
       "command": "npm test",
       "options": { "cwd": "integration-test" },
       "group": "build"
+    },
+    {
+      "label": "format test",
+      "type": "shell",
+      "command": "npm run format",
+      "options": { "cwd": "integration-test" },
+      "group": "build"
     }
   ]
 }

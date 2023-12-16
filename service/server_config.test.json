@@ -36,7 +36,7 @@
         "appName": "Scytta",
         "homeUrl": "https://web.sandbox.com:8080/",
         "errorUrl": "https://web.sandbox.com:8080/error",
-        "authBaseUrl": "https://cloud.sandbox.com/identity/auth",
+        "authBaseUrl": "https://cloud.sandbox.com/identity/auth/",
         "superUserApiKeyHash": "$2b$05$0OWeMQAQuh9kmD642a0ZHeVl6VNa2g.z1HTI2rrQ3RPkmxoCNUohG",
         "pageRedirectTime": 0,
         "pageErrorDetail": true,
