@@ -99,7 +99,7 @@ jobs:
       
     - name: Publish test results
       if: github.ref == 'refs/heads/master' || failure()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: test-reports
         path: | 
@@ -138,7 +138,7 @@ jobs:
         
     - name: Publish release artifacts
       if: github.ref == 'refs/heads/master'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: release-artifacts
         path: | 
