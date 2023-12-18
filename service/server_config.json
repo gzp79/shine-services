@@ -5,7 +5,9 @@
         "allowOrigins": [
             "https://scytta.com",
             "https://www.scytta.com",
-            "https://cloud.scytta.com"
+            "https://cloud.scytta.com",
+            "https://local.scytta.com",
+            "https://local-web.scytta.com"
         ]
     },
     "telemetry": {
