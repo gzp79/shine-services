@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use shine_service::axum::telemetry::TelemetryConfig;
 use shine_service::service::CoreConfig;
 use thiserror::Error as ThisError;
+use tower_http::cors::AllowOrigin;
 
 pub const SERVICE_NAME: &str = "identity";
 
@@ -16,6 +17,16 @@ pub struct PreInitConfigError;
 
 impl From<PreInitConfigError> for ConfigError {
     fn from(err: PreInitConfigError) -> Self {
+        ConfigError::Foreign(Box::new(err))
+    }
+}
+
+#[derive(Debug, ThisError)]
+#[error("CORS configuration is not a valid")]
+pub struct CORSConfigError;
+
+impl From<CORSConfigError> for ConfigError {
+    fn from(err: CORSConfigError) -> Self {
         ConfigError::Foreign(Box::new(err))
     }
 }
@@ -34,7 +45,23 @@ pub struct TlsConfig {
 pub struct ServiceConfig {
     pub tls: Option<TlsConfig>,
     pub port: u16,
-    pub allow_origins: Vec<String>,
+    /// Regular expression for the allowed origins.
+    pub allowed_origins: Vec<String>,
+}
+
+impl ServiceConfig {
+    pub fn cors_allowed_origin(&self) -> Result<AllowOrigin, CORSConfigError> {
+        let allowed_origins = self
+            .allowed_origins
+            .iter()
+            .map(|r| regex::bytes::Regex::new(r))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_err| CORSConfigError)?;
+        Ok(AllowOrigin::predicate(move |origin, _| {
+            let origin = origin.as_bytes();
+            allowed_origins.iter().any(|r| r.is_match(origin))
+        }))
+    }
 }
 
 /// The application configuration

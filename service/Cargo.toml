@@ -23,6 +23,7 @@ hex = "0.4"
 ring = "0.17"
 bcrypt = "0.15"
 harsh = "0.2"
+regex = "1.10"
 
 futures = "0.3"
 async-trait = "0.1"
@@ -55,8 +56,7 @@ tracing-log = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 axum = "0.7"
-#axum-server = { version = "0.5", features = ["tls-rustls"] }
-axum-server = { git = "https://github.com/programatik29/axum-server.git", features = ["tls-rustls"] }
+axum-server = { version = "0.6", features = ["tls-rustls"] }
 axum-extra = { version = "0.9", features = ["cookie", "cookie-signed", "cookie-private", "typed-header"] }
 
 utoipa = { version = "4.1", features = ["axum_extras", "uuid", "chrono"] }

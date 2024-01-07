@@ -8,10 +8,8 @@
             "key": "certs/test.key"
         },
         "port": 7080,
-        "allowOrigins": [
-            "https://sandbox.com",
-            "https://cloud.sandbox.com",
-            "https://web.sandbox.com:8080"
+        "allowedOrigins": [
+            "^https:\\/\\/([a-zA-Z0-9-]+\\.)*sandbox\\.com(:[0-9]+)?$"
         ]
     },
     "telemetry": {
