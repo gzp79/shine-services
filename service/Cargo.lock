@@ -222,8 +222,9 @@ dependencies = [
 
 [[package]]
 name = "axum-server"
-version = "0.5.1"
-source = "git+https://github.com/programatik29/axum-server.git#0090643b2f9522940c4d037be956cb92f2435539"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1ad46c3ec4e12f4a4b6835e173ba21c25e484c9d02b49770bf006ce5367c036"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -3507,6 +3508,7 @@ dependencies = [
  "rand 0.8.5",
  "redis",
  "refinery",
+ "regex",
  "reqwest",
  "ring 0.17.7",
  "serde",

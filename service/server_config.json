@@ -2,12 +2,8 @@
     "version": "custom",
     "service": {
         "port": 80,
-        "allowOrigins": [
-            "https://scytta.com",
-            "https://www.scytta.com",
-            "https://cloud.scytta.com",
-            "https://local.scytta.com",
-            "https://local-web.scytta.com"
+        "allowedOrigins": [
+            "^https:\\/\\/([a-zA-Z0-9-]+\\.)*scytta\\.com$"
         ]
     },
     "telemetry": {

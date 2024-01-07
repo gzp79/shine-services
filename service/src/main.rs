@@ -96,14 +96,8 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     tracing::warn!("warn  - tracing:ok");
     tracing::error!("error - tracing:ok");
 
-    let allow_origins = config
-        .service
-        .allow_origins
-        .iter()
-        .map(|r| r.parse())
-        .collect::<Result<Vec<_>, _>>()?;
     let cors = CorsLayer::default()
-        .allow_origin(allow_origins)
+        .allow_origin(config.service.cors_allowed_origin()?)
         .allow_methods([Method::GET, Method::POST])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
         .allow_credentials(true);
