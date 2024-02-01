@@ -3,7 +3,7 @@
     "service": {
         "port": 80,
         "allowedOrigins": [
-            "^https:\\/\\/([a-zA-Z0-9-]+\\.)*scytta\\.com$"
+			"^https:\\/\\/([a-zA-Z0-9-]+\\.)+scytta\\.com(:\\d+)?$"
         ]
     },
     "telemetry": {
