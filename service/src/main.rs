@@ -58,13 +58,7 @@ fn ep_health_check() -> ApiEndpoint<()> {
 async fn graceful_shutdown(handle: Handle) {
     signal::ctrl_c().await.expect("expect tokio signal ctrl-c");
     log::warn!("Shutting down the server...");
-
-    handle.graceful_shutdown(Some(StdDuration::from_secs(30)));
-
-    loop {
-        println!("alive connections: {}", handle.connection_count());
-        sleep(StdDuration::from_secs(1)).await;
-    }
+    handle.graceful_shutdown(Some(StdDuration::from_secs(10)));
 }
 
 async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
