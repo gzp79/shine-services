@@ -16,18 +16,20 @@ use axum::{
     http::{header, Method},
     Router,
 };
+use axum_server::Handle;
 use chrono::Duration;
 use openapi::ApiKind;
 use shine_service::{
     axum::{add_default_components, telemetry::TelemetryManager, ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy},
     service::UserSessionValidator,
 };
-use std::{env, fs, net::SocketAddr};
+use std::{env, fs, net::SocketAddr, time::Duration as StdDuration};
 use tera::Tera;
 use tokio::{
     net::TcpListener,
     runtime::{Handle as RtHandle, Runtime},
     signal,
+    time::sleep,
 };
 use tower_http::{
     cors::CorsLayer,
@@ -53,9 +55,16 @@ fn ep_health_check() -> ApiEndpoint<()> {
         .with_status_response(StatusCode::OK, "Ok.")
 }
 
-async fn shutdown_signal() {
+async fn graceful_shutdown(handle: Handle) {
     signal::ctrl_c().await.expect("expect tokio signal ctrl-c");
-    log::warn!("Signal shutdown");
+    log::warn!("Shutting down the server...");
+
+    handle.graceful_shutdown(Some(StdDuration::from_secs(30)));
+
+    loop {
+        println!("alive connections: {}", handle.connection_count());
+        sleep(StdDuration::from_secs(1)).await;
+    }
 }
 
 async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
@@ -171,6 +180,9 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         .layer(telemetry_layer)
         .layer(log_layer);
 
+    let handle = Handle::new();
+    tokio::spawn(graceful_shutdown(handle.clone()));
+
     //log::trace!("{app:#?}");
     let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
 
@@ -183,16 +195,12 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
             .map_err(|e| anyhow!(e))?;
         axum_server::bind_rustls(addr, config)
             .serve(app.into_make_service())
-            //.with_graceful_shutdown(shutdown_signal())
             .await
             .map_err(|e| anyhow!(e))
     } else {
         log::info!("Starting service on {addr:?}");
         let listener = TcpListener::bind(&addr).await.unwrap();
-        axum::serve(listener, app)
-            //.with_graceful_shutdown(shutdown_signal())
-            .await
-            .map_err(|e| anyhow!(e))
+        axum::serve(listener, app).await.map_err(|e| anyhow!(e))
     }
 }
 

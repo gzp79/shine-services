@@ -327,8 +327,8 @@ impl IntoResponseParts for AuthSession {
             token_cookie.as_ref().map(|d| {
                 let naive_time = d.expire_at.naive_utc();
                 // disable cookie a few minutes before the token expiration
-                let token_expiration =
-                    OffsetDateTime::from_unix_timestamp(naive_time.timestamp()).unwrap() - Duration::minutes(5);
+                let token_expiration = OffsetDateTime::from_unix_timestamp(naive_time.and_utc().timestamp()).unwrap()
+                    - Duration::minutes(5);
                 (d, token_expiration)
             }),
         );

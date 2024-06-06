@@ -19,7 +19,7 @@ use validator::{Validate, ValidationError};
 struct CreateTokenRequest {
     /// The kind of token to create, Allowed kinds are apiKey or singleAccess.
     /// access token can be created only through the login endpoint with enabled remember-me.
-    #[validate(custom = "validate_allowed_kind")]
+    #[validate(custom(function = "validate_allowed_kind"))]
     kind: TokenKind,
     /// The expiration The valid range is 30s .. 1 year, but server config
     /// may reduce it.
@@ -33,7 +33,7 @@ fn validate_allowed_kind(kind: &TokenKind) -> Result<(), ValidationError> {
     match kind {
         TokenKind::SingleAccess => Ok(()),
         TokenKind::Persistent => Ok(()),
-        TokenKind::Access => Err(ValidationError::new("oneOf").with_message("Access tokens are not allowed")),
+        TokenKind::Access => Err(ValidationError::new("oneOf").with_message("Access tokens are not allowed".into())),
     }
 }
 
