@@ -21,9 +21,9 @@ struct CreateTokenRequest {
     /// access token can be created only through the login endpoint with enabled remember-me.
     #[validate(custom(function = "validate_allowed_kind"))]
     kind: TokenKind,
-    /// The expiration The valid range is 30s .. 1 year, but server config
-    /// may reduce it.
-    #[validate(range(min = 30, max = 31_536_000))]
+    /// The expiration The maximum validity range is 10s .. 1 year, but server config
+    /// may reduce the maximum value through the ttl parameters.
+    #[validate(range(min = 10, max = 31_536_000))]
     time_to_live: usize,
     /// If set to true, the token is bound to the current site
     bind_to_site: bool,
@@ -71,7 +71,7 @@ async fn token_create(
     };
     if &time_to_live > max_time_to_live {
         return Err(ValidationError::new("range")
-            .with_param("min", &30)
+            .with_param("min", &10)
             .with_param("max", &max_time_to_live.num_seconds())
             .with_param("value", &params.time_to_live)
             .into_constraint_problem("time_to_live"));
