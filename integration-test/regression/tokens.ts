@@ -42,7 +42,7 @@ describe('Tokens', () => {
     it('Get token without a session shall fail', async () => {
         // initial session for a new user
         let response = await api.request.getTokens(null);
-        expect(response.statusCode).toEqual(401);
+        expect(response).toHaveStatus(401);
     });
 
     it('Token shall keep the site info', async () => {
@@ -103,7 +103,7 @@ describe('Tokens', () => {
         let response = await request
             .get(config.getUrlFor(`/identity/auth/logout`))
             .set('Cookie', [`sid=${sid2}`, `tid=${tid2}`]);
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(await api.token.getTokens(user.sid)).toIncludeSameMembers([{ ...anyToken, city: 'r1' }]);
     });
 
@@ -161,18 +161,18 @@ describe('Tokens', () => {
         // find the 2nd token and revoke it
         const tokenId = tokens.find((x) => x.city === 'r2')!.tokenFingerprint;
         let responseGet = await api.request.getToken(user.sid, tokenId);
-        expect(responseGet.statusCode).toEqual(200);
+        expect(responseGet).toHaveStatus(200);
         expect(responseGet.body.userId).toEqual(user.userId);
         expect(responseGet.body.city).toEqual('r2');
         expect(responseGet.body.tokenFingerprint).toEqual(tokenId);
 
         // revoke
         let responseDelete = await api.request.revokeToken(user.sid, tokenId);
-        expect(responseDelete.statusCode).toEqual(200);
+        expect(responseDelete).toHaveStatus(200);
 
         // it shall be gone
         let responseGet2 = await api.request.getToken(user.sid, tokenId);
-        expect(responseGet2.statusCode).toEqual(404);
+        expect(responseGet2).toHaveStatus(404);
         expect(await api.token.getTokens(user.sid)).toIncludeSameMembers([
             { ...anyToken, city: 'r1' },
             { ...anyToken, city: 'r3' }
@@ -183,7 +183,7 @@ describe('Tokens', () => {
             .get(config.getUrlFor('identity/auth/token/login'))
             .query(config.defaultRedirects)
             .set('Cookie', [`tid=${tid2}`]);
-        expect(responseLogin.statusCode).toEqual(200);
+        expect(responseLogin).toHaveStatus(200);
         expect(getPageRedirectUrl(responseLogin.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
@@ -225,7 +225,7 @@ describe('Tokens', () => {
 
         // Token rotated out shall not work
         const request = await api.request.loginWithToken(tid, null, null, null, null);
-        expect(request.statusCode).toEqual(200);
+        expect(request).toHaveStatus(200);
         expect(getPageRedirectUrl(request.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
@@ -250,7 +250,7 @@ describe('Tokens', () => {
             tokenHeader.token,
             false
         );
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
         var cookies = getCookies(response);
         const userLoggedIn = await api.user.getUserInfo(cookies.sid.value);
@@ -271,7 +271,7 @@ describe('Tokens', () => {
             tokenHeader.token,
             false
         );
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
         var cookies = getCookies(response);
         const userLoggedIn = await api.user.getUserInfo(cookies.sid.value);
@@ -300,7 +300,7 @@ describe('Created token', () => {
         'Creating %s token without session shall fail',
         async (kind: TokenKind) => {
             const response = await api.request.createToken(null, kind, 20, false);
-            expect(response.statusCode).toEqual(401);
+            expect(response).toHaveStatus(401);
         }
     );
 
@@ -332,7 +332,7 @@ describe('Created token', () => {
                 test.duration,
                 test.bindToSite
             );
-            expect(response.statusCode).toEqual(400);
+            expect(response).toHaveStatus(400);
             expect(response.body).toEqual({
                 type: 'validation_error',
                 detail: test.expectedError
@@ -359,7 +359,7 @@ describe('Single access token', () => {
 
     it('A failed login with a single access token shall clear the current user', async () => {
         const response = await api.request.loginWithToken(null, null, 'invalid', null, false);
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
@@ -375,7 +375,7 @@ describe('Single access token', () => {
         console.log('token:', token);
 
         const response = await api.request.loginWithToken(null, null, token.token, null, false);
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
         const cookies = getCookies(response);
         expect(cookies.tid).toBeClearCookie();
@@ -404,14 +404,15 @@ describe('Single access token', () => {
         'The single access token shall expire after the specified time',
         async () => {
             const now = new Date().getTime();
-            const token = await api.token.createSAToken(user.sid, 30, false);
-            expect(token.expireAt).toBeAfter(new Date(now + 30 * 1000));
-            expect(token.expireAt).toBeBefore(new Date(now + 35 * 1000));
+            const ttl = 10;
+            const token = await api.token.createSAToken(user.sid, ttl, false);
+            expect(token.expireAt).toBeAfter(new Date(now + ttl * 1000));
+            expect(token.expireAt).toBeBefore(new Date(now + (ttl + 5) * 1000));
 
-            console.log('Waiting for the token to expire...');
-            await delay(30 * 1000);
+            console.log('Waiting for the token to expire (${time} second)...');
+            await delay(ttl * 1000);
             const response = await api.request.loginWithToken(null, null, token.token, null, false);
-            expect(response.statusCode).toEqual(200);
+            expect(response).toHaveStatus(200);
             expect(getPageRedirectUrl(response.text)).toEqual(
                 config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
             );
@@ -429,7 +430,7 @@ describe('Single access token', () => {
         expect(tokens).toIncludeSameMembers([token.tokenFingerprint]);
 
         const response1 = await api.request.loginWithToken(null, null, token.token, null, false);
-        expect(response1.statusCode).toEqual(200);
+        expect(response1).toHaveStatus(200);
         const sid1 = getCookies(response1).sid.value;
         const user1 = await api.user.getUserInfo(sid1);
         expect(user1.userId, 'It shall be the same use').toEqual(user.userId);
@@ -438,7 +439,7 @@ describe('Single access token', () => {
         expect(tokens1, 'Token shall be removed').toIncludeSameMembers([]);
 
         const response2 = await api.request.loginWithToken(null, null, token.token, null, false);
-        expect(response2.statusCode).toEqual(200);
+        expect(response2).toHaveStatus(200);
         expect(getPageRedirectUrl(response2.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
@@ -454,13 +455,13 @@ describe('Single access token', () => {
         expect(tokens).toIncludeSameMembers([token.tokenFingerprint]);
 
         let responseDelete = await api.request.revokeToken(user.sid, token.tokenFingerprint);
-        expect(responseDelete.statusCode).toEqual(200);
+        expect(responseDelete).toHaveStatus(200);
 
         const tokens1 = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
         expect(tokens1, 'Token shall be removed').toIncludeSameMembers([]);
 
         const response2 = await api.request.loginWithToken(null, null, token.token, null, false);
-        expect(response2.statusCode).toEqual(200);
+        expect(response2).toHaveStatus(200);
         expect(getPageRedirectUrl(response2.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
@@ -488,7 +489,7 @@ describe('Persistent token', () => {
         const response = await api.request
             .loginWithToken(user.tid!, user.sid!, null, null, false)
             .set({ Authorization: `Basic invalid` });
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=400'
         );
@@ -503,7 +504,7 @@ describe('Persistent token', () => {
 
     it('A failed login with a persistent token shall clear the current user', async () => {
         const response = await api.request.loginWithToken(null, null, null, 'invalid', false);
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
@@ -519,7 +520,7 @@ describe('Persistent token', () => {
         console.log('token:', token);
 
         const response = await api.request.loginWithToken(null, null, null, token.token, false);
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
         const cookies = getCookies(response);
         expect(cookies.tid).toBeClearCookie();
@@ -552,7 +553,7 @@ describe('Persistent token', () => {
 
         for (let i = 0; i < 3; i++) {
             const response1 = await api.request.loginWithToken(null, null, null, token.token, false);
-            expect(response1.statusCode).toEqual(200);
+            expect(response1).toHaveStatus(200);
             const sid1 = getCookies(response1).sid.value;
             const user1 = await api.user.getUserInfo(sid1);
             expect(user1.userId, 'It shall be the same use').toEqual(user.userId);
@@ -572,13 +573,13 @@ describe('Persistent token', () => {
         expect(tokens).toIncludeSameMembers([token.tokenFingerprint]);
 
         let responseDelete = await api.request.revokeToken(user.sid, token.tokenFingerprint);
-        expect(responseDelete.statusCode).toEqual(200);
+        expect(responseDelete).toHaveStatus(200);
 
         const tokens1 = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
         expect(tokens1, 'Token shall be removed').toIncludeSameMembers([]);
 
         const response2 = await api.request.loginWithToken(null, null, null, token.token, false);
-        expect(response2.statusCode).toEqual(200);
+        expect(response2).toHaveStatus(200);
         expect(getPageRedirectUrl(response2.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );

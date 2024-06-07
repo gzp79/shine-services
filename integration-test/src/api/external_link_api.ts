@@ -15,7 +15,7 @@ export class ExternalLinkAPI {
     async getExternalLinks(sid: string, extraHeaders?: Record<string, string>): Promise<ExternalLink[]> {
         let response = await this.request.getExternalLinks(sid).set(extraHeaders ?? {});
 
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
 
         response.body?.links?.forEach((l: ExternalLink) => {
             l.linkedAt = new Date(l.linkedAt);
@@ -35,7 +35,7 @@ export class ExternalLinkAPI {
             return false;
         }
 
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         return true;
     }
 }

@@ -205,7 +205,7 @@ impl AuthServiceState {
 
         let mut context = tera::Context::new();
         context.insert("timeout", &self.page_redirect_time());
-        context.insert("redirect_url", target.as_str());
+        context.insert("redirectUrl", target.as_str());
         context.insert("statusCode", &status.as_u16());
         context.insert("type", kind);
         if self.page_error_detail() {
@@ -248,7 +248,7 @@ impl AuthServiceState {
         context.insert("timeout", &self.page_redirect_time());
         context.insert("title", self.app_name());
         context.insert("target", target);
-        context.insert("redirect_url", redirect_url.unwrap_or(self.home_url()).as_str());
+        context.insert("redirectUrl", redirect_url.unwrap_or(self.home_url()).as_str());
         let html = self
             .tera()
             .render("redirect.html", &context)

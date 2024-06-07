@@ -16,7 +16,7 @@ time = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 url = "2.3"
 uuid = { version = "1.3", features = ["v4", "serde"] }
-base64 = "0.21"
+base64 = "0.22"
 bytes = "1.0"
 rand = "0.8"
 hex = "0.4"
@@ -31,25 +31,25 @@ async-once-cell = "0.5"
 tokio = {version = "1.34", features = ["macros", "rt-multi-thread", "signal"] }
 
 bb8 = "0.8"
-oauth2 = "4.3"
+oauth2 = "4.4"
 reqwest = { version = "0.11", features = ["json"] }
-openidconnect = "3.0"
+openidconnect = "3.4"
 
 bb8-postgres = "0.8"
 tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-chrono-0_4", "runtime"] }
-tokio-rustls = "0.25"
-tokio-postgres-rustls = "0.10"
+tokio-rustls = "0.26"
+tokio-postgres-rustls = "0.12"
 postgres-from-row = "0.5"
 refinery = { version = "0.8", features = ["tokio-postgres"] }
 
-bb8-redis = "0.14"
-redis = { version = "0.24.0", features = ["tokio-comp", "tokio-rustls-comp"] }
+bb8-redis = "0.15"
+redis = { version = "0.25.0", features = ["tokio-comp", "tokio-rustls-comp"] }
 
-azure_core = { version = "0.17" }
-azure_identity = { version = "0.17" }
+azure_core = { version = "0.20" }
+azure_identity = { version = "0.20" }
 
-validator = { version = "0.16", features = ["derive"] }
-tera = "1.18"
+validator = { version = "0.18", features = ["derive"] }
+tera = "1.20"
 
 tracing = "0.1"
 tracing-log = "0.2"
@@ -60,7 +60,7 @@ axum-server = { version = "0.6", features = ["tls-rustls"] }
 axum-extra = { version = "0.9", features = ["cookie", "cookie-signed", "cookie-private", "typed-header"] }
 
 utoipa = { version = "4.1", features = ["axum_extras", "uuid", "chrono"] }
-utoipa-swagger-ui = { version = "5.0", features = ["axum"] }
+utoipa-swagger-ui = { version = "7.1", features = ["axum"] }
 
 shine-service = { path = "./shine-service-rs/shine-service", version = "0.1.0" }
 

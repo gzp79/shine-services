@@ -14,7 +14,7 @@ export class SessionAPI {
 
     async getSessions(sid: string, extraHeaders?: Record<string, string>): Promise<ActiveSession[]> {
         let response = await this.request.getSessions(sid).set(extraHeaders ?? {});
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
 
         response.body?.sessions?.forEach((s: ActiveSession) => {
             s.createdAt = new Date(s.createdAt);

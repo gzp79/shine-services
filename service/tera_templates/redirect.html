@@ -3,13 +3,13 @@
 
 <head>
   {% if timeout >= 0 %}
-  <meta http-equiv="refresh" content="{{timeout}}; url='{{ redirect_url | safe }}'" />
+  <meta http-equiv="refresh" content="{{timeout}}; url='{{ redirectUrl | safe }}'" />
   {% endif %}
 </head>
 
 <body>
   <h1 class="header-text">{{ title }}</h1>
-  <p>Redirecting to <a href='{{ redirect_url | safe }}'> {{ target }} </a> ...</p>
+  <p>Redirecting to <a href='{{ redirectUrl | safe }}'> {{ target }} </a> ...</p>
 </body>
 
 </html>

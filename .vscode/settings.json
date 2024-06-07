@@ -9,7 +9,9 @@
   },
   "jestrunner.codeLensSelector": "**/*.{ts}",
   "cSpell.words": [
+    "asyncness",
     "autoescape",
+    "bindgen",
     "Buildx",
     "cacerts",
     "cfhistu",

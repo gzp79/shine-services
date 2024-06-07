@@ -3,7 +3,7 @@
 
 <head>
   {% if timeout >= 0 %}
-  <meta http-equiv="refresh" content="{{timeout}}; url='{{ redirect_url | safe }}'" />
+  <meta http-equiv="refresh" content="{{timeout}}; url='{{ redirectUrl | safe }}'" />
   {% endif %}
 </head>
 
@@ -11,7 +11,7 @@
   <h1 class="header-text">Something went wrong!</h1>
   <h2>Code: {{statusCode}}</h2>
   <h2>Type: {{type}}</h2>
-  <p>Back to <a href='{{ redirect_url | safe }}'> safety </a> ... </p>
+  <p>Back to <a href='{{ redirectUrl | safe }}'> safety </a> ... </p>
   <h2>Details</h2>
   <div>{{detail}}</div>
 </body>

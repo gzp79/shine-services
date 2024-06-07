@@ -42,7 +42,7 @@ describe('Access to user role management', () => {
             let target = users[test.targetUser];
             const sid = test.user ? users[test.user].sid : null;
             const response = await api.request.getRoles(sid, test.apiKey, target.userId);
-            expect(response.statusCode).toEqual(test.expectedCode);
+            expect(response).toHaveStatus(test.expectedCode);
         }
     );
 
@@ -57,7 +57,7 @@ describe('Access to user role management', () => {
                 target.userId,
                 'Role_' + randomUUID()
             );
-            expect(response.statusCode).toEqual(test.expectedCode);
+            expect(response).toHaveStatus(test.expectedCode);
         }
     );
 
@@ -67,7 +67,7 @@ describe('Access to user role management', () => {
             let target = users[test.targetUser];
             const sid = test.user ? users[test.user].sid : null;
             const response = await api.request.deleteRole(sid, test.apiKey, target.userId, 'Role2');
-            expect(response.statusCode).toEqual(test.expectedCode);
+            expect(response).toHaveStatus(test.expectedCode);
         }
     );
 });
@@ -81,17 +81,17 @@ describe('User roles', () => {
 
     it('Getting role of non-existing user shall fail', async () => {
         let response = await api.request.getRoles(admin.sid, false, randomUUID());
-        expect(response.statusCode).toEqual(404);
+        expect(response).toHaveStatus(404);
     });
 
     it('Setting role of non-existing user shall fail', async () => {
         let response = await api.request.addRole(admin.sid, false, randomUUID(), 'Role1');
-        expect(response.statusCode).toEqual(404);
+        expect(response).toHaveStatus(404);
     });
 
     it('Deleting role of non-existing user shall fail', async () => {
         let response = await api.request.deleteRole(admin.sid, false, randomUUID(), 'Role1');
-        expect(response.statusCode).toEqual(404);
+        expect(response).toHaveStatus(404);
     });
 
     it('A complex flow with add, get, delete shall work', async () => {
