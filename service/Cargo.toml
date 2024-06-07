@@ -31,9 +31,9 @@ async-once-cell = "0.5"
 tokio = {version = "1.34", features = ["macros", "rt-multi-thread", "signal"] }
 
 bb8 = "0.8"
-oauth2 = "4.3"
+oauth2 = "4.4"
 reqwest = { version = "0.11", features = ["json"] }
-openidconnect = "3.0"
+openidconnect = "3.4"
 
 bb8-postgres = "0.8"
 tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-chrono-0_4", "runtime"] }
@@ -49,7 +49,7 @@ azure_core = { version = "0.20" }
 azure_identity = { version = "0.20" }
 
 validator = { version = "0.18", features = ["derive"] }
-tera = "1.18"
+tera = "1.20"
 
 tracing = "0.1"
 tracing-log = "0.2"

@@ -33,7 +33,7 @@ describe('Sessions', () => {
 
     it('Get token without a session shall fail', async () => {
         let response = await api.request.getSessions(null);
-        expect(response.statusCode).toEqual(401);
+        expect(response).toHaveStatus(401);
     });
 
     it('Session shall keep the site info', async () => {

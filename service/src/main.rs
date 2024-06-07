@@ -29,7 +29,6 @@ use tokio::{
     net::TcpListener,
     runtime::{Handle as RtHandle, Runtime},
     signal,
-    time::sleep,
 };
 use tower_http::{
     cors::CorsLayer,

@@ -12,7 +12,7 @@ export class UserAPI {
 
     async getUserInfo(sid: string, extraHeaders?: Record<string, string>): Promise<UserInfo> {
         let response = await this.request.getUserInfo(sid).set(extraHeaders ?? {});
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         //expect(response.body).toBeInstanceOf(UserInfo);
         return response.body;
     }
@@ -24,7 +24,7 @@ export class UserAPI {
         extraHeaders?: Record<string, string>
     ): Promise<string[]> {
         let response = await this.request.getRoles(sid, masterKey, userId).set(extraHeaders ?? {});
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         return response.body.roles;
     }
 
@@ -43,7 +43,7 @@ export class UserAPI {
             return result;
         } else {
             let response = await this.request.addRole(sid, masterKey, userId, role).set(extraHeaders ?? {});
-            expect(response.statusCode).toEqual(200);
+            expect(response).toHaveStatus(200);
             return response.body.roles;
         }
     }
@@ -65,7 +65,7 @@ export class UserAPI {
             let response = await this.request
                 .deleteRole(sid, masterKey, userId, role)
                 .set(extraHeaders ?? {});
-            expect(response.statusCode).toEqual(200);
+            expect(response).toHaveStatus(200);
             return response.body.roles;
         }
     }

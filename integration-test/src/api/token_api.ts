@@ -27,7 +27,7 @@ export class TokenAPI {
 
     async getTokens(sid: string, extraHeaders?: Record<string, string>): Promise<ActiveToken[]> {
         let response = await this.request.getTokens(sid).set(extraHeaders ?? {});
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
 
         response.body?.tokens?.forEach((t: ActiveToken) => {
             t.createdAt = new Date(t.createdAt);
@@ -47,7 +47,7 @@ export class TokenAPI {
             .createToken(sid, 'singleAccess', duration, bindToSite)
             .set(extraHeaders ?? {});
 
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(response.body.kind).toEqual('singleAccess');
 
         response.body.expireAt = new Date(response.body.expireAt as string);
@@ -64,7 +64,7 @@ export class TokenAPI {
             .createToken(sid, 'persistent', duration, bindToSite)
             .set(extraHeaders ?? {});
 
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(response.body.tokenType).toEqual('Bearer');
         expect(response.body.kind).toEqual('persistent');
 

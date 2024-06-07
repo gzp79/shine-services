@@ -32,7 +32,7 @@ describe('Check OAuth2 auth', () => {
         await startMock();
         const response = await api.request.authorizeWithOAuth2(null, null, null, null);
 
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             'https://web.sandbox.com:8080/error?type=authError&status=400'
         );
@@ -54,7 +54,7 @@ describe('Check OAuth2 auth', () => {
             authParams.state,
             ExternalUser.newRandomUser().toCode()
         );
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             'https://web.sandbox.com:8080/error?type=authError&status=400'
         );
@@ -71,7 +71,7 @@ describe('Check OAuth2 auth', () => {
         const { eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
         const response = await api.request.authorizeWithOAuth2(null, eid, null, null);
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=invalidInput&status=400'
         );
@@ -93,7 +93,7 @@ describe('Check OAuth2 auth', () => {
             'invalid',
             ExternalUser.newRandomUser().toCode()
         );
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=400'
         );
@@ -110,7 +110,7 @@ describe('Check OAuth2 auth', () => {
         const { authParams, eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
         const response = await api.request.authorizeWithOAuth2(null, eid, authParams.state, 'invalid');
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=500'
         );
@@ -133,7 +133,7 @@ describe('Check OAuth2 auth', () => {
             authParams.state,
             ExternalUser.newRandomUser().toCode()
         );
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=500'
         );
@@ -169,7 +169,7 @@ describe('Login with OAuth2', () => {
         const { sid } = await api.auth.loginAsGuestUser();
 
         const response = await api.request.loginWithOAuth2(null, sid, null);
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
         );
@@ -187,7 +187,7 @@ describe('Login with OAuth2', () => {
         await api.auth.logout(sid, false);
 
         const response = await api.request.loginWithOAuth2(null, sid, null);
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock!.getUrlFor('authorize'));
 
@@ -201,7 +201,7 @@ describe('Login with OAuth2', () => {
         const { tid } = await api.auth.loginAsGuestUser();
 
         const response = await api.request.loginWithOAuth2(tid, null, null);
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
 
@@ -215,7 +215,7 @@ describe('Login with OAuth2', () => {
         const { tid, sid } = await api.auth.loginAsGuestUser();
 
         const response = await api.request.loginWithOAuth2(tid, sid, null);
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
         );
@@ -261,7 +261,7 @@ describe('Login with OAuth2', () => {
             start.authParams.state,
             newUser.toCode()
         );
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=emailAlreadyUsed&status=409'
         );
@@ -297,7 +297,7 @@ describe('Link to OAuth2 account', () => {
 
     it('Linking without a session shall fail', async () => {
         const response = await api.request.linkWithOAuth2(null);
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=loginRequired&status=401'
         );
@@ -314,7 +314,7 @@ describe('Link to OAuth2 account', () => {
             start.authParams.state,
             newUser.toCode()
         );
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
     });
 
@@ -328,7 +328,7 @@ describe('Link to OAuth2 account', () => {
             start.authParams.state,
             user.externalUser!.toCode()
         );
-        expect(response.statusCode).toEqual(200);
+        expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=providerAlreadyUsed&status=409'
         );
