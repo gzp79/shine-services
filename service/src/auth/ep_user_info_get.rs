@@ -22,6 +22,7 @@ struct CurrentUserInfo {
     user_id: Uuid,
     name: String,
     is_email_confirmed: bool,
+    is_linked: bool,
     session_length: u64,
     roles: Vec<String>,
 }
@@ -61,12 +62,19 @@ async fn user_info_get(
         user.into_user()
     };
 
+    let is_linked = state
+        .identity_manager()
+        .is_linked(user.user_id)
+        .await
+        .map_err(Problem::internal_error_from)?;
+
     let session_length = (Utc::now() - user.session_start).num_seconds();
     let session_length = if session_length < 0 { 0 } else { session_length as u64 };
     Ok(Json(CurrentUserInfo {
         user_id: user.user_id,
         name: user.name,
         is_email_confirmed: identity.is_email_confirmed,
+        is_linked: is_linked,
         session_length,
         roles: user.roles,
     }))

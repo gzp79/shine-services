@@ -46,7 +46,7 @@ async fn external_link_list(
 ) -> Result<Json<LinkedExternalProviders>, Problem> {
     let links = state
         .identity_manager()
-        .list_find_links(user.user_id)
+        .list_links(user.user_id)
         .await
         .map_err(Problem::internal_error_from)?
         .into_iter()

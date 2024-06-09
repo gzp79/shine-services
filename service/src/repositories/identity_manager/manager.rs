@@ -132,7 +132,16 @@ impl IdentityManager {
             .await
     }
 
-    pub async fn list_find_links(&self, user_id: Uuid) -> Result<Vec<ExternalLink>, IdentityError> {
+    pub async fn is_linked(&self, user_id: Uuid) -> Result<bool, IdentityError> {
+        let inner = &*self.0;
+        let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
+
+        ExternalLinks::new(&client, &inner.stmts_external_links)
+            .is_linked(user_id)
+            .await
+    }
+
+    pub async fn list_links(&self, user_id: Uuid) -> Result<Vec<ExternalLink>, IdentityError> {
         let inner = &*self.0;
         let client = inner.postgres.get().await.map_err(DBError::PGPoolError)?;
 
