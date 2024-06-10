@@ -17,7 +17,8 @@
         "port": 443,
         "allowOrigins": [
             "https://local.scytta.com"
-        ]
+        ],
+        "fullProblemResponse": true
     },
     "auth": {
         "authBaseUrl": "https://local.scytta.com/identity/auth/",

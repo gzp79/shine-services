@@ -10,7 +10,8 @@
         "port": 7080,
         "allowedOrigins": [
             "^https:\\/\\/([a-zA-Z0-9-]+\\.)*sandbox\\.com(:[0-9]+)?$"
-        ]
+        ],
+        "fullProblemResponse": true
     },
     "telemetry": {
         "allowReconfigure": true,

@@ -4,7 +4,8 @@
         "port": 80,
         "allowedOrigins": [
 			"^https:\\/\\/([a-zA-Z0-9-]+\\.)+scytta\\.com(:\\d+)?$"
-        ]
+        ],
+        "fullProblemResponse": false
     },
     "telemetry": {
         "allowReconfigure": true,

@@ -8,8 +8,7 @@ const config = {
     },
     moduleNameMapper: pathsToModuleNameMapper(compilerOptions.paths, { prefix: '<rootDir>' }),
     setupFilesAfterEnv: ['<rootDir>/jest-setup/extensions.ts'],
-     reporters: [
-         'default',
+     reporters: [         
         [
             'jest-junit',
             {
@@ -18,7 +17,8 @@ const config = {
                 outputDirectory: './reports',
                 usePathForSuiteName: true
             }
-        ]
+        ],
+        'default'
     ]
 };
 
