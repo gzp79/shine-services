@@ -1,10 +1,12 @@
 use crate::{
     identity,
-    repositories::{AutoNameManager, DBPool, IdentityManager, Permission, PermissionSet, SessionManager},
+    repositories::{
+        AutoNameManager, DBPool, IdentityManager, Permission, PermissionError, PermissionSet, SessionManager,
+    },
 };
 use axum::Router;
 use shine_service::{
-    axum::{telemetry::TelemetryManager, ApiRoute, Problem},
+    axum::{telemetry::TelemetryManager, ApiRoute},
     service::CurrentUser,
 };
 use std::sync::Arc;
@@ -47,10 +49,12 @@ impl IdentityServiceState {
         &self.0.db
     }
 
-    pub async fn require_permission(&self, current_user: &CurrentUser, permission: Permission) -> Result<(), Problem> {
-        PermissionSet::from(current_user)
-            .require(permission)
-            .map_err(Problem::from)?;
+    pub async fn require_permission(
+        &self,
+        current_user: &CurrentUser,
+        permission: Permission,
+    ) -> Result<(), PermissionError> {
+        PermissionSet::from(current_user).require(permission)?;
         Ok(())
     }
 }

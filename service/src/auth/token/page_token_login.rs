@@ -11,7 +11,7 @@ use axum_extra::{
 };
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, InputError, SiteInfo, ValidatedQuery},
+    axum::{ApiEndpoint, ApiMethod, InputError, ProblemDetail, SiteInfo, ValidatedQuery},
     service::{ClientFingerprint, CurrentUser},
 };
 use url::Url;
@@ -325,7 +325,7 @@ async fn authenticate(
 
 async fn token_login(
     State(state): State<AuthServiceState>,
-    query: Result<ValidatedQuery<Query>, InputError>,
+    query: Result<ValidatedQuery<Query>, ProblemDetail<InputError>>,
     auth_header: Result<TypedHeader<Authorization<Bearer>>, TypedHeaderRejection>,
     mut auth_session: AuthSession,
     fingerprint: ClientFingerprint,
@@ -333,7 +333,7 @@ async fn token_login(
 ) -> Result<AuthPage, AuthPage> {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return Err(state.page_error(auth_session, AuthError::InputError(error), None)),
+        Err(error) => return Err(state.page_error(auth_session, AuthError::InputError(error.problem), None)),
     };
 
     // clear external login cookie, it shall be only for the authorize callback from the external provider

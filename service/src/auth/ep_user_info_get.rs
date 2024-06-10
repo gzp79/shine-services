@@ -3,10 +3,10 @@ use axum::{extract::State, http::StatusCode, Extension, Json};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig, ProblemDetail, ValidatedQuery},
+    axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig, ValidatedQuery},
     service::CheckedCurrentUser,
 };
-use std::sync::Arc;
+use url::Url;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
@@ -32,23 +32,18 @@ struct CurrentUserInfo {
 /// from javascript, thus this endpoint can be used to get details about the current user.
 async fn user_info_get(
     State(state): State<AuthServiceState>,
-    Extension(problem_config): Extension<Arc<ProblemConfig>>,
+    Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     ValidatedQuery(query): ValidatedQuery<Query>,
-) -> Result<Json<CurrentUserInfo>, ProblemDetail> {
+) -> Result<Json<CurrentUserInfo>, Problem> {
     // find extra information not present in the session data
     let identity = state
         .identity_manager()
         .find_by_id(user.user_id)
         .await
-        .map_err(|err| ProblemDetail::from(&problem_config, Problem::internal_error_from(err)))?
+        .map_err(|err| Problem::internal_error(&problem_config, "Failed to get user", err))?
         //in the very unlikely case, when the identity is deleted just after session validation, a not found is returned.
-        .ok_or_else(|| {
-            ProblemDetail::from(
-                &problem_config,
-                Problem::not_found().with_instance(format!("{{auth_api}}/identities/{}", user.user_id)),
-            )
-        })?;
+        .ok_or_else(|| Problem::not_found().with_instance_str(format!("{{auth_api}}/identities/{}", user.user_id)))?;
 
     // make sure the redis is updated
     let user = if query.refresh.unwrap_or(false) {
@@ -56,24 +51,19 @@ async fn user_info_get(
             .identity_manager()
             .get_roles(user.user_id)
             .await
-            .map_err(|err| ProblemDetail::from(&problem_config, Problem::internal_error_from(err)))?
+            .map_err(|err| Problem::internal_error(&problem_config, "Failed to get roles", err))?
             .ok_or_else(|| {
-                ProblemDetail::from(
-                    &problem_config,
-                    Problem::not_found().with_instance(format!("{{auth_api}}/identities/{}", user.user_id)),
-                )
+                Problem::not_found().with_instance_str(format!("{{auth_api}}/identities/{}", user.user_id))
             })?;
 
         state
             .session_manager()
             .update(user.key, &identity, &roles)
             .await
-            .map_err(|err| ProblemDetail::from(&problem_config, Problem::internal_error_from(err)))?
+            .map_err(|err| Problem::internal_error(&problem_config, "Failed to get session", err))?
             .ok_or_else(|| {
-                ProblemDetail::from(
-                    &problem_config,
-                    Problem::not_found().with_instance(format!("{{auth_api}}/identities/{}", user.user_id)),
-                )
+                let url = Url::parse(&format!("{{auth_api}}/identities/{}", user.user_id)).ok();
+                Problem::not_found().with_instance(url)
             })?
     } else {
         user.into_user()
@@ -83,7 +73,7 @@ async fn user_info_get(
         .identity_manager()
         .is_linked(user.user_id)
         .await
-        .map_err(|err| ProblemDetail::from(&problem_config, Problem::internal_error_from(err)))?;
+        .map_err(|err| Problem::internal_error(&problem_config, "Failed to get link info", err))?;
 
     let session_length = (Utc::now() - user.session_start).num_seconds();
     let session_length = if session_length < 0 { 0 } else { session_length as u64 };
@@ -91,7 +81,7 @@ async fn user_info_get(
         user_id: user.user_id,
         name: user.name,
         is_email_confirmed: identity.is_email_confirmed,
-        is_linked: is_linked,
+        is_linked,
         session_length,
         roles: user.roles,
     }))

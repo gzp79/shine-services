@@ -47,6 +47,8 @@ pub struct ServiceConfig {
     pub port: u16,
     /// Regular expression for the allowed origins.
     pub allowed_origins: Vec<String>,
+    /// Indicates if the full problem response should be returned. In production, it should be `false`.
+    pub full_problem_response: bool,
 }
 
 impl ServiceConfig {

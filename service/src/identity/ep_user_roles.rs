@@ -3,14 +3,14 @@ use crate::{
     openapi::ApiKind,
     repositories::{Permission, PermissionError, Role},
 };
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, http::StatusCode, Extension, Json};
 use axum_extra::{
     headers::{authorization::Bearer, Authorization},
     TypedHeader,
 };
 use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem, ValidatedJson, ValidatedPath},
+    axum::{ApiEndpoint, ApiMethod, IntoProblem, Problem, ProblemConfig, ValidatedJson, ValidatedPath},
     service::CheckedCurrentUser,
 };
 use utoipa::{IntoParams, ToSchema};
@@ -45,6 +45,7 @@ struct AddUserRole {
 
 async fn add_user_role(
     State(state): State<IdentityServiceState>,
+    Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     auth_key: Option<TypedHeader<Authorization<Bearer>>>,
     ValidatedPath(path): ValidatedPath<Path>,
@@ -56,21 +57,26 @@ async fn add_user_role(
     ) {
         log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
-            return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into());
+            return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into_problem(&problem_config));
         }
     } else {
         log::trace!("Using cookie");
-        state.require_permission(&user, Permission::UpdateAnyUserRole).await?;
+        state
+            .require_permission(&user, Permission::UpdateAnyUserRole)
+            .await
+            .map_err(|err| err.into_problem(&problem_config))?;
     }
 
     state
         .identity_manager()
         .add_role(path.user_id, &params.role)
         .await
-        .map_err(Problem::internal_error_from)?
-        .ok_or_else(|| Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", path.user_id)))?;
+        .map_err(|err| Problem::internal_error(&problem_config, "Failed to add role", err))?
+        .ok_or_else(|| {
+            Problem::not_found().with_instance_str(format!("{{identity_api}}/identities/{}", path.user_id))
+        })?;
 
-    let (_, roles) = state.update_session(path.user_id).await?;
+    let (_, roles) = state.update_session(path.user_id, &problem_config).await?;
     Ok(Json(UserRoles { roles }))
 }
 
@@ -87,6 +93,7 @@ pub fn ep_add_user_role() -> ApiEndpoint<IdentityServiceState> {
 
 async fn get_user_roles(
     State(state): State<IdentityServiceState>,
+    Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     auth_key: Option<TypedHeader<Authorization<Bearer>>>,
     ValidatedPath(path): ValidatedPath<Path>,
@@ -97,19 +104,24 @@ async fn get_user_roles(
     ) {
         log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
-            return Err(PermissionError::MissingPermission(Permission::ReadAnyUserRole).into());
+            return Err(PermissionError::MissingPermission(Permission::ReadAnyUserRole).into_problem(&problem_config));
         }
     } else {
         log::trace!("Using cookie");
-        state.require_permission(&user, Permission::ReadAnyUserRole).await?;
+        state
+            .require_permission(&user, Permission::ReadAnyUserRole)
+            .await
+            .map_err(|err| err.into_problem(&problem_config))?;
     }
 
     let roles = state
         .identity_manager()
         .get_roles(path.user_id)
         .await
-        .map_err(Problem::internal_error_from)?
-        .ok_or_else(|| Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", path.user_id)))?;
+        .map_err(|err| Problem::internal_error(&problem_config, "Failed to get roles", err))?
+        .ok_or_else(|| {
+            Problem::not_found().with_instance_str(format!("{{identity_api}}/identities/{}", path.user_id))
+        })?;
 
     Ok(Json(UserRoles { roles }))
 }
@@ -136,6 +148,7 @@ struct DeleteUserRole {
 
 async fn delete_user_role(
     State(state): State<IdentityServiceState>,
+    Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     auth_key: Option<TypedHeader<Authorization<Bearer>>>,
     ValidatedPath(path): ValidatedPath<Path>,
@@ -147,21 +160,26 @@ async fn delete_user_role(
     ) {
         log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key).unwrap_or(false) {
-            return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into());
+            return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into_problem(&problem_config));
         }
     } else {
         log::trace!("Using cookie");
-        state.require_permission(&user, Permission::UpdateAnyUserRole).await?;
+        state
+            .require_permission(&user, Permission::UpdateAnyUserRole)
+            .await
+            .map_err(|err| err.into_problem(&problem_config))?;
     }
 
     state
         .identity_manager()
         .delete_role(path.user_id, &params.role)
         .await
-        .map_err(Problem::internal_error_from)?
-        .ok_or_else(|| Problem::not_found().with_instance(format!("{{identity_api}}/identities/{}", path.user_id)))?;
+        .map_err(|err| Problem::internal_error(&problem_config, "Failed to delete role", err))?
+        .ok_or_else(|| {
+            Problem::not_found().with_instance_str(format!("{{identity_api}}/identities/{}", path.user_id))
+        })?;
 
-    let (_, roles) = state.update_session(path.user_id).await?;
+    let (_, roles) = state.update_session(path.user_id, &problem_config).await?;
     Ok(Json(UserRoles { roles }))
 }
 

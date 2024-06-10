@@ -7,7 +7,7 @@ use crate::{
 use axum::{extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, ValidatedQuery};
+use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, ProblemDetail, ValidatedQuery};
 use std::sync::Arc;
 use url::Url;
 use utoipa::IntoParams;
@@ -26,11 +26,11 @@ async fn oauth2_login(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
     mut auth_session: AuthSession,
-    query: Result<ValidatedQuery<Query>, InputError>,
+    query: Result<ValidatedQuery<Query>, ProblemDetail<InputError>>,
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return state.page_error(auth_session, AuthError::InputError(error), None),
+        Err(error) => return state.page_error(auth_session, AuthError::InputError(error.problem), None),
     };
 
     // Note: having a token login is not an error, on successful start of the flow, the token cookie is cleared

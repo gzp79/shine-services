@@ -20,7 +20,10 @@ use axum_server::Handle;
 use chrono::Duration;
 use openapi::ApiKind;
 use shine_service::{
-    axum::{add_default_components, telemetry::TelemetryManager, ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy},
+    axum::{
+        add_default_components, telemetry::TelemetryManager, ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy,
+        ProblemConfig,
+    },
     service::UserSessionValidator,
 };
 use std::{env, fs, net::SocketAddr, time::Duration as StdDuration};
@@ -117,6 +120,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let db_pool = DBPool::new(&config.db).await?;
     let user_session = UserSessionValidator::new(None, &auth_config.session_secret, "", db_pool.redis.clone())?;
+    let problem_config = ProblemConfig::new(config.service.full_problem_response);
     let identity_manager = IdentityManager::new(&db_pool.postgres).await?;
     let ttl_session = Duration::seconds(i64::try_from(auth_config.ttl_session)?);
     let session_manager = SessionManager::new(&db_pool.redis, String::new(), ttl_session).await?;
@@ -168,6 +172,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         .merge(auth_api)
         .merge(swagger)
         .layer(user_session.into_layer())
+        .layer(problem_config.into_layer())
         .layer(powered_by)
         .layer(cors)
         .layer(telemetry_layer)
