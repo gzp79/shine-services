@@ -5,6 +5,7 @@ export interface UserInfo {
     name: string;
     sessionLength: number;
     roles: string[];
+    isLinked: boolean;
 }
 
 export class UserAPI {

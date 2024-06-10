@@ -15,8 +15,8 @@ mod ep_token;
 pub use self::ep_token::*;
 mod ep_external_link;
 pub use self::ep_external_link::*;
-mod ep_user_info_get;
-pub use self::ep_user_info_get::*;
+mod ep_user_info;
+pub use self::ep_user_info::*;
 
 mod oauth2;
 pub(in crate::auth) use self::oauth2::*;
