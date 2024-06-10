@@ -342,6 +342,30 @@ describe('Link to OpenId account', () => {
         );
     });
 
+    it('Linking guest shall succeed', async () => {
+        const user = await TestUser.createGuest();
+        expect(user.userInfo!.isLinked).toBeFalse();
+
+        const externalUser = new ExternalUser(
+            randomUUID(),
+            randomUUID(),
+            generateRandomString(5) + '@example.com'
+        );
+        const start = await api.auth.startLinkWithOpenId(mock, user.sid);
+        const response = await api.request.authorizeWithOpenId(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            externalUser.toCode({ nonce: start.authParams.nonce })
+        );
+        expect(response).toHaveStatus(200);
+        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
+
+        user.externalUser = externalUser;
+        await user.refreshUserInfo();
+        expect(user.userInfo!.isLinked).toBeTrue();
+    });
+
     it('Linking with occupied email shall succeed', async () => {
         const user = await TestUser.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
         const newUser = new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email);

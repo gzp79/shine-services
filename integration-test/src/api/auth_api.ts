@@ -81,7 +81,6 @@ export class AuthAPI {
 
         const authParams = redirectUrl!.parseQueryParamsFromUrl();
         expect(authParams.redirect_uri).toEqual(this.config.getUrlFor('identity/auth/oauth2_flow/auth'));
-        console.log(authParams);
         return {
             authParams,
             tid: cookies.tid?.value,
@@ -183,9 +182,7 @@ export class AuthAPI {
         expect(cookies.sid).toBeClearCookie();
         expect(cookies.eid).toBeValidEID();
 
-        console.log(redirectUrl);
         const authParams = redirectUrl!.parseQueryParamsFromUrl();
-        console.log(authParams);
         expect(authParams.redirect_uri).toEqual(this.config.getUrlFor('identity/auth/openid_flow/auth'));
         return {
             authParams,

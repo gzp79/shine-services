@@ -192,35 +192,29 @@ describe('Tokens', () => {
     it('Token rotation with lost response shall work', async () => {
         const user = await TestUser.createGuest();
         const c0 = parseSignedCookie(user.tid!); //active: t1, revoke: -
-        console.log('c0', c0);
         expect(c0.rky).toBeNull();
         const tid = user.tid!;
 
         await user.rotateTID();
         const c1 = parseSignedCookie(user.tid!); // active: t2, revoke: t1
-        console.log('c1', c1);
         expect(c1.rky).toEqual(c0.key);
 
         // Emulate a few lost responses by using the
         const l2 = await api.auth.loginWithToken(user.tid!, false);
         const c2 = parseSignedCookie(l2.tid); // active: t3, revoke: t2
-        console.log('c2', c2);
         expect(c2.rky).toEqual(c1.key);
 
         const l3 = await api.auth.loginWithToken(user.tid!, false);
         const c3 = parseSignedCookie(l3.tid); // active: t4, revoke: t2
-        console.log('c3', c3);
         expect(c3.rky).toEqual(c1.key);
 
         // Get back to the normal operation
         await user.rotateTID();
         const c4 = parseSignedCookie(user.tid!); // active: t5, revoke: t2
-        console.log('c4', c4);
         expect(c4.rky).toEqual(c1.key);
 
         await user.rotateTID();
         const c5 = parseSignedCookie(user.tid!); // active: t6, revoke: t5
-        console.log('c5', c5);
         expect(c5.rky).toEqual(c4.key);
 
         // Token rotated out shall not work
@@ -323,6 +317,7 @@ describe('Created token', () => {
             kind: [expect.objectContaining({ code: 'oneOf', message: 'Access tokens are not allowed' })]
         })
     ];
+
     it.each(inputValidationCases)(
         'Token creation with(kind: $kind, duration:$duration, bindToSite: $bindToSite) shall be rejected with $expectedError',
         async (test) => {
@@ -333,10 +328,8 @@ describe('Created token', () => {
                 test.bindToSite
             );
             expect(response).toHaveStatus(400);
-            expect(response.body).toEqual({
-                type: 'validation_error',
-                detail: test.expectedError
-            });
+            expect(response.body.type).toEqual('validation_error');
+            expect(response.body.extension).toEqual(test.expectedError);
         }
     );
 });
@@ -372,7 +365,6 @@ describe('Single access token', () => {
 
     it('A successful login with a single access token shall change the current user', async () => {
         const token = await api.token.createSAToken(user.sid, 120, false);
-        console.log('token:', token);
 
         const response = await api.request.loginWithToken(null, null, token.token, null, false);
         expect(response).toHaveStatus(200);
@@ -517,7 +509,6 @@ describe('Persistent token', () => {
 
     it('A successful login with a persistent token shall change the current user', async () => {
         const token = await api.token.createPersistentToken(user.sid, 120, false);
-        console.log('token:', token);
 
         const response = await api.request.loginWithToken(null, null, null, token.token, false);
         expect(response).toHaveStatus(200);

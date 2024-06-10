@@ -1,9 +1,9 @@
 use crate::{identity::IdentityServiceState, openapi::ApiKind, repositories::Permission};
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, http::StatusCode, Extension, Json};
 use bb8::State as BB8PoolState;
 use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem},
+    axum::{ApiEndpoint, ApiMethod, IntoProblem, Problem, ProblemConfig},
     service::CheckedCurrentUser,
 };
 use utoipa::ToSchema;
@@ -54,15 +54,20 @@ pub struct Request {
 
 async fn reconfigure_telemetry(
     State(state): State<IdentityServiceState>,
+    Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     Json(format): Json<Request>,
 ) -> Result<(), Problem> {
-    state.require_permission(&user, Permission::UpdateTrace).await?;
+    state
+        .require_permission(&user, Permission::UpdateTrace)
+        .await
+        .map_err(|err| err.into_problem(&problem_config))?;
+
     log::trace!("config: {:#?}", format);
     state
         .telemetry_manager()
         .reconfigure(format.filter)
-        .map_err(Problem::internal_error_from)?;
+        .map_err(|err| Problem::internal_error(&problem_config, "Failed to update configuration", err))?;
 
     Ok(())
 }

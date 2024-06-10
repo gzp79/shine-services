@@ -3,11 +3,11 @@ use crate::{
     openapi::ApiKind,
     repositories::{IdentityKind, Permission, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_COUNT},
 };
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, http::StatusCode, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem, ValidatedQuery},
+    axum::{ApiEndpoint, ApiMethod, IntoProblem, Problem, ProblemConfig, ValidatedQuery},
     service::CheckedCurrentUser,
 };
 use utoipa::{IntoParams, ToSchema};
@@ -41,10 +41,14 @@ struct IdentitySearchPage {
 
 async fn search_identity(
     State(state): State<IdentityServiceState>,
+    Extension(problem_config): Extension<ProblemConfig>,
     ValidatedQuery(query): ValidatedQuery<Query>,
     user: CheckedCurrentUser,
 ) -> Result<Json<IdentitySearchPage>, Problem> {
-    state.require_permission(&user, Permission::ReadAnyIdentity).await?;
+    state
+        .require_permission(&user, Permission::ReadAnyIdentity)
+        .await
+        .map_err(|err| err.into_problem(&problem_config))?;
 
     let identities = state
         .identity_manager()
@@ -56,7 +60,7 @@ async fn search_identity(
             names: None,
         })
         .await
-        .map_err(Problem::internal_error_from)?;
+        .map_err(|err| Problem::internal_error(&problem_config, "Failed to find identities", err))?;
     log::info!("identities: {:?}", identities);
 
     let identities = identities

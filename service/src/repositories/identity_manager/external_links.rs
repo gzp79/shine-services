@@ -1,5 +1,6 @@
 use crate::repositories::{Identity, IdentityBuildError, IdentityError, IdentityKind};
 use chrono::{DateTime, Utc};
+use futures::FutureExt;
 use postgres_from_row::FromRow;
 use shine_service::{
     pg_query,
@@ -88,10 +89,22 @@ pg_query!( DeleteLink =>
     "#
 );
 
+pg_query!( ExistsByUserId =>
+    in = user_id: Uuid;
+    out = is_linked: bool;
+    sql = r#"
+        SELECT
+            CASE WHEN EXISTS( SELECT 1 FROM external_logins e WHERE e.user_id = $1 ) THEN TRUE
+            ELSE FALSE
+            END as is_linked
+    "#
+);
+
 pub struct ExternalLinksStatements {
     insert: InsertExternalLogin,
     find_by_provider_id: FindByProviderId,
     list_by_user_id: ListByUserId,
+    exists_by_user_id: ExistsByUserId,
     delete_link: DeleteLink,
 }
 
@@ -101,6 +114,7 @@ impl ExternalLinksStatements {
             insert: InsertExternalLogin::new(client).await?,
             find_by_provider_id: FindByProviderId::new(client).await?,
             list_by_user_id: ListByUserId::new(client).await?,
+            exists_by_user_id: ExistsByUserId::new(client).await?,
             delete_link: DeleteLink::new(client).await?,
         })
     }
@@ -169,6 +183,17 @@ where
             .collect();
 
         Ok(links)
+    }
+
+    pub async fn is_linked(&mut self, user_id: Uuid) -> Result<bool, IdentityError> {
+        let is_linked = self
+            .stmts_external_links
+            .exists_by_user_id
+            .query_one(self.client, &user_id)
+            .inspect(|d| log::info!("is_linked: {:?}", d))
+            .await?;
+
+        Ok(is_linked)
     }
 
     pub async fn find_by_external_link(

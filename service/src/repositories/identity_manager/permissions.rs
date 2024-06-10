@@ -1,5 +1,8 @@
 use crate::repositories::Role;
-use shine_service::{axum::Problem, service::CurrentUser};
+use shine_service::{
+    axum::{IntoProblem, Problem, ProblemConfig},
+    service::CurrentUser,
+};
 use std::collections::HashSet;
 use thiserror::Error as ThisError;
 
@@ -27,11 +30,11 @@ pub enum PermissionError {
     MissingPermission(Permission),
 }
 
-impl From<PermissionError> for Problem {
-    fn from(value: PermissionError) -> Self {
-        match value {
+impl IntoProblem for PermissionError {
+    fn into_problem(self, _config: &ProblemConfig) -> Problem {
+        match self {
             PermissionError::MissingPermission(perm) => {
-                Self::forbidden().with_detail(format!("Missing [{:?}] permission", perm))
+                Problem::forbidden().with_detail(format!("Missing [{:?}] permission", perm))
             }
         }
     }

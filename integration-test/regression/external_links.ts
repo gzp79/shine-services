@@ -93,7 +93,6 @@ describe('External links', () => {
         const l1 = ExternalUser.newRandomUser();
         await api.auth.linkWithOAuth2(mockOAuth2, user.sid, l1);
         const links1 = await api.externalLink.getExternalLinks(user.sid);
-        console.log(links1);
         const t1 = links1.find((l) => l.providerUserId === l1.id)!;
         expect(links1).toIncludeSameMembers([
             { ...anyLink, provider: 'oauth2_flow', email: l1.email, name: l1.name }

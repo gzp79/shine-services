@@ -1,11 +1,12 @@
 use crate::{auth::AuthServiceState, openapi::ApiKind, repositories::ExternalLink};
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, http::StatusCode, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem, ValidatedPath},
+    axum::{ApiEndpoint, ApiMethod, IntoProblem, Problem, ProblemConfig, ValidatedPath},
     service::CheckedCurrentUser,
 };
+use url::Url;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
@@ -42,13 +43,14 @@ pub struct LinkedExternalProviders {
 
 async fn external_link_list(
     State(state): State<AuthServiceState>,
+    Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
 ) -> Result<Json<LinkedExternalProviders>, Problem> {
     let links = state
         .identity_manager()
-        .list_find_links(user.user_id)
+        .list_links(user.user_id)
         .await
-        .map_err(Problem::internal_error_from)?
+        .map_err(|err| err.into_problem(&problem_config))?
         .into_iter()
         .map(LinkedExternalProvider::from)
         .collect();
@@ -72,6 +74,7 @@ struct ProviderSelectPathParam {
 
 async fn external_link_delete(
     State(state): State<AuthServiceState>,
+    Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     ValidatedPath(params): ValidatedPath<ProviderSelectPathParam>,
 ) -> Result<(), Problem> {
@@ -79,13 +82,15 @@ async fn external_link_delete(
         .identity_manager()
         .unlink_user(user.user_id, &params.provider, &params.provider_id)
         .await
-        .map_err(Problem::internal_error_from)?;
+        .map_err(|err| err.into_problem(&problem_config))?;
 
     if link.is_none() {
-        Err(Problem::not_found().with_instance(format!(
+        let url = Url::parse(&format!(
             "{{auth_api}}/user/links/{}/{}",
             params.provider, params.provider_id
-        )))
+        ))
+        .ok();
+        Err(Problem::not_found().with_instance(url))
     } else {
         Ok(())
     }

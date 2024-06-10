@@ -1,7 +1,7 @@
 use crate::{identity::IdentityServiceState, openapi::ApiKind};
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, http::StatusCode, Extension, Json};
 use serde::Serialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, Problem};
+use shine_service::axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig};
 use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
@@ -13,12 +13,15 @@ pub struct GeneratedUserName {
     name: String,
 }
 
-async fn generate_user_name(State(state): State<IdentityServiceState>) -> Result<Json<GeneratedUserName>, Problem> {
+async fn generate_user_name(
+    State(state): State<IdentityServiceState>,
+    Extension(problem_config): Extension<ProblemConfig>,
+) -> Result<Json<GeneratedUserName>, Problem> {
     let name = state
         .auto_name_manager()
         .generate_name()
         .await
-        .map_err(Problem::internal_error_from)?;
+        .map_err(|err| Problem::internal_error(&problem_config, "Failed to generate name", err))?;
 
     Ok(Json(GeneratedUserName { name }))
 }

@@ -20,7 +20,10 @@ use axum_server::Handle;
 use chrono::Duration;
 use openapi::ApiKind;
 use shine_service::{
-    axum::{add_default_components, telemetry::TelemetryManager, ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy},
+    axum::{
+        add_default_components, telemetry::TelemetryManager, ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy,
+        ProblemConfig,
+    },
     service::UserSessionValidator,
 };
 use std::{env, fs, net::SocketAddr, time::Duration as StdDuration};
@@ -54,9 +57,32 @@ fn ep_health_check() -> ApiEndpoint<()> {
         .with_status_response(StatusCode::OK, "Ok.")
 }
 
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+        log::warn!("Received ctrl-c, shutting down the server...")
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("Failed to install signal handler")
+            .recv()
+            .await;
+        log::warn!("Received SIGTERM, shutting down the server...")
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+}
+
 async fn graceful_shutdown(handle: Handle) {
-    signal::ctrl_c().await.expect("expect tokio signal ctrl-c");
-    log::warn!("Shutting down the server...");
+    shutdown_signal().await;
     handle.graceful_shutdown(Some(StdDuration::from_secs(10)));
 }
 
@@ -117,6 +143,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let db_pool = DBPool::new(&config.db).await?;
     let user_session = UserSessionValidator::new(None, &auth_config.session_secret, "", db_pool.redis.clone())?;
+    let problem_config = ProblemConfig::new(config.service.full_problem_response);
     let identity_manager = IdentityManager::new(&db_pool.postgres).await?;
     let ttl_session = Duration::seconds(i64::try_from(auth_config.ttl_session)?);
     let session_manager = SessionManager::new(&db_pool.redis, String::new(), ttl_session).await?;
@@ -168,32 +195,37 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         .merge(auth_api)
         .merge(swagger)
         .layer(user_session.into_layer())
+        .layer(problem_config.into_layer())
         .layer(powered_by)
         .layer(cors)
         .layer(telemetry_layer)
         .layer(log_layer);
 
-    let handle = Handle::new();
-    tokio::spawn(graceful_shutdown(handle.clone()));
-
-    //log::trace!("{app:#?}");
     let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
 
     if let Some(tls_config) = &config.service.tls {
-        log::info!("Starting service on {addr:?} using tls");
+        log::info!("Starting service on https://{addr:?}");
         let cert = fs::read(&tls_config.cert)?;
         let key = fs::read(&tls_config.key)?;
         let config = axum_server::tls_rustls::RustlsConfig::from_pem(cert, key)
             .await
             .map_err(|e| anyhow!(e))?;
+
+        let handle = Handle::new();
+        tokio::spawn(graceful_shutdown(handle.clone()));
+
         axum_server::bind_rustls(addr, config)
+            .handle(handle)
             .serve(app.into_make_service())
             .await
             .map_err(|e| anyhow!(e))
     } else {
-        log::info!("Starting service on {addr:?}");
+        log::info!("Starting service on http://{addr:?}");
         let listener = TcpListener::bind(&addr).await.unwrap();
-        axum::serve(listener, app).await.map_err(|e| anyhow!(e))
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_signal())
+            .await
+            .map_err(|e| anyhow!(e))
     }
 }
 

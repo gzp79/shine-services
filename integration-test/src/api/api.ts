@@ -167,13 +167,13 @@ export class RequestAPI {
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
-    getToken(sid: string | null, tokenId: string) {
+    getToken(sid: string | null, tokenId: string): Request {
         return request
             .get(config.getUrlFor(`identity/api/auth/user/tokens/${tokenId}`))
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
-    revokeToken(sid: string | null, tokenId: string) {
+    revokeToken(sid: string | null, tokenId: string): Request {
         return request
             .delete(config.getUrlFor(`identity/api/auth/user/tokens/${tokenId}`))
             .set('Cookie', sid ? [`sid=${sid}`] : []);

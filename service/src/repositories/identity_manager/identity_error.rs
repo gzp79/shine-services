@@ -1,5 +1,8 @@
 use crate::repositories::DBError;
-use shine_service::service::PGError;
+use shine_service::{
+    axum::{IntoProblem, Problem, ProblemConfig},
+    service::PGError,
+};
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
@@ -39,5 +42,11 @@ pub enum IdentityError {
 impl From<PGError> for IdentityError {
     fn from(err: PGError) -> Self {
         Self::DBError(err.into())
+    }
+}
+
+impl IntoProblem for IdentityError {
+    fn into_problem(self, _config: &ProblemConfig) -> Problem {
+        todo!()
     }
 }

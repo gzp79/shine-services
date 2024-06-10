@@ -1,3 +1,5 @@
+import { assert } from 'console';
+import exp from 'constants';
 import { randomUUID } from 'crypto';
 import os from 'os';
 import api from '$lib/api/api';
@@ -301,6 +303,30 @@ describe('Link to OAuth2 account', () => {
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=loginRequired&status=401'
         );
+    });
+
+    it('Linking guest shall succeed', async () => {
+        const user = await TestUser.createGuest();
+        expect(user.userInfo!.isLinked).toBeFalse();
+
+        const externalUser = new ExternalUser(
+            randomUUID(),
+            randomUUID(),
+            generateRandomString(5) + '@example.com'
+        );
+        const start = await api.auth.startLinkWithOAuth2(mock, user.sid);
+        const response = await api.request.authorizeWithOAuth2(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            externalUser.toCode()
+        );
+        expect(response).toHaveStatus(200);
+        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
+
+        user.externalUser = externalUser;
+        await user.refreshUserInfo();
+        expect(user.userInfo!.isLinked).toBeTrue();
     });
 
     it('Linking with occupied email shall succeed', async () => {
