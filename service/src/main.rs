@@ -57,9 +57,32 @@ fn ep_health_check() -> ApiEndpoint<()> {
         .with_status_response(StatusCode::OK, "Ok.")
 }
 
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+        log::warn!("Received ctrl-c, shutting down the server...")
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("Failed to install signal handler")
+            .recv()
+            .await;
+        log::warn!("Received SIGTERM, shutting down the server...")
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+}
+
 async fn graceful_shutdown(handle: Handle) {
-    signal::ctrl_c().await.expect("expect tokio signal ctrl-c");
-    log::warn!("Shutting down the server...");
+    shutdown_signal().await;
     handle.graceful_shutdown(Some(StdDuration::from_secs(10)));
 }
 
@@ -178,27 +201,31 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         .layer(telemetry_layer)
         .layer(log_layer);
 
-    let handle = Handle::new();
-    tokio::spawn(graceful_shutdown(handle.clone()));
-
-    //log::trace!("{app:#?}");
     let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
 
     if let Some(tls_config) = &config.service.tls {
-        log::info!("Starting service on {addr:?} using tls");
+        log::info!("Starting service on https://{addr:?}");
         let cert = fs::read(&tls_config.cert)?;
         let key = fs::read(&tls_config.key)?;
         let config = axum_server::tls_rustls::RustlsConfig::from_pem(cert, key)
             .await
             .map_err(|e| anyhow!(e))?;
+
+        let handle = Handle::new();
+        tokio::spawn(graceful_shutdown(handle.clone()));
+
         axum_server::bind_rustls(addr, config)
+            .handle(handle)
             .serve(app.into_make_service())
             .await
             .map_err(|e| anyhow!(e))
     } else {
-        log::info!("Starting service on {addr:?}");
+        log::info!("Starting service on http://{addr:?}");
         let listener = TcpListener::bind(&addr).await.unwrap();
-        axum::serve(listener, app).await.map_err(|e| anyhow!(e))
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_signal())
+            .await
+            .map_err(|e| anyhow!(e))
     }
 }
 
