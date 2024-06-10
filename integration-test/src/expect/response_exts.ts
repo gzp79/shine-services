@@ -21,7 +21,7 @@ const matchers: jest.ExpectExtendMap = {
         const pass = (response as request.Response).statusCode === statusCode;
 
         const receivedMsg = this.utils.printReceived(response.statusCode);
-        const expectedMsg = this.utils.printExpected(response.statusCode);
+        const expectedMsg = this.utils.printExpected(statusCode);
         const body = response.text ?? '';
         const negate = pass ? ' not' : '';
 

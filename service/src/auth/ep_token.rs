@@ -3,13 +3,17 @@ use crate::{
     openapi::ApiKind,
     repositories::{hash_token, TokenInfo, TokenKind},
 };
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, http::StatusCode, Extension, Json};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem, SiteInfo, ValidatedJson, ValidatedPath, ValidationErrorEx as _},
+    axum::{
+        ApiEndpoint, ApiMethod, Problem, ProblemConfig, ProblemDetail, SiteInfo, ValidatedJson, ValidatedPath,
+        ValidationErrorEx as _,
+    },
     service::{CheckedCurrentUser, ClientFingerprint},
 };
+use std::sync::Arc;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::{Validate, ValidationError};
@@ -56,11 +60,12 @@ struct CreatedToken {
 /// from javascript, thus this endpoint can be used to get details about the current user.
 async fn token_create(
     State(state): State<AuthServiceState>,
+    Extension(problem_config): Extension<Arc<ProblemConfig>>,
     user: CheckedCurrentUser,
     fingerprint: ClientFingerprint,
     site_info: SiteInfo,
     ValidatedJson(params): ValidatedJson<CreateTokenRequest>,
-) -> Result<Json<CreatedToken>, Problem> {
+) -> Result<Json<CreatedToken>, ProblemDetail> {
     let time_to_live = Duration::seconds(params.time_to_live as i64);
 
     // validate time_to_live against server config
@@ -70,18 +75,21 @@ async fn token_create(
         TokenKind::Access => unreachable!(),
     };
     if &time_to_live > max_time_to_live {
-        return Err(ValidationError::new("range")
-            .with_param("min", &10)
-            .with_param("max", &max_time_to_live.num_seconds())
-            .with_param("value", &params.time_to_live)
-            .into_constraint_problem("time_to_live"));
+        return Err(ProblemDetail::from(
+            &problem_config,
+            ValidationError::new("range")
+                .with_param("min", &10)
+                .with_param("max", &max_time_to_live.num_seconds())
+                .with_param("value", &params.time_to_live)
+                .into_constraint_error("time_to_live"),
+        ));
     }
 
     let site_fingerprint = if params.bind_to_site { Some(&fingerprint) } else { None };
     let token_cookie = state
         .create_token_with_retry(user.user_id, params.kind, &time_to_live, site_fingerprint, &site_info)
         .await
-        .map_err(Problem::internal_error_from)?;
+        .map_err(|err| ProblemDetail::from(&problem_config, Problem::internal_error_from(err)))?;
 
     let token_hash = hash_token(&token_cookie.key);
     Ok(Json(CreatedToken {
@@ -142,14 +150,15 @@ impl From<TokenInfo> for ActiveToken {
 
 async fn token_get(
     State(state): State<AuthServiceState>,
+    Extension(problem_config): Extension<Arc<ProblemConfig>>,
     user: CheckedCurrentUser,
     ValidatedPath(params): ValidatedPath<TokenPathParam>,
-) -> Result<Json<ActiveToken>, Problem> {
+) -> Result<Json<ActiveToken>, ProblemDetail> {
     let token = state
         .identity_manager()
         .find_token_by_hash(&params.fingerprint)
         .await
-        .map_err(Problem::internal_error_from)?
+        .map_err(|err| ProblemDetail::from(&problem_config, Problem::internal_error_from(err)))?
         .and_then(|t| {
             if t.user_id == user.user_id {
                 Some(ActiveToken::from(t))
@@ -167,7 +176,10 @@ async fn token_get(
     if let Some(token) = token {
         Ok(Json(token))
     } else {
-        Err(Problem::not_found().with_instance(format!("{{auth_api}}/user/tokens/{}", params.fingerprint)))
+        Err(ProblemDetail::from(
+            &problem_config,
+            Problem::not_found().with_instance(format!("{{auth_api}}/user/tokens/{}", params.fingerprint)),
+        ))
     }
 }
 
@@ -186,17 +198,21 @@ pub fn ep_token_get() -> ApiEndpoint<AuthServiceState> {
 
 async fn token_delete(
     State(state): State<AuthServiceState>,
+    Extension(problem_config): Extension<Arc<ProblemConfig>>,
     user: CheckedCurrentUser,
     ValidatedPath(params): ValidatedPath<TokenPathParam>,
-) -> Result<(), Problem> {
+) -> Result<(), ProblemDetail> {
     let token = state
         .identity_manager()
         .delete_token_by_hash(user.user_id, &params.fingerprint)
         .await
-        .map_err(Problem::internal_error_from)?;
+        .map_err(|err| ProblemDetail::from(&problem_config, Problem::internal_error_from(err)))?;
 
     if token.is_none() {
-        Err(Problem::not_found().with_instance(format!("{{auth_api}}/user/tokens/{}", params.fingerprint)))
+        Err(ProblemDetail::from(
+            &problem_config,
+            Problem::not_found().with_instance(format!("{{auth_api}}/user/tokens/{}", params.fingerprint)),
+        ))
     } else {
         Ok(())
     }
@@ -222,13 +238,14 @@ pub struct ActiveTokens {
 
 async fn token_list(
     State(state): State<AuthServiceState>,
+    Extension(problem_config): Extension<Arc<ProblemConfig>>,
     user: CheckedCurrentUser,
-) -> Result<Json<ActiveTokens>, Problem> {
+) -> Result<Json<ActiveTokens>, ProblemDetail> {
     let tokens = state
         .identity_manager()
         .list_all_tokens_by_user(&user.user_id)
         .await
-        .map_err(Problem::internal_error_from)?
+        .map_err(|err| ProblemDetail::from(&problem_config, Problem::internal_error_from(err)))?
         .into_iter()
         .map(ActiveToken::from)
         .collect();

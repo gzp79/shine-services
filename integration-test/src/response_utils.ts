@@ -2,8 +2,8 @@ import { Cookie } from 'tough-cookie';
 import { Response } from '$lib/request';
 
 export function getCookies(response?: Response): Record<string, Cookie> {
-    return (response?.headers['set-cookie'] ?? [])
-        .map((cookieStr: string) => Cookie.parse(cookieStr))
+    return (response?.get('Set-Cookie') ?? [])
+        .map((cookieStr: string) => Cookie.parse(cookieStr)!)
         .reduce((cookies: Record<string, Cookie>, cookie: Cookie) => {
             cookies[cookie.key] = cookie;
             return cookies;

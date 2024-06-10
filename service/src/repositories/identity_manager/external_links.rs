@@ -1,5 +1,6 @@
 use crate::repositories::{Identity, IdentityBuildError, IdentityError, IdentityKind};
 use chrono::{DateTime, Utc};
+use futures::FutureExt;
 use postgres_from_row::FromRow;
 use shine_service::{
     pg_query,
@@ -92,10 +93,10 @@ pg_query!( ExistsByUserId =>
     in = user_id: Uuid;
     out = is_linked: bool;
     sql = r#"
-        SELECT EXISTS(e.user_id)
-            FROM external_logins e
-            WHERE e.user_id = $1
-        
+        SELECT
+            CASE WHEN EXISTS( SELECT 1 FROM external_logins e WHERE e.user_id = $1 ) THEN TRUE
+            ELSE FALSE
+            END as is_linked
     "#
 );
 
@@ -189,6 +190,7 @@ where
             .stmts_external_links
             .exists_by_user_id
             .query_one(self.client, &user_id)
+            .inspect(|d| log::info!("is_linked: {:?}", d))
             .await?;
 
         Ok(is_linked)

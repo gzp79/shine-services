@@ -1,11 +1,12 @@
 use crate::{auth::AuthServiceState, openapi::ApiKind};
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, http::StatusCode, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem},
+    axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig, ProblemDetail},
     service::CheckedCurrentUser,
 };
+use std::sync::Arc;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -29,13 +30,14 @@ pub struct Response {
 
 async fn session_list(
     State(state): State<AuthServiceState>,
+    Extension(problem_config): Extension<Arc<ProblemConfig>>,
     user: CheckedCurrentUser,
-) -> Result<Json<Response>, Problem> {
+) -> Result<Json<Response>, ProblemDetail> {
     let sessions = state
         .session_manager()
         .find_all(user.user_id)
         .await
-        .map_err(Problem::internal_error_from)?
+        .map_err(|err| ProblemDetail::from(&problem_config, Problem::internal_error_from(err)))?
         .into_iter()
         .map(|s| ActiveSession {
             user_id: user.user_id,

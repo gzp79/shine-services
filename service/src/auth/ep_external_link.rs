@@ -1,11 +1,12 @@
 use crate::{auth::AuthServiceState, openapi::ApiKind, repositories::ExternalLink};
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, http::StatusCode, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem, ValidatedPath},
+    axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig, ProblemDetail, ValidatedPath},
     service::CheckedCurrentUser,
 };
+use std::sync::Arc;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
@@ -42,13 +43,14 @@ pub struct LinkedExternalProviders {
 
 async fn external_link_list(
     State(state): State<AuthServiceState>,
+    Extension(problem_config): Extension<Arc<ProblemConfig>>,
     user: CheckedCurrentUser,
-) -> Result<Json<LinkedExternalProviders>, Problem> {
+) -> Result<Json<LinkedExternalProviders>, ProblemDetail> {
     let links = state
         .identity_manager()
         .list_links(user.user_id)
         .await
-        .map_err(Problem::internal_error_from)?
+        .map_err(|err| ProblemDetail::from(&problem_config, Problem::internal_error_from(err)))?
         .into_iter()
         .map(LinkedExternalProvider::from)
         .collect();
@@ -72,20 +74,24 @@ struct ProviderSelectPathParam {
 
 async fn external_link_delete(
     State(state): State<AuthServiceState>,
+    Extension(problem_config): Extension<Arc<ProblemConfig>>,
     user: CheckedCurrentUser,
     ValidatedPath(params): ValidatedPath<ProviderSelectPathParam>,
-) -> Result<(), Problem> {
+) -> Result<(), ProblemDetail> {
     let link = state
         .identity_manager()
         .unlink_user(user.user_id, &params.provider, &params.provider_id)
         .await
-        .map_err(Problem::internal_error_from)?;
+        .map_err(|err| ProblemDetail::from(&problem_config, Problem::internal_error_from(err)))?;
 
     if link.is_none() {
-        Err(Problem::not_found().with_instance(format!(
-            "{{auth_api}}/user/links/{}/{}",
-            params.provider, params.provider_id
-        )))
+        Err(ProblemDetail::from(
+            &problem_config,
+            Problem::not_found().with_instance(format!(
+                "{{auth_api}}/user/links/{}/{}",
+                params.provider, params.provider_id
+            )),
+        ))
     } else {
         Ok(())
     }
