@@ -1,5 +1,4 @@
 use crate::auth::{async_http_client, AuthBuildError, OIDCConfig};
-use log::info;
 use oauth2::{reqwest::AsyncHttpClientError, ClientId, ClientSecret, HttpRequest, HttpResponse, RedirectUrl, Scope};
 use openidconnect::{
     core::{CoreClient, CoreProviderMetadata},
