@@ -47,6 +47,8 @@ pub struct OIDCConfig {
     pub client_secret: String,
     pub scopes: Vec<String>,
     pub ignore_certificates: Option<bool>,
+    /// Maximum time to store the discovered OIDC client information, like JWKS.
+    pub ttl_client: Option<usize>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -58,9 +60,13 @@ pub struct AuthSessionConfig {
     pub external_login_cookie_secret: String,
     pub token_cookie_secret: String,
 
+    /// The maximum time to line of a session in seconds
     pub ttl_session: usize,
+    /// The maximum time to line of an access (remember me) token in seconds
     pub ttl_access_token: usize,
+    /// The maximum time to line of a single access (one-time-use) token in seconds
     pub ttl_single_access: usize,
+    /// The maximum time to line of an api-key in seconds
     pub ttl_api_key: usize,
 }
 
@@ -120,6 +126,8 @@ pub enum AuthBuildError {
     InvalidUserInfoUrl(String),
     #[error("Invalid redirect url: {0}")]
     RedirectUrl(String),
+    #[error("Invalid key cache time: {0}")]
+    InvalidKeyCacheTime(#[source] TryFromIntError),
     #[error("Failed to discover open id: {0}")]
     OIDCDiscovery(OIDCDiscoveryError),
     #[error("Failed to create http client")]
