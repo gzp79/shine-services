@@ -476,7 +476,7 @@ describe('Persistent token', () => {
         user = undefined!;
     });
 
-    it('An failed login with invalid authorization shall not change the current user', async () => {
+    it('A failed login with invalid authorization shall not change the current user', async () => {
         const user = await TestUser.createGuest();
         const response = await api.request
             .loginWithToken(user.tid!, user.sid!, null, null, false)
