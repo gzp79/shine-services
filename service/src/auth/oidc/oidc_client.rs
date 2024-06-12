@@ -43,7 +43,7 @@ impl OIDCClient {
     pub async fn new(
         provider: &str,
         auth_base_url: &Url,
-        ignore_discovery_error: bool,
+        startup_discovery: bool,
         config: &OIDCConfig,
     ) -> Result<Option<Self>, AuthBuildError> {
         let client_id = ClientId::new(config.client_id.clone());
@@ -84,12 +84,8 @@ impl OIDCClient {
             cached_client: Arc::new(Mutex::new(None)),
         };
 
-        if let Err(err) = client.client().await {
-            if ignore_discovery_error {
-                log::warn!("Discovery failed for {provider}: {err}");
-            } else {
-                return Err(AuthBuildError::OIDCDiscovery(err));
-            }
+        if startup_discovery {
+            client.client().await.map_err(AuthBuildError::OIDCDiscovery)?;
         }
 
         Ok(Some(client))

@@ -99,9 +99,8 @@ pub struct AuthConfig {
     /// as it may expose unwanted information. Therefore, it is recommended to disable this feature in production.
     page_error_detail: Option<bool>,
 
-    /// When enabled, startup errors related to OpenID discovery will be ignored, allowing the service to
-    /// start without interruption.
-    openid_ignore_discovery_error: Option<bool>,
+    /// Initiates OIDC discovery at startup to identify and rectify any potential misconfigurations.
+    openid_startup_discovery: bool,
     /// A list of external providers utilizing the (interactive) OpenID Connect login flow.
     pub openid: HashMap<String, OIDCConfig>,
     /// List of external providers utilizing the (interactive) OAuth2 login flow
@@ -237,7 +236,7 @@ impl AuthServiceBuilder {
         let ttl_single_access = Duration::seconds(i64::try_from(config.auth_session.ttl_single_access)?);
         let ttl_api_key = Duration::seconds(i64::try_from(config.auth_session.ttl_api_key)?);
 
-        let openid_ignore_discovery_error = config.openid_ignore_discovery_error.unwrap_or(false);
+        let openid_startup_discovery = config.openid_startup_discovery;
         let mut openid_clients = Vec::new();
         for (provider, provider_config) in &config.openid {
             if !providers.insert(provider.clone()) {
@@ -247,7 +246,7 @@ impl AuthServiceBuilder {
             if let Some(connect) = OIDCClient::new(
                 provider,
                 &config.auth_base_url,
-                openid_ignore_discovery_error,
+                openid_startup_discovery,
                 provider_config,
             )
             .await?

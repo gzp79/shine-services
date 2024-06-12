@@ -29,6 +29,7 @@
         "ttlAccessToken": 1209600,
         "ttlSingleAccess": 600,
         "ttlApiKey": 31536000,
+        "openidStartupDiscovery": true,
         "openid": {
             "google": {
                 "discoveryUrl": "https://accounts.google.com",
