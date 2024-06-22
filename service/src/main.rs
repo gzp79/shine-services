@@ -126,7 +126,14 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let cors = CorsLayer::default()
         .allow_origin(config.service.cors_allowed_origin()?)
-        .allow_methods([Method::GET, Method::POST])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::PATCH,
+            Method::OPTIONS,
+        ])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
         .allow_credentials(true);
     let powered_by = PoweredBy::from_service_info(SERVICE_NAME, &config.core.version)?;
