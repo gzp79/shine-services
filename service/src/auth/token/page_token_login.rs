@@ -30,6 +30,7 @@ struct Query {
     redirect_url: Option<Url>,
     login_url: Option<Url>,
     error_url: Option<Url>,
+    captcha: String,
 }
 
 struct AuthenticationResult {
@@ -334,6 +335,10 @@ async fn token_login(
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
         Err(error) => return Err(state.page_error(auth_session, AuthError::InputError(error.problem), None)),
+    };
+
+    if let Err(err) = state.validate_captcha(&query.captcha).await {
+        return Err(state.page_error(auth_session, err, query.error_url.as_ref()));
     };
 
     // clear external login cookie, it shall be only for the authorize callback from the external provider

@@ -1,6 +1,6 @@
 use crate::{
     auth::{
-        auth_service_utils::UserCreateError, extensions, AuthError, AuthPage, AuthServiceState, AuthSession,
+        auth_service_page_utils::UserCreateError, extensions, AuthError, AuthPage, AuthServiceState, AuthSession,
         ExternalUserInfoExtensions,
     },
     repositories::{ExternalUserInfo, IdentityError, TokenKind},

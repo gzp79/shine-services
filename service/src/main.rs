@@ -19,6 +19,7 @@ use axum::{
 use axum_server::Handle;
 use chrono::Duration;
 use openapi::ApiKind;
+use repositories::CaptchaValidator;
 use shine_service::{
     axum::{
         add_default_components, telemetry::TelemetryManager, ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy,
@@ -149,6 +150,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     };
 
     let db_pool = DBPool::new(&config.db).await?;
+    let captcha_validator = CaptchaValidator::new(config.service.captcha_secret.clone());
     let user_session = UserSessionValidator::new(None, &auth_config.session_secret, "", db_pool.redis.clone())?;
     let problem_config = ProblemConfig::new(config.service.full_problem_response);
     let identity_manager = IdentityManager::new(&db_pool.postgres).await?;
@@ -169,6 +171,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
             identity_manager: identity_manager.clone(),
             session_manager: session_manager.clone(),
             auto_name_manager: auto_name_manager.clone(),
+            captcha_validator,
         };
         AuthServiceBuilder::new(auth_state, &config.auth)
             .await?

@@ -1,6 +1,6 @@
 use crate::{
     auth::{self, AuthSessionMeta, OAuth2Client, OIDCClient, OIDCDiscoveryError},
-    repositories::{AutoNameManager, IdentityManager, SessionManager},
+    repositories::{AutoNameManager, CaptchaValidator, IdentityManager, SessionManager},
 };
 use axum::{Extension, Router};
 use chrono::Duration;
@@ -138,6 +138,7 @@ struct Inner {
     identity_manager: IdentityManager,
     session_manager: SessionManager,
     auto_name_manager: AutoNameManager,
+    captcha_validator: CaptchaValidator,
     random: SystemRandom,
 
     app_name: String,
@@ -171,6 +172,10 @@ impl AuthServiceState {
 
     pub fn auto_name_manager(&self) -> &AutoNameManager {
         &self.0.auto_name_manager
+    }
+
+    pub fn captcha_validator(&self) -> &CaptchaValidator {
+        &self.0.captcha_validator
     }
 
     pub fn random(&self) -> &SystemRandom {
@@ -219,6 +224,7 @@ pub struct AuthServiceDependencies {
     pub identity_manager: IdentityManager,
     pub session_manager: SessionManager,
     pub auto_name_manager: AutoNameManager,
+    pub captcha_validator: CaptchaValidator,
 }
 
 pub struct AuthServiceBuilder {
@@ -272,6 +278,7 @@ impl AuthServiceBuilder {
             identity_manager: dependencies.identity_manager,
             session_manager: dependencies.session_manager,
             auto_name_manager: dependencies.auto_name_manager,
+            captcha_validator: dependencies.captcha_validator,
             random: SystemRandom::new(),
             app_name: config.app_name.to_owned(),
             home_url: config.home_url.to_owned(),

@@ -167,10 +167,38 @@ describe('Login with OAuth2', () => {
         mock = undefined!;
     });
 
+    it('Login without captcha shall fail and redirect to the default error page', async () => {
+        const response = await api.request.loginWithOAuth2(null, null, null, undefined);
+        expect(response).toHaveStatus(200);
+        expect(getPageRedirectUrl(response.text)).toEqual(
+            'https://web.sandbox.com:8080/error?type=invalidInput&status=400'
+        );
+        expect(response.text).toContain('Failed to deserialize query string');
+
+        const cookies = getCookies(response);
+        expect(cookies.tid).toBeClearCookie();
+        expect(cookies.sid).toBeClearCookie();
+        expect(cookies.eid).toBeClearCookie();
+    });
+
+    it('Login with wrong captcha shall fail and redirect to the default error page', async () => {
+        const response = await api.request.loginWithOAuth2(null, null, null, 'invalid');
+        expect(response).toHaveStatus(200);
+        expect(getPageRedirectUrl(response.text)).toEqual(
+            config.defaultRedirects.errorUrl + '?type=authError&status=400'
+        );
+        expect(response.text).toContain('&quot;Captcha&quot;:&quot;invalid-input-response&quot;');
+
+        const cookies = getCookies(response);
+        expect(cookies.tid).toBeClearCookie();
+        expect(cookies.sid).toBeClearCookie();
+        expect(cookies.eid).toBeClearCookie();
+    });
+
     it('Start login with (token: NULL, session: VALID) shall fail', async () => {
         const { sid } = await api.auth.loginAsGuestUser();
 
-        const response = await api.request.loginWithOAuth2(null, sid, null);
+        const response = await api.request.loginWithOAuth2(null, sid, null, null);
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
@@ -188,7 +216,7 @@ describe('Login with OAuth2', () => {
         const { sid } = await api.auth.loginAsGuestUser();
         await api.auth.logout(sid, false);
 
-        const response = await api.request.loginWithOAuth2(null, sid, null);
+        const response = await api.request.loginWithOAuth2(null, sid, null, null);
         expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock!.getUrlFor('authorize'));
@@ -202,7 +230,7 @@ describe('Login with OAuth2', () => {
     it('Start login with (token: VALID, session: NULL) shall succeed', async () => {
         const { tid } = await api.auth.loginAsGuestUser();
 
-        const response = await api.request.loginWithOAuth2(tid, null, null);
+        const response = await api.request.loginWithOAuth2(tid, null, null, null);
         expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -216,7 +244,7 @@ describe('Login with OAuth2', () => {
     it('Start login with (token: VALID, session: VALID) shall succeed', async () => {
         const { tid, sid } = await api.auth.loginAsGuestUser();
 
-        const response = await api.request.loginWithOAuth2(tid, sid, null);
+        const response = await api.request.loginWithOAuth2(tid, sid, null, null);
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
@@ -297,8 +325,38 @@ describe('Link to OAuth2 account', () => {
         mock = undefined!;
     });
 
+    it('Link without captcha shall fail and redirect to the default error page', async () => {
+        const response = await api.request.linkWithOAuth2(null, undefined);
+        expect(response).toHaveStatus(200);
+        expect(getPageRedirectUrl(response.text)).toEqual(
+            'https://web.sandbox.com:8080/error?type=invalidInput&status=400'
+        );
+        expect(response.text).toContain('Failed to deserialize query string');
+
+        const cookies = getCookies(response);
+        expect(cookies.tid).toBeClearCookie();
+        expect(cookies.sid).toBeClearCookie();
+        expect(cookies.eid).toBeClearCookie();
+    });
+
+    it('Link with wrong captcha shall fail and redirect to the default error page', async () => {
+        const user = await TestUser.createGuest();
+
+        const response = await api.request.linkWithOAuth2(user.sid, 'invalid');
+        expect(response).toHaveStatus(200);
+        expect(getPageRedirectUrl(response.text)).toEqual(
+            config.defaultRedirects.errorUrl + '?type=authError&status=400'
+        );
+        expect(response.text).toContain('&quot;Captcha&quot;:&quot;invalid-input-response&quot;');
+
+        const cookies = getCookies(response);
+        expect(cookies.tid).toBeClearCookie();
+        expect(cookies.sid.value).toEqual(user.sid);
+        expect(cookies.eid).toBeClearCookie();
+    });
+
     it('Linking without a session shall fail', async () => {
-        const response = await api.request.linkWithOAuth2(null);
+        const response = await api.request.linkWithOAuth2(null, null);
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=loginRequired&status=401'

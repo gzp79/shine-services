@@ -3,7 +3,7 @@ use crate::{
         auth_session::TokenCookie, token::TokenGenerator, AuthServiceState, AuthSession, OIDCDiscoveryError,
         TokenGeneratorError,
     },
-    repositories::{AutoNameError, ExternalUserInfo, Identity, IdentityError, TokenKind},
+    repositories::{AutoNameError, CaptchaError, ExternalUserInfo, Identity, IdentityError, TokenKind},
 };
 use axum::{
     http::StatusCode,
@@ -146,6 +146,11 @@ pub(in crate::auth) enum AuthError {
     #[error("Internal server error: {0}")]
     InternalServerError(String),
 
+    #[error("Failed to validate captcha")]
+    CaptchaValidation(CaptchaError),
+    #[error("Captcha test failed")]
+    Captcha(String),
+
     #[error("OpenId discovery failed")]
     OIDCDiscovery(OIDCDiscoveryError),
 
@@ -191,6 +196,8 @@ impl AuthServiceState {
             AuthError::TokenExpired => ("tokenExpired", StatusCode::UNAUTHORIZED),
             AuthError::SessionExpired => ("sessionExpired", StatusCode::UNAUTHORIZED),
             AuthError::InternalServerError(_) => ("internalError", StatusCode::INTERNAL_SERVER_ERROR),
+            AuthError::Captcha(_) => ("authError", StatusCode::BAD_REQUEST),
+            AuthError::CaptchaValidation(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
             AuthError::OIDCDiscovery(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
             AuthError::ProviderAlreadyUsed => ("providerAlreadyUsed", StatusCode::CONFLICT),
             AuthError::EmailAlreadyUsed => ("emailAlreadyUsed", StatusCode::CONFLICT),
@@ -257,6 +264,19 @@ impl AuthServiceState {
         AuthPage {
             auth_session: Some(auth_session),
             html,
+        }
+    }
+
+    pub(in crate::auth) async fn validate_captcha(&self, token: &str) -> Result<(), AuthError> {
+        match self.captcha_validator().validate(token, None).await {
+            Ok(result) => {
+                if !result.success {
+                    Err(AuthError::Captcha(result.error_codes.join(", ")))
+                } else {
+                    Ok(())
+                }
+            }
+            Err(err) => Err(AuthError::CaptchaValidation(err)),
         }
     }
 }

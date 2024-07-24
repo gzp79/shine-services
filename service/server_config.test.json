@@ -11,7 +11,8 @@
         "allowedOrigins": [
             "^https:\\/\\/([a-zA-Z0-9-]+\\.)*sandbox\\.com(:[0-9]+)?$"
         ],
-        "fullProblemResponse": true
+        "fullProblemResponse": true,
+        "captchaSecret": "1x0000000000000000000000000000000AA"
     },
     "telemetry": {
         "allowReconfigure": true,

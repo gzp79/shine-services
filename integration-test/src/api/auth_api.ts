@@ -24,7 +24,7 @@ export class AuthAPI {
 
     async loginAsGuestUser(extraHeaders?: Record<string, string>): Promise<UserCookies> {
         const response = await this.request
-            .loginWithToken(null, null, null, null, true)
+            .loginWithToken(null, null, null, null, true, null)
             .set(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(this.config.defaultRedirects.redirectUrl);
@@ -46,7 +46,7 @@ export class AuthAPI {
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
         const response = await this.request
-            .loginWithToken(tid, null, null, null, rememberMe)
+            .loginWithToken(tid, null, null, null, rememberMe, null)
             .set(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(this.config.defaultRedirects.redirectUrl);
@@ -69,7 +69,9 @@ export class AuthAPI {
         rememberMe: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request.loginWithOAuth2(null, null, rememberMe).set(extraHeaders ?? {});
+        const response = await this.request
+            .loginWithOAuth2(null, null, rememberMe, null)
+            .set(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -122,7 +124,7 @@ export class AuthAPI {
         sid: string,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request.linkWithOAuth2(sid).set(extraHeaders ?? {});
+        const response = await this.request.linkWithOAuth2(sid, null).set(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -172,7 +174,9 @@ export class AuthAPI {
         rememberMe: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request.loginWithOpenId(null, null, rememberMe).set(extraHeaders ?? {});
+        const response = await this.request
+            .loginWithOpenId(null, null, rememberMe, null)
+            .set(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -230,7 +234,7 @@ export class AuthAPI {
         sid: string,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request.linkWithOpenId(sid).set(extraHeaders ?? {});
+        const response = await this.request.linkWithOpenId(sid, null).set(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));

@@ -27,6 +27,7 @@
     "hmac",
     "hset",
     "httponly",
+    "idempotency",
     "ipcity",
     "ipcountry",
     "jbang",

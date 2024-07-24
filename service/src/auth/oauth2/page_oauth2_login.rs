@@ -19,6 +19,7 @@ struct Query {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
     remember_me: Option<bool>,
+    captcha: String,
 }
 
 /// Login or register a new user with the interactive flow using an OAuth2 provider.
@@ -31,6 +32,10 @@ async fn oauth2_login(
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
         Err(error) => return state.page_error(auth_session, AuthError::InputError(error.problem), None),
+    };
+
+    if let Err(err) = state.validate_captcha(&query.captcha).await {
+        return state.page_error(auth_session, err, query.error_url.as_ref());
     };
 
     // Note: having a token login is not an error, on successful start of the flow, the token cookie is cleared
