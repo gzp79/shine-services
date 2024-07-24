@@ -10,7 +10,7 @@ export type TokenKind = 'access' | 'persistent' | 'singleAccess';
 
 function getCaptchaQuery(captcha: string | null | undefined): object {
     if (captcha === null) {
-        // use to always pass token
+        // use the "always pass" token
         return { captcha: '1x00000000000000000000AA' };
     } else if (captcha) {
         // use provided captcha

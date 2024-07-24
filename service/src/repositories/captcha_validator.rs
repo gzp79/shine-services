@@ -113,9 +113,9 @@ mod test {
     use shine_test::test;
 
     #[test]
-    async fn test_captcha_validator_test_tokens_pass() {
+    async fn test_captcha_validator_test_token_pass() {
         let validator = CaptchaValidator::new("1x0000000000000000000000000000000AA".into());
-        let token = "token";
+        let token = "1x00000000000000000000AA";
         let response = validator
             .validate(token, None)
             .await
@@ -125,7 +125,7 @@ mod test {
     }
 
     #[test]
-    async fn test_captcha_validator_test_tokens_fail() {
+    async fn test_captcha_validator_test_token_invalid() {
         let validator = CaptchaValidator::new("2x0000000000000000000000000000000AA".into());
         let token = "token";
         let response = validator
@@ -138,7 +138,7 @@ mod test {
     }
 
     #[test]
-    async fn test_captcha_validator_test_tokens_expired() {
+    async fn test_captcha_validator_test_token_expired() {
         let validator = CaptchaValidator::new("3x0000000000000000000000000000000AA".into());
         let token = "token";
         let response = validator
@@ -151,7 +151,7 @@ mod test {
     }
 
     #[test]
-    async fn test_captcha_validator_invalid_token() {
+    async fn test_captcha_validator_real_token_invalid() {
         if let Ok(secret) = std::env::var("CF_CAPTCHA_SECRET") {
             let validator = CaptchaValidator::new(secret);
 
@@ -169,7 +169,7 @@ mod test {
     }
 
     #[test]
-    async fn test_captcha_validator_expired_token() {
+    async fn test_captcha_validator_real_token_expired() {
         if let Ok(secret) = std::env::var("CF_CAPTCHA_SECRET") {
             let validator = CaptchaValidator::new(secret);
 
