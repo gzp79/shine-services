@@ -8,6 +8,17 @@ import { UserAPI } from './user_api';
 
 export type TokenKind = 'access' | 'persistent' | 'singleAccess';
 
+function getCaptchaQuery(captcha: string | null | undefined): object {
+    if (captcha === null) {
+        // use to always pass token
+        return { captcha: '1x00000000000000000000AA' };
+    } else if (captcha) {
+        // use provided captcha
+        return { captcha };
+    }
+    return {};
+}
+
 export class RequestAPI {
     constructor(public readonly config: Config) {}
 
@@ -26,36 +37,46 @@ export class RequestAPI {
         sid: string | null,
         queryToken: string | null,
         apiKey: string | null,
-        rememberMe: boolean | null
+        rememberMe: boolean | null,
+        captcha: string | null | undefined
     ): Request {
         const qs = rememberMe ? { rememberMe } : {};
         const qt = queryToken ? { token: queryToken } : {};
         const ct = tid ? [`tid=${tid}`] : [];
         const cs = sid ? [`sid=${sid}`] : [];
         const ht = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+        let qc = getCaptchaQuery(captcha);
 
         return request
             .get(this.config.getUrlFor('identity/auth/token/login'))
-            .query({ ...qs, ...qt, ...config.defaultRedirects })
+            .query({ ...qs, ...qt, ...qc, ...config.defaultRedirects })
             .set('Cookie', [...ct, ...cs])
             .set({ ...ht });
     }
 
-    loginWithOAuth2(tid: string | null, sid: string | null, rememberMe: boolean | null): Request {
+    loginWithOAuth2(
+        tid: string | null,
+        sid: string | null,
+        rememberMe: boolean | null,
+        captcha: string | null | undefined
+    ): Request {
         const qs = rememberMe ? { rememberMe } : {};
         const ct = tid ? [`tid=${tid}`] : [];
         const cs = sid ? [`sid=${sid}`] : [];
+        let qc = getCaptchaQuery(captcha);
 
         return request
             .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
-            .query({ ...qs, ...config.defaultRedirects })
+            .query({ ...qs, ...qc, ...config.defaultRedirects })
             .set('Cookie', [...ct, ...cs]);
     }
 
-    linkWithOAuth2(sid: string | null): Request {
+    linkWithOAuth2(sid: string | null, captcha: string | null | undefined): Request {
+        let qc = getCaptchaQuery(captcha);
+
         return request
             .get(config.getUrlFor('identity/auth/oauth2_flow/link'))
-            .query({ ...config.defaultRedirects })
+            .query({ ...qc, ...config.defaultRedirects })
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
@@ -76,21 +97,28 @@ export class RequestAPI {
             .set('Cookie', [...cs, ...ce]);
     }
 
-    loginWithOpenId(tid: string | null, sid: string | null, rememberMe: boolean | null): Request {
+    loginWithOpenId(
+        tid: string | null,
+        sid: string | null,
+        rememberMe: boolean | null,
+        captcha: string | null | undefined
+    ): Request {
         const qs = rememberMe ? { rememberMe } : {};
         const ct = tid ? [`tid=${tid}`] : [];
         const cs = sid ? [`sid=${sid}`] : [];
+        let qc = getCaptchaQuery(captcha);
 
         return request
             .get(config.getUrlFor('identity/auth/openid_flow/login'))
-            .query({ ...qs, ...config.defaultRedirects })
+            .query({ ...qs, ...qc, ...config.defaultRedirects })
             .set('Cookie', [...ct, ...cs]);
     }
 
-    linkWithOpenId(sid: string | null): Request {
+    linkWithOpenId(sid: string | null, captcha: string | null | undefined): Request {
+        let qc = getCaptchaQuery(captcha);
         return request
             .get(config.getUrlFor('identity/auth/openid_flow/link'))
-            .query({ ...config.defaultRedirects })
+            .query({ ...qc, ...config.defaultRedirects })
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 

@@ -1,7 +1,7 @@
 mod auth_service;
 pub use self::auth_service::*;
-mod auth_service_utils;
-pub(in crate::auth) use self::auth_service_utils::*;
+mod auth_service_page_utils;
+pub(in crate::auth) use self::auth_service_page_utils::*;
 mod auth_service_external_auth;
 
 mod auth_session;
