@@ -267,16 +267,20 @@ impl AuthServiceState {
         }
     }
 
-    pub(in crate::auth) async fn validate_captcha(&self, token: &str) -> Result<(), AuthError> {
-        match self.captcha_validator().validate(token, None).await {
-            Ok(result) => {
-                if !result.success {
-                    Err(AuthError::Captcha(result.error_codes.join(", ")))
-                } else {
-                    Ok(())
+    pub(in crate::auth) async fn validate_captcha(&self, token: Option<&str>) -> Result<(), AuthError> {
+        if let Some(token) = token {
+            match self.captcha_validator().validate(token, None).await {
+                Ok(result) => {
+                    if !result.success {
+                        Err(AuthError::Captcha(result.error_codes.join(", ")))
+                    } else {
+                        Ok(())
+                    }
                 }
+                Err(err) => Err(AuthError::CaptchaValidation(err)),
             }
-            Err(err) => Err(AuthError::CaptchaValidation(err)),
+        } else {
+            Err(AuthError::Captcha("missing".to_string()))
         }
     }
 }

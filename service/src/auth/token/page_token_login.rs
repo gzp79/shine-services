@@ -30,7 +30,7 @@ struct Query {
     redirect_url: Option<Url>,
     login_url: Option<Url>,
     error_url: Option<Url>,
-    captcha: String,
+    captcha: Option<String>,
 }
 
 struct AuthenticationResult {
@@ -103,6 +103,7 @@ async fn authenticate_with_query_token(
             Ok(Some(info)) => info,
             Ok(None) => {
                 log::debug!("Token expired...");
+                // clearing the token from cookies, question: should we treat it as if no token was provided ???
                 auth_session.token_cookie = None;
                 return Err(state.page_error(auth_session, AuthError::TokenExpired, query.error_url.as_ref()));
             }
@@ -272,6 +273,11 @@ async fn authenticate_with_registration(
     // new session
     clear_session_token(state, &mut auth_session).await;
 
+    // we want to create a new user, check the captcha first
+    if let Err(err) = state.validate_captcha(query.captcha.as_deref()).await {
+        return Err(state.page_error(auth_session, err, query.error_url.as_ref()));
+    };
+
     // create a new user
     let identity = match state.create_user_with_retry(None).await {
         Ok(identity) => identity,
@@ -324,6 +330,23 @@ async fn authenticate(
     authenticate_with_registration(state, query, auth_session).await
 }
 
+/// Login flow in priority:
+/// - Check token in the query
+///   - Cookies and captcha are ignored
+///   - Cookie is updated based on the token status
+/// - Check authorization header
+///   - Cookies and captcha are ignored
+///   - If header is invalid, nothing is updated and request is rejected
+///   - Cookie is updated based on the token status
+/// - Check the token cookie
+///   - Captcha is ignored.
+///   - If there is an active session, reject the login with a logout required.
+///   - Cookie is updated based on the token status
+/// - Else
+///   - Check if there is an active session, if so reject the login with a logout required
+///   - Captcha is checked
+///   - Remember me should be true
+///   - If all the conditions are met, register a new user; otherwise reject the login with an error.
 async fn token_login(
     State(state): State<AuthServiceState>,
     query: Result<ValidatedQuery<Query>, ProblemDetail<InputError>>,
@@ -335,10 +358,6 @@ async fn token_login(
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
         Err(error) => return Err(state.page_error(auth_session, AuthError::InputError(error.problem), None)),
-    };
-
-    if let Err(err) = state.validate_captcha(&query.captcha).await {
-        return Err(state.page_error(auth_session, err, query.error_url.as_ref()));
     };
 
     // clear external login cookie, it shall be only for the authorize callback from the external provider

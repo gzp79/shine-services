@@ -204,9 +204,9 @@ describe('Login with OpenId', () => {
         const response = await api.request.loginWithOpenId(null, null, null, undefined);
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'https://web.sandbox.com:8080/error?type=invalidInput&status=400'
+            config.defaultRedirects.errorUrl + '?type=authError&status=400'
         );
-        expect(response.text).toContain('Failed to deserialize query string');
+        expect(response.text).toContain('&quot;Captcha&quot;:&quot;missing&quot;');
 
         const cookies = getCookies(response);
         expect(cookies.tid).toBeClearCookie();
@@ -362,38 +362,8 @@ describe('Link to OpenId account', () => {
         mock = undefined!;
     });
 
-    it('Link without captcha shall fail and redirect to the default error page', async () => {
-        const response = await api.request.linkWithOpenId(null, undefined);
-        expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(
-            'https://web.sandbox.com:8080/error?type=invalidInput&status=400'
-        );
-        expect(response.text).toContain('Failed to deserialize query string');
-
-        const cookies = getCookies(response);
-        expect(cookies.tid).toBeClearCookie();
-        expect(cookies.sid).toBeClearCookie();
-        expect(cookies.eid).toBeClearCookie();
-    });
-
-    it('Link with wrong captcha shall fail and redirect to the default error page', async () => {
-        const user = await TestUser.createGuest();
-
-        const response = await api.request.linkWithOpenId(user.sid, 'invalid');
-        expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=authError&status=400'
-        );
-        expect(response.text).toContain('&quot;Captcha&quot;:&quot;invalid-input-response&quot;');
-
-        const cookies = getCookies(response);
-        expect(cookies.tid).toBeClearCookie();
-        expect(cookies.sid.value).toEqual(user.sid);
-        expect(cookies.eid).toBeClearCookie();
-    });
-
     it('Linking without a session shall fail', async () => {
-        const response = await api.request.linkWithOpenId(null, null);
+        const response = await api.request.linkWithOpenId(null);
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=loginRequired&status=401'

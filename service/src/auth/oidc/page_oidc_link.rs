@@ -23,7 +23,6 @@ use validator::Validate;
 struct Query {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
-    captcha: String,
 }
 
 /// Link the current user to an OpenId Connect provider.
@@ -41,10 +40,6 @@ async fn oidc_link(
     if auth_session.user_session.is_none() {
         return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
     }
-
-    if let Err(err) = state.validate_captcha(&query.captcha).await {
-        return state.page_error(auth_session, err, query.error_url.as_ref());
-    };
 
     let core_client = match client.client().await {
         Ok(client) => client,

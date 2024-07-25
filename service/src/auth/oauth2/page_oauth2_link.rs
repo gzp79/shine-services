@@ -18,7 +18,6 @@ use validator::Validate;
 struct Query {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
-    captcha: String,
 }
 
 /// Link the current user to an OAuth2 provider.
@@ -36,10 +35,6 @@ async fn oauth2_link(
     if auth_session.user_session.is_none() {
         return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
     }
-
-    if let Err(err) = state.validate_captcha(&query.captcha).await {
-        return state.page_error(auth_session, err, query.error_url.as_ref());
-    };
 
     let key = match TokenGenerator::new(state.random()).generate() {
         Ok(key) => key,

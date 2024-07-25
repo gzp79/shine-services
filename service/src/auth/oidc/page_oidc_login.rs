@@ -24,7 +24,7 @@ struct Query {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
     remember_me: Option<bool>,
-    captcha: String,
+    captcha: Option<String>,
 }
 
 /// Login or register a new user with the interactive flow using an OpenID Connect provider.
@@ -39,7 +39,7 @@ async fn oidc_login(
         Err(error) => return state.page_error(auth_session, AuthError::InputError(error.problem), None),
     };
 
-    if let Err(err) = state.validate_captcha(&query.captcha).await {
+    if let Err(err) = state.validate_captcha(query.captcha.as_deref()).await {
         return state.page_error(auth_session, err, query.error_url.as_ref());
     };
 

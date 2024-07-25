@@ -6,7 +6,7 @@ use shine_service::{
 };
 use uuid::Uuid;
 
-use super::{versioned_update::VersionedUpdate, versioned_update::VersionedUpdateStatements};
+use super::versioned_update::{VersionedUpdate, VersionedUpdateStatements};
 
 pub type Role = String;
 

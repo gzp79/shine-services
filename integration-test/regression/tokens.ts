@@ -400,7 +400,7 @@ describe('Single access token', () => {
             expect(token.expireAt).toBeAfter(new Date(now + ttl * 1000));
             expect(token.expireAt).toBeBefore(new Date(now + (ttl + 5) * 1000));
 
-            console.log('Waiting for the token to expire (${time} second)...');
+            console.log(`Waiting for the token to expire (${ttl} second)...`);
             await delay(ttl * 1000);
             const response = await api.request.loginWithToken(null, null, token.token, null, false, null);
             expect(response).toHaveStatus(200);

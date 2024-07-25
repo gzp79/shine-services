@@ -71,12 +71,10 @@ export class RequestAPI {
             .set('Cookie', [...ct, ...cs]);
     }
 
-    linkWithOAuth2(sid: string | null, captcha: string | null | undefined): Request {
-        let qc = getCaptchaQuery(captcha);
-
+    linkWithOAuth2(sid: string | null): Request {
         return request
             .get(config.getUrlFor('identity/auth/oauth2_flow/link'))
-            .query({ ...qc, ...config.defaultRedirects })
+            .query({ ...config.defaultRedirects })
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
@@ -114,11 +112,10 @@ export class RequestAPI {
             .set('Cookie', [...ct, ...cs]);
     }
 
-    linkWithOpenId(sid: string | null, captcha: string | null | undefined): Request {
-        let qc = getCaptchaQuery(captcha);
+    linkWithOpenId(sid: string | null): Request {
         return request
             .get(config.getUrlFor('identity/auth/openid_flow/link'))
-            .query({ ...qc, ...config.defaultRedirects })
+            .query({ ...config.defaultRedirects })
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 

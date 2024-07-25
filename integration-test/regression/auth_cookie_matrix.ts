@@ -64,7 +64,7 @@ describe('Auth cookie consistency matrix', () => {
 
             //eid
             {
-                const response = await api.request.linkWithOAuth2(sid, null);
+                const response = await api.request.linkWithOAuth2(sid);
                 expect(response).toHaveStatus(200);
                 const cookies = getCookies(response);
                 expect(cookies.eid).toBeValidEID();

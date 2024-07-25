@@ -23,6 +23,7 @@ export class AuthAPI {
     }
 
     async loginAsGuestUser(extraHeaders?: Record<string, string>): Promise<UserCookies> {
+        // use the default captcha to fast-login
         const response = await this.request
             .loginWithToken(null, null, null, null, true, null)
             .set(extraHeaders ?? {});
@@ -45,8 +46,9 @@ export class AuthAPI {
         rememberMe: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
+        // no captcha as token login should work without it
         const response = await this.request
-            .loginWithToken(tid, null, null, null, rememberMe, null)
+            .loginWithToken(tid, null, null, null, rememberMe, undefined)
             .set(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(this.config.defaultRedirects.redirectUrl);
@@ -124,7 +126,7 @@ export class AuthAPI {
         sid: string,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request.linkWithOAuth2(sid, null).set(extraHeaders ?? {});
+        const response = await this.request.linkWithOAuth2(sid).set(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -234,7 +236,7 @@ export class AuthAPI {
         sid: string,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request.linkWithOpenId(sid, null).set(extraHeaders ?? {});
+        const response = await this.request.linkWithOpenId(sid).set(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(response.text);
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
