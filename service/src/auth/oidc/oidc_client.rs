@@ -14,7 +14,7 @@ use url::Url;
 
 struct ClientInfo {
     client_id: ClientId,
-    client_secret: ClientSecret,
+    client_secret: Option<ClientSecret>,
     discovery_url: IssuerUrl,
     redirect_url: RedirectUrl,
     ttl_client: StdDuration,
@@ -47,7 +47,7 @@ impl OIDCClient {
         config: &OIDCConfig,
     ) -> Result<Option<Self>, AuthBuildError> {
         let client_id = ClientId::new(config.client_id.clone());
-        let client_secret = ClientSecret::new(config.client_secret.clone());
+        let client_secret = config.client_secret.clone().map(ClientSecret::new);
         let redirect_url = auth_base_url
             .join(&format!("{provider}/auth"))
             .map_err(|err| AuthBuildError::RedirectUrl(format!("{err}")))?;
@@ -124,7 +124,7 @@ impl OIDCClient {
             CoreClient::from_provider_metadata(
                 provider_metadata,
                 client_info.client_id.clone(),
-                Some(client_info.client_secret.clone()),
+                client_info.client_secret.clone(),
             )
             .set_redirect_uri(client_info.redirect_url.clone())
         };

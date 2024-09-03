@@ -44,7 +44,7 @@ pub struct OAuth2Config {
 pub struct OIDCConfig {
     pub discovery_url: String,
     pub client_id: String,
-    pub client_secret: String,
+    pub client_secret: Option<String>,
     pub scopes: Vec<String>,
     pub ignore_certificates: Option<bool>,
     /// Maximum time to store the discovered OIDC client information, like JWKS.
