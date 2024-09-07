@@ -12,6 +12,7 @@ describe('Sessions', () => {
     const dateRange = [new Date(now - 60 * 1000), new Date(now + 60 * 1000)];
     const anySession: ActiveSession = {
         userId: expect.toBeString(),
+        fingerprint: expect.toBeString(),
         createdAt: expect.toBeBetween(dateRange[0], dateRange[1]),
         agent: '',
         country: null,
