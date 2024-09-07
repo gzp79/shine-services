@@ -2,6 +2,7 @@ import { RequestAPI } from './api';
 
 export interface ActiveSession {
     userId: string;
+    fingerprint: string;
     createdAt: Date;
     agent: string;
     country: string | null;

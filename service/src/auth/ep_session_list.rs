@@ -13,6 +13,7 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub struct ActiveSession {
     user_id: Uuid,
+    fingerprint: String,
     created_at: DateTime<Utc>,
     agent: String,
     country: Option<String>,
@@ -40,6 +41,7 @@ async fn session_list(
         .into_iter()
         .map(|s| ActiveSession {
             user_id: user.user_id,
+            fingerprint: s.fingerprint,
             created_at: s.created_at,
             agent: s.agent,
             country: s.country,
