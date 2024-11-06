@@ -4,8 +4,6 @@ use crate::{
 };
 use axum::{Extension, Router};
 use chrono::Duration;
-use oauth2::{reqwest::AsyncHttpClientError, HttpRequest, HttpResponse};
-use reqwest::Client as HttpClient;
 use ring::rand::SystemRandom;
 use serde::{Deserialize, Serialize};
 use shine_service::axum::ApiRoute;
@@ -363,33 +361,6 @@ impl AuthServiceBuilder {
 
         (page_router, api_router)
     }
-}
-
-pub async fn async_http_client(
-    http_client: &HttpClient,
-    request: HttpRequest,
-) -> Result<HttpResponse, AsyncHttpClientError> {
-    let mut request_builder = http_client
-        .request(request.method, request.url.as_str())
-        .body(request.body);
-    for (name, value) in &request.headers {
-        request_builder = request_builder.header(name.as_str(), value.as_bytes());
-    }
-    let request = request_builder.build().map_err(AsyncHttpClientError::Reqwest)?;
-
-    let response = http_client
-        .execute(request)
-        .await
-        .map_err(AsyncHttpClientError::Reqwest)?;
-
-    let status_code = response.status();
-    let headers = response.headers().to_owned();
-    let chunks = response.bytes().await.map_err(AsyncHttpClientError::Reqwest)?;
-    Ok(HttpResponse {
-        status_code,
-        headers,
-        body: chunks.to_vec(),
-    })
 }
 
 #[cfg(test)]

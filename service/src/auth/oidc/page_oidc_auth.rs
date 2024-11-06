@@ -73,10 +73,19 @@ async fn oidc_auth(
     }
 
     // Exchange the code with a token.
-    let token = match core_client
-        .exchange_code(auth_code)
+    let exchange_request = match core_client.exchange_code(auth_code) {
+        Ok(request) => request,
+        Err(err) => {
+            return state.page_error(
+                auth_session,
+                AuthError::TokenExchangeFailed(format!("{:?}", err)),
+                error_url.as_ref(),
+            )
+        }
+    };
+    let token = match exchange_request
         .set_pkce_verifier(PkceCodeVerifier::new(pkce_code_verifier))
-        .request_async(|r| async { client.send_request(r).await })
+        .request_async(&client.http_client)
         .await
     {
         Ok(token) => token,

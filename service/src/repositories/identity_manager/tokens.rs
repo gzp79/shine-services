@@ -13,9 +13,10 @@ use shine_service::{
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type as PGType};
 use tracing::instrument;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum TokenKind {
     SingleAccess,

@@ -25,7 +25,7 @@ use shine_service::{
         add_default_components, telemetry::TelemetryManager, ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy,
         ProblemConfig,
     },
-    service::UserSessionValidator,
+    service::UserSessionCacheReader,
 };
 use std::{env, fs, net::SocketAddr, time::Duration as StdDuration};
 use tera::Tera;
@@ -151,7 +151,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let db_pool = DBPool::new(&config.db).await?;
     let captcha_validator = CaptchaValidator::new(config.service.captcha_secret.clone());
-    let user_session = UserSessionValidator::new(None, &auth_config.session_secret, "", db_pool.redis.clone())?;
+    let user_session = UserSessionCacheReader::new(None, &auth_config.session_secret, "", db_pool.redis.clone())?;
     let problem_config = ProblemConfig::new(config.service.full_problem_response);
     let identity_manager = IdentityManager::new(&db_pool.postgres).await?;
     let ttl_session = Duration::seconds(i64::try_from(auth_config.ttl_session)?);

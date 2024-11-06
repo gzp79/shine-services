@@ -14,7 +14,9 @@ use validator::Validate;
 #[serde(rename_all = "camelCase")]
 struct Query {
     terminate_all: Option<bool>,
+    #[param(value_type=Option<String>)]
     redirect_url: Option<Url>,
+    #[param(value_type=Option<String>)]
     error_url: Option<Url>,
 }
 

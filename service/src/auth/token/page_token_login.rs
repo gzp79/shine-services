@@ -27,8 +27,11 @@ struct Query {
     /// - If there is a token cookie, this parameter is ignored an a login is performed.
     remember_me: Option<bool>,
     token: Option<String>,
+    #[param(value_type = Option<String>)]
     redirect_url: Option<Url>,
+    #[param(value_type = Option<String>)]
     login_url: Option<Url>,
+    #[param(value_type = Option<String>)]
     error_url: Option<Url>,
     captcha: Option<String>,
 }

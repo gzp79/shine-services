@@ -12,6 +12,7 @@ use validator::Validate;
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
 struct Query {
+    #[param(value_type=Option<String>)]
     redirect_url: Option<Url>,
 }
 

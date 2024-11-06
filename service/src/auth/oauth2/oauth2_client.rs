@@ -1,12 +1,19 @@
-use crate::auth::{async_http_client, AuthBuildError, ExternalUserInfoExtensions, OAuth2Config};
+use crate::auth::{AuthBuildError, ExternalUserInfoExtensions, OAuth2Config};
 use oauth2::{
-    basic::BasicClient, reqwest::AsyncHttpClientError, AuthUrl, ClientId, ClientSecret, HttpRequest, HttpResponse,
-    RedirectUrl, Scope, TokenUrl,
+    basic::BasicClient, AuthUrl, ClientId, ClientSecret, EndpointNotSet, EndpointSet, RedirectUrl, Scope, TokenUrl,
 };
 use openidconnect::UserInfoUrl;
 use reqwest::Client as HttpClient;
 use std::collections::HashMap;
 use url::Url;
+
+type CoreClient<
+    HasAuthUrl = EndpointSet,
+    HasDeviceAuthUrl = EndpointNotSet,
+    HasIntrospectionUrl = EndpointNotSet,
+    HasRevocationUrl = EndpointNotSet,
+    HasTokenUrl = EndpointSet,
+> = BasicClient<HasAuthUrl, HasDeviceAuthUrl, HasIntrospectionUrl, HasRevocationUrl, HasTokenUrl>;
 
 pub(in crate::auth) struct OAuth2Client {
     pub provider: String,
@@ -15,7 +22,7 @@ pub(in crate::auth) struct OAuth2Client {
     pub user_info_mapping: HashMap<String, String>,
     pub extensions: Vec<ExternalUserInfoExtensions>,
     pub http_client: HttpClient,
-    pub client: BasicClient,
+    pub client: CoreClient,
 }
 
 impl OAuth2Client {
@@ -33,8 +40,11 @@ impl OAuth2Client {
             TokenUrl::new(config.token_url.clone()).map_err(|err| AuthBuildError::InvalidTokenUrl(format!("{err}")))?;
         let user_info_url = UserInfoUrl::new(config.user_info_url.clone())
             .map_err(|err| AuthBuildError::InvalidUserInfoUrl(format!("{err}")))?;
-        let client =
-            BasicClient::new(client_id, Some(client_secret), auth_url, Some(token_url)).set_redirect_uri(redirect_url);
+        let client = BasicClient::new(client_id)
+            .set_auth_uri(auth_url)
+            .set_token_uri(token_url)
+            .set_redirect_uri(redirect_url)
+            .set_client_secret(client_secret);
 
         let ignore_certificates = config.ignore_certificates.unwrap_or(false);
         let http_client = HttpClient::builder()
@@ -52,9 +62,5 @@ impl OAuth2Client {
             http_client,
             client,
         })
-    }
-
-    pub async fn send_request(&self, request: HttpRequest) -> Result<HttpResponse, AsyncHttpClientError> {
-        async_http_client(&self.http_client, request).await
     }
 }

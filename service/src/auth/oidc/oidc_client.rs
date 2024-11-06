@@ -1,7 +1,7 @@
-use crate::auth::{async_http_client, AuthBuildError, OIDCConfig};
-use oauth2::{reqwest::AsyncHttpClientError, ClientId, ClientSecret, HttpRequest, HttpResponse, RedirectUrl, Scope};
+use crate::auth::{AuthBuildError, OIDCConfig};
+use oauth2::{ClientId, ClientSecret, EndpointMaybeSet, EndpointNotSet, EndpointSet, RedirectUrl, Scope};
 use openidconnect::{
-    core::{CoreClient, CoreProviderMetadata},
+    core::{CoreClient as OIDCCoreClient, CoreProviderMetadata},
     IssuerUrl,
 };
 use reqwest::Client as HttpClient;
@@ -25,6 +25,15 @@ struct ClientInfo {
 #[serde(rename_all = "camelCase")]
 pub struct OIDCDiscoveryError(pub String);
 
+type CoreClient<
+    HasAuthUrl = EndpointSet,
+    HasDeviceAuthUrl = EndpointNotSet,
+    HasIntrospectionUrl = EndpointNotSet,
+    HasRevocationUrl = EndpointNotSet,
+    HasTokenUrl = EndpointMaybeSet,
+    HasUserInfoUrl = EndpointMaybeSet,
+> = OIDCCoreClient<HasAuthUrl, HasDeviceAuthUrl, HasIntrospectionUrl, HasRevocationUrl, HasTokenUrl, HasUserInfoUrl>;
+
 #[derive(Clone)]
 struct CachedClient {
     client: CoreClient,
@@ -34,8 +43,8 @@ struct CachedClient {
 pub(in crate::auth) struct OIDCClient {
     pub provider: String,
     pub scopes: Vec<Scope>,
-    client_info: ClientInfo,
-    http_client: HttpClient,
+    pub client_info: ClientInfo,
+    pub http_client: HttpClient,
     cached_client: Arc<Mutex<Option<CachedClient>>>,
 }
 
@@ -107,27 +116,26 @@ impl OIDCClient {
         }
 
         // get client configuration from discovery
-        let client = {
-            let provider_metadata =
-                match CoreProviderMetadata::discover_async(client_info.discovery_url.clone(), |request| async {
-                    async_http_client(&self.http_client, request).await
-                })
-                .await
-                {
-                    Ok(meta) => meta,
-                    Err(err) => {
-                        log::warn!("Discovery failed for {}: {:#?}", self.provider, err);
-                        return Err(OIDCDiscoveryError(format!("{err:#?}")));
-                    }
-                };
+        let client =
+            {
+                let provider_metadata =
+                    match CoreProviderMetadata::discover_async(client_info.discovery_url.clone(), &self.http_client)
+                        .await
+                    {
+                        Ok(meta) => meta,
+                        Err(err) => {
+                            log::warn!("Discovery failed for {}: {:#?}", self.provider, err);
+                            return Err(OIDCDiscoveryError(format!("{err:#?}")));
+                        }
+                    };
 
-            CoreClient::from_provider_metadata(
-                provider_metadata,
-                client_info.client_id.clone(),
-                client_info.client_secret.clone(),
-            )
-            .set_redirect_uri(client_info.redirect_url.clone())
-        };
+                CoreClient::from_provider_metadata(
+                    provider_metadata,
+                    client_info.client_id.clone(),
+                    client_info.client_secret.clone(),
+                )
+                .set_redirect_uri(client_info.redirect_url.clone())
+            };
 
         // cache the new client (last writer wins)
         {
@@ -139,9 +147,5 @@ impl OIDCClient {
         }
 
         Ok(client)
-    }
-
-    pub async fn send_request(&self, request: HttpRequest) -> Result<HttpResponse, AsyncHttpClientError> {
-        async_http_client(&self.http_client, request).await
     }
 }
