@@ -217,6 +217,8 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         log::info!("Starting service on https://{addr:?}");
         let cert = fs::read(&tls_config.cert)?;
         let key = fs::read(&tls_config.key)?;
+        //todo: workaround for https://github.com/programatik29/axum-server/issues/153
+        // when fixed remove explicit dependency on rustls from Cargo.toml
         let config = axum_server::tls_rustls::RustlsConfig::from_pem(cert, key)
             .await
             .map_err(|e| anyhow!(e))?;
@@ -240,6 +242,8 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
 }
 
 pub fn main() {
+    let _ = rustls::crypto::ring::default_provider().install_default().unwrap();
+
     let rt = Runtime::new().unwrap();
 
     let handle = rt.handle();

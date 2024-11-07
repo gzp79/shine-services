@@ -7,19 +7,16 @@ use crate::{
 use axum::{extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, ProblemDetail, ValidatedQuery};
+use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, OpenApiUrl, ProblemDetail, ValidatedQuery};
 use std::sync::Arc;
-use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
 struct Query {
-    #[param(value_type = Option<String>)]
-    redirect_url: Option<Url>,
-    #[param(value_type = Option<String>)]
-    error_url: Option<Url>,
+    redirect_url: Option<OpenApiUrl>,
+    error_url: Option<OpenApiUrl>,
 }
 
 /// Link the current user to an OAuth2 provider.
@@ -35,12 +32,12 @@ async fn oauth2_link(
     };
 
     if auth_session.user_session.is_none() {
-        return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
+        return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_deref());
     }
 
     let key = match TokenGenerator::new(state.random()).generate() {
         Ok(key) => key,
-        Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
+        Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_deref()),
     };
 
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -56,8 +53,8 @@ async fn oauth2_link(
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
         nonce: None,
-        target_url: query.redirect_url,
-        error_url: query.error_url,
+        target_url: query.redirect_url.map(|url| url.into_url()),
+        error_url: query.error_url.map(|url| url.into_url()),
         remember_me: false,
         linked_user: auth_session.user_session.clone(),
     });

@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -31,21 +30,16 @@ pub struct TurnstileValidationRequest<'a> {
 pub struct TurnstileValidationResponse {
     #[serde(rename = "success")]
     pub success: bool,
-
-    #[serde(rename = "challenge_ts")]
-    pub challenge_ts: Option<DateTime<Utc>>,
-
-    #[serde(rename = "hostname")]
-    pub hostname: Option<String>,
-
+    //#[serde(rename = "challenge_ts")]
+    //pub challenge_ts: Option<DateTime<Utc>>,
+    //#[serde(rename = "hostname")]
+    //pub hostname: Option<String>,
     #[serde(rename = "error-codes")]
     pub error_codes: Vec<String>,
-
-    #[serde(rename = "action")]
-    pub action: Option<String>,
-
-    #[serde(rename = "cdata")]
-    pub cdata: Option<String>,
+    //#[serde(rename = "action")]
+    //pub action: Option<String>,
+    //#[serde(rename = "cdata")]
+    //pub cdata: Option<String>,
 }
 
 struct Inner {

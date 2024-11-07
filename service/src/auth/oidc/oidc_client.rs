@@ -12,7 +12,7 @@ use thiserror::Error as ThisError;
 use tokio::sync::Mutex;
 use url::Url;
 
-struct ClientInfo {
+pub struct ClientInfo {
     client_id: ClientId,
     client_secret: Option<ClientSecret>,
     discovery_url: IssuerUrl,
