@@ -16,7 +16,9 @@ struct Query {
     /// It is suggested to have some confirmation on the UI (for example enter the name of the user to be deleted) and
     /// set the value of the property to the result of the confirmation.
     confirmed: bool,
+    #[param(value_type=Option<String>)]
     redirect_url: Option<Url>,
+    #[param(value_type=Option<String>)]
     error_url: Option<Url>,
 }
 

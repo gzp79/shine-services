@@ -61,7 +61,7 @@ async fn oauth2_auth(
         .client
         .exchange_code(auth_code)
         .set_pkce_verifier(PkceCodeVerifier::new(pkce_code_verifier))
-        .request_async(|r| async { client.send_request(r).await })
+        .request_async(&client.http_client)
         .await
     {
         Ok(token) => token,

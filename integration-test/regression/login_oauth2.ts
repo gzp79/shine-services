@@ -116,7 +116,7 @@ describe('Check OAuth2 auth', () => {
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=authError&status=500'
         );
-        expect(response.text).toContain('Server returned empty error response');
+        expect(response.text).toContain('server returned empty error response');
 
         const cookies = getCookies(response);
         expect(cookies.tid).toBeClearCookie();

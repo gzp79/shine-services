@@ -12,17 +12,16 @@ use openidconnect::{
     Nonce,
 };
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, ProblemDetail, ValidatedQuery};
+use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, OpenApiUrl, ProblemDetail, ValidatedQuery};
 use std::sync::Arc;
-use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
 struct Query {
-    redirect_url: Option<Url>,
-    error_url: Option<Url>,
+    redirect_url: Option<OpenApiUrl>,
+    error_url: Option<OpenApiUrl>,
     remember_me: Option<bool>,
     captcha: Option<String>,
 }
@@ -40,23 +39,23 @@ async fn oidc_login(
     };
 
     if let Err(err) = state.validate_captcha(query.captcha.as_deref()).await {
-        return state.page_error(auth_session, err, query.error_url.as_ref());
+        return state.page_error(auth_session, err, query.error_url.as_deref());
     };
 
     // Note: having a token login is not an error, on successful start of the flow, the token cookie is cleared
     // It has some potential issue: if tid is connected to a guest user, the guest may loose all the progress
     if auth_session.user_session.is_some() {
-        return state.page_error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref());
+        return state.page_error(auth_session, AuthError::LogoutRequired, query.error_url.as_deref());
     }
 
     let core_client = match client.client().await {
         Ok(client) => client,
-        Err(err) => return state.page_error(auth_session, AuthError::OIDCDiscovery(err), query.error_url.as_ref()),
+        Err(err) => return state.page_error(auth_session, AuthError::OIDCDiscovery(err), query.error_url.as_deref()),
     };
 
     let key = match TokenGenerator::new(state.random()).generate() {
         Ok(key) => key,
-        Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
+        Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_deref()),
     };
 
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -79,8 +78,8 @@ async fn oidc_login(
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
         nonce: Some(nonce.secret().to_owned()),
-        target_url: query.redirect_url,
-        error_url: query.error_url,
+        target_url: query.redirect_url.map(|url| url.into_url()),
+        error_url: query.error_url.map(|url| url.into_url()),
         remember_me: query.remember_me.unwrap_or(false),
         linked_user: None,
     });

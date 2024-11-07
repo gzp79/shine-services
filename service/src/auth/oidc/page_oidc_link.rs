@@ -12,17 +12,16 @@ use openidconnect::{
     Nonce,
 };
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, ProblemDetail, ValidatedQuery};
+use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, OpenApiUrl, ProblemDetail, ValidatedQuery};
 use std::sync::Arc;
-use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
 struct Query {
-    redirect_url: Option<Url>,
-    error_url: Option<Url>,
+    redirect_url: Option<OpenApiUrl>,
+    error_url: Option<OpenApiUrl>,
 }
 
 /// Link the current user to an OpenId Connect provider.
@@ -38,17 +37,17 @@ async fn oidc_link(
     };
 
     if auth_session.user_session.is_none() {
-        return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
+        return state.page_error(auth_session, AuthError::LoginRequired, query.error_url.as_deref());
     }
 
     let core_client = match client.client().await {
         Ok(client) => client,
-        Err(err) => return state.page_error(auth_session, AuthError::OIDCDiscovery(err), query.error_url.as_ref()),
+        Err(err) => return state.page_error(auth_session, AuthError::OIDCDiscovery(err), query.error_url.as_deref()),
     };
 
     let key = match TokenGenerator::new(state.random()).generate() {
         Ok(key) => key,
-        Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_ref()),
+        Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_deref()),
     };
 
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -69,8 +68,8 @@ async fn oidc_link(
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
         nonce: Some(nonce.secret().to_owned()),
-        target_url: query.redirect_url,
-        error_url: query.error_url,
+        target_url: query.redirect_url.map(|url| url.into_url()),
+        error_url: query.error_url.map(|url| url.into_url()),
         remember_me: false,
         linked_user: auth_session.user_session.clone(),
     });

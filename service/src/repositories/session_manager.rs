@@ -211,7 +211,7 @@ impl SessionManager {
                 // it extends to session ttl, but the sentinel is still there to limit the session
                 .expire(&key, inner.ttl_session)
                 .ignore()
-                .query_async::<_, ()>(&mut *client)
+                .query_async::<()>(&mut *client)
                 .await
                 .map_err(DBError::RedisError)?;
             Ok(true)
@@ -283,7 +283,7 @@ impl SessionManager {
                 .expire(&sentinel_key, inner.ttl_session)
                 .hset_nx(&key, format!("{}", identity.version), &data)
                 .expire(&key, inner.ttl_session)
-                .query_async::<_, ()>(&mut *client)
+                .query_async::<()>(&mut *client)
                 .await
                 .map_err(DBError::RedisError)?;
 
