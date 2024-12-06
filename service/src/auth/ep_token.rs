@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::{
         ApiEndpoint, ApiMethod, IntoProblem, Problem, ProblemConfig, SiteInfo, ValidatedJson, ValidatedPath,
-        ValidationErrorEx as _,
+        ValidationErrorEx,
     },
     service::{CheckedCurrentUser, ClientFingerprint},
 };

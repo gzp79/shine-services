@@ -1,10 +1,8 @@
-use crate::repositories::Role;
-use shine_service::{
-    axum::{IntoProblem, Problem, ProblemConfig},
-    service::CurrentUser,
-};
+use shine_service::service::CurrentUser;
 use std::collections::HashSet;
 use thiserror::Error as ThisError;
+
+use super::roles::Role;
 
 /// All the user roles used by the service.
 pub mod roles {
@@ -28,16 +26,6 @@ pub enum Permission {
 pub enum PermissionError {
     #[error("Missing {0:?} permission to perform the operation")]
     MissingPermission(Permission),
-}
-
-impl IntoProblem for PermissionError {
-    fn into_problem(self, _config: &ProblemConfig) -> Problem {
-        match self {
-            PermissionError::MissingPermission(perm) => {
-                Problem::forbidden().with_detail(format!("Missing [{:?}] permission", perm))
-            }
-        }
-    }
 }
 
 pub struct PermissionSet {

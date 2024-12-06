@@ -1,22 +1,25 @@
-use crate::repositories::{Identity, IdentityKind, SessionManager};
+use crate::repositories::{
+    session::{redis::RedisSessionDb, session_db::SessionDb},
+    Identity, IdentityKind, SessionManager,
+};
 use chrono::{Duration, Utc};
 use ring::rand::SystemRandom;
 use shine_service::{
     axum::SiteInfo,
-    service::{self, ClientFingerprint, RedisConnectionPool, SessionKey},
+    service::{self, ClientFingerprint, SessionKey},
 };
 use shine_test::test;
 use std::env;
 use uuid::Uuid;
 
-async fn create_manager(scope: &str) -> Option<(SessionManager, RedisConnectionPool)> {
+async fn create_db(scope: &str) -> Option<impl SessionDb + Clone> {
     match env::var("SHINE_TEST_REDIS_CNS") {
         Ok(cns) => {
             let redis = service::create_redis_pool(cns.as_str()).await.unwrap();
-            let session_manager = SessionManager::new(&redis, format!("{scope}_"), Duration::seconds(1000))
+            let db = RedisSessionDb::new(&redis, format!("{scope}_"), Duration::seconds(1000))
                 .await
                 .unwrap();
-            Some((session_manager, redis))
+            Some(db)
         }
         _ => {
             log::warn!("Missing SHINE_TEST_REDIS_CNS, skipping test");
@@ -29,8 +32,8 @@ async fn create_manager(scope: &str) -> Option<(SessionManager, RedisConnectionP
 async fn create_get_remove() {
     let scope = &Uuid::new_v4().to_string()[..5];
     log::debug!("test scope: {scope}");
-    let (session_manager, _redis) = match create_manager(scope).await {
-        Some(session_manager) => session_manager,
+    let session_manager = match create_db(scope).await {
+        Some(db) => SessionManager::new(db),
         None => return,
     };
 
@@ -53,50 +56,50 @@ async fn create_get_remove() {
     };
 
     log::info!("Creating a new session...");
-    let session = session_manager
+    let (session, session_key) = session_manager
         .create(&identity, roles.clone(), &fingerprint, &site_info)
         .await
         .unwrap();
     log::debug!("session: {session:#?}");
-    assert_eq!(identity.id, session.user_id);
-    assert_eq!(identity.name, session.name);
-    assert_eq!(fingerprint.as_str(), session.fingerprint);
-    assert_eq!(roles, session.roles);
+    assert_eq!(identity.id, session.info.user_id);
+    assert_eq!(fingerprint.as_str(), session.info.fingerprint);
+    assert_eq!(identity.name, session.user.name);
+    assert_eq!(roles, session.user.roles);
 
     log::info!("Finding the session...");
     let found_session = session_manager
-        .find(identity.id, session.key)
+        .find(identity.id, &session_key)
         .await
         .unwrap()
         .expect("Session should have been found");
     log::debug!("found_session: {found_session:#?}");
-    assert_eq!(session.key, found_session.key);
-    assert_eq!(identity.id, found_session.user_id);
-    assert_eq!(identity.name, found_session.name);
-    assert_eq!(fingerprint.as_str(), found_session.fingerprint);
-    assert_eq!(roles, found_session.roles);
+    assert_eq!(session.info.key_hash, found_session.info.key_hash);
+    assert_eq!(identity.id, found_session.info.user_id);
+    assert_eq!(fingerprint.as_str(), found_session.info.fingerprint);
+    assert_eq!(identity.name, found_session.user.name);
+    assert_eq!(roles, found_session.user.roles);
 
     log::info!("Remove session...");
-    session_manager.remove(identity.id, session.key).await.unwrap();
+    session_manager.remove(identity.id, &session_key).await.unwrap();
     {
-        let keys = session_manager.find_key_hashes(identity.id).await.unwrap();
+        let sessions = session_manager.find_all(identity.id).await.unwrap();
         assert!(
-            keys.is_empty(),
+            sessions.is_empty(),
             "without concurrency after remove, no session data shall remain"
         );
     }
 
     log::info!("Finding after remove...");
-    let found_session = session_manager.find(identity.id, session.key).await.unwrap();
+    let found_session = session_manager.find(identity.id, &session_key).await.unwrap();
     assert!(found_session.is_none());
 }
 
 #[test]
-async fn no_create_update() {
+async fn update_invalid_key() {
     let scope = &Uuid::new_v4().to_string()[..5];
     log::debug!("test scope: {scope}");
-    let (session_manager, _) = match create_manager(scope).await {
-        Some(session_manager) => session_manager,
+    let session_manager = match create_db(scope).await {
+        Some(db) => SessionManager::new(db),
         None => return,
     };
 
@@ -114,7 +117,7 @@ async fn no_create_update() {
     let roles = vec!["R1".into(), "R2".into()];
 
     let session = session_manager
-        .update(SessionKey::new_random(&random).unwrap(), &identity, &roles)
+        .update_user_info(&SessionKey::new_random(&random).unwrap(), &identity, &roles)
         .await
         .unwrap();
     assert!(session.is_none());
@@ -124,8 +127,8 @@ async fn no_create_update() {
 async fn create_update() {
     let scope = &Uuid::new_v4().to_string()[..5];
     log::debug!("test scope: {scope}");
-    let (session_manager, _) = match create_manager(scope).await {
-        Some(session_manager) => session_manager,
+    let session_manager = match create_db(scope).await {
+        Some(db) => SessionManager::new(db),
         None => return,
     };
 
@@ -148,7 +151,7 @@ async fn create_update() {
     };
 
     log::info!("Creating a new session...");
-    let session = session_manager
+    let (session, session_key) = session_manager
         .create(&identity1, roles1.clone(), &fingerprint, &site_info)
         .await
         .unwrap();
@@ -157,28 +160,32 @@ async fn create_update() {
     let mut identity5 = identity1.clone();
     identity5.version = 5;
     let roles5 = vec!["R2".into(), "R5".into()];
-    let updated_session = session_manager.update(session.key, &identity5, &roles5).await.unwrap();
+    let updated_session = session_manager
+        .update_user_info(&session_key, &identity5, &roles5)
+        .await
+        .unwrap();
     let updated_session = updated_session.expect("Session should be available");
-    assert_eq!(session.key, updated_session.key);
-    assert_eq!(identity5.id, updated_session.user_id);
-    assert_eq!(identity5.name, updated_session.name);
-    assert_eq!(identity5.version, updated_session.version);
-    assert_eq!(fingerprint.as_str(), updated_session.fingerprint);
-    assert_eq!(roles5, updated_session.roles);
+    assert_eq!(session.info.key_hash, updated_session.info.key_hash);
+    assert_eq!(identity5.id, updated_session.info.user_id);
+    assert_eq!(fingerprint.as_str(), updated_session.info.fingerprint);
+    assert_eq!(identity5.version, updated_session.user_version);
+    assert_eq!(identity5.name, updated_session.user.name);
+    assert_eq!(roles5, updated_session.user.roles);
 
     {
         log::info!("Finding the session with version 5 ...");
         let found_session = session_manager
-            .find(identity5.id, session.key)
+            .find(identity5.id, &session_key)
             .await
             .unwrap()
             .expect("Session should have been found");
         log::debug!("found_session: {found_session:#?}");
-        assert_eq!(session.key, found_session.key);
-        assert_eq!(identity5.id, found_session.user_id);
-        assert_eq!(identity5.name, found_session.name);
-        assert_eq!(fingerprint.as_str(), found_session.fingerprint);
-        assert_eq!(roles5, found_session.roles);
+        assert_eq!(session.info.key_hash, found_session.info.key_hash);
+        assert_eq!(identity5.id, found_session.info.user_id);
+        assert_eq!(fingerprint.as_str(), found_session.info.fingerprint);
+        assert_eq!(identity5.version, found_session.user_version);
+        assert_eq!(identity5.name, found_session.user.name);
+        assert_eq!(roles5, found_session.user.roles);
     }
 
     {
@@ -186,54 +193,62 @@ async fn create_update() {
         let mut identity3 = identity1.clone();
         let roles3 = vec!["R2".into(), "R3".into()];
         identity3.version = 3;
-        let updated_session = session_manager.update(session.key, &identity3, &roles3).await.unwrap();
+        let updated_session = session_manager
+            .update_user_info(&session_key, &identity3, &roles3)
+            .await
+            .unwrap();
         let updated_session = updated_session.expect("Session should be available");
         // it should have no effect on the update
-        assert_eq!(session.key, updated_session.key);
-        assert_eq!(identity5.id, updated_session.user_id);
-        assert_eq!(identity5.name, updated_session.name);
-        assert_eq!(identity5.version, updated_session.version);
-        assert_eq!(fingerprint.as_str(), updated_session.fingerprint);
-        assert_eq!(roles5, updated_session.roles);
+        assert_eq!(session.info.key_hash, updated_session.info.key_hash);
+        assert_eq!(identity5.id, updated_session.info.user_id);
+        assert_eq!(fingerprint.as_str(), updated_session.info.fingerprint);
+        assert_eq!(identity5.version, updated_session.user_version);
+        assert_eq!(identity5.name, updated_session.user.name);
+        assert_eq!(roles5, updated_session.user.roles);
 
         log::info!("Finding the session with version 5 after storing version 3 ...");
         let found_session = session_manager
-            .find(identity5.id, session.key)
+            .find(identity5.id, &session_key)
             .await
             .unwrap()
             .expect("Session should have been found");
         log::debug!("found_session: {found_session:#?}");
-        assert_eq!(session.key, found_session.key);
-        assert_eq!(identity5.id, found_session.user_id);
-        assert_eq!(identity5.name, found_session.name);
-        assert_eq!(fingerprint.as_str(), found_session.fingerprint);
-        assert_eq!(roles5, found_session.roles);
+        assert_eq!(session.info.key_hash, found_session.info.key_hash);
+        assert_eq!(identity5.id, found_session.info.user_id);
+        assert_eq!(fingerprint.as_str(), found_session.info.fingerprint);
+        assert_eq!(identity5.version, found_session.user_version);
+        assert_eq!(identity5.name, found_session.user.name);
+        assert_eq!(roles5, found_session.user.roles);
     }
 
     {
         log::info!("Update to version 5 again with different roles should have no effect");
         let roles5b = vec!["R2".into(), "R52".into()];
-        let updated_session = session_manager.update(session.key, &identity5, &roles5b).await.unwrap();
+        let updated_session = session_manager
+            .update_user_info(&session_key, &identity5, &roles5b)
+            .await
+            .unwrap();
         let updated_session = updated_session.expect("Session should be available");
-        assert_eq!(session.key, updated_session.key);
-        assert_eq!(identity5.id, updated_session.user_id);
-        assert_eq!(identity5.name, updated_session.name);
-        assert_eq!(identity5.version, updated_session.version);
-        assert_eq!(fingerprint.as_str(), updated_session.fingerprint);
-        assert_eq!(roles5, updated_session.roles);
+        assert_eq!(session.info.key_hash, updated_session.info.key_hash);
+        assert_eq!(identity5.id, updated_session.info.user_id);
+        assert_eq!(fingerprint.as_str(), updated_session.info.fingerprint);
+        assert_eq!(identity5.version, updated_session.user_version);
+        assert_eq!(identity5.name, updated_session.user.name);
+        assert_eq!(roles5, updated_session.user.roles);
 
-        log::info!("Finding the session with version 5 after storing version 3 ...");
+        log::info!("Finding the session with version 5 after storing version 5 with altered roles ...");
         let found_session = session_manager
-            .find(identity5.id, session.key)
+            .find(identity5.id, &session_key)
             .await
             .unwrap()
             .expect("Session should have been found");
         log::debug!("found_session: {found_session:#?}");
-        assert_eq!(session.key, found_session.key);
-        assert_eq!(identity5.id, found_session.user_id);
-        assert_eq!(identity5.name, found_session.name);
-        assert_eq!(fingerprint.as_str(), found_session.fingerprint);
-        assert_eq!(roles5, found_session.roles);
+        assert_eq!(session.info.key_hash, found_session.info.key_hash);
+        assert_eq!(identity5.id, found_session.info.user_id);
+        assert_eq!(fingerprint.as_str(), found_session.info.fingerprint);
+        assert_eq!(identity5.name, found_session.user.name);
+        assert_eq!(identity5.version, found_session.user_version);
+        assert_eq!(roles5, found_session.user.roles);
     }
 }
 
@@ -241,8 +256,8 @@ async fn create_update() {
 async fn create_many_remove_all() {
     let scope = &Uuid::new_v4().to_string()[..5];
     log::debug!("test scope: {scope}");
-    let (session_manager, _redis) = match create_manager(scope).await {
-        Some(session_manager) => session_manager,
+    let session_manager = match create_db(scope).await {
+        Some(db) => SessionManager::new(db),
         None => return,
     };
 
@@ -267,24 +282,24 @@ async fn create_many_remove_all() {
     // generate a few sessions for user1
     let mut keys = vec![];
     for _ in 0..10 {
-        let session = session_manager
+        let (_, session_key) = session_manager
             .create(&identity, roles.clone(), &fingerprint, &site_info)
             .await
             .unwrap();
-        keys.push(session.key);
+        keys.push(session_key);
     }
 
     // create a session for another user
     let mut identity2 = identity.clone();
     identity2.id = Uuid::new_v4();
-    let session2 = session_manager
+    let (session2, session2_key) = session_manager
         .create(&identity2, roles.clone(), &fingerprint, &site_info)
         .await
         .unwrap();
 
     // delete sessions of user1
     session_manager.remove_all(identity.id).await.unwrap();
-    let keys = session_manager.find_key_hashes(identity.id).await.unwrap();
+    let keys = session_manager.find_all(identity.id).await.unwrap();
     assert!(
         keys.is_empty(),
         "without concurrency after remove, no session data shall remain"
@@ -292,10 +307,10 @@ async fn create_many_remove_all() {
 
     // check session of user2, it shall not be deleted
     let found_session = session_manager
-        .find(identity2.id, session2.key)
+        .find(identity2.id, &session2_key)
         .await
         .unwrap()
         .expect("Session should have been found");
-    assert_eq!(session2.key, found_session.key);
-    assert_eq!(session2.user_id, identity2.id);
+    assert_eq!(session2.info.key_hash, found_session.info.key_hash);
+    assert_eq!(identity2.id, found_session.info.user_id);
 }

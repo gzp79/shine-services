@@ -1,20 +1,10 @@
 use crate::repositories::DBError;
-use shine_service::{
-    axum::{IntoProblem, Problem, ProblemConfig},
-    service::PGError,
-};
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
 pub enum IdentityBuildError {
     #[error(transparent)]
     DBError(#[from] DBError),
-}
-
-impl From<tokio_postgres::Error> for IdentityBuildError {
-    fn from(err: tokio_postgres::Error) -> Self {
-        Self::DBError(err.into())
-    }
 }
 
 #[derive(Debug, ThisError)]
@@ -37,16 +27,4 @@ pub enum IdentityError {
     UserDeleted,
     #[error(transparent)]
     DBError(#[from] DBError),
-}
-
-impl From<PGError> for IdentityError {
-    fn from(err: PGError) -> Self {
-        Self::DBError(err.into())
-    }
-}
-
-impl IntoProblem for IdentityError {
-    fn into_problem(self, _config: &ProblemConfig) -> Problem {
-        todo!()
-    }
 }

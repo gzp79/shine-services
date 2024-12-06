@@ -1,30 +1,18 @@
-use crate::repositories::{Identity, IdentityBuildError, IdentityError, IdentityKind};
+use crate::repositories::{
+    identity::external_links::ExternalLinks, DBError, ExternalLink, ExternalUserInfo, Identity, IdentityBuildError,
+    IdentityError, IdentityKind,
+};
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
 use postgres_from_row::FromRow;
 use shine_service::{
     pg_query,
-    service::{PGClient, PGConnection, PGErrorChecks as _, PGRawConnection},
+    service::{PGClient, PGErrorChecks},
 };
+use tracing::instrument;
 use uuid::Uuid;
 
-#[derive(Clone, Debug)]
-pub struct ExternalUserInfo {
-    pub provider: String,
-    pub provider_id: String,
-    pub name: Option<String>,
-    pub email: Option<String>,
-}
-
-#[derive(Clone, Debug)]
-pub struct ExternalLink {
-    pub user_id: Uuid,
-    pub provider: String,
-    pub provider_id: String,
-    pub name: Option<String>,
-    pub email: Option<String>,
-    pub linked_at: DateTime<Utc>,
-}
+use super::PgIdentityTransaction;
 
 pg_query!( InsertExternalLogin =>
     in = user_id: Uuid, provider: &str, provider_id: &str, name: Option<&str>, email: Option<&str>;
@@ -100,7 +88,7 @@ pg_query!( ExistsByUserId =>
     "#
 );
 
-pub struct ExternalLinksStatements {
+pub struct PgExternalLinksStatements {
     insert: InsertExternalLogin,
     find_by_provider_id: FindByProviderId,
     list_by_user_id: ListByUserId,
@@ -108,44 +96,26 @@ pub struct ExternalLinksStatements {
     delete_link: DeleteLink,
 }
 
-impl ExternalLinksStatements {
+impl PgExternalLinksStatements {
     pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
         Ok(Self {
-            insert: InsertExternalLogin::new(client).await?,
-            find_by_provider_id: FindByProviderId::new(client).await?,
-            list_by_user_id: ListByUserId::new(client).await?,
-            exists_by_user_id: ExistsByUserId::new(client).await?,
-            delete_link: DeleteLink::new(client).await?,
+            insert: InsertExternalLogin::new(client).await.map_err(DBError::from)?,
+            find_by_provider_id: FindByProviderId::new(client).await.map_err(DBError::from)?,
+            list_by_user_id: ListByUserId::new(client).await.map_err(DBError::from)?,
+            exists_by_user_id: ExistsByUserId::new(client).await.map_err(DBError::from)?,
+            delete_link: DeleteLink::new(client).await.map_err(DBError::from)?,
         })
     }
 }
 
-/// Handle external links
-pub struct ExternalLinks<'a, T>
-where
-    T: PGRawConnection,
-{
-    client: &'a PGConnection<T>,
-    stmts_external_links: &'a ExternalLinksStatements,
-}
-
-impl<'a, T> ExternalLinks<'a, T>
-where
-    T: PGRawConnection,
-{
-    pub fn new(client: &'a PGConnection<T>, stmts_external_links: &'a ExternalLinksStatements) -> Self {
-        Self {
-            client,
-            stmts_external_links,
-        }
-    }
-
-    pub async fn link_user(&mut self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError> {
+impl<'a> ExternalLinks for PgIdentityTransaction<'a> {
+    #[instrument(skip(self))]
+    async fn link_user(&mut self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError> {
         match self
             .stmts_external_links
             .insert
             .query_one(
-                self.client,
+                &self.transaction,
                 &user_id,
                 &external_user.provider.as_str(),
                 &external_user.provider_id.as_str(),
@@ -165,12 +135,14 @@ where
         }
     }
 
-    pub async fn find_all(&mut self, user_id: Uuid) -> Result<Vec<ExternalLink>, IdentityError> {
+    #[instrument(skip(self))]
+    async fn find_all_links(&mut self, user_id: Uuid) -> Result<Vec<ExternalLink>, IdentityError> {
         let links = self
             .stmts_external_links
             .list_by_user_id
-            .query(self.client, &user_id)
-            .await?
+            .query(&self.transaction, &user_id)
+            .await
+            .map_err(DBError::from)?
             .into_iter()
             .map(|row| ExternalLink {
                 user_id: row.user_id,
@@ -185,18 +157,21 @@ where
         Ok(links)
     }
 
-    pub async fn is_linked(&mut self, user_id: Uuid) -> Result<bool, IdentityError> {
+    #[instrument(skip(self))]
+    async fn is_linked(&mut self, user_id: Uuid) -> Result<bool, IdentityError> {
         let is_linked = self
             .stmts_external_links
             .exists_by_user_id
-            .query_one(self.client, &user_id)
+            .query_one(&self.transaction, &user_id)
             .inspect(|d| log::info!("is_linked: {:?}", d))
-            .await?;
+            .await
+            .map_err(DBError::from)?;
 
         Ok(is_linked)
     }
 
-    pub async fn find_by_external_link(
+    #[instrument(skip(self))]
+    async fn find_by_external_link(
         &mut self,
         provider: &str,
         provider_id: &str,
@@ -204,8 +179,9 @@ where
         Ok(self
             .stmts_external_links
             .find_by_provider_id
-            .query_opt(self.client, &provider, &provider_id)
-            .await?
+            .query_opt(&self.transaction, &provider, &provider_id)
+            .await
+            .map_err(DBError::from)?
             .map(|row| Identity {
                 id: row.user_id,
                 kind: row.kind,
@@ -217,7 +193,8 @@ where
             }))
     }
 
-    pub async fn delete_link(
+    #[instrument(skip(self))]
+    async fn delete_link(
         &mut self,
         user_id: Uuid,
         provider: &str,
@@ -226,8 +203,9 @@ where
         let count = self
             .stmts_external_links
             .delete_link
-            .execute(self.client, &user_id, &provider, &provider_id)
-            .await?;
+            .execute(&self.transaction, &user_id, &provider, &provider_id)
+            .await
+            .map_err(DBError::from)?;
 
         if count == 1 {
             Ok(Some(()))

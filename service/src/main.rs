@@ -1,10 +1,10 @@
-mod app_config;
+/*mod app_config;
 mod auth;
 mod identity;
-mod openapi;
+mod openapi;*/
 mod repositories;
 
-use crate::{
+/*use crate::{
     app_config::{AppConfig, SERVICE_NAME},
     auth::{AuthServiceBuilder, AuthServiceDependencies},
     identity::{IdentityServiceBuilder, IdentityServiceDependencies},
@@ -153,7 +153,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let captcha_validator = CaptchaValidator::new(config.service.captcha_secret.clone());
     let user_session = UserSessionCacheReader::new(None, &auth_config.session_secret, "", db_pool.redis.clone())?;
     let problem_config = ProblemConfig::new(config.service.full_problem_response);
-    let identity_manager = IdentityManager::new(&db_pool.postgres).await?;
+    let identity_manager = PgIdentityManager::new(&db_pool.postgres).await?;
     let ttl_session = Duration::seconds(i64::try_from(auth_config.ttl_session)?);
     let session_manager = SessionManager::new(&db_pool.redis, String::new(), ttl_session).await?;
     let auto_name_manager = AutoNameManager::new(&config.user_name, &db_pool.postgres).await?;
@@ -263,3 +263,6 @@ pub fn main() {
         panic!();
     }
 }
+*/
+
+pub fn main() {}

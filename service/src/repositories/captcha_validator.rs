@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 const CAPTCHA_URL: &str = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
-#[derive(Debug, ThisError, Serialize)]
+#[derive(Debug, ThisError)]
 pub enum CaptchaError {
     #[error("Request failed with {0}")]
     Request(String),

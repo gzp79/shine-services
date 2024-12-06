@@ -1,14 +1,13 @@
-use crate::repositories::{IdentityBuildError, IdentityError};
+use crate::repositories::{identity::roles::Roles, DBError, IdentityBuildError, IdentityError};
 use postgres_from_row::FromRow;
 use shine_service::{
     pg_query,
-    service::{PGClient, PGConnection, PGErrorChecks as _, PGRawConnection},
+    service::{PGClient, PGErrorChecks},
 };
+use tracing::instrument;
 use uuid::Uuid;
 
-use super::versioned_update::{VersionedUpdate, VersionedUpdateStatements};
-
-pub type Role = String;
+use super::{PgIdentityTransaction, PgVersionedUpdate};
 
 pg_query!( AddUserRole =>
     in = user_id: Uuid, role: &str;
@@ -46,56 +45,37 @@ pg_query!( DeleteUserRole =>
     "#
 );
 
-pub struct RolesStatements {
+pub struct PgRolesStatements {
     add: AddUserRole,
     get: GetUserRoles,
     delete: DeleteUserRole,
 }
 
-impl RolesStatements {
+impl PgRolesStatements {
     pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
         Ok(Self {
-            add: AddUserRole::new(client).await?,
-            get: GetUserRoles::new(client).await?,
-            delete: DeleteUserRole::new(client).await?,
+            add: AddUserRole::new(client).await.map_err(DBError::from)?,
+            get: GetUserRoles::new(client).await.map_err(DBError::from)?,
+            delete: DeleteUserRole::new(client).await.map_err(DBError::from)?,
         })
     }
 }
 
-/// Handel user roles.
-pub struct Roles<'a, T>
-where
-    T: PGRawConnection,
-{
-    client: &'a mut PGConnection<T>,
-    stmts_version: &'a VersionedUpdateStatements,
-    stmts_role: &'a RolesStatements,
-}
-
-impl<'a, T> Roles<'a, T>
-where
-    T: PGRawConnection,
-{
-    pub fn new(
-        client: &'a mut PGConnection<T>,
-        stmts_version: &'a VersionedUpdateStatements,
-        stmts_role: &'a RolesStatements,
-    ) -> Self {
-        Self {
-            client,
-            stmts_version,
-            stmts_role,
-        }
-    }
-
-    pub async fn add_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
-        let update = match VersionedUpdate::new(self.client, self.stmts_version, user_id).await? {
+impl<'a> Roles for PgIdentityTransaction<'a> {
+    #[instrument(skip(self))]
+    async fn add_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
+        let update = match PgVersionedUpdate::new(&mut self.transaction, &self.stmts_version, user_id).await? {
             Some(update) => update,
             None => return Ok(None),
         };
 
         log::debug!("Adding role {} to user {}", role, user_id);
-        match self.stmts_role.add.execute(update.client(), &user_id, &role).await {
+        match self
+            .stmts_roles
+            .add
+            .execute(update.transaction(), &user_id, &role)
+            .await
+        {
             Ok(_) => {}
             Err(err) if err.is_constraint("roles", "fkey_user_id") => {
                 // user not found, deleted meanwhile
@@ -105,15 +85,21 @@ where
                 // role already present, it's ok
                 return Ok(Some(()));
             }
-            Err(err) => return Err(err.into()),
+            Err(err) => return Err(DBError::from(err).into()),
         };
 
         update.finish().await?;
         Ok(Some(()))
     }
 
-    pub async fn get_roles(&mut self, user_id: Uuid) -> Result<Option<Vec<String>>, IdentityError> {
-        let roles = self.stmts_role.get.query_opt(&*self.client, &user_id).await?;
+    #[instrument(skip(self))]
+    async fn get_roles(&mut self, user_id: Uuid) -> Result<Option<Vec<String>>, IdentityError> {
+        let roles = self
+            .stmts_roles
+            .get
+            .query_opt(&self.transaction, &user_id)
+            .await
+            .map_err(DBError::from)?;
         if let Some(roles) = roles {
             Ok(Some(roles.roles))
         } else {
@@ -121,13 +107,18 @@ where
         }
     }
 
-    pub async fn delete_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
-        let update = match VersionedUpdate::new(self.client, self.stmts_version, user_id).await? {
+    #[instrument(skip(self))]
+    async fn delete_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
+        let update = match PgVersionedUpdate::new(&mut self.transaction, &self.stmts_version, user_id).await? {
             Some(update) => update,
             None => return Ok(None),
         };
 
-        self.stmts_role.delete.execute(update.client(), &user_id, &role).await?;
+        self.stmts_roles
+            .delete
+            .execute(update.transaction(), &user_id, &role)
+            .await
+            .map_err(DBError::from)?;
 
         update.finish().await?;
         Ok(Some(()))

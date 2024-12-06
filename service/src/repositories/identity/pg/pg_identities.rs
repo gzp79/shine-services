@@ -1,20 +1,18 @@
-use crate::repositories::{IdentityBuildError, IdentityError};
+use crate::repositories::{
+    identity::identities::Identities, DBError, Identity, IdentityBuildError, IdentityError, IdentityKind,
+};
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
 use shine_service::{
     pg_query,
-    service::{PGClient, PGConnection, PGConvertError, PGErrorChecks, PGRawConnection, ToPGType},
+    service::{PGClient, PGConvertError, PGErrorChecks, ToPGType},
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type};
 use tracing::instrument;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy)]
-pub enum IdentityKind {
-    User,
-    Studio,
-}
+use super::PgIdentityTransaction;
 
 impl ToSql for IdentityKind {
     fn to_sql(&self, ty: &Type, out: &mut BytesMut) -> Result<IsNull, PGConvertError> {
@@ -44,18 +42,6 @@ impl<'a> FromSql<'a> for IdentityKind {
 
 impl ToPGType for IdentityKind {
     const PG_TYPE: Type = Type::INT2;
-}
-
-#[derive(Clone, Debug)]
-
-pub struct Identity {
-    pub id: Uuid,
-    pub kind: IdentityKind,
-    pub name: String,
-    pub email: Option<String>,
-    pub is_email_confirmed: bool,
-    pub created: DateTime<Utc>,
-    pub version: i32,
 }
 
 pg_query!( InsertIdentity =>
@@ -97,44 +83,25 @@ pg_query!( FindById =>
     "#
 );
 
-pub struct IdentitiesStatements {
+pub struct PgIdentitiesStatements {
     insert_identity: InsertIdentity,
     cascaded_delete: CascadedDelete,
     find_by_id: FindById,
 }
 
-impl IdentitiesStatements {
+impl PgIdentitiesStatements {
     pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
         Ok(Self {
-            insert_identity: InsertIdentity::new(client).await?,
-            cascaded_delete: CascadedDelete::new(client).await?,
-            find_by_id: FindById::new(client).await?,
+            insert_identity: InsertIdentity::new(client).await.map_err(DBError::from)?,
+            cascaded_delete: CascadedDelete::new(client).await.map_err(DBError::from)?,
+            find_by_id: FindById::new(client).await.map_err(DBError::from)?,
         })
     }
 }
 
-/// Handle identities.
-pub struct Identities<'a, T>
-where
-    T: PGRawConnection,
-{
-    client: &'a PGConnection<T>,
-    stmts_identities: &'a IdentitiesStatements,
-}
-
-impl<'a, T> Identities<'a, T>
-where
-    T: PGRawConnection,
-{
-    pub fn new(client: &'a PGConnection<T>, stmts_identities: &'a IdentitiesStatements) -> Self {
-        Self {
-            client,
-            stmts_identities,
-        }
-    }
-
+impl<'a> Identities for PgIdentityTransaction<'a> {
     #[instrument(skip(self))]
-    pub async fn create_user(
+    async fn create_user(
         &mut self,
         user_id: Uuid,
         user_name: &str,
@@ -145,7 +112,7 @@ where
         let created = match self
             .stmts_identities
             .insert_identity
-            .query_one(self.client, &user_id, &IdentityKind::User, &user_name, &email)
+            .query_one(&self.transaction, &user_id, &IdentityKind::User, &user_name, &email)
             .await
         {
             Ok(created) => created,
@@ -178,12 +145,13 @@ where
     }
 
     #[instrument(skip(self))]
-    pub async fn find_by_id(&mut self, user_id: Uuid) -> Result<Option<Identity>, IdentityError> {
+    async fn find_by_id(&mut self, user_id: Uuid) -> Result<Option<Identity>, IdentityError> {
         Ok(self
             .stmts_identities
             .find_by_id
-            .query_opt(self.client, &user_id)
-            .await?
+            .query_opt(&self.transaction, &user_id)
+            .await
+            .map_err(DBError::from)?
             .map(|row| Identity {
                 id: row.user_id,
                 kind: row.kind,
@@ -196,11 +164,13 @@ where
     }
 
     #[instrument(skip(self))]
-    pub async fn cascaded_delete(&mut self, user_id: Uuid) -> Result<(), IdentityError> {
+    async fn cascaded_delete(&mut self, user_id: Uuid) -> Result<(), IdentityError> {
         self.stmts_identities
             .cascaded_delete
-            .execute(self.client, &user_id)
-            .await?;
+            .execute(&self.transaction, &user_id)
+            .await
+            .map_err(DBError::from)
+            .map_err(DBError::from)?;
         Ok(())
     }
 }

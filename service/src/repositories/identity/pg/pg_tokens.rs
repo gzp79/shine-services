@@ -1,28 +1,19 @@
-use crate::repositories::{Identity, IdentityBuildError, IdentityError, IdentityKind};
+use crate::repositories::{
+    identity::tokens::Tokens, DBError, Identity, IdentityBuildError, IdentityError, IdentityKind, TokenInfo, TokenKind,
+};
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use postgres_from_row::FromRow;
-use ring::digest;
-use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::SiteInfo,
     pg_query,
-    service::{
-        ClientFingerprint, PGClient, PGConnection, PGConvertError, PGErrorChecks as _, PGRawConnection, ToPGType,
-    },
+    service::{ClientFingerprint, PGClient, PGConvertError, PGErrorChecks, ToPGType},
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type as PGType};
 use tracing::instrument;
-use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum TokenKind {
-    SingleAccess,
-    Persistent,
-    Access,
-}
+use super::PgIdentityTransaction;
 
 impl ToSql for TokenKind {
     fn to_sql(&self, ty: &PGType, out: &mut BytesMut) -> Result<IsNull, PGConvertError> {
@@ -54,21 +45,6 @@ impl<'a> FromSql<'a> for TokenKind {
 
 impl ToPGType for TokenKind {
     const PG_TYPE: PGType = PGType::INT2;
-}
-
-#[derive(Debug)]
-pub struct TokenInfo {
-    pub user_id: Uuid,
-    pub kind: TokenKind,
-    pub token_hash: String,
-    pub created_at: DateTime<Utc>,
-    pub expire_at: DateTime<Utc>,
-    pub is_expired: bool,
-    pub fingerprint: Option<String>,
-    pub agent: String,
-    pub country: Option<String>,
-    pub region: Option<String>,
-    pub city: Option<String>,
 }
 
 #[derive(FromRow)]
@@ -227,7 +203,7 @@ pg_query!( TakeToken =>
     "#
 );
 
-pub struct TokensStatements {
+pub struct PgTokensStatements {
     insert: InsertToken,
     find_by_hash: FindByHashToken,
     list_by_user: ListByUser,
@@ -238,40 +214,24 @@ pub struct TokensStatements {
     take: TakeToken,
 }
 
-impl TokensStatements {
+impl PgTokensStatements {
     pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
         Ok(Self {
-            insert: InsertToken::new(client).await?,
-            find_by_hash: FindByHashToken::new(client).await?,
-            list_by_user: ListByUser::new(client).await?,
-            delete: DeleteToken::new(client).await?,
-            delete_by_user: DeleteByUser::new(client).await?,
-            delete_all_by_user: DeleteAllByUser::new(client).await?,
-            test: TestToken::new(client).await?,
-            take: TakeToken::new(client).await?,
+            insert: InsertToken::new(client).await.map_err(DBError::from)?,
+            find_by_hash: FindByHashToken::new(client).await.map_err(DBError::from)?,
+            list_by_user: ListByUser::new(client).await.map_err(DBError::from)?,
+            delete: DeleteToken::new(client).await.map_err(DBError::from)?,
+            delete_by_user: DeleteByUser::new(client).await.map_err(DBError::from)?,
+            delete_all_by_user: DeleteAllByUser::new(client).await.map_err(DBError::from)?,
+            test: TestToken::new(client).await.map_err(DBError::from)?,
+            take: TakeToken::new(client).await.map_err(DBError::from)?,
         })
     }
 }
 
-/// Handle tokens
-pub struct Tokens<'a, T>
-where
-    T: PGRawConnection,
-{
-    client: &'a PGConnection<T>,
-    stmts_tokens: &'a TokensStatements,
-}
-
-impl<'a, T> Tokens<'a, T>
-where
-    T: PGRawConnection,
-{
-    pub fn new(client: &'a PGConnection<T>, stmts_tokens: &'a TokensStatements) -> Self {
-        Self { client, stmts_tokens }
-    }
-
+impl<'a> Tokens for PgIdentityTransaction<'a> {
     #[instrument(skip(self))]
-    pub async fn store_token(
+    async fn store_token(
         &mut self,
         user_id: Uuid,
         kind: TokenKind,
@@ -286,7 +246,7 @@ where
             .stmts_tokens
             .insert
             .query_one(
-                self.client,
+                &self.transaction,
                 &user_id,
                 &token_hash,
                 &fingerprint.map(|f| f.as_str()),
@@ -327,12 +287,13 @@ where
     }
 
     #[instrument(skip(self))]
-    pub async fn find_by_hash(&mut self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError> {
+    async fn find_by_hash(&mut self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError> {
         Ok(self
             .stmts_tokens
             .find_by_hash
-            .query_opt(self.client, &token_hash)
-            .await?
+            .query_opt(&self.transaction, &token_hash)
+            .await
+            .map_err(DBError::from)?
             .map(|row| TokenInfo {
                 user_id: row.user_id,
                 kind: row.kind,
@@ -349,12 +310,13 @@ where
     }
 
     #[instrument(skip(self))]
-    pub async fn find_by_user(&mut self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
+    async fn find_by_user(&mut self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
         Ok(self
             .stmts_tokens
             .list_by_user
-            .query(self.client, user_id)
-            .await?
+            .query(&self.transaction, user_id)
+            .await
+            .map_err(DBError::from)?
             .into_iter()
             .map(|row| TokenInfo {
                 user_id: row.user_id,
@@ -373,12 +335,13 @@ where
     }
 
     #[instrument(skip(self))]
-    pub async fn delete_token(&mut self, kind: TokenKind, token_hash: &str) -> Result<Option<()>, IdentityError> {
+    async fn delete_token_by_hash(&mut self, kind: TokenKind, token_hash: &str) -> Result<Option<()>, IdentityError> {
         let count = self
             .stmts_tokens
             .delete
-            .execute(self.client, &token_hash, &kind)
-            .await?;
+            .execute(&self.transaction, &token_hash, &kind)
+            .await
+            .map_err(DBError::from)?;
         if count == 1 {
             Ok(Some(()))
         } else {
@@ -387,12 +350,13 @@ where
     }
 
     #[instrument(skip(self))]
-    pub async fn delete_by_user(&mut self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
+    async fn delete_token_by_user(&mut self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
         let count = self
             .stmts_tokens
             .delete_by_user
-            .execute(self.client, &user_id, &token_hash)
-            .await?;
+            .execute(&self.transaction, &user_id, &token_hash)
+            .await
+            .map_err(DBError::from)?;
         if count == 1 {
             Ok(Some(()))
         } else {
@@ -401,19 +365,20 @@ where
     }
 
     #[instrument(skip(self))]
-    pub async fn delete_all_by_user(&mut self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
+    async fn delete_all_token_by_user(&mut self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
         for kind in kinds {
             self.stmts_tokens
                 .delete_all_by_user
-                .execute(self.client, &user_id, kind)
-                .await?;
+                .execute(&self.transaction, &user_id, kind)
+                .await
+                .map_err(DBError::from)?;
         }
         Ok(())
     }
 
     /// Test the presence of a token and return the identity if found.
     #[instrument(skip(self))]
-    pub async fn test_token(
+    async fn test_token(
         &mut self,
         kind: TokenKind,
         token_hash: &str,
@@ -421,8 +386,9 @@ where
         let row = self
             .stmts_tokens
             .test
-            .query_opt(self.client, &token_hash, &kind)
-            .await?;
+            .query_opt(&self.transaction, &token_hash, &kind)
+            .await
+            .map_err(DBError::from)?;
         Ok(row.map(|row| {
             let token = TokenInfo {
                 user_id: row.user_id,
@@ -453,7 +419,7 @@ where
     /// Take a token and return the identity if found.
     /// The token is deleted from the database.
     #[instrument(skip(self))]
-    pub async fn take_token(
+    async fn take_token(
         &mut self,
         kind: TokenKind,
         token_hash: &str,
@@ -461,8 +427,9 @@ where
         let row = self
             .stmts_tokens
             .take
-            .query_opt(self.client, &token_hash, &kind)
-            .await?;
+            .query_opt(&self.transaction, &token_hash, &kind)
+            .await
+            .map_err(DBError::from)?;
         Ok(row.map(|row| {
             let token = TokenInfo {
                 user_id: row.user_id,
@@ -489,14 +456,4 @@ where
             (identity, token)
         }))
     }
-}
-
-/// Generate a (crypto) hashed version of a token to protect data in rest.
-pub fn hash_token(token: &str) -> String {
-    // there is no need for a complex hash as key has a big entropy already
-    // and it'd be too expensive to invert the hashing.
-    let hash = digest::digest(&digest::SHA256, token.as_bytes());
-    let hash = hex::encode(hash);
-    log::debug!("Hashing token: {token:?} -> [{hash}]");
-    hash
 }

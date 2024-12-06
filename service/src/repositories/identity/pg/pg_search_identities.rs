@@ -1,44 +1,16 @@
-use crate::repositories::{Identity, IdentityError};
-use shine_service::service::{PGConnection, PGRawConnection, QueryBuilder};
+use crate::repositories::{
+    identity::search_identities::IdentitySearch, DBError, Identity, IdentityError, SearchIdentity, SearchIdentityOrder,
+    MAX_SEARCH_RESULT_COUNT,
+};
+use shine_service::service::QueryBuilder;
 use tokio_postgres::Row;
-use uuid::Uuid;
+use tracing::instrument;
 
-pub const MAX_SEARCH_COUNT: usize = 100;
+use super::PgIdentityTransaction;
 
-#[derive(Debug)]
-pub enum SearchIdentityOrder {
-    UserId(Option<Uuid>),
-    Email(Option<(String, Uuid)>),
-    Name(Option<(String, Uuid)>),
-}
-
-#[derive(Debug)]
-pub struct SearchIdentity<'a> {
-    pub order: SearchIdentityOrder,
-    pub count: Option<usize>,
-
-    pub user_ids: Option<&'a [Uuid]>,
-    pub emails: Option<&'a [String]>,
-    pub names: Option<&'a [String]>,
-}
-
-/// Search for identities.
-pub struct IdentitySearch<'a, T>
-where
-    T: PGRawConnection,
-{
-    client: &'a PGConnection<T>,
-}
-
-impl<'a, T> IdentitySearch<'a, T>
-where
-    T: PGRawConnection,
-{
-    pub fn new(client: &'a PGConnection<T>) -> Self {
-        Self { client }
-    }
-
-    pub async fn search(&self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, IdentityError> {
+impl<'a> IdentitySearch for PgIdentityTransaction<'a> {
+    #[instrument(skip(self))]
+    async fn search_identity(&mut self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, IdentityError> {
         log::info!("{search:?}");
         let mut builder = QueryBuilder::new(
             "SELECT user_id, kind, name, email, email_confirmed, created, data_version FROM identities",
@@ -46,13 +18,13 @@ where
 
         fn into_identity(r: Row) -> Result<Identity, IdentityError> {
             Ok(Identity {
-                id: r.try_get(0)?,
-                kind: r.try_get(1)?,
-                name: r.try_get(2)?,
-                email: r.try_get(3)?,
-                is_email_confirmed: r.try_get(4)?,
-                created: r.try_get(5)?,
-                version: r.try_get(6)?,
+                id: r.try_get(0).map_err(DBError::from)?,
+                kind: r.try_get(1).map_err(DBError::from)?,
+                name: r.try_get(2).map_err(DBError::from)?,
+                email: r.try_get(3).map_err(DBError::from)?,
+                is_email_confirmed: r.try_get(4).map_err(DBError::from)?,
+                created: r.try_get(5).map_err(DBError::from)?,
+                version: r.try_get(6).map_err(DBError::from)?,
             })
         }
 
@@ -95,12 +67,12 @@ where
         };
         builder.order_by("user_id");
 
-        let count = usize::min(MAX_SEARCH_COUNT, search.count.unwrap_or(MAX_SEARCH_COUNT));
+        let count = usize::min(MAX_SEARCH_RESULT_COUNT, search.count.unwrap_or(MAX_SEARCH_RESULT_COUNT));
         builder.limit(count);
 
         let (stmt, params) = builder.build();
         log::info!("{stmt:?}");
-        let rows = self.client.query(&stmt, &params).await?;
+        let rows = self.transaction.query(&stmt, &params).await.map_err(DBError::from)?;
 
         let identities = rows.into_iter().map(into_identity).collect::<Result<Vec<_>, _>>()?;
         Ok(identities)
