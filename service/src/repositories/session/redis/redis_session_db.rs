@@ -2,8 +2,8 @@ use chrono::Duration;
 use shine_service::service::{RedisConnectionPool, RedisPooledConnection};
 
 use crate::repositories::{
-    session::session_db::{SessionDb, SessionDbContext},
-    DBError, SessionBuildError, SessionError,
+    session::{SessionBuildError, SessionDb, SessionDbContext, SessionError},
+    DBError,
 };
 
 pub struct RedisSessionTransaction<'a> {

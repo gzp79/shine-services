@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use super::identity_error::IdentityError;
+use super::IdentityError;
 
 #[derive(Debug, Clone, Copy)]
 pub enum IdentityKind {

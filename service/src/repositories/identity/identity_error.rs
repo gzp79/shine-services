@@ -1,8 +1,11 @@
 use crate::repositories::DBError;
+use shine_service::utils::IdEncoderError;
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
 pub enum IdentityBuildError {
+    #[error(transparent)]
+    IdEncoder(#[from] IdEncoderError),
     #[error(transparent)]
     DBError(#[from] DBError),
 }
@@ -25,6 +28,9 @@ pub enum IdentityError {
     UpdateConflict,
     #[error("User was removed during the operation")]
     UserDeleted,
+
+    #[error(transparent)]
+    IdEncoder(#[from] IdEncoderError),
     #[error(transparent)]
     DBError(#[from] DBError),
 }

@@ -22,7 +22,6 @@ rand = "0.8"
 hex = "0.4"
 ring = "0.17"
 bcrypt = "0.15"
-harsh = "0.2"
 regex = "1.10"
 
 futures = "0.3"
@@ -45,7 +44,7 @@ refinery = { version = "0.8", features = ["tokio-postgres"] }
 bb8-redis = "0.17"
 redis = { version = "0.27.0", features = ["tokio-comp", "tokio-rustls-comp"] }
 
-azure_core = { version = "0.21" }
+azure_core = { version = "0.21" }  
 azure_identity = { version = "0.21" }
 
 validator = { version = "0.19", features = ["derive"] }

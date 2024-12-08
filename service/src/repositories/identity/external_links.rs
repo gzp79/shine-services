@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use super::{identities::Identity, identity_error::IdentityError};
+use super::{Identity, IdentityError};
 
 #[derive(Clone, Debug)]
 pub struct ExternalUserInfo {

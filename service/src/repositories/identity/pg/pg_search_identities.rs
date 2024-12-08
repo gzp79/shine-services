@@ -1,6 +1,6 @@
 use crate::repositories::{
-    identity::search_identities::IdentitySearch, DBError, Identity, IdentityError, SearchIdentity, SearchIdentityOrder,
-    MAX_SEARCH_RESULT_COUNT,
+    identity::{Identity, IdentityError, IdentitySearch, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_RESULT_COUNT},
+    DBError,
 };
 use shine_service::service::QueryBuilder;
 use tokio_postgres::Row;

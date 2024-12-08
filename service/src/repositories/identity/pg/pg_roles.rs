@@ -1,4 +1,7 @@
-use crate::repositories::{identity::roles::Roles, DBError, IdentityBuildError, IdentityError};
+use crate::repositories::{
+    identity::{IdentityBuildError, IdentityError, Roles},
+    DBError,
+};
 use postgres_from_row::FromRow;
 use shine_service::{
     pg_query,

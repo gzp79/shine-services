@@ -2,7 +2,7 @@ use shine_service::service::CurrentUser;
 use std::collections::HashSet;
 use thiserror::Error as ThisError;
 
-use super::roles::Role;
+use crate::repositories::identity::Role;
 
 /// All the user roles used by the service.
 pub mod roles {

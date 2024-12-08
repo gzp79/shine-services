@@ -1,5 +1,6 @@
-use crate::repositories::{Identity, IdentityError};
 use uuid::Uuid;
+
+use super::{Identity, IdentityError};
 
 pub const MAX_SEARCH_RESULT_COUNT: usize = 100;
 

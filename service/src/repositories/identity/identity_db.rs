@@ -1,10 +1,7 @@
-use super::{
-    external_links::ExternalLinks, identities::Identities, identity_error::IdentityError, roles::Roles,
-    search_identities::IdentitySearch, tokens::Tokens,
-};
+use super::{ExternalLinks, IdSequences, Identities, IdentityError, IdentitySearch, Roles, Tokens};
 
 pub trait IdentityDbContext<'c> {
-    type Transaction<'a>: Identities + ExternalLinks + Roles + IdentitySearch + Tokens
+    type Transaction<'a>: Identities + ExternalLinks + Roles + IdentitySearch + Tokens + IdSequences
     where
         Self: 'a;
 

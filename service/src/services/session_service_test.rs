@@ -1,6 +1,9 @@
-use crate::repositories::{
-    session::{redis::RedisSessionDb, session_db::SessionDb},
-    Identity, IdentityKind, SessionManager,
+use crate::{
+    repositories::{
+        identity::{Identity, IdentityKind},
+        session::{redis::RedisSessionDb, SessionDb},
+    },
+    services::SessionService,
 };
 use chrono::{Duration, Utc};
 use ring::rand::SystemRandom;
@@ -33,7 +36,7 @@ async fn create_get_remove() {
     let scope = &Uuid::new_v4().to_string()[..5];
     log::debug!("test scope: {scope}");
     let session_manager = match create_db(scope).await {
-        Some(db) => SessionManager::new(db),
+        Some(db) => SessionService::new(db),
         None => return,
     };
 
@@ -99,7 +102,7 @@ async fn update_invalid_key() {
     let scope = &Uuid::new_v4().to_string()[..5];
     log::debug!("test scope: {scope}");
     let session_manager = match create_db(scope).await {
-        Some(db) => SessionManager::new(db),
+        Some(db) => SessionService::new(db),
         None => return,
     };
 
@@ -128,7 +131,7 @@ async fn create_update() {
     let scope = &Uuid::new_v4().to_string()[..5];
     log::debug!("test scope: {scope}");
     let session_manager = match create_db(scope).await {
-        Some(db) => SessionManager::new(db),
+        Some(db) => SessionService::new(db),
         None => return,
     };
 
@@ -257,7 +260,7 @@ async fn create_many_remove_all() {
     let scope = &Uuid::new_v4().to_string()[..5];
     log::debug!("test scope: {scope}");
     let session_manager = match create_db(scope).await {
-        Some(db) => SessionManager::new(db),
+        Some(db) => SessionService::new(db),
         None => return,
     };
 

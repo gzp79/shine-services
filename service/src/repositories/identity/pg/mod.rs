@@ -13,3 +13,5 @@ mod pg_tokens;
 pub use self::pg_tokens::*;
 mod pg_roles;
 pub use self::pg_roles::*;
+mod pg_id_sequences;
+pub use self::pg_id_sequences::*;

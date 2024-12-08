@@ -1,13 +1,10 @@
-use crate::repositories::{Identity, Role};
+use crate::repositories::identity::{Identity, Role};
 use chrono::{DateTime, Utc};
 use ring::digest;
-use shine_service::{
-    axum::SiteInfo,
-    service::{ClientFingerprint, SessionKey},
-};
+use shine_service::{axum::SiteInfo, service::SessionKey};
 use uuid::Uuid;
 
-use super::session_error::SessionError;
+use super::SessionError;
 
 /// The immutable part of the session information.
 #[derive(Debug)]

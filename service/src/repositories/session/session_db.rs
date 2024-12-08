@@ -1,4 +1,4 @@
-use super::{session_error::SessionError, sessions::Sessions};
+use super::{SessionError, Sessions};
 
 pub trait SessionDbContext<'c> {
     type Transaction<'a>: Sessions

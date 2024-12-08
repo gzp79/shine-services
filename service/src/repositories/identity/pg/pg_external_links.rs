@@ -1,6 +1,8 @@
 use crate::repositories::{
-    identity::external_links::ExternalLinks, DBError, ExternalLink, ExternalUserInfo, Identity, IdentityBuildError,
-    IdentityError, IdentityKind,
+    identity::{
+        ExternalLink, ExternalLinks, ExternalUserInfo, Identity, IdentityBuildError, IdentityError, IdentityKind,
+    },
+    DBError,
 };
 use chrono::{DateTime, Utc};
 use futures::FutureExt;

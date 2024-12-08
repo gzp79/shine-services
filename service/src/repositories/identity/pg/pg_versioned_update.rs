@@ -1,4 +1,7 @@
-use crate::repositories::{DBError, IdentityBuildError, IdentityError};
+use crate::repositories::{
+    identity::{IdentityBuildError, IdentityError},
+    DBError,
+};
 use shine_service::{
     pg_query,
     service::{PGClient, PGTransaction},

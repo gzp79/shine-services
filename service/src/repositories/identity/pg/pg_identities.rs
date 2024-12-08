@@ -1,5 +1,6 @@
 use crate::repositories::{
-    identity::identities::Identities, DBError, Identity, IdentityBuildError, IdentityError, IdentityKind,
+    identity::{Identities, Identity, IdentityBuildError, IdentityError, IdentityKind},
+    DBError,
 };
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};

@@ -1,4 +1,7 @@
-use crate::repositories::{Identity, Role};
+use crate::repositories::{
+    identity::{Identity, Role},
+    session::{Session, SessionDb, SessionDbContext, SessionError, SessionInfo, Sessions},
+};
 use chrono::{DateTime, Utc};
 use ring::{digest, rand::SystemRandom};
 use shine_service::{
@@ -6,12 +9,6 @@ use shine_service::{
     service::{ClientFingerprint, RedisConnectionPool, SessionKey},
 };
 use uuid::Uuid;
-
-use super::{
-    session_db::{SessionDb, SessionDbContext},
-    session_error::SessionError,
-    sessions::{Session, SessionInfo, Sessions},
-};
 
 #[derive(Debug)]
 pub struct SessionSentinel {
@@ -38,12 +35,12 @@ pub struct Inner {
 }
 
 #[derive(Clone)]
-pub struct SessionManager<DB: SessionDb + Clone> {
+pub struct SessionService<DB: SessionDb + Clone> {
     db: DB,
     random: SystemRandom,
 }
 
-impl<DB> SessionManager<DB>
+impl<DB> SessionService<DB>
 where
     DB: SessionDb + Clone,
 {
@@ -159,5 +156,5 @@ fn hash_key(key: &SessionKey) -> String {
 }
 
 #[cfg(test)]
-#[path = "./session_manager_test.rs"]
-mod session_manager_test;
+#[path = "./session_service_test.rs"]
+mod session_service_test;

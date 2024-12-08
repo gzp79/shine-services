@@ -1,9 +1,10 @@
-use crate::repositories::{Identity, IdentityError};
 use chrono::{DateTime, Duration, Utc};
 use ring::digest;
 use serde::{Deserialize, Serialize};
 use shine_service::{axum::SiteInfo, service::ClientFingerprint};
 use uuid::Uuid;
+
+use super::{Identity, IdentityError};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TokenKind {

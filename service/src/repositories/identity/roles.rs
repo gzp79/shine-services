@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use super::identity_error::IdentityError;
+use super::IdentityError;
 
 pub type Role = String;
 

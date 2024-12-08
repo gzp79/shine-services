@@ -1,11 +1,11 @@
 use crate::repositories::{
-    identity::identity_db::{IdentityDbContext, IdentityDb},
-    DBError, IdentityBuildError, IdentityError,
+    identity::{IdentityBuildError, IdentityDb, IdentityDbContext, IdentityError},
+    DBError,
 };
 use shine_service::service::{PGConnectionPool, PGPooledConnection, PGTransaction};
 
 use super::{
-    PgExternalLinksStatements, PgIdentitiesStatements, PgRolesStatements, PgTokensStatements,
+    PgExternalLinksStatements, PgIdSequencesStatements, PgIdentitiesStatements, PgRolesStatements, PgTokensStatements,
     PgVersionedUpdateStatements,
 };
 
@@ -16,6 +16,7 @@ pub struct PgIdentityTransaction<'a> {
     pub stmts_tokens: &'a PgTokensStatements,
     pub stmts_version: &'a PgVersionedUpdateStatements,
     pub stmts_roles: &'a PgRolesStatements,
+    pub stmts_id_sequences: &'a PgIdSequencesStatements,
 }
 
 pub struct PgIdentityDbContext<'c> {
@@ -25,6 +26,7 @@ pub struct PgIdentityDbContext<'c> {
     stmts_tokens: &'c PgTokensStatements,
     stmts_version: &'c PgVersionedUpdateStatements,
     stmts_roles: &'c PgRolesStatements,
+    stmts_id_sequences: &'c PgIdSequencesStatements,
 }
 
 impl<'c> IdentityDbContext<'c> for PgIdentityDbContext<'c> {
@@ -39,6 +41,7 @@ impl<'c> IdentityDbContext<'c> for PgIdentityDbContext<'c> {
             stmts_tokens: self.stmts_tokens,
             stmts_version: &self.stmts_version,
             stmts_roles: &self.stmts_roles,
+            stmts_id_sequences: self.stmts_id_sequences,
         })
     }
 }
@@ -50,6 +53,7 @@ pub struct PgIdentityDb {
     stmts_tokens: PgTokensStatements,
     stmts_version: PgVersionedUpdateStatements,
     stmts_roles: PgRolesStatements,
+    stmts_id_sequences: PgIdSequencesStatements,
 }
 
 impl PgIdentityDb {
@@ -63,6 +67,7 @@ impl PgIdentityDb {
             stmts_tokens: PgTokensStatements::new(&client).await?,
             stmts_version: PgVersionedUpdateStatements::new(&client).await?,
             stmts_roles: PgRolesStatements::new(&client).await?,
+            stmts_id_sequences: PgIdSequencesStatements::new(&client).await?,
         })
     }
 }
@@ -79,6 +84,7 @@ impl IdentityDb for PgIdentityDb {
             stmts_tokens: &self.stmts_tokens,
             stmts_version: &self.stmts_version,
             stmts_roles: &self.stmts_roles,
+            stmts_id_sequences: &self.stmts_id_sequences,
         })
     }
 }
