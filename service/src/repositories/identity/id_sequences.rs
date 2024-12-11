@@ -1,5 +1,7 @@
+use std::future::Future;
+
 use super::IdentityError;
 
 pub trait IdSequences {
-    async fn get_next_id(&mut self) -> Result<u64, IdentityError>;
+    fn get_next_id(&mut self) -> impl Future<Output = Result<u64, IdentityError>> + Send;
 }

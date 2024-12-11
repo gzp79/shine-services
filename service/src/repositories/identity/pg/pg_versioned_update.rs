@@ -24,6 +24,7 @@ pg_query!( UpdateDataVersion =>
     "#
 );
 
+#[derive(Clone)]
 pub struct PgVersionedUpdateStatements {
     get_version: GetDataVersion,
     update_version: UpdateDataVersion,

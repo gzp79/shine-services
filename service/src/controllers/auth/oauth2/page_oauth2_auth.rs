@@ -6,7 +6,7 @@ use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, InputError, ProblemDetail, SiteInfo, ValidatedQuery},
+    axum::{ApiEndpoint, ApiMethod, InputError, ConfiguredProblem, SiteInfo, ValidatedQuery},
     service::ClientFingerprint,
 };
 use std::sync::Arc;
@@ -27,7 +27,7 @@ async fn oauth2_auth(
     mut auth_session: AuthSession,
     fingerprint: ClientFingerprint,
     site_info: SiteInfo,
-    query: Result<ValidatedQuery<Query>, ProblemDetail<InputError>>,
+    query: Result<ValidatedQuery<Query>, ConfiguredProblem<InputError>>,
 ) -> AuthPage {
     // take external_login_cookie from session, thus later code don't have to care with it
     let ExternalLoginCookie {

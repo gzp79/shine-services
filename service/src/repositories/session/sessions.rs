@@ -1,7 +1,8 @@
-use crate::repositories::identity::{Identity, Role};
+use crate::repositories::identity::Identity;
 use chrono::{DateTime, Utc};
 use ring::digest;
 use shine_service::{axum::SiteInfo, service::SessionKey};
+use std::future::Future;
 use uuid::Uuid;
 
 use super::SessionError;
@@ -21,7 +22,7 @@ pub struct SessionInfo {
 pub struct SessionUser {
     pub name: String,
     pub is_email_confirmed: bool,
-    pub roles: Vec<Role>,
+    pub roles: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -33,34 +34,46 @@ pub struct Session {
 }
 
 pub trait Sessions {
-    async fn store_session(
+    fn store_session(
         &mut self,
         created_at: DateTime<Utc>,
         session_key_hash: String,
         fingerprint: String,
         site_info: &SiteInfo,
         identity: &Identity,
-        roles: Vec<Role>,
-    ) -> Result<Session, SessionError>;
+        roles: Vec<String>,
+    ) -> impl Future<Output = Result<Session, SessionError>> + Send;
 
-    async fn find_all_session_hashes_by_user(&mut self, user_id: Uuid) -> Result<Vec<String>, SessionError>;
-    async fn find_all_session_infos_by_user(&mut self, user_id: Uuid) -> Result<Vec<SessionInfo>, SessionError>;
+    fn find_all_session_hashes_by_user(
+        &mut self,
+        user_id: Uuid,
+    ) -> impl Future<Output = Result<Vec<String>, SessionError>> + Send;
 
-    async fn find_session_by_hash(
+    fn find_all_session_infos_by_user(
+        &mut self,
+        user_id: Uuid,
+    ) -> impl Future<Output = Result<Vec<SessionInfo>, SessionError>> + Send;
+
+    fn find_session_by_hash(
         &mut self,
         user_id: Uuid,
         session_key_hash: String,
-    ) -> Result<Option<Session>, SessionError>;
+    ) -> impl Future<Output = Result<Option<Session>, SessionError>> + Send;
 
-    async fn update_session_user_by_hash(
+    fn update_session_user_by_hash(
         &mut self,
         session_key_hash: String,
         identity: &Identity,
-        roles: &[Role],
-    ) -> Result<Option<Session>, SessionError>;
+        roles: &[String],
+    ) -> impl Future<Output = Result<Option<Session>, SessionError>> + Send;
 
-    async fn delete_session_by_hash(&mut self, user_id: Uuid, session_key_hash: String) -> Result<(), SessionError>;
-    async fn delete_all_sessions_by_user(&mut self, user_id: Uuid) -> Result<(), SessionError>;
+    fn delete_session_by_hash(
+        &mut self,
+        user_id: Uuid,
+        session_key_hash: String,
+    ) -> impl Future<Output = Result<(), SessionError>> + Send;
+
+    fn delete_all_sessions_by_user(&mut self, user_id: Uuid) -> impl Future<Output = Result<(), SessionError>> + Send;
 }
 
 /// Generate a (crypto) hashed version of a session key to protect data in rest.

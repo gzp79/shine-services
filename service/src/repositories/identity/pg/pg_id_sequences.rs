@@ -14,6 +14,7 @@ pg_query!( GetNextId =>
     "#
 );
 
+#[derive(Clone)]
 pub struct PgIdSequencesStatements {
     stmt_next_id: GetNextId,
 }

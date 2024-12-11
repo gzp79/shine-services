@@ -1,5 +1,5 @@
-import { joinURL } from '$lib/utils';
 import fs from 'fs';
+import { joinURL } from '$lib/utils';
 
 export class Config {
     appDomain = 'sandbox.com';
@@ -23,12 +23,14 @@ export class Config {
         key: fs.readFileSync('../service/certs/test.key', 'utf8')
     };
 
+    /* spell-checker: disable */
     masterKey = '2vazg4Rwe2uKkHABcbL8WdEAbqvPA49M';
     masterKeyHash = '$2b$05$0OWeMQAQuh9kmD642a0ZHeVl6VNa2g.z1HTI2rrQ3RPkmxoCNUohG';
+    /* spell-checker: enable */
 
     // new key set can be generated at https://mkjwk.org/ quite easily
     // (RSA, size:2048 (smaller is rejected by the jose module as of specification), Use:Signature, Alg:RS256, ID:Sha-1 )
-    //spell-checker:disable
+    /* spell-checker: disable */
     openidJWKS = {
         p: '21pzZgFcZqxR3CXwJ4uaXhAZHPHCi2MdNwe6MFUr8i85ehj9-za1qlnW1Jb5XmusJQhu-iFMPhlR0h51n5rM_O_XRVBSp9uu-yh-cAYNwYFxMbtlkXvCnRhpAwKimNehokJ2YyRpLlW6Kn47dd3JjxYH3DRBBSPohQnHNzozARU',
         kty: 'RSA',
@@ -42,7 +44,7 @@ export class Config {
         dq: 'nycH1Vk0I9QvHMVK-CtuFEKimk0BL_gQYpELIlVDTQgtkdsAsyc2chUIi8en7XRANBcjZmI9YmsrKvvLklH_TXP2RUti3-sjcNvjSi5oR5_eMVzFg35oqRqmeaUS6IUud3H2QUMKWG7b4e8RfCtT80oWdvGb3gAy-BIHuSpL8Ak',
         n: 'qSq4xK-7D9wEIgfo1athchJvLZMn0oWh8lRXL8zwED4FtMX4nxqLGU8oir8E__Pic3sOn9ZS-bnRMlXJkIS0uZT1zBIoU6RQIfe2ScI6AaZ6QTTK5Viu10wy4S4wXdIyIInVSgnWcccrkWnrewxyj1pcZFzgzT1ZRD8BZ0roOxLefrCN0WOODABI4zTY-L5q0X5JpBk0jC1wk6YofQZYtEO4XU-wvHZIugKnjSsAvyRgcWZq1niH2_8tdnXrnvDlTnC6IZzRBjLrVW7nHu1KtiDAnwL3NRrsnW0wu1fjQCG_YUNCFRkIHwpnq5X8Zn7gsnvdTBAosJn9urnqmJ85bQ'
     };
-    //spell-checker:enable
+    /* spell-checker: enable */
 }
 
 const config = new Config();

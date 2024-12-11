@@ -7,7 +7,7 @@ use crate::{
 use axum::{extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, OpenApiUrl, ProblemDetail, ValidatedQuery};
+use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, OpenApiUrl, ConfiguredProblem, ValidatedQuery};
 use std::sync::Arc;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -26,7 +26,7 @@ async fn oauth2_login(
     State(state): State<AuthServiceState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
     mut auth_session: AuthSession,
-    query: Result<ValidatedQuery<Query>, ProblemDetail<InputError>>,
+    query: Result<ValidatedQuery<Query>, ConfiguredProblem<InputError>>,
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,

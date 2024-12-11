@@ -204,6 +204,7 @@ pg_query!( TakeToken =>
     "#
 );
 
+#[derive(Clone)]
 pub struct PgTokensStatements {
     insert: InsertToken,
     find_by_hash: FindByHashToken,

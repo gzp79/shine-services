@@ -2,6 +2,7 @@ use chrono::{DateTime, Duration, Utc};
 use ring::digest;
 use serde::{Deserialize, Serialize};
 use shine_service::{axum::SiteInfo, service::ClientFingerprint};
+use std::future::Future;
 use uuid::Uuid;
 
 use super::{Identity, IdentityError};
@@ -30,7 +31,7 @@ pub struct TokenInfo {
 
 /// Handle tokens
 pub trait Tokens {
-    async fn store_token(
+    fn store_token(
         &mut self,
         user_id: Uuid,
         kind: TokenKind,
@@ -38,28 +39,46 @@ pub trait Tokens {
         time_to_live: &Duration,
         fingerprint: Option<&ClientFingerprint>,
         site_info: &SiteInfo,
-    ) -> Result<TokenInfo, IdentityError>;
+    ) -> impl Future<Output = Result<TokenInfo, IdentityError>> + Send;
 
-    async fn find_by_hash(&mut self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError>;
-    async fn find_by_user(&mut self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError>;
+    fn find_by_hash(
+        &mut self,
+        token_hash: &str,
+    ) -> impl Future<Output = Result<Option<TokenInfo>, IdentityError>> + Send;
 
-    async fn delete_token_by_hash(&mut self, kind: TokenKind, token_hash: &str) -> Result<Option<()>, IdentityError>;
-    async fn delete_token_by_user(&mut self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError>;
-    async fn delete_all_token_by_user(&mut self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError>;
+    fn find_by_user(&mut self, user_id: &Uuid) -> impl Future<Output = Result<Vec<TokenInfo>, IdentityError>> + Send;
 
-    async fn test_token(
+    fn delete_token_by_hash(
         &mut self,
         kind: TokenKind,
         token_hash: &str,
-    ) -> Result<Option<(Identity, TokenInfo)>, IdentityError>;
+    ) -> impl Future<Output = Result<Option<()>, IdentityError>> + Send;
+
+    fn delete_token_by_user(
+        &mut self,
+        user_id: Uuid,
+        token_hash: &str,
+    ) -> impl Future<Output = Result<Option<()>, IdentityError>> + Send;
+
+    fn delete_all_token_by_user(
+        &mut self,
+        user_id: Uuid,
+        kinds: &[TokenKind],
+    ) -> impl Future<Output = Result<(), IdentityError>> + Send;
+
+    fn test_token(
+        &mut self,
+        kind: TokenKind,
+        token_hash: &str,
+    ) -> impl Future<Output = Result<Option<(Identity, TokenInfo)>, IdentityError>> + Send;
 
     /// Take a token and return the identity if found.
     /// The token is deleted from the database.
-    async fn take_token(
+    fn take_token(
         &mut self,
         kind: TokenKind,
         token_hash: &str,
-    ) -> Result<Option<(Identity, TokenInfo)>, IdentityError>;
+    ) -> impl Future<Output = Result<Option<(Identity, TokenInfo)>, IdentityError>> + Send;
 }
 
 /// Generate a (crypto) hashed version of a token to protect data in rest.

@@ -1,6 +1,9 @@
-use crate::repositories::{
-    identity::{Identity, Role},
-    session::{Session, SessionDb, SessionDbContext, SessionError, SessionInfo, Sessions},
+use crate::{
+    core::gat_fix,
+    repositories::{
+        identity::Identity,
+        session::{Session, SessionDb, SessionDbContext, SessionError, SessionInfo, Sessions},
+    },
 };
 use chrono::{DateTime, Utc};
 use ring::{digest, rand::SystemRandom};
@@ -24,7 +27,7 @@ pub struct SessionSentinel {
 struct SessionData {
     pub name: String,
     pub is_email_confirmed: bool,
-    pub roles: Vec<Role>,
+    pub roles: Vec<String>,
 }
 
 pub struct Inner {
@@ -34,15 +37,14 @@ pub struct Inner {
     random: SystemRandom,
 }
 
-#[derive(Clone)]
-pub struct SessionService<DB: SessionDb + Clone> {
+pub struct SessionService<DB: SessionDb> {
     db: DB,
     random: SystemRandom,
 }
 
 impl<DB> SessionService<DB>
 where
-    DB: SessionDb + Clone,
+    DB: SessionDb,
 {
     pub fn new(db: DB) -> Self {
         Self {
@@ -56,12 +58,12 @@ where
     pub async fn create(
         &self,
         identity: &Identity,
-        roles: Vec<Role>,
+        roles: Vec<String>,
         fingerprint: &ClientFingerprint,
         site_info: &SiteInfo,
     ) -> Result<(Session, SessionKey), SessionError> {
         let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = db.begin_transaction().await?;
+        let mut transaction = gat_fix(db.begin_transaction()).await?;
 
         let created_at = Utc::now();
         let fingerprint = fingerprint.to_string();
@@ -79,10 +81,10 @@ where
         &self,
         session_key: &SessionKey,
         identity: &Identity,
-        roles: &[Role],
+        roles: &[String],
     ) -> Result<Option<Session>, SessionError> {
         let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = db.begin_transaction().await?;
+        let mut transaction = gat_fix(db.begin_transaction()).await?;
 
         let session_key_hash = hash_key(&session_key);
 
@@ -94,9 +96,9 @@ where
     /// Update the user information in all the session of a user
     /// This is not an atomic operation, if new sessions are created they are not touched, but they should
     /// have the new value already.
-    pub async fn update_all(&self, identity: &Identity, roles: &[Role]) -> Result<(), SessionError> {
+    pub async fn update_all(&self, identity: &Identity, roles: &[String]) -> Result<(), SessionError> {
         let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = db.begin_transaction().await?;
+        let mut transaction = gat_fix(db.begin_transaction()).await?;
 
         let key_hashes = transaction.find_all_session_hashes_by_user(identity.id).await?;
 
@@ -112,14 +114,14 @@ where
     /// Get all the active session of the given user.
     pub async fn find_all(&self, user_id: Uuid) -> Result<Vec<SessionInfo>, SessionError> {
         let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = db.begin_transaction().await?;
+        let mut transaction = gat_fix(db.begin_transaction()).await?;
 
         transaction.find_all_session_infos_by_user(user_id).await
     }
 
     pub async fn find(&self, user_id: Uuid, session_key: &SessionKey) -> Result<Option<Session>, SessionError> {
         let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = db.begin_transaction().await?;
+        let mut transaction = gat_fix(db.begin_transaction()).await?;
 
         let session_key_hash = hash_key(&session_key);
 
@@ -129,7 +131,7 @@ where
     /// Remove an active session of the given user.
     pub async fn remove(&self, user_id: Uuid, session_key: &SessionKey) -> Result<(), SessionError> {
         let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = db.begin_transaction().await?;
+        let mut transaction = gat_fix(db.begin_transaction()).await?;
 
         let session_key_hash = hash_key(&session_key);
 
@@ -139,7 +141,7 @@ where
     /// Remove all the active session of the given user.
     pub async fn remove_all(&self, user_id: Uuid) -> Result<(), SessionError> {
         let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = db.begin_transaction().await?;
+        let mut transaction = gat_fix(db.begin_transaction()).await?;
 
         transaction.delete_all_sessions_by_user(user_id).await
     }

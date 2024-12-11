@@ -1,4 +1,4 @@
-use crate::{identity::IdentityServiceState, openapi::ApiKind};
+use crate::controllers::{ApiKind, AppState};
 use axum::{extract::State, http::StatusCode, Extension, Json};
 use serde::Serialize;
 use shine_service::axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig};
@@ -14,21 +14,21 @@ pub struct GeneratedUserName {
 }
 
 async fn generate_user_name(
-    State(state): State<IdentityServiceState>,
+    State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
 ) -> Result<Json<GeneratedUserName>, Problem> {
     let name = state
-        .auto_name_manager()
-        .generate_name()
+        .identity_service()
+        .generate_user_name()
         .await
         .map_err(|err| Problem::internal_error(&problem_config, "Failed to generate name", err))?;
 
     Ok(Json(GeneratedUserName { name }))
 }
 
-pub fn ep_generate_user_name() -> ApiEndpoint<IdentityServiceState> {
+pub fn ep_generate_user_name() -> ApiEndpoint<AppState> {
     ApiEndpoint::new(ApiMethod::Post, ApiKind::Api("/user-name"), generate_user_name)
-        .with_operation_id("ep_generate_user_name")
+        .with_operation_id("generate_user_name")
         .with_tag("identity")
         .with_json_response::<GeneratedUserName>(StatusCode::OK)
 }

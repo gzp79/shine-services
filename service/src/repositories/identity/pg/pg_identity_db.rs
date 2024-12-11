@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use crate::repositories::{
     identity::{IdentityBuildError, IdentityDb, IdentityDbContext, IdentityError},
     DBError,
@@ -11,37 +13,40 @@ use super::{
 
 pub struct PgIdentityTransaction<'a> {
     pub transaction: PGTransaction<'a>,
-    pub stmts_identities: &'a PgIdentitiesStatements,
-    pub stmts_external_links: &'a PgExternalLinksStatements,
-    pub stmts_tokens: &'a PgTokensStatements,
-    pub stmts_version: &'a PgVersionedUpdateStatements,
-    pub stmts_roles: &'a PgRolesStatements,
-    pub stmts_id_sequences: &'a PgIdSequencesStatements,
+    pub stmts_identities: PgIdentitiesStatements,
+    pub stmts_external_links: PgExternalLinksStatements,
+    pub stmts_tokens: PgTokensStatements,
+    pub stmts_version: PgVersionedUpdateStatements,
+    pub stmts_roles: PgRolesStatements,
+    pub stmts_id_sequences: PgIdSequencesStatements,
 }
 
 pub struct PgIdentityDbContext<'c> {
     client: PGPooledConnection<'c>,
-    stmts_identities: &'c PgIdentitiesStatements,
-    stmts_external_links: &'c PgExternalLinksStatements,
-    stmts_tokens: &'c PgTokensStatements,
-    stmts_version: &'c PgVersionedUpdateStatements,
-    stmts_roles: &'c PgRolesStatements,
-    stmts_id_sequences: &'c PgIdSequencesStatements,
+    stmts_identities: PgIdentitiesStatements,
+    stmts_external_links: PgExternalLinksStatements,
+    stmts_tokens: PgTokensStatements,
+    stmts_version: PgVersionedUpdateStatements,
+    stmts_roles: PgRolesStatements,
+    stmts_id_sequences: PgIdSequencesStatements,
 }
 
 impl<'c> IdentityDbContext<'c> for PgIdentityDbContext<'c> {
-    type Transaction<'a> = PgIdentityTransaction<'a> where 'c: 'a;
+    type Transaction<'a>
+        = PgIdentityTransaction<'a>
+    where
+        Self: 'a;
 
-    async fn begin_transaction<'a>(&'a mut self) -> Result<Self::Transaction<'a>, IdentityError> {
+    async fn begin_transaction(&mut self) -> Result<Self::Transaction<'_>, IdentityError> {
         let transaction = self.client.transaction().await.map_err(DBError::from)?;
         Ok(PgIdentityTransaction {
             transaction,
-            stmts_identities: self.stmts_identities,
-            stmts_external_links: self.stmts_external_links,
-            stmts_tokens: self.stmts_tokens,
-            stmts_version: &self.stmts_version,
-            stmts_roles: &self.stmts_roles,
-            stmts_id_sequences: self.stmts_id_sequences,
+            stmts_identities: self.stmts_identities.clone(),
+            stmts_external_links: self.stmts_external_links.clone(),
+            stmts_tokens: self.stmts_tokens.clone(),
+            stmts_version: self.stmts_version.clone(),
+            stmts_roles: self.stmts_roles.clone(),
+            stmts_id_sequences: self.stmts_id_sequences.clone(),
         })
     }
 }
@@ -73,18 +78,18 @@ impl PgIdentityDb {
 }
 
 impl IdentityDb for PgIdentityDb {
-    type Context<'c> = PgIdentityDbContext<'c>;
+    type Context<'a> = PgIdentityDbContext<'a>;
 
     async fn create_context(&self) -> Result<Self::Context<'_>, IdentityError> {
         let client = self.client.get().await.map_err(DBError::PGPoolError)?;
         Ok(PgIdentityDbContext {
             client,
-            stmts_identities: &self.stmts_identities,
-            stmts_external_links: &self.stmts_external_links,
-            stmts_tokens: &self.stmts_tokens,
-            stmts_version: &self.stmts_version,
-            stmts_roles: &self.stmts_roles,
-            stmts_id_sequences: &self.stmts_id_sequences,
+            stmts_identities: self.stmts_identities.clone(),
+            stmts_external_links: self.stmts_external_links.clone(),
+            stmts_tokens: self.stmts_tokens.clone(),
+            stmts_version: self.stmts_version.clone(),
+            stmts_roles: self.stmts_roles.clone(),
+            stmts_id_sequences: self.stmts_id_sequences.clone(),
         })
     }
 }

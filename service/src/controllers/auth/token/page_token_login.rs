@@ -11,7 +11,7 @@ use axum_extra::{
 };
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, InputError, OpenApiUrl, ProblemDetail, SiteInfo, ValidatedQuery},
+    axum::{ApiEndpoint, ApiMethod, InputError, OpenApiUrl, ConfiguredProblem, SiteInfo, ValidatedQuery},
     service::{ClientFingerprint, CurrentUser},
 };
 use utoipa::IntoParams;
@@ -348,7 +348,7 @@ async fn authenticate(
 ///   - If all the conditions are met, register a new user; otherwise reject the login with an error.
 async fn token_login(
     State(state): State<AuthServiceState>,
-    query: Result<ValidatedQuery<Query>, ProblemDetail<InputError>>,
+    query: Result<ValidatedQuery<Query>, ConfiguredProblem<InputError>>,
     auth_header: Result<TypedHeader<Authorization<Bearer>>, TypedHeaderRejection>,
     mut auth_session: AuthSession,
     fingerprint: ClientFingerprint,

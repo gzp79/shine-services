@@ -4,7 +4,7 @@ use crate::{
 };
 use axum::extract::State;
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, ProblemDetail, ValidatedQuery};
+use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, ConfiguredProblem, ValidatedQuery};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -27,7 +27,7 @@ struct Query {
 async fn delete_user(
     State(state): State<AuthServiceState>,
     mut auth_session: AuthSession,
-    query: Result<ValidatedQuery<Query>, ProblemDetail<InputError>>,
+    query: Result<ValidatedQuery<Query>, ConfiguredProblem<InputError>>,
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,

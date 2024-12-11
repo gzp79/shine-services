@@ -1,3 +1,4 @@
+use std::future::Future;
 use uuid::Uuid;
 
 use super::{Identity, IdentityError};
@@ -23,5 +24,8 @@ pub struct SearchIdentity<'a> {
 
 /// Search for identities.
 pub trait IdentitySearch {
-    async fn search_identity(&mut self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, IdentityError>;
+    fn search_identity(
+        &mut self,
+        search: SearchIdentity<'_>,
+    ) -> impl Future<Output = Result<Vec<Identity>, IdentityError>> + Send;
 }

@@ -2,8 +2,6 @@ use shine_service::service::CurrentUser;
 use std::collections::HashSet;
 use thiserror::Error as ThisError;
 
-use crate::repositories::identity::Role;
-
 /// All the user roles used by the service.
 pub mod roles {
     pub const SUPER_ADMIN: &str = "SuperAdmin";
@@ -33,7 +31,7 @@ pub struct PermissionSet {
 }
 
 impl PermissionSet {
-    pub fn from_roles(roles: &[Role]) -> Self {
+    pub fn from_roles(roles: &[String]) -> Self {
         let mut permission = HashSet::new();
         for role in roles {
             match role.as_str() {

@@ -1,5 +1,5 @@
 use crate::repositories::{
-    identity::{Identity, Role},
+    identity::Identity,
     session::{Session, SessionError, SessionInfo, SessionUser, Sessions},
     DBError,
 };
@@ -27,7 +27,7 @@ pub struct RedisSessionSentinel {
 struct RedisSessionUser {
     pub name: String,
     pub is_email_confirmed: bool,
-    pub roles: Vec<Role>,
+    pub roles: Vec<String>,
 }
 
 fn create_session_info(user_id: Uuid, key_hash: String, sentinel: RedisSessionSentinel) -> SessionInfo {
@@ -98,7 +98,7 @@ impl<'a> RedisSessionTransaction<'a> {
         Ok((user, key, role))
     }
 
-    async fn find_key_hashes(&mut self, user_id: Uuid) -> Result<Vec<String>, SessionError> {
+    async fn find_redis_keys(&mut self, user_id: Uuid) -> Result<Vec<String>, SessionError> {
         let pattern = format!("{}session:{}:*", self.key_prefix, user_id.as_simple());
         //log::debug!("pattern: {pattern}");
 
@@ -123,7 +123,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
         fingerprint: String,
         site_info: &SiteInfo,
         identity: &Identity,
-        roles: Vec<Role>,
+        roles: Vec<String>,
     ) -> Result<Session, SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(identity.id, &session_key_hash);
         log::debug!(
@@ -199,7 +199,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
     }
 
     async fn find_all_session_hashes_by_user(&mut self, user_id: Uuid) -> Result<Vec<String>, SessionError> {
-        let keys = self.find_key_hashes(user_id).await?;
+        let keys = self.find_redis_keys(user_id).await?;
 
         let mut key_hashes = vec![];
 
@@ -216,7 +216,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
     }
 
     async fn find_all_session_infos_by_user(&mut self, user_id: Uuid) -> Result<Vec<SessionInfo>, SessionError> {
-        let keys = self.find_key_hashes(user_id).await?;
+        let keys = self.find_redis_keys(user_id).await?;
 
         let mut sessions = vec![];
 
@@ -287,7 +287,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
         &mut self,
         session_key_hash: String,
         identity: &Identity,
-        roles: &[Role],
+        roles: &[String],
     ) -> Result<Option<Session>, SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(identity.id, &session_key_hash);
         log::debug!(
@@ -337,7 +337,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
     }
 
     async fn delete_all_sessions_by_user(&mut self, user_id: Uuid) -> Result<(), SessionError> {
-        let keys = self.find_key_hashes(user_id).await?;
+        let keys = self.find_redis_keys(user_id).await?;
 
         if !keys.is_empty() {
             log::debug!("Removing session, user:[{user_id}], keys: {keys:?}");

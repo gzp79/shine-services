@@ -90,6 +90,7 @@ pg_query!( ExistsByUserId =>
     "#
 );
 
+#[derive(Clone)]
 pub struct PgExternalLinksStatements {
     insert: InsertExternalLogin,
     find_by_provider_id: FindByProviderId,

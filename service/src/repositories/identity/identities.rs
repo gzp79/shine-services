@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use std::future::Future;
 use uuid::Uuid;
 
 use super::IdentityError;
@@ -23,10 +24,14 @@ pub struct Identity {
 
 /// Handle identities.
 pub trait Identities {
-    async fn create_user(&mut self, user_id: Uuid, user_name: &str, email: Option<&str>)
-        -> Result<Identity, IdentityError>;
+    fn create_user(
+        &mut self,
+        user_id: Uuid,
+        user_name: &str,
+        email: Option<&str>,
+    ) -> impl Future<Output = Result<Identity, IdentityError>> + Send;
 
-    async fn find_by_id(&mut self, user_id: Uuid) -> Result<Option<Identity>, IdentityError>;
+    fn find_by_id(&mut self, user_id: Uuid) -> impl Future<Output = Result<Option<Identity>, IdentityError>> + Send;
 
-    async fn cascaded_delete(&mut self, user_id: Uuid) -> Result<(), IdentityError>;
+    fn cascaded_delete(&mut self, user_id: Uuid) -> impl Future<Output = Result<(), IdentityError>> + Send;
 }

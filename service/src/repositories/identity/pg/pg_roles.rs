@@ -48,6 +48,7 @@ pg_query!( DeleteUserRole =>
     "#
 );
 
+#[derive(Clone)]
 pub struct PgRolesStatements {
     add: AddUserRole,
     get: GetUserRoles,

@@ -84,6 +84,7 @@ pg_query!( FindById =>
     "#
 );
 
+#[derive(Clone)]
 pub struct PgIdentitiesStatements {
     insert_identity: InsertIdentity,
     cascaded_delete: CascadedDelete,

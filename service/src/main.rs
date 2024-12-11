@@ -1,35 +1,21 @@
-/*mod app_config;
-mod auth;
-mod identity;
-mod openapi;*/
+mod app_config;
+mod controllers;
+mod core;
 mod repositories;
 mod services;
 
-/*use crate::{
-    app_config::{AppConfig, SERVICE_NAME},
-    auth::{AuthServiceBuilder, AuthServiceDependencies},
-    identity::{IdentityServiceBuilder, IdentityServiceDependencies},
-    repositories::{AutoNameManager, DBPool, IdentityManager, SessionManager},
-};
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
-    http::StatusCode,
     http::{header, Method},
     Router,
 };
 use axum_server::Handle;
-use chrono::Duration;
-use openapi::ApiKind;
-use repositories::CaptchaValidator;
+use controllers::identity;
 use shine_service::{
-    axum::{
-        add_default_components, telemetry::TelemetryManager, ApiEndpoint, ApiMethod, ApiPath, ApiRoute, PoweredBy,
-        ProblemConfig,
-    },
+    axum::{add_default_components, telemetry::TelemetryService, ApiPath, PoweredBy},
     service::UserSessionCacheReader,
 };
 use std::{env, fs, net::SocketAddr, time::Duration as StdDuration};
-use tera::Tera;
 use tokio::{
     net::TcpListener,
     runtime::{Handle as RtHandle, Runtime},
@@ -44,20 +30,14 @@ use tracing_subscriber::EnvFilter;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
 
+use self::{
+    app_config::{AppConfig, SERVICE_NAME},
+    controllers::{health::HealthController, ApiKind, AppState},
+};
+
 #[derive(OpenApi)]
 #[openapi(paths(), components(), tags())]
 struct ApiDoc;
-
-async fn health_check() -> String {
-    "Ok".into()
-}
-
-fn ep_health_check() -> ApiEndpoint<()> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Absolute("/info/ready"), health_check)
-        .with_operation_id("health_check")
-        .with_tag("status")
-        .with_status_response(StatusCode::OK, "Ok.")
-}
 
 async fn shutdown_signal() {
     let ctrl_c = async {
@@ -92,7 +72,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let args: Vec<String> = env::args().collect();
     let stage = args.get(1).ok_or(anyhow!("Missing stage parameter"))?.clone();
 
-    let (config, telemetry_manager) = {
+    let (config, telemetry_service) = {
         // initialize a pre-init logger
         let pre_init_log = {
             let _ = tracing_log::LogTracer::init();
@@ -109,7 +89,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         log::error!("init-error - ok");
 
         let config = AppConfig::new(&stage).await?;
-        let telemetry_manager = TelemetryManager::new(SERVICE_NAME, &config.telemetry).await?;
+        let telemetry_manager = TelemetryService::new(SERVICE_NAME, &config.telemetry).await?;
         log::info!("pre-init completed");
         (config, telemetry_manager)
     };
@@ -126,7 +106,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     tracing::warn!("warn  - tracing:ok");
     tracing::error!("error - tracing:ok");
 
-    let cors = CorsLayer::default()
+    let cors_layer = CorsLayer::default()
         .allow_origin(config.service.cors_allowed_origin()?)
         .allow_methods([
             Method::GET,
@@ -138,58 +118,67 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         ])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
         .allow_credentials(true);
-    let powered_by = PoweredBy::from_service_info(SERVICE_NAME, &config.core.version)?;
+    let powered_by_layer = PoweredBy::from_service_info(SERVICE_NAME, &config.core.version)?;
 
     let mut doc = ApiDoc::openapi();
     add_default_components(&mut doc);
 
-    let auth_config = &config.auth.auth_session;
-    let tera = {
-        let mut tera = Tera::new("tera_templates/**/*").map_err(|e| anyhow!(e))?;
-        tera.autoescape_on(vec![".html"]);
-        tera
-    };
+    // let identity_manager = PgIdentityManager::new(&db_pool.postgres).await?;
+    // let ttl_session = Duration::seconds(i64::try_from(auth_config.ttl_session)?);
+    // let session_manager = SessionManager::new(&db_pool.redis, String::new(), ttl_session).await?;
+    // let auto_name_manager = AutoNameManager::new(&config.user_name, &db_pool.postgres).await?;
 
-    let db_pool = DBPool::new(&config.db).await?;
-    let captcha_validator = CaptchaValidator::new(config.service.captcha_secret.clone());
-    let user_session = UserSessionCacheReader::new(None, &auth_config.session_secret, "", db_pool.redis.clone())?;
-    let problem_config = ProblemConfig::new(config.service.full_problem_response);
-    let identity_manager = PgIdentityManager::new(&db_pool.postgres).await?;
-    let ttl_session = Duration::seconds(i64::try_from(auth_config.ttl_session)?);
-    let session_manager = SessionManager::new(&db_pool.redis, String::new(), ttl_session).await?;
-    let auto_name_manager = AutoNameManager::new(&config.user_name, &db_pool.postgres).await?;
+    let app_state = AppState::new(&config, &telemetry_service).await?;
+
+    let name = app_state.identity_service().generate_user_name().await?;
+    log::error!("Generated name: {}", name);
+    log::error!("Generated name: {}", name);
+    log::error!("Generated name: {}", name);
+    log::error!("Generated name: {}", name);
+    log::error!("Generated name: {}", name);
+    log::error!("Generated name: {}", name);
+    //let captcha_validator = CaptchaValidator::new(config.service.captcha_secret.clone());
 
     let log_layer = TraceLayer::new_for_http()
         .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
         .on_response(DefaultOnResponse::new().level(Level::INFO));
-    let telemetry_layer = telemetry_manager.to_layer();
+    let problem_detail_layer = app_state.problem_config().clone().into_layer();
+    let telemetry_layer = telemetry_service.create_layer();
+    let user_session_layer = UserSessionCacheReader::new(
+        None,
+        &config.auth.auth_session.session_secret,
+        "",
+        app_state.db().redis.clone(),
+    )?
+    .into_layer();
 
-    let health_check = Router::new().add_api(ep_health_check(), &mut doc);
+    let health_controller = HealthController::new().into_router(&mut doc);
+    let identity_controller = identity::IdentityController::new().into_router(&mut doc);
 
-    let (auth_pages, auth_api) = {
-        let auth_state = AuthServiceDependencies {
-            tera: tera.clone(),
-            identity_manager: identity_manager.clone(),
-            session_manager: session_manager.clone(),
-            auto_name_manager: auto_name_manager.clone(),
-            captcha_validator,
-        };
-        AuthServiceBuilder::new(auth_state, &config.auth)
-            .await?
-            .into_router(&mut doc)
-    };
+    // let (auth_pages, auth_api) = {
+    //     let auth_state = AuthServiceDependencies {
+    //         tera: tera.clone(),
+    //         identity_manager: identity_manager.clone(),
+    //         session_manager: session_manager.clone(),
+    //         auto_name_manager: auto_name_manager.clone(),
+    //         captcha_validator,
+    //     };
+    //     AuthServiceBuilder::new(auth_state, &config.auth)
+    //         .await?
+    //         .into_router(&mut doc)
+    // };
 
-    let identity_api = {
-        let identity_state = IdentityServiceDependencies {
-            telemetry_manager,
-            identity_manager: identity_manager.clone(),
-            session_manager: session_manager.clone(),
-            auto_name_manager: auto_name_manager.clone(),
-            db: db_pool.clone(),
-        };
-        IdentityServiceBuilder::new(identity_state, config.auth.super_user_api_key_hash.as_deref())
-            .into_router(&mut doc)
-    };
+    // let identity_api = {
+    //     let identity_state = IdentityServiceDependencies {
+    //         telemetry_manager,
+    //         identity_manager: identity_manager.clone(),
+    //         session_manager: session_manager.clone(),
+    //         auto_name_manager: auto_name_manager.clone(),
+    //         db: db_pool.clone(),
+    //     };
+    //     IdentityServiceBuilder::new(identity_state, config.auth.super_user_api_key_hash.as_deref())
+    //         .into_router(&mut doc)
+    // };
 
     let swagger = SwaggerUi::new(ApiKind::Doc("/swagger-ui").path())
         .url(ApiKind::Doc("/openapi.json").path(), doc)
@@ -200,22 +189,23 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
         );
 
     let app = Router::new()
-        .merge(health_check)
-        .merge(auth_pages)
-        .merge(identity_api)
-        .merge(auth_api)
+        .merge(health_controller)
+        .merge(identity_controller)
+        // .merge(identity_api)
+        // .merge(auth_api)
         .merge(swagger)
-        .layer(user_session.into_layer())
-        .layer(problem_config.into_layer())
-        .layer(powered_by)
-        .layer(cors)
+        .layer(user_session_layer)
+        .layer(problem_detail_layer)
+        .layer(powered_by_layer)
+        .layer(cors_layer)
         .layer(telemetry_layer)
-        .layer(log_layer);
+        .layer(log_layer)
+        .with_state(app_state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
 
     if let Some(tls_config) = &config.service.tls {
-        log::info!("Starting service on https://{addr:?}");
+        log::info!("Starting service on https: //{addr:?}");
         let cert = fs::read(&tls_config.cert)?;
         let key = fs::read(&tls_config.key)?;
         //todo: workaround for https://github.com/programatik29/axum-server/issues/153
@@ -264,6 +254,3 @@ pub fn main() {
         panic!();
     }
 }
-*/
-
-pub fn main() {}
