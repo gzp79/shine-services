@@ -1,15 +1,19 @@
-use crate::{auth::AuthServiceState, openapi::ApiKind, repositories::ExternalLink};
 use axum::{extract::State, http::StatusCode, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, IntoProblem, Problem, ProblemConfig, ValidatedPath},
+    axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig, ValidatedPath},
     service::CheckedCurrentUser,
 };
 use url::Url;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
+
+use crate::{
+    controllers::{ApiKind, AppState},
+    repositories::identity::ExternalLink,
+};
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -41,25 +45,25 @@ pub struct LinkedExternalProviders {
     links: Vec<LinkedExternalProvider>,
 }
 
-async fn external_link_list(
-    State(state): State<AuthServiceState>,
+async fn list_external_links(
+    State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
 ) -> Result<Json<LinkedExternalProviders>, Problem> {
     let links = state
-        .identity_manager()
-        .list_links(user.user_id)
+        .identity_service()
+        .list_external_links_by_user(user.user_id)
         .await
-        .map_err(|err| err.into_problem(&problem_config))?
+        .map_err(|err| Problem::internal_error(&problem_config, "Failed to get links", err))?
         .into_iter()
         .map(LinkedExternalProvider::from)
         .collect();
     Ok(Json(LinkedExternalProviders { links }))
 }
 
-pub fn ep_external_link_list() -> ApiEndpoint<AuthServiceState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/links"), external_link_list)
-        .with_operation_id("external_link_list")
+pub fn ep_list_external_links() -> ApiEndpoint<AppState> {
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/links"), list_external_links)
+        .with_operation_id("list_external_links")
         .with_tag("auth")
         .with_schema::<LinkedExternalProvider>()
         .with_json_response::<LinkedExternalProviders>(StatusCode::OK)
@@ -72,17 +76,17 @@ struct ProviderSelectPathParam {
     provider_id: String,
 }
 
-async fn external_link_delete(
-    State(state): State<AuthServiceState>,
+async fn delete_external_link(
+    State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     ValidatedPath(params): ValidatedPath<ProviderSelectPathParam>,
 ) -> Result<(), Problem> {
     let link = state
-        .identity_manager()
-        .unlink_user(user.user_id, &params.provider, &params.provider_id)
+        .identity_service()
+        .delete_extern_link(user.user_id, &params.provider, &params.provider_id)
         .await
-        .map_err(|err| err.into_problem(&problem_config))?;
+        .map_err(|err| Problem::internal_error(&problem_config, "Failed to delete link", err))?;
 
     if link.is_none() {
         let url = Url::parse(&format!(
@@ -96,13 +100,13 @@ async fn external_link_delete(
     }
 }
 
-pub fn ep_external_link_delete() -> ApiEndpoint<AuthServiceState> {
+pub fn ep_delete_external_link() -> ApiEndpoint<AppState> {
     ApiEndpoint::new(
         ApiMethod::Delete,
         ApiKind::Api("/auth/user/links/:provider/:providerId"),
-        external_link_delete,
+        delete_external_link,
     )
-    .with_operation_id("external_link_delete")
+    .with_operation_id("delete_external_link")
     .with_tag("auth")
     .with_path_parameter::<ProviderSelectPathParam>()
     .with_status_response(StatusCode::OK, "Token revoked")

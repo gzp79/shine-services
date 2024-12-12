@@ -50,8 +50,10 @@ struct Inner {
 pub struct CaptchaValidator(Arc<Inner>);
 
 impl CaptchaValidator {
-    pub fn new(secret: String) -> Self {
-        Self(Arc::new(Inner { secret }))
+    pub fn new<S: ToString>(secret: S) -> Self {
+        Self(Arc::new(Inner {
+            secret: secret.to_string(),
+        }))
     }
 
     pub async fn validate(
@@ -108,7 +110,7 @@ mod test {
 
     #[test]
     async fn test_captcha_validator_test_token_pass() {
-        let validator = CaptchaValidator::new("1x0000000000000000000000000000000AA".into());
+        let validator = CaptchaValidator::new("1x0000000000000000000000000000000AA");
         let token = "1x00000000000000000000AA";
         let response = validator
             .validate(token, None)
@@ -120,7 +122,7 @@ mod test {
 
     #[test]
     async fn test_captcha_validator_test_token_invalid() {
-        let validator = CaptchaValidator::new("2x0000000000000000000000000000000AA".into());
+        let validator = CaptchaValidator::new("2x0000000000000000000000000000000AA");
         let token = "token";
         let response = validator
             .validate(token, None)
@@ -133,7 +135,7 @@ mod test {
 
     #[test]
     async fn test_captcha_validator_test_token_expired() {
-        let validator = CaptchaValidator::new("3x0000000000000000000000000000000AA".into());
+        let validator = CaptchaValidator::new("3x0000000000000000000000000000000AA");
         let token = "token";
         let response = validator
             .validate(token, None)

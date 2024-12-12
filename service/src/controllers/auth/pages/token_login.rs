@@ -1,8 +1,3 @@
-use crate::{
-    auth::{AuthError, AuthPage, AuthServiceState, AuthSession},
-    openapi::ApiKind,
-    repositories::{Identity, IdentityError, TokenKind},
-};
 use axum::extract::State;
 use axum_extra::{
     headers::{authorization::Bearer, Authorization},
@@ -11,15 +6,23 @@ use axum_extra::{
 };
 use serde::Deserialize;
 use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, InputError, OpenApiUrl, ConfiguredProblem, SiteInfo, ValidatedQuery},
+    axum::{ApiEndpoint, ApiMethod, ConfiguredProblem, InputError, OpenApiUrl, SiteInfo, ValidatedQuery},
     service::{ClientFingerprint, CurrentUser},
 };
 use utoipa::IntoParams;
 use validator::Validate;
 
+use crate::{
+    controllers::{
+        auth::{AuthError, AuthPage, AuthSession, CaptchaUtils, PageUtils, TokenCookie},
+        ApiKind, AppState,
+    },
+    repositories::identity::{Identity, IdentityError, TokenKind},
+};
+
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct Query {
+struct QueryParams {
     /// Depending on the token cookie and the Authorization header:
     /// - If there is a (valid) auth header (all other cookies are ignored), a new remember-me token is created
     /// - If there is no token cookie, a  new "quest" user is created iff it's is set to true.
@@ -39,10 +42,10 @@ struct AuthenticationResult {
     rotated_token: Option<String>,
 }
 
-async fn revoke_access_token(state: &AuthServiceState, revoked_token: Option<String>) {
+async fn revoke_access_token(state: &AppState, revoked_token: Option<String>) {
     if let Some(revoked_token) = revoked_token {
         if let Err(err) = state
-            .identity_manager()
+            .identity_service()
             .delete_access_token(revoked_token.as_str())
             .await
         {
@@ -53,19 +56,19 @@ async fn revoke_access_token(state: &AuthServiceState, revoked_token: Option<Str
     }
 }
 
-async fn revoke_persistent_token(state: &AuthServiceState, token: &str) {
-    if let Err(err) = state.identity_manager().delete_persistent_token(token).await {
+async fn revoke_persistent_token(state: &AppState, token: &str) {
+    if let Err(err) = state.identity_service().delete_persistent_token(token).await {
         // don't return an error. The revoked_token will be revoked by the retention policy
         // but if this happens too often, some measure should to be taken.
         log::error!("Failed to revoke token ({}): {}", token, err);
     }
 }
 
-async fn revoke_user_session(state: &AuthServiceState, user_session: Option<CurrentUser>) {
+async fn revoke_user_session(state: &AppState, user_session: Option<CurrentUser>) {
     if let Some(user_session) = user_session {
         if let Err(err) = state
-            .session_manager()
-            .remove(user_session.user_id, user_session.key)
+            .session_service()
+            .remove(user_session.user_id, &user_session.key)
             .await
         {
             // don't return an error. The session_key will be revoked by the retention policy
@@ -75,20 +78,20 @@ async fn revoke_user_session(state: &AuthServiceState, user_session: Option<Curr
     }
 }
 
-async fn clear_access_token(state: &AuthServiceState, auth_session: &mut AuthSession) {
+async fn clear_access_token(state: &AppState, auth_session: &mut AuthSession) {
     if let Some(token_cookie) = auth_session.token_cookie.take() {
         revoke_access_token(state, token_cookie.revoked_token).await;
         revoke_access_token(state, Some(token_cookie.key)).await;
     }
 }
 
-async fn clear_session_token(state: &AuthServiceState, auth_session: &mut AuthSession) {
+async fn clear_session_token(state: &AppState, auth_session: &mut AuthSession) {
     revoke_user_session(state, auth_session.user_session.take()).await;
 }
 
 async fn authenticate_with_query_token(
-    state: &AuthServiceState,
-    query: &Query,
+    state: &AppState,
+    query: &QueryParams,
     fingerprint: &ClientFingerprint,
     mut auth_session: AuthSession,
 ) -> Result<AuthenticationResult, AuthPage> {
@@ -98,15 +101,21 @@ async fn authenticate_with_query_token(
             .token
             .as_ref()
             .expect("It shall be called only if there is a token cookie");
-        match state.identity_manager().take_single_access_token(token.as_str()).await {
+        match state.identity_service().take_single_access_token(token.as_str()).await {
             Ok(Some(info)) => info,
             Ok(None) => {
                 log::debug!("Token expired...");
                 // clearing the token from cookies, question: should we treat it as if no token was provided ???
                 auth_session.token_cookie = None;
-                return Err(state.page_error(auth_session, AuthError::TokenExpired, query.error_url.as_deref()));
+                return Err(PageUtils::new(&state).error(
+                    auth_session,
+                    AuthError::TokenExpired,
+                    query.error_url.as_deref(),
+                ));
             }
-            Err(err) => return Err(state.page_internal_error(auth_session, err, query.error_url.as_deref())),
+            Err(err) => {
+                return Err(PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_deref()))
+            }
         }
     };
     // The single access token has already been removed from the DB, thus in case of error there is no need to revoke it.
@@ -119,14 +128,14 @@ async fn authenticate_with_query_token(
     clear_session_token(state, &mut auth_session).await;
 
     if token_info.is_expired {
-        Err(state.page_error(auth_session, AuthError::TokenExpired, query.error_url.as_deref()))
+        Err(PageUtils::new(&state).error(auth_session, AuthError::TokenExpired, query.error_url.as_deref()))
     } else if token_info.fingerprint.is_some() && Some(fingerprint.as_str()) != token_info.fingerprint.as_deref() {
         log::info!(
             "Client fingerprint changed [{:?}] -> [{:#?}]",
             token_info.fingerprint,
             fingerprint
         );
-        Err(state.page_error(auth_session, AuthError::InvalidToken, query.error_url.as_deref()))
+        Err(PageUtils::new(&state).error(auth_session, AuthError::InvalidToken, query.error_url.as_deref()))
     } else {
         Ok(AuthenticationResult {
             identity,
@@ -138,8 +147,8 @@ async fn authenticate_with_query_token(
 }
 
 async fn authenticate_with_header_token(
-    state: &AuthServiceState,
-    query: &Query,
+    state: &AppState,
+    query: &QueryParams,
     auth_header: TypedHeader<Authorization<Bearer>>,
     fingerprint: &ClientFingerprint,
     mut auth_session: AuthSession,
@@ -148,14 +157,20 @@ async fn authenticate_with_header_token(
 
     log::debug!("Retrieving the persistent token ...");
     let (identity, token_info) = {
-        match state.identity_manager().test_api_key(token).await {
+        match state.identity_service().test_api_key(token).await {
             Ok(Some(info)) => info,
             Ok(None) => {
                 log::debug!("Token expired ...");
                 auth_session.token_cookie = None;
-                return Err(state.page_error(auth_session, AuthError::TokenExpired, query.error_url.as_deref()));
+                return Err(PageUtils::new(&state).error(
+                    auth_session,
+                    AuthError::TokenExpired,
+                    query.error_url.as_deref(),
+                ));
             }
-            Err(err) => return Err(state.page_internal_error(auth_session, err, query.error_url.as_deref())),
+            Err(err) => {
+                return Err(PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_deref()))
+            }
         }
     };
 
@@ -169,7 +184,7 @@ async fn authenticate_with_header_token(
     if token_info.is_expired {
         log::debug!("Token expired, removing from DB ...");
         revoke_persistent_token(state, token).await;
-        Err(state.page_error(auth_session, AuthError::TokenExpired, query.error_url.as_deref()))
+        Err(PageUtils::new(&state).error(auth_session, AuthError::TokenExpired, query.error_url.as_deref()))
     } else if token_info.fingerprint.is_some() && Some(fingerprint.as_str()) != token_info.fingerprint.as_deref() {
         log::info!(
             "Client fingerprint changed [{:?}] -> [{:#?}]",
@@ -177,7 +192,7 @@ async fn authenticate_with_header_token(
             fingerprint
         );
         revoke_persistent_token(state, token).await;
-        Err(state.page_error(auth_session, AuthError::InvalidToken, query.error_url.as_deref()))
+        Err(PageUtils::new(&state).error(auth_session, AuthError::InvalidToken, query.error_url.as_deref()))
     } else {
         Ok(AuthenticationResult {
             identity,
@@ -189,8 +204,8 @@ async fn authenticate_with_header_token(
 }
 
 async fn authenticate_with_cookie_token(
-    state: &AuthServiceState,
-    query: &Query,
+    state: &AppState,
+    query: &QueryParams,
     fingerprint: &ClientFingerprint,
     mut auth_session: AuthSession,
 ) -> Result<AuthenticationResult, AuthPage> {
@@ -201,7 +216,7 @@ async fn authenticate_with_cookie_token(
             .as_ref()
             .expect("It shall be called only if there is a token cookie");
         match state
-            .identity_manager()
+            .identity_service()
             .test_access_token(token_cookie.key.as_str())
             .await
         {
@@ -209,9 +224,15 @@ async fn authenticate_with_cookie_token(
             Ok(None) => {
                 log::debug!("Token expired ...");
                 auth_session.token_cookie = None;
-                return Err(state.page_error(auth_session, AuthError::TokenExpired, query.error_url.as_deref()));
+                return Err(PageUtils::new(&state).error(
+                    auth_session,
+                    AuthError::TokenExpired,
+                    query.error_url.as_deref(),
+                ));
             }
-            Err(err) => return Err(state.page_internal_error(auth_session, err, query.error_url.as_deref())),
+            Err(err) => {
+                return Err(PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_deref()))
+            }
         }
     };
 
@@ -225,7 +246,7 @@ async fn authenticate_with_cookie_token(
 
     if token_info.is_expired {
         revoke_access_token(state, Some(token_cookie.key)).await;
-        Err(state.page_error(auth_session, AuthError::TokenExpired, query.error_url.as_deref()))
+        Err(PageUtils::new(&state).error(auth_session, AuthError::TokenExpired, query.error_url.as_deref()))
     } else if identity.id != token_cookie.user_id {
         log::info!(
             "User is not matching (id:{}, cookie:{}), cookie might have been compromised [{}]",
@@ -234,7 +255,7 @@ async fn authenticate_with_cookie_token(
             token_cookie.key
         );
         revoke_access_token(state, Some(token_cookie.key)).await;
-        Err(state.page_error(auth_session, AuthError::InvalidToken, query.error_url.as_deref()))
+        Err(PageUtils::new(&state).error(auth_session, AuthError::InvalidToken, query.error_url.as_deref()))
     } else if Some(fingerprint.as_str()) != token_info.fingerprint.as_deref() {
         log::info!(
             "Client fingerprint changed [{:?}] -> [{:#?}]",
@@ -242,7 +263,7 @@ async fn authenticate_with_cookie_token(
             fingerprint
         );
         revoke_access_token(state, Some(token_cookie.key)).await;
-        Err(state.page_error(auth_session, AuthError::InvalidToken, query.error_url.as_deref()))
+        Err(PageUtils::new(&state).error(auth_session, AuthError::InvalidToken, query.error_url.as_deref()))
     } else {
         Ok(AuthenticationResult {
             identity,
@@ -255,15 +276,15 @@ async fn authenticate_with_cookie_token(
 
 /// Register a new (guest) user
 async fn authenticate_with_registration(
-    state: &AuthServiceState,
-    query: &Query,
+    state: &AppState,
+    query: &QueryParams,
     mut auth_session: AuthSession,
 ) -> Result<AuthenticationResult, AuthPage> {
     // No credentials were provided, and the new users would not be remembered
     // It is usually used to check if client has any credential for a valid user and if not
     // user should be redirected to the "enter" page.
     if !query.remember_me.unwrap_or(false) {
-        return Err(state.page_redirect(auth_session, state.app_name(), query.login_url.as_deref()));
+        return Err(PageUtils::new(&state).redirect(auth_session, None, query.login_url.as_deref()));
     }
 
     log::debug!("New user registration flow triggered...");
@@ -273,14 +294,14 @@ async fn authenticate_with_registration(
     clear_session_token(state, &mut auth_session).await;
 
     // we want to create a new user, check the captcha first
-    if let Err(err) = state.validate_captcha(query.captcha.as_deref()).await {
-        return Err(state.page_error(auth_session, err, query.error_url.as_deref()));
+    if let Err(err) = CaptchaUtils::new(&state).validate(query.captcha.as_deref()).await {
+        return Err(PageUtils::new(&state).error(auth_session, err, query.error_url.as_deref()));
     };
 
     // create a new user
-    let identity = match state.create_user_with_retry(None).await {
+    let identity = match state.create_user_service().create_user(None).await {
         Ok(identity) => identity,
-        Err(err) => return Err(state.page_internal_error(auth_session, err, query.error_url.as_deref())),
+        Err(err) => return Err(PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_deref())),
     };
 
     Ok(AuthenticationResult {
@@ -293,8 +314,8 @@ async fn authenticate_with_registration(
 
 /// Try all the inputs for authentications with the appropriate priority
 async fn authenticate(
-    state: &AuthServiceState,
-    query: &Query,
+    state: &AppState,
+    query: &QueryParams,
     auth_header: Result<TypedHeader<Authorization<Bearer>>, TypedHeaderRejection>,
     auth_session: AuthSession,
     fingerprint: &ClientFingerprint,
@@ -307,7 +328,7 @@ async fn authenticate(
         Ok(auth_heder) => Some(auth_heder),
         Err(err) if matches!(err.reason(), TypedHeaderRejectionReason::Missing) => None,
         Err(_) => {
-            return Err(state.page_error(
+            return Err(PageUtils::new(&state).error(
                 auth_session,
                 AuthError::InvalidAuthorizationHeader,
                 query.error_url.as_deref(),
@@ -320,7 +341,7 @@ async fn authenticate(
 
     if auth_session.user_session.is_some() {
         // keep all the cookies, reject with logout required
-        return Err(state.page_error(auth_session, AuthError::LogoutRequired, query.error_url.as_deref()));
+        return Err(PageUtils::new(&state).error(auth_session, AuthError::LogoutRequired, query.error_url.as_deref()));
     }
 
     if auth_session.token_cookie.is_some() {
@@ -347,8 +368,8 @@ async fn authenticate(
 ///   - Remember me should be true
 ///   - If all the conditions are met, register a new user; otherwise reject the login with an error.
 async fn token_login(
-    State(state): State<AuthServiceState>,
-    query: Result<ValidatedQuery<Query>, ConfiguredProblem<InputError>>,
+    State(state): State<AppState>,
+    query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
     auth_header: Result<TypedHeader<Authorization<Bearer>>, TypedHeaderRejection>,
     mut auth_session: AuthSession,
     fingerprint: ClientFingerprint,
@@ -356,7 +377,9 @@ async fn token_login(
 ) -> Result<AuthPage, AuthPage> {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return Err(state.page_error(auth_session, AuthError::InputError(error.problem), None)),
+        Err(error) => {
+            return Err(PageUtils::new(&state).error(auth_session, AuthError::InputError(error.problem), None))
+        }
     };
 
     // clear external login cookie, it shall be only for the authorize callback from the external provider
@@ -378,36 +401,43 @@ async fn token_login(
     if create_token {
         log::debug!("Creating access token for identity: {:#?}", identity);
         // create a new access token
-        let mut token_cookie = match state
-            .create_token_with_retry(
+        let user_token = match state
+            .token_generator_service()
+            .create_user_token(
                 identity.id,
                 TokenKind::Access,
-                state.ttl_access_token(),
+                &state.settings().token.ttl_access_token,
                 Some(&fingerprint),
                 &site_info,
             )
             .await
         {
-            Ok(token_cookie) => token_cookie,
-            Err(err) => return Err(state.page_internal_error(auth_session, err, query.error_url.as_deref())),
+            Ok(user_token) => user_token,
+            Err(err) => {
+                return Err(PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_deref()))
+            }
         };
 
         // preserve the old token in case client does not acknowledge the new one
-        token_cookie.revoked_token = rotated_token;
-        auth_session.token_cookie = Some(token_cookie);
+        auth_session.token_cookie = Some(TokenCookie {
+            user_id: user_token.user_id,
+            key: user_token.token,
+            expire_at: user_token.expire_at,
+            revoked_token: rotated_token,
+        });
         auth_session.user_session = None;
     }
 
     // Create a new user session.
     {
         // Find roles for the identity
-        let roles = match state.identity_manager().get_roles(identity.id).await {
+        let roles = match state.identity_service().get_roles(identity.id).await {
             Ok(Some(roles)) => roles,
             Ok(None) => {
                 log::debug!("User {} has been deleted", identity.id);
                 // Deleting the token might be overkill as a missing user may have no tokens, but it is safer.
                 clear_access_token(&state, &mut auth_session).await;
-                return Err(state.page_internal_error(
+                return Err(PageUtils::new(&state).internal_error(
                     auth_session,
                     IdentityError::UserDeleted,
                     query.error_url.as_deref(),
@@ -416,14 +446,14 @@ async fn token_login(
             Err(err) => {
                 log::error!("Failed to retrieve roles for user {}: {}", identity.id, err);
                 // It is safe to return the access token. A retry will get the user back into to the system.
-                return Err(state.page_internal_error(auth_session, err, query.error_url.as_deref()));
+                return Err(PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_deref()));
             }
         };
 
         // Create session
         log::debug!("Creating session for identity: {:#?}", identity);
         let user_session = match state
-            .session_manager()
+            .session_service()
             .create(&identity, roles, &fingerprint, &site_info)
             .await
         {
@@ -431,20 +461,28 @@ async fn token_login(
             Err(err) => {
                 log::error!("Failed to create session for user {}: {}", identity.id, err);
                 // It is safe to return the access token. A retry will get the user back into to the system.
-                return Err(state.page_internal_error(auth_session, err, query.error_url.as_deref()));
+                return Err(PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_deref()));
             }
         };
-        auth_session.user_session = Some(user_session);
+        auth_session.user_session = Some(CurrentUser {
+            user_id: user_session.0.info.user_id,
+            key: user_session.1,
+            session_start: user_session.0.info.created_at,
+            name: user_session.0.user.name,
+            roles: user_session.0.user.roles,
+            fingerprint: user_session.0.info.fingerprint,
+            version: user_session.0.user_version,
+        });
     }
 
     log::info!("Token login completed for: {}", identity.id);
-    Ok(state.page_redirect(auth_session, state.app_name(), query.redirect_url.as_deref()))
+    Ok(PageUtils::new(&state).redirect(auth_session, None, query.redirect_url.as_deref()))
 }
 
-pub fn page_token_login() -> ApiEndpoint<AuthServiceState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage("token", "/login"), token_login)
+pub fn page_token_login() -> ApiEndpoint<AppState> {
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/token/login"), token_login)
         .with_operation_id("page_token_login")
         .with_tag("page")
-        .with_query_parameter::<Query>()
+        .with_query_parameter::<QueryParams>()
         .with_page_response("Html page to update client cookies and redirect user according to the login result")
 }

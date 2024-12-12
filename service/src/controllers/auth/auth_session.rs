@@ -1,4 +1,4 @@
-use crate::auth::AuthSessionConfig;
+use crate::app_config::AuthSessionConfig;
 use async_trait::async_trait;
 use axum::{
     extract::FromRequestParts,
@@ -22,7 +22,7 @@ use url::Url;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(in crate::auth) struct ExternalLoginCookie {
+pub struct ExternalLoginCookie {
     // used for tracing the login flow
     #[serde(rename = "key")]
     pub key: String,
@@ -44,7 +44,7 @@ pub(in crate::auth) struct ExternalLoginCookie {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(in crate::auth) struct TokenCookie {
+pub struct TokenCookie {
     #[serde(rename = "u")]
     pub user_id: Uuid,
     #[serde(rename = "key")]
@@ -58,7 +58,7 @@ pub(in crate::auth) struct TokenCookie {
 }
 
 #[derive(Debug, ThisError)]
-pub(in crate::auth) enum AuthSessionError {
+pub enum AuthSessionError {
     #[error("Missing or invalid domain for application home")]
     MissingHomeDomain,
     #[error("Invalid session secret: {0}")]
@@ -79,7 +79,7 @@ struct CookieSettings {
 
 /// Layer to configure auth related cookie.
 #[derive(Clone)]
-pub(in crate::auth) struct AuthSessionMeta {
+pub struct AuthSessionMeta {
     session_settings: CookieSettings,
     external_login_cookie_settings: CookieSettings,
     token_cookie_settings: CookieSettings,
@@ -152,10 +152,10 @@ impl AuthSessionMeta {
     }
 }
 
-/// Handle all auth related cookie as an atomic entity. During authorization flow this
-/// structure the consistency between the auth related cookie.
+/// Handle all auth related cookie as an atomic entity. During authorization flow
+/// it ensures the consistency between the auth related cookie.
 #[derive(Clone)]
-pub(in crate::auth) struct AuthSession {
+pub struct AuthSession {
     pub meta: Arc<AuthSessionMeta>,
     pub token_cookie: Option<TokenCookie>,
     pub user_session: Option<CurrentUser>,
@@ -326,9 +326,9 @@ impl IntoResponseParts for AuthSession {
             &meta.token_cookie_settings,
             token_cookie.as_ref().map(|d| {
                 let naive_time = d.expire_at.naive_utc();
+                let naive_time = OffsetDateTime::from_unix_timestamp(naive_time.and_utc().timestamp()).unwrap();
                 // disable cookie a few minutes before the token expiration
-                let token_expiration = OffsetDateTime::from_unix_timestamp(naive_time.and_utc().timestamp()).unwrap()
-                    - Duration::minutes(5);
+                let token_expiration = naive_time - Duration::minutes(5);
                 (d, token_expiration)
             }),
         );

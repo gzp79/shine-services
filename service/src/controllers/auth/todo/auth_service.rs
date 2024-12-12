@@ -49,7 +49,6 @@ pub struct OIDCConfig {
     pub ttl_client: Option<usize>,
 }
 
-
 #[derive(Debug, ThisError)]
 pub enum AuthBuildError {
     #[error("Invalid token duration")]
@@ -238,8 +237,7 @@ impl AuthServiceBuilder {
             config.home_url.clone(),
             config.auth_base_url.clone(),
             &config.auth_session,
-        )
-        .map_err(|err| AuthBuildError::InvalidAuthSession(format!("{err}")))?;
+        )?;
 
         Ok(Self {
             state,

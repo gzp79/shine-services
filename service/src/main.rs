@@ -10,7 +10,6 @@ use axum::{
     Router,
 };
 use axum_server::Handle;
-use controllers::identity;
 use shine_service::{
     axum::{add_default_components, telemetry::TelemetryService, ApiPath, PoweredBy},
     service::UserSessionCacheReader,
@@ -32,7 +31,7 @@ use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
 
 use self::{
     app_config::{AppConfig, SERVICE_NAME},
-    controllers::{health::HealthController, ApiKind, AppState},
+    controllers::{auth, health::HealthController, identity, ApiKind, AppState},
 };
 
 #[derive(OpenApi)]
@@ -154,31 +153,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let health_controller = HealthController::new().into_router(&mut doc);
     let identity_controller = identity::IdentityController::new().into_router(&mut doc);
-
-    // let (auth_pages, auth_api) = {
-    //     let auth_state = AuthServiceDependencies {
-    //         tera: tera.clone(),
-    //         identity_manager: identity_manager.clone(),
-    //         session_manager: session_manager.clone(),
-    //         auto_name_manager: auto_name_manager.clone(),
-    //         captcha_validator,
-    //     };
-    //     AuthServiceBuilder::new(auth_state, &config.auth)
-    //         .await?
-    //         .into_router(&mut doc)
-    // };
-
-    // let identity_api = {
-    //     let identity_state = IdentityServiceDependencies {
-    //         telemetry_manager,
-    //         identity_manager: identity_manager.clone(),
-    //         session_manager: session_manager.clone(),
-    //         auto_name_manager: auto_name_manager.clone(),
-    //         db: db_pool.clone(),
-    //     };
-    //     IdentityServiceBuilder::new(identity_state, config.auth.super_user_api_key_hash.as_deref())
-    //         .into_router(&mut doc)
-    // };
+    let auth_controller = auth::AuthController::new(&config)?.into_router(&mut doc);
 
     let swagger = SwaggerUi::new(ApiKind::Doc("/swagger-ui").path())
         .url(ApiKind::Doc("/openapi.json").path(), doc)
@@ -191,8 +166,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let app = Router::new()
         .merge(health_controller)
         .merge(identity_controller)
-        // .merge(identity_api)
-        // .merge(auth_api)
+        .merge(auth_controller)
         .merge(swagger)
         .layer(user_session_layer)
         .layer(problem_detail_layer)

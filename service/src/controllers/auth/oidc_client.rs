@@ -1,4 +1,4 @@
-use crate::auth::{AuthBuildError, OIDCConfig};
+use anyhow::Error as AnyError;
 use oauth2::{ClientId, ClientSecret, EndpointMaybeSet, EndpointNotSet, EndpointSet, RedirectUrl, Scope};
 use openidconnect::{
     core::{CoreClient as OIDCCoreClient, CoreProviderMetadata},
@@ -11,6 +11,8 @@ use std::{sync::Arc, time::Instant};
 use thiserror::Error as ThisError;
 use tokio::sync::Mutex;
 use url::Url;
+
+use crate::app_config::OIDCConfig;
 
 pub struct ClientInfo {
     client_id: ClientId,
@@ -40,7 +42,7 @@ struct CachedClient {
     created_at: Instant,
 }
 
-pub(in crate::auth) struct OIDCClient {
+pub struct OIDCClient {
     pub provider: String,
     pub scopes: Vec<Scope>,
     pub client_info: ClientInfo,
@@ -54,30 +56,24 @@ impl OIDCClient {
         auth_base_url: &Url,
         startup_discovery: bool,
         config: &OIDCConfig,
-    ) -> Result<Option<Self>, AuthBuildError> {
+    ) -> Result<Option<Self>, AnyError> {
         let client_id = ClientId::new(config.client_id.clone());
         let client_secret = config.client_secret.clone().map(ClientSecret::new);
-        let redirect_url = auth_base_url
-            .join(&format!("{provider}/auth"))
-            .map_err(|err| AuthBuildError::RedirectUrl(format!("{err}")))?;
-        let redirect_url =
-            RedirectUrl::new(redirect_url.to_string()).map_err(|err| AuthBuildError::RedirectUrl(format!("{err}")))?;
-        let discovery_url = IssuerUrl::new(config.discovery_url.clone())
-            .map_err(|err| AuthBuildError::InvalidIssuer(format!("{err}")))?;
+        let redirect_url = auth_base_url.join(&format!("{provider}/auth"))?;
+        let redirect_url = RedirectUrl::new(redirect_url.to_string())?;
+        let discovery_url = IssuerUrl::new(config.discovery_url.clone())?;
 
         let ttl_client = config
             .ttl_client
             .map(|sec| Ok::<_, TryFromIntError>(StdDuration::from_secs(u64::try_from(sec)?)))
-            .transpose()
-            .map_err(AuthBuildError::InvalidKeyCacheTime)?
+            .transpose()?
             .unwrap_or(StdDuration::from_secs(15 * 60));
 
         let ignore_certificates = config.ignore_certificates.unwrap_or(false);
         let http_client = HttpClient::builder()
             .redirect(reqwest::redirect::Policy::none())
             .danger_accept_invalid_certs(ignore_certificates)
-            .build()
-            .map_err(AuthBuildError::HttpClient)?;
+            .build()?;
 
         let client = Self {
             provider: provider.to_string(),
@@ -94,7 +90,7 @@ impl OIDCClient {
         };
 
         if startup_discovery {
-            client.client().await.map_err(AuthBuildError::OIDCDiscovery)?;
+            client.client().await?;
         }
 
         Ok(Some(client))

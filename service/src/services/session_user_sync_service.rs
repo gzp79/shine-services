@@ -9,14 +9,15 @@ use super::{IdentityService, SessionService};
 
 #[derive(ThisError, Debug)]
 pub enum SessionUserSyncError {
-    #[error(transparent)]
-    IdentityError(#[from] IdentityError),
-    #[error(transparent)]
-    SessionError(#[from] SessionError),
     #[error("User not found: {0}")]
     UserNotFound(Uuid),
     #[error("User role not found: {0}")]
     RolesNotFound(Uuid),
+
+    #[error(transparent)]
+    IdentityError(#[from] IdentityError),
+    #[error(transparent)]
+    SessionError(#[from] SessionError),
 }
 
 pub struct SessionUserSyncService<'a, IDB, SDB>

@@ -76,14 +76,14 @@ where
         transaction.find_by_external_link(provider, provider_id).await
     }
 
-    pub async fn link_user(&self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError> {
+    pub async fn add_external_link(&self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError> {
         let mut db = self.db.create_context().await?;
         let mut transaction = gat_fix(db.begin_transaction()).await?;
 
         transaction.link_user(user_id, external_user).await
     }
 
-    pub async fn delete_link(
+    pub async fn delete_extern_link(
         &self,
         user_id: Uuid,
         provider: &str,
@@ -102,7 +102,7 @@ where
         transaction.is_linked(user_id).await
     }
 
-    pub async fn find_all_links(&self, user_id: Uuid) -> Result<Vec<ExternalLink>, IdentityError> {
+    pub async fn list_external_links_by_user(&self, user_id: Uuid) -> Result<Vec<ExternalLink>, IdentityError> {
         let mut db = self.db.create_context().await?;
         let mut transaction = gat_fix(db.begin_transaction()).await?;
 

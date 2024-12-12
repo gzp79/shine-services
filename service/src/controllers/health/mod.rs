@@ -1,11 +1,4 @@
-mod ready;
-use self::ready::*;
-mod service_status;
-use self::service_status::*;
-mod telemetry_config;
-use self::telemetry_config::*;
-mod metrics;
-use self::metrics::*;
+mod api;
 
 use super::AppState;
 use axum::Router;
@@ -21,10 +14,10 @@ impl HealthController {
 
     pub fn into_router(self, doc: &mut OpenApi) -> Router<AppState> {
         Router::new()
-            .add_api(ep_get_ready(), doc)
-            .add_api(ep_get_service_status(), doc)
-            .add_api(ep_get_metrics(), doc)
-            .add_api(ep_get_telemetry_config(), doc)
-            .add_api(ep_put_telemetry_config(), doc)
+            .add_api(api::ep_get_ready(), doc)
+            .add_api(api::ep_get_service_status(), doc)
+            .add_api(api::ep_get_metrics(), doc)
+            .add_api(api::ep_get_telemetry_config(), doc)
+            .add_api(api::ep_put_telemetry_config(), doc)
     }
 }

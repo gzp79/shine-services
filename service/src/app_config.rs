@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::repositories::DBConfig;
 use config::ConfigError;
 use serde::{Deserialize, Serialize};
@@ -85,6 +87,38 @@ pub struct AuthSessionConfig {
     pub ttl_api_key: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ExternalUserInfoExtensions {
+    GithubEmail,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuth2Config {
+    pub authorization_url: String,
+    pub token_url: String,
+    pub user_info_url: String,
+    pub user_info_mapping: HashMap<String, String>,
+    pub extensions: HashSet<ExternalUserInfoExtensions>,
+    pub client_id: String,
+    pub client_secret: String,
+    pub scopes: Vec<String>,
+    pub ignore_certificates: Option<bool>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OIDCConfig {
+    pub discovery_url: String,
+    pub client_id: String,
+    pub client_secret: Option<String>,
+    pub scopes: Vec<String>,
+    pub ignore_certificates: Option<bool>,
+    /// Maximum time to store the discovered OIDC client information, like JWKS.
+    pub ttl_client: Option<usize>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthConfig {
@@ -109,16 +143,14 @@ pub struct AuthConfig {
 
     /// The time interval before redirecting the user from embedded pages. If not provided, no redirection occurs,
     /// and a value of 0 signifies an immediate redirect.
-    page_redirect_time: Option<u32>,
-    /// Enable to display error details on pages. From a security standpoint, it is not advisable to enable this feature
-    /// as it may expose unwanted information. Therefore, it is recommended to disable this feature in production.
-    page_error_detail: Option<bool>,
-    // /// Initiates OIDC discovery at startup to identify and rectify any potential misconfigurations.
-    // openid_startup_discovery: bool,
-    // /// A list of external providers utilizing the (interactive) OpenID Connect login flow.
-    // pub openid: HashMap<String, OIDCConfig>,
-    // /// List of external providers utilizing the (interactive) OAuth2 login flow
-    // pub oauth2: HashMap<String, OAuth2Config>,
+    pub page_redirect_time: Option<u32>,
+    
+    /// Initiates OIDC discovery at startup to identify and rectify any potential misconfigurations.
+    pub openid_startup_discovery: bool,
+    /// A list of external providers utilizing the (interactive) OpenID Connect login flow.
+    pub openid: HashMap<String, OIDCConfig>,
+    /// List of external providers utilizing the (interactive) OAuth2 login flow
+    pub oauth2: HashMap<String, OAuth2Config>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

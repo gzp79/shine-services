@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use std::future::Future;
 use uuid::Uuid;
 
 use super::{Identity, IdentityError};
@@ -23,22 +24,29 @@ pub struct ExternalLink {
 
 /// Handle external links
 pub trait ExternalLinks {
-    async fn link_user(&mut self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError>;
+    fn link_user(
+        &mut self,
+        user_id: Uuid,
+        external_user: &ExternalUserInfo,
+    ) -> impl Future<Output = Result<(), IdentityError>> + Send;
 
-    async fn find_all_links(&mut self, user_id: Uuid) -> Result<Vec<ExternalLink>, IdentityError>;
+    fn find_all_links(
+        &mut self,
+        user_id: Uuid,
+    ) -> impl Future<Output = Result<Vec<ExternalLink>, IdentityError>> + Send;
 
-    async fn is_linked(&mut self, user_id: Uuid) -> Result<bool, IdentityError>;
+    fn is_linked(&mut self, user_id: Uuid) -> impl Future<Output = Result<bool, IdentityError>> + Send;
 
-    async fn find_by_external_link(
+    fn find_by_external_link(
         &mut self,
         provider: &str,
         provider_id: &str,
-    ) -> Result<Option<Identity>, IdentityError>;
+    ) -> impl Future<Output = Result<Option<Identity>, IdentityError>> + Send;
 
-    async fn delete_link(
+    fn delete_link(
         &mut self,
         user_id: Uuid,
         provider: &str,
         provider_id: &str,
-    ) -> Result<Option<()>, IdentityError>;
+    ) -> impl Future<Output = Result<Option<()>, IdentityError>> + Send;
 }
