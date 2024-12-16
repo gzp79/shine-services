@@ -28,7 +28,7 @@ export class RequestAPI {
         const ce = eid ? [`eid=${eid}`] : [];
 
         return request
-            .get(this.config.getUrlFor('identity/auth/validate'))
+            .get(this.config.getUrlFor('auth/validate'))
             .set('Cookie', [...ct, ...cs, ...ce]);
     }
 
@@ -48,7 +48,7 @@ export class RequestAPI {
         let qc = getCaptchaQuery(captcha);
 
         return request
-            .get(this.config.getUrlFor('identity/auth/token/login'))
+            .get(this.config.getUrlFor('auth/token/login'))
             .query({ ...qs, ...qt, ...qc, ...config.defaultRedirects })
             .set('Cookie', [...ct, ...cs])
             .set({ ...ht });
@@ -66,14 +66,14 @@ export class RequestAPI {
         let qc = getCaptchaQuery(captcha);
 
         return request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/login'))
+            .get(config.getUrlFor('auth/oauth2_flow/login'))
             .query({ ...qs, ...qc, ...config.defaultRedirects })
             .set('Cookie', [...ct, ...cs]);
     }
 
     linkWithOAuth2(sid: string | null): Request {
         return request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/link'))
+            .get(config.getUrlFor('auth/oauth2_flow/link'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
@@ -90,7 +90,7 @@ export class RequestAPI {
         const ce = eid ? [`eid=${eid}`] : [];
 
         return request
-            .get(config.getUrlFor('identity/auth/oauth2_flow/auth'))
+            .get(config.getUrlFor('auth/oauth2_flow/auth'))
             .query({ ...qs, ...qc })
             .set('Cookie', [...cs, ...ce]);
     }
@@ -107,14 +107,14 @@ export class RequestAPI {
         let qc = getCaptchaQuery(captcha);
 
         return request
-            .get(config.getUrlFor('identity/auth/openid_flow/login'))
+            .get(config.getUrlFor('auth/openid_flow/login'))
             .query({ ...qs, ...qc, ...config.defaultRedirects })
             .set('Cookie', [...ct, ...cs]);
     }
 
     linkWithOpenId(sid: string | null): Request {
         return request
-            .get(config.getUrlFor('identity/auth/openid_flow/link'))
+            .get(config.getUrlFor('auth/openid_flow/link'))
             .query({ ...config.defaultRedirects })
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
@@ -131,21 +131,21 @@ export class RequestAPI {
         const ce = eid ? [`eid=${eid}`] : [];
 
         return request
-            .get(config.getUrlFor('identity/auth/openid_flow/auth'))
+            .get(config.getUrlFor('auth/openid_flow/auth'))
             .query({ ...qs, ...qc })
             .set('Cookie', [...cs, ...ce]);
     }
 
     logout(sid: string | null, terminateAll: boolean | null): Request {
         return request
-            .get(config.getUrlFor('/identity/auth/logout'))
+            .get(config.getUrlFor('/auth/logout'))
             .query({ terminateAll })
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
     getUserInfo(sid: string | null): Request {
         return request
-            .get(config.getUrlFor('identity/api/auth/user/info'))
+            .get(config.getUrlFor('api/auth/user/info'))
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
@@ -153,7 +153,7 @@ export class RequestAPI {
         let av = masterKey ? `Bearer ${config.masterKey}` : null;
 
         return request
-            .get(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
+            .get(config.getUrlFor(`/api/identities/${userId}/roles`))
             .set('Cookie', sid ? [`sid=${sid}`] : [])
             .set(av ? { Authorization: av } : {});
     }
@@ -162,7 +162,7 @@ export class RequestAPI {
         let av = masterKey ? `Bearer ${config.masterKey}` : null;
 
         return request
-            .put(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
+            .put(config.getUrlFor(`/api/identities/${userId}/roles`))
             .set('Cookie', sid ? [`sid=${sid}`] : [])
             .set(av ? { Authorization: av } : {})
             .type('json')
@@ -173,7 +173,7 @@ export class RequestAPI {
         let av = masterKey ? `Bearer ${config.masterKey}` : null;
 
         return request
-            .delete(config.getUrlFor(`/identity/api/identities/${userId}/roles`))
+            .delete(config.getUrlFor(`/api/identities/${userId}/roles`))
             .set('Cookie', sid ? [`sid=${sid}`] : [])
             .set(av ? { Authorization: av } : {})
             .type('json')
@@ -182,31 +182,31 @@ export class RequestAPI {
 
     getSessions(sid: string | null): Request {
         return request
-            .get(config.getUrlFor('identity/api/auth/user/sessions'))
+            .get(config.getUrlFor('api/auth/user/sessions'))
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
     getTokens(sid: string | null): Request {
         return request
-            .get(config.getUrlFor('identity/api/auth/user/tokens'))
+            .get(config.getUrlFor('api/auth/user/tokens'))
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
     getToken(sid: string | null, tokenId: string): Request {
         return request
-            .get(config.getUrlFor(`identity/api/auth/user/tokens/${tokenId}`))
+            .get(config.getUrlFor(`api/auth/user/tokens/${tokenId}`))
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
     revokeToken(sid: string | null, tokenId: string): Request {
         return request
-            .delete(config.getUrlFor(`identity/api/auth/user/tokens/${tokenId}`))
+            .delete(config.getUrlFor(`api/auth/user/tokens/${tokenId}`))
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
     createToken(sid: string | null, kind: TokenKind, duration: number, bindToSite: boolean): Request {
         return request
-            .post(this.config.getUrlFor('identity/api/auth/user/tokens'))
+            .post(this.config.getUrlFor('api/auth/user/tokens'))
             .set('Cookie', sid ? [`sid=${sid}`] : [])
             .type('json')
             .send({
@@ -218,12 +218,12 @@ export class RequestAPI {
 
     getExternalLinks(sid: string | null): Request {
         return request
-            .get(config.getUrlFor('identity/api/auth/user/links'))
+            .get(config.getUrlFor('api/auth/user/links'))
             .set('Cookie', sid ? [`sid=${sid}`] : []);
     }
 
     unlink(sid: string | null, provider: string, providerUserId: string): Request {
-        let url = `identity/api/auth/user/links/${provider}/${providerUserId}`;
+        let url = `api/auth/user/links/${provider}/${providerUserId}`;
 
         return request.delete(config.getUrlFor(url)).set('Cookie', sid ? [`sid=${sid}`] : []);
     }

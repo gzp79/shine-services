@@ -1,5 +1,3 @@
-import { assert } from 'console';
-import exp from 'constants';
 import { randomUUID } from 'crypto';
 import os from 'os';
 import api from '$lib/api/api';

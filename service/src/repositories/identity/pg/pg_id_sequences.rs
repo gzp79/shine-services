@@ -4,7 +4,7 @@ use crate::repositories::{
 };
 use shine_service::{pg_query, service::PGClient};
 
-use super::PgIdentityTransaction;
+use super::PgIdentityDbContext;
 
 pg_query!( GetNextId =>
     in = ;
@@ -27,12 +27,12 @@ impl PgIdSequencesStatements {
     }
 }
 
-impl<'a> IdSequences for PgIdentityTransaction<'a> {
+impl<'a> IdSequences for PgIdentityDbContext<'a> {
     async fn get_next_id(&mut self) -> Result<u64, IdentityError> {
         let id = self
             .stmts_id_sequences
             .stmt_next_id
-            .query_one(&self.transaction)
+            .query_one(&self.client)
             .await
             .map_err(DBError::from)?;
         Ok(id as u64)

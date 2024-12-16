@@ -92,3 +92,17 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use axum_extra::extract::cookie::Key;
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
+    use shine_test::test;
+
+    #[test]
+    #[ignore = "This is not a test but a helper to generate secret"]
+    fn generate_cookie_secret() {
+        let key = Key::generate();
+        println!("{}", B64.encode(key.master()));
+    }
+}

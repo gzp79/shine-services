@@ -1,7 +1,6 @@
 use crate::repositories::identity::Identity;
 use chrono::{DateTime, Utc};
-use ring::digest;
-use shine_service::{axum::SiteInfo, service::SessionKey};
+use shine_service::axum::SiteInfo;
 use std::future::Future;
 use uuid::Uuid;
 
@@ -21,7 +20,6 @@ pub struct SessionInfo {
 #[derive(Debug)]
 pub struct SessionUser {
     pub name: String,
-    pub is_email_confirmed: bool,
     pub roles: Vec<String>,
 }
 
@@ -74,14 +72,4 @@ pub trait Sessions {
     ) -> impl Future<Output = Result<(), SessionError>> + Send;
 
     fn delete_all_sessions_by_user(&mut self, user_id: Uuid) -> impl Future<Output = Result<(), SessionError>> + Send;
-}
-
-/// Generate a (crypto) hashed version of a session key to protect data in rest.
-pub fn hash_key(key: &SessionKey) -> String {
-    // there is no need for a complex hash as key has a big entropy already
-    // and it'd be too expensive to invert the hashing.
-    let hash = digest::digest(&digest::SHA256, key.as_bytes());
-    let hash = hex::encode(hash);
-    log::debug!("Hashing session key: {key:?} -> [{hash}]");
-    hash
 }

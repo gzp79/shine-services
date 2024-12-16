@@ -1,5 +1,5 @@
-//@url = https://cloud.sandbox.com:7080/identity
-@url = https://cloud.scytta.com/identity
+@url = https://cloud.sandbox.com:7080
+//@url = https://cloud.scytta.com/identity
 
 GET {{url}}/api/auth/providers 
 ###
@@ -7,7 +7,7 @@ GET {{url}}/api/auth/providers
 
 ##########################################################
 // Login, logout
-GET {{url}}/auth/token/login?rememberMe=true
+GET {{url}}/auth/token/login?rememberMe=true&captcha=1x00000000000000000000AA
 ###
 
 GET {{url}}/auth/token/login

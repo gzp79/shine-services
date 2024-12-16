@@ -13,7 +13,7 @@ describe('Sanity check', () => {
     });
 
     it('Registered providers shall be returned', async () => {
-        const response = await request.get(config.getUrlFor('/identity/api/auth/providers'));
+        const response = await request.get(config.getUrlFor('/api/auth/providers'));
         expect(response).toHaveStatus(200);
         expect(response.body.providers).toEqual(expect.arrayContaining(['oauth2_flow', 'openid_flow']));
     });

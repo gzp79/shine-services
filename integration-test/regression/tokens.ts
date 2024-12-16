@@ -1,4 +1,3 @@
-import exp from 'constants';
 import api, { TokenKind } from '$lib/api/api';
 import { ActiveToken } from '$lib/api/token_api';
 import { MockServer } from '$lib/mock_server';
@@ -16,7 +15,7 @@ describe('Tokens', () => {
     const expireRange = [new Date(now + 13 * 24 * 60 * 60 * 1000), new Date(now + 15 * 24 * 60 * 60 * 1000)];
     const anyToken: ActiveToken = {
         userId: expect.toBeString(),
-        tokenFingerprint: expect.toBeString(),
+        tokenHash: expect.toBeString(),
         kind: 'access',
         createdAt: expect.toBeBetween(createRange[0], createRange[1]),
         expireAt: expect.toBeBetween(expireRange[0], expireRange[1]),
@@ -101,7 +100,7 @@ describe('Tokens', () => {
         // Some notes:
         // - without tid the token would not be deleted as sessions and tokens are not linked
         let response = await request
-            .get(config.getUrlFor(`/identity/auth/logout`))
+            .get(config.getUrlFor(`/auth/logout`))
             .set('Cookie', [`sid=${sid2}`, `tid=${tid2}`]);
         expect(response).toHaveStatus(200);
         expect(await api.token.getTokens(user.sid)).toIncludeSameMembers([{ ...anyToken, city: 'r1' }]);
@@ -159,12 +158,12 @@ describe('Tokens', () => {
         ]);
 
         // find the 2nd token and revoke it
-        const tokenId = tokens.find((x) => x.city === 'r2')!.tokenFingerprint;
+        const tokenId = tokens.find((x) => x.city === 'r2')!.tokenHash;
         let responseGet = await api.request.getToken(user.sid, tokenId);
         expect(responseGet).toHaveStatus(200);
         expect(responseGet.body.userId).toEqual(user.userId);
         expect(responseGet.body.city).toEqual('r2');
-        expect(responseGet.body.tokenFingerprint).toEqual(tokenId);
+        expect(responseGet.body.tokenHash).toEqual(tokenId);
 
         // revoke
         let responseDelete = await api.request.revokeToken(user.sid, tokenId);
@@ -222,7 +221,7 @@ describe('Tokens', () => {
         );
 
         // live tokens: t3,t4,t5,t6
-        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
+        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash);
         const expectedTokens = [c2.key, c3.key, c4.key, c5.key].map((x) => getSHA256Hash(x));
         expect(tokens).toIncludeSameMembers(expectedTokens);
     });
@@ -377,8 +376,8 @@ describe('Single access token', () => {
     it('The single access token with client binding shall respect client fingerprint and revoke token on mismatch', async () => {
         const token = await api.token.createSAToken(user.sid, 120, true);
 
-        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
-        expect(tokens).toIncludeSameMembers([token.tokenFingerprint]);
+        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash);
+        expect(tokens).toIncludeSameMembers([token.tokenHash]);
 
         const response = await api.request
             .loginWithToken(null, null, token.token, null, false, null)
@@ -417,8 +416,8 @@ describe('Single access token', () => {
         expect(token.expireAt).toBeAfter(new Date(now + 120 * 1000));
         expect(token.expireAt).toBeBefore(new Date(now + 130 * 1000));
 
-        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
-        expect(tokens).toIncludeSameMembers([token.tokenFingerprint]);
+        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash);
+        expect(tokens).toIncludeSameMembers([token.tokenHash]);
 
         const response1 = await api.request.loginWithToken(null, null, token.token, null, false, null);
         expect(response1).toHaveStatus(200);
@@ -426,7 +425,7 @@ describe('Single access token', () => {
         const user1 = await api.user.getUserInfo(sid1);
         expect(user1.userId, 'It shall be the same use').toEqual(user.userId);
 
-        const tokens1 = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
+        const tokens1 = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash);
         expect(tokens1, 'Token shall be removed').toIncludeSameMembers([]);
 
         const response2 = await api.request.loginWithToken(null, null, token.token, null, false, null);
@@ -442,13 +441,13 @@ describe('Single access token', () => {
         expect(token.expireAt).toBeAfter(new Date(now + 120 * 1000));
         expect(token.expireAt).toBeBefore(new Date(now + 130 * 1000));
 
-        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
-        expect(tokens).toIncludeSameMembers([token.tokenFingerprint]);
+        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash);
+        expect(tokens).toIncludeSameMembers([token.tokenHash]);
 
-        let responseDelete = await api.request.revokeToken(user.sid, token.tokenFingerprint);
+        let responseDelete = await api.request.revokeToken(user.sid, token.tokenHash);
         expect(responseDelete).toHaveStatus(200);
 
-        const tokens1 = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
+        const tokens1 = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash);
         expect(tokens1, 'Token shall be removed').toIncludeSameMembers([]);
 
         const response2 = await api.request.loginWithToken(null, null, token.token, null, false, null);
@@ -521,8 +520,8 @@ describe('Persistent token', () => {
     it('The persistent token with client binding shall respect client fingerprint and revoke token on mismatch', async () => {
         const token = await api.token.createPersistentToken(user.sid, 120, true);
 
-        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
-        expect(tokens).toIncludeSameMembers([token.tokenFingerprint]);
+        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash);
+        expect(tokens).toIncludeSameMembers([token.tokenHash]);
 
         const response = await api.request
             .loginWithToken(null, null, null, token.token, false, null)
@@ -548,8 +547,8 @@ describe('Persistent token', () => {
             const user1 = await api.user.getUserInfo(sid1);
             expect(user1.userId, 'It shall be the same use').toEqual(user.userId);
 
-            const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
-            expect(tokens).toIncludeSameMembers([token.tokenFingerprint]);
+            const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash);
+            expect(tokens).toIncludeSameMembers([token.tokenHash]);
         }
     });
 
@@ -559,13 +558,13 @@ describe('Persistent token', () => {
         expect(token.expireAt).toBeAfter(new Date(now + 120 * 1000));
         expect(token.expireAt).toBeBefore(new Date(now + 130 * 1000));
 
-        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
-        expect(tokens).toIncludeSameMembers([token.tokenFingerprint]);
+        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash);
+        expect(tokens).toIncludeSameMembers([token.tokenHash]);
 
-        let responseDelete = await api.request.revokeToken(user.sid, token.tokenFingerprint);
+        let responseDelete = await api.request.revokeToken(user.sid, token.tokenHash);
         expect(responseDelete).toHaveStatus(200);
 
-        const tokens1 = (await api.token.getTokens(user.sid)).map((x) => x.tokenFingerprint);
+        const tokens1 = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash);
         expect(tokens1, 'Token shall be removed').toIncludeSameMembers([]);
 
         const response2 = await api.request.loginWithToken(null, null, null, token.token, false, null);

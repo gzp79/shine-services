@@ -1,41 +1,14 @@
-use crate::{
-    core::gat_fix,
-    repositories::{
-        identity::Identity,
-        session::{Session, SessionDb, SessionDbContext, SessionError, SessionInfo, Sessions},
-    },
+use crate::repositories::{
+    identity::Identity,
+    session::{Session, SessionDb, SessionError, SessionInfo, Sessions},
 };
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use ring::{digest, rand::SystemRandom};
 use shine_service::{
     axum::SiteInfo,
-    service::{ClientFingerprint, RedisConnectionPool, SessionKey},
+    service::{ClientFingerprint, SessionKey},
 };
 use uuid::Uuid;
-
-#[derive(Debug)]
-pub struct SessionSentinel {
-    pub created_at: DateTime<Utc>,
-    pub fingerprint: String,
-    pub agent: String,
-    pub country: Option<String>,
-    pub region: Option<String>,
-    pub city: Option<String>,
-}
-
-#[derive(Debug)]
-struct SessionData {
-    pub name: String,
-    pub is_email_confirmed: bool,
-    pub roles: Vec<String>,
-}
-
-pub struct Inner {
-    redis: RedisConnectionPool,
-    key_prefix: String,
-    ttl_session: i64,
-    random: SystemRandom,
-}
 
 pub struct SessionService<DB: SessionDb> {
     db: DB,
@@ -62,15 +35,13 @@ where
         fingerprint: &ClientFingerprint,
         site_info: &SiteInfo,
     ) -> Result<(Session, SessionKey), SessionError> {
-        let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = gat_fix(db.begin_transaction()).await?;
-
         let created_at = Utc::now();
         let fingerprint = fingerprint.to_string();
         let session_key = SessionKey::new_random(&self.random)?;
         let session_key_hash = hash_key(&session_key);
 
-        let session = transaction
+        let mut db = self.db.create_context().await?;
+        let session = db
             .store_session(created_at, session_key_hash, fingerprint, site_info, identity, roles)
             .await?;
         Ok((session, session_key))
@@ -83,29 +54,21 @@ where
         identity: &Identity,
         roles: &[String],
     ) -> Result<Option<Session>, SessionError> {
-        let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = gat_fix(db.begin_transaction()).await?;
-
         let session_key_hash = hash_key(&session_key);
-
-        transaction
-            .update_session_user_by_hash(session_key_hash, identity, roles)
-            .await
+        let mut db = self.db.create_context().await?;
+        db.update_session_user_by_hash(session_key_hash, identity, roles).await
     }
 
     /// Update the user information in all the session of a user
     /// This is not an atomic operation, if new sessions are created they are not touched, but they should
     /// have the new value already.
     pub async fn update_all(&self, identity: &Identity, roles: &[String]) -> Result<(), SessionError> {
-        let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = gat_fix(db.begin_transaction()).await?;
+        let mut db = self.db.create_context().await?;
 
-        let key_hashes = transaction.find_all_session_hashes_by_user(identity.id).await?;
-
+        let key_hashes = db.find_all_session_hashes_by_user(identity.id).await?;
         for key_hash in key_hashes {
-            transaction
-                .update_session_user_by_hash(key_hash, identity, roles)
-                .await?;
+            log::debug!("Updating session user info for: {}", key_hash);
+            db.update_session_user_by_hash(key_hash, identity, roles).await?;
         }
 
         Ok(())
@@ -113,37 +76,27 @@ where
 
     /// Get all the active session of the given user.
     pub async fn find_all(&self, user_id: Uuid) -> Result<Vec<SessionInfo>, SessionError> {
-        let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = gat_fix(db.begin_transaction()).await?;
-
-        transaction.find_all_session_infos_by_user(user_id).await
+        let mut db = self.db.create_context().await?;
+        db.find_all_session_infos_by_user(user_id).await
     }
 
     pub async fn find(&self, user_id: Uuid, session_key: &SessionKey) -> Result<Option<Session>, SessionError> {
-        let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = gat_fix(db.begin_transaction()).await?;
-
         let session_key_hash = hash_key(&session_key);
-
-        transaction.find_session_by_hash(user_id, session_key_hash).await
+        let mut db = self.db.create_context().await?;
+        db.find_session_by_hash(user_id, session_key_hash).await
     }
 
     /// Remove an active session of the given user.
     pub async fn remove(&self, user_id: Uuid, session_key: &SessionKey) -> Result<(), SessionError> {
-        let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = gat_fix(db.begin_transaction()).await?;
-
         let session_key_hash = hash_key(&session_key);
-
-        transaction.delete_session_by_hash(user_id, session_key_hash).await
+        let mut db = self.db.create_context().await?;
+        db.delete_session_by_hash(user_id, session_key_hash).await
     }
 
     /// Remove all the active session of the given user.
     pub async fn remove_all(&self, user_id: Uuid) -> Result<(), SessionError> {
-        let mut db: <DB as SessionDb>::Context<'_> = self.db.create_context().await?;
-        let mut transaction = gat_fix(db.begin_transaction()).await?;
-
-        transaction.delete_all_sessions_by_user(user_id).await
+        let mut db = self.db.create_context().await?;
+        db.delete_all_sessions_by_user(user_id).await
     }
 }
 

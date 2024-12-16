@@ -2,7 +2,6 @@ import api from '$lib/api/api';
 import { ActiveSession } from '$lib/api/session_api';
 import { MockServer } from '$lib/mock_server';
 import OAuth2MockServer from '$lib/mocks/oauth2';
-import request from '$lib/request';
 import { TestUser } from '$lib/test_user';
 import config from '../test.config';
 

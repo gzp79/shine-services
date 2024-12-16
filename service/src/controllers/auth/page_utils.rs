@@ -1,6 +1,9 @@
-use crate::controllers::{
-    auth::{AuthError, AuthPage, AuthSession},
-    AppSettings, AppState,
+use crate::{
+    controllers::{
+        auth::{AuthError, AuthPage, AuthSession},
+        AppState,
+    },
+    services::SettingsService,
 };
 use axum::http::StatusCode;
 use std::fmt;
@@ -8,7 +11,7 @@ use tera::Tera;
 use url::Url;
 
 pub struct PageUtils<'a> {
-    settings: &'a AppSettings,
+    settings: &'a SettingsService,
     tera: &'a Tera,
 }
 
@@ -39,7 +42,7 @@ impl<'a> PageUtils<'a> {
             AuthError::InternalServerError(_) => ("internalError", StatusCode::INTERNAL_SERVER_ERROR),
             AuthError::Captcha(_) => ("authError", StatusCode::BAD_REQUEST),
             AuthError::CaptchaServiceError(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
-            //AuthError::OIDCDiscovery(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
+            AuthError::OIDCDiscovery(_) => ("authError", StatusCode::INTERNAL_SERVER_ERROR),
             AuthError::ProviderAlreadyUsed => ("providerAlreadyUsed", StatusCode::CONFLICT),
             AuthError::EmailAlreadyUsed => ("emailAlreadyUsed", StatusCode::CONFLICT),
             AuthError::MissingPrecondition => ("preconditionFailed", StatusCode::PRECONDITION_FAILED),

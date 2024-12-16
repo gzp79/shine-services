@@ -2,7 +2,7 @@ use serde::Serialize;
 use shine_service::axum::InputError;
 use thiserror::Error as ThisError;
 
-use crate::repositories::CaptchaError;
+use super::OIDCDiscoveryError;
 
 #[derive(Debug, ThisError, Serialize)]
 pub enum AuthError {
@@ -38,8 +38,8 @@ pub enum AuthError {
     #[error("Failed to validate captcha")]
     CaptchaServiceError(String),
 
-    // #[error("OpenId discovery failed")]
-    // OIDCDiscovery(OIDCDiscoveryError),
+    #[error("OpenId discovery failed")]
+    OIDCDiscovery(OIDCDiscoveryError),
 
     #[error("External provider has already been linked to another user already")]
     ProviderAlreadyUsed,

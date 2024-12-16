@@ -303,6 +303,7 @@ async fn authenticate_with_registration(
         Ok(identity) => identity,
         Err(err) => return Err(PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_deref())),
     };
+    log::debug!("New user created: {:#?}", identity);
 
     Ok(AuthenticationResult {
         identity,
@@ -402,7 +403,7 @@ async fn token_login(
         log::debug!("Creating access token for identity: {:#?}", identity);
         // create a new access token
         let user_token = match state
-            .token_generator_service()
+            .token_service()
             .create_user_token(
                 identity.id,
                 TokenKind::Access,

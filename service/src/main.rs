@@ -1,6 +1,5 @@
 mod app_config;
 mod controllers;
-mod core;
 mod repositories;
 mod services;
 
@@ -153,7 +152,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
 
     let health_controller = HealthController::new().into_router(&mut doc);
     let identity_controller = identity::IdentityController::new().into_router(&mut doc);
-    let auth_controller = auth::AuthController::new(&config)?.into_router(&mut doc);
+    let auth_controller = auth::AuthController::new(&config).await?.into_router(&mut doc);
 
     let swagger = SwaggerUi::new(ApiKind::Doc("/swagger-ui").path())
         .url(ApiKind::Doc("/openapi.json").path(), doc)

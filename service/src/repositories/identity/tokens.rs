@@ -1,5 +1,4 @@
 use chrono::{DateTime, Duration, Utc};
-use ring::digest;
 use serde::{Deserialize, Serialize};
 use shine_service::{axum::SiteInfo, service::ClientFingerprint};
 use std::future::Future;
@@ -8,6 +7,7 @@ use uuid::Uuid;
 use super::{Identity, IdentityError};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub enum TokenKind {
     SingleAccess,
     Persistent,
@@ -79,14 +79,4 @@ pub trait Tokens {
         kind: TokenKind,
         token_hash: &str,
     ) -> impl Future<Output = Result<Option<(Identity, TokenInfo)>, IdentityError>> + Send;
-}
-
-/// Generate a (crypto) hashed version of a token to protect data in rest.
-pub fn hash_token(token: &str) -> String {
-    // there is no need for a complex hash as key has a big entropy already
-    // and it'd be too expensive to invert the hashing.
-    let hash = digest::digest(&digest::SHA256, token.as_bytes());
-    let hash = hex::encode(hash);
-    log::debug!("Hashing token: {token:?} -> [{hash}]");
-    hash
 }

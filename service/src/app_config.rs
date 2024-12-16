@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-
 use crate::repositories::DBConfig;
 use config::ConfigError;
 use serde::{Deserialize, Serialize};
@@ -151,6 +150,14 @@ pub struct AuthConfig {
     pub openid: HashMap<String, OIDCConfig>,
     /// List of external providers utilizing the (interactive) OAuth2 login flow
     pub oauth2: HashMap<String, OAuth2Config>,
+}
+impl AuthConfig {
+    pub fn collect_providers(&self) -> Vec<String> {
+        let mut providers = Vec::new();
+        providers.extend(self.openid.keys().cloned());
+        providers.extend(self.oauth2.keys().cloned());
+        providers
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -4,7 +4,7 @@ use crate::repositories::{
 };
 use shine_service::{
     pg_query,
-    service::{PGClient, PGTransaction},
+    service::{PGClient, PGPooledConnection, PGTransaction},
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -48,13 +48,13 @@ pub struct PgVersionedUpdate<'a> {
 }
 
 impl<'a> PgVersionedUpdate<'a> {
-    #[instrument(skip(parent_transaction, stmts))]
+    #[instrument(skip(client, stmts))]
     pub async fn new(
-        parent_transaction: &'a mut PGTransaction<'_>,
+        client: &'a mut PGPooledConnection<'_>,
         stmts: &'a PgVersionedUpdateStatements,
         user_id: Uuid,
     ) -> Result<Option<PgVersionedUpdate<'a>>, IdentityError> {
-        let transaction = parent_transaction.transaction().await.map_err(DBError::from)?;
+        let transaction = client.transaction().await.map_err(DBError::from)?;
         let version: i32 = match stmts
             .get_version
             .query_opt(&transaction, &user_id)

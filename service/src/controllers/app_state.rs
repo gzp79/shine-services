@@ -7,7 +7,7 @@ use crate::{
     },
     services::{
         CreateUserService, IdentityService, Permission, PermissionError, PermissionSet, SessionService,
-        SessionUserSyncService, TokenGenerator,
+        SessionUserSyncService, SettingsService, TokenGenerator, TokenSettings,
     },
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -20,28 +20,9 @@ use shine_service::{
 };
 use std::sync::Arc;
 use tera::Tera;
-use url::Url;
-
-pub struct TokenSettings {
-    pub ttl_access_token: Duration,
-    pub ttl_single_access: Duration,
-    pub ttl_api_key: Duration,
-}
-
-pub struct AppSettings {
-    pub app_name: String,
-    pub home_url: Url,
-    pub error_url: Url,
-    pub auth_base_url: Url,
-    pub token: TokenSettings,
-    pub external_providers: Vec<String>,
-    pub full_problem_response: bool,
-    pub page_redirect_time: Option<u32>,
-    pub super_user_api_key_hash: Option<String>,
-}
 
 struct Inner {
-    settings: AppSettings,
+    settings: SettingsService,
     problem_config: ProblemConfig,
     random: SystemRandom,
     tera: Tera,
@@ -57,17 +38,16 @@ pub struct AppState(Arc<Inner>);
 
 impl AppState {
     pub async fn new(config: &AppConfig, telemetry_service: &TelemetryService) -> Result<Self, AnyError> {
-        let settings = AppSettings {
+        let settings = SettingsService {
             app_name: config.auth.app_name.clone(),
             home_url: config.auth.home_url.clone(),
             error_url: config.auth.error_url.clone(),
-            auth_base_url: config.auth.auth_base_url.clone(),
             token: TokenSettings {
                 ttl_access_token: Duration::seconds(i64::try_from(config.auth.auth_session.ttl_access_token)?),
                 ttl_single_access: Duration::seconds(i64::try_from(config.auth.auth_session.ttl_single_access)?),
                 ttl_api_key: Duration::seconds(i64::try_from(config.auth.auth_session.ttl_api_key)?),
             },
-            external_providers: todo!(),
+            external_providers: config.auth.collect_providers(),
             full_problem_response: config.service.full_problem_response,
             page_redirect_time: config.auth.page_redirect_time,
             super_user_api_key_hash: config.auth.super_user_api_key_hash.clone(),
@@ -117,7 +97,7 @@ impl AppState {
         })))
     }
 
-    pub fn settings(&self) -> &AppSettings {
+    pub fn settings(&self) -> &SettingsService {
         &self.0.settings
     }
 
@@ -149,15 +129,15 @@ impl AppState {
         &self.0.session_service
     }
 
-    pub fn create_user_service(&self) -> CreateUserService<impl IdentityDb, impl SessionDb> {
-        CreateUserService::new(self.identity_service(), self.session_service())
+    pub fn create_user_service(&self) -> CreateUserService<impl IdentityDb> {
+        CreateUserService::new(self.identity_service())
     }
 
     pub fn session_user_sync_service(&self) -> SessionUserSyncService<impl IdentityDb, impl SessionDb> {
         SessionUserSyncService::new(self.identity_service(), self.session_service())
     }
 
-    pub fn token_generator_service(&self) -> TokenGenerator<impl IdentityDb> {
+    pub fn token_service(&self) -> TokenGenerator<impl IdentityDb> {
         TokenGenerator::new(&self.0.random, self.identity_service())
     }
 }

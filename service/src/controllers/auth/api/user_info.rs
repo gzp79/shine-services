@@ -1,6 +1,6 @@
-use crate::controllers::{ApiKind, AppState};
+use crate::{controllers::{ApiKind, AppState}, repositories::identity::IdentityKind};
 use axum::{extract::State, http::StatusCode, Extension, Json};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_service::{
     axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig, ValidatedQuery},
@@ -21,7 +21,9 @@ struct QueryParams {
 #[serde(rename_all = "camelCase")]
 struct CurrentUserInfo {
     user_id: Uuid,
+    kind: IdentityKind,
     name: String,
+    created_at: DateTime<Utc>,
     email: Option<String>,
     is_email_confirmed: bool,
     is_linked: bool,
@@ -89,7 +91,9 @@ async fn get_user_info(
     let session_length = if session_length < 0 { 0 } else { session_length as u64 };
     Ok(Json(CurrentUserInfo {
         user_id: user_info.user_id,
+        kind: identity.kind,
         name: user_info.name,
+        created_at: identity.created,
         email: identity.email,
         is_email_confirmed: identity.is_email_confirmed,
         is_linked,

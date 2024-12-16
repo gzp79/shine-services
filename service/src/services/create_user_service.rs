@@ -1,11 +1,8 @@
-use crate::repositories::{
-    identity::{ExternalUserInfo, Identity, IdentityDb, IdentityError},
-    session::SessionDb,
-};
+use crate::repositories::identity::{ExternalUserInfo, Identity, IdentityDb, IdentityError};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 
-use super::{IdentityService, SessionService};
+use super::IdentityService;
 
 #[derive(Debug, ThisError)]
 pub enum UserCreateError {
@@ -15,25 +12,19 @@ pub enum UserCreateError {
     IdentityError(#[from] IdentityError),
 }
 
-pub struct CreateUserService<'a, IDB, SDB>
+pub struct CreateUserService<'a, IDB>
 where
     IDB: IdentityDb,
-    SDB: SessionDb,
 {
     identity_service: &'a IdentityService<IDB>,
-    session_service: &'a SessionService<SDB>,
 }
 
-impl<'a, IDB, SDB> CreateUserService<'a, IDB, SDB>
+impl<'a, IDB> CreateUserService<'a, IDB>
 where
     IDB: IdentityDb,
-    SDB: SessionDb,
 {
-    pub fn new(identity_service: &'a IdentityService<IDB>, session_service: &'a SessionService<SDB>) -> Self {
-        Self {
-            identity_service,
-            session_service,
-        }
+    pub fn new(identity_service: &'a IdentityService<IDB>) -> Self {
+        Self { identity_service }
     }
 
     pub async fn create_user(&self, external_user: Option<&ExternalUserInfo>) -> Result<Identity, UserCreateError> {

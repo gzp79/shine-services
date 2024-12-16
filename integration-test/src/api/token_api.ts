@@ -4,7 +4,7 @@ import { RequestAPI } from './api';
 export interface ActiveToken {
     userId: string;
     kind: string;
-    tokenFingerprint: string;
+    tokenHash: string;
     createdAt: Date;
     expireAt: Date;
     isExpired: boolean;
@@ -17,7 +17,7 @@ export interface ActiveToken {
 export interface Token {
     kind: string;
     token: string;
-    tokenFingerprint: string;
+    tokenHash: string;
     tokenType: string;
     expireAt: Date;
 }

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use shine_service::{axum::SiteInfo, service::RedisJsonValue};
 use uuid::Uuid;
 
-use super::RedisSessionTransaction;
+use super::RedisSessionDbContext;
 
 #[derive(Serialize, Deserialize, Debug, RedisJsonValue)]
 #[serde(rename_all = "camelCase")]
@@ -57,13 +57,12 @@ fn create_session(
         user_version,
         user: SessionUser {
             name: user_data.name,
-            is_email_confirmed: user_data.is_email_confirmed,
             roles: user_data.roles,
         },
     }
 }
 
-impl<'a> RedisSessionTransaction<'a> {
+impl<'a> RedisSessionDbContext<'a> {
     fn to_redis_keys(&self, user_id: Uuid, session_key_hash: &str) -> (String, String) {
         let prefix = format!(
             "{}session:{}:{}",
@@ -88,7 +87,7 @@ impl<'a> RedisSessionTransaction<'a> {
         let user = Uuid::parse_str(user).map_err(|_| SessionError::InvalidKey)?;
         let key = parts.next().ok_or(SessionError::InvalidKey)?;
         let role = parts.next().ok_or(SessionError::InvalidKey)?;
-        if !["data", "opennes"].contains(&role) {
+        if !["data", "sentinel"].contains(&role) {
             return Err(SessionError::InvalidKey);
         }
         if parts.next().is_some() {
@@ -103,11 +102,7 @@ impl<'a> RedisSessionTransaction<'a> {
         //log::debug!("pattern: {pattern}");
 
         let mut keys = vec![];
-        let mut iter: redis::AsyncIter<String> = self
-            .transaction
-            .scan_match(pattern)
-            .await
-            .map_err(DBError::RedisError)?;
+        let mut iter: redis::AsyncIter<String> = self.client.scan_match(pattern).await.map_err(DBError::RedisError)?;
         while let Some(key) = iter.next_item().await {
             keys.push(key);
         }
@@ -115,7 +110,7 @@ impl<'a> RedisSessionTransaction<'a> {
     }
 }
 
-impl<'a> Sessions for RedisSessionTransaction<'a> {
+impl<'a> Sessions for RedisSessionDbContext<'a> {
     async fn store_session(
         &mut self,
         created_at: DateTime<Utc>,
@@ -158,7 +153,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
         };
         log::debug!("sentinel:{:#?}", sentinel);
         let created = self
-            .transaction
+            .client
             .set_nx(&sentinel_key, &sentinel)
             .await
             .map_err(DBError::RedisError)?;
@@ -173,7 +168,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
                 .expire(&sentinel_key, self.ttl_session)
                 .hset_nx(&key, format!("{}", identity.version), &data)
                 .expire(&key, self.ttl_session)
-                .query_async::<()>(&mut *self.transaction)
+                .query_async::<()>(&mut *self.client)
                 .await
                 .map_err(DBError::RedisError)?;
 
@@ -188,7 +183,6 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
                 user_version: identity.version,
                 user: SessionUser {
                     name: data.name,
-                    is_email_confirmed: data.is_email_confirmed,
                     roles: data.roles,
                 },
             })
@@ -225,7 +219,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
             assert_eq!(key_user_id, user_id);
             if key_role == "sentinel" {
                 let sentinel: Option<RedisSessionSentinel> =
-                    self.transaction.get(&key).await.map_err(DBError::RedisError)?;
+                    self.client.get(&key).await.map_err(DBError::RedisError)?;
                 if let Some(sentinel) = sentinel {
                     sessions.push(create_session_info(
                         key_user_id,
@@ -254,7 +248,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
         let (sentinel, data_versions): (Option<RedisSessionSentinel>, Vec<i32>) = redis::pipe()
             .get(sentinel_key)
             .hkeys(&key)
-            .query_async(&mut *self.transaction)
+            .query_async(&mut *self.client)
             .await
             .map_err(DBError::RedisError)?;
 
@@ -272,7 +266,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
 
         // find data
         let data: Option<RedisSessionUser> = self
-            .transaction
+            .client
             .hget(&key, format!("{version}"))
             .await
             .map_err(DBError::RedisError)?;
@@ -295,11 +289,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
             identity.id
         );
 
-        let is_open = self
-            .transaction
-            .exists(sentinel_key)
-            .await
-            .map_err(DBError::RedisError)?;
+        let is_open = self.client.exists(sentinel_key).await.map_err(DBError::RedisError)?;
         if is_open {
             let data = RedisSessionUser {
                 name: identity.name.clone(),
@@ -312,7 +302,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
                 // it extends to session ttl, but the sentinel is still there to limit the session
                 .expire(&key, self.ttl_session)
                 .ignore()
-                .query_async::<()>(&mut *self.transaction)
+                .query_async::<()>(&mut *self.client)
                 .await
                 .map_err(DBError::RedisError)?;
             self.find_session_by_hash(identity.id, session_key_hash).await
@@ -329,7 +319,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
             user_id
         );
 
-        self.transaction
+        self.client
             .del(&[sentinel_key, key])
             .await
             .map_err(DBError::RedisError)?;
@@ -341,7 +331,7 @@ impl<'a> Sessions for RedisSessionTransaction<'a> {
 
         if !keys.is_empty() {
             log::debug!("Removing session, user:[{user_id}], keys: {keys:?}");
-            self.transaction.del(keys).await.map_err(DBError::RedisError)?;
+            self.client.del(keys).await.map_err(DBError::RedisError)?;
         }
 
         Ok(())

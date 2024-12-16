@@ -47,7 +47,7 @@ struct CreatedToken {
     /// The new token. Backend does not store the raw token and it is not possible to retrieve it.
     token: String,
     /// The unique id of the token
-    token_fingerprint: String,
+    token_hash: String,
     /// Authorization type
     token_type: String,
     /// Date of the expiration of the token
@@ -81,7 +81,7 @@ async fn create_token(
 
     let site_fingerprint = if params.bind_to_site { Some(&fingerprint) } else { None };
     let user_token = state
-        .token_generator_service()
+        .token_service()
         .create_user_token(user.user_id, params.kind, &time_to_live, site_fingerprint, &site_info)
         .await
         .map_err(|err| Problem::internal_error(&problem_config, "Failed to create token", err))?;
@@ -89,7 +89,7 @@ async fn create_token(
     Ok(Json(CreatedToken {
         kind: params.kind,
         token: user_token.token,
-        token_fingerprint: user_token.token_hash,
+        token_hash: user_token.token_hash,
         token_type: "Bearer".into(),
         expire_at: user_token.expire_at,
     }))

@@ -15,6 +15,7 @@ use crate::controllers::{ApiKind, AppState};
 pub struct ActiveSession {
     user_id: Uuid,
     fingerprint: String,
+    token_hash: String,
     created_at: DateTime<Utc>,
     agent: String,
     country: Option<String>,
@@ -43,6 +44,7 @@ async fn list_sessions(
         .map(|s| ActiveSession {
             user_id: user.user_id,
             fingerprint: s.fingerprint,
+            token_hash: s.key_hash,
             created_at: s.created_at,
             agent: s.site_info.agent,
             country: s.site_info.country,

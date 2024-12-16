@@ -1,12 +1,30 @@
-use crate::app_config::{ExternalUserInfoExtensions, OAuth2Config};
+use crate::{
+    app_config::{ExternalUserInfoExtensions, OAuth2Config},
+    repositories::identity::ExternalUserInfo,
+};
 use anyhow::Error as AnyError;
 use oauth2::{
     basic::BasicClient, AuthUrl, ClientId, ClientSecret, EndpointNotSet, EndpointSet, RedirectUrl, Scope, TokenUrl,
 };
 use openidconnect::UserInfoUrl;
-use reqwest::Client as HttpClient;
+use reqwest::{header, Client as HttpClient};
+use serde::Deserialize;
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use thiserror::Error as ThisError;
 use url::Url;
+
+#[derive(Debug, ThisError)]
+pub enum OAuth2Error {
+    #[error("Error in request: {0}")]
+    RequestError(String),
+    #[error("Unexpected response: {0}")]
+    ResponseError(String),
+    #[error("Unexpected response content: {0}")]
+    ResponseContentError(String),
+    #[error("Cannot find external user id")]
+    MissingExternalId,
+}
 
 type CoreClient<
     HasAuthUrl = EndpointSet,
@@ -56,5 +74,122 @@ impl OAuth2Client {
             http_client,
             client,
         })
+    }
+
+    pub async fn get_external_user_info(
+        &self,
+        app_name: &str,
+        url: Url,
+        provider: &str,
+        token: &str,
+        id_mapping: &HashMap<String, String>,
+        extensions: &[ExternalUserInfoExtensions],
+    ) -> Result<ExternalUserInfo, OAuth2Error> {
+        let client = &self.http_client;
+
+        let response = client
+            .get(url)
+            .bearer_auth(token)
+            .header(header::USER_AGENT, app_name)
+            .send()
+            .await
+            .map_err(|err| OAuth2Error::RequestError(format!("{err}")))?;
+
+        let user_info = if response.status().is_success() {
+            response
+                .json::<JsonValue>()
+                .await
+                .map_err(|err| OAuth2Error::ResponseContentError(format!("{err}")))?
+        } else {
+            return Err(OAuth2Error::ResponseError(format!(
+                "({}), {}",
+                response.status(),
+                response.text().await.unwrap_or_default(),
+            )));
+        };
+        log::info!("external user info: {:?}", user_info);
+
+        let external_id_id = id_mapping.get("id").map(|s| s.as_str()).unwrap_or("id");
+        let external_id = user_info
+            .get(external_id_id)
+            .and_then(|v| match v {
+                JsonValue::Number(id) => Some(id.to_string()),
+                JsonValue::String(id) => Some(id.to_owned()),
+                _ => None,
+            })
+            .ok_or(OAuth2Error::MissingExternalId)?;
+        log::debug!("{external_id_id} - {external_id:?}");
+
+        let name_id = id_mapping.get("name").map(|s| s.as_str()).unwrap_or("name");
+        let name = user_info.get(name_id).and_then(|v| v.as_str()).map(ToOwned::to_owned);
+        log::debug!("{name_id} - {name:?}");
+        let email_id = id_mapping.get("email").map(|s| s.as_str()).unwrap_or("email");
+        let email = user_info.get(email_id).and_then(|v| v.as_str()).map(ToOwned::to_owned);
+        log::debug!("{email_id} - {email:?}");
+
+        let mut external_user_info = ExternalUserInfo {
+            provider: provider.to_string(),
+            provider_id: external_id,
+            name,
+            email,
+        };
+
+        log::info!("Checking extensions: {:?}", extensions);
+        for extension in extensions {
+            match extension {
+                ExternalUserInfoExtensions::GithubEmail => {
+                    external_user_info = self.get_github_user_email(external_user_info, app_name, token).await?
+                }
+            };
+        }
+
+        Ok(external_user_info)
+    }
+
+    async fn get_github_user_email(
+        &self,
+        mut external_user_info: ExternalUserInfo,
+        app_name: &str,
+        token: &str,
+    ) -> Result<ExternalUserInfo, OAuth2Error> {
+        if external_user_info.email.is_none() {
+            let client = &self.http_client;
+
+            let url = Url::parse("https://api.github.com/user/emails").unwrap();
+            let response = client
+                .get(url)
+                .bearer_auth(token)
+                .header(header::USER_AGENT, app_name)
+                .send()
+                .await
+                .map_err(|err| OAuth2Error::RequestError(format!("{err}")))?;
+
+            #[derive(Deserialize, Debug)]
+            struct Email {
+                email: String,
+                primary: bool,
+            }
+
+            let email_info = if response.status().is_success() {
+                response
+                    .json::<Vec<Email>>()
+                    .await
+                    .map_err(|err| OAuth2Error::ResponseContentError(format!("{err}")))?
+            } else {
+                return Err(OAuth2Error::ResponseError(format!(
+                    "({}), {}",
+                    response.status(),
+                    response.text().await.unwrap_or_default(),
+                )));
+            };
+            log::info!("{:?}", email_info);
+
+            external_user_info.email = email_info
+                .into_iter()
+                .find(|email| email.primary)
+                .map(|email| email.email);
+        }
+
+        Ok(external_user_info)
     }
 }

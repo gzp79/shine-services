@@ -1,8 +1,6 @@
-use crate::{
-    auth::{
-        token::TokenGenerator, AuthError, AuthPage, AuthServiceState, AuthSession, ExternalLoginCookie, OIDCClient,
-    },
-    openapi::ApiKind,
+use crate::controllers::{
+    auth::{AuthError, AuthPage, AuthSession, CaptchaUtils, ExternalLoginCookie, OIDCClient, PageUtils},
+    ApiKind, AppState,
 };
 use axum::{extract::State, Extension};
 use chrono::Duration;
@@ -12,14 +10,14 @@ use openidconnect::{
     Nonce,
 };
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, InputError, OpenApiUrl, ConfiguredProblem, ValidatedQuery};
+use shine_service::axum::{ApiEndpoint, ApiMethod, ConfiguredProblem, InputError, OpenApiUrl, ValidatedQuery};
 use std::sync::Arc;
 use utoipa::IntoParams;
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct Query {
+struct QueryParams {
     redirect_url: Option<OpenApiUrl>,
     error_url: Option<OpenApiUrl>,
     remember_me: Option<bool>,
@@ -28,34 +26,39 @@ struct Query {
 
 /// Login or register a new user with the interactive flow using an OpenID Connect provider.
 async fn oidc_login(
-    State(state): State<AuthServiceState>,
+    State(state): State<AppState>,
     Extension(client): Extension<Arc<OIDCClient>>,
     mut auth_session: AuthSession,
-    query: Result<ValidatedQuery<Query>, ConfiguredProblem<InputError>>,
+    query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return state.page_error(auth_session, AuthError::InputError(error.problem), None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, AuthError::InputError(error.problem), None),
     };
 
-    if let Err(err) = state.validate_captcha(query.captcha.as_deref()).await {
-        return state.page_error(auth_session, err, query.error_url.as_deref());
-    };
-
+    if let Err(err) = CaptchaUtils::new(&state).validate(query.captcha.as_deref()).await {
+        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_deref());
+    }
     // Note: having a token login is not an error, on successful start of the flow, the token cookie is cleared
     // It has some potential issue: if tid is connected to a guest user, the guest may loose all the progress
     if auth_session.user_session.is_some() {
-        return state.page_error(auth_session, AuthError::LogoutRequired, query.error_url.as_deref());
+        return PageUtils::new(&state).error(auth_session, AuthError::LogoutRequired, query.error_url.as_deref());
     }
 
     let core_client = match client.client().await {
         Ok(client) => client,
-        Err(err) => return state.page_error(auth_session, AuthError::OIDCDiscovery(err), query.error_url.as_deref()),
+        Err(err) => {
+            return PageUtils::new(&state).error(
+                auth_session,
+                AuthError::OIDCDiscovery(err),
+                query.error_url.as_deref(),
+            )
+        }
     };
 
-    let key = match TokenGenerator::new(state.random()).generate() {
+    let key = match state.token_service().generate() {
         Ok(key) => key,
-        Err(err) => return state.page_internal_error(auth_session, err, query.error_url.as_deref()),
+        Err(err) => return PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_deref()),
     };
 
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -86,14 +89,14 @@ async fn oidc_login(
 
     assert!(auth_session.user_session.is_none());
 
-    state.page_redirect(auth_session, &client.provider, Some(&authorize_url))
+    PageUtils::new(&state).redirect(auth_session, Some(&client.provider), Some(&authorize_url))
 }
 
-pub fn page_oidc_login(provider: &str) -> ApiEndpoint<AuthServiceState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::AuthPage(provider, "/login"), oidc_login)
-        .with_operation_id(format!("page_{provider}_login"))
+pub fn page_oidc_login(provider: &str) -> ApiEndpoint<AppState> {
+    ApiEndpoint::new(ApiMethod::Get, ApiKind::Page(&format!("/auth/{provider}/login")), oidc_login)
+        .with_operation_id(format!("{provider}_login"))
         .with_tag("page")
-        .with_query_parameter::<Query>()
+        .with_query_parameter::<QueryParams>()
         .with_page_response(
             "Html page to update client cookies and redirect user to start interactive OpenIdConnect login flow",
         )

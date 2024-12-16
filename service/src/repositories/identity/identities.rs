@@ -1,10 +1,12 @@
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::future::Future;
 use uuid::Uuid;
 
 use super::IdentityError;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum IdentityKind {
     User,
     Studio,

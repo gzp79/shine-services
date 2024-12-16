@@ -14,7 +14,7 @@ use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Typ
 use tracing::instrument;
 use uuid::Uuid;
 
-use super::PgIdentityTransaction;
+use super::PgIdentityDbContext;
 
 impl ToSql for TokenKind {
     fn to_sql(&self, ty: &PGType, out: &mut BytesMut) -> Result<IsNull, PGConvertError> {
@@ -231,7 +231,7 @@ impl PgTokensStatements {
     }
 }
 
-impl<'a> Tokens for PgIdentityTransaction<'a> {
+impl<'a> Tokens for PgIdentityDbContext<'a> {
     #[instrument(skip(self))]
     async fn store_token(
         &mut self,
@@ -248,7 +248,7 @@ impl<'a> Tokens for PgIdentityTransaction<'a> {
             .stmts_tokens
             .insert
             .query_one(
-                &self.transaction,
+                &self.client,
                 &user_id,
                 &token_hash,
                 &fingerprint.map(|f| f.as_str()),
@@ -293,7 +293,7 @@ impl<'a> Tokens for PgIdentityTransaction<'a> {
         Ok(self
             .stmts_tokens
             .find_by_hash
-            .query_opt(&self.transaction, &token_hash)
+            .query_opt(&self.client, &token_hash)
             .await
             .map_err(DBError::from)?
             .map(|row| TokenInfo {
@@ -316,7 +316,7 @@ impl<'a> Tokens for PgIdentityTransaction<'a> {
         Ok(self
             .stmts_tokens
             .list_by_user
-            .query(&self.transaction, user_id)
+            .query(&self.client, user_id)
             .await
             .map_err(DBError::from)?
             .into_iter()
@@ -341,7 +341,7 @@ impl<'a> Tokens for PgIdentityTransaction<'a> {
         let count = self
             .stmts_tokens
             .delete
-            .execute(&self.transaction, &token_hash, &kind)
+            .execute(&self.client, &token_hash, &kind)
             .await
             .map_err(DBError::from)?;
         if count == 1 {
@@ -356,7 +356,7 @@ impl<'a> Tokens for PgIdentityTransaction<'a> {
         let count = self
             .stmts_tokens
             .delete_by_user
-            .execute(&self.transaction, &user_id, &token_hash)
+            .execute(&self.client, &user_id, &token_hash)
             .await
             .map_err(DBError::from)?;
         if count == 1 {
@@ -371,7 +371,7 @@ impl<'a> Tokens for PgIdentityTransaction<'a> {
         for kind in kinds {
             self.stmts_tokens
                 .delete_all_by_user
-                .execute(&self.transaction, &user_id, kind)
+                .execute(&self.client, &user_id, kind)
                 .await
                 .map_err(DBError::from)?;
         }
@@ -388,7 +388,7 @@ impl<'a> Tokens for PgIdentityTransaction<'a> {
         let row = self
             .stmts_tokens
             .test
-            .query_opt(&self.transaction, &token_hash, &kind)
+            .query_opt(&self.client, &token_hash, &kind)
             .await
             .map_err(DBError::from)?;
         Ok(row.map(|row| {
@@ -429,7 +429,7 @@ impl<'a> Tokens for PgIdentityTransaction<'a> {
         let row = self
             .stmts_tokens
             .take
-            .query_opt(&self.transaction, &token_hash, &kind)
+            .query_opt(&self.client, &token_hash, &kind)
             .await
             .map_err(DBError::from)?;
         Ok(row.map(|row| {

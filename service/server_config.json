@@ -16,14 +16,14 @@
         }
     },
     "userName": {
-        "baseName": "Freshman",
+        "baseName": "Freshman_",
         "idEncoder": "harsh"
     },
     "auth": {
         "appName": "Scytta",
         "homeUrl": "https://scytta.com",
         "errorUrl": "https://scytta.com/error",
-        "authBaseUrl": "https://cloud.scytta.com/identity/auth/",
+        "authBaseUrl": "https://cloud.scytta.com/auth/",
         "pageRedirectTime": 0,
         "ttlSession": 43200,
         "ttlAccessToken": 1209600,

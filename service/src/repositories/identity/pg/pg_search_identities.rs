@@ -6,9 +6,9 @@ use shine_service::service::QueryBuilder;
 use tokio_postgres::Row;
 use tracing::instrument;
 
-use super::PgIdentityTransaction;
+use super::PgIdentityDbContext;
 
-impl<'a> IdentitySearch for PgIdentityTransaction<'a> {
+impl<'a> IdentitySearch for PgIdentityDbContext<'a> {
     #[instrument(skip(self))]
     async fn search_identity(&mut self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, IdentityError> {
         log::info!("{search:?}");
@@ -72,7 +72,7 @@ impl<'a> IdentitySearch for PgIdentityTransaction<'a> {
 
         let (stmt, params) = builder.build();
         log::info!("{stmt:?}");
-        let rows = self.transaction.query(&stmt, &params).await.map_err(DBError::from)?;
+        let rows = self.client.query(&stmt, &params).await.map_err(DBError::from)?;
 
         let identities = rows.into_iter().map(into_identity).collect::<Result<Vec<_>, _>>()?;
         Ok(identities)

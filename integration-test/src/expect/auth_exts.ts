@@ -34,7 +34,7 @@ const matchers: jest.ExpectExtendMap = {
             secure: true,
             httpOnly: true,
             sameSite: 'lax',
-            path: '/identity/auth/',
+            path: '/auth/',
             domain: 'cloud.sandbox.com',
             expires: expect.toBeAfter(new Date())
         });
@@ -60,7 +60,7 @@ const matchers: jest.ExpectExtendMap = {
             secure: true,
             httpOnly: true,
             sameSite: 'lax',
-            path: '/identity/auth/',
+            path: '/auth/',
             domain: 'cloud.sandbox.com',
             expires: 'Infinity'
         });

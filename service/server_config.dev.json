@@ -21,7 +21,7 @@
         "fullProblemResponse": true
     },
     "auth": {
-        "authBaseUrl": "https://local.scytta.com/identity/auth/",
+        "authBaseUrl": "https://local.scytta.com/auth/",
         "pageRedirectTime": null
     }
 }

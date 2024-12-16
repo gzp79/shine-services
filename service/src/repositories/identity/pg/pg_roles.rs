@@ -10,7 +10,7 @@ use shine_service::{
 use tracing::instrument;
 use uuid::Uuid;
 
-use super::{PgIdentityTransaction, PgVersionedUpdate};
+use super::{PgIdentityDbContext, PgVersionedUpdate};
 
 pg_query!( AddUserRole =>
     in = user_id: Uuid, role: &str;
@@ -65,10 +65,10 @@ impl PgRolesStatements {
     }
 }
 
-impl<'a> Roles for PgIdentityTransaction<'a> {
+impl<'a> Roles for PgIdentityDbContext<'a> {
     #[instrument(skip(self))]
     async fn add_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
-        let update = match PgVersionedUpdate::new(&mut self.transaction, &self.stmts_version, user_id).await? {
+        let update = match PgVersionedUpdate::new(&mut self.client, &self.stmts_version, user_id).await? {
             Some(update) => update,
             None => return Ok(None),
         };
@@ -101,7 +101,7 @@ impl<'a> Roles for PgIdentityTransaction<'a> {
         let roles = self
             .stmts_roles
             .get
-            .query_opt(&self.transaction, &user_id)
+            .query_opt(&self.client, &user_id)
             .await
             .map_err(DBError::from)?;
         if let Some(roles) = roles {
@@ -113,7 +113,7 @@ impl<'a> Roles for PgIdentityTransaction<'a> {
 
     #[instrument(skip(self))]
     async fn delete_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
-        let update = match PgVersionedUpdate::new(&mut self.transaction, &self.stmts_version, user_id).await? {
+        let update = match PgVersionedUpdate::new(&mut self.client, &self.stmts_version, user_id).await? {
             Some(update) => update,
             None => return Ok(None),
         };

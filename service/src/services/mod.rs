@@ -1,7 +1,10 @@
-mod identity_service;
-pub use self::identity_service::*;
 mod permissions;
 pub use self::permissions::*;
+
+mod settings_service;
+pub use self::settings_service::*;
+mod identity_service;
+pub use self::identity_service::*;
 mod session_service;
 pub use self::session_service::*;
 mod create_user_service;

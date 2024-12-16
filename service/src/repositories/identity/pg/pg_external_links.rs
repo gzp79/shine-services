@@ -14,7 +14,7 @@ use shine_service::{
 use tracing::instrument;
 use uuid::Uuid;
 
-use super::PgIdentityTransaction;
+use super::PgIdentityDbContext;
 
 pg_query!( InsertExternalLogin =>
     in = user_id: Uuid, provider: &str, provider_id: &str, name: Option<&str>, email: Option<&str>;
@@ -111,14 +111,14 @@ impl PgExternalLinksStatements {
     }
 }
 
-impl<'a> ExternalLinks for PgIdentityTransaction<'a> {
+impl<'a> ExternalLinks for PgIdentityDbContext<'a> {
     #[instrument(skip(self))]
     async fn link_user(&mut self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError> {
         match self
             .stmts_external_links
             .insert
             .query_one(
-                &self.transaction,
+                &self.client,
                 &user_id,
                 &external_user.provider.as_str(),
                 &external_user.provider_id.as_str(),
@@ -143,7 +143,7 @@ impl<'a> ExternalLinks for PgIdentityTransaction<'a> {
         let links = self
             .stmts_external_links
             .list_by_user_id
-            .query(&self.transaction, &user_id)
+            .query(&self.client, &user_id)
             .await
             .map_err(DBError::from)?
             .into_iter()
@@ -165,7 +165,7 @@ impl<'a> ExternalLinks for PgIdentityTransaction<'a> {
         let is_linked = self
             .stmts_external_links
             .exists_by_user_id
-            .query_one(&self.transaction, &user_id)
+            .query_one(&self.client, &user_id)
             .inspect(|d| log::info!("is_linked: {:?}", d))
             .await
             .map_err(DBError::from)?;
@@ -182,7 +182,7 @@ impl<'a> ExternalLinks for PgIdentityTransaction<'a> {
         Ok(self
             .stmts_external_links
             .find_by_provider_id
-            .query_opt(&self.transaction, &provider, &provider_id)
+            .query_opt(&self.client, &provider, &provider_id)
             .await
             .map_err(DBError::from)?
             .map(|row| Identity {
@@ -206,7 +206,7 @@ impl<'a> ExternalLinks for PgIdentityTransaction<'a> {
         let count = self
             .stmts_external_links
             .delete_link
-            .execute(&self.transaction, &user_id, &provider, &provider_id)
+            .execute(&self.client, &user_id, &provider, &provider_id)
             .await
             .map_err(DBError::from)?;
 

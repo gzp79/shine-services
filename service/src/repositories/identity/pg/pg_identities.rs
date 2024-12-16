@@ -13,7 +13,7 @@ use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Typ
 use tracing::instrument;
 use uuid::Uuid;
 
-use super::PgIdentityTransaction;
+use super::PgIdentityDbContext;
 
 impl ToSql for IdentityKind {
     fn to_sql(&self, ty: &Type, out: &mut BytesMut) -> Result<IsNull, PGConvertError> {
@@ -101,7 +101,7 @@ impl PgIdentitiesStatements {
     }
 }
 
-impl<'a> Identities for PgIdentityTransaction<'a> {
+impl<'a> Identities for PgIdentityDbContext<'a> {
     #[instrument(skip(self))]
     async fn create_user(
         &mut self,
@@ -114,7 +114,7 @@ impl<'a> Identities for PgIdentityTransaction<'a> {
         let created = match self
             .stmts_identities
             .insert_identity
-            .query_one(&self.transaction, &user_id, &IdentityKind::User, &user_name, &email)
+            .query_one(&self.client, &user_id, &IdentityKind::User, &user_name, &email)
             .await
         {
             Ok(created) => created,
@@ -151,7 +151,7 @@ impl<'a> Identities for PgIdentityTransaction<'a> {
         Ok(self
             .stmts_identities
             .find_by_id
-            .query_opt(&self.transaction, &user_id)
+            .query_opt(&self.client, &user_id)
             .await
             .map_err(DBError::from)?
             .map(|row| Identity {
@@ -169,7 +169,7 @@ impl<'a> Identities for PgIdentityTransaction<'a> {
     async fn cascaded_delete(&mut self, user_id: Uuid) -> Result<(), IdentityError> {
         self.stmts_identities
             .cascaded_delete
-            .execute(&self.transaction, &user_id)
+            .execute(&self.client, &user_id)
             .await
             .map_err(DBError::from)
             .map_err(DBError::from)?;
