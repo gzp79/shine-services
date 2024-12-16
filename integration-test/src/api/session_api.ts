@@ -4,6 +4,7 @@ export interface ActiveSession {
     userId: string;
     fingerprint: string;
     createdAt: Date;
+    tokenHash: string;
     agent: string;
     country: string | null;
     region: string | null;

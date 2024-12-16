@@ -13,6 +13,7 @@ describe('Sessions', () => {
         userId: expect.toBeString(),
         fingerprint: expect.toBeString(),
         createdAt: expect.toBeBetween(dateRange[0], dateRange[1]),
+        tokenHash: expect.toBeString(),
         agent: '',
         country: null,
         region: null,
