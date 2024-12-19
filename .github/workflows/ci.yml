@@ -135,7 +135,8 @@ jobs:
         if: github.ref == 'refs/heads/master'
         run: |
           echo "[build]" >> fly.toml
-          echo "  image = \"${{ steps.meta.outputs.tags }}\"" >> fly.toml        
+          echo "  image = \"${{ steps.meta.outputs.tags }}\"" >> fly.toml
+          mkdir -p release
           cp fly.toml ./release/
 
       - name: Publish release artifacts
