@@ -74,8 +74,8 @@ jobs:
         add-hosts: |
           postgres.mockbox.com:${{ steps.mockbox.outputs.pg_host }}
           redis.mockbox.com:${{ steps.mockbox.outputs.redis_host }}
-        cache-from: type=gha,mode=max
         cache-to: type=gha,mode=max
+        cache-from: type=gha
         tags: ${{ env.IMAGE_NAME }}:test
         
     - name: Add hosts to /etc/hosts
