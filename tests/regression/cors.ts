@@ -2,7 +2,7 @@ import request from '$lib/request';
 import config from '../test.config';
 
 describe('Sanity check', () => {
-    const url = config.getIdentityUrlFor('/info/ready');
+    const originUrl = new URL(config.serviceUrl);
 
     it('Allow origin shall not be present without origin', async () => {
         const url = config.getIdentityUrlFor('/info/ready');
@@ -12,25 +12,27 @@ describe('Sanity check', () => {
         expect(response.headers['access-control-allow-credentials']).toEqual('true');
     });
 
-    it('Allow origin shall be present for missing path too', async () => {
+    it('Allow origin shall be present for not-found request', async () => {
         const url = config.getIdentityUrlFor('/info/404');
-        const origin = config.identityUrl;
+        const origin = `${originUrl.protocol}//${originUrl.hostname}:${originUrl.port}`;
         const response = await request.get(url).set('Origin', origin);
         expect(response).toHaveStatus(404);
         expect(response.headers['access-control-allow-origin']).toEqual(origin);
         expect(response.headers['access-control-allow-credentials']).toEqual('true');
     });
 
-    it('Allow origin shall be present with an origin of the service', async () => {
-        const origin = config.identityUrl;
+    it('Allow origin shall be present for a successful request', async () => {
+        const url = config.getIdentityUrlFor('/info/ready');
+        const origin = `${originUrl.protocol}//${originUrl.hostname}:${originUrl.port}`;
         const response = await request.get(url).set('Origin', origin);
         expect(response).toHaveStatus(200);
         expect(response.headers['access-control-allow-origin']).toEqual(origin);
         expect(response.headers['access-control-allow-credentials']).toEqual('true');
     });
 
-    it('Allow origin shall be present for another subdomain', async () => {
-        const origin = 'https://another.sandbox.com:8443';
+    it('Allow origin shall be present for a subdomain', async () => {
+        const url = config.getIdentityUrlFor('/info/ready');
+        const origin = `${originUrl.protocol}//subdom.${originUrl.hostname}:${originUrl.port}`;
         const response = await request.get(url).set('Origin', origin);
         expect(response).toHaveStatus(200);
         expect(response.headers['access-control-allow-origin']).toEqual(origin);
@@ -38,7 +40,9 @@ describe('Sanity check', () => {
     });
 
     it('Allow origin shall be present for another port', async () => {
-        const origin = 'https://cloud.sandbox.com:123';
+        const url = config.getIdentityUrlFor('/info/ready');
+        const origin = `${originUrl.protocol}//${originUrl.hostname}:123`;
+        console.log('origin', origin);
         const response = await request.get(url).set('Origin', origin);
         expect(response).toHaveStatus(200);
         expect(response.headers['access-control-allow-origin']).toEqual(origin);
@@ -46,7 +50,8 @@ describe('Sanity check', () => {
     });
 
     it('Allow origin shall not be present for another protocol', async () => {
-        const origin = 'http://cloud.sandbox.com:8443';
+        const url = config.getIdentityUrlFor('/info/ready');
+        const origin = `file://${originUrl.hostname}:${originUrl.port}`;
         const response = await request.get(url).set('Origin', origin);
         expect(response).toHaveStatus(200);
         expect(response.headers['access-control-allow-origin']).toBeUndefined();
@@ -54,6 +59,7 @@ describe('Sanity check', () => {
     });
 
     it('Allow origin shall not be present for another domain', async () => {
+        const url = config.getIdentityUrlFor('/info/ready');
         const origin = 'https://example.com';
         const response = await request.get(url).set('Origin', origin);
         expect(response).toHaveStatus(200);
