@@ -93,7 +93,7 @@ jobs:
     - name: Integration test
       run: |
         echo "::group::Starting service in the test environment"
-        docker compose -f ./docker-compose.yml -p shine --profile test up -d
+        docker compose -f ../docker-compose.yml -p shine --profile test up -d
         echo "::endgroup::"
         echo "::group::Running test"
         npm run test
