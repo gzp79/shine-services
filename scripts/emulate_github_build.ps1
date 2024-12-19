@@ -1,22 +1,23 @@
 Write-Host "Setup buildx"
 docker network create shine
-docker buildx create --driver=docker-container --driver-opt=network=shine --use
-
-cd service
+docker buildx create --name shine-build --driver=docker-container --driver-opt=network=shine --use
 
 Write-Host "Setup environment"
-docker compose -f docker.yml -p shine-identity up -d
-$pg_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-postgres-1
-$redis_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-identity-redis-1
+docker compose -f docker-compose.yml -p shine up -d
+$pg_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-postgres-1
+$redis_host=docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-redis-1
+Write-Host "  pg: $pg_host"
+Write-Host "  redis: $redis_host"
 
 Write-Host "Build action"
-docker buildx build --target test --add-host postgres.mockbox.com:$pg_host --add-host redis.mockbox.com:$redis_host -t gzp79/shine-identity:test --progress=plain .
+# --load option is added only for local test to cache the layers for the next build
+docker buildx build --target test --add-host postgres.mockbox.com:$pg_host --add-host redis.mockbox.com:$redis_host -t gzp79/shine:test --load .
 
-Write-Host "Start dockerized service"
-docker compose -f docker.yml -p shine-identity --profile test up -d
+Write-Host "Start service in docker"
+docker compose -f docker-compose.yml -p shine --profile test up -d
 
 Write-Host "Run tests"
-cd ..\integration-test\
+cd tests
 npm run jest regression
 
 

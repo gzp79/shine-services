@@ -1,0 +1,83 @@
+[package]
+name = "shine-identity"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+log = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+config = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+time = { workspace = true }
+chrono = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+base64 = { workspace = true }
+bytes = { workspace = true }
+rand = { workspace = true }
+hex = { workspace = true }
+ring = { workspace = true }
+bcrypt = { workspace = true }
+regex = { workspace = true }
+
+############################# RUNTIME #############################
+futures = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+async-trait = { workspace = true }
+#async-once-cell = "0.5"
+
+############################# TRACING #############################
+tracing = { workspace = true }
+tracing-log = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+############################# DB #############################
+bb8 = { workspace = true }
+bb8-redis = { workspace = true }
+redis = { workspace = true, features = [
+    "tokio-comp",
+    "tokio-rustls-comp",
+    "json",
+] }
+bb8-postgres = { workspace = true }
+tokio-postgres = { workspace = true, features = [
+    "with-uuid-1",
+    "with-chrono-0_4",
+    "runtime",
+] }
+tokio-postgres-rustls = { workspace = true }
+postgres-from-row = { workspace = true }
+refinery = { workspace = true, features = ["tokio-postgres"] }
+
+############################# AZURE #############################
+azure_core = { workspace = true }
+azure_identity = { workspace = true }
+
+############################# NET #############################
+tokio-rustls = { workspace = true }
+rustls = { workspace = true }
+reqwest = { workspace = true }
+
+oauth2 = "5.0.0-rc.1"
+openidconnect = "4.0.0-rc.1"
+
+############################# WEB #############################
+tera = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "trace"] }
+axum = { workspace = true }
+axum-server = { workspace = true }
+axum-extra = { workspace = true }
+validator = { workspace = true }
+utoipa = { workspace = true }
+utoipa-swagger-ui = { workspace = true }
+
+############################# SELF #############################
+
+shine-service = { path = "../../crates/shine-service", version = "0.1.0" }
+
+[dev-dependencies]
+shine-test = { path = "../../crates/shine-test", version = "0.1.0" }
