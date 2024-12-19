@@ -1,3 +1,0 @@
-[submodule "service/shine-service-rs"]
-	path = service/shine-service-rs
-	url = https://github.com/gzp79/shine-service-rs.git

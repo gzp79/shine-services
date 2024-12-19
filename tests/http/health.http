@@ -1,0 +1,30 @@
+//@url = http://cloud.sandbox.com:7000
+@url = http://cloud.sandbox.com:8080
+//@url = https://cloud.sandbox.com:8443
+//@url = https://cloud.scytta.com
+
+GET {{url}}/ping
+###
+
+GET {{url}}/identity/info/ready
+###
+
+GET {{url}}/identity/doc/openapi.json
+###
+
+GET {{url}}/identity/api/telemetry/status
+###
+
+GET {{url}}/identity/api/telemetry/metrics
+###
+
+GET {{url}}/identity/api/telemetry/config 
+###
+
+PUT {{url}}/identity/api/telemetry/config 
+Content-Type: application/json
+
+{
+    "filter": "TRACE, shine_identity=TRACE,hyper=INFO"
+}
+###

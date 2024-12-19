@@ -7,48 +7,28 @@
       "label": "format",
       "type": "shell",
       "command": "cargo fmt",
-      "options": { "cwd": "service" },
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
     {
       "label": "clippy",
       "type": "shell",
-      "command": "cargo clippy --all-targets",
-      "options": { "cwd": "service" },
+      "command": "cargo clippy -p ${input:projects} --all-targets",
       "problemMatcher": ["$rustc"],
       "group": "build"
-    },
-    {
-      "label": "udeps",
-      "type": "shell",
-      "command": "cargo udeps",
-      "options": { "cwd": "service" },
-      "problemMatcher": ["$rustc"],
-      "group": "build"
-    },
-    {
-      "label": "outdated",
-      "type": "shell",
-      "command": "cargo outdated -R",
-      "options": { "cwd": "service" },
-      "problemMatcher": ["$rustc"],
-      "group": "build"
-    },
+    },   
     {
       "label": "build",
       "type": "shell",
-      "command": "cargo build --release --all-targets",
-      "options": { "cwd": "service" },
+      "command": "cargo build --release -p ${input:projects} --all-targets",
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
     {
       "label": "test unit",
       "type": "shell",
-      "command": "cargo test",
+      "command": "cargo test -p ${input:projects}",
       "options": {
-        "cwd": "service",
         "env": {
           "_RUST_LOG": "debug",
           "RUST_BACKTRACE": "full"
@@ -58,11 +38,10 @@
       "group": "build"
     },
     {
-      "label": "test miri-unit",
+      "label": "test miri",
       "type": "shell",
-      "command": "cargo miri test",
+      "command": "cargo miri test -p ${input:projects}",
       "options": {
-        "cwd": "service",
         "env": {
           "_RUST_LOG": "debug",
           "RUST_BACKTRACE": "full"
@@ -74,40 +53,45 @@
     {
       "label": "start dev environment",
       "type": "shell",
-      "command": "docker compose -f docker-compose.yml -p shine-identity up",
-      "options": { "cwd": "service" },
+      "command": "docker compose -f docker-compose.yml -p shine up",
       "group": "build",
       "isBackground": true
     },
     {
-      "label": "run stage: dev",
+      "label": "identity: dev",
       "type": "shell",
-      "command": "cargo run --release -- dev",
-      "options": { "cwd": "service" },
+      "command": "cargo run -p shine-identity --release -- dev",
+      "options": { "cwd": "services/identity" },
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
     {
-      "label": "run stage: test",
+      "label": "identity: local",
       "type": "shell",
-      "command": "cargo run --release -- test",
-      "options": { "cwd": "service" },
+      "command": "cargo run -p shine-identity --release -- local",
+      "options": { 
+        "cwd": "services/identity",
+        "env": {
+          "RUST_BACKTRACE": "full"
+        }
+      },
       "problemMatcher": ["$rustc"],
       "group": "build"
-    },
+    }
+  ],
+  "inputs": [
     {
-      "label": "test integration",
-      "type": "shell",
-      "command": "npm test",
-      "options": { "cwd": "integration-test" },
-      "group": "build"
-    },
-    {
-      "label": "format test",
-      "type": "shell",
-      "command": "npm run format",
-      "options": { "cwd": "integration-test" },
-      "group": "build"
+      "type": "pickString",
+      "id": "projects",
+      "description": "Select project",
+      "options": [
+        "shine-service",
+        "shine-macros",
+        "shine-test",
+        "shine-test-macros",
+        "shine-identity"
+      ],
+      "default": "asset-service"
     }
   ]
 }

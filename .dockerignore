@@ -1,0 +1,10 @@
+/target
+/temp
+**/node_modules
+
+/scripts
+docker.yml
+fly.toml
+
+
+
