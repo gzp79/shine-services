@@ -19,8 +19,8 @@ services:
     networks:
       - shine
       
-  identity:
-    image: gzp79/shine-identity:test
+  shine:
+    image: gzp79/shine-services:test
     profiles:
       - test
     environment:
