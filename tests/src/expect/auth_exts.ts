@@ -1,6 +1,6 @@
+import { toEndWith } from 'jest-extended';
 import { Cookie } from 'tough-cookie';
 import { intoMatcherResult } from './utils';
-import { toEndWith } from 'jest-extended';
 
 interface CustomMatchers<R = unknown> {
     toBeClearCookie(): R;
