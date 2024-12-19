@@ -70,6 +70,7 @@ jobs:
     - name: Docker build
       uses: docker/build-push-action@v6
       with:
+        context: .
         target: test
         push: false
         load: true
@@ -120,6 +121,7 @@ jobs:
       if: github.ref == 'refs/heads/master'
       uses: docker/build-push-action@v4
       with:
+        context: .
         target: prod
         push: true
         # these setting are added to allow the reuse of the layer from the build step

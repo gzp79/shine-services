@@ -4,6 +4,7 @@
 
 /scripts
 docker.yml
+docker-compose.yml
 fly.toml
 
 
