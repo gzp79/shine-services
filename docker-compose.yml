@@ -20,7 +20,7 @@ services:
       - shine
       
   identity:
-    image: gzp79/shine:test
+    image: gzp79/shine-identity:test
     profiles:
       - test
     environment:
