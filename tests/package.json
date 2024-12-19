@@ -4,9 +4,9 @@
   "description": "",
   "main": "test.js",
   "scripts": {
-    "mkcert:ca": "mkcert create-ca --cert ./certs/ca.crt --key ./certs/ca.key",
-    "mkcert:test": "mkcert create-cert --ca-cert ./certs/ca.crt --ca-key ./certs/ca.key --cert ./certs/test.crt --key ./certs/test.key --domain sandbox.com,*.sandbox.com,mockbox.com,localhost",
-    "mkcert:dev": "mkcert create-cert --ca-cert ./certs/ca.crt --ca-key ./certs/ca.key --cert ./certs/scytta.crt --key ./certs/scytta.key --domain local.scytta.com,localhost",
+    "mkcert:ca": "mkcert create-ca --cert ../certs/ca.crt --key ../certs/ca.key",
+    "mkcert:test": "mkcert create-cert --ca-cert ../certs/ca.crt --ca-key ../certs/ca.key --cert ../certs/test.crt --key ../certs/test.key --domain sandbox.com,*.sandbox.com,mockbox.com,localhost",
+    "mkcert:dev": "mkcert create-cert --ca-cert ../certs/ca.crt --ca-key ../certs/ca.key --cert ../certs/scytta.crt --key ../certs/scytta.key --domain local.scytta.com,localhost",
     "mkcert": "npm run mkcert:ca && npm run mkcert:test",
     "build_service": "docker build --target test -t gzp79/shine-identity:test --progress=plain ..",
     "format": "prettier '{jest-setup,src,regression}/**/*.{ts,tsx,js}' --write",
