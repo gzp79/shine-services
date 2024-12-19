@@ -38,7 +38,7 @@ jobs:
         npm ci
         npm run lint
         npm run mkcert
-        echo '{ "version": ${VERSION} }' > services/server_version.json
+        echo '{ "version": ${VERSION} }' > ../services/server_version.json
       working-directory: ./tests
 
     - name: Setup Docker Buildx (1)
