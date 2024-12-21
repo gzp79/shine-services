@@ -25,6 +25,13 @@ In a similar way the DB also depends on the selected environment:
 
 
 ## Know-how 
+
+### How to fix 'failed to run custom build command for `aws-lc-sys`' on Windows
+
+- rustls requires some other dependencies and it may result in `aws-lc-sys` compile errors
+  - <https://medium.com/@rrnazario/rust-how-to-fix-failed-to-run-custom-build-command-for-aws-lc-sys-on-windows-c3bd2405ac6f>
+  - <https://github.com/rustls/rustls/issues/1913>
+
 ### Fly.io
 
 To restart the postgres machine and server:
