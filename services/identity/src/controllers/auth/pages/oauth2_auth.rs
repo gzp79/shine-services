@@ -5,7 +5,7 @@ use crate::controllers::{
 use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
-use shine_service::{
+use shine_core::{
     axum::{ApiEndpoint, ApiMethod, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery},
     service::ClientFingerprint,
 };

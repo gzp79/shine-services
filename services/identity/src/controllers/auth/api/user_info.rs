@@ -5,7 +5,7 @@ use crate::{
 use axum::{extract::State, http::StatusCode, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_service::{
+use shine_core::{
     axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig, ValidatedQuery},
     service::{CheckedCurrentUser, CurrentUser},
 };

@@ -2,10 +2,10 @@
 resolver = "2"
 
 members = [
-	"crates/shine-service",
-	"crates/shine-macros",
-	"crates/shine-test",
 	"crates/shine-test-macros",
+	"crates/shine-test",
+	"crates/shine-core-macros",
+	"crates/shine-core",
 	"services/identity",
 ]
 
@@ -15,10 +15,11 @@ version = "0.1.0"
 
 [workspace.dependencies]
 log = "0.4"
+env_logger = "0.11"
+color-backtrace = "0.6"
 thiserror = "2.0"
 anyhow = "1.0"
-# see https://github.com/mehcode/config-rs/issues/564
-config = "0.13"
+config = "0.15"
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -82,3 +83,14 @@ utoipa = { version = "5.2", features = [
 	"debug",
 ] }
 utoipa-swagger-ui = { version = "8.0", features = ["axum"] }
+
+############################# WASM #############################
+wasm-logger = "0.2"
+wasm-bindgen-test = "0.3"
+
+############################# MEMBERS #############################
+
+shine-test-macros = { path = "./crates/shine-test-macros" }
+shine-test = { path = "./crates/shine-test" }
+shine-core-macros = { path = "./crates/shine-core-macros" }
+shine-core = { path = "./crates/shine-core" }

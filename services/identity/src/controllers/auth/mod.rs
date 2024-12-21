@@ -22,7 +22,7 @@ use crate::app_config::AppConfig;
 use anyhow::Error as AnyError;
 use axum::Extension;
 use axum::Router;
-use shine_service::axum::ApiRoute;
+use shine_core::axum::ApiRoute;
 use utoipa::openapi::OpenApi;
 mod auth_error;
 use std::sync::Arc;

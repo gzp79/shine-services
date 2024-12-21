@@ -1,4 +1,4 @@
-use shine_service::service::CurrentUser;
+use shine_core::service::CurrentUser;
 use std::collections::HashSet;
 use thiserror::Error as ThisError;
 

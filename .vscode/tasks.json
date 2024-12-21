@@ -13,21 +13,21 @@
     {
       "label": "clippy",
       "type": "shell",
-      "command": "cargo clippy -p ${input:projects} --all-targets",
+      "command": "cargo clippy ${input:projects} --all-targets",
       "problemMatcher": ["$rustc"],
       "group": "build"
     },   
     {
       "label": "build",
       "type": "shell",
-      "command": "cargo build --release -p ${input:projects} --all-targets",
+      "command": "cargo build --release ${input:projects} --all-targets",
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
     {
       "label": "test unit",
       "type": "shell",
-      "command": "cargo test -p ${input:projects}",
+      "command": "cargo test ${input:projects}",
       "options": {
         "env": {
           "_RUST_LOG": "debug",
@@ -40,7 +40,7 @@
     {
       "label": "test miri",
       "type": "shell",
-      "command": "cargo miri test -p ${input:projects}",
+      "command": "cargo miri test ${input:projects}",
       "options": {
         "env": {
           "_RUST_LOG": "debug",
@@ -85,11 +85,12 @@
       "id": "projects",
       "description": "Select project",
       "options": [
-        "shine-service",
-        "shine-macros",
-        "shine-test",
-        "shine-test-macros",
-        "shine-identity"
+        { "label": "all", "value": "" }, 
+        { "label": "shine-identity", "value": "-p shine-identity" }, 
+        { "label": "shine-core", "value": "-p shine-core" }, 
+        { "label": "shine-core-macros", "value": "-p shine-core-macros" }, 
+        { "label": "shine-test", "value": "-p shine-test" }, 
+        { "label": "shine-test-macros", "value": "-p shine-test-macros" }, 
       ],
       "default": "asset-service"
     }

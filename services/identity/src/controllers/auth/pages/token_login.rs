@@ -5,7 +5,7 @@ use axum_extra::{
     TypedHeader,
 };
 use serde::Deserialize;
-use shine_service::{
+use shine_core::{
     axum::{ApiEndpoint, ApiMethod, ConfiguredProblem, InputError, OpenApiUrl, SiteInfo, ValidatedQuery},
     service::{ClientFingerprint, CurrentUser},
 };

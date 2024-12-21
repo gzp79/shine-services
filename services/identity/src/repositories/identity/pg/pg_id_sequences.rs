@@ -2,7 +2,7 @@ use crate::repositories::{
     identity::{IdSequences, IdentityBuildError, IdentityError},
     DBError,
 };
-use shine_service::{pg_query, service::PGClient};
+use shine_core::{pg_query, service::PGClient};
 
 use super::PgIdentityDbContext;
 

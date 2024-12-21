@@ -3,7 +3,7 @@ use crate::repositories::{
     DBError,
 };
 use postgres_from_row::FromRow;
-use shine_service::{
+use shine_core::{
     pg_query,
     service::{PGClient, PGErrorChecks},
 };

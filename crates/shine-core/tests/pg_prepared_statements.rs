@@ -1,4 +1,4 @@
-use shine_service::{pg_prepared_statement, service::create_postgres_pool};
+use shine_core::{pg_prepared_statement, service::create_postgres_pool};
 use shine_test::test;
 use std::env;
 

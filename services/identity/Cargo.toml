@@ -77,7 +77,7 @@ utoipa-swagger-ui = { workspace = true }
 
 ############################# SELF #############################
 
-shine-service = { path = "../../crates/shine-service", version = "0.1.0" }
+shine-core = { workspace = true }
 
 [dev-dependencies]
-shine-test = { path = "../../crates/shine-test", version = "0.1.0" }
+shine-test = { workspace = true }

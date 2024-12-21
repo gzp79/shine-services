@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use shine_service::service::{
+use shine_core::service::{
     self, PGConnectionError, PGConnectionPool, PGCreatePoolError, PGError, RedisConnectionError, RedisConnectionPool,
 };
 use thiserror::Error as ThisError;

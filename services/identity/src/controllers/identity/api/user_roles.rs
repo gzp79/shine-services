@@ -8,7 +8,7 @@ use axum_extra::{
     TypedHeader,
 };
 use serde::{Deserialize, Serialize};
-use shine_service::{
+use shine_core::{
     axum::{ApiEndpoint, ApiMethod, IntoProblem, Problem, ProblemConfig, ValidatedJson, ValidatedPath},
     service::CheckedCurrentUser,
 };

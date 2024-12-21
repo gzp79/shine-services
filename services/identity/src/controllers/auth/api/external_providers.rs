@@ -1,7 +1,7 @@
 use crate::controllers::{ApiKind, AppState};
 use axum::{extract::State, http::StatusCode, Json};
 use serde::Serialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod};
+use shine_core::axum::{ApiEndpoint, ApiMethod};
 use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]

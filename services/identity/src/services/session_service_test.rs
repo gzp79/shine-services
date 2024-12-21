@@ -7,7 +7,7 @@ use crate::{
 };
 use chrono::{Duration, Utc};
 use ring::rand::SystemRandom;
-use shine_service::{
+use shine_core::{
     axum::SiteInfo,
     service::{self, ClientFingerprint, SessionKey},
 };
