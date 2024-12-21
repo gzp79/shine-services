@@ -1,6 +1,6 @@
 use crate::controllers::{ApiKind, AppState};
 use axum::{extract::State, http::StatusCode};
-use shine_service::axum::{ApiEndpoint, ApiMethod};
+use shine_core::axum::{ApiEndpoint, ApiMethod};
 
 async fn get_metrics(State(state): State<AppState>) -> String {
     state.telemetry_service().metrics()

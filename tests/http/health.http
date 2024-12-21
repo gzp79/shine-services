@@ -1,27 +1,27 @@
-//@url = http://cloud.sandbox.com:7000
-@url = http://cloud.sandbox.com:8080
-//@url = https://cloud.sandbox.com:8443
-//@url = https://cloud.scytta.com
+@url = https://cloud.sandbox.com:8443
+//@url = http://cloud.sandbox.com:8080/identity
+//@url = https://cloud.sandbox.com:8443/identity
+//@url = https://cloud.scytta.com/identity
 
-GET {{url}}/ping
+GET {{url}}/../ping
 ###
 
-GET {{url}}/identity/info/ready
+GET {{url}}/info/ready
 ###
 
-GET {{url}}/identity/doc/openapi.json
+GET {{url}}/doc/openapi.json
 ###
 
-GET {{url}}/identity/api/telemetry/status
+GET {{url}}/api/telemetry/status
 ###
 
-GET {{url}}/identity/api/telemetry/metrics
+GET {{url}}/api/telemetry/metrics
 ###
 
-GET {{url}}/identity/api/telemetry/config 
+GET {{url}}/api/telemetry/config 
 ###
 
-PUT {{url}}/identity/api/telemetry/config 
+PUT {{url}}/api/telemetry/config 
 Content-Type: application/json
 
 {

@@ -10,4 +10,4 @@ primary_region = "cdg"
 
 [metrics]
     port = 80
-    path = "/api/telemetry/metrics"
+    path = "identity/api/telemetry/metrics"

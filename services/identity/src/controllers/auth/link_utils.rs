@@ -6,7 +6,7 @@ use crate::{
     repositories::identity::{ExternalUserInfo, IdentityError, TokenKind},
     services::UserCreateError,
 };
-use shine_service::{
+use shine_core::{
     axum::SiteInfo,
     service::{ClientFingerprint, CurrentUser},
 };

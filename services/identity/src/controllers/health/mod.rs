@@ -2,7 +2,7 @@ mod api;
 
 use super::AppState;
 use axum::Router;
-use shine_service::axum::ApiRoute;
+use shine_core::axum::ApiRoute;
 use utoipa::openapi::OpenApi;
 
 pub struct HealthController();

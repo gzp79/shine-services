@@ -4,7 +4,7 @@ use crate::controllers::{
 };
 use axum::extract::State;
 use serde::Deserialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod, ConfiguredProblem, InputError, ValidatedQuery};
+use shine_core::axum::{ApiEndpoint, ApiMethod, ConfiguredProblem, InputError, ValidatedQuery};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;

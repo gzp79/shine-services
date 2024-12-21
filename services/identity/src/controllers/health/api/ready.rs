@@ -1,6 +1,6 @@
 use crate::controllers::{ApiKind, AppState};
 use axum::http::StatusCode;
-use shine_service::axum::{ApiEndpoint, ApiMethod};
+use shine_core::axum::{ApiEndpoint, ApiMethod};
 
 async fn ready() -> String {
     "Ok".into()

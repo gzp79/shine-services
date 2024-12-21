@@ -1,4 +1,4 @@
-use shine_service::axum::ApiPath;
+use shine_core::axum::ApiPath;
 
 pub enum ApiKind<'a> {
     Absolute(&'a str),

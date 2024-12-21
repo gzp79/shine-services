@@ -1,8 +1,8 @@
 use crate::repositories::DBConfig;
 use config::ConfigError;
 use serde::{Deserialize, Serialize};
-use shine_service::axum::telemetry::TelemetryConfig;
-use shine_service::service::CoreConfig;
+use shine_core::axum::telemetry::TelemetryConfig;
+use shine_core::service::CoreConfig;
 use std::collections::{HashMap, HashSet};
 use thiserror::Error as ThisError;
 use tower_http::cors::AllowOrigin;
@@ -151,6 +151,7 @@ pub struct AuthConfig {
     /// List of external providers utilizing the (interactive) OAuth2 login flow
     pub oauth2: HashMap<String, OAuth2Config>,
 }
+
 impl AuthConfig {
     pub fn collect_providers(&self) -> Vec<String> {
         let mut providers = Vec::new();
@@ -198,8 +199,8 @@ impl AppConfig {
         let pre_init = CoreConfig::new(stage)?;
         let builder = pre_init.create_config_builder()?;
         let config = builder.build().await?;
-
-        let cfg: AppConfig = config.try_deserialize()?;
+      
+        let cfg: AppConfig = config.try_deserialize().inspect(|x| log::error!("{x:?}"))?;
         log::info!("configuration: {:#?}", cfg);
 
         if pre_init != cfg.core {

@@ -13,7 +13,7 @@ use crate::{
 use anyhow::{anyhow, Error as AnyError};
 use chrono::Duration;
 use ring::rand::SystemRandom;
-use shine_service::{
+use shine_core::{
     axum::{telemetry::TelemetryService, IntoProblem, Problem, ProblemConfig},
     service::CurrentUser,
     utils::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
@@ -40,6 +40,7 @@ impl AppState {
     pub async fn new(config: &AppConfig, telemetry_service: &TelemetryService) -> Result<Self, AnyError> {
         let settings = SettingsService {
             app_name: config.auth.app_name.clone(),
+            app_version: config.core.version.clone(),
             home_url: config.auth.home_url.clone(),
             error_url: config.auth.error_url.clone(),
             token: TokenSettings {

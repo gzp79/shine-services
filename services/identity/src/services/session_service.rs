@@ -4,7 +4,7 @@ use crate::repositories::{
 };
 use chrono::Utc;
 use ring::{digest, rand::SystemRandom};
-use shine_service::{
+use shine_core::{
     axum::SiteInfo,
     service::{ClientFingerprint, SessionKey},
 };

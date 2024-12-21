@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use redis::AsyncCommands;
 use ring::digest;
 use serde::{Deserialize, Serialize};
-use shine_macros::RedisJsonValue;
+use shine_core_macros::RedisJsonValue;
 use std::{ops, sync::Arc};
 use thiserror::Error as ThisError;
 use uuid::Uuid;

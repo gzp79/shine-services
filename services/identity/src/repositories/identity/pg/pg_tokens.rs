@@ -5,7 +5,7 @@ use crate::repositories::{
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use postgres_from_row::FromRow;
-use shine_service::{
+use shine_core::{
     axum::SiteInfo,
     pg_query,
     service::{ClientFingerprint, PGClient, PGConvertError, PGErrorChecks, ToPGType},

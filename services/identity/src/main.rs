@@ -9,7 +9,7 @@ use axum::{
     Router,
 };
 use axum_server::Handle;
-use shine_service::{
+use shine_core::{
     axum::{add_default_components, telemetry::TelemetryService, ApiPath, PoweredBy},
     service::UserSessionCacheReader,
 };
@@ -121,21 +121,7 @@ async fn async_main(_rt_handle: RtHandle) -> Result<(), AnyError> {
     let mut doc = ApiDoc::openapi();
     add_default_components(&mut doc);
 
-    // let identity_manager = PgIdentityManager::new(&db_pool.postgres).await?;
-    // let ttl_session = Duration::seconds(i64::try_from(auth_config.ttl_session)?);
-    // let session_manager = SessionManager::new(&db_pool.redis, String::new(), ttl_session).await?;
-    // let auto_name_manager = AutoNameManager::new(&config.user_name, &db_pool.postgres).await?;
-
     let app_state = AppState::new(&config, &telemetry_service).await?;
-
-    let name = app_state.identity_service().generate_user_name().await?;
-    log::error!("Generated name: {}", name);
-    log::error!("Generated name: {}", name);
-    log::error!("Generated name: {}", name);
-    log::error!("Generated name: {}", name);
-    log::error!("Generated name: {}", name);
-    log::error!("Generated name: {}", name);
-    //let captcha_validator = CaptchaValidator::new(config.service.captcha_secret.clone());
 
     let log_layer = TraceLayer::new_for_http()
         .make_span_with(DefaultMakeSpan::new().level(Level::INFO))

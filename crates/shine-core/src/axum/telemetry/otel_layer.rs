@@ -54,9 +54,9 @@ impl<S> Layer<S> for OtelLayer {
 
     fn layer(&self, inner: S) -> Self::Service {
         let meters = self.meter.as_ref().map(|meter| OtelMeters {
-            request_counter: meter.u64_counter("request_count").init(),
-            request_duration: meter.f64_histogram("request_duration").init(),
-            error_counter: meter.u64_counter("error_count").init(),
+            request_counter: meter.u64_counter("request_count").build(),
+            request_duration: meter.f64_histogram("request_duration").build(),
+            error_counter: meter.u64_counter("error_count").build(),
         });
 
         OtelService {

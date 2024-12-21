@@ -2,7 +2,7 @@ use crate::repositories::{
     identity::{IdentityBuildError, IdentityError},
     DBError,
 };
-use shine_service::{
+use shine_core::{
     pg_query,
     service::{PGClient, PGPooledConnection, PGTransaction},
 };

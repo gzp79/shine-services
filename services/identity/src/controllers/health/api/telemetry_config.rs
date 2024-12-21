@@ -4,8 +4,8 @@ use crate::{
 };
 use axum::{extract::State, http::StatusCode, Extension, Json};
 use serde::{Deserialize, Serialize};
-use shine_service::{
-    axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig},
+use shine_core::{
+    axum::{telemetry::DynConfig, ApiEndpoint, ApiMethod, Problem, ProblemConfig},
     service::CheckedCurrentUser,
 };
 use utoipa::ToSchema;
@@ -19,14 +19,14 @@ async fn put_telemetry_config(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
-    Json(format): Json<TraceConfig>,
+    Json(body): Json<TraceConfig>,
 ) -> Result<(), Problem> {
     state.check_permission(&user, Permission::UpdateTrace).await?;
 
-    log::trace!("config: {:#?}", format);
+    log::trace!("reconfigure telemetry: {:#?}", body);
     state
         .telemetry_service()
-        .set_configuration(format.filter)
+        .set_configuration(DynConfig { filter: body.filter })
         .map_err(|err| Problem::internal_error(&problem_config, "Failed to update configuration", err))?;
 
     Ok(())
@@ -52,7 +52,7 @@ async fn get_telemetry_config(
         .get_configuration()
         .map_err(|err| Problem::internal_error(&problem_config, "Failed to update configuration", err))?;
 
-    Ok(Json(TraceConfig { filter: config }))
+    Ok(Json(TraceConfig { filter: config.filter }))
 }
 
 pub fn ep_get_telemetry_config() -> ApiEndpoint<AppState> {

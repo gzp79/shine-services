@@ -1,5 +1,5 @@
 [package]
-name = "shine-service"
+name = "shine-core"
 version.workspace = true
 edition.workspace = true
 
@@ -38,22 +38,22 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
 ############################# TRACING #############################
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-tracing-opentelemetry = "0.27"
-tracing-opentelemetry-instrumentation-sdk = "0.23"
+tracing-opentelemetry = "0.28"
+tracing-opentelemetry-instrumentation-sdk = "0.24"
 prometheus = "0.13"
-opentelemetry = "0.26"
-opentelemetry-semantic-conventions = "0.26"
-opentelemetry_sdk = { version = "0.26", features = ["rt-tokio", "metrics"] }
-opentelemetry-stdout = { version = "0.26", features = ["logs", "trace"] }
-opentelemetry-otlp = { version = "0.26", features = [
+opentelemetry = "0.27"
+opentelemetry-semantic-conventions = "0.27"
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio", "metrics"] }
+opentelemetry-stdout = { version = "0.27", features = ["logs", "trace"] }
+opentelemetry-otlp = { version = "0.27", features = [
     "tokio",
     "tonic",
 ], optional = true }
-opentelemetry-zipkin = { version = "0.26", features = [
+opentelemetry-zipkin = { version = "0.27", features = [
     "reqwest-client",
 ], default-features = false, optional = true }
-opentelemetry-prometheus = "0.17"
-opentelemetry-application-insights = { version = "0.36", features = [
+opentelemetry-prometheus = "0.27"
+opentelemetry-application-insights = { version = "0.37", features = [
     "reqwest-client-rustls",
 ], optional = true }
 
@@ -62,10 +62,10 @@ opentelemetry-application-insights = { version = "0.36", features = [
 bb8 = { workspace = true }
 bb8-redis = { workspace = true }
 redis = { workspace = true, features = [
-	"tokio-comp",
-	"tokio-rustls-comp",
-	"json",
-]  }
+    "tokio-comp",
+    "tokio-rustls-comp",
+    "json",
+] }
 bb8-postgres = { workspace = true }
 tokio-postgres = { workspace = true, features = [
     "with-uuid-1",
@@ -98,7 +98,8 @@ axum-extra = { workspace = true, features = [
     "typed-header",
 ] }
 
-shine-macros = { path = "../shine-macros", version = "0.1.0" }
+############################# MEMBERS #############################
+shine-core-macros = { workspace = true }
 
 [dev-dependencies]
-shine-test = { path = "../shine-test", version = "0.1.0" }
+shine-test = { workspace = true }

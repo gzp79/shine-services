@@ -1,7 +1,7 @@
 use crate::repositories::identity::{IdentityDb, IdentityError, TokenKind};
 use chrono::{DateTime, Duration, Utc};
 use ring::rand::{SecureRandom, SystemRandom};
-use shine_service::{axum::SiteInfo, service::ClientFingerprint};
+use shine_core::{axum::SiteInfo, service::ClientFingerprint};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 

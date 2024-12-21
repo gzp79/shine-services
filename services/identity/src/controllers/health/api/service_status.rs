@@ -2,7 +2,7 @@ use crate::controllers::{ApiKind, AppState};
 use axum::{extract::State, http::StatusCode, Json};
 use bb8::State as BB8PoolState;
 use serde::Serialize;
-use shine_service::axum::{ApiEndpoint, ApiMethod};
+use shine_core::axum::{ApiEndpoint, ApiMethod};
 use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
@@ -24,12 +24,16 @@ impl From<BB8PoolState> for DBState {
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 struct ServiceHealth {
+    pub app: String,
+    pub version: String,
     pub postgres: DBState,
     pub redis: DBState,
 }
 
 async fn get_service_status(State(state): State<AppState>) -> Json<ServiceHealth> {
     Json(ServiceHealth {
+        app: state.settings().app_name.clone(),
+        version: state.settings().app_version.clone(),
         postgres: DBState::from(state.db().postgres.state()),
         redis: DBState::from(state.db().redis.state()),
     })

@@ -1,5 +1,5 @@
 use postgres_from_row::FromRow;
-use shine_service::{pg_query, service::create_postgres_pool};
+use shine_core::{pg_query, service::create_postgres_pool};
 use shine_test::test;
 use std::env;
 

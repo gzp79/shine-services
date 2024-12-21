@@ -2,7 +2,7 @@ use crate::repositories::{
     identity::{IdentityBuildError, IdentityDb, IdentityDbContext, IdentityError},
     DBError,
 };
-use shine_service::service::{PGConnectionPool, PGPooledConnection};
+use shine_core::service::{PGConnectionPool, PGPooledConnection};
 
 use super::{
     PgExternalLinksStatements, PgIdSequencesStatements, PgIdentitiesStatements, PgRolesStatements, PgTokensStatements,
