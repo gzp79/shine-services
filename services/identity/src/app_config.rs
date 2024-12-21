@@ -199,7 +199,7 @@ impl AppConfig {
         let pre_init = CoreConfig::new(stage)?;
         let builder = pre_init.create_config_builder()?;
         let config = builder.build().await?;
-      
+
         let cfg: AppConfig = config.try_deserialize().inspect(|x| log::error!("{x:?}"))?;
         log::info!("configuration: {:#?}", cfg);
 
