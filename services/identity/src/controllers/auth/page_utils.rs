@@ -1,8 +1,6 @@
 use crate::{
-    controllers::{
-        auth::{AuthError, AuthPage, AuthSession},
-        AppState,
-    },
+    app_state::AppState,
+    controllers::auth::{AuthError, AuthPage, AuthSession},
     services::SettingsService,
 };
 use axum::http::StatusCode;

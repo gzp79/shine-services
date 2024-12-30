@@ -1,13 +1,12 @@
-use crate::controllers::{
-    auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, LinkUtils, OAuth2Client, PageUtils},
-    ApiKind, AppState,
+use crate::{
+    app_state::AppState,
+    controllers::auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, LinkUtils, OAuth2Client, PageUtils},
 };
 use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
-use shine_core::{
-    axum::{ApiEndpoint, ApiMethod, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery},
-    service::ClientFingerprint,
+use shine_core::web::{
+    ApiKind, ApiMethod, ClientFingerprint, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery, WebRoute,
 };
 use std::sync::Arc;
 use utoipa::IntoParams;
@@ -118,14 +117,17 @@ async fn oauth2_auth(
     }
 }
 
-pub fn page_oauth2_auth(provider: &str) -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(
+pub fn page_oauth2_auth(provider: &str) -> WebRoute<AppState> {
+    WebRoute::new(
         ApiMethod::Get,
         ApiKind::Page(&format!("/auth/{provider}/auth")),
         oauth2_auth,
     )
     .with_operation_id(format!("{provider}_auth"))
-    .with_tag("page")
-    .with_query_parameter::<QueryParams>()
-    .with_page_response("Html page to update client cookies and complete the oauth2 login flow")
+    tag = "page"
+    params( 
+QueryParans
+),
+    response(
+(status = OK, description="Html page to update client cookies and complete the oauth2 login flow")
 }

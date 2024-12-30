@@ -1,13 +1,12 @@
-use crate::axum::telemetry::OtelLayer;
 use opentelemetry::{
     metrics::{Meter, MeterProvider},
-    trace::{TraceError, Tracer, TracerProvider as _},
+    trace::{Tracer, TracerProvider as _},
     InstrumentationScope, KeyValue,
 };
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
     export::trace::SpanExporter,
-    metrics::{MetricError, SdkMeterProvider},
+    metrics::SdkMeterProvider,
     runtime::Tokio,
     trace::{Sampler, TracerProvider},
     Resource,
@@ -15,35 +14,19 @@ use opentelemetry_sdk::{
 use opentelemetry_semantic_conventions as otconv;
 use prometheus::{Encoder, Registry as PromRegistry, TextEncoder};
 use serde::{Deserialize, Serialize};
-use std::{
-    error::Error as StdError,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 use thiserror::Error as ThisError;
-use tracing::{subscriber::SetGlobalDefaultError, Dispatch, Subscriber};
+use tracing::{Dispatch, Subscriber};
 use tracing_opentelemetry::{OpenTelemetryLayer, PreSampledTracer};
 use tracing_subscriber::{
-    filter::{EnvFilter, ParseError},
+    filter::EnvFilter,
     layer::SubscriberExt,
     registry::LookupSpan,
     reload::{self, Handle},
     Layer, Registry,
 };
 
-#[derive(Debug, ThisError)]
-pub enum TelemetryBuildError {
-    #[error(transparent)]
-    SetGlobalTracing(#[from] SetGlobalDefaultError),
-    #[error("Default log format could not be parsed")]
-    DefaultLogError(#[from] ParseError),
-    #[cfg(feature = "ot_app_insight")]
-    #[error(transparent)]
-    AppInsightConfigError(Box<dyn StdError + Send + Sync + 'static>),
-    #[error(transparent)]
-    TraceError(#[from] TraceError),
-    #[error(transparent)]
-    MetricsError(#[from] MetricError),
-}
+use super::{OtelLayer, TelemetryBuildError};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

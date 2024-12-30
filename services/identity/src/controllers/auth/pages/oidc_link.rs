@@ -1,6 +1,6 @@
-use crate::controllers::{
-    auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, OIDCClient, PageUtils},
-    ApiKind, AppState,
+use crate::{
+    app_state::AppState,
+    controllers::auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, OIDCClient, PageUtils},
 };
 use axum::{extract::State, Extension};
 use chrono::Duration;
@@ -10,7 +10,7 @@ use openidconnect::{
     Nonce,
 };
 use serde::Deserialize;
-use shine_core::axum::{ApiEndpoint, ApiMethod, ConfiguredProblem, InputError, OpenApiUrl, ValidatedQuery};
+use shine_core::web::{ApiKind, ApiMethod, ConfiguredProblem, InputError, OpenApiUrl, ValidatedQuery, WebRoute};
 use std::sync::Arc;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -81,14 +81,14 @@ async fn oidc_link(
     PageUtils::new(&state).redirect(auth_session, Some(&client.provider), Some(&authorize_url))
 }
 
-pub fn page_oidc_link(provider: &str) -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(
+pub fn page_oidc_link(provider: &str) -> WebRoute<AppState> {
+    WebRoute::new(
         ApiMethod::Get,
         ApiKind::Page(&format!("/auth/{provider}/link")),
         oidc_link,
     )
     .with_operation_id(format!("{provider}_link"))
-    .with_tag("page")
+    tag = "page"
     .with_query_parameter::<Query>()
     .with_page_response(
         "Html page to update client cookies and redirect user to start interactive OpenIdConnect login flow",

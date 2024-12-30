@@ -72,7 +72,8 @@ axum = { workspace = true }
 axum-server = { workspace = true }
 axum-extra = { workspace = true }
 validator = { workspace = true }
-utoipa = { workspace = true }
+utoipa = { workspace = true, features = ["url"] }
+utoipa-axum = { workspace = true }
 utoipa-swagger-ui = { workspace = true }
 
 ############################# SELF #############################

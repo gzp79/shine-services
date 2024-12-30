@@ -8,6 +8,7 @@ use std::{env, path::Path, sync::Arc};
 pub const DEFAULT_CONFIG_FILE: &str = "server_config.json";
 pub const DEFAULT_DEV_CONFIG_FILE: &str = "server_config.dev.json";
 pub const DEFAULT_LOCAL_CONFIG_FILE: &str = "temp/server_config.json";
+pub const DEFAULT_VERSION_CONFIG_FILE: &str = "server_version.json";
 
 /// Partial configuration required for early setup.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -25,7 +26,7 @@ impl CoreConfig {
 
         let mut builder = Config::builder().add_source(File::from(Path::new(&format!("server_config.{}.json", stage))));
 
-        let version_path = Path::new("server_version.json");
+        let version_path = Path::new(DEFAULT_VERSION_CONFIG_FILE);
         if version_path.exists() {
             builder = builder.add_source(File::from(version_path));
         } else {
@@ -36,15 +37,17 @@ impl CoreConfig {
         builder = builder.set_override("stage", stage)?;
 
         let s = builder.build()?;
-        let cfg: CoreConfig = s.try_deserialize()?;
+        let cfg: CoreConfig = s.try_deserialize()/*.inspect(|a| log::error!("{a:#?}"))*/?;
 
         log::debug!("pre-init configuration: {:#?}", cfg);
         Ok(cfg)
     }
 
     pub fn create_config_builder(&self) -> Result<ConfigBuilder<AsyncState>, ConfigError> {
+        log::debug!("Setting up configuration builder...");
         let mut builder = ConfigBuilder::<AsyncState>::default();
 
+        #[derive(Debug)]
         enum Layer<'a> {
             Base,
             Environment,
@@ -76,6 +79,7 @@ impl CoreConfig {
 
         let mut azure_credentials: Option<Arc<dyn TokenCredential>> = None;
         for layer in layers {
+            log::debug!("Adding layer: {:?}", layer);
             match layer {
                 Layer::Base => {
                     builder = builder.add_source(File::from(Path::new(&format!("server_config.{}.json", self.stage))));

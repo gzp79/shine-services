@@ -77,7 +77,29 @@
       },
       "problemMatcher": ["$rustc"],
       "group": "build"
+    },
+    {
+      "label": "command: dev",
+      "type": "shell",
+      "command": "cargo run -p shine-command --release -- dev",
+      "options": { "cwd": "services/command" },
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "command: local",
+      "type": "shell",
+      "command": "cargo run -p shine-command --release -- local",
+      "options": { 
+        "cwd": "services/command",
+        "env": {
+          "RUST_BACKTRACE": "full"
+        }
+      },
+      "problemMatcher": ["$rustc"],
+      "group": "build"
     }
+
   ],
   "inputs": [
     {
@@ -86,6 +108,7 @@
       "description": "Select project",
       "options": [
         { "label": "all", "value": "" }, 
+        { "label": "shine-command", "value": "-p shine-command" }, 
         { "label": "shine-identity", "value": "-p shine-identity" }, 
         { "label": "shine-core", "value": "-p shine-core" }, 
         { "label": "shine-core-macros", "value": "-p shine-core-macros" }, 

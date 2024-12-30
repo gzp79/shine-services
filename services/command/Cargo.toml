@@ -1,0 +1,21 @@
+[package]
+name = "shine-command"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+log = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+serde = { workspace = true }
+
+############################# WEB #############################
+axum = { workspace = true }
+utoipa = { workspace = true }
+utoipa-axum = { workspace = true }
+
+shine-core = { workspace = true }
+
+[dev-dependencies]
+shine-test = { workspace = true }

@@ -1,7 +1,7 @@
-use crate::controllers::{ApiKind, AppState};
-use axum::{extract::State, http::StatusCode, Extension, Json};
+use crate::app_state::AppState;
+use axum::{extract::State, Extension, Json};
 use serde::Serialize;
-use shine_core::axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig};
+use shine_core::web::{Problem, ProblemConfig};
 use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
@@ -13,7 +13,15 @@ pub struct GeneratedUserName {
     name: String,
 }
 
-async fn generate_user_name(
+#[utoipa::path(
+    post,
+    path = "/api/user-name",
+    tag = "identity",
+    responses(
+        (status = OK, body = GeneratedUserName)
+    )
+)]
+pub async fn generate_user_name(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
 ) -> Result<Json<GeneratedUserName>, Problem> {
@@ -24,11 +32,4 @@ async fn generate_user_name(
         .map_err(|err| Problem::internal_error(&problem_config, "Failed to generate name", err))?;
 
     Ok(Json(GeneratedUserName { name }))
-}
-
-pub fn ep_generate_user_name() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Post, ApiKind::Api("/user-name"), generate_user_name)
-        .with_operation_id("generate_user_name")
-        .with_tag("identity")
-        .with_json_response::<GeneratedUserName>(StatusCode::OK)
 }

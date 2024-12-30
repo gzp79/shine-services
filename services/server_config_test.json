@@ -1,0 +1,21 @@
+{
+  "service": {
+    "port": 0,
+    "allowedOrigins": [
+      "^https:\\/\\/([a-zA-Z0-9-]+\\.)*sandbox\\.com(:[0-9]+)?$"
+    ],
+    "fullProblemResponse": true,
+    "captchaSecret": "1x0000000000000000000000000000000AA",
+    "sessionSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
+    "sessionRedisCns": "redis://redis.mockbox.com:6379"
+  },
+  "telemetry": {
+    "allowReconfigure": true,
+    "enableConsoleLog": true,
+    "defaultLevel": "INFO,shine_service=TRACE,shine_identity=TRACE,tower_http=TRACE",
+    "metrics": true,
+    "tracing": {
+      "type": "none"
+    }
+  }
+}

@@ -1,14 +1,14 @@
 use crate::{
-    controllers::{ApiKind, AppState},
+    app_state::AppState,
     repositories::identity::{SearchIdentity, SearchIdentityOrder, MAX_SEARCH_RESULT_COUNT},
     services::Permission,
 };
-use axum::{extract::State, http::StatusCode, Extension, Json};
+use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use shine_core::{
-    axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig, ValidatedQuery},
     service::CheckedCurrentUser,
+    web::{Problem, ProblemConfig, ValidatedQuery},
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -16,7 +16,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct Query {
+struct QueryParams {
     /// The maximum number of items returned in a single response
     #[validate(range(min = 1, max = "MAX_SEARCH_RESULT_COUNT"))]
     count: Option<usize>,
@@ -39,10 +39,21 @@ struct IdentitySearchPage {
     identities: Vec<IdentityInfo>,
 }
 
-async fn search_identity(
+#[utoipa::path(
+    get,
+    path = "/api/identities",
+    tag = "identity",
+    params(
+        QueryParams
+    ),
+    responses(
+        (status = OK, body = IdentitySearchPage)
+    )
+)]
+pub async fn search_identity(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
-    ValidatedQuery(query): ValidatedQuery<Query>,
+    ValidatedQuery(query): ValidatedQuery<QueryParams>,
     user: CheckedCurrentUser,
 ) -> Result<Json<IdentitySearchPage>, Problem> {
     state.check_permission(&user, Permission::ReadAnyIdentity).await?;
@@ -76,13 +87,4 @@ async fn search_identity(
         .collect();
 
     Ok(Json(IdentitySearchPage { identities }))*/
-}
-
-pub fn ep_search_identity() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/identities"), search_identity)
-        .with_operation_id("search_identity")
-        .with_tag("identity")
-        .with_query_parameter::<Query>()
-        .with_schema::<IdentityInfo>()
-        .with_json_response::<IdentitySearchPage>(StatusCode::OK)
 }

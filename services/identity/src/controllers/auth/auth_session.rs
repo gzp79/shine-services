@@ -1,4 +1,4 @@
-use crate::app_config::AuthSessionConfig;
+use crate::app_config::AppConfig;
 use async_trait::async_trait;
 use axum::{
     extract::FromRequestParts,
@@ -14,7 +14,10 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Utc};
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
-use shine_core::service::{CheckedCurrentUser, CurrentUser};
+use shine_core::{
+    service::{CheckedCurrentUser, CurrentUser},
+    web::WebAppConfig,
+};
 use std::{convert::Infallible, sync::Arc};
 use thiserror::Error as ThisError;
 use time::{Duration, OffsetDateTime};
@@ -86,14 +89,19 @@ pub struct AuthSessionMeta {
 }
 
 impl AuthSessionMeta {
-    pub fn new(home_url: Url, auth_base: Url, config: &AuthSessionConfig) -> Result<Self, AuthSessionError> {
-        let cookie_name_suffix = config.cookie_name_suffix.as_deref().unwrap_or_default();
+    pub fn new(config: &WebAppConfig<AppConfig>) -> Result<Self, AuthSessionError> {
+        let config_auth = &config.feature.auth;
+        let config_auth_session = &config_auth.auth_session;
+
+        let home_url = &config_auth.home_url;        
         let home_domain = home_url.domain().ok_or(AuthSessionError::MissingHomeDomain)?;
         let domain = {
             let mut parts = home_domain.split('.').rev().take(2).collect::<Vec<_>>();
             parts.reverse();
             parts.join(".")
         };
+
+        let auth_base = &config_auth.auth_base_url;
         let auth_domain = auth_base.domain().ok_or(AuthSessionError::MissingDomain)?.to_string();
         let auth_path = auth_base.path().to_string();
         if !auth_domain.ends_with(&domain) {
@@ -103,11 +111,11 @@ impl AuthSessionMeta {
 
         let token_cookie_settings = {
             let key = B64
-                .decode(&config.token_cookie_secret)
+                .decode(&config_auth_session.token_cookie_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             let secret = Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             CookieSettings {
-                name: format!("tid{}", cookie_name_suffix),
+                name: "tid".to_string(),
                 secret,
                 domain: auth_domain.clone(),
                 path: auth_path.clone(),
@@ -116,11 +124,11 @@ impl AuthSessionMeta {
 
         let session_settings = {
             let key = B64
-                .decode(&config.session_secret)
+                .decode(&config.service.session_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             let secret = Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             CookieSettings {
-                name: format!("sid{}", cookie_name_suffix),
+                name: "sid".to_string(),
                 secret,
                 domain,
                 path: "/".into(),
@@ -129,11 +137,11 @@ impl AuthSessionMeta {
 
         let external_login_cookie_settings = {
             let key = B64
-                .decode(&config.external_login_cookie_secret)
+                .decode(&config_auth_session.external_login_cookie_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             let secret = Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             CookieSettings {
-                name: format!("eid{}", cookie_name_suffix),
+                name: "eid".to_string(),
                 secret,
                 domain: auth_domain,
                 path: auth_path,

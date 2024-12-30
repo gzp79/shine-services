@@ -1,16 +1,16 @@
 use crate::{
-    controllers::{ApiKind, AppState},
+    app_state::AppState,
     services::{Permission, PermissionError},
 };
-use axum::{extract::State, http::StatusCode, Extension, Json};
+use axum::{extract::State, Extension, Json};
 use axum_extra::{
     headers::{authorization::Bearer, Authorization},
     TypedHeader,
 };
 use serde::{Deserialize, Serialize};
 use shine_core::{
-    axum::{ApiEndpoint, ApiMethod, IntoProblem, Problem, ProblemConfig, ValidatedJson, ValidatedPath},
     service::CheckedCurrentUser,
+    web::{IntoProblem, Problem, ProblemConfig, ValidatedJson, ValidatedPath},
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -42,7 +42,20 @@ struct AddUserRole {
     role: String,
 }
 
-async fn add_user_role(
+#[utoipa::path(
+    put,
+    path = "/api/identities/:id/roles",
+    tag = "identity",
+    params(
+        Path
+    ),
+    request_body = AddUserRole,
+    responses(
+        (status = OK, body = UserRoles),
+        //(status = BAD_REQUEST, body = Problem)
+    )
+)]
+pub async fn add_user_role(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
@@ -81,18 +94,19 @@ async fn add_user_role(
     Ok(Json(UserRoles { roles }))
 }
 
-pub fn ep_add_user_role() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Put, ApiKind::Api("/identities/:id/roles"), add_user_role)
-        .with_operation_id("add_user_role")
-        .with_tag("identity")
-        //.with_required_user([Permission::UpdateAnyUserRole])
-        .with_path_parameter::<Path>()
-        .with_json_request::<AddUserRole>()
-        .with_json_response::<UserRoles>(StatusCode::OK)
-        .with_problem_response(&[StatusCode::BAD_REQUEST])
-}
-
-async fn get_user_roles(
+#[utoipa::path(
+    get,
+    path = "/api/identities/:id/roles",
+    tag = "identity",
+    params(
+        Path
+    ),
+    responses(
+        (status = OK, body = UserRoles),
+        //(status = BAD_REQUEST, body = Problem)
+    )
+)]
+pub async fn get_user_roles(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
@@ -124,16 +138,6 @@ async fn get_user_roles(
     Ok(Json(UserRoles { roles }))
 }
 
-pub fn ep_get_user_roles() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/identities/:id/roles"), get_user_roles)
-        .with_operation_id("get_user_roles")
-        .with_tag("identity")
-        //.with_required_user([Permission::ReadAnyUserRole])
-        .with_path_parameter::<Path>()
-        .with_json_response::<UserRoles>(StatusCode::OK)
-        .with_problem_response(&[StatusCode::BAD_REQUEST])
-}
-
 #[derive(Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[schema(example = json!({
@@ -144,7 +148,20 @@ struct DeleteUserRole {
     role: String,
 }
 
-async fn delete_user_role(
+#[utoipa::path(
+    delete,
+    path = "/api/identities/:id/roles",
+    tag = "identity",
+    params(
+        Path
+    ),
+    request_body = DeleteUserRole,
+    responses(
+        (status = OK, body = UserRoles),
+        //(status = BAD_REQUEST, body = Problem)
+    )
+)]
+pub async fn delete_user_role(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
@@ -181,21 +198,6 @@ async fn delete_user_role(
         .map_err(|err| err.into_problem(&problem_config))?;
 
     Ok(Json(UserRoles { roles }))
-}
-
-pub fn ep_delete_user_role() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(
-        ApiMethod::Delete,
-        ApiKind::Api("/identities/:id/roles"),
-        delete_user_role,
-    )
-    .with_operation_id("ep_delete_user_role")
-    .with_tag("identity")
-    //.with_required_user([Permission::UpdateAnyUserRole])
-    .with_path_parameter::<Path>()
-    .with_json_request::<DeleteUserRole>()
-    .with_json_response::<UserRoles>(StatusCode::OK)
-    .with_problem_response(&[StatusCode::BAD_REQUEST])
 }
 
 #[cfg(test)]

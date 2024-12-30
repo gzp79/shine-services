@@ -14,9 +14,9 @@ use anyhow::{anyhow, Error as AnyError};
 use chrono::Duration;
 use ring::rand::SystemRandom;
 use shine_core::{
-    axum::{telemetry::TelemetryService, IntoProblem, Problem, ProblemConfig},
     service::CurrentUser,
     utils::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
+    web::{IntoProblem, Problem, ProblemConfig, WebAppConfig},
 };
 use std::sync::Arc;
 use tera::Tera;
@@ -28,7 +28,6 @@ struct Inner {
     tera: Tera,
     db: DBPool,
     captcha_validator: CaptchaValidator,
-    telemetry_service: TelemetryService,
     identity_service: IdentityService<PgIdentityDb>,
     session_service: SessionService<RedisSessionDb>,
 }
@@ -37,21 +36,25 @@ struct Inner {
 pub struct AppState(Arc<Inner>);
 
 impl AppState {
-    pub async fn new(config: &AppConfig, telemetry_service: &TelemetryService) -> Result<Self, AnyError> {
+    pub async fn new(config: &WebAppConfig<AppConfig>) -> Result<Self, AnyError> {
+        let config_auth = &config.feature.auth;
+        let config_db = &config.feature.db;
+        let config_user_name = &config.feature.user_name;
+
         let settings = SettingsService {
-            app_name: config.auth.app_name.clone(),
+            app_name: config_auth.app_name.clone(),
             app_version: config.core.version.clone(),
-            home_url: config.auth.home_url.clone(),
-            error_url: config.auth.error_url.clone(),
+            home_url: config_auth.home_url.clone(),
+            error_url: config_auth.error_url.clone(),
             token: TokenSettings {
-                ttl_access_token: Duration::seconds(i64::try_from(config.auth.auth_session.ttl_access_token)?),
-                ttl_single_access: Duration::seconds(i64::try_from(config.auth.auth_session.ttl_single_access)?),
-                ttl_api_key: Duration::seconds(i64::try_from(config.auth.auth_session.ttl_api_key)?),
+                ttl_access_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_access_token)?),
+                ttl_single_access: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_single_access)?),
+                ttl_api_key: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_api_key)?),
             },
-            external_providers: config.auth.collect_providers(),
+            external_providers: config_auth.collect_providers(),
             full_problem_response: config.service.full_problem_response,
-            page_redirect_time: config.auth.page_redirect_time,
-            super_user_api_key_hash: config.auth.super_user_api_key_hash.clone(),
+            page_redirect_time: config_auth.page_redirect_time,
+            super_user_api_key_hash: config_auth.super_user_api_key_hash.clone(),
         };
         let problem_config = ProblemConfig::new(config.service.full_problem_response);
 
@@ -61,18 +64,18 @@ impl AppState {
             tera
         };
 
-        let db_pool = DBPool::new(&config.db).await?;
+        let db_pool = DBPool::new(&config_db).await?;
         let captcha_validator = CaptchaValidator::new(&config.service.captcha_secret);
 
         let identity_service = {
             let identity_db = PgIdentityDb::new(&db_pool.postgres).await?;
-            let user_name_generator: Box<dyn IdEncoder> = match &config.user_name.id_encoder {
+            let user_name_generator: Box<dyn IdEncoder> = match &config_user_name.id_encoder {
                 IdEncoderConfig::Optimus { prime, random } => Box::new(PrefixedIdEncoder::new(
-                    &config.user_name.base_name,
+                    &config_user_name.base_name,
                     OptimusIdEncoder::new(*prime, *random),
                 )),
                 IdEncoderConfig::Harsh { salt } => Box::new(PrefixedIdEncoder::new(
-                    &config.user_name.base_name,
+                    &config_user_name.base_name,
                     HarshIdEncoder::new(salt)?,
                 )),
             };
@@ -80,7 +83,7 @@ impl AppState {
         };
 
         let session_service = {
-            let ttl_session = Duration::seconds(i64::try_from(config.auth.auth_session.ttl_session)?);
+            let ttl_session = Duration::seconds(i64::try_from(config_auth.auth_session.ttl_session)?);
             let session_db = RedisSessionDb::new(&db_pool.redis, "".to_string(), ttl_session).await?;
             SessionService::new(session_db)
         };
@@ -92,7 +95,6 @@ impl AppState {
             tera,
             db: db_pool,
             captcha_validator,
-            telemetry_service: telemetry_service.clone(),
             identity_service,
             session_service,
         })))
@@ -116,10 +118,6 @@ impl AppState {
 
     pub fn captcha_validator(&self) -> &CaptchaValidator {
         &self.0.captcha_validator
-    }
-
-    pub fn telemetry_service(&self) -> &TelemetryService {
-        &self.0.telemetry_service
     }
 
     pub fn identity_service(&self) -> &IdentityService<impl IdentityDb> {

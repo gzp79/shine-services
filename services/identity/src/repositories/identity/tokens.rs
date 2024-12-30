@@ -1,6 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::{axum::SiteInfo, service::ClientFingerprint};
+use shine_core::web::{ClientFingerprint, SiteInfo};
 use std::future::Future;
 use uuid::Uuid;
 

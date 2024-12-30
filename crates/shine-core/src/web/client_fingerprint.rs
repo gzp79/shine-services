@@ -1,4 +1,4 @@
-use crate::axum::{ConfiguredProblem, IntoProblem, Problem, ProblemConfig};
+use crate::web::{ConfiguredProblem, IntoProblem, Problem, ProblemConfig};
 use axum::{async_trait, extract::FromRequestParts, http::request::Parts, Extension, RequestPartsExt};
 use axum_extra::{headers::UserAgent, TypedHeader};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};

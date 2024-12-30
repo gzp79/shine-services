@@ -1,6 +1,6 @@
 use crate::{
-    axum::{ConfiguredProblem, IntoProblem, Problem, ProblemConfig},
     utils::serde_string,
+    web::{ConfiguredProblem, IntoProblem, Problem, ProblemConfig},
 };
 use axum::{
     async_trait,

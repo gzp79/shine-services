@@ -8,8 +8,8 @@ use crate::{
 use chrono::{Duration, Utc};
 use ring::rand::SystemRandom;
 use shine_core::{
-    axum::SiteInfo,
-    service::{self, ClientFingerprint, SessionKey},
+    service::{self, SessionKey},
+    web::{ClientFingerprint, SiteInfo},
 };
 use shine_test::test;
 use std::env;

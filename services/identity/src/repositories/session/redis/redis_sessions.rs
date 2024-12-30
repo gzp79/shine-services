@@ -6,7 +6,7 @@ use crate::repositories::{
 use chrono::{DateTime, Utc};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use shine_core::{axum::SiteInfo, service::RedisJsonValue};
+use shine_core::{service::RedisJsonValue, web::SiteInfo};
 use uuid::Uuid;
 
 use super::RedisSessionDbContext;

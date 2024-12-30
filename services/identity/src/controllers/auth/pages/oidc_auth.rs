@@ -1,17 +1,14 @@
 use crate::{
-    controllers::{
-        auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, LinkUtils, OIDCClient, PageUtils},
-        ApiKind, AppState,
-    },
+    app_state::AppState,
+    controllers::auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, LinkUtils, OIDCClient, PageUtils},
     repositories::identity::ExternalUserInfo,
 };
 use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier};
 use openidconnect::{Nonce, TokenResponse};
 use serde::Deserialize;
-use shine_core::{
-    axum::{ApiEndpoint, ApiMethod, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery},
-    service::ClientFingerprint,
+use shine_core::web::{
+    ApiKind, ApiMethod, ClientFingerprint, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery, WebRoute,
 };
 use std::sync::Arc;
 use utoipa::IntoParams;
@@ -161,14 +158,15 @@ async fn oidc_auth(
     }
 }
 
-pub fn page_oidc_auth(provider: &str) -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(
+pub fn page_oidc_auth(provider: &str) -> WebRoute<AppState> {
+    WebRoute::new(
         ApiMethod::Get,
         ApiKind::Page(&format!("/auth/{provider}/auth")),
         oidc_auth,
     )
     .with_operation_id(format!("{provider}_auth"))
-    .with_tag("page")
+    tag = "page"
     .with_query_parameter::<Query>()
-    .with_page_response("Html page to update client cookies and complete the OpenIdConnect login flow")
+    response(
+(status = OK, description="Html page to update client cookies and complete the OpenIdConnect login flow")
 }

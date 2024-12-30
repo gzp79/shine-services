@@ -1,7 +1,7 @@
 use crate::{
-    axum::{ConfiguredProblem, IntoProblem, Problem, ProblemConfig},
+    web::{ConfiguredProblem, IntoProblem, Problem, ProblemConfig, ClientFingerprint, ClientFingerprintError,},
     service::{
-        serde_session_key, ClientFingerprint, ClientFingerprintError, RedisConnectionError, RedisConnectionPool,
+        serde_session_key,  RedisConnectionError, RedisConnectionPool,
         SessionKey,
     },
 };

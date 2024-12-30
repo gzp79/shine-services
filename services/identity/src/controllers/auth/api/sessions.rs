@@ -1,14 +1,13 @@
-use axum::{extract::State, http::StatusCode, Extension, Json};
+use crate::app_state::AppState;
+use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use shine_core::{
-    axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig},
     service::CheckedCurrentUser,
+    web::{Problem, ProblemConfig},
 };
 use utoipa::ToSchema;
 use uuid::Uuid;
-
-use crate::controllers::{ApiKind, AppState};
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -25,16 +24,23 @@ pub struct ActiveSession {
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[schema(as=ActiveSessions)]
-pub struct Response {
+pub struct ActiveSessions {
     sessions: Vec<ActiveSession>,
 }
 
-async fn list_sessions(
+#[utoipa::path(
+    get,
+    path = "/api/auth/user/sessions",
+    tag = "auth",
+    responses(
+        (status = OK, body = ActiveSessions)
+    )
+)]
+pub async fn list_sessions(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
-) -> Result<Json<Response>, Problem> {
+) -> Result<Json<ActiveSessions>, Problem> {
     let sessions = state
         .session_service()
         .find_all(user.user_id)
@@ -52,13 +58,5 @@ async fn list_sessions(
             city: s.site_info.city,
         })
         .collect();
-    Ok(Json(Response { sessions }))
-}
-
-pub fn ep_list_sessions() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/sessions"), list_sessions)
-        .with_operation_id("list_sessions")
-        .with_tag("auth")
-        .with_schema::<ActiveSession>()
-        .with_json_response::<Response>(StatusCode::OK)
+    Ok(Json(ActiveSessions { sessions }))
 }

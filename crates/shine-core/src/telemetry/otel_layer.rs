@@ -1,4 +1,3 @@
-use crate::axum::telemetry::otel_http;
 use axum::{
     extract::MatchedPath,
     http::{Method, Request, Response},
@@ -19,6 +18,8 @@ use std::{
 use tower::{Layer, Service};
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+
+use super::otel_http;
 
 /// Filter for request path
 pub type RequestFilter = fn(&Method, &str) -> bool;
