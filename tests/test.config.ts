@@ -4,8 +4,9 @@ import { joinURL } from '$lib/utils';
 export class Config {
     appDomain = 'sandbox.com';
     serviceDomain = 'cloud.sandbox.com';
+    //serviceUrl = 'https://cloud.sandbox.com:7000';
+    //identityUrl = 'https://cloud.sandbox.com:7000';
     serviceUrl = 'https://cloud.sandbox.com:8443';
-    //identityUrl = 'https://cloud.sandbox.com:8443';
     identityUrl = 'https://cloud.sandbox.com:8443/identity';
 
     getUrlFor(path: string): string {

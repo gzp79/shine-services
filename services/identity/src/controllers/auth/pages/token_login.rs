@@ -12,9 +12,7 @@ use axum_extra::{
 use serde::Deserialize;
 use shine_core::{
     service::CurrentUser,
-    web::{
-        ClientFingerprint, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery,        
-    },
+    web::{ClientFingerprint, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery},
 };
 use url::Url;
 use utoipa::IntoParams;
@@ -22,7 +20,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct QueryParams {
+pub struct QueryParams {
     /// Depending on the token cookie and the Authorization header:
     /// - If there is a (valid) auth header (all other cookies are ignored), a new remember-me token is created
     /// - If there is no token cookie, a  new "quest" user is created iff it's is set to true.
@@ -113,9 +111,7 @@ async fn authenticate_with_query_token(
                     query.error_url.as_ref(),
                 ));
             }
-            Err(err) => {
-                return Err(PageUtils::new(state).internal_error(auth_session, err, query.error_url.as_ref()))
-            }
+            Err(err) => return Err(PageUtils::new(state).internal_error(auth_session, err, query.error_url.as_ref())),
         }
     };
     // The single access token has already been removed from the DB, thus in case of error there is no need to revoke it.
@@ -168,9 +164,7 @@ async fn authenticate_with_header_token(
                     query.error_url.as_ref(),
                 ));
             }
-            Err(err) => {
-                return Err(PageUtils::new(state).internal_error(auth_session, err, query.error_url.as_ref()))
-            }
+            Err(err) => return Err(PageUtils::new(state).internal_error(auth_session, err, query.error_url.as_ref())),
         }
     };
 
@@ -230,9 +224,7 @@ async fn authenticate_with_cookie_token(
                     query.error_url.as_ref(),
                 ));
             }
-            Err(err) => {
-                return Err(PageUtils::new(state).internal_error(auth_session, err, query.error_url.as_ref()))
-            }
+            Err(err) => return Err(PageUtils::new(state).internal_error(auth_session, err, query.error_url.as_ref())),
         }
     };
 
@@ -372,7 +364,7 @@ async fn authenticate(
     get,
     path = "/auth/token/login",
     tag = "page",
-    params( 
+    params(
         QueryParams
     ),
     responses(
@@ -425,9 +417,7 @@ pub async fn token_login(
             .await
         {
             Ok(user_token) => user_token,
-            Err(err) => {
-                return Err(PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_ref()))
-            }
+            Err(err) => return Err(PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_ref())),
         };
 
         // preserve the old token in case client does not acknowledge the new one

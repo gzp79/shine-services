@@ -1,7 +1,6 @@
-
 #[utoipa::path(
-    get, 
-    path = "/info/ready", 
+    get,
+    path = "/info/ready",
     tag = "health",
     description = "Health check.",
     responses(

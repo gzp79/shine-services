@@ -18,7 +18,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct Path {
+pub struct PathParams {
     #[serde(rename = "id")]
     user_id: Uuid,
 }
@@ -37,7 +37,7 @@ pub struct UserRoles {
 #[schema(example = json!({
     "role": "Role"
 }))]
-struct AddUserRole {
+pub struct AddUserRole {
     #[validate(length(min = 1, max = 63))]
     role: String,
 }
@@ -47,7 +47,7 @@ struct AddUserRole {
     path = "/api/identities/:id/roles",
     tag = "identity",
     params(
-        Path
+        PathParams
     ),
     request_body = AddUserRole,
     responses(
@@ -60,7 +60,7 @@ pub async fn add_user_role(
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     auth_key: Option<TypedHeader<Authorization<Bearer>>>,
-    ValidatedPath(path): ValidatedPath<Path>,
+    ValidatedPath(path): ValidatedPath<PathParams>,
     ValidatedJson(params): ValidatedJson<AddUserRole>,
 ) -> Result<Json<UserRoles>, Problem> {
     if let (Some(auth_key), Some(master_key_hash)) = (
@@ -99,7 +99,7 @@ pub async fn add_user_role(
     path = "/api/identities/:id/roles",
     tag = "identity",
     params(
-        Path
+        PathParams
     ),
     responses(
         (status = OK, body = UserRoles),
@@ -111,7 +111,7 @@ pub async fn get_user_roles(
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     auth_key: Option<TypedHeader<Authorization<Bearer>>>,
-    ValidatedPath(path): ValidatedPath<Path>,
+    ValidatedPath(path): ValidatedPath<PathParams>,
 ) -> Result<Json<UserRoles>, Problem> {
     if let (Some(auth_key), Some(master_key_hash)) = (
         auth_key.map(|auth| auth.token().to_owned()),
@@ -143,7 +143,7 @@ pub async fn get_user_roles(
 #[schema(example = json!({
     "role": "Role"
 }))]
-struct DeleteUserRole {
+pub struct DeleteUserRole {
     #[validate(length(min = 1, max = 32))]
     role: String,
 }
@@ -153,7 +153,7 @@ struct DeleteUserRole {
     path = "/api/identities/:id/roles",
     tag = "identity",
     params(
-        Path
+        PathParams
     ),
     request_body = DeleteUserRole,
     responses(
@@ -166,7 +166,7 @@ pub async fn delete_user_role(
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     auth_key: Option<TypedHeader<Authorization<Bearer>>>,
-    ValidatedPath(path): ValidatedPath<Path>,
+    ValidatedPath(path): ValidatedPath<PathParams>,
     ValidatedJson(params): ValidatedJson<DeleteUserRole>,
 ) -> Result<Json<UserRoles>, Problem> {
     if let (Some(auth_key), Some(master_key)) = (

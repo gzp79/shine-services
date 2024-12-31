@@ -1,22 +1,9 @@
 {
-  "beforeLayers": [],
-  "afterLayers": [],
+  "beforeLayers": ["file://../server_config_test.json"],
+  "afterLayers": ["environment"],
+
   "service": {
-    "port": 7000,
-    "allowedOrigins": [
-      "^https:\\/\\/([a-zA-Z0-9-]+\\.)*sandbox\\.com(:[0-9]+)?$"
-    ],
-    "fullProblemResponse": true,
-    "captchaSecret": "1x0000000000000000000000000000000AA"
-  },
-  "telemetry": {
-    "allowReconfigure": true,
-    "enableConsoleLog": true,
-    "defaultLevel": "INFO,shine_service=TRACE,shine_identity=TRACE,tower_http=TRACE",
-    "metrics": true,
-    "tracing": {
-      "type": "none"
-    }
+    "port": 7000
   },
   "db": {
     "redisCns": "redis://redis.mockbox.com:6379",

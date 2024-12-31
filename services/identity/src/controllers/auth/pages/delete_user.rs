@@ -11,7 +11,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct QueryParams {
+pub struct QueryParams {
     /// Set to true. Mainly used to avoid some accidental automated deletion.
     /// It is suggested to have some confirmation on the UI (for example enter the name of the user to be deleted) and
     /// set the value of the property to the result of the confirmation.
@@ -28,7 +28,7 @@ struct QueryParams {
     get,
     path = "/auth/delete",
     tag = "page",
-    params( 
+    params(
         QueryParams
     ),
     responses(
@@ -77,4 +77,3 @@ pub async fn delete_user(
 
     PageUtils::new(&state).redirect(auth_session, None, query.redirect_url.as_ref())
 }
-

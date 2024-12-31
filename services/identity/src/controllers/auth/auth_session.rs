@@ -93,7 +93,7 @@ impl AuthSessionMeta {
         let config_auth = &config.feature.auth;
         let config_auth_session = &config_auth.auth_session;
 
-        let home_url = &config_auth.home_url;        
+        let home_url = &config_auth.home_url;
         let home_domain = home_url.domain().ok_or(AuthSessionError::MissingHomeDomain)?;
         let domain = {
             let mut parts = home_domain.split('.').rev().take(2).collect::<Vec<_>>();

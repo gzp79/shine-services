@@ -23,7 +23,7 @@ impl From<BB8PoolState> for DBState {
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct ServiceHealth {
+pub struct ServiceHealth {
     pub app: String,
     pub version: String,
     pub postgres: DBState,

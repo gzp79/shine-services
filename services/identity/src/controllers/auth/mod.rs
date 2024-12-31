@@ -79,9 +79,18 @@ impl AuthController {
             log::info!("Registering OAuth2 provider {}", client.provider);
 
             let provider_route = OpenApiRouter::new()
-                //.routes(routes!(pages::oauth2_login(&client.provider))
-                //.routes(routes!(pages::oauth2_link(&client.provider))
-                //.routes(routes!(pages::oauth2_auth(&client.provider))
+                .nest(
+                    &format!("/auth/{}", client.provider),
+                    OpenApiRouter::new().routes(routes!(pages::oauth2_login)),
+                )
+                .nest(
+                    &format!("/auth/{}", client.provider),
+                    OpenApiRouter::new().routes(routes!(pages::oauth2_link)),
+                )
+                .nest(
+                    &format!("/auth/{}", client.provider),
+                    OpenApiRouter::new().routes(routes!(pages::oauth2_auth)),
+                )
                 .layer(Extension(Arc::new(client)));
 
             auth_routes = auth_routes.merge(provider_route);
@@ -91,9 +100,18 @@ impl AuthController {
             log::info!("Registering OpenId Connect provider {}", client.provider);
 
             let provider_route = OpenApiRouter::new()
-                //.routes(routes!(pages::page_oidc_login(&client.provider))
-                //.routes(routes!(pages::page_oidc_link(&client.provider))
-                //.routes(routes!(pages::page_oidc_auth(&client.provider))
+                .nest(
+                    &format!("/auth/{}", client.provider),
+                    OpenApiRouter::new().routes(routes!(pages::oidc_login)),
+                )
+                .nest(
+                    &format!("/auth/{}", client.provider),
+                    OpenApiRouter::new().routes(routes!(pages::oidc_link)),
+                )
+                .nest(
+                    &format!("/auth/{}", client.provider),
+                    OpenApiRouter::new().routes(routes!(pages::oidc_auth)),
+                )
                 .layer(Extension(Arc::new(client)));
 
             auth_routes = auth_routes.merge(provider_route);

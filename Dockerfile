@@ -16,6 +16,8 @@ COPY ./crates/shine-core/Cargo.toml ./crates/shine-core/
 RUN mkdir -p ./crates/shine-core/src && touch ./crates/shine-core/src/lib.rs
 COPY ./services/identity/Cargo.toml ./services/identity/
 RUN mkdir -p ./services/identity/src && echo "fn main() {}" >./services/identity/src/main.rs
+COPY ./services/command/Cargo.toml ./services/command/
+RUN mkdir -p ./services/command/src && echo "fn main() {}" >./services/command/src/main.rs
 COPY ./rustfmt.toml ./
 COPY ./clippy.toml ./
 COPY ./Cargo.toml ./
@@ -55,13 +57,18 @@ COPY ./docker/nginx.conf /etc/nginx/nginx.conf
 
 WORKDIR /app
 COPY ./docker/scripts/ ./
-RUN chmod +x ./start-identity.sh
+RUN  chmod +x ./wait-for-services.sh \
+    && chmod +x ./start-identity.sh \
+    && chmod +x ./start-command.sh
 
 WORKDIR /app/services/identity
 COPY --from=build /shine/target/release/shine-identity ./
 COPY --from=build /shine/services/identity/tera_templates ./tera_templates
 COPY ./services/server_version.json ./
-COPY ./services/identity/server_config.test.json ./
+
+WORKDIR /app/services/command
+COPY --from=build /shine/target/release/shine-command ./
+COPY ./services/server_version.json ./
 
 ENV IDENTITY_TENANT_ID=
 ENV IDENTITY_CLIENT_ID=
@@ -81,9 +88,13 @@ WORKDIR /app
 COPY ./certs/test.crt ./certs/test.crt
 COPY ./certs/test.key ./certs/test.key
 COPY ./docker/nginx.test.conf /etc/nginx/nginx-shine-server.conf
+COPY ./services/server_config_test.json ./
 
 WORKDIR /app/services/identity
 COPY ./services/identity/server_config.test.json ./
+
+WORKDIR /app/services/command
+COPY ./services/command/server_config.test.json ./
 
 ARG ENVIRONMENT=test
 ENV ENVIRONMENT=$ENVIRONMENT
@@ -93,10 +104,13 @@ FROM base AS prod
 
 WORKDIR /app
 COPY ./docker/nginx.prod.conf /etc/nginx/nginx-shine-server.conf
+COPY ./services/server_config.json ./
 
 WORKDIR /app/services/identity
-COPY ./services/identity/server_config.json ./
 COPY ./services/identity/server_config.prod.json ./
+
+WORKDIR /app/services/command
+COPY ./services/command/server_config.prod.json ./
 
 ARG ENVIRONMENT=prod
 ENV ENVIRONMENT=$ENVIRONMENT

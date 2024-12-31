@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use shine_core::{
     service::CheckedCurrentUser,
     web::{
-        ClientFingerprint, IntoProblem, Problem, ProblemConfig, SiteInfo, ValidatedJson,
-        ValidatedPath, ValidationErrorEx,
+        ClientFingerprint, IntoProblem, Problem, ProblemConfig, SiteInfo, ValidatedJson, ValidatedPath,
+        ValidationErrorEx,
     },
 };
 use utoipa::{IntoParams, ToSchema};
@@ -18,7 +18,7 @@ use validator::{Validate, ValidationError};
 
 #[derive(Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct CreateTokenRequest {
+pub struct CreateTokenRequest {
     /// The kind of token to create, Allowed kinds are apiKey or singleAccess.
     /// access token can be created only through the login endpoint with enabled remember-me.
     #[validate(custom(function = "validate_allowed_kind"))]
@@ -41,7 +41,7 @@ fn validate_allowed_kind(kind: &TokenKind) -> Result<(), ValidationError> {
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct CreatedToken {
+pub struct CreatedToken {
     /// The kind of the created token
     kind: TokenKind,
     /// The new token. Backend does not store the raw token and it is not possible to retrieve it.
@@ -62,7 +62,7 @@ struct CreatedToken {
     responses(
         (status = OK, body = CreatedToken)
     )
-)]  
+)]
 pub async fn create_token(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
@@ -106,7 +106,7 @@ pub async fn create_token(
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct TokenHash {
+pub struct TokenHash {
     hash: String,
 }
 
@@ -159,7 +159,7 @@ impl From<TokenInfo> for ActiveToken {
         (status = OK, body = ActiveToken)
     )
 )]
-    
+
 pub async fn get_token(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
@@ -197,10 +197,10 @@ pub async fn get_token(
     path = "/api/auth/user/tokens/:hash",
     tag = "auth",
     params(TokenHash),
-    responses( 
+    responses(
         (status = OK, description = "Token revoked")
     )
-)]  
+)]
 pub async fn delete_token(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
@@ -225,7 +225,7 @@ pub async fn delete_token(
     path = "/api/auth/user/tokens",
     tag = "auth",
     responses(
-        (status = OK, body = ActiveTokens)        
+        (status = OK, body = ActiveTokens)
     )
 )]
 pub async fn list_tokens(
@@ -243,4 +243,3 @@ pub async fn list_tokens(
         .collect();
     Ok(Json(ActiveTokens { tokens }))
 }
-    

@@ -13,13 +13,13 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct QueryParams {
+pub struct QueryParams {
     refresh: Option<bool>,
 }
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct CurrentUserInfo {
+pub struct CurrentUserInfo {
     user_id: Uuid,
     kind: IdentityKind,
     name: String,

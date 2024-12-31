@@ -46,8 +46,8 @@ pub struct LinkedExternalProviders {
     get,
     path  = "/api/auth/user/links",
     tag = "auth",
-    responses( 
-        (status = OK, body = LinkedExternalProviders) 
+    responses(
+        (status = OK, body = LinkedExternalProviders)
     )
 )]
 pub async fn list_external_links(
@@ -68,7 +68,7 @@ pub async fn list_external_links(
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct ProviderSelectPathParam {
+pub struct ProviderSelectPathParam {
     provider: String,
     provider_id: String,
 }
@@ -80,7 +80,7 @@ struct ProviderSelectPathParam {
     params(
         ProviderSelectPathParam
     ),
-    responses( 
+    responses(
         (status = OK, description = "Token revoked") 
     )
 )]
@@ -107,4 +107,3 @@ pub async fn delete_external_link(
         Ok(())
     }
 }
-

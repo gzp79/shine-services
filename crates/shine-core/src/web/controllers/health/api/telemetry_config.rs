@@ -1,7 +1,7 @@
 use crate::{
     service::CheckedCurrentUser,
     telemetry::{DynConfig, TelemetryService},
-    web::{ Problem, ProblemConfig },
+    web::{Problem, ProblemConfig},
 };
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
@@ -12,9 +12,8 @@ pub struct TraceConfig {
     filter: String,
 }
 
-
 #[utoipa::path(
-    put, 
+    put,
     path = "/api/telemetry/config", 
     tag = "health",
     description = "Update telemetry configuration.",
@@ -40,7 +39,7 @@ pub async fn put_telemetry_config(
 }
 
 #[utoipa::path(
-    get, 
+    get,
     path = "/api/telemetry/config", 
     tag = "health",
     description = "Get the current telemetry configuration.",

@@ -6,9 +6,9 @@ use axum::{
 };
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use utoipa::ToSchema;
 use std::fmt;
 use url::Url;
+use utoipa::ToSchema;
 
 #[derive(Clone)]
 pub struct ProblemConfig {
@@ -36,7 +36,7 @@ impl ProblemConfig {
 /// the specification [RFC-7807](https://datatracker.ietf.org/doc/html/rfc7807).
 #[derive(Debug, Serialize)]
 pub struct Problem {
-    #[serde(rename = "status", serialize_with = "serde_status_code::serialize")]    
+    #[serde(rename = "status", serialize_with = "serde_status_code::serialize")]
     status: StatusCode,
     #[serde(rename = "type")]
     ty: &'static str,

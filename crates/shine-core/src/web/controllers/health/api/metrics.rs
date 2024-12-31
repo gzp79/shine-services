@@ -2,8 +2,8 @@ use crate::telemetry::TelemetryService;
 use axum::Extension;
 
 #[utoipa::path(
-    get, 
-    path = "/api/telemetry/metrics", 
+    get,
+    path = "/api/telemetry/metrics",
     tag = "health",
     description = "Get system metrics.",
     responses(

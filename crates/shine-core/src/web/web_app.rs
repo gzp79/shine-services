@@ -8,7 +8,8 @@ use crate::{
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
-    http::{header, Method}, Extension, Router
+    http::{header, Method},
+    Extension, Router,
 };
 use axum_server::Handle;
 use serde::de::DeserializeOwned;

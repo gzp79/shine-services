@@ -11,7 +11,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct QueryParams {
+pub struct QueryParams {
     #[param(value_type=Option<String>)]
     redirect_url: Option<Url>,
 }
@@ -20,13 +20,13 @@ struct QueryParams {
     get,
     path = "/auth/validate",
     tag = "page",
-    params( 
+    params(
         QueryParams
     ),
     responses(
         (status = OK, description="Html page to validate cookie consistency. It removes all the invalid cookies and redirect user to the given page")
     )
-)]    
+)]
 pub async fn validate(
     State(state): State<AppState>,
     auth_session: AuthSession,

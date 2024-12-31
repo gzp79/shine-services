@@ -6,7 +6,7 @@ use crate::app_state::AppState;
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct AuthProviders {
+pub struct AuthProviders {
     providers: Vec<String>,
 }
 

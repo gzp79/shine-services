@@ -7,28 +7,37 @@ use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier};
 use openidconnect::{Nonce, TokenResponse};
 use serde::Deserialize;
-use shine_core::web::{
-    ApiKind, ApiMethod, ClientFingerprint, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery, WebRoute,
-};
+use shine_core::web::{ClientFingerprint, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery};
 use std::sync::Arc;
 use utoipa::IntoParams;
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct Query {
+pub struct QueryParams {
     code: String,
     state: String,
 }
 
 /// Process the authentication redirect from the OpenID Connect provider.
-async fn oidc_auth(
+#[utoipa::path(
+    get,
+    path = "/auth",
+    tag = "page",
+    params(
+        QueryParams
+    ),
+    responses(
+        (status = OK, description="Html page to update client cookies and complete the OpenIdConnect login flow")
+    )
+)]
+pub async fn oidc_auth(
     State(state): State<AppState>,
     Extension(client): Extension<Arc<OIDCClient>>,
     mut auth_session: AuthSession,
     fingerprint: ClientFingerprint,
     site_info: SiteInfo,
-    query: Result<ValidatedQuery<Query>, ConfiguredProblem<InputError>>,
+    query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
 ) -> AuthPage {
     // take external_login_cookie from session, thus later code don't have to care with it
     let ExternalLoginCookie {
@@ -156,17 +165,4 @@ async fn oidc_auth(
             )
             .await
     }
-}
-
-pub fn page_oidc_auth(provider: &str) -> WebRoute<AppState> {
-    WebRoute::new(
-        ApiMethod::Get,
-        ApiKind::Page(&format!("/auth/{provider}/auth")),
-        oidc_auth,
-    )
-    .with_operation_id(format!("{provider}_auth"))
-    tag = "page"
-    .with_query_parameter::<Query>()
-    response(
-(status = OK, description="Html page to update client cookies and complete the OpenIdConnect login flow")
 }

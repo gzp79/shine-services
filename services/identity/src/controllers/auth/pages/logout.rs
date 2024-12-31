@@ -12,7 +12,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct QueryParams {
+pub struct QueryParams {
     terminate_all: Option<bool>,
     #[param(value_type=Option<String>)]
     redirect_url: Option<Url>,
@@ -24,7 +24,7 @@ struct QueryParams {
     get,
     path = "/auth/logout",
     tag = "page",
-    params( 
+    params(
         QueryParams
     ),
     responses(
@@ -79,4 +79,3 @@ pub async fn logout(
     auth_session.clear();
     PageUtils::new(&state).redirect(auth_session, None, query.redirect_url.as_ref())
 }
-

@@ -16,7 +16,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct QueryParams {
+pub struct QueryParams {
     /// The maximum number of items returned in a single response
     #[validate(range(min = 1, max = "MAX_SEARCH_RESULT_COUNT"))]
     count: Option<usize>,
@@ -35,7 +35,7 @@ struct IdentityInfo {
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct IdentitySearchPage {
+pub struct IdentitySearchPage {
     identities: Vec<IdentityInfo>,
 }
 

@@ -1,28 +1,9 @@
 # Backend
 
-## Environments
-
-For web application to work properly on any environment, https is required. Depending on the selected environment, different tool provides the ssl.
-In a similar way the DB also depends on the selected environment:
-
-- local: Used for local development, independent of any cloud resources
-  - DB: local
-  - ssl: in the services, self-signed
-- test: Used for integration test,  independent of any cloud resources
-  - DB: local
-  - ssl: nginx, self-signed
-- dev: Allow to connect to cloud resources from the local machine, can be used debug attach to production DBs.
-  - cloud hosted DB
-  - ssl: in the services, self-signed
-- prod: Production version
-  - cloud hosted DB
-  - ssl: hosting environment, managed by cloudflare, fly.io
-
 ### To start a local version (VS code)
 
 - `start dev environment`
 - `identity: local`
-
 
 ## Know-how 
 
