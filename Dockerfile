@@ -82,8 +82,6 @@ CMD ["/usr/bin/supervisord"]
 #######################################################
 FROM base AS test
 
-RUN apt install -y --no-install-recommends netcat
-
 WORKDIR /app
 COPY ./certs/test.crt ./certs/test.crt
 COPY ./certs/test.key ./certs/test.key
