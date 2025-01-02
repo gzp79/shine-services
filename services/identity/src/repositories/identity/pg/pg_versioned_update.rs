@@ -3,8 +3,8 @@ use crate::repositories::{
     DBError,
 };
 use shine_core::{
+    db::{PGClient, PGPooledConnection, PGTransaction},
     pg_query,
-    service::{PGClient, PGPooledConnection, PGTransaction},
 };
 use tracing::instrument;
 use uuid::Uuid;

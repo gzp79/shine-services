@@ -2,7 +2,7 @@ use crate::repositories::{
     identity::{Identity, IdentityError, IdentitySearch, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_RESULT_COUNT},
     DBError,
 };
-use shine_core::service::QueryBuilder;
+use shine_core::db::QueryBuilder;
 use tokio_postgres::Row;
 use tracing::instrument;
 

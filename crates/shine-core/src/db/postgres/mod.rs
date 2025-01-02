@@ -14,28 +14,28 @@ macro_rules! pg_prepared_statement {
     ($id:ident => $stmt:expr, [$($pid:ident:$pty:ty),*]) => {
 
         #[derive(Clone, Copy, Debug)]
-        struct $id($crate::service::PGStatementId);
+        struct $id($crate::db::PGStatementId);
 
         impl $id {
-            async fn create_statement<T>(client: &$crate::service::PGConnection<T>) -> Result<$crate::service::PGStatement, $crate::service::PGError>
+            async fn create_statement<T>(client: &$crate::db::PGConnection<T>) -> Result<$crate::db::PGStatement, $crate::db::PGError>
             where
-                T: $crate::service::PGRawConnection
+                T: $crate::db::PGRawConnection
             {
                 log::debug!("creating prepared statement: \"{:#}\"", $stmt);
                 client
-                    .prepare_typed($stmt, &[$(<$pty as $crate::service::ToPGType>::PG_TYPE,)*])
+                    .prepare_typed($stmt, &[$(<$pty as $crate::db::ToPGType>::PG_TYPE,)*])
                     .await
             }
 
-            pub async fn new(client: &$crate::service::PGClient) -> Result<Self, $crate::service::PGError>
+            pub async fn new(client: &$crate::db::PGClient) -> Result<Self, $crate::db::PGError>
             {
                 let stmt = Self::create_statement(&client).await?;
                 Ok(Self(client.create_statement(stmt).await))
             }
 
-            pub async fn statement<'a, T>(&self, client: &$crate::service::PGConnection<T>) -> Result<$crate::service::PGStatement, $crate::service::PGError>
+            pub async fn statement<'a, T>(&self, client: &$crate::db::PGConnection<T>) -> Result<$crate::db::PGStatement, $crate::db::PGError>
             where
-                T: $crate::service::PGRawConnection
+                T: $crate::db::PGRawConnection
             {
                 if let Some(stmt) = client.get_statement(self.0).await {
                     Ok(stmt)
@@ -63,11 +63,11 @@ macro_rules! pg_query {
             #[allow(clippy::too_many_arguments)]
             pub async fn query<'a, T>(
                 &self,
-                client: &$crate::service::PGConnection<T>,
+                client: &$crate::db::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<Vec<$rty>, $crate::service::PGError>
+            ) -> Result<Vec<$rty>, $crate::db::PGError>
             where
-                T: $crate::service::PGRawConnection
+                T: $crate::db::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 let rows = client.query(&statement, &[$($pid,)*]).await?;
@@ -78,11 +78,11 @@ macro_rules! pg_query {
             #[allow(clippy::too_many_arguments)]
             pub async fn query_one<'a, T>(
                 &self,
-                client: &$crate::service::PGConnection<T>,
+                client: &$crate::db::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<$rty, $crate::service::PGError>
+            ) -> Result<$rty, $crate::db::PGError>
             where
-                T: $crate::service::PGRawConnection
+                T: $crate::db::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 let row = client.query_one(&statement, &[$($pid,)*]).await?;
@@ -93,11 +93,11 @@ macro_rules! pg_query {
             #[allow(clippy::too_many_arguments)]
             pub async fn query_opt<'a, T>(
                 &self,
-                client: &$crate::service::PGConnection<T>,
+                client: &$crate::db::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<Option<$rty>, $crate::service::PGError>
+            ) -> Result<Option<$rty>, $crate::db::PGError>
             where
-                T: $crate::service::PGRawConnection
+                T: $crate::db::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 client.query_opt(&statement, &[$($pid,)*])
@@ -119,11 +119,11 @@ macro_rules! pg_query {
             #[allow(clippy::too_many_arguments)]
             pub async fn query<'a, T>(
                 &self,
-                client: &$crate::service::PGConnection<T>,
+                client: &$crate::db::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<Vec<$oty>, $crate::service::PGError>
+            ) -> Result<Vec<$oty>, $crate::db::PGError>
             where
-                T: $crate::service::PGRawConnection
+                T: $crate::db::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 let rows = client.query(&statement, &[$($pid,)*]).await?;
@@ -136,11 +136,11 @@ macro_rules! pg_query {
             #[allow(clippy::too_many_arguments)]
             pub async fn query_one<'a, T>(
                 &self,
-                client: &$crate::service::PGConnection<T>,
+                client: &$crate::db::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<$oty, $crate::service::PGError>
+            ) -> Result<$oty, $crate::db::PGError>
             where
-                T: $crate::service::PGRawConnection
+                T: $crate::db::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 let row = client
@@ -152,11 +152,11 @@ macro_rules! pg_query {
             #[allow(clippy::too_many_arguments)]
             pub async fn query_opt<'a, T>(
                 &self,
-                client: &$crate::service::PGConnection<T>,
+                client: &$crate::db::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<Option<$oty>, $crate::service::PGError>
+            ) -> Result<Option<$oty>, $crate::db::PGError>
             where
-                T: $crate::service::PGRawConnection
+                T: $crate::db::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 client.query_opt(&statement, &[$($pid,)*])
@@ -177,11 +177,11 @@ macro_rules! pg_query {
             #[allow(clippy::too_many_arguments)]
             pub async fn execute<'a, T>(
                 &self,
-                client: &$crate::service::PGConnection<T>,
+                client: &$crate::db::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<u64, $crate::service::PGError>
+            ) -> Result<u64, $crate::db::PGError>
             where
-                T: $crate::service::PGRawConnection
+                T: $crate::db::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 client.execute(&statement, &[$($pid,)*]).await

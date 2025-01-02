@@ -1,4 +1,4 @@
-use crate::service::cacerts::{get_root_cert_store, CertError};
+use crate::db::cacerts::{get_root_cert_store, CertError};
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use bb8_postgres::PostgresConnectionManager;
 use std::ops::Deref;

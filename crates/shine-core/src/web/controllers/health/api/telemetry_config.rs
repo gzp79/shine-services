@@ -27,7 +27,8 @@ pub async fn put_telemetry_config(
     user: CheckedCurrentUser,
     Json(body): Json<TraceConfig>,
 ) -> Result<(), Problem> {
-    user.global_permissions().check(permissions::UPDATE_TRACE, &problem_config)?;
+    user.global_permissions()
+        .check(permissions::UPDATE_TRACE, &problem_config)?;
 
     log::trace!("reconfigure telemetry: {:#?}", body);
     telemetry
@@ -52,7 +53,8 @@ pub async fn get_telemetry_config(
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
 ) -> Result<Json<TraceConfig>, Problem> {
-    user.global_permissions().check(permissions::UPDATE_TRACE, &problem_config)?;
+    user.global_permissions()
+        .check(permissions::UPDATE_TRACE, &problem_config)?;
 
     let config = telemetry
         .get_configuration()

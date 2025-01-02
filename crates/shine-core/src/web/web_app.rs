@@ -184,7 +184,7 @@ async fn start_web_app<A: WebApplication>(_rt_handle: RtHandle, app: A) -> Resul
     let user_session_layer = {
         // todo: make it a read only access to the redis
         log::info!("Creating user session cache reader...");
-        let redis = crate::service::create_redis_pool(config.service.session_redis_cns.as_str()).await?;
+        let redis = crate::db::create_redis_pool(config.service.session_redis_cns.as_str()).await?;
         UserSessionCacheReader::new(None, &config.service.session_secret, "", redis)?.into_layer()
     };
 

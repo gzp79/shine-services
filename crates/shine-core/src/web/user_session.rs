@@ -1,5 +1,5 @@
 use crate::{
-    service::{RedisConnectionError, RedisConnectionPool},
+    db::{RedisConnectionError, RedisConnectionPool},
     web::{
         serde_session_key, ClientFingerprint, ClientFingerprintError, ConfiguredProblem, IntoProblem, Problem,
         ProblemConfig, SessionKey,
