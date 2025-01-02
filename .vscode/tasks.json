@@ -66,7 +66,8 @@
         "env": {
           "SERVICE--TLS--CERT": "../../certs/test.crt",
           "SERVICE--TLS--KEY": "../../certs/test.key",
-          "AUTH--AUTHBASEURL": "https://local.scytta.com:7000/auth/"
+          "SERVICE--port": "8443",
+          "AUTH--AUTHBASEURL": "https://local.scytta.com:8443/identity/auth/"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -82,7 +83,7 @@
           "RUST_BACKTRACE": "full",
           "SERVICE--TLS--CERT": "../../certs/test.crt",
           "SERVICE--TLS--KEY": "../../certs/test.key",
-          "AUTH--AUTHBASEURL": "https://local.scytta.com:7000/auth/"
+          "SERVICE--port": "8443"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -96,7 +97,8 @@
         "cwd": "services/command",
         "env": {
           "SERVICE--TLS--CERT": "../../certs/test.crt",
-          "SERVICE--TLS--KEY": "../../certs/test.key"
+          "SERVICE--TLS--KEY": "../../certs/test.key",
+          "SERVICE--port": "8443"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -111,7 +113,8 @@
         "env": {
           "RUST_BACKTRACE": "full",
           "SERVICE--TLS--CERT": "../../certs/test.crt",
-          "SERVICE--TLS--KEY": "../../certs/test.key"
+          "SERVICE--TLS--KEY": "../../certs/test.key",
+          "SERVICE--port": "8443"
         }
       },
       "problemMatcher": ["$rustc"],

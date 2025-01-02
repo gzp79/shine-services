@@ -82,12 +82,14 @@ CMD ["/usr/bin/supervisord"]
 #######################################################
 FROM base AS test
 
-#RUN apt install -y --no-install-recommends netcat
+RUN apt install -y --no-install-recommends netcat
 
 WORKDIR /app
 COPY ./certs/test.crt ./certs/test.crt
 COPY ./certs/test.key ./certs/test.key
 COPY ./docker/nginx.test.conf /etc/nginx/nginx-shine-server.conf
+
+WORKDIR /app/services
 COPY ./services/server_config_test.json ./
 
 WORKDIR /app/services/identity
@@ -104,6 +106,8 @@ FROM base AS prod
 
 WORKDIR /app
 COPY ./docker/nginx.prod.conf /etc/nginx/nginx-shine-server.conf
+
+WORKDIR /app/services
 COPY ./services/server_config.json ./
 
 WORKDIR /app/services/identity

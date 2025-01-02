@@ -9,7 +9,7 @@ use crate::{
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
     http::{header, Method},
-    Extension, Router,
+    Extension,
 };
 use axum_server::Handle;
 use serde::de::DeserializeOwned;
@@ -94,7 +94,7 @@ pub trait WebApplication {
     type AppConfig: DeserializeOwned + Send + Sync + 'static;
     type AppState: Clone + Send + Sync + 'static;
 
-    fn service_name(&self) -> &'static str;
+    fn feature_name(&self) -> &'static str;
     fn create_state(
         &self,
         config: &WebAppConfig<Self::AppConfig>,
@@ -126,7 +126,7 @@ async fn start_web_app<A: WebApplication>(_rt_handle: RtHandle, app: A) -> Resul
         log::error!("init-error - ok");
 
         let config = WebAppConfig::<A::AppConfig>::load_config(&stage).await?;
-        let telemetry_manager = TelemetryService::new(app.service_name(), &config.telemetry).await?;
+        let telemetry_manager = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
         log::info!("pre-init completed");
         (config, telemetry_manager)
     };
@@ -170,7 +170,7 @@ async fn start_web_app<A: WebApplication>(_rt_handle: RtHandle, app: A) -> Resul
             .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
             .allow_credentials(true)
     };
-    let powered_by_layer = PoweredBy::from_service_info(app.service_name(), &config.core.version)?;
+    let powered_by_layer = PoweredBy::from_service_info(app.feature_name(), &config.core.version)?;
 
     let mut doc = ApiDoc::with_default_components();
 
@@ -192,25 +192,28 @@ async fn start_web_app<A: WebApplication>(_rt_handle: RtHandle, app: A) -> Resul
     };
 
     log::info!("Creating application state...");
-    let mut router = Router::new();
+    let mut router = OpenApiRouter::new();
     let app_state = app.create_state(&config).await?;
 
     log::info!("Creating common routes...");
-    let (health_routes, health_api) = controllers::HealthController::new().into_routes().split_for_parts();
-    router = router.merge(health_routes);
-    doc.merge(health_api);
+    let health_controller = controllers::HealthController::new().into_routes();
+    router = router.nest(&format!("/{}", app.feature_name()), health_controller);
 
     log::info!("Creating application routes...");
-    let (app_routes, app_api) = app.create_routes(&config).await?.split_for_parts();
-    router = router.merge(app_routes);
-    doc.merge(app_api);
+    let app_controller = app.create_routes(&config).await?;
+    router = router.nest(&format!("/{}", app.feature_name()), app_controller);
+
+    let (router, router_api) = router.split_for_parts();
+    doc.merge(router_api);
 
     log::info!("Creating swagger-ui...");
-    let swagger = SwaggerUi::new("/doc/swagger-ui").url("/doc/openapi.json", doc).config(
-        SwaggerConfig::default()
-            .with_credentials(true)
-            .show_common_extensions(true),
-    );
+    let swagger = SwaggerUi::new(format!("/{}/doc/swagger-ui", app.feature_name()))
+        .url(format!("/{}/doc/openapi.json", app.feature_name()), doc)
+        .config(
+            SwaggerConfig::default()
+                .with_credentials(true)
+                .show_common_extensions(true),
+        );
 
     let router = router
         .merge(swagger)

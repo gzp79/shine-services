@@ -19,7 +19,7 @@ impl WebApplication for Application {
     type AppConfig = AppConfig;
     type AppState = AppState;
 
-    fn service_name(&self) -> &'static str {
+    fn feature_name(&self) -> &'static str {
         "identity"
     }
 
