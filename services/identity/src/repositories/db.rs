@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use shine_core::service::{
+use shine_core::db::{
     self, PGConnectionError, PGConnectionPool, PGCreatePoolError, PGError, RedisConnectionError, RedisConnectionPool,
 };
 use thiserror::Error as ThisError;
@@ -41,11 +41,11 @@ pub struct DBPool {
 
 impl DBPool {
     pub async fn new(config: &DBConfig) -> Result<Self, DBError> {
-        let postgres = service::create_postgres_pool(config.sql_cns.as_str())
+        let postgres = db::create_postgres_pool(config.sql_cns.as_str())
             .await
             .map_err(DBError::PGCreatePoolError)?;
 
-        let redis = service::create_redis_pool(config.redis_cns.as_str())
+        let redis = db::create_redis_pool(config.redis_cns.as_str())
             .await
             .map_err(DBError::RedisPoolError)?;
 

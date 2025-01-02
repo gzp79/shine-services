@@ -1,15 +1,10 @@
 use crate::{
-    controllers::{
-        auth::{AuthError, AuthPage, AuthSession, PageUtils, TokenCookie},
-        AppState,
-    },
+    app_state::AppState,
+    controllers::auth::{AuthError, AuthPage, AuthSession, PageUtils, TokenCookie},
     repositories::identity::{ExternalUserInfo, IdentityError, TokenKind},
     services::UserCreateError,
 };
-use shine_core::{
-    axum::SiteInfo,
-    service::{ClientFingerprint, CurrentUser},
-};
+use shine_core::web::{ClientFingerprint, CurrentUser, SiteInfo};
 use url::Url;
 
 pub struct LinkUtils<'a> {

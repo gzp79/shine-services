@@ -8,8 +8,8 @@ use crate::{
 use chrono::{Duration, Utc};
 use ring::rand::SystemRandom;
 use shine_core::{
-    axum::SiteInfo,
-    service::{self, ClientFingerprint, SessionKey},
+    db,
+    web::{ClientFingerprint, SessionKey, SiteInfo},
 };
 use shine_test::test;
 use std::env;
@@ -18,7 +18,7 @@ use uuid::Uuid;
 async fn create_db(scope: &str) -> Option<impl SessionDb + Clone> {
     match env::var("SHINE_TEST_REDIS_CNS") {
         Ok(cns) => {
-            let redis = service::create_redis_pool(cns.as_str()).await.unwrap();
+            let redis = db::create_redis_pool(cns.as_str()).await.unwrap();
             let db = RedisSessionDb::new(&redis, format!("{scope}_"), Duration::seconds(1000))
                 .await
                 .unwrap();

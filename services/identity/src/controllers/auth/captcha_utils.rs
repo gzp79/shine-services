@@ -1,7 +1,4 @@
-use crate::{
-    controllers::{auth::AuthError, AppState},
-    repositories::CaptchaValidator,
-};
+use crate::{app_state::AppState, controllers::auth::AuthError, repositories::CaptchaValidator};
 
 pub struct CaptchaUtils<'a> {
     captcha_validator: &'a CaptchaValidator,

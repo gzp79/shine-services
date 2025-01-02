@@ -1,15 +1,5 @@
-use crate::services::{PermissionError, SessionUserSyncError};
-use shine_core::axum::{IntoProblem, Problem, ProblemConfig};
-
-impl IntoProblem for PermissionError {
-    fn into_problem(self, _config: &ProblemConfig) -> Problem {
-        match self {
-            PermissionError::MissingPermission(perm) => {
-                Problem::forbidden().with_detail(format!("Missing [{:?}] permission", perm))
-            }
-        }
-    }
-}
+use crate::services::SessionUserSyncError;
+use shine_core::web::{IntoProblem, Problem, ProblemConfig};
 
 impl IntoProblem for SessionUserSyncError {
     fn into_problem(self, config: &ProblemConfig) -> Problem {

@@ -1,16 +1,15 @@
 use crate::{
-    controllers::{ApiKind, AppState},
-    services::{Permission, PermissionError},
+    app_state::AppState,
+    services::{permissions, IdentityPermissions},
 };
-use axum::{extract::State, http::StatusCode, Extension, Json};
+use axum::{extract::State, Extension, Json};
 use axum_extra::{
     headers::{authorization::Bearer, Authorization},
     TypedHeader,
 };
 use serde::{Deserialize, Serialize};
-use shine_core::{
-    axum::{ApiEndpoint, ApiMethod, IntoProblem, Problem, ProblemConfig, ValidatedJson, ValidatedPath},
-    service::CheckedCurrentUser,
+use shine_core::web::{
+    CheckedCurrentUser, IntoProblem, PermissionError, Problem, ProblemConfig, ValidatedJson, ValidatedPath,
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -18,7 +17,7 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct Path {
+pub struct PathParams {
     #[serde(rename = "id")]
     user_id: Uuid,
 }
@@ -37,17 +36,30 @@ pub struct UserRoles {
 #[schema(example = json!({
     "role": "Role"
 }))]
-struct AddUserRole {
+pub struct AddUserRole {
     #[validate(length(min = 1, max = 63))]
     role: String,
 }
 
-async fn add_user_role(
+#[utoipa::path(
+    put,
+    path = "/api/identities/:id/roles",
+    tag = "identity",
+    params(
+        PathParams
+    ),
+    request_body = AddUserRole,
+    responses(
+        (status = OK, body = UserRoles),
+        //(status = BAD_REQUEST, body = Problem)
+    )
+)]
+pub async fn add_user_role(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     auth_key: Option<TypedHeader<Authorization<Bearer>>>,
-    ValidatedPath(path): ValidatedPath<Path>,
+    ValidatedPath(path): ValidatedPath<PathParams>,
     ValidatedJson(params): ValidatedJson<AddUserRole>,
 ) -> Result<Json<UserRoles>, Problem> {
     if let (Some(auth_key), Some(master_key_hash)) = (
@@ -56,11 +68,14 @@ async fn add_user_role(
     ) {
         log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
-            return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into_problem(&problem_config));
+            return Err(
+                PermissionError::MissingPermission(permissions::UPDATE_ANY_USER_ROLE).into_problem(&problem_config)
+            );
         }
     } else {
         log::trace!("Using cookie");
-        state.check_permission(&user, Permission::UpdateAnyUserRole).await?;
+        user.identity_permissions()
+            .check(permissions::UPDATE_ANY_USER_ROLE, &problem_config)?;
     }
 
     state
@@ -81,23 +96,24 @@ async fn add_user_role(
     Ok(Json(UserRoles { roles }))
 }
 
-pub fn ep_add_user_role() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Put, ApiKind::Api("/identities/:id/roles"), add_user_role)
-        .with_operation_id("add_user_role")
-        .with_tag("identity")
-        //.with_required_user([Permission::UpdateAnyUserRole])
-        .with_path_parameter::<Path>()
-        .with_json_request::<AddUserRole>()
-        .with_json_response::<UserRoles>(StatusCode::OK)
-        .with_problem_response(&[StatusCode::BAD_REQUEST])
-}
-
-async fn get_user_roles(
+#[utoipa::path(
+    get,
+    path = "/api/identities/:id/roles",
+    tag = "identity",
+    params(
+        PathParams
+    ),
+    responses(
+        (status = OK, body = UserRoles),
+        //(status = BAD_REQUEST, body = Problem)
+    )
+)]
+pub async fn get_user_roles(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     auth_key: Option<TypedHeader<Authorization<Bearer>>>,
-    ValidatedPath(path): ValidatedPath<Path>,
+    ValidatedPath(path): ValidatedPath<PathParams>,
 ) -> Result<Json<UserRoles>, Problem> {
     if let (Some(auth_key), Some(master_key_hash)) = (
         auth_key.map(|auth| auth.token().to_owned()),
@@ -105,11 +121,14 @@ async fn get_user_roles(
     ) {
         log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
-            return Err(PermissionError::MissingPermission(Permission::ReadAnyUserRole).into_problem(&problem_config));
+            return Err(
+                PermissionError::MissingPermission(permissions::READ_ANY_USER_ROLE).into_problem(&problem_config)
+            );
         }
     } else {
         log::trace!("Using cookie");
-        state.check_permission(&user, Permission::ReadAnyUserRole).await?;
+        user.identity_permissions()
+            .check(permissions::READ_ANY_USER_ROLE, &problem_config)?;
     }
 
     let roles = state
@@ -124,32 +143,35 @@ async fn get_user_roles(
     Ok(Json(UserRoles { roles }))
 }
 
-pub fn ep_get_user_roles() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/identities/:id/roles"), get_user_roles)
-        .with_operation_id("get_user_roles")
-        .with_tag("identity")
-        //.with_required_user([Permission::ReadAnyUserRole])
-        .with_path_parameter::<Path>()
-        .with_json_response::<UserRoles>(StatusCode::OK)
-        .with_problem_response(&[StatusCode::BAD_REQUEST])
-}
-
 #[derive(Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[schema(example = json!({
     "role": "Role"
 }))]
-struct DeleteUserRole {
+pub struct DeleteUserRole {
     #[validate(length(min = 1, max = 32))]
     role: String,
 }
 
-async fn delete_user_role(
+#[utoipa::path(
+    delete,
+    path = "/api/identities/:id/roles",
+    tag = "identity",
+    params(
+        PathParams
+    ),
+    request_body = DeleteUserRole,
+    responses(
+        (status = OK, body = UserRoles),
+        //(status = BAD_REQUEST, body = Problem)
+    )
+)]
+pub async fn delete_user_role(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     auth_key: Option<TypedHeader<Authorization<Bearer>>>,
-    ValidatedPath(path): ValidatedPath<Path>,
+    ValidatedPath(path): ValidatedPath<PathParams>,
     ValidatedJson(params): ValidatedJson<DeleteUserRole>,
 ) -> Result<Json<UserRoles>, Problem> {
     if let (Some(auth_key), Some(master_key)) = (
@@ -158,11 +180,14 @@ async fn delete_user_role(
     ) {
         log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key).unwrap_or(false) {
-            return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into_problem(&problem_config));
+            return Err(
+                PermissionError::MissingPermission(permissions::UPDATE_ANY_USER_ROLE).into_problem(&problem_config)
+            );
         }
     } else {
         log::trace!("Using cookie");
-        state.check_permission(&user, Permission::UpdateAnyUserRole).await?;
+        user.identity_permissions()
+            .check(permissions::UPDATE_ANY_USER_ROLE, &problem_config)?;
     }
 
     state
@@ -181,21 +206,6 @@ async fn delete_user_role(
         .map_err(|err| err.into_problem(&problem_config))?;
 
     Ok(Json(UserRoles { roles }))
-}
-
-pub fn ep_delete_user_role() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(
-        ApiMethod::Delete,
-        ApiKind::Api("/identities/:id/roles"),
-        delete_user_role,
-    )
-    .with_operation_id("ep_delete_user_role")
-    .with_tag("identity")
-    //.with_required_user([Permission::UpdateAnyUserRole])
-    .with_path_parameter::<Path>()
-    .with_json_request::<DeleteUserRole>()
-    .with_json_response::<UserRoles>(StatusCode::OK)
-    .with_problem_response(&[StatusCode::BAD_REQUEST])
 }
 
 #[cfg(test)]

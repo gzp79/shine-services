@@ -1,5 +1,5 @@
 use serde::Serialize;
-use shine_core::axum::InputError;
+use shine_core::web::InputError;
 use thiserror::Error as ThisError;
 
 use super::OIDCDiscoveryError;

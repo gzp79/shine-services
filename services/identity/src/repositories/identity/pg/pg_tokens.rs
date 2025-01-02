@@ -6,9 +6,9 @@ use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use postgres_from_row::FromRow;
 use shine_core::{
-    axum::SiteInfo,
+    db::{PGClient, PGConvertError, PGErrorChecks, ToPGType},
     pg_query,
-    service::{ClientFingerprint, PGClient, PGConvertError, PGErrorChecks, ToPGType},
+    web::{ClientFingerprint, SiteInfo},
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type as PGType};
 use tracing::instrument;

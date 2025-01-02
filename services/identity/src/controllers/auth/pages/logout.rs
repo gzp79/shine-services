@@ -1,20 +1,18 @@
 use crate::{
-    controllers::{
-        auth::{AuthError, AuthPage, AuthSession, PageUtils},
-        ApiKind, AppState,
-    },
+    app_state::AppState,
+    controllers::auth::{AuthError, AuthPage, AuthSession, PageUtils},
     repositories::identity::TokenKind,
 };
 use axum::extract::State;
 use serde::Deserialize;
-use shine_core::axum::{ApiEndpoint, ApiMethod, ConfiguredProblem, InputError, ValidatedQuery};
+use shine_core::web::{ConfiguredProblem, InputError, ValidatedQuery};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct QueryParams {
+pub struct QueryParams {
     terminate_all: Option<bool>,
     #[param(value_type=Option<String>)]
     redirect_url: Option<Url>,
@@ -22,7 +20,18 @@ struct QueryParams {
     error_url: Option<Url>,
 }
 
-async fn logout(
+#[utoipa::path(
+    get,
+    path = "/auth/logout",
+    tag = "page",
+    params(
+        QueryParams
+    ),
+    responses(
+        (status = OK, description="Html page to update clear client cookies and complete user logout")
+    )
+)]
+pub async fn logout(
     State(state): State<AppState>,
     mut auth_session: AuthSession,
     query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
@@ -69,12 +78,4 @@ async fn logout(
 
     auth_session.clear();
     PageUtils::new(&state).redirect(auth_session, None, query.redirect_url.as_ref())
-}
-
-pub fn page_logout() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/logout"), logout)
-        .with_operation_id("page_logout")
-        .with_tag("page")
-        .with_query_parameter::<QueryParams>()
-        .with_page_response("Html page to update clear client cookies and complete user logout")
 }

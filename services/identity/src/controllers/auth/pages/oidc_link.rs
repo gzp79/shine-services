@@ -1,6 +1,6 @@
-use crate::controllers::{
-    auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, OIDCClient, PageUtils},
-    ApiKind, AppState,
+use crate::{
+    app_state::AppState,
+    controllers::auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, OIDCClient, PageUtils},
 };
 use axum::{extract::State, Extension};
 use chrono::Duration;
@@ -10,24 +10,36 @@ use openidconnect::{
     Nonce,
 };
 use serde::Deserialize;
-use shine_core::axum::{ApiEndpoint, ApiMethod, ConfiguredProblem, InputError, OpenApiUrl, ValidatedQuery};
+use shine_core::web::{ConfiguredProblem, InputError, ValidatedQuery};
 use std::sync::Arc;
+use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct Query {
-    redirect_url: Option<OpenApiUrl>,
-    error_url: Option<OpenApiUrl>,
+pub struct QueryParams {
+    redirect_url: Option<Url>,
+    error_url: Option<Url>,
 }
 
 /// Link the current user to an OpenId Connect provider.
-async fn oidc_link(
+#[utoipa::path(
+    get,
+    path = "/link",
+    tag = "page",
+    params(
+        QueryParams
+    ),
+    responses(
+        (status = OK, description="Html page to update client cookies and redirect user to start interactive OpenIdConnect login flow")
+    )
+)]
+pub async fn oidc_link(
     State(state): State<AppState>,
     Extension(client): Extension<Arc<OIDCClient>>,
     mut auth_session: AuthSession,
-    query: Result<ValidatedQuery<Query>, ConfiguredProblem<InputError>>,
+    query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
@@ -35,23 +47,19 @@ async fn oidc_link(
     };
 
     if auth_session.user_session.is_none() {
-        return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_deref());
+        return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
     }
 
     let core_client = match client.client().await {
         Ok(client) => client,
         Err(err) => {
-            return PageUtils::new(&state).error(
-                auth_session,
-                AuthError::OIDCDiscovery(err),
-                query.error_url.as_deref(),
-            )
+            return PageUtils::new(&state).error(auth_session, AuthError::OIDCDiscovery(err), query.error_url.as_ref())
         }
     };
 
     let key = match state.token_service().generate() {
         Ok(key) => key,
-        Err(err) => return PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_deref()),
+        Err(err) => return PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_ref()),
     };
 
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -72,25 +80,11 @@ async fn oidc_link(
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
         nonce: Some(nonce.secret().to_owned()),
-        target_url: query.redirect_url.map(|url| url.into_url()),
-        error_url: query.error_url.map(|url| url.into_url()),
+        target_url: query.redirect_url,
+        error_url: query.error_url,
         remember_me: false,
         linked_user: auth_session.user_session.clone(),
     });
 
     PageUtils::new(&state).redirect(auth_session, Some(&client.provider), Some(&authorize_url))
-}
-
-pub fn page_oidc_link(provider: &str) -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(
-        ApiMethod::Get,
-        ApiKind::Page(&format!("/auth/{provider}/link")),
-        oidc_link,
-    )
-    .with_operation_id(format!("{provider}_link"))
-    .with_tag("page")
-    .with_query_parameter::<Query>()
-    .with_page_response(
-        "Html page to update client cookies and redirect user to start interactive OpenIdConnect login flow",
-    )
 }

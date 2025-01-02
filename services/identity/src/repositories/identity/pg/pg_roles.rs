@@ -4,8 +4,8 @@ use crate::repositories::{
 };
 use postgres_from_row::FromRow;
 use shine_core::{
+    db::{PGClient, PGErrorChecks},
     pg_query,
-    service::{PGClient, PGErrorChecks},
 };
 use tracing::instrument;
 use uuid::Uuid;

@@ -1,13 +1,13 @@
-use crate::controllers::{ApiKind, AppState};
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, Json};
 use bb8::State as BB8PoolState;
 use serde::Serialize;
-use shine_core::axum::{ApiEndpoint, ApiMethod};
 use utoipa::ToSchema;
+
+use crate::app_state::AppState;
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct DBState {
+pub struct DBState {
     pub connections: u32,
     pub idle_connections: u32,
 }
@@ -23,26 +23,26 @@ impl From<BB8PoolState> for DBState {
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct ServiceHealth {
+pub struct ServiceHealth {
     pub app: String,
     pub version: String,
     pub postgres: DBState,
     pub redis: DBState,
 }
 
-async fn get_service_status(State(state): State<AppState>) -> Json<ServiceHealth> {
+#[utoipa::path(
+    get,
+    path = "/api/telemetry/status",
+    tag = "health",
+    responses(
+        (status = OK, body = ServiceHealth)
+    )
+)]
+pub async fn get_service_status(State(state): State<AppState>) -> Json<ServiceHealth> {
     Json(ServiceHealth {
         app: state.settings().app_name.clone(),
         version: state.settings().app_version.clone(),
         postgres: DBState::from(state.db().postgres.state()),
         redis: DBState::from(state.db().redis.state()),
     })
-}
-
-pub fn ep_get_service_status() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/telemetry/status"), get_service_status)
-        .with_operation_id("get_service_status")
-        .with_tag("health")
-        .with_schema::<DBState>()
-        .with_json_response::<ServiceHealth>(StatusCode::OK)
 }

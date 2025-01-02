@@ -1,19 +1,13 @@
-use axum::{extract::State, http::StatusCode, Extension, Json};
+use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::{
-    axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig, ValidatedPath},
-    service::CheckedCurrentUser,
-};
+use shine_core::web::{CheckedCurrentUser, Problem, ProblemConfig, ValidatedPath};
 use url::Url;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::{
-    controllers::{ApiKind, AppState},
-    repositories::identity::ExternalLink,
-};
+use crate::{app_state::AppState, repositories::identity::ExternalLink};
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -45,7 +39,15 @@ pub struct LinkedExternalProviders {
     links: Vec<LinkedExternalProvider>,
 }
 
-async fn list_external_links(
+#[utoipa::path(
+    get,
+    path  = "/api/auth/user/links",
+    tag = "auth",
+    responses(
+        (status = OK, body = LinkedExternalProviders)
+    )
+)]
+pub async fn list_external_links(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
@@ -61,22 +63,25 @@ async fn list_external_links(
     Ok(Json(LinkedExternalProviders { links }))
 }
 
-pub fn ep_list_external_links() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/links"), list_external_links)
-        .with_operation_id("list_external_links")
-        .with_tag("auth")
-        .with_schema::<LinkedExternalProvider>()
-        .with_json_response::<LinkedExternalProviders>(StatusCode::OK)
-}
-
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct ProviderSelectPathParam {
+pub struct ProviderSelectPathParam {
     provider: String,
     provider_id: String,
 }
 
-async fn delete_external_link(
+#[utoipa::path(
+    delete,
+    path  = "/api/auth/user/links/:provider/:providerId",
+    tag = "auth",
+    params(
+        ProviderSelectPathParam
+    ),
+    responses(
+        (status = OK, description = "Token revoked") 
+    )
+)]
+pub async fn delete_external_link(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
@@ -98,16 +103,4 @@ async fn delete_external_link(
     } else {
         Ok(())
     }
-}
-
-pub fn ep_delete_external_link() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(
-        ApiMethod::Delete,
-        ApiKind::Api("/auth/user/links/:provider/:providerId"),
-        delete_external_link,
-    )
-    .with_operation_id("delete_external_link")
-    .with_tag("auth")
-    .with_path_parameter::<ProviderSelectPathParam>()
-    .with_status_response(StatusCode::OK, "Token revoked")
 }

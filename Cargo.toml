@@ -7,6 +7,7 @@ members = [
 	"crates/shine-core-macros",
 	"crates/shine-core",
 	"services/identity",
+	"services/command",
 ]
 
 [workspace.package]
@@ -82,6 +83,7 @@ utoipa = { version = "5.2", features = [
 	"chrono",
 	"debug",
 ] }
+utoipa-axum = "0.1"
 utoipa-swagger-ui = { version = "8.0", features = ["axum"] }
 
 ############################# WASM #############################

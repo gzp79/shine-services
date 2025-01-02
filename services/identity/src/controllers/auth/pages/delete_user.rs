@@ -1,17 +1,17 @@
-use crate::controllers::{
-    auth::{AuthError, AuthPage, AuthSession, PageUtils},
-    ApiKind, AppState,
+use crate::{
+    app_state::AppState,
+    controllers::auth::{AuthError, AuthPage, AuthSession, PageUtils},
 };
 use axum::extract::State;
 use serde::Deserialize;
-use shine_core::axum::{ApiEndpoint, ApiMethod, ConfiguredProblem, InputError, ValidatedQuery};
+use shine_core::web::{ConfiguredProblem, InputError, ValidatedQuery};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct QueryParams {
+pub struct QueryParams {
     /// Set to true. Mainly used to avoid some accidental automated deletion.
     /// It is suggested to have some confirmation on the UI (for example enter the name of the user to be deleted) and
     /// set the value of the property to the result of the confirmation.
@@ -24,7 +24,18 @@ struct QueryParams {
 
 /// Delete he current user. This is not a soft delete, once executed there is no way back.
 /// Note, it only deletes the user and login credentials, but not the data of the user.
-async fn delete_user(
+#[utoipa::path(
+    get,
+    path = "/auth/delete",
+    tag = "page",
+    params(
+        QueryParams
+    ),
+    responses(
+        (status = OK, description="Html page to update clear client cookies and complete user deletion")
+    )
+)]
+pub async fn delete_user(
     State(state): State<AppState>,
     mut auth_session: AuthSession,
     query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
@@ -65,12 +76,4 @@ async fn delete_user(
     }
 
     PageUtils::new(&state).redirect(auth_session, None, query.redirect_url.as_ref())
-}
-
-pub fn page_delete_user() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Page("/auth/delete"), delete_user)
-        .with_operation_id("delete_user")
-        .with_tag("page")
-        .with_query_parameter::<QueryParams>()
-        .with_page_response("Html page to update clear client cookies and complete user deletion")
 }

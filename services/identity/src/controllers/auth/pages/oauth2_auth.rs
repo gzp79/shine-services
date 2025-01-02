@@ -1,27 +1,35 @@
-use crate::controllers::{
-    auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, LinkUtils, OAuth2Client, PageUtils},
-    ApiKind, AppState,
+use crate::{
+    app_state::AppState,
+    controllers::auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, LinkUtils, OAuth2Client, PageUtils},
 };
 use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
-use shine_core::{
-    axum::{ApiEndpoint, ApiMethod, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery},
-    service::ClientFingerprint,
-};
+use shine_core::web::{ClientFingerprint, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery};
 use std::sync::Arc;
 use utoipa::IntoParams;
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct QueryParams {
+pub struct QueryParams {
     code: String,
     state: String,
 }
 
 /// Process the authentication redirect from the OAuth2 provider.
-async fn oauth2_auth(
+#[utoipa::path(
+    get,
+    path = "/auth",
+    tag = "page",
+    params(
+        QueryParams
+    ),
+    responses(
+        (status = OK, description="Html page to update client cookies and complete the oauth2 login flow")
+    )
+)]
+pub async fn oauth2_auth(
     State(state): State<AppState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
     mut auth_session: AuthSession,
@@ -116,16 +124,4 @@ async fn oauth2_auth(
             )
             .await
     }
-}
-
-pub fn page_oauth2_auth(provider: &str) -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(
-        ApiMethod::Get,
-        ApiKind::Page(&format!("/auth/{provider}/auth")),
-        oauth2_auth,
-    )
-    .with_operation_id(format!("{provider}_auth"))
-    .with_tag("page")
-    .with_query_parameter::<QueryParams>()
-    .with_page_response("Html page to update client cookies and complete the oauth2 login flow")
 }

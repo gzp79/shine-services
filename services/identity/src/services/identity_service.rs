@@ -4,7 +4,10 @@ use crate::repositories::identity::{
 };
 use chrono::Duration;
 use ring::digest;
-use shine_core::{axum::SiteInfo, service::ClientFingerprint, utils::IdEncoder};
+use shine_core::{
+    utils::IdEncoder,
+    web::{ClientFingerprint, SiteInfo},
+};
 use uuid::Uuid;
 
 pub struct IdentityService<DB>

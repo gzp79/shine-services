@@ -1,16 +1,13 @@
 use crate::{
-    controllers::{ApiKind, AppState},
+    app_state::AppState,
     repositories::identity::{TokenInfo, TokenKind},
 };
-use axum::{extract::State, http::StatusCode, Extension, Json};
+use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::{
-    axum::{
-        ApiEndpoint, ApiMethod, IntoProblem, Problem, ProblemConfig, SiteInfo, ValidatedJson, ValidatedPath,
-        ValidationErrorEx,
-    },
-    service::{CheckedCurrentUser, ClientFingerprint},
+use shine_core::web::{
+    CheckedCurrentUser, ClientFingerprint, IntoProblem, Problem, ProblemConfig, SiteInfo, ValidatedJson, ValidatedPath,
+    ValidationErrorEx,
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -18,7 +15,7 @@ use validator::{Validate, ValidationError};
 
 #[derive(Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct CreateTokenRequest {
+pub struct CreateTokenRequest {
     /// The kind of token to create, Allowed kinds are apiKey or singleAccess.
     /// access token can be created only through the login endpoint with enabled remember-me.
     #[validate(custom(function = "validate_allowed_kind"))]
@@ -41,7 +38,7 @@ fn validate_allowed_kind(kind: &TokenKind) -> Result<(), ValidationError> {
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct CreatedToken {
+pub struct CreatedToken {
     /// The kind of the created token
     kind: TokenKind,
     /// The new token. Backend does not store the raw token and it is not possible to retrieve it.
@@ -54,7 +51,16 @@ struct CreatedToken {
     expire_at: DateTime<Utc>,
 }
 
-async fn create_token(
+#[utoipa::path(
+    post,
+    path = "/api/auth/user/tokens",
+    tag = "auth",
+    request_body = CreateTokenRequest,
+    responses(
+        (status = OK, body = CreatedToken)
+    )
+)]
+pub async fn create_token(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
@@ -95,18 +101,9 @@ async fn create_token(
     }))
 }
 
-pub fn ep_create_token() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Post, ApiKind::Api("/auth/user/tokens"), create_token)
-        .with_operation_id("create_token")
-        .with_tag("auth")
-        //.with_checked_user()
-        .with_json_request::<CreateTokenRequest>()
-        .with_json_response::<CreatedToken>(StatusCode::OK)
-}
-
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct TokenHash {
+pub struct TokenHash {
     hash: String,
 }
 
@@ -148,7 +145,19 @@ impl From<TokenInfo> for ActiveToken {
     }
 }
 
-async fn get_token(
+#[utoipa::path(
+    get,
+    path = "/api/auth/user/tokens/:hash",
+    tag = "auth",
+    params(
+        TokenHash
+    ),
+    responses(
+        (status = OK, body = ActiveToken)
+    )
+)]
+
+pub async fn get_token(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
@@ -180,15 +189,16 @@ async fn get_token(
     }
 }
 
-pub fn ep_get_token() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/tokens/:hash"), get_token)
-        .with_operation_id("get_token")
-        .with_tag("auth")
-        .with_path_parameter::<TokenHash>()
-        .with_json_response::<ActiveToken>(StatusCode::OK)
-}
-
-async fn delete_token(
+#[utoipa::path(
+    delete,
+    path = "/api/auth/user/tokens/:hash",
+    tag = "auth",
+    params(TokenHash),
+    responses(
+        (status = OK, description = "Token revoked")
+    )
+)]
+pub async fn delete_token(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
@@ -207,15 +217,15 @@ async fn delete_token(
     }
 }
 
-pub fn ep_delete_token() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Delete, ApiKind::Api("/auth/user/tokens/:hash"), delete_token)
-        .with_operation_id("delete_token")
-        .with_tag("auth")
-        .with_path_parameter::<TokenHash>()
-        .with_status_response(StatusCode::OK, "Token revoked")
-}
-
-async fn list_tokens(
+#[utoipa::path(
+    get,
+    path = "/api/auth/user/tokens",
+    tag = "auth",
+    responses(
+        (status = OK, body = ActiveTokens)
+    )
+)]
+pub async fn list_tokens(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
@@ -229,12 +239,4 @@ async fn list_tokens(
         .map(ActiveToken::from)
         .collect();
     Ok(Json(ActiveTokens { tokens }))
-}
-
-pub fn ep_list_tokens() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/tokens"), list_tokens)
-        .with_operation_id("list_tokens")
-        .with_tag("auth")
-        .with_schema::<ActiveToken>()
-        .with_json_response::<ActiveTokens>(StatusCode::OK)
 }

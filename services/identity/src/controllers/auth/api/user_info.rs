@@ -1,14 +1,8 @@
-use crate::{
-    controllers::{ApiKind, AppState},
-    repositories::identity::IdentityKind,
-};
-use axum::{extract::State, http::StatusCode, Extension, Json};
+use crate::{app_state::AppState, repositories::identity::IdentityKind};
+use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::{
-    axum::{ApiEndpoint, ApiMethod, Problem, ProblemConfig, ValidatedQuery},
-    service::{CheckedCurrentUser, CurrentUser},
-};
+use shine_core::web::{CheckedCurrentUser, CurrentUser, Problem, ProblemConfig, ValidatedQuery};
 use url::Url;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -16,13 +10,13 @@ use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-struct QueryParams {
+pub struct QueryParams {
     refresh: Option<bool>,
 }
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct CurrentUserInfo {
+pub struct CurrentUserInfo {
     user_id: Uuid,
     kind: IdentityKind,
     name: String,
@@ -36,7 +30,18 @@ struct CurrentUserInfo {
 
 /// Get the information about the current user. The cookie is not accessible
 /// from javascript, thus this endpoint can be used to get details about the current user.
-async fn get_user_info(
+#[utoipa::path(
+    get,
+    path = "/api/auth/user/info",
+    tag = "auth",
+    params(
+        QueryParams
+    ),
+    responses(
+        (status = OK, body = CurrentUserInfo)
+    )
+)]
+pub async fn get_user_info(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
@@ -103,12 +108,4 @@ async fn get_user_info(
         session_length,
         roles: user_info.roles,
     }))
-}
-
-pub fn ep_get_user_info() -> ApiEndpoint<AppState> {
-    ApiEndpoint::new(ApiMethod::Get, ApiKind::Api("/auth/user/info"), get_user_info)
-        .with_operation_id("get_user_info")
-        .with_tag("auth")
-        .with_query_parameter::<QueryParams>()
-        .with_json_response::<CurrentUserInfo>(StatusCode::OK)
 }

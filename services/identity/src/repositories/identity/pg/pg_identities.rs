@@ -6,8 +6,8 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
 use shine_core::{
+    db::{PGClient, PGConvertError, PGErrorChecks, ToPGType},
     pg_query,
-    service::{PGClient, PGConvertError, PGErrorChecks, ToPGType},
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type};
 use tracing::instrument;

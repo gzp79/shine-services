@@ -16,7 +16,7 @@
       "command": "cargo clippy ${input:projects} --all-targets",
       "problemMatcher": ["$rustc"],
       "group": "build"
-    },   
+    },
     {
       "label": "build",
       "type": "shell",
@@ -58,21 +58,63 @@
       "isBackground": true
     },
     {
-      "label": "identity: dev",
+      "label": "identity: cloud",
       "type": "shell",
-      "command": "cargo run -p shine-identity --release -- dev",
-      "options": { "cwd": "services/identity" },
+      "command": "cargo run -p shine-identity --release -- prod",
+      "options": {
+        "cwd": "services/identity",
+        "env": {
+          "SERVICE--TLS--CERT": "../../certs/test.crt",
+          "SERVICE--TLS--KEY": "../../certs/test.key",
+          "SERVICE--port": "8443",
+          "AUTH--AUTHBASEURL": "https://local.scytta.com:8443/identity/auth/"
+        }
+      },
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
     {
       "label": "identity: local",
       "type": "shell",
-      "command": "cargo run -p shine-identity --release -- local",
-      "options": { 
+      "command": "cargo run -p shine-identity --release -- test",
+      "options": {
         "cwd": "services/identity",
         "env": {
-          "RUST_BACKTRACE": "full"
+          "RUST_BACKTRACE": "full",
+          "SERVICE--TLS--CERT": "../../certs/test.crt",
+          "SERVICE--TLS--KEY": "../../certs/test.key",
+          "SERVICE--port": "8443"
+        }
+      },
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "command: cloud",
+      "type": "shell",
+      "command": "cargo run -p shine-command --release -- prod",
+      "options": {
+        "cwd": "services/command",
+        "env": {
+          "SERVICE--TLS--CERT": "../../certs/test.crt",
+          "SERVICE--TLS--KEY": "../../certs/test.key",
+          "SERVICE--port": "8443"
+        }
+      },
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "command: local",
+      "type": "shell",
+      "command": "cargo run -p shine-command --release -- test",
+      "options": {
+        "cwd": "services/command",
+        "env": {
+          "RUST_BACKTRACE": "full",
+          "SERVICE--TLS--CERT": "../../certs/test.crt",
+          "SERVICE--TLS--KEY": "../../certs/test.key",
+          "SERVICE--port": "8443"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -85,12 +127,13 @@
       "id": "projects",
       "description": "Select project",
       "options": [
-        { "label": "all", "value": "" }, 
-        { "label": "shine-identity", "value": "-p shine-identity" }, 
-        { "label": "shine-core", "value": "-p shine-core" }, 
-        { "label": "shine-core-macros", "value": "-p shine-core-macros" }, 
-        { "label": "shine-test", "value": "-p shine-test" }, 
-        { "label": "shine-test-macros", "value": "-p shine-test-macros" }, 
+        { "label": "all", "value": "" },
+        { "label": "shine-command", "value": "-p shine-command" },
+        { "label": "shine-identity", "value": "-p shine-identity" },
+        { "label": "shine-core", "value": "-p shine-core" },
+        { "label": "shine-core-macros", "value": "-p shine-core-macros" },
+        { "label": "shine-test", "value": "-p shine-test" },
+        { "label": "shine-test-macros", "value": "-p shine-test-macros" }
       ],
       "default": "asset-service"
     }
