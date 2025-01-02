@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    services::{Permission, PermissionError},
+    services::{permissions, IdentityPermissions},
 };
 use axum::{extract::State, Extension, Json};
 use axum_extra::{
@@ -8,9 +8,8 @@ use axum_extra::{
     TypedHeader,
 };
 use serde::{Deserialize, Serialize};
-use shine_core::{
-    service::CheckedCurrentUser,
-    web::{IntoProblem, Problem, ProblemConfig, ValidatedJson, ValidatedPath},
+use shine_core::web::{
+    CheckedCurrentUser, IntoProblem, PermissionError, Problem, ProblemConfig, ValidatedJson, ValidatedPath,
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -69,11 +68,14 @@ pub async fn add_user_role(
     ) {
         log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
-            return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into_problem(&problem_config));
+            return Err(
+                PermissionError::MissingPermission(permissions::UPDATE_ANY_USER_ROLE).into_problem(&problem_config)
+            );
         }
     } else {
         log::trace!("Using cookie");
-        state.check_permission(&user, Permission::UpdateAnyUserRole).await?;
+        user.identity_permissions()
+            .check(permissions::UPDATE_ANY_USER_ROLE, &problem_config)?;
     }
 
     state
@@ -119,11 +121,14 @@ pub async fn get_user_roles(
     ) {
         log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
-            return Err(PermissionError::MissingPermission(Permission::ReadAnyUserRole).into_problem(&problem_config));
+            return Err(
+                PermissionError::MissingPermission(permissions::READ_ANY_USER_ROLE).into_problem(&problem_config)
+            );
         }
     } else {
         log::trace!("Using cookie");
-        state.check_permission(&user, Permission::ReadAnyUserRole).await?;
+        user.identity_permissions()
+            .check(permissions::READ_ANY_USER_ROLE, &problem_config)?;
     }
 
     let roles = state
@@ -175,11 +180,14 @@ pub async fn delete_user_role(
     ) {
         log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key).unwrap_or(false) {
-            return Err(PermissionError::MissingPermission(Permission::UpdateAnyUserRole).into_problem(&problem_config));
+            return Err(
+                PermissionError::MissingPermission(permissions::UPDATE_ANY_USER_ROLE).into_problem(&problem_config)
+            );
         }
     } else {
         log::trace!("Using cookie");
-        state.check_permission(&user, Permission::UpdateAnyUserRole).await?;
+        user.identity_permissions()
+            .check(permissions::UPDATE_ANY_USER_ROLE, &problem_config)?;
     }
 
     state

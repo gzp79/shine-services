@@ -33,7 +33,7 @@ impl WebApplication for Application {
     ) -> Result<OpenApiRouter<Self::AppState>, AnyError> {
         let health_controller = HealthController::new().into_router();
         let identity_controller = identity::IdentityController::new().into_router();
-        let auth_controller = auth::AuthController::new(&config).await?.into_router();
+        let auth_controller = auth::AuthController::new(config).await?.into_router();
 
         Ok(health_controller.merge(identity_controller).merge(auth_controller))
     }

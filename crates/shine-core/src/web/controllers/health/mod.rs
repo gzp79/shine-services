@@ -2,13 +2,9 @@ mod api;
 
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub struct HealthController();
+pub struct HealthController;
 
 impl HealthController {
-    pub fn new() -> Self {
-        Self()
-    }
-
     pub fn into_routes<S>(self) -> OpenApiRouter<S>
     where
         S: Clone + Send + Sync + 'static,

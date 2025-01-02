@@ -10,10 +10,7 @@ use axum_extra::{
     TypedHeader,
 };
 use serde::Deserialize;
-use shine_core::{
-    service::CurrentUser,
-    web::{ClientFingerprint, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery},
-};
+use shine_core::web::{ClientFingerprint, ConfiguredProblem, CurrentUser, InputError, SiteInfo, ValidatedQuery};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;

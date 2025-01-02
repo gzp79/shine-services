@@ -7,7 +7,7 @@ use crate::app_state::AppState;
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct DBState {
+pub struct DBState {
     pub connections: u32,
     pub idle_connections: u32,
 }

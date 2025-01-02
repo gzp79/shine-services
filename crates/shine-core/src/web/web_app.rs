@@ -1,9 +1,8 @@
 use crate::{
-    service::UserSessionCacheReader,
     telemetry::TelemetryService,
     web::{
         controllers::{self, ApiUrl},
-        PoweredBy, ProblemConfig,
+        PoweredBy, ProblemConfig, UserSessionCacheReader, WebAppConfig,
     },
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -31,8 +30,6 @@ use utoipa::{
 };
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
-
-use super::WebAppConfig;
 
 #[derive(OpenApi)]
 #[openapi(paths(), components(), tags())]
@@ -196,7 +193,7 @@ async fn start_web_app<A: WebApplication>(_rt_handle: RtHandle, app: A) -> Resul
     let app_state = app.create_state(&config).await?;
 
     log::info!("Creating common routes...");
-    let health_controller = controllers::HealthController::new().into_routes();
+    let health_controller = controllers::HealthController.into_routes();
     router = router.nest(&format!("/{}", app.feature_name()), health_controller);
 
     log::info!("Creating application routes...");

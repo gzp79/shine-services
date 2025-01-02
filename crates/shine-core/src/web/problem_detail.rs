@@ -8,7 +8,6 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::fmt;
 use url::Url;
-use utoipa::ToSchema;
 
 #[derive(Clone)]
 pub struct ProblemConfig {

@@ -22,5 +22,11 @@ mod client_fingerprint;
 pub use self::client_fingerprint::*;
 mod validated;
 pub use self::validated::*;
+mod session_key;
+pub use self::session_key::*;
+mod user_session;
+pub use self::user_session::*;
+mod permission_set;
+pub use self::permission_set::*;
 
 pub mod controllers;

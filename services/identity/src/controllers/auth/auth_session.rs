@@ -14,10 +14,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Utc};
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
-use shine_core::{
-    service::{CheckedCurrentUser, CurrentUser},
-    web::WebAppConfig,
-};
+use shine_core::web::{CheckedCurrentUser, CurrentUser, WebAppConfig};
 use std::{convert::Infallible, sync::Arc};
 use thiserror::Error as ThisError;
 use time::{Duration, OffsetDateTime};

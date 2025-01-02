@@ -2,10 +2,7 @@ use crate::{app_state::AppState, repositories::identity::IdentityKind};
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::{
-    service::{CheckedCurrentUser, CurrentUser},
-    web::{Problem, ProblemConfig, ValidatedQuery},
-};
+use shine_core::web::{CheckedCurrentUser, CurrentUser, Problem, ProblemConfig, ValidatedQuery};
 use url::Url;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;

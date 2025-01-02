@@ -220,7 +220,7 @@ impl TelemetryService {
             Tracing::StdOut => {
                 log::info!("Registering StdOut tracing...");
                 let exporter = opentelemetry_stdout::SpanExporter::default();
-                self.install_ot_tracing(config, exporter, &resource, &scope)?;
+                self.install_ot_tracing(config, exporter, resource, scope)?;
             }
             #[cfg(feature = "ot_otlp")]
             Tracing::OpenTelemetryProtocol { endpoint } => {
@@ -229,13 +229,13 @@ impl TelemetryService {
                     .with_tonic()
                     .with_endpoint(endpoint)
                     .build()?;
-                self.install_ot_tracing(config, exporter, &resource, &scope)?;
+                self.install_ot_tracing(config, exporter, resource, scope)?;
             }
             #[cfg(feature = "ot_zipkin")]
             Tracing::Zipkin => {
                 log::info!("Registering Zipkin tracing...");
                 let exporter = opentelemetry_zipkin::new_pipeline().init_exporter()?;
-                self.install_ot_tracing(config, exporter, &resource, &scope)?;
+                self.install_ot_tracing(config, exporter, resource, scope)?;
             }
             #[cfg(feature = "ot_app_insight")]
             Tracing::AppInsight { connection_string } => {
@@ -245,7 +245,7 @@ impl TelemetryService {
                     reqwest::Client::new(),
                 )
                 .map_err(TelemetryBuildError::AppInsightConfigError)?;
-                self.install_ot_tracing(config, exporter, &resource, &scope)?;
+                self.install_ot_tracing(config, exporter, resource, scope)?;
             }
             Tracing::None => {
                 log::info!("Registering no tracing...");

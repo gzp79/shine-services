@@ -1,6 +1,9 @@
 use crate::{
-    service::{serde_session_key, RedisConnectionError, RedisConnectionPool, SessionKey},
-    web::{ClientFingerprint, ClientFingerprintError, ConfiguredProblem, IntoProblem, Problem, ProblemConfig},
+    service::{RedisConnectionError, RedisConnectionPool},
+    web::{
+        serde_session_key, ClientFingerprint, ClientFingerprintError, ConfiguredProblem, IntoProblem, Problem,
+        ProblemConfig, SessionKey,
+    },
 };
 use axum::{async_trait, extract::FromRequestParts, http::request::Parts, Extension, RequestPartsExt};
 use axum_extra::extract::{cookie::Key, SignedCookieJar};

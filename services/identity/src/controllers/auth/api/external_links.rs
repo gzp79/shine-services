@@ -1,10 +1,7 @@
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::{
-    service::CheckedCurrentUser,
-    web::{Problem, ProblemConfig, ValidatedPath},
-};
+use shine_core::web::{CheckedCurrentUser, Problem, ProblemConfig, ValidatedPath};
 use url::Url;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;

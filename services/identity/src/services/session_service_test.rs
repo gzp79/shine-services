@@ -7,10 +7,7 @@ use crate::{
 };
 use chrono::{Duration, Utc};
 use ring::rand::SystemRandom;
-use shine_core::{
-    service::{self, SessionKey},
-    web::{ClientFingerprint, SiteInfo},
-};
+use shine_core::{service, web::{ClientFingerprint, SessionKey, SiteInfo}};
 use shine_test::test;
 use std::env;
 use uuid::Uuid;

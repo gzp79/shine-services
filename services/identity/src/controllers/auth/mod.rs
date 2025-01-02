@@ -36,7 +36,7 @@ impl AuthController {
     pub async fn new(config: &WebAppConfig<AppConfig>) -> Result<Self, AnyError> {
         let config_auth = &config.feature.auth;
 
-        let auth_session_meta = AuthSessionMeta::new(&config)?;
+        let auth_session_meta = AuthSessionMeta::new(config)?;
 
         let mut oauth2_clients = Vec::new();
         for (provider, provider_config) in &config_auth.oauth2 {

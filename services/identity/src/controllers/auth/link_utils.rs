@@ -4,10 +4,7 @@ use crate::{
     repositories::identity::{ExternalUserInfo, IdentityError, TokenKind},
     services::UserCreateError,
 };
-use shine_core::{
-    service::CurrentUser,
-    web::{ClientFingerprint, SiteInfo},
-};
+use shine_core::web::{ClientFingerprint, CurrentUser, SiteInfo};
 use url::Url;
 
 pub struct LinkUtils<'a> {

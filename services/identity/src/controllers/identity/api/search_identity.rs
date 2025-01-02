@@ -1,15 +1,12 @@
 use crate::{
     app_state::AppState,
     repositories::identity::{SearchIdentity, SearchIdentityOrder, MAX_SEARCH_RESULT_COUNT},
-    services::Permission,
+    services::{permissions, IdentityPermissions},
 };
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::{
-    service::CheckedCurrentUser,
-    web::{Problem, ProblemConfig, ValidatedQuery},
-};
+use shine_core::web::{CheckedCurrentUser, Problem, ProblemConfig, ValidatedQuery};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
@@ -56,7 +53,8 @@ pub async fn search_identity(
     ValidatedQuery(query): ValidatedQuery<QueryParams>,
     user: CheckedCurrentUser,
 ) -> Result<Json<IdentitySearchPage>, Problem> {
-    state.check_permission(&user, Permission::ReadAnyIdentity).await?;
+    user.identity_permissions()
+        .check(permissions::READ_ANY_IDENTITY, &problem_config)?;
 
     let identities = state
         .identity_service()

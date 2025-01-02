@@ -6,24 +6,22 @@ use crate::{
         CaptchaValidator, DBPool,
     },
     services::{
-        CreateUserService, IdentityService, Permission, PermissionError, PermissionSet, SessionService,
-        SessionUserSyncService, SettingsService, TokenGenerator, TokenSettings,
+        CreateUserService, IdentityService, SessionService, SessionUserSyncService, SettingsService, TokenGenerator,
+        TokenSettings,
     },
 };
 use anyhow::{anyhow, Error as AnyError};
 use chrono::Duration;
 use ring::rand::SystemRandom;
 use shine_core::{
-    service::CurrentUser,
     utils::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
-    web::{IntoProblem, Problem, ProblemConfig, WebAppConfig},
+    web::WebAppConfig,
 };
 use std::sync::Arc;
 use tera::Tera;
 
 struct Inner {
     settings: SettingsService,
-    problem_config: ProblemConfig,
     random: SystemRandom,
     tera: Tera,
     db: DBPool,
@@ -56,7 +54,6 @@ impl AppState {
             page_redirect_time: config_auth.page_redirect_time,
             super_user_api_key_hash: config_auth.super_user_api_key_hash.clone(),
         };
-        let problem_config = ProblemConfig::new(config.service.full_problem_response);
 
         let tera = {
             let mut tera = Tera::new("tera_templates/**/*").map_err(|e| anyhow!(e))?;
@@ -64,7 +61,7 @@ impl AppState {
             tera
         };
 
-        let db_pool = DBPool::new(&config_db).await?;
+        let db_pool = DBPool::new(config_db).await?;
         let captcha_validator = CaptchaValidator::new(&config.service.captcha_secret);
 
         let identity_service = {
@@ -90,7 +87,6 @@ impl AppState {
 
         Ok(Self(Arc::new(Inner {
             settings,
-            problem_config,
             random: SystemRandom::new(),
             tera,
             db: db_pool,
@@ -102,10 +98,6 @@ impl AppState {
 
     pub fn settings(&self) -> &SettingsService {
         &self.0.settings
-    }
-
-    pub fn problem_config(&self) -> &ProblemConfig {
-        &self.0.problem_config
     }
 
     pub fn tera(&self) -> &Tera {
@@ -138,25 +130,5 @@ impl AppState {
 
     pub fn token_service(&self) -> TokenGenerator<impl IdentityDb> {
         TokenGenerator::new(&self.0.random, self.identity_service())
-    }
-}
-
-impl AppState {
-    pub async fn require_permission(
-        &self,
-        current_user: &CurrentUser,
-        permission: Permission,
-    ) -> Result<(), PermissionError> {
-        // At the moment role -> permission mapping is hardcoded, but it could be stored in the database,
-        // so the function was made async.
-        PermissionSet::from(current_user).require(permission)?;
-        Ok(())
-    }
-
-    pub async fn check_permission(&self, current_user: &CurrentUser, permission: Permission) -> Result<(), Problem> {
-        self.require_permission(current_user, permission)
-            .await
-            .map_err(|err| err.into_problem(self.problem_config()))?;
-        Ok(())
     }
 }
