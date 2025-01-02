@@ -32,7 +32,7 @@ pub struct ServiceHealth {
 
 #[utoipa::path(
     get,
-    path = "/api/telemetry/status",
+    path = "/api/info/status",
     tag = "health",
     responses(
         (status = OK, body = ServiceHealth)
