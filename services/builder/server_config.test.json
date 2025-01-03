@@ -1,0 +1,13 @@
+{
+  "beforeLayers": ["file://../server_config_test.json"],
+  "afterLayers": ["environment"],
+  
+  "service": {
+    "port": 7001
+  },
+
+  "builderDb": {
+    "redisCns": "redis://redis.mockbox.com:6379",
+    "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-name?sslmode=disable"
+  }
+}

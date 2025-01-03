@@ -114,10 +114,10 @@ pub struct AutoNameConfig {
 }
 
 /// The application configuration
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
-    pub db: DBConfig,
+    pub identity_db: DBConfig,
+    pub identity_name: AutoNameConfig,
     pub auth: AuthConfig,
-    pub user_name: AutoNameConfig,
 }

@@ -1,12 +1,15 @@
 mod app_config;
 mod app_state;
+mod controllers;
+mod repositories;
 
 use self::{app_config::AppConfig, app_state::AppState};
 use anyhow::Error as AnyError;
+use controllers::{builder::BuilderController, health::HealthController};
 use shine_core::web::{WebAppConfig, WebApplication};
 use utoipa_axum::router::OpenApiRouter;
 
-struct Application {}
+struct Application;
 
 impl WebApplication for Application {
     type AppConfig = AppConfig;
@@ -24,11 +27,14 @@ impl WebApplication for Application {
         &self,
         _config: &WebAppConfig<Self::AppConfig>,
     ) -> Result<OpenApiRouter<Self::AppState>, AnyError> {
-        Ok(OpenApiRouter::new())
+        let health_controller = HealthController::new().into_router();
+        let builder_controller = BuilderController::new().into_router();
+
+        Ok(health_controller.merge(builder_controller))
     }
 }
 
 pub fn main() {
-    let app = Application {};
+    let app = Application;
     shine_core::web::run_web_app(app);
 }

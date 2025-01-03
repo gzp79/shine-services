@@ -1,0 +1,42 @@
+[package]
+name = "shine-command"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+log = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+rand = { workspace = true }
+ring = { workspace = true }
+
+serde = { workspace = true }
+
+############################# DB #############################
+bb8 = { workspace = true }
+bb8-redis = { workspace = true }
+redis = { workspace = true, features = [
+    "tokio-comp",
+    "tokio-rustls-comp",
+    "json",
+] }
+bb8-postgres = { workspace = true }
+tokio-postgres = { workspace = true, features = [
+    "with-uuid-1",
+    "with-chrono-0_4",
+    "runtime",
+] }
+tokio-postgres-rustls = { workspace = true }
+postgres-from-row = { workspace = true }
+refinery = { workspace = true, features = ["tokio-postgres"] }
+
+############################# WEB #############################
+axum = { workspace = true, features = ["ws"] }
+utoipa = { workspace = true }
+utoipa-axum = { workspace = true }
+
+shine-core = { workspace = true }
+
+[dev-dependencies]
+shine-test = { workspace = true }

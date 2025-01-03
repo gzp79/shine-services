@@ -8,7 +8,7 @@
   "service": {
     "port": 7000
   },
-  "userName": {
+  "identityName": {
     "baseName": "Freshman_",
     "idEncoder": "harsh"
   },

@@ -36,12 +36,11 @@ pub struct AppState(Arc<Inner>);
 impl AppState {
     pub async fn new(config: &WebAppConfig<AppConfig>) -> Result<Self, AnyError> {
         let config_auth = &config.feature.auth;
-        let config_db = &config.feature.db;
-        let config_user_name = &config.feature.user_name;
+        let config_db = &config.feature.identity_db;
+        let config_user_name = &config.feature.identity_name;
 
         let settings = SettingsService {
             app_name: config_auth.app_name.clone(),
-            app_version: config.core.version.clone(),
             home_url: config_auth.home_url.clone(),
             error_url: config_auth.error_url.clone(),
             token: TokenSettings {
