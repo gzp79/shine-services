@@ -7,7 +7,7 @@
   },
   "identityDb": {
     "redisCns": "redis://redis.mockbox.com:6379",
-    "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-name?sslmode=disable"
+    "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-identity?sslmode=disable"
   },
   "identityName": {
     "baseName": "Freshman_",

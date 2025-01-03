@@ -16,7 +16,7 @@ impl WebApplication for Application {
     type AppState = AppState;
 
     fn feature_name(&self) -> &'static str {
-        "command"
+        "builder"
     }
 
     async fn create_state(&self, config: &WebAppConfig<Self::AppConfig>) -> Result<Self::AppState, AnyError> {

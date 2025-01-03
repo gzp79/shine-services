@@ -4057,7 +4057,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "shine-command"
+name = "shine-builder"
 version = "0.1.0"
 dependencies = [
  "anyhow",

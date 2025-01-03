@@ -8,6 +8,6 @@
 
   "builderDb": {
     "redisCns": "redis://redis.mockbox.com:6379",
-    "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-name?sslmode=disable"
+    "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-builder?sslmode=disable"
   }
 }
