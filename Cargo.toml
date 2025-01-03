@@ -7,7 +7,7 @@ members = [
 	"crates/shine-core-macros",
 	"crates/shine-core",
 	"services/identity",
-	"services/command",
+	"services/builder",
 ]
 
 [workspace.package]

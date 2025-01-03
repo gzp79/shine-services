@@ -90,11 +90,11 @@
       "group": "build"
     },
     {
-      "label": "command: cloud",
+      "label": "builder: cloud",
       "type": "shell",
-      "command": "cargo run -p shine-command --release -- prod",
+      "command": "cargo run -p shine-builder --release -- prod",
       "options": {
-        "cwd": "services/command",
+        "cwd": "services/builder",
         "env": {
           "SERVICE--TLS--CERT": "../../certs/test.crt",
           "SERVICE--TLS--KEY": "../../certs/test.key",
@@ -105,16 +105,16 @@
       "group": "build"
     },
     {
-      "label": "command: local",
+      "label": "builder: local",
       "type": "shell",
-      "command": "cargo run -p shine-command --release -- test",
+      "command": "cargo run -p shine-builder --release -- test",
       "options": {
-        "cwd": "services/command",
+        "cwd": "services/builder",
         "env": {
           "RUST_BACKTRACE": "full",
           "SERVICE--TLS--CERT": "../../certs/test.crt",
           "SERVICE--TLS--KEY": "../../certs/test.key",
-          "SERVICE--port": "8443"
+          "SERVICE--port": "8444"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -128,7 +128,7 @@
       "description": "Select project",
       "options": [
         { "label": "all", "value": "" },
-        { "label": "shine-command", "value": "-p shine-command" },
+        { "label": "shine-builder", "value": "-p shine-builder" },
         { "label": "shine-identity", "value": "-p shine-identity" },
         { "label": "shine-core", "value": "-p shine-core" },
         { "label": "shine-core-macros", "value": "-p shine-core-macros" },

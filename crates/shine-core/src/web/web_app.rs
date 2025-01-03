@@ -193,7 +193,7 @@ async fn start_web_app<A: WebApplication>(_rt_handle: RtHandle, app: A) -> Resul
     let app_state = app.create_state(&config).await?;
 
     log::info!("Creating common routes...");
-    let health_controller = controllers::HealthController.into_routes();
+    let health_controller = controllers::HealthController::new(app.feature_name(), &config)?.into_routes();
     router = router.nest(&format!("/{}", app.feature_name()), health_controller);
 
     log::info!("Creating application routes...");

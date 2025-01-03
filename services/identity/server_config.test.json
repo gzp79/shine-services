@@ -5,11 +5,11 @@
   "service": {
     "port": 7000
   },
-  "db": {
+  "identityDb": {
     "redisCns": "redis://redis.mockbox.com:6379",
-    "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-name?sslmode=disable"
+    "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-identity?sslmode=disable"
   },
-  "userName": {
+  "identityName": {
     "baseName": "Freshman_",
     "idEncoder": "harsh",
     "salt": "salt"

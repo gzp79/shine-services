@@ -2,11 +2,12 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use shine_core::web::{ClientFingerprint, SiteInfo};
 use std::future::Future;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::{Identity, IdentityError};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum TokenKind {
     SingleAccess,

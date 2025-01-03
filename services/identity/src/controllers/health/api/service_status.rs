@@ -24,8 +24,6 @@ impl From<BB8PoolState> for DBState {
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceHealth {
-    pub app: String,
-    pub version: String,
     pub postgres: DBState,
     pub redis: DBState,
 }
@@ -40,8 +38,6 @@ pub struct ServiceHealth {
 )]
 pub async fn get_service_status(State(state): State<AppState>) -> Json<ServiceHealth> {
     Json(ServiceHealth {
-        app: state.settings().app_name.clone(),
-        version: state.settings().app_version.clone(),
         postgres: DBState::from(state.db().postgres.state()),
         redis: DBState::from(state.db().redis.state()),
     })

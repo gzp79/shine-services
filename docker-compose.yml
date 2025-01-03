@@ -2,12 +2,14 @@ services:
   postgres:
     image: postgres:alpine
     environment:
-      POSTGRES_DB: database-name
+      POSTGRES_MULTIPLE_DATABASES: database-test,database-identity,database-builder
       POSTGRES_PASSWORD: password
       POSTGRES_USER: username
     ports:
       - 5432:5432
     restart: on-failure:3
+    volumes:
+       - ./docker/utils/create-multiple-databases.sh:/docker-entrypoint-initdb.d/create-multiple-databases.sh
     networks:
       - shine
 
