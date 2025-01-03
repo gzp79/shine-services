@@ -2,7 +2,7 @@ services:
   postgres:
     image: postgres:alpine
     environment:
-      POSTGRES_MULTIPLE_DATABASES: database-identity,database-builder
+      POSTGRES_MULTIPLE_DATABASES: database-test,database-identity,database-builder
       POSTGRES_PASSWORD: password
       POSTGRES_USER: username
     ports:

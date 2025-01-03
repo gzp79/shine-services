@@ -1,6 +1,9 @@
 {
   "beforeLayers": ["file://../server_config_test.json"],
-  "afterLayers": ["environment"],
+  "afterLayers": [
+    "environment",
+    "file?://../../temp/server_config.json"
+  ],
   
   "service": {
     "port": 7001
