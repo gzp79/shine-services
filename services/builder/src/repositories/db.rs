@@ -51,7 +51,7 @@ impl DBPool {
             .await
             .map_err(DBError::RedisPoolError)?;
 
-        let pool = Self { postgres, redis };        
+        let pool = Self { postgres, redis };
         pool.migrate().await?;
         Ok(pool)
     }
