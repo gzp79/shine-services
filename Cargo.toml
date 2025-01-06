@@ -56,7 +56,7 @@ bb8-postgres = "0.9"
 tokio-postgres = "0.7"
 tokio-postgres-rustls = "0.13"
 postgres-from-row = "0.5"
-refinery = "0.8"
+refinery = { version = "0.8", features = ["tokio-postgres"] }
 
 ############################# AZURE #############################
 azure_core = { version = "0.21" }

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::{collections::HashMap, ops::DerefMut};
 use thiserror::Error as ThisError;
 use tokio::sync::RwLock;
-use tokio_postgres::{Config as PGConfig, GenericClient, Statement};
+use tokio_postgres::{types::Type as PGType, Config as PGConfig, GenericClient, Statement};
 use tokio_postgres_rustls::MakeRustlsConnect;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -17,51 +17,71 @@ pub struct PGStatementId(usize);
 pub trait PGRawConnection: GenericClient {}
 impl<T> PGRawConnection for T where T: GenericClient {}
 
+type PreparedStatementBuilder = (String, Vec<PGType>);
+
 pub struct PGConnection<T>
 where
     T: PGRawConnection,
 {
-    prepared_statements: Arc<RwLock<HashMap<usize, Statement>>>,
     prepared_statement_id: Arc<AtomicUsize>,
+    prepared_statements_builder: Arc<RwLock<HashMap<usize, PreparedStatementBuilder>>>,
+    prepared_statements: Arc<RwLock<HashMap<usize, Statement>>>,
     client: T,
 }
 
 impl<T: PGRawConnection> PGConnection<T> {
     #[inline]
-    pub async fn create_statement(&self, prepared: Statement) -> PGStatementId {
+    pub async fn create_prepared_statement(&self, stmt: &str, types: Vec<PGType>) -> PGStatementId {
         let id = self.prepared_statement_id.fetch_add(1, Ordering::Relaxed);
-        self.set_statement(PGStatementId(id), prepared).await;
+        let mut prepared_statements = self.prepared_statements_builder.write().await;
+        prepared_statements.insert(id, (stmt.to_string(), types));
         PGStatementId(id)
     }
 
     #[inline]
-    pub async fn get_statement(&self, prepared_id: PGStatementId) -> Option<Statement> {
-        let prepared_statements = self.prepared_statements.read().await;
-        prepared_statements.get(&prepared_id.0).cloned()
-    }
+    pub async fn get_prepared_statement(&self, prepared_id: PGStatementId) -> Result<Statement, PGError> {
+        {
+            let prepared_statements = self.prepared_statements.read().await;
+            if let Some(prepared_statements) = prepared_statements.get(&prepared_id.0) {
+                return Ok(prepared_statements.to_owned());
+            }
+        }
 
-    #[inline]
-    pub async fn set_statement(&self, prepared_id: PGStatementId, prepared: Statement) {
-        let mut prepared_statements = self.prepared_statements.write().await;
-        prepared_statements.insert(prepared_id.0, prepared);
+        let prepared_statements_builder = self.prepared_statements_builder.read().await;
+        if let Some((stmt, types)) = prepared_statements_builder.get(&prepared_id.0) {
+            // create a new prepared statement for the current connection
+            let mut prepared_statements = self.prepared_statements.write().await;
+            let prepared = self.client.prepare_typed(&stmt, &types).await?;
+            prepared_statements.insert(prepared_id.0, prepared.clone());
+            Ok(prepared)
+        } else {
+            //todo: return some PGError instead of panic
+            panic!("No prepared statement found for id: {}", prepared_id.0);
+        }
     }
 
     #[inline]
     pub async fn transaction(&mut self) -> Result<PGConnection<PGRawTransaction<'_>>, PGError> {
         Ok(PGConnection {
-            prepared_statements: self.prepared_statements.clone(),
             prepared_statement_id: self.prepared_statement_id.clone(),
+            prepared_statements_builder: self.prepared_statements_builder.clone(),
+            prepared_statements: self.prepared_statements.clone(),
             client: self.client.transaction().await?,
         })
     }
 }
 
 impl PGConnection<PGRawClient> {
-    fn new(pg_client: PGRawClient, prepared_statement_id: Arc<AtomicUsize>) -> Self {
+    fn new(
+        pg_client: PGRawClient,
+        prepared_statement_id: Arc<AtomicUsize>,
+        prepared_statements_builder: Arc<RwLock<HashMap<usize, PreparedStatementBuilder>>>,
+    ) -> Self {
         Self {
-            client: pg_client,
             prepared_statement_id,
+            prepared_statements_builder,
             prepared_statements: Arc::new(RwLock::new(HashMap::default())),
+            client: pg_client,
         }
     }
 }
@@ -95,6 +115,7 @@ impl<T: PGRawConnection> DerefMut for PGConnection<T> {
 pub struct PGConnectionManager {
     connection_manager: PostgresConnectionManager<MakeRustlsConnect>,
     prepared_statement_id: Arc<AtomicUsize>,
+    prepared_statements_builder: Arc<RwLock<HashMap<usize, PreparedStatementBuilder>>>,
 }
 
 impl PGConnectionManager {
@@ -102,6 +123,7 @@ impl PGConnectionManager {
         Self {
             connection_manager: PostgresConnectionManager::new(config, tls),
             prepared_statement_id: Arc::new(AtomicUsize::new(1)),
+            prepared_statements_builder: Arc::new(RwLock::new(HashMap::default())),
         }
     }
 }
@@ -112,7 +134,11 @@ impl bb8::ManageConnection for PGConnectionManager {
 
     async fn connect(&self) -> Result<Self::Connection, Self::Error> {
         let conn = self.connection_manager.connect().await?;
-        Ok(PGConnection::new(conn, self.prepared_statement_id.clone()))
+        Ok(PGConnection::new(
+            conn,
+            self.prepared_statement_id.clone(),
+            self.prepared_statements_builder.clone(),
+        ))
     }
 
     async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
@@ -154,7 +180,7 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PGConnectionPool, PGCreat
     let tls = MakeRustlsConnect::new(tls_config);
 
     let pg_config = PGConfig::from_str(cns)?;
-    log::debug!("Postgresql config: {pg_config:#?}");
+    //log::debug!("Postgresql config: {pg_config:#?}");
     let postgres_manager = PGConnectionManager::new(pg_config, tls);
     let postgres = bb8::Pool::builder()
         .max_size(10) // Set the maximum number of connections in the pool

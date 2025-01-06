@@ -77,6 +77,7 @@ tokio-postgres = { workspace = true, features = [
 tokio-rustls = { workspace = true }
 tokio-postgres-rustls = { workspace = true }
 postgres-from-row = { workspace = true }
+refinery = { workspace = true }
 
 ############################# AZURE #############################
 azure_core = { workspace = true }

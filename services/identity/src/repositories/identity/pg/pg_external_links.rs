@@ -1,13 +1,10 @@
-use crate::repositories::{
-    identity::{
-        ExternalLink, ExternalLinks, ExternalUserInfo, Identity, IdentityBuildError, IdentityError, IdentityKind,
-    },
-    DBError,
+use crate::repositories::identity::{
+    ExternalLink, ExternalLinks, ExternalUserInfo, Identity, IdentityBuildError, IdentityError, IdentityKind,
 };
 use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
 use shine_core::{
-    db::{PGClient, PGErrorChecks},
+    db::{DBError, PGClient, PGErrorChecks},
     pg_query,
 };
 use tracing::instrument;

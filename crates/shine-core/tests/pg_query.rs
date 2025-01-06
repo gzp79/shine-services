@@ -49,12 +49,15 @@ async fn test_pg_query_struct() {
     match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => {
             let pool = create_postgres_pool(&cns).await.unwrap();
+
             let c1 = pool.get().await.unwrap();
             let stmt1 = TestQuery1::new(&c1).await.unwrap();
             let stmt2 = TestQuery2::new(&c1).await.unwrap();
             let stmt2b = TestQuery2Fail::new(&c1).await.unwrap();
             let stmt3 = TestQuery3::new(&c1).await.unwrap();
+            //drop(c1);
 
+            let c1 = pool.get().await.unwrap();
             let p1 = stmt1.query_one(&c1, &"data").await.unwrap();
             assert_eq!(p1.one, 1);
             assert_eq!(p1.two, 2);

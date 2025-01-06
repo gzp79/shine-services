@@ -1,5 +1,4 @@
-use crate::repositories::DBError;
-use shine_core::utils::IdEncoderError;
+use shine_core::{db::DBError, utils::IdEncoderError};
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
