@@ -4,10 +4,20 @@ CREATE TABLE es_heads_test(
 );
 
 CREATE TABLE es_events_test(
-    aggregate_id UUID NOT NULL PRIMARY KEY,
+    aggregate_id UUID NOT NULL,
     version INT NOT NULL,
-    type VARCHAR(255) NOT NULL,
-    command JBOD NOT NULL
+    event_type VARCHAR(255) NOT NULL,
+    data JSONB NOT NULL,
+
+    PRIMARY KEY (aggregate_id, version),
+    FOREIGN KEY (aggregate_id) REFERENCES es_heads_test(aggregate_id) ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX idx_es_events_test ON es_events_test(aggregate_id, version);
+-- Create a function to prevent updates
+CREATE OR REPLACE FUNCTION prevent_es_events_test_update()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'Cannot update rows in es_events_test';
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;

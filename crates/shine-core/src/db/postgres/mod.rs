@@ -35,6 +35,7 @@ macro_rules! pg_prepared_statement {
                 Ok(Self(stmt))
             }
 
+            #[allow(dead_code)]
             pub async fn statement<'a, T>(&self, client: &$crate::db::PGConnection<T>) -> Result<$crate::db::PGStatement, $crate::db::PGError>
             where
                 T: $crate::db::PGRawConnection
@@ -57,6 +58,7 @@ macro_rules! pg_query {
 
         impl $id {
             #[allow(clippy::too_many_arguments)]
+            #[allow(dead_code)]
             pub async fn query<'a, T>(
                 &self,
                 client: &$crate::db::PGConnection<T>,
@@ -72,6 +74,7 @@ macro_rules! pg_query {
             }
 
             #[allow(clippy::too_many_arguments)]
+            #[allow(dead_code)]
             pub async fn query_one<'a, T>(
                 &self,
                 client: &$crate::db::PGConnection<T>,
@@ -87,6 +90,7 @@ macro_rules! pg_query {
             }
 
             #[allow(clippy::too_many_arguments)]
+            #[allow(dead_code)]
             pub async fn query_opt<'a, T>(
                 &self,
                 client: &$crate::db::PGConnection<T>,
@@ -113,6 +117,7 @@ macro_rules! pg_query {
 
         impl $id {
             #[allow(clippy::too_many_arguments)]
+            #[allow(dead_code)]
             pub async fn query<'a, T>(
                 &self,
                 client: &$crate::db::PGConnection<T>,
@@ -130,6 +135,7 @@ macro_rules! pg_query {
             }
 
             #[allow(clippy::too_many_arguments)]
+            #[allow(dead_code)]
             pub async fn query_one<'a, T>(
                 &self,
                 client: &$crate::db::PGConnection<T>,
@@ -146,6 +152,7 @@ macro_rules! pg_query {
             }
 
             #[allow(clippy::too_many_arguments)]
+            #[allow(dead_code)]
             pub async fn query_opt<'a, T>(
                 &self,
                 client: &$crate::db::PGConnection<T>,
@@ -171,6 +178,7 @@ macro_rules! pg_query {
 
         impl $id {
             #[allow(clippy::too_many_arguments)]
+            #[allow(dead_code)]
             pub async fn execute<'a, T>(
                 &self,
                 client: &$crate::db::PGConnection<T>,
