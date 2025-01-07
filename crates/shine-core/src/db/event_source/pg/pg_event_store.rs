@@ -1,22 +1,23 @@
 use crate::{
     db::{
-        event_source::{Event, EventStore, EventStoreError, StoredEvent},
-        DBError, PGConnectionPool, PGErrorChecks,
+        event_source::{pg::PgEventDbContext, Event, EventStore, EventStoreError, StoredEvent},
+        DBError, PGClient, PGErrorChecks,
     },
     pg_query,
 };
+use postgres_from_row::FromRow;
 use std::{borrow::Cow, marker::PhantomData};
 use uuid::Uuid;
 
 pg_query!( CreateStream =>
-    in = aggregate:Uuid;
+    in = aggregate: Uuid;
     sql = r#"
         INSERT INTO es_heads_%table% (aggregate_id, version) VALUES ($1, 0)
     "#
 );
 
 pg_query!( GetStreamVersion =>
-    in = aggregate:Uuid;
+    in = aggregate: Uuid;
     out = version: i32;
     sql = r#"
         SELECT version FROM es_heads_%table% WHERE aggregate_id = $1
@@ -31,40 +32,76 @@ pg_query!( UpdateStreamVersion =>
 );
 
 pg_query!( StoreEvent =>
-    in = aggregate:Uuid, version: i32, event_type: &str, data: &str;
+    in = aggregate: Uuid, version: i32, event_type: &str, data: &str;
     sql = r#"
         INSERT INTO es_events_%table% (aggregate_id, version, event_type, data) VALUES ($1, $2, $3, $4::jsonb)
     "#
 );
 
-#[derive(Clone)]
-pub struct PgEventStore<E>
+#[derive(FromRow)]
+struct EventRow {
+    version: i32,
+    data: String,
+}
+
+impl EventRow {
+    fn try_into_stored_event<E>(self) -> Result<StoredEvent<E>, EventStoreError>
+    where
+        E: Event,
+    {
+        Ok(StoredEvent {
+            version: self.version as usize,
+            event: serde_json::from_str(&self.data).map_err(EventStoreError::EventSerialization)?,
+        })
+    }
+}
+
+pg_query!( GetEvent =>
+    in = aggregate: Uuid, from_version: i32, to_version: i32;
+    out = EventRow;
+    sql = r#"
+        SELECT version, data::text FROM es_events_%table% 
+            WHERE aggregate_id = $1 AND version >= $2 AND version <= $3
+            ORDER BY version
+    "#
+);
+
+pub struct PgEventStoreStatement<E>
 where
     E: Event,
 {
-    client: PGConnectionPool,
-
-    table: String,
     create_stream: CreateStream,
     get_version: GetStreamVersion,
     update_version: UpdateStreamVersion,
     store_event: StoreEvent,
+    get_event: GetEvent,
 
-    _phantom: PhantomData<E>,
+    _ph: PhantomData<fn(&E)>,
 }
 
-impl<E> PgEventStore<E>
+impl<E> Clone for PgEventStoreStatement<E>
 where
     E: Event,
 {
-    pub async fn new(postgres: &PGConnectionPool, table: &str) -> Result<Self, EventStoreError> {
-        let client = postgres.get().await.map_err(DBError::PGPoolError)?;
+    fn clone(&self) -> Self {
+        Self {
+            create_stream: self.create_stream.clone(),
+            get_version: self.get_version.clone(),
+            update_version: self.update_version.clone(),
+            store_event: self.store_event.clone(),
+            get_event: self.get_event.clone(),
+            _ph: self._ph.clone(),
+        }
+    }
+}
 
-        let table_name_process = |x: &str| Cow::Owned(x.replace("%table%", table));
-
+impl<E> PgEventStoreStatement<E>
+where
+    E: Event,
+{
+    pub async fn new(client: &PGClient) -> Result<Self, EventStoreError> {
+        let table_name_process = |x: &str| Cow::Owned(x.replace("%table%", <E as Event>::NAME));
         Ok(Self {
-            client: postgres.clone(),
-            table: table.to_string(),
             create_stream: CreateStream::new_with_process(&client, table_name_process)
                 .await
                 .map_err(DBError::from)?,
@@ -77,25 +114,31 @@ where
             store_event: StoreEvent::new_with_process(&client, table_name_process)
                 .await
                 .map_err(DBError::from)?,
+            get_event: GetEvent::new_with_process(&client, table_name_process)
+                .await
+                .map_err(DBError::from)?,
 
-            _phantom: PhantomData,
+            _ph: PhantomData,
         })
     }
 }
 
-impl<E> EventStore for PgEventStore<E>
+impl<'c, E> EventStore for PgEventDbContext<'c, E>
 where
     E: Event,
 {
     type Event = E;
 
-    async fn create(&self, aggregate_id: &Uuid) -> Result<(), EventStoreError> {
-        let client = self.client.get().await.map_err(DBError::PGPoolError)?;
-
-        if let Err(err) = self.create_stream.execute(&client, &aggregate_id).await {
+    async fn create_stream(&mut self, aggregate_id: &Uuid) -> Result<(), EventStoreError> {
+        if let Err(err) = self
+            .stmts_store
+            .create_stream
+            .execute(&self.client, &aggregate_id)
+            .await
+        {
             if err.is_constraint(
-                &format!("es_heads_{}", self.table),
-                &format!("es_heads_{}_pkey", self.table),
+                &format!("es_heads_{}", <E as Event>::NAME),
+                &format!("es_heads_{}_pkey", <E as Event>::NAME),
             ) {
                 Err(EventStoreError::Conflict)
             } else {
@@ -106,17 +149,16 @@ where
         }
     }
 
-    async fn store(
-        &self,
+    async fn store_events(
+        &mut self,
         aggregate_id: &Uuid,
         expected_version: Option<usize>,
         event: &[Self::Event],
     ) -> Result<usize, EventStoreError> {
-        let mut client = self.client.get().await.map_err(DBError::PGPoolError)?;
-
-        let transaction = client.transaction().await.map_err(DBError::from)?;
+        let transaction = self.client.transaction().await.map_err(DBError::from)?;
 
         let old_version: usize = match self
+            .stmts_store
             .get_version
             .query_opt(&transaction, &aggregate_id)
             .await
@@ -135,11 +177,12 @@ where
 
         for event in event.iter().enumerate() {
             let data = serde_json::to_string(event.1).map_err(EventStoreError::EventSerialization)?;
-            self.store_event
+            self.stmts_store
+                .store_event
                 .execute(
                     &transaction,
                     &aggregate_id,
-                    &((old_version + event.0) as i32),
+                    &((old_version + event.0 + 1) as i32),
                     &event.1.event_type(),
                     &data.as_str(),
                 )
@@ -148,6 +191,7 @@ where
         }
 
         if self
+            .stmts_store
             .update_version
             .execute(
                 &transaction,
@@ -167,12 +211,25 @@ where
         }
     }
 
-    async fn get(
-        &self,
-        aggregate: &Uuid,
-        from_version: usize,
+    async fn get_events(
+        &mut self,
+        aggregate_id: &Uuid,
+        from_version: Option<usize>,
         to_version: Option<usize>,
     ) -> Result<Vec<StoredEvent<Self::Event>>, EventStoreError> {
-        todo!()
+        let fv = from_version.map(|v| v as i32).unwrap_or(0);
+        let tv = to_version.map(|v| v as i32).unwrap_or(std::i32::MAX);
+
+        let events = self
+            .stmts_store
+            .get_event
+            .query(&self.client, aggregate_id, &fv, &tv)
+            .await
+            .map_err(DBError::from)?
+            .into_iter()
+            .map(|row| row.try_into_stored_event())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(events)
     }
 }

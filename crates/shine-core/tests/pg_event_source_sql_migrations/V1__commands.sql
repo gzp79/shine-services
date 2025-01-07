@@ -13,6 +13,16 @@ CREATE TABLE es_events_test(
     FOREIGN KEY (aggregate_id) REFERENCES es_heads_test(aggregate_id) ON DELETE CASCADE
 );
 
+CREATE TABLE es_snapshots_test(
+    aggregate_id UUID NOT NULL,
+    snapshot VARCHAR(255) NOT NULL,
+    version INT NOT NULL,
+    data JSONB NOT NULL,
+
+    PRIMARY KEY (aggregate_id, snapshot, version),
+    FOREIGN KEY (aggregate_id) REFERENCES es_heads_test(aggregate_id) ON DELETE CASCADE
+);
+
 -- Create a function to prevent updates
 CREATE OR REPLACE FUNCTION prevent_es_events_test_update()
 RETURNS TRIGGER AS $$
