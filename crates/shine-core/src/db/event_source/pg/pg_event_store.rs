@@ -16,6 +16,13 @@ pg_query!( CreateStream =>
     "#
 );
 
+pg_query!( DeleteStream =>
+    in = aggregate: Uuid;
+    sql = r#"
+        DELETE FROM es_heads_%table% WHERE aggregate_id = $1
+    "#
+);
+
 pg_query!( GetStreamVersion =>
     in = aggregate: Uuid;
     out = version: i32;
@@ -71,6 +78,7 @@ where
     E: Event,
 {
     create_stream: CreateStream,
+    delete_stream: DeleteStream,
     get_version: GetStreamVersion,
     update_version: UpdateStreamVersion,
     store_event: StoreEvent,
@@ -86,6 +94,7 @@ where
     fn clone(&self) -> Self {
         Self {
             create_stream: self.create_stream.clone(),
+            delete_stream: self.delete_stream.clone(),
             get_version: self.get_version.clone(),
             update_version: self.update_version.clone(),
             store_event: self.store_event.clone(),
@@ -103,6 +112,9 @@ where
         let table_name_process = |x: &str| Cow::Owned(x.replace("%table%", <E as Event>::NAME));
         Ok(Self {
             create_stream: CreateStream::new_with_process(&client, table_name_process)
+                .await
+                .map_err(DBError::from)?,
+            delete_stream: DeleteStream::new_with_process(&client, table_name_process)
                 .await
                 .map_err(DBError::from)?,
             get_version: GetStreamVersion::new_with_process(&client, table_name_process)
@@ -144,6 +156,34 @@ where
             } else {
                 Err(DBError::from(err).into())
             }
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn has_stream(&mut self, aggregate_id: &Uuid) -> Result<bool, EventStoreError> {
+        match self
+            .stmts_store
+            .get_version
+            .query_opt(&self.client, &aggregate_id)
+            .await
+            .map_err(DBError::from)?
+        {
+            Some(_) => Ok(true),
+            None => Ok(false),
+        }
+    }
+
+    async fn delete_stream(&mut self, aggregate_id: &Uuid) -> Result<(), EventStoreError> {
+        if self
+            .stmts_store
+            .delete_stream
+            .execute(&self.client, &aggregate_id)
+            .await
+            .map_err(DBError::from)?
+            != 1
+        {
+            Err(EventStoreError::NotFound)
         } else {
             Ok(())
         }
@@ -219,6 +259,12 @@ where
     ) -> Result<Vec<StoredEvent<Self::Event>>, EventStoreError> {
         let fv = from_version.map(|v| v as i32).unwrap_or(0);
         let tv = to_version.map(|v| v as i32).unwrap_or(std::i32::MAX);
+
+        //todo: checking has_stream and getting events are not atomic, it should be improved 
+
+        if !self.has_stream(&aggregate_id).await? {
+            return Err(EventStoreError::NotFound);
+        }
 
         let events = self
             .stmts_store

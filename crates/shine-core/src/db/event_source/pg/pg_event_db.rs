@@ -57,35 +57,54 @@ where
         })
     }
 
-    async fn listen_to_events<F>(&self, handler: F) -> Result<(), EventStoreError>
+    async fn listen_to_stream_updates<F>(&self, handler: F) -> Result<(), EventStoreError>
     where
         F: Fn(EventNotification) -> () + Send + Sync + 'static,
     {
         #[derive(Deserialize)]
         struct EventMsg {
+            operation: String,
             aggregate_id: Uuid,
-            version: usize,
+            version: Option<usize>,
+        }
+
+        impl EventMsg {
+            fn try_into_notification(self) -> Result<EventNotification, String> {
+                match self.operation.as_str() {
+                    "insert" => Ok(EventNotification::Insert {
+                        aggregate_id: self.aggregate_id,
+                    }),
+                    "update" => Ok(EventNotification::Update {
+                        aggregate_id: self.aggregate_id,
+                        version: self.version.unwrap_or(0),
+                    }),
+                    "delete" => Ok(EventNotification::Delete {
+                        aggregate_id: self.aggregate_id,
+                    }),
+                    op => Err(format!("Invalid operation: {op}")),
+                }
+            }
         }
 
         let client = self.client.get().await.map_err(DBError::PGPoolError)?;
         client
             .listen(
                 &format!("es_notification_{}", E::NAME),
-                move |p| match serde_json::from_str::<EventMsg>(p).map(|msg| EventNotification {
-                    aggregate_id: msg.aggregate_id,
-                    version: msg.version,
-                }) {
+                move |p| match serde_json::from_str::<EventMsg>(p)
+                    .map_err(|err| format!("Error deserializing event notification: {:#?}", err))
+                    .and_then(|msg| msg.try_into_notification())
+                {
                     Ok(m) => {
                         handler(m);
                     }
-                    Err(e) => log::error!("Error deserializing event notification: {:#?}", e),
+                    Err(e) => log::error!("Unexpected notification: {e}"),
                 },
             )
             .await?;
         Ok(())
     }
 
-    async fn unlisten_to_events(&self) -> Result<(), EventStoreError> {
+    async fn unlisten_to_stream_updates(&self) -> Result<(), EventStoreError> {
         let client = self.client.get().await.map_err(DBError::PGPoolError)?;
         client.unlisten(&format!("es_notification_{}", E::NAME)).await?;
         Ok(())

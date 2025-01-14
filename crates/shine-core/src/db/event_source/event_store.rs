@@ -22,9 +22,15 @@ where
 pub trait EventStore {
     type Event: Event;
 
-    /// Create a new empty aggregate with version 0.
+    /// Create a new empty stream with version 0.
     /// If the aggregate already exists, the operation will fail with a Conflict error.
     fn create_stream(&mut self, aggregate: &Uuid) -> impl Future<Output = Result<(), EventStoreError>> + Send;
+
+    /// Return if a stream exists
+    fn has_stream(&mut self, aggregate: &Uuid) -> impl Future<Output = Result<bool, EventStoreError>> + Send;
+
+    /// Delete a stream with all its events and snapshots.    
+    fn delete_stream(&mut self, aggregate: &Uuid) -> impl Future<Output = Result<(), EventStoreError>> + Send;
 
     /// Store events for an aggregate and return the new version
     /// If expected_version is Some, the store will fail if the current version does not match, otherwise it will store the events

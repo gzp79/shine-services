@@ -114,6 +114,12 @@ where
     where
         A: Aggregate<Event = Self::Event>,
     {
+        //todo: checking has_stream and getting events are not atomic, it should be improved
+
+        if !self.has_stream(&aggregate_id).await? {
+            return Err(EventStoreError::NotFound);
+        }
+
         if let Some(row) = self
             .stmts_snapshot
             .get_snapshot

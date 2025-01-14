@@ -143,6 +143,17 @@ async fn test_event_store() {
                 assert_eq!(3, events[2].version);
                 assert_eq!(&e3, &events[2].event);
             }
+
+            es.delete_stream(&aggregate).await.unwrap();
+            assert_eq!(false, es.has_stream(&aggregate).await.unwrap());
+            match es.store_events(&aggregate, None, &[e1.clone()]).await {
+                Err(EventStoreError::NotFound) => (),
+                other => panic!("Expected NotFound, {other:?}"),
+            }
+            match es.delete_stream(&aggregate).await {
+                Err(EventStoreError::NotFound) => (),
+                other => panic!("Expected NotFound, {other:?}"),
+            }
         }
         _ => log::warn!("Skipping test_stored_statements"),
     }
@@ -160,7 +171,7 @@ async fn test_event_snapshots() {
                 let event_db = event_source::pg::PgEventDb::<TestEvent>::new(&pool).await.unwrap();
 
                 event_db
-                    .listen_to_events(|event| {
+                    .listen_to_stream_updates(|event| {
                         log::info!("Received event: {:#?}", event);
                     })
                     .await
@@ -197,7 +208,7 @@ async fn test_event_snapshots() {
 
                     match es.store_snapshot(&snapshot).await {
                         Err(EventStoreError::Conflict) => (),
-                        err => panic!("Expected Conflict error, {err:?}"),
+                        other => panic!("Expected Conflict error, {other:?}"),
                     };
                 }
 
@@ -219,6 +230,16 @@ async fn test_event_snapshots() {
                     assert_eq!(12, snapshot.aggregate().aa);
 
                     es.store_snapshot(&snapshot).await.unwrap();
+                }
+
+                es.delete_stream(&aggregate).await.unwrap();
+                match es.get_aggregate::<TestAggregate>(&aggregate).await {
+                    Err(EventStoreError::NotFound) => (),
+                    other => panic!("Expected NotFound, {other:?}"),
+                }
+                match es.get_snapshot::<TestAggregate>(&aggregate).await {
+                    Err(EventStoreError::NotFound) => (),
+                    other => panic!("Expected NotFound, {other:?}"),
                 }
             }
         }

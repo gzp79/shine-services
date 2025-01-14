@@ -58,6 +58,13 @@
       "isBackground": true
     },
     {
+      "label": "stop dev environment",
+      "type": "shell",
+      "command": "docker compose -f docker-compose.yml -p shine down",
+      "group": "build",
+      "isBackground": true
+    },
+    {
       "label": "identity: cloud",
       "type": "shell",
       "command": "cargo run -p shine-identity --release -- prod",
