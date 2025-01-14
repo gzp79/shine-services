@@ -15,4 +15,3 @@ pub enum EventStoreError {
     #[error(transparent)]
     DbError(#[from] DBError),
 }
-

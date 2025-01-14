@@ -23,7 +23,7 @@ where
 
     fn listen_to_stream_updates<F>(&self, handler: F) -> impl Future<Output = Result<(), EventStoreError>> + Send
     where
-        F: Fn(EventNotification) -> () + Send + Sync + 'static;
+        F: Fn(EventNotification) + Send + Sync + 'static;
 
     fn unlisten_to_stream_updates(&self) -> impl Future<Output = Result<(), EventStoreError>> + Send;
 }

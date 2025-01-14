@@ -17,6 +17,7 @@ pub struct ServiceVersion {
         (status = OK, body = ServiceVersion)
     )
 )]
+
 pub async fn get_version(Extension(version): Extension<ServiceVersion>) -> Json<ServiceVersion> {
-    return Json(version);
+    Json(version)
 }

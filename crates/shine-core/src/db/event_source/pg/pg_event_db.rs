@@ -59,7 +59,7 @@ where
 
     async fn listen_to_stream_updates<F>(&self, handler: F) -> Result<(), EventStoreError>
     where
-        F: Fn(EventNotification) -> () + Send + Sync + 'static,
+        F: Fn(EventNotification) + Send + Sync + 'static,
     {
         #[derive(Deserialize)]
         struct EventMsg {

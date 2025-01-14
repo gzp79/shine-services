@@ -48,20 +48,11 @@ impl Event for TestEvent {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TestAggregate {
     e1: String,
     aa: usize,
-}
-
-impl Default for TestAggregate {
-    fn default() -> Self {
-        Self {
-            e1: String::new(),
-            aa: 0,
-        }
-    }
 }
 
 impl Aggregate for TestAggregate {
@@ -145,7 +136,7 @@ async fn test_event_store() {
             }
 
             es.delete_stream(&aggregate).await.unwrap();
-            assert_eq!(false, es.has_stream(&aggregate).await.unwrap());
+            assert!(!es.has_stream(&aggregate).await.unwrap());
             match es.store_events(&aggregate, None, &[e1.clone()]).await {
                 Err(EventStoreError::NotFound) => (),
                 other => panic!("Expected NotFound, {other:?}"),

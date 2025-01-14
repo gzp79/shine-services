@@ -56,7 +56,7 @@ impl<T: PGRawConnection> PGConnection<T> {
         if let Some((stmt, types)) = prepared_statements_builder.get(&prepared_id.0) {
             // create a new prepared statement for the current connection
             let mut prepared_statements = self.prepared_statements.write().await;
-            let prepared = self.client.prepare_typed(&stmt, &types).await?;
+            let prepared = self.client.prepare_typed(stmt, types).await?;
             prepared_statements.insert(prepared_id.0, prepared.clone());
             Ok(prepared)
         } else {
@@ -68,7 +68,7 @@ impl<T: PGRawConnection> PGConnection<T> {
     #[inline]
     pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), DBError>
     where
-        F: Fn(&str) -> () + Send + Sync + 'static,
+        F: Fn(&str) + Send + Sync + 'static,
     {
         self.listener.listen(channel, handler).await
     }

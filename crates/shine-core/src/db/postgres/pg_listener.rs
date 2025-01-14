@@ -15,7 +15,7 @@ use super::{PGConfig, PGRawClient};
 
 pub type PGNotification = Notification;
 
-type PGNotificationHandlers = Arc<RwLock<HashMap<String, Box<dyn Fn(&str) -> () + Send + Sync + 'static>>>>;
+type PGNotificationHandlers = Arc<RwLock<HashMap<String, Box<dyn Fn(&str) + Send + Sync + 'static>>>>;
 
 struct Inner {
     config: PGConfig,
@@ -97,7 +97,7 @@ impl Inner {
 
     pub async fn listen<F>(&mut self, channel: &str, handler: F) -> Result<(), DBError>
     where
-        F: Fn(&str) -> () + Send + Sync + 'static,
+        F: Fn(&str) + Send + Sync + 'static,
     {
         let ch = ident(channel);
 
@@ -198,7 +198,7 @@ impl PGListener {
 
     pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), DBError>
     where
-        F: Fn(&str) -> () + Send + Sync + 'static,
+        F: Fn(&str) + Send + Sync + 'static,
     {
         let mut inner = self.inner.lock().await;
         let inner = &mut *inner;

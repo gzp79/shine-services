@@ -93,13 +93,13 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            create_stream: self.create_stream.clone(),
-            delete_stream: self.delete_stream.clone(),
-            get_version: self.get_version.clone(),
-            update_version: self.update_version.clone(),
-            store_event: self.store_event.clone(),
-            get_event: self.get_event.clone(),
-            _ph: self._ph.clone(),
+            create_stream: self.create_stream,
+            delete_stream: self.delete_stream,
+            get_version: self.get_version,
+            update_version: self.update_version,
+            store_event: self.store_event,
+            get_event: self.get_event,
+            _ph: self._ph,
         }
     }
 }
@@ -111,22 +111,22 @@ where
     pub async fn new(client: &PGClient) -> Result<Self, EventStoreError> {
         let table_name_process = |x: &str| Cow::Owned(x.replace("%table%", <E as Event>::NAME));
         Ok(Self {
-            create_stream: CreateStream::new_with_process(&client, table_name_process)
+            create_stream: CreateStream::new_with_process(client, table_name_process)
                 .await
                 .map_err(DBError::from)?,
-            delete_stream: DeleteStream::new_with_process(&client, table_name_process)
+            delete_stream: DeleteStream::new_with_process(client, table_name_process)
                 .await
                 .map_err(DBError::from)?,
-            get_version: GetStreamVersion::new_with_process(&client, table_name_process)
+            get_version: GetStreamVersion::new_with_process(client, table_name_process)
                 .await
                 .map_err(DBError::from)?,
-            update_version: UpdateStreamVersion::new_with_process(&client, table_name_process)
+            update_version: UpdateStreamVersion::new_with_process(client, table_name_process)
                 .await
                 .map_err(DBError::from)?,
-            store_event: StoreEvent::new_with_process(&client, table_name_process)
+            store_event: StoreEvent::new_with_process(client, table_name_process)
                 .await
                 .map_err(DBError::from)?,
-            get_event: GetEvent::new_with_process(&client, table_name_process)
+            get_event: GetEvent::new_with_process(client, table_name_process)
                 .await
                 .map_err(DBError::from)?,
 
@@ -142,12 +142,7 @@ where
     type Event = E;
 
     async fn create_stream(&mut self, aggregate_id: &Uuid) -> Result<(), EventStoreError> {
-        if let Err(err) = self
-            .stmts_store
-            .create_stream
-            .execute(&self.client, &aggregate_id)
-            .await
-        {
+        if let Err(err) = self.stmts_store.create_stream.execute(&self.client, aggregate_id).await {
             if err.is_constraint(
                 &format!("es_heads_{}", <E as Event>::NAME),
                 &format!("es_heads_{}_pkey", <E as Event>::NAME),
@@ -165,7 +160,7 @@ where
         match self
             .stmts_store
             .get_version
-            .query_opt(&self.client, &aggregate_id)
+            .query_opt(&self.client, aggregate_id)
             .await
             .map_err(DBError::from)?
         {
@@ -178,7 +173,7 @@ where
         if self
             .stmts_store
             .delete_stream
-            .execute(&self.client, &aggregate_id)
+            .execute(&self.client, aggregate_id)
             .await
             .map_err(DBError::from)?
             != 1
@@ -200,7 +195,7 @@ where
         let old_version: usize = match self
             .stmts_store
             .get_version
-            .query_opt(&transaction, &aggregate_id)
+            .query_opt(&transaction, aggregate_id)
             .await
             .map_err(DBError::from)?
         {
@@ -221,7 +216,7 @@ where
                 .store_event
                 .execute(
                     &transaction,
-                    &aggregate_id,
+                    aggregate_id,
                     &((old_version + event.0 + 1) as i32),
                     &event.1.event_type(),
                     &data.as_str(),
@@ -233,12 +228,7 @@ where
         if self
             .stmts_store
             .update_version
-            .execute(
-                &transaction,
-                &aggregate_id,
-                &(old_version as i32),
-                &(new_version as i32),
-            )
+            .execute(&transaction, aggregate_id, &(old_version as i32), &(new_version as i32))
             .await
             .map_err(DBError::from)?
             != 1
@@ -258,11 +248,11 @@ where
         to_version: Option<usize>,
     ) -> Result<Vec<StoredEvent<Self::Event>>, EventStoreError> {
         let fv = from_version.map(|v| v as i32).unwrap_or(0);
-        let tv = to_version.map(|v| v as i32).unwrap_or(std::i32::MAX);
+        let tv = to_version.map(|v| v as i32).unwrap_or(i32::MAX);
 
-        //todo: checking has_stream and getting events are not atomic, it should be improved 
+        //todo: checking has_stream and getting events are not atomic, it should be improved
 
-        if !self.has_stream(&aggregate_id).await? {
+        if !self.has_stream(aggregate_id).await? {
             return Err(EventStoreError::NotFound);
         }
 

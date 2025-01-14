@@ -58,10 +58,10 @@ where
 {
     fn clone(&self) -> Self {
         Self {
-            store_snapshot: self.store_snapshot.clone(),
-            get_snapshot: self.get_snapshot.clone(),
-            prune_snapshot: self.prune_snapshot.clone(),
-            _ph: self._ph.clone(),
+            store_snapshot: self.store_snapshot,
+            get_snapshot: self.get_snapshot,
+            prune_snapshot: self.prune_snapshot,
+            _ph: self._ph,
         }
     }
 }
@@ -102,7 +102,7 @@ where
         let mut snapshot = self
             .get_snapshot(aggregate_id)
             .await?
-            .unwrap_or(Snapshot::new(aggregate_id.clone()));
+            .unwrap_or(Snapshot::new(*aggregate_id));
 
         let events = self.get_events(aggregate_id, Some(snapshot.version()), None).await?;
         snapshot.apply(&events)?;
@@ -116,19 +116,19 @@ where
     {
         //todo: checking has_stream and getting events are not atomic, it should be improved
 
-        if !self.has_stream(&aggregate_id).await? {
+        if !self.has_stream(aggregate_id).await? {
             return Err(EventStoreError::NotFound);
         }
 
         if let Some(row) = self
             .stmts_snapshot
             .get_snapshot
-            .query_opt(&self.client, &aggregate_id, &<A as Aggregate>::NAME)
+            .query_opt(&self.client, aggregate_id, &<A as Aggregate>::NAME)
             .await
             .map_err(DBError::from)?
         {
             Ok(Some(Snapshot::new_from_data(
-                aggregate_id.clone(),
+                *aggregate_id,
                 row.version as usize,
                 &row.data,
             )?))
@@ -148,7 +148,7 @@ where
             .store_snapshot
             .execute(
                 &self.client,
-                &snapshot.id(),
+                snapshot.id(),
                 &A::NAME,
                 &(snapshot.version() as i32),
                 &data.as_str(),
@@ -167,7 +167,7 @@ where
             if let Err(err) = self
                 .stmts_snapshot
                 .prune_snapshot
-                .execute(&self.client, &snapshot.id(), &A::NAME, &(snapshot.version() as i32))
+                .execute(&self.client, snapshot.id(), &A::NAME, &(snapshot.version() as i32))
                 .await
             {
                 log::error!("Failed to prune snapshots: {:#?}", err);

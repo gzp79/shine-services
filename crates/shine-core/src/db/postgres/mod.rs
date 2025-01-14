@@ -42,7 +42,7 @@ macro_rules! pg_prepared_statement {
             where
                 T: $crate::db::PGRawConnection
             {
-                Ok(client.get_prepared_statement(self.0).await?)
+                client.get_prepared_statement(self.0).await
             }
         }
     }
