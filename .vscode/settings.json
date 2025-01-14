@@ -41,6 +41,7 @@
     "nextval",
     "notnull",
     "oidc",
+    "oneshot",
     "Ooops",
     "openapi",
     "openidconnect",
@@ -68,6 +69,7 @@
     "TIMESTAMPTZ",
     "TIMESTAMPZ",
     "tsflow",
+    "unlisten",
     "utoipa",
     "zipkin"
   ]

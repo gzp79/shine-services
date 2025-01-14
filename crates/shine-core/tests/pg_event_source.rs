@@ -154,65 +154,73 @@ async fn test_event_snapshots() {
 
     match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => {
-            let pool = create_pg_pool(&cns).await.unwrap();
+            for _ in 0..2 {
+                let pool = create_pg_pool(&cns).await.unwrap();
 
-            let event_db = event_source::pg::PgEventDb::<TestEvent>::new(&pool).await.unwrap();
+                let event_db = event_source::pg::PgEventDb::<TestEvent>::new(&pool).await.unwrap();
 
-            let mut es = event_db.create_context().await.unwrap();
+                event_db
+                    .listen_to_events(|event| {
+                        log::info!("Received event: {:#?}", event);
+                    })
+                    .await
+                    .unwrap();
 
-            let aggregate = uuid::Uuid::new_v4();
-            es.create_stream(&aggregate).await.unwrap();
+                let mut es = event_db.create_context().await.unwrap();
 
-            let e1 = TestEvent::TestEvent1 { data: "aa".to_string() };
-            let e2 = TestEvent::TestEvent2 { aa: 5 };
-            let e3 = TestEvent::TestEvent2 { aa: 12 };
-            let e4 = TestEvent::TestEvent1 {
-                data: "_bb".to_string(),
-            };
+                let aggregate = uuid::Uuid::new_v4();
+                es.create_stream(&aggregate).await.unwrap();
 
-            es.store_events(&aggregate, None, &[e1.clone(), e2.clone()])
-                .await
-                .unwrap();
-            {
-                let snapshot = es.get_snapshot::<TestAggregate>(&aggregate).await.unwrap();
-                assert!(snapshot.is_none());
-            }
-
-            {
-                let snapshot = es.get_aggregate::<TestAggregate>(&aggregate).await.unwrap().unwrap();
-                log::info!("snapshot: {:#?}", snapshot.aggregate());
-                assert_eq!(2, snapshot.version());
-                assert_eq!("aa", &snapshot.aggregate().e1);
-                assert_eq!(5, snapshot.aggregate().aa);
-
-                es.store_snapshot(&snapshot).await.unwrap();
-
-                match es.store_snapshot(&snapshot).await {
-                    Err(EventStoreError::Conflict) => (),
-                    err => panic!("Expected Conflict error, {err:?}"),
+                let e1 = TestEvent::TestEvent1 { data: "aa".to_string() };
+                let e2 = TestEvent::TestEvent2 { aa: 5 };
+                let e3 = TestEvent::TestEvent2 { aa: 12 };
+                let e4 = TestEvent::TestEvent1 {
+                    data: "_bb".to_string(),
                 };
+
+                es.store_events(&aggregate, None, &[e1.clone(), e2.clone()])
+                    .await
+                    .unwrap();
+                {
+                    let snapshot = es.get_snapshot::<TestAggregate>(&aggregate).await.unwrap();
+                    assert!(snapshot.is_none());
+                }
+
+                {
+                    let snapshot = es.get_aggregate::<TestAggregate>(&aggregate).await.unwrap().unwrap();
+                    log::info!("snapshot: {:#?}", snapshot.aggregate());
+                    assert_eq!(2, snapshot.version());
+                    assert_eq!("aa", &snapshot.aggregate().e1);
+                    assert_eq!(5, snapshot.aggregate().aa);
+
+                    es.store_snapshot(&snapshot).await.unwrap();
+
+                    match es.store_snapshot(&snapshot).await {
+                        Err(EventStoreError::Conflict) => (),
+                        err => panic!("Expected Conflict error, {err:?}"),
+                    };
+                }
+
+                es.store_events(&aggregate, None, &[e3.clone(), e4.clone()])
+                    .await
+                    .unwrap();
+
+                {
+                    let snapshot = es.get_snapshot::<TestAggregate>(&aggregate).await.unwrap().unwrap();
+                    assert_eq!(2, snapshot.version());
+                    assert_eq!("aa", &snapshot.aggregate().e1);
+                    assert_eq!(5, snapshot.aggregate().aa);
+                }
+
+                {
+                    let snapshot = es.get_aggregate::<TestAggregate>(&aggregate).await.unwrap().unwrap();
+                    assert_eq!(4, snapshot.version());
+                    assert_eq!("aa_bb", snapshot.aggregate().e1);
+                    assert_eq!(12, snapshot.aggregate().aa);
+
+                    es.store_snapshot(&snapshot).await.unwrap();
+                }
             }
-
-            es.store_events(&aggregate, None, &[e3.clone(), e4.clone()])
-                .await
-                .unwrap();
-
-            {
-                let snapshot = es.get_snapshot::<TestAggregate>(&aggregate).await.unwrap().unwrap();
-                assert_eq!(2, snapshot.version());
-                assert_eq!("aa", &snapshot.aggregate().e1);
-                assert_eq!(5, snapshot.aggregate().aa);
-            }
-
-            {
-                let snapshot = es.get_aggregate::<TestAggregate>(&aggregate).await.unwrap().unwrap();
-                assert_eq!(4, snapshot.version());
-                assert_eq!("aa_bb", snapshot.aggregate().e1);
-                assert_eq!(12, snapshot.aggregate().aa);
-                
-                es.store_snapshot(&snapshot).await.unwrap();
-            }
-
         }
         _ => log::warn!("Skipping test_stored_statements"),
     }

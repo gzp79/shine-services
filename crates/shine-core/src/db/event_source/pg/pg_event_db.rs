@@ -1,7 +1,10 @@
+use serde::Deserialize;
+use uuid::Uuid;
+
 use crate::db::{
     event_source::{
         pg::{PgEventStoreStatement, PgSnapshotStatement},
-        Event, EventDb, EventDbContext, EventStoreError,
+        Event, EventDb, EventDbContext, EventNotification, EventStoreError,
     },
     DBError, PGConnectionPool, PGPooledConnection,
 };
@@ -52,5 +55,39 @@ where
             stmts_store: self.stmts_store.clone(),
             stmts_snapshot: self.stmts_snapshot.clone(),
         })
+    }
+
+    async fn listen_to_events<F>(&self, handler: F) -> Result<(), EventStoreError>
+    where
+        F: Fn(EventNotification) -> () + Send + Sync + 'static,
+    {
+        #[derive(Deserialize)]
+        struct EventMsg {
+            aggregate_id: Uuid,
+            version: usize,
+        }
+
+        let client = self.client.get().await.map_err(DBError::PGPoolError)?;
+        client
+            .listen(
+                &format!("es_notification_{}", E::NAME),
+                move |p| match serde_json::from_str::<EventMsg>(p).map(|msg| EventNotification {
+                    aggregate_id: msg.aggregate_id,
+                    version: msg.version,
+                }) {
+                    Ok(m) => {
+                        handler(m);
+                    }
+                    Err(e) => log::error!("Error deserializing event notification: {:#?}", e),
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn unlisten_to_events(&self) -> Result<(), EventStoreError> {
+        let client = self.client.get().await.map_err(DBError::PGPoolError)?;
+        client.unlisten(&format!("es_notification_{}", E::NAME)).await?;
+        Ok(())
     }
 }

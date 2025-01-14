@@ -3,6 +3,19 @@ CREATE TABLE es_heads_test(
     version INT NOT NULL
 );
 
+CREATE OR REPLACE FUNCTION notify_es_heads_test_update()
+RETURNS TRIGGER AS $$
+BEGIN
+    PERFORM pg_notify('es_notification_test', json_build_object('aggregate_id', NEW.aggregate_id, 'version', NEW.version)::text);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER es_heads_test_update_trigger
+AFTER UPDATE ON es_heads_test
+FOR EACH ROW
+EXECUTE FUNCTION notify_es_heads_test_update();
+
 CREATE TABLE es_events_test(
     aggregate_id UUID NOT NULL,
     version INT NOT NULL,
@@ -31,3 +44,4 @@ BEGIN
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
+

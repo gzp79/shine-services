@@ -33,8 +33,9 @@ primal-check = "0.3"
 ############################# RUNTIME #############################
 pin-project = { workspace = true }
 futures = { workspace = true }
+futures-channel = { workspace = true }
 async-trait = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { workspace = true, features = ["macros", "signal"] }
 
 ############################# TRACING #############################
 tracing = { workspace = true }
@@ -63,11 +64,7 @@ opentelemetry-application-insights = { version = "0.37", features = [
 ############################# DB #############################
 bb8 = { workspace = true }
 bb8-redis = { workspace = true }
-redis = { workspace = true, features = [
-    "tokio-comp",
-    "tokio-rustls-comp",
-    "json",
-] }
+redis = { workspace = true, features = ["json"] }
 bb8-postgres = { workspace = true }
 tokio-postgres = { workspace = true, features = [
     "with-uuid-1",
@@ -95,7 +92,7 @@ utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
 utoipa-swagger-ui = { workspace = true }
 tower = { workspace = true }
-tower-http = { workspace = true, features = ["trace", "cors"]}
+tower-http = { workspace = true, features = ["trace", "cors"] }
 axum = { workspace = true }
 axum-server = { workspace = true }
 axum-extra = { workspace = true, features = [

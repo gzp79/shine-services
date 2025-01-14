@@ -1,4 +1,5 @@
 use crate::db::cacerts::{get_root_cert_store, CertError};
+use crate::db::DBError;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use bb8_postgres::PostgresConnectionManager;
 use std::ops::Deref;
@@ -8,8 +9,11 @@ use std::sync::Arc;
 use std::{collections::HashMap, ops::DerefMut};
 use thiserror::Error as ThisError;
 use tokio::sync::RwLock;
-use tokio_postgres::{types::Type as PGType, Config as PGConfig, GenericClient, Statement};
+use tokio_postgres::tls::MakeTlsConnect;
+use tokio_postgres::{GenericClient, Statement};
 use tokio_postgres_rustls::MakeRustlsConnect;
+
+use super::PGListener;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PGStatementId(usize);
@@ -27,6 +31,7 @@ where
     prepared_statements_builder: Arc<RwLock<HashMap<usize, PreparedStatementBuilder>>>,
     prepared_statements: Arc<RwLock<HashMap<usize, Statement>>>,
     client: T,
+    listener: PGListener,
 }
 
 impl<T: PGRawConnection> PGConnection<T> {
@@ -61,12 +66,26 @@ impl<T: PGRawConnection> PGConnection<T> {
     }
 
     #[inline]
+    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), DBError>
+    where
+        F: Fn(&str) -> () + Send + Sync + 'static,
+    {
+        self.listener.listen(channel, handler).await
+    }
+
+    #[inline]
+    pub async fn unlisten(&self, channel: &str) -> Result<(), DBError> {
+        self.listener.unlisten(channel).await
+    }
+
+    #[inline]
     pub async fn transaction(&mut self) -> Result<PGConnection<PGRawTransaction<'_>>, PGError> {
         Ok(PGConnection {
             prepared_statement_id: self.prepared_statement_id.clone(),
             prepared_statements_builder: self.prepared_statements_builder.clone(),
             prepared_statements: self.prepared_statements.clone(),
             client: self.client.transaction().await?,
+            listener: self.listener.clone(),
         })
     }
 }
@@ -74,6 +93,7 @@ impl<T: PGRawConnection> PGConnection<T> {
 impl PGConnection<PGRawClient> {
     fn new(
         pg_client: PGRawClient,
+        listener: PGListener,
         prepared_statement_id: Arc<AtomicUsize>,
         prepared_statements_builder: Arc<RwLock<HashMap<usize, PreparedStatementBuilder>>>,
     ) -> Self {
@@ -82,6 +102,7 @@ impl PGConnection<PGRawClient> {
             prepared_statements_builder,
             prepared_statements: Arc::new(RwLock::new(HashMap::default())),
             client: pg_client,
+            listener,
         }
     }
 }
@@ -116,15 +137,26 @@ pub struct PGConnectionManager {
     connection_manager: PostgresConnectionManager<MakeRustlsConnect>,
     prepared_statement_id: Arc<AtomicUsize>,
     prepared_statements_builder: Arc<RwLock<HashMap<usize, PreparedStatementBuilder>>>,
+    listener: PGListener,
 }
 
 impl PGConnectionManager {
     pub fn new(config: PGConfig, tls: MakeRustlsConnect) -> Self {
+        let connection_manager = PostgresConnectionManager::new(config.clone(), tls.clone());
+        let listener = PGListener::new(config, tls);
+
         Self {
-            connection_manager: PostgresConnectionManager::new(config, tls),
+            connection_manager,
             prepared_statement_id: Arc::new(AtomicUsize::new(1)),
             prepared_statements_builder: Arc::new(RwLock::new(HashMap::default())),
+            listener,
         }
+    }
+}
+
+impl Drop for PGConnectionManager {
+    fn drop(&mut self) {
+        self.listener.close();
     }
 }
 
@@ -136,6 +168,7 @@ impl bb8::ManageConnection for PGConnectionManager {
         let conn = self.connection_manager.connect().await?;
         Ok(PGConnection::new(
             conn,
+            self.listener.clone(),
             self.prepared_statement_id.clone(),
             self.prepared_statements_builder.clone(),
         ))
@@ -156,7 +189,13 @@ pub type PGPooledConnection<'a> = PooledConnection<'a, PGConnectionManager>;
 pub type PGError = tokio_postgres::Error;
 pub type PGStatement = tokio_postgres::Statement;
 
+pub type PGConfig = tokio_postgres::Config;
+pub type PGType = tokio_postgres::types::Type;
+
 pub type PGRawClient = tokio_postgres::Client;
+type PGSocket = tokio_postgres::Socket;
+type PGSocketStream = <MakeRustlsConnect as MakeTlsConnect<PGSocket>>::Stream;
+pub type PGRawSocketConnection = tokio_postgres::Connection<PGSocket, PGSocketStream>;
 pub type PGRawTransaction<'a> = tokio_postgres::Transaction<'a>;
 pub type PGClient = PGConnection<PGRawClient>;
 pub type PGTransaction<'a> = PGConnection<PGRawTransaction<'a>>;
@@ -177,6 +216,7 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PGConnectionPool, PGCreat
     let tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(certs)
         .with_no_client_auth();
+
     let tls = MakeRustlsConnect::new(tls_config);
 
     let pg_config = PGConfig::from_str(cns)?;

@@ -7,6 +7,8 @@ mod pg_connection;
 pub use self::pg_connection::*;
 mod pg_type;
 pub use self::pg_type::*;
+mod pg_listener;
+pub use self::pg_listener::*;
 
 /// Create a prepared SQL statements
 #[macro_export]
