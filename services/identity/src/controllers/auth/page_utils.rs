@@ -21,6 +21,18 @@ impl<'a> PageUtils<'a> {
         }
     }
 
+    fn bind_app_nme(&self, context: &mut tera::Context) {
+        context.insert("appName", &self.settings.app_name);
+    }
+
+    fn bind_timeout(&self, context: &mut tera::Context) {
+        if let Some(page_redirect_time) = self.settings.page_redirect_time {
+            context.insert("timeout", &page_redirect_time);
+        } else {
+            context.insert("timeout", &-1);
+        }
+    }
+
     pub fn error(&self, auth_session: AuthSession, response: AuthError, target_url: Option<&Url>) -> AuthPage {
         log::error!("{response:?}");
 
@@ -53,7 +65,7 @@ impl<'a> PageUtils<'a> {
             .append_pair("status", &status.as_u16().to_string());
 
         let mut context = tera::Context::new();
-        context.insert("timeout", &self.settings.page_redirect_time);
+        self.bind_timeout(&mut context);
         context.insert("redirectUrl", target.as_str());
         context.insert("statusCode", &status.as_u16());
         context.insert("type", kind);
@@ -89,8 +101,8 @@ impl<'a> PageUtils<'a> {
 
     pub fn redirect(&self, auth_session: AuthSession, target: Option<&str>, redirect_url: Option<&Url>) -> AuthPage {
         let mut context = tera::Context::new();
-        context.insert("timeout", &self.settings.page_redirect_time);
-        context.insert("title", &self.settings.app_name);
+        self.bind_timeout(&mut context);
+        self.bind_app_nme(&mut context);
         context.insert("target", target.unwrap_or(&self.settings.app_name));
         context.insert("redirectUrl", redirect_url.unwrap_or(&self.settings.home_url).as_str());
         let html = self

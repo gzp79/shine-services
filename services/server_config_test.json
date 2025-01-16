@@ -2,8 +2,8 @@
   "service": {
     "port": 0,
     "allowedOrigins": [
-      "^https:\\/\\/([a-zA-Z0-9-]+\\.)*sandbox\\.com(:[0-9]+)?$",
-      "^https:\\/\\/local\\.scytta\\.com(:[0-9]+)?$"
+      "^https:\\/\\/cloud\\.local-scytta\\.com(:[0-9]+)?$",
+      "^https:\\/\\/local-scytta\\.com(:[0-9]+)?$"
     ],
     "fullProblemResponse": true,
     "captchaSecret": "1x0000000000000000000000000000000AA",

@@ -1,9 +1,9 @@
-use axum::{extract::State, Json};
+use crate::{app_state::AppState, services::permissions};
+use axum::{extract::State, Extension, Json};
 use bb8::State as BB8PoolState;
 use serde::Serialize;
+use shine_core::web::{CheckedCurrentUser, CorePermissions, Problem, ProblemConfig};
 use utoipa::ToSchema;
-
-use crate::app_state::AppState;
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -23,7 +23,7 @@ impl From<BB8PoolState> for DBState {
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ServiceHealth {
+pub struct ServiceStatus {
     pub postgres: DBState,
     pub redis: DBState,
 }
@@ -33,12 +33,19 @@ pub struct ServiceHealth {
     path = "/api/info/status",
     tag = "health",
     responses(
-        (status = OK, body = ServiceHealth)
+        (status = OK, body = ServiceStatus)
     )
 )]
-pub async fn get_service_status(State(state): State<AppState>) -> Json<ServiceHealth> {
-    Json(ServiceHealth {
+pub async fn get_service_status(
+    State(state): State<AppState>,
+    Extension(problem_config): Extension<ProblemConfig>,
+    user: CheckedCurrentUser,
+) -> Result<Json<ServiceStatus>, Problem> {
+    user.core_permissions()
+        .check(permissions::READ_TRACE, &problem_config)?;
+
+    Ok(Json(ServiceStatus {
         postgres: DBState::from(state.db().postgres.state()),
         redis: DBState::from(state.db().redis.state()),
-    })
+    }))
 }

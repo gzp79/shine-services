@@ -1,6 +1,6 @@
 use crate::{
     telemetry::{DynConfig, TelemetryService},
-    web::{permissions, CheckedCurrentUser, GlobalPermissions, Problem, ProblemConfig},
+    web::{permissions, CheckedCurrentUser, CorePermissions, Problem, ProblemConfig},
 };
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
@@ -27,7 +27,7 @@ pub async fn put_telemetry_config(
     user: CheckedCurrentUser,
     Json(body): Json<TraceConfig>,
 ) -> Result<(), Problem> {
-    user.global_permissions()
+    user.core_permissions()
         .check(permissions::UPDATE_TRACE, &problem_config)?;
 
     log::trace!("reconfigure telemetry: {:#?}", body);
@@ -53,8 +53,8 @@ pub async fn get_telemetry_config(
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
 ) -> Result<Json<TraceConfig>, Problem> {
-    user.global_permissions()
-        .check(permissions::UPDATE_TRACE, &problem_config)?;
+    user.core_permissions()
+        .check(permissions::READ_TRACE, &problem_config)?;
 
     let config = telemetry
         .get_configuration()

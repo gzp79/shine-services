@@ -8,10 +8,16 @@ log = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 
+serde = { workspace = true }
+
+uuid = { workspace = true }
 rand = { workspace = true }
 ring = { workspace = true }
 
-serde = { workspace = true }
+############################# RUNTIME #############################
+futures = { workspace = true }
+futures-channel = { workspace = true }
+tokio = { workspace = true }
 
 ############################# DB #############################
 bb8 = { workspace = true }
@@ -35,6 +41,7 @@ refinery = { workspace = true }
 axum = { workspace = true, features = ["ws"] }
 utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
+validator = { workspace = true }
 
 shine-core = { workspace = true }
 

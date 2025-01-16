@@ -148,7 +148,7 @@ async fn authenticate_with_header_token(
 ) -> Result<AuthenticationResult, AuthPage> {
     let token = auth_header.token();
 
-    log::debug!("Retrieving the persistent token ...");
+    log::debug!("Checking the access token from the header...");
     let (identity, token_info) = {
         match state.identity_service().test_api_key(token).await {
             Ok(Some(info)) => info,
@@ -200,7 +200,8 @@ async fn authenticate_with_cookie_token(
     fingerprint: &ClientFingerprint,
     mut auth_session: AuthSession,
 ) -> Result<AuthenticationResult, AuthPage> {
-    log::debug!("Retrieving the access token ...");
+    log::debug!("Checking the access token from the cookie ...");
+
     let (identity, token_info) = {
         let token_cookie = auth_session
             .token_cookie
@@ -331,6 +332,10 @@ async fn authenticate(
 
     if auth_session.user_session.is_some() {
         // keep all the cookies, reject with logout required
+        log::debug!(
+            "There is an active session ({:#?}), rejecting the login with a logout required",
+            auth_session.user_session
+        );
         return Err(PageUtils::new(state).error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref()));
     }
 

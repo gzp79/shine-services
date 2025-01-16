@@ -11,7 +11,7 @@ describe('Login with token for new user', () => {
             .query({ rememberMe: 'invalid' });
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'https://web.sandbox.com:8443/error?type=invalidInput&status=400'
+            'https://local-scytta.com:8443/error?type=invalidInput&status=400'
         );
         expect(response.text).toContain('Failed to deserialize query string');
 

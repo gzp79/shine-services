@@ -2,17 +2,18 @@ import fs from 'fs';
 import { joinURL } from '$lib/utils';
 
 export class Config {
-    appDomain = 'sandbox.com';
-    serviceDomain = 'cloud.sandbox.com';
-    serviceUrl = 'https://cloud.sandbox.com:8443';
-    identityUrl = 'https://cloud.sandbox.com:8443/identity';
-
-    getUrlFor(path: string): string {
-        return joinURL(new URL(this.serviceUrl), path);
-    }
+    appDomain = 'local-scytta.com';
+    serviceDomain = 'cloud.local-scytta.com';
+    
+    identityUrl = 'https://cloud.local-scytta.com:8443/identity';
+    builderUrl = 'https://cloud.local-scytta.com:8444/identity';
 
     getIdentityUrlFor(path: string): string {
         return joinURL(new URL(this.identityUrl), path);
+    }
+
+    getBuilderUrlFor(path: string): string {
+        return joinURL(new URL(this.builderUrl), path);
     }
 
     defaultRedirects = {

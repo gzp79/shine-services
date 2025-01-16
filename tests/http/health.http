@@ -1,6 +1,6 @@
-//@url = https://cloud.sandbox.com:8443
-//@url = http://cloud.sandbox.com:8080/identity
-//@url = https://cloud.sandbox.com:8443/identity
+//@url = https://cloud.local-scytta.com:8443
+//@url = http://cloud.local-scytta.com:8080/identity
+//@url = https://cloud.local-scytta.com:8443/identity
 @url = https://cloud.scytta.com/identity
 
 GET {{url}}/../ping

@@ -1,8 +1,7 @@
-import request from '$lib/request';
-import config from '../test.config';
+import { test, expect } from '@fixtures/service-fixture';
 
-describe('Sanity check', () => {
-    const originUrl = new URL(config.serviceUrl);
+describe('Sanity check', { tag: ['@smoke', '@regression'] }, () => {
+    const originUrl = new URL(config.identityUrl);
 
     it('Allow origin shall not be present without origin', async () => {
         const url = config.getIdentityUrlFor('/info/ready');
@@ -30,12 +29,12 @@ describe('Sanity check', () => {
         expect(response.headers['access-control-allow-credentials']).toEqual('true');
     });
 
-    it('Allow origin shall be present for a subdomain', async () => {
+    it('Allow origin shall not be present for a subdomain', async () => {
         const url = config.getIdentityUrlFor('/info/ready');
         const origin = `${originUrl.protocol}//subdom.${originUrl.hostname}:${originUrl.port}`;
         const response = await request.get(url).set('Origin', origin);
         expect(response).toHaveStatus(200);
-        expect(response.headers['access-control-allow-origin']).toEqual(origin);
+        expect(response.headers['access-control-allow-origin']).toBeUndefined();
         expect(response.headers['access-control-allow-credentials']).toEqual('true');
     });
 

@@ -1,4 +1,7 @@
-use crate::{app_config::AppConfig, repositories::DBPool};
+use crate::{
+    app_config::AppConfig,
+    repositories::{DBPool, SessionHandler},
+};
 use anyhow::Error as AnyError;
 use ring::rand::SystemRandom;
 use shine_core::web::WebAppConfig;
@@ -7,6 +10,7 @@ use std::sync::Arc;
 struct Inner {
     random: SystemRandom,
     db: DBPool,
+    sessions: SessionHandler,
 }
 
 #[derive(Clone)]
@@ -21,10 +25,15 @@ impl AppState {
         Ok(Self(Arc::new(Inner {
             random: SystemRandom::new(),
             db: db_pool,
+            sessions: SessionHandler::new(),
         })))
     }
 
     pub fn db(&self) -> &DBPool {
         &self.0.db
+    }
+
+    pub fn sessions(&self) -> &SessionHandler {
+        &self.0.sessions
     }
 }

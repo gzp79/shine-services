@@ -4063,6 +4063,8 @@ dependencies = [
  "bb8",
  "bb8-postgres",
  "bb8-redis",
+ "futures",
+ "futures-channel",
  "log",
  "postgres-from-row",
  "rand 0.8.5",
@@ -4073,10 +4075,13 @@ dependencies = [
  "shine-core",
  "shine-test",
  "thiserror 2.0.9",
+ "tokio",
  "tokio-postgres",
  "tokio-postgres-rustls",
  "utoipa",
  "utoipa-axum",
+ "uuid",
+ "validator",
 ]
 
 [[package]]

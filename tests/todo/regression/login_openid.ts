@@ -38,7 +38,7 @@ describe('Check OpenId auth', () => {
 
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'https://web.sandbox.com:8443/error?type=authError&status=400'
+            'https://local-scytta.com:8443/error?type=authError&status=400'
         );
         expect(response.text).toContain('&quot;MissingExternalLoginCookie&quot;');
 
@@ -60,7 +60,7 @@ describe('Check OpenId auth', () => {
         );
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
-            'https://web.sandbox.com:8443/error?type=authError&status=400'
+            'https://local-scytta.com:8443/error?type=authError&status=400'
         );
         expect(response.text).toContain('&quot;MissingExternalLoginCookie&quot;');
 

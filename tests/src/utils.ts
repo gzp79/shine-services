@@ -4,7 +4,7 @@ export function delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function joinURL(baseUrl: URL, path: string): string {
+export function joinURL(baseUrl: URL | string, path: string): string {
     let base = baseUrl.toString();
     if (!base.endsWith('/')) {
         base += '/';
