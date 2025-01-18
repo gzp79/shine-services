@@ -9,11 +9,11 @@ const log = debug('test:request');
 /// Any payload used to test edge cases, model validation, etc.
 export type Unstructured = {
     type: 'unstructured';
-    rawData: any;
+    rawData: unknown;
 };
 
 /// Construct an unstructured payload
-export function unstructured(rawData: any): Unstructured {
+export function unstructured(rawData: unknown): Unstructured {
     return { type: 'unstructured', rawData };
 }
 
@@ -134,7 +134,7 @@ export class ApiResponse {
         return decoder.decode(buffer);
     }
 
-    public async json(): Promise<any> {
+    public async json(): Promise<object> {
         return await this._response.json();
     }
 
@@ -224,38 +224,54 @@ export class ApiRequest<Q = void> {
         return this;
     }
 
+    private bodyJson(): string | undefined {
+        if (this.body === undefined) {
+            return undefined;
+        }
+        if ((this.body as Unstructured).type === 'unstructured') {
+            return JSON.stringify((this.body as Unstructured).rawData);
+        }
+        return JSON.stringify(this.body);
+    }
+
     async send(): Promise<ApiResponse> {
         const context = await request.newContext();
-
+        
         const log_id = randomUUID();
-        log(
-            `Sending request [${log_id}] ${this.method} ${this.url}\nparams: ${JSON.stringify(this.params, null, 2)}\nheaders: ${JSON.stringify(this.headers, null, 2)}`
-        );
-        if (this.body !== undefined) {
-            log(`Request body [${log_id}]: ${this.body}`);
+        const headers = removeUndefinedValues(this.headers);
+
+        const data = this.bodyJson();
+        if (data !== undefined) {
+            headers['content-type'] = 'application/json';
         }
 
-        const headers = removeUndefinedValues(this.headers);
+        log(
+            `Sending request [${log_id}] ${this.method} ${this.url}\nparams: ${JSON.stringify(this.params, null, 2)}\nheaders: ${JSON.stringify(headers, null, 2)}`
+        );
+        if (data !== undefined) {
+            log(`Request body [${log_id}]: ${data}`);
+        }        
+
         let response;
         switch (this.method) {
             case 'get': {
-                response = await context.get(this.url, { headers, params: this.params });
+                response = await context.get(this.url, { headers, params: this.params, data });
                 break;
             }
             case 'post': {
-                response = await context.post(this.url, { headers, params: this.params });
+                response = await context.post(this.url, { headers, params: this.params, data });
                 break;
             }
             case 'put': {
-                response = await context.put(this.url, { headers, params: this.params });
+                response = await context.put(this.url, { headers, params: this.params, data });
                 break;
             }
             case 'patch': {
-                response = await context.patch(this.url, { headers, params: this.params });
+                response = await context.patch(this.url, { headers, params: this.params, data });
                 break;
             }
             case 'delete': {
-                response = await context.delete(this.url, { headers, params: this.params });
+                response = await context.delete(this.url, { headers, params: this.params, data });
                 break;
             }
         }

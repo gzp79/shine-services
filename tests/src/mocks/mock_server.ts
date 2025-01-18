@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import express, { Express } from 'express';
 import { Query, Request, Response, Send } from 'express-serve-static-core';
 import http from 'http';
@@ -101,7 +103,7 @@ export class MockServer {
             throw err;
         });
 
-        this.app.use(async (req: TypedRequest<any, any>, res: TypedResponse<any>, next) => {
+        this.app.use(async (req: TypedRequest<any, any>, _res: TypedResponse<any>, next) => {
             this.log(`[${req.method}] ${req.url} ...`);
             await next();
             this.log(`[${req.method}] ${req.url} completed.`);

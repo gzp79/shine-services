@@ -1,8 +1,7 @@
-import { Cookie } from 'tough-cookie';
-import api from '$lib/api/api';
-import { getCookies } from '$lib/response_utils';
+import { expect, test } from '@fixtures/service-fixture';
+import { Cookie } from '$lib/api/api';
 
-describe('Auth cookie consistency matrix', () => {
+test.describe('Auth cookie consistency matrix', () => {
     const testCases = [
         //-: missing
         //!: not matching (ex different user id). When multiple ! are present in a row it's assumed all of them are different
@@ -47,15 +46,15 @@ describe('Auth cookie consistency matrix', () => {
     ].map((r: string) => r.split('|').map((c: string) => c.trim()));
 
     let cookieData!: Record<string, string>;
-    beforeAll(async () => {
+    test.beforeAll(async ({ api }) => {
         // creates a single group of matching cookie triplet (tid,sid,eid)
         const createCookies = async (): Promise<string[]> => {
             let tid, sid, eid: string;
 
             {
-                const response = await api.request.loginWithToken(null, null, null, null, true, null);
+                const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, null).send();
                 expect(response).toHaveStatus(200);
-                const cookies = getCookies(response);
+                const cookies = response.cookies();
                 expect(cookies.tid).toBeValidTID();
                 tid = cookies.tid.value;
                 expect(cookies.sid).toBeValidSID();
@@ -64,9 +63,9 @@ describe('Auth cookie consistency matrix', () => {
 
             //eid
             {
-                const response = await api.request.linkWithOAuth2(sid);
+                const response = await api.auth.linkWithOAuth2Request(sid).send();
                 expect(response).toHaveStatus(200);
-                const cookies = getCookies(response);
+                const cookies = response.cookies();
                 expect(cookies.eid).toBeValidEID();
                 eid = cookies.eid.value;
             }
@@ -95,93 +94,95 @@ describe('Auth cookie consistency matrix', () => {
         };
     });
 
-    it.each(testCases)('Cookie matrix [%p,%p,%p] shall pass', async (tid, sid, eid, expected) => {
-        let requestCookies: Record<string, string | null> = {
-            tid: null,
-            sid: null,
-            eid: null
-        };
+    for (const tst of testCases) {
+        const [tid, sid, eid, expected] = tst;
 
-        for (const [c, name] of [
-            [tid, 'tid'],
-            [sid, 'sid'],
-            [eid, 'eid']
-        ]) {
-            switch (c) {
-                case '+':
-                    requestCookies[name] = cookieData[name];
-                    break;
-                case '-':
-                    /* noop */ break;
-                case '!':
-                    requestCookies[name] = cookieData[name + '2'];
-                    break;
-                case 's':
-                    requestCookies[name] = cookieData[name + 'InvalidSig'];
-                    break;
-                default:
-                    throw new Error(`Unhandled cookie mod for ${c}`);
+        test(`Cookie matrix [${tid},${sid},${eid}] shall pass`, async ({ api }) => {
+            const requestCookies: Record<string, string | null> = {
+                tid: null,
+                sid: null,
+                eid: null
+            };
+
+            for (const [c, name] of [
+                [tid, 'tid'],
+                [sid, 'sid'],
+                [eid, 'eid']
+            ]) {
+                switch (c) {
+                    case '+':
+                        requestCookies[name] = cookieData[name];
+                        break;
+                    case '-':
+                        /* noop */ break;
+                    case '!':
+                        requestCookies[name] = cookieData[name + '2'];
+                        break;
+                    case 's':
+                        requestCookies[name] = cookieData[name + 'InvalidSig'];
+                        break;
+                    default:
+                        throw new Error(`Unhandled cookie mod for ${c}`);
+                }
             }
-        }
-        //console.log(requestCookies);
+            //console.log(requestCookies);
 
-        const response = await api.request.validate(
-            requestCookies.tid,
-            requestCookies.sid,
-            requestCookies.eid
-        );
-        expect(response).toHaveStatus(200);
+            const response = await api.auth
+                .validateRequest(requestCookies.tid, requestCookies.sid, requestCookies.eid)
+                .send();
+            expect(response).toHaveStatus(200);
 
-        const cookies = getCookies(response);
-        const now = new Date().getTime();
+            const cookies = response.cookies();
+            const now = new Date().getTime();
 
-        const isValid = (c?: Cookie): boolean => {
-            if (!c) return false;
-            if (c.expires == 'Infinity') return true;
-            return c.expires.getTime() > now;
-        };
-        const t = isValid(cookies.tid) ? cookies.tid?.value : undefined;
-        const s = isValid(cookies.sid) ? cookies.sid?.value : undefined;
-        const e = isValid(cookies.eid) ? cookies.eid?.value : undefined;
+            const isValid = (c?: Cookie): boolean => {
+                if (!c) return false;
+                if (c.expires === undefined) return true;
+                return c.expires.getTime() > now;
+            };
+            const t = isValid(cookies.tid) ? cookies.tid?.value : undefined;
+            const s = isValid(cookies.sid) ? cookies.sid?.value : undefined;
+            const e = isValid(cookies.eid) ? cookies.eid?.value : undefined;
 
-        const matched = new Set<string>(['t', 's', 'e']);
-        // check we have the expected values
-        for (const exp of expected.split(',')) {
-            switch (exp) {
-                case 's':
-                    expect(s).toEqual(cookieData.sid);
-                    break;
-                case 'S':
-                    expect(s).toEqual(cookieData.sid2);
-                    break;
-                case 't':
-                    expect(t).toEqual(cookieData.tid);
-                    break;
-                case 'T':
-                    expect(t).toEqual(cookieData.tid2);
-                    break;
-                case 'e':
-                    expect(e).toEqual(cookieData.eid);
-                    break;
-                case 'E':
-                    expect(e).toEqual(cookieData.eid2);
-                    break;
+            const matched = new Set<string>(['t', 's', 'e']);
+            // check we have the expected values
+            for (const exp of expected.split(',')) {
+                switch (exp) {
+                    case 's':
+                        expect(s).toEqual(cookieData.sid);
+                        break;
+                    case 'S':
+                        expect(s).toEqual(cookieData.sid2);
+                        break;
+                    case 't':
+                        expect(t).toEqual(cookieData.tid);
+                        break;
+                    case 'T':
+                        expect(t).toEqual(cookieData.tid2);
+                        break;
+                    case 'e':
+                        expect(e).toEqual(cookieData.eid);
+                        break;
+                    case 'E':
+                        expect(e).toEqual(cookieData.eid2);
+                        break;
+                }
+                matched.delete(exp.toLowerCase());
             }
-            matched.delete(exp.toLowerCase());
-        }
-        // and no other cookies are valid
-        matched.forEach((exp) => {
-            switch (exp) {
-                case 's':
-                    expect(s).not.toBeDefined();
-                    break;
-                case 't':
-                    expect(t).not.toBeDefined();
-                    break;
-                case 'e':
-                    expect(e).not.toBeDefined();
-                    break;
-            }
+            // and no other cookies are valid
+            matched.forEach((exp) => {
+                switch (exp) {
+                    case 's':
+                        expect(s).not.toBeDefined();
+                        break;
+                    case 't':
+                        expect(t).not.toBeDefined();
+                        break;
+                    case 'e':
+                        expect(e).not.toBeDefined();
+                        break;
+                }
+            });
         });
-    });
+    }
 });

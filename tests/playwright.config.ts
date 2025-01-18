@@ -41,7 +41,11 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
                     loginUrl: 'https://login.com/',
                     redirectUrl: 'https://redirect.com/',
                     errorUrl: 'https://error.com/'
-                }
+                },
+
+                /* spell-checker: disable */
+                masterAdminKey: '2vazg4Rwe2uKkHABcbL8WdEAbqvPA49M' // hash: '$2b$05$0OWeMQAQuh9kmD642a0ZHeVl6VNa2g.z1HTI2rrQ3RPkmxoCNUohG';
+                /* spell-checker: enable */
             }
         }
     ]

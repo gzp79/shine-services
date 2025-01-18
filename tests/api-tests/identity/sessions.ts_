@@ -1,11 +1,7 @@
-import api from '$lib/api/api';
-import { ActiveSession } from '$lib/api/session_api';
-import { MockServer } from '$lib/mocks/mock_server';
-import OAuth2MockServer from '$lib/mocks/oauth2';
-import { TestUser } from '$lib/api/test_user';
-import config from '../test.config';
+import { ActiveSession } from "$lib/api/session_api";
+import { expect, test } from "@fixtures/service-fixture";
 
-describe('Sessions', () => {
+test.describe('Sessions', () => {
     // assume server is not off more than a few seconds and the test is fast enough
     const now = new Date().getTime();
     const dateRange = [new Date(now - 60 * 1000), new Date(now + 60 * 1000)];
@@ -33,7 +29,7 @@ describe('Sessions', () => {
     });
 
     it('Get token without a session shall fail', async () => {
-        let response = await api.request.getSessions(null);
+        const response = await api.request.getSessions(null);
         expect(response).toHaveStatus(401);
     });
 

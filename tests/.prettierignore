@@ -4,4 +4,5 @@ pnpm-lock.yaml
 yarn.lock
 
 node_modules
+reports
 todo

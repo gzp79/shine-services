@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { Certificates, MockServer, TypedRequest, TypedResponse } from '$lib/mocks/mock_server';
 import '$lib/string_utils';
 import bodyParser from 'body-parser';

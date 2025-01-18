@@ -15,12 +15,12 @@ const UserInfoSchema = z.object({
 });
 export type UserInfo = z.infer<typeof UserInfoSchema>;
 
-const AddUserRoleSchema = z.object({
+export const AddUserRoleSchema = z.object({
     role: z.string()
 });
 export type AddUserRole = z.infer<typeof AddUserRoleSchema>;
 
-const DeleteUserRoleSchema = z.object({
+export const DeleteUserRoleSchema = z.object({
     role: z.string()
 });
 export type DeleteUserRole = z.infer<typeof DeleteUserRoleSchema>;
@@ -47,7 +47,7 @@ export class UserAPI {
     }
 
     async getUserInfo(sid: string, extraHeaders?: Record<string, string>): Promise<UserInfo> {
-        let response = await this.getUserInfoRequest(sid)
+        const response = await this.getUserInfoRequest(sid)
             .withHeaders(extraHeaders ?? {})
             .send();
         expect(response).toHaveStatus(200);
@@ -57,7 +57,7 @@ export class UserAPI {
 
     getRolesRequest(sid: string | null, masterKey: boolean, userId: string): ApiRequest {
         const cs = sid && { sid };
-        let av = masterKey ? `${this.masterAdminKey}` : null;
+        const av = masterKey ? `${this.masterAdminKey}` : null;
 
         return ApiRequest.get(this.urlFor(`/api/identities/${userId}/roles`))
             .withCookies({ ...cs })
@@ -70,7 +70,7 @@ export class UserAPI {
         userId: string,
         extraHeaders?: Record<string, string>
     ): Promise<string[]> {
-        let response = await this.getRolesRequest(sid, masterKey, userId)
+        const response = await this.getRolesRequest(sid, masterKey, userId)
             .withHeaders(extraHeaders ?? {})
             .send();
         expect(response).toHaveStatus(200);
@@ -80,7 +80,7 @@ export class UserAPI {
 
     addRoleRequest(sid: string | null, masterKey: boolean, userId: string, role: string): ApiRequest<AddUserRole> {
         const cs = sid && { sid };
-        let av = masterKey ? `${this.masterAdminKey}` : null;
+        const av = masterKey ? `${this.masterAdminKey}` : null;
 
         return ApiRequest.put<AddUserRole>(this.urlFor(`/api/identities/${userId}/roles`), { role })
             .withCookies({ ...cs })
@@ -101,10 +101,10 @@ export class UserAPI {
             }
             return result;
         } else {
-            let response = await this.addRoleRequest(sid, masterKey, userId, role)
+            const response = await this.addRoleRequest(sid, masterKey, userId, role)
                 .withHeaders(extraHeaders ?? {})
                 .send();
-            expect(response).toHaveStatus(200);
+                expect(response).toHaveStatus(200);
             return (await response.parse(UsersRoleSchema)).roles;
         }
     }
@@ -116,7 +116,7 @@ export class UserAPI {
         role: string
     ): ApiRequest<DeleteUserRole> {
         const cs = sid && { sid };
-        let av = masterKey ? `${this.masterAdminKey}` : null;
+        const av = masterKey ? `${this.masterAdminKey}` : null;
 
         return ApiRequest.delete<DeleteUserRole>(this.urlFor(`/api/identities/${userId}/roles`))
             .withCookies({ ...cs })
@@ -138,7 +138,7 @@ export class UserAPI {
             }
             return result;
         } else {
-            let response = await this.deleteRoleRequest(sid, masterKey, userId, role)
+            const response = await this.deleteRoleRequest(sid, masterKey, userId, role)
                 .withHeaders(extraHeaders ?? {})
                 .send();
             expect(response).toHaveStatus(200);

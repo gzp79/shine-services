@@ -34,9 +34,9 @@ export class SessionAPI {
     }
 
     async getSessions(sid: string, extraHeaders?: Record<string, string>): Promise<ActiveSession[]> {
-        let response = await this.getSessionsRequest(sid)
+        const response = await this.getSessionsRequest(sid)
             .withHeaders(extraHeaders ?? {})
-            .send<ActiveSessions>();
+            .send();
         expect(response).toHaveStatus(200);
 
         return (await response.parse(ActiveSessionsSchema)).sessions;

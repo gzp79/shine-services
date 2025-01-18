@@ -10,8 +10,9 @@
         "mkcert": "npm run mkcert:ca && npm run mkcert:test",
         "build_service": "docker build --target test -t gzp79/shine-identity:test --progress=plain ..",
         "format": "prettier --write .",
-        "lint": "npm run lint:format",
+        "lint": "npm run lint:format && npm run lint:eslint",
         "lint:format": "prettier --check .",
+        "lint:eslint": "eslint .",
         "test:local": "playwright test --project=local"
     },
     "author": "",
@@ -23,15 +24,21 @@
         "@playwright/test": "^1.49.1",
         "@trivago/prettier-plugin-sort-imports": "5.2.1",
         "@types/debug": "^4.1.12",
+        "@types/eslint": "^9.6.1",
+        "@types/eslint-config-prettier": "^6.11.3",
         "@types/express": "5.0.0",
         "@types/lodash": "^4.17.14",
         "@types/node": "^22.10.7",
         "@types/uuid-validate": "^0.0.3",
+        "eslint": "^9.18.0",
+        "eslint-config-prettier": "^10.0.1",
+        "jiti": "^2.4.2",
         "mkcert": "^3.2.0",
         "prettier": "^3.4.2",
         "ts-node": "^10.9.2",
         "tsconfig-paths": "^4.2.0",
-        "typescript": "^5.7.3"
+        "typescript": "^5.7.3",
+        "typescript-eslint": "^8.20.0"
     },
     "dependencies": {
         "console": "^0.7.2",

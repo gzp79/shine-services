@@ -2,7 +2,7 @@ import { expect as baseExpect } from '@playwright/test';
 import { ApiResponse } from '$lib/api/api';
 
 export const expect = baseExpect.extend({
-    async toHaveStatus(actual: ApiResponse, statusCode: number) {
+    toHaveStatus(actual: ApiResponse, statusCode: number) {
         const status = actual.status();
         const pass = status === statusCode;
         if (pass) {
@@ -11,15 +11,14 @@ export const expect = baseExpect.extend({
                 pass: true
             };
         } else {
-            const text = await actual.text();
             return {
-                message: () => `expected ${status} not to be ${statusCode}, response: ${text}`,
+                message: () => `expected ${status} not to be ${statusCode}`,
                 pass: false
             };
         }
     },
 
-    async toHaveHeader(actual: ApiResponse, header: string, value: undefined | string | string[]) {
+    toHaveHeader(actual: ApiResponse, header: string, value: undefined | string | string[]) {
         const headers = actual.headers();
         const headerValue = headers[header];
 

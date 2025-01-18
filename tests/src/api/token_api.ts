@@ -35,7 +35,7 @@ const TokenSchema = z.object({
 });
 export type Token = z.infer<typeof TokenSchema>;
 
-const CreateTokenRequestSchema = z.object({
+export const CreateTokenRequestSchema = z.object({
     kind: TokenKindSchema,
     timeToLive: z.number(),
     bindToSite: z.boolean()
@@ -56,9 +56,9 @@ export class TokenAPI {
     }
 
     async getTokens(sid: string, extraHeaders?: Record<string, string>): Promise<ActiveToken[]> {
-        let response = await this.getTokensRequest(sid)
+        const response = await this.getTokensRequest(sid)
             .withHeaders(extraHeaders ?? {})
-            .send<ActiveTokens>();
+            .send();
         expect(response).toHaveStatus(200);
 
         return (await response.parse(ActiveTokensSchema)).tokens;
@@ -97,13 +97,13 @@ export class TokenAPI {
         bindToSite: boolean,
         extraHeaders?: Record<string, string>
     ): Promise<Token> {
-        let response = await this.createTokenRequest(sid, 'singleAccess', duration, bindToSite)
+        const response = await this.createTokenRequest(sid, 'singleAccess', duration, bindToSite)
             .withHeaders(extraHeaders ?? {})
             .send();
 
         expect(response).toHaveStatus(200);
 
-        let token = await response.parse(TokenSchema);
+        const token = await response.parse(TokenSchema);
         expect(token.kind).toEqual('singleAccess');
 
         return token;
@@ -115,12 +115,12 @@ export class TokenAPI {
         bindToSite: boolean,
         extraHeaders?: Record<string, string>
     ): Promise<Token> {
-        let response = await this.createTokenRequest(sid, 'persistent', duration, bindToSite)
+        const response = await this.createTokenRequest(sid, 'persistent', duration, bindToSite)
             .withHeaders(extraHeaders ?? {})
             .send();
         expect(response).toHaveStatus(200);
 
-        let token = await response.parse(TokenSchema);
+        const token = await response.parse(TokenSchema);
         expect(token.tokenType).toEqual('Bearer');
         expect(token.kind).toEqual('persistent');
 

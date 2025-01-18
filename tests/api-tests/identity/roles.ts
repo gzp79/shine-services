@@ -1,15 +1,15 @@
-import { randomUUID } from 'crypto';
-import api from '$lib/api/api';
+import { expect, test } from '@fixtures/service-fixture';
 import { TestUser } from '$lib/api/test_user';
+import { randomUUID } from 'crypto';
 
 // It checks only for the access of the feature, but not if it does what it have to.
-describe('Access to user role management', () => {
-    let users: Record<string, TestUser> = {};
+test.describe('Access to user role management', () => {
+    const users: Record<string, TestUser> = {};
 
-    beforeAll(async () => {
-        users.target = await TestUser.createGuest();
-        users.general = await TestUser.createGuest();
-        users.admin = await TestUser.createGuest({ roles: ['SuperAdmin'] });
+    test.beforeAll(async ({ api }) => {
+        users.target = await api.testUsers.createGuest();
+        users.general = await api.testUsers.createGuest();
+        users.admin = await api.testUsers.createGuest({ roles: ['SuperAdmin'] });
     });
 
     class TestCase {
@@ -34,66 +34,62 @@ describe('Access to user role management', () => {
         new TestCase('admin', true, 'target', 200)
     ];
 
-    it.each(testCases)(
-        'Get roles ($#) with (user:$user, apiKey:$apiKey, target:$targetUser) shall return $expectedCode',
-        async (test) => {
-            let target = users[test.targetUser];
-            const sid = test.user ? users[test.user].sid : null;
-            const response = await api.request.getRoles(sid, test.apiKey, target.userId);
-            expect(response).toHaveStatus(test.expectedCode);
-        }
-    );
+    for (const tst of testCases) {
+        test(`Get roles with (user:${tst.user}, apiKey:${tst.apiKey}, target:${tst.targetUser}) shall return ${tst.expectedCode}`, async ({
+            api
+        }) => {
+            const target = users[tst.targetUser];
+            const sid = tst.user ? users[tst.user].sid : null;
+            const response = await api.user.getRolesRequest(sid, tst.apiKey, target.userId).send();
+            expect(response).toHaveStatus(tst.expectedCode);
+        });
 
-    it.each(testCases)(
-        'Add role ($#) with (user:$user, apiKey:$apiKey, target:$targetUser) shall return $expectedCode',
-        async (test) => {
-            let target = users[test.targetUser];
-            const sid = test.user ? users[test.user].sid : null;
-            const response = await api.request.addRole(
-                sid,
-                test.apiKey,
-                target.userId,
-                'Role_' + randomUUID()
-            );
-            expect(response).toHaveStatus(test.expectedCode);
-        }
-    );
+        test(`Add role with (user:${tst.user}, apiKey:${tst.apiKey}, target:${tst.targetUser}) shall return ${tst.expectedCode}`, async ({
+            api
+        }) => {
+            const target = users[tst.targetUser];
+            const sid = tst.user ? users[tst.user].sid : null;
+            const response = await api.user
+                .addRoleRequest(sid, tst.apiKey, target.userId, 'Role_' + randomUUID())
+                .send();
+            expect(response).toHaveStatus(tst.expectedCode);
+        });
 
-    it.each(testCases)(
-        'Delete role ($#) with (user:$user, apiKey:$apiKey, target:$targetUser) shall return $expectedCode',
-        async (test) => {
-            let target = users[test.targetUser];
-            const sid = test.user ? users[test.user].sid : null;
-            const response = await api.request.deleteRole(sid, test.apiKey, target.userId, 'Role2');
-            expect(response).toHaveStatus(test.expectedCode);
-        }
-    );
+        test(`Delete role with (user:${tst.user}, apiKey:${tst.apiKey}, target:${tst.targetUser}) shall return ${tst.expectedCode}`, async ({
+            api
+        }) => {
+            const target = users[tst.targetUser];
+            const sid = tst.user ? users[tst.user].sid : null;
+            const response = await api.user.deleteRoleRequest(sid, tst.apiKey, target.userId, 'Role2').send();
+            expect(response).toHaveStatus(tst.expectedCode);
+        });
+    }
 });
 
-describe('User roles', () => {
+test.describe('User roles', () => {
     let admin: TestUser = undefined!;
 
-    beforeAll(async () => {
-        admin = await TestUser.createGuest({ roles: ['SuperAdmin'] });
+    test.beforeAll(async ({ api }) => {
+        admin = await api.testUsers.createGuest({ roles: ['SuperAdmin'] });
     });
 
-    it('Getting role of non-existing user shall fail', async () => {
-        let response = await api.request.getRoles(admin.sid, false, randomUUID());
+    test('Getting role of non-existing user shall fail', async ({ api }) => {
+        const response = await api.user.getRolesRequest(admin.sid, false, randomUUID()).send();
         expect(response).toHaveStatus(404);
     });
 
-    it('Setting role of non-existing user shall fail', async () => {
-        let response = await api.request.addRole(admin.sid, false, randomUUID(), 'Role1');
+    test('Setting role of non-existing user shall fail', async ({ api }) => {
+        const response = await api.user.addRoleRequest(admin.sid, false, randomUUID(), 'Role1').send();
         expect(response).toHaveStatus(404);
     });
 
-    it('Deleting role of non-existing user shall fail', async () => {
-        let response = await api.request.deleteRole(admin.sid, false, randomUUID(), 'Role1');
+    test('Deleting role of non-existing user shall fail', async ({ api }) => {
+        const response = await api.user.deleteRoleRequest(admin.sid, false, randomUUID(), 'Role1').send();
         expect(response).toHaveStatus(404);
     });
 
-    it('A complex flow with add, get, delete shall work', async () => {
-        const user = await TestUser.createGuest();
+    test('A complex flow with add, get, delete shall work', async ({ api }) => {
+        const user = await api.testUsers.createGuest();
 
         const userApi = api.user;
         const userId = user.userId;

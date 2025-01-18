@@ -17,7 +17,7 @@ export class ExternalUser {
         return new ExternalUser(randomUUID(), name, name + '@example.com');
     }
 
-    toCode(params?: any): string {
+    toCode(params?: Record<string, string>): string {
         return createUrlQueryString({
             id: this.id,
             name: this.name,

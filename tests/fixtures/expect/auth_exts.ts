@@ -4,7 +4,7 @@ import uuidValidate from 'uuid-validate';
 import { expect as baseExpect } from './common';
 
 export const expect = baseExpect.extend({
-    async toBeClearCookie(received: Cookie) {
+    toBeClearCookie(received: Cookie) {
         expect(received.secure).toBe(true);
         expect(received.httpOnly).toBe(true);
         expect(received.sameSite).toBe('Lax');
@@ -16,7 +16,7 @@ export const expect = baseExpect.extend({
         };
     },
 
-    async toBeValidTID(received: Cookie) {
+    toBeValidTID(received: Cookie) {
         expect(received.name).toEqual('tid');
         expect(received.secure).toEqual(true);
         expect(received.httpOnly).toEqual(true);
@@ -31,7 +31,7 @@ export const expect = baseExpect.extend({
         };
     },
 
-    async toBeValidSID(received: Cookie) {
+    toBeValidSID(received: Cookie) {
         expect(received.name).toEqual('sid');
         expect(received.secure).toEqual(true);
         expect(received.httpOnly).toEqual(true);
@@ -46,7 +46,7 @@ export const expect = baseExpect.extend({
         };
     },
 
-    async toBeValidEID(received: Cookie) {
+    toBeValidEID(received: Cookie) {
         expect(received.name).toEqual('eid');
         expect(received.secure).toEqual(true);
         expect(received.httpOnly).toEqual(true);
@@ -61,7 +61,7 @@ export const expect = baseExpect.extend({
         };
     },
 
-    async toBeGuestUser(received: UserInfo) {
+    toBeGuestUser(received: UserInfo) {
         expect(uuidValidate(received.userId)).toBeTruthy();
         expect(received.name).toStartWith('Freshman_');
         expect(received.sessionLength).toBeGreaterThanOrEqual(0);

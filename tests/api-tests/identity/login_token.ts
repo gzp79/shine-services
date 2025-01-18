@@ -1,6 +1,6 @@
-//import { UserInfo } from '$lib/api/user_api';
-//import { TestUser } from '$lib/test_user';
 import { expect, test } from '@fixtures/service-fixture';
+import { TestUser } from '$lib/api/test_user';
+import { UserInfo } from '$lib/api/user_api';
 import { getPageRedirectUrl } from '$lib/api/utils';
 
 test.describe('Login with token for new user', () => {
@@ -126,14 +126,13 @@ test.describe('Login with token for new user', () => {
     });
 });
 
-/*
-describe('Login with token for returning user', () => {
+test.describe('Login with token for returning user', () => {
     let testUser: TestUser = undefined!;
     let userInfo: Omit<UserInfo, 'sessionLength'> = undefined!;
 
-    beforeEach(async () => {
+    test.beforeEach(async ({ api }) => {
         console.log('Register a new user...');
-        testUser = await TestUser.createGuest();
+        testUser = await api.testUsers.createGuest();
         expect(testUser.sid).toBeDefined();
         expect(testUser.tid).toBeDefined();
 
@@ -144,14 +143,14 @@ describe('Login with token for returning user', () => {
     test('Login with (token: NULL, session: VALID, rememberMe: true) shall fail with logout required', async ({
         api
     }) => {
-        const response = await api.auth.loginWithToken(null, testUser.sid, null, null, true, null);
+        const response = await api.auth.loginWithTokenRequest(null, testUser.sid, null, null, true, null).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
+        expect(getPageRedirectUrl(await response.text())).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
         );
-        expect(response.text).toContain('&quot;LogoutRequired&quot;');
+        expect(await response.text()).toContain('&quot;LogoutRequired&quot;');
 
-        const newCookies = getCookies(response);
+        const newCookies = response.cookies();
         expect(newCookies.tid).toBeClearCookie();
         expect(newCookies.sid).toBeValidSID();
         expect(newCookies.sid.value, 'it shall be the same session').toEqual(testUser.sid);
@@ -162,14 +161,16 @@ describe('Login with token for returning user', () => {
     test('Login with (token: VALID, session: VALID, rememberMe: true) shall fail with logout required', async ({
         api
     }) => {
-        const response = await api.auth.loginWithToken(testUser.tid!, testUser.sid, null, null, true, undefined);
+        const response = await api.auth
+            .loginWithTokenRequest(testUser.tid!, testUser.sid, null, null, true, undefined)
+            .send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
+        expect(getPageRedirectUrl(await response.text())).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
         );
-        expect(response.text).toContain('&quot;LogoutRequired&quot;');
+        expect(await response.text()).toContain('&quot;LogoutRequired&quot;');
 
-        const newCookies = getCookies(response);
+        const newCookies = response.cookies();
         expect(newCookies.tid).toBeValidTID();
         expect(newCookies.tid.value, 'it shall be the same token').toEqual(testUser.tid);
         expect(newCookies.sid).toBeValidSID();
@@ -181,11 +182,11 @@ describe('Login with token for returning user', () => {
     test('Login with (token: VALID, session: NULL, rememberMe: NULL) shall succeed and login the user', async ({
         api
     }) => {
-        const response = await api.auth.loginWithToken(testUser.tid!, null, null, null, null, undefined);
+        const response = await api.auth.loginWithTokenRequest(testUser.tid!, null, null, null, null, undefined).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
+        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
 
-        const newCookies = getCookies(response);
+        const newCookies = response.cookies();
         expect(newCookies.tid).toBeValidTID();
         expect(newCookies.tid.value, 'token shall be rotated').not.toEqual(testUser.tid);
         expect(newCookies.sid).toBeValidSID();
@@ -197,11 +198,11 @@ describe('Login with token for returning user', () => {
     test('Login with (token: VALID, session: NULL, rememberMe: false) shall succeed and login the user', async ({
         api
     }) => {
-        const response = await api.auth.loginWithToken(testUser.tid!, null, null, null, false, undefined);
+        const response = await api.auth.loginWithTokenRequest(testUser.tid!, null, null, null, false, undefined).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
+        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
 
-        const newCookies = getCookies(response);
+        const newCookies = response.cookies();
         expect(newCookies.tid).toBeValidTID();
         expect(newCookies.tid.value, 'token shall be rotated').not.toEqual(testUser.tid);
         expect(newCookies.sid).toBeValidSID();
@@ -213,11 +214,11 @@ describe('Login with token for returning user', () => {
     test('Login with (token: VALID, session: NULL, rememberMe: true) shall succeed and login the user', async ({
         api
     }) => {
-        const response = await api.auth.loginWithToken(testUser.tid!, null, null, null, true, undefined);
+        const response = await api.auth.loginWithTokenRequest(testUser.tid!, null, null, null, true, undefined).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
+        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
 
-        const newCookies = getCookies(response);
+        const newCookies = response.cookies();
         expect(newCookies.tid).toBeValidTID();
         expect(newCookies.tid.value, 'token shall be rotated').not.toEqual(testUser.tid);
         expect(newCookies.sid).toBeValidSID();
@@ -226,4 +227,3 @@ describe('Login with token for returning user', () => {
         expect(await api.user.getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 });
-*/

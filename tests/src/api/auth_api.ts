@@ -21,10 +21,15 @@ export type UserCookies = {
 };
 
 interface StartLoginResult extends UserCookies {
-    authParams: any;
+    authParams: Record<string, string>;
 }
 
-const LinkedIdentitySchema = z.object({
+export const ProvidersSchema = z.object({
+    providers: z.array(z.string())
+});
+export type Providers = z.infer<typeof ProvidersSchema>;
+
+export const LinkedIdentitySchema = z.object({
     userId: z.string(),
     provider: z.string(),
     providerUserId: z.string(),
@@ -34,7 +39,7 @@ const LinkedIdentitySchema = z.object({
 });
 export type LinkedIdentity = z.infer<typeof LinkedIdentitySchema>;
 
-const LinkedIdentitiesSchema = z.object({
+export const LinkedIdentitiesSchema = z.object({
     links: z.array(LinkedIdentitySchema)
 });
 export type LinkedIdentities = z.infer<typeof LinkedIdentitiesSchema>;
@@ -79,7 +84,7 @@ export class AuthAPI {
         const qt = queryToken && { token: queryToken };
         const ct = tid && { tid };
         const cs = sid && { sid };
-        let qc = getCaptchaQuery(captcha);
+        const qc = getCaptchaQuery(captcha);
 
         return ApiRequest.get(this.urlFor('auth/token/login'))
             .withParams({ ...qs, ...qt, ...qc, ...this.defaultRedirects })
@@ -132,6 +137,16 @@ export class AuthAPI {
         };
     }
 
+    getProvidersRequest(): ApiRequest {
+        return ApiRequest.get(this.urlFor('/api/auth/providers'));
+    }
+
+    async getProviders(): Promise<string[]> {
+        const response = await this.getProvidersRequest().send();
+        expect(response).toHaveStatus(200);
+        return (await response.parse(ProvidersSchema)).providers;
+    }
+
     loginWithOAuth2Request(
         tid: string | null,
         sid: string | null,
@@ -141,7 +156,7 @@ export class AuthAPI {
         const qs = rememberMe && { rememberMe };
         const ct = tid && { tid };
         const cs = sid && { sid };
-        let qc = getCaptchaQuery(captcha);
+        const qc = getCaptchaQuery(captcha);
 
         return ApiRequest.get(this.urlFor('auth/oauth2_flow/login'))
             .withParams({ ...qs, ...qc, ...this.defaultRedirects })
@@ -300,7 +315,7 @@ export class AuthAPI {
         const qs = rememberMe && { rememberMe };
         const ct = tid && { tid };
         const cs = sid && { sid };
-        let qc = getCaptchaQuery(captcha);
+        const qc = getCaptchaQuery(captcha);
 
         return ApiRequest.get(this.urlFor('auth/openid_flow/login'))
             .withParams({ ...qs, ...qc, ...this.defaultRedirects })
@@ -457,7 +472,7 @@ export class AuthAPI {
     }
 
     async getExternalLinks(sid: string, extraHeaders?: Record<string, string>): Promise<LinkedIdentity[]> {
-        let response = await this.getExternalLinksRequest(sid)
+        const response = await this.getExternalLinksRequest(sid)
             .withHeaders(extraHeaders ?? {})
             .send();
 
@@ -472,7 +487,7 @@ export class AuthAPI {
     }
 
     unlinkRequest(sid: string | null, provider: string, providerUserId: string): ApiRequest {
-        let url = `api/auth/user/links/${provider}/${providerUserId}`;
+        const url = `api/auth/user/links/${provider}/${providerUserId}`;
         const cs = sid && { sid };
 
         return ApiRequest.delete(this.urlFor(url)).withCookies({ ...cs });
@@ -484,7 +499,7 @@ export class AuthAPI {
         providerUserId: string,
         extraHeaders?: Record<string, string>
     ): Promise<boolean> {
-        let response = await this.unlinkRequest(sid, provider, providerUserId)
+        const response = await this.unlinkRequest(sid, provider, providerUserId)
             .withHeaders(extraHeaders ?? {})
             .send();
         if (response.status() == 404) {
@@ -505,7 +520,7 @@ export class AuthAPI {
     }
 
     async logout(sid: string, terminateAll: boolean | null, extraHeaders?: Record<string, string>): Promise<void> {
-        let response = await this.logoutRequest(sid, terminateAll)
+        const response = await this.logoutRequest(sid, terminateAll)
             .withHeaders(extraHeaders ?? {})
             .send();
         expect(response).toHaveStatus(200);
