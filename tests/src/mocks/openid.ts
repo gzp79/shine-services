@@ -1,9 +1,9 @@
+import { Certificates, MockServer, TypedRequest, TypedResponse } from '$lib/mocks/mock_server';
+import '$lib/string_utils';
 import bodyParser from 'body-parser';
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { JWK, JWT } from 'ts-jose';
-import { Certificates, MockServer, TypedRequest, TypedResponse } from '$lib/mock_server';
-import '$lib/string_utils';
 
 interface ServerConfig {
     tls?: Certificates;
@@ -26,21 +26,18 @@ export default class Server extends MockServer {
         app.use(bodyParser.json());
         app.use(express.urlencoded({ extended: true }));
 
-        app.get(
-            '/openid/.well-known/openid-configuration',
-            (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
-                res.status(200).json({
-                    issuer: this.baseUrl,
-                    jwks_uri: this.baseUrl + '/jwks',
-                    authorization_endpoint: this.baseUrl + '/authorize',
-                    token_endpoint: this.baseUrl + '/token',
-                    userinfo_endpoint: this.baseUrl + '/userinfo',
-                    response_types_supported: ['id_token'],
-                    subject_types_supported: ['public'],
-                    id_token_signing_alg_values_supported: ['RS256']
-                });
-            }
-        );
+        app.get('/openid/.well-known/openid-configuration', (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
+            res.status(200).json({
+                issuer: this.baseUrl,
+                jwks_uri: this.baseUrl + '/jwks',
+                authorization_endpoint: this.baseUrl + '/authorize',
+                token_endpoint: this.baseUrl + '/token',
+                userinfo_endpoint: this.baseUrl + '/userinfo',
+                response_types_supported: ['id_token'],
+                subject_types_supported: ['public'],
+                id_token_signing_alg_values_supported: ['RS256']
+            });
+        });
 
         app.get('/openid/jwks', (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
             res.status(200).json({ keys: [this.config.jwks] });

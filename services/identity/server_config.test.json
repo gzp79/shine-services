@@ -18,7 +18,7 @@
     "appName": "Scytta",
     "homeUrl": "https://local-scytta.com:8443/",
     "errorUrl": "https://local-scytta.com:8443/error",
-    "authBaseUrl": "https://local-scytta.com:8443/identity/auth/",
+    "authBaseUrl": "https://cloud.local-scytta.com:8443/identity/auth/",
     "superUserApiKeyHash": "$2b$05$0OWeMQAQuh9kmD642a0ZHeVl6VNa2g.z1HTI2rrQ3RPkmxoCNUohG",
     "pageRedirectTime": 0,
     "pageErrorDetail": true,

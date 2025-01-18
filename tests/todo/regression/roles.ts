@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import api from '$lib/api/api';
-import { TestUser } from '$lib/test_user';
+import { TestUser } from '$lib/api/test_user';
 
 // It checks only for the access of the feature, but not if it does what it have to.
 describe('Access to user role management', () => {

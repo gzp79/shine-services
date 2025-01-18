@@ -2,11 +2,11 @@ import { randomUUID } from 'crypto';
 import os from 'os';
 import api from '$lib/api/api';
 import { ExternalUser } from '$lib/api/external_user';
-import { MockServer } from '$lib/mock_server';
+import { MockServer } from '$lib/mocks/mock_server';
 import OpenIdMockServer from '$lib/mocks/openid';
 import { getCookies, getPageRedirectUrl } from '$lib/response_utils';
 import { generateRandomString } from '$lib/string_utils';
-import { TestUser } from '$lib/test_user';
+import { TestUser } from '$lib/api/test_user';
 import { parseSignedCookie } from '$lib/utils';
 import config from '../test.config';
 

@@ -26,6 +26,6 @@ export default [
         }
     },
     {
-        ignores: ['build/']
+        ignores: ['node_modules/']
     }
 ];

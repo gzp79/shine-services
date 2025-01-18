@@ -3,7 +3,7 @@ import { ExternalLink } from '$lib/api/external_link_api';
 import { ExternalUser } from '$lib/api/external_user';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIdMockServer from '$lib/mocks/openid';
-import { TestUser } from '$lib/test_user';
+import { TestUser } from '$lib/api/test_user';
 import config from '../test.config';
 
 describe('External links', () => {

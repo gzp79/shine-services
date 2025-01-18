@@ -1,26 +1,43 @@
 import { expect as baseExpect } from '@playwright/test';
-import { APIResponse } from 'playwright';
+import { ApiResponse } from '$lib/api/api';
 
 export const expect = baseExpect.extend({
-    toHaveStatus(actual: APIResponse, statusCode) {
-        const pass = actual.status() === statusCode;
+    async toHaveStatus(actual: ApiResponse, statusCode: number) {
+        const status = actual.status();
+        const pass = status === statusCode;
         if (pass) {
             return {
-                message: () => `expected ${actual.status()} to be ${statusCode}`,
+                message: () => `expected ${status} to be ${statusCode}`,
                 pass: true
             };
         } else {
+            const text = await actual.text();
             return {
-                message: () => `unexpected status(${actual.status()}): ${actual.text}`,
+                message: () => `expected ${status} not to be ${statusCode}, response: ${text}`,
                 pass: false
             };
         }
     },
 
-    toHaveHeader(actual: APIResponse, header: string, value: string | undefined) {
-        const headerValue = actual.headers()[header];
+    async toHaveHeader(actual: ApiResponse, header: string, value: undefined | string | string[]) {
+        const headers = actual.headers();
+        const headerValue = headers[header];
 
-        const pass = actual.headers()[header] === value;
+        let pass = false;
+        if (value === undefined) {
+            pass = headerValue === undefined;
+        } else if (typeof value === 'string') {
+            pass = headerValue === value;
+        } else {
+            if (Array.isArray(headerValue)) {
+                const sortedValue = value.sort();
+                const sortedHeaderValue = headerValue.sort();
+                pass =
+                    headerValue.length === value.length &&
+                    sortedHeaderValue.every((val, index) => val === sortedValue[index]);
+            }
+        }
+
         if (pass) {
             return {
                 message: () => `expected ${headerValue} to be ${value}`,

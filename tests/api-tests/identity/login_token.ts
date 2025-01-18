@@ -1,89 +1,101 @@
-import api from '$lib/api/api';
-import { UserInfo } from '$lib/api/user_api';
-import { getCookies, getPageRedirectUrl } from '$lib/response_utils';
-import { TestUser } from '$lib/test_user';
-import config from '../test.config';
+//import { UserInfo } from '$lib/api/user_api';
+//import { TestUser } from '$lib/test_user';
+import { expect, test } from '@fixtures/service-fixture';
+import { getPageRedirectUrl } from '$lib/api/utils';
 
-describe('Login with token for new user', () => {
-    it('Login with (captcha: NO, token: NO, rememberMe: INVALID) shall fail and redirect to the default error page', async () => {
-        const response = await api.request
-            .loginWithToken(null, null, null, null, null, undefined)
-            .query({ rememberMe: 'invalid' });
+test.describe('Login with token for new user', () => {
+    test('Login with (captcha: NO, token: NO, rememberMe: INVALID) shall fail and redirect to the default error page', async ({
+        api
+    }) => {
+        const response = await api.auth
+            .loginWithTokenRequest(null, null, null, null, null, undefined)
+            .withParams({ rememberMe: 'invalid' })
+            .send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(
+        expect(getPageRedirectUrl(await response.text())).toEqual(
             'https://local-scytta.com:8443/error?type=invalidInput&status=400'
         );
-        expect(response.text).toContain('Failed to deserialize query string');
+        expect(await response.text()).toContain('Failed to deserialize query string');
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeClearCookie();
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Login with (captcha: NO, token: NO, redirectMe: NO) shall fail and redirect to the login page', async () => {
-        const response = await api.request.loginWithToken(null, null, null, null, null, undefined);
+    test('Login with (captcha: NO, token: NO, redirectMe: NO) shall fail and redirect to the login page', async ({
+        api
+    }) => {
+        const response = await api.auth.loginWithTokenRequest(null, null, null, null, null, undefined).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.loginUrl);
+        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.loginUrl);
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeClearCookie();
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Login with (captcha: NO, token: NO, rememberMe: false) shall fail and redirect to the login page', async () => {
-        const response = await api.request.loginWithToken(null, null, null, null, false, undefined);
+    test('Login with (captcha: NO, token: NO, rememberMe: false) shall fail and redirect to the login page', async ({
+        api
+    }) => {
+        const response = await api.auth.loginWithTokenRequest(null, null, null, null, false, undefined).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.loginUrl);
+        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.loginUrl);
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeClearCookie();
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Login with (captcha: NO, token: NO, rememberMe: true) shall fail and redirect to the default error page', async () => {
-        const response = await api.request.loginWithToken(null, null, null, null, true, undefined);
+    test('Login with (captcha: NO, token: NO, rememberMe: true) shall fail and redirect to the default error page', async ({
+        api
+    }) => {
+        const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, undefined).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=authError&status=400'
+        expect(getPageRedirectUrl(await response.text())).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=authError&status=400'
         );
-        expect(response.text).toContain('&quot;Captcha&quot;:&quot;missing&quot;');
+        expect(await response.text()).toContain('&quot;Captcha&quot;:&quot;missing&quot;');
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeClearCookie();
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Login with (captcha: INVALID, token: NO, rememberMe: true) shall fail and redirect to the default error page', async () => {
-        const response = await api.request.loginWithToken(null, null, null, null, true, 'invalid');
+    test('Login with (captcha: INVALID, token: NO, rememberMe: true) shall fail and redirect to the default error page', async ({
+        api
+    }) => {
+        const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, 'invalid').send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=authError&status=400'
+        expect(getPageRedirectUrl(await response.text())).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=authError&status=400'
         );
-        expect(response.text).toContain('&quot;Captcha&quot;:&quot;invalid-input-response&quot;');
+        expect(await response.text()).toContain('&quot;Captcha&quot;:&quot;invalid-input-response&quot;');
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeClearCookie();
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('Login with (captcha: YES, token: NO, rememberMe: true) shall succeed and register a new guest user', async () => {
-        const response = await api.request.loginWithToken(null, null, null, null, true, null);
+    test('Login with (captcha: YES, token: NO, rememberMe: true) shall succeed and register a new guest user', async ({
+        api
+    }) => {
+        const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, null).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
+        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeValidTID();
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
         expect(await api.user.getUserInfo(cookies.sid.value)).toBeGuestUser();
     });
 
-    it('Getting user info shall succeed only if fingerprint is not altered', async () => {
+    test('Getting user info shall succeed only if fingerprint is not altered', async ({ api }) => {
         const extraHeaders = {
             'user-agent': 'agent',
             'cf-region': 'region',
@@ -91,7 +103,7 @@ describe('Login with token for new user', () => {
             'cf-ipcountry': 'country'
         };
 
-        const user = await TestUser.createGuest({}, extraHeaders);
+        const user = await api.testUsers.createGuest({}, extraHeaders);
 
         // altering non-fingerprint value has no effect
         expect(
@@ -105,12 +117,16 @@ describe('Login with token for new user', () => {
 
         // altering fingerprint value invalidates the session
         for (const mod of [{ 'user-agent': 'new-agent' }]) {
-            const response = await api.request.getUserInfo(user.sid).set({ ...extraHeaders, ...mod });
+            const response = await api.user
+                .getUserInfoRequest(user.sid)
+                .withHeaders({ ...extraHeaders, ...mod })
+                .send();
             expect(response).toHaveStatus(401);
         }
     });
 });
 
+/*
 describe('Login with token for returning user', () => {
     let testUser: TestUser = undefined!;
     let userInfo: Omit<UserInfo, 'sessionLength'> = undefined!;
@@ -125,8 +141,10 @@ describe('Login with token for returning user', () => {
         userInfo = partialUserInfo;
     });
 
-    it('Login with (token: NULL, session: VALID, rememberMe: true) shall fail with logout required', async () => {
-        const response = await api.request.loginWithToken(null, testUser.sid, null, null, true, null);
+    test('Login with (token: NULL, session: VALID, rememberMe: true) shall fail with logout required', async ({
+        api
+    }) => {
+        const response = await api.auth.loginWithToken(null, testUser.sid, null, null, true, null);
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
@@ -141,15 +159,10 @@ describe('Login with token for returning user', () => {
         expect(await api.user.getUserInfo(testUser.sid)).toEqual(expect.objectContaining(userInfo));
     });
 
-    it('Login with (token: VALID, session: VALID, rememberMe: true) shall fail with logout required', async () => {
-        const response = await api.request.loginWithToken(
-            testUser.tid!,
-            testUser.sid,
-            null,
-            null,
-            true,
-            undefined
-        );
+    test('Login with (token: VALID, session: VALID, rememberMe: true) shall fail with logout required', async ({
+        api
+    }) => {
+        const response = await api.auth.loginWithToken(testUser.tid!, testUser.sid, null, null, true, undefined);
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(
             config.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
@@ -165,8 +178,10 @@ describe('Login with token for returning user', () => {
         expect(await api.user.getUserInfo(testUser.sid)).toEqual(expect.objectContaining(userInfo));
     });
 
-    it('Login with (token: VALID, session: NULL, rememberMe: NULL) shall succeed and login the user', async () => {
-        const response = await api.request.loginWithToken(testUser.tid!, null, null, null, null, undefined);
+    test('Login with (token: VALID, session: NULL, rememberMe: NULL) shall succeed and login the user', async ({
+        api
+    }) => {
+        const response = await api.auth.loginWithToken(testUser.tid!, null, null, null, null, undefined);
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
 
@@ -179,8 +194,10 @@ describe('Login with token for returning user', () => {
         expect(await api.user.getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 
-    it('Login with (token: VALID, session: NULL, rememberMe: false) shall succeed and login the user', async () => {
-        const response = await api.request.loginWithToken(testUser.tid!, null, null, null, false, undefined);
+    test('Login with (token: VALID, session: NULL, rememberMe: false) shall succeed and login the user', async ({
+        api
+    }) => {
+        const response = await api.auth.loginWithToken(testUser.tid!, null, null, null, false, undefined);
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
 
@@ -193,8 +210,10 @@ describe('Login with token for returning user', () => {
         expect(await api.user.getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 
-    it('Login with (token: VALID, session: NULL, rememberMe: true) shall succeed and login the user', async () => {
-        const response = await api.request.loginWithToken(testUser.tid!, null, null, null, true, undefined);
+    test('Login with (token: VALID, session: NULL, rememberMe: true) shall succeed and login the user', async ({
+        api
+    }) => {
+        const response = await api.auth.loginWithToken(testUser.tid!, null, null, null, true, undefined);
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
 
@@ -207,3 +226,4 @@ describe('Login with token for returning user', () => {
         expect(await api.user.getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 });
+*/

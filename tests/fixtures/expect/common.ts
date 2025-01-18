@@ -1,8 +1,16 @@
 import { expect as baseExpect } from '@playwright/test';
 
 export const expect = baseExpect.extend({
-    toBeBefore(received: Date, expected: Date) {
-        const pass = new Date(received) < new Date(expected);
+    toBeBefore(received: Date | number, expected: Date | number) {
+        if (typeof received === 'number') {
+            received = new Date(received);
+        }
+
+        if (typeof expected === 'number') {
+            expected = new Date(expected);
+        }
+
+        const pass = received < expected;
         if (pass) {
             return {
                 message: () => `expected ${received} not to be before ${expected}`,
@@ -16,7 +24,15 @@ export const expect = baseExpect.extend({
         }
     },
     toBeAfter(received: Date, expected: Date) {
-        const pass = new Date(received) > new Date(expected);
+        if (typeof received === 'number') {
+            received = new Date(received);
+        }
+
+        if (typeof expected === 'number') {
+            expected = new Date(expected);
+        }
+
+        const pass = received > expected;
         if (pass) {
             return {
                 message: () => `expected ${received} not to be before ${expected}`,

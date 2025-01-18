@@ -1,10 +1,10 @@
 import api, { TokenKind } from '$lib/api/api';
 import { ActiveToken } from '$lib/api/token_api';
-import { MockServer } from '$lib/mock_server';
+import { MockServer } from '$lib/mocks/mock_server';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import request from '$lib/request';
 import { getCookies, getPageRedirectUrl } from '$lib/response_utils';
-import { TestUser } from '$lib/test_user';
+import { TestUser } from '$lib/api/test_user';
 import { delay, getSHA256Hash, parseSignedCookie } from '$lib/utils';
 import config from '../test.config';
 

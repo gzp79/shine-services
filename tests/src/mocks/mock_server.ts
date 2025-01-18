@@ -4,7 +4,7 @@ import http from 'http';
 import { Server } from 'http';
 import https from 'https';
 import { Socket } from 'net';
-import { delay, joinURL } from './utils';
+import { delay, joinURL } from '../utils';
 
 export interface TypedRequest<T extends Query, U> extends Request {
     body: U;

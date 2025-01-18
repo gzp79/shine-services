@@ -1,5 +1,12 @@
-import { APIRequestContext, APIResponse, expect } from '@playwright/test';
+import { expect } from '@fixtures/service-fixture';
+import OAuth2MockServer from '$lib/mocks/oauth2';
+import OpenIdMockServer from '$lib/mocks/openid';
+import { OptionalSchema } from '$lib/schema_utils';
 import { joinURL } from '$lib/utils';
+import { z } from 'zod';
+import { ApiRequest } from './api';
+import { ExternalUser } from './external_user';
+import { getPageRedirectUrl } from './utils';
 
 export type DefaultRedirects = {
     loginUrl: string;
@@ -7,17 +14,32 @@ export type DefaultRedirects = {
     errorUrl: string;
 };
 
-interface UserCookies {
+export type UserCookies = {
     tid: string;
     sid: string;
     eid: string;
-}
+};
 
 interface StartLoginResult extends UserCookies {
     authParams: any;
 }
 
-function getCaptchaQuery(captcha: string | null | undefined): object {
+const LinkedIdentitySchema = z.object({
+    userId: z.string(),
+    provider: z.string(),
+    providerUserId: z.string(),
+    linkedAt: z.string().transform((str) => new Date(str)),
+    name: OptionalSchema(z.string()),
+    email: OptionalSchema(z.string())
+});
+export type LinkedIdentity = z.infer<typeof LinkedIdentitySchema>;
+
+const LinkedIdentitiesSchema = z.object({
+    links: z.array(LinkedIdentitySchema)
+});
+export type LinkedIdentities = z.infer<typeof LinkedIdentitiesSchema>;
+
+function getCaptchaQuery(captcha: string | null | undefined): Record<string, string> {
     if (captcha === null) {
         // use the "always pass" token
         return { captcha: '1x00000000000000000000AA' };
@@ -28,155 +50,52 @@ function getCaptchaQuery(captcha: string | null | undefined): object {
     return {};
 }
 
-function cookieHeader(...lists: string[][]): object {
-    return { Cookie: lists.flat().join('; ') };
-}
-
-function authHeader(token?: string): object {
-    return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 export class AuthAPI {
     constructor(
-        protected request: APIRequestContext,
-        protected serviceUrl: string,
-        protected defaultRedirects: DefaultRedirects
+        public readonly serviceUrl: string,
+        public readonly defaultRedirects: DefaultRedirects
     ) {}
 
-    private urlFor(path: string) {
+    urlFor(path: string) {
         return joinURL(new URL(this.serviceUrl), path);
     }
 
-    validate(tid: string | null, sid: string | null, eid: string | null): Promise<APIResponse> {
-        const ct = tid ? [`tid=${tid}`] : [];
-        const cs = sid ? [`sid=${sid}`] : [];
-        const ce = eid ? [`eid=${eid}`] : [];
-        return this.request.get(this.urlFor('auth/validate'), {
-            headers: { ...cookieHeader(ct, cs, ce) }
-        });
+    validateRequest(tid: string | null, sid: string | null, eid: string | null): ApiRequest {
+        const ct = tid && { tid };
+        const cs = sid && { sid };
+        const ce = eid && { eid };
+        return ApiRequest.get(this.urlFor('auth/validate')).withCookies({ ...ct, ...cs, ...ce });
     }
 
-    loginWithToken(
+    loginWithTokenRequest(
         tid: string | null,
         sid: string | null,
         queryToken: string | null,
         apiKey: string | null,
         rememberMe: boolean | null,
         captcha: string | null | undefined
-    ): Promise<APIResponse> {
-        const qs = rememberMe ? { rememberMe } : {};
-        const qt = queryToken ? { token: queryToken } : {};
-        const ct = tid ? [`tid=${tid}`] : [];
-        const cs = sid ? [`sid=${sid}`] : [];
+    ): ApiRequest {
+        const qs = rememberMe && { rememberMe };
+        const qt = queryToken && { token: queryToken };
+        const ct = tid && { tid };
+        const cs = sid && { sid };
         let qc = getCaptchaQuery(captcha);
 
-        return this.request.get('auth/token/login', {
-            params: { ...qs, ...qt, ...qc, ...this.defaultRedirects },
-            headers: { ...authHeader(apiKey), ...cookieHeader(ct, cs) }
-        });
+        return ApiRequest.get(this.urlFor('auth/token/login'))
+            .withParams({ ...qs, ...qt, ...qc, ...this.defaultRedirects })
+            .withAuthIf(apiKey)
+            .withCookies({ ...ct, ...cs });
     }
 
-    loginWithOAuth2(
-        tid: string | null,
-        sid: string | null,
-        rememberMe: boolean | null,
-        captcha: string | null | undefined
-    ): Promise<APIResponse> {
-        const qs = rememberMe ? { rememberMe } : {};
-        const ct = tid ? [`tid=${tid}`] : [];
-        const cs = sid ? [`sid=${sid}`] : [];
-        let qc = getCaptchaQuery(captcha);
-
-        return this.request.get(this.urlFor('auth/oauth2_flow/login'), {
-            params: { ...qs, ...qc, ...this.defaultRedirects },
-            headers: { ...cookieHeader(ct, cs) }
-        });
-    }
-
-    linkWithOAuth2(sid: string | null): Promise<APIResponse> {
-        return this.request.get(this.urlFor('auth/oauth2_flow/link'), {
-            params: { ...this.defaultRedirects },
-            headers: { ...cookieHeader(sid ? [`sid=${sid}`] : []) }
-        });
-    }
-
-    authorizeWithOAuth2(
-        sid: string | null,
-        eid: string | null,
-        state: string | null,
-        code: string | null
-    ): Promise<APIResponse> {
-        const qs = state ? { state } : {};
-        const qc = code ? { code } : {};
-        const cs = sid ? [`sid=${sid}`] : [];
-        const ce = eid ? [`eid=${eid}`] : [];
-
-        return this.request.get(this.urlFor('auth/oauth2_flow/auth'), {
-            params: { ...qs, ...qc },
-            headers: { ...cookieHeader([...cs, ...ce]) }
-        });
-    }
-
-    loginWithOpenId(
-        tid: string | null,
-        sid: string | null,
-        rememberMe: boolean | null,
-        captcha: string | null | undefined
-    ): Promise<APIResponse> {
-        const qs = rememberMe ? { rememberMe } : {};
-        const ct = tid ? [`tid=${tid}`] : [];
-        const cs = sid ? [`sid=${sid}`] : [];
-        let qc = getCaptchaQuery(captcha);
-
-        return this.request.get(this.urlFor('auth/openid_flow/login'), {
-            params: { ...qs, ...qc, ...this.defaultRedirects },
-            headers: { ...cookieHeader(ct, cs) }
-        });
-    }
-
-    linkWithOpenId(sid: string | null): Promise<APIResponse> {
-        return this.request.get(this.urlFor('auth/openid_flow/link'), {
-            params: { ...this.defaultRedirects },
-            headers: { ...cookieHeader(sid ? [`sid=${sid}`] : []) }
-        });
-    }
-
-    authorizeWithOpenId(
-        sid: string | null,
-        eid: string | null,
-        state: string | null,
-        code: string | null
-    ): Promise<APIResponse> {
-        const qs = state ? { state } : {};
-        const qc = code ? { code } : {};
-        const cs = sid ? [`sid=${sid}`] : [];
-        const ce = eid ? [`eid=${eid}`] : [];
-
-        return this.request.get(this.urlFor('auth/openid_flow/auth'), {
-            params: { ...qs, ...qc },
-            headers: { ...cookieHeader(cs, ce) }
-        });
-    }
-
-    logout(sid: string | null, terminateAll: boolean | null): Promise<APIResponse> {
-        return this.request.get(this.urlFor('/auth/logout'), {
-            params: { terminateAll },
-            headers: { ...cookieHeader(sid ? [`sid=${sid}`] : []) }
-        });
-    }
-}
-
-export class AuthAPIEx extends AuthAPI {
-    constructor(request: APIRequestContext, serviceUrl: string, defaultRedirects: DefaultRedirects) {
-        super(request, serviceUrl, defaultRedirects);
-    }
-
-    /*async loginAsGuestUser(extraHeaders?: Record<string, string>): Promise<UserCookies> {
+    async loginAsGuestUser(extraHeaders?: Record<string, string>): Promise<UserCookies> {
         // use the default captcha to fast-login
-        const response = await this.request.loginWithToken(null, null, null, null, true, null).set(extraHeaders ?? {});
+        const response = await this.loginWithTokenRequest(null, null, null, null, true, null)
+            .withHeaders(extraHeaders ?? {})
+            .send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(this.this.defaultRedirects.redirectUrl);
-        const cookies = getCookies(response);
+        expect(getPageRedirectUrl(await response.text())).toEqual(this.defaultRedirects.redirectUrl);
+
+        const cookies = response.cookies();
         expect(cookies.tid).toBeValidTID();
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
@@ -194,13 +113,13 @@ export class AuthAPIEx extends AuthAPI {
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
         // no captcha as token login should work without it
-        const response = await this.request
-            .loginWithToken(tid, null, null, null, rememberMe, undefined)
-            .set(extraHeaders ?? {});
+        const response = await this.loginWithTokenRequest(tid, null, null, null, rememberMe, undefined)
+            .withHeaders(extraHeaders ?? {})
+            .send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(this.this.defaultRedirects.redirectUrl);
+        expect(getPageRedirectUrl(await response.text())).toEqual(this.defaultRedirects.redirectUrl);
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeValidTID();
         expect(cookies.tid.value).not.toEqual(tid);
         expect(cookies.sid).toBeValidSID();
@@ -213,17 +132,59 @@ export class AuthAPIEx extends AuthAPI {
         };
     }
 
+    loginWithOAuth2Request(
+        tid: string | null,
+        sid: string | null,
+        rememberMe: boolean | null,
+        captcha: string | null | undefined
+    ): ApiRequest {
+        const qs = rememberMe && { rememberMe };
+        const ct = tid && { tid };
+        const cs = sid && { sid };
+        let qc = getCaptchaQuery(captcha);
+
+        return ApiRequest.get(this.urlFor('auth/oauth2_flow/login'))
+            .withParams({ ...qs, ...qc, ...this.defaultRedirects })
+            .withCookies({ ...ct, ...cs });
+    }
+
+    linkWithOAuth2Request(sid: string | null): ApiRequest {
+        const cs = sid && { sid };
+
+        return ApiRequest.get(this.urlFor('auth/oauth2_flow/link'))
+            .withParams({ ...this.defaultRedirects })
+            .withCookies({ ...cs });
+    }
+
+    authorizeWithOAuth2Request(
+        sid: string | null,
+        eid: string | null,
+        state: string | null,
+        code: string | null
+    ): ApiRequest {
+        const qs = state && { state };
+        const qc = code && { code };
+        const cs = sid && { sid };
+        const ce = eid && { eid };
+
+        return ApiRequest.get(this.urlFor('auth/oauth2_flow/auth'))
+            .withParams({ ...qs, ...qc })
+            .withCookies({ ...cs, ...ce });
+    }
+
     async startLoginWithOAuth2(
         mock: OAuth2MockServer,
         rememberMe: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request.loginWithOAuth2(null, null, rememberMe, null).set(extraHeaders ?? {});
+        const response = await this.loginWithOAuth2Request(null, null, rememberMe, null)
+            .withHeaders(extraHeaders ?? {})
+            .send();
         expect(response).toHaveStatus(200);
-        const redirectUrl = getPageRedirectUrl(response.text);
+        const redirectUrl = getPageRedirectUrl(await response.text());
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeClearCookie();
         expect(cookies.eid).toBeValidEID();
@@ -245,12 +206,18 @@ export class AuthAPIEx extends AuthAPI {
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
         const start = await this.startLoginWithOAuth2(mock, rememberMe, extraHeaders);
-        const response = await this.request
-            .authorizeWithOAuth2(start.sid, start.eid, start.authParams.state, user.toCode())
-            .set(extraHeaders ?? {});
+        const response = await this.authorizeWithOAuth2Request(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            user.toCode()
+        )
+            .withHeaders(extraHeaders ?? {})
+            .send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(this.this.defaultRedirects.redirectUrl);
-        const cookies = getCookies(response);
+        expect(getPageRedirectUrl(await response.text())).toEqual(this.defaultRedirects.redirectUrl);
+
+        const cookies = response.cookies();
         if (rememberMe) {
             expect(cookies.tid).toBeValidTID();
         } else {
@@ -271,12 +238,14 @@ export class AuthAPIEx extends AuthAPI {
         sid: string,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request.linkWithOAuth2(sid).set(extraHeaders ?? {});
+        const response = await this.linkWithOAuth2Request(sid)
+            .withHeaders(extraHeaders ?? {})
+            .send();
         expect(response).toHaveStatus(200);
-        const redirectUrl = getPageRedirectUrl(response.text);
+        const redirectUrl = getPageRedirectUrl(await response.text());
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeValidSID();
         expect(cookies.sid.value).toEqual(sid);
@@ -299,12 +268,18 @@ export class AuthAPIEx extends AuthAPI {
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
         const start = await this.startLinkWithOAuth2(mock, sid, extraHeaders);
-        const response = await this.request
-            .authorizeWithOAuth2(start.sid, start.eid, start.authParams.state, user.toCode())
-            .set(extraHeaders ?? {});
+        const response = await this.authorizeWithOAuth2Request(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            user.toCode()
+        )
+            .withHeaders(extraHeaders ?? {})
+            .send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(this.this.defaultRedirects.redirectUrl);
-        const cookies = getCookies(response);
+        expect(getPageRedirectUrl(await response.text())).toEqual(this.defaultRedirects.redirectUrl);
+
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
@@ -316,17 +291,59 @@ export class AuthAPIEx extends AuthAPI {
         };
     }
 
+    loginWithOpenIdRequest(
+        tid: string | null,
+        sid: string | null,
+        rememberMe: boolean | null,
+        captcha: string | null | undefined
+    ): ApiRequest {
+        const qs = rememberMe && { rememberMe };
+        const ct = tid && { tid };
+        const cs = sid && { sid };
+        let qc = getCaptchaQuery(captcha);
+
+        return ApiRequest.get(this.urlFor('auth/openid_flow/login'))
+            .withParams({ ...qs, ...qc, ...this.defaultRedirects })
+            .withCookies({ ...ct, ...cs });
+    }
+
+    linkWithOpenIdRequest(sid: string | null): ApiRequest {
+        const cs = sid && { sid };
+
+        return ApiRequest.get(this.urlFor('auth/openid_flow/link'))
+            .withParams({ ...this.defaultRedirects })
+            .withCookies({ ...cs });
+    }
+
+    authorizeWithOpenIdRequest(
+        sid: string | null,
+        eid: string | null,
+        state: string | null,
+        code: string | null
+    ): ApiRequest {
+        const qs = state && { state };
+        const qc = code && { code };
+        const cs = sid && { sid };
+        const ce = eid && { eid };
+
+        return ApiRequest.get(this.urlFor('auth/openid_flow/auth'))
+            .withParams({ ...qs, ...qc })
+            .withCookies({ ...cs, ...ce });
+    }
+
     async startLoginWithOpenId(
         mock: OpenIdMockServer,
         rememberMe: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request.loginWithOpenId(null, null, rememberMe, null).set(extraHeaders ?? {});
+        const response = await this.loginWithOpenIdRequest(null, null, rememberMe, null)
+            .withHeaders(extraHeaders ?? {})
+            .send();
         expect(response).toHaveStatus(200);
-        const redirectUrl = getPageRedirectUrl(response.text);
+        const redirectUrl = getPageRedirectUrl(await response.text());
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeClearCookie();
         expect(cookies.eid).toBeValidEID();
@@ -348,17 +365,18 @@ export class AuthAPIEx extends AuthAPI {
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
         const start = await this.startLoginWithOpenId(mock, rememberMe, extraHeaders);
-        const response = await this.request
-            .authorizeWithOpenId(
-                start.sid,
-                start.eid,
-                start.authParams.state,
-                user.toCode({ nonce: start.authParams.nonce })
-            )
-            .set(extraHeaders ?? {});
+        const response = await this.authorizeWithOpenIdRequest(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            user.toCode({ nonce: start.authParams.nonce })
+        )
+            .withHeaders(extraHeaders ?? {})
+            .send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(this.this.defaultRedirects.redirectUrl);
-        const cookies = getCookies(response);
+        expect(getPageRedirectUrl(await response.text())).toEqual(this.defaultRedirects.redirectUrl);
+
+        const cookies = response.cookies();
         if (rememberMe) {
             expect(cookies.tid).toBeValidTID();
         } else {
@@ -379,12 +397,14 @@ export class AuthAPIEx extends AuthAPI {
         sid: string,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.request.linkWithOpenId(sid).set(extraHeaders ?? {});
+        const response = await this.linkWithOpenIdRequest(sid)
+            .withHeaders(extraHeaders ?? {})
+            .send();
         expect(response).toHaveStatus(200);
-        const redirectUrl = getPageRedirectUrl(response.text);
+        const redirectUrl = getPageRedirectUrl(await response.text());
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeValidSID();
         expect(cookies.sid.value).toEqual(sid);
@@ -407,17 +427,18 @@ export class AuthAPIEx extends AuthAPI {
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
         const start = await this.startLinkWithOpenId(mock, sid, extraHeaders);
-        const response = await this.request
-            .authorizeWithOpenId(
-                start.sid,
-                start.eid,
-                start.authParams.state,
-                user.toCode({ nonce: start.authParams.nonce })
-            )
-            .set(extraHeaders ?? {});
+        const response = await this.authorizeWithOpenIdRequest(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            user.toCode({ nonce: start.authParams.nonce })
+        )
+            .withHeaders(extraHeaders ?? {})
+            .send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(this.this.defaultRedirects.redirectUrl);
-        const cookies = getCookies(response);
+        expect(getPageRedirectUrl(await response.text())).toEqual(this.defaultRedirects.redirectUrl);
+
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
@@ -429,8 +450,64 @@ export class AuthAPIEx extends AuthAPI {
         };
     }
 
-    async logout(sid: string, terminateAll: boolean | null, extraHeaders?: Record<string, string>): Promise<void> {
-        let response = await this.request.logout(sid, terminateAll).set(extraHeaders ?? {});
+    getExternalLinksRequest(sid: string | null): ApiRequest {
+        const cs = sid && { sid };
+
+        return ApiRequest.get(this.urlFor('api/auth/user/links')).withCookies({ ...cs });
+    }
+
+    async getExternalLinks(sid: string, extraHeaders?: Record<string, string>): Promise<LinkedIdentity[]> {
+        let response = await this.getExternalLinksRequest(sid)
+            .withHeaders(extraHeaders ?? {})
+            .send();
+
         expect(response).toHaveStatus(200);
-    }*/
+
+        const links = (await response.parse(LinkedIdentitiesSchema)).links;
+        links.forEach((l) => {
+            l.linkedAt = new Date(l.linkedAt);
+        });
+
+        return links;
+    }
+
+    unlinkRequest(sid: string | null, provider: string, providerUserId: string): ApiRequest {
+        let url = `api/auth/user/links/${provider}/${providerUserId}`;
+        const cs = sid && { sid };
+
+        return ApiRequest.delete(this.urlFor(url)).withCookies({ ...cs });
+    }
+
+    async tryUnlink(
+        sid: string,
+        provider: string,
+        providerUserId: string,
+        extraHeaders?: Record<string, string>
+    ): Promise<boolean> {
+        let response = await this.unlinkRequest(sid, provider, providerUserId)
+            .withHeaders(extraHeaders ?? {})
+            .send();
+        if (response.status() == 404) {
+            return false;
+        }
+
+        expect(response).toHaveStatus(200);
+        return true;
+    }
+
+    logoutRequest(sid: string | null, terminateAll: boolean | null): ApiRequest {
+        const qt = terminateAll && { terminateAll };
+        const cs = sid && { sid };
+
+        return ApiRequest.get(this.urlFor('/auth/logout'))
+            .withParams({ ...qt })
+            .withCookies({ ...cs });
+    }
+
+    async logout(sid: string, terminateAll: boolean | null, extraHeaders?: Record<string, string>): Promise<void> {
+        let response = await this.logoutRequest(sid, terminateAll)
+            .withHeaders(extraHeaders ?? {})
+            .send();
+        expect(response).toHaveStatus(200);
+    }
 }

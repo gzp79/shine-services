@@ -1,8 +1,12 @@
-import { PlaywrightTestConfig } from '@playwright/test';
 import { ServiceOptions } from '@fixtures/service-fixture';
+import { PlaywrightTestConfig } from '@playwright/test';
+import { suppress_tls_certificate_warning } from '$lib/suppress_tls_certificate_warning';
 
 // Allow self-signed certificates
+
+suppress_tls_certificate_warning();
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+process.env.DEBUG = 'test:*';
 
 const isBuildRun: boolean = !!process.env.CI;
 if (isBuildRun) {
@@ -16,9 +20,7 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
     retries: isBuildRun ? 2 : 0,
     workers: isBuildRun ? 1 : undefined,
 
-    reporter: [
-        ['list'],
-        ['html', { outputFolder: 'reports/' }]],
+    reporter: [['list'], ['html', { outputFolder: 'reports/' }]],
 
     use: {
         trace: 'on-first-retry'
