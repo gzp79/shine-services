@@ -1,4 +1,4 @@
-import { expect, test } from '@fixtures/service-fixture';
+import { expect, test } from '$fixtures/setup';
 import { Cookie } from '$lib/api/api';
 
 test.describe('Auth cookie consistency matrix', () => {

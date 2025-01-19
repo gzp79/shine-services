@@ -1,4 +1,4 @@
-import { expect, test } from '@fixtures/service-fixture';
+import { expect, test } from '$fixtures/setup';
 import { ProvidersSchema } from '$lib/api/auth_api';
 
 test.describe('External login providers', () => {

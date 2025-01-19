@@ -1,5 +1,5 @@
 import { ActiveSession } from "$lib/api/session_api";
-import { expect, test } from "@fixtures/service-fixture";
+import { expect, test } from "$fixtures/service-fixture";
 
 test.describe('Sessions', () => {
     // assume server is not off more than a few seconds and the test is fast enough
@@ -18,22 +18,22 @@ test.describe('Sessions', () => {
 
     let mock!: MockServer;
     const startMock = async (): Promise<OAuth2MockServer> => {
-        mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
+        mock = new OAuth2MockServer();
         await mock.start();
         return mock as OAuth2MockServer;
     };
 
-    afterEach(async () => {
+    afterEach(async ({api}) => {
         await mock?.stop();
         mock = undefined!;
     });
 
-    it('Get token without a session shall fail', async () => {
+    test('Get token without a session shall fail', async ({api}) => {
         const response = await api.request.getSessions(null);
         expect(response).toHaveStatus(401);
     });
 
-    it('Session shall keep the site info', async () => {
+    test('Session shall keep the site info', async ({api}) => {
         const extraHeaders = {
             'user-agent': 'agent',
             'cf-ipcountry': 'country',
@@ -41,7 +41,7 @@ test.describe('Sessions', () => {
             'cf-ipcity': 'city'
         };
 
-        const user = await TestUser.createGuest({}, extraHeaders);
+        const user = await api.testUsers.createGuest({}, extraHeaders);
 
         // initial session for a new user
         expect(await api.session.getSessions(user.sid, extraHeaders)).toIncludeSameMembers([
@@ -55,8 +55,8 @@ test.describe('Sessions', () => {
         ]);
     });
 
-    it('Multiple login shall create multiple session and logout from a session shall invalidate the connected session', async () => {
-        const user = await TestUser.createGuest({}, { 'cf-region': 'r1' });
+    test('Multiple login shall create multiple session and logout from a session shall invalidate the connected session', async ({api}) => {
+        const user = await api.testUsers.createGuest({}, { 'cf-region': 'r1' });
 
         // initial session for a new user
         expect(await api.session.getSessions(user.sid)).toIncludeSameMembers([
@@ -78,9 +78,9 @@ test.describe('Sessions', () => {
         ]);
     });
 
-    it('Multiple login shall create multiple session and logout with terminateAll shall invalidate all of them', async () => {
+    test('Multiple login shall create multiple session and logout with terminateAll shall invalidate all of them', async ({api}) => {
         const mock = await startMock();
-        const user = await TestUser.createLinked(mock, { rememberMe: true }, { 'cf-region': 'r1' });
+        const user = await api.testUsers.createLinked(mock, { rememberMe: true }, { 'cf-region': 'r1' });
 
         // login a few more times
         await api.auth.loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r2' });

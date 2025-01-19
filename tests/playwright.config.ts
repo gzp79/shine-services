@@ -1,5 +1,5 @@
-import { ServiceOptions } from '@fixtures/service-fixture';
 import { PlaywrightTestConfig } from '@playwright/test';
+import { ServiceOptions } from '$fixtures/setup';
 import { suppress_tls_certificate_warning } from '$lib/suppress_tls_certificate_warning';
 
 // Allow self-signed certificates
@@ -18,7 +18,9 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
     fullyParallel: true,
     forbidOnly: isBuildRun,
     retries: isBuildRun ? 2 : 0,
-    workers: isBuildRun ? 1 : undefined,
+
+    // due to the mock-server's port usage we can't run more than one worker
+    workers: 1,
 
     reporter: [['list'], ['html', { outputFolder: 'reports/' }]],
 
@@ -29,7 +31,7 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
     projects: [
         {
             name: 'local',
-            testMatch: 'api-tests/**/*.ts',
+            testMatch: '{mock-tests,api-tests}/**/*.ts',
             use: {
                 appDomain: 'local-scytta.com',
                 serviceDomain: 'cloud.local-scytta.com',

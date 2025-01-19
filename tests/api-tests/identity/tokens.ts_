@@ -28,23 +28,23 @@ describe('Tokens', () => {
 
     let mock: MockServer;
     const startMock = async (): Promise<OAuth2MockServer> => {
-        mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
+        mock = new OAuth2MockServer();
         await mock.start();
         return mock as OAuth2MockServer;
     };
 
-    afterEach(async () => {
+    afterEach(async ({api}) => {
         await mock?.stop();
         mock = undefined!;
     });
 
-    it('Get token without a session shall fail', async () => {
+    test('Get token without a session shall fail', async ({api}) => {
         // initial session for a new user
         let response = await api.request.getTokens(null);
         expect(response).toHaveStatus(401);
     });
 
-    it('Token shall keep the site info', async () => {
+    test('Token shall keep the site info', async ({api}) => {
         const extraHeaders = {
             'user-agent': 'agent',
             'cf-ipcountry': 'country',
@@ -52,7 +52,7 @@ describe('Tokens', () => {
             'cf-ipcity': 'city'
         };
 
-        const user = await TestUser.createGuest({}, extraHeaders);
+        const user = await api.testUsers.createGuest({}, extraHeaders);
 
         // initial session for a new user
         expect(await api.token.getTokens(user.sid, extraHeaders)).toIncludeSameMembers([
@@ -66,9 +66,9 @@ describe('Tokens', () => {
         ]);
     });
 
-    it('Multiple login with rememberMe shall create multiple tokens and logout from a session shall invalidate the connected token', async () => {
+    test('Multiple login with rememberMe shall create multiple tokens and logout from a session shall invalidate the connected token', async ({api}) => {
         const mock = await startMock();
-        const user = await TestUser.createLinked(
+        const user = await api.testUsers.createLinked(
             mock,
             {
                 rememberMe: true
@@ -106,9 +106,9 @@ describe('Tokens', () => {
         expect(await api.token.getTokens(user.sid)).toIncludeSameMembers([{ ...anyToken, city: 'r1' }]);
     });
 
-    it('Multiple login with rememberMe shall create multiple tokens and logout with terminateAll shall invalidate all of them', async () => {
+    test('Multiple login with rememberMe shall create multiple tokens and logout with terminateAll shall invalidate all of them', async ({api}) => {
         const mock = await startMock();
-        const user = await TestUser.createLinked(
+        const user = await api.testUsers.createLinked(
             mock,
             {
                 rememberMe: true
@@ -136,9 +136,9 @@ describe('Tokens', () => {
         expect(await api.token.getTokens(newUserCookies.sid)).toBeEmpty();
     });
 
-    it('Delete token by hash shall revoke the token', async () => {
+    test('Delete token by hash shall revoke the token', async ({api}) => {
         const mock = await startMock();
-        const user = await TestUser.createLinked(
+        const user = await api.testUsers.createLinked(
             mock,
             {
                 rememberMe: true
@@ -181,12 +181,12 @@ describe('Tokens', () => {
         const responseLogin = await api.request.loginWithToken(tid2, null, null, null, false, null);
         expect(responseLogin).toHaveStatus(200);
         expect(getPageRedirectUrl(responseLogin.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
+            api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
     });
 
-    it('Token rotation with lost response shall work', async () => {
-        const user = await TestUser.createGuest();
+    test('Token rotation with lost response shall work', async ({api}) => {
+        const user = await api.testUsers.createGuest();
         const c0 = parseSignedCookie(user.tid!); //active: t1, revoke: -
         expect(c0.rky).toBeNull();
         const tid = user.tid!;
@@ -217,7 +217,7 @@ describe('Tokens', () => {
         const request = await api.request.loginWithToken(tid, null, null, null, null, null);
         expect(request).toHaveStatus(200);
         expect(getPageRedirectUrl(request.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
+            api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
 
         // live tokens: t3,t4,t5,t6
@@ -226,11 +226,11 @@ describe('Tokens', () => {
         expect(tokens).toIncludeSameMembers(expectedTokens);
     });
 
-    it('Query token shall have the highest precedence', async () => {
-        const userCookie = await TestUser.createGuest();
-        const userQuery = await TestUser.createGuest();
+    test('Query token shall have the highest precedence', async ({api}) => {
+        const userCookie = await api.testUsers.createGuest();
+        const userQuery = await api.testUsers.createGuest();
         const tokenQuery = await api.token.createSAToken(userQuery.sid, 120, false);
-        const userHeader = await TestUser.createGuest();
+        const userHeader = await api.testUsers.createGuest();
         const tokenHeader = await api.token.createPersistentToken(userHeader.sid, 120, false);
 
         const response = await api.request.loginWithToken(
@@ -242,17 +242,17 @@ describe('Tokens', () => {
             null
         );
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
-        var cookies = getCookies(response);
+        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
+        var cookies = response.cookies();
         const userLoggedIn = await api.user.getUserInfo(cookies.sid.value);
         expect(userLoggedIn.userId).not.toEqual(userCookie.userId);
         expect(userLoggedIn.userId).toEqual(userQuery.userId);
         expect(userLoggedIn.userId).not.toEqual(userHeader.userId);
     });
 
-    it('Header token shall have the 2nd highest precedence', async () => {
-        const userCookie = await TestUser.createGuest();
-        const userHeader = await TestUser.createGuest();
+    test('Header token shall have the 2nd highest precedence', async ({api}) => {
+        const userCookie = await api.testUsers.createGuest();
+        const userHeader = await api.testUsers.createGuest();
         const tokenHeader = await api.token.createPersistentToken(userHeader.sid, 120, false);
 
         const response = await api.request.loginWithToken(
@@ -264,8 +264,8 @@ describe('Tokens', () => {
             null
         );
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
-        var cookies = getCookies(response);
+        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
+        var cookies = response.cookies();
         const userLoggedIn = await api.user.getUserInfo(cookies.sid.value);
         expect(userLoggedIn.userId).not.toEqual(userCookie.userId);
         expect(userLoggedIn.userId).toEqual(userHeader.userId);
@@ -276,13 +276,13 @@ describe('Created token', () => {
     let mock: OAuth2MockServer = undefined!;
     let user: TestUser = undefined!;
 
-    beforeEach(async () => {
-        mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
+    beforeEach(async ({api}) => {
+        mock = new OAuth2MockServer();
         await mock.start();
-        user = await TestUser.createLinked(mock);
+        user = await api.testUsers.createLinked(mock);
     });
 
-    afterEach(async () => {
+    afterEach(async ({api}) => {
         await mock?.stop();
         mock = undefined!;
         user = undefined!;
@@ -336,44 +336,44 @@ describe('Single access token', () => {
     let mock: OAuth2MockServer = undefined!;
     let user: TestUser = undefined!;
 
-    beforeEach(async () => {
-        mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
+    beforeEach(async ({api}) => {
+        mock = new OAuth2MockServer();
         await mock.start();
-        user = await TestUser.createLinked(mock);
+        user = await api.testUsers.createLinked(mock);
     });
 
-    afterEach(async () => {
+    afterEach(async ({api}) => {
         await mock?.stop();
         mock = undefined!;
         user = undefined!;
     });
 
-    it('A failed login with a single access token shall clear the current user', async () => {
+    test('A failed login with a single access token shall clear the current user', async ({api}) => {
         const response = await api.request.loginWithToken(null, null, 'invalid', null, false, null);
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
+        expect(getPageRedirectUrl(await response.text())).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeClearCookie();
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('A successful login with a single access token shall change the current user', async () => {
+    test('A successful login with a single access token shall change the current user', async ({api}) => {
         const token = await api.token.createSAToken(user.sid, 120, false);
 
         const response = await api.request.loginWithToken(null, null, token.token, null, false, null);
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
-        const cookies = getCookies(response);
+        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('The single access token with client binding shall respect client fingerprint and revoke token on mismatch', async () => {
+    test('The single access token with client binding shall respect client fingerprint and revoke token on mismatch', async ({api}) => {
         const token = await api.token.createSAToken(user.sid, 120, true);
 
         const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash);
@@ -382,17 +382,17 @@ describe('Single access token', () => {
         const response = await api.request
             .loginWithToken(null, null, token.token, null, false, null)
             .set({ 'user-agent': 'agent2' });
-        expect(getPageRedirectUrl(response.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=authError&status=400'
+        expect(getPageRedirectUrl(await response.text())).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=authError&status=400'
         );
 
         // token is revoked
         expect(await api.token.getTokens(user.sid)).toBeEmpty();
     });
 
-    it(
+    test(
         'The single access token shall expire after the specified time',
-        async () => {
+        async ({api}) => {
             const now = new Date().getTime();
             const ttl = 10;
             const token = await api.token.createSAToken(user.sid, ttl, false);
@@ -403,14 +403,14 @@ describe('Single access token', () => {
             await delay(ttl * 1000);
             const response = await api.request.loginWithToken(null, null, token.token, null, false, null);
             expect(response).toHaveStatus(200);
-            expect(getPageRedirectUrl(response.text)).toEqual(
-                config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
+            expect(getPageRedirectUrl(await response.text())).toEqual(
+                api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
             );
         },
         35 * 1000
     );
 
-    it('The single access token shall be used only once', async () => {
+    test('The single access token shall be used only once', async ({api}) => {
         const now = new Date().getTime();
         const token = await api.token.createSAToken(user.sid, 120, false);
         expect(token.expireAt).toBeAfter(new Date(now + 120 * 1000));
@@ -431,11 +431,11 @@ describe('Single access token', () => {
         const response2 = await api.request.loginWithToken(null, null, token.token, null, false, null);
         expect(response2).toHaveStatus(200);
         expect(getPageRedirectUrl(response2.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
+            api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
     });
 
-    it('The single access token revoke shall work', async () => {
+    test('The single access token revoke shall work', async ({api}) => {
         const now = new Date().getTime();
         const token = await api.token.createSAToken(user.sid, 120, false);
         expect(token.expireAt).toBeAfter(new Date(now + 120 * 1000));
@@ -453,7 +453,7 @@ describe('Single access token', () => {
         const response2 = await api.request.loginWithToken(null, null, token.token, null, false, null);
         expect(response2).toHaveStatus(200);
         expect(getPageRedirectUrl(response2.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
+            api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
     });
 });
@@ -462,29 +462,29 @@ describe('Persistent token', () => {
     let mock: OAuth2MockServer = undefined!;
     let user: TestUser = undefined!;
 
-    beforeEach(async () => {
-        mock = new OAuth2MockServer({ tls: config.mockTLS, url: config.mockUrl });
+    beforeEach(async ({api}) => {
+        mock = new OAuth2MockServer();
         await mock.start();
-        user = await TestUser.createLinked(mock);
+        user = await api.testUsers.createLinked(mock);
     });
 
-    afterEach(async () => {
+    afterEach(async ({api}) => {
         await mock?.stop();
         mock = undefined!;
         user = undefined!;
     });
 
-    it('A failed login with invalid authorization shall not change the current user', async () => {
-        const user = await TestUser.createGuest();
+    test('A failed login with invalid authorization shall not change the current user', async ({api}) => {
+        const user = await api.testUsers.createGuest();
         const response = await api.request
             .loginWithToken(user.tid!, user.sid!, null, null, false, null)
             .set({ Authorization: `Basic invalid` });
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=authError&status=400'
+        expect(getPageRedirectUrl(await response.text())).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=authError&status=400'
         );
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeValidTID();
         expect(cookies.tid.value, 'Token cookie shall not be changed').toEqual(user.tid);
         expect(cookies.sid).toBeValidSID();
@@ -492,32 +492,32 @@ describe('Persistent token', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('A failed login with a persistent token shall clear the current user', async () => {
+    test('A failed login with a persistent token shall clear the current user', async ({api}) => {
         const response = await api.request.loginWithToken(null, null, null, 'invalid', false, null);
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
+        expect(getPageRedirectUrl(await response.text())).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
 
-        const cookies = getCookies(response);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeClearCookie();
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('A successful login with a persistent token shall change the current user', async () => {
+    test('A successful login with a persistent token shall change the current user', async ({api}) => {
         const token = await api.token.createPersistentToken(user.sid, 120, false);
 
         const response = await api.request.loginWithToken(null, null, null, token.token, false, null);
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(response.text)).toEqual(config.defaultRedirects.redirectUrl);
-        const cookies = getCookies(response);
+        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
+        const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
         expect(cookies.sid).toBeValidSID();
         expect(cookies.eid).toBeClearCookie();
     });
 
-    it('The persistent token with client binding shall respect client fingerprint and revoke token on mismatch', async () => {
+    test('The persistent token with client binding shall respect client fingerprint and revoke token on mismatch', async ({api}) => {
         const token = await api.token.createPersistentToken(user.sid, 120, true);
 
         const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash);
@@ -526,15 +526,15 @@ describe('Persistent token', () => {
         const response = await api.request
             .loginWithToken(null, null, null, token.token, false, null)
             .set({ 'user-agent': 'agent2' });
-        expect(getPageRedirectUrl(response.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=authError&status=400'
+        expect(getPageRedirectUrl(await response.text())).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=authError&status=400'
         );
 
         // token is revoked
         expect(await api.token.getTokens(user.sid)).toBeEmpty();
     });
 
-    it('The persistent token should be available for use at all times.', async () => {
+    test('The persistent token should be available for use at all times.', async ({api}) => {
         const now = new Date().getTime();
         const token = await api.token.createPersistentToken(user.sid, 120, false);
         expect(token.expireAt).toBeAfter(new Date(now + 120 * 1000));
@@ -552,7 +552,7 @@ describe('Persistent token', () => {
         }
     });
 
-    it('The persistent token revoke shall work', async () => {
+    test('The persistent token revoke shall work', async ({api}) => {
         const now = new Date().getTime();
         const token = await api.token.createPersistentToken(user.sid, 120, false);
         expect(token.expireAt).toBeAfter(new Date(now + 120 * 1000));
@@ -570,7 +570,7 @@ describe('Persistent token', () => {
         const response2 = await api.request.loginWithToken(null, null, null, token.token, false, null);
         expect(response2).toHaveStatus(200);
         expect(getPageRedirectUrl(response2.text)).toEqual(
-            config.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
+            api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
     });
 });

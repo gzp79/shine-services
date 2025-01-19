@@ -37,7 +37,7 @@ export function removeUndefinedValues<T>(obj: Record<string, T | undefined>): Re
     );
 }
 
-export function parseSignedCookie(value: string): unknown {
+export function parseSignedCookie(value: string): Record<string, unknown> {
     const json = decodeURIComponent(value);
     const payload = json.substring(44);
     return JSON.parse(payload);

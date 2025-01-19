@@ -1,4 +1,4 @@
-import { expect } from '@fixtures/service-fixture';
+import { expect } from '$fixtures/setup';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIdMockServer from '$lib/mocks/openid';
 import { OptionalSchema } from '$lib/schema_utils';

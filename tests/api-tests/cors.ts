@@ -1,4 +1,4 @@
-import { expect, test } from '@fixtures/service-fixture';
+import { expect, test } from '$fixtures/setup';
 import { ApiRequest } from '$lib/api/api';
 import { joinURL } from '$lib/utils';
 

@@ -1,4 +1,4 @@
-import { expect } from '@fixtures/service-fixture';
+import { expect } from '$fixtures/setup';
 import { DateStringSchema, OptionalSchema } from '$lib/schema_utils';
 import { joinURL } from '$lib/utils';
 import { z } from 'zod';

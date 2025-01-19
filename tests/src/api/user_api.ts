@@ -1,4 +1,4 @@
-import { expect } from '@fixtures/service-fixture';
+import { expect } from '$fixtures/setup';
 import { OptionalSchema } from '$lib/schema_utils';
 import { joinURL } from '$lib/utils';
 import { z } from 'zod';
@@ -104,7 +104,7 @@ export class UserAPI {
             const response = await this.addRoleRequest(sid, masterKey, userId, role)
                 .withHeaders(extraHeaders ?? {})
                 .send();
-                expect(response).toHaveStatus(200);
+            expect(response).toHaveStatus(200);
             return (await response.parse(UsersRoleSchema)).roles;
         }
     }

@@ -1,43 +1,28 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { Certificates, MockServer, TypedRequest, TypedResponse } from '$lib/mocks/mock_server';
 import '$lib/string_utils';
 import bodyParser from 'body-parser';
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { JWK, JWKObject, JWSAlgorithms, JWT } from 'ts-jose';
-
-// new key set can be generated at https://mkjwk.org/ quite easily
-// (RSA, size:2048 (smaller is rejected by the jose module as of specification), Use:Signature, Alg:RS256, ID:Sha-1 )
-/* spell-checker: disable */
-const JWKS: JWKObject = {
-    p: '21pzZgFcZqxR3CXwJ4uaXhAZHPHCi2MdNwe6MFUr8i85ehj9-za1qlnW1Jb5XmusJQhu-iFMPhlR0h51n5rM_O_XRVBSp9uu-yh-cAYNwYFxMbtlkXvCnRhpAwKimNehokJ2YyRpLlW6Kn47dd3JjxYH3DRBBSPohQnHNzozARU',
-    kty: 'RSA',
-    q: 'xW3XRPacjFnGXt6x1RbFV48wIGfeYEAKrFPbcQRL2uY1pq2htGDmso8umEK7lIFUFonqBJKR3dw8t3NuQN8P9rZSGdXVhQ52DKnKvLAQT4IKoyXOGdOuugBbRh57VEpTw8fMfyzdJwccLmWSTPtVj_0GCa6T6oZCDCDuEnPJfPk',
-    d: 'cHehvcojcKjS6pkdmCjHsWJGHiOunw0PHSArkvEKTZIekw_nekfYYKw7BPt4ZH6NeD9A-s0v_y0lwvQ7_OPtj1BUlicgPnOIfvzEaYdCr2Qx9XYWyqHKJANZ9FGUAFxFzVI1xnKB6sUC1zt3PiiJZXsq3-LL5ke6OGA3G6g2e0a8I67bQbbZd_TOe8Jh0N5IUyfnkv8jYiC5waNjZSVY9_DZE2rSZ-CmIhypUTTUfXhgNxciZGMMB3mtzMG3vR_kUv-VooXqsWgecUu9Af97maSBwoC2MessJ7VvvR553ZeYkfoCsRs8k1au2O3qLW6TON6QVZr1D602nQ0murgUIQ',
-    e: 'AQAB',
-    use: 'sig',
-    qi: 'sX4jokfUgFeUBjTBQA7mFZ6Hg8dcIidDcSa11heUb9TZt24oR-c3wsWT11cOdT6-wjEL9b-H0UZd3iC8YjwNBu6cHwQJb9sJ3-ZLSRSQJ0HuAozhMuB4n-7Oewzb63AHgwuBSb_gwxWl0X-KYERYxK7vtu38PnHFjxWCeyqtYJc',
-    dp: 'gV5rSPHsiTGAZhKJ_Qi81lUwOn3re0HNbTNFgFP7Qy7O-0_aG1s88Wdi6KbSE_n04TKEIUmaKdXNB9unC6bE1zitAdhJp25NWRuc1nz7h_DLzcT0NkWDlhtbc8cOFo62aXhBUl-bGRS-Y2lnsDBKO_WGVT0MS_fNnwkRUWUlx7E',
-    alg: 'RS256',
-    dq: 'nycH1Vk0I9QvHMVK-CtuFEKimk0BL_gQYpELIlVDTQgtkdsAsyc2chUIi8en7XRANBcjZmI9YmsrKvvLklH_TXP2RUti3-sjcNvjSi5oR5_eMVzFg35oqRqmeaUS6IUud3H2QUMKWG7b4e8RfCtT80oWdvGb3gAy-BIHuSpL8Ak',
-    n: 'qSq4xK-7D9wEIgfo1athchJvLZMn0oWh8lRXL8zwED4FtMX4nxqLGU8oir8E__Pic3sOn9ZS-bnRMlXJkIS0uZT1zBIoU6RQIfe2ScI6AaZ6QTTK5Viu10wy4S4wXdIyIInVSgnWcccrkWnrewxyj1pcZFzgzT1ZRD8BZ0roOxLefrCN0WOODABI4zTY-L5q0X5JpBk0jC1wk6YofQZYtEO4XU-wvHZIugKnjSsAvyRgcWZq1niH2_8tdnXrnvDlTnC6IZzRBjLrVW7nHu1KtiDAnwL3NRrsnW0wu1fjQCG_YUNCFRkIHwpnq5X8Zn7gsnvdTBAosJn9urnqmJ85bQ'
-};
-/* spell-checker: enable */
+import { CERTIFICATES, DEFAULT_URL, JWKS } from './mock_constants';
 
 interface ServerConfig {
-    tls?: Certificates;
     url: string;
+    jwks: JWKObject;
+    tls?: Certificates;
 }
 
 export default class Server extends MockServer {
-    public readonly config: ServerConfig;
+    protected readonly _jwks: JWKObject;
 
-    constructor(config: ServerConfig) {
-        const url = new URL('openid', config.url);
+    constructor(config?: ServerConfig) {
+        const url = new URL('openid', config?.url ?? DEFAULT_URL);
         url.port = '8091';
-        super('openid', url, config.tls);
-        this.config = config;
+        super('openid', url, config?.tls ?? CERTIFICATES);
+
+        this.log(`url: ${url}`);
+        this._jwks = config?.jwks ?? JWKS;
     }
 
     protected init() {
@@ -102,13 +87,13 @@ export default class Server extends MockServer {
                 email: user.email
             };
 
-            const key = await JWK.fromObject(JWKS);
+            const key = await JWK.fromObject(this._jwks);
             const idToken = await JWT.sign(payload, key, {
-                alg: JWKS.alg as JWSAlgorithms,
+                alg: this._jwks.alg as JWSAlgorithms,
                 issuer: issuer,
-                audience: audience
+                audience: audience,
                 //expiresIn: '1h',
-                //kid: JWKS.kid
+                kid: this._jwks.kid
             });
 
             this.log(`id-token: ${idToken}`);

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-
+import { debug } from 'debug';
 import express, { Express } from 'express';
 import { Query, Request, Response, Send } from 'express-serve-static-core';
 import http from 'http';
@@ -23,10 +23,11 @@ export interface Certificates {
 }
 
 export class MockServer {
-    app: Express = undefined!;
-    server: Server = undefined!;
-    connections: Socket[] = [];
-    port: string;
+    protected app: Express = undefined!;
+    protected server: Server = undefined!;
+    protected connections: Socket[] = [];
+    protected port: string;
+    protected readonly log: debug.Debugger;
 
     constructor(
         public readonly name: string,
@@ -37,6 +38,7 @@ export class MockServer {
             throw new Error(`Port is not defined in the base use (${this.baseUrl})`);
         }
         this.port = this.baseUrl.port;
+        this.log = debug(`test:mock:${this.name}`);
     }
 
     public get isRunning(): boolean {
@@ -45,10 +47,6 @@ export class MockServer {
 
     public getUrlFor(path: string): string {
         return joinURL(this.baseUrl, path);
-    }
-
-    protected log(message: string) {
-        console.log(`[${this.name}] ${message}`);
     }
 
     public async start() {
@@ -61,7 +59,7 @@ export class MockServer {
         this.log('Init server');
         this.initCommon();
         this.init();
-        this.log('Start listening...');
+        this.log(`Start listening at port ${this.port}...`);
         if (this.tls) {
             this.server = await https.createServer(this.tls, this.app).listen(this.port);
         } else {

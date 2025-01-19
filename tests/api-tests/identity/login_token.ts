@@ -1,4 +1,4 @@
-import { expect, test } from '@fixtures/service-fixture';
+import { expect, test } from '$fixtures/setup';
 import { TestUser } from '$lib/api/test_user';
 import { UserInfo } from '$lib/api/user_api';
 import { getPageRedirectUrl } from '$lib/api/utils';

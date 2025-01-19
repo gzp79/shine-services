@@ -236,7 +236,7 @@ export class ApiRequest<Q = void> {
 
     async send(): Promise<ApiResponse> {
         const context = await request.newContext();
-        
+
         const log_id = randomUUID();
         const headers = removeUndefinedValues(this.headers);
 
@@ -250,7 +250,7 @@ export class ApiRequest<Q = void> {
         );
         if (data !== undefined) {
             log(`Request body [${log_id}]: ${data}`);
-        }        
+        }
 
         let response;
         switch (this.method) {

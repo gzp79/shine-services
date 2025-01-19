@@ -8,7 +8,7 @@
         "outDir": "build",
 
         "paths": {
-            "@fixtures/*": ["./fixtures/*"],
+            "$fixtures/*": ["./fixtures/*"],
             "$lib": ["./src"],
             "$lib/*": ["./src/*"]
         }
