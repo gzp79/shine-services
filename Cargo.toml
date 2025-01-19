@@ -66,8 +66,6 @@ azure_identity = { version = "0.21" }
 ############################# NET #############################
 rustls = "0.23"
 tokio-rustls = "0.26"
-#rustls-native-certs = "0.8"
-#rustls-pemfile = "2.1"
 reqwest = { version = "0.12", features = ["json"] }
 
 ############################# WEB #############################

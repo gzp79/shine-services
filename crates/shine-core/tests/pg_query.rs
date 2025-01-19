@@ -44,7 +44,7 @@ pg_query!( TestQuery3 =>
 
 #[test]
 async fn test_pg_query_struct() {
-    rustls::crypto::ring::default_provider().install_default().unwrap();
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
     match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => {

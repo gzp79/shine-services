@@ -75,7 +75,7 @@ impl Aggregate for TestAggregate {
 
 #[test]
 async fn test_event_store() {
-    rustls::crypto::ring::default_provider().install_default().unwrap();
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
     match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => {
@@ -152,7 +152,7 @@ async fn test_event_store() {
 
 #[test]
 async fn test_event_snapshots() {
-    rustls::crypto::ring::default_provider().install_default().unwrap();
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
     match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => {
