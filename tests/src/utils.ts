@@ -37,11 +37,13 @@ export function removeUndefinedValues<T>(obj: Record<string, T | undefined>): Re
     );
 }
 
-export function parseSignedCookie(value: string): Record<string, unknown> {
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export function parseSignedCookie(value: string): any {
     const json = decodeURIComponent(value);
     const payload = json.substring(44);
     return JSON.parse(payload);
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export function getSHA256Hash(text: string): string {
     const hash = crypto.createHash('sha256');

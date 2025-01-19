@@ -1,3 +1,4 @@
+import { OptionalSchema } from '$lib/schema_utils';
 import { convertKeysToLowerCase, removeUndefinedValues } from '$lib/utils';
 import { randomUUID } from 'crypto';
 import debug from 'debug';
@@ -30,6 +31,15 @@ export type Cookie = {
     secure: boolean;
     sameSite: 'Strict' | 'Lax' | 'None' | string;
 };
+
+export const ProblemSchema = z.object({
+    status: z.number(),
+    type: z.string(),
+    instance: OptionalSchema(z.string()),
+    detail: z.string(),
+    extension: z.any()
+});
+export type Problem = z.infer<typeof ProblemSchema>;
 
 export type ApiMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 export type ApiParams = Record<string, string | number | boolean>;

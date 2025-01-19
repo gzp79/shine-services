@@ -1,7 +1,6 @@
 import { expect, test } from '$fixtures/setup';
 import { MockServer } from '$lib/mocks/mock_server';
 import OAuth2MockServer from '$lib/mocks/oauth2';
-import OpenIdMockServer from '$lib/mocks/openid';
 
 test.describe('Sessions', () => {
     // assume server is not off more than a few seconds and the test is fast enough
@@ -65,7 +64,7 @@ test.describe('Sessions', () => {
 
         sessions = await api.session.getSessions(user.sid);
         expect(sessions).toHaveLength(2);
-        for (const s of sessions) {
+        for (const session of sessions) {
             expect(session.createdAt).toBeAfter(createdRange[0]);
             expect(session.createdAt).toBeBefore(createdRange[1]);
         }
@@ -73,7 +72,7 @@ test.describe('Sessions', () => {
 
         sessions = await api.session.getSessions(sid2);
         expect(sessions).toHaveLength(2);
-        for (const s of sessions) {
+        for (const session of sessions) {
             expect(session.createdAt).toBeAfter(createdRange[0]);
             expect(session.createdAt).toBeBefore(createdRange[1]);
         }
@@ -83,7 +82,7 @@ test.describe('Sessions', () => {
         await api.auth.logout(sid2, null, false);
         sessions = await api.session.getSessions(user.sid);
         expect(sessions).toHaveLength(1);
-        for (const s of sessions) {
+        for (const session of sessions) {
             expect(session.createdAt).toBeAfter(createdRange[0]);
             expect(session.createdAt).toBeBefore(createdRange[1]);
         }

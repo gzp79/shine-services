@@ -1,15 +1,16 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { expect as baseExpect } from '@playwright/test';
 
-function toHaveType(received: unknown, expected: string) {
+function toHaveType(received: any, expected: string) {
     const pass = typeof received === expected;
     if (pass) {
         return {
-            message: () => `expected ${received} to have type ${expected}`,
+            message: () => `expected ${received} not to have type ${expected}`,
             pass: true
         };
     } else {
         return {
-            message: () => `expected ${received} not to have type ${expected}`,
+            message: () => `expected ${received} to have type ${expected}`,
             pass: false
         };
     }
@@ -17,26 +18,26 @@ function toHaveType(received: unknown, expected: string) {
 
 export const expect = baseExpect.extend({
     toHaveType,
-    toBeString(received: unknown) {
+    toBeString(received: any) {
         return toHaveType(received, 'string');
     },
-    toBeNumber(received: unknown) {
+    toBeNumber(received: any) {
         return toHaveType(received, 'number');
     },
-    toBeBoolean(received: unknown) {
+    toBeBoolean(received: any) {
         return toHaveType(received, 'boolean');
     },
-    toBeObject(received: unknown) {
+    toBeObject(received: any) {
         return toHaveType(received, 'object');
     },
-    toBeArray(received: unknown) {
+    toBeArray(received: any) {
         return toHaveType(received, 'array');
     },
-    toBeFunction(received: unknown) {
+    toBeFunction(received: any) {
         return toHaveType(received, 'function');
     },
 
-    toBeEmpty(received: unknown) {
+    toBeEmpty(received: any) {
         let pass;
         if (received === null || received === undefined) {
             pass = true;

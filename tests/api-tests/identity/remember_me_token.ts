@@ -1,9 +1,8 @@
 import { expect, test } from '$fixtures/setup';
-import { TestUser } from '$lib/api/test_user';
-import { ActiveToken } from '$lib/api/token_api';
+import { getPageRedirectUrl } from '$lib/api/utils';
 import { MockServer } from '$lib/mocks/mock_server';
 import OAuth2MockServer from '$lib/mocks/oauth2';
-import { delay, getSHA256Hash, parseSignedCookie } from '$lib/utils';
+import { getSHA256Hash, parseSignedCookie } from '$lib/utils';
 
 test.describe('Remember me token (TID)', () => {
     // assume server is not off more than a few seconds and the test is fast enough
@@ -25,7 +24,7 @@ test.describe('Remember me token (TID)', () => {
 
     test('Get token without a session shall fail', async ({ api }) => {
         // initial session for a new user
-        let response = await api.token.getTokensRequest(null).send();
+        const response = await api.token.getTokensRequest(null).send();
         expect(response).toHaveStatus(401);
     });
 
@@ -54,6 +53,25 @@ test.describe('Remember me token (TID)', () => {
         expect(token.expireAt).toBeBefore(expireRange[1]);
     });
 
+    test('A failed login with invalid authorization shall not change the current user', async ({ api }) => {
+        const user = await api.testUsers.createGuest();
+        const response = await api.auth
+            .loginWithTokenRequest(user.tid!, user.sid!, null, null, false, null)
+            .withHeaders({ authorization: `Basic invalid` }) // only Bearer is supported, thus it is considered invalid
+            .send();
+        expect(response).toHaveStatus(200);
+        expect(getPageRedirectUrl(await response.text())).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=authError&status=400'
+        );
+
+        const cookies = response.cookies();
+        expect(cookies.tid).toBeValidTID();
+        expect(cookies.tid.value, 'Token cookie shall not be changed').toEqual(user.tid);
+        expect(cookies.sid).toBeValidSID();
+        expect(cookies.sid.value, 'User session shall not be changed').toEqual(user.sid);
+        expect(cookies.eid).toBeClearCookie();
+    });
+
     test('Multiple login with rememberMe shall create multiple tokens and logout from a session shall invalidate the connected token', async ({
         api
     }) => {
@@ -80,7 +98,6 @@ test.describe('Remember me token (TID)', () => {
 
         const userCookies3 = await api.auth.loginWithOAuth2(mock, externalUser, true, { 'cf-ipcity': 'r3' });
         const sid3 = userCookies3.sid;
-        const tid3 = userCookies3.tid;
         tokens = await api.token.getTokens(user.sid);
         expect(tokens.map((t) => t.city).sort()).toEqual(['r1', 'r2', 'r3']);
 
@@ -131,57 +148,52 @@ test.describe('Remember me token (TID)', () => {
 
     test('Delete token by hash shall revoke the token', async ({ api }) => {
         const mock = await startMock();
+
         const user = await api.testUsers.createLinked(mock, { rememberMe: true }, { 'cf-ipcity': 'r1' });
         const externalUser = user.externalUser!;
-        /*const cookies2 = await api.auth.loginWithOAuth2(mock, externalUser, true, { 'cf-ipcity': 'r2' });
+        const cookies2 = await api.auth.loginWithOAuth2(mock, externalUser, true, { 'cf-ipcity': 'r2' });
         const tid2 = cookies2.tid;
         await api.auth.loginWithOAuth2(mock, externalUser, true, { 'cf-ipcity': 'r3' });
 
         let tokens = await api.token.getTokens(user.sid);
-        expect(tokens).toIncludeSameMembers([
-            { ...anyToken, city: 'r1' },
-            { ...anyToken, city: 'r2' },
-            { ...anyToken, city: 'r3' }
-        ]);
+        expect(tokens.map((t) => t.city).sort()).toEqual(['r1', 'r2', 'r3']);
 
         // find the 2nd token and revoke it
         const tokenId = tokens.find((x) => x.city === 'r2')!.tokenHash;
-        let responseGet = await api.request.getToken(user.sid, tokenId);
-        expect(responseGet).toHaveStatus(200);
-        expect(responseGet.body.userId).toEqual(user.userId);
-        expect(responseGet.body.city).toEqual('r2');
-        expect(responseGet.body.tokenHash).toEqual(tokenId);
+        let token = await api.token.getToken(user.sid, tokenId);
+        expect(token).toBeDefined();
+        expect(token!.userId).toEqual(user.userId);
+        expect(token!.city).toEqual('r2');
+        expect(token!.tokenHash).toEqual(tokenId);
 
         // revoke
-        let responseDelete = await api.request.revokeToken(user.sid, tokenId);
-        expect(responseDelete).toHaveStatus(200);
+        await api.token.revokeToken(user.sid, tokenId);
 
         // it shall be gone
-        let responseGet2 = await api.request.getToken(user.sid, tokenId);
-        expect(responseGet2).toHaveStatus(404);
-        expect(await api.token.getTokens(user.sid)).toIncludeSameMembers([
-            { ...anyToken, city: 'r1' },
-            { ...anyToken, city: 'r3' }
-        ]);
+        token = await api.token.getToken(user.sid, tokenId);
+        expect(token).toBeUndefined();
+        tokens = await api.token.getTokens(user.sid);
+        expect(tokens.map((t) => t.city).sort()).toEqual(['r1', 'r3']);
 
         // login shall fail with the revoked token
-        const responseLogin = await api.request.loginWithToken(tid2, null, null, null, false, null);
+        const responseLogin = await api.auth.loginWithTokenRequest(tid2, null, null, null, false, null).send();
         expect(responseLogin).toHaveStatus(200);
-        expect(getPageRedirectUrl(responseLogin.text)).toEqual(
+        expect(getPageRedirectUrl(await responseLogin.text())).toEqual(
             api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
-        );*/
+        );
     });
 
     test('Login with token shall rotate the token', async ({ api }) => {
-        /*
         const user = await api.testUsers.createGuest();
-        
-        todo: loginWith token creates a new tid        
-        */
+        const c0 = parseSignedCookie(user.tid!);
+        expect(c0.rky).toBeNull();
+        const tid = user.tid!;
+
+        const newCookies = await api.auth.loginWithToken(tid, null);
+        expect(tid).not.toEqual(newCookies.tid);
     });
 
     test('Token rotation with lost response shall work', async ({ api }) => {
-        /*
         const user = await api.testUsers.createGuest();
         const c0 = parseSignedCookie(user.tid!); //active: t1, revoke: -
         expect(c0.rky).toBeNull();
@@ -210,65 +222,50 @@ test.describe('Remember me token (TID)', () => {
         expect(c5.rky).toEqual(c4.key);
 
         // Token rotated out shall not work
-        const request = await api.request.loginWithToken(tid, null, null, null, null, null);
+        const request = await api.auth.loginWithTokenRequest(tid, null, null, null, null, null).send();
         expect(request).toHaveStatus(200);
-        expect(getPageRedirectUrl(request.text)).toEqual(
+        expect(getPageRedirectUrl(await request.text())).toEqual(
             api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
 
         // live tokens: t3,t4,t5,t6
-        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash);
-        const expectedTokens = [c2.key, c3.key, c4.key, c5.key].map((x) => getSHA256Hash(x));
-        expect(tokens).toIncludeSameMembers(expectedTokens);
-        */
+        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
+        const expectedTokens = [c2.key, c3.key, c4.key, c5.key].map((x) => getSHA256Hash(x)).sort();
+        expect(tokens).toEqual(expectedTokens);
     });
 
     test('Query token shall have the highest precedence', async ({ api }) => {
-        /*
         const userCookie = await api.testUsers.createGuest();
         const userQuery = await api.testUsers.createGuest();
         const tokenQuery = await api.token.createSAToken(userQuery.sid, 120, false);
         const userHeader = await api.testUsers.createGuest();
         const tokenHeader = await api.token.createPersistentToken(userHeader.sid, 120, false);
 
-        const response = await api.request.loginWithToken(
-            userCookie.tid!,
-            null,
-            tokenQuery.token,
-            tokenHeader.token,
-            false,
-            null
-        );
+        const response = await api.auth
+            .loginWithTokenRequest(userCookie.tid!, null, tokenQuery.token, tokenHeader.token, false, null)
+            .send();
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
-        var cookies = response.cookies();
+        const cookies = response.cookies();
         const userLoggedIn = await api.user.getUserInfo(cookies.sid.value);
         expect(userLoggedIn.userId).not.toEqual(userCookie.userId);
         expect(userLoggedIn.userId).toEqual(userQuery.userId);
         expect(userLoggedIn.userId).not.toEqual(userHeader.userId);
-        */
     });
 
     test('Header token shall have the 2nd highest precedence', async ({ api }) => {
-        /*
         const userCookie = await api.testUsers.createGuest();
         const userHeader = await api.testUsers.createGuest();
         const tokenHeader = await api.token.createPersistentToken(userHeader.sid, 120, false);
 
-        const response = await api.request.loginWithToken(
-            userCookie.tid!,
-            null,
-            null,
-            tokenHeader.token,
-            false,
-            null
-        );
+        const response = await api.auth
+            .loginWithTokenRequest(userCookie.tid!, null, null, tokenHeader.token, false, null)
+            .send();
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
-        var cookies = response.cookies();
+        const cookies = response.cookies();
         const userLoggedIn = await api.user.getUserInfo(cookies.sid.value);
         expect(userLoggedIn.userId).not.toEqual(userCookie.userId);
         expect(userLoggedIn.userId).toEqual(userHeader.userId);
-        */
     });
 });

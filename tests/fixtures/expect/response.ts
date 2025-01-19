@@ -7,12 +7,12 @@ export const expect = baseExpect.extend({
         const pass = status === statusCode;
         if (pass) {
             return {
-                message: () => `expected ${status} to be ${statusCode}`,
+                message: () => `expected ${status} not to be ${statusCode}`,
                 pass: true
             };
         } else {
             return {
-                message: () => `expected ${status} not to be ${statusCode}`,
+                message: () => `expected ${status} to be ${statusCode}`,
                 pass: false
             };
         }
@@ -39,12 +39,12 @@ export const expect = baseExpect.extend({
 
         if (pass) {
             return {
-                message: () => `expected ${headerValue} to be ${value}`,
+                message: () => `expected ${headerValue} not to be ${value}`,
                 pass: true
             };
         } else {
             return {
-                message: () => `expected ${headerValue} not to be ${value}`,
+                message: () => `expected ${headerValue} to be ${value}`,
                 pass: false
             };
         }

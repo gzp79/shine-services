@@ -131,7 +131,6 @@ test.describe('Login with token for returning user', () => {
     let userInfo: Omit<UserInfo, 'sessionLength'> = undefined!;
 
     test.beforeEach(async ({ api }) => {
-        console.log('Register a new user...');
         testUser = await api.testUsers.createGuest();
         expect(testUser.sid).toBeDefined();
         expect(testUser.tid).toBeDefined();

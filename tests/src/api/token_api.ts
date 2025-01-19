@@ -70,10 +70,24 @@ export class TokenAPI {
         return ApiRequest.get(this.urlFor(`api/auth/user/tokens/${tokenId}`)).withCookies({ ...cs });
     }
 
+    async getToken(sid: string | null, tokenId: string): Promise<ActiveToken | undefined> {
+        const response = await this.getTokenRequest(sid, tokenId).send();
+        if (response.status() === 404) {
+            return undefined;
+        }
+        expect(response).toHaveStatus(200);
+        return await response.parse(ActiveTokenSchema);
+    }
+
     revokeTokenRequest(sid: string | null, tokenId: string): ApiRequest {
         const cs = sid && { sid };
 
         return ApiRequest.delete(this.urlFor(`api/auth/user/tokens/${tokenId}`)).withCookies({ ...cs });
+    }
+
+    async revokeToken(sid: string | null, tokenId: string): Promise<void> {
+        const response = await this.revokeTokenRequest(sid, tokenId).send();
+        expect(response).toHaveStatus(200);
     }
 
     createTokenRequest(

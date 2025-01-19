@@ -45,7 +45,6 @@ test.describe('CORS check', { tag: ['@regression'] }, () => {
         const url = joinURL(identityUrl, '/info/ready');
         const originUrl = new URL(identityUrl);
         const origin = `${originUrl.protocol}//${originUrl.hostname}:123`;
-        console.log('origin', origin);
         const response = await ApiRequest.get(url).withHeaders({ Origin: origin }).send();
         expect(response).toHaveStatus(200);
         expect(response).toHaveHeader('access-control-allow-origin', origin);
