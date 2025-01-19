@@ -242,7 +242,7 @@ test.describe('Login with OpenId', () => {
 
     test('Start login with (token: NULL, session: EXPIRED) shall succeed', async ({ api }) => {
         const { sid } = await api.auth.loginAsGuestUser();
-        await api.auth.logout(sid, false);
+        await api.auth.logout(sid, null, false);
 
         const response = await api.auth.loginWithOpenIdRequest(null, sid, null, null).send();
         expect(response).toHaveStatus(200);

@@ -510,17 +510,23 @@ export class AuthAPI {
         return true;
     }
 
-    logoutRequest(sid: string | null, terminateAll: boolean | null): ApiRequest {
+    logoutRequest(sid: string | null, tid: string | null, terminateAll: boolean | null): ApiRequest {
         const qt = terminateAll && { terminateAll };
         const cs = sid && { sid };
+        const ct = tid && { tid };
 
         return ApiRequest.get(this.urlFor('/auth/logout'))
             .withParams({ ...qt })
-            .withCookies({ ...cs });
+            .withCookies({ ...cs, ...ct });
     }
 
-    async logout(sid: string, terminateAll: boolean | null, extraHeaders?: Record<string, string>): Promise<void> {
-        const response = await this.logoutRequest(sid, terminateAll)
+    async logout(
+        sid: string,
+        tid: string | null,
+        terminateAll: boolean | null,
+        extraHeaders?: Record<string, string>
+    ): Promise<void> {
+        const response = await this.logoutRequest(sid, tid, terminateAll)
             .withHeaders(extraHeaders ?? {})
             .send();
         expect(response).toHaveStatus(200);

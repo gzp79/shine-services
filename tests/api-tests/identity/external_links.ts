@@ -37,10 +37,10 @@ test.describe('External links', () => {
 
         expect(links).toHaveLength(1);
         const link = links[0];
-        expect(link.provider).toBe('oauth2_flow');
-        expect(link.userId).toBe(user.userId);
-        expect(link.email).toBe(user.externalUser?.email);
-        expect(link.name).toBe(user.externalUser?.name);
+        expect(link.provider).toEqual('oauth2_flow');
+        expect(link.userId).toEqual(user.userId);
+        expect(link.email).toEqual(user.externalUser?.email);
+        expect(link.name).toEqual(user.externalUser?.name);
         expect(link.linkedAt).toBeAfter(linkRange[0]);
         expect(link.linkedAt).toBeBefore(linkRange[1]);
 
@@ -52,17 +52,16 @@ test.describe('External links', () => {
     test('Sign up with OpenId shall create a link and delete link shall work', async ({ api }) => {
         const user = await api.testUsers.createLinked(mockOpenId);
         const links = await api.auth.getExternalLinks(user.sid);
-        expect(links).toIncludeSameMembers([
-            {
-                //linkedAt: expect.toBeBetween(linkRange[0], linkRange[1]),
-                provider: 'openid_flow',
-                userId: user.userId,
-                email: user.externalUser?.email,
-                name: user.externalUser?.name
-            }
-        ]);
 
+        expect(links).toHaveLength(1);
         const link = links[0];
+        expect(link.provider).toEqual('openid_flow');
+        expect(link.userId).toEqual(user.userId);
+        expect(link.email).toEqual(user.externalUser?.email);
+        expect(link.name).toEqual(user.externalUser?.name);
+        expect(link.linkedAt).toBeAfter(linkRange[0]);
+        expect(link.linkedAt).toBeBefore(linkRange[1]);
+
         expect(await api.auth.tryUnlink(user.sid, link.provider, link.providerUserId)).toBeTruthy();
         expect(await api.auth.getExternalLinks(user.sid)).toBeEmpty();
         expect(await api.auth.tryUnlink(user.sid, link.provider, link.providerUserId)).toBeFalsy();
@@ -75,10 +74,10 @@ test.describe('External links', () => {
         const testLink = (links: LinkedIdentity[], external: ExternalUser, provider: string) => {
             const link = links.find((l) => l.providerUserId === external.id);
             expect(link).toBeDefined();
-            expect(link!.provider).toBe(provider);
-            expect(link!.userId).toBe(user.userId);
-            expect(link!.email).toBe(external.email);
-            expect(link!.name).toBe(external.name);
+            expect(link!.provider).toEqual(provider);
+            expect(link!.userId).toEqual(user.userId);
+            expect(link!.email).toEqual(external.email);
+            expect(link!.name).toEqual(external.name);
             expect(link!.linkedAt).toBeAfter(linkRange[0]);
             expect(link!.linkedAt).toBeBefore(linkRange[1]);
         };

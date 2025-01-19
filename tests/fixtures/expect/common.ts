@@ -133,20 +133,5 @@ export const expect = baseExpect.extend({
                 pass: false
             };
         }
-    },
-
-    toIncludeSameMembers(received, expected) {
-        const pass = received.sort().toString() === expected.sort().toString();
-        if (pass) {
-            return {
-                message: () => `expected ${received} not to include same members as ${expected}`,
-                pass: true
-            };
-        } else {
-            return {
-                message: () => `expected ${received} to include same members as ${expected}`,
-                pass: false
-            };
-        }
     }
 });

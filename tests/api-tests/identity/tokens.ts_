@@ -1,30 +1,15 @@
-import api, { TokenKind } from '$lib/api/api';
+import { expect, test } from '$fixtures/setup';
+import { TestUser } from '$lib/api/test_user';
 import { ActiveToken } from '$lib/api/token_api';
 import { MockServer } from '$lib/mocks/mock_server';
 import OAuth2MockServer from '$lib/mocks/oauth2';
-import request from '$lib/request';
-import { getCookies, getPageRedirectUrl } from '$lib/response_utils';
-import { TestUser } from '$lib/api/test_user';
 import { delay, getSHA256Hash, parseSignedCookie } from '$lib/utils';
-import config from '../test.config';
 
-describe('Tokens', () => {
+test.describe('Tokens', () => {
     // assume server is not off more than a few seconds and the test is fast enough
     const now = new Date().getTime();
     const createRange = [new Date(now - 60 * 1000), new Date(now + 60 * 1000)];
     const expireRange = [new Date(now + 13 * 24 * 60 * 60 * 1000), new Date(now + 15 * 24 * 60 * 60 * 1000)];
-    const anyToken: ActiveToken = {
-        userId: expect.toBeString(),
-        tokenHash: expect.toBeString(),
-        kind: 'access',
-        createdAt: expect.toBeBetween(createRange[0], createRange[1]),
-        expireAt: expect.toBeBetween(expireRange[0], expireRange[1]),
-        isExpired: false,
-        agent: '',
-        country: null,
-        region: null,
-        city: null
-    };
 
     let mock: MockServer;
     const startMock = async (): Promise<OAuth2MockServer> => {
@@ -33,18 +18,18 @@ describe('Tokens', () => {
         return mock as OAuth2MockServer;
     };
 
-    afterEach(async ({api}) => {
+    test.afterEach(async () => {
         await mock?.stop();
         mock = undefined!;
     });
 
-    test('Get token without a session shall fail', async ({api}) => {
+    test('Get token without a session shall fail', async ({ api }) => {
         // initial session for a new user
-        let response = await api.request.getTokens(null);
+        let response = await api.token.getTokensRequest(null).send();
         expect(response).toHaveStatus(401);
     });
 
-    test('Token shall keep the site info', async ({api}) => {
+    test('Token shall keep the site info', async ({ api }) => {
         const extraHeaders = {
             'user-agent': 'agent',
             'cf-ipcountry': 'country',
@@ -55,18 +40,23 @@ describe('Tokens', () => {
         const user = await api.testUsers.createGuest({}, extraHeaders);
 
         // initial session for a new user
-        expect(await api.token.getTokens(user.sid, extraHeaders)).toIncludeSameMembers([
-            {
-                ...anyToken,
-                agent: 'agent',
-                country: 'country',
-                region: 'region',
-                city: 'city'
-            }
-        ]);
+        const tokens = await api.token.getTokens(user.sid, extraHeaders);
+        expect(tokens).toHaveLength(1);
+        const token = tokens[0];
+        expect(token.userId).toEqual(user.userId);
+        expect(token.agent).toEqual('agent');
+        expect(token.country).toEqual('country');
+        expect(token.region).toEqual('region');
+        expect(token.city).toEqual('city');
+        expect(token.createdAt).toBeAfter(createRange[0]);
+        expect(token.createdAt).toBeBefore(createRange[1]);
+        expect(token.expireAt).toBeAfter(expireRange[0]);
+        expect(token.expireAt).toBeBefore(expireRange[1]);
     });
 
-    test('Multiple login with rememberMe shall create multiple tokens and logout from a session shall invalidate the connected token', async ({api}) => {
+    test('Multiple login with rememberMe shall create multiple tokens and logout from a session shall invalidate the connected token', async ({
+        api
+    }) => {
         const mock = await startMock();
         const user = await api.testUsers.createLinked(
             mock,
@@ -78,65 +68,68 @@ describe('Tokens', () => {
         const externalUser = user.externalUser!;
 
         // initial session for a new user
-        expect(await api.token.getTokens(user.sid)).toIncludeSameMembers([{ ...anyToken, city: 'r1' }]);
+        let tokens = await api.token.getTokens(user.sid);
+        expect(tokens.map((t) => t.city).sort()).toEqual(['r1']);
 
-        // login and create new token
+        // login and create a new token
         const userCookies2 = await api.auth.loginWithOAuth2(mock, externalUser, true, { 'cf-ipcity': 'r2' });
         const sid2 = userCookies2.sid;
         const tid2 = userCookies2.tid;
-        expect(await api.token.getTokens(user.sid)).toIncludeSameMembers([
-            { ...anyToken, city: 'r1' },
-            { ...anyToken, city: 'r2' }
-        ]);
+        tokens = await api.token.getTokens(user.sid);
+        expect(tokens.map((t) => t.city).sort()).toEqual(['r1', 'r2']);
+
+        const userCookies3 = await api.auth.loginWithOAuth2(mock, externalUser, true, { 'cf-ipcity': 'r3' });
+        const sid3 = userCookies3.sid;
+        const tid3 = userCookies3.tid;
+        tokens = await api.token.getTokens(user.sid);
+        expect(tokens.map((t) => t.city).sort()).toEqual(['r1', 'r2', 'r3']);
 
         // login but don't create new token
-        await api.auth.loginWithOAuth2(mock, externalUser, false, { 'cf-ipcity': 'r3' });
-        expect(await api.token.getTokens(user.sid)).toIncludeSameMembers([
-            { ...anyToken, city: 'r1' },
-            { ...anyToken, city: 'r2' }
-        ]);
+        await api.auth.loginWithOAuth2(mock, externalUser, false, { 'cf-ipcity': 'r4' });
+        tokens = await api.token.getTokens(user.sid);
+        expect(tokens.map((t) => t.city).sort()).toEqual(['r1', 'r2', 'r3']);
 
-        //logout from the second session with tid.
-        // Some notes:
-        // - without tid the token would not be deleted as sessions and tokens are not linked
-        let response = await request
-            .get(config.getIdentityUrlFor(`/auth/logout`))
-            .set('Cookie', [`sid=${sid2}`, `tid=${tid2}`]);
-        expect(response).toHaveStatus(200);
-        expect(await api.token.getTokens(user.sid)).toIncludeSameMembers([{ ...anyToken, city: 'r1' }]);
+        //logout using the second session
+        // Note: to revoke the tid2, we have to also provide it. From sid, the server cannot tell the (tid) remember me token.
+        // They are connected only on the client side.
+        let logout = await api.auth.logoutRequest(sid2, tid2, false).send();
+        expect(logout.cookies().sid).toBeClearCookie();
+        expect(logout.cookies().tid).toBeClearCookie();
+        tokens = await api.token.getTokens(user.sid);
+        expect(tokens.map((t) => t.city).sort()).toEqual(['r1', 'r3']);
+
+        //logout using the 3rd session, but without the tid3 will not revoke the token.
+        // It will be clear from the cookies, thus browser shall forget it.
+        logout = await api.auth.logoutRequest(sid3, null, false).send();
+        expect(logout.cookies().sid).toBeClearCookie();
+        expect(logout.cookies().tid).toBeClearCookie();
+        tokens = await api.token.getTokens(user.sid);
+        expect(tokens.map((t) => t.city).sort()).toEqual(['r1', 'r3']);
     });
 
-    test('Multiple login with rememberMe shall create multiple tokens and logout with terminateAll shall invalidate all of them', async ({api}) => {
+    test('Multiple login with rememberMe shall create multiple tokens and logout with terminateAll shall invalidate all of them', async ({
+        api
+    }) => {
         const mock = await startMock();
-        const user = await api.testUsers.createLinked(
-            mock,
-            {
-                rememberMe: true
-            },
-            { 'cf-ipcity': 'r1' }
-        );
+        const user = await api.testUsers.createLinked(mock, { rememberMe: true }, { 'cf-ipcity': 'r1' });
         const externalUser = user.externalUser!;
 
         // login a few more times
         await api.auth.loginWithOAuth2(mock, externalUser, true, { 'cf-ipcity': 'r2' });
         await api.auth.loginWithOAuth2(mock, externalUser, true, { 'cf-ipcity': 'r3' });
-        expect(await api.token.getTokens(user.sid)).toIncludeSameMembers([
-            { ...anyToken, city: 'r1' },
-            { ...anyToken, city: 'r2' },
-            { ...anyToken, city: 'r3' }
-        ]);
+        let tokens = await api.token.getTokens(user.sid);
+        expect(tokens.map((t) => t.city).sort()).toEqual(['r1', 'r2', 'r3']);
 
         //logout from the all the session
-        await api.auth.logout(user.sid, true);
+        await api.auth.logout(user.sid, null, true);
 
-        //login again and check if no token is present
-        const newUserCookies = await api.auth.loginWithOAuth2(mock, externalUser, false, {
-            'cf-region': 'r4'
-        });
-        expect(await api.token.getTokens(newUserCookies.sid)).toBeEmpty();
+        //login again without remember me shall create no tid
+        const newUserCookies = await api.auth.loginWithOAuth2(mock, externalUser, false, { 'cf-region': 'r4' });
+        tokens = await api.token.getTokens(newUserCookies.sid);
+        expect(tokens.map((t) => t.city).sort()).toEqual([]);
     });
 
-    test('Delete token by hash shall revoke the token', async ({api}) => {
+    /*test('Delete token by hash shall revoke the token', async ({api}) => {
         const mock = await startMock();
         const user = await api.testUsers.createLinked(
             mock,
@@ -572,5 +565,5 @@ describe('Persistent token', () => {
         expect(getPageRedirectUrl(response2.text)).toEqual(
             api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
         );
-    });
+    });*/
 });

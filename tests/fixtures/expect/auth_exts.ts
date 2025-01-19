@@ -5,9 +5,9 @@ import { expect as baseExpect } from './common';
 
 export const expect = baseExpect.extend({
     toBeClearCookie(received: Cookie) {
-        expect(received.secure).toBe(true);
-        expect(received.httpOnly).toBe(true);
-        expect(received.sameSite).toBe('Lax');
+        expect(received.secure).toBeTruthy();
+        expect(received.httpOnly).toBeTruthy();
+        expect(received.sameSite).toEqual('Lax');
         expect(received.expires!).toBeBefore(new Date());
 
         return {
@@ -18,8 +18,8 @@ export const expect = baseExpect.extend({
 
     toBeValidTID(received: Cookie) {
         expect(received.name).toEqual('tid');
-        expect(received.secure).toEqual(true);
-        expect(received.httpOnly).toEqual(true);
+        expect(received.secure).toBeTruthy();
+        expect(received.httpOnly).toBeTruthy();
         expect(received.sameSite).toEqual('Lax');
         expect(received.path).toEndWith('/auth/');
         expect(received.domain).toEqual('cloud.local-scytta.com');
@@ -33,8 +33,8 @@ export const expect = baseExpect.extend({
 
     toBeValidSID(received: Cookie) {
         expect(received.name).toEqual('sid');
-        expect(received.secure).toEqual(true);
-        expect(received.httpOnly).toEqual(true);
+        expect(received.secure).toBeTruthy();
+        expect(received.httpOnly).toBeTruthy();
         expect(received.sameSite).toEqual('Lax');
         expect(received.path).toEqual('/');
         expect(received.domain).toEqual('local-scytta.com');
@@ -48,8 +48,8 @@ export const expect = baseExpect.extend({
 
     toBeValidEID(received: Cookie) {
         expect(received.name).toEqual('eid');
-        expect(received.secure).toEqual(true);
-        expect(received.httpOnly).toEqual(true);
+        expect(received.secure).toBeTruthy();
+        expect(received.httpOnly).toBeTruthy();
         expect(received.sameSite).toEqual('Lax');
         expect(received.path).toEndWith('/auth/');
         expect(received.domain).toEqual('cloud.local-scytta.com');

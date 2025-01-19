@@ -96,37 +96,37 @@ test.describe('User roles', () => {
         const uSid = user.sid;
         const aSid = admin.sid;
 
-        expect(await userApi.getRoles(aSid, false, userId)).toIncludeSameMembers([]);
-        expect((await userApi.getUserInfo(uSid)).roles).toIncludeSameMembers([]);
+        expect((await userApi.getRoles(aSid, false, userId)).sort()).toEqual([]);
+        expect((await userApi.getUserInfo(uSid)).roles.sort()).toEqual([]);
 
         // remove Role3 (not existing)
-        expect(await userApi.deleteRoles(aSid, false, userId, 'Role3')).toIncludeSameMembers([]);
-        expect(await userApi.getRoles(aSid, false, userId)).toIncludeSameMembers([]);
-        expect((await userApi.getUserInfo(uSid)).roles).toIncludeSameMembers([]);
+        expect((await userApi.deleteRoles(aSid, false, userId, 'Role3')).sort()).toEqual([]);
+        expect((await userApi.getRoles(aSid, false, userId)).sort()).toEqual([]);
+        expect((await userApi.getUserInfo(uSid)).roles.sort()).toEqual([]);
 
         // add Role1
-        expect(await userApi.addRole(aSid, false, userId, 'Role1')).toIncludeSameMembers(['Role1']);
-        expect(await userApi.getRoles(aSid, false, userId)).toIncludeSameMembers(['Role1']);
-        expect((await userApi.getUserInfo(uSid)).roles).toIncludeSameMembers(['Role1']);
+        expect((await userApi.addRole(aSid, false, userId, 'Role1')).sort().sort()).toEqual(['Role1']);
+        expect((await userApi.getRoles(aSid, false, userId)).sort()).toEqual(['Role1']);
+        expect((await userApi.getUserInfo(uSid)).roles.sort()).toEqual(['Role1']);
 
         //add Role2
-        expect(await userApi.addRole(aSid, false, userId, 'Role2')).toIncludeSameMembers(['Role1', 'Role2']);
-        expect(await userApi.getRoles(aSid, false, userId)).toIncludeSameMembers(['Role1', 'Role2']);
-        expect((await userApi.getUserInfo(uSid)).roles).toIncludeSameMembers(['Role1', 'Role2']);
+        expect((await userApi.addRole(aSid, false, userId, 'Role2')).sort()).toEqual(['Role1', 'Role2']);
+        expect((await userApi.getRoles(aSid, false, userId)).sort()).toEqual(['Role1', 'Role2']);
+        expect((await userApi.getUserInfo(uSid)).roles.sort()).toEqual(['Role1', 'Role2']);
 
         // remove Role1
-        expect(await userApi.deleteRoles(aSid, false, userId, 'Role1')).toIncludeSameMembers(['Role2']);
-        expect(await userApi.getRoles(aSid, false, userId)).toIncludeSameMembers(['Role2']);
-        expect((await userApi.getUserInfo(uSid)).roles).toIncludeSameMembers(['Role2']);
+        expect((await userApi.deleteRoles(aSid, false, userId, 'Role1')).sort()).toEqual(['Role2']);
+        expect((await userApi.getRoles(aSid, false, userId)).sort()).toEqual(['Role2']);
+        expect((await userApi.getUserInfo(uSid)).roles.sort()).toEqual(['Role2']);
 
         // remove Role3 (not existing)
-        expect(await userApi.deleteRoles(aSid, false, userId, 'Role3')).toIncludeSameMembers(['Role2']);
-        expect(await userApi.getRoles(aSid, false, userId)).toIncludeSameMembers(['Role2']);
-        expect((await userApi.getUserInfo(uSid)).roles).toIncludeSameMembers(['Role2']);
+        expect((await userApi.deleteRoles(aSid, false, userId, 'Role3')).sort()).toEqual(['Role2']);
+        expect((await userApi.getRoles(aSid, false, userId)).sort()).toEqual(['Role2']);
+        expect((await userApi.getUserInfo(uSid)).roles.sort()).toEqual(['Role2']);
 
         // remove Role2
-        expect(await userApi.deleteRoles(aSid, false, userId, 'Role2')).toIncludeSameMembers([]);
-        expect(await userApi.getRoles(aSid, false, userId)).toIncludeSameMembers([]);
-        expect((await userApi.getUserInfo(uSid)).roles).toIncludeSameMembers([]);
+        expect((await userApi.deleteRoles(aSid, false, userId, 'Role2')).sort()).toEqual([]);
+        expect((await userApi.getRoles(aSid, false, userId)).sort()).toEqual([]);
+        expect((await userApi.getUserInfo(uSid)).roles.sort()).toEqual([]);
     });
 });
