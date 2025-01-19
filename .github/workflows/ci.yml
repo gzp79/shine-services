@@ -37,7 +37,7 @@ jobs:
         run: |
           npm ci
           npm run lint
-          npm run mkcert
+          npm run mkcert:local
           echo '{ "version": "${{env.VERSION}}" }' > ../services/server_version.json
         working-directory: ./tests
 

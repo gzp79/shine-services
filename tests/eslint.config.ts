@@ -35,7 +35,6 @@ export default [
                     ignoreRestSiblings: true
                 }
             ],
-            //'@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_|_' }],
             '@typescript-eslint/no-floating-promises': ['error']
         }
     },

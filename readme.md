@@ -10,7 +10,6 @@
 host setup
 ```
 127.0.0.1 local-cloud.scytta.com
-127.0.0.1 local-web.scytta.com
 127.0.0.1 local.scytta.com
 
 127.0.0.1 local-scytta.com

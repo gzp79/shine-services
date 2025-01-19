@@ -28,7 +28,7 @@ pub struct PathParams {
 
 #[utoipa::path(
     get,
-    path = "/api/builder/connect/{session_id}",
+    path = "/api/connect/:id",
     tag = "builder",
     params (
         PathParams
@@ -45,12 +45,18 @@ pub async fn connect(
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, Problem> {
     let user = user.into_user();
+    log::info!(
+        "User {} requesting a connection to the session {}...",
+        path.session_id,
+        user.user_id
+    );
+
     let session = state
         .sessions()
         .acquire_session(&path.session_id, &user.user_id)
         .await
         .map_err(|err| err.into_problem(&problem_config))?;
-    Ok(ws.on_upgrade(|socket| handle_socket(socket, user, session)))
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, session)))
 }
 
 async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Session>) {
