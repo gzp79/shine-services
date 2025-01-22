@@ -1,5 +1,5 @@
-import { randomUUID } from 'crypto';
 import { createUrlQueryString, generateRandomString } from '$lib/string_utils';
+import { randomUUID } from 'crypto';
 
 export class ExternalUser {
     public readonly id: string;
@@ -17,7 +17,7 @@ export class ExternalUser {
         return new ExternalUser(randomUUID(), name, name + '@example.com');
     }
 
-    toCode(params?: any): string {
+    toCode(params?: Record<string, string>): string {
         return createUrlQueryString({
             id: this.id,
             name: this.name,

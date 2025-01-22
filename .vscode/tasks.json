@@ -58,6 +58,13 @@
       "isBackground": true
     },
     {
+      "label": "stop dev environment",
+      "type": "shell",
+      "command": "docker compose -f docker-compose.yml -p shine down",
+      "group": "build",
+      "isBackground": true
+    },
+    {
       "label": "identity: cloud",
       "type": "shell",
       "command": "cargo run -p shine-identity --release -- prod",
@@ -67,7 +74,7 @@
           "SERVICE--TLS--CERT": "../../certs/test.crt",
           "SERVICE--TLS--KEY": "../../certs/test.key",
           "SERVICE--port": "8443",
-          "AUTH--AUTHBASEURL": "https://local.scytta.com:8443/identity/auth/"
+          "AUTH--AUTHBASEURL": "https://local-cloud.scytta.com:8443/identity/auth/"
         }
       },
       "problemMatcher": ["$rustc"],

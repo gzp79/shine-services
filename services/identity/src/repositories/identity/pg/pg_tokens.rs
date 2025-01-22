@@ -1,12 +1,11 @@
-use crate::repositories::{
-    identity::{Identity, IdentityBuildError, IdentityError, IdentityKind, TokenInfo, TokenKind, Tokens},
-    DBError,
+use crate::repositories::identity::{
+    Identity, IdentityBuildError, IdentityError, IdentityKind, TokenInfo, TokenKind, Tokens,
 };
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use postgres_from_row::FromRow;
 use shine_core::{
-    db::{PGClient, PGConvertError, PGErrorChecks, ToPGType},
+    db::{DBError, PGClient, PGConvertError, PGErrorChecks, ToPGType},
     pg_query,
     web::{ClientFingerprint, SiteInfo},
 };

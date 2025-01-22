@@ -1,5 +1,4 @@
-use crate::repositories::DBError;
-use shine_core::web::SessionKeyError;
+use shine_core::{db::DBError, web::SessionKeyError};
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]

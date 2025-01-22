@@ -1,9 +1,6 @@
-use crate::repositories::{
-    identity::{IdentityBuildError, IdentityError},
-    DBError,
-};
+use crate::repositories::identity::{IdentityBuildError, IdentityError};
 use shine_core::{
-    db::{PGClient, PGPooledConnection, PGTransaction},
+    db::{DBError, PGClient, PGPooledConnection, PGTransaction},
     pg_query,
 };
 use tracing::instrument;

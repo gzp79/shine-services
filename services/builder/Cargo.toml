@@ -8,10 +8,17 @@ log = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+uuid = { workspace = true }
 rand = { workspace = true }
 ring = { workspace = true }
 
-serde = { workspace = true }
+############################# RUNTIME #############################
+futures = { workspace = true }
+futures-channel = { workspace = true }
+tokio = { workspace = true }
 
 ############################# DB #############################
 bb8 = { workspace = true }
@@ -29,12 +36,13 @@ tokio-postgres = { workspace = true, features = [
 ] }
 tokio-postgres-rustls = { workspace = true }
 postgres-from-row = { workspace = true }
-refinery = { workspace = true, features = ["tokio-postgres"] }
+refinery = { workspace = true }
 
 ############################# WEB #############################
 axum = { workspace = true, features = ["ws"] }
 utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
+validator = { workspace = true }
 
 shine-core = { workspace = true }
 

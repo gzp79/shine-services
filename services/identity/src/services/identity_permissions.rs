@@ -1,7 +1,7 @@
-use shine_core::web::{roles, CurrentUser, GlobalPermissions, PermissionSet};
+use shine_core::web::{roles, CorePermissions, CurrentUser, PermissionSet};
 
 pub mod permissions {
-    //pub use shine_core::web::permissions::*;
+    pub use shine_core::web::permissions::*;
 
     /// Allow to query the general information of an identity
     pub const READ_ANY_IDENTITY: &str = "ReadAnyIdentity";
@@ -17,7 +17,7 @@ pub trait IdentityPermissions {
 
 impl IdentityPermissions for CurrentUser {
     fn identity_permissions(&self) -> PermissionSet {
-        let mut permission = self.global_permissions();
+        let mut permission = self.core_permissions();
 
         for role in &self.roles {
             match role.as_str() {

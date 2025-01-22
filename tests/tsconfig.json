@@ -1,22 +1,14 @@
 {
     "compilerOptions": {
-        "target": "es6",
-        "module": "commonjs",
-        "allowJs": true,
-        "checkJs": true,
         "esModuleInterop": true,
         "forceConsistentCasingInFileNames": true,
-        "skipLibCheck": true,
         "strict": true,
-        "sourceMap": true,
-
-        "experimentalDecorators": true,
-        "resolveJsonModule": true,
-        "allowSyntheticDefaultImports": true,
+        "skipLibCheck": true,
 
         "outDir": "build",
 
         "paths": {
+            "$fixtures/*": ["./fixtures/*"],
             "$lib": ["./src"],
             "$lib/*": ["./src/*"]
         }

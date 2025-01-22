@@ -1,10 +1,7 @@
-use crate::repositories::{
-    identity::{IdentityBuildError, IdentityError, Roles},
-    DBError,
-};
+use crate::repositories::identity::{IdentityBuildError, IdentityError, Roles};
 use postgres_from_row::FromRow;
 use shine_core::{
-    db::{PGClient, PGErrorChecks},
+    db::{DBError, PGClient, PGErrorChecks},
     pg_query,
 };
 use tracing::instrument;

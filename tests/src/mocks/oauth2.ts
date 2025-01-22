@@ -1,19 +1,23 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { Certificates, MockServer, TypedRequest, TypedResponse } from '$lib/mocks/mock_server';
+import '$lib/string_utils';
 import bodyParser from 'body-parser';
 import express from 'express';
 import { body, validationResult } from 'express-validator';
-import { Certificates, MockServer, TypedRequest, TypedResponse } from '$lib/mock_server';
-import '$lib/string_utils';
+import { CERTIFICATES, DEFAULT_URL } from './mock_constants';
 
 export interface ServerConfig {
-    tls?: Certificates;
     url: string;
+    tls?: Certificates;
 }
 
 export default class Server extends MockServer {
-    constructor(config: ServerConfig) {
-        const url = new URL('oauth2', config.url);
+    constructor(config?: ServerConfig) {
+        const url = new URL('oauth2', config?.url ?? DEFAULT_URL);
         url.port = '8090';
-        super('openid', url, config.tls);
+        super('openid', url, config?.tls ?? CERTIFICATES);
+
+        this.log(`url: ${url}`);
     }
 
     protected init() {

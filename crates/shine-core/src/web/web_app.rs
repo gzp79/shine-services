@@ -254,7 +254,7 @@ async fn start_web_app<A: WebApplication>(_rt_handle: RtHandle, app: A) -> Resul
 }
 
 pub fn run_web_app<A: WebApplication>(app: A) {
-    rustls::crypto::ring::default_provider().install_default().unwrap();
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
     let rt = Runtime::new().unwrap();
 

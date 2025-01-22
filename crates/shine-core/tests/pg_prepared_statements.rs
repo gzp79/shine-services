@@ -6,7 +6,7 @@ pg_prepared_statement!(TestQuery => "select 1", []);
 
 #[test]
 async fn test_stored_statements() {
-    rustls::crypto::ring::default_provider().install_default().unwrap();
+    let _ = rustls::crypto::ring::default_provider().install_default();
 
     match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => {

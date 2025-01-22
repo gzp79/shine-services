@@ -5,7 +5,7 @@
     "RUST_LOG": "INFO,shine_core=TRACE,shine_identity=TRACE,shine_builder=TRACE",
 
     "SHINE_TEST_REDIS_CNS": "redis://redis.mockbox.com:6379",
-    "SHINE_TEST_PG_CNS": "postgres://username:password@postgres.mockbox.com:5432/database-name?sslmode=disable"
+    "SHINE_TEST_PG_CNS": "postgres://username:password@postgres.mockbox.com:5432/database-test?sslmode=disable"
   },
   "jestrunner.codeLensSelector": "**/*.{ts}",
   "cSpell.words": [
@@ -41,6 +41,7 @@
     "nextval",
     "notnull",
     "oidc",
+    "oneshot",
     "Ooops",
     "openapi",
     "openidconnect",
@@ -68,6 +69,7 @@
     "TIMESTAMPTZ",
     "TIMESTAMPZ",
     "tsflow",
+    "unlisten",
     "utoipa",
     "zipkin"
   ]

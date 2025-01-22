@@ -2,6 +2,7 @@ mod app_config;
 mod app_state;
 mod controllers;
 mod repositories;
+mod services;
 
 use self::{app_config::AppConfig, app_state::AppState};
 use anyhow::Error as AnyError;

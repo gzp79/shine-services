@@ -1,10 +1,7 @@
 use chrono::Duration;
-use shine_core::db::{RedisConnectionPool, RedisPooledConnection};
+use shine_core::db::{DBError, RedisConnectionPool, RedisPooledConnection};
 
-use crate::repositories::{
-    session::{SessionBuildError, SessionDb, SessionDbContext, SessionError},
-    DBError,
-};
+use crate::repositories::session::{SessionBuildError, SessionDb, SessionDbContext, SessionError};
 
 pub struct RedisSessionDbContext<'c> {
     pub(in crate::repositories::session::redis) client: RedisPooledConnection<'c>,

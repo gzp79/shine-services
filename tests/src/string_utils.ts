@@ -1,7 +1,7 @@
 declare global {
     interface String {
         format(kv: Record<string, string>): string;
-        formatExpr(context: any): string;
+        formatExpr(context: unknown): string;
 
         urlDecode(): string;
         urlEncode(): string;
@@ -33,7 +33,7 @@ if (!String.prototype.format) {
     };
 
     String.prototype.parseAsQueryParams = function (): Record<string, string> {
-        let o: Record<string, string> = {};
+        const o: Record<string, string> = {};
         this.split('&')
             .map((x) => x.split('='))
             .forEach((x) => (o[x[0]] = x[1]?.urlDecode()));
@@ -45,7 +45,7 @@ if (!String.prototype.format) {
     };
 }
 
-export function createUrlQueryString(params: Record<string, String>): string {
+export function createUrlQueryString(params: Record<string, string>): string {
     const p = [];
     for (const k in params) {
         p.push(`${k}=${params[k].urlEncode()}`);

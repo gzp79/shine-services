@@ -1,31 +1,10 @@
 use serde::{Deserialize, Serialize};
-use shine_core::db::{
-    self, PGConnectionError, PGConnectionPool, PGCreatePoolError, PGError, RedisConnectionError, RedisConnectionPool,
-};
-use thiserror::Error as ThisError;
-
-#[derive(Debug, ThisError)]
-pub enum DBError {
-    #[error("Failed to get a PG connection from the pool")]
-    PGCreatePoolError(#[source] PGCreatePoolError),
-    #[error("Failed to get a PG connection from the pool")]
-    PGPoolError(#[source] PGConnectionError),
-    #[error(transparent)]
-    PGError(#[from] PGError),
-    #[error(transparent)]
-    SqlMigration(#[from] refinery::Error),
-
-    #[error("Failed to get pooled redis connection")]
-    RedisPoolError(#[source] RedisConnectionError),
-    #[error(transparent)]
-    RedisError(#[from] redis::RedisError),
-}
+use shine_core::db::{self, DBError, PGConnectionPool};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DBConfig {
     pub sql_cns: String,
-    pub redis_cns: String,
 }
 
 mod embedded {
@@ -36,7 +15,6 @@ mod embedded {
 #[derive(Clone)]
 pub struct DBPool {
     pub postgres: PGConnectionPool,
-    pub redis: RedisConnectionPool,
 }
 
 impl DBPool {
@@ -46,12 +24,7 @@ impl DBPool {
             .await
             .map_err(DBError::PGCreatePoolError)?;
 
-        log::info!("Creating redis pool...");
-        let redis = db::create_redis_pool(config.redis_cns.as_str())
-            .await
-            .map_err(DBError::RedisPoolError)?;
-
-        let pool = Self { postgres, redis };
+        let pool = Self { postgres };
         pool.migrate().await?;
         Ok(pool)
     }

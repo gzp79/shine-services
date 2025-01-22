@@ -10,6 +10,8 @@ pub mod roles {
 
 /// Global permissions used by the services.
 pub mod permissions {
+    /// Allow to read trace and status info
+    pub const READ_TRACE: &str = "ReadTrace";
     /// Allow to update tracing configuration
     pub const UPDATE_TRACE: &str = "UpdateTrace";
 }
@@ -61,18 +63,19 @@ impl PermissionSet {
     }
 }
 
-pub trait GlobalPermissions {
-    fn global_permissions(&self) -> PermissionSet;
+pub trait CorePermissions {
+    fn core_permissions(&self) -> PermissionSet;
 }
 
-impl GlobalPermissions for CurrentUser {
-    fn global_permissions(&self) -> PermissionSet {
+impl CorePermissions for CurrentUser {
+    fn core_permissions(&self) -> PermissionSet {
         let mut permission = PermissionSet::new();
 
         for role in &self.roles {
             #[allow(clippy::single_match)]
             match role.as_str() {
                 roles::SUPER_ADMIN => {
+                    permission.add(permissions::READ_TRACE);
                     permission.add(permissions::UPDATE_TRACE);
                 }
                 _ => {}

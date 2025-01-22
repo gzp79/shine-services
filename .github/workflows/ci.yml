@@ -37,7 +37,7 @@ jobs:
         run: |
           npm ci
           npm run lint
-          npm run mkcert
+          npm run mkcert:local
           echo '{ "version": "${{env.VERSION}}" }' > ../services/server_version.json
         working-directory: ./tests
 
@@ -83,9 +83,8 @@ jobs:
 
       - name: Add hosts to /etc/hosts
         run: |
-          sudo echo "127.0.0.1 sandbox.com" | sudo tee -a /etc/hosts
-          sudo echo "127.0.0.1 web.sandbox.com" | sudo tee -a /etc/hosts
-          sudo echo "127.0.0.1 cloud.sandbox.com" | sudo tee -a /etc/hosts
+          sudo echo "127.0.0.1 local-scytta.com" | sudo tee -a /etc/hosts
+          sudo echo "127.0.0.1 cloud.local-scytta.com" | sudo tee -a /etc/hosts
           sudo echo "127.0.0.1 mockbox.com" | sudo tee -a /etc/hosts
           sudo echo "127.0.0.1 postgres.mockbox.com" | sudo tee -a /etc/hosts
           sudo echo "127.0.0.1 redis.mockbox.com" | sudo tee -a /etc/hosts
@@ -96,8 +95,7 @@ jobs:
           docker compose -f ../docker-compose.yml -p shine --profile test up -d
           echo "::endgroup::"
           echo "::group::Running test"
-          npm run test
-          npm run test:report
+          npm run test:local
           echo "::endgroup::"
         working-directory: ./tests
 

@@ -64,22 +64,25 @@ impl CaptchaValidator {
         let idempotency_key = Uuid::new_v4().to_string();
 
         let secret = &self.0.secret;
-        let secret = if secret == "1x0000000000000000000000000000000AA" {
-            // with the testing secret allow all the test token to pass and fail everything else
-            let test_tokens = [
-                "1x00000000000000000000AA",
-                "2x00000000000000000000AB",
-                "1x00000000000000000000BB",
-                "2x00000000000000000000BB",
-                "3x00000000000000000000FF",
+        let (secret, token) = if secret == "1x0000000000000000000000000000000AA" {
+            log::warn!("Using test-secret for captcha validation for token {token}");
+            // When a test-secret is used, the token is used as a site-key to emulate a passing or failing response
+            let test_site_keys = [
+                "1x00000000000000000000AA", // Always passes
+                //"2x00000000000000000000AB", // Always blocks
+                "1x00000000000000000000BB", // Always passes
+                //"2x00000000000000000000BB", // Always blocks
+                "3x00000000000000000000FF", // Forces an interactive challenge
             ];
-            if test_tokens.contains(&token) {
-                "1x0000000000000000000000000000000AA"
+            if test_site_keys.contains(&token) {
+                log::info!("Using an always passing secret");
+                ("1x0000000000000000000000000000000AA", "XXXX.DUMMY.TOKEN.XXXX")
             } else {
-                "2x0000000000000000000000000000000AA"
+                log::info!("Using an always failing secret");
+                ("2x0000000000000000000000000000000AA", "XXXX.DUMMY.TOKEN.XXXX")
             }
         } else {
-            &self.0.secret
+            (self.0.secret.as_str(), token)
         };
 
         let request = TurnstileValidationRequest {

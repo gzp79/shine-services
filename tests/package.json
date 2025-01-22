@@ -1,59 +1,51 @@
 {
-  "name": "integration-test",
-  "version": "1.0.0",
-  "description": "",
-  "main": "test.js",
-  "scripts": {
-    "mkcert:ca": "mkcert create-ca --cert ../certs/ca.crt --key ../certs/ca.key",
-    "mkcert:test": "mkcert create-cert --ca-cert ../certs/ca.crt --ca-key ../certs/ca.key --cert ../certs/test.crt --key ../certs/test.key --domain sandbox.com,*.sandbox.com,mockbox.com,localhost",
-    "mkcert:dev": "mkcert create-cert --ca-cert ../certs/ca.crt --ca-key ../certs/ca.key --cert ../certs/scytta.crt --key ../certs/scytta.key --domain local.scytta.com,localhost",
-    "mkcert": "npm run mkcert:ca && npm run mkcert:test",
-    "build_service": "docker build --target test -t gzp79/shine-identity:test --progress=plain ..",
-    "format": "prettier '{jest-setup,src,regression}/**/*.{ts,tsx,js}' --write",
-    "lint": "npm run lint:format",
-    "lint:format": "prettier '{jest-setup,src,regression}/**/*.{ts,tsx,js}' --check",
-    "jest": "jest -i --verbose=false",
-    "test:regression": "npm run jest regression",
-    "test:report": "xunit-viewer -r ./reports/junit.xml -o ./reports/index.html",
-    "test": "npm run test:regression"
-  },
-  "author": "",
-  "license": "MIT",
-  "engines": {
-    "node": ">=18.18.2"
-  },
-  "devDependencies": {
-    "@trivago/prettier-plugin-sort-imports": "^4.3.0",
-    "@types/debug": "^4.1.12",
-    "@types/express": "^4.17.21",
-    "@types/jest": "^29.5.12",
-    "@types/jest-expect-message": "^1.1.0",
-    "@types/node": "^16.18.98",
-    "@types/superagent": "^4.1.24",
-    "@types/tough-cookie": "^4.0.5",
-    "@types/uuid-validate": "^0.0.1",
-    "cross-env": "^7.0.3",
-    "mkcert": "^3.2.0",
-    "prettier": "^3.3.1",
-    "ts-jest": "^29.1.4",
-    "ts-node": "^10.9.2",
-    "tsconfig-paths": "^4.2.0",
-    "typescript": "^5.4.5",
-    "xunit-viewer": "^10.6.1"
-  },
-  "dependencies": {
-    "console": "^0.7.2",
-    "debug": "^4.3.5",
-    "express": "^4.19.2",
-    "express-validator": "^7.1.0",
-    "jest": "^29.7.0",
-    "jest-expect-message": "^1.1.3",
-    "jest-extended": "^4.0.2",
-    "jest-junit": "^16.0.0",
-    "joi": "^17.13.1",
-    "superagent": "^8.1.2",
-    "tough-cookie": "^4.1.4",
-    "ts-jose": "^5.4.0",
-    "uuid-validate": "^0.0.3"
-  }
+    "name": "integration-test",
+    "version": "1.0.0",
+    "description": "",
+    "main": "test.js",
+    "scripts": {
+        "mkcert:ca": "mkcert create-ca --cert ../certs/ca.crt --key ../certs/ca.key",
+        "mkcert:local": "npm run mkcert:ca && mkcert create-cert --ca-cert ../certs/ca.crt --ca-key ../certs/ca.key --cert ../certs/test.crt --key ../certs/test.key --domain cloud.local-scytta.com,mockbox.com",
+        "mkcert:dev": "npm run mkcert:ca && mkcert create-cert --ca-cert ../certs/ca.crt --ca-key ../certs/ca.key --cert ../certs/scytta.crt --key ../certs/scytta.key --domain local-cloud.scytta.com",
+        "build_service": "docker build --target test -t gzp79/shine-identity:test --progress=plain ..",
+        "format": "prettier --write .",
+        "lint": "npm run lint:format && npm run lint:eslint",
+        "lint:format": "prettier --check .",
+        "lint:eslint": "eslint .",
+        "test:local": "playwright test --project=local"
+    },
+    "author": "",
+    "license": "MIT",
+    "engines": {
+        "node": ">=18.18.2"
+    },
+    "devDependencies": {
+        "@playwright/test": "^1.49.1",
+        "@trivago/prettier-plugin-sort-imports": "5.2.1",
+        "@types/debug": "^4.1.12",
+        "@types/eslint": "^9.6.1",
+        "@types/eslint-config-prettier": "^6.11.3",
+        "@types/express": "5.0.0",
+        "@types/lodash": "^4.17.14",
+        "@types/node": "^22.10.7",
+        "@types/uuid-validate": "^0.0.3",
+        "eslint": "^9.18.0",
+        "eslint-config-prettier": "^10.0.1",
+        "mkcert": "^3.2.0",
+        "prettier": "^3.4.2",
+        "ts-node": "^10.9.2",
+        "tsconfig-paths": "^4.2.0",
+        "typescript": "^5.7.3",
+        "typescript-eslint": "^8.20.0"
+    },
+    "dependencies": {
+        "debug": "^4.4.0",
+        "express": "5.0.1",
+        "express-validator": "^7.2.1",
+        "lodash": "^4.17.21",
+        "playwright": "^1.49.1",
+        "ts-jose": "^5.9.6",
+        "uuid-validate": "^0.0.3",
+        "zod": "^3.24.1"
+    }
 }

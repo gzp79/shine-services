@@ -4,6 +4,22 @@
 
 - `start dev environment`
 - `identity: local`
+  
+### Test environment
+
+host setup
+```
+127.0.0.1 local-cloud.scytta.com
+127.0.0.1 local.scytta.com
+
+127.0.0.1 local-scytta.com
+127.0.0.1 cloud.local-scytta.com
+
+127.0.0.1 mockbox.com
+127.0.0.1 postgres.mockbox.com
+127.0.0.1 redis.mockbox.com
+```
+
 
 ## Know-how 
 

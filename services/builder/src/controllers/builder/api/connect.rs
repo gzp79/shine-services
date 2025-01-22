@@ -1,47 +1,142 @@
+use crate::{
+    app_state::AppState,
+    services::{Message, MessageSource, Session},
+};
 use axum::{
-    body::Bytes,
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
+        ws::{Message as WsMessage, WebSocket, WebSocketUpgrade},
         State,
     },
     response::IntoResponse,
+    Extension,
 };
-use serde::Serialize;
-use shine_core::web::{CheckedCurrentUser, CurrentUser};
-use utoipa::ToSchema;
+use futures::{SinkExt, StreamExt};
+use serde::Deserialize;
+use shine_core::web::{CheckedCurrentUser, CurrentUser, IntoProblem, Problem, ProblemConfig, ValidatedPath};
+use std::sync::Arc;
+use utoipa::IntoParams;
+use uuid::Uuid;
+use validator::Validate;
 
-use crate::app_state::AppState;
+use super::{RequestMessage, ResponseMessage};
 
-#[derive(Serialize, ToSchema)]
+#[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-pub struct ServiceHealth {}
+pub struct PathParams {
+    #[serde(rename = "id")]
+    session_id: Uuid,
+}
 
 #[utoipa::path(
     get,
-    path = "/api/builder/connect",
+    path = "/api/connect/:id",
     tag = "builder",
+    params (
+        PathParams
+    ),
     responses(
         (status = OK)
     )
 )]
 pub async fn connect(
     State(state): State<AppState>,
+    Extension(problem_config): Extension<ProblemConfig>,
+    ValidatedPath(path): ValidatedPath<PathParams>,
     user: CheckedCurrentUser,
     ws: WebSocketUpgrade,
-) -> impl IntoResponse {
-    ws.on_upgrade(|socket| handle_socket(socket, user.into_user()))
+) -> Result<impl IntoResponse, Problem> {
+    let user = user.into_user();
+    log::info!(
+        "User {} requesting a connection to the session {}...",
+        path.session_id,
+        user.user_id
+    );
+
+    let session = state
+        .sessions()
+        .acquire_session(&path.session_id, &user.user_id)
+        .await
+        .map_err(|err| err.into_problem(&problem_config))?;
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, session)))
 }
 
-async fn handle_socket(mut socket: WebSocket, user: CurrentUser) {
-    // send a ping (unsupported by some browsers) just to kick things off and get a response
-    if socket.send(Message::Ping(vec![1, 2, 3])).await.is_ok() {
-        println!("Pinged {}...", user.user_id);
-    } else {
-        println!("Could not send ping {}!", user.user_id);
-        return;
+async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Session>) {
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+    let current_user_id = user.user_id;
+    let session_id = session.id();
+
+    log::info!("[{current_user_id}] Connected to the session {session_id}");
+    let message_sender = session.message_sender(MessageSource::User(current_user_id));
+    let mut message_receiver = session.subscribe_messages();
+
+    let mut recv_task = {
+        let message_sender = message_sender.clone();
+        tokio::spawn(async move {
+            message_sender.send(Message::Chat(current_user_id, "${tr: Connected}".to_string()));
+
+            while let Some(Ok(message)) = ws_receiver.next().await {
+                log::info!("[{current_user_id}] WsMessage received");
+                match message {
+                    WsMessage::Text(text) => {
+                        let msg = match serde_json::from_str::<RequestMessage>(&text) {
+                            Ok(msg) => match msg {
+                                RequestMessage::Chat { text } => Some(Message::Chat(current_user_id, text)),
+                                //RequestMessage::
+                            },
+                            Err(_) => {
+                                log::error!("[{current_user_id}] Received invalid message: {text}");
+                                None
+                            }
+                        };
+
+                        if let Some(msg) = msg {
+                            message_sender.send(msg);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        })
+    };
+
+    let mut send_task = tokio::spawn(async move {
+        while let Ok(message) = message_receiver.recv().await {
+            log::info!("[{current_user_id}] Message received");
+            let msg = match message {
+                Message::Chat(user_id, text) => Some(ResponseMessage::Chat { from: user_id, text }),
+            };
+
+            if let Some(msg) = msg {
+                let data = match serde_json::to_string(&msg) {
+                    Ok(data) => data,
+                    Err(err) => {
+                        log::error!(
+                            "[{current_user_id}] Failed to serialize message {:#?} with error {:#?}",
+                            msg,
+                            err
+                        );
+                        continue;
+                    }
+                };
+                if let Err(err) = ws_sender.send(WsMessage::Text(data)).await {
+                    log::error!("[{current_user_id}] Failed to send message to the user: {:#?}", err);
+                }
+            }
+        }
+    });
+
+    // If any one of the tasks exit, abort the other.
+    tokio::select! {
+        rv_a = (&mut send_task) => {
+            log::info!("Send task exited: {rv_a:?}");
+            recv_task.abort();
+        },
+        rv_b = (&mut recv_task) => {
+            log::info!("Receive task exited: {rv_b:?}");
+            send_task.abort();
+        }
     }
 
-    // By splitting socket we can send and receive at the same time. In this example we will send
-    // unsolicited messages to client based on some sort of server's internal event (i.e .timer).
-    //let (mut sender, mut receiver) = socket.split();
+    session.disconnect_user(current_user_id).await;
+    message_sender.send(Message::Chat(current_user_id, "${tr: Disconnected}".to_string()));
 }
