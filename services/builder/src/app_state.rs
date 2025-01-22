@@ -1,7 +1,4 @@
-use crate::{
-    app_config::AppConfig,
-    repositories::{DBPool, SessionHandler},
-};
+use crate::{app_config::AppConfig, repositories::DBPool, services::SessionHandler};
 use anyhow::Error as AnyError;
 use ring::rand::SystemRandom;
 use shine_core::web::WebAppConfig;

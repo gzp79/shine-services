@@ -1,3 +1,7 @@
+use crate::{
+    app_state::AppState,
+    services::{Message, MessageSource, Session},
+};
 use axum::{
     extract::{
         ws::{Message as WsMessage, WebSocket, WebSocketUpgrade},
@@ -14,10 +18,7 @@ use utoipa::IntoParams;
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::{
-    app_state::AppState,
-    repositories::{Message, Session},
-};
+use super::{RequestMessage, ResponseMessage};
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
@@ -60,23 +61,34 @@ pub async fn connect(
 }
 
 async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Session>) {
-    let (message_sender, mut message_receiver) = session.message_channel();
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let current_user_id = user.user_id;
     let session_id = session.id();
 
     log::info!("[{current_user_id}] Connected to the session {session_id}");
+    let message_sender = session.message_sender(MessageSource::User(current_user_id));
+    let mut message_receiver = session.subscribe_messages();
 
     let mut recv_task = tokio::spawn(async move {
+        message_sender.send(Message::Chat(current_user_id, "${tr: Connected}".to_string()));
+
         while let Some(Ok(message)) = ws_receiver.next().await {
             log::info!("[{current_user_id}] WsMessage received");
             match message {
                 WsMessage::Text(text) => {
-                    if let Err(err) = message_sender.send(Message::Chat(current_user_id, text)) {
-                        log::error!(
-                            "[{current_user_id}] Failed to enqueue message to the session: {:#?}",
-                            err
-                        );
+                    let msg = match serde_json::from_str::<RequestMessage>(&text) {
+                        Ok(msg) => match msg {
+                            RequestMessage::Chat { text } => Some(Message::Chat(current_user_id, text)),
+                            //RequestMessage::
+                        },
+                        Err(_) => {
+                            log::error!("[{current_user_id}] Received invalid message: {text}");
+                            None
+                        }
+                    };
+
+                    if let Some(msg) = msg {
+                        message_sender.send(msg);
                     }
                 }
                 _ => {}
@@ -87,17 +99,24 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Sessio
     let mut send_task = tokio::spawn(async move {
         while let Ok(message) = message_receiver.recv().await {
             log::info!("[{current_user_id}] Message received");
-            match message {
-                Message::Chat(user_id, text) => {
-                    if user_id == current_user_id {
+            let msg = match message {
+                Message::Chat(user_id, text) => Some(ResponseMessage::Chat { from: user_id, text }),
+            };
+
+            if let Some(msg) = msg {
+                let data = match serde_json::to_string(&msg) {
+                    Ok(data) => data,
+                    Err(err) => {
+                        log::error!(
+                            "[{current_user_id}] Failed to serialize message {:#?} with error {:#?}",
+                            msg,
+                            err
+                        );
                         continue;
                     }
-                    if let Err(err) = ws_sender.send(WsMessage::Text(text)).await {
-                        log::error!("[{current_user_id}] Failed to send message to the user: {:#?}", err);
-                    }
-                }
-                msg => {
-                    log::error!("[{current_user_id}] Unknown message received: {:#?}", msg);
+                };
+                if let Err(err) = ws_sender.send(WsMessage::Text(data)).await {
+                    log::error!("[{current_user_id}] Failed to send message to the user: {:#?}", err);
                 }
             }
         }

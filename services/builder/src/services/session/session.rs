@@ -1,9 +1,8 @@
 use std::collections::HashSet;
-
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
-use super::{Message, SessionError};
+use super::{Message, MessageSender, MessageSource, SessionError};
 
 pub struct Session {
     id: Uuid,
@@ -44,7 +43,11 @@ impl Session {
         users.remove(&user_id);
     }
 
-    pub fn message_channel(&self) -> (broadcast::Sender<Message>, broadcast::Receiver<Message>) {
-        (self.message_channel.clone(), self.message_channel.subscribe())
+    pub fn message_sender(&self, source: MessageSource) -> MessageSender {
+        MessageSender::new(self.message_channel.clone(), source)
+    }
+
+    pub fn subscribe_messages(&self) -> broadcast::Receiver<Message> {
+        self.message_channel.subscribe()
     }
 }
