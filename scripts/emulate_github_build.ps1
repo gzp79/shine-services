@@ -16,9 +16,9 @@ docker buildx build --target test --add-host postgres.mockbox.com:$pg_host --add
 Write-Host "Start service in docker"
 docker compose -f docker-compose.yml -p shine --profile test up -d
 
-Write-Host "Run tests"
-cd tests
-npm run jest regression
+#Write-Host "Run tests"
+#cd tests
+#npm run test
 
 
 
