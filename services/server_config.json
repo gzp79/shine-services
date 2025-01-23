@@ -9,6 +9,7 @@
     "telemetry": {
         "allowReconfigure": true,
         "enableConsoleLog": true,
+        "defaultLevel": "INFO,shine_builder=TRACE",
         "metrics": true,
         "tracing": {
             "type": "stdOut"

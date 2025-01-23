@@ -132,10 +132,9 @@ jobs:
       - name: Create release artifacts
         if: github.ref == 'refs/heads/master'
         run: |
-          echo "[build]" >> fly.toml
-          echo "  image = \"${{ steps.meta.outputs.tags }}\"" >> fly.toml
+          sed -i 's/%DOCKER_IMAGE%/${{ steps.meta.outputs.tags }}/g' fly.json
           mkdir -p release
-          cp fly.toml ./release/
+          cp fly.json ./release/
 
       - name: Publish release artifacts
         if: github.ref == 'refs/heads/master'

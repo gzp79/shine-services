@@ -12,7 +12,7 @@ use axum::{
 };
 use axum_server::Handle;
 use serde::de::DeserializeOwned;
-use std::{env, fs, future::Future, net::SocketAddr, time::Duration as StdDuration};
+use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, time::Duration as StdDuration};
 use tokio::{
     net::TcpListener,
     runtime::{Handle as RtHandle, Runtime},
@@ -88,7 +88,7 @@ async fn graceful_shutdown(handle: Handle) {
 }
 
 pub trait WebApplication {
-    type AppConfig: DeserializeOwned + Send + Sync + 'static;
+    type AppConfig: DeserializeOwned + Debug + Send + Sync + 'static;
     type AppState: Clone + Send + Sync + 'static;
 
     fn feature_name(&self) -> &'static str;

@@ -75,7 +75,7 @@ impl ConfigAsyncSource for AzureKeyvaultConfigSource {
             }
         }
 
-        log::info!("keyvault config: {:#?}", config);
+        //log::info!("keyvault config: {:#?}", config);
         Ok(config)
     }
 }
