@@ -12,7 +12,7 @@
         "defaultLevel": "INFO,shine_builder=TRACE",
         "metrics": true,
         "tracing": {
-            "type": "stdOut"
+            "type": "none"
         }
     }
 }
