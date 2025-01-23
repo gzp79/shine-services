@@ -132,7 +132,7 @@ jobs:
       - name: Create release artifacts
         if: github.ref == 'refs/heads/master'
         run: |
-          sed -i 's/%DOCKER_IMAGE%/${{ steps.meta.outputs.tags }}/g' fly.json
+          sed -i 's#%DOCKER_IMAGE%#${{ steps.meta.outputs.tags }}#g' fly.json
           mkdir -p release
           cp fly.json ./release/
 
