@@ -1,0 +1,53 @@
+{
+  "app": "shine-app",
+  "primary_region": "cdg",
+
+  "build": {
+    "image": "ghcr.io/gzp79/shine-services:sha-4035eeb"
+  },
+
+  "services": [
+    {
+      "protocol": "tcp",
+      "internal_port": 80,
+      "auto_stop_machines": true,
+      "auto_start_machines": true,
+      "min_machines_running": 0,
+
+      "ports": [
+        {
+          "port": 80,
+          "handlers": ["http"],
+          "force_https": true
+        },
+        {
+          "port": 443,
+          "handlers": ["tls", "http"]
+        }
+      ],
+
+      "concurrency": {
+        "hard_limit": 25,
+        "soft_limit": 20
+      },
+
+      "tcp_checks": [
+        {
+          "interval": "10s",
+          "timeout": "2s"
+        }
+      ]
+    }
+  ],
+
+  "metrics": [
+    {
+      "port": 80,
+      "path": "identity/api/telemetry/metrics"
+    },
+    {
+      "port": 80,
+      "path": "builder/api/telemetry/metrics"
+    }
+  ]
+}
