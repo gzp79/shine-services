@@ -235,14 +235,14 @@ impl TelemetryService {
                 if config.allow_reconfigure {
                     Self::set_global_tracing_pipeline(
                         registry()
-                            .with(self.tracing_console_log(config)?)
-                            .with(self.tracing_dyn_filter(config)?),
+                            .with(self.tracing_dyn_filter(config)?)
+                            .with(self.tracing_console_log(config)?),
                     )?;
                 } else {
                     Self::set_global_tracing_pipeline(
                         registry()
-                            .with(self.tracing_console_log(config)?)
-                            .with(self.tracing_fixed_filter(config)?),
+                            .with(self.tracing_fixed_filter(config)?)
+                            .with(self.tracing_console_log(config)?),
                     )?;
                 }
             } else {
@@ -253,27 +253,31 @@ impl TelemetryService {
                 (true, true) => {
                     Self::set_global_tracing_pipeline(
                         registry()
-                            .with(self.tracing_ot(config, resource, scope)?)
+                            .with(self.tracing_dyn_filter(config)?)
                             .with(self.tracing_console_log(config)?)
-                            .with(self.tracing_dyn_filter(config)?),
+                            .with(self.tracing_ot(config, resource, scope)?),
                     )?;
                 }
                 (true, false) => {
                     Self::set_global_tracing_pipeline(
                         registry()
-                            .with(self.tracing_ot(config, resource, scope)?)
+                            .with(self.tracing_fixed_filter(config)?)
                             .with(self.tracing_console_log(config)?)
-                            .with(self.tracing_fixed_filter(config)?),
+                            .with(self.tracing_ot(config, resource, scope)?),
                     )?;
                 }
                 (false, true) => {
                     Self::set_global_tracing_pipeline(
-                        registry().with(self.tracing_ot(config, resource, scope)?), //todo: ot + EnvFilter seems to be broken .with(self.tracing_dyn_filter(config)?),
+                        registry()
+                            .with(self.tracing_dyn_filter(config)?)
+                            .with(self.tracing_ot(config, resource, scope)?),
                     )?;
                 }
                 (false, false) => {
                     Self::set_global_tracing_pipeline(
-                        registry().with(self.tracing_ot(config, resource, scope)?), //todo: ot + EnvFilter seems to be broken .with(self.tracing_fixed_filter(config)?),
+                        registry()
+                            .with(self.tracing_fixed_filter(config)?)
+                            .with(self.tracing_ot(config, resource, scope)?),
                     )?;
                 }
             }
