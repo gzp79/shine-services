@@ -3,7 +3,6 @@ use crate::{
     web::{ConfiguredProblem, IntoProblem, Problem, ProblemConfig},
 };
 use axum::{
-    async_trait,
     extract::{
         rejection::{JsonRejection, PathRejection, QueryRejection},
         FromRequest, FromRequestParts, Path, Query, Request,
@@ -101,7 +100,6 @@ pub struct ValidatedPath<T>(pub T)
 where
     T: 'static + DeserializeOwned + Validate;
 
-#[async_trait]
 impl<S, T> FromRequestParts<S> for ValidatedPath<T>
 where
     S: Send + Sync,
@@ -128,7 +126,6 @@ pub struct ValidatedQuery<T>(pub T)
 where
     T: 'static + DeserializeOwned + Validate;
 
-#[async_trait]
 impl<S, T> FromRequestParts<S> for ValidatedQuery<T>
 where
     S: Send + Sync,
@@ -155,7 +152,6 @@ pub struct ValidatedJson<J>(pub J)
 where
     J: Validate + 'static;
 
-#[async_trait]
 impl<S, J> FromRequest<S> for ValidatedJson<J>
 where
     S: Send + Sync,

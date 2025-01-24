@@ -43,7 +43,7 @@ pub struct AddUserRole {
 
 #[utoipa::path(
     put,
-    path = "/api/identities/:id/roles",
+    path = "/api/identities/{id}/roles",
     tag = "identity",
     params(
         PathParams
@@ -98,7 +98,7 @@ pub async fn add_user_role(
 
 #[utoipa::path(
     get,
-    path = "/api/identities/:id/roles",
+    path = "/api/identities/{id}/roles",
     tag = "identity",
     params(
         PathParams
@@ -155,7 +155,7 @@ pub struct DeleteUserRole {
 
 #[utoipa::path(
     delete,
-    path = "/api/identities/:id/roles",
+    path = "/api/identities/{id}/roles",
     tag = "identity",
     params(
         PathParams

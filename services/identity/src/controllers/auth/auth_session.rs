@@ -1,5 +1,4 @@
 use crate::app_config::AppConfig;
-use async_trait::async_trait;
 use axum::{
     extract::FromRequestParts,
     http::request::Parts,
@@ -190,7 +189,6 @@ impl AuthSession {
     }
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for AuthSession
 where
     S: Send + Sync,

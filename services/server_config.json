@@ -1,18 +1,18 @@
 {
-    "service": {
-        "port": 7000,
-        "allowedOrigins": [
-			"^https:\\/\\/([a-zA-Z0-9-]+\\.)+scytta\\.com(:\\d+)?$"
-        ],
-        "fullProblemResponse": false
+  "service": {
+    "port": 7000,
+    "allowedOrigins": ["^https:\\/\\/([a-zA-Z0-9-]+\\.)+scytta\\.com(:\\d+)?$"],
+    "fullProblemResponse": false
+  },
+  "telemetry": {
+    "allowReconfigure": true,
+    "enableConsoleLog": true,
+    "defaultLevel": "INFO,shine_corer=INFO,shine_identity=DEBUG,shine_builder=DEBUG",
+    "metrics": {
+      "type": "prometheus"
     },
-    "telemetry": {
-        "allowReconfigure": true,
-        "enableConsoleLog": true,
-        "defaultLevel": "INFO,shine_builder=TRACE",
-        "metrics": true,
-        "tracing": {
-            "type": "none"
-        }
+    "tracing": {
+      "type": "none"
     }
+  }
 }

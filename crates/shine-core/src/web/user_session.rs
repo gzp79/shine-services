@@ -5,7 +5,7 @@ use crate::{
         ProblemConfig, SessionKey,
     },
 };
-use axum::{async_trait, extract::FromRequestParts, http::request::Parts, Extension, RequestPartsExt};
+use axum::{extract::FromRequestParts, http::request::Parts, Extension, RequestPartsExt};
 use axum_extra::extract::{cookie::Key, SignedCookieJar};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Utc};
@@ -94,7 +94,6 @@ impl ops::DerefMut for CheckedCurrentUser {
     }
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for CheckedCurrentUser
 where
     S: Send + Sync,
@@ -149,7 +148,6 @@ impl ops::DerefMut for UncheckedCurrentUser {
     }
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for UncheckedCurrentUser
 where
     S: Send + Sync,

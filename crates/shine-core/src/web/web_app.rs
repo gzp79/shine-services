@@ -8,21 +8,19 @@ use crate::{
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
     http::{header, Method},
+    routing::Router,
     Extension,
 };
 use axum_server::Handle;
 use serde::de::DeserializeOwned;
 use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, time::Duration as StdDuration};
-use tokio::{
-    net::TcpListener,
-    runtime::{Handle as RtHandle, Runtime},
-    signal,
-};
+use tokio::{net::TcpListener, runtime::Runtime, signal};
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
 };
-use tracing::{Dispatch, Level};
+use tracing::{instrument, level_filters::LevelFilter, Level};
+use tracing_log::LogTracer;
 use tracing_subscriber::EnvFilter;
 use utoipa::{
     openapi::{ComponentsBuilder, OpenApi as OpenApiDoc, OpenApiBuilder},
@@ -102,33 +100,46 @@ pub trait WebApplication {
     ) -> impl Future<Output = Result<OpenApiRouter<Self::AppState>, AnyError>> + Send;
 }
 
-async fn start_web_app<A: WebApplication>(_rt_handle: RtHandle, app: A) -> Result<(), AnyError> {
+async fn prepare_web_app<A: WebApplication>(
+    app: &A,
+) -> Result<(WebAppConfig<A::AppConfig>, TelemetryService), AnyError> {
     let args: Vec<String> = env::args().collect();
     let stage = args.get(1).ok_or(anyhow!("Missing config stage parameter"))?.clone();
 
-    let (config, telemetry_service) = {
-        // initialize a pre-init logger
-        let pre_init_log = {
-            let _ = tracing_log::LogTracer::init();
-            let env_filter = EnvFilter::from_default_env();
-            let pre_init_log = tracing_subscriber::fmt().with_env_filter(env_filter).compact().finish();
-            Dispatch::new(pre_init_log)
-        };
-        let _pre_init_log_guard = tracing::dispatcher::set_default(&pre_init_log);
-
-        log::trace!("init-trace - ok");
-        log::debug!("init-debug - ok");
-        log::info!("init-info  - ok");
-        log::warn!("init-warn  - ok");
-        log::error!("init-error - ok");
-
-        let config = WebAppConfig::<A::AppConfig>::load_config(&stage).await?;
-        let telemetry_manager = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
-        log::info!("pre-init completed");
-        (config, telemetry_manager)
+    // initialize a pre-init logger
+    let _pre_init_log_guard = {
+        LogTracer::init().expect("Failed to set log tracer");
+        let env_filter = EnvFilter::builder()
+            .with_default_directive(LevelFilter::INFO.into())
+            .from_env_lossy();
+        let pre_init_log = tracing_subscriber::fmt().with_env_filter(env_filter).compact().finish();
+        tracing::dispatcher::set_default(&pre_init_log.into())
     };
 
-    log::trace!("Creating services...");
+    log::trace!("init-trace - ok");
+    log::debug!("init-debug - ok");
+    log::info!("init-info  - ok");
+    log::warn!("init-warn  - ok");
+    log::error!("init-error - ok");
+    tracing::trace!("init-trace - tracing:ok");
+    tracing::debug!("init-debug - tracing:ok");
+    tracing::info!("init-info  - tracing:ok");
+    tracing::warn!("init-warn  - tracing:ok");
+    tracing::error!("init-error - tracing:ok");
+
+    let config = WebAppConfig::<A::AppConfig>::load_config(&stage).await?;
+    let telemetry_service = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
+    log::info!("pre-init completed");
+
+    Ok((config, telemetry_service))
+}
+
+#[instrument(skip(config, telemetry_service, app))]
+async fn create_web_app<A: WebApplication>(
+    config: &WebAppConfig<A::AppConfig>,
+    telemetry_service: TelemetryService,
+    app: &A,
+) -> Result<Router<()>, AnyError> {
     log::trace!("trace - ok:log");
     log::debug!("debug - ok:log");
     log::info!("info  - ok:log");
@@ -139,6 +150,8 @@ async fn start_web_app<A: WebApplication>(_rt_handle: RtHandle, app: A) -> Resul
     tracing::info!("info  - tracing:ok");
     tracing::warn!("warn  - tracing:ok");
     tracing::error!("error - tracing:ok");
+
+    log::trace!("Creating services...");
 
     let cors_layer = {
         let allowed_origins = {
@@ -190,14 +203,14 @@ async fn start_web_app<A: WebApplication>(_rt_handle: RtHandle, app: A) -> Resul
 
     log::info!("Creating application state...");
     let mut router = OpenApiRouter::new();
-    let app_state = app.create_state(&config).await?;
+    let app_state = app.create_state(config).await?;
 
     log::info!("Creating common routes...");
-    let health_controller = controllers::HealthController::new(app.feature_name(), &config)?.into_routes();
+    let health_controller = controllers::HealthController::new(app.feature_name(), config)?.into_routes();
     router = router.nest(&format!("/{}", app.feature_name()), health_controller);
 
     log::info!("Creating application routes...");
-    let app_controller = app.create_routes(&config).await?;
+    let app_controller = app.create_routes(config).await?;
     router = router.nest(&format!("/{}", app.feature_name()), app_controller);
 
     let (router, router_api) = router.split_for_parts();
@@ -212,7 +225,7 @@ async fn start_web_app<A: WebApplication>(_rt_handle: RtHandle, app: A) -> Resul
                 .show_common_extensions(true),
         );
 
-    let router = router
+    Ok(router
         .merge(swagger)
         .layer(user_session_layer)
         .layer(problem_detail_layer)
@@ -221,7 +234,12 @@ async fn start_web_app<A: WebApplication>(_rt_handle: RtHandle, app: A) -> Resul
         .layer(telemetry_layer)
         .layer(Extension(telemetry_service))
         .layer(log_layer)
-        .with_state(app_state);
+        .with_state(app_state))
+}
+
+async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
+    let (config, telemetry_service) = prepare_web_app(&app).await?;
+    let router = create_web_app(&config, telemetry_service, &app).await?;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
 
@@ -257,9 +275,9 @@ pub fn run_web_app<A: WebApplication>(app: A) {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let rt = Runtime::new().unwrap();
-
     let handle = rt.handle();
-    if let Err(err) = handle.block_on(start_web_app(handle.clone(), app)) {
+
+    if let Err(err) = handle.block_on(start_web_app(app)) {
         eprintln!("[ERROR] {}", err);
         if let Some(cause) = err.source() {
             eprintln!();

@@ -147,7 +147,7 @@ impl From<TokenInfo> for ActiveToken {
 
 #[utoipa::path(
     get,
-    path = "/api/auth/user/tokens/:hash",
+    path = "/api/auth/user/tokens/{hash}",
     tag = "auth",
     params(
         TokenHash
@@ -191,7 +191,7 @@ pub async fn get_token(
 
 #[utoipa::path(
     delete,
-    path = "/api/auth/user/tokens/:hash",
+    path = "/api/auth/user/tokens/{hash}",
     tag = "auth",
     params(TokenHash),
     responses(

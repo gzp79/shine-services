@@ -1,5 +1,5 @@
 use crate::web::{ConfiguredProblem, IntoProblem, Problem, ProblemConfig};
-use axum::{async_trait, extract::FromRequestParts, http::request::Parts, Extension, RequestPartsExt};
+use axum::{extract::FromRequestParts, http::request::Parts, Extension, RequestPartsExt};
 use axum_extra::{headers::UserAgent, TypedHeader};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use ring::digest::{self, Context};
@@ -53,7 +53,6 @@ impl ClientFingerprint {
     }
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for ClientFingerprint
 where
     S: Send + Sync,

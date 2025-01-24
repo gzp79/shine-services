@@ -1,5 +1,4 @@
 use axum::{
-    async_trait,
     extract::FromRequestParts,
     http::{request::Parts, HeaderMap},
     RequestPartsExt,
@@ -16,7 +15,6 @@ pub struct SiteInfo {
     pub city: Option<String>,
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for SiteInfo
 where
     S: Send + Sync,
