@@ -7,7 +7,7 @@
   "telemetry": {
     "allowReconfigure": true,
     "enableConsoleLog": true,
-    "defaultLevel": "INFO,shine_corer=INFO,shine_identity=DEBUG,shine_builder=DEBUG",
+    "defaultLevel": "INFO,shine_builder=TRACE",
     "metrics": {
       "type": "prometheus"
     },
