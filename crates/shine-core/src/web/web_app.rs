@@ -107,14 +107,14 @@ async fn prepare_web_app<A: WebApplication>(
     let stage = args.get(1).ok_or(anyhow!("Missing config stage parameter"))?.clone();
 
     // initialize a pre-init logger
-    let _pre_init_log_guard = {
-        LogTracer::init().expect("Failed to set log tracer");
-        let env_filter = EnvFilter::builder()
-            .with_default_directive(LevelFilter::INFO.into())
-            .from_env_lossy();
-        let pre_init_log = tracing_subscriber::fmt().with_env_filter(env_filter).compact().finish();
-        tracing::dispatcher::set_default(&pre_init_log.into())
-    };
+    // let _pre_init_log_guard = {
+    //     LogTracer::init().expect("Failed to set log tracer");
+    //     let env_filter = EnvFilter::builder()
+    //         .with_default_directive(LevelFilter::INFO.into())
+    //         .from_env_lossy();
+    //     let pre_init_log = tracing_subscriber::fmt().with_env_filter(env_filter).compact().finish();
+    //     tracing::dispatcher::set_default(&pre_init_log.into())
+    // };
 
     log::trace!("init-trace - ok");
     log::debug!("init-debug - ok");
@@ -273,6 +273,13 @@ async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
 
 pub fn run_web_app<A: WebApplication>(app: A) {
     let _ = rustls::crypto::ring::default_provider().install_default();
+
+    LogTracer::init().expect("Failed to set log tracer");
+    let env_filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::DEBUG.into())
+        .from_env_lossy();
+    let pre_init_log = tracing_subscriber::fmt().with_env_filter(env_filter).compact().finish();
+    tracing::dispatcher::set_global_default(pre_init_log.into());
 
     let rt = Runtime::new().unwrap();
     let handle = rt.handle();
