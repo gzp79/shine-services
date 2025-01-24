@@ -1,11 +1,10 @@
 use opentelemetry::{
     metrics::{Meter, MeterProvider},
-    trace::{Tracer, TracerProvider as _},
+    trace::TracerProvider as _,
     InstrumentationScope, KeyValue,
 };
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
-    export::trace::SpanExporter,
     metrics::SdkMeterProvider,
     runtime::Tokio,
     trace::{Sampler, TracerProvider},
@@ -13,53 +12,13 @@ use opentelemetry_sdk::{
 };
 use opentelemetry_semantic_conventions as otconv;
 use prometheus::{Encoder, Registry as PromRegistry, TextEncoder};
-use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
 use thiserror::Error as ThisError;
 use tracing::{Dispatch, Subscriber};
-use tracing_opentelemetry::{OpenTelemetryLayer, PreSampledTracer};
-use tracing_subscriber::{
-    filter::EnvFilter,
-    layer::SubscriberExt,
-    registry::LookupSpan,
-    reload::{self, Handle},
-    Layer, Registry,
-};
+use tracing_opentelemetry::OpenTelemetryLayer;
+use tracing_subscriber::{filter::EnvFilter, layer::SubscriberExt, registry::LookupSpan, reload, Layer};
 
-use super::{OtelLayer, TelemetryBuildError};
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(tag = "type")]
-pub enum Tracing {
-    /// Disable tracing
-    None,
-
-    /// Enable tracing to the standard output
-    StdOut,
-
-    /// Enable Jaeger tracing (https://www.jaegertracing.io)
-    #[cfg(feature = "ot_otlp")]
-    OpenTelemetryProtocol { endpoint: String },
-
-    /// Enable Zipkin tracing (https://zipkin.io/)
-    #[cfg(feature = "ot_zipkin")]
-    Zipkin,
-
-    /// Enable AppInsight tracing
-    #[cfg(feature = "ot_app_insight")]
-    AppInsight { connection_string: String },
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TelemetryConfig {
-    allow_reconfigure: bool,
-    enable_console_log: bool,
-    metrics: bool,
-    tracing: Tracing,
-    default_level: Option<String>,
-}
+use super::{Metering, OtelLayer, TelemetryBuildError, TelemetryConfig, Tracing};
 
 #[derive(Debug, Clone)]
 pub struct DynConfig {
@@ -76,7 +35,7 @@ where
     L: 'static + Layer<S> + From<EnvFilter> + Send + Sync,
     S: Subscriber,
 {
-    handle: Handle<L, S>,
+    handle: reload::Handle<L, S>,
     config: DynConfig,
 }
 
@@ -102,156 +61,225 @@ where
 #[error("Failed to perform trace configuration operation: {0}")]
 pub struct TraceReconfigureError(String);
 
-#[derive(Clone)]
-pub struct Metrics {
+trait MetricsExport: Send + Sync {
+    fn export(&self) -> String;
+}
+
+struct PromMeterExporter {
     registry: PromRegistry,
-    provider: SdkMeterProvider,
-    service_meter: Meter,
+}
+
+impl MetricsExport for PromMeterExporter {
+    fn export(&self) -> String {
+        let mut buffer = vec![];
+        let encoder = TextEncoder::new();
+        let metric_families = self.registry.gather();
+        encoder.encode(&metric_families, &mut buffer).unwrap();
+        String::from_utf8(buffer).unwrap()
+    }
 }
 
 #[derive(Clone)]
+struct Metrics {
+    provider: SdkMeterProvider,
+    collect: Arc<dyn MetricsExport>,
+    meter: Meter,
+}
+
+/// Telemetry service.
+/// Metrics:
+///  - Uses opentelemetry_sdk to provide metrics in Prometheus format.
+///  - The Meter type can be used to define new metrics.
+/// Tracings:
+///  - The tracing crate is used as the frontend and some configured opentelemetry exporter is used as the backend.
+/// Logs
+///  - The trace::trace,debug,info,warn,error! macros can be used
+///  - For convenience, the log::trace,debug,info,warn,error! macros are also available and channelled to the tracing layer
+#[derive(Clone)]
 pub struct TelemetryService {
-    reconfigure: Option<Arc<RwLock<dyn DynHandle>>>,
+    tracer_provider: Option<TracerProvider>,
     metrics: Option<Metrics>,
+    reconfigure: Option<Arc<RwLock<dyn DynHandle>>>,
 }
 
 impl TelemetryService {
     pub async fn new(service_name: &'static str, config: &TelemetryConfig) -> Result<Self, TelemetryBuildError> {
         let mut service = TelemetryService {
-            reconfigure: None,
+            tracer_provider: None,
             metrics: None,
+            reconfigure: None,
         };
         service.install_telemetry(service_name, config)?;
         Ok(service)
     }
 
-    fn set_global_tracing<L>(&mut self, tracing_pipeline: L) -> Result<(), TelemetryBuildError>
+    fn set_global_tracing_pipeline<P>(pipeline: P) -> Result<(), TelemetryBuildError>
     where
-        L: Into<Dispatch>,
+        P: Into<Dispatch>,
     {
-        tracing::dispatcher::set_global_default(tracing_pipeline.into())?;
+        //Note: pipeline.init (SubscriberInitExt::init) cannot be used as we have already installed
+        // the LogTracer in the WebApplication for the pre-init phase. If we call init here,
+        // it would result in a double install error from the LogTracer.
+        tracing::dispatcher::set_global_default(pipeline.into())?;
         Ok(())
     }
 
-    fn install_tracing_layer_with_filter<T>(
-        &mut self,
-        config: &TelemetryConfig,
-        pipeline: T,
-    ) -> Result<(), TelemetryBuildError>
+    fn tracing_fixed_filter<S>(&mut self, config: &TelemetryConfig) -> Result<impl Layer<S>, TelemetryBuildError>
     where
-        T: for<'a> LookupSpan<'a> + Subscriber + Send + Sync,
+        S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
+        log::debug!("Registering fixed filter tracing layer...");
         let filter = config.default_level.as_deref().unwrap_or("warn");
         let env_filter = EnvFilter::builder().parse(filter)?;
 
-        if config.allow_reconfigure {
-            // enable filtering with reconfiguration capabilities
-            let (reload_env_filter, reload_handle) = reload::Layer::new(env_filter);
-            let pipeline = pipeline.with(reload_env_filter);
-            let reload_handle = WrapHandle {
-                handle: reload_handle,
-                config: DynConfig {
-                    filter: filter.to_string(),
-                },
-            };
-            self.reconfigure = Some(Arc::new(RwLock::new(reload_handle)));
-
-            self.set_global_tracing(pipeline)?;
-            Ok(())
-        } else {
-            // enable filtering from the environment variables
-            let pipeline = pipeline.with(env_filter);
-
-            self.set_global_tracing(pipeline)?;
-            Ok(())
-        }
+        Ok(env_filter)
     }
 
-    fn install_tracing_layer<L>(&mut self, config: &TelemetryConfig, layer: L) -> Result<(), TelemetryBuildError>
+    fn tracing_dyn_filter<S>(&mut self, config: &TelemetryConfig) -> Result<impl Layer<S>, TelemetryBuildError>
     where
-        L: Layer<Registry> + Send + Sync,
+        S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
-        let pipeline = tracing_subscriber::registry().with(layer);
-        if config.enable_console_log {
-            let console_layer = tracing_subscriber::fmt::Layer::new().pretty();
-            let pipeline = pipeline.with(console_layer);
-            self.install_tracing_layer_with_filter(config, pipeline)
-        } else {
-            self.install_tracing_layer_with_filter(config, pipeline)
-        }
+        log::debug!("Registering dynamic filter tracing layer...");
+
+        let filter = config.default_level.as_deref().unwrap_or("warn");
+        let env_filter = EnvFilter::builder().parse(filter)?;
+
+        let (reload_env_filter, reload_handle) = reload::Layer::new(env_filter);
+        self.reconfigure = Some(Arc::new(RwLock::new(WrapHandle {
+            handle: reload_handle,
+            config: DynConfig {
+                filter: filter.to_string(),
+            },
+        })));
+        Ok(reload_env_filter)
     }
 
-    fn ot_layer<T>(tracer: T) -> OpenTelemetryLayer<Registry, T>
+    fn tracing_console_log<S>(&mut self, _config: &TelemetryConfig) -> Result<impl Layer<S>, TelemetryBuildError>
     where
-        T: 'static + Tracer + PreSampledTracer + Send + Sync,
+        S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
-        tracing_opentelemetry::layer()
-            .with_tracked_inactivity(true)
-            .with_tracer(tracer)
+        log::debug!("Registering console log tracing layer...");
+        let console_layer = tracing_subscriber::fmt::Layer::new().compact();
+        Ok(console_layer)
     }
 
-    fn install_ot_tracing<E>(
-        &mut self,
-        config: &TelemetryConfig,
-        exporter: E,
-        resource: &Resource,
-        scope: &InstrumentationScope,
-    ) -> Result<(), TelemetryBuildError>
-    where
-        E: SpanExporter + 'static,
-    {
-        let provider = TracerProvider::builder()
-            .with_batch_exporter(exporter, Tokio)
-            .with_resource(resource.clone())
-            .with_sampler(Sampler::AlwaysOn)
-            .build();
-        let tracer = provider.tracer_with_scope(scope.clone());
-        self.install_tracing_layer(config, Self::ot_layer(tracer))?;
-        Ok(())
-    }
-
-    fn install_tracing(
+    fn tracing_ot<S>(
         &mut self,
         config: &TelemetryConfig,
         resource: &Resource,
         scope: &InstrumentationScope,
-    ) -> Result<(), TelemetryBuildError> {
-        match &config.tracing {
+    ) -> Result<impl Layer<S>, TelemetryBuildError>
+    where
+        S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
+    {
+        let mut builder = TracerProvider::builder();
+
+        builder = match &config.tracing {
             Tracing::StdOut => {
-                log::info!("Registering StdOut tracing...");
+                log::info!("Registering StdOut tracing exporter...");
                 let exporter = opentelemetry_stdout::SpanExporter::default();
-                self.install_ot_tracing(config, exporter, resource, scope)?;
+                builder.with_simple_exporter(exporter)
             }
             #[cfg(feature = "ot_otlp")]
             Tracing::OpenTelemetryProtocol { endpoint } => {
-                log::info!("Registering OpenTelemetryProtocol tracing...");
+                log::info!("Registering OpenTelemetryProtocol tracing exporter...");
                 let exporter = opentelemetry_otlp::SpanExporter::builder()
                     .with_tonic()
                     .with_endpoint(endpoint)
                     .build()?;
-                self.install_ot_tracing(config, exporter, resource, scope)?;
+                builder.with_batch_exporter(exporter, Tokio)
             }
             #[cfg(feature = "ot_zipkin")]
             Tracing::Zipkin => {
-                log::info!("Registering Zipkin tracing...");
+                log::info!("Registering Zipkin tracing exporter...");
                 let exporter = opentelemetry_zipkin::new_pipeline().init_exporter()?;
-                self.install_ot_tracing(config, exporter, resource, scope)?;
+                builder.with_batch_exporter(exporter, Tokio)
             }
             #[cfg(feature = "ot_app_insight")]
             Tracing::AppInsight { connection_string } => {
-                log::info!("Registering AppInsight tracing...");
+                log::info!("Registering AppInsight tracing exporter...");
                 let exporter = opentelemetry_application_insights::Exporter::new_from_connection_string(
                     connection_string,
                     reqwest::Client::new(),
                 )
                 .map_err(TelemetryBuildError::AppInsightConfigError)?;
-                self.install_ot_tracing(config, exporter, resource, scope)?;
+                builder.with_batch_exporter(exporter, Tokio)
             }
-            Tracing::None => {
-                log::info!("Registering no tracing...");
-                self.install_tracing_layer(config, EmptyLayer)?;
-            }
+            Tracing::None => unreachable!("Tracing::None should not be used in this context"),
         };
+
+        let provider = builder
+            .with_resource(resource.clone())
+            .with_sampler(Sampler::AlwaysOn)
+            .build();
+        let tracer = provider.tracer_with_scope(scope.clone());
+        self.tracer_provider = Some(provider);
+
+        Ok(OpenTelemetryLayer::new(tracer).with_tracked_inactivity(true))
+    }
+
+    fn install_trace(
+        &mut self,
+        config: &TelemetryConfig,
+        resource: &Resource,
+        scope: &InstrumentationScope,
+    ) -> Result<(), TelemetryBuildError> {
+        use tracing_subscriber::registry;
+
+        if matches!(config.tracing, Tracing::None) {
+            log::warn!("Trace is disabled");
+
+            if config.enable_console_log {
+                if config.allow_reconfigure {
+                    Self::set_global_tracing_pipeline(
+                        registry()
+                            .with(self.tracing_console_log(config)?)
+                            .with(self.tracing_dyn_filter(config)?),
+                    )?;
+                } else {
+                    Self::set_global_tracing_pipeline(
+                        registry()
+                            .with(self.tracing_console_log(config)?)
+                            .with(self.tracing_fixed_filter(config)?),
+                    )?;
+                }
+            } else {
+                log::warn!("Service is configured for silent mode");
+            }
+        } else {
+            match (config.enable_console_log, config.allow_reconfigure) {
+                (true, true) => {
+                    Self::set_global_tracing_pipeline(
+                        registry()
+                            .with(self.tracing_ot(config, resource, scope)?)
+                            .with(self.tracing_console_log(config)?)
+                            .with(self.tracing_dyn_filter(config)?),
+                    )?;
+                }
+                (true, false) => {
+                    Self::set_global_tracing_pipeline(
+                        registry()
+                            .with(self.tracing_ot(config, resource, scope)?)
+                            .with(self.tracing_console_log(config)?)
+                            .with(self.tracing_fixed_filter(config)?),
+                    )?;
+                }
+                (false, true) => {
+                    Self::set_global_tracing_pipeline(
+                        registry()
+                            .with(self.tracing_ot(config, resource, scope)?)
+                            //todo: ot + EnvFilter seems to be broken .with(self.tracing_dyn_filter(config)?),
+                    )?;
+                }
+                (false, false) => {
+                    Self::set_global_tracing_pipeline(
+                        registry()
+                            .with(self.tracing_ot(config, resource, scope)?)
+                            //todo: ot + EnvFilter seems to be broken .with(self.tracing_fixed_filter(config)?),
+                    )?;
+                }
+            }
+        }
 
         Ok(())
     }
@@ -263,23 +291,30 @@ impl TelemetryService {
         scope: &InstrumentationScope,
     ) -> Result<(), TelemetryBuildError> {
         // Install meter provider for opentelemetry
-        if config.metrics {
-            log::info!("Registering metrics...");
-            let registry = prometheus::Registry::new();
-            let exporter = opentelemetry_prometheus::exporter()
-                .with_registry(registry.clone())
-                .build()?;
-            let provider = SdkMeterProvider::builder()
-                .with_resource(resource.clone())
-                .with_reader(exporter)
-                .build();
-            let service_meter = provider.meter_with_scope(scope.clone());
-            self.metrics = Some(Metrics {
-                registry,
-                provider,
-                service_meter,
-            });
-        }
+        let (provider, collect) = match config.metrics {
+            Metering::Prometheus => {
+                log::info!("Registering metrics...");
+                let registry = prometheus::Registry::new();
+                let exporter = opentelemetry_prometheus::exporter()
+                    .with_registry(registry.clone())
+                    .build()?;
+
+                let collect = Arc::new(PromMeterExporter { registry });
+                let provider = SdkMeterProvider::builder()
+                    .with_resource(resource.clone())
+                    .with_reader(exporter)
+                    .build();
+
+                (provider, collect)
+            }
+        };
+
+        let meter = provider.meter_with_scope(scope.clone());
+        self.metrics = Some(Metrics {
+            provider,
+            collect,
+            meter,
+        });
         Ok(())
     }
 
@@ -297,7 +332,7 @@ impl TelemetryService {
             .build();
 
         self.install_metrics(config, &resource, &scope)?;
-        self.install_tracing(config, &resource, &scope)?;
+        self.install_trace(config, &resource, &scope)?;
 
         Ok(())
     }
@@ -328,16 +363,12 @@ impl TelemetryService {
     }
 
     pub fn service_meter(&self) -> Option<&Meter> {
-        self.metrics.as_ref().map(|m| &m.service_meter)
+        self.metrics.as_ref().map(|m| &m.meter)
     }
 
     pub fn metrics(&self) -> String {
         if let Some(metrics) = &self.metrics {
-            let mut buffer = vec![];
-            let encoder = TextEncoder::new();
-            let metric_families = metrics.registry.gather();
-            encoder.encode(&metric_families, &mut buffer).unwrap();
-            String::from_utf8(buffer).unwrap()
+            metrics.collect.export()
         } else {
             String::new()
         }
@@ -347,11 +378,8 @@ impl TelemetryService {
         //todo: read route filtering from config
         let mut layer = OtelLayer::default();
         if let Some(metrics) = &self.metrics {
-            layer = layer.meter(metrics.service_meter.clone())
+            layer = layer.meter(metrics.meter.clone())
         }
         layer
     }
 }
-
-struct EmptyLayer;
-impl<S: Subscriber> Layer<S> for EmptyLayer {}

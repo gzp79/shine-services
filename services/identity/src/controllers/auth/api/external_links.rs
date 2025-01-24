@@ -41,7 +41,7 @@ pub struct LinkedExternalProviders {
 
 #[utoipa::path(
     get,
-    path  = "/api/auth/user/links",
+    path = "/api/auth/user/links",
     tag = "auth",
     responses(
         (status = OK, body = LinkedExternalProviders)
@@ -72,7 +72,7 @@ pub struct ProviderSelectPathParam {
 
 #[utoipa::path(
     delete,
-    path  = "/api/auth/user/links/:provider/:providerId",
+    path = "/api/auth/user/links/{provider}/{providerId}",
     tag = "auth",
     params(
         ProviderSelectPathParam

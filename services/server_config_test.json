@@ -13,8 +13,10 @@
   "telemetry": {
     "allowReconfigure": true,
     "enableConsoleLog": true,
-    "defaultLevel": "INFO,shine_service=TRACE,shine_identity=TRACE,shine_builder=TRACE,tower_http=TRACE",
-    "metrics": true,
+    "defaultLevel": "INFO",
+    "metrics": {
+      "type": "prometheus"
+    },
     "tracing": {
       "type": "none"
     }

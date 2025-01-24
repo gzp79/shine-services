@@ -29,7 +29,7 @@ pub struct PathParams {
 
 #[utoipa::path(
     get,
-    path = "/api/connect/:id",
+    path = "/api/connect/{id}",
     tag = "builder",
     params (
         PathParams
@@ -118,7 +118,7 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Sessio
                         continue;
                     }
                 };
-                if let Err(err) = ws_sender.send(WsMessage::Text(data)).await {
+                if let Err(err) = ws_sender.send(WsMessage::Text(data.into())).await {
                     log::error!("[{current_user_id}] Failed to send message to the user: {:#?}", err);
                 }
             }

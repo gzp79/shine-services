@@ -71,19 +71,19 @@ reqwest = { version = "0.12", features = ["json"] }
 ############################# WEB #############################
 tower = "0.5"
 tower-http = "0.6"
-axum = "0.7"
-axum-extra = { version = "0.9" }
+axum = "0.8"
+axum-extra = { version = "0.10" }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 tera = "1.20"
-validator = { version = "0.19", features = ["derive"] }
+validator = { version = "0.20", features = ["derive"] }
 utoipa = { version = "5.2", features = [
 	"axum_extras",
 	"uuid",
 	"chrono",
 	"debug",
 ] }
-utoipa-axum = "0.1"
-utoipa-swagger-ui = { version = "8.0", features = ["axum"] }
+utoipa-axum = "0.2"
+utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
 
 ############################# WASM #############################
 wasm-logger = "0.2"

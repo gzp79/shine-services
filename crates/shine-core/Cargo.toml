@@ -40,13 +40,20 @@ tokio = { workspace = true, features = ["macros", "signal"] }
 ############################# TRACING #############################
 tracing = { workspace = true }
 tracing-log = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
-tracing-opentelemetry = "0.28"
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+tracing-opentelemetry = { version = "0.28", features = [
+    "metrics",
+    "tracing-log",
+] }
 tracing-opentelemetry-instrumentation-sdk = "0.24"
 prometheus = "0.13"
 opentelemetry = "0.27"
 opentelemetry-semantic-conventions = "0.27"
-opentelemetry_sdk = { version = "0.27", features = ["rt-tokio", "metrics"] }
+opentelemetry_sdk = { version = "0.27", features = [
+    "rt-tokio",
+    "metrics",
+    "trace",
+] }
 opentelemetry-stdout = { version = "0.27", features = ["logs", "trace"] }
 opentelemetry-otlp = { version = "0.27", features = [
     "tokio",
