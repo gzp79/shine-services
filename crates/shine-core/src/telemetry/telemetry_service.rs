@@ -334,7 +334,7 @@ impl TelemetryService {
             .build();
 
         self.install_metrics(config, &resource, &scope)?;
-        //self.install_trace(config, &resource, &scope)?;
+        self.install_trace(config, &resource, &scope)?;
 
         Ok(())
     }

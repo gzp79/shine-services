@@ -3,7 +3,7 @@
   "primary_region": "cdg",
 
   "build": {
-    "image": "ghcr.io/gzp79/shine-services:sha-4035eeb"
+    "image": "%DOCKER_IMAGE%"
   },
 
   "services": [
