@@ -90,8 +90,10 @@ struct Metrics {
 /// Metrics:
 ///  - Uses opentelemetry_sdk to provide metrics in Prometheus format.
 ///  - The Meter type can be used to define new metrics.
+///
 /// Tracings:
 ///  - The tracing crate is used as the frontend and some configured opentelemetry exporter is used as the backend.
+///
 /// Logs
 ///  - The trace::trace,debug,info,warn,error! macros can be used
 ///  - For convenience, the log::trace,debug,info,warn,error! macros are also available and channelled to the tracing layer
@@ -266,16 +268,12 @@ impl TelemetryService {
                 }
                 (false, true) => {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_ot(config, resource, scope)?)
-                            //todo: ot + EnvFilter seems to be broken .with(self.tracing_dyn_filter(config)?),
+                        registry().with(self.tracing_ot(config, resource, scope)?), //todo: ot + EnvFilter seems to be broken .with(self.tracing_dyn_filter(config)?),
                     )?;
                 }
                 (false, false) => {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_ot(config, resource, scope)?)
-                            //todo: ot + EnvFilter seems to be broken .with(self.tracing_fixed_filter(config)?),
+                        registry().with(self.tracing_ot(config, resource, scope)?), //todo: ot + EnvFilter seems to be broken .with(self.tracing_fixed_filter(config)?),
                     )?;
                 }
             }

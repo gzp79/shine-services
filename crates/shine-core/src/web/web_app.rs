@@ -203,14 +203,14 @@ async fn create_web_app<A: WebApplication>(
 
     log::info!("Creating application state...");
     let mut router = OpenApiRouter::new();
-    let app_state = app.create_state(&config).await?;
+    let app_state = app.create_state(config).await?;
 
     log::info!("Creating common routes...");
-    let health_controller = controllers::HealthController::new(app.feature_name(), &config)?.into_routes();
+    let health_controller = controllers::HealthController::new(app.feature_name(), config)?.into_routes();
     router = router.nest(&format!("/{}", app.feature_name()), health_controller);
 
     log::info!("Creating application routes...");
-    let app_controller = app.create_routes(&config).await?;
+    let app_controller = app.create_routes(config).await?;
     router = router.nest(&format!("/{}", app.feature_name()), app_controller);
 
     let (router, router_api) = router.split_for_parts();
