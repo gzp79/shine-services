@@ -1,12 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Certificates, MockServer, TypedRequest, TypedResponse } from '$lib/mocks/mock_server';
 import '$lib/string_utils';
-import { createUrlQueryString } from '$lib/string_utils';
 import bodyParser from 'body-parser';
-import { randomUUID } from 'crypto';
 import express from 'express';
 import { body, validationResult } from 'express-validator';
-import { get } from 'lodash';
 import { CERTIFICATES, DEFAULT_URL } from './mock_constants';
 import { getAuthorizeHtml } from './utils';
 
