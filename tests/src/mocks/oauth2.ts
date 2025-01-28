@@ -5,6 +5,7 @@ import bodyParser from 'body-parser';
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { CERTIFICATES, DEFAULT_URL } from './mock_constants';
+import { getAuthorizeHtml } from './utils';
 
 export interface ServerConfig {
     url: string;
@@ -15,7 +16,7 @@ export default class Server extends MockServer {
     constructor(config?: ServerConfig) {
         const url = new URL('oauth2', config?.url ?? DEFAULT_URL);
         url.port = '8090';
-        super('openid', url, config?.tls ?? CERTIFICATES);
+        super('oauth2', url, config?.tls ?? CERTIFICATES);
 
         this.log(`url: ${url}`);
     }
@@ -57,6 +58,12 @@ export default class Server extends MockServer {
                 access_token: code,
                 token_type: 'Bearer'
             });
+        });
+
+        app.get('/oauth2/authorize', async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
+            const authParams = req.query as Record<string, string>;
+            const htmlContent = getAuthorizeHtml(authParams);
+            res.status(200).send(htmlContent);
         });
 
         app.get('/oauth2/users', async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {

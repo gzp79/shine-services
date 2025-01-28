@@ -6,6 +6,7 @@ import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { JWK, JWKObject, JWSAlgorithms, JWT } from 'ts-jose';
 import { CERTIFICATES, DEFAULT_URL, JWKS } from './mock_constants';
+import { getAuthorizeHtml } from './utils';
 
 interface ServerConfig {
     url: string;
@@ -103,6 +104,12 @@ export default class Server extends MockServer {
                 id_token: idToken,
                 token_type: 'Bearer'
             });
+        });
+
+        app.get('/openid/authorize', async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
+            const authParams = req.query as Record<string, string>;
+            const htmlContent = getAuthorizeHtml(authParams);
+            res.status(200).send(htmlContent);
         });
     }
 }
