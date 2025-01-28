@@ -6,7 +6,9 @@ import bodyParser from 'body-parser';
 import { randomUUID } from 'crypto';
 import express from 'express';
 import { body, validationResult } from 'express-validator';
+import { get } from 'lodash';
 import { CERTIFICATES, DEFAULT_URL } from './mock_constants';
+import { getAuthorizeHtml } from './utils';
 
 export interface ServerConfig {
     url: string;
@@ -63,34 +65,7 @@ export default class Server extends MockServer {
 
         app.get('/oauth2/authorize', async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
             const authParams = req.query as Record<string, string>;
-
-            const id = randomUUID().toString();
-            const name = `oauth_${id}`;
-            const email = `${name}@example.com`;
-
-            const state = authParams.state;
-            const code = encodeURIComponent(
-                createUrlQueryString({
-                    id,
-                    name,
-                    email
-                })
-            );
-
-            const redirectUrl = `${authParams.redirect_uri}?state=${state}&code=${code}`;
-
-            const htmlContent = `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Fake Login</title>
-                </head>
-                <body>
-                    <a href="${redirectUrl}">Login</a>
-                </body>
-                </html>
-            `;
-
+            const htmlContent = getAuthorizeHtml(authParams);
             res.status(200).send(htmlContent);
         });
 

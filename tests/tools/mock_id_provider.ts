@@ -9,7 +9,6 @@ async function main() {
 
     const mock_oidc = new OpenIDMockServer();
     await mock_oidc.start();
-
 }
 
 main()
