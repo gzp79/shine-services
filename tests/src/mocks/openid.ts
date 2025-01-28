@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Certificates, MockServer, TypedRequest, TypedResponse } from '$lib/mocks/mock_server';
 import '$lib/string_utils';
+import { createUrlQueryString } from '$lib/string_utils';
 import bodyParser from 'body-parser';
+import { randomUUID } from 'crypto';
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { JWK, JWKObject, JWSAlgorithms, JWT } from 'ts-jose';
@@ -103,6 +105,40 @@ export default class Server extends MockServer {
                 id_token: idToken,
                 token_type: 'Bearer'
             });
+        });
+
+        app.get('/openid/authorize', async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
+            const authParams = req.query as Record<string, string>;
+
+            const id = randomUUID().toString();
+            const name = `oidc_${id}`;
+            const email = `${name}@example.com`;
+
+            const state = authParams.state;
+            const code = encodeURIComponent(
+                createUrlQueryString({
+                    id,
+                    name,
+                    email,
+                    nonce: authParams.nonce
+                })
+            );
+
+            const redirectUrl = `${authParams.redirect_uri}?state=${state}&code=${code}`;
+
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Fake Login</title>
+                </head>
+                <body>
+                    <a href="${redirectUrl}">Login</a>
+                </body>
+                </html>
+            `;
+
+            res.status(200).send(htmlContent);
         });
     }
 }

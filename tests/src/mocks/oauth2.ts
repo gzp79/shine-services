@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Certificates, MockServer, TypedRequest, TypedResponse } from '$lib/mocks/mock_server';
 import '$lib/string_utils';
+import { createUrlQueryString } from '$lib/string_utils';
 import bodyParser from 'body-parser';
+import { randomUUID } from 'crypto';
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { CERTIFICATES, DEFAULT_URL } from './mock_constants';
@@ -15,7 +17,7 @@ export default class Server extends MockServer {
     constructor(config?: ServerConfig) {
         const url = new URL('oauth2', config?.url ?? DEFAULT_URL);
         url.port = '8090';
-        super('openid', url, config?.tls ?? CERTIFICATES);
+        super('oauth2', url, config?.tls ?? CERTIFICATES);
 
         this.log(`url: ${url}`);
     }
@@ -57,6 +59,39 @@ export default class Server extends MockServer {
                 access_token: code,
                 token_type: 'Bearer'
             });
+        });
+
+        app.get('/oauth2/authorize', async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
+            const authParams = req.query as Record<string, string>;
+
+            const id = randomUUID().toString();
+            const name = `oauth_${id}`;
+            const email = `${name}@example.com`;
+
+            const state = authParams.state;
+            const code = encodeURIComponent(
+                createUrlQueryString({
+                    id,
+                    name,
+                    email
+                })
+            );
+
+            const redirectUrl = `${authParams.redirect_uri}?state=${state}&code=${code}`;
+
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Fake Login</title>
+                </head>
+                <body>
+                    <a href="${redirectUrl}">Login</a>
+                </body>
+                </html>
+            `;
+
+            res.status(200).send(htmlContent);
         });
 
         app.get('/oauth2/users', async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {

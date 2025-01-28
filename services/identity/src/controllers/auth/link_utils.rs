@@ -24,7 +24,6 @@ impl<'a> LinkUtils<'a> {
         error_url: Option<&Url>,
     ) -> AuthPage {
         // at this point current user, linked_user, etc. should be consistent due to auth_session construction
-        assert!(auth_session.token_cookie.is_none());
 
         let user = auth_session.user_session.clone().unwrap();
         match self
