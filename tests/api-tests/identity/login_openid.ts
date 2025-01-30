@@ -32,7 +32,7 @@ test.describe('Check OpenId auth', () => {
 
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(
-            'https://local-scytta.com:8443/error?type=authError&status=400'
+            'https://local-scytta.com:4443/error?type=authError&status=400'
         );
         expect(await response.text()).toContain('&quot;MissingExternalLoginCookie&quot;');
 
@@ -56,7 +56,7 @@ test.describe('Check OpenId auth', () => {
             .send();
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(
-            'https://local-scytta.com:8443/error?type=authError&status=400'
+            'https://local-scytta.com:4443/error?type=authError&status=400'
         );
         expect(await response.text()).toContain('&quot;MissingExternalLoginCookie&quot;');
 

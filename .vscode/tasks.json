@@ -65,6 +65,16 @@
       "isBackground": true
     },
     {
+      "label": "start mocked id provider",
+      "type": "shell",
+      "command": "npm run mock:id_provider",
+      "options": {
+        "cwd": "${workspaceFolder}/tests"
+      },
+      "group": "build",
+      "isBackground": true
+    },
+    {
       "label": "identity: cloud",
       "type": "shell",
       "command": "cargo run -p shine-identity --release -- prod",

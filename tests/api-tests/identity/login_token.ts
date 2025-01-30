@@ -13,7 +13,7 @@ test.describe('Login with token for new user', () => {
             .send();
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(
-            'https://local-scytta.com:8443/error?type=invalidInput&status=400'
+            'https://local-scytta.com:4443/error?type=invalidInput&status=400'
         );
         expect(await response.text()).toContain('Failed to deserialize query string');
 
