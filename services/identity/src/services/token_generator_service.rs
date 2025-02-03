@@ -1,11 +1,14 @@
-use crate::repositories::identity::{IdentityDb, IdentityError, TokenKind};
+use crate::repositories::{
+    identity::{IdentityDb, IdentityError, TokenKind},
+    mailer::{EmailSender, EmailSenderError},
+};
 use chrono::{DateTime, Duration, Utc};
 use ring::rand::{SecureRandom, SystemRandom};
 use shine_core::web::{ClientFingerprint, SiteInfo};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 
-use super::IdentityService;
+use super::{IdentityService, MailerService};
 
 #[derive(Debug, ThisError)]
 pub enum TokenGeneratorError {
@@ -13,9 +16,13 @@ pub enum TokenGeneratorError {
     GeneratorError(String),
     #[error("Retry limit reached")]
     RetryLimitReached,
+    #[error("User has no email address")]
+    MissingEmailAddress,
 
     #[error(transparent)]
     IdentityError(#[from] IdentityError),
+    #[error(transparent)]
+    MailerError(#[from] EmailSenderError),
 }
 
 #[derive(Clone, Debug)]
@@ -26,22 +33,30 @@ pub struct UserToken {
     pub expire_at: DateTime<Utc>,
 }
 
-pub struct TokenGenerator<'a, IDB>
+pub struct TokenGenerator<'a, IDB, ES>
 where
     IDB: IdentityDb,
+    ES: EmailSender,
 {
     random: &'a SystemRandom,
     identity_service: &'a IdentityService<IDB>,
+    mailer_service: &'a MailerService<ES>,
 }
 
-impl<'a, IDB> TokenGenerator<'a, IDB>
+impl<'a, IDB, ES> TokenGenerator<'a, IDB, ES>
 where
     IDB: IdentityDb,
+    ES: EmailSender,
 {
-    pub fn new(random: &'a SystemRandom, identity_service: &'a IdentityService<IDB>) -> Self {
+    pub fn new(
+        random: &'a SystemRandom,
+        identity_service: &'a IdentityService<IDB>,
+        mailer_service: &'a MailerService<ES>,
+    ) -> Self {
         Self {
             random,
             identity_service,
+            mailer_service,
         }
     }
 
@@ -59,14 +74,15 @@ where
         user_id: Uuid,
         kind: TokenKind,
         time_to_live: &Duration,
-        fingerprint: Option<&ClientFingerprint>,
+        fingerprint_to_bind_to: Option<&ClientFingerprint>,
+        email_to_bind_to: Option<&str>,
         site_info: &SiteInfo,
     ) -> Result<UserToken, TokenGeneratorError> {
         const MAX_RETRY_COUNT: usize = 10;
 
         let mut retry_count = 0;
         loop {
-            log::debug!("Creating new token for user {user_id}, retry: {retry_count:#?}");
+            log::debug!("Creating new {kind:?} token for user {user_id}, retry: {retry_count:#?}");
             if retry_count > MAX_RETRY_COUNT {
                 return Err(TokenGeneratorError::RetryLimitReached);
             }
@@ -75,7 +91,15 @@ where
             let token = self.generate()?;
             match self
                 .identity_service
-                .add_token(user_id, kind, &token, time_to_live, fingerprint, site_info)
+                .add_token(
+                    user_id,
+                    kind,
+                    &token,
+                    time_to_live,
+                    fingerprint_to_bind_to,
+                    email_to_bind_to,
+                    site_info,
+                )
                 .await
             {
                 Ok(info) => {
@@ -90,6 +114,31 @@ where
                 Err(err) => return Err(TokenGeneratorError::IdentityError(err)),
             }
         }
+    }
+
+    pub async fn create_email_token(
+        &self,
+        user_id: Uuid,
+        time_to_live: &Duration,
+        site_info: &SiteInfo,
+    ) -> Result<(), TokenGeneratorError> {
+        let kind = TokenKind::EmailVerify;
+        let email = self
+            .identity_service
+            .find_by_id(user_id)
+            .await
+            .map_err(TokenGeneratorError::IdentityError)?
+            .ok_or(IdentityError::UserDeleted)?
+            .email
+            .ok_or(TokenGeneratorError::MissingEmailAddress)?;
+        let token = self
+            .create_user_token(user_id, kind, time_to_live, None, Some(&email), site_info)
+            .await?;
+        self.mailer_service
+            .send_confirmation_email(&email, &token.token)
+            .await
+            .map_err(TokenGeneratorError::MailerError)?;
+        Ok(())
     }
 }
 

@@ -71,6 +71,7 @@ impl AuthController {
     pub fn into_router(self) -> OpenApiRouter<AppState> {
         let mut auth_routes = OpenApiRouter::new()
             .routes(routes!(pages::token_login))
+            .routes(routes!(pages::email_login))
             .routes(routes!(pages::validate))
             .routes(routes!(pages::logout))
             .routes(routes!(pages::delete_user));
@@ -121,6 +122,7 @@ impl AuthController {
 
         let api_routes = OpenApiRouter::new()
             .routes(routes!(api::get_user_info))
+            .routes(routes!(api::validate_user_email))
             .routes(routes!(api::create_token))
             .routes(routes!(api::get_token))
             .routes(routes!(api::list_tokens))

@@ -33,6 +33,12 @@ fn validate_allowed_kind(kind: &TokenKind) -> Result<(), ValidationError> {
         TokenKind::SingleAccess => Ok(()),
         TokenKind::Persistent => Ok(()),
         TokenKind::Access => Err(ValidationError::new("oneOf").with_message("Access tokens are not allowed".into())),
+        TokenKind::EmailVerify => {
+            Err(ValidationError::new("oneOf").with_message("Email validation tokens are not allowed".into()))
+        }
+        TokenKind::EmailChange => {
+            Err(ValidationError::new("oneOf").with_message("Email change tokens are not allowed".into()))
+        }
     }
 }
 
@@ -75,6 +81,8 @@ pub async fn create_token(
         TokenKind::SingleAccess => state.settings().token.ttl_single_access,
         TokenKind::Persistent => state.settings().token.ttl_api_key,
         TokenKind::Access => unreachable!(),
+        TokenKind::EmailVerify => unreachable!(),
+        TokenKind::EmailChange => unreachable!(),
     };
     if time_to_live > max_time_to_live {
         return Err(ValidationError::new("range")
@@ -88,7 +96,14 @@ pub async fn create_token(
     let site_fingerprint = if params.bind_to_site { Some(&fingerprint) } else { None };
     let user_token = state
         .token_service()
-        .create_user_token(user.user_id, params.kind, &time_to_live, site_fingerprint, &site_info)
+        .create_user_token(
+            user.user_id,
+            params.kind,
+            &time_to_live,
+            site_fingerprint,
+            None,
+            &site_info,
+        )
         .await
         .map_err(|err| Problem::internal_error(&problem_config, "Failed to create token", err))?;
 

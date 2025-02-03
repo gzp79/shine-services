@@ -72,7 +72,12 @@ impl<'a> LinkUtils<'a> {
             // Found an existing (linked) account
             Ok(Some(identity)) => identity,
             // Create a new (linked) user
-            Ok(None) => match self.state.create_user_service().create_user(Some(external_user)).await {
+            Ok(None) => match self
+                .state
+                .create_user_service()
+                .create_user(Some(external_user), None)
+                .await
+            {
                 Ok(identity) => identity,
                 Err(UserCreateError::IdentityError(IdentityError::LinkEmailConflict)) => {
                     return PageUtils::new(self.state).error(auth_session, AuthError::EmailAlreadyUsed, error_url)
@@ -92,6 +97,7 @@ impl<'a> LinkUtils<'a> {
                     TokenKind::Access,
                     &self.state.settings().token.ttl_access_token,
                     Some(&fingerprint),
+                    None,
                     site_info,
                 )
                 .await

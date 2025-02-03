@@ -113,6 +113,17 @@ pub struct AutoNameConfig {
     pub id_encoder: IdEncoderConfig,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MailerConfig {
+    Smtp {
+        smtp_server: String,
+        smtp_username: String,
+        smtp_password: String,
+        email_domain: String,
+    },
+}
+
 /// The application configuration
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -120,4 +131,5 @@ pub struct AppConfig {
     pub identity_db: DBConfig,
     pub identity_name: AutoNameConfig,
     pub auth: AuthConfig,
+    pub identity_mailer: MailerConfig,
 }

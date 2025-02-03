@@ -1,13 +1,17 @@
 use crate::{
-    app_config::{AppConfig, IdEncoderConfig},
+    app_config::{AppConfig, IdEncoderConfig, MailerConfig},
     repositories::{
         identity::{pg::PgIdentityDb, IdentityDb},
+        mailer::{
+            smtp::{self, SmtpEmailSender},
+            EmailSender,
+        },
         session::{redis::RedisSessionDb, SessionDb},
         CaptchaValidator, DBPool,
     },
     services::{
-        CreateUserService, IdentityService, SessionService, SessionUserSyncService, SettingsService, TokenGenerator,
-        TokenSettings,
+        CreateUserService, IdentityService, MailerService, SessionService, SessionUserSyncService, SettingsService,
+        TokenGenerator, TokenSettings,
     },
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -28,6 +32,7 @@ struct Inner {
     captcha_validator: CaptchaValidator,
     identity_service: IdentityService<PgIdentityDb>,
     session_service: SessionService<RedisSessionDb>,
+    mailer_service: MailerService<SmtpEmailSender>,
 }
 
 #[derive(Clone)]
@@ -84,6 +89,22 @@ impl AppState {
             SessionService::new(session_db)
         };
 
+        let mailer_service = {
+            match &config.feature.identity_mailer {
+                MailerConfig::Smtp {
+                    smtp_server,
+                    smtp_username,
+                    smtp_password,
+                    email_domain,
+                } => MailerService::new(smtp::SmtpEmailSender::new(
+                    email_domain,
+                    smtp_server,
+                    smtp_username,
+                    smtp_password,
+                )),
+            }
+        };
+
         Ok(Self(Arc::new(Inner {
             settings,
             random: SystemRandom::new(),
@@ -92,6 +113,7 @@ impl AppState {
             captcha_validator,
             identity_service,
             session_service,
+            mailer_service,
         })))
     }
 
@@ -127,7 +149,11 @@ impl AppState {
         SessionUserSyncService::new(self.identity_service(), self.session_service())
     }
 
-    pub fn token_service(&self) -> TokenGenerator<impl IdentityDb> {
-        TokenGenerator::new(&self.0.random, self.identity_service())
+    pub fn token_service(&self) -> TokenGenerator<impl IdentityDb, impl EmailSender> {
+        TokenGenerator::new(&self.0.random, self.identity_service(), self.mailer_service())
+    }
+
+    pub fn mailer_service(&self) -> &MailerService<impl EmailSender> {
+        &self.0.mailer_service
     }
 }

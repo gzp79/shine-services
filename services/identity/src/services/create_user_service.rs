@@ -27,11 +27,21 @@ where
         Self { identity_service }
     }
 
-    pub async fn create_user(&self, external_user: Option<&ExternalUserInfo>) -> Result<Identity, UserCreateError> {
+    pub async fn create_user(
+        &self,
+        external_user: Option<&ExternalUserInfo>,
+        confirmed_email: Option<&str>,
+    ) -> Result<Identity, UserCreateError> {
         const MAX_RETRY_COUNT: usize = 10;
 
         let mut default_name = external_user.as_ref().and_then(|u| u.name.clone());
-        let email = external_user.as_ref().and_then(|u| u.email.as_deref());
+        let email = match confirmed_email {
+            Some(email) => Some((email, true)),
+            None => external_user
+                .as_ref()
+                .and_then(|u| u.email.as_deref())
+                .map(|email| (email, false)),
+        };
         let mut retry_count = 0;
         loop {
             log::debug!("Creating new user; retry: {retry_count:#?}");

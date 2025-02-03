@@ -23,6 +23,8 @@ pub enum IdentityError {
     TokenConflict,
     #[error("Fingerprint is missing for the requested token kind")]
     MissingFingerprint,
+    #[error("Email address is missing for the requested token kind")]
+    MissingEmail,
     #[error("Operation failed with conflict, no change was made")]
     UpdateConflict,
     #[error("User was removed during the operation")]

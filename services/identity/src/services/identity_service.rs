@@ -33,7 +33,7 @@ where
         &self,
         user_id: Uuid,
         user_name: &str,
-        email: Option<&str>,
+        email: Option<(&str, bool)>,
         external_user_info: Option<&ExternalUserInfo>,
     ) -> Result<Identity, IdentityError> {
         //let email = email.map(|e| e.normalize_email());
@@ -50,14 +50,24 @@ where
         Ok(identity)
     }
 
-    pub async fn find_by_id(&self, user_id: Uuid) -> Result<Option<Identity>, IdentityError> {
+    pub async fn find_by_id(&self, id: Uuid) -> Result<Option<Identity>, IdentityError> {
         let mut db = self.db.create_context().await?;
-        db.find_by_id(user_id).await
+        db.find_by_id(id).await
     }
 
-    pub async fn cascaded_delete(&self, user_id: Uuid) -> Result<(), IdentityError> {
+    pub async fn update(
+        &self,
+        id: Uuid,
+        name: Option<&str>,
+        email: Option<(&str, bool)>,
+    ) -> Result<Option<Identity>, IdentityError> {
         let mut db = self.db.create_context().await?;
-        db.cascaded_delete(user_id).await
+        db.update(id, name, email).await
+    }
+
+    pub async fn cascaded_delete(&self, id: Uuid) -> Result<(), IdentityError> {
+        let mut db = self.db.create_context().await?;
+        db.cascaded_delete(id).await
     }
 
     pub async fn find_by_external_link(
@@ -109,13 +119,22 @@ where
         kind: TokenKind,
         token: &str,
         time_to_live: &Duration,
-        fingerprint: Option<&ClientFingerprint>,
+        fingerprint_to_bind_to: Option<&ClientFingerprint>,
+        email_to_bind_to: Option<&str>,
         site_info: &SiteInfo,
     ) -> Result<TokenInfo, IdentityError> {
         let mut db = self.db.create_context().await?;
         let token_hash = hash_token(token);
-        db.store_token(user_id, kind, &token_hash, time_to_live, fingerprint, site_info)
-            .await
+        db.store_token(
+            user_id,
+            kind,
+            &token_hash,
+            time_to_live,
+            fingerprint_to_bind_to,
+            email_to_bind_to,
+            site_info,
+        )
+        .await
     }
 
     pub async fn find_token_by_hash(&self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError> {

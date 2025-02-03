@@ -13,3 +13,5 @@ mod session_user_sync_service;
 pub use self::session_user_sync_service::*;
 mod token_generator_service;
 pub use self::token_generator_service::*;
+mod mailer_service;
+pub use self::mailer_service::*;

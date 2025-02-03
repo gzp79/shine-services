@@ -13,6 +13,17 @@ pub enum TokenKind {
     SingleAccess,
     Persistent,
     Access,
+    EmailVerify,
+    EmailChange,
+}
+
+impl TokenKind {
+    // return if token can be used only once
+    pub fn is_single_access(&self) -> bool {
+        matches!(self, Self::SingleAccess)
+            || matches!(self, Self::EmailVerify)
+            || matches!(self, Self::EmailChange)
+    }
 }
 
 #[derive(Debug)]
@@ -23,7 +34,8 @@ pub struct TokenInfo {
     pub created_at: DateTime<Utc>,
     pub expire_at: DateTime<Utc>,
     pub is_expired: bool,
-    pub fingerprint: Option<String>,
+    pub bound_fingerprint: Option<String>,
+    pub bound_email: Option<String>,
     pub agent: String,
     pub country: Option<String>,
     pub region: Option<String>,
@@ -39,6 +51,7 @@ pub trait Tokens {
         token_hash: &str,
         time_to_live: &Duration,
         fingerprint: Option<&ClientFingerprint>,
+        email: Option<&str>,
         site_info: &SiteInfo,
     ) -> impl Future<Output = Result<TokenInfo, IdentityError>> + Send;
 
@@ -67,6 +80,8 @@ pub trait Tokens {
         kinds: &[TokenKind],
     ) -> impl Future<Output = Result<(), IdentityError>> + Send;
 
+    /// Test if the token is valid and return the identity if found.
+    /// It can be used only for tokens that can be used multiple times. (is_single_access() == false)
     fn test_token(
         &mut self,
         kind: TokenKind,
@@ -74,7 +89,7 @@ pub trait Tokens {
     ) -> impl Future<Output = Result<Option<(Identity, TokenInfo)>, IdentityError>> + Send;
 
     /// Take a token and return the identity if found.
-    /// The token is deleted from the database.
+    /// The token is deleted from the database, thus it is used mainly for single access tokens. (is_single_access() == true)
     fn take_token(
         &mut self,
         kind: TokenKind,
