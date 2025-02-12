@@ -10,8 +10,8 @@ use crate::{
         CaptchaValidator, DBPool,
     },
     services::{
-        CreateUserService, IdentityService, MailerService, SessionService, SessionUserSyncService, SettingsService,
-        TokenGenerator, TokenSettings,
+        CreateUserService, IdentityService, MailerService, SessionService, SessionUserSyncService, SessionUtils,
+        SettingsService, TokenGenerator, TokenSettings,
     },
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -19,13 +19,14 @@ use chrono::Duration;
 use ring::rand::SystemRandom;
 use shine_core::{
     utils::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
-    web::WebAppConfig,
+    web::{ProblemConfig, WebAppConfig},
 };
 use std::sync::Arc;
 use tera::Tera;
 
 struct Inner {
     settings: SettingsService,
+    problem_config: ProblemConfig,
     random: SystemRandom,
     tera: Tera,
     db: DBPool,
@@ -41,8 +42,8 @@ pub struct AppState(Arc<Inner>);
 impl AppState {
     pub async fn new(config: &WebAppConfig<AppConfig>) -> Result<Self, AnyError> {
         let config_auth = &config.feature.auth;
-        let config_db = &config.feature.identity_db;
-        let config_user_name = &config.feature.identity_name;
+        let config_db = &config.feature.db;
+        let config_user_name = &config.feature.name;
 
         let settings = SettingsService {
             app_name: config_auth.app_name.clone(),
@@ -54,10 +55,11 @@ impl AppState {
                 ttl_api_key: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_api_key)?),
             },
             external_providers: config_auth.collect_providers(),
-            full_problem_response: config.service.full_problem_response,
             page_redirect_time: config_auth.page_redirect_time,
             super_user_api_key_hash: config_auth.super_user_api_key_hash.clone(),
         };
+
+        let problem_config = ProblemConfig::new(config.service.full_problem_response);
 
         let tera = {
             let mut tera = Tera::new("tera_templates/**/*").map_err(|e| anyhow!(e))?;
@@ -90,23 +92,30 @@ impl AppState {
         };
 
         let mailer_service = {
-            match &config.feature.identity_mailer {
+            match &config.feature.mailer {
                 MailerConfig::Smtp {
-                    smtp_server,
+                    email_domain,
+                    smtp_url,
+                    use_tls,
                     smtp_username,
                     smtp_password,
-                    email_domain,
-                } => MailerService::new(smtp::SmtpEmailSender::new(
-                    email_domain,
-                    smtp_server,
-                    smtp_username,
-                    smtp_password,
-                )),
+                } => {
+                    let email_sender = smtp::SmtpEmailSender::new(
+                        email_domain,
+                        smtp_url,
+                        use_tls.unwrap_or(true),
+                        smtp_username,
+                        smtp_password,
+                    )
+                    .map_err(|e| anyhow!(e))?;
+                    MailerService::new(email_sender)
+                }
             }
         };
 
         Ok(Self(Arc::new(Inner {
             settings,
+            problem_config,
             random: SystemRandom::new(),
             tera,
             db: db_pool,
@@ -119,6 +128,10 @@ impl AppState {
 
     pub fn settings(&self) -> &SettingsService {
         &self.0.settings
+    }
+
+    pub fn problem_config(&self) -> &ProblemConfig {
+        &self.0.problem_config
     }
 
     pub fn tera(&self) -> &Tera {
@@ -155,5 +168,9 @@ impl AppState {
 
     pub fn mailer_service(&self) -> &MailerService<impl EmailSender> {
         &self.0.mailer_service
+    }
+
+    pub fn session_utils(&self) -> SessionUtils<'_> {
+        SessionUtils::new(self)
     }
 }

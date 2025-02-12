@@ -1,5 +1,6 @@
 use crate::repositories::DBConfig;
 use serde::{Deserialize, Serialize};
+use shine_core::web::FeatureConfig;
 use std::collections::{HashMap, HashSet};
 use url::Url;
 
@@ -115,12 +116,15 @@ pub struct AutoNameConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(tag = "type")]
 pub enum MailerConfig {
+    #[serde(rename_all = "camelCase")]
     Smtp {
-        smtp_server: String,
+        email_domain: String,
+        smtp_url: String,
+        use_tls: Option<bool>,
         smtp_username: String,
         smtp_password: String,
-        email_domain: String,
     },
 }
 
@@ -128,8 +132,12 @@ pub enum MailerConfig {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
-    pub identity_db: DBConfig,
-    pub identity_name: AutoNameConfig,
+    pub db: DBConfig,
+    pub name: AutoNameConfig,
     pub auth: AuthConfig,
-    pub identity_mailer: MailerConfig,
+    pub mailer: MailerConfig,
+}
+
+impl FeatureConfig for AppConfig {
+    const NAME: &'static str = "identity";
 }

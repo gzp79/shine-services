@@ -76,16 +76,19 @@ test.describe('User roles', () => {
     test('Getting role of non-existing user shall fail', async ({ api }) => {
         const response = await api.user.getRolesRequest(admin.sid, false, randomUUID()).send();
         expect(response).toHaveStatus(404);
+        expect(await response.json()).toEqual(expect.objectContaining({ type: 'not-found' }));
     });
 
     test('Setting role of non-existing user shall fail', async ({ api }) => {
         const response = await api.user.addRoleRequest(admin.sid, false, randomUUID(), 'Role1').send();
         expect(response).toHaveStatus(404);
+        expect(await response.json()).toEqual(expect.objectContaining({ type: 'not-found' }));
     });
 
     test('Deleting role of non-existing user shall fail', async ({ api }) => {
         const response = await api.user.deleteRoleRequest(admin.sid, false, randomUUID(), 'Role1').send();
         expect(response).toHaveStatus(404);
+        expect(await response.json()).toEqual(expect.objectContaining({ type: 'not-found' }));
     });
 
     test('A complex flow with add, get, delete shall work', async ({ api }) => {

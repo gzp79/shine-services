@@ -29,6 +29,8 @@ use utoipa::{
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
 
+use super::FeatureConfig;
+
 #[derive(OpenApi)]
 #[openapi(paths(), components(), tags())]
 struct ApiDoc;
@@ -86,10 +88,13 @@ async fn graceful_shutdown(handle: Handle) {
 }
 
 pub trait WebApplication {
-    type AppConfig: DeserializeOwned + Debug + Send + Sync + 'static;
+    type AppConfig: FeatureConfig + DeserializeOwned + Debug + Send + Sync + 'static;
     type AppState: Clone + Send + Sync + 'static;
 
-    fn feature_name(&self) -> &'static str;
+    fn feature_name(&self) -> &'static str {
+        Self::AppConfig::NAME
+    }
+
     fn create_state(
         &self,
         config: &WebAppConfig<Self::AppConfig>,

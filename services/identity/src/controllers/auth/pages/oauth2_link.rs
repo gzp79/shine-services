@@ -33,7 +33,7 @@ pub struct QueryParams {
 pub async fn oauth2_link(
     State(state): State<AppState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
-    mut auth_session: AuthSession,
+    auth_session: AuthSession,
     query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
 ) -> AuthPage {
     let query = match query {
@@ -41,7 +41,7 @@ pub async fn oauth2_link(
         Err(error) => return PageUtils::new(&state).error(auth_session, AuthError::InputError(error.problem), None),
     };
 
-    if auth_session.user_session.is_none() {
+    if auth_session.user_session().is_none() {
         return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
     }
 
@@ -58,7 +58,8 @@ pub async fn oauth2_link(
         .set_pkce_challenge(pkce_code_challenge)
         .url();
 
-    auth_session.external_login_cookie = Some(ExternalLoginCookie {
+    let linked_user = auth_session.user_session().cloned();
+    let response_session = auth_session.with_external_login(Some(ExternalLoginCookie {
         key,
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
@@ -66,8 +67,8 @@ pub async fn oauth2_link(
         target_url: query.redirect_url,
         error_url: query.error_url,
         remember_me: false,
-        linked_user: auth_session.user_session.clone(),
-    });
-
-    PageUtils::new(&state).redirect(auth_session, Some(&client.provider), Some(&authorize_url))
+        linked_user,
+    }));
+    assert!(response_session.user_session().is_some());
+    PageUtils::new(&state).redirect(response_session, Some(&client.provider), Some(&authorize_url))
 }

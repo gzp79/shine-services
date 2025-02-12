@@ -5,7 +5,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use postgres_from_row::FromRow;
 use shine_core::{
-    db::{DBError, PGClient, PGConvertError, PGErrorChecks, ToPGType},
+    db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
     pg_query,
     web::{ClientFingerprint, SiteInfo},
 };
@@ -48,7 +48,7 @@ impl FromSql<'_> for TokenKind {
 }
 
 impl ToPGType for TokenKind {
-    const PG_TYPE: PGType = PGType::INT2;
+    type PGValueType = PGValueTypeINT2;
 }
 
 #[derive(FromRow)]
@@ -65,13 +65,13 @@ pg_query!( InsertToken =>
     out = InsertTokenRow;
     sql =  r#"
         INSERT INTO login_tokens (
-                user_id, token, created, 
-                kind, fingerprint, email, 
-                expire, 
+                user_id, token, created,
+                kind, fingerprint, email,
+                expire,
                 agent, country, region, city)
             VALUES (
-                $1, $2, now(), 
-                $3, $4, $5
+                $1, $2, now(),
+                $3, $4, $5,
                 now() + $6 * interval '1 seconds',
                 $7, $8, $9, $10)
         RETURNING created, expire
@@ -162,7 +162,7 @@ struct IdentityTokenRow {
 
 // Test token for use. Compared to find it also returns the identity
 pg_query!( TestToken =>
-    in = token: &str, kind: TokenKind;
+    in = token: &str, allowed_kind: &[TokenKind];
     out = IdentityTokenRow;
     sql = r#"
         SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
@@ -180,18 +180,18 @@ pg_query!( TestToken =>
             FROM login_tokens t, identities i
             WHERE t.user_id = i.user_id
                 AND t.token = $1
-                AND t.kind = $2
+                AND t.kind = any($2)
     "#
 );
 
 // Test token for use. Compared to find it also returns the identity
 pg_query!( TakeToken =>
-    in = token: &str, kind: TokenKind;
+    in = token: &str, allowed_kind: &[TokenKind];
     out = IdentityTokenRow;
     sql = r#"
     WITH t AS (
         DELETE FROM login_tokens lt
-        WHERE lt.token = $1 AND lt.kind = $2
+        WHERE lt.token = $1 AND lt.kind = any($2)
         RETURNING *        
     )
     SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
@@ -397,18 +397,13 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
     #[instrument(skip(self))]
     async fn test_token(
         &mut self,
-        kind: TokenKind,
+        allowed_kind: &[TokenKind],
         token_hash: &str,
     ) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
-        assert!(
-            !kind.is_single_access(),
-            "test_token can be used only for tokens that can be used multiple times"
-        );
-
         let row = self
             .stmts_tokens
             .test
-            .query_opt(&self.client, &token_hash, &kind)
+            .query_opt(&self.client, &token_hash, &allowed_kind)
             .await
             .map_err(DBError::from)?;
         Ok(row.map(|row| {
@@ -444,13 +439,13 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
     #[instrument(skip(self))]
     async fn take_token(
         &mut self,
-        kind: TokenKind,
+        allowed_kind: &[TokenKind],
         token_hash: &str,
     ) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
         let row = self
             .stmts_tokens
             .take
-            .query_opt(&self.client, &token_hash, &kind)
+            .query_opt(&self.client, &token_hash, &allowed_kind)
             .await
             .map_err(DBError::from)?;
         Ok(row.map(|row| {

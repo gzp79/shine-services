@@ -256,7 +256,7 @@ export class ApiRequest<Q = void> {
         }
 
         log(
-            `Sending request [${log_id}] ${this.method} ${this.url}\nparams: ${JSON.stringify(this.params, null, 2)}\nheaders: ${JSON.stringify(headers, null, 2)}`
+            `Request [${log_id}] ${this.method} ${this.url}\nparams: ${JSON.stringify(this.params, null, 2)}\nheaders: ${JSON.stringify(headers, null, 2)}`
         );
         if (data !== undefined) {
             log(`Request body [${log_id}]: ${data}`);

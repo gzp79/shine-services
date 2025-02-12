@@ -13,7 +13,6 @@ pub struct SettingsService {
     pub error_url: Url,
     pub token: TokenSettings,
     pub external_providers: Vec<String>,
-    pub full_problem_response: bool,
     pub page_redirect_time: Option<u32>,
     pub super_user_api_key_hash: Option<String>,
 }

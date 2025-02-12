@@ -38,7 +38,7 @@ pub struct QueryParams {
 pub async fn oidc_link(
     State(state): State<AppState>,
     Extension(client): Extension<Arc<OIDCClient>>,
-    mut auth_session: AuthSession,
+    auth_session: AuthSession,
     query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
 ) -> AuthPage {
     let query = match query {
@@ -46,14 +46,20 @@ pub async fn oidc_link(
         Err(error) => return PageUtils::new(&state).error(auth_session, AuthError::InputError(error.problem), None),
     };
 
-    if auth_session.user_session.is_none() {
+    if auth_session.user_session().is_none() {
         return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
     }
 
     let core_client = match client.client().await {
         Ok(client) => client,
         Err(err) => {
-            return PageUtils::new(&state).error(auth_session, AuthError::OIDCDiscovery(err), query.error_url.as_ref())
+            return PageUtils::new(&state).error(
+                auth_session,
+                AuthError::OIDCDiscovery {
+                    error: format!("{err:#?}"),
+                },
+                query.error_url.as_ref(),
+            )
         }
     };
 
@@ -75,7 +81,8 @@ pub async fn oidc_link(
         .add_prompt(CoreAuthPrompt::Login)
         .url();
 
-    auth_session.external_login_cookie = Some(ExternalLoginCookie {
+    let linked_user = auth_session.user_session().cloned();
+    let response_session = auth_session.with_external_login(Some(ExternalLoginCookie {
         key,
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
@@ -83,8 +90,8 @@ pub async fn oidc_link(
         target_url: query.redirect_url,
         error_url: query.error_url,
         remember_me: false,
-        linked_user: auth_session.user_session.clone(),
-    });
-
-    PageUtils::new(&state).redirect(auth_session, Some(&client.provider), Some(&authorize_url))
+        linked_user,
+    }));
+    assert!(response_session.user_session().is_some());
+    PageUtils::new(&state).redirect(response_session, Some(&client.provider), Some(&authorize_url))
 }

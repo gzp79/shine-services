@@ -42,7 +42,7 @@ impl IntoProblem for UserSessionError {
             UserSessionError::RedisError(err) => Problem::internal_error(config, "Redis error", err),
             _ => Problem::unauthorized()
                 .with_detail(self.to_string())
-                .with_extension(config, format!("{:#?}", self)),
+                .with_opt_extension(config.include_internal.then(|| format!("{:#?}", self))),
         }
     }
 }

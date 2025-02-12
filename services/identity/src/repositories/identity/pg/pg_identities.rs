@@ -3,7 +3,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
 use shine_core::{
-    db::{DBError, PGClient, PGConvertError, PGErrorChecks, ToPGType},
+    db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
     pg_query,
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type};
@@ -39,7 +39,7 @@ impl FromSql<'_> for IdentityKind {
 }
 
 impl ToPGType for IdentityKind {
-    const PG_TYPE: Type = Type::INT2;
+    type PGValueType = PGValueTypeINT2;
 }
 
 pg_query!( InsertIdentity =>

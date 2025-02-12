@@ -6,9 +6,10 @@ import { TokenAPI } from '$lib/api/token_api';
 import { UserAPI } from '$lib/api/user_api';
 import { expect as authExpect } from './expect/auth_exts';
 import { expect as commonExpect } from './expect/common';
+import { expect as mailExpect } from './expect/mail';
 import { expect as responseExpect } from './expect/response';
 
-export const expect = mergeExpects(commonExpect, responseExpect, authExpect);
+export const expect = mergeExpects(commonExpect, responseExpect, authExpect, mailExpect);
 
 export type ServiceOptions = {
     appDomain: string;

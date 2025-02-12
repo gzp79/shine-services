@@ -15,7 +15,7 @@ pub struct AppState(Arc<Inner>);
 
 impl AppState {
     pub async fn new(config: &WebAppConfig<AppConfig>) -> Result<Self, AnyError> {
-        let config_db = &config.feature.builder_db;
+        let config_db = &config.feature.db;
 
         let db_pool = DBPool::new(config_db).await?;
 

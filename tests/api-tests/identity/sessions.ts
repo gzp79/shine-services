@@ -45,7 +45,7 @@ test.describe('Sessions', () => {
         expect(session.createdAt).toBeBefore(createdRange[1]);
     });
 
-    test('Multiple login shall create multiple session and logout from a session shall invalidate the connected session', async ({
+    test('Create multiple session and logout from a single session shall invalidate that single session', async ({
         api
     }) => {
         const user = await api.testUsers.createGuest({}, { 'cf-region': 'r1' });
@@ -89,9 +89,7 @@ test.describe('Sessions', () => {
         expect(sessions.map((s) => s.region).sort()).toEqual(['r1']);
     });
 
-    test('Multiple login shall create multiple session and logout with terminateAll shall invalidate all of them', async ({
-        api
-    }) => {
+    test('Create multiple session and logout from all sites shall invalidate all the sessions', async ({ api }) => {
         const mock = await startMock();
         const user = await api.testUsers.createLinked(mock, { rememberMe: true }, { 'cf-region': 'r1' });
 

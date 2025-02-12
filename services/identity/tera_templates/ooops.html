@@ -1,19 +1,24 @@
 <!DOCTYPE html>
 <html>
+  <head>
+    {% if timeout >= 0 %}
+    <meta
+      http-equiv="refresh"
+      content="{{timeout}}; url='{{ redirectUrl | safe }}'"
+    />
+    {% endif %}
+  </head>
 
-<head>
-  {% if timeout >= 0 %}
-  <meta http-equiv="refresh" content="{{timeout}}; url='{{ redirectUrl | safe }}'" />
-  {% endif %}
-</head>
-
-<body>
-  <h1 class="header-text">Something went wrong!</h1>
-  <h2>Code: {{statusCode}}</h2>
-  <h2>Type: {{type}}</h2>
-  <p>Back to <a href='{{ redirectUrl | safe }}'> safety </a> ... </p>
-  <h2>Details</h2>
-  <div>{{detail}}</div>
-</body>
-
+  <body>
+    <h1 class="header-text">Something went wrong!</h1>
+    <h2>Code: {{statusCode}}</h2>
+    <h2>Type: {{type}}</h2>
+    <p>Back to <a href="{{ redirectUrl | safe }}"> safety </a> ...</p>
+    <h2>Detail</h2>
+    <div>{{detail}}</div>
+    <div style="display: none">
+      <h2>Problem</h2>
+      <pre>{{problem}}</pre>
+    </div>
+  </body>
 </html>

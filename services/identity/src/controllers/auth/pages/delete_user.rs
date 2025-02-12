@@ -37,7 +37,7 @@ pub struct QueryParams {
 )]
 pub async fn delete_user(
     State(state): State<AppState>,
-    mut auth_session: AuthSession,
+    auth_session: AuthSession,
     query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
 ) -> AuthPage {
     let query = match query {
@@ -45,7 +45,7 @@ pub async fn delete_user(
         Err(error) => return PageUtils::new(&state).error(auth_session, AuthError::InputError(error.problem), None),
     };
 
-    let (user_id, session_key) = match auth_session.user_session.as_ref().map(|u| (u.user_id, u.key)) {
+    let (user_id, session_key) = match auth_session.user_session().map(|u| (u.user_id, u.key)) {
         Some(user_id) => user_id,
         None => return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_ref()),
     };
@@ -68,12 +68,14 @@ pub async fn delete_user(
         return PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_ref());
     }
 
-    // from this point there is no reason to keep session
-    // errors beyond these points are irrelevant for the users and mostly just warnings.
-    auth_session.clear();
+    // End of validations, from this point
+    //  - there is no reason to keep session
+    //  - errors are irrelevant for the users and mostly just warnings.
+    let response_session = auth_session.cleared();
+
     if let Err(err) = state.session_service().remove_all(user_id).await {
         log::warn!("Failed to clear all sessions for user {}: {:?}", user_id, err);
     }
 
-    PageUtils::new(&state).redirect(auth_session, None, query.redirect_url.as_ref())
+    PageUtils::new(&state).redirect(response_session, None, query.redirect_url.as_ref())
 }

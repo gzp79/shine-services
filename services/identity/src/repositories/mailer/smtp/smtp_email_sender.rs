@@ -4,10 +4,18 @@ use lettre::{
     address::AddressError,
     error::Error as EmailError,
     message::header::ContentType,
-    transport::smtp::{self, authentication::Credentials},
+    transport::smtp::{self, authentication::Credentials, client::Tls, SUBMISSIONS_PORT},
     Message, SmtpTransport, Transport,
 };
+use thiserror::Error as ThisError;
+use url::Url;
 /* spell-checker: enable */
+
+#[derive(ThisError, Debug)]
+pub enum SmtpEmailSenderBuildError {
+    #[error("Invalid SMTP URL")]
+    InvalidSmtpUrl,
+}
 
 impl From<AddressError> for EmailSenderError {
     fn from(err: AddressError) -> Self {
@@ -37,17 +45,45 @@ pub struct SmtpEmailSender {
 }
 
 impl SmtpEmailSender {
-    pub fn new(email_domain: &str, relay_server: &str, smtp_username: &str, smtp_password: &str) -> Self {
-        let credentials = Credentials::new(smtp_username.to_owned(), smtp_password.to_owned());
-        let mailer = SmtpTransport::relay(relay_server)
-            .unwrap()
-            .credentials(credentials)
-            .build();
+    pub fn new(
+        email_domain: &str,
+        smtp_url: &str,
+        use_tls: bool,
+        smtp_username: &str,
+        smtp_password: &str,
+    ) -> Result<Self, SmtpEmailSenderBuildError> {
+        let (relay, port) = {
+            let mut iter = smtp_url.splitn(2, ':');
+            let relay = iter.next().ok_or(SmtpEmailSenderBuildError::InvalidSmtpUrl)?;
+            let port = iter.next().map_or(Ok(SUBMISSIONS_PORT), |p| {
+                p.parse().map_err(|err| {
+                    log::error!("Failed to parse SMTP port: {err}");
+                    SmtpEmailSenderBuildError::InvalidSmtpUrl
+                })
+            })?;
+            (relay, port)
+        };
 
-        Self {
+        let credentials = Credentials::new(smtp_username.to_owned(), smtp_password.to_owned());
+        let mut mailer_builder = SmtpTransport::relay(relay)
+            .map_err(|err| {
+                log::error!("Failed to create SMTP transport: {err}");
+                SmtpEmailSenderBuildError::InvalidSmtpUrl
+            })?
+            .port(port)
+            .credentials(credentials);
+
+        if !use_tls {
+            log::warn!("TLS is disabled for SMTP transport");
+            mailer_builder = mailer_builder.tls(Tls::None);
+        }
+
+        let mailer = mailer_builder.build();
+
+        Ok(Self {
             email_domain: email_domain.to_owned(),
             mailer,
-        }
+        })
     }
 }
 

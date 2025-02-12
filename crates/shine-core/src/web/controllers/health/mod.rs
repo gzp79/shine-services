@@ -1,6 +1,6 @@
 mod api;
 
-use crate::web::WebAppConfig;
+use crate::web::{FeatureConfig, WebAppConfig};
 use anyhow::Error as AnyError;
 use axum::Extension;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -10,7 +10,10 @@ pub struct HealthController {
 }
 
 impl HealthController {
-    pub fn new<F>(feature_name: &'static str, config: &WebAppConfig<F>) -> Result<Self, AnyError> {
+    pub fn new<F>(feature_name: &'static str, config: &WebAppConfig<F>) -> Result<Self, AnyError>
+    where
+        F: FeatureConfig,
+    {
         let version = api::ServiceVersion {
             app_name: feature_name.to_string(),
             version: config.core.version.clone(),

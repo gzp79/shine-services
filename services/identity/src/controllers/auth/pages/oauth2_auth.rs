@@ -32,12 +32,11 @@ pub struct QueryParams {
 pub async fn oauth2_auth(
     State(state): State<AppState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
-    mut auth_session: AuthSession,
+    auth_session: AuthSession,
     fingerprint: ClientFingerprint,
     site_info: SiteInfo,
     query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
 ) -> AuthPage {
-    // take external_login_cookie from session, thus later code don't have to care with it
     let ExternalLoginCookie {
         pkce_code_verifier,
         csrf_state,
@@ -46,10 +45,11 @@ pub async fn oauth2_auth(
         remember_me,
         linked_user,
         ..
-    } = match auth_session.external_login_cookie.take() {
-        Some(external_login_cookie) => external_login_cookie,
+    } = match auth_session.external_login() {
+        Some(external_login) => external_login.clone(),
         None => return PageUtils::new(&state).error(auth_session, AuthError::MissingExternalLoginCookie, None),
     };
+    let auth_session = auth_session.with_external_login(None);
 
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
@@ -79,7 +79,9 @@ pub async fn oauth2_auth(
             log::warn!("Token exchange error: {err:?}");
             return PageUtils::new(&state).error(
                 auth_session,
-                AuthError::TokenExchangeFailed(format!("{err:#?}")),
+                AuthError::TokenExchangeFailed {
+                    error: format!("{err:#?}"),
+                },
                 error_url.as_ref(),
             );
         }
@@ -100,7 +102,9 @@ pub async fn oauth2_auth(
         Err(err) => {
             return PageUtils::new(&state).error(
                 auth_session,
-                AuthError::FailedExternalUserInfo(format!("{err:?}")),
+                AuthError::FailedExternalUserInfo {
+                    error: format!("{err:?}"),
+                },
                 error_url.as_ref(),
             )
         }

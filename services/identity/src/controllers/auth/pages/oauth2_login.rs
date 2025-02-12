@@ -35,7 +35,7 @@ pub struct QueryParams {
 pub async fn oauth2_login(
     State(state): State<AppState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
-    mut auth_session: AuthSession,
+    auth_session: AuthSession,
     query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
 ) -> AuthPage {
     let query = match query {
@@ -49,7 +49,7 @@ pub async fn oauth2_login(
 
     // Note: having a token login is not an error, on successful start of the flow, the token cookie is cleared
     // It has some potential issue: if tid is connected to a guest user, the guest may loose all the progress
-    if auth_session.user_session.is_some() {
+    if auth_session.user_session().is_some() {
         return PageUtils::new(&state).error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref());
     }
 
@@ -66,18 +66,19 @@ pub async fn oauth2_login(
         .set_pkce_challenge(pkce_code_challenge)
         .url();
 
-    auth_session.token_cookie = None;
-    auth_session.external_login_cookie = Some(ExternalLoginCookie {
-        key,
-        pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
-        csrf_state: csrf_state.secret().to_owned(),
-        nonce: None,
-        target_url: query.redirect_url,
-        error_url: query.error_url,
-        remember_me: query.remember_me.unwrap_or(false),
-        linked_user: None,
-    });
-    assert!(auth_session.user_session.is_none());
-
-    PageUtils::new(&state).redirect(auth_session, Some(&client.provider), Some(&authorize_url))
+    let response_session = auth_session
+        .revoke_access(&state)
+        .await
+        .with_external_login(Some(ExternalLoginCookie {
+            key,
+            pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
+            csrf_state: csrf_state.secret().to_owned(),
+            nonce: None,
+            target_url: query.redirect_url,
+            error_url: query.error_url,
+            remember_me: query.remember_me.unwrap_or(false),
+            linked_user: None,
+        }));
+    assert!(response_session.user_session().is_none());
+    PageUtils::new(&state).redirect(response_session, Some(&client.provider), Some(&authorize_url))
 }

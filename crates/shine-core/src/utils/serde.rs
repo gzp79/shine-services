@@ -1,4 +1,4 @@
-pub mod serde_string {
+pub mod serde_to_string {
     use serde::Serializer;
     use std::fmt::Display;
 

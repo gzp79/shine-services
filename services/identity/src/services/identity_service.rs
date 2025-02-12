@@ -148,49 +148,45 @@ where
     }
 
     /// Get the identity associated to an access token.
-    /// The provided token is not removed from the DB.
-    pub async fn test_access_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+    pub async fn test_token(
+        &self,
+        allowed_kind: &[TokenKind],
+        token: &str,
+    ) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
         let mut db = self.db.create_context().await?;
         let token_hash = hash_token(token);
-        db.test_token(TokenKind::Access, &token_hash).await
+        db.test_token(allowed_kind, &token_hash).await
     }
 
-    /// Get the identity associated to an api key.
-    /// The provided token is not removed from the DB.
-    pub async fn test_api_key(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+    /// Get the identity associated to an access token and removed from the DB.
+    pub async fn take_token(
+        &self,
+        allowed_kind: &[TokenKind],
+        token: &str,
+    ) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
         let mut db = self.db.create_context().await?;
         let token_hash = hash_token(token);
-        db.test_token(TokenKind::Persistent, &token_hash).await
+        db.take_token(allowed_kind, &token_hash).await
     }
 
-    /// Get the identity associated to a single access token.
-    /// Independent of the result the provided toke is removed from the DB
-    pub async fn take_single_access_token(&self, token: &str) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
+    pub async fn delete_token(&self, kind: TokenKind, token: &str) -> Result<Option<()>, IdentityError> {
         let mut db = self.db.create_context().await?;
         let token_hash = hash_token(token);
-        db.take_token(TokenKind::SingleAccess, &token_hash).await
+        db.delete_token_by_hash(kind, &token_hash).await
     }
 
-    pub async fn delete_access_token(&self, token: &str) -> Result<Option<()>, IdentityError> {
+    pub async fn delete_hashed_token_by_user(
+        &self,
+        user_id: Uuid,
+        token_hash: &str,
+    ) -> Result<Option<()>, IdentityError> {
         let mut db = self.db.create_context().await?;
-        let token_hash = hash_token(token);
-        db.delete_token_by_hash(TokenKind::Access, &token_hash).await
+        db.delete_token_by_user(user_id, &token_hash).await
     }
 
-    pub async fn delete_persistent_token(&self, token: &str) -> Result<Option<()>, IdentityError> {
-        let mut db = self.db.create_context().await?;
+    pub async fn delete_token_by_user(&self, user_id: Uuid, token: &str) -> Result<Option<()>, IdentityError> {
         let token_hash = hash_token(token);
-        db.delete_token_by_hash(TokenKind::Persistent, &token_hash).await
-    }
-
-    pub async fn delete_token(&self, user_id: Uuid, token: &str) -> Result<Option<()>, IdentityError> {
-        let token_hash = hash_token(token);
-        self.delete_token_by_user(user_id, &token_hash).await
-    }
-
-    pub async fn delete_token_by_user(&self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
-        let mut db = self.db.create_context().await?;
-        db.delete_token_by_user(user_id, token_hash).await
+        self.delete_hashed_token_by_user(user_id, &token_hash).await
     }
 
     pub async fn delete_all_tokens_by_user(&self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {

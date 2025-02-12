@@ -5,53 +5,66 @@
   "service": {
     "port": 7000
   },
-  "identityDb": {
-    "redisCns": "redis://redis.mockbox.com:6379",
-    "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-identity?sslmode=disable"
-  },
-  "identityName": {
-    "baseName": "Freshman_",
-    "idEncoder": "harsh",
-    "salt": "salt"
-  },
-  "auth": {
-    "appName": "Scytta",
-    "homeUrl": "https://local-scytta.com:4443/",
-    "errorUrl": "https://local-scytta.com:4443/error",
-    "authBaseUrl": "https://cloud.local-scytta.com:8443/identity/auth/",
-    "superUserApiKeyHash": "$2b$05$0OWeMQAQuh9kmD642a0ZHeVl6VNa2g.z1HTI2rrQ3RPkmxoCNUohG",
-    "pageRedirectTime": 0,
-    "pageErrorDetail": true,
-    "sessionSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
-    "externalLoginCookieSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
-    "tokenCookieSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
-    "ttlSession": 43200,
-    "ttlAccessToken": 1209600,
-    "ttlSingleAccess": 600,
-    "ttlApiKey": 31536000,
-    "openidStartupDiscovery": false,
-    "oauth2": {
-      "oauth2_flow": {
-        "authorizationUrl": "https://mockbox.com:8090/oauth2/authorize",
-        "tokenUrl": "https://mockbox.com:8090/oauth2/token",
-        "userInfoUrl": "https://mockbox.com:8090/oauth2/users",
-        "userInfoMapping": {
-          "name": "name"
-        },
-        "extensions": [],
-        "scopes": ["identity", "email"],
-        "ignoreCertificates": true,
-        "clientId": "someClientId2",
-        "clientSecret": "someClientSecret2"
-      }
+
+  "identity": {
+    "db": {
+      "redisCns": "redis://redis.mockbox.com:6379",
+      "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-identity?sslmode=disable"
     },
-    "openid": {
-      "openid_flow": {
-        "discoveryUrl": "https://mockbox.com:8091/openid",
-        "scopes": ["openid", "email", "profile"],
-        "ignoreCertificates": true,
-        "clientId": "someClientId",
-        "clientSecret": "someClientSecret"
+
+    "name": {
+      "baseName": "Freshman_",
+      "idEncoder": "harsh",
+      "salt": "salt"
+    },
+
+    "mailer": {
+      "type": "smtp",
+      "smtpUrl": "mockbox.com:2525",
+      "useTls": false,
+      "smtpUsername": "user",
+      "smtpPassword": "password",
+      "emailDomain": "local-scytta.com"
+    },
+
+    "auth": {
+      "appName": "Scytta",
+      "homeUrl": "https://local-scytta.com:4443/",
+      "errorUrl": "https://local-scytta.com:4443/error",
+      "authBaseUrl": "https://cloud.local-scytta.com:8443/identity/auth/",
+      "superUserApiKeyHash": "$2b$05$0OWeMQAQuh9kmD642a0ZHeVl6VNa2g.z1HTI2rrQ3RPkmxoCNUohG",
+      "pageRedirectTime": 0,
+      "pageErrorDetail": true,
+      "externalLoginCookieSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
+      "tokenCookieSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
+      "ttlSession": 43200,
+      "ttlAccessToken": 1209600,
+      "ttlSingleAccess": 600,
+      "ttlApiKey": 31536000,
+      "openidStartupDiscovery": false,
+      "oauth2": {
+        "oauth2_flow": {
+          "authorizationUrl": "https://mockbox.com:8090/oauth2/authorize",
+          "tokenUrl": "https://mockbox.com:8090/oauth2/token",
+          "userInfoUrl": "https://mockbox.com:8090/oauth2/users",
+          "userInfoMapping": {
+            "name": "name"
+          },
+          "extensions": [],
+          "scopes": ["identity", "email"],
+          "ignoreCertificates": true,
+          "clientId": "someClientId2",
+          "clientSecret": "someClientSecret2"
+        }
+      },
+      "openid": {
+        "openid_flow": {
+          "discoveryUrl": "https://mockbox.com:8091/openid",
+          "scopes": ["openid", "email", "profile"],
+          "ignoreCertificates": true,
+          "clientId": "someClientId",
+          "clientSecret": "someClientSecret"
+        }
       }
     }
   }

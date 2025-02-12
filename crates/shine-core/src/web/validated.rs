@@ -1,5 +1,5 @@
 use crate::{
-    utils::serde_string,
+    utils::serde_to_string,
     web::{ConfiguredProblem, IntoProblem, Problem, ProblemConfig},
 };
 use axum::{
@@ -65,15 +65,16 @@ impl ValidationErrorEx for ValidationError {
 }
 
 #[derive(Debug, ThisError, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum InputError {
     #[error("Path could not be parsed for input")]
-    #[serde(with = "serde_string")]
+    #[serde(with = "serde_to_string")]
     PathFormat(PathRejection),
     #[error("Query could not be parsed for input")]
-    #[serde(with = "serde_string")]
+    #[serde(with = "serde_to_string")]
     QueryFormat(QueryRejection),
     #[error("Body could not be parsed for input")]
-    #[serde(with = "serde_string")]
+    #[serde(with = "serde_to_string")]
     JsonFormat(JsonRejection),
     #[error("Input constraint violated")]
     Constraint(ValidationErrors),
@@ -91,7 +92,7 @@ impl IntoProblem for InputError {
                 Problem::bad_request("body_format_error").with_detail(err.body_text())
             }
             InputError::JsonFormat(err) => Problem::internal_error(config, "Json error", err),
-            InputError::Constraint(detail) => Problem::bad_request("validation_error").with_public_extension(detail),
+            InputError::Constraint(detail) => Problem::bad_request("validation_error").with_extension(detail),
         }
     }
 }

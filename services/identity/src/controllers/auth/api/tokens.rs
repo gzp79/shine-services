@@ -221,7 +221,7 @@ pub async fn delete_token(
 ) -> Result<(), Problem> {
     let token = state
         .identity_service()
-        .delete_token_by_user(user.user_id, &params.hash)
+        .delete_hashed_token_by_user(user.user_id, &params.hash)
         .await
         .map_err(|err| Problem::internal_error(&problem_config, "Could not revoke token", err))?;
 

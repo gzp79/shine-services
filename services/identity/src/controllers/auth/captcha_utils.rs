@@ -16,15 +16,21 @@ impl<'a> CaptchaUtils<'a> {
             match self.captcha_validator.validate(token, None).await {
                 Ok(result) => {
                     if !result.success {
-                        Err(AuthError::Captcha(result.error_codes.join(", ")))
+                        Err(AuthError::Captcha {
+                            error: result.error_codes.join(", "),
+                        })
                     } else {
                         Ok(())
                     }
                 }
-                Err(err) => Err(AuthError::CaptchaServiceError(format!("{err}"))),
+                Err(err) => Err(AuthError::CaptchaServiceError {
+                    error: format!("{err:#?}"),
+                }),
             }
         } else {
-            Err(AuthError::Captcha("missing".to_string()))
+            Err(AuthError::Captcha {
+                error: "missing captcha".to_string(),
+            })
         }
     }
 }

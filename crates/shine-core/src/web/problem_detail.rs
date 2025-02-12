@@ -36,15 +36,15 @@ impl ProblemConfig {
 #[derive(Debug, Serialize)]
 pub struct Problem {
     #[serde(rename = "status", serialize_with = "serde_status_code::serialize")]
-    status: StatusCode,
+    pub status: StatusCode,
     #[serde(rename = "type")]
-    ty: &'static str,
+    pub ty: &'static str,
     #[serde(rename = "instance")]
-    instance: Option<Url>,
+    pub instance: Option<Url>,
     #[serde(rename = "detail")]
-    detail: String,
+    pub detail: String,
     #[serde(rename = "extension")]
-    extension: JsonValue,
+    pub extension: JsonValue,
 }
 
 impl Problem {
@@ -102,16 +102,16 @@ impl Problem {
         Self { instance, ..self }
     }
 
-    pub fn with_public_extension<S: Serialize>(self, extension: S) -> Self {
+    pub fn with_extension<S: Serialize>(self, extension: S) -> Self {
         Self {
             extension: serde_json::to_value(extension).unwrap(),
             ..self
         }
     }
 
-    pub fn with_extension<S: Serialize>(self, config: &ProblemConfig, extension: S) -> Self {
-        if config.include_internal {
-            self.with_public_extension(extension)
+    pub fn with_opt_extension<S: Serialize>(self, extension: Option<S>) -> Self {
+        if let Some(extension) = extension {
+            self.with_extension(extension)
         } else {
             self
         }

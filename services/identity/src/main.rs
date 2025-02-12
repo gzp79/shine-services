@@ -19,10 +19,6 @@ impl WebApplication for Application {
     type AppConfig = AppConfig;
     type AppState = AppState;
 
-    fn feature_name(&self) -> &'static str {
-        "identity"
-    }
-
     async fn create_state(&self, config: &WebAppConfig<Self::AppConfig>) -> Result<Self::AppState, AnyError> {
         AppState::new(config).await
     }

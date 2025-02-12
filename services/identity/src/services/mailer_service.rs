@@ -1,6 +1,5 @@
+use crate::repositories::mailer::{Email, EmailContent, EmailSender, EmailSenderError};
 use ring::digest;
-
-use crate::repositories::mailer::{EmailSender, EmailSenderError};
 
 #[derive(Clone)]
 pub struct MailerService<E: EmailSender> {
@@ -13,6 +12,16 @@ impl<E: EmailSender> MailerService<E> {
     }
 
     pub async fn send_confirmation_email(&self, to: &str, token: &str) -> Result<(), EmailSenderError> {
+        self.mailer.send(
+            "no-replay",
+            to,
+            Email {
+                subject: "Confirm your email".to_string(),
+                body: EmailContent::Text(
+                    format!("Click the link below to confirm your email address:\n\nhttps://example.com/auth/email/confirm?token={token}")
+                )
+            }
+        ).await?;
         Ok(())
     }
 }

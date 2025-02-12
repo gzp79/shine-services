@@ -10,9 +10,9 @@ use super::{Identity, IdentityError};
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum TokenKind {
-    SingleAccess,
-    Persistent,
     Access,
+    Persistent,
+    SingleAccess,
     EmailVerify,
     EmailChange,
 }
@@ -20,9 +20,25 @@ pub enum TokenKind {
 impl TokenKind {
     // return if token can be used only once
     pub fn is_single_access(&self) -> bool {
-        matches!(self, Self::SingleAccess)
-            || matches!(self, Self::EmailVerify)
-            || matches!(self, Self::EmailChange)
+        matches!(self, Self::SingleAccess) || matches!(self, Self::EmailVerify) || matches!(self, Self::EmailChange)
+    }
+
+    pub fn all() -> &'static [TokenKind] {
+        &[
+            TokenKind::Access,
+            TokenKind::Persistent,
+            TokenKind::SingleAccess,
+            TokenKind::EmailVerify,
+            TokenKind::EmailChange,
+        ]
+    }
+
+    pub fn all_single_access() -> &'static [TokenKind] {
+        &[TokenKind::SingleAccess, TokenKind::EmailVerify, TokenKind::EmailChange]
+    }
+
+    pub fn all_multi_access() -> &'static [TokenKind] {
+        &[TokenKind::Access, TokenKind::Persistent]
     }
 }
 
@@ -40,6 +56,12 @@ pub struct TokenInfo {
     pub country: Option<String>,
     pub region: Option<String>,
     pub city: Option<String>,
+}
+
+impl TokenInfo {
+    pub fn check_fingerprint(&self, fingerprint: &ClientFingerprint) -> bool {
+        self.bound_fingerprint.is_none() || Some(fingerprint.as_str()) == self.bound_fingerprint.as_deref()
+    }
 }
 
 /// Handle tokens
@@ -84,7 +106,7 @@ pub trait Tokens {
     /// It can be used only for tokens that can be used multiple times. (is_single_access() == false)
     fn test_token(
         &mut self,
-        kind: TokenKind,
+        allowed_kind: &[TokenKind],
         token_hash: &str,
     ) -> impl Future<Output = Result<Option<(Identity, TokenInfo)>, IdentityError>> + Send;
 
@@ -92,7 +114,7 @@ pub trait Tokens {
     /// The token is deleted from the database, thus it is used mainly for single access tokens. (is_single_access() == true)
     fn take_token(
         &mut self,
-        kind: TokenKind,
+        allowed_kind: &[TokenKind],
         token_hash: &str,
     ) -> impl Future<Output = Result<Option<(Identity, TokenInfo)>, IdentityError>> + Send;
 }

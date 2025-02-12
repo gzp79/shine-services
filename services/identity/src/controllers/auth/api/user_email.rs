@@ -53,11 +53,10 @@ pub async fn change_user_email(
     // get email from identity
     // check if new email is already in use
     // send email:
-    //  send email about changed request (passive, no link, for this the credentials had to be stolen, no our issue) 
+    //  send email about changed request (passive, no link, for this the credentials had to be stolen, no our issue)
     //  with EmailChange token bound to the new email
     todo!()
 }
-
 
 /// Delete email address.
 #[utoipa::path(

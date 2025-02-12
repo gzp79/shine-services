@@ -1,9 +1,16 @@
+import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIDMockServer from '$lib/mocks/openid';
 import debug from 'debug';
 
 async function main() {
     debug.enable('test:mock:*');
+
+    const mock_smtp = new MockSmtp();
+    await mock_smtp.start((email) => {
+        console.log('Email received:', email);
+    });
+
     const mock_oath = new OAuth2MockServer();
     await mock_oath.start();
 

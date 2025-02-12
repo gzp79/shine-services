@@ -23,9 +23,10 @@ impl<'a> LinkUtils<'a> {
         target_url: Option<&Url>,
         error_url: Option<&Url>,
     ) -> AuthPage {
-        // at this point current user, linked_user, etc. should be consistent due to auth_session construction
+        log::debug!("Completing external link for user: {:#?}", external_user);
+        assert!(auth_session.user_session().is_some());
 
-        let user = auth_session.user_session.clone().unwrap();
+        let user = auth_session.user_session().clone().unwrap();
         match self
             .state
             .identity_service()
@@ -45,12 +46,14 @@ impl<'a> LinkUtils<'a> {
             external_user.provider,
             external_user.provider_id
         );
-        PageUtils::new(self.state).redirect(auth_session, None, target_url)
+        let response_session = auth_session.with_external_login(None);
+        assert!(response_session.user_session().is_some());
+        PageUtils::new(self.state).redirect(response_session, None, target_url)
     }
 
     pub async fn complete_external_login(
         &self,
-        mut auth_session: AuthSession,
+        auth_session: AuthSession,
         fingerprint: ClientFingerprint,
         site_info: &SiteInfo,
         external_user: &ExternalUserInfo,
@@ -58,8 +61,9 @@ impl<'a> LinkUtils<'a> {
         error_url: Option<&Url>,
         create_token: bool,
     ) -> AuthPage {
-        assert!(auth_session.user_session.is_none());
-        assert!(auth_session.token_cookie.is_none());
+        log::debug!("Completing external login for user: {:#?}", external_user);
+        assert!(auth_session.user_session().is_none());
+        assert!(auth_session.access().is_none());
 
         log::debug!("Checking if this is a login or registration...");
         log::debug!("{external_user:#?}");
@@ -129,21 +133,23 @@ impl<'a> LinkUtils<'a> {
             Err(err) => return PageUtils::new(self.state).internal_error(auth_session, err, error_url),
         };
 
-        auth_session.token_cookie = user_token.map(|user_token| TokenCookie {
-            user_id: user_token.user_id,
-            key: user_token.token,
-            expire_at: user_token.expire_at,
-            revoked_token: None,
-        });
-        auth_session.user_session = Some(CurrentUser {
-            user_id: user_session.0.info.user_id,
-            key: user_session.1,
-            session_start: user_session.0.info.created_at,
-            name: user_session.0.user.name,
-            roles: user_session.0.user.roles,
-            fingerprint: user_session.0.info.fingerprint,
-            version: user_session.0.user_version,
-        });
-        PageUtils::new(self.state).redirect(auth_session, None, target_url)
+        let response_session = auth_session
+            .with_external_login(None)
+            .with_access(user_token.map(|user_token| TokenCookie {
+                user_id: user_token.user_id,
+                key: user_token.token,
+                expire_at: user_token.expire_at,
+                revoked_token: None,
+            }))
+            .with_session(Some(CurrentUser {
+                user_id: user_session.0.info.user_id,
+                key: user_session.1,
+                session_start: user_session.0.info.created_at,
+                name: user_session.0.user.name,
+                roles: user_session.0.user.roles,
+                fingerprint: user_session.0.info.fingerprint,
+                version: user_session.0.user_version,
+            }));
+        PageUtils::new(self.state).redirect(response_session, None, target_url)
     }
 }
