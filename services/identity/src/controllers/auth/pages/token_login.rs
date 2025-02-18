@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthError, AuthPage, AuthSession, CaptchaUtils, PageUtils, TokenCookie},
+    controllers::auth::{AuthError, AuthPage, AuthSession, PageUtils, TokenCookie},
     repositories::identity::{Identity, IdentityError, TokenInfo, TokenKind},
     services::hash_email,
 };
@@ -11,7 +11,7 @@ use axum_extra::{
     TypedHeader,
 };
 use serde::Deserialize;
-use shine_core::web::{ClientFingerprint, ConfiguredProblem, CurrentUser, InputError, SiteInfo, ValidatedQuery};
+use shine_core::web::{ClientFingerprint, CurrentUser, ErrorResponse, InputError, SiteInfo, ValidatedQuery};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -85,9 +85,7 @@ async fn complete_verify_email(
         }
         Err(err) => {
             return Err(AuthenticationFailure {
-                error: AuthError::InternalServerError {
-                    error: format!("{err:#?}"),
-                },
+                error: err.into(),
                 auth_session,
             })
         }
@@ -145,9 +143,7 @@ async fn complete_change_email(
         }
         Err(err) => {
             return Err(AuthenticationFailure {
-                error: AuthError::InternalServerError {
-                    error: format!("{err:#?}"),
-                },
+                error: err.into(),
                 auth_session,
             })
         }
@@ -189,9 +185,7 @@ async fn authenticate_with_query_token(
             }
             Err(err) => {
                 return Err(AuthenticationFailure {
-                    error: AuthError::InternalServerError {
-                        error: format!("{err:#?}"),
-                    },
+                    error: err.into(),
                     auth_session,
                 })
             }
@@ -271,9 +265,7 @@ async fn authenticate_with_header_token(
         Ok(None) => {}
         Err(err) => {
             return Err(AuthenticationFailure {
-                error: AuthError::InternalServerError {
-                    error: format!("{err:#?}"),
-                },
+                error: err.into(),
                 auth_session,
             });
         }
@@ -296,9 +288,7 @@ async fn authenticate_with_header_token(
             }
             Err(err) => {
                 return Err(AuthenticationFailure {
-                    error: AuthError::InternalServerError {
-                        error: format!("{err:#?}"),
-                    },
+                    error: err.into(),
                     auth_session,
                 });
             }
@@ -381,9 +371,7 @@ async fn authenticate_with_cookie_token(
             }
             Err(err) => {
                 return Err(AuthenticationFailure {
-                    error: AuthError::InternalServerError {
-                        error: format!("{err:#?}"),
-                    },
+                    error: err.into(),
                     auth_session,
                 })
             }
@@ -483,9 +471,9 @@ async fn authenticate_with_registration(
         });
     }
 
-    if let Err(err) = CaptchaUtils::new(state).validate(query.captcha.as_deref()).await {
+    if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
         return Err(AuthenticationFailure {
-            error: err,
+            error: err.into(),
             auth_session,
         });
     };
@@ -503,9 +491,7 @@ async fn authenticate_with_registration(
         Ok(identity) => identity,
         Err(err) => {
             return Err(AuthenticationFailure {
-                error: AuthError::InternalServerError {
-                    error: format!("{err:#?}"),
-                },
+                error: err.into(),
                 auth_session,
             })
         }
@@ -556,7 +542,7 @@ async fn authenticate(
         Err(err) if matches!(err.reason(), TypedHeaderRejectionReason::Missing) => None,
         Err(_) => {
             return Err(AuthenticationFailure {
-                error: AuthError::InvalidAuthorizationHeader,
+                error: AuthError::InvalidHeader,
                 auth_session,
             });
         }
@@ -598,17 +584,15 @@ async fn authenticate(
 )]
 pub async fn token_login(
     State(state): State<AppState>,
-    query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
+    query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
     auth_header: Result<TypedHeader<Authorization<Bearer>>, TypedHeaderRejection>,
     auth_session: AuthSession,
     fingerprint: ClientFingerprint,
     site_info: SiteInfo,
-) -> Result<AuthPage, AuthPage> {
+) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => {
-            return Err(PageUtils::new(&state).error(auth_session, AuthError::InputError(error.problem), None))
-        }
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
     };
 
     // clear external login cookie, it shall be only for the authorize callback from the external provider
@@ -622,12 +606,11 @@ pub async fn token_login(
     } = match authenticate(&state, &query, auth_header, auth_session, &fingerprint).await {
         Ok(success) => success,
         Err(failure) => {
-            let url = if let AuthError::LogoutRequired = failure.error {
-                query.login_url.as_ref()
+            if let AuthError::LoginRequired = failure.error {
+                return PageUtils::new(&state).redirect(failure.auth_session, None, query.login_url.as_ref());
             } else {
-                query.error_url.as_ref()
+                return PageUtils::new(&state).error(failure.auth_session, failure.error, query.error_url.as_ref());
             };
-            return Err(PageUtils::new(&state).error(failure.auth_session, failure.error, url));
         }
     };
 
@@ -654,7 +637,7 @@ pub async fn token_login(
             .await
         {
             Ok(user_token) => user_token,
-            Err(err) => return Err(PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_ref())),
+            Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
         };
 
         // preserve the old token in case client does not acknowledge the new one
@@ -677,16 +660,16 @@ pub async fn token_login(
             Ok(Some(roles)) => roles,
             Ok(None) => {
                 log::warn!("User {} has been deleted during login", identity.id);
-                return Err(PageUtils::new(&state).internal_error(
+                return PageUtils::new(&state).error(
                     auth_session.with_access(None),
-                    IdentityError::UserDeleted,
+                    IdentityError::UserDeleted { id: identity.id },
                     query.error_url.as_ref(),
-                ));
+                );
             }
             Err(err) => {
                 log::error!("Failed to retrieve roles for user {}: {}", identity.id, err);
                 // It is safe to return the session, a retry will get the user back into to the normal flow.
-                return Err(PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_ref()));
+                return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
             }
         };
 
@@ -701,7 +684,7 @@ pub async fn token_login(
             Err(err) => {
                 log::error!("Failed to create session for user {}: {}", identity.id, err);
                 // It is safe to return the session, a retry will get the user back into to the normal flow.
-                return Err(PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_ref()));
+                return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
             }
         };
         auth_session.with_session(Some(CurrentUser {
@@ -716,5 +699,5 @@ pub async fn token_login(
     };
 
     log::info!("Token login completed for: {}", identity.id);
-    Ok(PageUtils::new(&state).redirect(auth_session, None, query.redirect_url.as_ref()))
+    PageUtils::new(&state).redirect(auth_session, None, query.redirect_url.as_ref())
 }

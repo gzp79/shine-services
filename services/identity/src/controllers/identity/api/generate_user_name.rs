@@ -1,7 +1,7 @@
 use crate::app_state::AppState;
 use axum::{extract::State, Extension, Json};
 use serde::Serialize;
-use shine_core::web::{Problem, ProblemConfig};
+use shine_core::web::{IntoProblemResponse, ProblemConfig, ProblemResponse};
 use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
@@ -24,12 +24,12 @@ pub struct GeneratedUserName {
 pub async fn generate_user_name(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
-) -> Result<Json<GeneratedUserName>, Problem> {
+) -> Result<Json<GeneratedUserName>, ProblemResponse> {
     let name = state
         .identity_service()
         .generate_user_name()
         .await
-        .map_err(|err| Problem::internal_error(&problem_config, "Failed to generate name", err))?;
+        .map_err(|err| err.into_response(&problem_config))?;
 
     Ok(Json(GeneratedUserName { name }))
 }

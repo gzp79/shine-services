@@ -1,4 +1,4 @@
-use crate::web::{CurrentUser, IntoProblem, Problem, ProblemConfig};
+use crate::web::{CurrentUser, Problem};
 use std::collections::HashSet;
 use thiserror::Error as ThisError;
 
@@ -22,9 +22,9 @@ pub enum PermissionError {
     MissingPermission(&'static str),
 }
 
-impl IntoProblem for PermissionError {
-    fn into_problem(self, _config: &ProblemConfig) -> Problem {
-        match self {
+impl From<PermissionError> for Problem {
+    fn from(value: PermissionError) -> Self {
+        match value {
             PermissionError::MissingPermission(perm) => {
                 Problem::forbidden().with_detail(format!("Missing [{:?}] permission", perm))
             }
@@ -58,8 +58,8 @@ impl PermissionSet {
         }
     }
 
-    pub fn check(&self, permission: &'static str, config: &ProblemConfig) -> Result<(), Problem> {
-        self.require(permission).map_err(|err| err.into_problem(config))
+    pub fn check(&self, permission: &'static str) -> Result<(), Problem> {
+        Ok(self.require(permission)?)
     }
 }
 

@@ -32,7 +32,7 @@ test.describe('Persistent token', () => {
         const error = await response.parse(ProblemSchema);
         expect(error).toEqual(
             expect.objectContaining({
-                type: 'validation_error',
+                type: 'input-validation',
                 status: 400,
                 extension: expect.objectContaining({
                     time_to_live: [expect.objectContaining({ code: 'range' })]
@@ -61,11 +61,15 @@ test.describe('Persistent token', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401');
+        expect(getPageRedirectUrl(text)).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=auth-token-expired&status=401'
+        );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
-                type: 'tokenExpired',
-                status: 401
+                type: 'auth-token-expired',
+                status: 401,
+                extension: null,
+                sensitive: 'expiredToken'
             })
         );
 
@@ -82,14 +86,15 @@ test.describe('Persistent token', () => {
         const response = await api.auth.loginWithTokenRequest(null, null, token.token, null, null, null).send();
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=authError&status=400');
+        expect(getPageRedirectUrl(text)).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=auth-token-expired&status=401'
+        );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
-                type: 'authError',
-                status: 400,
-                extension: expect.objectContaining({
-                    type: 'invalidToken'
-                })
+                type: 'auth-token-expired',
+                status: 401,
+                extension: null,
+                sensitive: 'invalidToken'
             })
         );
 
@@ -114,11 +119,15 @@ test.describe('Persistent token', () => {
             .send();
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401');
+        expect(getPageRedirectUrl(text)).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=auth-token-expired&status=401'
+        );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
-                type: 'tokenExpired',
-                status: 401
+                type: 'auth-token-expired',
+                status: 401,
+                extension: null,
+                sensitive: 'expiredToken'
             })
         );
 
@@ -163,6 +172,8 @@ test.describe('Persistent token', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401');
+        expect(getPageRedirectUrl(text)).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=auth-token-expired&status=401'
+        );
     });
 });

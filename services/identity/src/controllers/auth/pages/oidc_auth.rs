@@ -1,13 +1,15 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, LinkUtils, OIDCClient, PageUtils},
+    controllers::auth::{
+        AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, LinkUtils, OIDCClient, PageUtils,
+    },
     repositories::identity::ExternalUserInfo,
 };
 use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier};
 use openidconnect::{Nonce, TokenResponse};
 use serde::Deserialize;
-use shine_core::web::{ClientFingerprint, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery};
+use shine_core::web::{ClientFingerprint, ErrorResponse, InputError, SiteInfo, ValidatedQuery};
 use std::sync::Arc;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -37,10 +39,9 @@ pub async fn oidc_auth(
     auth_session: AuthSession,
     fingerprint: ClientFingerprint,
     site_info: SiteInfo,
-    query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
+    query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
 ) -> AuthPage {
     let ExternalLoginCookie {
-        key,
         pkce_code_verifier,
         csrf_state,
         nonce,
@@ -48,17 +49,18 @@ pub async fn oidc_auth(
         error_url,
         remember_me,
         linked_user,
+        ..
     } = match auth_session.external_login() {
         Some(external_login_cookie) => external_login_cookie.clone(),
-        None => return PageUtils::new(&state).error(auth_session, AuthError::MissingExternalLoginCookie, None),
+        None => {
+            return PageUtils::new(&state).error(auth_session, ExternalLoginError::MissingExternalLoginCookie, None)
+        }
     };
     let auth_session = auth_session.with_external_login(None);
 
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => {
-            return PageUtils::new(&state).error(auth_session, AuthError::InputError(error.problem), error_url.as_ref())
-        }
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, error_url.as_ref()),
     };
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
@@ -68,9 +70,7 @@ pub async fn oidc_auth(
         Err(err) => {
             return PageUtils::new(&state).error(
                 auth_session,
-                AuthError::OIDCDiscovery {
-                    error: format!("{err}"),
-                },
+                ExternalLoginError::OIDCDiscovery(format!("{err}")),
                 error_url.as_ref(),
             )
         }
@@ -78,13 +78,15 @@ pub async fn oidc_auth(
 
     let nonce = match nonce {
         Some(nonce) => nonce,
-        None => return PageUtils::new(&state).error(auth_session, AuthError::MissingNonce, error_url.as_ref()),
+        None => {
+            return PageUtils::new(&state).error(auth_session, ExternalLoginError::MissingNonce, error_url.as_ref())
+        }
     };
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
         log::debug!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
-        return PageUtils::new(&state).error(auth_session, AuthError::InvalidCSRF, error_url.as_ref());
+        return PageUtils::new(&state).error(auth_session, ExternalLoginError::InvalidCSRF, error_url.as_ref());
     }
 
     // Exchange the code with a token.
@@ -93,9 +95,7 @@ pub async fn oidc_auth(
         Err(err) => {
             return PageUtils::new(&state).error(
                 auth_session,
-                AuthError::TokenExchangeFailed {
-                    error: format!("{err:#?}"),
-                },
+                ExternalLoginError::TokenExchangeFailed(format!("{err:#?}")),
                 error_url.as_ref(),
             )
         }
@@ -110,9 +110,7 @@ pub async fn oidc_auth(
             log::warn!("Token exchange error: {err:#?}");
             return PageUtils::new(&state).error(
                 auth_session,
-                AuthError::TokenExchangeFailed {
-                    error: format!("{err:#?}"),
-                },
+                ExternalLoginError::TokenExchangeFailed(format!("{err:#?}")),
                 error_url.as_ref(),
             );
         }
@@ -131,9 +129,7 @@ pub async fn oidc_auth(
             log::error!("{err:?}");
             return PageUtils::new(&state).error(
                 auth_session,
-                AuthError::FailedExternalUserInfo {
-                    error: format!("{err:#?}"),
-                },
+                ExternalLoginError::FailedExternalUserInfo(format!("{err:#?}")),
                 error_url.as_ref(),
             );
         }

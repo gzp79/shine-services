@@ -1,8 +1,10 @@
-use crate::repositories::identity::{ExternalUserInfo, Identity, IdentityDb, IdentityError};
+use crate::{
+    repositories::identity::{ExternalUserInfo, Identity, IdentityDb, IdentityError},
+    services::IdentityService,
+};
+use shine_core::web::Problem;
 use thiserror::Error as ThisError;
 use uuid::Uuid;
-
-use super::IdentityService;
 
 #[derive(Debug, ThisError)]
 pub enum UserCreateError {
@@ -10,6 +12,16 @@ pub enum UserCreateError {
     RetryLimitReached,
     #[error(transparent)]
     IdentityError(#[from] IdentityError),
+}
+
+impl From<UserCreateError> for Problem {
+    fn from(err: UserCreateError) -> Self {
+        match err {
+            UserCreateError::IdentityError(err) => err.into(),
+
+            err => Problem::internal_error().with_detail(err.to_string()),
+        }
+    }
 }
 
 pub struct CreateUserService<'a, IDB>

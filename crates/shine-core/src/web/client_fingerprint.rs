@@ -1,9 +1,12 @@
-use crate::web::{ConfiguredProblem, IntoProblem, Problem, ProblemConfig};
+use crate::web::{Problem, ProblemConfig};
 use axum::{extract::FromRequestParts, http::request::Parts, Extension, RequestPartsExt};
 use axum_extra::{headers::UserAgent, TypedHeader};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
+use reqwest::StatusCode;
 use ring::digest::{self, Context};
 use thiserror::Error as ThisError;
+
+use super::ErrorResponse;
 
 #[derive(Debug, ThisError)]
 pub enum ClientFingerprintError {
@@ -11,10 +14,10 @@ pub enum ClientFingerprintError {
     MissingUserAgent,
 }
 
-impl IntoProblem for ClientFingerprintError {
-    fn into_problem(self, _config: &ProblemConfig) -> Problem {
-        match self {
-            ClientFingerprintError::MissingUserAgent => Problem::bad_request("missing_user_agent"),
+impl From<ClientFingerprintError> for Problem {
+    fn from(err: ClientFingerprintError) -> Self {
+        match err {
+            ClientFingerprintError::MissingUserAgent => Problem::new(StatusCode::BAD_REQUEST, "missing_user_agent"),
         }
     }
 }
@@ -57,7 +60,7 @@ impl<S> FromRequestParts<S> for ClientFingerprint
 where
     S: Send + Sync,
 {
-    type Rejection = ConfiguredProblem<ClientFingerprintError>;
+    type Rejection = ErrorResponse<ClientFingerprintError>;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let Extension(problem_config) = parts
@@ -74,7 +77,7 @@ where
         if agent.is_empty() {
             Ok(ClientFingerprint::unknown())
         } else {
-            ClientFingerprint::from_agent(agent).map_err(|err| problem_config.configure(err))
+            ClientFingerprint::from_agent(agent).map_err(|err| ErrorResponse::new(&problem_config, err))
         }
     }
 }

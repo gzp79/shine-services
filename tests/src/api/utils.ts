@@ -12,10 +12,14 @@ export function getPageRedirectUrl(page: string): string {
     return url;
 }
 
-export function getPageProblem(page: string): Problem {
+export function getPageProblem(page: string): Problem | null {
     const regexp = /<pre>([\s\S]*?)<\/pre>/;
     const match = regexp.exec(page) ?? [];
-    const json = decode(match[1] ?? '{}');
+    const part = match[1];
+    if (part === undefined) {
+        return null;
+    }
+    const json = decode(part);
     log(`Problem: ${json}`);
-    return ProblemSchema.parse(json);
+    return ProblemSchema.parse(JSON.parse(json));
 }

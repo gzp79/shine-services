@@ -1,11 +1,10 @@
-use crate::{app_state::AppState, repositories::identity::IdentityKind};
-use axum::{extract::State, Extension, Json};
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use shine_core::web::{CheckedCurrentUser, CurrentUser, Problem, ProblemConfig, ValidatedQuery};
-use url::Url;
-use utoipa::{IntoParams, ToSchema};
-use uuid::Uuid;
+use crate::app_state::AppState;
+use axum::{extract::State, Extension};
+use serde::Deserialize;
+use shine_core::web::{
+    CheckedCurrentUser, IntoProblemResponse, Problem, ProblemConfig, ProblemResponse, SiteInfo, ValidatedQuery,
+};
+use utoipa::IntoParams;
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
@@ -28,11 +27,23 @@ pub async fn validate_user_email(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
-) -> Result<(), Problem> {
-    // get email from identity
-    // send email:
-    //  with EmailVerify token bound to the same user
-    todo!()
+    site_info: SiteInfo,
+) -> Result<(), ProblemResponse> {
+    let ttl = state.settings().token.ttl_email_token;
+
+    let token = state
+        .token_service()
+        .create_email_token(user.user_id, &ttl, &site_info)
+        .await
+        .map_err(|err| err.into_response(&problem_config))?;
+
+    state
+        .mailer_service()
+        .send_confirmation_email(&token.email, &token.token)
+        .await
+        .map_err(|err| err.into_response(&problem_config))?;
+
+    Ok(())
 }
 
 /// Change email address.

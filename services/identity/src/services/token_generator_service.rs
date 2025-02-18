@@ -1,14 +1,12 @@
-use crate::repositories::{
-    identity::{IdentityDb, IdentityError, TokenKind},
-    mailer::{EmailSender, EmailSenderError},
+use crate::{
+    repositories::identity::{IdentityDb, IdentityError, TokenKind},
+    services::IdentityService,
 };
 use chrono::{DateTime, Duration, Utc};
 use ring::rand::{SecureRandom, SystemRandom};
-use shine_core::web::{ClientFingerprint, SiteInfo};
+use shine_core::web::{ClientFingerprint, Problem, SiteInfo};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
-
-use super::{IdentityService, MailerService};
 
 #[derive(Debug, ThisError)]
 pub enum TokenGeneratorError {
@@ -16,13 +14,21 @@ pub enum TokenGeneratorError {
     GeneratorError(String),
     #[error("Retry limit reached")]
     RetryLimitReached,
-    #[error("User has no email address")]
-    MissingEmailAddress,
 
     #[error(transparent)]
     IdentityError(#[from] IdentityError),
-    #[error(transparent)]
-    MailerError(#[from] EmailSenderError),
+}
+
+impl From<TokenGeneratorError> for Problem {
+    fn from(err: TokenGeneratorError) -> Self {
+        match err {
+            TokenGeneratorError::IdentityError(err) => err.into(),
+
+            err => Problem::internal_error()
+                .with_detail(err.to_string())
+                .with_sensitive_dbg(err),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -33,30 +39,31 @@ pub struct UserToken {
     pub expire_at: DateTime<Utc>,
 }
 
-pub struct TokenGenerator<'a, IDB, ES>
+#[derive(Clone, Debug)]
+pub struct EmailToken {
+    pub user_id: Uuid,
+    pub token: String,
+    pub token_hash: String,
+    pub expire_at: DateTime<Utc>,
+    pub email: String,
+}
+
+pub struct TokenGenerator<'a, IDB>
 where
     IDB: IdentityDb,
-    ES: EmailSender,
 {
     random: &'a SystemRandom,
     identity_service: &'a IdentityService<IDB>,
-    mailer_service: &'a MailerService<ES>,
 }
 
-impl<'a, IDB, ES> TokenGenerator<'a, IDB, ES>
+impl<'a, IDB> TokenGenerator<'a, IDB>
 where
     IDB: IdentityDb,
-    ES: EmailSender,
 {
-    pub fn new(
-        random: &'a SystemRandom,
-        identity_service: &'a IdentityService<IDB>,
-        mailer_service: &'a MailerService<ES>,
-    ) -> Self {
+    pub fn new(random: &'a SystemRandom, identity_service: &'a IdentityService<IDB>) -> Self {
         Self {
             random,
             identity_service,
-            mailer_service,
         }
     }
 
@@ -121,24 +128,26 @@ where
         user_id: Uuid,
         time_to_live: &Duration,
         site_info: &SiteInfo,
-    ) -> Result<(), TokenGeneratorError> {
+    ) -> Result<EmailToken, TokenGeneratorError> {
         let kind = TokenKind::EmailVerify;
         let email = self
             .identity_service
             .find_by_id(user_id)
-            .await
-            .map_err(TokenGeneratorError::IdentityError)?
-            .ok_or(IdentityError::UserDeleted)?
+            .await?
+            .ok_or(IdentityError::UserDeleted { id: user_id })?
             .email
-            .ok_or(TokenGeneratorError::MissingEmailAddress)?;
+            .ok_or(IdentityError::MissingEmail)?;
         let token = self
             .create_user_token(user_id, kind, time_to_live, None, Some(&email), site_info)
             .await?;
-        self.mailer_service
-            .send_confirmation_email(&email, &token.token)
-            .await
-            .map_err(TokenGeneratorError::MailerError)?;
-        Ok(())
+
+        Ok(EmailToken {
+            user_id,
+            token: token.token,
+            token_hash: token.token_hash,
+            expire_at: token.expire_at,
+            email,
+        })
     }
 }
 

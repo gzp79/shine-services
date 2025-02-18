@@ -14,15 +14,17 @@ test.describe('Login with access cookie for new user', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual('https://local-scytta.com:4443/error?type=invalidInput&status=400');
+        expect(getPageRedirectUrl(text)).toEqual(
+            'https://local-scytta.com:4443/error?type=auth-input-error&status=400'
+        );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
-                type: 'invalidInput',
+                type: 'auth-input-error',
                 status: 400,
-                extension: expect.objectContaining({
-                    type: 'invalidInput',
-                    queryFormat:
-                        'Failed to deserialize query string: rememberMe: provided string was not `true` or `false`'
+                extension: null,
+                sensitive: expect.objectContaining({
+                    type: 'input-query-format',
+                    detail: 'Failed to deserialize query string: rememberMe: provided string was not `true` or `false`'
                 })
             })
         );
@@ -38,15 +40,10 @@ test.describe('Login with access cookie for new user', () => {
     }) => {
         const response = await api.auth.loginWithTokenRequest(null, null, null, null, null, undefined).send();
         expect(response).toHaveStatus(200);
+
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.loginUrl);
-        expect(getPageProblem(text)).toEqual(
-            expect.objectContaining({
-                type: 'TBD',
-                status: 400,
-                extension: expect.objectContaining({})
-            })
-        );
+        expect(getPageProblem(text)).toBeNull();
 
         const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
@@ -59,7 +56,10 @@ test.describe('Login with access cookie for new user', () => {
     }) => {
         const response = await api.auth.loginWithTokenRequest(null, null, null, null, false, undefined).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.loginUrl);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.loginUrl);
+        expect(getPageProblem(text)).toBeNull();
 
         const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
@@ -72,10 +72,19 @@ test.describe('Login with access cookie for new user', () => {
     }) => {
         const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, undefined).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=authError&status=400'
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=auth-error&status=400');
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-error',
+                status: 400,
+                extension: null,
+                sensitive: expect.objectContaining({
+                    type: 'captcha-not-provided'
+                })
+            })
         );
-        expect(await response.text()).toContain('&quot;Captcha&quot;:&quot;missing&quot;');
 
         const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
@@ -88,10 +97,19 @@ test.describe('Login with access cookie for new user', () => {
     }) => {
         const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, 'invalid').send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=authError&status=400'
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=auth-error&status=400');
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-error',
+                status: 400,
+                extension: null,
+                sensitive: expect.objectContaining({
+                    type: 'captcha-failed-validation'
+                })
+            })
         );
-        expect(await response.text()).toContain('&quot;Captcha&quot;:&quot;invalid-input-response&quot;');
 
         const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();
@@ -104,7 +122,9 @@ test.describe('Login with access cookie for new user', () => {
     }) => {
         const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, null).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
 
         const cookies = response.cookies();
         expect(cookies.tid).toBeValidTID();
@@ -127,15 +147,22 @@ test.describe('Login with access cookie for returning user', () => {
         userInfo = partialUserInfo;
     });
 
-    test('Login with (token: NULL, session: VALID, rememberMe: true) shall fail with logout required', async ({
-        api
-    }) => {
+    test('Login with (token: NULL, session: VALID, rememberMe: true) shall fail', async ({ api }) => {
         const response = await api.auth.loginWithTokenRequest(null, testUser.sid, null, null, true, null).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=auth-logout-required&status=400'
         );
-        expect(await response.text()).toContain('&quot;LogoutRequired&quot;');
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-logout-required',
+                status: 400,
+                extension: null,
+                sensitive: null
+            })
+        );
 
         const newCookies = response.cookies();
         expect(newCookies.tid).toBeClearCookie();
@@ -145,17 +172,24 @@ test.describe('Login with access cookie for returning user', () => {
         expect(await api.user.getUserInfo(testUser.sid)).toEqual(expect.objectContaining(userInfo));
     });
 
-    test('Login with (token: VALID, session: VALID, rememberMe: true) shall fail with logout required', async ({
-        api
-    }) => {
+    test('Login with (token: VALID, session: VALID, rememberMe: true) shall fail', async ({ api }) => {
         const response = await api.auth
             .loginWithTokenRequest(testUser.tid!, testUser.sid, null, null, true, undefined)
             .send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=logoutRequired&status=400'
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(
+            api.auth.defaultRedirects.errorUrl + '?type=auth-logout-required&status=400'
         );
-        expect(await response.text()).toContain('&quot;LogoutRequired&quot;');
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-logout-required',
+                status: 400,
+                extension: null,
+                sensitive: null
+            })
+        );
 
         const newCookies = response.cookies();
         expect(newCookies.tid).toBeValidTID();
@@ -166,12 +200,12 @@ test.describe('Login with access cookie for returning user', () => {
         expect(await api.user.getUserInfo(testUser.sid)).toEqual(expect.objectContaining(userInfo));
     });
 
-    test('Login with (token: VALID, session: NULL, rememberMe: NULL) shall succeed and login the user', async ({
-        api
-    }) => {
+    test('Login with (token: VALID, session: NULL, rememberMe: NULL) shall succeed', async ({ api }) => {
         const response = await api.auth.loginWithTokenRequest(testUser.tid!, null, null, null, null, undefined).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
 
         const newCookies = response.cookies();
         expect(newCookies.tid).toBeValidTID();
@@ -182,12 +216,12 @@ test.describe('Login with access cookie for returning user', () => {
         expect(await api.user.getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
     });
 
-    test('Login with (token: VALID, session: NULL, rememberMe: false) shall succeed and login the user', async ({
-        api
-    }) => {
+    test('Login with (token: VALID, session: NULL, rememberMe: false) shall succeed', async ({ api }) => {
         const response = await api.auth.loginWithTokenRequest(testUser.tid!, null, null, null, false, undefined).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
 
         const newCookies = response.cookies();
         expect(newCookies.tid).toBeValidTID();
@@ -203,7 +237,9 @@ test.describe('Login with access cookie for returning user', () => {
     }) => {
         const response = await api.auth.loginWithTokenRequest(testUser.tid!, null, null, null, true, undefined).send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
 
         const newCookies = response.cookies();
         expect(newCookies.tid).toBeValidTID();
@@ -257,7 +293,10 @@ test.describe('Login edge cases', () => {
             .loginWithTokenRequest(userCookie.tid!, null, tokenQuery.token, tokenHeader.token, false, null)
             .send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
+
         const cookies = response.cookies();
         const userLoggedIn = await api.user.getUserInfo(cookies.sid.value);
         expect(userLoggedIn.userId).not.toEqual(userCookie.userId);
@@ -274,7 +313,10 @@ test.describe('Login edge cases', () => {
             .loginWithTokenRequest(userCookie.tid!, null, null, tokenHeader.token, false, null)
             .send();
         expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
+
         const cookies = response.cookies();
         const userLoggedIn = await api.user.getUserInfo(cookies.sid.value);
         expect(userLoggedIn.userId).not.toEqual(userCookie.userId);

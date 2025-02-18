@@ -5,8 +5,6 @@ mod auth_page;
 pub use self::auth_page::*;
 mod page_utils;
 pub use self::page_utils::*;
-mod captcha_utils;
-pub use self::captcha_utils::*;
 mod link_utils;
 pub use self::link_utils::*;
 mod oauth2_client;

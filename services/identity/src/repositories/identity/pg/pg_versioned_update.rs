@@ -85,7 +85,7 @@ impl<'a> PgVersionedUpdate<'a> {
             != 1
         {
             self.transaction.rollback().await.map_err(DBError::from)?;
-            Err(IdentityError::UpdateConflict)
+            Err(IdentityError::UpdateConflict { id: self.user_id })
         } else {
             self.transaction.commit().await.map_err(DBError::from)?;
             Ok(())

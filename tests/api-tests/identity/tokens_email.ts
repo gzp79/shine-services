@@ -1,21 +1,24 @@
 import { expect, test } from '$fixtures/setup';
+import { ProblemSchema } from '$lib/api/api';
 import { TestUser } from '$lib/api/test_user';
-import { getPageRedirectUrl } from '$lib/api/utils';
+import { TokenKind } from '$lib/api/token_api';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
+import { randomUUID } from 'crypto';
+import { ParsedMail } from 'mailparser';
 
-test.describe('Email confirmation token', () => {
+test.describe('Email tokens', () => {
     let mockAuth: OAuth2MockServer = undefined!;
     let mockEmail: MockSmtp = undefined!;
     let user: TestUser = undefined!;
 
-    /*const startMock = async (check: (mail: ParsedMail) => void): Promise<MockSmtp> => {
+    const startMockEmail = async (check: (mail: ParsedMail) => void): Promise<MockSmtp> => {
         if (!mockEmail) {
             mockEmail = new MockSmtp();
             await mockEmail.start(check);
         }
         return mockEmail as MockSmtp;
-    };*/
+    };
 
     test.beforeEach(async ({ api }) => {
         mockAuth = new OAuth2MockServer();
@@ -31,88 +34,54 @@ test.describe('Email confirmation token', () => {
         user = undefined!;
     });
 
-    test('A failed login with a email token shall clear the current user', async ({ api }) => {
-        const response = await api.auth.loginWithTokenRequest(null, null, null, 'invalid', false, null).send();
-        expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
-        );
+    for (const tokenKind of ['emailVerify', 'emailChange']) {
+        test(`Creating ${tokenKind} with api shall be rejected`, async ({ api }) => {
+            const user = await api.testUsers.createGuest();
 
-        const cookies = response.cookies();
-        expect(cookies.tid).toBeClearCookie();
-        expect(cookies.sid).toBeClearCookie();
-        expect(cookies.eid).toBeClearCookie();
+            const response = await api.token.createTokenRequest(user.sid, tokenKind as TokenKind, 20, false).send();
+            expect(response).toHaveStatus(400);
+
+            const error = await response.parse(ProblemSchema);
+            expect(error).toEqual(
+                expect.objectContaining({
+                    type: 'body_format_error',
+                    status: 400,
+                    detail: expect.stringContaining(`kind: unknown variant \`${tokenKind}\``)
+                })
+            );
+        });
+    }
+
+    test(`Requesting email confirmation without session shall fail`, async ({ api }) => {
+        const response = await api.user.confirmEmailRequest(user.sid).send();
+        expect(response).toHaveStatus(401);
     });
 
-    test('A successful login with a persistent token shall change the current user', async ({ api }) => {
-        const token = await api.token.createPersistentToken(user.sid, 120, false);
+    test(`Requesting email confirmation without email address shall fail`, async ({ api }) => {
+        const smtp = await startMockEmail((mail) => {
+            expect(true, 'No email shall be sent').toBe(false);
+        });
 
-        const response = await api.auth.loginWithTokenRequest(null, null, null, token.token, false, null).send();
-        expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(api.auth.defaultRedirects.redirectUrl);
-        const cookies = response.cookies();
-        expect(cookies.tid).toBeClearCookie();
-        expect(cookies.sid).toBeValidSID();
-        expect(cookies.eid).toBeClearCookie();
+        const user = await api.testUsers.createGuest();
+        await api.user.confirmEmailRequest(user.sid);
     });
 
-    test('The persistent token with client binding shall respect client fingerprint and revoke token on mismatch', async ({
-        api
-    }) => {
-        const token = await api.token.createPersistentToken(user.sid, 120, true);
+    test(`Requesting email with email address shall succeed`, async ({ api }) => {
+        const email = randomUUID() + '@example.com';
+        const user = await api.testUsers.createLinked(mockAuth, { email });
 
-        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
-        expect(tokens).toEqual([token.tokenHash]);
-
-        const response = await api.auth
-            .loginWithTokenRequest(null, null, null, token.token, false, null)
-            .withHeaders({ 'user-agent': 'agent2' })
-            .send();
-        expect(getPageRedirectUrl(await response.text())).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=authError&status=400'
-        );
-
-        // token is revoked
-        expect(await api.token.getTokens(user.sid)).toBeEmptyValue();
+        await startMockEmail((mail) => {
+            expect(mail).toHaveSingleTo(email);
+            //expect(mail).ToHaveFrom()
+        });
+        await api.user.confirmEmail(user.sid);
     });
 
-    test('The persistent token should be available for use at all times.', async ({ api }) => {
-        const now = new Date().getTime();
-        const token = await api.token.createPersistentToken(user.sid, 120, false);
-        expect(token.expireAt).toBeAfter(new Date(now + 120 * 1000));
-        expect(token.expireAt).toBeBefore(new Date(now + 130 * 1000));
+    test(`Requesting email with 3rd party error shall fail`, async ({ api }) => {
+        const email = randomUUID() + '@example.com';
+        const user = await api.testUsers.createLinked(mockAuth, { email });
+        const response = await api.user.confirmEmailRequest(user.sid).send();
 
-        for (let i = 0; i < 3; i++) {
-            const response1 = await api.auth.loginWithTokenRequest(null, null, null, token.token, false, null).send();
-            expect(response1).toHaveStatus(200);
-            const sid1 = response1.cookies().sid.value;
-            const user1 = await api.user.getUserInfo(sid1);
-            expect(user1.userId, 'It shall be the same use').toEqual(user.userId);
-
-            const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
-            expect(tokens).toEqual([token.tokenHash]);
-        }
-    });
-
-    test('The persistent token revoke shall work', async ({ api }) => {
-        const now = new Date().getTime();
-        const token = await api.token.createPersistentToken(user.sid, 120, false);
-        expect(token.expireAt).toBeAfter(new Date(now + 120 * 1000));
-        expect(token.expireAt).toBeBefore(new Date(now + 130 * 1000));
-
-        const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
-        expect(tokens).toEqual([token.tokenHash]);
-
-        let response = await api.token.revokeTokenRequest(user.sid, token.tokenHash).send();
-        expect(response).toHaveStatus(200);
-
-        const tokens1 = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
-        expect(tokens1, 'Token shall be removed').toEqual([]);
-
-        response = await api.auth.loginWithTokenRequest(null, null, null, token.token, false, null).send();
-        expect(response).toHaveStatus(200);
-        expect(getPageRedirectUrl(await response.text())).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=tokenExpired&status=401'
-        );
+        expect(response).toHaveStatus(500);
     });
 });

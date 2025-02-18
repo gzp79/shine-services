@@ -193,9 +193,7 @@ async fn create_web_app<A: WebApplication>(
         .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
         .on_response(DefaultOnResponse::new().level(Level::INFO));
     let problem_detail_layer = {
-        let problem_config = ProblemConfig {
-            include_internal: config.service.full_problem_response,
-        };
+        let problem_config = ProblemConfig::new(config.service.full_problem_response);
         problem_config.into_layer()
     };
     let telemetry_layer = telemetry_service.create_layer();

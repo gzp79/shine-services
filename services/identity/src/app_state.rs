@@ -2,10 +2,7 @@ use crate::{
     app_config::{AppConfig, IdEncoderConfig, MailerConfig},
     repositories::{
         identity::{pg::PgIdentityDb, IdentityDb},
-        mailer::{
-            smtp::{self, SmtpEmailSender},
-            EmailSender,
-        },
+        mailer::{smtp::SmtpEmailSender, EmailSender},
         session::{redis::RedisSessionDb, SessionDb},
         CaptchaValidator, DBPool,
     },
@@ -33,7 +30,7 @@ struct Inner {
     captcha_validator: CaptchaValidator,
     identity_service: IdentityService<PgIdentityDb>,
     session_service: SessionService<RedisSessionDb>,
-    mailer_service: MailerService<SmtpEmailSender>,
+    email_sender: SmtpEmailSender,
 }
 
 #[derive(Clone)]
@@ -53,6 +50,7 @@ impl AppState {
                 ttl_access_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_access_token)?),
                 ttl_single_access: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_single_access)?),
                 ttl_api_key: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_api_key)?),
+                ttl_email_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_email_token)?),
             },
             external_providers: config_auth.collect_providers(),
             page_redirect_time: config_auth.page_redirect_time,
@@ -91,7 +89,7 @@ impl AppState {
             SessionService::new(session_db)
         };
 
-        let mailer_service = {
+        let email_sender = {
             match &config.feature.mailer {
                 MailerConfig::Smtp {
                     email_domain,
@@ -99,17 +97,14 @@ impl AppState {
                     use_tls,
                     smtp_username,
                     smtp_password,
-                } => {
-                    let email_sender = smtp::SmtpEmailSender::new(
-                        email_domain,
-                        smtp_url,
-                        use_tls.unwrap_or(true),
-                        smtp_username,
-                        smtp_password,
-                    )
-                    .map_err(|e| anyhow!(e))?;
-                    MailerService::new(email_sender)
-                }
+                } => SmtpEmailSender::new(
+                    email_domain,
+                    smtp_url,
+                    use_tls.unwrap_or(true),
+                    smtp_username,
+                    smtp_password,
+                )
+                .map_err(|e| anyhow!(e))?,
             }
         };
 
@@ -122,7 +117,7 @@ impl AppState {
             captcha_validator,
             identity_service,
             session_service,
-            mailer_service,
+            email_sender,
         })))
     }
 
@@ -162,12 +157,12 @@ impl AppState {
         SessionUserSyncService::new(self.identity_service(), self.session_service())
     }
 
-    pub fn token_service(&self) -> TokenGenerator<impl IdentityDb, impl EmailSender> {
-        TokenGenerator::new(&self.0.random, self.identity_service(), self.mailer_service())
+    pub fn token_service(&self) -> TokenGenerator<impl IdentityDb> {
+        TokenGenerator::new(&self.0.random, self.identity_service())
     }
 
-    pub fn mailer_service(&self) -> &MailerService<impl EmailSender> {
-        &self.0.mailer_service
+    pub fn mailer_service(&self) -> MailerService<impl EmailSender> {
+        MailerService::new(&self.0.email_sender, &self.0.tera)
     }
 
     pub fn session_utils(&self) -> SessionUtils<'_> {

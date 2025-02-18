@@ -9,26 +9,15 @@ use serde_json::Value as JsonValue;
 use std::fmt;
 use url::Url;
 
-#[derive(Clone)]
-pub struct ProblemConfig {
-    pub include_internal: bool,
+pub trait ProblemType {
+    const TYPE: &'static str;
 }
 
-impl ProblemConfig {
-    pub fn new(include_internal: bool) -> Self {
-        Self { include_internal }
-    }
-
-    pub fn into_layer(self) -> Extension<Self> {
-        Extension(self)
-    }
-
-    pub fn configure<P: IntoProblem>(&self, problem: P) -> ConfiguredProblem<P> {
-        ConfiguredProblem {
-            config: self.clone(),
-            problem,
-        }
-    }
+pub mod problems {
+    pub const INPUT_PATH: &str = "input-path-format";
+    pub const INPUT_QUERY: &str = "input-query-format";
+    pub const INPUT_BODY: &str = "input-body-format";
+    pub const INPUT_VALIDATION: &str = "input-validation";
 }
 
 /// Implementation of a Problem Details response for HTTP APIs as of
@@ -43,8 +32,12 @@ pub struct Problem {
     pub instance: Option<Url>,
     #[serde(rename = "detail")]
     pub detail: String,
+
     #[serde(rename = "extension")]
     pub extension: JsonValue,
+    // This property is returned only if service configuration allows it
+    #[serde(rename = "sensitive")]
+    pub sensitive: JsonValue,
 }
 
 impl Problem {
@@ -55,11 +48,8 @@ impl Problem {
             instance: None,
             detail: String::new(),
             extension: JsonValue::Null,
+            sensitive: JsonValue::Null,
         }
-    }
-
-    pub fn bad_request(ty: &'static str) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, ty)
     }
 
     pub fn not_found() -> Self {
@@ -70,21 +60,32 @@ impl Problem {
         Self::new(StatusCode::UNAUTHORIZED, "unauthorized")
     }
 
+    pub fn unauthorized_ty(ty: &'static str) -> Self {
+        Self::new(StatusCode::UNAUTHORIZED, ty)
+    }
+
     pub fn forbidden() -> Self {
         Self::new(StatusCode::FORBIDDEN, "forbidden")
     }
 
-    pub fn internal_error<M, F>(config: &ProblemConfig, minimal: M, full: F) -> Self
-    where
-        M: fmt::Display,
-        F: fmt::Debug,
-    {
-        let problem = Self::new(StatusCode::INTERNAL_SERVER_ERROR, "server-error");
-        if config.include_internal {
-            problem.with_detail(format!("{}: {:#?}", minimal, full))
-        } else {
-            problem.with_detail(minimal)
-        }
+    pub fn internal_error() -> Self {
+        Problem::new(StatusCode::INTERNAL_SERVER_ERROR, "server-error")
+    }
+
+    pub fn internal_error_ty(ty: &'static str) -> Self {
+        Problem::new(StatusCode::INTERNAL_SERVER_ERROR, ty)
+    }
+
+    pub fn bad_request(ty: &'static str) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, ty)
+    }
+
+    pub fn conflict(ty: &'static str) -> Self {
+        Self::new(StatusCode::CONFLICT, ty)
+    }
+
+    pub fn precondition_failed(ty: &'static str) -> Self {
+        Self::new(StatusCode::PRECONDITION_FAILED, ty)
     }
 
     pub fn with_detail<S: ToString>(self, detail: S) -> Self {
@@ -109,44 +110,128 @@ impl Problem {
         }
     }
 
-    pub fn with_opt_extension<S: Serialize>(self, extension: Option<S>) -> Self {
-        if let Some(extension) = extension {
-            self.with_extension(extension)
+    pub fn with_extension_dbg<S>(self, extension: S) -> Self
+    where
+        S: fmt::Debug,
+    {
+        self.with_extension(format!("{:#?}", extension))
+    }
+
+    pub fn with_sensitive<S>(self, extension: S) -> Self
+    where
+        S: Serialize,
+    {
+        Self {
+            sensitive: serde_json::to_value(extension).unwrap(),
+            ..self
+        }
+    }
+
+    pub fn with_sensitive_dbg<S>(self, extension: S) -> Self
+    where
+        S: fmt::Debug,
+    {
+        self.with_sensitive(format!("{:#?}", extension))
+    }
+}
+
+#[derive(Clone)]
+pub struct ProblemConfig {
+    include_internal: bool,
+}
+
+impl ProblemConfig {
+    pub fn new(include_internal: bool) -> Self {
+        Self { include_internal }
+    }
+
+    pub fn into_layer(self) -> Extension<Self> {
+        Extension(self)
+    }
+
+    pub fn transform<P>(&self, problem: P) -> Problem
+    where
+        P: Into<Problem>,
+    {
+        let problem = problem.into();
+        if !self.include_internal {
+            Problem {
+                sensitive: Default::default(),
+                ..problem
+            }
         } else {
-            self
+            problem
         }
     }
 }
 
-impl IntoResponse for Problem {
-    fn into_response(self) -> Response {
-        let mut response = (self.status, Json(self)).into_response();
-        response
-            .headers_mut()
-            .insert("content-type", "application/problem+json".parse().unwrap());
-        response
+pub trait IntoProblemResponse {
+    fn into_response(self, config: &ProblemConfig) -> ProblemResponse;
+}
+
+impl<T> IntoProblemResponse for T
+where
+    T: Into<Problem>,
+{
+    fn into_response(self, config: &ProblemConfig) -> ProblemResponse {
+        ProblemResponse::new(config, self)
     }
 }
 
-pub trait IntoProblem {
-    fn into_problem(self, config: &ProblemConfig) -> Problem;
-}
-
-impl IntoProblem for Problem {
-    fn into_problem(self, _config: &ProblemConfig) -> Problem {
-        self
-    }
-}
-
-/// A problem that is already configured with a ProblemConfig and can be converted into a response.
-pub struct ConfiguredProblem<P: IntoProblem> {
+/// Problem response
+pub struct ProblemResponse {
     pub config: ProblemConfig,
-    pub problem: P,
+    pub problem: Problem,
 }
 
-impl<P: IntoProblem> IntoResponse for ConfiguredProblem<P> {
+impl ProblemResponse {
+    pub fn new<P>(config: &ProblemConfig, problem: P) -> Self
+    where
+        P: Into<Problem>,
+    {
+        Self {
+            config: config.clone(),
+            problem: problem.into(),
+        }
+    }
+}
+
+impl IntoResponse for ProblemResponse {
     fn into_response(self) -> Response {
-        let ConfiguredProblem { problem, config } = self;
-        problem.into_problem(&config).into_response()
+        let ProblemResponse { problem, config } = self;
+        log::info!("problem response: {:#?}", problem);
+        let problem = config.transform(problem);
+        (problem.status, Json(problem)).into_response()
+    }
+}
+
+/// Problem response that preserves the original problem type.
+pub struct ErrorResponse<E>
+where
+    E: Into<Problem>,
+{
+    pub config: ProblemConfig,
+    pub problem: E,
+}
+
+impl<E> ErrorResponse<E>
+where
+    E: Into<Problem>,
+{
+    pub fn new(config: &ProblemConfig, problem: E) -> Self {
+        Self {
+            config: config.clone(),
+            problem,
+        }
+    }
+}
+
+impl<E> IntoResponse for ErrorResponse<E>
+where
+    E: Into<Problem>,
+{
+    fn into_response(self) -> Response {
+        let ErrorResponse { config, problem } = self;
+        ProblemResponse::new(&config, problem).into_response()
     }
 }

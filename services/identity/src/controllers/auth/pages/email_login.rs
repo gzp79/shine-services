@@ -1,10 +1,12 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthError, AuthSession, CaptchaUtils},
+    controllers::auth::{AuthError, AuthSession},
 };
 use axum::{extract::State, Extension};
 use serde::Deserialize;
-use shine_core::web::{ClientFingerprint, IntoProblem, Problem, ProblemConfig, SiteInfo, ValidatedQuery};
+use shine_core::web::{
+    ClientFingerprint, IntoProblemResponse, Problem, ProblemConfig, ProblemResponse, SiteInfo, ValidatedQuery,
+};
 use utoipa::IntoParams;
 use validator::Validate;
 
@@ -37,21 +39,22 @@ pub async fn email_login(
     auth_session: AuthSession,
     fingerprint: ClientFingerprint,
     site_info: SiteInfo,
-) -> Result<(), Problem> {
-    CaptchaUtils::new(&state)
+) -> Result<(), ProblemResponse> {
+    state
+        .captcha_validator()
         .validate(Some(&query.captcha))
         .await
-        .map_err(|err| Problem::internal_error(&problem_config, "Failed to send email", err))?;
+        .map_err(|err| err.into_response(&problem_config))?;
 
     if auth_session.user_session().is_some() {
-        return Err(AuthError::LogoutRequired.into_problem(&problem_config));
+        return Err(AuthError::LogoutRequired.into_response(&problem_config));
     }
 
     state
         .mailer_service()
         .send_confirmation_email(&query.email, "token")
         .await
-        .map_err(|err| Problem::internal_error(&problem_config, "Failed to send email", err))?;
+        .map_err(|err| err.into_response(&problem_config))?;
     // create a user with an unconfirmed email address
     // send emailVerification (?token=[token]&email_hash=[email_hash]) to the provided email
     Ok(())

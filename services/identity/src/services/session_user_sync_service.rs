@@ -2,7 +2,7 @@ use crate::repositories::{
     identity::{Identity, IdentityDb, IdentityError},
     session::{SessionDb, SessionError},
 };
-use shine_core::web::{IntoProblem, Problem, ProblemConfig};
+use shine_core::web::Problem;
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 
@@ -21,16 +21,17 @@ pub enum SessionUserSyncError {
     SessionError(#[from] SessionError),
 }
 
-impl IntoProblem for SessionUserSyncError {
-    fn into_problem(self, config: &ProblemConfig) -> Problem {
-        match self {
+impl From<SessionUserSyncError> for Problem {
+    fn from(value: SessionUserSyncError) -> Self {
+        match value {
             SessionUserSyncError::UserNotFound(user_id) => {
                 Problem::not_found().with_instance_str(format!("{{identity_api}}/identities/{}", user_id))
             }
             SessionUserSyncError::RolesNotFound(user_id) => {
                 Problem::not_found().with_instance_str(format!("{{identity_api}}/identities/{}", user_id))
             }
-            err => Problem::internal_error(config, "Failed to synchronize session user", err),
+            SessionUserSyncError::IdentityError(err) => err.into(),
+            SessionUserSyncError::SessionError(err) => err.into(),
         }
     }
 }

@@ -37,7 +37,7 @@ impl<'a> LinkUtils<'a> {
             Err(IdentityError::LinkProviderConflict) => {
                 return PageUtils::new(self.state).error(auth_session, AuthError::ProviderAlreadyUsed, error_url)
             }
-            Err(err) => return PageUtils::new(self.state).internal_error(auth_session, err, error_url),
+            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
         };
 
         log::debug!(
@@ -86,9 +86,9 @@ impl<'a> LinkUtils<'a> {
                 Err(UserCreateError::IdentityError(IdentityError::LinkEmailConflict)) => {
                     return PageUtils::new(self.state).error(auth_session, AuthError::EmailAlreadyUsed, error_url)
                 }
-                Err(err) => return PageUtils::new(self.state).internal_error(auth_session, err, error_url),
+                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
             },
-            Err(err) => return PageUtils::new(self.state).internal_error(auth_session, err, error_url),
+            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
         };
 
         // create a new remember me token
@@ -107,7 +107,7 @@ impl<'a> LinkUtils<'a> {
                 .await
             {
                 Ok(token_cookie) => Some(token_cookie),
-                Err(err) => return PageUtils::new(self.state).internal_error(auth_session, err, error_url),
+                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
             }
         } else {
             None
@@ -117,9 +117,13 @@ impl<'a> LinkUtils<'a> {
         let roles = match self.state.identity_service().get_roles(identity.id).await {
             Ok(Some(roles)) => roles,
             Ok(None) => {
-                return PageUtils::new(self.state).internal_error(auth_session, IdentityError::UserDeleted, error_url)
+                return PageUtils::new(self.state).error(
+                    auth_session,
+                    IdentityError::UserDeleted { id: identity.id }, //FIXME
+                    error_url,
+                );
             }
-            Err(err) => return PageUtils::new(self.state).internal_error(auth_session, err, error_url),
+            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
         };
 
         log::debug!("Identity created: {identity:#?}");
@@ -130,7 +134,7 @@ impl<'a> LinkUtils<'a> {
             .await
         {
             Ok(user) => user,
-            Err(err) => return PageUtils::new(self.state).internal_error(auth_session, err, error_url),
+            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
         };
 
         let response_session = auth_session

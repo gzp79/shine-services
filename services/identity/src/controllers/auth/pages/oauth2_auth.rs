@@ -1,11 +1,13 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, LinkUtils, OAuth2Client, PageUtils},
+    controllers::auth::{
+        AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, LinkUtils, OAuth2Client, PageUtils,
+    },
 };
 use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
-use shine_core::web::{ClientFingerprint, ConfiguredProblem, InputError, SiteInfo, ValidatedQuery};
+use shine_core::web::{ClientFingerprint, ErrorResponse, InputError, SiteInfo, ValidatedQuery};
 use std::sync::Arc;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -35,7 +37,7 @@ pub async fn oauth2_auth(
     auth_session: AuthSession,
     fingerprint: ClientFingerprint,
     site_info: SiteInfo,
-    query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
+    query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
 ) -> AuthPage {
     let ExternalLoginCookie {
         pkce_code_verifier,
@@ -47,15 +49,15 @@ pub async fn oauth2_auth(
         ..
     } = match auth_session.external_login() {
         Some(external_login) => external_login.clone(),
-        None => return PageUtils::new(&state).error(auth_session, AuthError::MissingExternalLoginCookie, None),
+        None => {
+            return PageUtils::new(&state).error(auth_session, ExternalLoginError::MissingExternalLoginCookie, None)
+        }
     };
     let auth_session = auth_session.with_external_login(None);
 
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => {
-            return PageUtils::new(&state).error(auth_session, AuthError::InputError(error.problem), error_url.as_ref())
-        }
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, error_url.as_ref()),
     };
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
@@ -63,7 +65,7 @@ pub async fn oauth2_auth(
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
         log::debug!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
-        return PageUtils::new(&state).error(auth_session, AuthError::InvalidCSRF, error_url.as_ref());
+        return PageUtils::new(&state).error(auth_session, ExternalLoginError::InvalidCSRF, error_url.as_ref());
     }
 
     // Exchange the code with a token.
@@ -79,9 +81,7 @@ pub async fn oauth2_auth(
             log::warn!("Token exchange error: {err:?}");
             return PageUtils::new(&state).error(
                 auth_session,
-                AuthError::TokenExchangeFailed {
-                    error: format!("{err:#?}"),
-                },
+                ExternalLoginError::TokenExchangeFailed(format!("{err:#?}")),
                 error_url.as_ref(),
             );
         }
@@ -102,9 +102,7 @@ pub async fn oauth2_auth(
         Err(err) => {
             return PageUtils::new(&state).error(
                 auth_session,
-                AuthError::FailedExternalUserInfo {
-                    error: format!("{err:?}"),
-                },
+                ExternalLoginError::FailedExternalUserInfo(format!("{err:?}")),
                 error_url.as_ref(),
             )
         }

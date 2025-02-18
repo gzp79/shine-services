@@ -1,20 +1,32 @@
-use reqwest::StatusCode;
+use crate::{
+    repositories::{identity::IdentityError, session::SessionError, CaptchaError},
+    services::{TokenGeneratorError, UserCreateError},
+};
+use lettre::transport::smtp::extension;
 use serde::Serialize;
-use shine_core::web::{InputError, IntoProblem, Problem, ProblemConfig};
+use serde_json::Value as JsonValue;
+use shine_core::web::{InputError, Problem};
 use thiserror::Error as ThisError;
 
-#[derive(Debug, ThisError, Serialize)]
-#[serde(tag = "type")]
-#[serde(rename_all = "camelCase")]
-pub enum AuthError {
-    #[error("Input validation error")]
-    InputError(InputError),
-    #[error("Authorization header is malformed")]
-    InvalidAuthorizationHeader,
-    #[error("Logout required")]
-    LogoutRequired,
-    #[error("Login required")]
-    LoginRequired,
+const INPUT_ERROR: &str = "auth-input-error";
+const AUTH_ERROR: &str = "auth-error";
+const LOGOUT_REQUIRED: &str = "auth-logout-required";
+const LOGIN_REQUIRED: &str = "auth-login-required";
+const TOKEN_EXPIRED: &str = "auth-token-expired";
+const SESSION_EXPIRED: &str = "auth-session-expired";
+const EMAIL_CONFLICT: &str = "auth-register-email-conflict";
+const EXTERNAL_ID_CONFLICT: &str = "auth-register-external-id-conflict";
+const MISSING_CONFIRMATION: &str = "auth-confirmation-error";
+
+const EXTERNAL_MISSING_COOKIE: &str = "external-missing-cookie";
+const EXTERNAL_INVALID_NONCE: &str = "external-invalid-nonce";
+const EXTERNAL_INVALID_CSRF: &str = "external-invalid-csrf";
+const EXTERNAL_EXCHANGE_FAILED: &str = "external-exchange-failed";
+const EXTERNAL_INFO_FAILED: &str = "external-info-failed";
+const EXTERNAL_DISCOVERY_FAILED: &str = "external-discovery-failed";
+
+#[derive(Debug, ThisError)]
+pub enum ExternalLoginError {
     #[error("Missing external login")]
     MissingExternalLoginCookie,
     #[error("Missing Nonce")]
@@ -22,62 +34,118 @@ pub enum AuthError {
     #[error("Invalid CSRF state")]
     InvalidCSRF,
     #[error("Failed to exchange authentication token")]
-    TokenExchangeFailed { error: String },
+    TokenExchangeFailed(String),
     #[error("Failed to get user info from provider")]
-    FailedExternalUserInfo { error: String },
+    FailedExternalUserInfo(String),
+
+    #[error("OpenId discovery failed")]
+    OIDCDiscovery(String),
+}
+
+impl From<ExternalLoginError> for Problem {
+    fn from(value: ExternalLoginError) -> Self {
+        match value {
+            ExternalLoginError::MissingExternalLoginCookie => Problem::bad_request(EXTERNAL_MISSING_COOKIE),
+            ExternalLoginError::MissingNonce => Problem::bad_request(EXTERNAL_INVALID_NONCE),
+            ExternalLoginError::InvalidCSRF => Problem::bad_request(EXTERNAL_INVALID_CSRF),
+            ExternalLoginError::TokenExchangeFailed(error) => {
+                Problem::internal_error_ty(EXTERNAL_EXCHANGE_FAILED).with_sensitive(error)
+            }
+            ExternalLoginError::FailedExternalUserInfo(error) => {
+                Problem::internal_error_ty(EXTERNAL_INFO_FAILED).with_sensitive(error)
+            }
+            ExternalLoginError::OIDCDiscovery(error) => {
+                Problem::internal_error_ty(EXTERNAL_DISCOVERY_FAILED).with_sensitive(error)
+            }
+        }
+    }
+}
+
+#[derive(Debug, ThisError)]
+pub enum AuthError {
+    #[error("Authorization header is malformed")]
+    InvalidHeader,
+    #[error("Logout required")]
+    LogoutRequired,
+    #[error("Login required")]
+    LoginRequired,
     #[error("Login token is invalid")]
     InvalidToken,
     #[error("Login token has been revoked")]
     TokenExpired,
     #[error("User session has expired")]
     SessionExpired,
-    #[error("Internal server error: {error}")]
-    InternalServerError { error: String },
-
-    #[error("Captcha test failed")]
-    Captcha { error: String },
-    #[error("Failed to validate captcha")]
-    CaptchaServiceError { error: String },
-
-    #[error("OpenId discovery failed")]
-    OIDCDiscovery { error: String },
-
     #[error("External provider has already been linked to another user already")]
     ProviderAlreadyUsed,
     #[error("Email has already been linked to another user already")]
     EmailAlreadyUsed,
-    #[error("Missing some protection gate to perform operation")]
-    MissingPrecondition,
+    #[error("Missing or invalid confirmation")]
+    MissingConfirmation,
+
+    #[error(transparent)]
+    InputError(#[from] InputError),
+    #[error(transparent)]
+    CaptchaError(#[from] CaptchaError),
+    #[error(transparent)]
+    SessionError(#[from] SessionError),
+    #[error(transparent)]
+    ExternalLoginError(#[from] ExternalLoginError),
+    #[error(transparent)]
+    IdentityError(#[from] IdentityError),
+    #[error(transparent)]
+    UserCreateError(#[from] UserCreateError),
+    #[error(transparent)]
+    TokenGeneratorError(#[from] TokenGeneratorError),
+
+    #[error("Internal server error")]
+    InternalServerError(Problem),
 }
 
-impl IntoProblem for AuthError {
-    fn into_problem(self, config: &ProblemConfig) -> Problem {
-        let problem = match &self {
-            AuthError::InputError(_) => Problem::new(StatusCode::BAD_REQUEST, "invalidInput"),
-            AuthError::InvalidAuthorizationHeader => Problem::new(StatusCode::BAD_REQUEST, "authError"),
-            AuthError::LogoutRequired => Problem::new(StatusCode::BAD_REQUEST, "logoutRequired"),
-            AuthError::LoginRequired => Problem::new(StatusCode::UNAUTHORIZED, "loginRequired"),
-            AuthError::MissingExternalLoginCookie => Problem::new(StatusCode::BAD_REQUEST, "authError"),
-            AuthError::MissingNonce => Problem::new(StatusCode::BAD_REQUEST, "authError"),
-            AuthError::InvalidCSRF => Problem::new(StatusCode::BAD_REQUEST, "authError"),
-            AuthError::TokenExchangeFailed { .. } => Problem::new(StatusCode::INTERNAL_SERVER_ERROR, "authError"),
-            AuthError::FailedExternalUserInfo { .. } => Problem::new(StatusCode::BAD_REQUEST, "authError"),
-            AuthError::InvalidToken => Problem::new(StatusCode::BAD_REQUEST, "authError"),
-            AuthError::TokenExpired => Problem::new(StatusCode::UNAUTHORIZED, "tokenExpired"),
-            AuthError::SessionExpired => Problem::new(StatusCode::UNAUTHORIZED, "sessionExpired"),
-            AuthError::InternalServerError { .. } => Problem::new(StatusCode::INTERNAL_SERVER_ERROR, "internalError"),
-            AuthError::Captcha { .. } => Problem::new(StatusCode::BAD_REQUEST, "authError"),
-            AuthError::CaptchaServiceError { .. } => Problem::new(StatusCode::INTERNAL_SERVER_ERROR, "authError"),
-            AuthError::OIDCDiscovery { .. } => Problem::new(StatusCode::INTERNAL_SERVER_ERROR, "authError"),
-            AuthError::ProviderAlreadyUsed => Problem::new(StatusCode::CONFLICT, "providerAlreadyUsed"),
-            AuthError::EmailAlreadyUsed => Problem::new(StatusCode::CONFLICT, "emailAlreadyUsed"),
-            AuthError::MissingPrecondition => Problem::new(StatusCode::PRECONDITION_FAILED, "preconditionFailed"),
-        };
+impl From<AuthError> for Problem {
+    fn from(value: AuthError) -> Self {
+        match value {
+            AuthError::LogoutRequired => Problem::bad_request(LOGOUT_REQUIRED),
+            AuthError::LoginRequired => Problem::unauthorized_ty(LOGIN_REQUIRED),
+            AuthError::InvalidHeader => Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("invalidHeader"),
+            AuthError::TokenExpired => Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("expiredToken"),
+            AuthError::InvalidToken => Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("invalidToken"),
+            AuthError::SessionExpired => Problem::unauthorized_ty(SESSION_EXPIRED),
+            AuthError::ProviderAlreadyUsed => Problem::conflict(EXTERNAL_ID_CONFLICT),
+            AuthError::EmailAlreadyUsed => Problem::conflict(EMAIL_CONFLICT),
+            AuthError::MissingConfirmation => Problem::conflict(MISSING_CONFIRMATION),
 
-        if config.include_internal {
-            problem.with_detail(format!("{}", self)).with_extension(self)
-        } else {
-            problem.with_detail(format!("{}", self))
+            AuthError::InputError(input_error) => {
+                Problem::bad_request(INPUT_ERROR).with_sensitive(Problem::from(input_error))
+            }
+            AuthError::CaptchaError(error @ CaptchaError::MissingCaptcha)
+            | AuthError::CaptchaError(error @ CaptchaError::FailedValidation(_)) => {
+                Problem::bad_request(AUTH_ERROR).with_sensitive(Problem::from(error))
+            }
+            AuthError::CaptchaError(error) => {
+                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+            }
+            AuthError::SessionError(error) => {
+                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+            }
+            AuthError::IdentityError(IdentityError::UserDeleted { .. }) => {
+                Problem::unauthorized_ty(&SESSION_EXPIRED).with_sensitive("userDeleted")
+            }
+            AuthError::IdentityError(error) => {
+                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+            }
+            AuthError::ExternalLoginError(error) => {
+                let problem: Problem = error.into();
+                Problem::new(problem.status, AUTH_ERROR).with_sensitive(Problem::from(problem))
+            }
+            AuthError::UserCreateError(error) => {
+                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+            }
+            AuthError::TokenGeneratorError(error) => {
+                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+            }
+            AuthError::InternalServerError(error) => {
+                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+            }
         }
     }
 }

@@ -1,4 +1,3 @@
-/* spell-checker: disable */
 use crate::repositories::mailer::{Email, EmailContent, EmailSender, EmailSenderError};
 use lettre::{
     address::AddressError,
@@ -8,8 +7,6 @@ use lettre::{
     Message, SmtpTransport, Transport,
 };
 use thiserror::Error as ThisError;
-use url::Url;
-/* spell-checker: enable */
 
 #[derive(ThisError, Debug)]
 pub enum SmtpEmailSenderBuildError {

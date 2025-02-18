@@ -37,7 +37,8 @@ export const ProblemSchema = z.object({
     type: z.string(),
     instance: OptionalSchema(z.string()),
     detail: z.string(),
-    extension: z.any()
+    extension: z.any(),
+    sensitive: z.any()
 });
 export type Problem = z.infer<typeof ProblemSchema>;
 

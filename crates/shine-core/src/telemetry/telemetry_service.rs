@@ -13,12 +13,11 @@ use opentelemetry_sdk::{
 use opentelemetry_semantic_conventions as otconv;
 use prometheus::{Encoder, Registry as PromRegistry, TextEncoder};
 use std::sync::{Arc, RwLock};
-use thiserror::Error as ThisError;
 use tracing::{Dispatch, Subscriber};
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{filter::EnvFilter, layer::SubscriberExt, registry::LookupSpan, reload, Layer};
 
-use super::{Metering, OtelLayer, TelemetryBuildError, TelemetryConfig, Tracing};
+use super::{Metering, OtelLayer, TelemetryBuildError, TelemetryConfig, TelemetryError, Tracing};
 
 #[derive(Debug, Clone)]
 pub struct DynConfig {
@@ -56,10 +55,6 @@ where
         &self.config
     }
 }
-
-#[derive(Debug, ThisError)]
-#[error("Failed to perform trace configuration operation: {0}")]
-pub struct TraceReconfigureError(String);
 
 trait MetricsExport: Send + Sync {
     fn export(&self) -> String;
@@ -339,24 +334,24 @@ impl TelemetryService {
         Ok(())
     }
 
-    pub fn set_configuration(&self, config: DynConfig) -> Result<(), TraceReconfigureError> {
+    pub fn set_configuration(&self, config: DynConfig) -> Result<(), TelemetryError> {
         if let Some(reconfigure) = &self.reconfigure {
             reconfigure
                 .write()
                 .unwrap()
                 .set_configuration(config)
-                .map_err(TraceReconfigureError)?
+                .map_err(TelemetryError::TraceUpdateConfig)?;
         }
         Ok(())
     }
 
-    pub fn get_configuration(&self) -> Result<DynConfig, TraceReconfigureError> {
+    pub fn get_configuration(&self) -> Result<DynConfig, TelemetryError> {
         if let Some(reconfigure) = &self.reconfigure {
             let reconfigure = reconfigure.read().unwrap();
             let config = reconfigure.get_configuration();
             Ok(config.clone())
         } else {
-            Err(TraceReconfigureError("Reconfigure is not enabled".to_string()))
+            Err(TelemetryError::TraceNoReconfigure)
         }
     }
 

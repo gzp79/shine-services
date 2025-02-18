@@ -1,14 +1,37 @@
 use serde::{Deserialize, Serialize};
+use shine_core::web::Problem;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 
 const CAPTCHA_URL: &str = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
+const CAPTCHA_FAILED: &str = "captcha-failed-validation";
+const CAPTCHA_MISSING: &str = "captcha-not-provided";
+
 #[derive(Debug, ThisError)]
 pub enum CaptchaError {
-    #[error("Request failed with {0}")]
+    #[error("Request failed with")]
     Request(String),
+    #[error("Captcha validation failed")]
+    FailedValidation(String),
+    #[error("Missing captcha token")]
+    MissingCaptcha,
+}
+
+impl From<CaptchaError> for Problem {
+    fn from(value: CaptchaError) -> Self {
+        let detail = value.to_string();
+
+        match value {
+            CaptchaError::FailedValidation(err) => Problem::bad_request(CAPTCHA_FAILED)
+                .with_detail(detail)
+                .with_sensitive_dbg(err),
+            CaptchaError::MissingCaptcha => Problem::bad_request(CAPTCHA_MISSING).with_detail(detail),
+
+            _ => Problem::internal_error().with_detail(detail).with_sensitive_dbg(value),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,7 +79,7 @@ impl CaptchaValidator {
         }))
     }
 
-    pub async fn validate(
+    pub async fn validate_request(
         &self,
         token: &str,
         remote_ip: Option<&str>,
@@ -104,6 +127,23 @@ impl CaptchaValidator {
             .map_err(|err| CaptchaError::Request(format!("{:?}", err)))?;
         Ok(response)
     }
+
+    pub async fn validate(&self, token: Option<&str>) -> Result<(), CaptchaError> {
+        if let Some(token) = token {
+            match self.validate_request(token, None).await {
+                Ok(result) => {
+                    if !result.success {
+                        Err(CaptchaError::FailedValidation(result.error_codes.join(", ")))
+                    } else {
+                        Ok(())
+                    }
+                }
+                Err(err) => Err(CaptchaError::Request(format!("{err:#?}"))),
+            }
+        } else {
+            Err(CaptchaError::MissingCaptcha)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -116,7 +156,7 @@ mod test {
         let validator = CaptchaValidator::new("1x0000000000000000000000000000000AA");
         let token = "1x00000000000000000000AA";
         let response = validator
-            .validate(token, None)
+            .validate_request(token, None)
             .await
             .expect("Validation request failed");
         log::info!("response: {:?}", response);
@@ -128,7 +168,7 @@ mod test {
         let validator = CaptchaValidator::new("2x0000000000000000000000000000000AA");
         let token = "token";
         let response = validator
-            .validate(token, None)
+            .validate_request(token, None)
             .await
             .expect("Validation request failed");
         log::info!("response: {:?}", response);
@@ -141,7 +181,7 @@ mod test {
         let validator = CaptchaValidator::new("3x0000000000000000000000000000000AA");
         let token = "token";
         let response = validator
-            .validate(token, None)
+            .validate_request(token, None)
             .await
             .expect("Validation request failed");
         log::info!("response: {:?}", response);
@@ -156,7 +196,7 @@ mod test {
 
             let token = "invalid";
             let response = validator
-                .validate(token, None)
+                .validate_request(token, None)
                 .await
                 .expect("Validation request failed");
             log::info!("response: {:?}", response);
@@ -174,7 +214,7 @@ mod test {
 
             let token = "0.xVJwSGxsgonZ5dcUUCehmsoDATadFvQcJHYJ2T77vggEXA0EfzqtYQKk8dRdGgdZQieN1Cdh9TR1BCd3jU80Tkq_wBt5jdhvvMeGQNDtNRbkyj4W_Tp2_kEFRfQRWmnNA56MC2jpaNbi74OD3Ixz52koRwBkbaKWukRnHyxtQ80gkm2Uv_rnJsxFbsQurrs1JBy2azoc5zdW7esOi9gZEhwBhhXbnyj7u3Pu0Ui2ywe7ehfuU1-1dtzEMM9Gt2jSm8qYSD2AvYr2-CIUj8kIXbi5K9Z8tibclvQgePsdWo7mgMkQkpDzUKZwLpUUkqBSgP-wvcsdRS_El487aHUBjrIhVCqtaca_mCi7vIQNDSXFjzhn7_ffhzxcGZUeCj13vDjkCOcHZdtx9pJWd_G6Ir9pul0XXo60QEJJkzgxKUY3cYPaxsAhpPLvq3yfRvP7.tJWm1L0wA8I5zg2c1vPVTg.3125c6192bcc80a18596acdb789c53362fd48b71cde2ceaa0206b1e44c22f2e8";
             let response = validator
-                .validate(token, None)
+                .validate_request(token, None)
                 .await
                 .expect("Validation request failed");
             log::info!("response: {:?}", response);

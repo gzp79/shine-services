@@ -6,40 +6,39 @@ use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use shine_core::web::{
-    CheckedCurrentUser, ClientFingerprint, IntoProblem, Problem, ProblemConfig, SiteInfo, ValidatedJson, ValidatedPath,
-    ValidationErrorEx,
+    CheckedCurrentUser, ClientFingerprint, IntoProblemResponse, Problem, ProblemConfig, ProblemResponse, SiteInfo,
+    ValidatedJson, ValidatedPath, ValidationErrorEx,
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::{Validate, ValidationError};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ManualTokenKind {
+    Persistent,
+    SingleAccess,
+}
+
+impl From<ManualTokenKind> for TokenKind {
+    fn from(kind: ManualTokenKind) -> Self {
+        match kind {
+            ManualTokenKind::Persistent => TokenKind::Persistent,
+            ManualTokenKind::SingleAccess => TokenKind::SingleAccess,
+        }
+    }
+}
+
 #[derive(Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateTokenRequest {
-    /// The kind of token to create, Allowed kinds are apiKey or singleAccess.
-    /// access token can be created only through the login endpoint with enabled remember-me.
-    #[validate(custom(function = "validate_allowed_kind"))]
-    kind: TokenKind,
+    kind: ManualTokenKind,
     /// The expiration The maximum validity range is 10s .. 1 year, but server config
     /// may reduce the maximum value through the ttl parameters.
     #[validate(range(min = 10, max = 31_536_000))]
     time_to_live: usize,
     /// If set to true, the token is bound to the current site
     bind_to_site: bool,
-}
-
-fn validate_allowed_kind(kind: &TokenKind) -> Result<(), ValidationError> {
-    match kind {
-        TokenKind::SingleAccess => Ok(()),
-        TokenKind::Persistent => Ok(()),
-        TokenKind::Access => Err(ValidationError::new("oneOf").with_message("Access tokens are not allowed".into())),
-        TokenKind::EmailVerify => {
-            Err(ValidationError::new("oneOf").with_message("Email validation tokens are not allowed".into()))
-        }
-        TokenKind::EmailChange => {
-            Err(ValidationError::new("oneOf").with_message("Email change tokens are not allowed".into()))
-        }
-    }
 }
 
 #[derive(Serialize, ToSchema)]
@@ -55,65 +54,6 @@ pub struct CreatedToken {
     token_type: String,
     /// Date of the expiration of the token
     expire_at: DateTime<Utc>,
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/auth/user/tokens",
-    tag = "auth",
-    request_body = CreateTokenRequest,
-    responses(
-        (status = OK, body = CreatedToken)
-    )
-)]
-pub async fn create_token(
-    State(state): State<AppState>,
-    Extension(problem_config): Extension<ProblemConfig>,
-    user: CheckedCurrentUser,
-    fingerprint: ClientFingerprint,
-    site_info: SiteInfo,
-    ValidatedJson(params): ValidatedJson<CreateTokenRequest>,
-) -> Result<Json<CreatedToken>, Problem> {
-    let time_to_live = Duration::seconds(params.time_to_live as i64);
-
-    // validate time_to_live against server config
-    let max_time_to_live = match params.kind {
-        TokenKind::SingleAccess => state.settings().token.ttl_single_access,
-        TokenKind::Persistent => state.settings().token.ttl_api_key,
-        TokenKind::Access => unreachable!(),
-        TokenKind::EmailVerify => unreachable!(),
-        TokenKind::EmailChange => unreachable!(),
-    };
-    if time_to_live > max_time_to_live {
-        return Err(ValidationError::new("range")
-            .with_param("min", &10)
-            .with_param("max", &max_time_to_live.num_seconds())
-            .with_param("value", &params.time_to_live)
-            .into_constraint_error("time_to_live")
-            .into_problem(&problem_config));
-    }
-
-    let site_fingerprint = if params.bind_to_site { Some(&fingerprint) } else { None };
-    let user_token = state
-        .token_service()
-        .create_user_token(
-            user.user_id,
-            params.kind,
-            &time_to_live,
-            site_fingerprint,
-            None,
-            &site_info,
-        )
-        .await
-        .map_err(|err| Problem::internal_error(&problem_config, "Failed to create token", err))?;
-
-    Ok(Json(CreatedToken {
-        kind: params.kind,
-        token: user_token.token,
-        token_hash: user_token.token_hash,
-        token_type: "Bearer".into(),
-        expire_at: user_token.expire_at,
-    }))
 }
 
 #[derive(Deserialize, Validate, IntoParams)]
@@ -161,6 +101,62 @@ impl From<TokenInfo> for ActiveToken {
 }
 
 #[utoipa::path(
+    post,
+    path = "/api/auth/user/tokens",
+    tag = "auth",
+    request_body = CreateTokenRequest,
+    responses(
+        (status = OK, body = CreatedToken)
+    )
+)]
+pub async fn create_token(
+    State(state): State<AppState>,
+    Extension(problem_config): Extension<ProblemConfig>,
+    user: CheckedCurrentUser,
+    fingerprint: ClientFingerprint,
+    site_info: SiteInfo,
+    ValidatedJson(params): ValidatedJson<CreateTokenRequest>,
+) -> Result<Json<CreatedToken>, ProblemResponse> {
+    let time_to_live = Duration::seconds(params.time_to_live as i64);
+
+    // validate time_to_live against server config
+    let max_time_to_live = match params.kind {
+        ManualTokenKind::SingleAccess => state.settings().token.ttl_single_access,
+        ManualTokenKind::Persistent => state.settings().token.ttl_api_key,
+    };
+    if time_to_live > max_time_to_live {
+        return Err(ValidationError::new("range")
+            .with_param("min", &10)
+            .with_param("max", &max_time_to_live.num_seconds())
+            .with_param("value", &params.time_to_live)
+            .into_constraint_error("time_to_live")
+            .into_response(&problem_config));
+    }
+
+    let site_fingerprint = if params.bind_to_site { Some(&fingerprint) } else { None };
+    let user_token = state
+        .token_service()
+        .create_user_token(
+            user.user_id,
+            params.kind.into(),
+            &time_to_live,
+            site_fingerprint,
+            None,
+            &site_info,
+        )
+        .await
+        .map_err(|err| err.into_response(&problem_config))?;
+
+    Ok(Json(CreatedToken {
+        kind: params.kind.into(),
+        token: user_token.token,
+        token_hash: user_token.token_hash,
+        token_type: "Bearer".into(),
+        expire_at: user_token.expire_at,
+    }))
+}
+
+#[utoipa::path(
     get,
     path = "/api/auth/user/tokens/{hash}",
     tag = "auth",
@@ -177,12 +173,12 @@ pub async fn get_token(
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     ValidatedPath(params): ValidatedPath<TokenHash>,
-) -> Result<Json<ActiveToken>, Problem> {
+) -> Result<Json<ActiveToken>, ProblemResponse> {
     let token = state
         .identity_service()
         .find_token_by_hash(&params.hash)
         .await
-        .map_err(|err| Problem::internal_error(&problem_config, "Failed to find token", err))?
+        .map_err(|err| err.into_response(&problem_config))?
         .and_then(|t| {
             if t.user_id == user.user_id {
                 Some(ActiveToken::from(t))
@@ -200,7 +196,9 @@ pub async fn get_token(
     if let Some(token) = token {
         Ok(Json(token))
     } else {
-        Err(Problem::not_found().with_instance_str(format!("{{auth_api}}/user/tokens/{}", params.hash)))
+        Err(Problem::not_found()
+            .with_instance_str(format!("{{auth_api}}/user/tokens/{}", params.hash))
+            .into_response(&problem_config))
     }
 }
 
@@ -218,15 +216,17 @@ pub async fn delete_token(
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     ValidatedPath(params): ValidatedPath<TokenHash>,
-) -> Result<(), Problem> {
+) -> Result<(), ProblemResponse> {
     let token = state
         .identity_service()
         .delete_hashed_token_by_user(user.user_id, &params.hash)
         .await
-        .map_err(|err| Problem::internal_error(&problem_config, "Could not revoke token", err))?;
+        .map_err(|err| err.into_response(&problem_config))?;
 
     if token.is_none() {
-        Err(Problem::not_found().with_instance_str(format!("{{auth_api}}/user/tokens/{}", params.hash)))
+        Err(Problem::not_found()
+            .with_instance_str(format!("{{auth_api}}/user/tokens/{}", params.hash))
+            .into_response(&problem_config))
     } else {
         Ok(())
     }
@@ -244,12 +244,12 @@ pub async fn list_tokens(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
-) -> Result<Json<ActiveTokens>, Problem> {
+) -> Result<Json<ActiveTokens>, ProblemResponse> {
     let tokens = state
         .identity_service()
         .list_all_tokens_by_user(&user.user_id)
         .await
-        .map_err(|err| Problem::internal_error(&problem_config, "Could not find tokens", err))?
+        .map_err(|err| err.into_response(&problem_config))?
         .into_iter()
         .map(ActiveToken::from)
         .collect();

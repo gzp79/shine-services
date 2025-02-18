@@ -3,8 +3,7 @@ use crate::{
     controllers::auth::{AuthError, AuthPage, AuthSession},
     services::SettingsService,
 };
-use shine_core::web::{IntoProblem, ProblemConfig};
-use std::fmt;
+use shine_core::web::{Problem, ProblemConfig};
 use tera::Tera;
 use url::Url;
 
@@ -35,17 +34,22 @@ impl<'a> PageUtils<'a> {
         }
     }
 
-    pub fn error(&self, auth_session: AuthSession, error: AuthError, target_url: Option<&Url>) -> AuthPage {
-        log::error!("{error:?}");
+    pub fn error<E>(&self, auth_session: AuthSession, error: E, target_url: Option<&Url>) -> AuthPage
+    where
+        E: Into<AuthError>,
+    {
+        let error = error.into();
+        log::error!("Page Error: {error:#?}");
 
-        let problem = error.into_problem(&self.problem_config);
+        let problem: Problem = self.problem_config.transform(error);
+        log::debug!("Page Problem: {problem:#?}");
+        let problem_json = serde_json::to_string_pretty(&problem).unwrap();
 
         let mut target = target_url.unwrap_or(&self.settings.error_url).to_owned();
         target
             .query_pairs_mut()
             .append_pair("type", problem.ty)
             .append_pair("status", &problem.status.as_u16().to_string());
-        let problem_json = serde_json::to_string_pretty(&problem).unwrap();
 
         let mut context = tera::Context::new();
         self.bind_timeout(&mut context);
@@ -64,21 +68,6 @@ impl<'a> PageUtils<'a> {
             auth_session: Some(auth_session),
             html,
         }
-    }
-
-    pub fn internal_error<E: fmt::Debug>(
-        &self,
-        auth_session: AuthSession,
-        err: E,
-        target_url: Option<&Url>,
-    ) -> AuthPage {
-        self.error(
-            auth_session,
-            AuthError::InternalServerError {
-                error: format!("{err:#?}"),
-            },
-            target_url,
-        )
     }
 
     pub fn redirect(&self, auth_session: AuthSession, target: Option<&str>, redirect_url: Option<&Url>) -> AuthPage {

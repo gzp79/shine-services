@@ -1,8 +1,7 @@
 use crate::{
     db::{RedisConnectionError, RedisConnectionPool},
     web::{
-        serde_session_key, ClientFingerprint, ClientFingerprintError, ConfiguredProblem, IntoProblem, Problem,
-        ProblemConfig, SessionKey,
+        serde_session_key, ClientFingerprint, ClientFingerprintError, ErrorResponse, Problem, ProblemConfig, SessionKey,
     },
 };
 use axum::{extract::FromRequestParts, http::request::Parts, Extension, RequestPartsExt};
@@ -29,20 +28,27 @@ pub enum UserSessionError {
     ClientFingerprintError(#[from] ClientFingerprintError),
     #[error("Session is compromised")]
     SessionCompromised,
+
     #[error("Failed to get redis connection")]
     RedisPoolError(#[source] RedisConnectionError),
     #[error("Redis error")]
     RedisError(#[from] redis::RedisError),
 }
 
-impl IntoProblem for UserSessionError {
-    fn into_problem(self, config: &ProblemConfig) -> Problem {
-        match self {
-            UserSessionError::RedisPoolError(err) => Problem::internal_error(config, "Redis connection error", err),
-            UserSessionError::RedisError(err) => Problem::internal_error(config, "Redis error", err),
-            _ => Problem::unauthorized()
-                .with_detail(self.to_string())
-                .with_opt_extension(config.include_internal.then(|| format!("{:#?}", self))),
+impl From<UserSessionError> for Problem {
+    fn from(value: UserSessionError) -> Self {
+        match value {
+            UserSessionError::Unauthenticated
+            | UserSessionError::InvalidSecret(_)
+            | UserSessionError::SessionExpired
+            | UserSessionError::ClientFingerprintError(_)
+            | UserSessionError::SessionCompromised => Problem::unauthorized()
+                .with_detail(value.to_string())
+                .with_sensitive_dbg(value),
+
+            _ => Problem::internal_error()
+                .with_detail(value.to_string())
+                .with_sensitive_dbg(value),
         }
     }
 }
@@ -98,7 +104,7 @@ impl<S> FromRequestParts<S> for CheckedCurrentUser
 where
     S: Send + Sync,
 {
-    type Rejection = ConfiguredProblem<UserSessionError>;
+    type Rejection = ErrorResponse<UserSessionError>;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let Extension(problem_config) = parts
@@ -116,7 +122,7 @@ where
         validator
             .refresh_user(&mut user)
             .await
-            .map_err(|err| problem_config.configure(err))?;
+            .map_err(|err| ErrorResponse::new(&problem_config, err))?;
         Ok(CheckedCurrentUser(user))
     }
 }
@@ -152,7 +158,7 @@ impl<S> FromRequestParts<S> for UncheckedCurrentUser
 where
     S: Send + Sync,
 {
-    type Rejection = ConfiguredProblem<UserSessionError>;
+    type Rejection = ErrorResponse<UserSessionError>;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let Extension(problem_config) = parts
@@ -167,17 +173,20 @@ where
         let fingerprint = parts
             .extract::<ClientFingerprint>()
             .await
-            .map_err(|err| problem_config.configure(UserSessionError::from(err.problem)))?;
+            .map_err(|err| ErrorResponse::new(&problem_config, UserSessionError::from(err.problem)))?;
 
         let jar = SignedCookieJar::from_headers(&parts.headers, validator.cookie_secret.clone());
         let user = jar
             .get(&validator.cookie_name)
             .and_then(|cookie| serde_json::from_str::<CurrentUser>(cookie.value()).ok())
-            .ok_or_else(|| problem_config.configure(UserSessionError::Unauthenticated))?;
+            .ok_or_else(|| ErrorResponse::new(&problem_config, UserSessionError::Unauthenticated))?;
 
         // perform the least minimal validation
         if user.fingerprint != fingerprint.as_str() {
-            Err(problem_config.configure(UserSessionError::SessionCompromised))
+            Err(ErrorResponse::new(
+                &problem_config,
+                UserSessionError::SessionCompromised,
+            ))
         } else {
             Ok(UncheckedCurrentUser(user))
         }

@@ -110,7 +110,7 @@ export class UserAPI {
     }
 
     deleteRoleRequest(
-        sid: string | 'masterKey' | null,
+        sid: string | null,
         masterKey: boolean,
         userId: string,
         role: string
@@ -144,5 +144,16 @@ export class UserAPI {
             expect(response).toHaveStatus(200);
             return (await response.parse(UsersRoleSchema)).roles;
         }
+    }
+
+    confirmEmailRequest(sid: string | null): ApiRequest {
+        const cs = sid && { sid };
+
+        return ApiRequest.post(this.urlFor(`/api/auth/user/email/validate`)).withCookies({ ...cs });
+    }
+
+    async confirmEmail(sid: string | null): Promise<void> {
+        const response = await this.confirmEmailRequest(sid).send();
+        expect(response).toHaveStatus(200);
     }
 }

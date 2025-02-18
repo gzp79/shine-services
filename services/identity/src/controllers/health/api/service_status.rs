@@ -2,7 +2,7 @@ use crate::{app_state::AppState, services::permissions};
 use axum::{extract::State, Extension, Json};
 use bb8::State as BB8PoolState;
 use serde::Serialize;
-use shine_core::web::{CheckedCurrentUser, CorePermissions, Problem, ProblemConfig};
+use shine_core::web::{CheckedCurrentUser, CorePermissions, IntoProblemResponse, ProblemConfig, ProblemResponse};
 use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
@@ -40,9 +40,10 @@ pub async fn get_service_status(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
-) -> Result<Json<ServiceStatus>, Problem> {
+) -> Result<Json<ServiceStatus>, ProblemResponse> {
     user.core_permissions()
-        .check(permissions::READ_TRACE, &problem_config)?;
+        .check(permissions::READ_TRACE)
+        .map_err(|err| err.into_response(&problem_config))?;
 
     Ok(Json(ServiceStatus {
         postgres: DBState::from(state.db().postgres.state()),
