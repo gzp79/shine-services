@@ -21,12 +21,12 @@ test.describe('Persistent token', () => {
     });
 
     test(`Creating a persistent token without session shall fail`, async ({ api }) => {
-        const response = await api.token.createTokenRequest(null, 'persistent', 20, false).send();
+        const response = await api.token.createTokenRequest(null, 'persistent', 20, false);
         expect(response).toHaveStatus(401);
     });
 
     test(`Token creation with a too long duration shall be rejected`, async ({ api }) => {
-        const response = await api.token.createTokenRequest(user.sid, 'persistent', 31536001, false).send();
+        const response = await api.token.createTokenRequest(user.sid, 'persistent', 31536001, false);
         expect(response).toHaveStatus(400);
 
         const error = await response.parse(ProblemSchema);
@@ -44,7 +44,7 @@ test.describe('Persistent token', () => {
     test('A successful login with a persistent token shall change the current user', async ({ api }) => {
         const token = await api.token.createPersistentToken(user.sid, 120, false);
 
-        const response = await api.auth.loginWithTokenRequest(null, null, null, token.token, false, null).send();
+        const response = await api.auth.loginWithTokenRequest(null, null, null, token.token, false, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -57,7 +57,7 @@ test.describe('Persistent token', () => {
     });
 
     test('A failed login with an header token shall clear the current user', async ({ api }) => {
-        const response = await api.auth.loginWithTokenRequest(null, null, null, 'invalid', false, null).send();
+        const response = await api.auth.loginWithTokenRequest(null, null, null, 'invalid', false, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -83,7 +83,7 @@ test.describe('Persistent token', () => {
         const token = await api.token.createPersistentToken(user.sid, 120, false);
         expect((await api.token.getTokens(user.sid)).map((x) => x.tokenHash)).toEqual([token.tokenHash]);
 
-        const response = await api.auth.loginWithTokenRequest(null, null, token.token, null, null, null).send();
+        const response = await api.auth.loginWithTokenRequest(null, null, token.token, null, null, null);
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
@@ -115,9 +115,7 @@ test.describe('Persistent token', () => {
 
         const response = await api.auth
             .loginWithTokenRequest(null, null, null, token.token, false, null)
-            .withHeaders({ 'user-agent': 'agent2' })
-            .send();
-
+            .withHeaders({ 'user-agent': 'agent2' });
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
             api.auth.defaultRedirects.errorUrl + '?type=auth-token-expired&status=401'
@@ -142,7 +140,7 @@ test.describe('Persistent token', () => {
         expect(token.expireAt).toBeBefore(new Date(now + 130 * 1000));
 
         for (let i = 0; i < 3; i++) {
-            const response1 = await api.auth.loginWithTokenRequest(null, null, null, token.token, false, null).send();
+            const response1 = await api.auth.loginWithTokenRequest(null, null, null, token.token, false, null);
             expect(response1).toHaveStatus(200);
             const sid1 = response1.cookies().sid.value;
             const user1 = await api.user.getUserInfo(sid1);
@@ -162,13 +160,13 @@ test.describe('Persistent token', () => {
         const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
         expect(tokens).toEqual([token.tokenHash]);
 
-        let response = await api.token.revokeTokenRequest(user.sid, token.tokenHash).send();
+        let response = await api.token.revokeTokenRequest(user.sid, token.tokenHash);
         expect(response).toHaveStatus(200);
 
         const tokens1 = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
         expect(tokens1, 'Token shall be removed').toEqual([]);
 
-        response = await api.auth.loginWithTokenRequest(null, null, null, token.token, false, null).send();
+        response = await api.auth.loginWithTokenRequest(null, null, null, token.token, false, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();

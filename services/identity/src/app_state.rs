@@ -44,6 +44,7 @@ impl AppState {
 
         let settings = SettingsService {
             app_name: config_auth.app_name.clone(),
+            service_url: config_auth.auth_base_url.clone(),
             home_url: config_auth.home_url.clone(),
             error_url: config_auth.error_url.clone(),
             token: TokenSettings {
@@ -162,7 +163,7 @@ impl AppState {
     }
 
     pub fn mailer_service(&self) -> MailerService<impl EmailSender> {
-        MailerService::new(&self.0.email_sender, &self.0.tera)
+        MailerService::new(&self.0.settings, &self.0.email_sender, &self.0.tera)
     }
 
     pub fn session_utils(&self) -> SessionUtils<'_> {

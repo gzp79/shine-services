@@ -1,17 +1,25 @@
 use crate::app_state::AppState;
 use axum::{extract::State, Extension};
 use serde::Deserialize;
-use shine_core::web::{
-    CheckedCurrentUser, IntoProblemResponse, Problem, ProblemConfig, ProblemResponse, SiteInfo, ValidatedQuery,
+use shine_core::{
+    consts::Language,
+    web::{CheckedCurrentUser, IntoProblemResponse, Problem, ProblemConfig, ProblemResponse, SiteInfo, ValidatedQuery},
 };
 use utoipa::IntoParams;
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
-pub struct QueryParams {
+pub struct ConfirmQueryParams {
+    lang: Option<Language>,
+}
+
+#[derive(Deserialize, Validate, IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeQueryParams {
     #[validate(email)]
     email: String,
+    lang: Option<Language>,
 }
 
 /// Validate email address.
@@ -19,6 +27,9 @@ pub struct QueryParams {
     post,
     path = "/api/auth/user/email/validate",
     tag = "auth",
+    params(
+        ConfirmQueryParams
+    ),
     responses(
         (status = OK, description="Email validation request is sent")
     )
@@ -26,6 +37,7 @@ pub struct QueryParams {
 pub async fn validate_user_email(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
+    ValidatedQuery(query): ValidatedQuery<ConfirmQueryParams>,
     user: CheckedCurrentUser,
     site_info: SiteInfo,
 ) -> Result<(), ProblemResponse> {
@@ -39,7 +51,7 @@ pub async fn validate_user_email(
 
     state
         .mailer_service()
-        .send_confirmation_email(&token.email, &token.token)
+        .send_confirmation_email(&token.email, &token.token, query.lang)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 
@@ -51,6 +63,9 @@ pub async fn validate_user_email(
     post,
     path = "/api/auth/user/email",
     tag = "auth",
+    params (
+        ChangeQueryParams
+    ),
     responses(
         (status = OK, description="Email validation request is sent")
     )
@@ -58,7 +73,7 @@ pub async fn validate_user_email(
 pub async fn change_user_email(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
-    ValidatedQuery(query): ValidatedQuery<QueryParams>,
+    ValidatedQuery(query): ValidatedQuery<ChangeQueryParams>,
     user: CheckedCurrentUser,
 ) -> Result<(), Problem> {
     // get email from identity
@@ -74,6 +89,9 @@ pub async fn change_user_email(
     delete,
     path = "/api/auth/user/email",
     tag = "auth",
+    params (
+        ChangeQueryParams
+    ),
     responses(
         (status = OK, description="Email validation request is sent")
     )
@@ -81,7 +99,7 @@ pub async fn change_user_email(
 pub async fn delete_user_email(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
-    ValidatedQuery(query): ValidatedQuery<QueryParams>,
+    ValidatedQuery(query): ValidatedQuery<ChangeQueryParams>,
     user: CheckedCurrentUser,
 ) -> Result<(), Problem> {
     // get email from identity

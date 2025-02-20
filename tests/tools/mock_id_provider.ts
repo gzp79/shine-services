@@ -7,9 +7,7 @@ async function main() {
     debug.enable('test:mock:*');
 
     const mock_smtp = new MockSmtp();
-    await mock_smtp.start((email) => {
-        console.log('Email received:', email);
-    });
+    await mock_smtp.start();
 
     const mock_oath = new OAuth2MockServer();
     await mock_oath.start();

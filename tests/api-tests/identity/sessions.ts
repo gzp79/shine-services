@@ -20,7 +20,7 @@ test.describe('Sessions', () => {
     });
 
     test('Get token without a session shall fail', async ({ api }) => {
-        const response = await api.session.getSessionsRequest(null).send();
+        const response = await api.session.getSessionsRequest(null);
         expect(response).toHaveStatus(401);
     });
 

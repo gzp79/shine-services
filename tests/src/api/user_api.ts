@@ -47,9 +47,7 @@ export class UserAPI {
     }
 
     async getUserInfo(sid: string, extraHeaders?: Record<string, string>): Promise<UserInfo> {
-        const response = await this.getUserInfoRequest(sid)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.getUserInfoRequest(sid).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
 
         return await response.parse(UserInfoSchema);
@@ -70,9 +68,7 @@ export class UserAPI {
         userId: string,
         extraHeaders?: Record<string, string>
     ): Promise<string[]> {
-        const response = await this.getRolesRequest(sid, masterKey, userId)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.getRolesRequest(sid, masterKey, userId).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
 
         return (await response.parse(UsersRoleSchema)).roles;
@@ -101,9 +97,7 @@ export class UserAPI {
             }
             return result;
         } else {
-            const response = await this.addRoleRequest(sid, masterKey, userId, role)
-                .withHeaders(extraHeaders ?? {})
-                .send();
+            const response = await this.addRoleRequest(sid, masterKey, userId, role).withHeaders(extraHeaders ?? {});
             expect(response).toHaveStatus(200);
             return (await response.parse(UsersRoleSchema)).roles;
         }
@@ -138,9 +132,7 @@ export class UserAPI {
             }
             return result;
         } else {
-            const response = await this.deleteRoleRequest(sid, masterKey, userId, role)
-                .withHeaders(extraHeaders ?? {})
-                .send();
+            const response = await this.deleteRoleRequest(sid, masterKey, userId, role).withHeaders(extraHeaders ?? {});
             expect(response).toHaveStatus(200);
             return (await response.parse(UsersRoleSchema)).roles;
         }
@@ -153,7 +145,7 @@ export class UserAPI {
     }
 
     async confirmEmail(sid: string | null): Promise<void> {
-        const response = await this.confirmEmailRequest(sid).send();
+        const response = await this.confirmEmailRequest(sid);
         expect(response).toHaveStatus(200);
     }
 }

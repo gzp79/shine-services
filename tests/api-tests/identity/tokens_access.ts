@@ -25,14 +25,14 @@ test.describe('Access token (TID)', () => {
 
     test('Get token without a session shall fail', async ({ api }) => {
         // initial session for a new user
-        const response = await api.token.getTokensRequest(null).send();
+        const response = await api.token.getTokensRequest(null);
         expect(response).toHaveStatus(401);
     });
 
     test(`Token creation with api shall be rejected`, async ({ api }) => {
         const user = await api.testUsers.createGuest();
 
-        const response = await api.token.createTokenRequest(user.sid, 'access', 20, false).send();
+        const response = await api.token.createTokenRequest(user.sid, 'access', 20, false);
         expect(response).toHaveStatus(400);
 
         const error = await response.parse(ProblemSchema);
@@ -74,8 +74,7 @@ test.describe('Access token (TID)', () => {
         const user = await api.testUsers.createGuest();
         const response = await api.auth
             .loginWithTokenRequest(user.tid!, user.sid!, null, null, false, null)
-            .withHeaders({ authorization: `Basic invalid` }) // only Bearer is supported, thus it is considered invalid
-            .send();
+            .withHeaders({ authorization: `Basic invalid` }); // only Bearer is supported, thus it is considered invalid
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -136,7 +135,7 @@ test.describe('Access token (TID)', () => {
         //logout using the second session
         // Note: to revoke the tid2, we have to also provide it. From sid, the server cannot tell the (tid) remember me token.
         // They are connected only on the client side.
-        let logout = await api.auth.logoutRequest(sid2, tid2, false).send();
+        let logout = await api.auth.logoutRequest(sid2, tid2, false);
         expect(logout.cookies().sid).toBeClearCookie();
         expect(logout.cookies().tid).toBeClearCookie();
         tokens = await api.token.getTokens(user.sid);
@@ -144,7 +143,7 @@ test.describe('Access token (TID)', () => {
 
         //logout using the 3rd session, but without the tid3 will not revoke the token.
         // It will be clear from the cookies, thus browser shall forget it.
-        logout = await api.auth.logoutRequest(sid3, null, false).send();
+        logout = await api.auth.logoutRequest(sid3, null, false);
         expect(logout.cookies().sid).toBeClearCookie();
         expect(logout.cookies().tid).toBeClearCookie();
         tokens = await api.token.getTokens(user.sid);
@@ -202,7 +201,7 @@ test.describe('Access token (TID)', () => {
         expect(tokens.map((t) => t.city).sort()).toEqual(['r1', 'r3']);
 
         // login shall fail with the revoked token
-        const responseLogin = await api.auth.loginWithTokenRequest(tid2, null, null, null, false, null).send();
+        const responseLogin = await api.auth.loginWithTokenRequest(tid2, null, null, null, false, null);
         expect(responseLogin).toHaveStatus(200);
 
         const text = await responseLogin.text();
@@ -280,7 +279,7 @@ test.describe('Access token (TID)', () => {
         expect(tokens).toEqual(expectedTokens);
 
         // Token rotated out shall not work (t0)
-        const response = await api.auth.loginWithTokenRequest(tid0, null, null, null, null, null).send();
+        const response = await api.auth.loginWithTokenRequest(tid0, null, null, null, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -306,7 +305,7 @@ test.describe('Access token (TID)', () => {
         let tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
         expect(tokens).toEqual([getSHA256Hash(t0)]);
 
-        const response = await api.auth.loginWithTokenRequest(null, null, t0, null, null, null).send();
+        const response = await api.auth.loginWithTokenRequest(null, null, t0, null, null, null);
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
@@ -334,7 +333,7 @@ test.describe('Access token (TID)', () => {
         let tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
         expect(tokens).toEqual([getSHA256Hash(t0)]);
 
-        const response = await api.auth.loginWithTokenRequest(null, null, null, t0, null, null).send();
+        const response = await api.auth.loginWithTokenRequest(null, null, null, t0, null, null);
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(

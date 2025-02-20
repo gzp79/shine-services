@@ -22,12 +22,12 @@ test.describe('Single access token', () => {
     });
 
     test(`Creating singleAccess token without session shall fail`, async ({ api }) => {
-        const response = await api.token.createTokenRequest(null, 'singleAccess', 20, false).send();
+        const response = await api.token.createTokenRequest(null, 'singleAccess', 20, false);
         expect(response).toHaveStatus(401);
     });
 
     test(`Token creation with a too long duration shall be rejected`, async ({ api }) => {
-        const response = await api.token.createTokenRequest(user.sid, 'singleAccess', 2000, false).send();
+        const response = await api.token.createTokenRequest(user.sid, 'singleAccess', 2000, false);
         expect(response).toHaveStatus(400);
 
         const error = await response.parse(ProblemSchema);
@@ -45,7 +45,7 @@ test.describe('Single access token', () => {
     test('A successful login with a single access token shall change the current user', async ({ api }) => {
         const token = await api.token.createSAToken(user.sid, 120, false);
 
-        const response = await api.auth.loginWithTokenRequest(null, null, token.token, null, false, null).send();
+        const response = await api.auth.loginWithTokenRequest(null, null, token.token, null, false, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -58,7 +58,7 @@ test.describe('Single access token', () => {
     });
 
     test('A failed login with an query token shall clear the current user', async ({ api }) => {
-        const response = await api.auth.loginWithTokenRequest(null, null, 'invalid', null, false, null).send();
+        const response = await api.auth.loginWithTokenRequest(null, null, 'invalid', null, false, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -83,7 +83,7 @@ test.describe('Single access token', () => {
     test('Using token in header shall fail and revoke the token', async ({ api }) => {
         const token = await api.token.createSAToken(user.sid, 120, false);
 
-        const response = await api.auth.loginWithTokenRequest(null, null, null, token.token, false, null).send();
+        const response = await api.auth.loginWithTokenRequest(null, null, null, token.token, false, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -118,9 +118,7 @@ test.describe('Single access token', () => {
 
         const response = await api.auth
             .loginWithTokenRequest(null, null, token.token, null, false, null)
-            .withHeaders({ 'user-agent': 'agent2' })
-            .send();
-
+            .withHeaders({ 'user-agent': 'agent2' });
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
             api.auth.defaultRedirects.errorUrl + '?type=auth-token-expired&status=401'
@@ -149,7 +147,7 @@ test.describe('Single access token', () => {
 
         console.log(`Waiting for the token to expire (${ttl} second)...`);
         await delay(ttl * 1000);
-        const response = await api.auth.loginWithTokenRequest(null, null, token.token, null, false, null).send();
+        const response = await api.auth.loginWithTokenRequest(null, null, token.token, null, false, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -175,7 +173,7 @@ test.describe('Single access token', () => {
         const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
         expect(tokens).toEqual([token.tokenHash]);
 
-        const response1 = await api.auth.loginWithTokenRequest(null, null, token.token, null, false, null).send();
+        const response1 = await api.auth.loginWithTokenRequest(null, null, token.token, null, false, null);
         expect(response1).toHaveStatus(200);
         const sid1 = response1.cookies().sid.value;
         const user1 = await api.user.getUserInfo(sid1);
@@ -184,7 +182,7 @@ test.describe('Single access token', () => {
         const tokens1 = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
         expect(tokens1, 'Token shall be removed').toEqual([]);
 
-        const response2 = await api.auth.loginWithTokenRequest(null, null, token.token, null, false, null).send();
+        const response2 = await api.auth.loginWithTokenRequest(null, null, token.token, null, false, null);
         expect(response2).toHaveStatus(200);
         expect(getPageRedirectUrl(await response2.text())).toEqual(
             api.auth.defaultRedirects.errorUrl + '?type=auth-token-expired&status=401'
@@ -200,13 +198,13 @@ test.describe('Single access token', () => {
         const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
         expect(tokens).toEqual([token.tokenHash]);
 
-        let response = await api.token.revokeTokenRequest(user.sid, token.tokenHash).send();
+        let response = await api.token.revokeTokenRequest(user.sid, token.tokenHash);
         expect(response).toHaveStatus(200);
 
         const tokens1 = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
         expect(tokens1, 'Token shall be removed').toEqual([]);
 
-        response = await api.auth.loginWithTokenRequest(null, null, token.token, null, false, null).send();
+        response = await api.auth.loginWithTokenRequest(null, null, token.token, null, false, null);
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(
             api.auth.defaultRedirects.errorUrl + '?type=auth-token-expired&status=401'

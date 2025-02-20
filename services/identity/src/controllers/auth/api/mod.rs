@@ -8,5 +8,5 @@ mod sessions;
 pub use self::sessions::*;
 mod tokens;
 pub use self::tokens::*;
-mod user_email;
-pub use self::user_email::*;
+mod user_email_confirm;
+pub use self::user_email_confirm::*;

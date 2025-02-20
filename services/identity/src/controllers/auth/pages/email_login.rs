@@ -4,9 +4,9 @@ use crate::{
 };
 use axum::{extract::State, Extension};
 use serde::Deserialize;
-use shine_core::web::{
-    ClientFingerprint, IntoProblemResponse, Problem, ProblemConfig, ProblemResponse, SiteInfo, ValidatedQuery,
-};
+use shine_core::{consts::Language, web::{
+    ClientFingerprint, IntoProblemResponse, ProblemConfig, ProblemResponse, SiteInfo, ValidatedQuery,
+}};
 use utoipa::IntoParams;
 use validator::Validate;
 
@@ -16,6 +16,7 @@ pub struct QueryParams {
     #[validate(email)]
     email: String,
     captcha: String,
+    lang: Option<Language>,
 }
 
 /// Email login and registration.
@@ -52,7 +53,7 @@ pub async fn email_login(
 
     state
         .mailer_service()
-        .send_confirmation_email(&query.email, "token")
+        .send_confirmation_email(&query.email, "token", query.lang)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
     // create a user with an unconfirmed email address

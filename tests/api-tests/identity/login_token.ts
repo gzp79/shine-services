@@ -9,8 +9,7 @@ test.describe('Login with access cookie for new user', () => {
     }) => {
         const response = await api.auth
             .loginWithTokenRequest(null, null, null, null, null, undefined)
-            .withParams({ rememberMe: 'invalid' })
-            .send();
+            .withParams({ rememberMe: 'invalid' });
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -38,7 +37,7 @@ test.describe('Login with access cookie for new user', () => {
     test('Login with (captcha: NO, token: NO, redirectMe: NO) shall fail and redirect to the login page', async ({
         api
     }) => {
-        const response = await api.auth.loginWithTokenRequest(null, null, null, null, null, undefined).send();
+        const response = await api.auth.loginWithTokenRequest(null, null, null, null, null, undefined);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -54,7 +53,7 @@ test.describe('Login with access cookie for new user', () => {
     test('Login with (captcha: NO, token: NO, rememberMe: false) shall fail and redirect to the login page', async ({
         api
     }) => {
-        const response = await api.auth.loginWithTokenRequest(null, null, null, null, false, undefined).send();
+        const response = await api.auth.loginWithTokenRequest(null, null, null, null, false, undefined);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -70,7 +69,7 @@ test.describe('Login with access cookie for new user', () => {
     test('Login with (captcha: NO, token: NO, rememberMe: true) shall fail and redirect to the default error page', async ({
         api
     }) => {
-        const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, undefined).send();
+        const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, undefined);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -95,7 +94,7 @@ test.describe('Login with access cookie for new user', () => {
     test('Login with (captcha: INVALID, token: NO, rememberMe: true) shall fail and redirect to the default error page', async ({
         api
     }) => {
-        const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, 'invalid').send();
+        const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, 'invalid');
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -120,7 +119,7 @@ test.describe('Login with access cookie for new user', () => {
     test('Login with (captcha: YES, token: NO, rememberMe: true) shall succeed and register a new guest user', async ({
         api
     }) => {
-        const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, null).send();
+        const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -148,7 +147,7 @@ test.describe('Login with access cookie for returning user', () => {
     });
 
     test('Login with (token: NULL, session: VALID, rememberMe: true) shall fail', async ({ api }) => {
-        const response = await api.auth.loginWithTokenRequest(null, testUser.sid, null, null, true, null).send();
+        const response = await api.auth.loginWithTokenRequest(null, testUser.sid, null, null, true, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -173,9 +172,7 @@ test.describe('Login with access cookie for returning user', () => {
     });
 
     test('Login with (token: VALID, session: VALID, rememberMe: true) shall fail', async ({ api }) => {
-        const response = await api.auth
-            .loginWithTokenRequest(testUser.tid!, testUser.sid, null, null, true, undefined)
-            .send();
+        const response = await api.auth.loginWithTokenRequest(testUser.tid!, testUser.sid, null, null, true, undefined);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -201,7 +198,7 @@ test.describe('Login with access cookie for returning user', () => {
     });
 
     test('Login with (token: VALID, session: NULL, rememberMe: NULL) shall succeed', async ({ api }) => {
-        const response = await api.auth.loginWithTokenRequest(testUser.tid!, null, null, null, null, undefined).send();
+        const response = await api.auth.loginWithTokenRequest(testUser.tid!, null, null, null, null, undefined);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -217,7 +214,7 @@ test.describe('Login with access cookie for returning user', () => {
     });
 
     test('Login with (token: VALID, session: NULL, rememberMe: false) shall succeed', async ({ api }) => {
-        const response = await api.auth.loginWithTokenRequest(testUser.tid!, null, null, null, false, undefined).send();
+        const response = await api.auth.loginWithTokenRequest(testUser.tid!, null, null, null, false, undefined);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -235,7 +232,7 @@ test.describe('Login with access cookie for returning user', () => {
     test('Login with (token: VALID, session: NULL, rememberMe: true) shall succeed and login the user', async ({
         api
     }) => {
-        const response = await api.auth.loginWithTokenRequest(testUser.tid!, null, null, null, true, undefined).send();
+        const response = await api.auth.loginWithTokenRequest(testUser.tid!, null, null, null, true, undefined);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -274,10 +271,7 @@ test.describe('Login edge cases', () => {
 
         // altering fingerprint value invalidates the session
         for (const mod of [{ 'user-agent': 'new-agent' }]) {
-            const response = await api.user
-                .getUserInfoRequest(user.sid)
-                .withHeaders({ ...extraHeaders, ...mod })
-                .send();
+            const response = await api.user.getUserInfoRequest(user.sid).withHeaders({ ...extraHeaders, ...mod });
             expect(response).toHaveStatus(401);
         }
     });
@@ -289,9 +283,14 @@ test.describe('Login edge cases', () => {
         const userHeader = await api.testUsers.createGuest();
         const tokenHeader = await api.token.createPersistentToken(userHeader.sid, 120, false);
 
-        const response = await api.auth
-            .loginWithTokenRequest(userCookie.tid!, null, tokenQuery.token, tokenHeader.token, false, null)
-            .send();
+        const response = await api.auth.loginWithTokenRequest(
+            userCookie.tid!,
+            null,
+            tokenQuery.token,
+            tokenHeader.token,
+            false,
+            null
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -309,9 +308,14 @@ test.describe('Login edge cases', () => {
         const userHeader = await api.testUsers.createGuest();
         const tokenHeader = await api.token.createPersistentToken(userHeader.sid, 120, false);
 
-        const response = await api.auth
-            .loginWithTokenRequest(userCookie.tid!, null, null, tokenHeader.token, false, null)
-            .send();
+        const response = await api.auth.loginWithTokenRequest(
+            userCookie.tid!,
+            null,
+            null,
+            tokenHeader.token,
+            false,
+            null
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();

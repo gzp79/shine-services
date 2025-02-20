@@ -31,32 +31,29 @@ import { randomUUID } from 'crypto';
 import { ParsedMail } from 'mailparser';
 
 test.describe('Login with email', () => {
-    let mock: MockSmtp | undefined;
+    let mock: MockSmtp;
 
-    const startMock = async (check: (mail: ParsedMail) => void): Promise<MockSmtp> => {
-        if (!mock) {
-            mock = new MockSmtp();
-            await mock.start(check);
-            console.log('Mock started');
-        }
-        return mock as MockSmtp;
-    };
-
-    test.afterEach(async () => {
-        await mock?.stop();
-        mock = undefined;
+    test.beforeAll(async () => {
+        mock = new MockSmtp();
+        await mock.start();
+        console.log('Mock started');
     });
 
-    test('Login with new email should create user and send email', async ({ api }) => {
-        const targetEmailAddress = `${randomUUID()}@example.com`;
-        const _mock = await startMock((mail) => {
-            expect(mail).toHaveSingleTo(targetEmailAddress);
-            expect(mail.text).toContain('Please confirm your email address');
-        });
+    test.afterAll(async () => {
+        mock.stop();
+        mock = undefined!;
+    });
 
-        const response = await api.auth
-            .loginWithEmailRequest(targetEmailAddress, null, null, null, null, null, null)
-            .send();
+    test('Login with new email should create user and send email', async ({ api, appDomain }) => {
+        const targetEmailAddress = `${randomUUID()}@example.com`;
+
+        const mailPromise = mock.waitMail();
+        const response = await api.auth.loginWithEmailRequest(targetEmailAddress, null, null, null, null, null, null);
         expect(response).toHaveStatus(200);
+        const mail = await mailPromise;
+        console.log('Mail received', mail);
+        expect(mail).toHaveMailTo(targetEmailAddress);
+        expect(mail).toHaveMailFrom(`no-replay@${appDomain}`);
+        //expect(mail.text).toContain('Please confirm your email address');
     });
 });

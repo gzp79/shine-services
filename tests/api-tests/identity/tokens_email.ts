@@ -38,7 +38,7 @@ test.describe('Email tokens', () => {
         test(`Creating ${tokenKind} with api shall be rejected`, async ({ api }) => {
             const user = await api.testUsers.createGuest();
 
-            const response = await api.token.createTokenRequest(user.sid, tokenKind as TokenKind, 20, false).send();
+            const response = await api.token.createTokenRequest(user.sid, tokenKind as TokenKind, 20, false);
             expect(response).toHaveStatus(400);
 
             const error = await response.parse(ProblemSchema);
@@ -53,7 +53,7 @@ test.describe('Email tokens', () => {
     }
 
     test(`Requesting email confirmation without session shall fail`, async ({ api }) => {
-        const response = await api.user.confirmEmailRequest(user.sid).send();
+        const response = await api.user.confirmEmailRequest(user.sid);
         expect(response).toHaveStatus(401);
     });
 
@@ -80,7 +80,7 @@ test.describe('Email tokens', () => {
     test(`Requesting email with 3rd party error shall fail`, async ({ api }) => {
         const email = randomUUID() + '@example.com';
         const user = await api.testUsers.createLinked(mockAuth, { email });
-        const response = await api.user.confirmEmailRequest(user.sid).send();
+        const response = await api.user.confirmEmailRequest(user.sid);
 
         expect(response).toHaveStatus(500);
     });

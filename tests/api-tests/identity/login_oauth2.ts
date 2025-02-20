@@ -28,7 +28,7 @@ test.describe('Check OAuth2 auth', () => {
 
     test('Auth with (parameters: NULL, session: NULL, external: NULL) shall fail', async ({ api }) => {
         await startMock();
-        const response = await api.auth.authorizeWithOAuth2Request(null, null, null, null).send();
+        const response = await api.auth.authorizeWithOAuth2Request(null, null, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -54,9 +54,12 @@ test.describe('Check OAuth2 auth', () => {
         const mock = await startMock();
         const { authParams } = await api.auth.startLoginWithOAuth2(mock, null);
 
-        const response = await api.auth
-            .authorizeWithOAuth2Request(null, null, authParams.state, ExternalUser.newRandomUser().toCode())
-            .send();
+        const response = await api.auth.authorizeWithOAuth2Request(
+            null,
+            null,
+            authParams.state,
+            ExternalUser.newRandomUser().toCode()
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -82,7 +85,7 @@ test.describe('Check OAuth2 auth', () => {
         const mock = await startMock();
         const { eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
-        const response = await api.auth.authorizeWithOAuth2Request(null, eid, null, null).send();
+        const response = await api.auth.authorizeWithOAuth2Request(null, eid, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -111,9 +114,12 @@ test.describe('Check OAuth2 auth', () => {
         const mock = await startMock();
         const { eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
-        const response = await api.auth
-            .authorizeWithOAuth2Request(null, eid, 'invalid', ExternalUser.newRandomUser().toCode())
-            .send();
+        const response = await api.auth.authorizeWithOAuth2Request(
+            null,
+            eid,
+            'invalid',
+            ExternalUser.newRandomUser().toCode()
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -139,7 +145,7 @@ test.describe('Check OAuth2 auth', () => {
         const mock = await startMock();
         const { authParams, eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
-        const response = await api.auth.authorizeWithOAuth2Request(null, eid, authParams.state, 'invalid').send();
+        const response = await api.auth.authorizeWithOAuth2Request(null, eid, authParams.state, 'invalid');
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -167,9 +173,12 @@ test.describe('Check OAuth2 auth', () => {
         const mock = await startMock(false);
         const { authParams, eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
-        const response = await api.auth
-            .authorizeWithOAuth2Request(null, eid, authParams.state, ExternalUser.newRandomUser().toCode())
-            .send();
+        const response = await api.auth.authorizeWithOAuth2Request(
+            null,
+            eid,
+            authParams.state,
+            ExternalUser.newRandomUser().toCode()
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -212,7 +221,7 @@ test.describe('Login with OAuth2', () => {
     });
 
     test('Login without captcha shall fail and redirect to the default error page', async ({ api }) => {
-        const response = await api.auth.loginWithOAuth2Request(null, null, null, undefined).send();
+        const response = await api.auth.loginWithOAuth2Request(null, null, null, undefined);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -235,7 +244,7 @@ test.describe('Login with OAuth2', () => {
     });
 
     test('Login with wrong captcha shall fail and redirect to the default error page', async ({ api }) => {
-        const response = await api.auth.loginWithOAuth2Request(null, null, null, 'invalid').send();
+        const response = await api.auth.loginWithOAuth2Request(null, null, null, 'invalid');
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -260,7 +269,7 @@ test.describe('Login with OAuth2', () => {
     test('Start login with (token: NULL, session: VALID) shall fail', async ({ api }) => {
         const { sid } = await api.auth.loginAsGuestUser();
 
-        const response = await api.auth.loginWithOAuth2Request(null, sid, null, null).send();
+        const response = await api.auth.loginWithOAuth2Request(null, sid, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -287,7 +296,7 @@ test.describe('Login with OAuth2', () => {
         const { sid } = await api.auth.loginAsGuestUser();
         await api.auth.logout(sid, null, false);
 
-        const response = await api.auth.loginWithOAuth2Request(null, sid, null, null).send();
+        const response = await api.auth.loginWithOAuth2Request(null, sid, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -303,7 +312,7 @@ test.describe('Login with OAuth2', () => {
     test('Start login with (token: VALID, session: NULL) shall succeed', async ({ api }) => {
         const { tid } = await api.auth.loginAsGuestUser();
 
-        const response = await api.auth.loginWithOAuth2Request(tid, null, null, null).send();
+        const response = await api.auth.loginWithOAuth2Request(tid, null, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -319,7 +328,7 @@ test.describe('Login with OAuth2', () => {
     test('Start login with (token: VALID, session: VALID) shall fail', async ({ api }) => {
         const { tid, sid } = await api.auth.loginAsGuestUser();
 
-        const response = await api.auth.loginWithOAuth2Request(tid, sid, null, null).send();
+        const response = await api.auth.loginWithOAuth2Request(tid, sid, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -374,9 +383,12 @@ test.describe('Login with OAuth2', () => {
         const newUser = new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email);
 
         const start = await api.auth.startLoginWithOAuth2(mock, false);
-        const response = await api.auth
-            .authorizeWithOAuth2Request(start.sid, start.eid, start.authParams.state, newUser.toCode())
-            .send();
+        const response = await api.auth.authorizeWithOAuth2Request(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            newUser.toCode()
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -422,7 +434,7 @@ test.describe('Link to OAuth2 account', () => {
     });
 
     test('Linking without a session shall fail', async ({ api }) => {
-        const response = await api.auth.linkWithOAuth2Request(null).send();
+        const response = await api.auth.linkWithOAuth2Request(null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -445,9 +457,12 @@ test.describe('Link to OAuth2 account', () => {
 
         const externalUser = new ExternalUser(randomUUID(), randomUUID(), generateRandomString(5) + '@example.com');
         const start = await api.auth.startLinkWithOAuth2(mock, user.sid);
-        const response = await api.auth
-            .authorizeWithOAuth2Request(start.sid, start.eid, start.authParams.state, externalUser.toCode())
-            .send();
+        const response = await api.auth.authorizeWithOAuth2Request(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            externalUser.toCode()
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -464,9 +479,12 @@ test.describe('Link to OAuth2 account', () => {
         const newUser = new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email);
 
         const start = await api.auth.startLinkWithOAuth2(mock, user.sid);
-        const response = await api.auth
-            .authorizeWithOAuth2Request(start.sid, start.eid, start.authParams.state, newUser.toCode())
-            .send();
+        const response = await api.auth.authorizeWithOAuth2Request(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            newUser.toCode()
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -478,9 +496,12 @@ test.describe('Link to OAuth2 account', () => {
         const user = await api.testUsers.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
 
         const start = await api.auth.startLinkWithOAuth2(mock, user.sid);
-        const response = await api.auth
-            .authorizeWithOAuth2Request(start.sid, start.eid, start.authParams.state, user.externalUser!.toCode())
-            .send();
+        const response = await api.auth.authorizeWithOAuth2Request(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            user.externalUser!.toCode()
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();

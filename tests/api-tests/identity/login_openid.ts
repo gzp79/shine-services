@@ -28,7 +28,7 @@ test.describe('Check OpenId auth', () => {
 
     test('Auth with (parameters: NULL, session: NULL, external: NULL) shall fail', async ({ api }) => {
         await startMock();
-        const response = await api.auth.authorizeWithOpenIdRequest(null, null, null, null).send();
+        const response = await api.auth.authorizeWithOpenIdRequest(null, null, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -54,14 +54,12 @@ test.describe('Check OpenId auth', () => {
         const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
-        const response = await api.auth
-            .authorizeWithOpenIdRequest(
-                null,
-                null,
-                start.authParams.state,
-                ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
-            )
-            .send();
+        const response = await api.auth.authorizeWithOpenIdRequest(
+            null,
+            null,
+            start.authParams.state,
+            ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -87,7 +85,7 @@ test.describe('Check OpenId auth', () => {
         const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
-        const response = await api.auth.authorizeWithOpenIdRequest(null, start.eid, null, null).send();
+        const response = await api.auth.authorizeWithOpenIdRequest(null, start.eid, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -116,14 +114,12 @@ test.describe('Check OpenId auth', () => {
         const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
-        const response = await api.auth
-            .authorizeWithOpenIdRequest(
-                null,
-                start.eid,
-                'invalid',
-                ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
-            )
-            .send();
+        const response = await api.auth.authorizeWithOpenIdRequest(
+            null,
+            start.eid,
+            'invalid',
+            ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -149,9 +145,7 @@ test.describe('Check OpenId auth', () => {
         const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
-        const response = await api.auth
-            .authorizeWithOpenIdRequest(null, start.eid, start.authParams.state, 'invalid')
-            .send();
+        const response = await api.auth.authorizeWithOpenIdRequest(null, start.eid, start.authParams.state, 'invalid');
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -178,14 +172,12 @@ test.describe('Check OpenId auth', () => {
         const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
-        const response = await api.auth
-            .authorizeWithOpenIdRequest(
-                null,
-                start.eid,
-                start.authParams.state,
-                ExternalUser.newRandomUser().toCode({ nonce: 'invalid' })
-            )
-            .send();
+        const response = await api.auth.authorizeWithOpenIdRequest(
+            null,
+            start.eid,
+            start.authParams.state,
+            ExternalUser.newRandomUser().toCode({ nonce: 'invalid' })
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -213,14 +205,12 @@ test.describe('Check OpenId auth', () => {
         const mock = await startMock(false);
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
-        const response = await api.auth
-            .authorizeWithOpenIdRequest(
-                null,
-                start.eid,
-                start.authParams.state,
-                ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
-            )
-            .send();
+        const response = await api.auth.authorizeWithOpenIdRequest(
+            null,
+            start.eid,
+            start.authParams.state,
+            ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -263,7 +253,7 @@ test.describe('Login with OpenId', () => {
     });
 
     test('Login without captcha shall fail and redirect to the default error page', async ({ api }) => {
-        const response = await api.auth.loginWithOpenIdRequest(null, null, null, undefined).send();
+        const response = await api.auth.loginWithOpenIdRequest(null, null, null, undefined);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -286,7 +276,7 @@ test.describe('Login with OpenId', () => {
     });
 
     test('Login with wrong captcha shall fail and redirect to the default error page', async ({ api }) => {
-        const response = await api.auth.loginWithOpenIdRequest(null, null, null, 'invalid').send();
+        const response = await api.auth.loginWithOpenIdRequest(null, null, null, 'invalid');
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -311,7 +301,7 @@ test.describe('Login with OpenId', () => {
     test('Start login with (token: NULL, session: VALID) shall fail', async ({ api }) => {
         const { sid } = await api.auth.loginAsGuestUser();
 
-        const response = await api.auth.loginWithOpenIdRequest(null, sid, null, null).send();
+        const response = await api.auth.loginWithOpenIdRequest(null, sid, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -338,7 +328,7 @@ test.describe('Login with OpenId', () => {
         const { sid } = await api.auth.loginAsGuestUser();
         await api.auth.logout(sid, null, false);
 
-        const response = await api.auth.loginWithOpenIdRequest(null, sid, null, null).send();
+        const response = await api.auth.loginWithOpenIdRequest(null, sid, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -354,7 +344,7 @@ test.describe('Login with OpenId', () => {
     test('Start login with (token: VALID, session: NULL) shall succeed', async ({ api }) => {
         const { tid } = await api.auth.loginAsGuestUser();
 
-        const response = await api.auth.loginWithOpenIdRequest(tid, null, null, null).send();
+        const response = await api.auth.loginWithOpenIdRequest(tid, null, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -370,7 +360,7 @@ test.describe('Login with OpenId', () => {
     test('Start login with (token: VALID, session: VALID) shall fail', async ({ api }) => {
         const { tid, sid } = await api.auth.loginAsGuestUser();
 
-        const response = await api.auth.loginWithOpenIdRequest(tid, sid, null, null).send();
+        const response = await api.auth.loginWithOpenIdRequest(tid, sid, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -425,14 +415,12 @@ test.describe('Login with OpenId', () => {
         const newUser = new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email);
 
         const start = await api.auth.startLoginWithOpenId(mock, false);
-        const response = await api.auth
-            .authorizeWithOpenIdRequest(
-                start.sid,
-                start.eid,
-                start.authParams.state,
-                newUser.toCode({ nonce: start.authParams.nonce })
-            )
-            .send();
+        const response = await api.auth.authorizeWithOpenIdRequest(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            newUser.toCode({ nonce: start.authParams.nonce })
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -478,7 +466,7 @@ test.describe('Link to OpenId account', () => {
     });
 
     test('Linking without a session shall fail', async ({ api }) => {
-        const response = await api.auth.linkWithOpenIdRequest(null).send();
+        const response = await api.auth.linkWithOpenIdRequest(null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -501,14 +489,12 @@ test.describe('Link to OpenId account', () => {
 
         const externalUser = new ExternalUser(randomUUID(), randomUUID(), generateRandomString(5) + '@example.com');
         const start = await api.auth.startLinkWithOpenId(mock, user.sid);
-        const response = await api.auth
-            .authorizeWithOpenIdRequest(
-                start.sid,
-                start.eid,
-                start.authParams.state,
-                externalUser.toCode({ nonce: start.authParams.nonce })
-            )
-            .send();
+        const response = await api.auth.authorizeWithOpenIdRequest(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            externalUser.toCode({ nonce: start.authParams.nonce })
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -525,14 +511,12 @@ test.describe('Link to OpenId account', () => {
         const newUser = new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email);
 
         const start = await api.auth.startLinkWithOpenId(mock, user.sid);
-        const response = await api.auth
-            .authorizeWithOpenIdRequest(
-                start.sid,
-                start.eid,
-                start.authParams.state,
-                newUser.toCode({ nonce: start.authParams.nonce })
-            )
-            .send();
+        const response = await api.auth.authorizeWithOpenIdRequest(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            newUser.toCode({ nonce: start.authParams.nonce })
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
@@ -544,14 +528,12 @@ test.describe('Link to OpenId account', () => {
         const user = await api.testUsers.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
 
         const start = await api.auth.startLinkWithOpenId(mock, user.sid);
-        const response = await api.auth
-            .authorizeWithOpenIdRequest(
-                start.sid,
-                start.eid,
-                start.authParams.state,
-                user.externalUser!.toCode({ nonce: start.authParams.nonce })
-            )
-            .send();
+        const response = await api.auth.authorizeWithOpenIdRequest(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            user.externalUser!.toCode({ nonce: start.authParams.nonce })
+        );
         expect(response).toHaveStatus(200);
 
         const text = await response.text();

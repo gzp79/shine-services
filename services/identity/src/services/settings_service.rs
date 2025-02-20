@@ -10,6 +10,7 @@ pub struct TokenSettings {
 
 pub struct SettingsService {
     pub app_name: String,
+    pub service_url: Url,
     pub home_url: Url,
     pub error_url: Url,
     pub token: TokenSettings,

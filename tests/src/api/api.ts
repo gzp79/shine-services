@@ -245,7 +245,7 @@ export class ApiRequest<Q = void> {
         return JSON.stringify(this.body);
     }
 
-    async send(): Promise<ApiResponse> {
+    private async send(): Promise<ApiResponse> {
         const context = await request.newContext();
 
         const log_id = randomUUID();
@@ -301,5 +301,12 @@ export class ApiRequest<Q = void> {
         }
 
         return api_response;
+    }
+
+    then<TResult1 = ApiResponse, TResult2 = never>(
+        onfulfilled?: ((value: ApiResponse) => TResult1 | PromiseLike<TResult1>) | null,
+        onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+    ): Promise<TResult1 | TResult2> {
+        return this.send().then(onfulfilled, onrejected);
     }
 }
