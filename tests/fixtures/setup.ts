@@ -15,6 +15,7 @@ export type ServiceOptions = {
     appDomain: string;
     serviceDomain: string;
 
+    homeUrl: string;
     identityUrl: string;
     builderUrl: string;
 
@@ -38,6 +39,7 @@ export type ServiceTestFixture = {
 export const test = base.extend<ServiceTestFixture, ServiceOptions /*& ServiceWorkerFixture*/>({
     appDomain: [undefined!, { scope: 'worker', option: true }],
     serviceDomain: [undefined!, { scope: 'worker', option: true }],
+    homeUrl: [undefined!, { scope: 'worker', option: true }],
     identityUrl: [undefined!, { scope: 'worker', option: true }],
     builderUrl: [undefined!, { scope: 'worker', option: true }],
     masterAdminKey: [undefined!, { scope: 'worker', option: true }],

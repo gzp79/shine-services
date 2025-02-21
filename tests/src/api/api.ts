@@ -305,7 +305,7 @@ export class ApiRequest<Q = void> {
 
     then<TResult1 = ApiResponse, TResult2 = never>(
         onfulfilled?: ((value: ApiResponse) => TResult1 | PromiseLike<TResult1>) | null,
-        onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+        onrejected?: ((reason: void) => TResult2 | PromiseLike<TResult2>) | null
     ): Promise<TResult1 | TResult2> {
         return this.send().then(onfulfilled, onrejected);
     }

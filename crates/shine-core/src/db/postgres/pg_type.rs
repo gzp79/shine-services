@@ -6,6 +6,12 @@ pub trait PGValue: 'static {
 }
 
 #[derive(Debug)]
+pub struct PGValueTypeBOOL;
+impl PGValue for PGValueTypeBOOL {
+    const PG_TYPE: PGType = PGType::BOOL;
+}
+
+#[derive(Debug)]
 pub struct PGValueTypeINT2;
 impl PGValue for PGValueTypeINT2 {
     const PG_TYPE: PGType = PGType::INT2;
@@ -58,6 +64,10 @@ where
     T: ToPGType,
 {
     type PGValueType = T::PGValueType;
+}
+
+impl ToPGType for bool {
+    type PGValueType = PGValueTypeBOOL;
 }
 
 impl ToPGType for i16 {

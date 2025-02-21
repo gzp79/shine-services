@@ -4,9 +4,10 @@ use crate::{
 };
 use axum::{extract::State, Extension};
 use serde::Deserialize;
-use shine_core::{consts::Language, web::{
-    ClientFingerprint, IntoProblemResponse, ProblemConfig, ProblemResponse, SiteInfo, ValidatedQuery,
-}};
+use shine_core::{
+    consts::Language,
+    web::{ClientFingerprint, IntoProblemResponse, ProblemConfig, ProblemResponse, SiteInfo, ValidatedQuery},
+};
 use utoipa::IntoParams;
 use validator::Validate;
 
@@ -47,13 +48,14 @@ pub async fn email_login(
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 
-    if auth_session.user_session().is_some() {
-        return Err(AuthError::LogoutRequired.into_response(&problem_config));
-    }
+    let user_name = match auth_session.user_session() {
+        Some(user_session) => user_session.name.clone(),
+        None => return Err(AuthError::LogoutRequired.into_response(&problem_config)),
+    };
 
     state
         .mailer_service()
-        .send_confirmation_email(&query.email, "token", query.lang)
+        .send_confirmation_email(&query.email, "token", query.lang, &user_name)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
     // create a user with an unconfirmed email address

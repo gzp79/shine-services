@@ -40,12 +40,22 @@ pub struct UserToken {
 }
 
 #[derive(Clone, Debug)]
-pub struct EmailToken {
+pub struct EmailVerifyToken {
     pub user_id: Uuid,
     pub token: String,
     pub token_hash: String,
     pub expire_at: DateTime<Utc>,
     pub email: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct EmailChangeToken {
+    pub user_id: Uuid,
+    pub token: String,
+    pub token_hash: String,
+    pub expire_at: DateTime<Utc>,
+    pub current_email: Option<String>,
+    pub new_email: String,
 }
 
 pub struct TokenGenerator<'a, IDB>
@@ -123,13 +133,12 @@ where
         }
     }
 
-    pub async fn create_email_token(
+    pub async fn create_email_verify_token(
         &self,
         user_id: Uuid,
         time_to_live: &Duration,
         site_info: &SiteInfo,
-    ) -> Result<EmailToken, TokenGeneratorError> {
-        let kind = TokenKind::EmailVerify;
+    ) -> Result<EmailVerifyToken, TokenGeneratorError> {
         let email = self
             .identity_service
             .find_by_id(user_id)
@@ -137,16 +146,59 @@ where
             .ok_or(IdentityError::UserDeleted { id: user_id })?
             .email
             .ok_or(IdentityError::MissingEmail)?;
+
         let token = self
-            .create_user_token(user_id, kind, time_to_live, None, Some(&email), site_info)
+            .create_user_token(
+                user_id,
+                TokenKind::EmailVerify,
+                time_to_live,
+                None,
+                Some(&email),
+                site_info,
+            )
             .await?;
 
-        Ok(EmailToken {
+        Ok(EmailVerifyToken {
             user_id,
             token: token.token,
             token_hash: token.token_hash,
             expire_at: token.expire_at,
             email,
+        })
+    }
+
+    pub async fn create_email_change_token(
+        &self,
+        user_id: Uuid,
+        time_to_live: &Duration,
+        site_info: &SiteInfo,
+        new_email: String,
+    ) -> Result<EmailChangeToken, TokenGeneratorError> {
+        let email = self
+            .identity_service
+            .find_by_id(user_id)
+            .await?
+            .ok_or(IdentityError::UserDeleted { id: user_id })?
+            .email;
+
+        let token = self
+            .create_user_token(
+                user_id,
+                TokenKind::EmailChange,
+                time_to_live,
+                None,
+                Some(&new_email),
+                site_info,
+            )
+            .await?;
+
+        Ok(EmailChangeToken {
+            user_id,
+            token: token.token,
+            token_hash: token.token_hash,
+            expire_at: token.expire_at,
+            current_email: email,
+            new_email,
         })
     }
 }

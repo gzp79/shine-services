@@ -28,7 +28,6 @@ todo:
 import { expect, test } from '$fixtures/setup';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import { randomUUID } from 'crypto';
-import { ParsedMail } from 'mailparser';
 
 test.describe('Login with email', () => {
     let mock: MockSmtp;
@@ -40,7 +39,7 @@ test.describe('Login with email', () => {
     });
 
     test.afterAll(async () => {
-        mock.stop();
+        await mock.stop();
         mock = undefined!;
     });
 

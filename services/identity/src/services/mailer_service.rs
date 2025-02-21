@@ -23,16 +23,25 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
         to: &str,
         token: &str,
         lang: Option<Language>,
+        user_name: &str,
     ) -> Result<(), EmailSenderError> {
         let mut context = tera::Context::new();
 
+        let lang = lang.unwrap_or(Language::En);
         let to_hash = hash_email(to);
         let url = format!(
-            "https://{}/auth/token/login?token={}&email_hash={}",
-            self.settings.service_url, token, to_hash
+            "{}token/login?token={}&emailHash={}",
+            self.settings.auth_base_url, token, to_hash
         );
 
-        context.insert("login", url.as_str());
+        context.insert("user", user_name);
+        context.insert("link", url.as_str());
+        context.insert("app", self.settings.app_name.as_str());
+
+        let html = self
+            .tera
+            .render(&format!("mail/{}/confirm.html", lang), &context)
+            .expect("Failed to generate confirm html");
 
         self.mailer
             .send(
@@ -40,9 +49,7 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
                 to,
                 Email {
                     subject: "Confirm your email".to_string(),
-                    body: EmailContent::Text(format!(
-                        "Click the link below to confirm your email address:\n\nhttps://example.com/auth/email/confirm?token={token}"
-                    )),
+                    body: EmailContent::Html(html),
                 },
             )
             .await?;

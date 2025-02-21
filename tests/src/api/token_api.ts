@@ -4,7 +4,7 @@ import { joinURL } from '$lib/utils';
 import { z } from 'zod';
 import { ApiRequest } from './api';
 
-const TokenKindSchema = z.enum(['singleAccess', 'persistent', 'access']);
+const TokenKindSchema = z.enum(['singleAccess', 'persistent', 'access', 'emailVerify', 'emailChange']);
 export type TokenKind = z.infer<typeof TokenKindSchema>;
 
 const ActiveTokenSchema = z.object({

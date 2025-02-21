@@ -26,13 +26,13 @@ test.describe('Check OAuth2 auth', () => {
         mock = undefined;
     });
 
-    test('Auth with (parameters: NULL, session: NULL, external: NULL) shall fail', async ({ api }) => {
+    test('Auth with (parameters: NULL, session: NULL, external: NULL) shall fail', async ({ homeUrl, api }) => {
         await startMock();
         const response = await api.auth.authorizeWithOAuth2Request(null, null, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual('https://local-scytta.com:4443/error?type=auth-error&status=400');
+        expect(getPageRedirectUrl(text)).toEqual(`${homeUrl}/error?type=auth-error&status=400`);
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
                 type: 'auth-error',
@@ -50,7 +50,7 @@ test.describe('Check OAuth2 auth', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    test('Auth with (parameters: VALID, session: NULL, external: NULL) shall fail', async ({ api }) => {
+    test('Auth with (parameters: VALID, session: NULL, external: NULL) shall fail', async ({ homeUrl, api }) => {
         const mock = await startMock();
         const { authParams } = await api.auth.startLoginWithOAuth2(mock, null);
 
@@ -63,7 +63,7 @@ test.describe('Check OAuth2 auth', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual('https://local-scytta.com:4443/error?type=auth-error&status=400');
+        expect(getPageRedirectUrl(text)).toEqual(`${homeUrl}/error?type=auth-error&status=400`);
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
                 type: 'auth-error',

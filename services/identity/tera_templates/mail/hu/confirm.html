@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Email Cím Megerősítése</title>
+  </head>
+  <body>
+    <h1>Email Cím Megerősítése</h1>
+    <p>Kedves {{ user }},</p>
+    <p>
+      Köszönjük, hogy regisztrált. Kérjük, erősítse meg az email címét az alábbi
+      linkre kattintva:
+    </p>
+    <p><a href="{{ link }}">Email Cím Megerősítése</a></p>
+    <p>
+      Ha nem regisztrált erre a fiókra, kérjük, hagyja figyelmen kívül ezt az
+      emailt.
+    </p>
+    <p>Üdvözlettel,<br />{{ App }}</p>
+  </body>
+</html>

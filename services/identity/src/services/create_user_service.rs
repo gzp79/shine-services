@@ -5,6 +5,7 @@ use crate::{
 use shine_core::web::Problem;
 use thiserror::Error as ThisError;
 use uuid::Uuid;
+use validator::ValidateEmail;
 
 #[derive(Debug, ThisError)]
 pub enum UserCreateError {
@@ -52,8 +53,12 @@ where
             None => external_user
                 .as_ref()
                 .and_then(|u| u.email.as_deref())
+                .filter(|email| email.validate_email())
                 .map(|email| (email, false)),
         };
+
+        assert!(email.as_ref().map_or(true, |(email, _)| email.validate_email()));
+
         let mut retry_count = 0;
         loop {
             log::debug!("Creating new user; retry: {retry_count:#?}");

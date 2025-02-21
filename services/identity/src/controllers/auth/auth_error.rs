@@ -2,9 +2,6 @@ use crate::{
     repositories::{identity::IdentityError, session::SessionError, CaptchaError},
     services::{TokenGeneratorError, UserCreateError},
 };
-use lettre::transport::smtp::extension;
-use serde::Serialize;
-use serde_json::Value as JsonValue;
 use shine_core::web::{InputError, Problem};
 use thiserror::Error as ThisError;
 
@@ -73,6 +70,8 @@ pub enum AuthError {
     InvalidToken,
     #[error("Login token has been revoked")]
     TokenExpired,
+    #[error("Email has been altered")]
+    EmailConflict,
     #[error("User session has expired")]
     SessionExpired,
     #[error("External provider has already been linked to another user already")]
@@ -109,6 +108,7 @@ impl From<AuthError> for Problem {
             AuthError::InvalidHeader => Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("invalidHeader"),
             AuthError::TokenExpired => Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("expiredToken"),
             AuthError::InvalidToken => Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("invalidToken"),
+            AuthError::EmailConflict => Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("emailConflict"),
             AuthError::SessionExpired => Problem::unauthorized_ty(SESSION_EXPIRED),
             AuthError::ProviderAlreadyUsed => Problem::conflict(EXTERNAL_ID_CONFLICT),
             AuthError::EmailAlreadyUsed => Problem::conflict(EMAIL_CONFLICT),

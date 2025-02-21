@@ -1,11 +1,15 @@
+import { expect } from '$fixtures/setup';
+import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIdMockServer from '$lib/mocks/openid';
 import { generateRandomString } from '$lib/string_utils';
 import { randomUUID } from 'crypto';
 import { MockServer } from '../mocks/mock_server';
+import { ApiRequest } from './api';
 import { AuthAPI } from './auth_api';
 import { ExternalUser } from './external_user';
 import { UserAPI, UserInfo } from './user_api';
+import { getEmailLink, getPageProblem, getPageRedirectUrl } from './utils';
 
 export class TestUser {
     public sid: string = '';
@@ -42,6 +46,20 @@ export class TestUser {
     public async refreshUserInfo(extraHeaders?: Record<string, string>) {
         const info = await this.userAPI.getUserInfo(this.sid, extraHeaders);
         this.userInfo = info;
+    }
+
+    public async confirmEmail(mock: MockSmtp) {
+        const mailPromise = mock.waitMail();
+        await this.userAPI.confirmEmail(this.sid);
+        const mail = await mailPromise;
+        const response = await ApiRequest.get(getEmailLink(mail));
+        expect(response).toHaveStatus(200);
+        // check it it was a valid signin
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toStartWith('https://');
+        expect(getPageProblem(await response.text())).toBeNull();
+        await this.refreshUserInfo();
+        expect(this.userInfo?.isEmailConfirmed).toBe(true);
     }
 }
 

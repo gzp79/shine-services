@@ -16,16 +16,16 @@ use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
 
-#[derive(Deserialize, Validate, IntoParams)]
+#[derive(Debug, Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryParams {
-    /// Required based on the token flow:
-    /// - If auth header or query token is used, the property optional and a new access token is created
-    /// - If (access) cookie is used, ignored and a simple login is performed (there is an active access token already)
-    /// - If no token was used, it is a user registration and it have to be true
+    /// Remember me for the next login.
+    /// - If auth header or query token is used, the property **optional** and a new access token is created
+    /// - If (access) cookie is used, **ignored** and a simple login is performed (there is an active access token already)
+    /// - no token was used, it is a user registration and it have to be **true**
     remember_me: Option<bool>,
-    /// Required based on the token flow
-    ///  - It is used only in the email change flow to validate the originating email address
+    /// Required for
+    ///  - Email confirmation to make sure the link is from the correct email
     email_hash: Option<String>,
     token: Option<String>,
     redirect_url: Option<Url>,
@@ -53,6 +53,8 @@ async fn complete_verify_email(
     identity: Identity,
     auth_session: AuthSession,
 ) -> Result<AuthenticationSuccess, AuthenticationFailure> {
+    log::debug!("Completing email verification...");
+
     let confirmed_email = token_info
         .bound_email
         .as_deref()
@@ -63,14 +65,20 @@ async fn complete_verify_email(
     let query_email_hash = query.email_hash.as_ref();
 
     if confirmed_email_hash != identity_email_hash || confirmed_email_hash.as_ref() != query_email_hash {
-        log::info!("Identity {} has non-matching emails to verify.", identity.id);
+        log::info!(
+            "Identity {} has non-matching emails to verify. [{:?}], [{:?}], [{:?}]",
+            identity.id,
+            confirmed_email_hash,
+            identity_email_hash,
+            query_email_hash
+        );
         return Err(AuthenticationFailure {
-            error: AuthError::TokenExpired,
+            error: AuthError::EmailConflict,
             auth_session,
         });
     }
 
-    log::info!("Completing email verification for identity {}.", identity.id);
+    log::info!("Updating email verification for identity {}.", identity.id);
     let identity = match state
         .identity_service()
         .update(identity.id, None, Some((confirmed_email, true)))
@@ -79,7 +87,7 @@ async fn complete_verify_email(
         Ok(Some(identity)) => identity,
         Ok(None) => {
             return Err(AuthenticationFailure {
-                error: AuthError::TokenExpired,
+                error: IdentityError::UserDeleted { id: identity.id }.into(),
                 auth_session,
             })
         }
@@ -106,6 +114,7 @@ async fn complete_change_email(
     identity: Identity,
     auth_session: AuthSession,
 ) -> Result<AuthenticationSuccess, AuthenticationFailure> {
+    log::debug!("Completing email change...");
     let confirmed_email = token_info
         .bound_email
         .as_deref()
@@ -118,13 +127,13 @@ async fn complete_change_email(
     if original_email_hash.as_ref() != query_email_hash {
         log::info!("Identity {} has non-matching emails for change.", identity.id,);
         return Err(AuthenticationFailure {
-            error: AuthError::TokenExpired,
+            error: AuthError::EmailConflict,
             auth_session,
         });
     }
 
     log::info!(
-        "Completing email change for identity {}: ({:?} -> {}).",
+        "Updating email change for identity {}: ({:?} -> {}).",
         identity.id,
         identity.email,
         confirmed_email
@@ -594,6 +603,8 @@ pub async fn token_login(
         Ok(ValidatedQuery(query)) => query,
         Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
     };
+
+    log::debug!("Query: {:#?}", query);
 
     // clear external login cookie, it shall be only for the authorize callback from the external provider
     let auth_session = auth_session.with_external_login(None);

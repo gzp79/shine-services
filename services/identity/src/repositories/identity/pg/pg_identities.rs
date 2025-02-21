@@ -48,7 +48,7 @@ pg_query!( InsertIdentity =>
     sql = r#"
         INSERT INTO identities (user_id, kind, created, name, email) 
             VALUES ($1, $2, now(), $3, $4)
-            RETURNING created
+        RETURNING created
     "#
 );
 
@@ -81,13 +81,16 @@ pg_query!( FindById =>
     "#
 );
 
-pg_query!( Update =>
-    in = user_id: Uuid, user_name: Option<&str>, email: Option<&str>/*, email_confirmed: Option<bool>*/;
+pg_query!( UpdateIdentity =>
+    in = user_id: Uuid, user_name: Option<&str>, email: Option<&str>, email_confirmed: Option<bool>;
     out = IdentityRow;
     sql = r#"
-        UPDATE identities 
-            SET name = $2, email = $3 --, email_confirmed = $4
-            WHERE user_id = $1            
+        UPDATE identities
+            SET name = COALESCE($2, name),
+                email = COALESCE($3, email),
+                email_confirmed = COALESCE($4, email_confirmed)
+            WHERE user_id = $1
+        RETURNING user_id, kind, name, email, email_confirmed, created, data_version
     "#
 );
 
@@ -96,7 +99,7 @@ pub struct PgIdentitiesStatements {
     insert_identity: InsertIdentity,
     cascaded_delete: CascadedDelete,
     find_by_id: FindById,
-    update: Update,
+    update: UpdateIdentity,
 }
 
 impl PgIdentitiesStatements {
@@ -105,7 +108,7 @@ impl PgIdentitiesStatements {
             insert_identity: InsertIdentity::new(client).await.map_err(DBError::from)?,
             cascaded_delete: CascadedDelete::new(client).await.map_err(DBError::from)?,
             find_by_id: FindById::new(client).await.map_err(DBError::from)?,
-            update: Update::new(client).await.map_err(DBError::from)?,
+            update: UpdateIdentity::new(client).await.map_err(DBError::from)?,
         })
     }
 }
@@ -190,13 +193,7 @@ impl<'a> Identities for PgIdentityDbContext<'a> {
         Ok(self
             .stmts_identities
             .update
-            .query_opt(
-                &self.client,
-                &id,
-                &name,
-                &email.map(|x| x.0),
-                //&email.map(|x| x.1),
-            )
+            .query_opt(&self.client, &id, &name, &email.map(|x| x.0), &email.map(|x| x.1))
             .await
             .map_err(DBError::from)?
             .map(|row| Identity {

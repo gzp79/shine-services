@@ -44,7 +44,7 @@ impl AppState {
 
         let settings = SettingsService {
             app_name: config_auth.app_name.clone(),
-            service_url: config_auth.auth_base_url.clone(),
+            auth_base_url: config_auth.auth_base_url.clone(),
             home_url: config_auth.home_url.clone(),
             error_url: config_auth.error_url.clone(),
             token: TokenSettings {

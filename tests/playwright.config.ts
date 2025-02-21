@@ -36,6 +36,7 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
                 appDomain: 'local-scytta.com',
                 serviceDomain: 'cloud.local-scytta.com',
 
+                homeUrl: 'https://local-scytta.com:4443',
                 identityUrl: 'https://cloud.local-scytta.com:8443/identity',
                 builderUrl: 'https://cloud.local-scytta.com:8444/identity',
 

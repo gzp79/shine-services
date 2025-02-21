@@ -1,5 +1,6 @@
 import debug from 'debug';
 import { decode } from 'html-entities';
+import { ParsedMail } from 'mailparser';
 import { Problem, ProblemSchema } from './api';
 
 const log = debug('test:page');
@@ -22,4 +23,13 @@ export function getPageProblem(page: string): Problem | null {
     const json = decode(part);
     log(`Problem: ${json}`);
     return ProblemSchema.parse(JSON.parse(json));
+}
+
+export function getEmailLink(mail: ParsedMail): string {
+    const html = mail.textAsHtml ?? '';
+    const regexp = /<a\s+href="([^"]*)"[^>]*>.*<\/a>/;
+    const match = regexp.exec(html) ?? [];
+    const url = match[1] ?? '';
+    log(`Email link: ${url}`);
+    return url;
 }

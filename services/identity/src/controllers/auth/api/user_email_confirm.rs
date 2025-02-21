@@ -37,13 +37,13 @@ pub async fn validate_user_email(
 
     let token = state
         .token_service()
-        .create_email_token(user.user_id, &ttl, &site_info)
+        .create_email_verify_token(user.user_id, &ttl, &site_info)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 
     state
         .mailer_service()
-        .send_confirmation_email(&token.email, &token.token, query.lang)
+        .send_confirmation_email(&token.email, &token.token, query.lang, &user.name)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 

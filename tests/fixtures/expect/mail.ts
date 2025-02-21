@@ -42,5 +42,21 @@ export const expect = baseExpect.extend({
                 pass: false
             };
         }
+    },
+
+    toContainMailBody(actual: ParsedMail, text: string) {
+        const pass = actual.textAsHtml?.includes(text);
+
+        if (pass) {
+            return {
+                message: () => `expected [${actual.textAsHtml}] not to contain [${text}]`,
+                pass: true
+            };
+        } else {
+            return {
+                message: () => `expected [${actual.textAsHtml}] to contain [${text}]`,
+                pass: false
+            };
+        }
     }
 });

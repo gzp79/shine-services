@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import debug from 'debug';
 import { ParsedMail, simpleParser } from 'mailparser';
 import { Logger, LoggerLevel } from 'nodemailer/lib/shared';
@@ -24,10 +25,10 @@ class MockSmtpLogger implements Logger {
 
 class MockSmtp {
     private server: SMTPServer;
-    private _isRunning = false;
-    private mailReceived: Promise<ParsedMail>;
-    private resolveMailReceived?: (mail: ParsedMail) => void;
-    private rejectMailReceived?: (reason?: any) => void;
+    private isStarted = false;
+    private resolveWaitMail?: (mail: ParsedMail) => void;
+    private rejectWaitMail?: (reason?: any) => void;
+    private onMailReceived?: (mail: ParsedMail) => void;
 
     constructor(public readonly port: number = 2525) {
         this.server = new SMTPServer({
@@ -37,14 +38,11 @@ class MockSmtp {
                 simpleParser(stream, (err, parsed) => {
                     if (err) {
                         log('Error parsing email:', err);
-                        this.rejectMailReceived?.(err);
+                        this.rejectWaitMail?.(err);
                     } else {
-                        this.resolveMailReceived?.(parsed);
+                        this.onMailReceived?.(parsed);
+                        this.resolveWaitMail?.(parsed);
                     }
-                    this.mailReceived = new Promise((resolve, reject) => {
-                        this.resolveMailReceived = resolve;
-                        this.rejectMailReceived = reject;
-                    });
                 });
                 return callback(null);
             },
@@ -54,28 +52,24 @@ class MockSmtp {
                 return callback(null, { user: auth.username });
             },
 
-            disabledCommands: ['STARTTLS']
+            disabledCommands: ['STARTTLS'],
             /*secure: true,
             key: CERTIFICATES.key,
             cert: CERTIFICATES.cert,
             rejectUnauthorized: false*/
-        });
-
-        this.mailReceived = new Promise((resolve, reject) => {
-            this.resolveMailReceived = resolve;
-            this.rejectMailReceived = reject;
+            closeTimeout: 100
         });
     }
 
     async start(): Promise<void> {
-        if (this._isRunning) {
+        if (this.isRunning) {
             log('SMTP Mock Server already running.');
             return;
         }
 
         await new Promise<void>((resolve) => {
             this.server.listen(this.port, () => {
-                this._isRunning = true;
+                this.isStarted = true;
                 resolve();
             });
         });
@@ -88,10 +82,8 @@ class MockSmtp {
             log('SMTP Mock stopping...');
 
             this.server.close(() => {
-                this.rejectMailReceived?.(new Error('Mail server stopped.'));
-                this.rejectMailReceived = undefined;
-                this.resolveMailReceived = undefined;
-                this._isRunning = false;
+                this.rejectWaitMail?.(new Error('Mail server stopped.'));
+                this.isStarted = false;
                 resolve();
             });
         });
@@ -100,14 +92,28 @@ class MockSmtp {
     }
 
     get isRunning(): boolean {
-        return this._isRunning;
+        return this.isStarted;
     }
 
     async waitMail(): Promise<ParsedMail> {
-        if (!this._isRunning) throw new Error('SMTP Mock Server is not running.');
+        if (!this.isStarted) throw new Error('SMTP Mock Server is not running.');
         log('Waiting for email...');
-        const mail = await this.mailReceived;
-        return mail;
+        return new Promise((resolve, reject) => {
+            this.resolveWaitMail = (mail) => {
+                resolve(mail);
+                this.resolveWaitMail = undefined;
+                this.rejectWaitMail = undefined;
+            };
+            this.rejectWaitMail = (reason?: any) => {
+                reject(reason);
+                this.resolveWaitMail = undefined;
+                this.rejectWaitMail = undefined;
+            };
+        });
+    }
+
+    onMail(callback: (mail: ParsedMail) => void) {
+        this.onMailReceived = callback;
     }
 }
 

@@ -5,6 +5,7 @@ import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 
 test.describe('Login with access cookie for new user', () => {
     test('Login with (captcha: NO, token: NO, rememberMe: INVALID) shall fail and redirect to the default error page', async ({
+        homeUrl,
         api
     }) => {
         const response = await api.auth
@@ -13,9 +14,7 @@ test.describe('Login with access cookie for new user', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(
-            'https://local-scytta.com:4443/error?type=auth-input-error&status=400'
-        );
+        expect(getPageRedirectUrl(text)).toEqual(`${homeUrl}/error?type=auth-input-error&status=400`);
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
                 type: 'auth-input-error',
