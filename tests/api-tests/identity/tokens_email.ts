@@ -124,7 +124,6 @@ test.describe('Email confirmation', () => {
     test(`Login with requested email confirmation and corrupted email hash shall fail`, async ({ homeUrl, api }) => {
         const smtp = await startMockEmail();
         const user = await api.testUsers.createLinked(mockAuth);
-        const { sessionLength, ...userInfo } = await api.user.getUserInfo(user.sid);
 
         const mailPromise = smtp.waitMail();
         await api.user.confirmEmail(user.sid);
@@ -165,7 +164,7 @@ test.describe('Email confirmation', () => {
         await test.step('Revoke token', async () => {
             const tokens = await api.token.getTokens(user.sid);
             expect(tokens).toEqual([expect.objectContaining({ kind: 'emailVerify', isExpired: false })]);
-            api.token.revokeToken(user.sid, tokens[0].tokenHash);
+            await api.token.revokeToken(user.sid, tokens[0].tokenHash);
             expect(await api.token.getTokens(user.sid)).toEqual([]);
         });
 

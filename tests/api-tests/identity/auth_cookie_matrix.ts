@@ -52,7 +52,7 @@ test.describe('Auth cookie consistency matrix', () => {
             let tid, sid, eid: string;
 
             {
-                const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, null);
+                const response = await api.auth.loginWithGuestRequest(null, null, null);
                 expect(response).toHaveStatus(200);
                 const cookies = response.cookies();
                 expect(cookies.tid).toBeValidTID();

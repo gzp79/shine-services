@@ -30,7 +30,7 @@ pub struct QueryParams {
         QueryParams
     ),
     responses(
-        (status = OK, description="Html page to update client cookies and complete the OpenIdConnect login flow")
+        (status = OK, description="Complete the OenID Connect login flow")
     )
 )]
 pub async fn oidc_auth(

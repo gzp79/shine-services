@@ -21,8 +21,7 @@ impl ToSql for TokenKind {
             TokenKind::SingleAccess => 1,
             TokenKind::Persistent => 2,
             TokenKind::Access => 3,
-            TokenKind::EmailVerify => 4,
-            TokenKind::EmailChange => 5,
+            TokenKind::EmailAccess => 4,
         };
         value.to_sql(ty, out)
     }
@@ -38,8 +37,7 @@ impl FromSql<'_> for TokenKind {
             1 => Ok(TokenKind::SingleAccess),
             2 => Ok(TokenKind::Persistent),
             3 => Ok(TokenKind::Access),
-            4 => Ok(TokenKind::EmailVerify),
-            5 => Ok(TokenKind::EmailChange),
+            4 => Ok(TokenKind::EmailAccess),
             _ => Err(PGConvertError::from("Invalid value for TokenKind")),
         }
     }

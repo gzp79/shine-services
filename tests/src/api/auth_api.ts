@@ -72,6 +72,16 @@ export class AuthAPI {
         return ApiRequest.get(this.urlFor('auth/validate')).withCookies({ ...ct, ...cs, ...ce });
     }
 
+    loginWithGuestRequest(tid: string | null, sid: string | null, captcha: string | null | undefined): ApiRequest {
+        const ct = tid && { tid };
+        const cs = sid && { sid };
+        const qc = getCaptchaQuery(captcha);
+
+        return ApiRequest.get(this.urlFor('auth/guest/login'))
+            .withParams({ ...qc, ...this.defaultRedirects })
+            .withCookies({ ...ct, ...cs });
+    }
+
     loginWithTokenRequest(
         tid: string | null,
         sid: string | null,
@@ -116,9 +126,7 @@ export class AuthAPI {
 
     async loginAsGuestUser(extraHeaders?: Record<string, string>): Promise<UserCookies> {
         // use the default captcha to fast-login
-        const response = await this.loginWithTokenRequest(null, null, null, null, true, null).withHeaders(
-            extraHeaders ?? {}
-        );
+        const response = await this.loginWithGuestRequest(null, null, null).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(this.defaultRedirects.redirectUrl);
 

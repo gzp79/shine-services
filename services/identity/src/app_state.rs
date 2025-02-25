@@ -12,8 +12,9 @@ use crate::{
     },
 };
 use anyhow::{anyhow, Error as AnyError};
+use base64::{prelude::BASE64_URL_SAFE_NO_PAD as B64, Engine};
 use chrono::Duration;
-use ring::rand::SystemRandom;
+use ring::{hmac, rand::SystemRandom};
 use shine_core::{
     utils::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
     web::{ProblemConfig, WebAppConfig},
@@ -52,6 +53,11 @@ impl AppState {
                 ttl_single_access: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_single_access)?),
                 ttl_api_key: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_api_key)?),
                 ttl_email_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_email_token)?),
+                email_key: hmac::Key::new(
+                    hmac::HMAC_SHA256,
+                    &B64.decode(config_auth.auth_session.email_token_secret.as_bytes())
+                        .map_err(|e| anyhow!(e))?,
+                ),
             },
             external_providers: config_auth.collect_providers(),
             page_redirect_time: config_auth.page_redirect_time,
@@ -159,7 +165,7 @@ impl AppState {
     }
 
     pub fn token_service(&self) -> TokenGenerator<impl IdentityDb> {
-        TokenGenerator::new(&self.0.random, self.identity_service())
+        TokenGenerator::new(&self.0.random, self.settings(), self.identity_service())
     }
 
     pub fn mailer_service(&self) -> MailerService<impl EmailSender> {

@@ -28,7 +28,7 @@ pub struct QueryParams {
         QueryParams
     ),
     responses(
-        (status = OK, description="Html page to update client cookies and complete the oauth2 login flow")
+        (status = OK, description="Complete the OAuth2 login flow")
     )
 )]
 pub async fn oauth2_auth(

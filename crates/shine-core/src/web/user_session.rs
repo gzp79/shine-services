@@ -38,13 +38,21 @@ pub enum UserSessionError {
 impl From<UserSessionError> for Problem {
     fn from(value: UserSessionError) -> Self {
         match value {
-            UserSessionError::Unauthenticated
-            | UserSessionError::InvalidSecret(_)
-            | UserSessionError::SessionExpired
-            | UserSessionError::ClientFingerprintError(_)
-            | UserSessionError::SessionCompromised => Problem::unauthorized()
+            UserSessionError::Unauthenticated => Problem::unauthorized()
                 .with_detail(value.to_string())
-                .with_sensitive_dbg(value),
+                .with_sensitive("unauthenticated"),
+            UserSessionError::InvalidSecret(_) => Problem::unauthorized()
+                .with_detail(value.to_string())
+                .with_sensitive("invalidSecret"),
+            UserSessionError::SessionExpired => Problem::unauthorized()
+                .with_detail(value.to_string())
+                .with_sensitive("sessionExpired"),
+            UserSessionError::ClientFingerprintError(_) => Problem::unauthorized()
+                .with_detail(value.to_string())
+                .with_sensitive("clientFingerprintError"),
+            UserSessionError::SessionCompromised => Problem::unauthorized()
+                .with_detail(value.to_string())
+                .with_sensitive("sessionCompromised"),
 
             _ => Problem::internal_error()
                 .with_detail(value.to_string())

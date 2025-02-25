@@ -7,13 +7,12 @@ use thiserror::Error as ThisError;
 
 const INPUT_ERROR: &str = "auth-input-error";
 const AUTH_ERROR: &str = "auth-error";
-const LOGOUT_REQUIRED: &str = "auth-logout-required";
 const LOGIN_REQUIRED: &str = "auth-login-required";
 const TOKEN_EXPIRED: &str = "auth-token-expired";
 const SESSION_EXPIRED: &str = "auth-session-expired";
 const EMAIL_CONFLICT: &str = "auth-register-email-conflict";
 const EXTERNAL_ID_CONFLICT: &str = "auth-register-external-id-conflict";
-const MISSING_CONFIRMATION: &str = "auth-confirmation-error";
+const MISSING_CONFIRMATION: &str = "auth-not-confirmed";
 
 const EXTERNAL_MISSING_COOKIE: &str = "external-missing-cookie";
 const EXTERNAL_INVALID_NONCE: &str = "external-invalid-nonce";
@@ -62,8 +61,6 @@ impl From<ExternalLoginError> for Problem {
 pub enum AuthError {
     #[error("Authorization header is malformed")]
     InvalidHeader,
-    #[error("Logout required")]
-    LogoutRequired,
     #[error("Login required")]
     LoginRequired,
     #[error("Login token is invalid")]
@@ -78,7 +75,7 @@ pub enum AuthError {
     ProviderAlreadyUsed,
     #[error("Email has already been linked to another user already")]
     EmailAlreadyUsed,
-    #[error("Missing or invalid confirmation")]
+    #[error("Missing operation confirmation")]
     MissingConfirmation,
 
     #[error(transparent)]
@@ -103,7 +100,6 @@ pub enum AuthError {
 impl From<AuthError> for Problem {
     fn from(value: AuthError) -> Self {
         match value {
-            AuthError::LogoutRequired => Problem::bad_request(LOGOUT_REQUIRED),
             AuthError::LoginRequired => Problem::unauthorized_ty(LOGIN_REQUIRED),
             AuthError::InvalidHeader => Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("invalidHeader"),
             AuthError::TokenExpired => Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("expiredToken"),

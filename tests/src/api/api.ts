@@ -159,6 +159,10 @@ export class ApiResponse {
             throw new Error(error.message);
         }
     }
+
+    public async parseProblem(): Promise<Problem> {
+        return await this.parse(ProblemSchema);
+    }
 }
 
 export class ApiRequest<Q = void> {

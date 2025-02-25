@@ -298,30 +298,33 @@ test.describe('Login with OpenId', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    test('Start login with (token: NULL, session: VALID) shall fail', async ({ api }) => {
+    test('Start login with (token: NULL, session: VALID) shall succeed and clear the current session', async ({
+        api
+    }) => {
         const { sid } = await api.auth.loginAsGuestUser();
 
         const response = await api.auth.loginWithOpenIdRequest(null, sid, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=auth-logout-required&status=400'
-        );
-        expect(getPageProblem(text)).toEqual(
-            expect.objectContaining({
-                type: 'auth-logout-required',
-                status: 400,
-                extension: null,
-                sensitive: null
-            })
-        );
+        expect(getPageRedirectUrl(text)).toStartWith(mock!.getUrlFor('authorize'));
+        expect(getPageProblem(text)).toBeNull();
 
         const authCookies = response.cookies();
         expect(authCookies.tid).toBeClearCookie();
-        expect(authCookies.sid).toBeValidSID();
-        expect(authCookies.sid.value).toEqual(sid);
-        expect(authCookies.eid).toBeClearCookie();
+        expect(authCookies.sid).toBeClearCookie();
+        expect(authCookies.eid).toBeValidEID();
+
+        const infoResponse = await api.user.getUserInfoRequest(sid);
+        expect(infoResponse).toHaveStatus(401);
+        expect(await infoResponse.parseProblem()).toEqual(
+            expect.objectContaining({
+                type: 'unauthorized',
+                status: 401,
+                extension: null,
+                sensitive: 'sessionExpired'
+            })
+        );
     });
 
     test('Start login with (token: NULL, session: EXPIRED) shall succeed', async ({ api }) => {
@@ -357,31 +360,33 @@ test.describe('Login with OpenId', () => {
         expect(authCookies.eid).toBeValidEID();
     });
 
-    test('Start login with (token: VALID, session: VALID) shall fail', async ({ api }) => {
+    test('Start login with (token: VALID, session: VALID) shall succeed and a new session is created ', async ({
+        api
+    }) => {
         const { tid, sid } = await api.auth.loginAsGuestUser();
 
         const response = await api.auth.loginWithOpenIdRequest(tid, sid, null, null);
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=auth-logout-required&status=400'
-        );
-        expect(getPageProblem(text)).toEqual(
-            expect.objectContaining({
-                type: 'auth-logout-required',
-                status: 400,
-                extension: null,
-                sensitive: null
-            })
-        );
+        expect(getPageRedirectUrl(text)).toStartWith(mock!.getUrlFor('authorize'));
+        expect(getPageProblem(text)).toBeNull();
 
         const authCookies = response.cookies();
-        expect(authCookies.tid).toBeValidTID();
-        expect(authCookies.tid.value).toEqual(tid);
-        expect(authCookies.sid).toBeValidSID();
-        expect(authCookies.sid.value).toEqual(sid);
-        expect(authCookies.eid).toBeClearCookie();
+        expect(authCookies.tid).toBeClearCookie();
+        expect(authCookies.sid).toBeClearCookie();
+        expect(authCookies.eid).toBeValidEID();
+
+        const infoResponse = await api.user.getUserInfoRequest(sid);
+        expect(infoResponse).toHaveStatus(401);
+        expect(await infoResponse.parseProblem()).toEqual(
+            expect.objectContaining({
+                type: 'unauthorized',
+                status: 401,
+                extension: null,
+                sensitive: 'sessionExpired'
+            })
+        );
     });
 
     test('Login with (token: NULL, session: NULL, rememberMe: false) shall succeed and register a new user', async ({

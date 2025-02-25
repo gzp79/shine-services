@@ -34,7 +34,7 @@ pub struct QueryParams {
         QueryParams
     ),
     responses(
-        (status = OK, description="Html page to update client cookies and redirect user to start interactive OpenIdConnect login flow")
+        (status = OK, description="Start the OpenID Connect interactive login flow for linking an account")
     )
 )]
 pub async fn oidc_link(

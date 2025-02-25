@@ -19,14 +19,7 @@ use validator::Validate;
 #[derive(Debug, Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryParams {
-    /// Remember me for the next login.
-    /// - If auth header or query token is used, the property **optional** and a new access token is created
-    /// - If (access) cookie is used, **ignored** and a simple login is performed (there is an active access token already)
-    /// - no token was used, it is a user registration and it have to be **true**
     remember_me: Option<bool>,
-    /// Required for
-    ///  - Email confirmation to make sure the link is from the correct email
-    email_hash: Option<String>,
     token: Option<String>,
     redirect_url: Option<Url>,
     login_url: Option<Url>,
@@ -36,7 +29,7 @@ pub struct QueryParams {
 
 struct AuthenticationSuccess {
     identity: Identity,
-    create_token: bool,
+    create_access_token: bool,
     auth_session: AuthSession,
     rotated_token: Option<String>,
 }
@@ -46,7 +39,7 @@ struct AuthenticationFailure {
     auth_session: AuthSession,
 }
 
-async fn complete_verify_email(
+async fn complete_email_login(
     state: &AppState,
     query: &QueryParams,
     token_info: TokenInfo,
@@ -62,7 +55,8 @@ async fn complete_verify_email(
 
     let confirmed_email_hash = Some(hash_email(confirmed_email));
     let identity_email_hash = identity.email.map(|email| hash_email(&email));
-    let query_email_hash = query.email_hash.as_ref();
+    // during email verification the captcha is used to check the link is from the email
+    let query_email_hash = query.captcha.as_ref();
 
     if confirmed_email_hash != identity_email_hash || confirmed_email_hash.as_ref() != query_email_hash {
         log::info!(
@@ -101,68 +95,7 @@ async fn complete_verify_email(
 
     Ok(AuthenticationSuccess {
         identity,
-        create_token: query.remember_me.unwrap_or(false),
-        auth_session,
-        rotated_token: None,
-    })
-}
-
-async fn complete_change_email(
-    state: &AppState,
-    query: &QueryParams,
-    token_info: TokenInfo,
-    identity: Identity,
-    auth_session: AuthSession,
-) -> Result<AuthenticationSuccess, AuthenticationFailure> {
-    log::debug!("Completing email change...");
-    let confirmed_email = token_info
-        .bound_email
-        .as_deref()
-        .expect("Email shall be bound to the token");
-
-    let original_email = identity.email.clone();
-    let original_email_hash = original_email.as_ref().map(|email| hash_email(&email));
-    let query_email_hash = query.email_hash.as_ref();
-
-    if original_email_hash.as_ref() != query_email_hash {
-        log::info!("Identity {} has non-matching emails for change.", identity.id,);
-        return Err(AuthenticationFailure {
-            error: AuthError::EmailConflict,
-            auth_session,
-        });
-    }
-
-    log::info!(
-        "Updating email change for identity {}: ({:?} -> {}).",
-        identity.id,
-        identity.email,
-        confirmed_email
-    );
-    let identity = match state
-        .identity_service()
-        .update(identity.id, None, Some((confirmed_email, true)))
-        .await
-    {
-        Ok(Some(identity)) => identity,
-        Ok(None) => {
-            return Err(AuthenticationFailure {
-                error: AuthError::TokenExpired,
-                auth_session,
-            })
-        }
-        Err(err) => {
-            return Err(AuthenticationFailure {
-                error: err.into(),
-                auth_session,
-            })
-        }
-    };
-
-    //todo: send email has changed to the original_email
-
-    Ok(AuthenticationSuccess {
-        identity,
-        create_token: query.remember_me.unwrap_or(false),
+        create_access_token: query.remember_me.unwrap_or(false),
         auth_session,
         rotated_token: None,
     })
@@ -235,12 +168,11 @@ async fn authenticate_with_query_token(
         match token_info.kind {
             TokenKind::SingleAccess => Ok(AuthenticationSuccess {
                 identity,
-                create_token: query.remember_me.unwrap_or(false),
+                create_access_token: query.remember_me.unwrap_or(false),
                 auth_session: response_session,
                 rotated_token: None,
             }),
-            TokenKind::EmailVerify => complete_verify_email(state, query, token_info, identity, response_session).await,
-            TokenKind::EmailChange => complete_change_email(state, query, token_info, identity, response_session).await,
+            TokenKind::EmailAccess => complete_email_login(state, query, token_info, identity, response_session).await,
             TokenKind::Persistent => unreachable!(),
             TokenKind::Access => unreachable!(),
         }
@@ -345,7 +277,7 @@ async fn authenticate_with_header_token(
     } else {
         Ok(AuthenticationSuccess {
             identity,
-            create_token: query.remember_me.unwrap_or(false),
+            create_access_token: query.remember_me.unwrap_or(false),
             auth_session: response_session,
             rotated_token: None,
         })
@@ -459,45 +391,31 @@ async fn authenticate_with_cookie_token(
     } else {
         Ok(AuthenticationSuccess {
             identity,
-            create_token: true,
+            create_access_token: true,
             auth_session: response_session,
             rotated_token: Some(token),
         })
     }
 }
 
-/// Register a new (guest) user
-async fn authenticate_with_registration(
+async fn authenticate_with_refresh_session(
     state: &AppState,
     query: &QueryParams,
     auth_session: AuthSession,
 ) -> Result<AuthenticationSuccess, AuthenticationFailure> {
-    log::debug!("Checking new user registration ...");
-    if !query.remember_me.unwrap_or(false) {
-        return Err(AuthenticationFailure {
-            error: AuthError::LoginRequired,
-            auth_session,
-        });
-    }
+    log::debug!("Checking the session cookie ...");
+    assert!(auth_session.access().is_none());
+    assert!(auth_session.user_session().is_some());
 
-    if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
-        return Err(AuthenticationFailure {
-            error: err.into(),
-            auth_session,
-        });
-    };
-
-    log::debug!("New user registration flow triggered...");
-    let auth_session = auth_session
-        .with_external_login(None)
-        .revoke_access(state)
-        .await
-        .revoke_session(state)
-        .await;
-
-    // create a new user
-    let identity = match state.create_user_service().create_user(None, None).await {
-        Ok(identity) => identity,
+    let user_id = auth_session.user_session().as_ref().unwrap().user_id;
+    let identity = match state.identity_service().find_by_id(user_id).await {
+        Ok(Some(info)) => info,
+        Ok(None) => {
+            return Err(AuthenticationFailure {
+                error: IdentityError::UserDeleted { id: user_id }.into(),
+                auth_session,
+            });
+        }
         Err(err) => {
             return Err(AuthenticationFailure {
                 error: err.into(),
@@ -505,12 +423,20 @@ async fn authenticate_with_registration(
             })
         }
     };
-    log::debug!("New user created: {:#?}", identity);
+
+    log::debug!("Refresh session flow triggered...");
+    let response_session = auth_session
+        .with_external_login(None)
+        // only clear, but don't revoke the access token, it will be revoked after the new token is acknowledged
+        .revoke_access(state)
+        .await
+        .revoke_session(state)
+        .await;
 
     Ok(AuthenticationSuccess {
         identity,
-        create_token: true,
-        auth_session,
+        create_access_token: query.remember_me.unwrap_or(false),
+        auth_session: response_session,
         rotated_token: None,
     })
 }
@@ -526,15 +452,9 @@ async fn authenticate_with_registration(
 ///   - Any single access tokens are rejected and revoked
 ///   - Access token are rejected and revoked as they are exposed only as cookies thus it is a sign of a security issue.
 /// - Check the token cookie
-///   - Query and headers are empty, captcha is ignored
-///   - If there is an active session, login is rejected with a logout required and no cookies are changed.
+///   - Query and headers are empty, captcha is used for email access
 ///   - Only the Access token is allowed
 ///   - Any other token are rejected and revoked as cookie should store only Access token, thus it is a sign of a security issue.
-/// - Else
-///   - Query, headers and cookies are empty
-///   - Captcha is checked
-///   - Remember me should be true
-///   - Register a new user
 async fn authenticate(
     state: &AppState,
     query: &QueryParams,
@@ -560,23 +480,18 @@ async fn authenticate(
         return authenticate_with_header_token(state, query, auth_header, fingerprint, auth_session).await;
     }
 
-    if auth_session.user_session().is_some() {
-        // keep all the cookies, reject with logout required
-        log::debug!(
-            "There is an active session ({:#?}), rejecting the login with a logout required",
-            auth_session.user_session()
-        );
-        return Err(AuthenticationFailure {
-            error: AuthError::LogoutRequired,
-            auth_session,
-        });
-    }
-
     if auth_session.access().is_some() {
         return authenticate_with_cookie_token(state, fingerprint, auth_session).await;
     }
 
-    authenticate_with_registration(state, query, auth_session).await
+    if auth_session.user_session().is_some() {
+        return authenticate_with_refresh_session(state, query, auth_session).await;
+    }
+
+    Err(AuthenticationFailure {
+        error: AuthError::LoginRequired,
+        auth_session,
+    })
 }
 
 /// Login with token using query, auth and cookie as sources.
@@ -588,7 +503,7 @@ async fn authenticate(
         QueryParams
     ),
     responses(
-        (status = OK, description="Html page to update client cookies and redirect user according to the login result")
+        (status = OK, description="Login with a token")
     )
 )]
 pub async fn token_login(
@@ -611,7 +526,7 @@ pub async fn token_login(
 
     let AuthenticationSuccess {
         identity,
-        create_token,
+        create_access_token,
         auth_session,
         rotated_token,
     } = match authenticate(&state, &query, auth_header, auth_session, &fingerprint).await {
@@ -632,7 +547,7 @@ pub async fn token_login(
     );
 
     // Create a new access token. It can be either a rotated or a new token
-    let auth_session = if create_token {
+    let auth_session = if create_access_token {
         log::debug!("Creating access token for identity: {:#?}", identity);
         // create a new access token
         let user_token = match state

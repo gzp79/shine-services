@@ -1,4 +1,5 @@
 use chrono::Duration;
+use ring::hmac;
 use url::Url;
 
 pub struct TokenSettings {
@@ -6,6 +7,7 @@ pub struct TokenSettings {
     pub ttl_single_access: Duration,
     pub ttl_api_key: Duration,
     pub ttl_email_token: Duration,
+    pub email_key: hmac::Key,
 }
 
 pub struct SettingsService {

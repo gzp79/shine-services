@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, OAuth2Client, PageUtils},
+    controllers::auth::{AuthPage, AuthSession, ExternalLoginCookie, OAuth2Client, PageUtils},
 };
 use axum::{extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};
@@ -29,7 +29,7 @@ pub struct QueryParams {
         QueryParams
     ),
     responses(
-        (status = OK, description="Html page to update client cookies and redirect user to start interactive oauth2 login flow")
+        (status = OK, description="Start the OAuth2 interactive login flow")
     )
 )]
 pub async fn oauth2_login(
@@ -47,12 +47,6 @@ pub async fn oauth2_login(
         return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
     }
 
-    // Note: having a token login is not an error, on successful start of the flow, the token cookie is cleared
-    // It has some potential issue: if tid is connected to a guest user, the guest may loose all the progress
-    if auth_session.user_session().is_some() {
-        return PageUtils::new(&state).error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref());
-    }
-
     let key = match state.token_service().generate() {
         Ok(key) => key,
         Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
@@ -67,6 +61,8 @@ pub async fn oauth2_login(
         .url();
 
     let response_session = auth_session
+        .revoke_session(&state)
+        .await
         .revoke_access(&state)
         .await
         .with_external_login(Some(ExternalLoginCookie {

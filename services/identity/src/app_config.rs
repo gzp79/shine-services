@@ -9,6 +9,7 @@ use url::Url;
 pub struct AuthSessionConfig {
     pub external_login_cookie_secret: String,
     pub token_cookie_secret: String,
+    pub email_token_secret: String,
 
     /// The maximum time to live for a session in seconds
     pub ttl_session: usize,

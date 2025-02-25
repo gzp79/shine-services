@@ -1,9 +1,12 @@
 use crate::{
     repositories::identity::{IdentityDb, IdentityError, TokenKind},
-    services::IdentityService,
+    services::{IdentityService, SettingsService},
 };
 use chrono::{DateTime, Duration, Utc};
-use ring::rand::{SecureRandom, SystemRandom};
+use ring::{
+    hmac,
+    rand::{SecureRandom, SystemRandom},
+};
 use shine_core::web::{ClientFingerprint, Problem, SiteInfo};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
@@ -40,19 +43,9 @@ pub struct UserToken {
 }
 
 #[derive(Clone, Debug)]
-pub struct EmailVerifyToken {
+pub struct EmailToken {
     pub user_id: Uuid,
     pub token: String,
-    pub token_hash: String,
-    pub expire_at: DateTime<Utc>,
-    pub email: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct EmailChangeToken {
-    pub user_id: Uuid,
-    pub token: String,
-    pub token_hash: String,
     pub expire_at: DateTime<Utc>,
     pub current_email: Option<String>,
     pub new_email: String,
@@ -63,6 +56,7 @@ where
     IDB: IdentityDb,
 {
     random: &'a SystemRandom,
+    settings: &'a SettingsService,
     identity_service: &'a IdentityService<IDB>,
 }
 
@@ -70,9 +64,14 @@ impl<'a, IDB> TokenGenerator<'a, IDB>
 where
     IDB: IdentityDb,
 {
-    pub fn new(random: &'a SystemRandom, identity_service: &'a IdentityService<IDB>) -> Self {
+    pub fn new(
+        random: &'a SystemRandom,
+        settings: &'a SettingsService,
+        identity_service: &'a IdentityService<IDB>,
+    ) -> Self {
         Self {
             random,
+            settings,
             identity_service,
         }
     }
@@ -133,47 +132,26 @@ where
         }
     }
 
+    pub fn generate_email_verify_token(
+        &self,
+        user_id: Uuid,
+        current_email: Option<&str>,
+        new_email: &str,
+        expire_at: &DateTime<Utc>,
+    ) -> String {
+        let msg = format!("{}{}{}{}", user_id, current_email.unwrap_or(""), new_email, expire_at);
+        let token = hmac::sign(&self.settings.token.email_key, msg.as_bytes());
+        let token_hex = hex::encode(token.as_ref());
+        let token = format!("{};{:x}", token_hex, expire_at.timestamp());
+        token
+    }
+
     pub async fn create_email_verify_token(
         &self,
         user_id: Uuid,
         time_to_live: &Duration,
-        site_info: &SiteInfo,
-    ) -> Result<EmailVerifyToken, TokenGeneratorError> {
-        let email = self
-            .identity_service
-            .find_by_id(user_id)
-            .await?
-            .ok_or(IdentityError::UserDeleted { id: user_id })?
-            .email
-            .ok_or(IdentityError::MissingEmail)?;
-
-        let token = self
-            .create_user_token(
-                user_id,
-                TokenKind::EmailVerify,
-                time_to_live,
-                None,
-                Some(&email),
-                site_info,
-            )
-            .await?;
-
-        Ok(EmailVerifyToken {
-            user_id,
-            token: token.token,
-            token_hash: token.token_hash,
-            expire_at: token.expire_at,
-            email,
-        })
-    }
-
-    pub async fn create_email_change_token(
-        &self,
-        user_id: Uuid,
-        time_to_live: &Duration,
-        site_info: &SiteInfo,
-        new_email: String,
-    ) -> Result<EmailChangeToken, TokenGeneratorError> {
+        new_email: Option<String>,
+    ) -> Result<EmailToken, TokenGeneratorError> {
         let email = self
             .identity_service
             .find_by_id(user_id)
@@ -181,22 +159,14 @@ where
             .ok_or(IdentityError::UserDeleted { id: user_id })?
             .email;
 
-        let token = self
-            .create_user_token(
-                user_id,
-                TokenKind::EmailChange,
-                time_to_live,
-                None,
-                Some(&new_email),
-                site_info,
-            )
-            .await?;
+        let new_email = new_email.or(email.clone()).ok_or(IdentityError::MissingEmail)?;
+        let expire_at = Utc::now() + *time_to_live;
+        let token = self.generate_email_verify_token(user_id, email.as_deref(), &new_email, &expire_at);
 
-        Ok(EmailChangeToken {
+        Ok(EmailToken {
             user_id,
-            token: token.token,
-            token_hash: token.token_hash,
-            expire_at: token.expire_at,
+            token: token,
+            expire_at: expire_at,
             current_email: email,
             new_email,
         })
@@ -205,14 +175,23 @@ where
 
 #[cfg(test)]
 mod test {
-    use axum_extra::extract::cookie::Key;
+    use axum_extra::extract::cookie;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
+    use ring::{digest, rand};
     use shine_test::test;
 
     #[test]
     #[ignore = "This is not a test but a helper to generate secret"]
     fn generate_cookie_secret() {
-        let key = Key::generate();
+        let key = cookie::Key::generate();
         println!("{}", B64.encode(key.master()));
+    }
+
+    #[test]
+    #[ignore = "This is not a test but a helper to generate secret"]
+    fn generate_email_token_secret() {
+        let rng = rand::SystemRandom::new();
+        let key: [u8; digest::SHA256_OUTPUT_LEN] = rand::generate(&rng).unwrap().expose();
+        println!("{}", B64.encode(key));
     }
 }

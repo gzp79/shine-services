@@ -1,8 +1,6 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{
-        AuthError, AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient, PageUtils,
-    },
+    controllers::auth::{AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient, PageUtils},
 };
 use axum::{extract::State, Extension};
 use chrono::Duration;
@@ -36,7 +34,7 @@ pub struct QueryParams {
         QueryParams
     ),
     responses(
-        (status = OK)
+        (status = OK, description="Start the OpenID Connect interactive login flow")
     )
 )]
 pub async fn oidc_login(
@@ -52,11 +50,6 @@ pub async fn oidc_login(
 
     if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
         return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-    }
-    // Note: having a token login is not an error, on successful start of the flow, the token cookie is cleared
-    // It has some potential issue: if tid is connected to a guest user, the guest may loose all the progress
-    if auth_session.user_session().is_some() {
-        return PageUtils::new(&state).error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref());
     }
 
     let core_client = match client.client().await {
@@ -89,6 +82,8 @@ pub async fn oidc_login(
         .url();
 
     let response_session = auth_session
+        .revoke_session(&state)
+        .await
         .revoke_access(&state)
         .await
         .with_external_login(Some(ExternalLoginCookie {

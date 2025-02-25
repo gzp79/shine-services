@@ -13,14 +13,13 @@ pub enum TokenKind {
     Access,
     Persistent,
     SingleAccess,
-    EmailVerify,
-    EmailChange,
+    EmailAccess,
 }
 
 impl TokenKind {
     // return if token can be used only once
     pub fn is_single_access(&self) -> bool {
-        matches!(self, Self::SingleAccess) || matches!(self, Self::EmailVerify) || matches!(self, Self::EmailChange)
+        matches!(self, Self::SingleAccess) || matches!(self, Self::EmailAccess)
     }
 
     pub fn all() -> &'static [TokenKind] {
@@ -28,13 +27,12 @@ impl TokenKind {
             TokenKind::Access,
             TokenKind::Persistent,
             TokenKind::SingleAccess,
-            TokenKind::EmailVerify,
-            TokenKind::EmailChange,
+            TokenKind::EmailAccess,
         ]
     }
 
     pub fn all_single_access() -> &'static [TokenKind] {
-        &[TokenKind::SingleAccess, TokenKind::EmailVerify, TokenKind::EmailChange]
+        &[TokenKind::SingleAccess, TokenKind::EmailAccess]
     }
 
     pub fn all_multi_access() -> &'static [TokenKind] {
