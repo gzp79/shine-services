@@ -5,6 +5,7 @@ use crate::{
 use ring::digest;
 use shine_core::consts::Language;
 use tera::Tera;
+use tracing_subscriber::fmt::format;
 
 #[derive(Clone)]
 pub struct MailerService<'a, E: EmailSender> {
@@ -28,10 +29,12 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
         let mut context = tera::Context::new();
 
         let lang = lang.unwrap_or(Language::En);
-        let to_hash = hash_email(to);
+        let redirect_url = format!("{}link/email-verify?token={}", self.settings.home_url, token);
+
         let url = format!(
-            "{}token/login?token={}&emailHash={}",
-            self.settings.auth_base_url, token, to_hash
+            "{}login?{}",
+            self.settings.home_url,
+            serde_urlencoded::to_string(&[("prompt", "true"), ("redirectUrl", "redirect_url")])
         );
 
         context.insert("user", user_name);

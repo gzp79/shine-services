@@ -29,10 +29,10 @@ test.describe('Email confirmation', () => {
         mockEmail = undefined!;
     });
 
-    test(`Creating emailVerify with api shall be rejected`, async ({ api }) => {
+    test(`Creating emailAccess with api shall be rejected`, async ({ api }) => {
         const user = await api.testUsers.createGuest();
 
-        const response = await api.token.createTokenRequest(user.sid, 'emailVerify', 20, false);
+        const response = await api.token.createTokenRequest(user.sid, 'emailAccess', 20, false);
         expect(response).toHaveStatus(400);
 
         const error = await response.parse(ProblemSchema);
@@ -40,7 +40,7 @@ test.describe('Email confirmation', () => {
             expect.objectContaining({
                 type: 'input-body-format',
                 status: 400,
-                detail: expect.stringContaining(`kind: unknown variant \`emailVerify\``)
+                detail: expect.stringContaining(`kind: unknown variant \`emailAccess\``)
             })
         );
     });
@@ -48,6 +48,13 @@ test.describe('Email confirmation', () => {
     test(`Requesting email confirmation without session shall fail`, async ({ api }) => {
         const response = await api.user.confirmEmailRequest(null);
         expect(response).toHaveStatus(401);
+        expect(await response.parseProblem()).toEqual(
+            expect.objectContaining({
+                type: 'unauthorized',
+                status: 401,
+                sensitive: 'unauthenticated'
+            })
+        );
     });
 
     test(`Requesting email confirmation without email shall fail`, async ({ api }) => {
@@ -59,8 +66,7 @@ test.describe('Email confirmation', () => {
         const user = await api.testUsers.createGuest();
         const response = await api.user.confirmEmailRequest(user.sid);
         expect(response).toHaveStatus(412);
-        const error = await response.parse(ProblemSchema);
-        expect(error).toEqual(
+        expect(await response.parseProblem()).toEqual(
             expect.objectContaining({
                 type: 'identity-missing-email',
                 status: 412,
@@ -80,8 +86,11 @@ test.describe('Email confirmation', () => {
         expect(mail).toHaveMailTo(email);
         expect(mail).toContainMailBody(`<p>Hello ${user.name},</p>`);
         expect(mail).toContainMailBody('Confirm Email Address');
-        expect(mail).toContainMailBody(identityUrl + '/auth/token/login?token=');
         expect(mail).toContainMailBody('<p>Best regards,<br/>Scytta</p>');
+
+        let url = new URL(getEmailLink(mail));
+        let params = url.searchParams;
+        expect(params.get('token')).toBeString();
     });
 
     test(`Requesting email confirmation with 3rd party error shall fail`, async ({ api }) => {
@@ -92,7 +101,7 @@ test.describe('Email confirmation', () => {
         expect(response).toHaveStatus(500);
     });
 
-    test(`Login with requested email confirmation shall work`, async ({ homeUrl, identityUrl, api }) => {
+    test(`Confirm email with same user shall work`, async ({ homeUrl, identityUrl, api }) => {
         const smtp = await startMockEmail();
         const user = await api.testUsers.createLinked(mockAuth);
         const { sessionLength, ...userInfo } = await api.user.getUserInfo(user.sid);
@@ -102,7 +111,7 @@ test.describe('Email confirmation', () => {
         const mail = await mailPromise;
 
         const url = getEmailLink(mail);
-        expect(url).toStartWith(identityUrl + '/auth/token/login');
+        let params = new URL(url).searchParams;
         const response = await ApiRequest.get(url);
         expect(response).toHaveStatus(200);
 
