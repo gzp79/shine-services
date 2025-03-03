@@ -17,7 +17,7 @@ test.describe('Email confirmation', () => {
         return mockEmail as MockSmtp;
     };
 
-    test.beforeEach(async ({ api }) => {
+    test.beforeEach(async () => {
         mockAuth = new OAuth2MockServer();
         await mockAuth.start();
     });
@@ -72,13 +72,13 @@ test.describe('Email confirmation', () => {
         expect(mail).toContainMailBody('Confirm Email Address');
         expect(mail).toContainMailBody('<p>Best regards,<br/>Scytta</p>');
 
-        let authUrl = getEmailLink(mail);
+        const authUrl = getEmailLink(mail);
         expect(authUrl).toStartWith(identityUrl);
-        let authParams = new URL(authUrl).searchParams;
-        let confirmUrl = authParams.get('redirectUrl') ?? '';
+        const authParams = new URL(authUrl).searchParams;
+        const confirmUrl = authParams.get('redirectUrl') ?? '';
 
         expect(confirmUrl).toStartWith(linkUrl);
-        let confirmParams = new URL(confirmUrl).searchParams;
+        const confirmParams = new URL(confirmUrl).searchParams;
         expect(confirmParams.get('token')).toBeString();
     });
 
@@ -128,7 +128,6 @@ test.describe('Email confirmation', () => {
     test(`Confirm email with another guest user shall fail`, async ({ api }) => {
         const smtp = await startMockEmail();
         const user = await api.testUsers.createLinked(mockAuth);
-        const { sessionLength, ...userInfo } = await api.user.getUserInfo(user.sid);
 
         const mailPromise = smtp.waitMail();
         await api.user.startConfirmEmail(user.sid);
@@ -158,7 +157,6 @@ test.describe('Email confirmation', () => {
     test(`Confirm email with another linked user shall fail`, async ({ api }) => {
         const smtp = await startMockEmail();
         const user = await api.testUsers.createLinked(mockAuth);
-        const { sessionLength, ...userInfo } = await api.user.getUserInfo(user.sid);
 
         const mailPromise = smtp.waitMail();
         await api.user.startConfirmEmail(user.sid);
@@ -200,7 +198,7 @@ test.describe('Email change', () => {
         return mockEmail as MockSmtp;
     };
 
-    test.beforeEach(async ({ api }) => {
+    test.beforeEach(async () => {
         mockAuth = new OAuth2MockServer();
         await mockAuth.start();
     });
@@ -212,23 +210,28 @@ test.describe('Email change', () => {
         mockEmail = undefined!;
     });
 
-    test.skip(`Changing email without session shall fail`, async ({ api }) => {
+    test.skip(`Changing email without session shall fail`, async () => {
+        const smtp = await startMockEmail();
+        smtp.onMail((_mail) => {
+            expect(true, 'No message should arrive').toBe(false);
+        });
+
         throw new Error('Not implemented');
     });
 
-    test.skip(`Changing email with 3rd party error shall fail`, async ({ api }) => {
+    test.skip(`Changing email with 3rd party error shall fail`, async () => {
         throw new Error('Not implemented');
     });
 
-    test.skip(`Changing email without email shall succeed`, async ({ api }) => {
+    test.skip(`Changing email without email shall succeed`, async () => {
         throw new Error('Not implemented');
     });
 
-    test.skip(`Changing email with unconfirmed email shall succeed`, async ({ api }) => {
+    test.skip(`Changing email with unconfirmed email shall succeed`, async () => {
         throw new Error('Not implemented');
     });
 
-    test.skip(`Changing email with confirmed email shall succeed`, async ({ api }) => {
+    test.skip(`Changing email with confirmed email shall succeed`, async () => {
         throw new Error('Not implemented');
     });
 });
@@ -245,7 +248,7 @@ test.describe('Email delete', () => {
         return mockEmail as MockSmtp;
     };
 
-    test.beforeEach(async ({ api }) => {
+    test.beforeEach(async () => {
         mockAuth = new OAuth2MockServer();
         await mockAuth.start();
     });
@@ -257,23 +260,28 @@ test.describe('Email delete', () => {
         mockEmail = undefined!;
     });
 
-    test.skip(`Deleting email without session shall fail`, async ({ api }) => {
+    test.skip(`Deleting email without session shall fail`, async () => {
+        const smtp = await startMockEmail();
+        smtp.onMail((_mail) => {
+            expect(true, 'No message should arrive').toBe(false);
+        });
+
         throw new Error('Not implemented');
     });
 
-    test.skip(`Deleting email with 3rd party error shall fail`, async ({ api }) => {
+    test.skip(`Deleting email with 3rd party error shall fail`, async () => {
         throw new Error('Not implemented');
     });
 
-    test.skip(`Deleting email without email shall succeed`, async ({ api }) => {
+    test.skip(`Deleting email without email shall succeed`, async () => {
         throw new Error('Not implemented');
     });
 
-    test.skip(`Deleting email with unconfirmed email shall succeed`, async ({ api }) => {
+    test.skip(`Deleting email with unconfirmed email shall succeed`, async () => {
         throw new Error('Not implemented');
     });
 
-    test.skip(`Deleting email with confirmed email shall succeed`, async ({ api }) => {
+    test.skip(`Deleting email with confirmed email shall succeed`, async () => {
         throw new Error('Not implemented');
     });
 });

@@ -1,6 +1,4 @@
 import { expect, test } from '$fixtures/setup';
-import { TestUser } from '$lib/api/test_user';
-import { UserInfo } from '$lib/api/user_api';
 import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 
 test.describe('Login and register guest', () => {

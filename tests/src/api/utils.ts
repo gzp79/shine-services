@@ -44,7 +44,7 @@ export function getEmailLinkToken(mail: ParsedMail): string | null {
     if (!confirmUrl) {
         return null;
     }
-    
+
     const token = new URL(confirmUrl).searchParams.get('token');
     return token;
 }
