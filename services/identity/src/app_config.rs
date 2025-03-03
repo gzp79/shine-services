@@ -60,9 +60,11 @@ pub struct OIDCConfig {
 pub struct AuthConfig {
     /// The name of the application
     pub app_name: String,
-    /// The default redirection URL for users
+    /// The URL of the website
     pub home_url: Url,
-    /// The default redirection URL for users in case of an err
+    /// The URL to handle permanent links and similar redirect URLs
+    pub link_url: Url,
+    /// The default redirection URL for users in case of an error during the authentication process.
     pub error_url: Url,
     /// The URL base for authentication services. This serves as:
     /// - The source for certain cookie protection parameters, including domain and path.
@@ -143,4 +145,27 @@ pub struct AppConfig {
 
 impl FeatureConfig for AppConfig {
     const NAME: &'static str = "identity";
+}
+
+#[cfg(test)]
+mod test {
+    use axum_extra::extract::cookie;
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
+    use ring::{digest, rand};
+    use shine_test::test;
+
+    #[test]
+    #[ignore = "This is not a test but a helper to generate secret"]
+    fn generate_cookie_secret() {
+        let key = cookie::Key::generate();
+        println!("{}", B64.encode(key.master()));
+    }
+
+    #[test]
+    #[ignore = "This is not a test but a helper to generate secret"]
+    fn generate_email_token_secret() {
+        let rng = rand::SystemRandom::new();
+        let key: [u8; digest::SHA256_OUTPUT_LEN] = rand::generate(&rng).unwrap().expose();
+        println!("{}", B64.encode(key));
+    }
 }

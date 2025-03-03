@@ -8,7 +8,7 @@ use crate::{
     },
     services::{
         CreateUserService, IdentityService, MailerService, SessionService, SessionUserSyncService, SessionUtils,
-        SettingsService, TokenGenerator, TokenSettings,
+        SettingsService, SignedTokenService, StoredTokenService, TokenSettings,
     },
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -45,8 +45,9 @@ impl AppState {
 
         let settings = SettingsService {
             app_name: config_auth.app_name.clone(),
-            auth_base_url: config_auth.auth_base_url.clone(),
             home_url: config_auth.home_url.clone(),
+            link_url: config_auth.link_url.clone(),
+            auth_base_url: config_auth.auth_base_url.clone(),
             error_url: config_auth.error_url.clone(),
             token: TokenSettings {
                 ttl_access_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_access_token)?),
@@ -164,8 +165,16 @@ impl AppState {
         SessionUserSyncService::new(self.identity_service(), self.session_service())
     }
 
-    pub fn token_service(&self) -> TokenGenerator<impl IdentityDb> {
-        TokenGenerator::new(&self.0.random, self.settings(), self.identity_service())
+    pub fn random(&self) -> &SystemRandom {
+        &self.0.random
+    }
+
+    pub fn stored_token_service(&self) -> StoredTokenService<impl IdentityDb> {
+        StoredTokenService::new(self.random(), self.identity_service())
+    }
+
+    pub fn signed_token_service(&self) -> SignedTokenService {
+        SignedTokenService::new(self.settings())
     }
 
     pub fn mailer_service(&self) -> MailerService<impl EmailSender> {

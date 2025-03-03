@@ -1,13 +1,14 @@
-use crate::azure::azure_keyvault_config::AzureKeyvaultConfigSource;
+use crate::{azure::azure_keyvault_config::AzureKeyvaultConfigSource, web::Environment};
 use azure_core::auth::TokenCredential;
 use azure_identity::{AzureCliCredential, EnvironmentCredential, TokenCredentialOptions};
-use config::{builder::AsyncState, Config, ConfigBuilder, ConfigError, Environment, File};
+use config::{builder::AsyncState, Config, ConfigBuilder, ConfigError, File};
 use serde::{Deserialize, Serialize};
-use std::{env, path::Path, sync::Arc};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
-pub const DEFAULT_CONFIG_FILE: &str = "server_config.json";
-pub const DEFAULT_DEV_CONFIG_FILE: &str = "server_config.dev.json";
-pub const DEFAULT_LOCAL_CONFIG_FILE: &str = "temp/server_config.json";
 pub const DEFAULT_VERSION_CONFIG_FILE: &str = "server_version.json";
 
 /// Partial configuration required for early setup.
@@ -18,13 +19,15 @@ pub struct CoreConfig {
     pub version: String,
     pub before_layers: Vec<String>,
     pub after_layers: Vec<String>,
+    pub root_file: String,
 }
 
 impl CoreConfig {
-    pub fn new(stage: &str) -> Result<Self, ConfigError> {
+    pub fn new(stage: &str, config_file: Option<PathBuf>) -> Result<Self, ConfigError> {
         log::info!("Loading configuration for {}", stage);
 
-        let mut builder = Config::builder().add_source(File::from(Path::new(&format!("server_config.{}.json", stage))));
+        let root_file = config_file.unwrap_or_else(|| Path::new(&format!("server_config.{}.json", stage)).to_owned());
+        let mut builder = Config::builder().add_source(File::from(root_file.as_path()));
 
         let version_path = Path::new(DEFAULT_VERSION_CONFIG_FILE);
         if version_path.exists() {
@@ -34,7 +37,9 @@ impl CoreConfig {
             builder = builder.set_override("version", "custom")?;
         }
 
-        builder = builder.set_override("stage", stage)?;
+        builder = builder
+            .set_override("stage", stage)?
+            .set_override("rootFile", root_file.to_str().unwrap().to_string())?;
 
         let s = builder.build()?;
         let cfg: CoreConfig = s.try_deserialize()/*.inspect(|a| log::error!("{a:#?}"))*/?;
@@ -82,10 +87,10 @@ impl CoreConfig {
             log::debug!("Adding layer: {:?}", layer);
             match layer {
                 Layer::Base => {
-                    builder = builder.add_source(File::from(Path::new(&format!("server_config.{}.json", self.stage))));
+                    builder = builder.add_source(File::from(Path::new(&self.root_file)));
                 }
                 Layer::Environment => {
-                    builder = builder.add_source(Environment::default().separator("--"));
+                    builder = builder.add_source(Environment::new());
                 }
                 Layer::Config("file", url, path) => {
                     let path = path.ok_or(ConfigError::FileParse {
@@ -141,7 +146,8 @@ impl CoreConfig {
         // these properties cannot be altered wrt the core config
         builder = builder
             .set_override("stage", self.stage.clone())?
-            .set_override("version", self.version.clone())?;
+            .set_override("version", self.version.clone())?
+            .set_override("rootFile", self.root_file.clone())?;
 
         Ok(builder)
     }

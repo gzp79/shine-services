@@ -1,6 +1,6 @@
 use crate::{
     repositories::{identity::IdentityError, session::SessionError, CaptchaError},
-    services::{TokenGeneratorError, UserCreateError},
+    services::{StoredTokenServiceError, UserCreateError},
 };
 use shine_core::web::{InputError, Problem};
 use thiserror::Error as ThisError;
@@ -91,7 +91,7 @@ pub enum AuthError {
     #[error(transparent)]
     UserCreateError(#[from] UserCreateError),
     #[error(transparent)]
-    TokenGeneratorError(#[from] TokenGeneratorError),
+    StoredTokenServiceError(#[from] StoredTokenServiceError),
 
     #[error("Internal server error")]
     InternalServerError(Problem),
@@ -113,8 +113,10 @@ impl From<AuthError> for Problem {
             AuthError::InputError(input_error) => {
                 Problem::bad_request(INPUT_ERROR).with_sensitive(Problem::from(input_error))
             }
-            AuthError::CaptchaError(error @ CaptchaError::MissingCaptcha)
-            | AuthError::CaptchaError(error @ CaptchaError::FailedValidation(_)) => {
+            AuthError::CaptchaError(error @ CaptchaError::MissingCaptcha) => {
+                Problem::bad_request(AUTH_ERROR).with_sensitive(Problem::from(error))
+            }
+            AuthError::CaptchaError(error @ CaptchaError::FailedValidation(_)) => {
                 Problem::bad_request(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::CaptchaError(error) => {
@@ -136,7 +138,7 @@ impl From<AuthError> for Problem {
             AuthError::UserCreateError(error) => {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
-            AuthError::TokenGeneratorError(error) => {
+            AuthError::StoredTokenServiceError(error) => {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::InternalServerError(error) => {

@@ -7,6 +7,7 @@ use serde::{
 use std::{
     fmt::{self, Debug},
     marker::PhantomData,
+    path::PathBuf,
 };
 
 use super::{CoreConfig, ServiceConfig};
@@ -59,6 +60,7 @@ where
             {
                 let mut core_stage = None;
                 let mut core_version = None;
+                let mut core_root_file = None;
                 let mut core_before_layers = None;
                 let mut core_after_layers = None;
 
@@ -79,6 +81,12 @@ where
                                 return Err(SerdeError::duplicate_field("version"));
                             }
                             core_version = Some(map.next_value()?);
+                        }
+                        "rootFile" => {
+                            if core_root_file.is_some() {
+                                return Err(SerdeError::duplicate_field("rootFile"));
+                            }
+                            core_root_file = Some(map.next_value()?);
                         }
                         "beforeLayers" => {
                             if core_before_layers.is_some() {
@@ -118,6 +126,7 @@ where
 
                 let core_stage = core_stage.ok_or_else(|| SerdeError::missing_field("stage"))?;
                 let core_version = core_version.ok_or_else(|| SerdeError::missing_field("version"))?;
+                let core_root_file = core_root_file.ok_or_else(|| SerdeError::missing_field("rootFile"))?;
                 let core_before_layers = core_before_layers.ok_or_else(|| SerdeError::missing_field("beforeLayers"))?;
                 let core_after_layers = core_after_layers.ok_or_else(|| SerdeError::missing_field("afterLayers"))?;
                 let service = service.ok_or_else(|| SerdeError::missing_field("service"))?;
@@ -128,6 +137,7 @@ where
                     core: CoreConfig {
                         stage: core_stage,
                         version: core_version,
+                        root_file: core_root_file,
                         before_layers: core_before_layers,
                         after_layers: core_after_layers,
                     },
@@ -146,13 +156,13 @@ impl<F> WebAppConfig<F>
 where
     F: FeatureConfig + DeserializeOwned + Debug,
 {
-    pub async fn load_config(stage: &str) -> Result<Self, AnyError> {
-        let pre_init = CoreConfig::new(stage)?;
+    pub async fn load(stage: &str, config_file: Option<PathBuf>) -> Result<Self, AnyError> {
+        let pre_init = CoreConfig::new(stage, config_file)?;
         let builder = pre_init.create_config_builder()?;
         let config = builder.build().await?;
 
         let cfg: Self = config.try_deserialize()?;
-        log::info!("Config loaded: {:#?}", cfg);
+        log::info!("Config loaded [{}]: {:#?}", cfg.core.root_file, cfg);
 
         if pre_init != cfg.core {
             Err(anyhow!("Core config mismatch"))

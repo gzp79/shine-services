@@ -5,7 +5,6 @@ use crate::{
 use ring::digest;
 use shine_core::consts::Language;
 use tera::Tera;
-use tracing_subscriber::fmt::format;
 
 #[derive(Clone)]
 pub struct MailerService<'a, E: EmailSender> {
@@ -29,13 +28,22 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
         let mut context = tera::Context::new();
 
         let lang = lang.unwrap_or(Language::En);
-        let redirect_url = format!("{}link/email-verify?token={}", self.settings.home_url, token);
+        let mut redirect_url = self
+            .settings
+            .link_url
+            .join("email-verify")
+            .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?;
+        redirect_url.set_query(Some(&format!("token={}", token)));
 
-        let url = format!(
-            "{}login?{}",
-            self.settings.home_url,
-            serde_urlencoded::to_string(&[("prompt", "true"), ("redirectUrl", "redirect_url")])
-        );
+        let mut url = self
+            .settings
+            .auth_base_url
+            .join("login")
+            .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?;
+        url.set_query(Some(
+            &serde_urlencoded::to_string(&[("prompt", "true"), ("redirectUrl", redirect_url.as_str())])
+                .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?,
+        ));
 
         context.insert("user", user_name);
         context.insert("link", url.as_str());

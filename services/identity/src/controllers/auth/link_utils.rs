@@ -95,7 +95,7 @@ impl<'a> LinkUtils<'a> {
         let user_token = if create_token {
             match self
                 .state
-                .token_service()
+                .stored_token_service()
                 .create_user_token(
                     identity.id,
                     TokenKind::Access,

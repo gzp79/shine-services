@@ -6,3 +6,5 @@ mod serde;
 pub use self::serde::*;
 mod error;
 pub use self::error::*;
+
+pub mod random;

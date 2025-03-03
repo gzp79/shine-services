@@ -220,17 +220,12 @@ pub async fn delete_user_role(
 
 #[cfg(test)]
 mod test {
-    use rand::distributions::Alphanumeric;
-    use rand::{thread_rng, Rng};
+    use rand::{distr::Alphanumeric, rng, Rng};
 
     #[test]
     #[ignore = "This is not a test but a helper to generate master key"]
     fn generate_master_key() {
-        let key: String = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(32)
-            .map(char::from)
-            .collect();
+        let key: String = rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
 
         let hash = bcrypt::hash(&key, 5).unwrap();
         println!("key: {key}");

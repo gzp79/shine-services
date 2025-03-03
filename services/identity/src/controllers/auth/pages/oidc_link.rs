@@ -12,7 +12,10 @@ use openidconnect::{
     Nonce,
 };
 use serde::Deserialize;
-use shine_core::web::{ErrorResponse, InputError, ValidatedQuery};
+use shine_core::{
+    utils::random,
+    web::{ErrorResponse, InputError, ValidatedQuery},
+};
 use std::sync::Arc;
 use url::Url;
 use utoipa::IntoParams;
@@ -63,11 +66,7 @@ pub async fn oidc_link(
         }
     };
 
-    let key = match state.token_service().generate() {
-        Ok(key) => key,
-        Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
-    };
-
+    let key = random::hex_16(state.random());
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
     let (authorize_url, csrf_state, nonce) = core_client
         .authorize_url(

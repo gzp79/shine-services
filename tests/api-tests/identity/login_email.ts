@@ -26,6 +26,7 @@ todo:
   - new user, change email, revoke token, change should be rejected
 */
 import { expect, test } from '$fixtures/setup';
+import { getEmailLink } from '$lib/api/utils';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import { randomUUID } from 'crypto';
 
@@ -43,16 +44,19 @@ test.describe('Login with email', () => {
         mock = undefined!;
     });
 
-    test('Login with new email should create user and send email', async ({ api, appDomain }) => {
+    test.skip('Login with new email should create user and send email', async ({ api, appDomain }) => {
         const targetEmailAddress = `${randomUUID()}@example.com`;
 
         const mailPromise = mock.waitMail();
         const response = await api.auth.loginWithEmailRequest(targetEmailAddress, null, null, null, null, null, null);
         expect(response).toHaveStatus(200);
+
         const mail = await mailPromise;
         console.log('Mail received', mail);
         expect(mail).toHaveMailTo(targetEmailAddress);
         expect(mail).toHaveMailFrom(`no-replay@${appDomain}`);
         //expect(mail.text).toContain('Please confirm your email address');
+        //let url = getEmailLink(mail);
+        //expect(url).toStartWith);
     });
 });

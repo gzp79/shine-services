@@ -33,3 +33,18 @@ export function getEmailLink(mail: ParsedMail): string {
     log(`Email link: ${url}`);
     return url;
 }
+
+export function getEmailLinkToken(mail: ParsedMail): string | null {
+    const authUrl = getEmailLink(mail);
+    if (!authUrl) {
+        return null;
+    }
+    const authParams = new URL(authUrl).searchParams;
+    const confirmUrl = authParams.get('redirectUrl');
+    if (!confirmUrl) {
+        return null;
+    }
+    
+    const token = new URL(confirmUrl).searchParams.get('token');
+    return token;
+}

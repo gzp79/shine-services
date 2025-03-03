@@ -12,8 +12,9 @@ pub struct TokenSettings {
 
 pub struct SettingsService {
     pub app_name: String,
-    pub auth_base_url: Url,
     pub home_url: Url,
+    pub link_url: Url,
+    pub auth_base_url: Url,
     pub error_url: Url,
     pub token: TokenSettings,
     pub external_providers: Vec<String>,

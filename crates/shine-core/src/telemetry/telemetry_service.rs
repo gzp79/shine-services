@@ -289,6 +289,10 @@ impl TelemetryService {
     ) -> Result<(), TelemetryBuildError> {
         // Install meter provider for opentelemetry
         let (provider, collect) = match config.metrics {
+            Metering::None => {
+                log::warn!("Metrics are disabled");
+                return Ok(());
+            }
             Metering::Prometheus => {
                 log::info!("Registering metrics...");
                 let registry = prometheus::Registry::new();

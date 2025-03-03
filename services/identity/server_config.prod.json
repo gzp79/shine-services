@@ -23,7 +23,8 @@
 
     "auth": {
       "appName": "Scytta",
-      "homeUrl": "https://scytta.com",
+      "homeUrl": "https://scytta.com/",
+      "linkUrl": "https://scytta.com/link/",
       "errorUrl": "https://scytta.com/error",
       "authBaseUrl": "https://cloud.scytta.com/identity/auth/",
       "pageRedirectTime": 0,
@@ -31,6 +32,7 @@
       "ttlAccessToken": 1209600,
       "ttlSingleAccess": 600,
       "ttlApiKey": 31536000,
+      "ttlEmailToken": 3600,
       "openidStartupDiscovery": true,
       "openid": {
         "google": {

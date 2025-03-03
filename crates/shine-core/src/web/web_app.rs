@@ -132,7 +132,7 @@ async fn prepare_web_app<A: WebApplication>(
     tracing::warn!("init-warn  - tracing:ok");
     tracing::error!("init-error - tracing:ok");
 
-    let config = WebAppConfig::<A::AppConfig>::load_config(&stage).await?;
+    let config = WebAppConfig::<A::AppConfig>::load(&stage, None).await?;
     let telemetry_service = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
     log::info!("pre-init completed");
 
@@ -199,7 +199,10 @@ async fn create_web_app<A: WebApplication>(
     let telemetry_layer = telemetry_service.create_layer();
     let user_session_layer = {
         // todo: make it a read only access to the redis
-        log::info!("Creating user session cache reader...");
+        log::info!(
+            "Creating user session cache reader... [{}]",
+            config.service.session_redis_cns
+        );
         let redis = crate::db::create_redis_pool(config.service.session_redis_cns.as_str()).await?;
         UserSessionCacheReader::new(None, &config.service.session_secret, "", redis)?.into_layer()
     };

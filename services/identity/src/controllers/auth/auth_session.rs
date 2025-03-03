@@ -11,7 +11,7 @@ use axum_extra::extract::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Utc};
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use serde::{Deserialize, Serialize};
 use shine_core::web::{CheckedCurrentUser, CurrentUser, WebAppConfig};
 use std::{convert::Infallible, sync::Arc};
@@ -346,7 +346,7 @@ fn create_jar<T: Serialize, X: Into<Expiration>>(
             n: String,
         }
 
-        let nonce: Vec<u8> = (0..16).map(|_| thread_rng().gen::<u8>()).collect();
+        let nonce: Vec<u8> = (0..16).map(|_| rng().random::<u8>()).collect();
         let nonce = B64.encode(nonce);
         let raw_data = serde_json::to_string(&Dummy { n: nonce }).expect("Failed to serialize user");
         let mut cookie = Cookie::new(settings.name.to_string(), raw_data);

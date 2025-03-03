@@ -138,14 +138,27 @@ export class UserAPI {
         }
     }
 
-    confirmEmailRequest(sid: string | null): ApiRequest {
+    startConfirmEmailRequest(sid: string | null): ApiRequest {
         const cs = sid && { sid };
 
-        return ApiRequest.post(this.urlFor(`/api/auth/user/email/validate`)).withCookies({ ...cs });
+        return ApiRequest.post(this.urlFor(`/api/auth/user/email/confirm`)).withCookies({ ...cs });
     }
 
-    async confirmEmail(sid: string | null): Promise<void> {
-        const response = await this.confirmEmailRequest(sid);
+    async startConfirmEmail(sid: string | null): Promise<void> {
+        const response = await this.startConfirmEmailRequest(sid);
+        expect(response).toHaveStatus(200);
+    }
+
+    completeConfirmEmailRequest(sid: string | null, token: string): ApiRequest {
+        const cs = sid && { sid };
+
+        return ApiRequest.post(this.urlFor(`/api/auth/user/email/complete?token=${token}`)).withCookies({
+            ...cs
+        });
+    }
+
+    async completeConfirmEmail(sid: string | null, token: string): Promise<void> {
+        const response = await this.completeConfirmEmailRequest(sid, token);
         expect(response).toHaveStatus(200);
     }
 }
