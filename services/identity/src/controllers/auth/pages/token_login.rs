@@ -551,7 +551,7 @@ pub async fn token_login(
         log::debug!("Creating access token for identity: {:#?}", identity);
         // create a new access token
         let user_token = match state
-            .stored_token_service()
+            .login_token_service()
             .create_user_token(
                 identity.id,
                 TokenKind::Access,

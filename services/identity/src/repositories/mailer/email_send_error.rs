@@ -10,7 +10,7 @@ pub enum EmailSenderError {
     InvalidEmailAddress,
     #[error("Invalid content")]
     InvalidContent,
-    #[error("Email send failed: {0}")]
+    #[error("Email send failed")]
     SendFailed(String),
 }
 

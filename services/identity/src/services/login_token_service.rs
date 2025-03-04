@@ -12,7 +12,7 @@ use thiserror::Error as ThisError;
 use uuid::Uuid;
 
 #[derive(Debug, ThisError)]
-pub enum StoredTokenServiceError {
+pub enum LoginTokenServiceError {
     #[error("Retry limit reached")]
     RetryLimitReached,
 
@@ -20,10 +20,10 @@ pub enum StoredTokenServiceError {
     IdentityError(#[from] IdentityError),
 }
 
-impl From<StoredTokenServiceError> for Problem {
-    fn from(err: StoredTokenServiceError) -> Self {
+impl From<LoginTokenServiceError> for Problem {
+    fn from(err: LoginTokenServiceError) -> Self {
         match err {
-            StoredTokenServiceError::IdentityError(err) => err.into(),
+            LoginTokenServiceError::IdentityError(err) => err.into(),
 
             err => Problem::internal_error()
                 .with_detail(err.to_string())
@@ -40,7 +40,7 @@ pub struct UserToken {
     pub expire_at: DateTime<Utc>,
 }
 
-pub struct StoredTokenService<'a, IDB>
+pub struct LoginTokenService<'a, IDB>
 where
     IDB: IdentityDb,
 {
@@ -48,7 +48,7 @@ where
     identity_service: &'a IdentityService<IDB>,
 }
 
-impl<'a, IDB> StoredTokenService<'a, IDB>
+impl<'a, IDB> LoginTokenService<'a, IDB>
 where
     IDB: IdentityDb,
 {
@@ -67,14 +67,14 @@ where
         fingerprint_to_bind_to: Option<&ClientFingerprint>,
         email_to_bind_to: Option<&str>,
         site_info: &SiteInfo,
-    ) -> Result<UserToken, StoredTokenServiceError> {
+    ) -> Result<UserToken, LoginTokenServiceError> {
         const MAX_RETRY_COUNT: usize = 10;
 
         let mut retry_count = 0;
         loop {
             log::debug!("Creating new {kind:?} token for user {user_id}, retry: {retry_count:#?}");
             if retry_count > MAX_RETRY_COUNT {
-                return Err(StoredTokenServiceError::RetryLimitReached);
+                return Err(LoginTokenServiceError::RetryLimitReached);
             }
             retry_count += 1;
 
@@ -101,7 +101,7 @@ where
                     })
                 }
                 Err(IdentityError::TokenConflict) => continue,
-                Err(err) => return Err(StoredTokenServiceError::IdentityError(err)),
+                Err(err) => return Err(LoginTokenServiceError::IdentityError(err)),
             }
         }
     }

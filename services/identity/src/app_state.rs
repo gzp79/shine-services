@@ -8,7 +8,7 @@ use crate::{
     },
     services::{
         CreateUserService, IdentityService, MailerService, SessionService, SessionUserSyncService, SessionUtils,
-        SettingsService, SignedTokenService, StoredTokenService, TokenSettings,
+        SettingsService, EmailTokenService, LoginTokenService, TokenSettings,
     },
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -169,12 +169,12 @@ impl AppState {
         &self.0.random
     }
 
-    pub fn stored_token_service(&self) -> StoredTokenService<impl IdentityDb> {
-        StoredTokenService::new(self.random(), self.identity_service())
+    pub fn login_token_service(&self) -> LoginTokenService<impl IdentityDb> {
+        LoginTokenService::new(self.random(), self.identity_service())
     }
 
-    pub fn signed_token_service(&self) -> SignedTokenService {
-        SignedTokenService::new(self.settings())
+    pub fn email_token_service(&self) -> EmailTokenService {
+        EmailTokenService::new(self.settings())
     }
 
     pub fn mailer_service(&self) -> MailerService<impl EmailSender> {

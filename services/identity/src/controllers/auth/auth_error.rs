@@ -1,6 +1,6 @@
 use crate::{
     repositories::{identity::IdentityError, session::SessionError, CaptchaError},
-    services::{StoredTokenServiceError, UserCreateError},
+    services::{LoginTokenServiceError, UserCreateError},
 };
 use shine_core::web::{InputError, Problem};
 use thiserror::Error as ThisError;
@@ -91,7 +91,7 @@ pub enum AuthError {
     #[error(transparent)]
     UserCreateError(#[from] UserCreateError),
     #[error(transparent)]
-    StoredTokenServiceError(#[from] StoredTokenServiceError),
+    StoredTokenServiceError(#[from] LoginTokenServiceError),
 
     #[error("Internal server error")]
     InternalServerError(Problem),

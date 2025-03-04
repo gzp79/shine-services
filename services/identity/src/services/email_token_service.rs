@@ -6,7 +6,7 @@ use thiserror::Error as ThisError;
 use uuid::Uuid;
 
 #[derive(Debug, ThisError)]
-pub enum SignedTokenServiceError {
+pub enum EmailTokenServiceError {
     #[error("Invalid token")]
     InvalidToken,
     #[error("Token expired")]
@@ -15,14 +15,14 @@ pub enum SignedTokenServiceError {
     TokenMissMatching,
 }
 
-impl From<SignedTokenServiceError> for Problem {
-    fn from(err: SignedTokenServiceError) -> Self {
+impl From<EmailTokenServiceError> for Problem {
+    fn from(err: EmailTokenServiceError) -> Self {
         match err {
-            SignedTokenServiceError::InvalidToken => Problem::bad_request("auth-invalid-token"),
-            SignedTokenServiceError::TokenExpired => {
+            EmailTokenServiceError::InvalidToken => Problem::bad_request("auth-invalid-token"),
+            EmailTokenServiceError::TokenExpired => {
                 Problem::bad_request("auth-token-expired").with_sensitive("tokenExpired")
             }
-            SignedTokenServiceError::TokenMissMatching => {
+            EmailTokenServiceError::TokenMissMatching => {
                 Problem::bad_request("auth-token-expired").with_sensitive("tokenMissMatch")
             }
         }
@@ -34,11 +34,11 @@ pub struct EmailToken {
     pub token: String,
 }
 
-pub struct SignedTokenService<'a> {
+pub struct EmailTokenService<'a> {
     settings: &'a SettingsService,
 }
 
-impl<'a> SignedTokenService<'a> {
+impl<'a> EmailTokenService<'a> {
     pub fn new(settings: &'a SettingsService) -> Self {
         Self { settings }
     }
@@ -58,7 +58,7 @@ impl<'a> SignedTokenService<'a> {
         user_id: Uuid,
         time_to_live: &Duration,
         email: &str,
-    ) -> Result<EmailToken, SignedTokenServiceError> {
+    ) -> Result<EmailToken, EmailTokenServiceError> {
         let expire_at = Utc::now() + *time_to_live;
 
         let msg = self.generate_email_verify_data(user_id, email, email, &expire_at);
@@ -75,21 +75,21 @@ impl<'a> SignedTokenService<'a> {
         user_id: Uuid,
         email: &str,
         token: &str,
-    ) -> Result<(), SignedTokenServiceError> {
-        let (signature, expire_at) = token.split_once(';').ok_or(SignedTokenServiceError::InvalidToken)?;
+    ) -> Result<(), EmailTokenServiceError> {
+        let (signature, expire_at) = token.split_once(';').ok_or(EmailTokenServiceError::InvalidToken)?;
 
-        let signature = hex::decode(signature).map_err(|_| SignedTokenServiceError::InvalidToken)?;
+        let signature = hex::decode(signature).map_err(|_| EmailTokenServiceError::InvalidToken)?;
 
-        let expire_at = i64::from_str_radix(expire_at, 16).map_err(|_| SignedTokenServiceError::InvalidToken)?;
-        let expire_at = DateTime::<Utc>::from_timestamp(expire_at, 0).ok_or(SignedTokenServiceError::InvalidToken)?;
+        let expire_at = i64::from_str_radix(expire_at, 16).map_err(|_| EmailTokenServiceError::InvalidToken)?;
+        let expire_at = DateTime::<Utc>::from_timestamp(expire_at, 0).ok_or(EmailTokenServiceError::InvalidToken)?;
         if expire_at < Utc::now() {
-            return Err(SignedTokenServiceError::TokenExpired);
+            return Err(EmailTokenServiceError::TokenExpired);
         }
 
         let msg = self.generate_email_verify_data(user_id, email, email, &expire_at);
         log::trace!("Verify signature for [{}]", msg);
         if hmac::verify(&self.settings.token.email_key, msg.as_bytes(), &signature).is_err() {
-            Err(SignedTokenServiceError::TokenMissMatching)
+            Err(EmailTokenServiceError::TokenMissMatching)
         } else {
             Ok(())
         }

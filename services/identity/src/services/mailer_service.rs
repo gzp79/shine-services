@@ -35,18 +35,8 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
             .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?;
         redirect_url.set_query(Some(&format!("token={}", token)));
 
-        let mut url = self
-            .settings
-            .auth_base_url
-            .join("login")
-            .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?;
-        url.set_query(Some(
-            &serde_urlencoded::to_string(&[("prompt", "true"), ("redirectUrl", redirect_url.as_str())])
-                .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?,
-        ));
-
         context.insert("user", user_name);
-        context.insert("link", url.as_str());
+        context.insert("link", redirect_url.as_str());
         context.insert("app", self.settings.app_name.as_str());
 
         let html = self

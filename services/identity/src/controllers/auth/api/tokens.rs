@@ -135,7 +135,7 @@ pub async fn create_token(
 
     let site_fingerprint = if params.bind_to_site { Some(&fingerprint) } else { None };
     let user_token = state
-        .stored_token_service()
+        .login_token_service()
         .create_user_token(
             user.user_id,
             params.kind.into(),

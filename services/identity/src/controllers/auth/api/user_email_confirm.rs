@@ -1,4 +1,4 @@
-use crate::{app_state::AppState, repositories::identity::IdentityError, services::SignedTokenServiceError};
+use crate::{app_state::AppState, repositories::identity::IdentityError, services::EmailTokenServiceError};
 use axum::{extract::State, Extension};
 use serde::Deserialize;
 use shine_core::{
@@ -34,6 +34,7 @@ pub async fn start_user_email_validation(
 ) -> Result<(), ProblemResponse> {
     let ttl = state.settings().token.ttl_email_token;
 
+    //todo: move identity handling into the email_token_service
     let email = state
         .identity_service()
         .find_by_id(user.user_id)
@@ -44,7 +45,7 @@ pub async fn start_user_email_validation(
         .ok_or(IdentityError::MissingEmail.into_response(&problem_config))?;
 
     let token = state
-        .signed_token_service()
+        .email_token_service()
         .create_email_verify_token(user.user_id, &ttl, &email)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
@@ -82,6 +83,8 @@ pub async fn complete_user_email_operation(
     ValidatedQuery(query): ValidatedQuery<CompleteQueryParams>,
     user: CheckedCurrentUser,
 ) -> Result<(), ProblemResponse> {
+
+    //todo: move identity handling into the email_token_service
     let email = state
         .identity_service()
         .find_by_id(user.user_id)
@@ -89,10 +92,10 @@ pub async fn complete_user_email_operation(
         .map_err(|err| err.into_response(&problem_config))?
         .ok_or(IdentityError::UserDeleted { id: user.user_id }.into_response(&problem_config))?
         .email
-        .ok_or(SignedTokenServiceError::TokenExpired.into_response(&problem_config))?;
+        .ok_or(EmailTokenServiceError::TokenExpired.into_response(&problem_config))?;
 
     state
-        .signed_token_service()
+        .email_token_service()
         .check_email_verify_token(user.user_id, &email, &query.token)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
