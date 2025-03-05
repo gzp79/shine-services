@@ -66,7 +66,7 @@ pub async fn guest_login(
     // Create access token
     let user_access = {
         let user_token = match state
-            .login_token_service()
+            .login_token_handler()
             .create_user_token(
                 identity.id,
                 TokenKind::Access,

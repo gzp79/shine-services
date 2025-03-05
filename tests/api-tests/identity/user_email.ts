@@ -52,9 +52,8 @@ test.describe('Email confirmation', () => {
         expect(response).toHaveStatus(412);
         expect(await response.parseProblem()).toEqual(
             expect.objectContaining({
-                type: 'identity-missing-email',
-                status: 412,
-                detail: expect.stringContaining('User has no valid email address')
+                type: 'auth-missing-email',
+                status: 412
             })
         );
     });
@@ -72,11 +71,7 @@ test.describe('Email confirmation', () => {
         expect(mail).toContainMailBody('Confirm Email Address');
         expect(mail).toContainMailBody('<p>Best regards,<br/>Scytta</p>');
 
-        const authUrl = getEmailLink(mail);
-        expect(authUrl).toStartWith(identityUrl);
-        const authParams = new URL(authUrl).searchParams;
-        const confirmUrl = authParams.get('redirectUrl') ?? '';
-
+        const confirmUrl = getEmailLink(mail);
         expect(confirmUrl).toStartWith(linkUrl);
         const confirmParams = new URL(confirmUrl).searchParams;
         expect(confirmParams.get('token')).toBeString();
@@ -104,7 +99,7 @@ test.describe('Email confirmation', () => {
         );
     });
 
-    test(`Confirm email with same user shall work`, async ({ api }) => {
+    test(`Confirming email with same user shall work`, async ({ api }) => {
         const smtp = await startMockEmail();
         const user = await api.testUsers.createLinked(mockAuth);
         const { sessionLength, ...userInfo } = await api.user.getUserInfo(user.sid);
@@ -125,7 +120,7 @@ test.describe('Email confirmation', () => {
         );
     });
 
-    test(`Confirm email with another guest user shall fail`, async ({ api }) => {
+    test(`Confirming email with another guest user shall fail`, async ({ api }) => {
         const smtp = await startMockEmail();
         const user = await api.testUsers.createLinked(mockAuth);
 
@@ -144,7 +139,7 @@ test.describe('Email confirmation', () => {
             expect.objectContaining({
                 type: 'auth-token-expired',
                 status: 400,
-                sensitive: 'tokenExpired' // for the missing email
+                sensitive: 'wrongUser' // for the missing email
             })
         );
 
@@ -154,7 +149,7 @@ test.describe('Email confirmation', () => {
         expect(await api.user.getUserInfo(user2.sid)).toEqual(expect.objectContaining({ isEmailConfirmed: false }));
     });
 
-    test(`Confirm email with another linked user shall fail`, async ({ api }) => {
+    test(`Confirming email with another linked user shall fail`, async ({ api }) => {
         const smtp = await startMockEmail();
         const user = await api.testUsers.createLinked(mockAuth);
 
@@ -173,7 +168,7 @@ test.describe('Email confirmation', () => {
             expect.objectContaining({
                 type: 'auth-token-expired',
                 status: 400,
-                sensitive: 'tokenMissMatch' // for the non matching data
+                sensitive: 'wrongUser' // for the non matching data
             })
         );
 
@@ -232,6 +227,18 @@ test.describe('Email change', () => {
     });
 
     test.skip(`Changing email with confirmed email shall succeed`, async () => {
+        throw new Error('Not implemented');
+    });
+
+    test.skip(`Changing email with and already changed email shall fail`, async () => {
+        throw new Error('Not implemented');
+    });
+
+    test.skip(`Changing email to an used email shall fail`, async () => {
+        throw new Error('Not implemented');
+    });
+
+    test.skip(`Confirming a changed email shall fail`, async () => {
         throw new Error('Not implemented');
     });
 });

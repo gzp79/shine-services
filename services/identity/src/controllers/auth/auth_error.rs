@@ -1,6 +1,6 @@
 use crate::{
+    handlers::{CreateUserError, LoginTokenError},
     repositories::{identity::IdentityError, session::SessionError, CaptchaError},
-    services::{LoginTokenServiceError, UserCreateError},
 };
 use shine_core::web::{InputError, Problem};
 use thiserror::Error as ThisError;
@@ -89,9 +89,9 @@ pub enum AuthError {
     #[error(transparent)]
     IdentityError(#[from] IdentityError),
     #[error(transparent)]
-    UserCreateError(#[from] UserCreateError),
+    CreateUserError(#[from] CreateUserError),
     #[error(transparent)]
-    StoredTokenServiceError(#[from] LoginTokenServiceError),
+    LoginTokenError(#[from] LoginTokenError),
 
     #[error("Internal server error")]
     InternalServerError(Problem),
@@ -135,10 +135,10 @@ impl From<AuthError> for Problem {
                 let problem: Problem = error.into();
                 Problem::new(problem.status, AUTH_ERROR).with_sensitive(Problem::from(problem))
             }
-            AuthError::UserCreateError(error) => {
+            AuthError::CreateUserError(error) => {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
-            AuthError::StoredTokenServiceError(error) => {
+            AuthError::LoginTokenError(error) => {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::InternalServerError(error) => {

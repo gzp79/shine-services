@@ -151,21 +151,25 @@ impl FeatureConfig for AppConfig {
 mod test {
     use axum_extra::extract::cookie;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
-    use ring::{digest, rand};
+    use ring::{
+        aead,
+        rand::{SecureRandom, SystemRandom},
+    };
     use shine_test::test;
 
     #[test]
-    #[ignore = "This is not a test but a helper to generate secret"]
+    #[ignore = "This is not a test but a helper to generate cookie secret"]
     fn generate_cookie_secret() {
         let key = cookie::Key::generate();
         println!("{}", B64.encode(key.master()));
     }
 
     #[test]
-    #[ignore = "This is not a test but a helper to generate secret"]
+    #[ignore = "This is not a test but a helper to generate an email secret"]
     fn generate_email_token_secret() {
-        let rng = rand::SystemRandom::new();
-        let key: [u8; digest::SHA256_OUTPUT_LEN] = rand::generate(&rng).unwrap().expose();
+        let rng = SystemRandom::new();
+        let mut key = vec![0u8; aead::AES_256_GCM.key_len()];
+        rng.fill(&mut key).unwrap();
         println!("{}", B64.encode(key));
     }
 }

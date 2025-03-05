@@ -18,7 +18,7 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
         Self { settings, mailer, tera }
     }
 
-    pub async fn send_confirmation_email(
+    pub async fn send_email_confirmation(
         &self,
         to: &str,
         token: &str,
@@ -50,6 +50,45 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
                 to,
                 Email {
                     subject: "Confirm your email".to_string(),
+                    body: EmailContent::Html(html),
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn send_email_change(
+        &self,
+        to: &str,
+        token: &str,
+        lang: Option<Language>,
+        user_name: &str,
+    ) -> Result<(), EmailSenderError> {
+        let mut context = tera::Context::new();
+
+        let lang = lang.unwrap_or(Language::En);
+        let mut redirect_url = self
+            .settings
+            .link_url
+            .join("email-verify")
+            .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?;
+        redirect_url.set_query(Some(&format!("token={}&email={}", token, to)));
+
+        context.insert("user", user_name);
+        context.insert("link", redirect_url.as_str());
+        context.insert("app", self.settings.app_name.as_str());
+
+        let html = self
+            .tera
+            .render(&format!("mail/{}/change.html", lang), &context)
+            .expect("Failed to generate change email html");
+
+        self.mailer
+            .send(
+                "no-replay",
+                to,
+                Email {
+                    subject: "Switch your email address".to_string(),
                     body: EmailContent::Html(html),
                 },
             )

@@ -6,15 +6,12 @@ use crate::{
         session::{redis::RedisSessionDb, SessionDb},
         CaptchaValidator, DBPool,
     },
-    services::{
-        CreateUserService, IdentityService, MailerService, SessionService, SessionUserSyncService, SessionUtils,
-        SettingsService, EmailTokenService, LoginTokenService, TokenSettings,
-    },
+    services::{IdentityService, MailerService, SessionService, SettingsService, TokenSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD as B64, Engine};
 use chrono::Duration;
-use ring::{hmac, rand::SystemRandom};
+use ring::{aead, rand::SystemRandom};
 use shine_core::{
     utils::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
     web::{ProblemConfig, WebAppConfig},
@@ -43,26 +40,29 @@ impl AppState {
         let config_db = &config.feature.db;
         let config_user_name = &config.feature.name;
 
-        let settings = SettingsService {
-            app_name: config_auth.app_name.clone(),
-            home_url: config_auth.home_url.clone(),
-            link_url: config_auth.link_url.clone(),
-            auth_base_url: config_auth.auth_base_url.clone(),
-            error_url: config_auth.error_url.clone(),
-            token: TokenSettings {
-                ttl_access_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_access_token)?),
-                ttl_single_access: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_single_access)?),
-                ttl_api_key: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_api_key)?),
-                ttl_email_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_email_token)?),
-                email_key: hmac::Key::new(
-                    hmac::HMAC_SHA256,
-                    &B64.decode(config_auth.auth_session.email_token_secret.as_bytes())
-                        .map_err(|e| anyhow!(e))?,
-                ),
-            },
-            external_providers: config_auth.collect_providers(),
-            page_redirect_time: config_auth.page_redirect_time,
-            super_user_api_key_hash: config_auth.super_user_api_key_hash.clone(),
+        let settings = {
+            let email_key = &B64
+                .decode(config_auth.auth_session.email_token_secret.as_bytes())
+                .map_err(|e| anyhow!(e))?;
+            let email_key = aead::UnboundKey::new(&aead::AES_256_GCM, email_key).map_err(|e| anyhow!(e))?;
+
+            SettingsService {
+                app_name: config_auth.app_name.clone(),
+                home_url: config_auth.home_url.clone(),
+                link_url: config_auth.link_url.clone(),
+                auth_base_url: config_auth.auth_base_url.clone(),
+                error_url: config_auth.error_url.clone(),
+                token: TokenSettings {
+                    ttl_access_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_access_token)?),
+                    ttl_single_access: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_single_access)?),
+                    ttl_api_key: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_api_key)?),
+                    ttl_email_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_email_token)?),
+                    email_key: aead::LessSafeKey::new(email_key),
+                },
+                external_providers: config_auth.collect_providers(),
+                page_redirect_time: config_auth.page_redirect_time,
+                super_user_api_key_hash: config_auth.super_user_api_key_hash.clone(),
+            }
         };
 
         let problem_config = ProblemConfig::new(config.service.full_problem_response);
@@ -157,31 +157,11 @@ impl AppState {
         &self.0.session_service
     }
 
-    pub fn create_user_service(&self) -> CreateUserService<impl IdentityDb> {
-        CreateUserService::new(self.identity_service())
-    }
-
-    pub fn session_user_sync_service(&self) -> SessionUserSyncService<impl IdentityDb, impl SessionDb> {
-        SessionUserSyncService::new(self.identity_service(), self.session_service())
-    }
-
     pub fn random(&self) -> &SystemRandom {
         &self.0.random
     }
 
-    pub fn login_token_service(&self) -> LoginTokenService<impl IdentityDb> {
-        LoginTokenService::new(self.random(), self.identity_service())
-    }
-
-    pub fn email_token_service(&self) -> EmailTokenService {
-        EmailTokenService::new(self.settings())
-    }
-
     pub fn mailer_service(&self) -> MailerService<impl EmailSender> {
         MailerService::new(&self.0.settings, &self.0.email_sender, &self.0.tera)
-    }
-
-    pub fn session_utils(&self) -> SessionUtils<'_> {
-        SessionUtils::new(self)
     }
 }

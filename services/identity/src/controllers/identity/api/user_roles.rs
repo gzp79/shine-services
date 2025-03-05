@@ -92,7 +92,7 @@ pub async fn add_user_role(
         })?;
 
     let (_, roles) = state
-        .session_user_sync_service()
+        .session_user_handler()
         .refresh_session_user(path.user_id)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
@@ -210,7 +210,7 @@ pub async fn delete_user_role(
         })?;
 
     let (_, roles) = state
-        .session_user_sync_service()
+        .session_user_handler()
         .refresh_session_user(path.user_id)
         .await
         .map_err(|err| err.into_response(&problem_config))?;

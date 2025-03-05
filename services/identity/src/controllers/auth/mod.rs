@@ -122,6 +122,7 @@ impl AuthController {
         let api_routes = OpenApiRouter::new()
             .routes(routes!(api::get_user_info))
             .routes(routes!(api::start_user_email_validation))
+            .routes(routes!(api::start_user_email_change))
             .routes(routes!(api::complete_user_email_operation))
             .routes(routes!(api::create_token))
             .routes(routes!(api::get_token))

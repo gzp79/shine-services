@@ -35,12 +35,7 @@ export function getEmailLink(mail: ParsedMail): string {
 }
 
 export function getEmailLinkToken(mail: ParsedMail): string | null {
-    const authUrl = getEmailLink(mail);
-    if (!authUrl) {
-        return null;
-    }
-    const authParams = new URL(authUrl).searchParams;
-    const confirmUrl = authParams.get('redirectUrl');
+    const confirmUrl = getEmailLink(mail);
     if (!confirmUrl) {
         return null;
     }

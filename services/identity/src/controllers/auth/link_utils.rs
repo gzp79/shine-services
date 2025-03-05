@@ -1,8 +1,8 @@
 use crate::{
     app_state::AppState,
     controllers::auth::{AuthError, AuthPage, AuthSession, PageUtils, TokenCookie},
+    handlers::CreateUserError,
     repositories::identity::{ExternalUserInfo, IdentityError, TokenKind},
-    services::UserCreateError,
 };
 use shine_core::web::{ClientFingerprint, CurrentUser, SiteInfo};
 use url::Url;
@@ -83,7 +83,7 @@ impl<'a> LinkUtils<'a> {
                 .await
             {
                 Ok(identity) => identity,
-                Err(UserCreateError::IdentityError(IdentityError::LinkEmailConflict)) => {
+                Err(CreateUserError::IdentityError(IdentityError::LinkEmailConflict)) => {
                     return PageUtils::new(self.state).error(auth_session, AuthError::EmailAlreadyUsed, error_url)
                 }
                 Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
@@ -95,7 +95,7 @@ impl<'a> LinkUtils<'a> {
         let user_token = if create_token {
             match self
                 .state
-                .login_token_service()
+                .login_token_handler()
                 .create_user_token(
                     identity.id,
                     TokenKind::Access,

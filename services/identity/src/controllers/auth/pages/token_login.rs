@@ -251,14 +251,14 @@ async fn authenticate_with_header_token(
             "Non-persistent token ({:?}) used in the header, revoking compromised token ...",
             token_info.kind
         );
-        state.session_utils().revoke_access(token_info.kind, token).await;
+        state.session_user_handler().revoke_access(token_info.kind, token).await;
         Err(AuthenticationFailure {
             error: AuthError::InvalidToken,
             auth_session: response_session,
         })
     } else if token_info.is_expired {
         log::debug!("Token expired, removing from DB ...");
-        state.session_utils().revoke_access(token_info.kind, token).await;
+        state.session_user_handler().revoke_access(token_info.kind, token).await;
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -269,7 +269,7 @@ async fn authenticate_with_header_token(
             token_info.bound_fingerprint,
             fingerprint
         );
-        state.session_utils().revoke_access(token_info.kind, token).await;
+        state.session_user_handler().revoke_access(token_info.kind, token).await;
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -341,7 +341,7 @@ async fn authenticate_with_cookie_token(
     if let Some(revoked_token) = revoked_token {
         log::debug!("Rotating out the access token ...");
         state
-            .session_utils()
+            .session_user_handler()
             .revoke_access(token_info.kind, &revoked_token)
             .await;
     }
@@ -352,14 +352,20 @@ async fn authenticate_with_cookie_token(
             "Non-access token ({:?}) used in the cookie, revoking compromised token ...",
             token_info.kind
         );
-        state.session_utils().revoke_access(token_info.kind, &token).await;
+        state
+            .session_user_handler()
+            .revoke_access(token_info.kind, &token)
+            .await;
         Err(AuthenticationFailure {
             error: AuthError::InvalidToken,
             auth_session: response_session,
         })
     } else if token_info.is_expired {
         log::debug!("Token expired, removing from DB ...");
-        state.session_utils().revoke_access(token_info.kind, &token).await;
+        state
+            .session_user_handler()
+            .revoke_access(token_info.kind, &token)
+            .await;
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -372,7 +378,10 @@ async fn authenticate_with_cookie_token(
             token_user_id,
             token
         );
-        state.session_utils().revoke_access(token_info.kind, &token).await;
+        state
+            .session_user_handler()
+            .revoke_access(token_info.kind, &token)
+            .await;
         Err(AuthenticationFailure {
             error: AuthError::InvalidToken,
             auth_session: response_session,
@@ -383,7 +392,10 @@ async fn authenticate_with_cookie_token(
             token_info.bound_fingerprint,
             fingerprint
         );
-        state.session_utils().revoke_access(token_info.kind, &token).await;
+        state
+            .session_user_handler()
+            .revoke_access(token_info.kind, &token)
+            .await;
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -551,7 +563,7 @@ pub async fn token_login(
         log::debug!("Creating access token for identity: {:#?}", identity);
         // create a new access token
         let user_token = match state
-            .login_token_service()
+            .login_token_handler()
             .create_user_token(
                 identity.id,
                 TokenKind::Access,

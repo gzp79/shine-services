@@ -198,7 +198,10 @@ impl AuthSession {
     /// Clear the session and revoke the session from the session store.
     #[must_use]
     pub async fn revoke_session(mut self, state: &AppState) -> Self {
-        state.session_utils().revoke_opt_session(self.session.take()).await;
+        state
+            .session_user_handler()
+            .revoke_opt_session(self.session.take())
+            .await;
         self
     }
 
@@ -221,11 +224,11 @@ impl AuthSession {
     pub async fn revoke_access(mut self, state: &AppState) -> Self {
         if let Some(token_cookie) = self.access.take() {
             state
-                .session_utils()
+                .session_user_handler()
                 .revoke_opt_access(TokenKind::Access, token_cookie.revoked_token)
                 .await;
             state
-                .session_utils()
+                .session_user_handler()
                 .revoke_access(TokenKind::Access, &token_cookie.key)
                 .await;
         }

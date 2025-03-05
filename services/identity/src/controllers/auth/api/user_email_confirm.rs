@@ -1,4 +1,4 @@
-use crate::{app_state::AppState, repositories::identity::IdentityError, services::EmailTokenServiceError};
+use crate::app_state::AppState;
 use axum::{extract::State, Extension};
 use serde::Deserialize;
 use shine_core::{
@@ -32,27 +32,44 @@ pub async fn start_user_email_validation(
     ValidatedQuery(query): ValidatedQuery<ConfirmQueryParams>,
     user: CheckedCurrentUser,
 ) -> Result<(), ProblemResponse> {
-    let ttl = state.settings().token.ttl_email_token;
-
-    //todo: move identity handling into the email_token_service
-    let email = state
-        .identity_service()
-        .find_by_id(user.user_id)
-        .await
-        .map_err(|err| err.into_response(&problem_config))?
-        .ok_or(IdentityError::UserDeleted { id: user.user_id }.into_response(&problem_config))?
-        .email
-        .ok_or(IdentityError::MissingEmail.into_response(&problem_config))?;
-
-    let token = state
-        .email_token_service()
-        .create_email_verify_token(user.user_id, &ttl, &email)
+    state
+        .email_token_handler()
+        .start_email_confirm_flow(user.user_id, query.lang)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 
+    Ok(())
+}
+
+#[derive(Deserialize, Validate, IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeQueryParams {
+    #[validate(email)]
+    email: String,
+    lang: Option<Language>,
+}
+
+/// Start email address change flow.
+#[utoipa::path(
+    post,
+    path = "/api/auth/user/email/change",
+    tag = "auth",
+    params(
+        ChangeQueryParams
+    ),
+    responses(
+        (status = OK, description="Start email address change")
+    )
+)]
+pub async fn start_user_email_change(
+    State(state): State<AppState>,
+    Extension(problem_config): Extension<ProblemConfig>,
+    ValidatedQuery(query): ValidatedQuery<ChangeQueryParams>,
+    user: CheckedCurrentUser,
+) -> Result<(), ProblemResponse> {
     state
-        .mailer_service()
-        .send_confirmation_email(&email, &token.token, query.lang, &user.name)
+        .email_token_handler()
+        .start_email_change_flow(user.user_id, &query.email, query.lang)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 
@@ -65,7 +82,7 @@ pub struct CompleteQueryParams {
     token: String,
 }
 
-/// Complete email address confirmation and change flow.
+/// Complete email address operation flow.
 #[utoipa::path(
     post,
     path = "/api/auth/user/email/complete",
@@ -83,26 +100,9 @@ pub async fn complete_user_email_operation(
     ValidatedQuery(query): ValidatedQuery<CompleteQueryParams>,
     user: CheckedCurrentUser,
 ) -> Result<(), ProblemResponse> {
-
-    //todo: move identity handling into the email_token_service
-    let email = state
-        .identity_service()
-        .find_by_id(user.user_id)
-        .await
-        .map_err(|err| err.into_response(&problem_config))?
-        .ok_or(IdentityError::UserDeleted { id: user.user_id }.into_response(&problem_config))?
-        .email
-        .ok_or(EmailTokenServiceError::TokenExpired.into_response(&problem_config))?;
-
     state
-        .email_token_service()
-        .check_email_verify_token(user.user_id, &email, &query.token)
-        .await
-        .map_err(|err| err.into_response(&problem_config))?;
-
-    state
-        .identity_service()
-        .update(user.user_id, None, Some((&email, true)))
+        .email_token_handler()
+        .complete_email_flow(user.user_id, &query.token)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 
