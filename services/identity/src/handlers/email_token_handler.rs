@@ -16,9 +16,10 @@ use shine_core::{consts::Language, web::Problem};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 
-const TOKEN_EXPIRED: &str = "auth-token-expired";
-const INVALID_TOKEN: &str = "auth-invalid-token";
-const MISSING_EMAIL: &str = "auth-missing-email";
+const TOKEN_EXPIRED: &str = "email-token-expired";
+const INVALID_TOKEN: &str = "email-invalid-token";
+const MISSING_EMAIL: &str = "email-missing-email";
+const EMAIL_CONFLICT: &str = "email-conflict";
 
 #[derive(Debug, ThisError)]
 pub enum EmailTokenError {
@@ -32,6 +33,8 @@ pub enum EmailTokenError {
     TokenWrongEmail,
     #[error("No email to validate")]
     MissingEmail,
+    #[error("Email already in use")]
+    EmailConflict,
     #[error("Encryption error")]
     EncryptionError,
     #[error(transparent)]
@@ -48,6 +51,7 @@ impl From<EmailTokenError> for Problem {
             EmailTokenError::TokenWrongUser => Problem::bad_request(TOKEN_EXPIRED).with_sensitive("wrongUser"),
             EmailTokenError::TokenWrongEmail => Problem::bad_request(TOKEN_EXPIRED).with_sensitive("wrongEmail"),
             EmailTokenError::MissingEmail => Problem::precondition_failed(MISSING_EMAIL),
+            EmailTokenError::EmailConflict => Problem::precondition_failed(EMAIL_CONFLICT),
             EmailTokenError::IdentityError(IdentityError::UserDeleted { .. }) => {
                 Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("userDeleted")
             }
@@ -74,16 +78,6 @@ where
     IDB: IdentityDb,
     EMS: EmailSender,
 {
-    /*fn generate_email_verify_data(
-        &self,
-        user_id: Uuid,
-        current_email: &str,
-        new_email: &str,
-        expire_at: &DateTime<Utc>,
-    ) -> String {
-        format!("{},{},{},{}", user_id, current_email, new_email, expire_at.timestamp())
-    }*/
-
     fn encrypt(
         &self,
         user_id: Uuid,
@@ -207,9 +201,15 @@ where
             return Err(EmailTokenError::TokenWrongEmail);
         }
 
-        self.identity_service
+        match self
+            .identity_service
             .update(user_id, None, Some((&token_new_email, true)))
-            .await?;
+            .await
+        {
+            Ok(_) => (),
+            Err(IdentityError::EmailConflict) => return Err(EmailTokenError::EmailConflict),
+            Err(err) => return Err(EmailTokenError::IdentityError(err)),
+        }
 
         Ok(())
     }

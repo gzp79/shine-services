@@ -5,11 +5,10 @@ import OpenIdMockServer from '$lib/mocks/openid';
 import { generateRandomString } from '$lib/string_utils';
 import { randomUUID } from 'crypto';
 import { MockServer } from '../mocks/mock_server';
-import { ApiRequest } from './api';
 import { AuthAPI } from './auth_api';
 import { ExternalUser } from './external_user';
 import { UserAPI, UserInfo } from './user_api';
-import { getEmailLink, getPageProblem, getPageRedirectUrl } from './utils';
+import { getEmailLinkToken } from './utils';
 
 export class TestUser {
     public sid: string = '';
@@ -48,18 +47,31 @@ export class TestUser {
         this.userInfo = info;
     }
 
-    public async confirmEmail(mock: MockSmtp) {
-        const mailPromise = mock.waitMail();
-        await this.userAPI.confirmEmail(this.sid);
+    public async confirmEmail(smtp: MockSmtp) {
+        const mailPromise = smtp.waitMail();
+        await this.userAPI.startConfirmEmail(this.sid);
         const mail = await mailPromise;
-        const response = await ApiRequest.get(getEmailLink(mail));
-        expect(response).toHaveStatus(200);
-        // check it it was a valid signin
-        const text = await response.text();
-        expect(getPageRedirectUrl(text)).toStartWith('https://');
-        expect(getPageProblem(await response.text())).toBeNull();
+
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+        await this.userAPI.completeConfirmEmail(this.sid, token!);
+
         await this.refreshUserInfo();
         expect(this.userInfo?.isEmailConfirmed).toBe(true);
+    }
+
+    public async changeEmail(smtp: MockSmtp, newEmail: string) {
+        const mailPromise = smtp.waitMail();
+        await this.userAPI.startChangeEmail(this.sid, newEmail);
+        const mail = await mailPromise;
+
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+        await this.userAPI.completeConfirmEmail(this.sid, token!);
+
+        await this.refreshUserInfo();
+        expect(this.userInfo?.isEmailConfirmed).toBe(true);
+        expect(this.userInfo?.email).toEqual(newEmail);
     }
 }
 

@@ -146,7 +146,7 @@ impl<'a> Identities for PgIdentityDbContext<'a> {
             }
             Err(err) if err.is_constraint("identities", "idx_email") => {
                 log::info!("Conflicting email: {}, rolling back user creation", user_id);
-                return Err(IdentityError::LinkEmailConflict);
+                return Err(IdentityError::EmailConflict);
             }
             Err(err) => {
                 return Err(IdentityError::DBError(err.into()));
@@ -190,21 +190,34 @@ impl<'a> Identities for PgIdentityDbContext<'a> {
         name: Option<&str>,
         email: Option<(&str, bool)>,
     ) -> Result<Option<Identity>, IdentityError> {
-        Ok(self
+        let identity_row = match self
             .stmts_identities
             .update
             .query_opt(&self.client, &id, &name, &email.map(|x| x.0), &email.map(|x| x.1))
             .await
-            .map_err(DBError::from)?
-            .map(|row| Identity {
-                id: row.user_id,
-                kind: row.kind,
-                name: row.name,
-                email: row.email,
-                is_email_confirmed: row.email_confirmed,
-                created: row.created,
-                version: row.data_version,
-            }))
+        {
+            Ok(Some(row)) => row,
+            Ok(None) => return Ok(None),
+            Err(err) if err.is_constraint("identities", "idx_name") => {
+                log::info!("Conflicting name: {:?}, rolling back user update", name);
+                return Err(IdentityError::NameConflict);
+            }
+            Err(err) if err.is_constraint("identities", "idx_email") => {
+                log::info!("Conflicting email: {:?}, rolling back user update", email);
+                return Err(IdentityError::EmailConflict);
+            }
+            Err(err) => return Err(DBError::from(err).into()),
+        };
+
+        Ok(Some(Identity {
+            id: identity_row.user_id,
+            kind: identity_row.kind,
+            name: identity_row.name,
+            email: identity_row.email,
+            is_email_confirmed: identity_row.email_confirmed,
+            created: identity_row.created,
+            version: identity_row.data_version,
+        }))
     }
 
     #[instrument(skip(self))]

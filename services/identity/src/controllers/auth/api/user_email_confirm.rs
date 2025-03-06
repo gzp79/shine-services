@@ -3,9 +3,9 @@ use axum::{extract::State, Extension};
 use serde::Deserialize;
 use shine_core::{
     consts::Language,
-    web::{CheckedCurrentUser, IntoProblemResponse, ProblemConfig, ProblemResponse, ValidatedQuery},
+    web::{CheckedCurrentUser, IntoProblemResponse, ProblemConfig, ProblemResponse, ValidatedJson, ValidatedQuery},
 };
-use utoipa::IntoParams;
+use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
@@ -44,9 +44,14 @@ pub async fn start_user_email_validation(
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangeQueryParams {
+    lang: Option<Language>,
+}
+
+#[derive(Deserialize, Validate, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeEmailRequest {
     #[validate(email)]
     email: String,
-    lang: Option<Language>,
 }
 
 /// Start email address change flow.
@@ -57,6 +62,7 @@ pub struct ChangeQueryParams {
     params(
         ChangeQueryParams
     ),
+    request_body = ChangeEmailRequest,
     responses(
         (status = OK, description="Start email address change")
     )
@@ -66,10 +72,11 @@ pub async fn start_user_email_change(
     Extension(problem_config): Extension<ProblemConfig>,
     ValidatedQuery(query): ValidatedQuery<ChangeQueryParams>,
     user: CheckedCurrentUser,
+    ValidatedJson(body): ValidatedJson<ChangeEmailRequest>,
 ) -> Result<(), ProblemResponse> {
     state
         .email_token_handler()
-        .start_email_change_flow(user.user_id, &query.email, query.lang)
+        .start_email_change_flow(user.user_id, &body.email, query.lang)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 

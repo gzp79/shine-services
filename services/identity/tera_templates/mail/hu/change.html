@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Email Cím Megváltoztatásának Megerősítése</title>
+  </head>
+  <body>
+    <h1>Email Cím Megváltoztatásának Megerősítése</h1>
+    <p>Szia {{ user }},</p>
+    <p>
+      Kérted az email címed megváltoztatását. Kérjük, erősítsd meg az új email
+      címed az alábbi linkre kattintva:
+    </p>
+    <p><a href="{{ link }}">Új Email Cím Megerősítése</a></p>
+    <p>
+      Ha nem te kérted ezt a változtatást, kérjük, hagyd figyelmen kívül ezt az
+      emailt.
+    </p>
+    <p>Üdv,<br />{{ app }}</p>
+  </body>
+</html>

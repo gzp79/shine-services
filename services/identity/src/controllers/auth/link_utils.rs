@@ -83,7 +83,7 @@ impl<'a> LinkUtils<'a> {
                 .await
             {
                 Ok(identity) => identity,
-                Err(CreateUserError::IdentityError(IdentityError::LinkEmailConflict)) => {
+                Err(CreateUserError::IdentityError(IdentityError::EmailConflict)) => {
                     return PageUtils::new(self.state).error(auth_session, AuthError::EmailAlreadyUsed, error_url)
                 }
                 Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),

@@ -27,8 +27,8 @@ pub enum IdentityError {
     UserIdConflict,
     #[error("Name already taken")]
     NameConflict,
-    #[error("Email already linked to a user")]
-    LinkEmailConflict,
+    #[error("Email already used by a user")]
+    EmailConflict,
     #[error("External id already linked to a user")]
     LinkProviderConflict,
     #[error("User has no valid email address")]
@@ -55,7 +55,7 @@ impl From<IdentityError> for Problem {
         match err {
             IdentityError::UserIdConflict => Problem::conflict(pr::ID_CONFLICT).with_detail(err.to_string()),
             IdentityError::NameConflict => Problem::conflict(pr::NAME_CONFLICT).with_detail(err.to_string()),
-            IdentityError::LinkEmailConflict => Problem::conflict(pr::EMAIL_CONFLICT).with_detail(err.to_string()),
+            IdentityError::EmailConflict => Problem::conflict(pr::EMAIL_CONFLICT).with_detail(err.to_string()),
             IdentityError::LinkProviderConflict => {
                 Problem::conflict(pr::EXTERNAL_ID_CONFLICT).with_detail(err.to_string())
             }

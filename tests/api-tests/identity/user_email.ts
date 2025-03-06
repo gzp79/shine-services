@@ -29,7 +29,7 @@ test.describe('Email confirmation', () => {
         mockEmail = undefined!;
     });
 
-    test(`Requesting email confirmation without session shall fail`, async ({ api }) => {
+    test('Requesting email confirmation without session shall fail', async ({ api }) => {
         const response = await api.user.startConfirmEmailRequest(null);
         expect(response).toHaveStatus(401);
         expect(await response.parseProblem()).toEqual(
@@ -41,7 +41,7 @@ test.describe('Email confirmation', () => {
         );
     });
 
-    test(`Requesting email confirmation without email shall fail`, async ({ api }) => {
+    test('Requesting email confirmation without email shall fail', async ({ api }) => {
         const smtp = await startMockEmail();
         smtp.onMail((_mail) => {
             expect(true, 'No message should arrive').toBe(false);
@@ -52,13 +52,13 @@ test.describe('Email confirmation', () => {
         expect(response).toHaveStatus(412);
         expect(await response.parseProblem()).toEqual(
             expect.objectContaining({
-                type: 'auth-missing-email',
+                type: 'email-missing-email',
                 status: 412
             })
         );
     });
 
-    test(`Requesting email confirmation with email address shall succeed`, async ({ linkUrl, identityUrl, api }) => {
+    test('Requesting email confirmation with email address shall succeed', async ({ linkUrl, api }) => {
         const email = randomUUID() + '@example.com';
         const user = await api.testUsers.createLinked(mockAuth, { email });
 
@@ -77,14 +77,28 @@ test.describe('Email confirmation', () => {
         expect(confirmParams.get('token')).toBeString();
     });
 
-    test(`Requesting email confirmation with 3rd party error shall fail`, async ({ api }) => {
+    test('Requesting email confirmation with invalid lang shall fail', async ({ api }) => {
+        const email = randomUUID() + '@example.com';
+        const user = await api.testUsers.createLinked(mockAuth, { email });
+        const response = await api.user.startConfirmEmailRequest(user.sid, 'invalid');
+        expect(response).toHaveStatus(400);
+        expect(await response.parseProblem()).toEqual(
+            expect.objectContaining({
+                type: 'input-query-format',
+                status: 400,
+                detail: expect.stringContaining('lang: unknown variant `invalid`, expected `en` or `hu`')
+            })
+        );
+    });
+
+    test('Requesting email confirmation with 3rd party error shall fail', async ({ api }) => {
         const email = randomUUID() + '@example.com';
         const user = await api.testUsers.createLinked(mockAuth, { email });
         const response = await api.user.startConfirmEmailRequest(user.sid);
         expect(response).toHaveStatus(500);
     });
 
-    test(`Completing email confirmation with invalid token shall fail`, async ({ api }) => {
+    test('Completing email confirmation with invalid token shall fail', async ({ api }) => {
         const email = randomUUID() + '@example.com';
         const user = await api.testUsers.createLinked(mockAuth, { email });
         const response = await api.user.completeConfirmEmailRequest(user.sid, 'invalid');
@@ -93,37 +107,39 @@ test.describe('Email confirmation', () => {
         const error = await response.parse(ProblemSchema);
         expect(error).toEqual(
             expect.objectContaining({
-                type: 'auth-invalid-token',
+                type: 'email-invalid-token',
                 status: 400
             })
         );
     });
 
-    test(`Confirming email with same user shall work`, async ({ api }) => {
-        const smtp = await startMockEmail();
+    for (const lang of ['en', 'hu', undefined]) {
+        test(`Confirming email with lang ${lang} shall work`, async ({ api }) => {
+            const user = await api.testUsers.createLinked(mockAuth);
+            const { sessionLength, ...userInfo } = user.userInfo!;
+
+            const smtp = await startMockEmail();
+            const mailPromise = smtp.waitMail();
+            await api.user.startConfirmEmail(user.sid, lang);
+            const mail = await mailPromise;
+
+            const token = getEmailLinkToken(mail);
+            expect(token).toBeString();
+            await api.user.completeConfirmEmail(user.sid, token!);
+
+            expect(await api.user.getUserInfo(user.sid)).toEqual(
+                expect.objectContaining({
+                    ...userInfo,
+                    isEmailConfirmed: true
+                })
+            );
+        });
+    }
+
+    test('Confirming email with another guest user shall fail', async ({ api }) => {
         const user = await api.testUsers.createLinked(mockAuth);
-        const { sessionLength, ...userInfo } = await api.user.getUserInfo(user.sid);
 
-        const mailPromise = smtp.waitMail();
-        await api.user.startConfirmEmail(user.sid);
-        const mail = await mailPromise;
-
-        const token = getEmailLinkToken(mail);
-        expect(token).toBeString();
-        await api.user.completeConfirmEmail(user.sid, token!);
-
-        expect(await api.user.getUserInfo(user.sid)).toEqual(
-            expect.objectContaining({
-                ...userInfo,
-                isEmailConfirmed: true
-            })
-        );
-    });
-
-    test(`Confirming email with another guest user shall fail`, async ({ api }) => {
         const smtp = await startMockEmail();
-        const user = await api.testUsers.createLinked(mockAuth);
-
         const mailPromise = smtp.waitMail();
         await api.user.startConfirmEmail(user.sid);
         const mail = await mailPromise;
@@ -137,9 +153,9 @@ test.describe('Email confirmation', () => {
         const error = await response.parse(ProblemSchema);
         expect(error).toEqual(
             expect.objectContaining({
-                type: 'auth-token-expired',
+                type: 'email-token-expired',
                 status: 400,
-                sensitive: 'wrongUser' // for the missing email
+                sensitive: 'wrongUser'
             })
         );
 
@@ -149,10 +165,10 @@ test.describe('Email confirmation', () => {
         expect(await api.user.getUserInfo(user2.sid)).toEqual(expect.objectContaining({ isEmailConfirmed: false }));
     });
 
-    test(`Confirming email with another linked user shall fail`, async ({ api }) => {
-        const smtp = await startMockEmail();
+    test('Confirming email with another linked user shall fail', async ({ api }) => {
         const user = await api.testUsers.createLinked(mockAuth);
 
+        const smtp = await startMockEmail();
         const mailPromise = smtp.waitMail();
         await api.user.startConfirmEmail(user.sid);
         const mail = await mailPromise;
@@ -166,9 +182,9 @@ test.describe('Email confirmation', () => {
         const error = await response.parse(ProblemSchema);
         expect(error).toEqual(
             expect.objectContaining({
-                type: 'auth-token-expired',
+                type: 'email-token-expired',
                 status: 400,
-                sensitive: 'wrongUser' // for the non matching data
+                sensitive: 'wrongUser'
             })
         );
 
@@ -177,6 +193,39 @@ test.describe('Email confirmation', () => {
         );
         expect(await api.user.getUserInfo(user2.sid)).toEqual(
             expect.objectContaining({ email: user2.userInfo?.email, isEmailConfirmed: false })
+        );
+    });
+
+    test('Confirming a changed email shall fail', async ({ api }) => {
+        const smtp = await startMockEmail();
+
+        const email = randomUUID() + '@example.com';
+        const user = await api.testUsers.createLinked(mockAuth, { email });
+
+        const mailPromise = smtp.waitMail();
+        await api.user.startConfirmEmail(user.sid);
+        const mail = await mailPromise;
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+
+        const newEmail = `updated-${randomUUID()}@example.com`;
+        await user.changeEmail(smtp, newEmail);
+        const { sessionLength, ...userInfo } = user.userInfo!;
+
+        const response = await api.user.completeConfirmEmailRequest(user.sid, token!);
+        expect(response).toHaveStatus(400);
+        expect(await response.parseProblem()).toEqual(
+            expect.objectContaining({
+                type: 'email-token-expired',
+                status: 400,
+                sensitive: 'wrongEmail'
+            })
+        );
+
+        expect(await api.user.getUserInfo(user.sid)).toEqual(
+            expect.objectContaining({
+                ...userInfo
+            })
         );
     });
 });
@@ -205,90 +254,188 @@ test.describe('Email change', () => {
         mockEmail = undefined!;
     });
 
-    test.skip(`Changing email without session shall fail`, async () => {
-        const smtp = await startMockEmail();
-        smtp.onMail((_mail) => {
-            expect(true, 'No message should arrive').toBe(false);
+    test('Requesting email change without session shall fail', async ({ api }) => {
+        const response = await api.user.startChangeEmailRequest(null, 'sample@example.com');
+        expect(response).toHaveStatus(401);
+        expect(await response.parseProblem()).toEqual(
+            expect.objectContaining({
+                type: 'unauthorized',
+                status: 401,
+                sensitive: 'unauthenticated'
+            })
+        );
+    });
+
+    test('Requesting email change with 3rd party error shall fail', async ({ api }) => {
+        const email = randomUUID() + '@example.com';
+        const user = await api.testUsers.createLinked(mockAuth, { email });
+        const response = await api.user.startChangeEmailRequest(user.sid, 'sample@example.com');
+        expect(response).toHaveStatus(500);
+    });
+
+    test('Requesting email change with invalid lang shall fail', async ({ api }) => {
+        const email = randomUUID() + '@example.com';
+        const user = await api.testUsers.createLinked(mockAuth, { email });
+        const response = await api.user.startChangeEmailRequest(user.sid, 'sample@example.com', 'invalid');
+        expect(response).toHaveStatus(400);
+        expect(await response.parseProblem()).toEqual(
+            expect.objectContaining({
+                type: 'input-query-format',
+                status: 400,
+                detail: expect.stringContaining('lang: unknown variant `invalid`, expected `en` or `hu`')
+            })
+        );
+    });
+
+    for (const lang of ['en', 'hu', undefined]) {
+        test(`Changing email with unconfirmed email in lang ${lang} shall succeed`, async ({ api }) => {
+            const email = randomUUID() + '@example.com';
+            const user = await api.testUsers.createLinked(mockAuth, { email });
+            const { sessionLength, ...userInfo } = user.userInfo!;
+
+            const smtp = await startMockEmail();
+            const mailPromise = smtp.waitMail();
+            const newEmail = `updated-${randomUUID()}@example.com`;
+            expect(userInfo.email).not.toEqual(newEmail);
+            await api.user.startChangeEmail(user.sid, newEmail, lang);
+            const mail = await mailPromise;
+
+            const token = getEmailLinkToken(mail);
+            expect(token).toBeString();
+            await api.user.completeConfirmEmail(user.sid, token!);
+
+            expect(await api.user.getUserInfo(user.sid)).toEqual(
+                expect.objectContaining({
+                    ...userInfo,
+                    email: newEmail,
+                    isEmailConfirmed: true
+                })
+            );
         });
+    }
 
-        throw new Error('Not implemented');
-    });
+    test('Changing email without email shall succeed', async ({ api }) => {
+        const user = await api.testUsers.createGuest();
+        const { sessionLength, ...userInfo } = user.userInfo!;
+        expect(userInfo.email).not.toBeNull();
 
-    test.skip(`Changing email with 3rd party error shall fail`, async () => {
-        throw new Error('Not implemented');
-    });
-
-    test.skip(`Changing email without email shall succeed`, async () => {
-        throw new Error('Not implemented');
-    });
-
-    test.skip(`Changing email with unconfirmed email shall succeed`, async () => {
-        throw new Error('Not implemented');
-    });
-
-    test.skip(`Changing email with confirmed email shall succeed`, async () => {
-        throw new Error('Not implemented');
-    });
-
-    test.skip(`Changing email with and already changed email shall fail`, async () => {
-        throw new Error('Not implemented');
-    });
-
-    test.skip(`Changing email to an used email shall fail`, async () => {
-        throw new Error('Not implemented');
-    });
-
-    test.skip(`Confirming a changed email shall fail`, async () => {
-        throw new Error('Not implemented');
-    });
-});
-
-test.describe('Email delete', () => {
-    let mockAuth: OAuth2MockServer = undefined!;
-    let mockEmail: MockSmtp = undefined!;
-
-    const startMockEmail = async (): Promise<MockSmtp> => {
-        if (!mockEmail) {
-            mockEmail = new MockSmtp();
-            await mockEmail.start();
-        }
-        return mockEmail as MockSmtp;
-    };
-
-    test.beforeEach(async () => {
-        mockAuth = new OAuth2MockServer();
-        await mockAuth.start();
-    });
-
-    test.afterEach(async () => {
-        await mockAuth?.stop();
-        mockAuth = undefined!;
-        await mockEmail?.stop();
-        mockEmail = undefined!;
-    });
-
-    test.skip(`Deleting email without session shall fail`, async () => {
         const smtp = await startMockEmail();
-        smtp.onMail((_mail) => {
-            expect(true, 'No message should arrive').toBe(false);
+        const mailPromise = smtp.waitMail();
+        const newEmail = `updated-${randomUUID()}@example.com`;
+        await api.user.startChangeEmail(user.sid, newEmail);
+        const mail = await mailPromise;
+
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+        await api.user.completeConfirmEmail(user.sid, token!);
+
+        expect(await api.user.getUserInfo(user.sid)).toEqual(
+            expect.objectContaining({
+                ...userInfo,
+                email: newEmail,
+                isEmailConfirmed: true
+            })
+        );
+    });
+
+    test('Changing email with confirmed email shall succeed', async ({ api }) => {
+        const smtp = await startMockEmail();
+
+        const email = randomUUID() + '@example.com';
+        const user = await api.testUsers.createLinked(mockAuth, { email });
+        await user.confirmEmail(smtp);
+        const { sessionLength, ...userInfo } = user.userInfo!;
+
+        const mailPromise = smtp.waitMail();
+        const newEmail = `updated-${randomUUID()}@example.com`;
+        expect(userInfo.email).not.toEqual(newEmail);
+        await api.user.startChangeEmail(user.sid, newEmail);
+        const mail = await mailPromise;
+
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+        await api.user.completeConfirmEmail(user.sid, token!);
+
+        expect(await api.user.getUserInfo(user.sid)).toEqual(
+            expect.objectContaining({
+                ...userInfo,
+                email: newEmail,
+                isEmailConfirmed: true
+            })
+        );
+    });
+
+    test('Changing email with and already changed email shall fail', async ({ api }) => {
+        const smtp = await startMockEmail();
+
+        const email = randomUUID() + '@example.com';
+        const user = await api.testUsers.createLinked(mockAuth, { email });
+
+        const mailPromise = smtp.waitMail();
+        const newEmail = `updated-${randomUUID()}@example.com`;
+        expect(user.userInfo?.email).not.toEqual(newEmail);
+        await api.user.startChangeEmail(user.sid, newEmail);
+        const mail = await mailPromise;
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+
+        const newEmail2 = `updated-${randomUUID()}@example.com`;
+        await user.changeEmail(smtp, newEmail2);
+        const { sessionLength, ...userInfo } = user.userInfo!;
+
+        const response = await api.user.completeConfirmEmailRequest(user.sid, token!);
+        expect(response).toHaveStatus(400);
+        expect(await response.parseProblem()).toEqual(
+            expect.objectContaining({
+                type: 'email-token-expired',
+                status: 400,
+                sensitive: 'wrongEmail'
+            })
+        );
+
+        expect(await api.user.getUserInfo(user.sid)).toEqual(
+            expect.objectContaining({
+                ...userInfo
+            })
+        );
+    });
+
+    for (const confirmed of [true, false]) {
+        test(`Changing email to an used ${confirmed ? 'confirmed' : 'unconfirmed'} email shall fail`, async ({
+            api
+        }) => {
+            const smtp = await startMockEmail();
+
+            const email = randomUUID() + '@example.com';
+            const emailOwnerUser = await api.testUsers.createLinked(mockAuth, { email });
+            if (confirmed) {
+                await emailOwnerUser.confirmEmail(smtp);
+            }
+
+            const user = await api.testUsers.createLinked(mockAuth);
+            const { sessionLength, ...userInfo } = user.userInfo!;
+
+            const mailPromise = smtp.waitMail();
+            expect(userInfo.email).not.toEqual(email);
+            await api.user.startChangeEmail(user.sid, email);
+            const mail = await mailPromise;
+            const token = getEmailLinkToken(mail);
+            expect(token).toBeString();
+
+            const response = await api.user.completeConfirmEmailRequest(user.sid, token!);
+            expect(response).toHaveStatus(412);
+            expect(await response.parseProblem()).toEqual(
+                expect.objectContaining({
+                    type: 'email-conflict',
+                    status: 412
+                })
+            );
+
+            expect(await api.user.getUserInfo(user.sid)).toEqual(
+                expect.objectContaining({
+                    ...userInfo
+                })
+            );
         });
-
-        throw new Error('Not implemented');
-    });
-
-    test.skip(`Deleting email with 3rd party error shall fail`, async () => {
-        throw new Error('Not implemented');
-    });
-
-    test.skip(`Deleting email without email shall succeed`, async () => {
-        throw new Error('Not implemented');
-    });
-
-    test.skip(`Deleting email with unconfirmed email shall succeed`, async () => {
-        throw new Error('Not implemented');
-    });
-
-    test.skip(`Deleting email with confirmed email shall succeed`, async () => {
-        throw new Error('Not implemented');
-    });
+    }
 });

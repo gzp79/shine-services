@@ -3,7 +3,7 @@ import { decode } from 'html-entities';
 import { ParsedMail } from 'mailparser';
 import { Problem, ProblemSchema } from './api';
 
-const log = debug('test:page');
+const log = debug('test:content');
 
 export function getPageRedirectUrl(page: string): string {
     const regexp = /.*<meta\s+http-equiv[^>]*url='([^']*)'[^>]*>.*/;

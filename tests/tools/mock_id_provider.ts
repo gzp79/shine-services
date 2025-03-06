@@ -3,7 +3,6 @@ import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIDMockServer from '$lib/mocks/openid';
 import debug from 'debug';
-import { mock } from 'node:test';
 
 async function main() {
     debug.enable('test:mock:*');

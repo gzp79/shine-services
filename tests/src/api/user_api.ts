@@ -30,6 +30,12 @@ const UsersRoleSchema = z.object({
 });
 export type UserRoles = z.infer<typeof UsersRoleSchema>;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const EmailChangeSchema = z.object({
+    email: z.string()
+});
+export type EmailChange = z.infer<typeof EmailChangeSchema>;
+
 export class UserAPI {
     constructor(
         public readonly serviceUrl: string,
@@ -138,14 +144,32 @@ export class UserAPI {
         }
     }
 
-    startConfirmEmailRequest(sid: string | null): ApiRequest {
+    startConfirmEmailRequest(sid: string | null, lang?: string): ApiRequest {
         const cs = sid && { sid };
+        const pl = lang && { lang };
 
-        return ApiRequest.post(this.urlFor(`/api/auth/user/email/confirm`)).withCookies({ ...cs });
+        return ApiRequest.post(this.urlFor(`/api/auth/user/email/confirm`))
+            .withCookies({ ...cs })
+            .withParams({ ...pl });
     }
 
-    async startConfirmEmail(sid: string | null): Promise<void> {
-        const response = await this.startConfirmEmailRequest(sid);
+    async startConfirmEmail(sid: string | null, lang?: string): Promise<void> {
+        const response = await this.startConfirmEmailRequest(sid, lang);
+        expect(response).toHaveStatus(200);
+    }
+
+    startChangeEmailRequest(sid: string | null, email: string, lang?: string): ApiRequest<EmailChange> {
+        const cs = sid && { sid };
+        const pl = lang && { lang };
+
+        return ApiRequest.post<EmailChange>(this.urlFor(`/api/auth/user/email/change`))
+            .withCookies({ ...cs })
+            .withParams({ ...pl })
+            .withBody({ email });
+    }
+
+    async startChangeEmail(sid: string | null, email: string, lang?: string): Promise<void> {
+        const response = await this.startChangeEmailRequest(sid, email, lang);
         expect(response).toHaveStatus(200);
     }
 
