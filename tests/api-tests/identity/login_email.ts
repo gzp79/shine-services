@@ -28,7 +28,9 @@ test.describe('Login with email', () => {
             expect.objectContaining({
                 type: 'input-body-format',
                 status: 400,
-                detail: expect.stringContaining(`kind: unknown variant \`emailChange\``)
+                detail: expect.stringContaining(
+                    `kind: unknown variant \`emailAccess\`, expected \`persistent\` or \`singleAccess\` at line 1`
+                )
             })
         );
     });
