@@ -40,7 +40,7 @@ test.describe('Access to user role management', () => {
         }) => {
             const target = users[tst.targetUser];
             const sid = tst.user ? users[tst.user].sid : null;
-            const response = await api.user.getRolesRequest(sid, tst.apiKey, target.userId).send();
+            const response = await api.user.getRolesRequest(sid, tst.apiKey, target.userId);
             expect(response).toHaveStatus(tst.expectedCode);
         });
 
@@ -49,9 +49,7 @@ test.describe('Access to user role management', () => {
         }) => {
             const target = users[tst.targetUser];
             const sid = tst.user ? users[tst.user].sid : null;
-            const response = await api.user
-                .addRoleRequest(sid, tst.apiKey, target.userId, 'Role_' + randomUUID())
-                .send();
+            const response = await api.user.addRoleRequest(sid, tst.apiKey, target.userId, 'Role_' + randomUUID());
             expect(response).toHaveStatus(tst.expectedCode);
         });
 
@@ -60,7 +58,7 @@ test.describe('Access to user role management', () => {
         }) => {
             const target = users[tst.targetUser];
             const sid = tst.user ? users[tst.user].sid : null;
-            const response = await api.user.deleteRoleRequest(sid, tst.apiKey, target.userId, 'Role2').send();
+            const response = await api.user.deleteRoleRequest(sid, tst.apiKey, target.userId, 'Role2');
             expect(response).toHaveStatus(tst.expectedCode);
         });
     }
@@ -74,18 +72,21 @@ test.describe('User roles', () => {
     });
 
     test('Getting role of non-existing user shall fail', async ({ api }) => {
-        const response = await api.user.getRolesRequest(admin.sid, false, randomUUID()).send();
+        const response = await api.user.getRolesRequest(admin.sid, false, randomUUID());
         expect(response).toHaveStatus(404);
+        expect(await response.json()).toEqual(expect.objectContaining({ type: 'not-found' }));
     });
 
     test('Setting role of non-existing user shall fail', async ({ api }) => {
-        const response = await api.user.addRoleRequest(admin.sid, false, randomUUID(), 'Role1').send();
+        const response = await api.user.addRoleRequest(admin.sid, false, randomUUID(), 'Role1');
         expect(response).toHaveStatus(404);
+        expect(await response.json()).toEqual(expect.objectContaining({ type: 'not-found' }));
     });
 
     test('Deleting role of non-existing user shall fail', async ({ api }) => {
-        const response = await api.user.deleteRoleRequest(admin.sid, false, randomUUID(), 'Role1').send();
+        const response = await api.user.deleteRoleRequest(admin.sid, false, randomUUID(), 'Role1');
         expect(response).toHaveStatus(404);
+        expect(await response.json()).toEqual(expect.objectContaining({ type: 'not-found' }));
     });
 
     test('A complex flow with add, get, delete shall work', async ({ api }) => {

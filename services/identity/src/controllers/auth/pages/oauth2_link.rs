@@ -5,7 +5,10 @@ use crate::{
 use axum::{extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};
 use serde::Deserialize;
-use shine_core::web::{ConfiguredProblem, InputError, ValidatedQuery};
+use shine_core::{
+    utils::random,
+    web::{ErrorResponse, InputError, ValidatedQuery},
+};
 use std::sync::Arc;
 use url::Url;
 use utoipa::IntoParams;
@@ -27,29 +30,25 @@ pub struct QueryParams {
         QueryParams
     ),
     responses(
-        (status = OK, description="Html page to update client cookies and redirect user to start interactive oauth2 login flow")
+        (status = OK, description="Start the OAuth2 interactive login flow for linking an account")
     )
 )]
 pub async fn oauth2_link(
     State(state): State<AppState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
-    mut auth_session: AuthSession,
-    query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
+    auth_session: AuthSession,
+    query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, AuthError::InputError(error.problem), None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
     };
 
-    if auth_session.user_session.is_none() {
+    if auth_session.user_session().is_none() {
         return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
     }
 
-    let key = match state.token_service().generate() {
-        Ok(key) => key,
-        Err(err) => return PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_ref()),
-    };
-
+    let key = random::hex_16(state.random());
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
     let (authorize_url, csrf_state) = client
         .client
@@ -58,7 +57,8 @@ pub async fn oauth2_link(
         .set_pkce_challenge(pkce_code_challenge)
         .url();
 
-    auth_session.external_login_cookie = Some(ExternalLoginCookie {
+    let linked_user = auth_session.user_session().cloned();
+    let response_session = auth_session.with_external_login(Some(ExternalLoginCookie {
         key,
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
@@ -66,8 +66,8 @@ pub async fn oauth2_link(
         target_url: query.redirect_url,
         error_url: query.error_url,
         remember_me: false,
-        linked_user: auth_session.user_session.clone(),
-    });
-
-    PageUtils::new(&state).redirect(auth_session, Some(&client.provider), Some(&authorize_url))
+        linked_user,
+    }));
+    assert!(response_session.user_session().is_some());
+    PageUtils::new(&state).redirect(response_session, Some(&client.provider), Some(&authorize_url))
 }

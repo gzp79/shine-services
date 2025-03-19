@@ -1,6 +1,6 @@
 use crate::{
     telemetry::{DynConfig, TelemetryService},
-    web::{permissions, CheckedCurrentUser, CorePermissions, Problem, ProblemConfig},
+    web::{permissions, CheckedCurrentUser, CorePermissions, IntoProblemResponse, ProblemConfig, ProblemResponse},
 };
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
@@ -26,14 +26,15 @@ pub async fn put_telemetry_config(
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     Json(body): Json<TraceConfig>,
-) -> Result<(), Problem> {
+) -> Result<(), ProblemResponse> {
     user.core_permissions()
-        .check(permissions::UPDATE_TRACE, &problem_config)?;
+        .check(permissions::UPDATE_TRACE)
+        .map_err(|err| err.into_response(&problem_config))?;
 
     log::trace!("reconfigure telemetry: {:#?}", body);
     telemetry
         .set_configuration(DynConfig { filter: body.filter })
-        .map_err(|err| Problem::internal_error(&problem_config, "Failed to update configuration", err))?;
+        .map_err(|err| err.into_response(&problem_config))?;
 
     Ok(())
 }
@@ -52,13 +53,14 @@ pub async fn get_telemetry_config(
     Extension(telemetry): Extension<TelemetryService>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
-) -> Result<Json<TraceConfig>, Problem> {
+) -> Result<Json<TraceConfig>, ProblemResponse> {
     user.core_permissions()
-        .check(permissions::READ_TRACE, &problem_config)?;
+        .check(permissions::READ_TRACE)
+        .map_err(|err| err.into_response(&problem_config))?;
 
     let config = telemetry
         .get_configuration()
-        .map_err(|err| Problem::internal_error(&problem_config, "Failed to update configuration", err))?;
+        .map_err(|err| err.into_response(&problem_config))?;
 
     Ok(Json(TraceConfig { filter: config.filter }))
 }

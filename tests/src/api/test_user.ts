@@ -1,3 +1,5 @@
+import { expect } from '$fixtures/setup';
+import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIdMockServer from '$lib/mocks/openid';
 import { generateRandomString } from '$lib/string_utils';
@@ -6,6 +8,7 @@ import { MockServer } from '../mocks/mock_server';
 import { AuthAPI } from './auth_api';
 import { ExternalUser } from './external_user';
 import { UserAPI, UserInfo } from './user_api';
+import { getEmailLinkToken } from './utils';
 
 export class TestUser {
     public sid: string = '';
@@ -42,6 +45,33 @@ export class TestUser {
     public async refreshUserInfo(extraHeaders?: Record<string, string>) {
         const info = await this.userAPI.getUserInfo(this.sid, extraHeaders);
         this.userInfo = info;
+    }
+
+    public async confirmEmail(smtp: MockSmtp) {
+        const mailPromise = smtp.waitMail();
+        await this.userAPI.startConfirmEmail(this.sid);
+        const mail = await mailPromise;
+
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+        await this.userAPI.completeConfirmEmail(this.sid, token!);
+
+        await this.refreshUserInfo();
+        expect(this.userInfo?.isEmailConfirmed).toBe(true);
+    }
+
+    public async changeEmail(smtp: MockSmtp, newEmail: string) {
+        const mailPromise = smtp.waitMail();
+        await this.userAPI.startChangeEmail(this.sid, newEmail);
+        const mail = await mailPromise;
+
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+        await this.userAPI.completeConfirmEmail(this.sid, token!);
+
+        await this.refreshUserInfo();
+        expect(this.userInfo?.isEmailConfirmed).toBe(true);
+        expect(this.userInfo?.email).toEqual(newEmail);
     }
 }
 

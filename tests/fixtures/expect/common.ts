@@ -37,26 +37,28 @@ export const expect = baseExpect.extend({
         return toHaveType(received, 'function');
     },
 
-    toBeEmpty(received: any) {
+    toBeEmptyValue(received: any) {
         let pass;
+        let formatted = received.toString();
         if (received === null || received === undefined) {
             pass = true;
         } else if (typeof received === 'string') {
             pass = received === '';
         } else if (Array.isArray(received)) {
             pass = received.length === 0;
+            formatted = JSON.stringify(received);
         } else {
-            throw new Error(`toBeEmpty: unsupported type ${typeof received}`);
+            throw new Error(`toBeEmptyValue: unsupported type ${typeof received}`);
         }
 
         if (pass) {
             return {
-                message: () => `expected ${received} not to be empty`,
+                message: () => `expected ${formatted} not to be empty`,
                 pass: true
             };
         } else {
             return {
-                message: () => `expected ${received} to be empty`,
+                message: () => `expected ${formatted} to be empty`,
                 pass: false
             };
         }

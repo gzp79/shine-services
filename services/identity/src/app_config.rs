@@ -1,5 +1,6 @@
 use crate::repositories::DBConfig;
 use serde::{Deserialize, Serialize};
+use shine_core::web::FeatureConfig;
 use std::collections::{HashMap, HashSet};
 use url::Url;
 
@@ -8,6 +9,7 @@ use url::Url;
 pub struct AuthSessionConfig {
     pub external_login_cookie_secret: String,
     pub token_cookie_secret: String,
+    pub email_token_secret: String,
 
     /// The maximum time to live for a session in seconds
     pub ttl_session: usize,
@@ -17,6 +19,8 @@ pub struct AuthSessionConfig {
     pub ttl_single_access: usize,
     /// The maximum time to live for an api-key in seconds
     pub ttl_api_key: usize,
+    /// The maximum time to live for an email in seconds
+    pub ttl_email_token: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
@@ -56,9 +60,11 @@ pub struct OIDCConfig {
 pub struct AuthConfig {
     /// The name of the application
     pub app_name: String,
-    /// The default redirection URL for users
+    /// The URL of the website
     pub home_url: Url,
-    /// The default redirection URL for users in case of an err
+    /// The URL to handle permanent links and similar redirect URLs
+    pub link_url: Url,
+    /// The default redirection URL for users in case of an error during the authentication process.
     pub error_url: Url,
     /// The URL base for authentication services. This serves as:
     /// - The source for certain cookie protection parameters, including domain and path.
@@ -113,11 +119,57 @@ pub struct AutoNameConfig {
     pub id_encoder: IdEncoderConfig,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(tag = "type")]
+pub enum MailerConfig {
+    #[serde(rename_all = "camelCase")]
+    Smtp {
+        email_domain: String,
+        smtp_url: String,
+        use_tls: Option<bool>,
+        smtp_username: String,
+        smtp_password: String,
+    },
+}
+
 /// The application configuration
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
-    pub identity_db: DBConfig,
-    pub identity_name: AutoNameConfig,
+    pub db: DBConfig,
+    pub name: AutoNameConfig,
     pub auth: AuthConfig,
+    pub mailer: MailerConfig,
+}
+
+impl FeatureConfig for AppConfig {
+    const NAME: &'static str = "identity";
+}
+
+#[cfg(test)]
+mod test {
+    use axum_extra::extract::cookie;
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
+    use ring::{
+        aead,
+        rand::{SecureRandom, SystemRandom},
+    };
+    use shine_test::test;
+
+    #[test]
+    #[ignore = "This is not a test but a helper to generate cookie secret"]
+    fn generate_cookie_secret() {
+        let key = cookie::Key::generate();
+        println!("{}", B64.encode(key.master()));
+    }
+
+    #[test]
+    #[ignore = "This is not a test but a helper to generate an email secret"]
+    fn generate_email_token_secret() {
+        let rng = SystemRandom::new();
+        let mut key = vec![0u8; aead::AES_256_GCM.key_len()];
+        rng.fill(&mut key).unwrap();
+        println!("{}", B64.encode(key));
+    }
 }

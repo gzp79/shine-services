@@ -3,7 +3,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
 use shine_core::{
-    db::{DBError, PGClient, PGConvertError, PGErrorChecks, ToPGType},
+    db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
     pg_query,
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type};
@@ -39,7 +39,7 @@ impl FromSql<'_> for IdentityKind {
 }
 
 impl ToPGType for IdentityKind {
-    const PG_TYPE: Type = Type::INT2;
+    type PGValueType = PGValueTypeINT2;
 }
 
 pg_query!( InsertIdentity =>
@@ -48,7 +48,7 @@ pg_query!( InsertIdentity =>
     sql = r#"
         INSERT INTO identities (user_id, kind, created, name, email) 
             VALUES ($1, $2, now(), $3, $4)
-            RETURNING created
+        RETURNING created
     "#
 );
 
@@ -61,7 +61,7 @@ pg_query!( CascadedDelete =>
 );
 
 #[derive(FromRow)]
-struct FindByIdRow {
+struct IdentityRow {
     user_id: Uuid,
     kind: IdentityKind,
     name: String,
@@ -73,11 +73,24 @@ struct FindByIdRow {
 
 pg_query!( FindById =>
     in = user_id: Uuid;
-    out = FindByIdRow;
+    out = IdentityRow;
     sql = r#"
         SELECT user_id, kind, name, email, email_confirmed, created, data_version
             FROM identities
             WHERE user_id = $1
+    "#
+);
+
+pg_query!( UpdateIdentity =>
+    in = user_id: Uuid, user_name: Option<&str>, email: Option<&str>, email_confirmed: Option<bool>;
+    out = IdentityRow;
+    sql = r#"
+        UPDATE identities
+            SET name = COALESCE($2, name),
+                email = COALESCE($3, email),
+                email_confirmed = COALESCE($4, email_confirmed)
+            WHERE user_id = $1
+        RETURNING user_id, kind, name, email, email_confirmed, created, data_version
     "#
 );
 
@@ -86,6 +99,7 @@ pub struct PgIdentitiesStatements {
     insert_identity: InsertIdentity,
     cascaded_delete: CascadedDelete,
     find_by_id: FindById,
+    update: UpdateIdentity,
 }
 
 impl PgIdentitiesStatements {
@@ -94,6 +108,7 @@ impl PgIdentitiesStatements {
             insert_identity: InsertIdentity::new(client).await.map_err(DBError::from)?,
             cascaded_delete: CascadedDelete::new(client).await.map_err(DBError::from)?,
             find_by_id: FindById::new(client).await.map_err(DBError::from)?,
+            update: UpdateIdentity::new(client).await.map_err(DBError::from)?,
         })
     }
 }
@@ -104,14 +119,20 @@ impl<'a> Identities for PgIdentityDbContext<'a> {
         &mut self,
         user_id: Uuid,
         user_name: &str,
-        email: Option<&str>,
+        email: Option<(&str, bool)>,
     ) -> Result<Identity, IdentityError> {
         //let email = email.map(|e| e.normalize_email());
 
         let created = match self
             .stmts_identities
             .insert_identity
-            .query_one(&self.client, &user_id, &IdentityKind::User, &user_name, &email)
+            .query_one(
+                &self.client,
+                &user_id,
+                &IdentityKind::User,
+                &user_name,
+                &email.map(|x| x.0),
+            )
             .await
         {
             Ok(created) => created,
@@ -125,7 +146,7 @@ impl<'a> Identities for PgIdentityDbContext<'a> {
             }
             Err(err) if err.is_constraint("identities", "idx_email") => {
                 log::info!("Conflicting email: {}, rolling back user creation", user_id);
-                return Err(IdentityError::LinkEmailConflict);
+                return Err(IdentityError::EmailConflict);
             }
             Err(err) => {
                 return Err(IdentityError::DBError(err.into()));
@@ -135,8 +156,8 @@ impl<'a> Identities for PgIdentityDbContext<'a> {
         Ok(Identity {
             id: user_id,
             name: user_name.to_owned(),
-            email: email.map(String::from),
-            is_email_confirmed: false,
+            email: email.map(|x| x.0.to_owned()),
+            is_email_confirmed: email.map(|x| x.1).unwrap_or(false),
             kind: IdentityKind::User,
             created,
             version: 0,
@@ -144,11 +165,11 @@ impl<'a> Identities for PgIdentityDbContext<'a> {
     }
 
     #[instrument(skip(self))]
-    async fn find_by_id(&mut self, user_id: Uuid) -> Result<Option<Identity>, IdentityError> {
+    async fn find_by_id(&mut self, id: Uuid) -> Result<Option<Identity>, IdentityError> {
         Ok(self
             .stmts_identities
             .find_by_id
-            .query_opt(&self.client, &user_id)
+            .query_opt(&self.client, &id)
             .await
             .map_err(DBError::from)?
             .map(|row| Identity {
@@ -163,10 +184,47 @@ impl<'a> Identities for PgIdentityDbContext<'a> {
     }
 
     #[instrument(skip(self))]
-    async fn cascaded_delete(&mut self, user_id: Uuid) -> Result<(), IdentityError> {
+    async fn update(
+        &mut self,
+        id: Uuid,
+        name: Option<&str>,
+        email: Option<(&str, bool)>,
+    ) -> Result<Option<Identity>, IdentityError> {
+        let identity_row = match self
+            .stmts_identities
+            .update
+            .query_opt(&self.client, &id, &name, &email.map(|x| x.0), &email.map(|x| x.1))
+            .await
+        {
+            Ok(Some(row)) => row,
+            Ok(None) => return Ok(None),
+            Err(err) if err.is_constraint("identities", "idx_name") => {
+                log::info!("Conflicting name: {:?}, rolling back user update", name);
+                return Err(IdentityError::NameConflict);
+            }
+            Err(err) if err.is_constraint("identities", "idx_email") => {
+                log::info!("Conflicting email: {:?}, rolling back user update", email);
+                return Err(IdentityError::EmailConflict);
+            }
+            Err(err) => return Err(DBError::from(err).into()),
+        };
+
+        Ok(Some(Identity {
+            id: identity_row.user_id,
+            kind: identity_row.kind,
+            name: identity_row.name,
+            email: identity_row.email,
+            is_email_confirmed: identity_row.email_confirmed,
+            created: identity_row.created,
+            version: identity_row.data_version,
+        }))
+    }
+
+    #[instrument(skip(self))]
+    async fn cascaded_delete(&mut self, id: Uuid) -> Result<(), IdentityError> {
         self.stmts_identities
             .cascaded_delete
-            .execute(&self.client, &user_id)
+            .execute(&self.client, &id)
             .await
             .map_err(DBError::from)
             .map_err(DBError::from)?;

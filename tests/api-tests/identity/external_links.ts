@@ -28,7 +28,7 @@ test.describe('External links', () => {
 
     test('Sign up as guest shall not be linked', async ({ api }) => {
         const user = await api.testUsers.createGuest();
-        expect(await api.auth.getExternalLinks(user.sid)).toBeEmpty();
+        expect(await api.auth.getExternalLinks(user.sid)).toBeEmptyValue();
     });
 
     test('Sign up with OAuth2 shall create a link and delete link shall work', async ({ api }) => {
@@ -45,7 +45,7 @@ test.describe('External links', () => {
         expect(link.linkedAt).toBeBefore(linkRange[1]);
 
         expect(await api.auth.tryUnlink(user.sid, link.provider, link.providerUserId)).toBeTruthy();
-        expect(await api.auth.getExternalLinks(user.sid)).toBeEmpty();
+        expect(await api.auth.getExternalLinks(user.sid)).toBeEmptyValue();
         expect(await api.auth.tryUnlink(user.sid, link.provider, link.providerUserId)).toBeFalsy();
     });
 
@@ -63,13 +63,13 @@ test.describe('External links', () => {
         expect(link.linkedAt).toBeBefore(linkRange[1]);
 
         expect(await api.auth.tryUnlink(user.sid, link.provider, link.providerUserId)).toBeTruthy();
-        expect(await api.auth.getExternalLinks(user.sid)).toBeEmpty();
+        expect(await api.auth.getExternalLinks(user.sid)).toBeEmptyValue();
         expect(await api.auth.tryUnlink(user.sid, link.provider, link.providerUserId)).toBeFalsy();
     });
 
     test('Link to multiple provider and delete links shall work', async ({ api }) => {
         const user = await api.testUsers.createGuest();
-        expect(await api.auth.getExternalLinks(user.sid)).toBeEmpty();
+        expect(await api.auth.getExternalLinks(user.sid)).toBeEmptyValue();
 
         const testLink = (links: LinkedIdentity[], external: ExternalUser, provider: string) => {
             const link = links.find((l) => l.providerUserId === external.id);

@@ -2,7 +2,9 @@ use crate::{app_state::AppState, repositories::identity::IdentityKind};
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::web::{CheckedCurrentUser, CurrentUser, Problem, ProblemConfig, ValidatedQuery};
+use shine_core::web::{
+    CheckedCurrentUser, CurrentUser, IntoProblemResponse, Problem, ProblemConfig, ProblemResponse, ValidatedQuery,
+};
 use url::Url;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -46,15 +48,19 @@ pub async fn get_user_info(
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     ValidatedQuery(query): ValidatedQuery<QueryParams>,
-) -> Result<Json<CurrentUserInfo>, Problem> {
+) -> Result<Json<CurrentUserInfo>, ProblemResponse> {
     // find extra information not present in the session data
     let identity = state
         .identity_service()
         .find_by_id(user.user_id)
         .await
-        .map_err(|err| Problem::internal_error(&problem_config, "Failed to get user", err))?
+        .map_err(|err| err.into_response(&problem_config))?
         //in the very unlikely case, when the identity is deleted just after session validation, a not found is returned.
-        .ok_or_else(|| Problem::not_found().with_instance_str(format!("{{auth_api}}/identities/{}", user.user_id)))?;
+        .ok_or_else(|| {
+            Problem::not_found()
+                .with_instance_str(format!("{{auth_api}}/identities/{}", user.user_id))
+                .into_response(&problem_config)
+        })?;
 
     // make sure the redis is to date
     let user_info = if query.refresh.unwrap_or(false) {
@@ -62,19 +68,21 @@ pub async fn get_user_info(
             .identity_service()
             .get_roles(user.user_id)
             .await
-            .map_err(|err| Problem::internal_error(&problem_config, "Failed to get roles", err))?
+            .map_err(|err| err.into_response(&problem_config))?
             .ok_or_else(|| {
-                Problem::not_found().with_instance_str(format!("{{auth_api}}/identities/{}", user.user_id))
+                Problem::not_found()
+                    .with_instance_str(format!("{{auth_api}}/identities/{}", user.user_id))
+                    .into_response(&problem_config)
             })?;
 
         let session = state
             .session_service()
             .update_user_info(&user.key, &identity, &roles)
             .await
-            .map_err(|err| Problem::internal_error(&problem_config, "Failed to get session", err))?
+            .map_err(|err| err.into_response(&problem_config))?
             .ok_or_else(|| {
                 let url = Url::parse(&format!("{{auth_api}}/identities/{}", user.user_id)).ok();
-                Problem::not_found().with_instance(url)
+                Problem::not_found().with_instance(url).into_response(&problem_config)
             })?;
         CurrentUser {
             user_id: session.info.user_id,
@@ -93,7 +101,7 @@ pub async fn get_user_info(
         .identity_service()
         .is_linked(user_info.user_id)
         .await
-        .map_err(|err| Problem::internal_error(&problem_config, "Failed to get link info", err))?;
+        .map_err(|err| err.into_response(&problem_config))?;
 
     let session_length = (Utc::now() - user_info.session_start).num_seconds();
     let session_length = if session_length < 0 { 0 } else { session_length as u64 };

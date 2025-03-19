@@ -12,8 +12,14 @@
           "kind": "bin"
         }
       },
-      "args": ["local"],
-      "cwd": "${workspaceFolder}/services/identity"
+      "args": ["test"],
+      "cwd": "${workspaceFolder}/services/identity",
+      "env": {
+        "RUST_BACKTRACE": "full",
+        "SERVICE--TLS--CERT": "../../certs/test.crt",
+        "SERVICE--TLS--KEY": "../../certs/test.key",
+        "SERVICE--port": "8443"
+      }
     }
   ]
 }

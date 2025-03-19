@@ -13,6 +13,7 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use thiserror::Error as ThisError;
 use url::Url;
+use validator::ValidateEmail;
 
 #[derive(Debug, ThisError)]
 pub enum OAuth2Error {
@@ -187,7 +188,8 @@ impl OAuth2Client {
             external_user_info.email = email_info
                 .into_iter()
                 .find(|email| email.primary)
-                .map(|email| email.email);
+                .map(|email| email.email)
+                .filter(|email| email.validate_email());
         }
 
         Ok(external_user_info)

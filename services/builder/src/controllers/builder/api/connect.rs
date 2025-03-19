@@ -12,7 +12,9 @@ use axum::{
 };
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
-use shine_core::web::{CheckedCurrentUser, CurrentUser, IntoProblem, Problem, ProblemConfig, ValidatedPath};
+use shine_core::web::{
+    CheckedCurrentUser, CurrentUser, IntoProblemResponse, ProblemConfig, ProblemResponse, ValidatedPath,
+};
 use std::sync::Arc;
 use utoipa::IntoParams;
 use uuid::Uuid;
@@ -44,7 +46,7 @@ pub async fn connect(
     ValidatedPath(path): ValidatedPath<PathParams>,
     user: CheckedCurrentUser,
     ws: WebSocketUpgrade,
-) -> Result<impl IntoResponse, Problem> {
+) -> Result<impl IntoResponse, ProblemResponse> {
     let user = user.into_user();
     log::info!(
         "User {} requesting a connection to the session {}...",
@@ -56,7 +58,7 @@ pub async fn connect(
         .sessions()
         .acquire_session(&path.session_id, &user.user_id)
         .await
-        .map_err(|err| err.into_problem(&problem_config))?;
+        .map_err(|err| err.into_response(&problem_config))?;
     Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, session)))
 }
 

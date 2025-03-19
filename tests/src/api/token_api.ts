@@ -4,7 +4,7 @@ import { joinURL } from '$lib/utils';
 import { z } from 'zod';
 import { ApiRequest } from './api';
 
-const TokenKindSchema = z.enum(['singleAccess', 'persistent', 'access']);
+const TokenKindSchema = z.enum(['singleAccess', 'persistent', 'access', 'emailAccess']);
 export type TokenKind = z.infer<typeof TokenKindSchema>;
 
 const ActiveTokenSchema = z.object({
@@ -56,9 +56,7 @@ export class TokenAPI {
     }
 
     async getTokens(sid: string, extraHeaders?: Record<string, string>): Promise<ActiveToken[]> {
-        const response = await this.getTokensRequest(sid)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.getTokensRequest(sid).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
 
         return (await response.parse(ActiveTokensSchema)).tokens;
@@ -71,7 +69,7 @@ export class TokenAPI {
     }
 
     async getToken(sid: string | null, tokenId: string): Promise<ActiveToken | undefined> {
-        const response = await this.getTokenRequest(sid, tokenId).send();
+        const response = await this.getTokenRequest(sid, tokenId);
         if (response.status() === 404) {
             return undefined;
         }
@@ -86,7 +84,7 @@ export class TokenAPI {
     }
 
     async revokeToken(sid: string | null, tokenId: string): Promise<void> {
-        const response = await this.revokeTokenRequest(sid, tokenId).send();
+        const response = await this.revokeTokenRequest(sid, tokenId);
         expect(response).toHaveStatus(200);
     }
 
@@ -111,10 +109,9 @@ export class TokenAPI {
         bindToSite: boolean,
         extraHeaders?: Record<string, string>
     ): Promise<Token> {
-        const response = await this.createTokenRequest(sid, 'singleAccess', duration, bindToSite)
-            .withHeaders(extraHeaders ?? {})
-            .send();
-
+        const response = await this.createTokenRequest(sid, 'singleAccess', duration, bindToSite).withHeaders(
+            extraHeaders ?? {}
+        );
         expect(response).toHaveStatus(200);
 
         const token = await response.parse(TokenSchema);
@@ -129,9 +126,9 @@ export class TokenAPI {
         bindToSite: boolean,
         extraHeaders?: Record<string, string>
     ): Promise<Token> {
-        const response = await this.createTokenRequest(sid, 'persistent', duration, bindToSite)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.createTokenRequest(sid, 'persistent', duration, bindToSite).withHeaders(
+            extraHeaders ?? {}
+        );
         expect(response).toHaveStatus(200);
 
         const token = await response.parse(TokenSchema);

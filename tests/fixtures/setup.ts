@@ -6,14 +6,17 @@ import { TokenAPI } from '$lib/api/token_api';
 import { UserAPI } from '$lib/api/user_api';
 import { expect as authExpect } from './expect/auth_exts';
 import { expect as commonExpect } from './expect/common';
+import { expect as mailExpect } from './expect/mail';
 import { expect as responseExpect } from './expect/response';
 
-export const expect = mergeExpects(commonExpect, responseExpect, authExpect);
+export const expect = mergeExpects(commonExpect, responseExpect, authExpect, mailExpect);
 
 export type ServiceOptions = {
     appDomain: string;
     serviceDomain: string;
 
+    homeUrl: string;
+    linkUrl: string;
     identityUrl: string;
     builderUrl: string;
 
@@ -37,6 +40,8 @@ export type ServiceTestFixture = {
 export const test = base.extend<ServiceTestFixture, ServiceOptions /*& ServiceWorkerFixture*/>({
     appDomain: [undefined!, { scope: 'worker', option: true }],
     serviceDomain: [undefined!, { scope: 'worker', option: true }],
+    homeUrl: [undefined!, { scope: 'worker', option: true }],
+    linkUrl: [undefined!, { scope: 'worker', option: true }],
     identityUrl: [undefined!, { scope: 'worker', option: true }],
     builderUrl: [undefined!, { scope: 'worker', option: true }],
     masterAdminKey: [undefined!, { scope: 'worker', option: true }],

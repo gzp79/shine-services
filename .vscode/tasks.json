@@ -81,10 +81,13 @@
       "options": {
         "cwd": "services/identity",
         "env": {
-          "SERVICE--TLS--CERT": "../../certs/test.crt",
-          "SERVICE--TLS--KEY": "../../certs/test.key",
-          "SERVICE--port": "8443",
-          "AUTH--AUTHBASEURL": "https://local-cloud.scytta.com:8443/identity/auth/"
+          "RUST_BACKTRACE": "full",
+          "SHINE--SERVICE--TLS--CERT": "../../certs/test.crt2",
+          "SHINE--SERVICE--TLS--KEY": "../../certs/test.key",
+          "SHINE--SERVICE--PORT": "8443",
+          "SHINE--SERVICE--SESSION_REDIS_CNS": "${env:SHINE_REDIS_CNS}",
+          "SHINE--IDENTITY--AUTH--AUTH_BASE_URL": "https://local-cloud.scytta.com:8443/identity/auth/",
+          "SHINE--IDENTITY--DB--REDIS_CNS": "${env:SHINE_REDIS_CNS}",
         }
       },
       "problemMatcher": ["$rustc"],
@@ -98,9 +101,9 @@
         "cwd": "services/identity",
         "env": {
           "RUST_BACKTRACE": "full",
-          "SERVICE--TLS--CERT": "../../certs/test.crt",
-          "SERVICE--TLS--KEY": "../../certs/test.key",
-          "SERVICE--port": "8443"
+          "SHINE--SERVICE--TLS--CERT": "../../certs/test.crt",
+          "SHINE--SERVICE--TLS--KEY": "../../certs/test.key",
+          "SHINE--SERVICE--PORT": "8443",
         }
       },
       "problemMatcher": ["$rustc"],
@@ -113,9 +116,9 @@
       "options": {
         "cwd": "services/builder",
         "env": {
-          "SERVICE--TLS--CERT": "../../certs/test.crt",
-          "SERVICE--TLS--KEY": "../../certs/test.key",
-          "SERVICE--port": "8443"
+          "SHINE--SERVICE--TLS--CERT": "../../certs/test.crt",
+          "SHINE--SERVICE--TLS--KEY": "../../certs/test.key",
+          "SHINE--SERVICE--POSRT": "8443"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -129,9 +132,9 @@
         "cwd": "services/builder",
         "env": {
           "RUST_BACKTRACE": "full",
-          "SERVICE--TLS--CERT": "../../certs/test.crt",
-          "SERVICE--TLS--KEY": "../../certs/test.key",
-          "SERVICE--port": "8444"
+          "SHINE--SERVICE--TLS--CERT": "../../certs/test.crt",
+          "SHINE--SERVICE--TLS--KEY": "../../certs/test.key",
+          "SHINE--SERVICE--PORT": "8444"
         }
       },
       "problemMatcher": ["$rustc"],

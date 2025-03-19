@@ -2,7 +2,7 @@ use crate::app_state::AppState;
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use shine_core::web::{CheckedCurrentUser, Problem, ProblemConfig};
+use shine_core::web::{CheckedCurrentUser, IntoProblemResponse, ProblemConfig, ProblemResponse};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -37,12 +37,12 @@ pub async fn list_sessions(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
-) -> Result<Json<ActiveSessions>, Problem> {
+) -> Result<Json<ActiveSessions>, ProblemResponse> {
     let sessions = state
         .session_service()
         .find_all(user.user_id)
         .await
-        .map_err(|err| Problem::internal_error(&problem_config, "DBError", err))?
+        .map_err(|err| err.into_response(&problem_config))?
         .into_iter()
         .map(|s| ActiveSession {
             user_id: user.user_id,

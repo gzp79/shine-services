@@ -20,7 +20,7 @@ export function getAuthorizeHtml(authParams: Record<string, string>): string {
 
                         const state = '${authParams.state}';
                         const name = \`oauth_\${id}\`;
-                        const email = \`\${name}@example.com\`;
+                        const email = \`\${name}@example.com\`;                        
 
                         const code = encodeURIComponent(
                             createUrlQueryString({

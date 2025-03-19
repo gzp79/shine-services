@@ -5,8 +5,6 @@ mod auth_page;
 pub use self::auth_page::*;
 mod page_utils;
 pub use self::page_utils::*;
-mod captcha_utils;
-pub use self::captcha_utils::*;
 mod link_utils;
 pub use self::link_utils::*;
 mod oauth2_client;
@@ -70,7 +68,9 @@ impl AuthController {
 
     pub fn into_router(self) -> OpenApiRouter<AppState> {
         let mut auth_routes = OpenApiRouter::new()
+            .routes(routes!(pages::guest_login))
             .routes(routes!(pages::token_login))
+            //.routes(routes!(pages::email_login))
             .routes(routes!(pages::validate))
             .routes(routes!(pages::logout))
             .routes(routes!(pages::delete_user));
@@ -121,6 +121,9 @@ impl AuthController {
 
         let api_routes = OpenApiRouter::new()
             .routes(routes!(api::get_user_info))
+            .routes(routes!(api::start_user_email_validation))
+            .routes(routes!(api::start_user_email_change))
+            .routes(routes!(api::complete_user_email_operation))
             .routes(routes!(api::create_token))
             .routes(routes!(api::get_token))
             .routes(routes!(api::list_tokens))

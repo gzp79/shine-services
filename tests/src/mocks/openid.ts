@@ -9,8 +9,8 @@ import { CERTIFICATES, DEFAULT_URL, JWKS } from './mock_constants';
 import { getAuthorizeHtml } from './utils';
 
 interface ServerConfig {
-    url: string;
-    jwks: JWKObject;
+    url?: string;
+    jwks?: JWKObject;
     tls?: Certificates;
 }
 
@@ -85,7 +85,8 @@ export default class Server extends MockServer {
                 iat: Math.floor(Date.now() / 1000), // Issued at time
                 nonce: user.nonce,
                 nickname: user.name,
-                email: user.email
+                email: user.email,
+                ...user
             };
 
             const key = await JWK.fromObject(this._jwks);

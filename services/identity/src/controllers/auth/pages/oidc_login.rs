@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthError, AuthPage, AuthSession, CaptchaUtils, ExternalLoginCookie, OIDCClient, PageUtils},
+    controllers::auth::{AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient, PageUtils},
 };
 use axum::{extract::State, Extension};
 use chrono::Duration;
@@ -10,7 +10,10 @@ use openidconnect::{
     Nonce,
 };
 use serde::Deserialize;
-use shine_core::web::{ConfiguredProblem, InputError, ValidatedQuery};
+use shine_core::{
+    utils::random,
+    web::{ErrorResponse, InputError, ValidatedQuery},
+};
 use std::sync::Arc;
 use url::Url;
 use utoipa::IntoParams;
@@ -34,41 +37,36 @@ pub struct QueryParams {
         QueryParams
     ),
     responses(
-        (status = OK)
+        (status = OK, description="Start the OpenID Connect interactive login flow")
     )
 )]
 pub async fn oidc_login(
     State(state): State<AppState>,
     Extension(client): Extension<Arc<OIDCClient>>,
-    mut auth_session: AuthSession,
-    query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
+    auth_session: AuthSession,
+    query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, AuthError::InputError(error.problem), None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
     };
 
-    if let Err(err) = CaptchaUtils::new(&state).validate(query.captcha.as_deref()).await {
+    if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
         return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-    }
-    // Note: having a token login is not an error, on successful start of the flow, the token cookie is cleared
-    // It has some potential issue: if tid is connected to a guest user, the guest may loose all the progress
-    if auth_session.user_session.is_some() {
-        return PageUtils::new(&state).error(auth_session, AuthError::LogoutRequired, query.error_url.as_ref());
     }
 
     let core_client = match client.client().await {
         Ok(client) => client,
         Err(err) => {
-            return PageUtils::new(&state).error(auth_session, AuthError::OIDCDiscovery(err), query.error_url.as_ref())
+            return PageUtils::new(&state).error(
+                auth_session,
+                ExternalLoginError::OIDCDiscovery(format!("{err:#?}")),
+                query.error_url.as_ref(),
+            )
         }
     };
 
-    let key = match state.token_service().generate() {
-        Ok(key) => key,
-        Err(err) => return PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_ref()),
-    };
-
+    let key = random::hex_16(state.random());
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
     let (authorize_url, csrf_state, nonce) = core_client
         .authorize_url(
@@ -82,20 +80,21 @@ pub async fn oidc_login(
         .add_prompt(CoreAuthPrompt::Login)
         .url();
 
-    auth_session.token_cookie = None;
-
-    auth_session.external_login_cookie = Some(ExternalLoginCookie {
-        key,
-        pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
-        csrf_state: csrf_state.secret().to_owned(),
-        nonce: Some(nonce.secret().to_owned()),
-        target_url: query.redirect_url,
-        error_url: query.error_url,
-        remember_me: query.remember_me.unwrap_or(false),
-        linked_user: None,
-    });
-
-    assert!(auth_session.user_session.is_none());
-
-    PageUtils::new(&state).redirect(auth_session, Some(&client.provider), Some(&authorize_url))
+    let response_session = auth_session
+        .revoke_session(&state)
+        .await
+        .revoke_access(&state)
+        .await
+        .with_external_login(Some(ExternalLoginCookie {
+            key,
+            pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
+            csrf_state: csrf_state.secret().to_owned(),
+            nonce: Some(nonce.secret().to_owned()),
+            target_url: query.redirect_url,
+            error_url: query.error_url,
+            remember_me: query.remember_me.unwrap_or(false),
+            linked_user: None,
+        }));
+    assert!(response_session.user_session().is_none());
+    PageUtils::new(&state).redirect(response_session, Some(&client.provider), Some(&authorize_url))
 }

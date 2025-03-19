@@ -37,7 +37,8 @@ export const ProblemSchema = z.object({
     type: z.string(),
     instance: OptionalSchema(z.string()),
     detail: z.string(),
-    extension: z.any()
+    extension: z.any(),
+    sensitive: z.any()
 });
 export type Problem = z.infer<typeof ProblemSchema>;
 
@@ -158,6 +159,10 @@ export class ApiResponse {
             throw new Error(error.message);
         }
     }
+
+    public async parseProblem(): Promise<Problem> {
+        return await this.parse(ProblemSchema);
+    }
 }
 
 export class ApiRequest<Q = void> {
@@ -244,7 +249,7 @@ export class ApiRequest<Q = void> {
         return JSON.stringify(this.body);
     }
 
-    async send(): Promise<ApiResponse> {
+    private async send(): Promise<ApiResponse> {
         const context = await request.newContext();
 
         const log_id = randomUUID();
@@ -256,7 +261,7 @@ export class ApiRequest<Q = void> {
         }
 
         log(
-            `Sending request [${log_id}] ${this.method} ${this.url}\nparams: ${JSON.stringify(this.params, null, 2)}\nheaders: ${JSON.stringify(headers, null, 2)}`
+            `Request [${log_id}] ${this.method} ${this.url}\nparams: ${JSON.stringify(this.params, null, 2)}\nheaders: ${JSON.stringify(headers, null, 2)}`
         );
         if (data !== undefined) {
             log(`Request body [${log_id}]: ${data}`);
@@ -300,5 +305,12 @@ export class ApiRequest<Q = void> {
         }
 
         return api_response;
+    }
+
+    then<TResult1 = ApiResponse, TResult2 = never>(
+        onfulfilled?: ((value: ApiResponse) => TResult1 | PromiseLike<TResult1>) | null,
+        onrejected?: ((reason: void) => TResult2 | PromiseLike<TResult2>) | null
+    ): Promise<TResult1 | TResult2> {
+        return this.send().then(onfulfilled, onrejected);
     }
 }

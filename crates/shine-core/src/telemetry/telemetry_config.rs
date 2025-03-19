@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type")]
 pub enum Metering {
+    /// Disable metrics
+    None,
+
     /// Prometheus metrics
     Prometheus,
 }

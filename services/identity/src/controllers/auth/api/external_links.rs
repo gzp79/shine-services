@@ -1,13 +1,14 @@
+use crate::{app_state::AppState, repositories::identity::ExternalLink};
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::web::{CheckedCurrentUser, Problem, ProblemConfig, ValidatedPath};
+use shine_core::web::{
+    CheckedCurrentUser, IntoProblemResponse, Problem, ProblemConfig, ProblemResponse, ValidatedPath,
+};
 use url::Url;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
-
-use crate::{app_state::AppState, repositories::identity::ExternalLink};
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -51,12 +52,12 @@ pub async fn list_external_links(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
-) -> Result<Json<LinkedExternalProviders>, Problem> {
+) -> Result<Json<LinkedExternalProviders>, ProblemResponse> {
     let links = state
         .identity_service()
         .list_external_links_by_user(user.user_id)
         .await
-        .map_err(|err| Problem::internal_error(&problem_config, "Failed to get links", err))?
+        .map_err(|err| err.into_response(&problem_config))?
         .into_iter()
         .map(LinkedExternalProvider::from)
         .collect();
@@ -86,12 +87,12 @@ pub async fn delete_external_link(
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
     ValidatedPath(params): ValidatedPath<ProviderSelectPathParam>,
-) -> Result<(), Problem> {
+) -> Result<(), ProblemResponse> {
     let link = state
         .identity_service()
         .delete_extern_link(user.user_id, &params.provider, &params.provider_id)
         .await
-        .map_err(|err| Problem::internal_error(&problem_config, "Failed to delete link", err))?;
+        .map_err(|err| err.into_response(&problem_config))?;
 
     if link.is_none() {
         let url = Url::parse(&format!(
@@ -99,7 +100,7 @@ pub async fn delete_external_link(
             params.provider, params.provider_id
         ))
         .ok();
-        Err(Problem::not_found().with_instance(url))
+        Err(Problem::not_found().with_instance(url).into_response(&problem_config))
     } else {
         Ok(())
     }

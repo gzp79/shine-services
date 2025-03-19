@@ -6,7 +6,7 @@ use crate::{
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::web::{CheckedCurrentUser, Problem, ProblemConfig, ValidatedQuery};
+use shine_core::web::{CheckedCurrentUser, IntoProblemResponse, ProblemConfig, ProblemResponse, ValidatedQuery};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;
@@ -52,9 +52,10 @@ pub async fn search_identity(
     Extension(problem_config): Extension<ProblemConfig>,
     ValidatedQuery(query): ValidatedQuery<QueryParams>,
     user: CheckedCurrentUser,
-) -> Result<Json<IdentitySearchPage>, Problem> {
+) -> Result<Json<IdentitySearchPage>, ProblemResponse> {
     user.identity_permissions()
-        .check(permissions::READ_ANY_IDENTITY, &problem_config)?;
+        .check(permissions::READ_ANY_IDENTITY)
+        .map_err(|err| err.into_response(&problem_config))?;
 
     let identities = state
         .identity_service()
@@ -66,7 +67,7 @@ pub async fn search_identity(
             names: None,
         })
         .await
-        .map_err(|err| Problem::internal_error(&problem_config, "Failed to find identities", err))?;
+        .map_err(|err| err.into_response(&problem_config))?;
     log::info!("identities: {:?}", identities);
     todo!()
     /* let identities = identities

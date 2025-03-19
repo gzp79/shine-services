@@ -1,4 +1,4 @@
-use crate::app_config::AppConfig;
+use crate::{app_config::AppConfig, app_state::AppState, repositories::identity::TokenKind};
 use axum::{
     extract::FromRequestParts,
     http::request::Parts,
@@ -11,7 +11,7 @@ use axum_extra::extract::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Utc};
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use serde::{Deserialize, Serialize};
 use shine_core::web::{CheckedCurrentUser, CurrentUser, WebAppConfig};
 use std::{convert::Infallible, sync::Arc};
@@ -160,32 +160,103 @@ impl AuthSessionMeta {
 /// it ensures the consistency between the auth related cookie.
 #[derive(Clone)]
 pub struct AuthSession {
-    pub meta: Arc<AuthSessionMeta>,
-    pub token_cookie: Option<TokenCookie>,
-    pub user_session: Option<CurrentUser>,
-    pub external_login_cookie: Option<ExternalLoginCookie>,
+    meta: Arc<AuthSessionMeta>,
+    access: Option<TokenCookie>,
+    session: Option<CurrentUser>,
+    external_login: Option<ExternalLoginCookie>,
 }
 
 impl AuthSession {
     pub fn new(
         meta: Arc<AuthSessionMeta>,
-        token_cookie: Option<TokenCookie>,
-        user: Option<CurrentUser>,
-        external_login_cookie: Option<ExternalLoginCookie>,
+        access: Option<TokenCookie>,
+        session: Option<CurrentUser>,
+        external_login: Option<ExternalLoginCookie>,
     ) -> Self {
         Self {
             meta,
-            token_cookie,
-            user_session: user,
-            external_login_cookie,
+            access,
+            session,
+            external_login,
         }
     }
 
-    /// Clear all the components.
-    pub fn clear(&mut self) {
-        self.token_cookie.take();
-        self.user_session.take();
-        self.external_login_cookie.take();
+    pub fn user_session(&self) -> Option<&CurrentUser> {
+        self.session.as_ref()
+    }
+
+    #[must_use]
+    pub fn with_session(self, session: Option<CurrentUser>) -> Self {
+        Self {
+            meta: self.meta,
+            access: self.access,
+            session,
+            external_login: self.external_login,
+        }
+    }
+
+    /// Clear the session and revoke the session from the session store.
+    #[must_use]
+    pub async fn revoke_session(mut self, state: &AppState) -> Self {
+        state
+            .session_user_handler()
+            .revoke_opt_session(self.session.take())
+            .await;
+        self
+    }
+
+    pub fn access(&self) -> Option<&TokenCookie> {
+        self.access.as_ref()
+    }
+
+    #[must_use]
+    pub fn with_access(self, access: Option<TokenCookie>) -> Self {
+        Self {
+            meta: self.meta,
+            access,
+            session: self.session,
+            external_login: self.external_login,
+        }
+    }
+
+    /// Clear the access token and revoke the token from the token store.
+    #[must_use]
+    pub async fn revoke_access(mut self, state: &AppState) -> Self {
+        if let Some(token_cookie) = self.access.take() {
+            state
+                .session_user_handler()
+                .revoke_opt_access(TokenKind::Access, token_cookie.revoked_token)
+                .await;
+            state
+                .session_user_handler()
+                .revoke_access(TokenKind::Access, &token_cookie.key)
+                .await;
+        }
+        self
+    }
+
+    #[must_use]
+    pub fn with_external_login(self, external_login: Option<ExternalLoginCookie>) -> Self {
+        Self {
+            meta: self.meta,
+            access: self.access,
+            session: self.session,
+            external_login,
+        }
+    }
+
+    pub fn external_login(&self) -> Option<&ExternalLoginCookie> {
+        self.external_login.as_ref()
+    }
+
+    #[must_use]
+    pub fn cleared(self) -> Self {
+        Self {
+            meta: self.meta,
+            access: None,
+            session: None,
+            external_login: None,
+        }
     }
 }
 
@@ -278,7 +349,7 @@ fn create_jar<T: Serialize, X: Into<Expiration>>(
             n: String,
         }
 
-        let nonce: Vec<u8> = (0..16).map(|_| thread_rng().gen::<u8>()).collect();
+        let nonce: Vec<u8> = (0..16).map(|_| rng().random::<u8>()).collect();
         let nonce = B64.encode(nonce);
         let raw_data = serde_json::to_string(&Dummy { n: nonce }).expect("Failed to serialize user");
         let mut cookie = Cookie::new(settings.name.to_string(), raw_data);
@@ -304,9 +375,9 @@ impl IntoResponseParts for AuthSession {
     fn into_response_parts(self, res: ResponseParts) -> Result<ResponseParts, Self::Error> {
         let Self {
             meta,
-            user_session,
-            external_login_cookie,
-            token_cookie,
+            session: user_session,
+            external_login: external_login_cookie,
+            access: token_cookie,
         } = self;
         log::debug!(
             "Auth sessions set headers:\n  user:{:#?}\n  external_login_cookie:{:#?}\n  token_cookie:{:#?}",

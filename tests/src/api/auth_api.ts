@@ -72,6 +72,16 @@ export class AuthAPI {
         return ApiRequest.get(this.urlFor('auth/validate')).withCookies({ ...ct, ...cs, ...ce });
     }
 
+    loginWithGuestRequest(tid: string | null, sid: string | null, captcha: string | null | undefined): ApiRequest {
+        const ct = tid && { tid };
+        const cs = sid && { sid };
+        const qc = getCaptchaQuery(captcha);
+
+        return ApiRequest.get(this.urlFor('auth/guest/login'))
+            .withParams({ ...qc, ...this.defaultRedirects })
+            .withCookies({ ...ct, ...cs });
+    }
+
     loginWithTokenRequest(
         tid: string | null,
         sid: string | null,
@@ -92,11 +102,31 @@ export class AuthAPI {
             .withCookies({ ...ct, ...cs });
     }
 
+    loginWithEmailRequest(
+        email: string | null,
+        tid: string | null,
+        sid: string | null,
+        queryToken: string | null,
+        apiKey: string | null,
+        rememberMe: boolean | null,
+        captcha: string | null | undefined
+    ): ApiRequest {
+        const qe = email && { email };
+        const qs = rememberMe && { rememberMe };
+        const qt = queryToken && { token: queryToken };
+        const ct = tid && { tid };
+        const cs = sid && { sid };
+        const qc = getCaptchaQuery(captcha);
+
+        return ApiRequest.get(this.urlFor('auth/email/login'))
+            .withParams({ ...qe, ...qs, ...qt, ...qc, ...this.defaultRedirects })
+            .withAuthIf(apiKey)
+            .withCookies({ ...ct, ...cs });
+    }
+
     async loginAsGuestUser(extraHeaders?: Record<string, string>): Promise<UserCookies> {
         // use the default captcha to fast-login
-        const response = await this.loginWithTokenRequest(null, null, null, null, true, null)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.loginWithGuestRequest(null, null, null).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(this.defaultRedirects.redirectUrl);
 
@@ -118,9 +148,9 @@ export class AuthAPI {
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
         // no captcha as token login should work without it
-        const response = await this.loginWithTokenRequest(tid, null, null, null, rememberMe, undefined)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.loginWithTokenRequest(tid, null, null, null, rememberMe, undefined).withHeaders(
+            extraHeaders ?? {}
+        );
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(this.defaultRedirects.redirectUrl);
 
@@ -142,7 +172,7 @@ export class AuthAPI {
     }
 
     async getProviders(): Promise<string[]> {
-        const response = await this.getProvidersRequest().send();
+        const response = await this.getProvidersRequest();
         expect(response).toHaveStatus(200);
         return (await response.parse(ProvidersSchema)).providers;
     }
@@ -192,9 +222,9 @@ export class AuthAPI {
         rememberMe: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.loginWithOAuth2Request(null, null, rememberMe, null)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.loginWithOAuth2Request(null, null, rememberMe, null).withHeaders(
+            extraHeaders ?? {}
+        );
         expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(await response.text());
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -226,9 +256,7 @@ export class AuthAPI {
             start.eid,
             start.authParams.state,
             user.toCode()
-        )
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        ).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(this.defaultRedirects.redirectUrl);
 
@@ -253,9 +281,7 @@ export class AuthAPI {
         sid: string,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.linkWithOAuth2Request(sid)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.linkWithOAuth2Request(sid).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(await response.text());
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -288,9 +314,7 @@ export class AuthAPI {
             start.eid,
             start.authParams.state,
             user.toCode()
-        )
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        ).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(this.defaultRedirects.redirectUrl);
 
@@ -351,9 +375,9 @@ export class AuthAPI {
         rememberMe: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.loginWithOpenIdRequest(null, null, rememberMe, null)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.loginWithOpenIdRequest(null, null, rememberMe, null).withHeaders(
+            extraHeaders ?? {}
+        );
         expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(await response.text());
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -385,9 +409,7 @@ export class AuthAPI {
             start.eid,
             start.authParams.state,
             user.toCode({ nonce: start.authParams.nonce })
-        )
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        ).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(this.defaultRedirects.redirectUrl);
 
@@ -412,9 +434,7 @@ export class AuthAPI {
         sid: string,
         extraHeaders?: Record<string, string>
     ): Promise<StartLoginResult> {
-        const response = await this.linkWithOpenIdRequest(sid)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.linkWithOpenIdRequest(sid).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         const redirectUrl = getPageRedirectUrl(await response.text());
         expect(redirectUrl).toStartWith(mock.getUrlFor('authorize'));
@@ -447,9 +467,7 @@ export class AuthAPI {
             start.eid,
             start.authParams.state,
             user.toCode({ nonce: start.authParams.nonce })
-        )
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        ).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(this.defaultRedirects.redirectUrl);
 
@@ -472,10 +490,7 @@ export class AuthAPI {
     }
 
     async getExternalLinks(sid: string, extraHeaders?: Record<string, string>): Promise<LinkedIdentity[]> {
-        const response = await this.getExternalLinksRequest(sid)
-            .withHeaders(extraHeaders ?? {})
-            .send();
-
+        const response = await this.getExternalLinksRequest(sid).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
 
         const links = (await response.parse(LinkedIdentitiesSchema)).links;
@@ -499,9 +514,7 @@ export class AuthAPI {
         providerUserId: string,
         extraHeaders?: Record<string, string>
     ): Promise<boolean> {
-        const response = await this.unlinkRequest(sid, provider, providerUserId)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.unlinkRequest(sid, provider, providerUserId).withHeaders(extraHeaders ?? {});
         if (response.status() == 404) {
             return false;
         }
@@ -526,9 +539,7 @@ export class AuthAPI {
         terminateAll: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<void> {
-        const response = await this.logoutRequest(sid, tid, terminateAll)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.logoutRequest(sid, tid, terminateAll).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
     }
 }

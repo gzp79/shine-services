@@ -8,4 +8,6 @@
 
  - Dependency injection <https://tulipemoutarde.be/posts/2023-08-20-depencency-injection-rust-axum/>
 
-
+## gmail
+ 
+ - Use gmail for smpt, but send through cloudflare email routing: <https://community.cloudflare.com/t/solved-how-to-use-gmail-smtp-to-send-from-an-email-address-which-uses-cloudflare-email-routing/382769>

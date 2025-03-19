@@ -1,6 +1,7 @@
 mod app_config;
 mod app_state;
 mod controllers;
+mod handlers;
 mod repositories;
 mod services;
 
@@ -18,10 +19,6 @@ struct Application {}
 impl WebApplication for Application {
     type AppConfig = AppConfig;
     type AppState = AppState;
-
-    fn feature_name(&self) -> &'static str {
-        "identity"
-    }
 
     async fn create_state(&self, config: &WebAppConfig<Self::AppConfig>) -> Result<Self::AppState, AnyError> {
         AppState::new(config).await

@@ -1,1 +1,1 @@
-fly redis connect
+fly redis proxy

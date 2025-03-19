@@ -8,51 +8,63 @@
   "service": {
     "port": 7000
   },
-  "identityName": {
-    "baseName": "Freshman_",
-    "idEncoder": "harsh"
-  },
-  "auth": {
-    "appName": "Scytta",
-    "homeUrl": "https://scytta.com",
-    "errorUrl": "https://scytta.com/error",
-    "authBaseUrl": "https://cloud.scytta.com/identity/auth/",
-    "pageRedirectTime": 0,
-    "ttlSession": 43200,
-    "ttlAccessToken": 1209600,
-    "ttlSingleAccess": 600,
-    "ttlApiKey": 31536000,
-    "openidStartupDiscovery": true,
-    "openid": {
-      "google": {
-        "discoveryUrl": "https://accounts.google.com",
-        "scopes": ["openid", "email", "profile"]
-      },
-      "gitlab": {
-        "discoveryUrl": "https://gitlab.com",
-        "scopes": ["openid", "email", "profile"]
-      }
+
+  "identity": {
+    "name": {
+      "baseName": "Freshman_",
+      "idEncoder": "harsh"
     },
-    "oauth2": {
-      "discord": {
-        "authorizationUrl": "https://discord.com/oauth2/authorize",
-        "tokenUrl": "https://discord.com/api/oauth2/token",
-        "userInfoUrl": "https://discord.com/api/users/@me",
-        "userInfoMapping": {
-          "name": "global_name"
+
+    "mailer": {
+      "type": "smtp",
+      "useTls": true,
+      "emailDomain": "scytta.com"
+    },
+
+    "auth": {
+      "appName": "Scytta",
+      "homeUrl": "https://scytta.com/",
+      "linkUrl": "https://scytta.com/link/",
+      "errorUrl": "https://scytta.com/error",
+      "authBaseUrl": "https://cloud.scytta.com/identity/auth/",
+      "pageRedirectTime": 0,
+      "ttlSession": 43200,
+      "ttlAccessToken": 1209600,
+      "ttlSingleAccess": 600,
+      "ttlApiKey": 31536000,
+      "ttlEmailToken": 3600,
+      "openidStartupDiscovery": true,
+      "openid": {
+        "google": {
+          "discoveryUrl": "https://accounts.google.com",
+          "scopes": ["openid", "email", "profile"]
         },
-        "extensions": [],
-        "scopes": ["identify", "email"]
+        "gitlab": {
+          "discoveryUrl": "https://gitlab.com",
+          "scopes": ["openid", "email", "profile"]
+        }
       },
-      "github": {
-        "authorizationUrl": "https://github.com/login/oauth/authorize",
-        "tokenUrl": "https://github.com/login/oauth/access_token",
-        "userInfoUrl": "https://api.github.com/user",
-        "userInfoMapping": {
-          "name": "login"
+      "oauth2": {
+        "discord": {
+          "authorizationUrl": "https://discord.com/oauth2/authorize",
+          "tokenUrl": "https://discord.com/api/oauth2/token",
+          "userInfoUrl": "https://discord.com/api/users/@me",
+          "userInfoMapping": {
+            "name": "global_name"
+          },
+          "extensions": [],
+          "scopes": ["identify", "email"]
         },
-        "extensions": ["githubEmail"],
-        "scopes": ["user:email"]
+        "github": {
+          "authorizationUrl": "https://github.com/login/oauth/authorize",
+          "tokenUrl": "https://github.com/login/oauth/access_token",
+          "userInfoUrl": "https://api.github.com/user",
+          "userInfoMapping": {
+            "name": "login"
+          },
+          "extensions": ["githubEmail"],
+          "scopes": ["user:email"]
+        }
       }
     }
   }

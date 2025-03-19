@@ -23,6 +23,7 @@ hex = { workspace = true }
 ring = { workspace = true }
 bcrypt = { workspace = true }
 regex = { workspace = true }
+serde_urlencoded = { workspace = true }
 
 ############################# RUNTIME #############################
 futures = { workspace = true }
@@ -62,8 +63,8 @@ tokio-rustls = { workspace = true }
 rustls = { workspace = true }
 reqwest = { workspace = true }
 
-oauth2 = "5.0.0"
-openidconnect = "4.0.0"
+oauth2 = "5.0"
+openidconnect = "4.0"
 
 ############################# WEB #############################
 tera = { workspace = true }
@@ -77,6 +78,8 @@ utoipa-axum = { workspace = true }
 utoipa-swagger-ui = { workspace = true }
 
 ############################# SELF #############################
+
+lettre = "0.11"
 
 shine-core = { workspace = true }
 

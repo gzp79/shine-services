@@ -29,6 +29,8 @@ use utoipa::{
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
 
+use super::FeatureConfig;
+
 #[derive(OpenApi)]
 #[openapi(paths(), components(), tags())]
 struct ApiDoc;
@@ -86,10 +88,13 @@ async fn graceful_shutdown(handle: Handle) {
 }
 
 pub trait WebApplication {
-    type AppConfig: DeserializeOwned + Debug + Send + Sync + 'static;
+    type AppConfig: FeatureConfig + DeserializeOwned + Debug + Send + Sync + 'static;
     type AppState: Clone + Send + Sync + 'static;
 
-    fn feature_name(&self) -> &'static str;
+    fn feature_name(&self) -> &'static str {
+        Self::AppConfig::NAME
+    }
+
     fn create_state(
         &self,
         config: &WebAppConfig<Self::AppConfig>,
@@ -127,7 +132,7 @@ async fn prepare_web_app<A: WebApplication>(
     tracing::warn!("init-warn  - tracing:ok");
     tracing::error!("init-error - tracing:ok");
 
-    let config = WebAppConfig::<A::AppConfig>::load_config(&stage).await?;
+    let config = WebAppConfig::<A::AppConfig>::load(&stage, None).await?;
     let telemetry_service = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
     log::info!("pre-init completed");
 
@@ -188,15 +193,16 @@ async fn create_web_app<A: WebApplication>(
         .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
         .on_response(DefaultOnResponse::new().level(Level::INFO));
     let problem_detail_layer = {
-        let problem_config = ProblemConfig {
-            include_internal: config.service.full_problem_response,
-        };
+        let problem_config = ProblemConfig::new(config.service.full_problem_response);
         problem_config.into_layer()
     };
     let telemetry_layer = telemetry_service.create_layer();
     let user_session_layer = {
         // todo: make it a read only access to the redis
-        log::info!("Creating user session cache reader...");
+        log::info!(
+            "Creating user session cache reader... [{}]",
+            config.service.session_redis_cns
+        );
         let redis = crate::db::create_redis_pool(config.service.session_redis_cns.as_str()).await?;
         UserSessionCacheReader::new(None, &config.service.session_secret, "", redis)?.into_layer()
     };

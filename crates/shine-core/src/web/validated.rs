@@ -1,7 +1,4 @@
-use crate::{
-    utils::serde_string,
-    web::{ConfiguredProblem, IntoProblem, Problem, ProblemConfig},
-};
+use crate::web::{problems, ErrorResponse, Problem, ProblemConfig};
 use axum::{
     extract::{
         rejection::{JsonRejection, PathRejection, QueryRejection},
@@ -64,34 +61,34 @@ impl ValidationErrorEx for ValidationError {
     }
 }
 
-#[derive(Debug, ThisError, Serialize)]
+#[derive(Debug, ThisError)]
 pub enum InputError {
     #[error("Path could not be parsed for input")]
-    #[serde(with = "serde_string")]
     PathFormat(PathRejection),
     #[error("Query could not be parsed for input")]
-    #[serde(with = "serde_string")]
     QueryFormat(QueryRejection),
     #[error("Body could not be parsed for input")]
-    #[serde(with = "serde_string")]
     JsonFormat(JsonRejection),
     #[error("Input constraint violated")]
     Constraint(ValidationErrors),
 }
 
-impl IntoProblem for InputError {
-    fn into_problem(self, config: &ProblemConfig) -> Problem {
-        match self {
-            InputError::PathFormat(err) => Problem::bad_request("path_format_error").with_detail(format!("{err:?}")),
-            InputError::QueryFormat(err) => Problem::bad_request("query_format_error").with_detail(format!("{err}")),
-            InputError::JsonFormat(JsonRejection::JsonDataError(err)) => {
-                Problem::bad_request("body_format_error").with_detail(err.body_text())
-            }
+impl From<InputError> for Problem {
+    fn from(value: InputError) -> Self {
+        match value {
+            InputError::PathFormat(err) => Problem::bad_request(problems::INPUT_PATH).with_detail(format!("{err:?}")),
+            InputError::QueryFormat(err) => Problem::bad_request(problems::INPUT_QUERY).with_detail(format!("{err}")),
             InputError::JsonFormat(JsonRejection::JsonSyntaxError(err)) => {
-                Problem::bad_request("body_format_error").with_detail(err.body_text())
+                Problem::bad_request(problems::INPUT_BODY).with_detail(err.body_text())
             }
-            InputError::JsonFormat(err) => Problem::internal_error(config, "Json error", err),
-            InputError::Constraint(detail) => Problem::bad_request("validation_error").with_public_extension(detail),
+            InputError::JsonFormat(JsonRejection::JsonDataError(err)) => {
+                //todo: convert it into validation error
+                Problem::bad_request(problems::INPUT_BODY).with_detail(err.body_text())
+            }
+            InputError::Constraint(detail) => Problem::bad_request(problems::INPUT_VALIDATION).with_extension(detail),
+            err => Problem::internal_error()
+                .with_detail(err.to_string())
+                .with_sensitive_dbg(err),
         }
     }
 }
@@ -105,7 +102,7 @@ where
     S: Send + Sync,
     T: DeserializeOwned + Send + Validate,
 {
-    type Rejection = ConfiguredProblem<InputError>;
+    type Rejection = ErrorResponse<InputError>;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let Extension(problem_config) = parts
@@ -115,9 +112,9 @@ where
 
         let Path(data) = Path::<T>::from_request_parts(parts, state)
             .await
-            .map_err(|err| problem_config.configure(InputError::PathFormat(err)))?;
+            .map_err(|err| ErrorResponse::new(&problem_config, InputError::PathFormat(err)))?;
         data.validate()
-            .map_err(|err| problem_config.configure(InputError::Constraint(err)))?;
+            .map_err(|err| ErrorResponse::new(&problem_config, InputError::Constraint(err)))?;
         Ok(Self(data))
     }
 }
@@ -131,7 +128,7 @@ where
     S: Send + Sync,
     T: 'static + DeserializeOwned + Validate,
 {
-    type Rejection = ConfiguredProblem<InputError>;
+    type Rejection = ErrorResponse<InputError>;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let Extension(problem_config) = parts
@@ -141,9 +138,9 @@ where
 
         let Query(data) = Query::<T>::from_request_parts(parts, state)
             .await
-            .map_err(|err| problem_config.configure(InputError::QueryFormat(err)))?;
+            .map_err(|err| ErrorResponse::new(&problem_config, InputError::QueryFormat(err)))?;
         data.validate()
-            .map_err(|err| problem_config.configure(InputError::Constraint(err)))?;
+            .map_err(|err| ErrorResponse::new(&problem_config, InputError::Constraint(err)))?;
         Ok(Self(data))
     }
 }
@@ -158,7 +155,7 @@ where
     J: Validate + 'static,
     Json<J>: FromRequest<(), Rejection = JsonRejection>,
 {
-    type Rejection = ConfiguredProblem<InputError>;
+    type Rejection = ErrorResponse<InputError>;
 
     async fn from_request(mut req: Request, _state: &S) -> Result<Self, Self::Rejection> {
         let Extension(problem_config) = req
@@ -169,9 +166,9 @@ where
         let Json(data) = req
             .extract::<Json<J>, _>()
             .await
-            .map_err(|err| problem_config.configure(InputError::JsonFormat(err)))?;
+            .map_err(|err| ErrorResponse::new(&problem_config, InputError::JsonFormat(err)))?;
         data.validate()
-            .map_err(|err| problem_config.configure(InputError::Constraint(err)))?;
+            .map_err(|err| ErrorResponse::new(&problem_config, InputError::Constraint(err)))?;
         Ok(Self(data))
     }
 }

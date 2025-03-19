@@ -1,5 +1,5 @@
-mod core_config;
-pub use self::core_config::*;
+mod config;
+pub use self::config::*;
 mod service_config;
 pub use self::service_config::*;
 mod web_config;

@@ -1,6 +1,8 @@
 use axum::{extract::State, Extension, Json};
 use serde::Serialize;
-use shine_core::web::{permissions, CheckedCurrentUser, CorePermissions, Problem, ProblemConfig};
+use shine_core::web::{
+    permissions, CheckedCurrentUser, CorePermissions, IntoProblemResponse, ProblemConfig, ProblemResponse,
+};
 use utoipa::ToSchema;
 
 use crate::app_state::AppState;
@@ -21,9 +23,10 @@ pub async fn get_service_status(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
-) -> Result<Json<ServiceStatus>, Problem> {
+) -> Result<Json<ServiceStatus>, ProblemResponse> {
     user.core_permissions()
-        .check(permissions::READ_TRACE, &problem_config)?;
+        .check(permissions::READ_TRACE)
+        .map_err(|err| err.into_response(&problem_config))?;
 
     Ok(Json(ServiceStatus {}))
 }

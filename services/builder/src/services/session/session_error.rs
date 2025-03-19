@@ -1,5 +1,5 @@
 use axum::http::StatusCode;
-use shine_core::web::{IntoProblem, Problem, ProblemConfig};
+use shine_core::web::Problem;
 use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
@@ -8,9 +8,9 @@ pub enum SessionError {
     UserAlreadyConnected,
 }
 
-impl IntoProblem for SessionError {
-    fn into_problem(self, _config: &ProblemConfig) -> Problem {
-        match self {
+impl From<SessionError> for Problem {
+    fn from(value: SessionError) -> Self {
+        match value {
             SessionError::UserAlreadyConnected => Problem::new(StatusCode::CONFLICT, "User already connected"),
         }
     }

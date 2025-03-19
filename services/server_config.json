@@ -1,6 +1,5 @@
 {
   "service": {
-    "port": 7000,
     "allowedOrigins": ["^https:\\/\\/([a-zA-Z0-9-]+\\.)+scytta\\.com(:\\d+)?$"],
     "fullProblemResponse": false
   },

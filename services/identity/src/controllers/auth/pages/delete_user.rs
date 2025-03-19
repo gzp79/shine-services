@@ -4,7 +4,7 @@ use crate::{
 };
 use axum::extract::State;
 use serde::Deserialize;
-use shine_core::web::{ConfiguredProblem, InputError, ValidatedQuery};
+use shine_core::web::{ErrorResponse, InputError, ValidatedQuery};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -12,10 +12,8 @@ use validator::Validate;
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryParams {
-    /// Set to true. Mainly used to avoid some accidental automated deletion.
-    /// It is suggested to have some confirmation on the UI (for example enter the name of the user to be deleted) and
-    /// set the value of the property to the result of the confirmation.
-    confirmed: bool,
+    /// User confirmation value, it must match the user name to proceed with the deletion.
+    confirmation: Option<String>,
     #[param(value_type=Option<String>)]
     redirect_url: Option<Url>,
     #[param(value_type=Option<String>)]
@@ -37,22 +35,25 @@ pub struct QueryParams {
 )]
 pub async fn delete_user(
     State(state): State<AppState>,
-    mut auth_session: AuthSession,
-    query: Result<ValidatedQuery<QueryParams>, ConfiguredProblem<InputError>>,
+    auth_session: AuthSession,
+    query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, AuthError::InputError(error.problem), None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
     };
 
-    let (user_id, session_key) = match auth_session.user_session.as_ref().map(|u| (u.user_id, u.key)) {
-        Some(user_id) => user_id,
+    let (user_id, user_name, session_key) = match auth_session
+        .user_session()
+        .map(|u| (u.user_id, u.name.clone(), u.key))
+    {
+        Some(user) => user,
         None => return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_ref()),
     };
 
-    // some gating mainly used in the swagger ui not to accidentally delete the user
-    if !query.confirmed {
-        return PageUtils::new(&state).error(auth_session, AuthError::MissingPrecondition, query.error_url.as_ref());
+    // check for user confirmation
+    if query.confirmation != Some(user_name) {
+        return PageUtils::new(&state).error(auth_session, AuthError::MissingConfirmation, query.error_url.as_ref());
     }
 
     // validate session as this is a very risky operation
@@ -60,20 +61,22 @@ pub async fn delete_user(
         Ok(None) => {
             return PageUtils::new(&state).error(auth_session, AuthError::SessionExpired, query.error_url.as_ref())
         }
-        Err(err) => return PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_ref()),
+        Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
         Ok(Some(_)) => {}
     };
 
     if let Err(err) = state.identity_service().cascaded_delete(user_id).await {
-        return PageUtils::new(&state).internal_error(auth_session, err, query.error_url.as_ref());
+        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
     }
 
-    // from this point there is no reason to keep session
-    // errors beyond these points are irrelevant for the users and mostly just warnings.
-    auth_session.clear();
+    // End of validations, from this point
+    //  - there is no reason to keep session
+    //  - errors are irrelevant for the users and mostly just warnings.
+    let response_session = auth_session.cleared();
+
     if let Err(err) = state.session_service().remove_all(user_id).await {
         log::warn!("Failed to clear all sessions for user {}: {:?}", user_id, err);
     }
 
-    PageUtils::new(&state).redirect(auth_session, None, query.redirect_url.as_ref())
+    PageUtils::new(&state).redirect(response_session, None, query.redirect_url.as_ref())
 }

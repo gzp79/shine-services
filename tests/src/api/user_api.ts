@@ -30,6 +30,12 @@ const UsersRoleSchema = z.object({
 });
 export type UserRoles = z.infer<typeof UsersRoleSchema>;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const EmailChangeSchema = z.object({
+    email: z.string()
+});
+export type EmailChange = z.infer<typeof EmailChangeSchema>;
+
 export class UserAPI {
     constructor(
         public readonly serviceUrl: string,
@@ -47,9 +53,7 @@ export class UserAPI {
     }
 
     async getUserInfo(sid: string, extraHeaders?: Record<string, string>): Promise<UserInfo> {
-        const response = await this.getUserInfoRequest(sid)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.getUserInfoRequest(sid).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
 
         return await response.parse(UserInfoSchema);
@@ -70,9 +74,7 @@ export class UserAPI {
         userId: string,
         extraHeaders?: Record<string, string>
     ): Promise<string[]> {
-        const response = await this.getRolesRequest(sid, masterKey, userId)
-            .withHeaders(extraHeaders ?? {})
-            .send();
+        const response = await this.getRolesRequest(sid, masterKey, userId).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
 
         return (await response.parse(UsersRoleSchema)).roles;
@@ -101,16 +103,14 @@ export class UserAPI {
             }
             return result;
         } else {
-            const response = await this.addRoleRequest(sid, masterKey, userId, role)
-                .withHeaders(extraHeaders ?? {})
-                .send();
+            const response = await this.addRoleRequest(sid, masterKey, userId, role).withHeaders(extraHeaders ?? {});
             expect(response).toHaveStatus(200);
             return (await response.parse(UsersRoleSchema)).roles;
         }
     }
 
     deleteRoleRequest(
-        sid: string | 'masterKey' | null,
+        sid: string | null,
         masterKey: boolean,
         userId: string,
         role: string
@@ -138,11 +138,51 @@ export class UserAPI {
             }
             return result;
         } else {
-            const response = await this.deleteRoleRequest(sid, masterKey, userId, role)
-                .withHeaders(extraHeaders ?? {})
-                .send();
+            const response = await this.deleteRoleRequest(sid, masterKey, userId, role).withHeaders(extraHeaders ?? {});
             expect(response).toHaveStatus(200);
             return (await response.parse(UsersRoleSchema)).roles;
         }
+    }
+
+    startConfirmEmailRequest(sid: string | null, lang?: string): ApiRequest {
+        const cs = sid && { sid };
+        const pl = lang && { lang };
+
+        return ApiRequest.post(this.urlFor(`/api/auth/user/email/confirm`))
+            .withCookies({ ...cs })
+            .withParams({ ...pl });
+    }
+
+    async startConfirmEmail(sid: string | null, lang?: string): Promise<void> {
+        const response = await this.startConfirmEmailRequest(sid, lang);
+        expect(response).toHaveStatus(200);
+    }
+
+    startChangeEmailRequest(sid: string | null, email: string, lang?: string): ApiRequest<EmailChange> {
+        const cs = sid && { sid };
+        const pl = lang && { lang };
+
+        return ApiRequest.post<EmailChange>(this.urlFor(`/api/auth/user/email/change`))
+            .withCookies({ ...cs })
+            .withParams({ ...pl })
+            .withBody({ email });
+    }
+
+    async startChangeEmail(sid: string | null, email: string, lang?: string): Promise<void> {
+        const response = await this.startChangeEmailRequest(sid, email, lang);
+        expect(response).toHaveStatus(200);
+    }
+
+    completeConfirmEmailRequest(sid: string | null, token: string): ApiRequest {
+        const cs = sid && { sid };
+
+        return ApiRequest.post(this.urlFor(`/api/auth/user/email/complete?token=${token}`)).withCookies({
+            ...cs
+        });
+    }
+
+    async completeConfirmEmail(sid: string | null, token: string): Promise<void> {
+        const response = await this.completeConfirmEmailRequest(sid, token);
+        expect(response).toHaveStatus(200);
     }
 }

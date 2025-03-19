@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import cors from 'cors';
 import { debug } from 'debug';
 import express, { Express } from 'express';
 import { Query, Request, Response, Send } from 'express-serve-static-core';
@@ -96,6 +97,8 @@ export class MockServer {
     }
 
     private initCommon() {
+        this.app.use(cors());
+
         this.app.use((err: any, _req: any, _res: any, _next: any) => {
             this.log(err.stack);
             throw err;

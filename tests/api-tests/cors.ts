@@ -5,7 +5,7 @@ import { joinURL } from '$lib/utils';
 test.describe('CORS check', { tag: ['@regression'] }, () => {
     test('Allow origin shall not be present without origin', async ({ identityUrl }) => {
         const url = joinURL(identityUrl, '/info/ready');
-        const response = await ApiRequest.get(url).send();
+        const response = await ApiRequest.get(url);
         expect(response).toHaveStatus(200);
         expect(response).toHaveHeader('access-control-allow-origin', undefined);
         expect(response).toHaveHeader('access-control-allow-credentials', 'true');
@@ -15,7 +15,7 @@ test.describe('CORS check', { tag: ['@regression'] }, () => {
         const url = joinURL(identityUrl, '/info/404');
         const originUrl = new URL(identityUrl);
         const origin = `${originUrl.protocol}//${originUrl.hostname}:${originUrl.port}`;
-        const response = await ApiRequest.get(url).withHeaders({ Origin: origin }).send();
+        const response = await ApiRequest.get(url).withHeaders({ Origin: origin });
         expect(response).toHaveStatus(404);
         expect(response).toHaveHeader('access-control-allow-origin', origin);
         expect(response).toHaveHeader('access-control-allow-credentials', 'true');
@@ -25,7 +25,7 @@ test.describe('CORS check', { tag: ['@regression'] }, () => {
         const url = joinURL(identityUrl, '/info/ready');
         const originUrl = new URL(identityUrl);
         const origin = `${originUrl.protocol}//${originUrl.hostname}:${originUrl.port}`;
-        const response = await ApiRequest.get(url).withHeaders({ Origin: origin }).send();
+        const response = await ApiRequest.get(url).withHeaders({ Origin: origin });
         expect(response).toHaveStatus(200);
         expect(response).toHaveHeader('access-control-allow-origin', origin);
         expect(response).toHaveHeader('access-control-allow-credentials', 'true');
@@ -35,7 +35,7 @@ test.describe('CORS check', { tag: ['@regression'] }, () => {
         const url = joinURL(identityUrl, '/info/ready');
         const originUrl = new URL(identityUrl);
         const origin = `${originUrl.protocol}//subdom.${originUrl.hostname}:${originUrl.port}`;
-        const response = await ApiRequest.get(url).withHeaders({ Origin: origin }).send();
+        const response = await ApiRequest.get(url).withHeaders({ Origin: origin });
         expect(response).toHaveStatus(200);
         expect(response).toHaveHeader('access-control-allow-origin', undefined);
         expect(response).toHaveHeader('access-control-allow-credentials', 'true');
@@ -45,7 +45,7 @@ test.describe('CORS check', { tag: ['@regression'] }, () => {
         const url = joinURL(identityUrl, '/info/ready');
         const originUrl = new URL(identityUrl);
         const origin = `${originUrl.protocol}//${originUrl.hostname}:123`;
-        const response = await ApiRequest.get(url).withHeaders({ Origin: origin }).send();
+        const response = await ApiRequest.get(url).withHeaders({ Origin: origin });
         expect(response).toHaveStatus(200);
         expect(response).toHaveHeader('access-control-allow-origin', origin);
         expect(response).toHaveHeader('access-control-allow-credentials', 'true');
@@ -55,7 +55,7 @@ test.describe('CORS check', { tag: ['@regression'] }, () => {
         const url = joinURL(identityUrl, '/info/ready');
         const originUrl = new URL(identityUrl);
         const origin = `file://${originUrl.hostname}:${originUrl.port}`;
-        const response = await ApiRequest.get(url).withHeaders({ Origin: origin }).send();
+        const response = await ApiRequest.get(url).withHeaders({ Origin: origin });
         expect(response).toHaveStatus(200);
         expect(response).toHaveHeader('access-control-allow-origin', undefined);
         expect(response).toHaveHeader('access-control-allow-credentials', 'true');
@@ -64,7 +64,7 @@ test.describe('CORS check', { tag: ['@regression'] }, () => {
     test('Allow origin shall not be present for another domain', async ({ identityUrl }) => {
         const url = joinURL(identityUrl, '/info/ready');
         const origin = 'https://example.com';
-        const response = await ApiRequest.get(url).withHeaders({ Origin: origin }).send();
+        const response = await ApiRequest.get(url).withHeaders({ Origin: origin });
         expect(response).toHaveStatus(200);
         expect(response).toHaveHeader('access-control-allow-origin', undefined);
         expect(response).toHaveHeader('access-control-allow-credentials', 'true');

@@ -5,7 +5,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use postgres_from_row::FromRow;
 use shine_core::{
-    db::{DBError, PGClient, PGConvertError, PGErrorChecks, ToPGType},
+    db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
     pg_query,
     web::{ClientFingerprint, SiteInfo},
 };
@@ -17,10 +17,11 @@ use super::PgIdentityDbContext;
 
 impl ToSql for TokenKind {
     fn to_sql(&self, ty: &PGType, out: &mut BytesMut) -> Result<IsNull, PGConvertError> {
-        let value = match self {
-            TokenKind::SingleAccess => 1_i16,
-            TokenKind::Persistent => 2_i16,
-            TokenKind::Access => 3_i16,
+        let value: i16 = match self {
+            TokenKind::SingleAccess => 1,
+            TokenKind::Persistent => 2,
+            TokenKind::Access => 3,
+            TokenKind::EmailAccess => 4,
         };
         value.to_sql(ty, out)
     }
@@ -36,6 +37,7 @@ impl FromSql<'_> for TokenKind {
             1 => Ok(TokenKind::SingleAccess),
             2 => Ok(TokenKind::Persistent),
             3 => Ok(TokenKind::Access),
+            4 => Ok(TokenKind::EmailAccess),
             _ => Err(PGConvertError::from("Invalid value for TokenKind")),
         }
     }
@@ -44,7 +46,7 @@ impl FromSql<'_> for TokenKind {
 }
 
 impl ToPGType for TokenKind {
-    const PG_TYPE: PGType = PGType::INT2;
+    type PGValueType = PGValueTypeINT2;
 }
 
 #[derive(FromRow)]
@@ -55,21 +57,21 @@ struct InsertTokenRow {
 
 pg_query!( InsertToken =>
     in = user_id: Uuid, token: &str,
-        fingerprint: Option<&str>, kind: TokenKind,
+        kind: TokenKind, fingerprint: Option<&str>, email: Option<&str>,
         expire_s: i32,
         agent: &str, country: Option<&str>, region: Option<&str>, city: Option<&str>;
     out = InsertTokenRow;
     sql =  r#"
         INSERT INTO login_tokens (
-                user_id, token, created, 
-                fingerprint, kind,  
-                expire, 
+                user_id, token, created,
+                kind, fingerprint, email,
+                expire,
                 agent, country, region, city)
             VALUES (
-                $1, $2, now(), 
-                $3, $4, 
-                now() + $5 * interval '1 seconds',
-                $6, $7, $8, $9)
+                $1, $2, now(),
+                $3, $4, $5,
+                now() + $6 * interval '1 seconds',
+                $7, $8, $9, $10)
         RETURNING created, expire
     "#
 );
@@ -81,6 +83,7 @@ struct TokenRow {
     created: DateTime<Utc>,
     expire: DateTime<Utc>,
     fingerprint: Option<String>,
+    email: Option<String>,
     kind: TokenKind,
     is_expired: bool,
     agent: String,
@@ -93,7 +96,7 @@ pg_query!( FindByHashToken =>
     in = token: &str;
     out = TokenRow;
     sql = r#"
-        SELECT t.user_id, t.token, t.created, t.expire, t.fingerprint, t.kind, t.expire < now() is_expired,
+        SELECT t.user_id, t.token, t.created, t.expire, t.fingerprint, t.email, t.kind, t.expire < now() is_expired,
                 t.agent, t.country, t.region, t.city
             FROM login_tokens t
             WHERE t.token = $1
@@ -104,7 +107,7 @@ pg_query!( ListByUser =>
     in = user_id: Uuid;
     out = TokenRow;
     sql = r#"
-        SELECT t.user_id, t.token, t.created, t.expire, t.fingerprint, t.kind, t.expire < now() is_expired,
+        SELECT t.user_id, t.token, t.created, t.expire, t.fingerprint, t.email, t.kind, t.expire < now() is_expired,
                 t.agent, t.country, t.region, t.city
             FROM login_tokens t
             WHERE t.user_id = $1
@@ -146,6 +149,7 @@ struct IdentityTokenRow {
     token_created: DateTime<Utc>,
     token_expire: DateTime<Utc>,
     token_fingerprint: Option<String>,
+    token_email: Option<String>,
     token_kind: TokenKind,
     token_is_expired: bool,
     token_agent: String,
@@ -156,7 +160,7 @@ struct IdentityTokenRow {
 
 // Test token for use. Compared to find it also returns the identity
 pg_query!( TestToken =>
-    in = token: &str, kind: TokenKind;
+    in = token: &str, allowed_kind: &[TokenKind];
     out = IdentityTokenRow;
     sql = r#"
         SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
@@ -164,6 +168,7 @@ pg_query!( TestToken =>
                 t.created token_created, 
                 t.expire token_expire, 
                 t.fingerprint token_fingerprint, 
+                t.email token_email,
                 t.kind token_kind, 
                 t.expire < now() token_is_expired,
                 t.agent token_agent,
@@ -173,18 +178,18 @@ pg_query!( TestToken =>
             FROM login_tokens t, identities i
             WHERE t.user_id = i.user_id
                 AND t.token = $1
-                AND t.kind = $2
+                AND t.kind = any($2)
     "#
 );
 
 // Test token for use. Compared to find it also returns the identity
 pg_query!( TakeToken =>
-    in = token: &str, kind: TokenKind;
+    in = token: &str, allowed_kind: &[TokenKind];
     out = IdentityTokenRow;
     sql = r#"
     WITH t AS (
         DELETE FROM login_tokens lt
-        WHERE lt.token = $1 AND lt.kind = $2
+        WHERE lt.token = $1 AND lt.kind = any($2)
         RETURNING *        
     )
     SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
@@ -192,6 +197,7 @@ pg_query!( TakeToken =>
         t.created token_created, 
         t.expire token_expire, 
         t.fingerprint token_fingerprint, 
+        t.email token_email,
         t.kind token_kind, 
         t.expire < now() token_is_expired,
         t.agent token_agent,
@@ -238,7 +244,8 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
         kind: TokenKind,
         token_hash: &str,
         time_to_live: &Duration,
-        fingerprint: Option<&ClientFingerprint>,
+        fingerprint_to_bind_to: Option<&ClientFingerprint>,
+        email_to_bind_to: Option<&str>,
         site_info: &SiteInfo,
     ) -> Result<TokenInfo, IdentityError> {
         let time_to_live = time_to_live.num_seconds() as i32;
@@ -250,8 +257,9 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
                 &self.client,
                 &user_id,
                 &token_hash,
-                &fingerprint.map(|f| f.as_str()),
                 &kind,
+                &fingerprint_to_bind_to.map(|f| f.as_str()),
+                &email_to_bind_to,
                 &time_to_live,
                 &site_info.agent.as_str(),
                 &site_info.country.as_deref(),
@@ -265,7 +273,10 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
                 return Err(IdentityError::TokenConflict);
             }
             Err(err) if err.is_constraint("login_tokens", "chk_fingerprint") => {
-                return Err(IdentityError::MissingFingerprint);
+                return Err(IdentityError::TokenMissingFingerprint);
+            }
+            Err(err) if err.is_constraint("login_tokens", "chk_email") => {
+                return Err(IdentityError::TokenMissingEmail);
             }
             Err(err) => {
                 return Err(IdentityError::DBError(err.into()));
@@ -279,7 +290,8 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
             created_at: row.created,
             expire_at: row.expire,
             is_expired: false,
-            fingerprint: fingerprint.map(|f| f.to_string()),
+            bound_fingerprint: fingerprint_to_bind_to.map(|f| f.to_string()),
+            bound_email: email_to_bind_to.map(|e| e.to_string()),
             agent: site_info.agent.clone(),
             country: site_info.country.clone(),
             region: site_info.region.clone(),
@@ -302,7 +314,8 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
                 created_at: row.created,
                 expire_at: row.expire,
                 is_expired: row.is_expired,
-                fingerprint: row.fingerprint,
+                bound_fingerprint: row.fingerprint,
+                bound_email: row.email,
                 agent: row.agent,
                 country: row.country,
                 region: row.region,
@@ -326,7 +339,8 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
                 created_at: row.created,
                 expire_at: row.expire,
                 is_expired: row.is_expired,
-                fingerprint: row.fingerprint,
+                bound_fingerprint: row.fingerprint,
+                bound_email: row.email,
                 agent: row.agent,
                 country: row.country,
                 region: row.region,
@@ -381,13 +395,13 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
     #[instrument(skip(self))]
     async fn test_token(
         &mut self,
-        kind: TokenKind,
+        allowed_kind: &[TokenKind],
         token_hash: &str,
     ) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
         let row = self
             .stmts_tokens
             .test
-            .query_opt(&self.client, &token_hash, &kind)
+            .query_opt(&self.client, &token_hash, &allowed_kind)
             .await
             .map_err(DBError::from)?;
         Ok(row.map(|row| {
@@ -398,7 +412,8 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
                 created_at: row.token_created,
                 expire_at: row.token_expire,
                 is_expired: row.token_is_expired,
-                fingerprint: row.token_fingerprint,
+                bound_fingerprint: row.token_fingerprint,
+                bound_email: row.token_email,
                 agent: row.token_agent,
                 country: row.token_country,
                 region: row.token_region,
@@ -422,13 +437,13 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
     #[instrument(skip(self))]
     async fn take_token(
         &mut self,
-        kind: TokenKind,
+        allowed_kind: &[TokenKind],
         token_hash: &str,
     ) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
         let row = self
             .stmts_tokens
             .take
-            .query_opt(&self.client, &token_hash, &kind)
+            .query_opt(&self.client, &token_hash, &allowed_kind)
             .await
             .map_err(DBError::from)?;
         Ok(row.map(|row| {
@@ -439,7 +454,8 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
                 created_at: row.token_created,
                 expire_at: row.token_expire,
                 is_expired: row.token_is_expired,
-                fingerprint: row.token_fingerprint,
+                bound_fingerprint: row.token_fingerprint,
+                bound_email: row.token_email,
                 agent: row.token_agent,
                 country: row.token_country,
                 region: row.token_region,

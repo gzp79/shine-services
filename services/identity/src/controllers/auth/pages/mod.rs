@@ -1,3 +1,5 @@
+mod guest_login;
+pub use self::guest_login::*;
 mod token_login;
 pub use self::token_login::*;
 mod oauth2_login;
@@ -12,6 +14,7 @@ mod oidc_link;
 pub use self::oidc_link::*;
 mod oidc_auth;
 pub use self::oidc_auth::*;
+
 mod logout;
 pub use self::logout::*;
 mod validate;
