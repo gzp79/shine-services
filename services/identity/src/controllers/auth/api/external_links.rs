@@ -2,7 +2,7 @@ use crate::{app_state::AppState, repositories::identity::ExternalLink};
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::web::{
+use shine_infra::web::{
     CheckedCurrentUser, IntoProblemResponse, Problem, ProblemConfig, ProblemResponse, ValidatedPath,
 };
 use url::Url;

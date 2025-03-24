@@ -1,6 +1,6 @@
 use crate::repositories::identity::Identity;
 use chrono::{DateTime, Utc};
-use shine_core::web::SiteInfo;
+use shine_infra::web::SiteInfo;
 use std::future::Future;
 use uuid::Uuid;
 

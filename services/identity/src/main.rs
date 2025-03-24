@@ -11,7 +11,7 @@ use self::{
     controllers::{auth, health::HealthController, identity},
 };
 use anyhow::Error as AnyError;
-use shine_core::web::{WebAppConfig, WebApplication};
+use shine_infra::web::{WebAppConfig, WebApplication};
 use utoipa_axum::router::OpenApiRouter;
 
 struct Application {}
@@ -21,7 +21,9 @@ impl WebApplication for Application {
     type AppState = AppState;
 
     async fn create_state(&self, config: &WebAppConfig<Self::AppConfig>) -> Result<Self::AppState, AnyError> {
-        AppState::new(config).await
+        let state = AppState::new(config).await?;
+
+        Ok(state)
     }
 
     async fn create_routes(
@@ -38,5 +40,5 @@ impl WebApplication for Application {
 
 pub fn main() {
     let app = Application {};
-    shine_core::web::run_web_app(app);
+    shine_infra::web::run_web_app(app);
 }

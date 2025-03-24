@@ -82,6 +82,7 @@ utoipa-swagger-ui = { workspace = true }
 lettre = "0.11"
 
 shine-core = { workspace = true }
+shine-infra = { workspace = true }
 
 [dev-dependencies]
 shine-test = { workspace = true }

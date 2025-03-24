@@ -13,7 +13,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Utc};
 use rand::{rng, Rng};
 use serde::{Deserialize, Serialize};
-use shine_core::web::{CheckedCurrentUser, CurrentUser, WebAppConfig};
+use shine_infra::web::{CheckedCurrentUser, CurrentUser, WebAppConfig};
 use std::{convert::Infallible, sync::Arc};
 use thiserror::Error as ThisError;
 use time::{Duration, OffsetDateTime};
@@ -198,10 +198,12 @@ impl AuthSession {
     /// Clear the session and revoke the session from the session store.
     #[must_use]
     pub async fn revoke_session(mut self, state: &AppState) -> Self {
-        state
-            .session_user_handler()
-            .revoke_opt_session(self.session.take())
-            .await;
+        if let Some(session) = self.session.take() {
+            state
+                .session_user_handler()
+                .revoke_session(session.user_id, &session.key)
+                .await;
+        }
         self
     }
 
@@ -223,10 +225,12 @@ impl AuthSession {
     #[must_use]
     pub async fn revoke_access(mut self, state: &AppState) -> Self {
         if let Some(token_cookie) = self.access.take() {
-            state
-                .session_user_handler()
-                .revoke_opt_access(TokenKind::Access, token_cookie.revoked_token)
-                .await;
+            if let Some(revoked_token) = &token_cookie.revoked_token {
+                state
+                    .session_user_handler()
+                    .revoke_access(TokenKind::Access, revoked_token)
+                    .await;
+            }
             state
                 .session_user_handler()
                 .revoke_access(TokenKind::Access, &token_cookie.key)

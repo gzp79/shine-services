@@ -9,7 +9,7 @@ use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier};
 use openidconnect::{Nonce, TokenResponse};
 use serde::Deserialize;
-use shine_core::web::{ClientFingerprint, ErrorResponse, InputError, SiteInfo, ValidatedQuery};
+use shine_infra::web::{ClientFingerprint, ErrorResponse, InputError, SiteInfo, ValidatedQuery};
 use std::sync::Arc;
 use utoipa::IntoParams;
 use validator::Validate;

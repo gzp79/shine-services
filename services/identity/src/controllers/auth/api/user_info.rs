@@ -2,7 +2,7 @@ use crate::{app_state::AppState, repositories::identity::IdentityKind};
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::web::{
+use shine_infra::web::{
     CheckedCurrentUser, CurrentUser, IntoProblemResponse, Problem, ProblemConfig, ProblemResponse, ValidatedQuery,
 };
 use url::Url;
@@ -49,6 +49,8 @@ pub async fn get_user_info(
     user: CheckedCurrentUser,
     ValidatedQuery(query): ValidatedQuery<QueryParams>,
 ) -> Result<Json<CurrentUserInfo>, ProblemResponse> {
+    //todo: move it into some handler
+
     // find extra information not present in the session data
     let identity = state
         .identity_service()
@@ -62,7 +64,7 @@ pub async fn get_user_info(
                 .into_response(&problem_config)
         })?;
 
-    // make sure the redis is to date
+    // make sure the redis is up to date
     let user_info = if query.refresh.unwrap_or(false) {
         let roles = state
             .identity_service()

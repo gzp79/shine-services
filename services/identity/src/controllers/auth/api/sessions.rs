@@ -2,7 +2,7 @@ use crate::app_state::AppState;
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use shine_core::web::{CheckedCurrentUser, IntoProblemResponse, ProblemConfig, ProblemResponse};
+use shine_infra::web::{CheckedCurrentUser, IntoProblemResponse, ProblemConfig, ProblemResponse};
 use utoipa::ToSchema;
 use uuid::Uuid;
 

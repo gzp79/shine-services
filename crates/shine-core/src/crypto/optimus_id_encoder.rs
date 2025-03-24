@@ -1,6 +1,4 @@
-use crate::utils::Optimus;
-
-use super::{IdEncoder, IdEncoderError};
+use super::{IdEncoder, IdEncoderError, Optimus};
 
 pub struct OptimusIdEncoder(Optimus);
 

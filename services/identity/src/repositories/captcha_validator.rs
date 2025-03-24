@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use shine_core::web::Problem;
+use shine_infra::web::Problem;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 use uuid::Uuid;

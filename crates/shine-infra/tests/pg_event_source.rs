@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use shine_core::db::{
+use shine_infra::db::{
     self,
     event_source::{self, Aggregate, Event, EventDb, EventStore, EventStoreError, SnapshotStore},
     DBError, PGConnectionPool,

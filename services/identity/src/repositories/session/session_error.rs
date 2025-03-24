@@ -1,4 +1,4 @@
-use shine_core::{
+use shine_infra::{
     db::DBError,
     web::{Problem, SessionKeyError},
 };

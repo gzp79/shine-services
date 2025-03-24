@@ -18,7 +18,7 @@ mod pages;
 use crate::{app_config::AppConfig, app_state::AppState};
 use anyhow::Error as AnyError;
 use axum::Extension;
-use shine_core::web::WebAppConfig;
+use shine_infra::web::WebAppConfig;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 mod auth_error;

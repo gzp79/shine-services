@@ -2,7 +2,7 @@ use crate::repositories::identity::{Identities, Identity, IdentityBuildError, Id
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
-use shine_core::{
+use shine_infra::{
     db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
     pg_query,
 };
@@ -190,6 +190,7 @@ impl<'a> Identities for PgIdentityDbContext<'a> {
         name: Option<&str>,
         email: Option<(&str, bool)>,
     ) -> Result<Option<Identity>, IdentityError> {
+        //todo: use PgVersionedUpdate to trigger a session update for name and similar things
         let identity_row = match self
             .stmts_identities
             .update

@@ -5,7 +5,7 @@ use crate::repositories::{
 use chrono::{DateTime, Utc};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use shine_core::{
+use shine_infra::{
     db::{DBError, RedisJsonValue},
     web::SiteInfo,
 };

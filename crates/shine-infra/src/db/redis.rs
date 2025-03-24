@@ -1,7 +1,7 @@
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 
 pub use bb8_redis::RedisConnectionManager;
-pub use shine_core_macros::RedisJsonValue;
+pub use shine_infra_macros::RedisJsonValue;
 
 pub type RedisConnectionError = RunError<<RedisConnectionManager as ManageConnection>::Error>;
 pub type RedisConnectionPool = BB8Pool<RedisConnectionManager>;

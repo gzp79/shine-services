@@ -1,6 +1,6 @@
 use crate::repositories::DBConfig;
 use serde::{Deserialize, Serialize};
-use shine_core::web::FeatureConfig;
+use shine_infra::web::FeatureConfig;
 
 /// The application configuration
 #[derive(Debug, Serialize, Deserialize)]

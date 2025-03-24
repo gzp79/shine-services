@@ -1,6 +1,6 @@
 use crate::repositories::identity::{IdentityBuildError, IdentityError, Roles};
 use postgres_from_row::FromRow;
-use shine_core::{
+use shine_infra::{
     db::{DBError, PGClient, PGErrorChecks},
     pg_query,
 };

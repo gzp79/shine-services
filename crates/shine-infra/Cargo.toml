@@ -1,0 +1,116 @@
+[package]
+name = "shine-infra"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = ["ot_otlp", "ot_zipkin", "ot_app_insight"]
+
+ot_otlp = ["opentelemetry-otlp"]
+ot_zipkin = ["opentelemetry-zipkin"]
+ot_app_insight = ["reqwest", "opentelemetry-application-insights"]
+
+[dependencies]
+log = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+config = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+time = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+url = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+ring = { workspace = true }
+regex = { workspace = true }
+harsh = "0.2"
+primal-check = "0.3"
+
+############################# RUNTIME #############################
+pin-project = { workspace = true }
+futures = { workspace = true }
+futures-channel = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["macros", "signal"] }
+
+############################# TRACING #############################
+tracing = { workspace = true }
+tracing-log = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+tracing-opentelemetry = { version = "0.28", features = [
+    "metrics",
+    "tracing-log",
+] }
+tracing-opentelemetry-instrumentation-sdk = "0.24"
+prometheus = "0.13"
+opentelemetry = "0.27"
+opentelemetry-semantic-conventions = "0.27"
+opentelemetry_sdk = { version = "0.27", features = [
+    "rt-tokio",
+    "metrics",
+    "trace",
+] }
+opentelemetry-stdout = { version = "0.27", features = ["logs", "trace"] }
+opentelemetry-otlp = { version = "0.27", features = [
+    "tokio",
+    "tonic",
+], optional = true }
+opentelemetry-zipkin = { version = "0.27", features = [
+    "reqwest-client",
+], default-features = false, optional = true }
+opentelemetry-prometheus = "0.27"
+opentelemetry-application-insights = { version = "0.37", features = [
+    "reqwest-client-rustls",
+], optional = true }
+
+
+############################# DB #############################
+bb8 = { workspace = true }
+bb8-redis = { workspace = true }
+redis = { workspace = true, features = ["json"] }
+bb8-postgres = { workspace = true }
+tokio-postgres = { workspace = true, features = [
+    "with-uuid-1",
+    "with-chrono-0_4",
+    "runtime",
+] }
+tokio-rustls = { workspace = true }
+tokio-postgres-rustls = { workspace = true }
+postgres-from-row = { workspace = true }
+refinery = { workspace = true }
+
+############################# AZURE #############################
+azure_core = { workspace = true }
+azure_identity = { workspace = true }
+azure_security_keyvault = { version = "0.21" }
+
+############################# NET #############################
+rustls = { workspace = true }
+reqwest = { workspace = true, optional = true }
+rustls-native-certs = "0.8"
+
+############################# WEB #############################
+validator = { workspace = true }
+utoipa = { workspace = true }
+utoipa-axum = { workspace = true }
+utoipa-swagger-ui = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["trace", "cors"] }
+axum = { workspace = true }
+axum-server = { workspace = true }
+axum-extra = { workspace = true, features = [
+    "cookie",
+    "cookie-signed",
+    "cookie-private",
+    "typed-header",
+] }
+
+############################# MEMBERS #############################
+shine-infra-macros = { workspace = true }
+
+[dev-dependencies]
+shine-test = { workspace = true }

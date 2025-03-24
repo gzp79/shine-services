@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use shine_core::web::{Environment, FeatureConfig, WebAppConfig};
+use shine_infra::web::{Environment, FeatureConfig, WebAppConfig};
 use shine_test::test;
 use std::env;
 

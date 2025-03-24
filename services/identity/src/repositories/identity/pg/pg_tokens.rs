@@ -4,7 +4,7 @@ use crate::repositories::identity::{
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use postgres_from_row::FromRow;
-use shine_core::{
+use shine_infra::{
     db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
     pg_query,
     web::{ClientFingerprint, SiteInfo},

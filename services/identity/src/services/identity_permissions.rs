@@ -1,7 +1,7 @@
-use shine_core::web::{roles, CorePermissions, CurrentUser, PermissionSet};
+use shine_infra::web::{roles, CorePermissions, CurrentUser, PermissionSet};
 
 pub mod permissions {
-    pub use shine_core::web::permissions::*;
+    pub use shine_infra::web::permissions::*;
 
     /// Allow to query the general information of an identity
     pub const READ_ANY_IDENTITY: &str = "ReadAnyIdentity";

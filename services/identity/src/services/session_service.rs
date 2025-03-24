@@ -4,7 +4,7 @@ use crate::repositories::{
 };
 use chrono::Utc;
 use ring::{digest, rand::SystemRandom};
-use shine_core::web::{ClientFingerprint, SessionKey, SiteInfo};
+use shine_infra::web::{ClientFingerprint, SessionKey, SiteInfo};
 use uuid::Uuid;
 
 pub struct SessionService<DB: SessionDb> {

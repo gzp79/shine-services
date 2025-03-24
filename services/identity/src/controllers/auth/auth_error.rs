@@ -2,7 +2,7 @@ use crate::{
     handlers::{CreateUserError, LoginTokenError},
     repositories::{identity::IdentityError, session::SessionError, CaptchaError},
 };
-use shine_core::web::{InputError, Problem};
+use shine_infra::web::{InputError, Problem};
 use thiserror::Error as ThisError;
 
 const INPUT_ERROR: &str = "auth-input-error";

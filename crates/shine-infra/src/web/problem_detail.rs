@@ -1,10 +1,10 @@
-use crate::utils::serde_status_code;
+use crate::serde::serde_status_code;
+use serde::Serialize;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
     Extension, Json,
 };
-use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::fmt;
 use url::Url;
@@ -24,7 +24,7 @@ pub mod problems {
 /// the specification [RFC-7807](https://datatracker.ietf.org/doc/html/rfc7807).
 #[derive(Debug, Serialize)]
 pub struct Problem {
-    #[serde(rename = "status", serialize_with = "serde_status_code::serialize")]
+    #[serde(rename = "status", with = "serde_status_code")]
     pub status: StatusCode,
     #[serde(rename = "type")]
     pub ty: &'static str,

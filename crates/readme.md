@@ -3,8 +3,9 @@
 Some common crates for the shine project:
 - shine-test-macros
 - shine-test
-- shine-core-macros
 - shine-core
+- shine-infra-macros
+- shine-infra
   
 ## shine-test
 
@@ -14,5 +15,9 @@ This crate was highly inspired by the [test-log](https://crates.io/crates/test-l
 
 ## shine-core
 
-The common features for all the server projects.
+The common algorithm, extensions for all the projects
+
+## shine-infra, shine-infra-macros
+
+The common features for all the (web) server projects.
 

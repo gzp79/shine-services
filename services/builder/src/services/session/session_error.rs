@@ -1,5 +1,5 @@
 use axum::http::StatusCode;
-use shine_core::web::Problem;
+use shine_infra::web::Problem;
 use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
