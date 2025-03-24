@@ -10,10 +10,12 @@ COPY ./crates/shine-test-macros/Cargo.toml ./crates/shine-test-macros/
 RUN mkdir -p ./crates/shine-test-macros/src && touch ./crates/shine-test-macros/src/lib.rs
 COPY ./crates/shine-test/Cargo.toml ./crates/shine-test/
 RUN mkdir -p ./crates/shine-test/src && touch ./crates/shine-test/src/lib.rs
-COPY ./crates/shine-core-macros/Cargo.toml ./crates/shine-core-macros/
-RUN mkdir -p ./crates/shine-core-macros/src && touch ./crates/shine-core-macros/src/lib.rs
 COPY ./crates/shine-core/Cargo.toml ./crates/shine-core/
 RUN mkdir -p ./crates/shine-core/src && touch ./crates/shine-core/src/lib.rs
+COPY ./crates/shine-infra-macros/Cargo.toml ./crates/shine-infra-macros/
+RUN mkdir -p ./crates/shine-infra-macros/src && touch ./crates/shine-infra-macros/src/lib.rs
+COPY ./crates/shine-infra/Cargo.toml ./crates/shine-infra/
+RUN mkdir -p ./crates/shine-infra/src && touch ./crates/shine-infra/src/lib.rs
 COPY ./services/identity/Cargo.toml ./services/identity/
 RUN mkdir -p ./services/identity/src && echo "fn main() {}" >./services/identity/src/main.rs
 COPY ./services/builder/Cargo.toml ./services/builder/

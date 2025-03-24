@@ -1,5 +1,6 @@
 use serde_json::json;
-use shine_core::{db::DBError, utils::IdEncoderError, web::Problem};
+use shine_core::crypto::IdEncoderError;
+use shine_infra::{db::DBError, web::Problem};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 

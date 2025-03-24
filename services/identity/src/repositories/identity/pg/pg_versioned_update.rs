@@ -1,5 +1,5 @@
 use crate::repositories::identity::{IdentityBuildError, IdentityError};
-use shine_core::{
+use shine_infra::{
     db::{DBError, PGClient, PGPooledConnection, PGTransaction},
     pg_query,
 };

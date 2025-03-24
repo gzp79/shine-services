@@ -1,4 +1,4 @@
-use crate::utils::serde_status_code;
+use crate::serde::serde_status_code;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -24,7 +24,7 @@ pub mod problems {
 /// the specification [RFC-7807](https://datatracker.ietf.org/doc/html/rfc7807).
 #[derive(Debug, Serialize)]
 pub struct Problem {
-    #[serde(rename = "status", serialize_with = "serde_status_code::serialize")]
+    #[serde(rename = "status", with = "serde_status_code")]
     pub status: StatusCode,
     #[serde(rename = "type")]
     pub ty: &'static str,

@@ -4235,6 +4235,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shine-core",
+ "shine-infra",
  "shine-test",
  "thiserror 2.0.11",
  "tokio",
@@ -4248,6 +4249,90 @@ dependencies = [
 
 [[package]]
 name = "shine-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "futures",
+ "futures-channel",
+ "harsh",
+ "hex",
+ "log",
+ "pin-project",
+ "primal-check",
+ "regex",
+ "ring",
+ "serde",
+ "serde_json",
+ "shine-test",
+ "thiserror 2.0.11",
+ "time",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "shine-identity"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum 0.8.1",
+ "axum-extra",
+ "axum-server",
+ "azure_core",
+ "azure_identity",
+ "base64 0.22.1",
+ "bb8",
+ "bb8-postgres",
+ "bb8-redis",
+ "bcrypt",
+ "bytes",
+ "chrono",
+ "config",
+ "futures",
+ "hex",
+ "lettre",
+ "log",
+ "oauth2 5.0.0",
+ "openidconnect",
+ "postgres-from-row",
+ "rand 0.9.0",
+ "redis",
+ "refinery",
+ "regex",
+ "reqwest",
+ "ring",
+ "rustls",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "shine-core",
+ "shine-infra",
+ "shine-test",
+ "tera",
+ "thiserror 2.0.11",
+ "time",
+ "tokio",
+ "tokio-postgres",
+ "tokio-postgres-rustls",
+ "tokio-rustls",
+ "tower-http",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
+ "url",
+ "utoipa",
+ "utoipa-axum",
+ "utoipa-swagger-ui",
+ "uuid",
+ "validator",
+]
+
+[[package]]
+name = "shine-infra"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -4290,7 +4375,7 @@ dependencies = [
  "rustls-native-certs 0.8.1",
  "serde",
  "serde_json",
- "shine-core-macros",
+ "shine-infra-macros",
  "shine-test",
  "thiserror 2.0.11",
  "time",
@@ -4314,68 +4399,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "shine-core-macros"
+name = "shine-infra-macros"
 version = "0.1.0"
 dependencies = [
  "quote",
  "syn",
-]
-
-[[package]]
-name = "shine-identity"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum 0.8.1",
- "axum-extra",
- "axum-server",
- "azure_core",
- "azure_identity",
- "base64 0.22.1",
- "bb8",
- "bb8-postgres",
- "bb8-redis",
- "bcrypt",
- "bytes",
- "chrono",
- "config",
- "futures",
- "hex",
- "lettre",
- "log",
- "oauth2 5.0.0",
- "openidconnect",
- "postgres-from-row",
- "rand 0.9.0",
- "redis",
- "refinery",
- "regex",
- "reqwest",
- "ring",
- "rustls",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "shine-core",
- "shine-test",
- "tera",
- "thiserror 2.0.11",
- "time",
- "tokio",
- "tokio-postgres",
- "tokio-postgres-rustls",
- "tokio-rustls",
- "tower-http",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
- "url",
- "utoipa",
- "utoipa-axum",
- "utoipa-swagger-ui",
- "uuid",
- "validator",
 ]
 
 [[package]]

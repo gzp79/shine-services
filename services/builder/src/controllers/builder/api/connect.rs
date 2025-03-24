@@ -12,7 +12,7 @@ use axum::{
 };
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
-use shine_core::web::{
+use shine_infra::web::{
     CheckedCurrentUser, CurrentUser, IntoProblemResponse, ProblemConfig, ProblemResponse, ValidatedPath,
 };
 use std::sync::Arc;

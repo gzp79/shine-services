@@ -1,5 +1,5 @@
 use chrono::Duration;
-use shine_core::db::{DBError, RedisConnectionPool, RedisPooledConnection};
+use shine_infra::db::{DBError, RedisConnectionPool, RedisPooledConnection};
 
 use crate::repositories::session::{SessionBuildError, SessionDb, SessionDbContext, SessionError};
 

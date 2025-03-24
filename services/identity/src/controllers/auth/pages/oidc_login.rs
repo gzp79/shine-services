@@ -10,10 +10,8 @@ use openidconnect::{
     Nonce,
 };
 use serde::Deserialize;
-use shine_core::{
-    utils::random,
-    web::{ErrorResponse, InputError, ValidatedQuery},
-};
+use shine_core::crypto::random;
+use shine_infra::web::{ErrorResponse, InputError, ValidatedQuery};
 use std::sync::Arc;
 use url::Url;
 use utoipa::IntoParams;

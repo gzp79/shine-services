@@ -1,8 +1,8 @@
 use crate::app_state::AppState;
 use axum::{extract::State, Extension};
 use serde::Deserialize;
-use shine_core::{
-    consts::Language,
+use shine_infra::{
+    language::Language,
     web::{CheckedCurrentUser, IntoProblemResponse, ProblemConfig, ProblemResponse, ValidatedJson, ValidatedQuery},
 };
 use utoipa::{IntoParams, ToSchema};

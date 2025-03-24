@@ -12,7 +12,7 @@ use ring::{
     aead::{self, Nonce},
     rand::{SecureRandom, SystemRandom},
 };
-use shine_core::{consts::Language, web::Problem};
+use shine_infra::{language::Language, web::Problem};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 

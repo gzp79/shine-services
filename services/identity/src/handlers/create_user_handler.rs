@@ -3,7 +3,7 @@ use crate::{
     repositories::identity::{ExternalUserInfo, Identity, IdentityDb, IdentityError},
     services::IdentityService,
 };
-use shine_core::web::Problem;
+use shine_infra::web::Problem;
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 use validator::ValidateEmail;

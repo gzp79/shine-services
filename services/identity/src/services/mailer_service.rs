@@ -3,7 +3,7 @@ use crate::{
     services::SettingsService,
 };
 use ring::digest;
-use shine_core::consts::Language;
+use shine_infra::language::Language;
 use tera::Tera;
 
 #[derive(Clone)]

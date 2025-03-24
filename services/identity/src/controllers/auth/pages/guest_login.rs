@@ -5,7 +5,7 @@ use crate::{
 };
 use axum::extract::State;
 use serde::Deserialize;
-use shine_core::web::{ClientFingerprint, CurrentUser, ErrorResponse, InputError, SiteInfo, ValidatedQuery};
+use shine_infra::web::{ClientFingerprint, CurrentUser, ErrorResponse, InputError, SiteInfo, ValidatedQuery};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;

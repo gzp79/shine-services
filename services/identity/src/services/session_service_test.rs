@@ -7,7 +7,7 @@ use crate::{
 };
 use chrono::{Duration, Utc};
 use ring::rand::SystemRandom;
-use shine_core::{
+use shine_infra::{
     db,
     web::{ClientFingerprint, SessionKey, SiteInfo},
 };

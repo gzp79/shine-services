@@ -12,10 +12,8 @@ use anyhow::{anyhow, Error as AnyError};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD as B64, Engine};
 use chrono::Duration;
 use ring::{aead, rand::SystemRandom};
-use shine_core::{
-    utils::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
-    web::{ProblemConfig, WebAppConfig},
-};
+use shine_core::crypto::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder};
+use shine_infra::web::{ProblemConfig, WebAppConfig};
 use std::sync::Arc;
 use tera::Tera;
 

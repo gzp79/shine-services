@@ -6,7 +6,7 @@ use crate::{
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::web::{CheckedCurrentUser, IntoProblemResponse, ProblemConfig, ProblemResponse, ValidatedQuery};
+use shine_infra::web::{CheckedCurrentUser, IntoProblemResponse, ProblemConfig, ProblemResponse, ValidatedQuery};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validator::Validate;

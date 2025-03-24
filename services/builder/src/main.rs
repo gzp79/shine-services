@@ -7,7 +7,7 @@ mod services;
 use self::{app_config::AppConfig, app_state::AppState};
 use anyhow::Error as AnyError;
 use controllers::{builder::BuilderController, health::HealthController};
-use shine_core::web::{WebAppConfig, WebApplication};
+use shine_infra::web::{WebAppConfig, WebApplication};
 use utoipa_axum::router::OpenApiRouter;
 
 struct Application;
@@ -33,5 +33,5 @@ impl WebApplication for Application {
 
 pub fn main() {
     let app = Application;
-    shine_core::web::run_web_app(app);
+    shine_infra::web::run_web_app(app);
 }

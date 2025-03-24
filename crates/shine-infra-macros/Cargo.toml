@@ -1,5 +1,5 @@
 [package]
-name = "shine-core-macros"
+name = "shine-infra-macros"
 version.workspace = true
 edition.workspace = true
 

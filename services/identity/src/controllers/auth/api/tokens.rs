@@ -5,7 +5,7 @@ use crate::{
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use shine_core::web::{
+use shine_infra::web::{
     CheckedCurrentUser, ClientFingerprint, IntoProblemResponse, Problem, ProblemConfig, ProblemResponse, SiteInfo,
     ValidatedJson, ValidatedPath, ValidationErrorEx,
 };

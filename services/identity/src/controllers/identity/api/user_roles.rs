@@ -8,7 +8,7 @@ use axum_extra::{
     TypedHeader,
 };
 use serde::{Deserialize, Serialize};
-use shine_core::web::{
+use shine_infra::web::{
     CheckedCurrentUser, IntoProblemResponse, PermissionError, Problem, ProblemConfig, ProblemResponse, ValidatedJson,
     ValidatedPath,
 };
@@ -91,6 +91,7 @@ pub async fn add_user_role(
                 .into_response(&problem_config)
         })?;
 
+    //todo: make it triggered by the identity
     let (_, roles) = state
         .session_user_handler()
         .refresh_session_user(path.user_id)
@@ -209,6 +210,7 @@ pub async fn delete_user_role(
                 .into_response(&problem_config)
         })?;
 
+    //todo: make it triggered by the identity
     let (_, roles) = state
         .session_user_handler()
         .refresh_session_user(path.user_id)

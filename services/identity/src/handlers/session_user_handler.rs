@@ -6,7 +6,7 @@ use crate::{
     },
     services::{IdentityService, SessionService},
 };
-use shine_core::web::{CurrentUser, Problem};
+use shine_infra::web::{Problem, SessionKey};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 
@@ -70,6 +70,7 @@ where
         Ok((identity, roles))
     }
 
+    // todo: instead of calling this method, we should trigger it by events
     pub async fn refresh_session_user(&self, user_id: Uuid) -> Result<(Identity, Vec<String>), SessionUserSyncError> {
         match self.get_user_info(user_id).await {
             Ok((identity, roles)) => {
@@ -86,31 +87,15 @@ where
         }
     }
 
-    pub async fn revoke_session(&self, user_session: CurrentUser) {
-        if let Err(err) = self
-            .session_service
-            .remove(user_session.user_id, &user_session.key)
-            .await
-        {
-            log::error!("Failed to revoke session for user {}: {}", user_session.user_id, err);
-        }
-    }
-
-    pub async fn revoke_opt_session(&self, user_session: Option<CurrentUser>) {
-        if let Some(user_session) = user_session {
-            self.revoke_session(user_session).await;
+    pub async fn revoke_session(&self, user_id: Uuid, session_key: &SessionKey) {
+        if let Err(err) = self.session_service.remove(user_id, session_key).await {
+            log::error!("Failed to revoke session for user {}: {}", user_id, err);
         }
     }
 
     pub async fn revoke_access(&self, kind: TokenKind, token: &str) {
         if let Err(err) = self.identity_service.delete_token(kind, token).await {
             log::error!("Failed to revoke ({:?}) token ({}): {}", kind, token, err);
-        }
-    }
-
-    pub async fn revoke_opt_access(&self, kind: TokenKind, token: Option<String>) {
-        if let Some(revoked_token) = token {
-            self.revoke_access(kind, &revoked_token).await;
         }
     }
 }
