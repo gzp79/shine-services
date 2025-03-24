@@ -1,10 +1,10 @@
 use crate::serde::serde_status_code;
-use serde::Serialize;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
     Extension, Json,
 };
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::fmt;
 use url::Url;
