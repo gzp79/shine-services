@@ -115,7 +115,7 @@ async fn authenticate_with_query_token(
             .expect("It shall be called only if there is a token in the query");
 
         // Any token provided as a query token is removed from the DB as
-        match state.identity_service().take_token(TokenKind::all(), &token).await {
+        match state.identity_service().take_token(TokenKind::all(), token).await {
             Ok(Some(info)) => info,
             Ok(None) => {
                 log::debug!("Expired single access token ...");

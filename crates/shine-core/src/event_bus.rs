@@ -30,26 +30,26 @@ where
 #[derive(Eq, Hash, PartialEq, Clone, Debug, Default)]
 pub struct EventHandlerId(usize);
 
-type BoxedHandler = Box<dyn for<'a> Fn(&'a (dyn Any + Send + Sync + 'static)) -> BoxFuture<'a, ()>>;
+type BoxedHandler = Box<dyn for<'a> Fn(&'a (dyn Any + Send + Sync + 'static)) -> BoxFuture<'a, ()> + Send + Sync>;
 type HandlerMap = Arc<RwLock<HashMap<EventHandlerId, BoxedHandler>>>;
 type EventHandlerMap = RwLock<HashMap<TypeId, HandlerMap>>;
 
-struct Inner<D>
-where
-    D: Send + Sync + 'static,
-{
+struct Inner<D> {
     next_handler_id: AtomicUsize,
     event_handlers: EventHandlerMap,
     domain: PhantomData<D>,
 }
 
 #[derive(Clone)]
-pub struct EventBus<D: Send + Sync + 'static>(Arc<Inner<D>>);
+pub struct EventBus<D>(Arc<Inner<D>>);
 
-impl<D> EventBus<D>
-where
-    D: Send + Sync + 'static,
-{
+impl<D> Default for EventBus<D> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<D> EventBus<D> {
     pub fn new() -> Self {
         Self(Arc::new(Inner {
             next_handler_id: AtomicUsize::new(1),

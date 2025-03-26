@@ -1,6 +1,6 @@
 use crate::{azure::azure_keyvault_config::AzureKeyvaultConfigSource, web::Environment};
-use azure_core::auth::TokenCredential;
-use azure_identity::{AzureCliCredential, EnvironmentCredential, TokenCredentialOptions};
+use azure_core::credentials::TokenCredential;
+use azure_identity::{AzureCliCredential, TokenCredentialOptions, WorkloadIdentityCredential};
 use config::{builder::AsyncState, Config, ConfigBuilder, ConfigError, File};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -117,16 +117,20 @@ impl CoreConfig {
                     })?;
                     if azure_credentials.is_none() {
                         azure_credentials = if env::var("AZURE_TENANT_ID").is_ok() {
-                            let credentials = EnvironmentCredential::create(TokenCredentialOptions::default())
+                            let credentials = WorkloadIdentityCredential::from_env(TokenCredentialOptions::default())
                                 .map_err(|err| ConfigError::FileParse {
-                                    uri: Some(url.to_owned()),
-                                    cause: err.into(),
-                                })?;
+                                uri: Some(url.to_owned()),
+                                cause: err.into(),
+                            })?;
                             log::info!("Getting azure credentials through environment...");
-                            Some(Arc::new(credentials))
+                            Some(credentials)
                         } else {
                             log::info!("Getting azure credentials through azure cli...");
-                            Some(Arc::new(AzureCliCredential::new()))
+                            let credentials = AzureCliCredential::new().map_err(|err| ConfigError::FileParse {
+                                uri: Some(url.to_owned()),
+                                cause: err.into(),
+                            })?;
+                            Some(credentials)
                         };
                     }
                     let azure_credentials = azure_credentials.clone().unwrap();

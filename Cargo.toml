@@ -62,8 +62,8 @@ postgres-from-row = "0.5"
 refinery = { version = "0.8", features = ["tokio-postgres"] }
 
 ############################# AZURE #############################
-azure_core = { version = "0.21" }
-azure_identity = { version = "0.21" }
+azure_core = { version = "0.22" }
+azure_identity = { version = "0.22" }
 
 ############################# NET #############################
 rustls = "0.23"
@@ -78,7 +78,7 @@ axum-extra = { version = "0.10" }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 tera = "1.20"
 validator = { version = "0.20", features = ["derive"] }
-utoipa = { version = "5.2", features = [
+utoipa = { version = "5.3", features = [
 	"axum_extras",
 	"uuid",
 	"chrono",

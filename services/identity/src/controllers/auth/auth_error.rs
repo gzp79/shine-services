@@ -126,14 +126,14 @@ impl From<AuthError> for Problem {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::IdentityError(IdentityError::UserDeleted { .. }) => {
-                Problem::unauthorized_ty(&SESSION_EXPIRED).with_sensitive("userDeleted")
+                Problem::unauthorized_ty(SESSION_EXPIRED).with_sensitive("userDeleted")
             }
             AuthError::IdentityError(error) => {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::ExternalLoginError(error) => {
                 let problem: Problem = error.into();
-                Problem::new(problem.status, AUTH_ERROR).with_sensitive(Problem::from(problem))
+                Problem::new(problem.status, AUTH_ERROR).with_sensitive(problem)
             }
             AuthError::CreateUserError(error) => {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
@@ -141,9 +141,7 @@ impl From<AuthError> for Problem {
             AuthError::LoginTokenError(error) => {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
-            AuthError::InternalServerError(error) => {
-                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
-            }
+            AuthError::InternalServerError(error) => Problem::internal_error_ty(AUTH_ERROR).with_sensitive(error),
         }
     }
 }

@@ -3,17 +3,14 @@ use std::{collections::HashMap, env};
 use config::{ConfigError, Map, Source, Value, ValueKind};
 
 /// Base on config-rs crate, but with some modifications
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Environment {
     extra_conversion: HashMap<String, String>,
 }
 
 impl Environment {
     pub fn new() -> Self {
-        let extra_conversion = HashMap::new();
-        //extra_conversion.insert("tls".to_string(), "TLS".to_string());
-
-        Self { extra_conversion }
+        Self::default()
     }
 
     fn convert_key_case(&self, key: &str) -> String {
@@ -22,17 +19,15 @@ impl Environment {
             .map(|(i, s)| {
                 if let Some(key) = self.extra_conversion.get(s) {
                     key.to_string()
+                } else if i == 0 {
+                    s.to_lowercase()
                 } else {
-                    if i == 0 {
-                        s.to_lowercase()
-                    } else {
-                        let mut chars = s.chars();
-                        chars
-                            .next()
-                            .map(|c| c.to_uppercase().collect::<String>())
-                            .unwrap_or_default()
-                            + &chars.as_str().to_lowercase()
-                    }
+                    let mut chars = s.chars();
+                    chars
+                        .next()
+                        .map(|c| c.to_uppercase().collect::<String>())
+                        .unwrap_or_default()
+                        + &chars.as_str().to_lowercase()
                 }
             })
             .collect()

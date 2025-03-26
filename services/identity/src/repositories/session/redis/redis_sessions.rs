@@ -321,7 +321,9 @@ impl<'a> Sessions for RedisSessionDbContext<'a> {
             user_id
         );
 
-        self.client
+        // todo: https://github.com/redis-rs/redis-rs/issues/1228, https://github.com/redis-rs/redis-rs/issues/1322
+        () = self
+            .client
             .del(&[sentinel_key, key])
             .await
             .map_err(DBError::RedisError)?;
@@ -333,7 +335,8 @@ impl<'a> Sessions for RedisSessionDbContext<'a> {
 
         if !keys.is_empty() {
             log::debug!("Removing session, user:[{user_id}], keys: {keys:?}");
-            self.client.del(keys).await.map_err(DBError::RedisError)?;
+            // todo: https://github.com/redis-rs/redis-rs/issues/1228, https://github.com/redis-rs/redis-rs/issues/1322
+            () = self.client.del(keys).await.map_err(DBError::RedisError)?;
         }
 
         Ok(())

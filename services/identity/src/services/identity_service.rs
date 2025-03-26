@@ -188,7 +188,7 @@ where
         token_hash: &str,
     ) -> Result<Option<()>, IdentityError> {
         let mut db = self.db.create_context().await?;
-        db.delete_token_by_user(user_id, &token_hash).await
+        db.delete_token_by_user(user_id, token_hash).await
     }
 
     pub async fn delete_all_tokens_by_user(&self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {

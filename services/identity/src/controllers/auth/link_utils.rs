@@ -26,7 +26,7 @@ impl<'a> LinkUtils<'a> {
         log::debug!("Completing external link for user: {:#?}", external_user);
         assert!(auth_session.user_session().is_some());
 
-        let user = auth_session.user_session().clone().unwrap();
+        let user = auth_session.user_session().unwrap();
         match self
             .state
             .identity_service()
