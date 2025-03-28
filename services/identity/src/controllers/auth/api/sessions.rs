@@ -13,6 +13,7 @@ pub struct ActiveSession {
     fingerprint: String,
     token_hash: String,
     created_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
     agent: String,
     country: Option<String>,
     region: Option<String>,
@@ -46,13 +47,14 @@ pub async fn list_sessions(
         .into_iter()
         .map(|s| ActiveSession {
             user_id: user.user_id,
-            fingerprint: s.fingerprint,
-            token_hash: s.key_hash,
-            created_at: s.created_at,
-            agent: s.site_info.agent,
-            country: s.site_info.country,
-            region: s.site_info.region,
-            city: s.site_info.city,
+            fingerprint: s.info.fingerprint,
+            token_hash: s.info.key_hash,
+            created_at: s.info.created_at,
+            expires_at: s.expire_at,
+            agent: s.info.site_info.agent,
+            country: s.info.site_info.country,
+            region: s.info.site_info.region,
+            city: s.info.site_info.city,
         })
         .collect();
     Ok(Json(ActiveSessions { sessions }))

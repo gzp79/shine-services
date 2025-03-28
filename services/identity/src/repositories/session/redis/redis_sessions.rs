@@ -2,7 +2,7 @@ use crate::repositories::{
     identity::Identity,
     session::{Session, SessionError, SessionInfo, SessionUser, Sessions},
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use shine_infra::{
@@ -52,18 +52,18 @@ fn create_session(
     user_id: Uuid,
     key_hash: String,
     sentinel: RedisSessionSentinel,
-    user_version: i32,
     user_data: RedisSessionUser,
+    expire_at: DateTime<Utc>,
 ) -> Session {
     Session {
         info: create_session_info(user_id, key_hash, sentinel),
-        user_version,
         user: SessionUser {
             name: user_data.name,
             is_email_confirmed: user_data.is_email_confirmed,
             is_linked: user_data.is_linked,
             roles: user_data.roles,
         },
+        expire_at,
     }
 }
 
@@ -137,14 +137,11 @@ impl Sessions for RedisSessionDbContext<'_> {
         // fails, it indicates an exceptionally rare key conflict scenario, and the login process should be
         // restarted (although the likelihood of this occurring is extremely low).
         // Once created, this sentinel takes on the responsibility of managing the session's lifespan.
-        // It remains immutable having some expiration time.
-        // Session data is stored within a hash set (hset), where each field corresponds to a different
-        // version of the data. A version number signifies that the stored data is not older than the
-        // specified version, though it may be newer due to concurrent updates.
-        // To access the current session data, one must retrieve both the sentinel and the data with
-        // the latest version. If either of them has expired or is missing, the session is considered
+        // It remains immutable having some expiration time. The expiration time is extended on each access.
+        // Session data is stored within a different key. To access the current session data, one must retrieve
+        // both the sentinel and the data. If either of them has expired or is missing, the session is considered
         // expired. For instance, during a logout (when the session is deleted), it is possible to have a
-        // concurrent update resulting in a removed sentinel, but new session data is still present.
+        // concurrent update resulting in a removed sentinel, but a new session data is still present.
         // So having both the sentinel and the data ensures that the session
         // cannot be extended beyond the default period. Nevertheless, this situation may result in
         // lingering session data, but the expiration mechanism guarantees their eventual deletion.
@@ -157,6 +154,7 @@ impl Sessions for RedisSessionDbContext<'_> {
             region: site_info.region.clone(),
             city: site_info.city.clone(),
         };
+
         log::debug!("sentinel:{:#?}", sentinel);
         let created = self
             .client
@@ -173,7 +171,7 @@ impl Sessions for RedisSessionDbContext<'_> {
             log::debug!("data:{:#?}", sentinel);
             redis::pipe()
                 .expire(&sentinel_key, self.ttl_session)
-                .hset_nx(&key, format!("{}", identity.version), &data)
+                .set(&key, &data)
                 .expire(&key, self.ttl_session)
                 .query_async::<()>(&mut *self.client)
                 .await
@@ -187,13 +185,13 @@ impl Sessions for RedisSessionDbContext<'_> {
                     fingerprint: sentinel.fingerprint,
                     site_info: site_info.clone(),
                 },
-                user_version: identity.version,
                 user: SessionUser {
                     name: data.name,
                     is_email_confirmed: data.is_email_confirmed,
                     is_linked: data.is_linked,
                     roles: data.roles,
                 },
+                expire_at: Utc::now() + Duration::seconds(self.ttl_session),
             })
         } else {
             log::debug!("key conflict");
@@ -218,7 +216,7 @@ impl Sessions for RedisSessionDbContext<'_> {
         Ok(key_hashes)
     }
 
-    async fn find_all_session_infos_by_user(&mut self, user_id: Uuid) -> Result<Vec<SessionInfo>, SessionError> {
+    async fn find_all_sessions_by_user(&mut self, user_id: Uuid) -> Result<Vec<Session>, SessionError> {
         let keys = self.find_redis_keys(user_id).await?;
 
         let mut sessions = vec![];
@@ -227,14 +225,8 @@ impl Sessions for RedisSessionDbContext<'_> {
             let (key_user_id, key_session_key_hash, key_role) = self.parse_redis_key(&key)?;
             assert_eq!(key_user_id, user_id);
             if key_role == "sentinel" {
-                let sentinel: Option<RedisSessionSentinel> =
-                    self.client.get(&key).await.map_err(DBError::RedisError)?;
-                if let Some(sentinel) = sentinel {
-                    sessions.push(create_session_info(
-                        key_user_id,
-                        key_session_key_hash.to_owned(),
-                        sentinel,
-                    ));
+                if let Some(session) = self.find_session_by_hash(user_id, key_session_key_hash).await? {
+                    sessions.push(session);
                 }
             }
         }
@@ -245,55 +237,58 @@ impl Sessions for RedisSessionDbContext<'_> {
     async fn find_session_by_hash(
         &mut self,
         user_id: Uuid,
-        session_key_hash: String,
+        session_key_hash: &str,
     ) -> Result<Option<Session>, SessionError> {
-        let (sentinel_key, key) = self.to_redis_keys(user_id, &session_key_hash);
+        let (sentinel_key, key) = self.to_redis_keys(user_id, session_key_hash);
         log::debug!(
             "Finding session, user:[{}], sentinel: [{sentinel_key}], data:[{key}]",
             user_id
         );
 
         // query sentinel and the available data versions
-        let (sentinel, data_versions): (Option<RedisSessionSentinel>, Vec<i32>) = redis::pipe()
-            .get(sentinel_key)
-            .hkeys(&key)
+        let (sentinel, sentinel_ttl, data, data_ttl): (
+            Option<RedisSessionSentinel>,
+            Option<i64>,
+            Option<RedisSessionUser>,
+            Option<i64>,
+        ) = redis::pipe()
+            .get(&sentinel_key)
+            .ttl(&sentinel_key)
+            .get(&key)
+            .ttl(&key)
             .query_async(&mut *self.client)
             .await
             .map_err(DBError::RedisError)?;
 
-        // check if sentinel is present
-        let sentinel = match sentinel {
-            Some(sentinel) => sentinel,
+        let (sentinel, sentinel_ttl) = match (sentinel, sentinel_ttl) {
+            (Some(sentinel), Some(sentinel_ttl)) => (sentinel, sentinel_ttl),
+            _ => return Ok(None),
+        };
+        let (data, data_ttl) = match (data, data_ttl) {
+            (Some(data), Some(data_ttl)) => (data, data_ttl),
             _ => return Ok(None),
         };
 
-        // find the latest data version
-        let version = match data_versions.into_iter().max() {
-            Some(version) => version,
-            _ => return Ok(None),
-        };
+        let ttl = sentinel_ttl.min(data_ttl);
+        let expire_at = Utc::now() + Duration::seconds(ttl);
 
-        // find data
-        let data: Option<RedisSessionUser> = self
-            .client
-            .hget(&key, format!("{version}"))
-            .await
-            .map_err(DBError::RedisError)?;
-        match data {
-            // In a very unlikely case, data could have been deleted.
-            None => Ok(None),
-            Some(data) => Ok(Some(create_session(user_id, session_key_hash, sentinel, version, data))),
-        }
+        Ok(Some(create_session(
+            user_id,
+            session_key_hash.to_string(),
+            sentinel,
+            data,
+            expire_at,
+        )))
     }
 
     async fn update_session_user_by_hash(
         &mut self,
-        session_key_hash: String,
+        session_key_hash: &str,
         identity: &Identity,
         roles: &[String],
         is_linked: bool,
     ) -> Result<Option<Session>, SessionError> {
-        let (sentinel_key, key) = self.to_redis_keys(identity.id, &session_key_hash);
+        let (sentinel_key, key) = self.to_redis_keys(identity.id, session_key_hash);
         log::debug!(
             "Updating session, user:[{}], sentinel: [{sentinel_key}], data:[{key}]",
             identity.id
@@ -301,6 +296,7 @@ impl Sessions for RedisSessionDbContext<'_> {
 
         let is_open = self.client.exists(sentinel_key).await.map_err(DBError::RedisError)?;
         if is_open {
+            // an update on the session extends the expiration time
             let data = RedisSessionUser {
                 name: identity.name.clone(),
                 is_email_confirmed: identity.is_email_confirmed,
@@ -308,9 +304,8 @@ impl Sessions for RedisSessionDbContext<'_> {
                 roles: roles.to_vec(),
             };
             redis::pipe()
-                .hset_nx(&key, format!("{}", identity.version), &data)
-                .ignore()
-                // it extends to session ttl, but the sentinel is still there to limit the session
+                .expire(&key, self.ttl_session)
+                .set(&key, &data)
                 .expire(&key, self.ttl_session)
                 .ignore()
                 .query_async::<()>(&mut *self.client)
@@ -323,8 +318,8 @@ impl Sessions for RedisSessionDbContext<'_> {
         }
     }
 
-    async fn delete_session_by_hash(&mut self, user_id: Uuid, session_key_hash: String) -> Result<(), SessionError> {
-        let (sentinel_key, key) = self.to_redis_keys(user_id, &session_key_hash);
+    async fn delete_session_by_hash(&mut self, user_id: Uuid, session_key_hash: &str) -> Result<(), SessionError> {
+        let (sentinel_key, key) = self.to_redis_keys(user_id, session_key_hash);
         log::debug!(
             "Removing session, user:[{}], sentinel: [{sentinel_key}], data:[{key}]",
             user_id

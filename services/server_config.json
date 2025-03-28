@@ -1,7 +1,8 @@
 {
   "service": {
     "allowedOrigins": ["^https:\\/\\/([a-zA-Z0-9-]+\\.)+scytta\\.com(:\\d+)?$"],
-    "fullProblemResponse": false
+    "fullProblemResponse": false,
+    "sessionTtl": 1800
   },
   "telemetry": {
     "allowReconfigure": true,

@@ -7,7 +7,7 @@ use shine_infra::{
 use tracing::instrument;
 use uuid::Uuid;
 
-use super::{PgIdentityDbContext, PgVersionedUpdate};
+use super::PgIdentityDbContext;
 
 pg_query!( AddUserRole =>
     in = user_id: Uuid, role: &str;
@@ -91,18 +91,8 @@ impl PgRolesStatements {
 impl Roles for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
     async fn add_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
-        let update = match PgVersionedUpdate::new(&mut self.client, &self.stmts_version, user_id).await? {
-            Some(update) => update,
-            None => return Ok(None),
-        };
-
         log::debug!("Adding role {} to user {}", role, user_id);
-        let row = match self
-            .stmts_roles
-            .add
-            .query_opt(update.transaction(), &user_id, &role)
-            .await
-        {
+        let row = match self.stmts_roles.add.query_opt(&self.client, &user_id, &role).await {
             Ok(roles) => roles,
             Err(err) if err.is_constraint("roles", "fkey_user_id") => {
                 // user not found, deleted meanwhile
@@ -110,8 +100,6 @@ impl Roles for PgIdentityDbContext<'_> {
             }
             Err(err) => return Err(DBError::from(err).into()),
         };
-
-        update.finish().await?;
 
         if let Some(roles) = row {
             Ok(Some(roles.roles))
@@ -137,19 +125,12 @@ impl Roles for PgIdentityDbContext<'_> {
 
     #[instrument(skip(self))]
     async fn delete_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
-        let update = match PgVersionedUpdate::new(&mut self.client, &self.stmts_version, user_id).await? {
-            Some(update) => update,
-            None => return Ok(None),
-        };
-
         let row = self
             .stmts_roles
             .delete
-            .query_opt(update.transaction(), &user_id, &role)
+            .query_opt(&self.client, &user_id, &role)
             .await
             .map_err(DBError::from)?;
-
-        update.finish().await?;
 
         if let Some(roles) = row {
             Ok(Some(roles.roles))

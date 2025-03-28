@@ -68,14 +68,13 @@ struct IdentityRow {
     email: Option<String>,
     email_confirmed: bool,
     created: DateTime<Utc>,
-    data_version: i32,
 }
 
 pg_query!( FindById =>
     in = user_id: Uuid;
     out = IdentityRow;
     sql = r#"
-        SELECT user_id, kind, name, email, email_confirmed, created, data_version
+        SELECT user_id, kind, name, email, email_confirmed, created
             FROM identities
             WHERE user_id = $1
     "#
@@ -90,7 +89,7 @@ pg_query!( UpdateIdentity =>
                 email = COALESCE($3, email),
                 email_confirmed = COALESCE($4, email_confirmed)
             WHERE user_id = $1
-        RETURNING user_id, kind, name, email, email_confirmed, created, data_version
+        RETURNING user_id, kind, name, email, email_confirmed, created
     "#
 );
 
@@ -160,7 +159,6 @@ impl Identities for PgIdentityDbContext<'_> {
             is_email_confirmed: email.map(|x| x.1).unwrap_or(false),
             kind: IdentityKind::User,
             created,
-            version: 0,
         })
     }
 
@@ -179,7 +177,6 @@ impl Identities for PgIdentityDbContext<'_> {
                 email: row.email,
                 is_email_confirmed: row.email_confirmed,
                 created: row.created,
-                version: row.data_version,
             }))
     }
 
@@ -217,7 +214,6 @@ impl Identities for PgIdentityDbContext<'_> {
             email: identity_row.email,
             is_email_confirmed: identity_row.email_confirmed,
             created: identity_row.created,
-            version: identity_row.data_version,
         }))
     }
 

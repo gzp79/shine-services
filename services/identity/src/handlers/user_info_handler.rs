@@ -94,12 +94,12 @@ where
             user_id: user_session.info.user_id,
             key: user_session_key,
             session_start: user_session.info.created_at,
+            session_end: user_session.expire_at,
             name: user_session.user.name,
             roles: user_session.user.roles,
             is_email_confirmed: user_session.user.is_email_confirmed,
             is_linked: user_session.user.is_linked,
             fingerprint: user_session.info.fingerprint,
-            version: user_session.user_version,
         }))
     }
 

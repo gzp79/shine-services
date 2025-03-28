@@ -22,7 +22,6 @@ pub struct Identity {
     pub email: Option<String>,
     pub is_email_confirmed: bool,
     pub created: DateTime<Utc>,
-    pub version: i32,
 }
 
 /// Handle identities.

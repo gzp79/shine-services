@@ -65,8 +65,7 @@ pub async fn get_user_info(
 ) -> Result<Json<CurrentUserInfo>, ProblemResponse> {
     let method = query.method.unwrap_or(GetUserInfoMode::Fast);
 
-    let session_length = (Utc::now() - user.session_start).num_seconds();
-    let session_length = if session_length < 0 { 0 } else { session_length as u64 };
+    let session_length = (user.session_end - Utc::now()).num_seconds().max(0) as u64;
 
     let info = match method {
         // read the user info from the session

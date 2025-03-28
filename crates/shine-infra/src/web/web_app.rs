@@ -204,7 +204,14 @@ async fn create_web_app<A: WebApplication>(
             config.service.session_redis_cns
         );
         let redis = crate::db::create_redis_pool(config.service.session_redis_cns.as_str()).await?;
-        UserSessionCacheReader::new(None, &config.service.session_secret, "", redis)?.into_layer()
+        UserSessionCacheReader::new(
+            None,
+            &config.service.session_secret,
+            "",
+            config.service.session_ttl,
+            redis,
+        )?
+        .into_layer()
     };
 
     log::info!("Creating application state...");

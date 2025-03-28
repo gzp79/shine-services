@@ -89,7 +89,7 @@ impl AppState {
         };
 
         let session_service = {
-            let ttl_session = Duration::seconds(i64::try_from(config_auth.auth_session.ttl_session)?);
+            let ttl_session = Duration::seconds(i64::try_from(config.service.session_ttl)?);
             let session_db = RedisSessionDb::new(&db_pool.redis, "".to_string(), ttl_session).await?;
             SessionService::new(session_db)
         };

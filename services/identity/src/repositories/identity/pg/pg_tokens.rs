@@ -144,7 +144,6 @@ struct IdentityTokenRow {
     email: Option<String>,
     email_confirmed: bool,
     created: DateTime<Utc>,
-    data_version: i32,
     token_hash: String,
     token_created: DateTime<Utc>,
     token_expire: DateTime<Utc>,
@@ -163,13 +162,13 @@ pg_query!( TestToken =>
     in = token: &str, allowed_kind: &[TokenKind];
     out = IdentityTokenRow;
     sql = r#"
-        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
-                t.token token_hash, 
-                t.created token_created, 
-                t.expire token_expire, 
-                t.fingerprint token_fingerprint, 
+        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created,
+                t.token token_hash,
+                t.created token_created,
+                t.expire token_expire,
+                t.fingerprint token_fingerprint,
                 t.email token_email,
-                t.kind token_kind, 
+                t.kind token_kind,
                 t.expire < now() token_is_expired,
                 t.agent token_agent,
                 t.country token_country,
@@ -192,13 +191,13 @@ pg_query!( TakeToken =>
         WHERE lt.token = $1 AND lt.kind = any($2)
         RETURNING *        
     )
-    SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
-        t.token token_hash, 
-        t.created token_created, 
-        t.expire token_expire, 
-        t.fingerprint token_fingerprint, 
+    SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created,
+        t.token token_hash,
+        t.created token_created,
+        t.expire token_expire,
+        t.fingerprint token_fingerprint,
         t.email token_email,
-        t.kind token_kind, 
+        t.kind token_kind,
         t.expire < now() token_is_expired,
         t.agent token_agent,
         t.country token_country,
@@ -426,7 +425,6 @@ impl Tokens for PgIdentityDbContext<'_> {
                 email: row.email,
                 is_email_confirmed: row.email_confirmed,
                 created: row.created,
-                version: row.data_version,
             };
             (identity, token)
         }))
@@ -468,7 +466,6 @@ impl Tokens for PgIdentityDbContext<'_> {
                 email: row.email,
                 is_email_confirmed: row.email_confirmed,
                 created: row.created,
-                version: row.data_version,
             };
             (identity, token)
         }))

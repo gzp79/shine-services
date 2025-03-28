@@ -47,9 +47,9 @@ async fn create_get_remove() {
         email: None,
         is_email_confirmed: false,
         created: Utc::now(),
-        version: 1,
     };
     let roles = vec!["R1".into(), "R2".into()];
+    let is_linked = true;
     let fingerprint = ClientFingerprint::from_agent("test".into()).unwrap();
     let site_info = SiteInfo {
         agent: "test".into(),
@@ -60,7 +60,7 @@ async fn create_get_remove() {
 
     log::info!("Creating a new session...");
     let (session, session_key) = session_manager
-        .create(&identity, roles.clone(), false, &fingerprint, &site_info)
+        .create(&identity, roles.clone(), is_linked, &fingerprint, &site_info)
         .await
         .unwrap();
     log::debug!("session: {session:#?}");
@@ -68,6 +68,7 @@ async fn create_get_remove() {
     assert_eq!(fingerprint.as_str(), session.info.fingerprint);
     assert_eq!(identity.name, session.user.name);
     assert_eq!(roles, session.user.roles);
+    assert_eq!(is_linked, session.user.is_linked);
 
     log::info!("Finding the session...");
     let found_session = session_manager
@@ -115,7 +116,6 @@ async fn update_invalid_key() {
         email: None,
         is_email_confirmed: false,
         created: Utc::now(),
-        version: 1,
     };
     let roles = vec!["R1".into(), "R2".into()];
 
@@ -142,9 +142,9 @@ async fn create_update() {
         email: None,
         is_email_confirmed: false,
         created: Utc::now(),
-        version: 1,
     };
-    let roles1 = vec!["R1".into(), "R2".into()];
+    let roles1 = vec!["R1".into(), "Rfix".into()];
+    let is_linked1 = false;
     let fingerprint = ClientFingerprint::from_agent("test".into()).unwrap();
     let site_info = SiteInfo {
         agent: "test".into(),
@@ -155,103 +155,40 @@ async fn create_update() {
 
     log::info!("Creating a new session...");
     let (session, session_key) = session_manager
-        .create(&identity1, roles1.clone(), false, &fingerprint, &site_info)
+        .create(&identity1, roles1.clone(), is_linked1, &fingerprint, &site_info)
         .await
         .unwrap();
 
-    log::info!("Update to version 5");
-    let mut identity5 = identity1.clone();
-    identity5.version = 5;
-    let roles5 = vec!["R2".into(), "R5".into()];
+    log::info!("Update session");
+    let mut identity2 = identity1.clone();
+    identity2.is_email_confirmed = true;
+    let roles2 = vec!["Rfix".into(), "R2".into()];
+    let is_linked2 = true;
     let updated_session = session_manager
-        .update_user_info(&session_key, &identity5, &roles5, false)
+        .update_user_info(&session_key, &identity2, &roles2, is_linked2)
         .await
         .unwrap();
     let updated_session = updated_session.expect("Session should be available");
     assert_eq!(session.info.key_hash, updated_session.info.key_hash);
-    assert_eq!(identity5.id, updated_session.info.user_id);
+    assert_eq!(identity2.id, updated_session.info.user_id);
     assert_eq!(fingerprint.as_str(), updated_session.info.fingerprint);
-    assert_eq!(identity5.version, updated_session.user_version);
-    assert_eq!(identity5.name, updated_session.user.name);
-    assert_eq!(roles5, updated_session.user.roles);
+    assert_eq!(identity2.name, updated_session.user.name);
+    assert_eq!(identity2.is_email_confirmed, updated_session.user.is_email_confirmed);
+    assert_eq!(roles2, updated_session.user.roles);
+    assert_eq!(is_linked2, updated_session.user.is_linked);
 
     {
-        log::info!("Finding the session with version 5 ...");
         let found_session = session_manager
-            .find(identity5.id, &session_key)
+            .find(identity2.id, &session_key)
             .await
             .unwrap()
             .expect("Session should have been found");
         log::debug!("found_session: {found_session:#?}");
         assert_eq!(session.info.key_hash, found_session.info.key_hash);
-        assert_eq!(identity5.id, found_session.info.user_id);
+        assert_eq!(identity2.id, found_session.info.user_id);
         assert_eq!(fingerprint.as_str(), found_session.info.fingerprint);
-        assert_eq!(identity5.version, found_session.user_version);
-        assert_eq!(identity5.name, found_session.user.name);
-        assert_eq!(roles5, found_session.user.roles);
-    }
-
-    {
-        log::info!("Update to version 3 should have no effect");
-        let mut identity3 = identity1.clone();
-        let roles3 = vec!["R2".into(), "R3".into()];
-        identity3.version = 3;
-        let updated_session = session_manager
-            .update_user_info(&session_key, &identity3, &roles3, false)
-            .await
-            .unwrap();
-        let updated_session = updated_session.expect("Session should be available");
-        // it should have no effect on the update
-        assert_eq!(session.info.key_hash, updated_session.info.key_hash);
-        assert_eq!(identity5.id, updated_session.info.user_id);
-        assert_eq!(fingerprint.as_str(), updated_session.info.fingerprint);
-        assert_eq!(identity5.version, updated_session.user_version);
-        assert_eq!(identity5.name, updated_session.user.name);
-        assert_eq!(roles5, updated_session.user.roles);
-
-        log::info!("Finding the session with version 5 after storing version 3 ...");
-        let found_session = session_manager
-            .find(identity5.id, &session_key)
-            .await
-            .unwrap()
-            .expect("Session should have been found");
-        log::debug!("found_session: {found_session:#?}");
-        assert_eq!(session.info.key_hash, found_session.info.key_hash);
-        assert_eq!(identity5.id, found_session.info.user_id);
-        assert_eq!(fingerprint.as_str(), found_session.info.fingerprint);
-        assert_eq!(identity5.version, found_session.user_version);
-        assert_eq!(identity5.name, found_session.user.name);
-        assert_eq!(roles5, found_session.user.roles);
-    }
-
-    {
-        log::info!("Update to version 5 again with different roles should have no effect");
-        let roles5b = vec!["R2".into(), "R52".into()];
-        let updated_session = session_manager
-            .update_user_info(&session_key, &identity5, &roles5b, false)
-            .await
-            .unwrap();
-        let updated_session = updated_session.expect("Session should be available");
-        assert_eq!(session.info.key_hash, updated_session.info.key_hash);
-        assert_eq!(identity5.id, updated_session.info.user_id);
-        assert_eq!(fingerprint.as_str(), updated_session.info.fingerprint);
-        assert_eq!(identity5.version, updated_session.user_version);
-        assert_eq!(identity5.name, updated_session.user.name);
-        assert_eq!(roles5, updated_session.user.roles);
-
-        log::info!("Finding the session with version 5 after storing version 5 with altered roles ...");
-        let found_session = session_manager
-            .find(identity5.id, &session_key)
-            .await
-            .unwrap()
-            .expect("Session should have been found");
-        log::debug!("found_session: {found_session:#?}");
-        assert_eq!(session.info.key_hash, found_session.info.key_hash);
-        assert_eq!(identity5.id, found_session.info.user_id);
-        assert_eq!(fingerprint.as_str(), found_session.info.fingerprint);
-        assert_eq!(identity5.name, found_session.user.name);
-        assert_eq!(identity5.version, found_session.user_version);
-        assert_eq!(roles5, found_session.user.roles);
+        assert_eq!(identity2.name, found_session.user.name);
+        assert_eq!(roles2, found_session.user.roles);
     }
 }
 
@@ -271,7 +208,6 @@ async fn create_many_remove_all() {
         email: None,
         is_email_confirmed: false,
         created: Utc::now(),
-        version: 1,
     };
     let roles = vec!["R1".into(), "R2".into()];
     let fingerprint = ClientFingerprint::from_agent("test".into()).unwrap();

@@ -1,6 +1,3 @@
-mod pg_versioned_update;
-pub use self::pg_versioned_update::*;
-
 mod pg_identity_db;
 pub use self::pg_identity_db::*;
 mod pg_identities;
