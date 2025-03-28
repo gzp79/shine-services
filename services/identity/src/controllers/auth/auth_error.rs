@@ -1,5 +1,5 @@
 use crate::{
-    handlers::{CreateUserError, LoginTokenError},
+    handlers::{CreateUserError, LoginTokenError, UserInfoError},
     repositories::{identity::IdentityError, session::SessionError, CaptchaError},
 };
 use shine_infra::web::{InputError, Problem};
@@ -92,6 +92,8 @@ pub enum AuthError {
     CreateUserError(#[from] CreateUserError),
     #[error(transparent)]
     LoginTokenError(#[from] LoginTokenError),
+    #[error(transparent)]
+    UserInfoError(#[from] UserInfoError),
 
     #[error("Internal server error")]
     InternalServerError(Problem),
@@ -139,6 +141,9 @@ impl From<AuthError> for Problem {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::LoginTokenError(error) => {
+                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+            }
+            AuthError::UserInfoError(error) => {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::InternalServerError(error) => Problem::internal_error_ty(AUTH_ERROR).with_sensitive(error),

@@ -15,14 +15,14 @@ use std::{
 use tokio::sync::RwLock;
 
 /// Abstraction for event connected to the D domain.
-pub trait Event: Send + Sync {
+pub trait Event: Send + Sync + 'static {
     type Domain: 'static;
 }
 
 /// Handle event synchronously with the event publish.
-pub trait EventHandler<E>: Send + Sync
+pub trait EventHandler<E>: Send + Sync + 'static
 where
-    E: Event + Send + Sync + 'static,
+    E: Event + Send + Sync,
 {
     fn handle(self, event: &E) -> impl Future<Output = ()> + Send + '_;
 }
@@ -30,7 +30,7 @@ where
 #[derive(Eq, Hash, PartialEq, Clone, Debug, Default)]
 pub struct EventHandlerId(usize);
 
-type BoxedHandler = Box<dyn for<'a> Fn(&'a (dyn Any + Send + Sync + 'static)) -> BoxFuture<'a, ()> + Send + Sync>;
+type BoxedHandler = Box<dyn for<'a> Fn(&'a (dyn Any + Send + Sync)) -> BoxFuture<'a, ()> + Send + Sync>;
 type HandlerMap = Arc<RwLock<HashMap<EventHandlerId, BoxedHandler>>>;
 type EventHandlerMap = RwLock<HashMap<TypeId, HandlerMap>>;
 
@@ -60,8 +60,8 @@ impl<D> EventBus<D> {
 
     pub async fn subscribe<E, H>(&self, handler: H) -> EventHandlerId
     where
-        E: Event<Domain = D> + 'static,
-        H: EventHandler<E> + Clone + 'static,
+        E: Event<Domain = D>,
+        H: EventHandler<E> + Clone,
     {
         let handler: BoxedHandler = Box::new(move |e| {
             let handler = handler.clone();
@@ -103,11 +103,11 @@ impl<D> EventBus<D> {
 
     pub async fn publish<E>(&self, event: &E)
     where
-        E: Event<Domain = D> + 'static,
+        E: Event<Domain = D>,
     {
         let event_handlers = self.0.event_handlers.read().await;
         let event_type = TypeId::of::<E>();
-        let event: &(dyn Any + Send + Sync + 'static) = event;
+        let event: &(dyn Any + Send + Sync) = event;
 
         if let Some(handlers) = event_handlers.get(&event_type) {
             let handlers = handlers.read().await;

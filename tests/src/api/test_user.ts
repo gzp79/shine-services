@@ -43,7 +43,7 @@ export class TestUser {
     }
 
     public async refreshUserInfo(extraHeaders?: Record<string, string>) {
-        const info = await this.userAPI.getUserInfo(this.sid, extraHeaders);
+        const info = await this.userAPI.getUserInfo(this.sid, 'full', extraHeaders);
         this.userInfo = info;
     }
 
@@ -90,10 +90,10 @@ export class TestUserHelper {
         const cookies = await this.authAPI.loginAsGuestUser(extraHeaders);
         {
             // add roles using api key
-            const info = await this.userAPI.getUserInfo(cookies.sid, extraHeaders);
+            const info = await this.userAPI.getUserInfo(cookies.sid, 'full', extraHeaders);
             await this.userAPI.addRole(cookies.sid, true, info.userId, props?.roles ?? [], extraHeaders);
         }
-        const info = await this.userAPI.getUserInfo(cookies.sid, extraHeaders);
+        const info = await this.userAPI.getUserInfo(cookies.sid, 'full', extraHeaders);
         const testUser = new TestUser(info.userId, this.authAPI, this.userAPI);
         testUser.userInfo = info;
         testUser.sid = cookies.sid;
@@ -127,11 +127,11 @@ export class TestUserHelper {
 
         {
             // add roles using api key
-            const info = await this.userAPI.getUserInfo(cookies.sid, extraHeaders);
+            const info = await this.userAPI.getUserInfo(cookies.sid, 'full', extraHeaders);
             await this.userAPI.addRole(cookies.sid, true, info.userId, props?.roles ?? [], extraHeaders);
         }
 
-        const info = await this.userAPI.getUserInfo(cookies.sid, extraHeaders);
+        const info = await this.userAPI.getUserInfo(cookies.sid, 'full', extraHeaders);
         const testUser = new TestUser(info.userId, this.authAPI, this.userAPI);
         testUser.externalUser = user;
         testUser.userInfo = info;

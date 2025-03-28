@@ -73,6 +73,10 @@ pub struct CurrentUser {
     pub session_start: DateTime<Utc>,
     #[serde(rename = "nm")]
     pub name: String,
+    #[serde(rename = "ie")]
+    pub is_email_confirmed: bool,
+    #[serde(rename = "il")]
+    pub is_linked: bool,
     #[serde(rename = "r")]
     pub roles: Vec<String>,
     #[serde(rename = "fp")]
@@ -251,6 +255,7 @@ impl UserSessionCacheReader {
         struct SessionData {
             pub name: String,
             pub is_email_confirmed: bool,
+            pub is_linked: bool,
             pub roles: Vec<String>,
         }
 

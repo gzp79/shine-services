@@ -67,9 +67,11 @@ test.describe('External links', () => {
         expect(await api.auth.tryUnlink(user.sid, link.provider, link.providerUserId)).toBeFalsy();
     });
 
-    test('Link to multiple provider and delete links shall work', async ({ api }) => {
+    test('Link to multiple provider and delete all the links shall work', async ({ api }) => {
         const user = await api.testUsers.createGuest();
         expect(await api.auth.getExternalLinks(user.sid)).toBeEmptyValue();
+        expect((await api.user.getUserInfo(user.sid, 'fast')).isLinked).toBeFalsy();
+        expect((await api.user.getUserInfo(user.sid, 'full')).isLinked).toBeFalsy();
 
         const testLink = (links: LinkedIdentity[], external: ExternalUser, provider: string) => {
             const link = links.find((l) => l.providerUserId === external.id);
@@ -85,6 +87,8 @@ test.describe('External links', () => {
         //link with oauth2
         const l1 = ExternalUser.newRandomUser();
         await api.auth.linkWithOAuth2(mockOAuth2, user.sid, l1);
+        expect((await api.user.getUserInfo(user.sid, 'fast')).isLinked).toBeTruthy();
+        expect((await api.user.getUserInfo(user.sid, 'full')).isLinked).toBeTruthy();
         let links = await api.auth.getExternalLinks(user.sid);
         expect(links).toHaveLength(1);
         testLink(links, l1, 'oauth2_flow');
@@ -92,6 +96,8 @@ test.describe('External links', () => {
         // link with openid
         const l2 = ExternalUser.newRandomUser();
         await api.auth.linkWithOpenId(mockOpenId, user.sid, l2);
+        expect((await api.user.getUserInfo(user.sid, 'fast')).isLinked).toBeTruthy();
+        expect((await api.user.getUserInfo(user.sid, 'full')).isLinked).toBeTruthy();
         links = await api.auth.getExternalLinks(user.sid);
         expect(links).toHaveLength(2);
         testLink(links, l1, 'oauth2_flow');
@@ -130,5 +136,12 @@ test.describe('External links', () => {
         testLink(links, l2, 'openid_flow');
         testLink(links, l3, 'oauth2_flow');
         expect(await api.auth.tryUnlink(user.sid, 'openid_flow', l4.id)).toBeFalsy();
+
+        // unlink all remaining links
+        expect(await api.auth.tryUnlink(user.sid, 'openid_flow', l2.id)).toBeTruthy();
+        expect(await api.auth.tryUnlink(user.sid, 'openid_flow', l3.id)).toBeTruthy();
+        expect(await api.auth.getExternalLinks(user.sid)).toBeEmptyValue();
+        expect((await api.user.getUserInfo(user.sid, 'fast')).isLinked).toBeFalsy();
+        expect((await api.user.getUserInfo(user.sid, 'full')).isLinked).toBeFalsy();
     });
 });

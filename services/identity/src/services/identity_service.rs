@@ -4,9 +4,30 @@ use crate::repositories::identity::{
 };
 use chrono::Duration;
 use ring::digest;
-use shine_core::crypto::IdEncoder;
+use shine_core::{
+    crypto::IdEncoder,
+    event_bus::{Event, EventBus, EventHandler, EventHandlerId},
+};
 use shine_infra::web::{ClientFingerprint, SiteInfo};
 use uuid::Uuid;
+
+/// Identity service events.
+pub mod events {
+    use shine_core::event_bus::Event;
+    use uuid::Uuid;
+
+    pub struct IdentityEvent;
+
+    pub struct UserUpdated(pub Uuid);
+    impl Event for UserUpdated {
+        type Domain = IdentityEvent;
+    }
+
+    pub struct UserRoleUpdated(pub Uuid);
+    impl Event for UserRoleUpdated {
+        type Domain = IdentityEvent;
+    }
+}
 
 pub struct IdentityService<DB>
 where
@@ -14,6 +35,7 @@ where
 {
     pub db: DB,
     user_name_generator: Box<dyn IdEncoder>,
+    event_bus: EventBus<events::IdentityEvent>,
 }
 
 impl<DB> IdentityService<DB>
@@ -24,7 +46,16 @@ where
         Self {
             db,
             user_name_generator: Box::new(user_name_generator),
+            event_bus: EventBus::new(),
         }
+    }
+
+    pub async fn subscribe<E, H>(&self, handler: H) -> EventHandlerId
+    where
+        E: Event<Domain = events::IdentityEvent> + 'static,
+        H: EventHandler<E> + Clone + 'static,
+    {
+        self.event_bus.subscribe::<E, H>(handler).await
     }
 
     pub async fn create_user(
@@ -62,7 +93,7 @@ where
         let mut db = self.db.create_context().await?;
         match db.update(id, name, email).await? {
             Some(identity) => {
-                //self.event_bus.publish(&IdentityEvent::UserUpdated(id)).await;
+                self.event_bus.publish(&events::UserUpdated(id)).await;
                 Ok(Some(identity))
             }
             None => Ok(None),
@@ -196,10 +227,14 @@ where
         db.delete_all_token_by_user(user_id, kinds).await
     }
 
-    pub async fn add_role(&self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
+    pub async fn add_role(&self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         let mut db = self.db.create_context().await?;
-        db.add_role(user_id, role).await
-        //todo: trigger session update - role added
+        if let Some(roles) = db.add_role(user_id, role).await? {
+            self.event_bus.publish(&events::UserRoleUpdated(user_id)).await;
+            Ok(Some(roles))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn get_roles(&self, user_id: Uuid) -> Result<Option<Vec<String>>, IdentityError> {
@@ -207,10 +242,14 @@ where
         db.get_roles(user_id).await
     }
 
-    pub async fn delete_role(&self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
+    pub async fn delete_role(&self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         let mut db = self.db.create_context().await?;
-        db.delete_role(user_id, role).await
-        //todo: trigger session update - role deleted
+        if let Some(roles) = db.delete_role(user_id, role).await? {
+            self.event_bus.publish(&events::UserRoleUpdated(user_id)).await;
+            Ok(Some(roles))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn generate_user_name(&self) -> Result<String, IdentityError> {

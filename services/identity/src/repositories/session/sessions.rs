@@ -20,6 +20,8 @@ pub struct SessionInfo {
 #[derive(Debug)]
 pub struct SessionUser {
     pub name: String,
+    pub is_linked: bool,
+    pub is_email_confirmed: bool,
     pub roles: Vec<String>,
 }
 
@@ -40,6 +42,7 @@ pub trait Sessions {
         site_info: &SiteInfo,
         identity: &Identity,
         roles: Vec<String>,
+        is_linked: bool,
     ) -> impl Future<Output = Result<Session, SessionError>> + Send;
 
     fn find_all_session_hashes_by_user(
@@ -63,6 +66,7 @@ pub trait Sessions {
         session_key_hash: String,
         identity: &Identity,
         roles: &[String],
+        is_linked: bool,
     ) -> impl Future<Output = Result<Option<Session>, SessionError>> + Send;
 
     fn delete_session_by_hash(

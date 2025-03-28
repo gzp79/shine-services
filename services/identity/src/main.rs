@@ -23,6 +23,8 @@ impl WebApplication for Application {
     async fn create_state(&self, config: &WebAppConfig<Self::AppConfig>) -> Result<Self::AppState, AnyError> {
         let state = AppState::new(config).await?;
 
+        state.subscribe_user_info_handler().await;
+
         Ok(state)
     }
 

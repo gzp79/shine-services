@@ -27,7 +27,7 @@ impl PgIdSequencesStatements {
     }
 }
 
-impl<'a> IdSequences for PgIdentityDbContext<'a> {
+impl IdSequences for PgIdentityDbContext<'_> {
     async fn get_next_id(&mut self) -> Result<u64, IdentityError> {
         let id = self
             .stmts_id_sequences

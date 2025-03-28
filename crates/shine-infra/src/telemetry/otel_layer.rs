@@ -116,7 +116,7 @@ where
             start: Instant::now(),
         };
 
-        let span = if self.request_filter.map_or(true, |f| f(req.method(), req.uri().path())) {
+        let span = if self.request_filter.is_none_or(|f| f(req.method(), req.uri().path())) {
             let span = otel_http::make_span_from_request(&req);
             span.set_parent(otel_http::extract_context(req.headers()));
             span

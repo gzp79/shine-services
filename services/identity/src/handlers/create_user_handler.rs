@@ -33,7 +33,7 @@ where
     identity_service: &'a IdentityService<IDB>,
 }
 
-impl<'a, IDB> CreateUserHandler<'a, IDB>
+impl<IDB> CreateUserHandler<'_, IDB>
 where
     IDB: IdentityDb,
 {
@@ -54,7 +54,7 @@ where
                 .map(|email| (email, false)),
         };
 
-        assert!(email.as_ref().map_or(true, |(email, _)| email.validate_email()));
+        assert!(email.as_ref().is_none_or(|(email, _)| email.validate_email()));
 
         let mut retry_count = 0;
         loop {

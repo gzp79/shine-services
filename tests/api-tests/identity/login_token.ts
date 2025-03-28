@@ -48,8 +48,8 @@ test.describe('Login with access cookie', () => {
         expect(newCookies.sid.value, 'it shall be a new session').not.toEqual(testUser.sid);
         expect(newCookies.eid).toBeClearCookie();
 
-        expect(await api.user.getUserInfoRequest(testUser.sid)).toHaveStatus(401);
-        expect(await api.user.getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
+        expect(await api.user.getUserInfoRequest(testUser.sid, 'full')).toHaveStatus(401);
+        expect(await api.user.getUserInfo(newCookies.sid.value, 'full')).toEqual(expect.objectContaining(userInfo));
     });
 
     test('Login with (token: NULL, session: VALID, rememberMe: false) shall succeed and create a new session', async ({
@@ -68,8 +68,8 @@ test.describe('Login with access cookie', () => {
         expect(newCookies.sid.value, 'it shall be a new session').not.toEqual(testUser.sid);
         expect(newCookies.eid).toBeClearCookie();
 
-        expect(await api.user.getUserInfoRequest(testUser.sid)).toHaveStatus(401);
-        expect(await api.user.getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
+        expect(await api.user.getUserInfoRequest(testUser.sid, 'full')).toHaveStatus(401);
+        expect(await api.user.getUserInfo(newCookies.sid.value, 'full')).toEqual(expect.objectContaining(userInfo));
     });
 
     test('Login with (token: NULL, session: VALID, rememberMe: true) shall succeed and create a new session', async ({
@@ -89,8 +89,8 @@ test.describe('Login with access cookie', () => {
         expect(newCookies.sid.value, 'it shall be a new session').not.toEqual(testUser.sid);
         expect(newCookies.eid).toBeClearCookie();
 
-        expect(await api.user.getUserInfoRequest(testUser.sid)).toHaveStatus(401);
-        expect(await api.user.getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
+        expect(await api.user.getUserInfoRequest(testUser.sid, 'full')).toHaveStatus(401);
+        expect(await api.user.getUserInfo(newCookies.sid.value, 'full')).toEqual(expect.objectContaining(userInfo));
     });
 
     test('Login with (token: VALID, session: NULL, rememberMe: NULL) shall succeed and create a new session', async ({
@@ -110,8 +110,13 @@ test.describe('Login with access cookie', () => {
         expect(newCookies.sid.value, 'it shall be a new session').not.toEqual(testUser.sid);
         expect(newCookies.eid).toBeClearCookie();
 
-        //expect(await api.user.getUserInfoRequest(testUser.sid)).toHaveStatus(401) - would fail as the sid change is not known by the server as sid was not sent
-        expect(await api.user.getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
+        //expect(await api.user.getUserInfoRequest(testUser.sid, 'fast')).toHaveStatus(401) - would fail as the sid change is not known by the server as sid was not sent
+        expect(await api.user.getUserInfo(newCookies.sid.value, 'fast')).toEqual(
+            expect.objectContaining({ ...userInfo, details: null })
+        );
+
+        //expect(await api.user.getUserInfoRequest(testUser.sid, 'full')).toHaveStatus(401) - would fail as the sid change is not known by the server as sid was not sent
+        expect(await api.user.getUserInfo(newCookies.sid.value, 'full')).toEqual(expect.objectContaining(userInfo));
     });
 
     test('Login with (token: VALID, session: NULL, rememberMe: false) shall succeed and create a new session', async ({
@@ -130,8 +135,13 @@ test.describe('Login with access cookie', () => {
         expect(newCookies.sid.value, 'it shall be a new session').not.toEqual(testUser.sid);
         expect(newCookies.eid).toBeClearCookie();
 
-        //expect(await api.user.getUserInfoRequest(testUser.sid)).toHaveStatus(401) - would fail as the sid change is not known by the server as sid was not sent
-        expect(await api.user.getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
+        //expect(await api.user.getUserInfoRequest(testUser.sid, 'fast')).toHaveStatus(401) - would fail as the sid change is not known by the server as sid was not sent
+        expect(await api.user.getUserInfo(newCookies.sid.value, 'fast')).toEqual(
+            expect.objectContaining({ ...userInfo, details: null })
+        );
+
+        //expect(await api.user.getUserInfoRequest(testUser.sid, 'full')).toHaveStatus(401) - would fail as the sid change is not known by the server as sid was not sent
+        expect(await api.user.getUserInfo(newCookies.sid.value, 'full')).toEqual(expect.objectContaining(userInfo));
     });
 
     test('Login with (token: VALID, session: NULL, rememberMe: true) shall succeed and and create a new session', async ({
@@ -150,8 +160,13 @@ test.describe('Login with access cookie', () => {
         expect(newCookies.sid.value, 'it shall be a new session').not.toEqual(testUser.sid);
         expect(newCookies.eid).toBeClearCookie();
 
-        //expect(await api.user.getUserInfoRequest(testUser.sid)).toHaveStatus(401) - would fail as the sid change is not known by the server as sid was not sent
-        expect(await api.user.getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
+        //expect(await api.user.getUserInfoRequest(testUser.sid, 'fast')).toHaveStatus(401) - would fail as the sid change is not known by the server as sid was not sent
+        expect(await api.user.getUserInfo(newCookies.sid.value, 'fast')).toEqual(
+            expect.objectContaining({ ...userInfo, details: null })
+        );
+
+        //expect(await api.user.getUserInfoRequest(testUser.sid, 'full')).toHaveStatus(401) - would fail as the sid change is not known by the server as sid was not sent
+        expect(await api.user.getUserInfo(newCookies.sid.value, 'full')).toEqual(expect.objectContaining(userInfo));
     });
 
     test('Login with (token: VALID, session: VALID, rememberMe: true) shall succeed and create a new session', async ({
@@ -171,8 +186,8 @@ test.describe('Login with access cookie', () => {
         expect(newCookies.sid.value, 'it shall be the a new session').not.toEqual(testUser.sid);
         expect(newCookies.eid).toBeClearCookie();
 
-        expect(await api.user.getUserInfoRequest(testUser.sid)).toHaveStatus(401);
-        expect(await api.user.getUserInfo(newCookies.sid.value)).toEqual(expect.objectContaining(userInfo));
+        expect(await api.user.getUserInfoRequest(testUser.sid, 'full')).toHaveStatus(401);
+        expect(await api.user.getUserInfo(newCookies.sid.value, 'full')).toEqual(expect.objectContaining(userInfo));
     });
 });
 
@@ -187,20 +202,24 @@ test.describe('Login edge cases', () => {
 
         const user = await api.testUsers.createGuest({}, extraHeaders);
 
-        // altering non-fingerprint value has no effect
-        expect(
-            await api.user.getUserInfo(user.sid, {
-                ...extraHeaders,
-                'cf-region': 'new-region',
-                'cf-ipcity': 'new-city',
-                'cf-ipcountry': 'new-country'
-            })
-        ).toBeGuestUser();
+        for (const method of ['fast', 'full'] as const) {
+            // altering non-fingerprint value has no effect
+            expect(
+                await api.user.getUserInfo(user.sid, method, {
+                    ...extraHeaders,
+                    'cf-region': 'new-region',
+                    'cf-ipcity': 'new-city',
+                    'cf-ipcountry': 'new-country'
+                })
+            ).toBeGuestUser();
 
-        // altering fingerprint value invalidates the session
-        for (const mod of [{ 'user-agent': 'new-agent' }]) {
-            const response = await api.user.getUserInfoRequest(user.sid).withHeaders({ ...extraHeaders, ...mod });
-            expect(response).toHaveStatus(401);
+            // altering fingerprint value invalidates the session
+            for (const mod of [{ 'user-agent': 'new-agent' }]) {
+                const response = await api.user
+                    .getUserInfoRequest(user.sid, method)
+                    .withHeaders({ ...extraHeaders, ...mod });
+                expect(response).toHaveStatus(401);
+            }
         }
     });
 
@@ -225,10 +244,13 @@ test.describe('Login edge cases', () => {
         expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
 
         const cookies = response.cookies();
-        const userLoggedIn = await api.user.getUserInfo(cookies.sid.value);
-        expect(userLoggedIn.userId).not.toEqual(userCookie.userId);
-        expect(userLoggedIn.userId).toEqual(userQuery.userId);
-        expect(userLoggedIn.userId).not.toEqual(userHeader.userId);
+
+        for (const method of ['fast', 'full'] as const) {
+            const userLoggedIn = await api.user.getUserInfo(cookies.sid.value, method);
+            expect(userLoggedIn.userId).not.toEqual(userCookie.userId);
+            expect(userLoggedIn.userId).toEqual(userQuery.userId);
+            expect(userLoggedIn.userId).not.toEqual(userHeader.userId);
+        }
     });
 
     test('Header token shall have the 2nd highest precedence', async ({ api }) => {
@@ -250,7 +272,7 @@ test.describe('Login edge cases', () => {
         expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
 
         const cookies = response.cookies();
-        const userLoggedIn = await api.user.getUserInfo(cookies.sid.value);
+        const userLoggedIn = await api.user.getUserInfo(cookies.sid.value, 'full');
         expect(userLoggedIn.userId).not.toEqual(userCookie.userId);
         expect(userLoggedIn.userId).toEqual(userHeader.userId);
     });

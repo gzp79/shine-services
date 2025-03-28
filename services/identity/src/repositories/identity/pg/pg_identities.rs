@@ -113,7 +113,7 @@ impl PgIdentitiesStatements {
     }
 }
 
-impl<'a> Identities for PgIdentityDbContext<'a> {
+impl Identities for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
     async fn create_user(
         &mut self,
@@ -227,7 +227,6 @@ impl<'a> Identities for PgIdentityDbContext<'a> {
             .cascaded_delete
             .execute(&self.client, &id)
             .await
-            .map_err(DBError::from)
             .map_err(DBError::from)?;
         Ok(())
     }

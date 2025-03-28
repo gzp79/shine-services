@@ -1,5 +1,5 @@
 import { Cookie } from '$lib/api/api';
-import { UserInfo } from '$lib/api/user_api';
+import { UserInfo, UserInfoDetail } from '$lib/api/user_api';
 import uuidValidate from 'uuid-validate';
 import { expect as baseExpect } from './common';
 
@@ -66,6 +66,8 @@ export const expect = baseExpect.extend({
         expect(received.name).toStartWith('Freshman_');
         expect(received.sessionLength).toBeGreaterThanOrEqual(0);
         expect(received.roles).toEqual([]);
+        expect(received.isEmailConfirmed).toBeFalsy();
+        expect(received.isLinked).toBeFalsy();
 
         return {
             message: () => 'User is a guest user',

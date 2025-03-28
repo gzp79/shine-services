@@ -127,7 +127,15 @@ test.describe('Email confirmation', () => {
             expect(token).toBeString();
             await api.user.completeConfirmEmail(user.sid, token!);
 
-            expect(await api.user.getUserInfo(user.sid)).toEqual(
+            expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
+                expect.objectContaining({
+                    ...userInfo,
+                    isEmailConfirmed: true,
+                    details: null
+                })
+            );
+
+            expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
                 expect.objectContaining({
                     ...userInfo,
                     isEmailConfirmed: true
@@ -159,10 +167,19 @@ test.describe('Email confirmation', () => {
             })
         );
 
-        expect(await api.user.getUserInfo(user.sid)).toEqual(
-            expect.objectContaining({ email: user.userInfo?.email, isEmailConfirmed: false })
+        expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
+            expect.objectContaining({ isEmailConfirmed: false, details: null })
         );
-        expect(await api.user.getUserInfo(user2.sid)).toEqual(expect.objectContaining({ isEmailConfirmed: false }));
+        expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
+            expect.objectContaining({ isEmailConfirmed: false, details: user.userInfo?.details })
+        );
+
+        expect(await api.user.getUserInfo(user2.sid, 'fast')).toEqual(
+            expect.objectContaining({ isEmailConfirmed: false, details: null })
+        );
+        expect(await api.user.getUserInfo(user2.sid, 'full')).toEqual(
+            expect.objectContaining({ isEmailConfirmed: false, details: user2.userInfo?.details })
+        );
     });
 
     test('Confirming email with another linked user shall fail', async ({ api }) => {
@@ -188,11 +205,18 @@ test.describe('Email confirmation', () => {
             })
         );
 
-        expect(await api.user.getUserInfo(user.sid)).toEqual(
-            expect.objectContaining({ email: user.userInfo?.email, isEmailConfirmed: false })
+        expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
+            expect.objectContaining({ isEmailConfirmed: false, details: null })
         );
-        expect(await api.user.getUserInfo(user2.sid)).toEqual(
-            expect.objectContaining({ email: user2.userInfo?.email, isEmailConfirmed: false })
+        expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
+            expect.objectContaining({ isEmailConfirmed: false, details: user.userInfo!.details })
+        );
+
+        expect(await api.user.getUserInfo(user2.sid, 'fast')).toEqual(
+            expect.objectContaining({ isEmailConfirmed: false, details: null })
+        );
+        expect(await api.user.getUserInfo(user2.sid, 'full')).toEqual(
+            expect.objectContaining({ isEmailConfirmed: false, details: user2.userInfo!.details })
         );
     });
 
@@ -222,7 +246,12 @@ test.describe('Email confirmation', () => {
             })
         );
 
-        expect(await api.user.getUserInfo(user.sid)).toEqual(
+        expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
+            expect.objectContaining({
+                ...userInfo
+            })
+        );
+        expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
             expect.objectContaining({
                 ...userInfo
             })
@@ -304,7 +333,14 @@ test.describe('Email change', () => {
             expect(token).toBeString();
             await api.user.completeConfirmEmail(user.sid, token!);
 
-            expect(await api.user.getUserInfo(user.sid)).toEqual(
+            expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
+                expect.objectContaining({
+                    ...userInfo,
+                    email: newEmail,
+                    isEmailConfirmed: true
+                })
+            );
+            expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
                 expect.objectContaining({
                     ...userInfo,
                     email: newEmail,
@@ -329,7 +365,14 @@ test.describe('Email change', () => {
         expect(token).toBeString();
         await api.user.completeConfirmEmail(user.sid, token!);
 
-        expect(await api.user.getUserInfo(user.sid)).toEqual(
+        expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
+            expect.objectContaining({
+                ...userInfo,
+                email: newEmail,
+                isEmailConfirmed: true
+            })
+        );
+        expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
             expect.objectContaining({
                 ...userInfo,
                 email: newEmail,
@@ -356,7 +399,14 @@ test.describe('Email change', () => {
         expect(token).toBeString();
         await api.user.completeConfirmEmail(user.sid, token!);
 
-        expect(await api.user.getUserInfo(user.sid)).toEqual(
+        expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
+            expect.objectContaining({
+                ...userInfo,
+                email: newEmail,
+                isEmailConfirmed: true
+            })
+        );
+        expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
             expect.objectContaining({
                 ...userInfo,
                 email: newEmail,
@@ -393,7 +443,12 @@ test.describe('Email change', () => {
             })
         );
 
-        expect(await api.user.getUserInfo(user.sid)).toEqual(
+        expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
+            expect.objectContaining({
+                ...userInfo
+            })
+        );
+        expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
             expect.objectContaining({
                 ...userInfo
             })
@@ -431,7 +486,12 @@ test.describe('Email change', () => {
                 })
             );
 
-            expect(await api.user.getUserInfo(user.sid)).toEqual(
+            expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
+                expect.objectContaining({
+                    ...userInfo
+                })
+            );
+            expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
                 expect.objectContaining({
                     ...userInfo
                 })

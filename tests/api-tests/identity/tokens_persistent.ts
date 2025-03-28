@@ -143,8 +143,8 @@ test.describe('Persistent token', () => {
             const response1 = await api.auth.loginWithTokenRequest(null, null, null, token.token, false, null);
             expect(response1).toHaveStatus(200);
             const sid1 = response1.cookies().sid.value;
-            const user1 = await api.user.getUserInfo(sid1);
-            expect(user1.userId, 'It shall be the same use').toEqual(user.userId);
+            const user1 = await api.user.getUserInfo(sid1, 'full');
+            expect(user1.userId, 'It shall be the same user').toEqual(user.userId);
 
             const tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
             expect(tokens).toEqual([token.tokenHash]);

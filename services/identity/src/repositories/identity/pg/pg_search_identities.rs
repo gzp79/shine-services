@@ -7,7 +7,7 @@ use tracing::instrument;
 
 use super::PgIdentityDbContext;
 
-impl<'a> IdentitySearch for PgIdentityDbContext<'a> {
+impl IdentitySearch for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
     async fn search_identity(&mut self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, IdentityError> {
         log::info!("{search:?}");

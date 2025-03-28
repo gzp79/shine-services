@@ -73,7 +73,7 @@ where
     mailer_service: MailerService<'a, EMS>,
 }
 
-impl<'a, IDB, EMS> EmailTokenHandler<'a, IDB, EMS>
+impl<IDB, EMS> EmailTokenHandler<'_, IDB, EMS>
 where
     IDB: IdentityDb,
     EMS: EmailSender,

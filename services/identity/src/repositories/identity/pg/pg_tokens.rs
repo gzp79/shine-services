@@ -236,7 +236,7 @@ impl PgTokensStatements {
     }
 }
 
-impl<'a> Tokens for PgIdentityDbContext<'a> {
+impl Tokens for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
     async fn store_token(
         &mut self,

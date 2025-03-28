@@ -60,7 +60,7 @@ async fn create_get_remove() {
 
     log::info!("Creating a new session...");
     let (session, session_key) = session_manager
-        .create(&identity, roles.clone(), &fingerprint, &site_info)
+        .create(&identity, roles.clone(), false, &fingerprint, &site_info)
         .await
         .unwrap();
     log::debug!("session: {session:#?}");
@@ -119,8 +119,8 @@ async fn update_invalid_key() {
     };
     let roles = vec!["R1".into(), "R2".into()];
 
-    let session = session_manager
-        .update_user_info(&SessionKey::new_random(&random).unwrap(), &identity, &roles)
+    let session: Option<crate::repositories::session::Session> = session_manager
+        .update_user_info(&SessionKey::new_random(&random).unwrap(), &identity, &roles, false)
         .await
         .unwrap();
     assert!(session.is_none());
@@ -155,7 +155,7 @@ async fn create_update() {
 
     log::info!("Creating a new session...");
     let (session, session_key) = session_manager
-        .create(&identity1, roles1.clone(), &fingerprint, &site_info)
+        .create(&identity1, roles1.clone(), false, &fingerprint, &site_info)
         .await
         .unwrap();
 
@@ -164,7 +164,7 @@ async fn create_update() {
     identity5.version = 5;
     let roles5 = vec!["R2".into(), "R5".into()];
     let updated_session = session_manager
-        .update_user_info(&session_key, &identity5, &roles5)
+        .update_user_info(&session_key, &identity5, &roles5, false)
         .await
         .unwrap();
     let updated_session = updated_session.expect("Session should be available");
@@ -197,7 +197,7 @@ async fn create_update() {
         let roles3 = vec!["R2".into(), "R3".into()];
         identity3.version = 3;
         let updated_session = session_manager
-            .update_user_info(&session_key, &identity3, &roles3)
+            .update_user_info(&session_key, &identity3, &roles3, false)
             .await
             .unwrap();
         let updated_session = updated_session.expect("Session should be available");
@@ -228,7 +228,7 @@ async fn create_update() {
         log::info!("Update to version 5 again with different roles should have no effect");
         let roles5b = vec!["R2".into(), "R52".into()];
         let updated_session = session_manager
-            .update_user_info(&session_key, &identity5, &roles5b)
+            .update_user_info(&session_key, &identity5, &roles5b, false)
             .await
             .unwrap();
         let updated_session = updated_session.expect("Session should be available");
@@ -286,7 +286,7 @@ async fn create_many_remove_all() {
     let mut keys = vec![];
     for _ in 0..10 {
         let (_, session_key) = session_manager
-            .create(&identity, roles.clone(), &fingerprint, &site_info)
+            .create(&identity, roles.clone(), false, &fingerprint, &site_info)
             .await
             .unwrap();
         keys.push(session_key);
@@ -296,7 +296,7 @@ async fn create_many_remove_all() {
     let mut identity2 = identity.clone();
     identity2.id = Uuid::new_v4();
     let (session2, session2_key) = session_manager
-        .create(&identity2, roles.clone(), &fingerprint, &site_info)
+        .create(&identity2, roles.clone(), false, &fingerprint, &site_info)
         .await
         .unwrap();
 

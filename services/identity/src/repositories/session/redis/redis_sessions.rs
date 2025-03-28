@@ -29,6 +29,7 @@ pub struct RedisSessionSentinel {
 struct RedisSessionUser {
     pub name: String,
     pub is_email_confirmed: bool,
+    pub is_linked: bool,
     pub roles: Vec<String>,
 }
 
@@ -59,12 +60,14 @@ fn create_session(
         user_version,
         user: SessionUser {
             name: user_data.name,
+            is_email_confirmed: user_data.is_email_confirmed,
+            is_linked: user_data.is_linked,
             roles: user_data.roles,
         },
     }
 }
 
-impl<'a> RedisSessionDbContext<'a> {
+impl RedisSessionDbContext<'_> {
     fn to_redis_keys(&self, user_id: Uuid, session_key_hash: &str) -> (String, String) {
         let prefix = format!(
             "{}session:{}:{}",
@@ -112,7 +115,7 @@ impl<'a> RedisSessionDbContext<'a> {
     }
 }
 
-impl<'a> Sessions for RedisSessionDbContext<'a> {
+impl Sessions for RedisSessionDbContext<'_> {
     async fn store_session(
         &mut self,
         created_at: DateTime<Utc>,
@@ -121,6 +124,7 @@ impl<'a> Sessions for RedisSessionDbContext<'a> {
         site_info: &SiteInfo,
         identity: &Identity,
         roles: Vec<String>,
+        is_linked: bool,
     ) -> Result<Session, SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(identity.id, &session_key_hash);
         log::debug!(
@@ -163,6 +167,7 @@ impl<'a> Sessions for RedisSessionDbContext<'a> {
             let data = RedisSessionUser {
                 name: identity.name.clone(),
                 is_email_confirmed: identity.is_email_confirmed,
+                is_linked,
                 roles,
             };
             log::debug!("data:{:#?}", sentinel);
@@ -185,6 +190,8 @@ impl<'a> Sessions for RedisSessionDbContext<'a> {
                 user_version: identity.version,
                 user: SessionUser {
                     name: data.name,
+                    is_email_confirmed: data.is_email_confirmed,
+                    is_linked: data.is_linked,
                     roles: data.roles,
                 },
             })
@@ -284,6 +291,7 @@ impl<'a> Sessions for RedisSessionDbContext<'a> {
         session_key_hash: String,
         identity: &Identity,
         roles: &[String],
+        is_linked: bool,
     ) -> Result<Option<Session>, SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(identity.id, &session_key_hash);
         log::debug!(
@@ -296,6 +304,7 @@ impl<'a> Sessions for RedisSessionDbContext<'a> {
             let data = RedisSessionUser {
                 name: identity.name.clone(),
                 is_email_confirmed: identity.is_email_confirmed,
+                is_linked,
                 roles: roles.to_vec(),
             };
             redis::pipe()

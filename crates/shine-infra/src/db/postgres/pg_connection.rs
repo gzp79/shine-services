@@ -107,7 +107,7 @@ impl PGConnection<PGRawClient> {
     }
 }
 
-impl<'a> PGConnection<PGRawTransaction<'a>> {
+impl PGConnection<PGRawTransaction<'_>> {
     pub async fn commit(self) -> Result<(), PGError> {
         self.client.commit().await
     }

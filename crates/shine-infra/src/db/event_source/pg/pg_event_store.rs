@@ -135,7 +135,7 @@ where
     }
 }
 
-impl<'c, E> EventStore for PgEventDbContext<'c, E>
+impl<E> EventStore for PgEventDbContext<'_, E>
 where
     E: Event,
 {

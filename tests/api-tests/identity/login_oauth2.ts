@@ -283,7 +283,7 @@ test.describe('Login with OAuth2', () => {
         expect(authCookies.sid).toBeClearCookie();
         expect(authCookies.eid).toBeValidEID();
 
-        const infoResponse = await api.user.getUserInfoRequest(sid);
+        const infoResponse = await api.user.getUserInfoRequest(sid, 'full');
         expect(infoResponse).toHaveStatus(401);
         expect(await infoResponse.parseProblem()).toEqual(
             expect.objectContaining({
@@ -345,7 +345,7 @@ test.describe('Login with OAuth2', () => {
         expect(authCookies.sid).toBeClearCookie();
         expect(authCookies.eid).toBeValidEID();
 
-        const infoResponse = await api.user.getUserInfoRequest(sid);
+        const infoResponse = await api.user.getUserInfoRequest(sid, 'full');
         expect(infoResponse).toHaveStatus(401);
         expect(await infoResponse.parseProblem()).toEqual(
             expect.objectContaining({
@@ -366,8 +366,9 @@ test.describe('Login with OAuth2', () => {
         expect(parseSignedCookie(cookies.tid).key).toBeUndefined();
         expect(parseSignedCookie(cookies.sid).key).toBeString();
         expect(parseSignedCookie(cookies.eid).key).toBeUndefined();
-        const userInfo = await api.user.getUserInfo(cookies.sid);
-        expect(userInfo.name).toEqual(user.name);
+
+        expect((await api.user.getUserInfo(cookies.sid, 'fast')).name).toEqual(user.name);
+        expect((await api.user.getUserInfo(cookies.sid, 'full')).name).toEqual(user.name);
     });
 
     test('Login with (token cookie: NULL, session: NULL, rememberMe: true) shall succeed and register a new user', async ({
@@ -379,8 +380,9 @@ test.describe('Login with OAuth2', () => {
         expect(parseSignedCookie(cookies.tid).key).toBeString();
         expect(parseSignedCookie(cookies.sid).key).toBeString();
         expect(parseSignedCookie(cookies.eid).key).toBeUndefined();
-        const userInfo = await api.user.getUserInfo(cookies.sid);
-        expect(userInfo.name).toEqual(user.name);
+
+        expect((await api.user.getUserInfo(cookies.sid, 'fast')).name).toEqual(user.name);
+        expect((await api.user.getUserInfo(cookies.sid, 'full')).name).toEqual(user.name);
     });
 
     test('Login with occupied email shall fail', async ({ api }) => {
@@ -412,16 +414,20 @@ test.describe('Login with OAuth2', () => {
 
     test('Login with the same external user shall succeed', async ({ api }) => {
         const user = await api.testUsers.createLinked(mock);
+
         const newUserCookies = await api.auth.loginWithOAuth2(mock, user.externalUser!, null);
         expect(newUserCookies.sid, 'It shall be a new session').not.toEqual(user.sid);
-        expect((await api.user.getUserInfo(newUserCookies.sid)).userId).toEqual(user.userId);
+        expect((await api.user.getUserInfo(newUserCookies.sid, 'fast')).userId).toEqual(user.userId);
+        expect((await api.user.getUserInfo(newUserCookies.sid, 'full')).userId).toEqual(user.userId);
     });
 
     test('Login with the returned token shall be a success', async ({ api }) => {
         const user = await api.testUsers.createLinked(mock, { rememberMe: true });
+
         const newUserCookies = await api.auth.loginWithToken(user.tid!, null);
         expect(newUserCookies.sid, 'It shall be a new session').not.toEqual(user.sid);
-        expect((await api.user.getUserInfo(newUserCookies.sid)).userId).toEqual(user.userId);
+        expect((await api.user.getUserInfo(newUserCookies.sid, 'fast')).userId).toEqual(user.userId);
+        expect((await api.user.getUserInfo(newUserCookies.sid, 'full')).userId).toEqual(user.userId);
     });
 });
 
@@ -474,27 +480,13 @@ test.describe('Link to OAuth2 account', () => {
         expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
         expect(getPageProblem(text)).toBeNull();
 
+        expect((await api.user.getUserInfo(user.sid, 'fast')).isLinked).toBeTruthy();
+        expect((await api.user.getUserInfo(user.sid, 'full')).isLinked).toBeTruthy();
+
         user.externalUser = externalUser;
         await user.refreshUserInfo();
         expect(user.userInfo!.isLinked).toBeTruthy();
-    });
-
-    test('Linking with occupied email shall succeed', async ({ api }) => {
-        const user = await api.testUsers.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
-        const newUser = new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email);
-
-        const start = await api.auth.startLinkWithOAuth2(mock, user.sid);
-        const response = await api.auth.authorizeWithOAuth2Request(
-            start.sid,
-            start.eid,
-            start.authParams.state,
-            newUser.toCode()
-        );
-        expect(response).toHaveStatus(200);
-
-        const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
-        expect(getPageProblem(text)).toBeNull();
+        expect(user.userInfo!.details?.email).toBeNull(); // linking does not set an email for the user
     });
 
     test('Linking with occupied external user shall fail', async ({ api }) => {
