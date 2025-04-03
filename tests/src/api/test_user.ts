@@ -114,12 +114,14 @@ export class TestUserHelper {
         const id = randomUUID().toString();
         const name = props?.name ?? 'Random_' + generateRandomString(5);
         const email = props?.email ?? name + '@example.com';
-        const user = new ExternalUser(id, name, email);
 
+        let user;
         let cookies;
         if (mock instanceof OAuth2MockServer) {
+            user = new ExternalUser('oauth2_flow', id, name, email);
             cookies = await this.authAPI.loginWithOAuth2(mock, user, props?.rememberMe ?? false, extraHeaders);
         } else if (mock instanceof OpenIdMockServer) {
+            user = new ExternalUser('openid_flow', id, name, email);
             cookies = await this.authAPI.loginWithOpenId(mock, user, props?.rememberMe ?? false, extraHeaders);
         } else {
             throw new Error('Invalid mock server type');

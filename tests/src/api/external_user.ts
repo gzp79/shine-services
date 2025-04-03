@@ -1,20 +1,24 @@
 import { createUrlQueryString, generateRandomString } from '$lib/string_utils';
 import { randomUUID } from 'crypto';
 
+export type ExternalUserProvider = 'oauth2_flow' | 'openid_flow';
+
 export class ExternalUser {
+    public readonly provider: ExternalUserProvider;
     public readonly id: string;
     public readonly name: string;
     public readonly email: string;
 
-    constructor(id: string, name: string, email: string) {
+    constructor(provider: ExternalUserProvider, id: string, name: string, email: string) {
+        this.provider = provider;
         this.id = id;
         this.name = name;
         this.email = email;
     }
 
-    static newRandomUser(): ExternalUser {
+    static newRandomUser(provider: ExternalUserProvider): ExternalUser {
         const name = 'Random_' + generateRandomString(5);
-        return new ExternalUser(randomUUID(), name, name + '@example.com');
+        return new ExternalUser(provider, randomUUID(), name, name + '@example.com');
     }
 
     toCode(params?: Record<string, string>): string {

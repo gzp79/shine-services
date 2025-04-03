@@ -4,9 +4,9 @@ use crate::{
         identity::{Identity, IdentityDb, IdentityError, TokenKind},
         session::{SessionDb, SessionError},
     },
-    services::{events, IdentityService, SessionService},
+    services::{IdentityService, SessionService, UserEvent, UserLinkEvent},
 };
-use shine_core::event_bus::EventHandler;
+use shine_core::sync::EventHandler;
 use shine_infra::web::{ClientFingerprint, CurrentUser, Problem, SessionKey, SiteInfo};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
@@ -151,39 +151,49 @@ impl AppState {
 
     pub async fn subscribe_user_info_handler(&self) {
         #[derive(Clone)]
-        pub struct OnUserUpdate(AppState);
-        impl EventHandler<events::UserUpdated> for OnUserUpdate {
-            async fn handle(self, event: &events::UserUpdated) {
-                let user_id = event.0;
+        pub struct OnUserEvent(AppState);
+        impl EventHandler<UserEvent> for OnUserEvent {
+            async fn handle(&self, event: &UserEvent) {
+                let user_id = match event {
+                    UserEvent::Created(user_id) => *user_id,
+                    UserEvent::Updated(user_id) => *user_id,
+                    UserEvent::Deleted(user_id) => *user_id,
+                    UserEvent::RoleChange(user_id) => *user_id,
+                };
 
                 let handler = self.0.user_info_handler();
                 if let Err(err) = handler.refresh_user_session(user_id).await {
                     log::error!(
-                        "Failed to refresh session user ({}) after an UserUpdated event: {}",
+                        "Failed to refresh session for user ({}) after an UserEvent {:?}: {:?}",
                         user_id,
+                        event,
                         err
                     );
                 }
             }
         }
-        self.identity_service().subscribe(OnUserUpdate(self.clone())).await;
+        self.identity_service().subscribe(OnUserEvent(self.clone())).await;
 
         #[derive(Clone)]
-        pub struct OnUserRoleUpdate(AppState);
-        impl EventHandler<events::UserRoleUpdated> for OnUserRoleUpdate {
-            async fn handle(self, event: &events::UserRoleUpdated) {
-                let user_id = event.0;
+        pub struct OnUserLinkEvent(AppState);
+        impl EventHandler<UserLinkEvent> for OnUserLinkEvent {
+            async fn handle(&self, event: &UserLinkEvent) {
+                let user_id = match event {
+                    UserLinkEvent::Linked(user_id) => *user_id,
+                    UserLinkEvent::Unlinked(user_id) => *user_id,
+                };
 
                 let handler = self.0.user_info_handler();
                 if let Err(err) = handler.refresh_user_session(user_id).await {
                     log::error!(
-                        "Failed to refresh session user ({}) after an UserRoleUpdated event: {}",
+                        "Failed to refresh session for user ({}) after an UserEvent {:?}: {:?}",
                         user_id,
+                        event,
                         err
                     );
                 }
             }
         }
-        self.identity_service().subscribe(OnUserRoleUpdate(self.clone())).await;
+        self.identity_service().subscribe(OnUserLinkEvent(self.clone())).await;
     }
 }

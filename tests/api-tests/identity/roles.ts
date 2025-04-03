@@ -108,12 +108,18 @@ test.describe('User roles', () => {
         expect((await userApi.getUserInfo(uSid, 'full')).roles.sort()).toEqual([]);
 
         // add Role1
-        expect((await userApi.addRole(aSid, false, userId, 'Role1')).sort().sort()).toEqual(['Role1']);
+        expect((await userApi.addRole(aSid, false, userId, 'Role1')).sort()).toEqual(['Role1']);
         expect((await userApi.getRoles(aSid, false, userId)).sort()).toEqual(['Role1']);
         expect((await userApi.getUserInfo(uSid, 'fast')).roles.sort()).toEqual(['Role1']);
         expect((await userApi.getUserInfo(uSid, 'full')).roles.sort()).toEqual(['Role1']);
 
-        //add Role2
+        // add Role1 (again)
+        expect((await userApi.addRole(aSid, false, userId, 'Role1')).sort()).toEqual(['Role1']);
+        expect((await userApi.getRoles(aSid, false, userId)).sort()).toEqual(['Role1']);
+        expect((await userApi.getUserInfo(uSid, 'fast')).roles.sort()).toEqual(['Role1']);
+        expect((await userApi.getUserInfo(uSid, 'full')).roles.sort()).toEqual(['Role1']);
+
+        // add Role2
         expect((await userApi.addRole(aSid, false, userId, 'Role2')).sort()).toEqual(['Role1', 'Role2']);
         expect((await userApi.getRoles(aSid, false, userId)).sort()).toEqual(['Role1', 'Role2']);
         expect((await userApi.getUserInfo(uSid, 'fast')).roles.sort()).toEqual(['Role1', 'Role2']);

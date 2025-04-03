@@ -1,58 +1,58 @@
-use shine_core::event_bus::{Event, EventBus, EventHandler};
+use shine_core::sync::{Event, EventBus, EventHandler};
 use shine_test::test;
 use std::sync::{
     atomic::{AtomicIsize, Ordering},
     Arc,
 };
 
-struct UserDomain;
-
-struct UserAddEvent(pub isize);
-impl Event for UserAddEvent {
-    type Domain = UserDomain;
+pub enum UserEvent {
+    Add(isize),
+    Remove(isize),
 }
 
-struct UserRemoveEvent(pub isize);
-impl Event for UserRemoveEvent {
-    type Domain = UserDomain;
-}
+impl Event for UserEvent {}
 
 #[test]
 async fn test_event_bus() {
-    let bus = EventBus::<UserDomain>::new();
+    let bus = EventBus::<UserEvent>::new();
     let add_count = Arc::new(AtomicIsize::new(0));
-    let remove_count = Arc::new(AtomicIsize::new(0));
+    let count = Arc::new(AtomicIsize::new(0));
 
     #[derive(Clone)]
-    struct HandleAdd(Arc<AtomicIsize>);
-    impl EventHandler<UserAddEvent> for HandleAdd {
-        async fn handle(self, event: &UserAddEvent) {
-            self.0.fetch_add(event.0, Ordering::Relaxed);
+    struct OnUserEvent(Arc<AtomicIsize>);
+    impl EventHandler<UserEvent> for OnUserEvent {
+        async fn handle(&self, event: &UserEvent) {
+            match event {
+                UserEvent::Add(count) => self.0.fetch_add(*count, Ordering::Relaxed),
+                UserEvent::Remove(count) => self.0.fetch_sub(*count, Ordering::Relaxed),
+            };
         }
     }
 
     #[derive(Clone)]
-    struct HandleRemove(Arc<AtomicIsize>);
-    impl EventHandler<UserRemoveEvent> for HandleRemove {
-        async fn handle(self, event: &UserRemoveEvent) {
-            self.0.fetch_sub(event.0, Ordering::Relaxed);
+    struct OnAddEvent(Arc<AtomicIsize>);
+    impl EventHandler<UserEvent> for OnAddEvent {
+        async fn handle(&self, event: &UserEvent) {
+            if let UserEvent::Add(count) = event {
+                self.0.fetch_add(*count, Ordering::Relaxed);
+            }
         }
     }
 
-    let add_id = bus.subscribe(HandleAdd(add_count.clone())).await;
-    bus.subscribe(HandleRemove(remove_count.clone())).await;
+    bus.subscribe(OnUserEvent(count.clone())).await;
+    let add_id = bus.subscribe(OnAddEvent(add_count.clone())).await;
 
-    bus.publish(&UserAddEvent(1)).await;
-    bus.publish(&UserAddEvent(2)).await;
-    bus.publish(&UserAddEvent(3)).await;
+    bus.publish(&UserEvent::Add(1)).await;
+    bus.publish(&UserEvent::Add(2)).await;
+    bus.publish(&UserEvent::Add(3)).await;
+    bus.publish(&UserEvent::Remove(4)).await;
     assert_eq!(add_count.load(Ordering::Relaxed), 6);
-    assert_eq!(remove_count.load(Ordering::Relaxed), 0);
+    assert_eq!(count.load(Ordering::Relaxed), 2);
 
     bus.unsubscribe(&add_id).await;
 
-    bus.publish(&UserAddEvent(1)).await;
-    bus.publish(&UserRemoveEvent(2)).await;
-    bus.publish(&UserAddEvent(3)).await;
+    bus.publish(&UserEvent::Add(1)).await;
+    bus.publish(&UserEvent::Remove(2)).await;
     assert_eq!(add_count.load(Ordering::Relaxed), 6);
-    assert_eq!(remove_count.load(Ordering::Relaxed), -2);
+    assert_eq!(count.load(Ordering::Relaxed), 1);
 }

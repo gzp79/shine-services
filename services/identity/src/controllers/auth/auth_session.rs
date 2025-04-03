@@ -1,8 +1,4 @@
-use crate::{
-    app_config::AppConfig,
-    app_state::AppState,
-    repositories::{identity::TokenKind, session::Session},
-};
+use crate::{app_config::AppConfig, app_state::AppState, repositories::identity::TokenKind};
 use axum::{
     extract::FromRequestParts,
     http::request::Parts,

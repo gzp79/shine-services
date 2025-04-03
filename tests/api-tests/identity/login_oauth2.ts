@@ -58,7 +58,7 @@ test.describe('Check OAuth2 auth', () => {
             null,
             null,
             authParams.state,
-            ExternalUser.newRandomUser().toCode()
+            ExternalUser.newRandomUser('oauth2_flow').toCode()
         );
         expect(response).toHaveStatus(200);
 
@@ -118,7 +118,7 @@ test.describe('Check OAuth2 auth', () => {
             null,
             eid,
             'invalid',
-            ExternalUser.newRandomUser().toCode()
+            ExternalUser.newRandomUser('oauth2_flow').toCode()
         );
         expect(response).toHaveStatus(200);
 
@@ -177,7 +177,7 @@ test.describe('Check OAuth2 auth', () => {
             null,
             eid,
             authParams.state,
-            ExternalUser.newRandomUser().toCode()
+            ExternalUser.newRandomUser('oauth2_flow').toCode()
         );
         expect(response).toHaveStatus(200);
 
@@ -360,7 +360,7 @@ test.describe('Login with OAuth2', () => {
     test('Login with (token: NULL, session: NULL, rememberMe: false) shall succeed and register a new user', async ({
         api
     }) => {
-        const user = ExternalUser.newRandomUser();
+        const user = ExternalUser.newRandomUser('oauth2_flow');
 
         const cookies = await api.auth.loginWithOAuth2(mock, user, false);
         expect(parseSignedCookie(cookies.tid).key).toBeUndefined();
@@ -374,7 +374,7 @@ test.describe('Login with OAuth2', () => {
     test('Login with (token cookie: NULL, session: NULL, rememberMe: true) shall succeed and register a new user', async ({
         api
     }) => {
-        const user = ExternalUser.newRandomUser();
+        const user = ExternalUser.newRandomUser('oauth2_flow');
 
         const cookies = await api.auth.loginWithOAuth2(mock, user, true);
         expect(parseSignedCookie(cookies.tid).key).toBeString();
@@ -387,7 +387,7 @@ test.describe('Login with OAuth2', () => {
 
     test('Login with occupied email shall fail', async ({ api }) => {
         const user = await api.testUsers.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
-        const newUser = new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email);
+        const newUser = new ExternalUser('oauth2_flow', randomUUID(), randomUUID(), user.externalUser!.email);
 
         const start = await api.auth.startLoginWithOAuth2(mock, false);
         const response = await api.auth.authorizeWithOAuth2Request(
@@ -466,7 +466,7 @@ test.describe('Link to OAuth2 account', () => {
         const user = await api.testUsers.createGuest();
         expect(user.userInfo!.isLinked).toBeFalsy();
 
-        const externalUser = new ExternalUser(randomUUID(), randomUUID(), generateRandomString(5) + '@example.com');
+        const externalUser = new ExternalUser('oauth2_flow', randomUUID(), randomUUID(), generateRandomString(5) + '@example.com');
         const start = await api.auth.startLinkWithOAuth2(mock, user.sid);
         const response = await api.auth.authorizeWithOAuth2Request(
             start.sid,
@@ -486,7 +486,7 @@ test.describe('Link to OAuth2 account', () => {
         user.externalUser = externalUser;
         await user.refreshUserInfo();
         expect(user.userInfo!.isLinked).toBeTruthy();
-        expect(user.userInfo!.details?.email).toBeNull(); // linking does not set an email for the user
+        expect(user.userInfo!.details?.email).toBeUndefined(); // linking does not set an email for the user
     });
 
     test('Linking with occupied external user shall fail', async ({ api }) => {

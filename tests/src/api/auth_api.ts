@@ -250,6 +250,7 @@ export class AuthAPI {
         rememberMe: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
+        expect(user.provider).toEqual('oauth2_flow');
         const start = await this.startLoginWithOAuth2(mock, rememberMe, extraHeaders);
         const response = await this.authorizeWithOAuth2Request(
             start.sid,
@@ -308,6 +309,7 @@ export class AuthAPI {
         user: ExternalUser,
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
+        expect(user.provider).toEqual('oauth2_flow');
         const start = await this.startLinkWithOAuth2(mock, sid, extraHeaders);
         const response = await this.authorizeWithOAuth2Request(
             start.sid,
@@ -403,6 +405,7 @@ export class AuthAPI {
         rememberMe: boolean | null,
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
+        expect(user.provider).toEqual('openid_flow');
         const start = await this.startLoginWithOpenId(mock, rememberMe, extraHeaders);
         const response = await this.authorizeWithOpenIdRequest(
             start.sid,
@@ -461,6 +464,7 @@ export class AuthAPI {
         user: ExternalUser,
         extraHeaders?: Record<string, string>
     ): Promise<UserCookies> {
+        expect(user.provider).toEqual('openid_flow');
         const start = await this.startLinkWithOpenId(mock, sid, extraHeaders);
         const response = await this.authorizeWithOpenIdRequest(
             start.sid,

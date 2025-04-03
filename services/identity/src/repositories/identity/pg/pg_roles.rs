@@ -11,22 +11,10 @@ use super::PgIdentityDbContext;
 
 pg_query!( AddUserRole =>
     in = user_id: Uuid, role: &str;
-    out = UserRolesRow;
     sql = r#"
-         WITH inserted AS (
-            INSERT INTO roles (user_id, role) 
-            VALUES ($1, $2)
-            ON CONFLICT (user_id, role) DO NOTHING
-        )
-        SELECT 
-            CASE 
-                WHEN array_agg(r.role) = ARRAY[NULL]::text[] THEN ARRAY[]::text[] 
-                ELSE array_agg(r.role) 
-            END AS roles
-        FROM identities i
-        LEFT JOIN roles r ON i.user_id = r.user_id
-        WHERE i.user_id = $1
-        GROUP BY i.user_id
+         INSERT INTO roles (user_id, role) 
+         VALUES ($1, $2)
+         ON CONFLICT (user_id, role) DO NOTHING
     "#
 );
 
@@ -53,21 +41,9 @@ pg_query!( GetUserRoles =>
 
 pg_query!( DeleteUserRole =>
     in = user_id: Uuid, role: &str;
-    out = UserRolesRow;
     sql = r#"
-        WITH deleted AS (
-            DELETE FROM roles
-            WHERE user_id = $1 AND role = $2
-        )
-        SELECT 
-            CASE 
-                WHEN array_agg(r.role) = ARRAY[NULL]::text[] THEN ARRAY[]::text[] 
-                ELSE array_agg(r.role) 
-            END AS roles
-        FROM identities i
-        LEFT JOIN roles r ON i.user_id = r.user_id
-        WHERE i.user_id = $1
-        GROUP BY i.user_id
+        DELETE FROM roles
+        WHERE user_id = $1 AND role = $2
     "#
 );
 
@@ -92,20 +68,15 @@ impl Roles for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
     async fn add_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         log::debug!("Adding role {} to user {}", role, user_id);
-        let row = match self.stmts_roles.add.query_opt(&self.client, &user_id, &role).await {
-            Ok(roles) => roles,
+        match self.stmts_roles.add.execute(&self.client, &user_id, &role).await {
+            Ok(_) => (),
             Err(err) if err.is_constraint("roles", "fkey_user_id") => {
                 // user not found, deleted meanwhile
                 return Ok(None);
             }
             Err(err) => return Err(DBError::from(err).into()),
         };
-
-        if let Some(roles) = row {
-            Ok(Some(roles.roles))
-        } else {
-            Ok(None)
-        }
+        self.get_roles(user_id).await
     }
 
     #[instrument(skip(self))]
@@ -125,17 +96,12 @@ impl Roles for PgIdentityDbContext<'_> {
 
     #[instrument(skip(self))]
     async fn delete_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
-        let row = self
-            .stmts_roles
+        self.stmts_roles
             .delete
-            .query_opt(&self.client, &user_id, &role)
+            .execute(&self.client, &user_id, &role)
             .await
             .map_err(DBError::from)?;
 
-        if let Some(roles) = row {
-            Ok(Some(roles.roles))
-        } else {
-            Ok(None)
-        }
+        self.get_roles(user_id).await
     }
 }
