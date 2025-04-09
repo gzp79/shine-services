@@ -466,7 +466,12 @@ test.describe('Link to OAuth2 account', () => {
         const user = await api.testUsers.createGuest();
         expect(user.userInfo!.isLinked).toBeFalsy();
 
-        const externalUser = new ExternalUser('oauth2_flow', randomUUID(), randomUUID(), generateRandomString(5) + '@example.com');
+        const externalUser = new ExternalUser(
+            'oauth2_flow',
+            randomUUID(),
+            randomUUID(),
+            generateRandomString(5) + '@example.com'
+        );
         const start = await api.auth.startLinkWithOAuth2(mock, user.sid);
         const response = await api.auth.authorizeWithOAuth2Request(
             start.sid,

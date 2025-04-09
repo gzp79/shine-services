@@ -1,5 +1,5 @@
 import { Cookie } from '$lib/api/api';
-import { UserInfo, UserInfoDetail } from '$lib/api/user_api';
+import { UserInfo } from '$lib/api/user_api';
 import uuidValidate from 'uuid-validate';
 import { expect as baseExpect } from './common';
 
