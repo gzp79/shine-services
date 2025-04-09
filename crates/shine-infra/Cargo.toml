@@ -41,29 +41,29 @@ tokio = { workspace = true, features = ["macros", "signal"] }
 tracing = { workspace = true }
 tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
-tracing-opentelemetry = { version = "0.28", features = [
+tracing-opentelemetry = { version = "0.30", features = [
     "metrics",
     "tracing-log",
 ] }
-tracing-opentelemetry-instrumentation-sdk = "0.24"
+tracing-opentelemetry-instrumentation-sdk = "0.26"
 prometheus = "0.13"
-opentelemetry = "0.27"
-opentelemetry-semantic-conventions = "0.27"
-opentelemetry_sdk = { version = "0.27", features = [
+opentelemetry = "0.29"
+opentelemetry-semantic-conventions = "0.29"
+opentelemetry_sdk = { version = "0.29", features = [
     "rt-tokio",
     "metrics",
     "trace",
 ] }
-opentelemetry-stdout = { version = "0.27", features = ["logs", "trace"] }
-opentelemetry-otlp = { version = "0.27", features = [
+opentelemetry-stdout = { version = "0.29", features = ["logs", "trace"] }
+opentelemetry-otlp = { version = "0.29", features = [
     "tokio",
-    "tonic",
+    "grpc-tonic",
 ], optional = true }
-opentelemetry-zipkin = { version = "0.27", features = [
+opentelemetry-zipkin = { version = "0.29", features = [
     "reqwest-client",
 ], default-features = false, optional = true }
-opentelemetry-prometheus = "0.27"
-opentelemetry-application-insights = { version = "0.37", features = [
+opentelemetry-prometheus = "0.29"
+opentelemetry-application-insights = { version = "0.40", features = [
     "reqwest-client-rustls",
 ], optional = true }
 
@@ -86,7 +86,7 @@ refinery = { workspace = true }
 ############################# AZURE #############################
 azure_core = { workspace = true }
 azure_identity = { workspace = true }
-azure_security_keyvault = { version = "0.21" }
+azure_security_keyvault_secrets = { version = "0.1" }
 
 ############################# NET #############################
 rustls = { workspace = true }
@@ -108,6 +108,9 @@ axum-extra = { workspace = true, features = [
     "cookie-private",
     "typed-header",
 ] }
+
+# https://github.com/zip-rs/zip2/issues/328
+zip = { version = "=2.4.2" }
 
 ############################# MEMBERS #############################
 shine-infra-macros = { workspace = true }

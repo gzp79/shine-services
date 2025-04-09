@@ -13,7 +13,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Utc};
 use rand::{rng, Rng};
 use serde::{Deserialize, Serialize};
-use shine_infra::web::{CheckedCurrentUser, CurrentUser, WebAppConfig};
+use shine_infra::web::{CheckedCurrentUser, CurrentUser, SessionCookie, WebAppConfig};
 use std::{convert::Infallible, sync::Arc};
 use thiserror::Error as ThisError;
 use time::{Duration, OffsetDateTime};
@@ -200,7 +200,7 @@ impl AuthSession {
     pub async fn revoke_session(mut self, state: &AppState) -> Self {
         if let Some(session) = self.session.take() {
             state
-                .session_user_handler()
+                .user_info_handler()
                 .revoke_session(session.user_id, &session.key)
                 .await;
         }
@@ -227,12 +227,12 @@ impl AuthSession {
         if let Some(token_cookie) = self.access.take() {
             if let Some(revoked_token) = &token_cookie.revoked_token {
                 state
-                    .session_user_handler()
+                    .user_info_handler()
                     .revoke_access(TokenKind::Access, revoked_token)
                     .await;
             }
             state
-                .session_user_handler()
+                .user_info_handler()
                 .revoke_access(TokenKind::Access, &token_cookie.key)
                 .await;
         }
@@ -383,18 +383,23 @@ impl IntoResponseParts for AuthSession {
             external_login: external_login_cookie,
             access: token_cookie,
         } = self;
+        let session_cookie = user_session.as_ref().map(|u| SessionCookie {
+            user_id: u.user_id,
+            fingerprint: u.fingerprint.clone(),
+            key: u.key,
+        });
+
         log::debug!(
-            "Auth sessions set headers:\n  user:{:#?}\n  external_login_cookie:{:#?}\n  token_cookie:{:#?}",
-            user_session,
+            "Auth sessions set headers:\n  session_cookie:{:#?}\n  external_login_cookie:{:#?}\n  token_cookie:{:#?}",
+            session_cookie,
             external_login_cookie,
             token_cookie,
         );
 
         let session = create_jar(
             &meta.session_settings,
-            user_session.as_ref().map(|d| (d, Expiration::Session)),
+            session_cookie.as_ref().map(|d| (d, Expiration::Session)),
         );
-
         let external_login_cookie = create_jar(
             &meta.external_login_cookie_settings,
             external_login_cookie.as_ref().map(|d| (d, Expiration::Session)),

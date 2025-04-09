@@ -58,7 +58,7 @@ test.describe('Check OpenId auth', () => {
             null,
             null,
             start.authParams.state,
-            ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
+            ExternalUser.newRandomUser('openid_flow').toCode({ nonce: start.authParams.nonce })
         );
         expect(response).toHaveStatus(200);
 
@@ -118,7 +118,7 @@ test.describe('Check OpenId auth', () => {
             null,
             start.eid,
             'invalid',
-            ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
+            ExternalUser.newRandomUser('openid_flow').toCode({ nonce: start.authParams.nonce })
         );
         expect(response).toHaveStatus(200);
 
@@ -176,7 +176,7 @@ test.describe('Check OpenId auth', () => {
             null,
             start.eid,
             start.authParams.state,
-            ExternalUser.newRandomUser().toCode({ nonce: 'invalid' })
+            ExternalUser.newRandomUser('openid_flow').toCode({ nonce: 'invalid' })
         );
         expect(response).toHaveStatus(200);
 
@@ -209,7 +209,7 @@ test.describe('Check OpenId auth', () => {
             null,
             start.eid,
             start.authParams.state,
-            ExternalUser.newRandomUser().toCode({ nonce: start.authParams.nonce })
+            ExternalUser.newRandomUser('openid_flow').toCode({ nonce: start.authParams.nonce })
         );
         expect(response).toHaveStatus(200);
 
@@ -315,7 +315,7 @@ test.describe('Login with OpenId', () => {
         expect(authCookies.sid).toBeClearCookie();
         expect(authCookies.eid).toBeValidEID();
 
-        const infoResponse = await api.user.getUserInfoRequest(sid);
+        const infoResponse = await api.user.getUserInfoRequest(sid, 'full');
         expect(infoResponse).toHaveStatus(401);
         expect(await infoResponse.parseProblem()).toEqual(
             expect.objectContaining({
@@ -377,7 +377,7 @@ test.describe('Login with OpenId', () => {
         expect(authCookies.sid).toBeClearCookie();
         expect(authCookies.eid).toBeValidEID();
 
-        const infoResponse = await api.user.getUserInfoRequest(sid);
+        const infoResponse = await api.user.getUserInfoRequest(sid, 'full');
         expect(infoResponse).toHaveStatus(401);
         expect(await infoResponse.parseProblem()).toEqual(
             expect.objectContaining({
@@ -392,32 +392,34 @@ test.describe('Login with OpenId', () => {
     test('Login with (token: NULL, session: NULL, rememberMe: false) shall succeed and register a new user', async ({
         api
     }) => {
-        const user = ExternalUser.newRandomUser();
+        const user = ExternalUser.newRandomUser('openid_flow');
 
         const cookies = await api.auth.loginWithOpenId(mock, user, false);
         expect(parseSignedCookie(cookies.tid).key).toBeUndefined();
         expect(parseSignedCookie(cookies.sid).key).toBeString();
         expect(parseSignedCookie(cookies.eid).key).toBeUndefined();
-        const userInfo = await api.user.getUserInfo(cookies.sid);
-        expect(userInfo.name).toEqual(user.name);
+
+        expect((await api.user.getUserInfo(cookies.sid, 'fast')).name).toEqual(user.name);
+        expect((await api.user.getUserInfo(cookies.sid, 'full')).name).toEqual(user.name);
     });
 
     test('Login with (token cookie: NULL, session: NULL, rememberMe: true) shall succeed and register a new user', async ({
         api
     }) => {
-        const user = ExternalUser.newRandomUser();
+        const user = ExternalUser.newRandomUser('openid_flow');
 
         const cookies = await api.auth.loginWithOpenId(mock, user, true);
         expect(parseSignedCookie(cookies.tid).key).toBeString();
         expect(parseSignedCookie(cookies.sid).key).toBeString();
         expect(parseSignedCookie(cookies.eid).key).toBeUndefined();
-        const userInfo = await api.user.getUserInfo(cookies.sid);
-        expect(userInfo.name).toEqual(user.name);
+
+        expect((await api.user.getUserInfo(cookies.sid, 'fast')).name).toEqual(user.name);
+        expect((await api.user.getUserInfo(cookies.sid, 'full')).name).toEqual(user.name);
     });
 
     test('Login with occupied email shall fail', async ({ api }) => {
         const user = await api.testUsers.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
-        const newUser = new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email);
+        const newUser = new ExternalUser('openid_flow', randomUUID(), randomUUID(), user.externalUser!.email);
 
         const start = await api.auth.startLoginWithOpenId(mock, false);
         const response = await api.auth.authorizeWithOpenIdRequest(
@@ -444,22 +446,25 @@ test.describe('Login with OpenId', () => {
 
     test('Login with invalid email from external user shall have no email', async ({ api }) => {
         const user = await api.testUsers.createLinked(mock, { email: 'invalid' });
-        const userInfo = await api.user.getUserInfo(user.sid);
-        expect(userInfo.email).toBeUndefined();
+        expect(user.userInfo!.details!.email).toBeUndefined();
     });
 
     test('Login with the same external user shall succeed', async ({ api }) => {
         const user = await api.testUsers.createLinked(mock);
+
         const newUserCookies = await api.auth.loginWithOpenId(mock, user.externalUser!, null);
         expect(newUserCookies.sid, 'It shall be a new session').not.toEqual(user.sid);
-        expect((await api.user.getUserInfo(newUserCookies.sid)).userId).toEqual(user.userId);
+        expect((await api.user.getUserInfo(newUserCookies.sid, 'fast')).userId).toEqual(user.userId);
+        expect((await api.user.getUserInfo(newUserCookies.sid, 'full')).userId).toEqual(user.userId);
     });
 
     test('Login with the returned token shall be a success', async ({ api }) => {
         const user = await api.testUsers.createLinked(mock, { rememberMe: true });
+
         const newUserCookies = await api.auth.loginWithToken(user.tid!, null);
         expect(newUserCookies.sid, 'It shall be a new session').not.toEqual(user.sid);
-        expect((await api.user.getUserInfo(newUserCookies.sid)).userId).toEqual(user.userId);
+        expect((await api.user.getUserInfo(newUserCookies.sid, 'fast')).userId).toEqual(user.userId);
+        expect((await api.user.getUserInfo(newUserCookies.sid, 'full')).userId).toEqual(user.userId);
     });
 });
 
@@ -498,7 +503,12 @@ test.describe('Link to OpenId account', () => {
         const user = await api.testUsers.createGuest();
         expect(user.userInfo!.isLinked).toBeFalsy();
 
-        const externalUser = new ExternalUser(randomUUID(), randomUUID(), generateRandomString(5) + '@example.com');
+        const externalUser = new ExternalUser(
+            'openid_flow',
+            randomUUID(),
+            randomUUID(),
+            generateRandomString(5) + '@example.com'
+        );
         const start = await api.auth.startLinkWithOpenId(mock, user.sid);
         const response = await api.auth.authorizeWithOpenIdRequest(
             start.sid,
@@ -512,27 +522,13 @@ test.describe('Link to OpenId account', () => {
         expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
         expect(getPageProblem(text)).toBeNull();
 
+        expect((await api.user.getUserInfo(user.sid, 'fast')).isLinked).toBeTruthy();
+        expect((await api.user.getUserInfo(user.sid, 'full')).isLinked).toBeTruthy();
+
         user.externalUser = externalUser;
         await user.refreshUserInfo();
         expect(user.userInfo!.isLinked).toBeTruthy();
-    });
-
-    test('Linking with occupied email shall succeed', async ({ api }) => {
-        const user = await api.testUsers.createLinked(mock, { email: generateRandomString(5) + '@example.com' });
-        const newUser = new ExternalUser(randomUUID(), randomUUID(), user.externalUser!.email);
-
-        const start = await api.auth.startLinkWithOpenId(mock, user.sid);
-        const response = await api.auth.authorizeWithOpenIdRequest(
-            start.sid,
-            start.eid,
-            start.authParams.state,
-            newUser.toCode({ nonce: start.authParams.nonce })
-        );
-        expect(response).toHaveStatus(200);
-
-        const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
-        expect(getPageProblem(text)).toBeNull();
+        expect(user.userInfo!.details?.email).toBeUndefined(); // linking does not set an email for the user
     });
 
     test('Linking with occupied external user shall fail', async ({ api }) => {

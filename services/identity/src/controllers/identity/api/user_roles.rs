@@ -80,7 +80,7 @@ pub async fn add_user_role(
             .map_err(|err| err.into_response(&problem_config))?;
     }
 
-    state
+    let roles = state
         .identity_service()
         .add_role(path.user_id, &params.role)
         .await
@@ -90,13 +90,6 @@ pub async fn add_user_role(
                 .with_instance_str(format!("{{identity_api}}/identities/{}", path.user_id))
                 .into_response(&problem_config)
         })?;
-
-    //todo: make it triggered by the identity
-    let (_, roles) = state
-        .session_user_handler()
-        .refresh_session_user(path.user_id)
-        .await
-        .map_err(|err| err.into_response(&problem_config))?;
 
     Ok(Json(UserRoles { roles }))
 }
@@ -199,7 +192,7 @@ pub async fn delete_user_role(
             .map_err(|err| err.into_response(&problem_config))?;
     }
 
-    state
+    let roles = state
         .identity_service()
         .delete_role(path.user_id, &params.role)
         .await
@@ -209,13 +202,6 @@ pub async fn delete_user_role(
                 .with_instance_str(format!("{{identity_api}}/identities/{}", path.user_id))
                 .into_response(&problem_config)
         })?;
-
-    //todo: make it triggered by the identity
-    let (_, roles) = state
-        .session_user_handler()
-        .refresh_session_user(path.user_id)
-        .await
-        .map_err(|err| err.into_response(&problem_config))?;
 
     Ok(Json(UserRoles { roles }))
 }

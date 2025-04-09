@@ -43,7 +43,7 @@ export class TestUser {
     }
 
     public async refreshUserInfo(extraHeaders?: Record<string, string>) {
-        const info = await this.userAPI.getUserInfo(this.sid, extraHeaders);
+        const info = await this.userAPI.getUserInfo(this.sid, 'full', extraHeaders);
         this.userInfo = info;
     }
 
@@ -71,7 +71,7 @@ export class TestUser {
 
         await this.refreshUserInfo();
         expect(this.userInfo?.isEmailConfirmed).toBe(true);
-        expect(this.userInfo?.email).toEqual(newEmail);
+        expect(this.userInfo?.details?.email).toEqual(newEmail);
     }
 }
 
@@ -90,10 +90,10 @@ export class TestUserHelper {
         const cookies = await this.authAPI.loginAsGuestUser(extraHeaders);
         {
             // add roles using api key
-            const info = await this.userAPI.getUserInfo(cookies.sid, extraHeaders);
+            const info = await this.userAPI.getUserInfo(cookies.sid, 'full', extraHeaders);
             await this.userAPI.addRole(cookies.sid, true, info.userId, props?.roles ?? [], extraHeaders);
         }
-        const info = await this.userAPI.getUserInfo(cookies.sid, extraHeaders);
+        const info = await this.userAPI.getUserInfo(cookies.sid, 'full', extraHeaders);
         const testUser = new TestUser(info.userId, this.authAPI, this.userAPI);
         testUser.userInfo = info;
         testUser.sid = cookies.sid;
@@ -114,12 +114,14 @@ export class TestUserHelper {
         const id = randomUUID().toString();
         const name = props?.name ?? 'Random_' + generateRandomString(5);
         const email = props?.email ?? name + '@example.com';
-        const user = new ExternalUser(id, name, email);
 
+        let user;
         let cookies;
         if (mock instanceof OAuth2MockServer) {
+            user = new ExternalUser('oauth2_flow', id, name, email);
             cookies = await this.authAPI.loginWithOAuth2(mock, user, props?.rememberMe ?? false, extraHeaders);
         } else if (mock instanceof OpenIdMockServer) {
+            user = new ExternalUser('openid_flow', id, name, email);
             cookies = await this.authAPI.loginWithOpenId(mock, user, props?.rememberMe ?? false, extraHeaders);
         } else {
             throw new Error('Invalid mock server type');
@@ -127,11 +129,11 @@ export class TestUserHelper {
 
         {
             // add roles using api key
-            const info = await this.userAPI.getUserInfo(cookies.sid, extraHeaders);
+            const info = await this.userAPI.getUserInfo(cookies.sid, 'full', extraHeaders);
             await this.userAPI.addRole(cookies.sid, true, info.userId, props?.roles ?? [], extraHeaders);
         }
 
-        const info = await this.userAPI.getUserInfo(cookies.sid, extraHeaders);
+        const info = await this.userAPI.getUserInfo(cookies.sid, 'full', extraHeaders);
         const testUser = new TestUser(info.userId, this.authAPI, this.userAPI);
         testUser.externalUser = user;
         testUser.userInfo = info;

@@ -30,14 +30,13 @@ struct FindByProviderIdRow {
     email: Option<String>,
     email_confirmed: bool,
     created: DateTime<Utc>,
-    data_version: i32,
 }
 
 pg_query!( FindByProviderId =>
     in = provider: &str, provider_id: &str;
     out = FindByProviderIdRow;
     sql = r#"
-        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version            
+        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created
             FROM external_logins e, identities i
             WHERE e.user_id = i.user_id
                 AND e.provider = $1
@@ -107,7 +106,7 @@ impl PgExternalLinksStatements {
     }
 }
 
-impl<'a> ExternalLinks for PgIdentityDbContext<'a> {
+impl ExternalLinks for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
     async fn link_user(&mut self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError> {
         match self
@@ -187,7 +186,6 @@ impl<'a> ExternalLinks for PgIdentityDbContext<'a> {
                 email: row.email,
                 is_email_confirmed: row.email_confirmed,
                 created: row.created,
-                version: row.data_version,
             }))
     }
 

@@ -28,7 +28,6 @@
       "errorUrl": "https://scytta.com/error",
       "authBaseUrl": "https://cloud.scytta.com/identity/auth/",
       "pageRedirectTime": 0,
-      "ttlSession": 43200,
       "ttlAccessToken": 1209600,
       "ttlSingleAccess": 600,
       "ttlApiKey": 31536000,

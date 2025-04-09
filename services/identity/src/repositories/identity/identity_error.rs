@@ -9,7 +9,6 @@ mod pr {
     pub const NAME_CONFLICT: &str = "identity-name-conflict";
     pub const EMAIL_CONFLICT: &str = "identity-email-conflict";
     pub const EXTERNAL_ID_CONFLICT: &str = "identity-external-id-conflict";
-    pub const UPDATE_CONFLICT: &str = "identity-update-conflict";
     pub const DELETE_CONFLICT: &str = "identity-deleted-conflict";
     pub const MISSING_EMAIL: &str = "identity-missing-email";
 }
@@ -40,8 +39,6 @@ pub enum IdentityError {
     TokenMissingFingerprint,
     #[error("Email address is missing for the requested token kind")]
     TokenMissingEmail,
-    #[error("Operation failed with conflict, no change was made")]
-    UpdateConflict { id: Uuid },
     #[error("User was removed during the operation")]
     UserDeleted { id: Uuid },
 
@@ -61,9 +58,6 @@ impl From<IdentityError> for Problem {
                 Problem::conflict(pr::EXTERNAL_ID_CONFLICT).with_detail(err.to_string())
             }
             IdentityError::MissingEmail => Problem::precondition_failed(pr::MISSING_EMAIL).with_detail(err.to_string()),
-            IdentityError::UpdateConflict { id } => Problem::conflict(pr::UPDATE_CONFLICT)
-                .with_detail(err.to_string())
-                .with_extension(json!({ id: id })),
             IdentityError::UserDeleted { id } => Problem::conflict(pr::DELETE_CONFLICT)
                 .with_detail(err.to_string())
                 .with_extension(json!({ id: id })),

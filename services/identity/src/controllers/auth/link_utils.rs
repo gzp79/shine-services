@@ -4,7 +4,7 @@ use crate::{
     handlers::CreateUserError,
     repositories::identity::{ExternalUserInfo, IdentityError, TokenKind},
 };
-use shine_infra::web::{ClientFingerprint, CurrentUser, SiteInfo};
+use shine_infra::web::{ClientFingerprint, SiteInfo};
 use url::Url;
 
 pub struct LinkUtils<'a> {
@@ -26,7 +26,7 @@ impl<'a> LinkUtils<'a> {
         log::debug!("Completing external link for user: {:#?}", external_user);
         assert!(auth_session.user_session().is_some());
 
-        let user = auth_session.user_session().clone().unwrap();
+        let user = auth_session.user_session().unwrap();
         match self
             .state
             .identity_service()
@@ -113,27 +113,21 @@ impl<'a> LinkUtils<'a> {
             None
         };
 
-        // find roles (for new user it will be an empty list)
-        let roles = match self.state.identity_service().get_roles(identity.id).await {
-            Ok(Some(roles)) => roles,
+        let user_session = match self
+            .state
+            .user_info_handler()
+            .create_user_session(&identity, &fingerprint, site_info)
+            .await
+        {
+            Ok(Some(session)) => session,
             Ok(None) => {
+                log::warn!("User {} has been deleted during link", identity.id);
                 return PageUtils::new(self.state).error(
-                    auth_session,
-                    IdentityError::UserDeleted { id: identity.id }, //FIXME
+                    auth_session.with_access(None),
+                    IdentityError::UserDeleted { id: identity.id },
                     error_url,
                 );
             }
-            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
-        };
-
-        log::debug!("Identity created: {identity:#?}");
-        let user_session = match self
-            .state
-            .session_service()
-            .create(&identity, roles, &fingerprint, site_info)
-            .await
-        {
-            Ok(user) => user,
             Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
         };
 
@@ -145,15 +139,7 @@ impl<'a> LinkUtils<'a> {
                 expire_at: user_token.expire_at,
                 revoked_token: None,
             }))
-            .with_session(Some(CurrentUser {
-                user_id: user_session.0.info.user_id,
-                key: user_session.1,
-                session_start: user_session.0.info.created_at,
-                name: user_session.0.user.name,
-                roles: user_session.0.user.roles,
-                fingerprint: user_session.0.info.fingerprint,
-                version: user_session.0.user_version,
-            }));
+            .with_session(Some(user_session));
         PageUtils::new(self.state).redirect(response_session, None, target_url)
     }
 }

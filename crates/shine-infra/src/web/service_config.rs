@@ -22,6 +22,8 @@ pub struct ServiceConfig {
     pub captcha_secret: String,
     /// The user session secret for the used cookie validation
     pub session_secret: String,
+    /// The user session time to live - auto logout after this time of "inactivity"
+    pub session_ttl: u64,
     /// The get up-to-date session information of the current user
     pub session_redis_cns: String,
 }

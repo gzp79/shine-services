@@ -89,7 +89,7 @@ where
     }
 }
 
-impl<'c, E> SnapshotStore for PgEventDbContext<'c, E>
+impl<E> SnapshotStore for PgEventDbContext<'_, E>
 where
     E: Event,
 {

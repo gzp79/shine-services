@@ -1,16 +1,14 @@
 use opentelemetry::{
     metrics::{Meter, MeterProvider},
-    trace::TracerProvider as _,
-    InstrumentationScope, KeyValue,
+    trace::TracerProvider,
+    InstrumentationScope,
 };
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
     metrics::SdkMeterProvider,
-    runtime::Tokio,
-    trace::{Sampler, TracerProvider},
+    trace::{Sampler, SdkTracerProvider},
     Resource,
 };
-use opentelemetry_semantic_conventions as otconv;
 use prometheus::{Encoder, Registry as PromRegistry, TextEncoder};
 use std::sync::{Arc, RwLock};
 use tracing::{Dispatch, Subscriber};
@@ -94,7 +92,7 @@ struct Metrics {
 ///  - For convenience, the log::trace,debug,info,warn,error! macros are also available and channelled to the tracing layer
 #[derive(Clone)]
 pub struct TelemetryService {
-    tracer_provider: Option<TracerProvider>,
+    tracer_provider: Option<SdkTracerProvider>,
     metrics: Option<Metrics>,
     reconfigure: Option<Arc<RwLock<dyn DynHandle>>>,
 }
@@ -169,7 +167,7 @@ impl TelemetryService {
     where
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
-        let mut builder = TracerProvider::builder();
+        let mut builder = SdkTracerProvider::builder();
 
         builder = match &config.tracing {
             Tracing::StdOut => {
@@ -184,13 +182,13 @@ impl TelemetryService {
                     .with_tonic()
                     .with_endpoint(endpoint)
                     .build()?;
-                builder.with_batch_exporter(exporter, Tokio)
+                builder.with_batch_exporter(exporter)
             }
             #[cfg(feature = "ot_zipkin")]
             Tracing::Zipkin => {
                 log::info!("Registering Zipkin tracing exporter...");
-                let exporter = opentelemetry_zipkin::new_pipeline().init_exporter()?;
-                builder.with_batch_exporter(exporter, Tokio)
+                let exporter = opentelemetry_zipkin::ZipkinExporter::builder().build()?;
+                builder.with_batch_exporter(exporter)
             }
             #[cfg(feature = "ot_app_insight")]
             Tracing::AppInsight { connection_string } => {
@@ -200,7 +198,7 @@ impl TelemetryService {
                     reqwest::Client::new(),
                 )
                 .map_err(TelemetryBuildError::AppInsightConfigError)?;
-                builder.with_batch_exporter(exporter, Tokio)
+                builder.with_batch_exporter(exporter)
             }
             Tracing::None => unreachable!("Tracing::None should not be used in this context"),
         };
@@ -324,10 +322,7 @@ impl TelemetryService {
         service_name: &'static str,
         config: &TelemetryConfig,
     ) -> Result<(), TelemetryBuildError> {
-        let resource = Resource::new(vec![KeyValue::new(
-            otconv::resource::SERVICE_NAME,
-            service_name.to_string(),
-        )]);
+        let resource = Resource::builder().with_service_name(service_name).build();
         let scope = InstrumentationScope::builder("opentelemetry-instrumentation-shine")
             .with_version(env!("CARGO_PKG_VERSION"))
             .build();

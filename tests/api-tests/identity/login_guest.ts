@@ -75,7 +75,8 @@ test.describe('Login and register guest', () => {
         expect(cookies.sid.value).toEqual(testUser.sid);
         expect(cookies.eid).toBeClearCookie();
 
-        expect(await api.user.getUserInfo(testUser.sid)).toBeGuestUser();
+        expect(await api.user.getUserInfo(testUser.sid, 'fast')).toBeGuestUser();
+        expect(await api.user.getUserInfo(testUser.sid, 'full')).toBeGuestUser();
     });
 
     for (const [tid, sid] of [
@@ -104,9 +105,11 @@ test.describe('Login and register guest', () => {
             expect(cookies.sid).toBeValidSID();
             expect(cookies.eid).toBeClearCookie();
 
-            const userInfo = await api.user.getUserInfo(cookies.sid.value);
-            expect(userInfo).toBeGuestUser();
-            expect(userInfo.userId).not.toEqual(testUser.userId);
+            for (const infoMethod of ['fast', 'full'] as const) {
+                const userInfo = await api.user.getUserInfo(cookies.sid.value, infoMethod);
+                expect(userInfo).toBeGuestUser();
+                expect(userInfo.userId).not.toEqual(testUser.userId);
+            }
         });
     }
 });

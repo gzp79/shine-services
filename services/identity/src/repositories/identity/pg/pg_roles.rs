@@ -7,13 +7,14 @@ use shine_infra::{
 use tracing::instrument;
 use uuid::Uuid;
 
-use super::{PgIdentityDbContext, PgVersionedUpdate};
+use super::PgIdentityDbContext;
 
 pg_query!( AddUserRole =>
     in = user_id: Uuid, role: &str;
     sql = r#"
-        INSERT INTO roles (user_id, role) 
-            VALUES ($1, $2)
+         INSERT INTO roles (user_id, role) 
+         VALUES ($1, $2)
+         ON CONFLICT (user_id, role) DO NOTHING
     "#
 );
 
@@ -41,7 +42,8 @@ pg_query!( GetUserRoles =>
 pg_query!( DeleteUserRole =>
     in = user_id: Uuid, role: &str;
     sql = r#"
-        DELETE FROM roles WHERE user_id = $1 AND role = $2
+        DELETE FROM roles
+        WHERE user_id = $1 AND role = $2
     "#
 );
 
@@ -62,46 +64,30 @@ impl PgRolesStatements {
     }
 }
 
-impl<'a> Roles for PgIdentityDbContext<'a> {
+impl Roles for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
-    async fn add_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
-        let update = match PgVersionedUpdate::new(&mut self.client, &self.stmts_version, user_id).await? {
-            Some(update) => update,
-            None => return Ok(None),
-        };
-
+    async fn add_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         log::debug!("Adding role {} to user {}", role, user_id);
-        match self
-            .stmts_roles
-            .add
-            .execute(update.transaction(), &user_id, &role)
-            .await
-        {
-            Ok(_) => {}
+        match self.stmts_roles.add.execute(&self.client, &user_id, &role).await {
+            Ok(_) => (),
             Err(err) if err.is_constraint("roles", "fkey_user_id") => {
                 // user not found, deleted meanwhile
                 return Ok(None);
             }
-            Err(err) if err.is_constraint("roles", "roles_idx_user_id_role") => {
-                // role already present, it's ok
-                return Ok(Some(()));
-            }
             Err(err) => return Err(DBError::from(err).into()),
         };
-
-        update.finish().await?;
-        Ok(Some(()))
+        self.get_roles(user_id).await
     }
 
     #[instrument(skip(self))]
     async fn get_roles(&mut self, user_id: Uuid) -> Result<Option<Vec<String>>, IdentityError> {
-        let roles = self
+        let row = self
             .stmts_roles
             .get
             .query_opt(&self.client, &user_id)
             .await
             .map_err(DBError::from)?;
-        if let Some(roles) = roles {
+        if let Some(roles) = row {
             Ok(Some(roles.roles))
         } else {
             Ok(None)
@@ -109,19 +95,13 @@ impl<'a> Roles for PgIdentityDbContext<'a> {
     }
 
     #[instrument(skip(self))]
-    async fn delete_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
-        let update = match PgVersionedUpdate::new(&mut self.client, &self.stmts_version, user_id).await? {
-            Some(update) => update,
-            None => return Ok(None),
-        };
-
+    async fn delete_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         self.stmts_roles
             .delete
-            .execute(update.transaction(), &user_id, &role)
+            .execute(&self.client, &user_id, &role)
             .await
             .map_err(DBError::from)?;
 
-        update.finish().await?;
-        Ok(Some(()))
+        self.get_roles(user_id).await
     }
 }

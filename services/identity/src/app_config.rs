@@ -11,8 +11,6 @@ pub struct AuthSessionConfig {
     pub token_cookie_secret: String,
     pub email_token_secret: String,
 
-    /// The maximum time to live for a session in seconds
-    pub ttl_session: usize,
     /// The maximum time to live for an access (remember me) token in seconds
     pub ttl_access_token: usize,
     /// The maximum time to live for a single access (one-time-use) token in seconds

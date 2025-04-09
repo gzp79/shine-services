@@ -73,7 +73,7 @@ where
     mailer_service: MailerService<'a, EMS>,
 }
 
-impl<'a, IDB, EMS> EmailTokenHandler<'a, IDB, EMS>
+impl<IDB, EMS> EmailTokenHandler<'_, IDB, EMS>
 where
     IDB: IdentityDb,
     EMS: EmailSender,
@@ -88,7 +88,7 @@ where
         let expire_at = expire_at.timestamp();
 
         let mut raw_nonce = [0u8; 12];
-        (&mut raw_nonce[0..8]).copy_from_slice(&expire_at.to_le_bytes());
+        raw_nonce[0..8].copy_from_slice(&expire_at.to_le_bytes());
         self.random
             .fill(&mut raw_nonce[8..])
             .map_err(|_| EmailTokenError::EncryptionError)?;
@@ -101,7 +101,7 @@ where
         }
 
         let key = &self.settings.token.email_key;
-        let nonce = Nonce::assume_unique_for_key(raw_nonce.clone());
+        let nonce = Nonce::assume_unique_for_key(raw_nonce);
         key.seal_in_place_append_tag(nonce, aead::Aad::from(&[]), &mut in_out)
             .map_err(|_| EmailTokenError::EncryptionError)?;
         in_out.extend_from_slice(&raw_nonce);
@@ -151,10 +151,10 @@ where
 
         let ttl = self.settings.token.ttl_email_token;
         let expire_at = Utc::now() + ttl;
-        let token = self.encrypt(user_id, &email, &email, &expire_at)?;
+        let token = self.encrypt(user_id, email, email, &expire_at)?;
 
         self.mailer_service
-            .send_email_confirmation(&email, &token, lang, &user.name)
+            .send_email_confirmation(email, &token, lang, &user.name)
             .await?;
 
         Ok(())
@@ -178,7 +178,7 @@ where
         let token = self.encrypt(user_id, old_email, new_email, &expire_at)?;
 
         self.mailer_service
-            .send_email_change(&new_email, &token, lang, &user.name)
+            .send_email_change(new_email, &token, lang, &user.name)
             .await?;
 
         Ok(())

@@ -20,15 +20,16 @@ pub struct SessionInfo {
 #[derive(Debug)]
 pub struct SessionUser {
     pub name: String,
+    pub is_linked: bool,
+    pub is_email_confirmed: bool,
     pub roles: Vec<String>,
 }
 
 #[derive(Debug)]
 pub struct Session {
     pub info: SessionInfo,
-
-    pub user_version: i32,
     pub user: SessionUser,
+    pub expire_at: DateTime<Utc>,
 }
 
 pub trait Sessions {
@@ -40,6 +41,7 @@ pub trait Sessions {
         site_info: &SiteInfo,
         identity: &Identity,
         roles: Vec<String>,
+        is_linked: bool,
     ) -> impl Future<Output = Result<Session, SessionError>> + Send;
 
     fn find_all_session_hashes_by_user(
@@ -47,28 +49,29 @@ pub trait Sessions {
         user_id: Uuid,
     ) -> impl Future<Output = Result<Vec<String>, SessionError>> + Send;
 
-    fn find_all_session_infos_by_user(
+    fn find_all_sessions_by_user(
         &mut self,
         user_id: Uuid,
-    ) -> impl Future<Output = Result<Vec<SessionInfo>, SessionError>> + Send;
+    ) -> impl Future<Output = Result<Vec<Session>, SessionError>> + Send;
 
     fn find_session_by_hash(
         &mut self,
         user_id: Uuid,
-        session_key_hash: String,
+        session_key_hash: &str,
     ) -> impl Future<Output = Result<Option<Session>, SessionError>> + Send;
 
     fn update_session_user_by_hash(
         &mut self,
-        session_key_hash: String,
+        session_key_hash: &str,
         identity: &Identity,
         roles: &[String],
+        is_linked: bool,
     ) -> impl Future<Output = Result<Option<Session>, SessionError>> + Send;
 
     fn delete_session_by_hash(
         &mut self,
         user_id: Uuid,
-        session_key_hash: String,
+        session_key_hash: &str,
     ) -> impl Future<Output = Result<(), SessionError>> + Send;
 
     fn delete_all_sessions_by_user(&mut self, user_id: Uuid) -> impl Future<Output = Result<(), SessionError>> + Send;

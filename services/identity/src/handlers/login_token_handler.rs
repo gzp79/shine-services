@@ -47,7 +47,7 @@ where
     identity_service: &'a IdentityService<IDB>,
 }
 
-impl<'a, IDB> LoginTokenHandler<'a, IDB>
+impl<IDB> LoginTokenHandler<'_, IDB>
 where
     IDB: IdentityDb,
 {

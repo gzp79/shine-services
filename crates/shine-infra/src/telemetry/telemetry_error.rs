@@ -1,6 +1,5 @@
 use crate::web::Problem;
-use opentelemetry::trace::TraceError;
-use opentelemetry_sdk::metrics::MetricError;
+use opentelemetry_sdk::{metrics::MetricError, trace::TraceError};
 use std::error::Error as StdError;
 use thiserror::Error as ThisError;
 use tracing::subscriber::SetGlobalDefaultError;
@@ -15,6 +14,12 @@ pub enum TelemetryBuildError {
     #[cfg(feature = "ot_app_insight")]
     #[error(transparent)]
     AppInsightConfigError(Box<dyn StdError + Send + Sync + 'static>),
+    #[cfg(feature = "ot_otlp")]
+    #[error(transparent)]
+    OtlpBuildError(#[from] opentelemetry_otlp::ExporterBuildError),
+    #[cfg(feature = "ot_zipkin")]
+    #[error(transparent)]
+    ZipkinBuildError(#[from] opentelemetry_zipkin::ExporterBuildError),
     #[error(transparent)]
     TraceError(#[from] TraceError),
     #[error(transparent)]

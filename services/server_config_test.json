@@ -8,6 +8,7 @@
     "fullProblemResponse": true,
     "captchaSecret": "1x0000000000000000000000000000000AA",
     "sessionSecret": "J6leERkPT8a5xz5d6VlMIBCwUGA9vMA2OxVBcCi6sMBheHQZ474lcGhEhchBxxqz9uahTpur4X6oEqX8DECcXA",
+    "sessionTtl": 1800,
     "sessionRedisCns": "redis://redis.mockbox.com:6379"
   },
 

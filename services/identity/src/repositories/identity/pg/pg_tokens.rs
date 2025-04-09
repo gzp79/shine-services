@@ -144,7 +144,6 @@ struct IdentityTokenRow {
     email: Option<String>,
     email_confirmed: bool,
     created: DateTime<Utc>,
-    data_version: i32,
     token_hash: String,
     token_created: DateTime<Utc>,
     token_expire: DateTime<Utc>,
@@ -163,13 +162,13 @@ pg_query!( TestToken =>
     in = token: &str, allowed_kind: &[TokenKind];
     out = IdentityTokenRow;
     sql = r#"
-        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
-                t.token token_hash, 
-                t.created token_created, 
-                t.expire token_expire, 
-                t.fingerprint token_fingerprint, 
+        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created,
+                t.token token_hash,
+                t.created token_created,
+                t.expire token_expire,
+                t.fingerprint token_fingerprint,
                 t.email token_email,
-                t.kind token_kind, 
+                t.kind token_kind,
                 t.expire < now() token_is_expired,
                 t.agent token_agent,
                 t.country token_country,
@@ -192,13 +191,13 @@ pg_query!( TakeToken =>
         WHERE lt.token = $1 AND lt.kind = any($2)
         RETURNING *        
     )
-    SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created, i.data_version,
-        t.token token_hash, 
-        t.created token_created, 
-        t.expire token_expire, 
-        t.fingerprint token_fingerprint, 
+    SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created,
+        t.token token_hash,
+        t.created token_created,
+        t.expire token_expire,
+        t.fingerprint token_fingerprint,
         t.email token_email,
-        t.kind token_kind, 
+        t.kind token_kind,
         t.expire < now() token_is_expired,
         t.agent token_agent,
         t.country token_country,
@@ -236,7 +235,7 @@ impl PgTokensStatements {
     }
 }
 
-impl<'a> Tokens for PgIdentityDbContext<'a> {
+impl Tokens for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
     async fn store_token(
         &mut self,
@@ -272,10 +271,10 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
             Err(err) if err.is_constraint("login_tokens", "idx_token") => {
                 return Err(IdentityError::TokenConflict);
             }
-            Err(err) if err.is_constraint("login_tokens", "chk_fingerprint") => {
+            Err(err) if err.is_constraint("login_tokens", "chk_required_fingerprint") => {
                 return Err(IdentityError::TokenMissingFingerprint);
             }
-            Err(err) if err.is_constraint("login_tokens", "chk_email") => {
+            Err(err) if err.is_constraint("login_tokens", "chk_required_email") => {
                 return Err(IdentityError::TokenMissingEmail);
             }
             Err(err) => {
@@ -426,7 +425,6 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
                 email: row.email,
                 is_email_confirmed: row.email_confirmed,
                 created: row.created,
-                version: row.data_version,
             };
             (identity, token)
         }))
@@ -468,7 +466,6 @@ impl<'a> Tokens for PgIdentityDbContext<'a> {
                 email: row.email,
                 is_email_confirmed: row.email_confirmed,
                 created: row.created,
-                version: row.data_version,
             };
             (identity, token)
         }))

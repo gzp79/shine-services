@@ -11,7 +11,7 @@ use axum_extra::{
     TypedHeader,
 };
 use serde::Deserialize;
-use shine_infra::web::{ClientFingerprint, CurrentUser, ErrorResponse, InputError, SiteInfo, ValidatedQuery};
+use shine_infra::web::{ClientFingerprint, ErrorResponse, InputError, SiteInfo, ValidatedQuery};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -115,7 +115,7 @@ async fn authenticate_with_query_token(
             .expect("It shall be called only if there is a token in the query");
 
         // Any token provided as a query token is removed from the DB as
-        match state.identity_service().take_token(TokenKind::all(), &token).await {
+        match state.identity_service().take_token(TokenKind::all(), token).await {
             Ok(Some(info)) => info,
             Ok(None) => {
                 log::debug!("Expired single access token ...");
@@ -251,14 +251,14 @@ async fn authenticate_with_header_token(
             "Non-persistent token ({:?}) used in the header, revoking compromised token ...",
             token_info.kind
         );
-        state.session_user_handler().revoke_access(token_info.kind, token).await;
+        state.user_info_handler().revoke_access(token_info.kind, token).await;
         Err(AuthenticationFailure {
             error: AuthError::InvalidToken,
             auth_session: response_session,
         })
     } else if token_info.is_expired {
         log::debug!("Token expired, removing from DB ...");
-        state.session_user_handler().revoke_access(token_info.kind, token).await;
+        state.user_info_handler().revoke_access(token_info.kind, token).await;
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -269,7 +269,7 @@ async fn authenticate_with_header_token(
             token_info.bound_fingerprint,
             fingerprint
         );
-        state.session_user_handler().revoke_access(token_info.kind, token).await;
+        state.user_info_handler().revoke_access(token_info.kind, token).await;
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -341,7 +341,7 @@ async fn authenticate_with_cookie_token(
     if let Some(revoked_token) = revoked_token {
         log::debug!("Rotating out the access token ...");
         state
-            .session_user_handler()
+            .user_info_handler()
             .revoke_access(token_info.kind, &revoked_token)
             .await;
     }
@@ -352,20 +352,14 @@ async fn authenticate_with_cookie_token(
             "Non-access token ({:?}) used in the cookie, revoking compromised token ...",
             token_info.kind
         );
-        state
-            .session_user_handler()
-            .revoke_access(token_info.kind, &token)
-            .await;
+        state.user_info_handler().revoke_access(token_info.kind, &token).await;
         Err(AuthenticationFailure {
             error: AuthError::InvalidToken,
             auth_session: response_session,
         })
     } else if token_info.is_expired {
         log::debug!("Token expired, removing from DB ...");
-        state
-            .session_user_handler()
-            .revoke_access(token_info.kind, &token)
-            .await;
+        state.user_info_handler().revoke_access(token_info.kind, &token).await;
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -378,10 +372,7 @@ async fn authenticate_with_cookie_token(
             token_user_id,
             token
         );
-        state
-            .session_user_handler()
-            .revoke_access(token_info.kind, &token)
-            .await;
+        state.user_info_handler().revoke_access(token_info.kind, &token).await;
         Err(AuthenticationFailure {
             error: AuthError::InvalidToken,
             auth_session: response_session,
@@ -392,10 +383,7 @@ async fn authenticate_with_cookie_token(
             token_info.bound_fingerprint,
             fingerprint
         );
-        state
-            .session_user_handler()
-            .revoke_access(token_info.kind, &token)
-            .await;
+        state.user_info_handler().revoke_access(token_info.kind, &token).await;
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -593,9 +581,12 @@ pub async fn token_login(
 
     // Create a new user session.
     let auth_session = {
-        // Find roles for the identity
-        let roles = match state.identity_service().get_roles(identity.id).await {
-            Ok(Some(roles)) => roles,
+        let user_session = match state
+            .user_info_handler()
+            .create_user_session(&identity, &fingerprint, &site_info)
+            .await
+        {
+            Ok(Some(session)) => session,
             Ok(None) => {
                 log::warn!("User {} has been deleted during login", identity.id);
                 return PageUtils::new(&state).error(
@@ -604,36 +595,9 @@ pub async fn token_login(
                     query.error_url.as_ref(),
                 );
             }
-            Err(err) => {
-                log::error!("Failed to retrieve roles for user {}: {}", identity.id, err);
-                // It is safe to return the session, a retry will get the user back into to the normal flow.
-                return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-            }
+            Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
         };
-
-        // Create session
-        log::debug!("Creating session for identity: {:#?}", identity);
-        let user_session = match state
-            .session_service()
-            .create(&identity, roles, &fingerprint, &site_info)
-            .await
-        {
-            Ok(user) => user,
-            Err(err) => {
-                log::error!("Failed to create session for user {}: {}", identity.id, err);
-                // It is safe to return the session, a retry will get the user back into to the normal flow.
-                return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-            }
-        };
-        auth_session.with_session(Some(CurrentUser {
-            user_id: user_session.0.info.user_id,
-            key: user_session.1,
-            session_start: user_session.0.info.created_at,
-            name: user_session.0.user.name,
-            roles: user_session.0.user.roles,
-            fingerprint: user_session.0.info.fingerprint,
-            version: user_session.0.user_version,
-        }))
+        auth_session.with_session(Some(user_session))
     };
 
     log::info!("Token login completed for: {}", identity.id);

@@ -5,7 +5,7 @@ use crate::{
 };
 use axum::extract::State;
 use serde::Deserialize;
-use shine_infra::web::{ClientFingerprint, CurrentUser, ErrorResponse, InputError, SiteInfo, ValidatedQuery};
+use shine_infra::web::{ClientFingerprint, ErrorResponse, InputError, SiteInfo, ValidatedQuery};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
@@ -90,49 +90,21 @@ pub async fn guest_login(
     };
 
     // Create user session.
-    let user_session = {
-        // Find roles for the identity
-        let roles = match state.identity_service().get_roles(identity.id).await {
-            Ok(Some(roles)) => roles,
-            Ok(None) => {
-                log::warn!("User {} has been deleted during login", identity.id);
-                return PageUtils::new(&state).error(
-                    auth_session.with_access(None),
-                    IdentityError::UserDeleted { id: identity.id },
-                    query.error_url.as_ref(),
-                );
-            }
-            Err(err) => {
-                log::error!("Failed to retrieve roles for user {}: {}", identity.id, err);
-                // It is safe to return the session, a retry will get the user back into to the normal flow.
-                return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-            }
-        };
-
-        // Create session
-        log::debug!("Creating session for identity: {:#?}", identity);
-        let user_session = match state
-            .session_service()
-            .create(&identity, roles, &fingerprint, &site_info)
-            .await
-        {
-            Ok(user) => user,
-            Err(err) => {
-                log::error!("Failed to create session for user {}: {}", identity.id, err);
-                // It is safe to return the session, a retry will get the user back into to the normal flow.
-                return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-            }
-        };
-
-        CurrentUser {
-            user_id: user_session.0.info.user_id,
-            key: user_session.1,
-            session_start: user_session.0.info.created_at,
-            name: user_session.0.user.name,
-            roles: user_session.0.user.roles,
-            fingerprint: user_session.0.info.fingerprint,
-            version: user_session.0.user_version,
+    let user_session = match state
+        .user_info_handler()
+        .create_user_session(&identity, &fingerprint, &site_info)
+        .await
+    {
+        Ok(Some(session)) => session,
+        Ok(None) => {
+            log::warn!("User {} has been deleted during login", identity.id);
+            return PageUtils::new(&state).error(
+                auth_session.with_access(None),
+                IdentityError::UserDeleted { id: identity.id },
+                query.error_url.as_ref(),
+            );
         }
+        Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
     };
 
     log::info!("Guest user registration completed for: {}", identity.id);

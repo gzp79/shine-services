@@ -4,9 +4,14 @@ use crate::repositories::identity::{
 };
 use chrono::Duration;
 use ring::digest;
-use shine_core::crypto::IdEncoder;
+use shine_core::{
+    crypto::IdEncoder,
+    sync::{EventHandler, EventHandlerId, TopicBus, TopicEvent},
+};
 use shine_infra::web::{ClientFingerprint, SiteInfo};
 use uuid::Uuid;
+
+use super::{IdentityTopic, UserEvent, UserLinkEvent};
 
 pub struct IdentityService<DB>
 where
@@ -14,6 +19,7 @@ where
 {
     pub db: DB,
     user_name_generator: Box<dyn IdEncoder>,
+    event_bus: TopicBus<IdentityTopic>,
 }
 
 impl<DB> IdentityService<DB>
@@ -24,7 +30,16 @@ where
         Self {
             db,
             user_name_generator: Box::new(user_name_generator),
+            event_bus: TopicBus::new(),
         }
+    }
+
+    pub async fn subscribe<E, H>(&self, handler: H) -> EventHandlerId
+    where
+        E: TopicEvent<Topic = IdentityTopic>,
+        H: EventHandler<E>,
+    {
+        self.event_bus.subscribe::<E, H>(handler).await
     }
 
     pub async fn create_user(
@@ -45,6 +60,12 @@ where
                 return Err(err);
             }
         }
+
+        self.event_bus.publish(&UserEvent::Created(user_id)).await;
+        if external_user_info.is_some() {
+            self.event_bus.publish(&UserLinkEvent::Linked(user_id)).await;
+        }
+
         Ok(identity)
     }
 
@@ -62,7 +83,7 @@ where
         let mut db = self.db.create_context().await?;
         match db.update(id, name, email).await? {
             Some(identity) => {
-                //self.event_bus.publish(&IdentityEvent::UserUpdated(id)).await;
+                self.event_bus.publish(&UserEvent::Updated(id)).await;
                 Ok(Some(identity))
             }
             None => Ok(None),
@@ -71,8 +92,9 @@ where
 
     pub async fn cascaded_delete(&self, id: Uuid) -> Result<(), IdentityError> {
         let mut db = self.db.create_context().await?;
-        db.cascaded_delete(id).await
-        //todo: trigger session update - user deleted
+        db.cascaded_delete(id).await?;
+        self.event_bus.publish(&UserEvent::Deleted(id)).await;
+        Ok(())
     }
 
     pub async fn find_by_external_link(
@@ -90,8 +112,9 @@ where
         external_user: &ExternalUserInfo,
     ) -> Result<(), IdentityError> {
         let mut db = self.db.create_context().await?;
-        db.link_user(user_id, external_user).await
-        //todo: trigger session update - external link added
+        db.link_user(user_id, external_user).await?;
+        self.event_bus.publish(&UserLinkEvent::Linked(user_id)).await;
+        Ok(())
     }
 
     pub async fn delete_extern_link(
@@ -101,8 +124,13 @@ where
         provider_id: &str,
     ) -> Result<Option<()>, IdentityError> {
         let mut db = self.db.create_context().await?;
-        db.delete_link(user_id, provider, provider_id).await
-        //todo: trigger session update - external link deleted
+        match db.delete_link(user_id, provider, provider_id).await? {
+            Some(_) => {
+                self.event_bus.publish(&UserLinkEvent::Unlinked(user_id)).await;
+                Ok(Some(()))
+            }
+            None => Ok(None),
+        }
     }
 
     pub async fn is_linked(&self, user_id: Uuid) -> Result<bool, IdentityError> {
@@ -154,7 +182,7 @@ where
         db.find_by_user(user_id).await
     }
 
-    /// Get the identity associated to an access token.
+    /// Get the identity associated to an access token, but keep the token in the DB.
     pub async fn test_token(
         &self,
         allowed_kind: &[TokenKind],
@@ -165,7 +193,7 @@ where
         db.test_token(allowed_kind, &token_hash).await
     }
 
-    /// Get the identity associated to an access token and removed from the DB.
+    /// Get the identity associated to an access token and remove the token from the DB.
     pub async fn take_token(
         &self,
         allowed_kind: &[TokenKind],
@@ -188,7 +216,7 @@ where
         token_hash: &str,
     ) -> Result<Option<()>, IdentityError> {
         let mut db = self.db.create_context().await?;
-        db.delete_token_by_user(user_id, &token_hash).await
+        db.delete_token_by_user(user_id, token_hash).await
     }
 
     pub async fn delete_all_tokens_by_user(&self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
@@ -196,10 +224,14 @@ where
         db.delete_all_token_by_user(user_id, kinds).await
     }
 
-    pub async fn add_role(&self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
+    pub async fn add_role(&self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         let mut db = self.db.create_context().await?;
-        db.add_role(user_id, role).await
-        //todo: trigger session update - role added
+        if let Some(roles) = db.add_role(user_id, role).await? {
+            self.event_bus.publish(&UserEvent::RoleChange(user_id)).await;
+            Ok(Some(roles))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn get_roles(&self, user_id: Uuid) -> Result<Option<Vec<String>>, IdentityError> {
@@ -207,10 +239,14 @@ where
         db.get_roles(user_id).await
     }
 
-    pub async fn delete_role(&self, user_id: Uuid, role: &str) -> Result<Option<()>, IdentityError> {
+    pub async fn delete_role(&self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         let mut db = self.db.create_context().await?;
-        db.delete_role(user_id, role).await
-        //todo: trigger session update - role deleted
+        if let Some(roles) = db.delete_role(user_id, role).await? {
+            self.event_bus.publish(&UserEvent::RoleChange(user_id)).await;
+            Ok(Some(roles))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn generate_user_name(&self) -> Result<String, IdentityError> {

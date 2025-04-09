@@ -1,17 +1,28 @@
 import { expect } from '$fixtures/setup';
-import { OptionalSchema } from '$lib/schema_utils';
+import { DateStringSchema, OptionalSchema } from '$lib/schema_utils';
 import { joinURL } from '$lib/utils';
 import { z } from 'zod';
 import { ApiRequest } from './api';
 
-const UserInfoSchema = z.object({
+export type GetUserInfoMethod = 'fast' | 'full' | 'fillWithRefresh';
+
+export const UserInfoDetailSchema = z.object({
+    kind: z.string(),
+    email: OptionalSchema(z.string()),
+    createdAt: DateStringSchema
+});
+export type UserInfoDetail = z.infer<typeof UserInfoDetailSchema>;
+
+export const UserInfoSchema = z.object({
     isLinked: z.boolean(),
     userId: z.string(),
     name: z.string(),
     email: OptionalSchema(z.string()),
     isEmailConfirmed: z.boolean(),
     roles: z.array(z.string()),
-    sessionLength: z.number()
+    sessionLength: z.number(),
+    remainingSessionTime: z.number(),
+    details: UserInfoDetailSchema.nullable()
 });
 export type UserInfo = z.infer<typeof UserInfoSchema>;
 
@@ -46,14 +57,20 @@ export class UserAPI {
         return joinURL(new URL(this.serviceUrl), path);
     }
 
-    getUserInfoRequest(sid: string | null): ApiRequest {
+    getUserInfoRequest(sid: string | null, method: GetUserInfoMethod | null): ApiRequest {
         const cs = sid && { sid };
 
-        return ApiRequest.get(this.urlFor('api/auth/user/info')).withCookies({ ...cs });
+        return ApiRequest.get(this.urlFor('api/auth/user/info'))
+            .withParams(method ? { method } : {})
+            .withCookies({ ...cs });
     }
 
-    async getUserInfo(sid: string, extraHeaders?: Record<string, string>): Promise<UserInfo> {
-        const response = await this.getUserInfoRequest(sid).withHeaders(extraHeaders ?? {});
+    async getUserInfo(
+        sid: string,
+        method: GetUserInfoMethod | null,
+        extraHeaders?: Record<string, string>
+    ): Promise<UserInfo> {
+        const response = await this.getUserInfoRequest(sid, method).withHeaders(extraHeaders ?? {});
         expect(response).toHaveStatus(200);
 
         return await response.parse(UserInfoSchema);

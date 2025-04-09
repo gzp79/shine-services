@@ -48,7 +48,6 @@ impl AppState {
                 app_name: config_auth.app_name.clone(),
                 home_url: config_auth.home_url.clone(),
                 link_url: config_auth.link_url.clone(),
-                auth_base_url: config_auth.auth_base_url.clone(),
                 error_url: config_auth.error_url.clone(),
                 token: TokenSettings {
                     ttl_access_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_access_token)?),
@@ -90,7 +89,7 @@ impl AppState {
         };
 
         let session_service = {
-            let ttl_session = Duration::seconds(i64::try_from(config_auth.auth_session.ttl_session)?);
+            let ttl_session = Duration::seconds(i64::try_from(config.service.session_ttl)?);
             let session_db = RedisSessionDb::new(&db_pool.redis, "".to_string(), ttl_session).await?;
             SessionService::new(session_db)
         };

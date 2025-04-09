@@ -7,13 +7,12 @@ use tracing::instrument;
 
 use super::PgIdentityDbContext;
 
-impl<'a> IdentitySearch for PgIdentityDbContext<'a> {
+impl IdentitySearch for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
     async fn search_identity(&mut self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, IdentityError> {
         log::info!("{search:?}");
-        let mut builder = QueryBuilder::new(
-            "SELECT user_id, kind, name, email, email_confirmed, created, data_version FROM identities",
-        );
+        let mut builder =
+            QueryBuilder::new("SELECT user_id, kind, name, email, email_confirmed, created FROM identities");
 
         fn into_identity(r: Row) -> Result<Identity, IdentityError> {
             Ok(Identity {
@@ -23,7 +22,6 @@ impl<'a> IdentitySearch for PgIdentityDbContext<'a> {
                 email: r.try_get(3).map_err(DBError::from)?,
                 is_email_confirmed: r.try_get(4).map_err(DBError::from)?,
                 created: r.try_get(5).map_err(DBError::from)?,
-                version: r.try_get(6).map_err(DBError::from)?,
             })
         }
 
