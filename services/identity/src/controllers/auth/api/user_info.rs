@@ -41,6 +41,7 @@ pub struct CurrentUserInfo {
     is_linked: bool,
     roles: Vec<String>,
     session_length: u64,
+    remaining_session_time: u64,
     details: Option<CurrentUserInfoDetails>,
 }
 
@@ -65,7 +66,8 @@ pub async fn get_user_info(
 ) -> Result<Json<CurrentUserInfo>, ProblemResponse> {
     let method = query.method.unwrap_or(GetUserInfoMode::Fast);
 
-    let session_length = (user.session_end - Utc::now()).num_seconds().max(0) as u64;
+    let session_length = (Utc::now() - user.session_start).num_seconds().max(0) as u64;
+    let remaining_session_time = (user.session_end - Utc::now()).num_seconds().max(0) as u64;
 
     let info = match method {
         // read the user info from the session
@@ -78,6 +80,7 @@ pub async fn get_user_info(
                 is_linked: user.is_linked,
                 roles: user.roles,
                 session_length,
+                remaining_session_time,
                 details: None,
             }
         }
@@ -109,6 +112,7 @@ pub async fn get_user_info(
                 is_email_confirmed: user_info.identity.is_email_confirmed,
                 is_linked: user_info.is_linked,
                 session_length,
+                remaining_session_time,
                 roles: user_info.roles,
                 details: Some(CurrentUserInfoDetails {
                     kind: user_info.identity.kind,

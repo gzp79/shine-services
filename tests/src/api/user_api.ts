@@ -21,6 +21,7 @@ export const UserInfoSchema = z.object({
     isEmailConfirmed: z.boolean(),
     roles: z.array(z.string()),
     sessionLength: z.number(),
+    remainingSessionTime: z.number(),
     details: UserInfoDetailSchema.nullable()
 });
 export type UserInfo = z.infer<typeof UserInfoSchema>;

@@ -5,14 +5,14 @@ import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 
 test.describe('Login with access cookie', () => {
     let testUser: TestUser = undefined!;
-    let userInfo: Omit<UserInfo, 'sessionLength'> = undefined!;
+    let userInfo: Omit<UserInfo, 'sessionLength' | 'remainingSessionTime'> = undefined!;
 
     test.beforeEach(async ({ api }) => {
         testUser = await api.testUsers.createGuest();
         expect(testUser.sid).toBeDefined();
         expect(testUser.tid).toBeDefined();
 
-        const { sessionLength, ...partialUserInfo } = testUser.userInfo!;
+        const { sessionLength, remainingSessionTime, ...partialUserInfo } = testUser.userInfo!;
         userInfo = partialUserInfo;
     });
 

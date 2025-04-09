@@ -116,7 +116,7 @@ test.describe('Email confirmation', () => {
     for (const lang of ['en', 'hu', undefined]) {
         test(`Confirming email with lang ${lang} shall work`, async ({ api }) => {
             const user = await api.testUsers.createLinked(mockAuth);
-            const { sessionLength, ...userInfo } = user.userInfo!;
+            const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
 
             const smtp = await startMockEmail();
             const mailPromise = smtp.waitMail();
@@ -234,7 +234,7 @@ test.describe('Email confirmation', () => {
 
         const newEmail = `updated-${randomUUID()}@example.com`;
         await user.changeEmail(smtp, newEmail);
-        const { sessionLength, ...userInfo } = user.userInfo!;
+        const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
 
         const response = await api.user.completeConfirmEmailRequest(user.sid, token!);
         expect(response).toHaveStatus(400);
@@ -248,7 +248,8 @@ test.describe('Email confirmation', () => {
 
         expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
             expect.objectContaining({
-                ...userInfo
+                ...userInfo,
+                details: null
             })
         );
         expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
@@ -320,7 +321,7 @@ test.describe('Email change', () => {
         test(`Changing email with unconfirmed email in lang ${lang} shall succeed`, async ({ api }) => {
             const email = randomUUID() + '@example.com';
             const user = await api.testUsers.createLinked(mockAuth, { email });
-            const { sessionLength, ...userInfo } = user.userInfo!;
+            const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
 
             const smtp = await startMockEmail();
             const mailPromise = smtp.waitMail();
@@ -336,15 +337,15 @@ test.describe('Email change', () => {
             expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
                 expect.objectContaining({
                     ...userInfo,
-                    email: newEmail,
-                    isEmailConfirmed: true
+                    isEmailConfirmed: true,
+                    details: null
                 })
             );
             expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
                 expect.objectContaining({
                     ...userInfo,
-                    email: newEmail,
-                    isEmailConfirmed: true
+                    isEmailConfirmed: true,
+                    details: { ...userInfo?.details, email: newEmail }
                 })
             );
         });
@@ -352,7 +353,7 @@ test.describe('Email change', () => {
 
     test('Changing email without email shall succeed', async ({ api }) => {
         const user = await api.testUsers.createGuest();
-        const { sessionLength, ...userInfo } = user.userInfo!;
+        const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
         expect(userInfo.email).not.toBeNull();
 
         const smtp = await startMockEmail();
@@ -368,15 +369,15 @@ test.describe('Email change', () => {
         expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
             expect.objectContaining({
                 ...userInfo,
-                email: newEmail,
-                isEmailConfirmed: true
+                isEmailConfirmed: true,
+                details: null
             })
         );
         expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
             expect.objectContaining({
                 ...userInfo,
-                email: newEmail,
-                isEmailConfirmed: true
+                isEmailConfirmed: true,
+                details: { ...userInfo?.details, email: newEmail }
             })
         );
     });
@@ -387,7 +388,7 @@ test.describe('Email change', () => {
         const email = randomUUID() + '@example.com';
         const user = await api.testUsers.createLinked(mockAuth, { email });
         await user.confirmEmail(smtp);
-        const { sessionLength, ...userInfo } = user.userInfo!;
+        const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
 
         const mailPromise = smtp.waitMail();
         const newEmail = `updated-${randomUUID()}@example.com`;
@@ -402,15 +403,13 @@ test.describe('Email change', () => {
         expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
             expect.objectContaining({
                 ...userInfo,
-                email: newEmail,
-                isEmailConfirmed: true
+                details: null
             })
         );
         expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
             expect.objectContaining({
                 ...userInfo,
-                email: newEmail,
-                isEmailConfirmed: true
+                details: { ...userInfo?.details, email: newEmail }
             })
         );
     });
@@ -431,7 +430,7 @@ test.describe('Email change', () => {
 
         const newEmail2 = `updated-${randomUUID()}@example.com`;
         await user.changeEmail(smtp, newEmail2);
-        const { sessionLength, ...userInfo } = user.userInfo!;
+        const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
 
         const response = await api.user.completeConfirmEmailRequest(user.sid, token!);
         expect(response).toHaveStatus(400);
@@ -445,7 +444,8 @@ test.describe('Email change', () => {
 
         expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
             expect.objectContaining({
-                ...userInfo
+                ...userInfo,
+                details: null
             })
         );
         expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
@@ -468,7 +468,7 @@ test.describe('Email change', () => {
             }
 
             const user = await api.testUsers.createLinked(mockAuth);
-            const { sessionLength, ...userInfo } = user.userInfo!;
+            const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
 
             const mailPromise = smtp.waitMail();
             expect(userInfo.email).not.toEqual(email);
@@ -488,7 +488,8 @@ test.describe('Email change', () => {
 
             expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
                 expect.objectContaining({
-                    ...userInfo
+                    ...userInfo,
+                    details: null
                 })
             );
             expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(

@@ -71,7 +71,7 @@ export class TestUser {
 
         await this.refreshUserInfo();
         expect(this.userInfo?.isEmailConfirmed).toBe(true);
-        expect(this.userInfo?.email).toEqual(newEmail);
+        expect(this.userInfo?.details?.email).toEqual(newEmail);
     }
 }
 

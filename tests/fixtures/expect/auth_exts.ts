@@ -65,6 +65,7 @@ export const expect = baseExpect.extend({
         expect(uuidValidate(received.userId)).toBeTruthy();
         expect(received.name).toStartWith('Freshman_');
         expect(received.sessionLength).toBeGreaterThanOrEqual(0);
+        expect(received.remainingSessionTime).toBeGreaterThanOrEqual(0);
         expect(received.roles).toEqual([]);
         expect(received.isEmailConfirmed).toBeFalsy();
         expect(received.isLinked).toBeFalsy();
