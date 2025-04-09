@@ -1,6 +1,6 @@
 use crate::{azure::azure_keyvault_config::AzureKeyvaultConfigSource, web::Environment};
 use azure_core::credentials::TokenCredential;
-use azure_identity::{AzureCliCredential, TokenCredentialOptions, WorkloadIdentityCredential};
+use azure_identity::{AzureCliCredential, ClientSecretCredential};
 use config::{builder::AsyncState, Config, ConfigBuilder, ConfigError, File};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -116,20 +116,26 @@ impl CoreConfig {
                         cause: "Missing azure keyvault location".into(),
                     })?;
                     if azure_credentials.is_none() {
-                        azure_credentials = if env::var("AZURE_TENANT_ID").is_ok() {
-                            let credentials = WorkloadIdentityCredential::from_env(TokenCredentialOptions::default())
-                                .map_err(|err| ConfigError::FileParse {
-                                uri: Some(url.to_owned()),
-                                cause: err.into(),
-                            })?;
+                        if let (Some(tenant_id), Some(client_id), Some(client_secret)) = (
+                            env::var("AZURE_TENANT_ID").ok(),
+                            env::var("AZURE_CLIENT_ID").ok(),
+                            env::var("AZURE_CLIENT_SECRET").ok(),
+                        ) {
+                            let credentials: Arc<dyn TokenCredential> =
+                                ClientSecretCredential::new(&tenant_id, client_id, client_secret.into(), None)
+                                    .map_err(|err| ConfigError::FileParse {
+                                        uri: Some(url.to_owned()),
+                                        cause: err.into(),
+                                    })?;
                             log::info!("Getting azure credentials through environment...");
                             Some(credentials)
                         } else {
                             log::info!("Getting azure credentials through azure cli...");
-                            let credentials = AzureCliCredential::new().map_err(|err| ConfigError::FileParse {
-                                uri: Some(url.to_owned()),
-                                cause: err.into(),
-                            })?;
+                            let credentials: Arc<dyn TokenCredential> =
+                                AzureCliCredential::new(None).map_err(|err| ConfigError::FileParse {
+                                    uri: Some(url.to_owned()),
+                                    cause: err.into(),
+                                })?;
                             Some(credentials)
                         };
                     }

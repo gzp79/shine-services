@@ -86,7 +86,7 @@ refinery = { workspace = true }
 ############################# AZURE #############################
 azure_core = { workspace = true }
 azure_identity = { workspace = true }
-azure_security_keyvault_secrets = { version = "0.1" }
+azure_security_keyvault_secrets = { workspace = true }
 
 ############################# NET #############################
 rustls = { workspace = true }
@@ -108,9 +108,6 @@ axum-extra = { workspace = true, features = [
     "cookie-private",
     "typed-header",
 ] }
-
-# https://github.com/zip-rs/zip2/issues/328
-zip = { version = "=2.4.2" }
 
 ############################# MEMBERS #############################
 shine-infra-macros = { workspace = true }
