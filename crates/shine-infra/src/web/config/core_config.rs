@@ -116,7 +116,7 @@ impl CoreConfig {
                         cause: "Missing azure keyvault location".into(),
                     })?;
                     if azure_credentials.is_none() {
-                        if let (Some(tenant_id), Some(client_id), Some(client_secret)) = (
+                        azure_credentials = if let (Some(tenant_id), Some(client_id), Some(client_secret)) = (
                             env::var("AZURE_TENANT_ID").ok(),
                             env::var("AZURE_CLIENT_ID").ok(),
                             env::var("AZURE_CLIENT_SECRET").ok(),
