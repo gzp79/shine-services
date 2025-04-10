@@ -54,7 +54,7 @@ impl ConfigAsyncSource for AzureKeyvaultConfigSource {
         let origin = self.keyvault_url.to_string();
         let mut stream = self
             .client
-            .list_secrets(None)
+            .list_secret_properties(None)
             .map_err(AzureKeyvaultConfigError)?
             .into_stream();
         while let Some(response) = stream.try_next().await.map_err(AzureKeyvaultConfigError)? {
