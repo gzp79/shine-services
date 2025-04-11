@@ -33,7 +33,7 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
             .link_url
             .join("email-verify")
             .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?;
-        redirect_url.set_query(Some(&format!("token={}", token)));
+        redirect_url.set_query(Some(&format!("token={}&hint=email-confirm", token)));
 
         context.insert("user", user_name);
         context.insert("link", redirect_url.as_str());
@@ -72,7 +72,7 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
             .link_url
             .join("email-verify")
             .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?;
-        redirect_url.set_query(Some(&format!("token={}&email={}", token, to)));
+        redirect_url.set_query(Some(&format!("token={}&hint=email-change", token)));
 
         context.insert("user", user_name);
         context.insert("link", redirect_url.as_str());
