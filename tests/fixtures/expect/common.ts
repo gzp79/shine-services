@@ -38,11 +38,13 @@ export const expect = baseExpect.extend({
 
     toBeEmptyValue(received: unknown) {
         let pass;
-        let formatted = (received as any).toString();
+        let formatted: string;
         if (received === null || received === undefined) {
             pass = true;
+            formatted = String(received);
         } else if (typeof received === 'string') {
             pass = received === '';
+            formatted = received;
         } else if (Array.isArray(received)) {
             pass = received.length === 0;
             formatted = JSON.stringify(received);
