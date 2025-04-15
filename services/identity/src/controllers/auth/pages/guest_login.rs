@@ -39,13 +39,13 @@ pub async fn guest_login(
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
 
     log::debug!("Query: {:#?}", query);
 
     if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
-        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
+        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), query.redirect_url.as_ref());
     };
 
     log::debug!("New user registration flow triggered...");
@@ -59,7 +59,14 @@ pub async fn guest_login(
     // create a new user
     let identity = match state.create_user_service().create_user(None, None).await {
         Ok(identity) => identity,
-        Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
+        Err(err) => {
+            return PageUtils::new(&state).error(
+                auth_session,
+                err,
+                query.error_url.as_ref(),
+                query.redirect_url.as_ref(),
+            )
+        }
     };
     log::debug!("New user created: {:#?}", identity);
 
@@ -78,7 +85,14 @@ pub async fn guest_login(
             .await
         {
             Ok(user_token) => user_token,
-            Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
+            Err(err) => {
+                return PageUtils::new(&state).error(
+                    auth_session,
+                    err,
+                    query.error_url.as_ref(),
+                    query.redirect_url.as_ref(),
+                )
+            }
         };
 
         TokenCookie {
@@ -102,9 +116,17 @@ pub async fn guest_login(
                 auth_session.with_access(None),
                 IdentityError::UserDeleted { id: identity.id },
                 query.error_url.as_ref(),
+                query.redirect_url.as_ref(),
             );
         }
-        Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
+        Err(err) => {
+            return PageUtils::new(&state).error(
+                auth_session,
+                err,
+                query.error_url.as_ref(),
+                query.redirect_url.as_ref(),
+            )
+        }
     };
 
     log::info!("Guest user registration completed for: {}", identity.id);
@@ -112,7 +134,7 @@ pub async fn guest_login(
         auth_session
             .with_access(Some(user_access))
             .with_session(Some(user_session)),
-        None,
         query.redirect_url.as_ref(),
+        None,
     )
 }

@@ -1,7 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { expect as baseExpect } from '@playwright/test';
 
-function toHaveType(received: any, expected: string) {
+function toHaveType(received: unknown, expected: string) {
     const pass = typeof received === expected;
     if (pass) {
         return {
@@ -17,33 +16,35 @@ function toHaveType(received: any, expected: string) {
 }
 
 export const expect = baseExpect.extend({
-    toHaveType,
-    toBeString(received: any) {
+    //toHaveType,
+    toBeString(received: unknown) {
         return toHaveType(received, 'string');
     },
-    toBeNumber(received: any) {
+    toBeNumber(received: unknown) {
         return toHaveType(received, 'number');
     },
-    toBeBoolean(received: any) {
+    toBeBoolean(received: unknown) {
         return toHaveType(received, 'boolean');
     },
-    toBeObject(received: any) {
+    toBeObject(received: unknown) {
         return toHaveType(received, 'object');
     },
-    toBeArray(received: any) {
+    toBeArray(received: unknown) {
         return toHaveType(received, 'array');
     },
-    toBeFunction(received: any) {
+    toBeFunction(received: unknown) {
         return toHaveType(received, 'function');
     },
 
-    toBeEmptyValue(received: any) {
+    toBeEmptyValue(received: unknown) {
         let pass;
-        let formatted = received.toString();
+        let formatted: string;
         if (received === null || received === undefined) {
             pass = true;
+            formatted = String(received);
         } else if (typeof received === 'string') {
             pass = received === '';
+            formatted = received;
         } else if (Array.isArray(received)) {
             pass = received.length === 0;
             formatted = JSON.stringify(received);

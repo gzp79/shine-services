@@ -4,7 +4,7 @@ import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 import { MockServer } from '$lib/mocks/mock_server';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import { generateRandomString } from '$lib/string_utils';
-import { parseSignedCookie } from '$lib/utils';
+import { createUrl, parseSignedCookie } from '$lib/utils';
 import { randomUUID } from 'crypto';
 import os from 'os';
 
@@ -90,7 +90,11 @@ test.describe('Check OAuth2 auth', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=auth-input-error&status=400'
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-input-error',
+                status: 400,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -123,7 +127,13 @@ test.describe('Check OAuth2 auth', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=auth-error&status=400');
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-error',
+                status: 400,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
+        );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
                 type: 'auth-error',
@@ -149,7 +159,13 @@ test.describe('Check OAuth2 auth', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=auth-error&status=500');
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-error',
+                status: 500,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
+        );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
                 type: 'auth-error',
@@ -182,7 +198,13 @@ test.describe('Check OAuth2 auth', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=auth-error&status=500');
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-error',
+                status: 500,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
+        );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
                 type: 'auth-error',
@@ -225,7 +247,13 @@ test.describe('Login with OAuth2', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=auth-error&status=400');
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-error',
+                status: 400,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
+        );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
                 type: 'auth-error',
@@ -248,7 +276,13 @@ test.describe('Login with OAuth2', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=auth-error&status=400');
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-error',
+                status: 400,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
+        );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
                 type: 'auth-error',
@@ -400,7 +434,11 @@ test.describe('Login with OAuth2', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=auth-register-email-conflict&status=409'
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-register-email-conflict',
+                status: 409,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -450,7 +488,11 @@ test.describe('Link to OAuth2 account', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=auth-login-required&status=401'
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-login-required',
+                status: 401,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -508,7 +550,11 @@ test.describe('Link to OAuth2 account', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=auth-register-external-id-conflict&status=409'
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-register-external-id-conflict',
+                status: 409,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({

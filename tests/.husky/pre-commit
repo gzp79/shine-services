@@ -1,0 +1,7 @@
+set -e
+
+echo "Running cargo fmt check..."
+cargo fmt --check
+
+cd tests
+npm run lint

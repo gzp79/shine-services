@@ -17,7 +17,7 @@ test.describe('Login with email', () => {
         mock = undefined!;
     });
 
-    test(`Creating emailAccess with api shall be rejected`, async ({ api }) => {
+    test('Creating emailAccess with api shall be rejected', async ({ api }) => {
         const user = await api.testUsers.createGuest();
 
         const response = await api.token.createTokenRequest(user.sid, 'emailAccess', 20, false);
@@ -29,7 +29,7 @@ test.describe('Login with email', () => {
                 type: 'input-body-format',
                 status: 400,
                 detail: expect.stringContaining(
-                    `kind: unknown variant \`emailAccess\`, expected \`persistent\` or \`singleAccess\` at line 1`
+                    'kind: unknown variant `emailAccess`, expected `persistent` or `singleAccess` at line 1'
                 )
             })
         );

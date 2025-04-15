@@ -34,48 +34,51 @@ impl<'a> PageUtils<'a> {
         }
     }
 
-    pub fn error<E>(&self, auth_session: AuthSession, error: E, target_url: Option<&Url>) -> AuthPage
+    pub fn error<E>(
+        &self,
+        auth_session: AuthSession,
+        error: E,
+        error_url: Option<&Url>,
+        redirect_url: Option<&Url>,
+    ) -> AuthPage
     where
         E: Into<AuthError>,
     {
         let error = error.into();
         log::error!("Page Error: {error:#?}");
-
         let problem: Problem = self.problem_config.transform(error);
-        log::debug!("Page Problem: {problem:#?}");
-        let problem_json = serde_json::to_string_pretty(&problem).unwrap();
 
-        let mut target = target_url.unwrap_or(&self.settings.error_url).to_owned();
-        target
-            .query_pairs_mut()
-            .append_pair("type", problem.ty)
-            .append_pair("status", &problem.status.as_u16().to_string());
+        let mut target_url = error_url.unwrap_or(&self.settings.error_url).to_owned();
 
-        let mut context = tera::Context::new();
-        self.bind_timeout(&mut context);
-        context.insert("redirectUrl", target.as_str());
-        context.insert("statusCode", &problem.status.as_u16());
-        context.insert("type", &problem.ty);
-        context.insert("detail", &problem.detail);
-        context.insert("problem", &problem_json);
+        {
+            let mut query = target_url.query_pairs_mut();
 
-        let html = self
-            .tera
-            .render("ooops.html", &context)
-            .expect("Failed to generate ooops.html template");
+            query
+                .clear()
+                .append_pair("type", problem.ty)
+                .append_pair("status", &problem.status.as_u16().to_string());
 
-        AuthPage {
-            auth_session: Some(auth_session),
-            html,
+            if let Some(redirect_url) = redirect_url {
+                query.append_pair("redirectUrl", redirect_url.as_str());
+            }
         }
+
+        self.redirect(auth_session, Some(&target_url), Some(&problem))
     }
 
-    pub fn redirect(&self, auth_session: AuthSession, target: Option<&str>, redirect_url: Option<&Url>) -> AuthPage {
+    pub fn redirect(&self, auth_session: AuthSession, target_url: Option<&Url>, problem: Option<&Problem>) -> AuthPage {
         let mut context = tera::Context::new();
+
         self.bind_timeout(&mut context);
         self.bind_app_nme(&mut context);
-        context.insert("target", target.unwrap_or(&self.settings.app_name));
-        context.insert("redirectUrl", redirect_url.unwrap_or(&self.settings.home_url).as_str());
+
+        context.insert("targetUrl", target_url.unwrap_or(&self.settings.home_url).as_str());
+
+        let problem_json = problem
+            .map(|p| serde_json::to_string_pretty(&p).unwrap())
+            .unwrap_or_default();
+        context.insert("problem", &problem_json);
+
         let html = self
             .tera
             .render("redirect.html", &context)

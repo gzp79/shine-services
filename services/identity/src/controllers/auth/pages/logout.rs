@@ -38,7 +38,7 @@ pub async fn logout(
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
 
     if let Some((user_id, session_key)) = auth_session.user_session().map(|u| (u.user_id, u.key)) {
@@ -51,7 +51,12 @@ pub async fn logout(
                     .delete_all_tokens_by_user(user_id, &[TokenKind::Access, TokenKind::SingleAccess])
                     .await
                 {
-                    return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
+                    return PageUtils::new(&state).error(
+                        auth_session,
+                        err,
+                        query.error_url.as_ref(),
+                        query.redirect_url.as_ref(),
+                    );
                 }
 
                 log::debug!("Removing all the session for user {}", user_id);
@@ -64,7 +69,12 @@ pub async fn logout(
                 if let Some(token) = auth_session.access().map(|t| t.key.clone()) {
                     log::debug!("Removing token {} for user {}", token, user_id);
                     if let Err(err) = state.identity_service().delete_token(TokenKind::Access, &token).await {
-                        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
+                        return PageUtils::new(&state).error(
+                            auth_session,
+                            err,
+                            query.error_url.as_ref(),
+                            query.redirect_url.as_ref(),
+                        );
                     }
                 }
 
@@ -77,5 +87,5 @@ pub async fn logout(
     }
 
     let response_session = auth_session.cleared();
-    PageUtils::new(&state).redirect(response_session, None, query.redirect_url.as_ref())
+    PageUtils::new(&state).redirect(response_session, query.redirect_url.as_ref(), None)
 }

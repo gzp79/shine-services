@@ -2,6 +2,7 @@ import { expect, test } from '$fixtures/setup';
 import { TestUser } from '$lib/api/test_user';
 import { UserInfo } from '$lib/api/user_api';
 import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
+import { createUrl } from '$lib/utils';
 
 test.describe('Login with access cookie', () => {
     let testUser: TestUser = undefined!;
@@ -23,8 +24,21 @@ test.describe('Login with access cookie', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.loginUrl);
-        expect(getPageProblem(text)).toBeNull();
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-login-required',
+                status: 401,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
+        );
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-login-required',
+                status: 401,
+                extension: null,
+                sensitive: null
+            })
+        );
 
         const cookies = response.cookies();
         expect(cookies.tid).toBeClearCookie();

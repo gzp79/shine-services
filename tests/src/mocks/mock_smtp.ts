@@ -4,7 +4,7 @@ import { ParsedMail, simpleParser } from 'mailparser';
 import { Logger, LoggerLevel } from 'nodemailer/lib/shared';
 import { SMTPServer } from 'smtp-server';
 
-const log = debug(`test:mock:smtp`);
+const log = debug('test:mock:smtp');
 
 /* prettier-ignore */
 class MockSmtpLogger implements Logger {
@@ -74,7 +74,7 @@ class MockSmtp {
             });
         });
 
-        log(`SMTP Mock Server started.`);
+        log('SMTP Mock Server started.');
     }
 
     async stop(): Promise<void> {

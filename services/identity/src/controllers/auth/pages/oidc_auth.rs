@@ -45,7 +45,7 @@ pub async fn oidc_auth(
         pkce_code_verifier,
         csrf_state,
         nonce,
-        target_url,
+        target_url: redirect_url,
         error_url,
         remember_me,
         linked_user,
@@ -53,14 +53,21 @@ pub async fn oidc_auth(
     } = match auth_session.external_login() {
         Some(external_login_cookie) => external_login_cookie.clone(),
         None => {
-            return PageUtils::new(&state).error(auth_session, ExternalLoginError::MissingExternalLoginCookie, None)
+            return PageUtils::new(&state).error(
+                auth_session,
+                ExternalLoginError::MissingExternalLoginCookie,
+                None,
+                None,
+            )
         }
     };
     let auth_session = auth_session.with_external_login(None);
 
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, error_url.as_ref()),
+        Err(error) => {
+            return PageUtils::new(&state).error(auth_session, error.problem, error_url.as_ref(), redirect_url.as_ref())
+        }
     };
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
@@ -72,6 +79,7 @@ pub async fn oidc_auth(
                 auth_session,
                 ExternalLoginError::OIDCDiscovery(format!("{err}")),
                 error_url.as_ref(),
+                redirect_url.as_ref(),
             )
         }
     };
@@ -79,14 +87,24 @@ pub async fn oidc_auth(
     let nonce = match nonce {
         Some(nonce) => nonce,
         None => {
-            return PageUtils::new(&state).error(auth_session, ExternalLoginError::MissingNonce, error_url.as_ref())
+            return PageUtils::new(&state).error(
+                auth_session,
+                ExternalLoginError::MissingNonce,
+                error_url.as_ref(),
+                redirect_url.as_ref(),
+            )
         }
     };
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
         log::debug!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
-        return PageUtils::new(&state).error(auth_session, ExternalLoginError::InvalidCSRF, error_url.as_ref());
+        return PageUtils::new(&state).error(
+            auth_session,
+            ExternalLoginError::InvalidCSRF,
+            error_url.as_ref(),
+            redirect_url.as_ref(),
+        );
     }
 
     // Exchange the code with a token.
@@ -97,6 +115,7 @@ pub async fn oidc_auth(
                 auth_session,
                 ExternalLoginError::TokenExchangeFailed(format!("{err:#?}")),
                 error_url.as_ref(),
+                redirect_url.as_ref(),
             )
         }
     };
@@ -112,6 +131,7 @@ pub async fn oidc_auth(
                 auth_session,
                 ExternalLoginError::TokenExchangeFailed(format!("{err:#?}")),
                 error_url.as_ref(),
+                redirect_url.as_ref(),
             );
         }
     };
@@ -131,6 +151,7 @@ pub async fn oidc_auth(
                 auth_session,
                 ExternalLoginError::FailedExternalUserInfo(format!("{err:#?}")),
                 error_url.as_ref(),
+                redirect_url.as_ref(),
             );
         }
     };
@@ -155,7 +176,7 @@ pub async fn oidc_auth(
 
     if linked_user.is_some() {
         LinkUtils::new(&state)
-            .complete_external_link(auth_session, &external_user, target_url.as_ref(), error_url.as_ref())
+            .complete_external_link(auth_session, &external_user, redirect_url.as_ref(), error_url.as_ref())
             .await
     } else {
         LinkUtils::new(&state)
@@ -164,7 +185,7 @@ pub async fn oidc_auth(
                 fingerprint,
                 &site_info,
                 &external_user,
-                target_url.as_ref(),
+                redirect_url.as_ref(),
                 error_url.as_ref(),
                 remember_me,
             )

@@ -35,7 +35,7 @@ export default class Server extends MockServer {
 
         app.post('/oauth2/token', validate, async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
             if (!req.is('application/x-www-form-urlencoded')) {
-                this.log(`Unexpected content type`);
+                this.log('Unexpected content type');
                 res.status(201).json({});
                 return;
                 //throw new Error(`Unexpected content type`);

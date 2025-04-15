@@ -1,15 +1,21 @@
 <!DOCTYPE html>
 <html>
+  <head>
+    {% if timeout >= 0 %}
+    <meta
+      http-equiv="refresh"
+      content="{{timeout}}; url='{{ targetUrl | safe }}'"
+    />
+    {% endif %}
+  </head>
 
-<head>
-  {% if timeout >= 0 %}
-  <meta http-equiv="refresh" content="{{timeout}}; url='{{ redirectUrl | safe }}'" />
-  {% endif %}
-</head>
-
-<body>
-  <h1 class="header-text">{{ appName }}</h1>
-  <p>Redirecting to <a href='{{ redirectUrl | safe }}'> {{ target }} </a> ...</p>
-</body>
-
+  <body>
+    <p>Redirecting to <a href="{{ targetUrl | safe }}"> link </a> ...</p>
+    {% if problem != '' %}
+    <div style="display: none">
+      <h2>Problem</h2>
+      <pre>{{problem}}</pre>
+    </div>
+    {% endif %}
+  </body>
 </html>

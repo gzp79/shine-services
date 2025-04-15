@@ -42,7 +42,6 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
                 builderUrl: 'https://cloud.local-scytta.com:8444/identity',
 
                 defaultRedirects: {
-                    loginUrl: 'https://login.com/',
                     redirectUrl: 'https://redirect.com/',
                     errorUrl: 'https://error.com/'
                 },

@@ -40,33 +40,55 @@ pub async fn delete_user(
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
 
-    let (user_id, user_name, session_key) = match auth_session
-        .user_session()
-        .map(|u| (u.user_id, u.name.clone(), u.key))
-    {
-        Some(user) => user,
-        None => return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_ref()),
-    };
+    let (user_id, user_name, session_key) =
+        match auth_session.user_session().map(|u| (u.user_id, u.name.clone(), u.key)) {
+            Some(user) => user,
+            None => {
+                return PageUtils::new(&state).error(
+                    auth_session,
+                    AuthError::LoginRequired,
+                    query.error_url.as_ref(),
+                    query.redirect_url.as_ref(),
+                )
+            }
+        };
 
     // check for user confirmation
     if query.confirmation != Some(user_name) {
-        return PageUtils::new(&state).error(auth_session, AuthError::MissingConfirmation, query.error_url.as_ref());
+        return PageUtils::new(&state).error(
+            auth_session,
+            AuthError::MissingConfirmation,
+            query.error_url.as_ref(),
+            query.redirect_url.as_ref(),
+        );
     }
 
     // validate session as this is a very risky operation
     match state.session_service().find(user_id, &session_key).await {
         Ok(None) => {
-            return PageUtils::new(&state).error(auth_session, AuthError::SessionExpired, query.error_url.as_ref())
+            return PageUtils::new(&state).error(
+                auth_session,
+                AuthError::SessionExpired,
+                query.error_url.as_ref(),
+                query.redirect_url.as_ref(),
+            )
         }
-        Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
+        Err(err) => {
+            return PageUtils::new(&state).error(
+                auth_session,
+                err,
+                query.error_url.as_ref(),
+                query.redirect_url.as_ref(),
+            )
+        }
         Ok(Some(_)) => {}
     };
 
     if let Err(err) = state.identity_service().cascaded_delete(user_id).await {
-        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
+        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), query.redirect_url.as_ref());
     }
 
     // End of validations, from this point
@@ -78,5 +100,5 @@ pub async fn delete_user(
         log::warn!("Failed to clear all sessions for user {}: {:?}", user_id, err);
     }
 
-    PageUtils::new(&state).redirect(response_session, None, query.redirect_url.as_ref())
+    PageUtils::new(&state).redirect(response_session, query.redirect_url.as_ref(), None)
 }
