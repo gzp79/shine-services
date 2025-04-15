@@ -61,7 +61,7 @@
         "mailparser": "^3.7.2",
         "playwright": "^1.51.1",
         "smtp-server": "^3.13.6",
-        "ts-jose": "^6.0.10",
+        "ts-jose": "^5.10.0",
         "uuid-validate": "^0.0.3",
         "zod": "^3.24.2"
     }
