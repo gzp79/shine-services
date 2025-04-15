@@ -4,7 +4,7 @@
     "description": "",
     "main": "test.js",
     "scripts": {
-        "prepare": "husky",
+        "prepare": "cd .. && husky tests/.husky",
         "mkcert:ca": "mkcert create-ca --cert ../certs/ca.crt --key ../certs/ca.key",
         "mkcert:local": "npm run mkcert:ca && mkcert create-cert --ca-cert ../certs/ca.crt --ca-key ../certs/ca.key --cert ../certs/test.crt --key ../certs/test.key --domain cloud.local-scytta.com,mockbox.com",
         "mkcert:dev": "npm run mkcert:ca && mkcert create-cert --ca-cert ../certs/ca.crt --ca-key ../certs/ca.key --cert ../certs/scytta.crt --key ../certs/scytta.key --domain local-cloud.scytta.com",
