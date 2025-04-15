@@ -9,7 +9,6 @@ import { ExternalUser } from './external_user';
 import { getPageRedirectUrl } from './utils';
 
 export type DefaultRedirects = {
-    loginUrl: string;
     redirectUrl: string;
     errorUrl: string;
 };

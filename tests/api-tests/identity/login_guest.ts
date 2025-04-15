@@ -1,5 +1,6 @@
 import { expect, test } from '$fixtures/setup';
 import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
+import { createUrl } from '$lib/utils';
 
 test.describe('Login and register guest', () => {
     test('Login with (tid: NULL, sid: NULL, captcha: NULL) shall fail with missing captcha', async ({ api }) => {
@@ -7,7 +8,13 @@ test.describe('Login and register guest', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=auth-error&status=400');
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-error',
+                status: 400,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
+        );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
                 type: 'auth-error',
@@ -31,7 +38,13 @@ test.describe('Login and register guest', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=auth-error&status=400');
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-error',
+                status: 400,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
+        );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
                 type: 'auth-error',
@@ -56,7 +69,13 @@ test.describe('Login and register guest', () => {
         expect(response).toHaveStatus(200);
 
         const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.errorUrl + '?type=auth-error&status=400');
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-error',
+                status: 400,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
+        );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
                 type: 'auth-error',

@@ -34,8 +34,8 @@ pub async fn validate(
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
 
-    PageUtils::new(&state).redirect(auth_session, None, query.redirect_url.as_ref())
+    PageUtils::new(&state).redirect(auth_session, query.redirect_url.as_ref(), None)
 }

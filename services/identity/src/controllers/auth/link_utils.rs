@@ -20,7 +20,7 @@ impl<'a> LinkUtils<'a> {
         &self,
         auth_session: AuthSession,
         external_user: &ExternalUserInfo,
-        target_url: Option<&Url>,
+        redirect_url: Option<&Url>,
         error_url: Option<&Url>,
     ) -> AuthPage {
         log::debug!("Completing external link for user: {:#?}", external_user);
@@ -35,9 +35,14 @@ impl<'a> LinkUtils<'a> {
         {
             Ok(()) => {}
             Err(IdentityError::LinkProviderConflict) => {
-                return PageUtils::new(self.state).error(auth_session, AuthError::ProviderAlreadyUsed, error_url)
+                return PageUtils::new(self.state).error(
+                    auth_session,
+                    AuthError::ProviderAlreadyUsed,
+                    error_url,
+                    redirect_url,
+                )
             }
-            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
+            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
         };
 
         log::debug!(
@@ -48,7 +53,7 @@ impl<'a> LinkUtils<'a> {
         );
         let response_session = auth_session.with_external_login(None);
         assert!(response_session.user_session().is_some());
-        PageUtils::new(self.state).redirect(response_session, None, target_url)
+        PageUtils::new(self.state).redirect(response_session, redirect_url, None)
     }
 
     pub async fn complete_external_login(
@@ -57,7 +62,7 @@ impl<'a> LinkUtils<'a> {
         fingerprint: ClientFingerprint,
         site_info: &SiteInfo,
         external_user: &ExternalUserInfo,
-        target_url: Option<&Url>,
+        redirect_url: Option<&Url>,
         error_url: Option<&Url>,
         create_token: bool,
     ) -> AuthPage {
@@ -84,11 +89,16 @@ impl<'a> LinkUtils<'a> {
             {
                 Ok(identity) => identity,
                 Err(CreateUserError::IdentityError(IdentityError::EmailConflict)) => {
-                    return PageUtils::new(self.state).error(auth_session, AuthError::EmailAlreadyUsed, error_url)
+                    return PageUtils::new(self.state).error(
+                        auth_session,
+                        AuthError::EmailAlreadyUsed,
+                        error_url,
+                        redirect_url,
+                    )
                 }
-                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
+                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
             },
-            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
+            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
         };
 
         // create a new remember me token
@@ -107,7 +117,7 @@ impl<'a> LinkUtils<'a> {
                 .await
             {
                 Ok(token_cookie) => Some(token_cookie),
-                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
+                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
             }
         } else {
             None
@@ -126,9 +136,10 @@ impl<'a> LinkUtils<'a> {
                     auth_session.with_access(None),
                     IdentityError::UserDeleted { id: identity.id },
                     error_url,
+                    redirect_url,
                 );
             }
-            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
+            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
         };
 
         let response_session = auth_session
@@ -140,6 +151,6 @@ impl<'a> LinkUtils<'a> {
                 revoked_token: None,
             }))
             .with_session(Some(user_session));
-        PageUtils::new(self.state).redirect(response_session, None, target_url)
+        PageUtils::new(self.state).redirect(response_session, redirect_url, None)
     }
 }

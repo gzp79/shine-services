@@ -22,7 +22,6 @@ pub struct QueryParams {
     remember_me: Option<bool>,
     token: Option<String>,
     redirect_url: Option<Url>,
-    login_url: Option<Url>,
     error_url: Option<Url>,
     captcha: Option<String>,
 }
@@ -516,7 +515,7 @@ pub async fn token_login(
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
 
     log::debug!("Query: {:#?}", query);
@@ -532,11 +531,12 @@ pub async fn token_login(
     } = match authenticate(&state, &query, auth_header, auth_session, &fingerprint).await {
         Ok(success) => success,
         Err(failure) => {
-            if let AuthError::LoginRequired = failure.error {
-                return PageUtils::new(&state).redirect(failure.auth_session, None, query.login_url.as_ref());
-            } else {
-                return PageUtils::new(&state).error(failure.auth_session, failure.error, query.error_url.as_ref());
-            };
+            return PageUtils::new(&state).error(
+                failure.auth_session,
+                failure.error,
+                query.error_url.as_ref(),
+                query.redirect_url.as_ref(),
+            );
         }
     };
 
@@ -563,7 +563,14 @@ pub async fn token_login(
             .await
         {
             Ok(user_token) => user_token,
-            Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
+            Err(err) => {
+                return PageUtils::new(&state).error(
+                    auth_session,
+                    err,
+                    query.error_url.as_ref(),
+                    query.redirect_url.as_ref(),
+                )
+            }
         };
 
         // preserve the old token in case client does not acknowledge the new one
@@ -593,13 +600,21 @@ pub async fn token_login(
                     auth_session.with_access(None),
                     IdentityError::UserDeleted { id: identity.id },
                     query.error_url.as_ref(),
+                    query.redirect_url.as_ref(),
                 );
             }
-            Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
+            Err(err) => {
+                return PageUtils::new(&state).error(
+                    auth_session,
+                    err,
+                    query.error_url.as_ref(),
+                    query.redirect_url.as_ref(),
+                )
+            }
         };
         auth_session.with_session(Some(user_session))
     };
 
     log::info!("Token login completed for: {}", identity.id);
-    PageUtils::new(&state).redirect(auth_session, None, query.redirect_url.as_ref())
+    PageUtils::new(&state).redirect(auth_session, query.redirect_url.as_ref(), None)
 }

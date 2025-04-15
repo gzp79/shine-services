@@ -41,11 +41,11 @@ pub async fn oauth2_login(
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
 
     if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
-        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
+        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), query.redirect_url.as_ref());
     }
 
     let key = random::hex_16(state.random());
@@ -73,5 +73,5 @@ pub async fn oauth2_login(
             linked_user: None,
         }));
     assert!(response_session.user_session().is_none());
-    PageUtils::new(&state).redirect(response_session, Some(&client.provider), Some(&authorize_url))
+    PageUtils::new(&state).redirect(response_session, Some(&authorize_url), None)
 }

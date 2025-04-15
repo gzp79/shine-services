@@ -46,11 +46,16 @@ pub async fn oidc_link(
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
 
     if auth_session.user_session().is_none() {
-        return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
+        return PageUtils::new(&state).error(
+            auth_session,
+            AuthError::LoginRequired,
+            query.error_url.as_ref(),
+            query.redirect_url.as_ref(),
+        );
     }
 
     let core_client = match client.client().await {
@@ -60,6 +65,7 @@ pub async fn oidc_link(
                 auth_session,
                 ExternalLoginError::OIDCDiscovery(format!("{err:#?}")),
                 query.error_url.as_ref(),
+                query.redirect_url.as_ref(),
             )
         }
     };
@@ -90,5 +96,5 @@ pub async fn oidc_link(
         linked_user,
     }));
     assert!(response_session.user_session().is_some());
-    PageUtils::new(&state).redirect(response_session, Some(&client.provider), Some(&authorize_url))
+    PageUtils::new(&state).redirect(response_session, Some(&authorize_url), None)
 }

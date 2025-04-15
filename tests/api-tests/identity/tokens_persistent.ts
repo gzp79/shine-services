@@ -3,6 +3,7 @@ import { ProblemSchema } from '$lib/api/api';
 import { TestUser } from '$lib/api/test_user';
 import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 import OAuth2MockServer from '$lib/mocks/oauth2';
+import { createUrl } from '$lib/utils';
 
 test.describe('Persistent token', () => {
     let mock: OAuth2MockServer = undefined!;
@@ -62,7 +63,11 @@ test.describe('Persistent token', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=auth-token-expired&status=401'
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-token-expired',
+                status: 401,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -87,7 +92,11 @@ test.describe('Persistent token', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=auth-token-expired&status=401'
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-token-expired',
+                status: 401,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -118,7 +127,11 @@ test.describe('Persistent token', () => {
             .withHeaders({ 'user-agent': 'agent2' });
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=auth-token-expired&status=401'
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-token-expired',
+                status: 401,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -171,7 +184,11 @@ test.describe('Persistent token', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            api.auth.defaultRedirects.errorUrl + '?type=auth-token-expired&status=401'
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-token-expired',
+                status: 401,
+                redirectUrl: api.auth.defaultRedirects.redirectUrl
+            })
         );
     });
 });
