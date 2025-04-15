@@ -165,7 +165,7 @@ export class UserAPI {
         const cs = sid && { sid };
         const pl = lang && { lang };
 
-        return ApiRequest.post(this.urlFor(`/api/auth/user/email/confirm`))
+        return ApiRequest.post(this.urlFor('/api/auth/user/email/confirm'))
             .withCookies({ ...cs })
             .withParams({ ...pl });
     }
@@ -179,7 +179,7 @@ export class UserAPI {
         const cs = sid && { sid };
         const pl = lang && { lang };
 
-        return ApiRequest.post<EmailChange>(this.urlFor(`/api/auth/user/email/change`))
+        return ApiRequest.post<EmailChange>(this.urlFor('/api/auth/user/email/change'))
             .withCookies({ ...cs })
             .withParams({ ...pl })
             .withBody({ email });

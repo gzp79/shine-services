@@ -35,7 +35,8 @@ export default [
                     ignoreRestSiblings: true
                 }
             ],
-            '@typescript-eslint/no-floating-promises': ['error']
+            '@typescript-eslint/no-floating-promises': ['error'],
+            '@stylistic/ts/quotes': ['error', 'single']
         }
     },
     {

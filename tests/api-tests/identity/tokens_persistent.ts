@@ -21,12 +21,12 @@ test.describe('Persistent token', () => {
         user = undefined!;
     });
 
-    test(`Creating a persistent token without session shall fail`, async ({ api }) => {
+    test('Creating a persistent token without session shall fail', async ({ api }) => {
         const response = await api.token.createTokenRequest(null, 'persistent', 20, false);
         expect(response).toHaveStatus(401);
     });
 
-    test(`Token creation with a too long duration shall be rejected`, async ({ api }) => {
+    test('Token creation with a too long duration shall be rejected', async ({ api }) => {
         const response = await api.token.createTokenRequest(user.sid, 'persistent', 31536001, false);
         expect(response).toHaveStatus(400);
 

@@ -29,7 +29,7 @@ test.describe('Access token (TID)', () => {
         expect(response).toHaveStatus(401);
     });
 
-    test(`Token creation with api shall be rejected`, async ({ api }) => {
+    test('Token creation with api shall be rejected', async ({ api }) => {
         const user = await api.testUsers.createGuest();
 
         const response = await api.token.createTokenRequest(user.sid, 'access', 20, false);
@@ -40,7 +40,7 @@ test.describe('Access token (TID)', () => {
             expect.objectContaining({
                 type: 'input-body-format',
                 status: 400,
-                detail: expect.stringContaining(`kind: unknown variant \`access\``)
+                detail: expect.stringContaining('kind: unknown variant `access`')
             })
         );
     });
@@ -74,7 +74,7 @@ test.describe('Access token (TID)', () => {
         const user = await api.testUsers.createGuest();
         const response = await api.auth
             .loginWithTokenRequest(user.tid!, user.sid!, null, null, false, null)
-            .withHeaders({ authorization: `Basic invalid` }); // only Bearer is supported, thus it is considered invalid
+            .withHeaders({ authorization: 'Basic invalid' }); // only Bearer is supported, thus it is considered invalid
         expect(response).toHaveStatus(200);
 
         const text = await response.text();

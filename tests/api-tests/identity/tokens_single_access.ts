@@ -21,12 +21,12 @@ test.describe('Single access token', () => {
         user = undefined!;
     });
 
-    test(`Creating singleAccess token without session shall fail`, async ({ api }) => {
+    test('Creating singleAccess token without session shall fail', async ({ api }) => {
         const response = await api.token.createTokenRequest(null, 'singleAccess', 20, false);
         expect(response).toHaveStatus(401);
     });
 
-    test(`Token creation with a too long duration shall be rejected`, async ({ api }) => {
+    test('Token creation with a too long duration shall be rejected', async ({ api }) => {
         const response = await api.token.createTokenRequest(user.sid, 'singleAccess', 2000, false);
         expect(response).toHaveStatus(400);
 
