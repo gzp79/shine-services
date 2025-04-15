@@ -1,5 +1,5 @@
 import js from '@eslint/js';
-import typescriptEslint from '@typescript-eslint/eslint-plugin';
+import stylisticTs from '@stylistic/eslint-plugin-ts';
 import prettier from 'eslint-config-prettier';
 import ts from 'typescript-eslint';
 
@@ -9,7 +9,7 @@ export default [
     prettier,
     {
         plugins: {
-            '@typescript-eslint': typescriptEslint
+            '@stylistic/ts': stylisticTs
         },
 
         languageOptions: {
