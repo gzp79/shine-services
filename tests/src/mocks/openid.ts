@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Certificates, MockServer, TypedRequest, TypedResponse } from '$lib/mocks/mock_server';
+import { Certificates, MockServer } from '$lib/mocks/mock_server';
 import '$lib/string_utils';
 import bodyParser from 'body-parser';
 import express from 'express';
+import { Request, RequestHandler, Response } from 'express-serve-static-core';
 import { body, validationResult } from 'express-validator';
 import { JWK, JWKObject, JWSAlgorithms, JWT } from 'ts-jose';
 import { CERTIFICATES, DEFAULT_URL, JWKS } from './mock_constants';
@@ -27,11 +28,11 @@ export default class Server extends MockServer {
     }
 
     protected init() {
-        const app = this.app!;
-        app.use(bodyParser.json());
-        app.use(express.urlencoded({ extended: true }));
+        let app = this.app!;
+        app = app.use(bodyParser.json() as any as RequestHandler);
+        app = app.use(express.urlencoded({ extended: true }) as any as RequestHandler);
 
-        app.get('/openid/.well-known/openid-configuration', (_req: TypedRequest<any, any>, res: TypedResponse<any>) => {
+        app.get('/openid/.well-known/openid-configuration', (_req: Request, res: Response) => {
             res.status(200).json({
                 issuer: this.baseUrl,
                 jwks_uri: this.baseUrl + '/jwks',
@@ -44,7 +45,7 @@ export default class Server extends MockServer {
             });
         });
 
-        app.get('/openid/jwks', (_req: TypedRequest<any, any>, res: TypedResponse<any>) => {
+        app.get('/openid/jwks', (_req: Request, res: Response) => {
             res.status(200).json({ keys: [JWKS] });
         });
 
@@ -53,8 +54,8 @@ export default class Server extends MockServer {
             body('grant_type').isString().notEmpty(),
             body('redirect_uri').isString().notEmpty(),
             body('code_verifier').isString().notEmpty()
-        ];
-        app.post('/openid/token', validate, async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
+        ] as any as RequestHandler;
+        app.post('/openid/token', validate, async (req: Request, res: Response) => {
             if (!req.is('application/x-www-form-urlencoded')) {
                 this.log('Unexpected content type');
                 throw new Error('Unexpected content type');
@@ -107,7 +108,7 @@ export default class Server extends MockServer {
             });
         });
 
-        app.get('/openid/authorize', async (req: TypedRequest<any, any>, res: TypedResponse<any>) => {
+        app.get('/openid/authorize', async (req: Request, res: Response) => {
             const authParams = req.query as Record<string, string>;
             const htmlContent = getAuthorizeHtml(authParams);
             res.status(200).send(htmlContent);

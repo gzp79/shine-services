@@ -1,10 +1,11 @@
 import { Cookie } from '$lib/api/api';
 import { UserInfo } from '$lib/api/user_api';
+import { MatcherReturnType } from 'playwright/test';
 import uuidValidate from 'uuid-validate';
 import { expect as baseExpect } from './common';
 
 export const expect = baseExpect.extend({
-    toBeClearCookie(received: Cookie) {
+    toBeClearCookie(received: Cookie): MatcherReturnType {
         expect(received.secure).toBeTruthy();
         expect(received.httpOnly).toBeTruthy();
         expect(received.sameSite).toEqual('Lax');
@@ -16,7 +17,7 @@ export const expect = baseExpect.extend({
         };
     },
 
-    toBeValidTID(received: Cookie) {
+    toBeValidTID(received: Cookie): MatcherReturnType {
         expect(received.name).toEqual('tid');
         expect(received.secure).toBeTruthy();
         expect(received.httpOnly).toBeTruthy();
@@ -31,7 +32,7 @@ export const expect = baseExpect.extend({
         };
     },
 
-    toBeValidSID(received: Cookie) {
+    toBeValidSID(received: Cookie): MatcherReturnType {
         expect(received.name).toEqual('sid');
         expect(received.secure).toBeTruthy();
         expect(received.httpOnly).toBeTruthy();
@@ -46,7 +47,7 @@ export const expect = baseExpect.extend({
         };
     },
 
-    toBeValidEID(received: Cookie) {
+    toBeValidEID(received: Cookie): MatcherReturnType {
         expect(received.name).toEqual('eid');
         expect(received.secure).toBeTruthy();
         expect(received.httpOnly).toBeTruthy();
@@ -61,7 +62,7 @@ export const expect = baseExpect.extend({
         };
     },
 
-    toBeGuestUser(received: UserInfo) {
+    toBeGuestUser(received: UserInfo): MatcherReturnType {
         expect(uuidValidate(received.userId)).toBeTruthy();
         expect(received.name).toStartWith('Freshman_');
         expect(received.sessionLength).toBeGreaterThanOrEqual(0);

@@ -21,6 +21,7 @@ export function suppress_tls_certificate_warning() {
             return;
         }
 
-        return originalEmitWarning.call(process, warning, ...args);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return originalEmitWarning.call(process, warning, ...(args as any[]));
     };
 }

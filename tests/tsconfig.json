@@ -2,8 +2,10 @@
     "compilerOptions": {
         "esModuleInterop": true,
         "forceConsistentCasingInFileNames": true,
+        "tsBuildInfoFile": "node_modules/.tmp/tsconfig.tsbuildinfo",
         "strict": true,
         "skipLibCheck": true,
+        "noEmit": true,
 
         "outDir": "build",
 
