@@ -1,6 +1,6 @@
-import { expect as baseExpect } from '@playwright/test';
+import { MatcherReturnType, expect as baseExpect } from '@playwright/test';
 
-function toHaveType(received: unknown, expected: string) {
+function toHaveType(received: unknown, expected: string): MatcherReturnType {
     const pass = typeof received === expected;
     if (pass) {
         return {
@@ -16,27 +16,27 @@ function toHaveType(received: unknown, expected: string) {
 }
 
 export const expect = baseExpect.extend({
-    //toHaveType,
-    toBeString(received: unknown) {
+    toHaveType,
+    toBeString(received: unknown): MatcherReturnType {
         return toHaveType(received, 'string');
     },
-    toBeNumber(received: unknown) {
+    toBeNumber(received: unknown): MatcherReturnType {
         return toHaveType(received, 'number');
     },
-    toBeBoolean(received: unknown) {
+    toBeBoolean(received: unknown): MatcherReturnType {
         return toHaveType(received, 'boolean');
     },
-    toBeObject(received: unknown) {
+    toBeObject(received: unknown): MatcherReturnType {
         return toHaveType(received, 'object');
     },
-    toBeArray(received: unknown) {
+    toBeArray(received: unknown): MatcherReturnType {
         return toHaveType(received, 'array');
     },
-    toBeFunction(received: unknown) {
+    toBeFunction(received: unknown): MatcherReturnType {
         return toHaveType(received, 'function');
     },
 
-    toBeEmptyValue(received: unknown) {
+    toBeEmptyValue(received: unknown): MatcherReturnType {
         let pass;
         let formatted: string;
         if (received === null || received === undefined) {
@@ -65,7 +65,7 @@ export const expect = baseExpect.extend({
         }
     },
 
-    toBeBefore(received: Date | number, expected: Date | number) {
+    toBeBefore(received: Date | number, expected: Date | number): MatcherReturnType {
         if (typeof received === 'number') {
             received = new Date(received);
         }
@@ -87,7 +87,7 @@ export const expect = baseExpect.extend({
             };
         }
     },
-    toBeAfter(received: Date, expected: Date) {
+    toBeAfter(received: Date, expected: Date): MatcherReturnType {
         if (typeof received === 'number') {
             received = new Date(received);
         }
@@ -110,7 +110,7 @@ export const expect = baseExpect.extend({
         }
     },
 
-    toStartWith(received: string, expected: string) {
+    toStartWith(received: string, expected: string): MatcherReturnType {
         const pass = received.startsWith(expected);
         if (pass) {
             return {
@@ -124,7 +124,7 @@ export const expect = baseExpect.extend({
             };
         }
     },
-    toEndWith(received: string, expected: string) {
+    toEndWith(received: string, expected: string): MatcherReturnType {
         const pass = received.endsWith(expected);
         if (pass) {
             return {

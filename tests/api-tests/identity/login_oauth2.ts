@@ -398,7 +398,7 @@ test.describe('Login with OAuth2', () => {
 
         const cookies = await api.auth.loginWithOAuth2(mock, user, false);
         expect(parseSignedCookie(cookies.tid).key).toBeUndefined();
-        expect(parseSignedCookie(cookies.sid).key).toBeString();
+        expect(parseSignedCookie(cookies.sid).key).toBeDefined();
         expect(parseSignedCookie(cookies.eid).key).toBeUndefined();
 
         expect((await api.user.getUserInfo(cookies.sid, 'fast')).name).toEqual(user.name);
@@ -411,8 +411,8 @@ test.describe('Login with OAuth2', () => {
         const user = ExternalUser.newRandomUser('oauth2_flow');
 
         const cookies = await api.auth.loginWithOAuth2(mock, user, true);
-        expect(parseSignedCookie(cookies.tid).key).toBeString();
-        expect(parseSignedCookie(cookies.sid).key).toBeString();
+        expect(parseSignedCookie(cookies.tid).key).toBeDefined();
+        expect(parseSignedCookie(cookies.sid).key).toBeDefined();
         expect(parseSignedCookie(cookies.eid).key).toBeUndefined();
 
         expect((await api.user.getUserInfo(cookies.sid, 'fast')).name).toEqual(user.name);

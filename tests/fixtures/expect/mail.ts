@@ -1,8 +1,8 @@
-import { expect as baseExpect } from '@playwright/test';
+import { MatcherReturnType, expect as baseExpect } from '@playwright/test';
 import { ParsedMail } from 'mailparser';
 
 export const expect = baseExpect.extend({
-    toHaveMailTo(actual: ParsedMail, address: string | string[]) {
+    toHaveMailTo(actual: ParsedMail, address: string | string[]): MatcherReturnType {
         let toList: string[] = [];
         if (Array.isArray(actual.to)) {
             toList = actual.to.map((to) => to.text);
@@ -28,7 +28,7 @@ export const expect = baseExpect.extend({
         }
     },
 
-    toHaveMailFrom(actual: ParsedMail, address: string) {
+    toHaveMailFrom(actual: ParsedMail, address: string): MatcherReturnType {
         const pass = actual.from?.text === address;
 
         if (pass) {
@@ -44,7 +44,7 @@ export const expect = baseExpect.extend({
         }
     },
 
-    toContainMailBody(actual: ParsedMail, text: string) {
+    toContainMailBody(actual: ParsedMail, text: string): MatcherReturnType {
         const pass = actual.textAsHtml?.includes(text);
 
         if (pass) {

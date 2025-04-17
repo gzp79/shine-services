@@ -2,21 +2,12 @@
 import cors from 'cors';
 import { debug } from 'debug';
 import express, { Express } from 'express';
-import { Query, Request, Response, Send } from 'express-serve-static-core';
+import { NextFunction, Request, RequestHandler, Response } from 'express-serve-static-core';
 import http from 'http';
 import { Server } from 'http';
 import https from 'https';
 import { Socket } from 'net';
 import { delay, joinURL } from '../utils';
-
-export interface TypedRequest<T extends Query, U> extends Request {
-    body: U;
-    query: T;
-}
-
-export interface TypedResponse<ResBody> extends Response {
-    json: Send<ResBody, this>;
-}
 
 export interface Certificates {
     cert: string;
@@ -97,16 +88,16 @@ export class MockServer {
     }
 
     private initCommon() {
-        this.app.use(cors());
+        this.app.use(cors() as any as RequestHandler);
 
         this.app.use((err: any, _req: any, _res: any, _next: any) => {
             this.log(err.stack);
             throw err;
         });
 
-        this.app.use(async (req: TypedRequest<any, any>, _res: TypedResponse<any>, next) => {
+        this.app.use(async (req: Request, _res: Response, next?: NextFunction) => {
             this.log(`[${req.method}] ${req.url} ...`);
-            await next();
+            await next?.();
             this.log(`[${req.method}] ${req.url} completed.`);
         });
     }

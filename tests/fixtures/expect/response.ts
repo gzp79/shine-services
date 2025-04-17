@@ -1,8 +1,8 @@
-import { expect as baseExpect } from '@playwright/test';
+import { MatcherReturnType, expect as baseExpect } from '@playwright/test';
 import { ApiResponse } from '$lib/api/api';
 
 export const expect = baseExpect.extend({
-    toHaveStatus(actual: ApiResponse, statusCode: number) {
+    toHaveStatus(actual: ApiResponse, statusCode: number): MatcherReturnType {
         const status = actual.status();
         const pass = status === statusCode;
         if (pass) {
@@ -18,7 +18,7 @@ export const expect = baseExpect.extend({
         }
     },
 
-    toHaveHeader(actual: ApiResponse, header: string, value: undefined | string | string[]) {
+    toHaveHeader(actual: ApiResponse, header: string, value: undefined | string | string[]): MatcherReturnType {
         const headers = actual.headers();
         const headerValue = headers[header];
 
