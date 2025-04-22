@@ -80,6 +80,16 @@ pg_query!( FindById =>
     "#
 );
 
+pg_query!( FindByEmail =>
+    in = email: &str;
+    out = IdentityRow;
+    sql = r#"
+        SELECT user_id, kind, name, email, email_confirmed, created
+            FROM identities
+            WHERE email = $1
+    "#
+);
+
 pg_query!( UpdateIdentity =>
     in = user_id: Uuid, user_name: Option<&str>, email: Option<&str>, email_confirmed: Option<bool>;
     out = IdentityRow;
@@ -98,6 +108,7 @@ pub struct PgIdentitiesStatements {
     insert_identity: InsertIdentity,
     cascaded_delete: CascadedDelete,
     find_by_id: FindById,
+    find_by_email: FindByEmail,
     update: UpdateIdentity,
 }
 
@@ -107,6 +118,7 @@ impl PgIdentitiesStatements {
             insert_identity: InsertIdentity::new(client).await.map_err(DBError::from)?,
             cascaded_delete: CascadedDelete::new(client).await.map_err(DBError::from)?,
             find_by_id: FindById::new(client).await.map_err(DBError::from)?,
+            find_by_email: FindByEmail::new(client).await.map_err(DBError::from)?,
             update: UpdateIdentity::new(client).await.map_err(DBError::from)?,
         })
     }
@@ -168,6 +180,23 @@ impl Identities for PgIdentityDbContext<'_> {
             .stmts_identities
             .find_by_id
             .query_opt(&self.client, &id)
+            .await
+            .map_err(DBError::from)?
+            .map(|row| Identity {
+                id: row.user_id,
+                kind: row.kind,
+                name: row.name,
+                email: row.email,
+                is_email_confirmed: row.email_confirmed,
+                created: row.created,
+            }))
+    }
+    #[instrument(skip(self))]
+    async fn find_by_email(&mut self, email: &str) -> Result<Option<Identity>, IdentityError> {
+        Ok(self
+            .stmts_identities
+            .find_by_email
+            .query_opt(&self.client, &email)
             .await
             .map_err(DBError::from)?
             .map(|row| Identity {

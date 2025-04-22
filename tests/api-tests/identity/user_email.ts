@@ -326,7 +326,7 @@ test.describe('Email change', () => {
             const smtp = await startMockEmail();
             const mailPromise = smtp.waitMail();
             const newEmail = `updated-${randomUUID()}@example.com`;
-            expect(userInfo.email).not.toEqual(newEmail);
+            expect(user.email).not.toEqual(newEmail);
             await api.user.startChangeEmail(user.sid, newEmail, lang);
             const mail = await mailPromise;
 
@@ -354,7 +354,7 @@ test.describe('Email change', () => {
     test('Changing email without email shall succeed', async ({ api }) => {
         const user = await api.testUsers.createGuest();
         const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
-        expect(userInfo.email).not.toBeNull();
+        expect(user.email).not.toBeNull();
 
         const smtp = await startMockEmail();
         const mailPromise = smtp.waitMail();
@@ -392,7 +392,7 @@ test.describe('Email change', () => {
 
         const mailPromise = smtp.waitMail();
         const newEmail = `updated-${randomUUID()}@example.com`;
-        expect(userInfo.email).not.toEqual(newEmail);
+        expect(user.email).not.toEqual(newEmail);
         await api.user.startChangeEmail(user.sid, newEmail);
         const mail = await mailPromise;
 
@@ -422,7 +422,7 @@ test.describe('Email change', () => {
 
         const mailPromise = smtp.waitMail();
         const newEmail = `updated-${randomUUID()}@example.com`;
-        expect(user.userInfo?.email).not.toEqual(newEmail);
+        expect(user.email).not.toEqual(newEmail);
         await api.user.startChangeEmail(user.sid, newEmail);
         const mail = await mailPromise;
         const token = getEmailLinkToken(mail);
@@ -471,7 +471,7 @@ test.describe('Email change', () => {
             const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
 
             const mailPromise = smtp.waitMail();
-            expect(userInfo.email).not.toEqual(email);
+            expect(user.email).not.toEqual(email);
             await api.user.startChangeEmail(user.sid, email);
             const mail = await mailPromise;
             const token = getEmailLinkToken(mail);

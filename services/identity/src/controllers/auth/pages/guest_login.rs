@@ -57,7 +57,7 @@ pub async fn guest_login(
         .await;
 
     // create a new user
-    let identity = match state.create_user_service().create_user(None, None).await {
+    let identity = match state.create_user_service().create_user(None, None, None).await {
         Ok(identity) => identity,
         Err(err) => {
             return PageUtils::new(&state).error(
@@ -79,7 +79,6 @@ pub async fn guest_login(
                 TokenKind::Access,
                 &state.settings().token.ttl_access_token,
                 Some(&fingerprint),
-                None,
                 &site_info,
             )
             .await
@@ -114,7 +113,7 @@ pub async fn guest_login(
             log::warn!("User {} has been deleted during login", identity.id);
             return PageUtils::new(&state).error(
                 auth_session.with_access(None),
-                IdentityError::UserDeleted { id: identity.id },
+                IdentityError::UserDeleted,
                 query.error_url.as_ref(),
                 query.redirect_url.as_ref(),
             );

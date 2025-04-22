@@ -80,7 +80,7 @@ async fn complete_email_login(
         Ok(Some(identity)) => identity,
         Ok(None) => {
             return Err(AuthenticationFailure {
-                error: IdentityError::UserDeleted { id: identity.id }.into(),
+                error: IdentityError::UserDeleted.into(),
                 auth_session,
             })
         }
@@ -411,7 +411,7 @@ async fn authenticate_with_refresh_session(
         Ok(Some(info)) => info,
         Ok(None) => {
             return Err(AuthenticationFailure {
-                error: IdentityError::UserDeleted { id: user_id }.into(),
+                error: IdentityError::UserDeleted.into(),
                 auth_session,
             });
         }
@@ -557,7 +557,6 @@ pub async fn token_login(
                 TokenKind::Access,
                 &state.settings().token.ttl_access_token,
                 Some(&fingerprint),
-                None,
                 &site_info,
             )
             .await
@@ -598,7 +597,7 @@ pub async fn token_login(
                 log::warn!("User {} has been deleted during login", identity.id);
                 return PageUtils::new(&state).error(
                     auth_session.with_access(None),
-                    IdentityError::UserDeleted { id: identity.id },
+                    IdentityError::UserDeleted,
                     query.error_url.as_ref(),
                     query.redirect_url.as_ref(),
                 );

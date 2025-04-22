@@ -31,6 +31,10 @@ export class TestUser {
         return this.userInfo?.roles ?? [];
     }
 
+    public get email(): string | undefined {
+        return this.userInfo?.details?.email;
+    }
+
     public get isLinked(): boolean {
         return this.userInfo?.isLinked ?? false;
     }

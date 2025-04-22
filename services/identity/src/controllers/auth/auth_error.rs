@@ -1,7 +1,8 @@
 use crate::{
-    handlers::{CreateUserError, LoginTokenError, UserInfoError},
+    handlers::{CreateUserError, LoginEmailError, LoginTokenError, UserInfoError},
     repositories::{identity::IdentityError, session::SessionError, CaptchaError},
 };
+use reqwest::StatusCode;
 use shine_infra::web::{InputError, Problem};
 use thiserror::Error as ThisError;
 
@@ -13,6 +14,7 @@ const SESSION_EXPIRED: &str = "auth-session-expired";
 const EMAIL_CONFLICT: &str = "auth-register-email-conflict";
 const EXTERNAL_ID_CONFLICT: &str = "auth-register-external-id-conflict";
 const MISSING_CONFIRMATION: &str = "auth-not-confirmed";
+const EMAIL_LOGIN: &str = "auth-email-login";
 
 const EXTERNAL_MISSING_COOKIE: &str = "external-missing-cookie";
 const EXTERNAL_INVALID_NONCE: &str = "external-invalid-nonce";
@@ -33,7 +35,6 @@ pub enum ExternalLoginError {
     TokenExchangeFailed(String),
     #[error("Failed to get user info from provider")]
     FailedExternalUserInfo(String),
-
     #[error("OpenId discovery failed")]
     OIDCDiscovery(String),
 }
@@ -77,6 +78,8 @@ pub enum AuthError {
     EmailAlreadyUsed,
     #[error("Missing operation confirmation")]
     MissingConfirmation,
+    #[error("Waiting email login flow")]
+    EmailLogin,
 
     #[error(transparent)]
     InputError(#[from] InputError),
@@ -92,6 +95,8 @@ pub enum AuthError {
     CreateUserError(#[from] CreateUserError),
     #[error(transparent)]
     LoginTokenError(#[from] LoginTokenError),
+    #[error(transparent)]
+    LoginEmailError(#[from] LoginEmailError),
     #[error(transparent)]
     UserInfoError(#[from] UserInfoError),
 
@@ -111,6 +116,7 @@ impl From<AuthError> for Problem {
             AuthError::ProviderAlreadyUsed => Problem::conflict(EXTERNAL_ID_CONFLICT),
             AuthError::EmailAlreadyUsed => Problem::conflict(EMAIL_CONFLICT),
             AuthError::MissingConfirmation => Problem::conflict(MISSING_CONFIRMATION),
+            AuthError::EmailLogin => Problem::new(StatusCode::ACCEPTED, EMAIL_LOGIN),
 
             AuthError::InputError(input_error) => {
                 Problem::bad_request(INPUT_ERROR).with_sensitive(Problem::from(input_error))
@@ -141,6 +147,9 @@ impl From<AuthError> for Problem {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::LoginTokenError(error) => {
+                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+            }
+            AuthError::LoginEmailError(error) => {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::UserInfoError(error) => {

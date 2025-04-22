@@ -70,7 +70,7 @@ impl AuthController {
         let mut auth_routes = OpenApiRouter::new()
             .routes(routes!(pages::guest_login))
             .routes(routes!(pages::token_login))
-            //.routes(routes!(pages::email_login))
+            .routes(routes!(pages::email_login))
             .routes(routes!(pages::validate))
             .routes(routes!(pages::logout))
             .routes(routes!(pages::delete_user));

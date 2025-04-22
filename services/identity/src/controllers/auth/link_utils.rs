@@ -84,7 +84,11 @@ impl<'a> LinkUtils<'a> {
             Ok(None) => match self
                 .state
                 .create_user_service()
-                .create_user(Some(external_user), None)
+                .create_user(
+                    Some(external_user),
+                    external_user.name.as_deref(),
+                    external_user.email.as_deref(),
+                )
                 .await
             {
                 Ok(identity) => identity,
@@ -111,7 +115,6 @@ impl<'a> LinkUtils<'a> {
                     TokenKind::Access,
                     &self.state.settings().token.ttl_access_token,
                     Some(&fingerprint),
-                    None,
                     site_info,
                 )
                 .await
@@ -134,7 +137,7 @@ impl<'a> LinkUtils<'a> {
                 log::warn!("User {} has been deleted during link", identity.id);
                 return PageUtils::new(self.state).error(
                     auth_session.with_access(None),
-                    IdentityError::UserDeleted { id: identity.id },
+                    IdentityError::UserDeleted,
                     error_url,
                     redirect_url,
                 );

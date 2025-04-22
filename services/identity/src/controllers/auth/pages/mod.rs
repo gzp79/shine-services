@@ -14,6 +14,8 @@ mod oidc_link;
 pub use self::oidc_link::*;
 mod oidc_auth;
 pub use self::oidc_auth::*;
+mod email_login;
+pub use self::email_login::*;
 
 mod logout;
 pub use self::logout::*;

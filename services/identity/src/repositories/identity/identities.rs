@@ -38,6 +38,7 @@ pub trait Identities {
     ) -> impl Future<Output = Result<Identity, IdentityError>> + Send;
 
     fn find_by_id(&mut self, id: Uuid) -> impl Future<Output = Result<Option<Identity>, IdentityError>> + Send;
+    fn find_by_email(&mut self, id: &str) -> impl Future<Output = Result<Option<Identity>, IdentityError>> + Send;
 
     fn update(
         &mut self,

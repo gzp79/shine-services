@@ -1,8 +1,6 @@
-use serde_json::json;
 use shine_core::crypto::IdEncoderError;
 use shine_infra::{db::DBError, web::Problem};
 use thiserror::Error as ThisError;
-use uuid::Uuid;
 
 mod pr {
     pub const ID_CONFLICT: &str = "identity-id-conflict";
@@ -40,7 +38,7 @@ pub enum IdentityError {
     #[error("Email address is missing for the requested token kind")]
     TokenMissingEmail,
     #[error("User was removed during the operation")]
-    UserDeleted { id: Uuid },
+    UserDeleted,
 
     #[error(transparent)]
     IdEncoder(#[from] IdEncoderError),
@@ -58,9 +56,7 @@ impl From<IdentityError> for Problem {
                 Problem::conflict(pr::EXTERNAL_ID_CONFLICT).with_detail(err.to_string())
             }
             IdentityError::MissingEmail => Problem::precondition_failed(pr::MISSING_EMAIL).with_detail(err.to_string()),
-            IdentityError::UserDeleted { id } => Problem::conflict(pr::DELETE_CONFLICT)
-                .with_detail(err.to_string())
-                .with_extension(json!({ id: id })),
+            IdentityError::UserDeleted => Problem::conflict(pr::DELETE_CONFLICT).with_detail(err.to_string()),
 
             err => Problem::internal_error()
                 .with_detail(err.to_string())

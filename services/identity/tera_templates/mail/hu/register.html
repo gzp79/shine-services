@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Regisztráció</title>
+  </head>
+  <body>
+    <h1>Regisztráció</h1>
+    <p>Szia {{ user }},</p>
+    <p>
+      Köszönjük, hogy regisztráltál a(z) {{ app }} szolgáltatásba! Kérjük,
+      erősítsd meg a regisztrációdat az alábbi linkre kattintva:
+    </p>
+    <p><a href="{{ link }}">Regisztráció Megerősítése</a></p>
+    <p>
+      Ha nem te kezdeményezted ezt a regisztrációt, kérjük, hagyd figyelmen
+      kívül ezt az emailt.
+    </p>
+    <p>Üdv,<br />{{ app }}</p>
+  </body>
+</html>

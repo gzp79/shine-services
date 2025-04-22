@@ -17,7 +17,7 @@ pub struct AuthSessionConfig {
     pub ttl_single_access: usize,
     /// The maximum time to live for an api-key in seconds
     pub ttl_api_key: usize,
-    /// The maximum time to live for an email in seconds
+    /// The maximum time to live for an email login in seconds
     pub ttl_email_token: usize,
 }
 
