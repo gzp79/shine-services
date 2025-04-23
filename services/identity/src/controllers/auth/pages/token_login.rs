@@ -113,15 +113,19 @@ async fn authenticate_with_query_token(
             .as_ref()
             .expect("It shall be called only if there is a token in the query");
 
-        // Any token provided as a query token is removed from the DB as
+        // Any token provided as a query token is removed from the DB as it's been used in a non-secure way.
         match state.identity_service().take_token(TokenKind::all(), token).await {
             Ok(Some(info)) => info,
             Ok(None) => {
                 log::debug!("Expired single access token ...");
-                // reject, but keep the session not to loose the quest users's sessions
                 return Err(AuthenticationFailure {
                     error: AuthError::TokenExpired,
-                    auth_session,
+                    auth_session: auth_session
+                        .with_external_login(None)
+                        .revoke_access(state)
+                        .await
+                        .revoke_session(state)
+                        .await,
                 });
             }
             Err(err) => {
