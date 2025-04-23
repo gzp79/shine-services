@@ -25,19 +25,19 @@ export type ServiceOptions = {
     masterAdminKey: string;
 };
 
-export type ServiceTestFixture = {
-    api: {
-        auth: AuthAPI;
-        session: SessionAPI;
-        token: TokenAPI;
-        user: UserAPI;
-        testUsers: TestUserHelper;
-    };
+export type Api = {
+    auth: AuthAPI;
+    session: SessionAPI;
+    token: TokenAPI;
+    user: UserAPI;
+    testUsers: TestUserHelper;
 };
 
-// export type ServiceWorkerFixture = {};
+export type ServiceTestFixture = {
+    api: Api;
+};
 
-export const test = base.extend<ServiceTestFixture, ServiceOptions /*& ServiceWorkerFixture*/>({
+export const test = base.extend<ServiceTestFixture, ServiceOptions>({
     appDomain: [undefined!, { scope: 'worker', option: true }],
     serviceDomain: [undefined!, { scope: 'worker', option: true }],
     homeUrl: [undefined!, { scope: 'worker', option: true }],

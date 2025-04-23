@@ -73,11 +73,25 @@ where
     mailer_service: MailerService<'a, EMS>,
 }
 
-impl<IDB, EMS> EmailTokenHandler<'_, IDB, EMS>
+impl<'a, IDB, EMS> EmailTokenHandler<'a, IDB, EMS>
 where
     IDB: IdentityDb,
     EMS: EmailSender,
 {
+    pub fn new(
+        random: &'a SystemRandom,
+        settings: &'a SettingsService,
+        identity_service: &'a IdentityService<IDB>,
+        mailer_service: MailerService<'a, EMS>,
+    ) -> Self {
+        Self {
+            random,
+            settings,
+            identity_service,
+            mailer_service,
+        }
+    }
+
     fn encrypt(
         &self,
         user_id: Uuid,
@@ -146,15 +160,15 @@ where
             .identity_service
             .find_by_id(user_id)
             .await?
-            .ok_or(IdentityError::UserDeleted { id: user_id })?;
+            .ok_or(IdentityError::UserDeleted)?;
         let email = user.email.as_ref().ok_or(EmailTokenError::MissingEmail)?;
 
-        let ttl = self.settings.token.ttl_email_token;
+        let ttl = self.settings.token.ttl_email_login_token;
         let expire_at = Utc::now() + ttl;
         let token = self.encrypt(user_id, email, email, &expire_at)?;
 
         self.mailer_service
-            .send_email_confirmation(email, &token, lang, &user.name)
+            .send_email_confirmation(email, &token, &user.name, lang)
             .await?;
 
         Ok(())
@@ -170,10 +184,10 @@ where
             .identity_service
             .find_by_id(user_id)
             .await?
-            .ok_or(IdentityError::UserDeleted { id: user_id })?;
+            .ok_or(IdentityError::UserDeleted)?;
         let old_email = user.email.as_deref().unwrap_or("");
 
-        let ttl = self.settings.token.ttl_email_token;
+        let ttl = self.settings.token.ttl_email_login_token;
         let expire_at = Utc::now() + ttl;
         let token = self.encrypt(user_id, old_email, new_email, &expire_at)?;
 
@@ -194,7 +208,7 @@ where
             .identity_service
             .find_by_id(user_id)
             .await?
-            .ok_or(IdentityError::UserDeleted { id: user_id })?;
+            .ok_or(IdentityError::UserDeleted)?;
 
         let old_email = user.email.as_deref().unwrap_or("");
         if old_email != token_old_email {
@@ -217,11 +231,11 @@ where
 
 impl AppState {
     pub fn email_token_handler(&self) -> EmailTokenHandler<impl IdentityDb, impl EmailSender> {
-        EmailTokenHandler {
-            random: self.random(),
-            settings: self.settings(),
-            identity_service: self.identity_service(),
-            mailer_service: self.mailer_service(),
-        }
+        EmailTokenHandler::new(
+            self.random(),
+            self.settings(),
+            self.identity_service(),
+            self.mailer_service(),
+        )
     }
 }

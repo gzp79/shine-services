@@ -47,17 +47,23 @@ where
     identity_service: &'a IdentityService<IDB>,
 }
 
-impl<IDB> LoginTokenHandler<'_, IDB>
+impl<'a, IDB> LoginTokenHandler<'a, IDB>
 where
     IDB: IdentityDb,
 {
+    pub fn new(random: &'a SystemRandom, identity_service: &'a IdentityService<IDB>) -> Self {
+        Self {
+            random,
+            identity_service,
+        }
+    }
+
     pub async fn create_user_token(
         &self,
         user_id: Uuid,
         kind: TokenKind,
         time_to_live: &Duration,
         fingerprint_to_bind_to: Option<&ClientFingerprint>,
-        email_to_bind_to: Option<&str>,
         site_info: &SiteInfo,
     ) -> Result<UserToken, LoginTokenError> {
         const MAX_RETRY_COUNT: usize = 10;
@@ -79,7 +85,7 @@ where
                     &token,
                     time_to_live,
                     fingerprint_to_bind_to,
-                    email_to_bind_to,
+                    None,
                     site_info,
                 )
                 .await
@@ -101,9 +107,6 @@ where
 
 impl AppState {
     pub fn login_token_handler(&self) -> LoginTokenHandler<impl IdentityDb> {
-        LoginTokenHandler {
-            random: self.random(),
-            identity_service: self.identity_service(),
-        }
+        LoginTokenHandler::new(self.random(), self.identity_service())
     }
 }

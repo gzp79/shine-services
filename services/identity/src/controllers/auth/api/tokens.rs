@@ -141,7 +141,6 @@ pub async fn create_token(
             params.kind.into(),
             &time_to_live,
             site_fingerprint,
-            None,
             &site_info,
         )
         .await

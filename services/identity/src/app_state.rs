@@ -47,13 +47,14 @@ impl AppState {
             SettingsService {
                 app_name: config_auth.app_name.clone(),
                 home_url: config_auth.home_url.clone(),
+                auth_base_url: config_auth.auth_base_url.clone(),
                 link_url: config_auth.link_url.clone(),
                 error_url: config_auth.error_url.clone(),
                 token: TokenSettings {
                     ttl_access_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_access_token)?),
                     ttl_single_access: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_single_access)?),
                     ttl_api_key: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_api_key)?),
-                    ttl_email_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_email_token)?),
+                    ttl_email_login_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_email_token)?),
                     email_key: aead::LessSafeKey::new(email_key),
                 },
                 external_providers: config_auth.collect_providers(),

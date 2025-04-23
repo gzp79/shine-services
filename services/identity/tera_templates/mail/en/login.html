@@ -2,16 +2,16 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>Email Confirmation</title>
+    <title>Login</title>
   </head>
   <body>
-    <h1>Email Confirmation</h1>
+    <h1>Login</h1>
     <p>Hello {{ user }},</p>
     <p>
-      Thank you for registering. Please confirm your email address by clicking
-      the link below:
+      You requested a one-time login link for the {{ app }} service. Please
+      click the link below to log in:
     </p>
-    <p><a href="{{ link }}">Confirm Email Address</a></p>
+    <p><a href="{{ link }}">Login</a></p>
     <p>If you did not initiate this request, please ignore this email.</p>
     <p>Best regards,<br />{{ app }}</p>
   </body>

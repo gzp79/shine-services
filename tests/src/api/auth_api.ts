@@ -81,48 +81,6 @@ export class AuthAPI {
             .withCookies({ ...ct, ...cs });
     }
 
-    loginWithTokenRequest(
-        tid: string | null,
-        sid: string | null,
-        queryToken: string | null,
-        apiKey: string | null,
-        rememberMe: boolean | null,
-        captcha: string | null | undefined
-    ): ApiRequest {
-        const qs = rememberMe && { rememberMe };
-        const qt = queryToken && { token: queryToken };
-        const ct = tid && { tid };
-        const cs = sid && { sid };
-        const qc = getCaptchaQuery(captcha);
-
-        return ApiRequest.get(this.urlFor('auth/token/login'))
-            .withParams({ ...qs, ...qt, ...qc, ...this.defaultRedirects })
-            .withAuthIf(apiKey)
-            .withCookies({ ...ct, ...cs });
-    }
-
-    loginWithEmailRequest(
-        email: string | null,
-        tid: string | null,
-        sid: string | null,
-        queryToken: string | null,
-        apiKey: string | null,
-        rememberMe: boolean | null,
-        captcha: string | null | undefined
-    ): ApiRequest {
-        const qe = email && { email };
-        const qs = rememberMe && { rememberMe };
-        const qt = queryToken && { token: queryToken };
-        const ct = tid && { tid };
-        const cs = sid && { sid };
-        const qc = getCaptchaQuery(captcha);
-
-        return ApiRequest.get(this.urlFor('auth/email/login'))
-            .withParams({ ...qe, ...qs, ...qt, ...qc, ...this.defaultRedirects })
-            .withAuthIf(apiKey)
-            .withCookies({ ...ct, ...cs });
-    }
-
     async loginAsGuestUser(extraHeaders?: Record<string, string>): Promise<UserCookies> {
         // use the default captcha to fast-login
         const response = await this.loginWithGuestRequest(null, null, null).withHeaders(extraHeaders ?? {});
@@ -139,6 +97,27 @@ export class AuthAPI {
             sid: cookies.sid?.value,
             eid: cookies.eid?.value
         };
+    }
+
+    loginWithTokenRequest(
+        tid: string | null,
+        sid: string | null,
+        queryToken: string | null,
+        apiKey: string | null,
+        rememberMe: boolean | null,
+        // null uses default captcha, undefined uses no captcha
+        captcha: string | null | undefined
+    ): ApiRequest {
+        const qs = rememberMe && { rememberMe };
+        const qt = queryToken && { token: queryToken };
+        const ct = tid && { tid };
+        const cs = sid && { sid };
+        const qc = getCaptchaQuery(captcha);
+
+        return ApiRequest.get(this.urlFor('auth/token/login'))
+            .withParams({ ...qs, ...qt, ...qc, ...this.defaultRedirects })
+            .withAuthIf(apiKey)
+            .withCookies({ ...ct, ...cs });
     }
 
     async loginWithToken(
@@ -164,6 +143,23 @@ export class AuthAPI {
             sid: cookies.sid?.value,
             eid: cookies.eid?.value
         };
+    }
+
+    loginWithEmailRequest(
+        email: string | null,
+        rememberMe: boolean | null,
+        captcha: string | null | undefined
+    ): ApiRequest {
+        const qe = email && { email };
+        const qs = rememberMe && { rememberMe };
+        const qc = getCaptchaQuery(captcha);
+
+        return ApiRequest.get(this.urlFor('auth/email/login')).withParams({
+            ...qe,
+            ...qs,
+            ...qc,
+            ...this.defaultRedirects
+        });
     }
 
     getProvidersRequest(): ApiRequest {

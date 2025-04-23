@@ -17,7 +17,6 @@ export const UserInfoSchema = z.object({
     isLinked: z.boolean(),
     userId: z.string(),
     name: z.string(),
-    email: OptionalSchema(z.string()),
     isEmailConfirmed: z.boolean(),
     roles: z.array(z.string()),
     sessionLength: z.number(),

@@ -33,26 +33,24 @@ where
     identity_service: &'a IdentityService<IDB>,
 }
 
-impl<IDB> CreateUserHandler<'_, IDB>
+impl<'a, IDB> CreateUserHandler<'a, IDB>
 where
     IDB: IdentityDb,
 {
+    pub fn new(identity_service: &'a IdentityService<IDB>) -> Self {
+        Self { identity_service }
+    }
+
     pub async fn create_user(
         &self,
         external_user: Option<&ExternalUserInfo>,
-        confirmed_email: Option<&str>,
+        name: Option<&str>,
+        email: Option<&str>,
     ) -> Result<Identity, CreateUserError> {
         const MAX_RETRY_COUNT: usize = 10;
 
-        let mut default_name = external_user.as_ref().and_then(|u| u.name.clone());
-        let email = match confirmed_email {
-            Some(email) => Some((email, true)),
-            None => external_user
-                .as_ref()
-                .and_then(|u| u.email.as_deref())
-                .filter(|email| email.validate_email())
-                .map(|email| (email, false)),
-        };
+        let mut name = name.map(|e| e.to_owned());
+        let email = email.filter(|email| email.validate_email()).map(|email| (email, false));
 
         assert!(email.as_ref().is_none_or(|(email, _)| email.validate_email()));
 
@@ -65,7 +63,7 @@ where
             retry_count += 1;
 
             let user_id = Uuid::new_v4();
-            let user_name = match default_name.take() {
+            let user_name = match name.take() {
                 Some(name) => name,
                 None => self.identity_service.generate_user_name().await?,
             };
@@ -86,8 +84,6 @@ where
 
 impl AppState {
     pub fn create_user_service(&self) -> CreateUserHandler<impl IdentityDb> {
-        CreateUserHandler {
-            identity_service: self.identity_service(),
-        }
+        CreateUserHandler::new(self.identity_service())
     }
 }

@@ -10,6 +10,10 @@ async function main() {
     const mock_smtp = new MockSmtp();
     await mock_smtp.start();
     mock_smtp.onMail((mail) => {
+        const subject = mail.subject;
+        if (subject) {
+            console.log('Email subject:', subject);
+        }
         const link = getEmailLink(mail);
         if (link) {
             console.log('Email link:', link);

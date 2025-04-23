@@ -5,6 +5,7 @@ use crate::{
 use ring::digest;
 use shine_infra::language::Language;
 use tera::Tera;
+use url::Url;
 
 #[derive(Clone)]
 pub struct MailerService<'a, E: EmailSender> {
@@ -18,16 +19,59 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
         Self { settings, mailer, tera }
     }
 
+    fn find_subject(&self, html: &str) -> Option<String> {
+        //extract the title text from the html
+        let start = html.find("<title>")? + "<title>".len();
+        let end = html.find("</title>")?;
+        let subject = &html[start..end];
+        let subject = subject.trim();
+        if subject.is_empty() {
+            None
+        } else {
+            Some(subject.to_string())
+        }
+    }
+
+    async fn send_email(
+        &self,
+        to: &str,
+        link: Url,
+        user_name: &str,
+        lang: Option<Language>,
+        template: &str,
+    ) -> Result<(), EmailSenderError> {
+        let mut context = tera::Context::new();
+
+        context.insert("user", user_name);
+        context.insert("link", link.as_str());
+        context.insert("app", self.settings.app_name.as_str());
+
+        let lang = lang.unwrap_or(Language::En);
+        let html = self
+            .tera
+            .render(&format!("mail/{}/{}", lang, template), &context)
+            .expect("Failed to generate email html");
+
+        self.mailer
+            .send(
+                "no-replay",
+                to,
+                Email {
+                    subject: self.find_subject(&html).expect("Failed to extract subject"),
+                    body: EmailContent::Html(html),
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
     pub async fn send_email_confirmation(
         &self,
         to: &str,
         token: &str,
-        lang: Option<Language>,
         user_name: &str,
+        lang: Option<Language>,
     ) -> Result<(), EmailSenderError> {
-        let mut context = tera::Context::new();
-
-        let lang = lang.unwrap_or(Language::En);
         let mut redirect_url = self
             .settings
             .link_url
@@ -35,26 +79,7 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
             .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?;
         redirect_url.set_query(Some(&format!("token={}&hint=email-confirm", token)));
 
-        context.insert("user", user_name);
-        context.insert("link", redirect_url.as_str());
-        context.insert("app", self.settings.app_name.as_str());
-
-        let html = self
-            .tera
-            .render(&format!("mail/{}/confirm.html", lang), &context)
-            .expect("Failed to generate confirm html");
-
-        self.mailer
-            .send(
-                "no-replay",
-                to,
-                Email {
-                    subject: "Confirm your email".to_string(),
-                    body: EmailContent::Html(html),
-                },
-            )
-            .await?;
-        Ok(())
+        self.send_email(to, redirect_url, user_name, lang, "confirm.html").await
     }
 
     pub async fn send_email_change(
@@ -64,9 +89,6 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
         lang: Option<Language>,
         user_name: &str,
     ) -> Result<(), EmailSenderError> {
-        let mut context = tera::Context::new();
-
-        let lang = lang.unwrap_or(Language::En);
         let mut redirect_url = self
             .settings
             .link_url
@@ -74,26 +96,28 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
             .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?;
         redirect_url.set_query(Some(&format!("token={}&hint=email-change", token)));
 
-        context.insert("user", user_name);
-        context.insert("link", redirect_url.as_str());
-        context.insert("app", self.settings.app_name.as_str());
+        self.send_email(to, redirect_url, user_name, lang, "change.html").await
+    }
 
-        let html = self
-            .tera
-            .render(&format!("mail/{}/change.html", lang), &context)
-            .expect("Failed to generate change email html");
+    pub async fn send_email_login(
+        &self,
+        to: &str,
+        redirect_url: Url,
+        user_name: &str,
+        lang: Option<Language>,
+    ) -> Result<(), EmailSenderError> {
+        self.send_email(to, redirect_url, user_name, lang, "login.html").await
+    }
 
-        self.mailer
-            .send(
-                "no-replay",
-                to,
-                Email {
-                    subject: "Switch your email address".to_string(),
-                    body: EmailContent::Html(html),
-                },
-            )
-            .await?;
-        Ok(())
+    pub async fn send_email_register(
+        &self,
+        to: &str,
+        redirect_url: Url,
+        user_name: &str,
+        lang: Option<Language>,
+    ) -> Result<(), EmailSenderError> {
+        self.send_email(to, redirect_url, user_name, lang, "register.html")
+            .await
     }
 }
 

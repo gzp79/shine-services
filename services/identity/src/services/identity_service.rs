@@ -74,6 +74,11 @@ where
         db.find_by_id(id).await
     }
 
+    pub async fn find_by_email(&self, email: &str) -> Result<Option<Identity>, IdentityError> {
+        let mut db = self.db.create_context().await?;
+        db.find_by_email(email).await
+    }
+
     pub async fn update(
         &self,
         id: Uuid,
