@@ -1,16 +1,17 @@
 use crate::{
     db::{
-        event_source::{pg::PgEventDbContext, Aggregate, Event, EventStore, EventStoreError, Snapshot, SnapshotStore},
+        event_source::{
+            pg::PgEventDbContext, Aggregate, AggregateId, Event, EventStore, EventStoreError, Snapshot, SnapshotStore,
+        },
         DBError, PGClient, PGErrorChecks,
     },
     pg_query,
 };
 use postgres_from_row::FromRow;
 use std::{borrow::Cow, marker::PhantomData};
-use uuid::Uuid;
 
 pg_query!( StoreSnapshot =>
-    in = aggregate: Uuid, snapshot: &str, version: i32, data: &str;
+    in = aggregate: &str, snapshot: &str, version: i32, data: &str;
     sql = r#"
         INSERT INTO es_snapshots_%table% (aggregate_id, snapshot, version, data) VALUES ($1, $2, $3, $4::jsonb)
     "#
@@ -23,7 +24,7 @@ struct SnapshotRow {
 }
 
 pg_query!( GetSnapshot =>
-    in = aggregate: Uuid, snapshot: &str;
+    in = aggregate: &str, snapshot: &str;
     out = SnapshotRow;
     sql = r#"
         SELECT version, data::text FROM es_snapshots_%table% 
@@ -34,7 +35,7 @@ pg_query!( GetSnapshot =>
 );
 
 pg_query!( PruneSnapshot =>
-    in = aggregate: Uuid, snapshot: &str, version: i32;
+    in = aggregate: &str, snapshot: &str, version: i32;
     sql = r#"
         DELETE FROM es_snapshots_%table%
             WHERE aggregate_id = $1 AND snapshot = $2 AND version < $3
@@ -89,20 +90,25 @@ where
     }
 }
 
-impl<E> SnapshotStore for PgEventDbContext<'_, E>
+impl<E, A> SnapshotStore for PgEventDbContext<'_, E, A>
 where
     E: Event,
+    A: AggregateId,
 {
     type Event = E;
+    type AggregateId = A;
 
-    async fn get_aggregate<A>(&mut self, aggregate_id: &Uuid) -> Result<Option<Snapshot<A>>, EventStoreError>
+    async fn get_aggregate<G>(
+        &mut self,
+        aggregate_id: &Self::AggregateId,
+    ) -> Result<Option<Snapshot<G>>, EventStoreError>
     where
-        A: Aggregate<Event = Self::Event>,
+        G: Aggregate<Event = Self::Event, AggregateId = Self::AggregateId>,
     {
         let mut snapshot = self
             .get_snapshot(aggregate_id)
             .await?
-            .unwrap_or(Snapshot::new(*aggregate_id));
+            .unwrap_or(Snapshot::new(aggregate_id.clone()));
 
         let events = self.get_events(aggregate_id, Some(snapshot.version()), None).await?;
         snapshot.apply(&events)?;
@@ -110,9 +116,12 @@ where
         Ok(Some(snapshot))
     }
 
-    async fn get_snapshot<A>(&mut self, aggregate_id: &Uuid) -> Result<Option<Snapshot<A>>, EventStoreError>
+    async fn get_snapshot<G>(
+        &mut self,
+        aggregate_id: &Self::AggregateId,
+    ) -> Result<Option<Snapshot<G>>, EventStoreError>
     where
-        A: Aggregate<Event = Self::Event>,
+        G: Aggregate<Event = Self::Event, AggregateId = Self::AggregateId>,
     {
         //todo: checking has_stream and getting events are not atomic, it should be improved
 
@@ -123,12 +132,16 @@ where
         if let Some(row) = self
             .stmts_snapshot
             .get_snapshot
-            .query_opt(&self.client, aggregate_id, &<A as Aggregate>::NAME)
+            .query_opt(
+                &self.client,
+                &aggregate_id.to_string().as_str(),
+                &<G as Aggregate>::NAME,
+            )
             .await
             .map_err(DBError::from)?
         {
             Ok(Some(Snapshot::new_from_data(
-                *aggregate_id,
+                aggregate_id.clone(),
                 row.version as usize,
                 &row.data,
             )?))
@@ -137,9 +150,9 @@ where
         }
     }
 
-    async fn store_snapshot<A>(&mut self, snapshot: &Snapshot<A>) -> Result<(), EventStoreError>
+    async fn store_snapshot<G>(&mut self, snapshot: &Snapshot<G>) -> Result<(), EventStoreError>
     where
-        A: Aggregate<Event = Self::Event>,
+        G: Aggregate<Event = Self::Event, AggregateId = Self::AggregateId>,
     {
         let data = serde_json::to_string(snapshot.aggregate()).map_err(EventStoreError::EventSerialization)?;
 
@@ -148,8 +161,8 @@ where
             .store_snapshot
             .execute(
                 &self.client,
-                snapshot.id(),
-                &A::NAME,
+                &snapshot.id().to_string().as_str(),
+                &G::NAME,
                 &(snapshot.version() as i32),
                 &data.as_str(),
             )
@@ -167,7 +180,12 @@ where
             if let Err(err) = self
                 .stmts_snapshot
                 .prune_snapshot
-                .execute(&self.client, snapshot.id(), &A::NAME, &(snapshot.version() as i32))
+                .execute(
+                    &self.client,
+                    &snapshot.id().to_string().as_str(),
+                    &G::NAME,
+                    &(snapshot.version() as i32),
+                )
                 .await
             {
                 log::error!("Failed to prune snapshots: {:#?}", err);

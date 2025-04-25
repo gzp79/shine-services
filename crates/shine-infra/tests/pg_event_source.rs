@@ -7,6 +7,7 @@ use shine_infra::db::{
 use shine_test::test;
 use std::env;
 use tokio::sync::OnceCell;
+use uuid::Uuid;
 
 mod embedded {
     use refinery::embed_migrations;
@@ -58,6 +59,7 @@ pub struct TestAggregate {
 
 impl Aggregate for TestAggregate {
     type Event = TestEvent;
+    type AggregateId = Uuid;
 
     const NAME: &'static str = "TestModel";
 
@@ -92,7 +94,9 @@ async fn test_event_store() {
 
             let pool = create_pg_pool(&cns).await.unwrap();
 
-            let event_db = event_source::pg::PgEventDb::<TestEvent>::new(&pool).await.unwrap();
+            let event_db = event_source::pg::PgEventDb::<TestEvent, Uuid>::new(&pool)
+                .await
+                .unwrap();
 
             let mut es = event_db.create_context().await.unwrap();
 
@@ -168,7 +172,9 @@ async fn test_event_snapshots() {
             initialize(&cns).await;
             let pool = create_pg_pool(&cns).await.unwrap();
 
-            let event_db = event_source::pg::PgEventDb::<TestEvent>::new(&pool).await.unwrap();
+            let event_db = event_source::pg::PgEventDb::<TestEvent, Uuid>::new(&pool)
+                .await
+                .unwrap();
 
             event_db
                 .listen_to_stream_updates(|event| {

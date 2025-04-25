@@ -1,3 +1,5 @@
+mod aggregate_id;
+pub use self::aggregate_id::*;
 mod event_store_error;
 pub use self::event_store_error::*;
 mod event_store;

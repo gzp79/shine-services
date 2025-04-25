@@ -1,0 +1,25 @@
+[package]
+name = "shine-game"
+version.workspace = true
+edition.workspace = true
+
+[features]
+persisted = ['shine-infra']
+
+[dependencies]
+log = { workspace = true }
+thiserror = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+bevy = { version = "0.16", default-features = false, features = [
+    "std",
+    "async_executor", 
+    "bevy_state",
+] }
+
+shine-infra = { workspace = true, optional = true }
+
+[dev-dependencies]
+shine-test = { workspace = true }

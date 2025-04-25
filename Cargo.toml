@@ -5,6 +5,7 @@ members = [
 	"crates/shine-test-macros",
 	"crates/shine-test",
 	"crates/shine-core",
+	"crates/shine-game",
 	"crates/shine-infra-macros",
 	"crates/shine-infra",
 	"services/identity",

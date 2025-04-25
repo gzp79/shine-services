@@ -1,37 +1,48 @@
+use std::marker::PhantomData;
+
 use serde::Deserialize;
-use uuid::Uuid;
 
 use crate::db::{
     event_source::{
         pg::{PgEventStoreStatement, PgSnapshotStatement},
-        Event, EventDb, EventDbContext, EventNotification, EventStoreError,
+        AggregateId, Event, EventDb, EventDbContext, EventNotification, EventStoreError,
     },
     DBError, PGConnectionPool, PGPooledConnection,
 };
 
-pub struct PgEventDbContext<'c, E>
+pub struct PgEventDbContext<'c, E, A>
 where
     E: Event,
+    A: AggregateId,
 {
     pub(in crate::db::event_source::pg) client: PGPooledConnection<'c>,
     pub(in crate::db::event_source::pg) stmts_store: PgEventStoreStatement<E>,
     pub(in crate::db::event_source::pg) stmts_snapshot: PgSnapshotStatement<E>,
+    ph: PhantomData<A>,
 }
 
-impl<'c, E> EventDbContext<'c, E> for PgEventDbContext<'c, E> where E: Event {}
-
-pub struct PgEventDb<E>
+impl<'c, E, A> EventDbContext<'c, E, A> for PgEventDbContext<'c, E, A>
 where
     E: Event,
+    A: AggregateId,
+{
+}
+
+pub struct PgEventDb<E, A>
+where
+    E: Event,
+    A: AggregateId,
 {
     client: PGConnectionPool,
     stmts_store: PgEventStoreStatement<E>,
     stmts_snapshot: PgSnapshotStatement<E>,
+    ph: PhantomData<A>,
 }
 
-impl<E> PgEventDb<E>
+impl<E, A> PgEventDb<E, A>
 where
     E: Event,
+    A: AggregateId,
 {
     pub async fn new(postgres: &PGConnectionPool) -> Result<Self, EventStoreError> {
         let client = postgres.get().await.map_err(DBError::PGPoolError)?;
@@ -40,46 +51,52 @@ where
             client: postgres.clone(),
             stmts_store: PgEventStoreStatement::new(&client).await?,
             stmts_snapshot: PgSnapshotStatement::new(&client).await?,
+            ph: PhantomData,
         })
     }
 }
 
-impl<E> EventDb<E> for PgEventDb<E>
+impl<E, A> EventDb<E, A> for PgEventDb<E, A>
 where
     E: Event,
+    A: AggregateId,
 {
-    async fn create_context(&self) -> Result<impl EventDbContext<'_, E>, EventStoreError> {
+    async fn create_context(&self) -> Result<impl EventDbContext<'_, E, A>, EventStoreError> {
         let client = self.client.get().await.map_err(DBError::PGPoolError)?;
         Ok(PgEventDbContext {
             client,
             stmts_store: self.stmts_store.clone(),
             stmts_snapshot: self.stmts_snapshot.clone(),
+            ph: PhantomData::<A>,
         })
     }
 
     async fn listen_to_stream_updates<F>(&self, handler: F) -> Result<(), EventStoreError>
     where
-        F: Fn(EventNotification) + Send + Sync + 'static,
+        F: Fn(EventNotification<A>) + Send + Sync + 'static,
     {
         #[derive(Deserialize)]
         struct EventMsg {
             operation: String,
-            aggregate_id: Uuid,
+            aggregate_id: String,
             version: Option<usize>,
         }
 
         impl EventMsg {
-            fn try_into_notification(self) -> Result<EventNotification, String> {
+            fn try_into_notification<A>(self) -> Result<EventNotification<A>, String>
+            where
+                A: AggregateId,
+            {
                 match self.operation.as_str() {
                     "insert" => Ok(EventNotification::Insert {
-                        aggregate_id: self.aggregate_id,
+                        aggregate_id: A::from_string(self.aggregate_id),
                     }),
                     "update" => Ok(EventNotification::Update {
-                        aggregate_id: self.aggregate_id,
+                        aggregate_id: A::from_string(self.aggregate_id),
                         version: self.version.unwrap_or(0),
                     }),
                     "delete" => Ok(EventNotification::Delete {
-                        aggregate_id: self.aggregate_id,
+                        aggregate_id: A::from_string(self.aggregate_id),
                     }),
                     op => Err(format!("Invalid operation: {op}")),
                 }

@@ -1,11 +1,10 @@
+use crate::db::event_source::{AggregateId, Event, EventStoreError, StoredEvent};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
-use uuid::Uuid;
-
-use super::{Event, EventStoreError, StoredEvent};
 
 pub trait Aggregate: 'static + Default + Serialize + for<'de> Deserialize<'de> + Send + Sync {
     type Event: Event;
+    type AggregateId: ToString;
 
     const NAME: &'static str;
 
@@ -17,7 +16,7 @@ pub struct Snapshot<A>
 where
     A: Aggregate,
 {
-    aggregate_id: Uuid,
+    aggregate_id: A::AggregateId,
     version: usize,
     aggregate: A,
 }
@@ -26,7 +25,7 @@ impl<A> Snapshot<A>
 where
     A: Aggregate,
 {
-    pub fn new(aggregate_id: Uuid) -> Self {
+    pub fn new(aggregate_id: A::AggregateId) -> Self {
         Self {
             aggregate_id,
             version: 0,
@@ -34,7 +33,7 @@ where
         }
     }
 
-    pub fn new_from_data(aggregate_id: Uuid, version: usize, data: &str) -> Result<Self, EventStoreError> {
+    pub fn new_from_data(aggregate_id: A::AggregateId, version: usize, data: &str) -> Result<Self, EventStoreError> {
         let aggregate = serde_json::from_str(data).map_err(EventStoreError::EventSerialization)?;
 
         Ok(Self {
@@ -48,7 +47,7 @@ where
         self.version
     }
 
-    pub fn id(&self) -> &Uuid {
+    pub fn id(&self) -> &A::AggregateId {
         &self.aggregate_id
     }
 
@@ -78,25 +77,26 @@ where
 
 pub trait SnapshotStore {
     type Event: Event;
+    type AggregateId: AggregateId;
 
     /// Get aggregate up to the latest version using the latest snapshot if present.
-    fn get_aggregate<A>(
+    fn get_aggregate<G>(
         &mut self,
-        aggregate_id: &Uuid,
-    ) -> impl Future<Output = Result<Option<Snapshot<A>>, EventStoreError>> + Send
+        aggregate_id: &Self::AggregateId,
+    ) -> impl Future<Output = Result<Option<Snapshot<G>>, EventStoreError>> + Send
     where
-        A: Aggregate<Event = Self::Event>;
+        G: Aggregate<Event = Self::Event, AggregateId = Self::AggregateId>;
 
     /// Get the last stored aggregate
-    fn get_snapshot<A>(
+    fn get_snapshot<G>(
         &mut self,
-        aggregate_id: &Uuid,
-    ) -> impl Future<Output = Result<Option<Snapshot<A>>, EventStoreError>> + Send
+        aggregate_id: &Self::AggregateId,
+    ) -> impl Future<Output = Result<Option<Snapshot<G>>, EventStoreError>> + Send
     where
-        A: Aggregate<Event = Self::Event>;
+        G: Aggregate<Event = Self::Event, AggregateId = Self::AggregateId>;
 
     /// Store a new snapshot for an aggregate
-    fn store_snapshot<A>(&mut self, snapshot: &Snapshot<A>) -> impl Future<Output = Result<(), EventStoreError>> + Send
+    fn store_snapshot<G>(&mut self, snapshot: &Snapshot<G>) -> impl Future<Output = Result<(), EventStoreError>> + Send
     where
-        A: Aggregate<Event = Self::Event>;
+        G: Aggregate<Event = Self::Event, AggregateId = Self::AggregateId>;
 }

@@ -16,6 +16,7 @@
     "cfhistu",
     "chrono",
     "cookiejar",
+    "Deque",
     "endgroup",
     "fkey",
     "hasher",
