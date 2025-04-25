@@ -9,8 +9,7 @@ use std::sync::Arc;
 use std::{collections::HashMap, ops::DerefMut};
 use thiserror::Error as ThisError;
 use tokio::sync::RwLock;
-use tokio_postgres::tls::MakeTlsConnect;
-use tokio_postgres::{GenericClient, Statement};
+use tokio_postgres::{tls::MakeTlsConnect, GenericClient, IsolationLevel, Statement};
 use tokio_postgres_rustls::MakeRustlsConnect;
 
 use super::PGListener;
@@ -77,17 +76,6 @@ impl<T: PGRawConnection> PGConnection<T> {
     pub async fn unlisten(&self, channel: &str) -> Result<(), DBError> {
         self.listener.unlisten(channel).await
     }
-
-    #[inline]
-    pub async fn transaction(&mut self) -> Result<PGConnection<PGRawTransaction<'_>>, PGError> {
-        Ok(PGConnection {
-            prepared_statement_id: self.prepared_statement_id.clone(),
-            prepared_statements_builder: self.prepared_statements_builder.clone(),
-            prepared_statements: self.prepared_statements.clone(),
-            client: self.client.transaction().await?,
-            listener: self.listener.clone(),
-        })
-    }
 }
 
 impl PGConnection<PGRawClient> {
@@ -104,6 +92,25 @@ impl PGConnection<PGRawClient> {
             client: pg_client,
             listener,
         }
+    }
+
+    #[inline]
+    pub async fn transaction(
+        &mut self,
+        isolation_level: Option<IsolationLevel>,
+    ) -> Result<PGConnection<PGRawTransaction<'_>>, PGError> {
+        let mut transaction_builder = self.client.build_transaction();
+        if let Some(level) = isolation_level {
+            transaction_builder = transaction_builder.isolation_level(level);
+        }
+        let transaction = transaction_builder.start().await?;
+        Ok(PGConnection {
+            prepared_statement_id: self.prepared_statement_id.clone(),
+            prepared_statements_builder: self.prepared_statements_builder.clone(),
+            prepared_statements: self.prepared_statements.clone(),
+            client: transaction,
+            listener: self.listener.clone(),
+        })
     }
 }
 

@@ -16,4 +16,4 @@ mod plugin;
 pub use self::plugin::*;
 
 #[cfg(feature = "persisted")]
-mod persisted;
+pub mod persisted;

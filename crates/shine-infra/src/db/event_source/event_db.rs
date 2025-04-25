@@ -19,7 +19,7 @@ where
     Delete { aggregate_id: A },
 }
 
-pub trait EventDb<E, A>: Send + Sync
+pub trait EventDb<E, A>: 'static + Send + Sync
 where
     E: Event,
     A: AggregateId,

@@ -1,26 +1,43 @@
-use crate::map2::Tile;
+use crate::map2::TileMapConfig;
 use bevy::ecs::component::Component;
 
 #[derive(Component)]
-pub struct Chunk<T>
+pub struct Chunk<C>
 where
-    T: Tile,
+    C: TileMapConfig,
 {
     width: usize,
     height: usize,
-    data: Vec<T>,
+    version: usize,
+    data: Vec<C::Tile>,
 }
 
-impl<T: Tile> Chunk<T> {
+impl<C> Chunk<C>
+where
+    C: TileMapConfig,
+{
     pub fn new(width: usize, height: usize) -> Self
     where
-        T: Default + Clone,
+        C::Tile: Default + Clone,
     {
-        let data = vec![T::default(); width * height];
-        Self { width, height, data }
+        let data = vec![C::Tile::default(); width * height];
+        Self {
+            width,
+            height,
+            version: 0,
+            data,
+        }
     }
 
-    pub fn try_get(&self, x: usize, y: usize) -> Option<&T> {
+    pub fn version(&self) -> usize {
+        self.version
+    }
+
+    pub fn set_version(&mut self, version: usize) {
+        self.version = version;
+    }
+
+    pub fn try_get(&self, x: usize, y: usize) -> Option<&C::Tile> {
         if x < self.width && y < self.height {
             Some(&self.data[y * self.width + x])
         } else {
@@ -28,12 +45,12 @@ impl<T: Tile> Chunk<T> {
         }
     }
 
-    pub fn get(&self, x: usize, y: usize) -> &T {
+    pub fn get(&self, x: usize, y: usize) -> &C::Tile {
         self.try_get(x, y)
             .unwrap_or_else(|| panic!("Out of bounds access at ({}, {})", x, y))
     }
 
-    pub fn try_get_mut(&mut self, x: usize, y: usize) -> Option<&mut T> {
+    pub fn try_get_mut(&mut self, x: usize, y: usize) -> Option<&mut C::Tile> {
         if x < self.width && y < self.height {
             Some(&mut self.data[y * self.width + x])
         } else {
@@ -41,33 +58,33 @@ impl<T: Tile> Chunk<T> {
         }
     }
 
-    pub fn get_mut(&mut self, x: usize, y: usize) -> &mut T {
+    pub fn get_mut(&mut self, x: usize, y: usize) -> &mut C::Tile {
         self.try_get_mut(x, y)
             .unwrap_or_else(|| panic!("Out of bounds access at ({}, {})", x, y))
     }
 
-    pub fn iter(&self) -> ChunkIterator<T> {
+    pub fn iter(&self) -> ChunkIterator<C> {
         ChunkIterator { chunk: self, index: 0 }
     }
 
-    pub fn iter_mut(&mut self) -> ChunkIteratorMut<T> {
+    pub fn iter_mut(&mut self) -> ChunkIteratorMut<C> {
         ChunkIteratorMut { chunk: self, index: 0 }
     }
 }
 
-pub struct ChunkIterator<'a, T>
+pub struct ChunkIterator<'a, C>
 where
-    T: Tile,
+    C: TileMapConfig,
 {
-    chunk: &'a Chunk<T>,
+    chunk: &'a Chunk<C>,
     index: usize,
 }
 
-impl<'a, T> Iterator for ChunkIterator<'a, T>
+impl<'a, C> Iterator for ChunkIterator<'a, C>
 where
-    T: Tile,
+    C: TileMapConfig,
 {
-    type Item = (usize, usize, &'a T);
+    type Item = (usize, usize, &'a C::Tile);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.chunk.data.len() {
@@ -83,19 +100,19 @@ where
     }
 }
 
-pub struct ChunkIteratorMut<'a, T>
+pub struct ChunkIteratorMut<'a, C>
 where
-    T: Tile,
+    C: TileMapConfig,
 {
-    chunk: &'a mut Chunk<T>,
+    chunk: &'a mut Chunk<C>,
     index: usize,
 }
 
-impl<'a, T> Iterator for ChunkIteratorMut<'a, T>
+impl<'a, C> Iterator for ChunkIteratorMut<'a, C>
 where
-    T: Tile,
+    C: TileMapConfig,
 {
-    type Item = (usize, usize, &'a mut T);
+    type Item = (usize, usize, &'a mut C::Tile);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.chunk.data.len() {
@@ -107,7 +124,7 @@ where
 
         let tile = &mut self.chunk.data[self.index];
         // SAFETY: The iterator ensures that only one mutable reference is active at a time.
-        let tile: &'a mut T = unsafe { std::mem::transmute(tile) };
+        let tile: &'a mut C::Tile = unsafe { std::mem::transmute(tile) };
 
         self.index += 1;
 

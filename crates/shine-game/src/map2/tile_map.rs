@@ -9,7 +9,6 @@ use bevy::{
 };
 use std::{
     collections::{HashMap, VecDeque},
-    marker::PhantomData,
     sync::Arc,
 };
 
@@ -21,19 +20,18 @@ where
     C: TileMapConfig,
 {
     config: C,
-    factory: Arc<dyn ChunkFactory<C::Tile>>,
+    factory: Arc<dyn ChunkFactory<C>>,
     load_requests: VecDeque<(ChunkId, usize)>,
-    loading_chunks: HashMap<ChunkId, (ChunkLoadTask<C::Tile>, usize)>,
+    loading_chunks: HashMap<ChunkId, (ChunkLoadTask<C>, usize)>,
     loaded_chunks: HashMap<ChunkId, Entity>,
     commands: VecDeque<ChunkCommand<C::ChunkOperation>>,
-    ph: PhantomData<Chunk<C::Tile>>,
 }
 
 impl<C> TileMap<C>
 where
     C: TileMapConfig,
 {
-    pub fn new(config: C, factory: Arc<dyn ChunkFactory<C::Tile>>) -> Self {
+    pub fn new(config: C, factory: Arc<dyn ChunkFactory<C>>) -> Self {
         Self {
             config,
             factory,
@@ -41,7 +39,6 @@ where
             loading_chunks: HashMap::new(),
             loaded_chunks: HashMap::new(),
             commands: VecDeque::new(),
-            ph: PhantomData,
         }
     }
 
@@ -76,11 +73,11 @@ where
             continue;
         }
 
-        let (w, h) = chunk_id.get_size(&tile_map.config.chunk_size());
+        let config = tile_map.config.clone();
         let factory = tile_map.factory.clone();
         let task = task_pool.spawn(async move {
             println!("Loading chunk asynchronously: {:?}", chunk_id);
-            let chunk = factory.read(w, h).await;
+            let chunk = factory.read(&config, chunk_id).await;
             println!("Chunk loaded: {:?}", chunk_id);
             chunk
         });
@@ -121,7 +118,7 @@ where
     });
 }
 
-pub fn process_commands_system<C>(mut tile_map: ResMut<TileMap<C>>, mut chunks: Query<&mut Chunk<C::Tile>>)
+pub fn process_commands_system<C>(mut tile_map: ResMut<TileMap<C>>, mut chunks: Query<&mut Chunk<C>>)
 where
     C: TileMapConfig,
 {
@@ -135,22 +132,45 @@ where
     commands.retain_mut(|command| {
         if loading_chunks.contains_key(&command.chunk_id) {
             log::info!(
-                "Chunk is still loading, command will be delayed for {:?}",
+                "Chunk is still loading, command for {:?} will be delayed",
                 command.chunk_id
             );
-            true
-        } else {
-            if let Some(entity) = loaded_chunks.get(&command.chunk_id) {
-                if let Ok(mut chunk) = chunks.get_mut(*entity) {
-                    command.operation.apply(&mut chunk);
-                } else {
-                    log::warn!(
-                        "Chunk not found for ID, but present in the tile-map: {:?}",
-                        command.chunk_id
-                    );
-                }
-            }
             false
+        } else {
+            if let Some(mut chunk) = loaded_chunks
+                .get(&command.chunk_id)
+                .and_then(|entity| chunks.get_mut(*entity).ok())
+            {
+                if let Some(version) = command.version {
+                    if chunk.version() == version - 1 {
+                        command.operation.apply(&mut chunk);
+                        chunk.set_version(version);
+                        false
+                    } else if chunk.version() < version {
+                        log::info!(
+                            "Command is too early ({}) for chunk {:?} at version {}",
+                            version,
+                            command.chunk_id,
+                            chunk.version()
+                        );
+                        true
+                    } else {
+                        log::debug!(
+                            "Command is too late ({}) for chunk {:?} at version {}",
+                            version,
+                            command.chunk_id,
+                            chunk.version()
+                        );
+                        false
+                    }
+                } else {
+                    command.operation.apply_local(&mut chunk);
+                    false
+                }
+            } else {
+                log::info!("Chunk {:?} is not tracked by the tile-map", command.chunk_id);
+                false
+            }
         }
     });
 }

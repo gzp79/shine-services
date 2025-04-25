@@ -7,6 +7,7 @@ use crate::{
 };
 use postgres_from_row::FromRow;
 use std::{borrow::Cow, marker::PhantomData};
+use tokio_postgres::IsolationLevel;
 
 pg_query!( CreateStream =>
     in = aggregate: &str;
@@ -196,7 +197,11 @@ where
         expected_version: Option<usize>,
         event: &[Self::Event],
     ) -> Result<usize, EventStoreError> {
-        let transaction = self.client.transaction().await.map_err(DBError::from)?;
+        let transaction = self
+            .client
+            .transaction(Some(IsolationLevel::RepeatableRead))
+            .await
+            .map_err(DBError::from)?;
 
         let old_version: usize = match self
             .stmts_store

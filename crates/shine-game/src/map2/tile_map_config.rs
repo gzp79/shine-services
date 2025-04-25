@@ -9,8 +9,9 @@ pub struct ChunkSizes {
 }
 
 pub trait TileMapConfig: 'static + Clone + Send + Sync {
+    const NAME: &'static str;
     type Tile: Tile;
-    type ChunkOperation: ChunkOperation<Tile = Self::Tile>;
+    type ChunkOperation: ChunkOperation<TileMapConfig = Self>;
 
     fn chunk_size(&self) -> ChunkSizes;
 }

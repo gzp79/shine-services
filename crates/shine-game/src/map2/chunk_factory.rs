@@ -1,9 +1,9 @@
-use crate::map2::{Chunk, Tile};
+use crate::map2::{Chunk, ChunkId, TileMapConfig};
 use bevy::tasks::BoxedFuture;
 
-pub trait ChunkFactory<T>: 'static + Send + Sync
+pub trait ChunkFactory<C>: 'static + Send + Sync
 where
-    T: Tile,
+    C: TileMapConfig,
 {
-    fn read(&self, width: usize, height: usize) -> BoxedFuture<'_, Result<Chunk<T>, ()>>;
+    fn read<'a>(&'a self, config: &C, chunk_id: ChunkId) -> BoxedFuture<'a, Result<Chunk<C>, ()>>;
 }

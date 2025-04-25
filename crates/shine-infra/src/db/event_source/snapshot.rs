@@ -1,10 +1,10 @@
 use crate::db::event_source::{AggregateId, Event, EventStoreError, StoredEvent};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 use std::future::Future;
 
-pub trait Aggregate: 'static + Default + Serialize + for<'de> Deserialize<'de> + Send + Sync {
+pub trait Aggregate: 'static + Default + Serialize + DeserializeOwned + Send + Sync {
     type Event: Event;
-    type AggregateId: ToString;
+    type AggregateId: AggregateId;
 
     const NAME: &'static str;
 

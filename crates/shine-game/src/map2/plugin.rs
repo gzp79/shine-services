@@ -12,7 +12,7 @@ where
     C: TileMapConfig,
 {
     pub(crate) config: C,
-    pub(crate) factory: Arc<dyn ChunkFactory<C::Tile>>,
+    pub(crate) factory: Arc<dyn ChunkFactory<C>>,
 }
 
 impl<C> TileMapPlugin<C>
@@ -21,7 +21,7 @@ where
 {
     pub fn new<F>(config: C, factory: F) -> Self
     where
-        F: ChunkFactory<C::Tile> + 'static,
+        F: ChunkFactory<C> + 'static,
     {
         Self {
             config,

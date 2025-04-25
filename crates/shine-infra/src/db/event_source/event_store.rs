@@ -1,8 +1,8 @@
 use crate::db::event_source::{AggregateId, EventStoreError};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 use std::future::Future;
 
-pub trait Event: 'static + Serialize + for<'de> Deserialize<'de> + Send + Sync {
+pub trait Event: 'static + Serialize + DeserializeOwned + Send + Sync {
     const NAME: &'static str;
 
     fn event_type(&self) -> &'static str;

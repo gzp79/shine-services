@@ -2,7 +2,7 @@ pub fn migration_001(aggregate: &str) -> String {
     format!(
         r#"
 CREATE TABLE es_heads_{aggregate} (
-    aggregate_id UUID NOT NULL PRIMARY KEY,
+    aggregate_id VARCHAR(256) NOT NULL PRIMARY KEY,
     version INT NOT NULL
 );
 
@@ -28,7 +28,7 @@ FOR EACH ROW
 EXECUTE FUNCTION notify_es_heads_{aggregate}_update();
 
 CREATE TABLE es_events_{aggregate} (
-    aggregate_id UUID NOT NULL,
+    aggregate_id VARCHAR(256) NOT NULL,
     version INT NOT NULL,
     event_type VARCHAR(255) NOT NULL,
     data JSONB NOT NULL,
@@ -37,7 +37,7 @@ CREATE TABLE es_events_{aggregate} (
 );
 
 CREATE TABLE es_snapshots_{aggregate} (
-    aggregate_id UUID NOT NULL,
+    aggregate_id VARCHAR(256) NOT NULL,
     snapshot VARCHAR(255) NOT NULL,
     version INT NOT NULL,
     data JSONB NOT NULL,

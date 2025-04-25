@@ -7,6 +7,7 @@
     "SHINE_TEST_REDIS_CNS": "redis://redis.mockbox.com:6379",
     "SHINE_TEST_PG_CNS": "postgres://username:password@postgres.mockbox.com:5432/database-test?sslmode=disable"
   },
+  "rust-analyzer.cargo.features": ["persisted"],
   "cSpell.words": [
     "asyncness",
     "autoescape",
