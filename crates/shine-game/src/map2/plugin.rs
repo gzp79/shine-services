@@ -1,4 +1,6 @@
-use crate::map2::{complete_chunk_load_system, start_chunk_load_system, ChunkFactory, TileMap, TileMapConfig};
+use crate::map2::{
+    complete_chunk_load_system, process_refresh_system, start_chunk_load_system, ChunkFactory, TileMap, TileMapConfig,
+};
 use bevy::{
     app::{App, Plugin, Update},
     ecs::schedule::IntoScheduleConfigs,
@@ -36,14 +38,15 @@ where
 {
     fn build(&self, app: &mut App) {
         app.insert_resource(TileMap::new(self.config.clone(), self.factory.clone()));
-        app.add_systems(Update, start_chunk_load_system::<C>);
         app.add_systems(
             Update,
-            complete_chunk_load_system::<C>.after(start_chunk_load_system::<C>),
-        );
-        app.add_systems(
-            Update,
-            process_commands_system::<C>.after(complete_chunk_load_system::<C>),
+            (
+                process_refresh_system::<C>,
+                start_chunk_load_system::<C>,
+                complete_chunk_load_system::<C>,
+                process_commands_system::<C>,
+            )
+                .chain(),
         );
     }
 }

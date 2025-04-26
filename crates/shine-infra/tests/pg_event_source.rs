@@ -204,7 +204,10 @@ async fn test_event_snapshots() {
             }
 
             {
-                let snapshot = es.get_aggregate::<TestAggregate>(&aggregate).await.unwrap().unwrap();
+                let snapshot = es
+                    .get_aggregate::<TestAggregate, _>(&aggregate, Default::default)
+                    .await
+                    .unwrap();
                 log::info!("snapshot: {:#?}", snapshot.aggregate());
                 assert_eq!(2, snapshot.version());
                 assert_eq!("aa", &snapshot.aggregate().e1);
@@ -230,7 +233,10 @@ async fn test_event_snapshots() {
             }
 
             {
-                let snapshot = es.get_aggregate::<TestAggregate>(&aggregate).await.unwrap().unwrap();
+                let snapshot = es
+                    .get_aggregate::<TestAggregate, _>(&aggregate, Default::default)
+                    .await
+                    .unwrap();
                 assert_eq!(4, snapshot.version());
                 assert_eq!("aa_bb", snapshot.aggregate().e1);
                 assert_eq!(12, snapshot.aggregate().aa);
@@ -239,7 +245,7 @@ async fn test_event_snapshots() {
             }
 
             es.delete_stream(&aggregate).await.unwrap();
-            match es.get_aggregate::<TestAggregate>(&aggregate).await {
+            match es.get_aggregate::<TestAggregate, _>(&aggregate, Default::default).await {
                 Err(EventStoreError::NotFound) => (),
                 other => panic!("Expected NotFound, {other:?}"),
             }

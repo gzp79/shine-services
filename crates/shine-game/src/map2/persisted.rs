@@ -1,10 +1,11 @@
-use crate::map2::{Chunk, ChunkFactory, ChunkId, ChunkOperation, TileMapConfig};
-use bevy::tasks::BoxedFuture;
+use crate::map2::{Chunk, ChunkCommand, ChunkFactory, ChunkId, ChunkOperation, TileMapConfig, TileMapError};
+use bevy::{platform::sync::RwLock, tasks::BoxedFuture};
 use serde::{de::DeserializeOwned, Serialize};
 use shine_infra::db::event_source::{
-    Aggregate, AggregateId, Event, EventDb, EventStore, EventStoreError, SnapshotStore,
+    pg::PgEventDb, Aggregate, AggregateId, Event, EventDb, EventNotification, EventStore, EventStoreError,
+    SnapshotStore,
 };
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 impl AggregateId for ChunkId {
     fn from_string(id: String) -> Self {
@@ -78,25 +79,66 @@ where
         }
     }
 
-    async fn read_chunk(&self, chunk_id: ChunkId) -> Result<Chunk<C>, ()> {
-        let mut es = self.event_db.create_context().await.map_err(|_| ())?;
-        let chunk = es
-            .get_aggregate::<Chunk<C>>(&chunk_id)
+    async fn read_chunk(&self, config: &C, chunk_id: ChunkId) -> Result<(Chunk<C>, usize), TileMapError> {
+        let mut es = self.event_db.create_context().await?;
+        let size = config.chunk_size();
+        match es
+            .get_aggregate::<Chunk<C>, _>(&chunk_id, move || Chunk::new(size))
             .await
-            .map_err(|_| ())?
-            .map(|aggregate| {
+        {
+            Ok(aggregate) => {
                 let version = aggregate.version();
-                let mut chunk = aggregate.into_aggregate();
-                chunk.set_version(version);
-                chunk
-            })
-            .unwrap_or_default();
-        Ok(chunk)
+                let chunk = aggregate.into_aggregate();
+                Ok((chunk, version))
+            }
+            Err(EventStoreError::NotFound) => {
+                let chunk = Chunk::new(size);
+                Ok((chunk, 0))
+            }
+            Err(err) => Err(err.into()),
+        }
     }
 
-    pub async fn store_operation(&self, chunk_id: ChunkId, operation: C::ChunkOperation) -> Result<(), ()> {
-        let mut es = self.event_db.create_context().await.map_err(|_| ())?;
-        es.store_events(&chunk_id, None, &[operation]).await.map_err(|_| ())?;
+    async fn read_update(&self, chunk_id: ChunkId, version: usize) -> Result<Vec<ChunkCommand<C>>, TileMapError> {
+        let mut es = self.event_db.create_context().await?;
+        match es.get_events(&chunk_id, Some(version), None).await {
+            Ok(events) => Ok(events
+                .into_iter()
+                .map(|stored_event| ChunkCommand {
+                    version: stored_event.version,
+                    operation: stored_event.event,
+                })
+                .collect::<Vec<_>>()),
+            Err(EventStoreError::NotFound) => Err(TileMapError::ChunkNotFound),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    pub async fn store_operation(&self, chunk_id: ChunkId, operation: C::ChunkOperation) -> Result<(), TileMapError> {
+        let mut es = self.event_db.create_context().await?;
+        es.store_events(&chunk_id, None, &[operation]).await?;
+        Ok(())
+    }
+}
+
+impl<C> PersistedChunkFactory<PgEventDb<C::ChunkOperation, ChunkId>, C>
+where
+    C: TileMapConfig,
+    C::ChunkOperation: Event,
+    Chunk<C>: Aggregate<Event = C::ChunkOperation, AggregateId = ChunkId>,
+{
+    pub async fn start_listen(&self, queue: Arc<RwLock<Vec<ChunkId>>>) -> Result<(), TileMapError> {
+        self.event_db
+            .listen_to_stream_updates(move |notification| {
+                let chunk_id = match notification {
+                    EventNotification::Update { aggregate_id, .. } => aggregate_id,
+                    EventNotification::Delete { aggregate_id } => aggregate_id,
+                    EventNotification::Insert { aggregate_id } => aggregate_id,
+                };
+                let mut queue = queue.write().unwrap();
+                queue.push(chunk_id);
+            })
+            .await?;
         Ok(())
     }
 }
@@ -108,7 +150,20 @@ where
     C::ChunkOperation: Event,
     Chunk<C>: Aggregate<Event = C::ChunkOperation, AggregateId = ChunkId>,
 {
-    fn read<'a>(&'a self, _config: &C, chunk_id: ChunkId) -> BoxedFuture<'a, Result<Chunk<C>, ()>> {
-        Box::pin(self.read_chunk(chunk_id))
+    fn read<'a>(
+        &'a self,
+        config: &'a C,
+        chunk_id: ChunkId,
+    ) -> BoxedFuture<'a, Result<(Chunk<C>, usize), TileMapError>> {
+        Box::pin(self.read_chunk(config, chunk_id))
+    }
+
+    fn read_updates<'a>(
+        &'a self,
+        _config: &C,
+        chunk_id: ChunkId,
+        version: usize,
+    ) -> BoxedFuture<'a, Result<Vec<ChunkCommand<C>>, TileMapError>> {
+        Box::pin(self.read_update(chunk_id, version))
     }
 }

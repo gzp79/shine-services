@@ -1,5 +1,31 @@
-use crate::map2::TileMapConfig;
-use bevy::ecs::component::Component;
+use crate::map2::{ChunkSize, TileMapConfig, TileMapError};
+use bevy::{ecs::component::Component, tasks::BoxedFuture};
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct ChunkId(pub usize, pub usize);
+
+pub struct ChunkCommand<C>
+where
+    C: TileMapConfig,
+{
+    pub version: usize,
+    pub operation: C::ChunkOperation,
+}
+
+pub trait ChunkFactory<C>: 'static + Send + Sync
+where
+    C: TileMapConfig,
+{
+    fn read<'a>(&'a self, config: &'a C, chunk_id: ChunkId)
+        -> BoxedFuture<'a, Result<(Chunk<C>, usize), TileMapError>>;
+
+    fn read_updates<'a>(
+        &'a self,
+        config: &C,
+        chunk_id: ChunkId,
+        version: usize,
+    ) -> BoxedFuture<'a, Result<Vec<ChunkCommand<C>>, TileMapError>>;
+}
 
 #[derive(Component)]
 pub struct Chunk<C>
@@ -8,7 +34,6 @@ where
 {
     width: usize,
     height: usize,
-    version: usize,
     data: Vec<C::Tile>,
 }
 
@@ -16,25 +41,38 @@ impl<C> Chunk<C>
 where
     C: TileMapConfig,
 {
-    pub fn new(width: usize, height: usize) -> Self
-    where
-        C::Tile: Default + Clone,
-    {
-        let data = vec![C::Tile::default(); width * height];
+    pub fn new(size: ChunkSize) -> Self {
+        let area = size.area();
+        let mut data = Vec::with_capacity(area);
+        data.resize_with(area, C::Tile::default);
         Self {
-            width,
-            height,
-            version: 0,
+            width: size.width,
+            height: size.height,
             data,
         }
     }
 
-    pub fn version(&self) -> usize {
-        self.version
+    pub fn width(&self) -> usize {
+        self.width
     }
 
-    pub fn set_version(&mut self, version: usize) {
-        self.version = version;
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
+    pub fn size(&self) -> ChunkSize {
+        ChunkSize {
+            width: self.width,
+            height: self.height,
+        }
+    }
+
+    pub fn data(&self) -> &[C::Tile] {
+        &self.data
+    }
+
+    pub fn data_mut(&mut self) -> &mut [C::Tile] {
+        &mut self.data
     }
 
     pub fn try_get(&self, x: usize, y: usize) -> Option<&C::Tile> {
@@ -69,6 +107,10 @@ where
 
     pub fn iter_mut(&mut self) -> ChunkIteratorMut<C> {
         ChunkIteratorMut { chunk: self, index: 0 }
+    }
+
+    pub fn clear(&mut self) {
+        self.data.fill_with(C::Tile::default);
     }
 }
 

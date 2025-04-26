@@ -2,7 +2,7 @@ use crate::db::event_source::{AggregateId, Event, EventStoreError, StoredEvent};
 use serde::{de::DeserializeOwned, Serialize};
 use std::future::Future;
 
-pub trait Aggregate: 'static + Default + Serialize + DeserializeOwned + Send + Sync {
+pub trait Aggregate: 'static + Serialize + DeserializeOwned + Send + Sync {
     type Event: Event;
     type AggregateId: AggregateId;
 
@@ -25,11 +25,14 @@ impl<A> Snapshot<A>
 where
     A: Aggregate,
 {
-    pub fn new(aggregate_id: A::AggregateId) -> Self {
+    pub fn new<D>(aggregate_id: A::AggregateId, default: D) -> Self
+    where
+        D: FnOnce() -> A,
+    {
         Self {
             aggregate_id,
             version: 0,
-            aggregate: Default::default(),
+            aggregate: default(),
         }
     }
 
@@ -80,12 +83,14 @@ pub trait SnapshotStore {
     type AggregateId: AggregateId;
 
     /// Get aggregate up to the latest version using the latest snapshot if present.
-    fn get_aggregate<G>(
+    fn get_aggregate<G, D>(
         &mut self,
         aggregate_id: &Self::AggregateId,
-    ) -> impl Future<Output = Result<Option<Snapshot<G>>, EventStoreError>> + Send
+        default: D,
+    ) -> impl Future<Output = Result<Snapshot<G>, EventStoreError>> + Send
     where
-        G: Aggregate<Event = Self::Event, AggregateId = Self::AggregateId>;
+        G: Aggregate<Event = Self::Event, AggregateId = Self::AggregateId>,
+        D: FnOnce() -> G + Send + Sync + 'static;
 
     /// Get the last stored aggregate
     fn get_snapshot<G>(

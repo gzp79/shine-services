@@ -98,22 +98,24 @@ where
     type Event = E;
     type AggregateId = A;
 
-    async fn get_aggregate<G>(
+    async fn get_aggregate<G, D>(
         &mut self,
         aggregate_id: &Self::AggregateId,
-    ) -> Result<Option<Snapshot<G>>, EventStoreError>
+        default: D,
+    ) -> Result<Snapshot<G>, EventStoreError>
     where
         G: Aggregate<Event = Self::Event, AggregateId = Self::AggregateId>,
+        D: FnOnce() -> G + Send + Sync + 'static,
     {
         let mut snapshot = self
             .get_snapshot(aggregate_id)
             .await?
-            .unwrap_or(Snapshot::new(aggregate_id.clone()));
+            .unwrap_or_else(|| Snapshot::new(aggregate_id.clone(), default));
 
         let events = self.get_events(aggregate_id, Some(snapshot.version()), None).await?;
         snapshot.apply(&events)?;
 
-        Ok(Some(snapshot))
+        Ok(snapshot)
     }
 
     async fn get_snapshot<G>(
