@@ -1,18 +1,43 @@
-use crate::map2::{Chunk, ChunkCommand, ChunkFactory, ChunkId, ChunkOperation, TileMapConfig, TileMapError};
+use crate::map2::{
+    ChunkId, ChunkOperation, PersistedChunk, PersistedChunkUpdate, PersistedVersion, TileMapConfig, TileMapError,
+    UpdatedChunks,
+};
 use bevy::{
     ecs::{
         entity::Entity,
         resource::Resource,
         system::{Commands, Local, Query, ResMut},
     },
-    platform::sync::Mutex,
-    tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, Task},
+    platform::sync::{Arc, Mutex},
+    tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, BoxedFuture, Task},
 };
-use std::{
-    collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
-    mem,
-    sync::Arc,
-};
+use std::collections::{hash_map::Entry, HashMap, VecDeque};
+
+use super::PersistedChunkCommand;
+
+pub trait ChunkFactory<C>: 'static + Send + Sync
+where
+    C: TileMapConfig,
+{
+    fn read<'a>(
+        &'a self,
+        config: &'a C,
+        chunk_id: ChunkId,
+    ) -> BoxedFuture<'a, Result<(C::PersistedChunkStore, usize), TileMapError>>;
+
+    fn read_updates<'a>(
+        &'a self,
+        config: &'a C,
+        chunk_id: ChunkId,
+        version: usize,
+    ) -> BoxedFuture<'a, Result<Vec<PersistedChunkCommand<C>>, TileMapError>>;
+
+    fn listen_updates<'a>(
+        &'a self,
+        config: &'a C,
+        channel: Arc<Mutex<UpdatedChunks>>,
+    ) -> BoxedFuture<'a, Result<(), TileMapError>>;
+}
 
 #[derive(Debug)]
 pub struct TileMapStatistics {
@@ -25,8 +50,8 @@ enum TaskResult<C>
 where
     C: TileMapConfig,
 {
-    Chunk(Chunk<C>, usize),
-    Commands(Vec<ChunkCommand<C>>),
+    Chunk(PersistedChunk<C>, usize),
+    Commands(Vec<PersistedChunkCommand<C>>),
     Empty,
     Retry(usize),
 }
@@ -38,15 +63,10 @@ where
 {
     config: C,
     factory: Arc<dyn ChunkFactory<C>>,
+
     load_requests: VecDeque<(ChunkId, usize)>,
     loading_tasks: HashMap<ChunkId, Task<TaskResult<C>>>,
-    loaded_chunks: HashMap<ChunkId, (Entity, usize)>,
-    // command from the server
-    server_commands: HashMap<ChunkId, Vec<ChunkCommand<C>>>,
-    // local commands, and the version of the chunk at the time of the command
-    local_commands: HashMap<ChunkId, Vec<ChunkCommand<C>>>,
-    // Channel to notify about updated chunks
-    refresh_channel: Arc<Mutex<HashSet<ChunkId>>>,
+    loaded_chunks: HashMap<ChunkId, Entity>,
 }
 
 impl<C> TileMap<C>
@@ -60,14 +80,15 @@ where
             load_requests: VecDeque::new(),
             loading_tasks: HashMap::new(),
             loaded_chunks: HashMap::new(),
-            server_commands: HashMap::new(),
-            local_commands: HashMap::new(),
-            refresh_channel: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
     pub fn config(&self) -> &C {
         &self.config
+    }
+
+    pub fn factory(&self) -> &Arc<dyn ChunkFactory<C>> {
+        &self.factory
     }
 
     pub fn statistics(&self) -> TileMapStatistics {
@@ -81,7 +102,13 @@ where
     pub fn load_chunk(&mut self, chunk_id: ChunkId, commands: &mut Commands) {
         if let Entry::Vacant(entry) = self.loaded_chunks.entry(chunk_id) {
             log::debug!("Chunk {:?} load was requested", chunk_id);
-            entry.insert((commands.spawn_empty().id(), 0));
+            entry.insert(
+                commands
+                    .spawn_empty()
+                    .insert(chunk_id)
+                    .insert(PersistedVersion::new(0))
+                    .id(),
+            );
         }
 
         self.load_requests.push_back((chunk_id, self.config.max_retry_count()));
@@ -94,30 +121,20 @@ where
     }
 
     pub fn unload_chunk(&mut self, chunk_id: ChunkId, commands: &mut Commands) {
-        if let Some((entity, _)) = self.loaded_chunks.remove(&chunk_id) {
+        if let Some(entity) = self.loaded_chunks.remove(&chunk_id) {
             commands.entity(entity).despawn();
         }
         self.load_requests.retain(|(id, _)| *id != chunk_id);
         self.loading_tasks.remove(&chunk_id);
-        self.server_commands.remove(&chunk_id);
-        self.local_commands.remove(&chunk_id);
-    }
-
-    pub fn update_chunk(&mut self, chunk_id: ChunkId, operation: C::ChunkOperation) {
-        if let Some((_, version)) = self.loaded_chunks.get(&chunk_id) {
-            self.local_commands.entry(chunk_id).or_default().push(ChunkCommand {
-                version: *version,
-                operation,
-            });
-        }
+        //self.local_commands.remove(&chunk_id);
     }
 
     pub fn get_chunk_entity(&self, chunk_id: ChunkId) -> Option<Entity> {
-        self.loaded_chunks.get(&chunk_id).map(|(entity, _)| *entity)
+        self.loaded_chunks.get(&chunk_id).cloned()
     }
 }
 
-pub fn start_chunk_load_system<C>(mut tile_map: ResMut<TileMap<C>>)
+pub fn start_chunk_load_system<C>(mut tile_map: ResMut<TileMap<C>>, chunks: Query<&PersistedVersion>)
 where
     C: TileMapConfig,
 {
@@ -142,8 +159,8 @@ where
             load_requests.push_back((chunk_id, retry_count));
             continue;
         }
-        let chunk_version = match loaded_chunks.get(&chunk_id) {
-            Some((_, version)) => *version,
+        let chunk_version = match loaded_chunks.get(&chunk_id).and_then(|entity| chunks.get(*entity).ok()) {
+            Some(chunk) => chunk.version,
             None => {
                 log::warn!("Chunk {:?} is requested, but was removed from the tile map", chunk_id);
                 continue;
@@ -176,7 +193,7 @@ where
             task_pool.spawn(async move {
                 log::debug!("Start loading chunk {:?} ", chunk_id);
                 match factory.read(&config, chunk_id).await {
-                    Ok((chunk, version)) => TaskResult::Chunk(chunk, version),
+                    Ok((chunk, version)) => TaskResult::Chunk(PersistedChunk::<C>::new(chunk), version),
                     Err(_) => TaskResult::Retry(retry_count.saturating_sub(1)),
                 }
             })
@@ -185,8 +202,11 @@ where
     }
 }
 
-pub fn complete_chunk_load_system<C>(mut tile_map: ResMut<TileMap<C>>, mut commands: Commands)
-where
+pub fn complete_chunk_load_system<C>(
+    mut tile_map: ResMut<TileMap<C>>,
+    mut chunk_commands: Query<&mut PersistedChunkUpdate<C>>,
+    mut commands: Commands,
+) where
     C: TileMapConfig,
 {
     let TileMap {
@@ -194,7 +214,6 @@ where
         loading_tasks,
         loaded_chunks,
         load_requests,
-        server_commands: chunk_updates,
         ..
     } = tile_map.as_mut();
 
@@ -202,7 +221,7 @@ where
         let status = block_on(future::poll_once(task));
         let retain = status.is_none();
 
-        let (entity, version) = match loaded_chunks.get_mut(chunk_id) {
+        let entity = match loaded_chunks.get_mut(chunk_id) {
             Some(entry) => entry,
             None => {
                 log::warn!("Chunk {:?} is not loaded, ignoring task result", chunk_id);
@@ -212,19 +231,27 @@ where
 
         if let Some(task_result) = status {
             match task_result {
-                TaskResult::Chunk(chunk, ver) => {
+                TaskResult::Chunk(chunk, version) => {
                     log::debug!("Chunk {:?} loaded successfully", chunk_id);
-                    commands.entity(*entity).insert(chunk);
-                    *version = ver;
+                    commands
+                        .entity(*entity)
+                        .insert(chunk)
+                        .insert(PersistedVersion::new(version));
                 }
                 TaskResult::Commands(cmds) => {
                     log::debug!("Chunk {:?} updates loaded successfully", chunk_id);
-                    chunk_updates.entry(*chunk_id).or_default().extend(cmds);
+                    if let Ok(mut chunk_command) = chunk_commands.get_mut(*entity) {
+                        chunk_command.extend(cmds);
+                    } else {
+                        commands.entity(*entity).insert(PersistedChunkUpdate::<C>::new(cmds));
+                    }
                 }
                 TaskResult::Empty => {
                     log::debug!("Chunk {:?} is emptied", chunk_id);
-                    commands.entity(*entity).insert(Chunk::<C>::new(config.chunk_size()));
-                    *version = 0;
+                    commands
+                        .entity(*entity)
+                        .insert(PersistedChunk::<C>::new_empty(config.chunk_size()))
+                        .insert(PersistedVersion::new(0));
                 }
                 TaskResult::Retry(retry_left) => {
                     if retry_left > 0 {
@@ -241,87 +268,51 @@ where
     });
 }
 
-pub fn process_refresh_system<C>(mut tile_map: ResMut<TileMap<C>>, mut local: Local<HashSet<ChunkId>>)
+/*pub fn process_refresh_system<C>(mut tile_map: ResMut<Map<C>>, mut local: Local<HashSet<ChunkId>>)
 where
-    C: TileMapConfig,
+    C: MapConfig,
 {
     mem::swap(&mut *tile_map.refresh_channel.lock().unwrap(), &mut local);
 
     for chunk_id in local.drain() {
         tile_map.refresh_chunk(chunk_id);
     }
-}
+}*/
 
-pub fn process_commands_system<C>(mut tile_map: ResMut<TileMap<C>>, mut chunks: Query<&mut Chunk<C>>)
-where
+pub fn process_commands_system<C>(
+    mut chunks: Query<(
+        &ChunkId,
+        &mut PersistedVersion,
+        &mut PersistedChunk<C>,
+        &mut PersistedChunkUpdate<C>,
+    )>,
+    mut commands: Local<Vec<PersistedChunkCommand<C>>>,
+) where
     C: TileMapConfig,
 {
-    let TileMap {
-        loaded_chunks,
-        server_commands,
-        local_commands: local_operation,
-        ..
-    } = tile_map.as_mut();
-
-    for (chunk_id, commands) in server_commands.iter_mut() {
-        if let Some((entity, version)) = loaded_chunks.get_mut(chunk_id) {
-            if let Ok(mut chunk) = chunks.get_mut(*entity) {
-                commands.sort_by(|a, b| a.version.cmp(&b.version));
-                commands.retain_mut(|command| {
-                    if command.version == *version + 1 {
-                        command.operation.apply(&mut chunk);
-                        *version = command.version;
-                        false
-                    } else if command.version > *version {
-                        log::info!(
-                            "Command is too early ({}) for chunk {:?} at version {}",
-                            command.version,
-                            chunk_id,
-                            version
-                        );
-                        true
-                    } else {
-                        log::debug!(
-                            "Command is too late ({}) for chunk {:?} at version {}",
-                            command.version,
-                            chunk_id,
-                            version
-                        );
-                        false
-                    }
-                });
+    for (chunk_id, mut version, mut chunk, mut updates) in chunks.iter_mut() {
+        for command in updates.drain(..) {
+            if command.version == version.version + 1 {
+                command.operation.apply(&mut **chunk);
+                **version = command.version;
+            } else if command.version > **version {
+                log::info!(
+                    "Command is too early ({}) for chunk {:?} at version {}",
+                    command.version,
+                    chunk_id,
+                    **version
+                );
+                commands.push(command);
+            } else {
+                log::debug!(
+                    "Command is too late ({}) for chunk {:?} at version {}",
+                    command.version,
+                    chunk_id,
+                    **version
+                );
             }
         }
-    }
-
-    for (chunk_id, commands) in local_operation.iter_mut() {
-        if let Some((entity, version)) = loaded_chunks.get_mut(chunk_id) {
-            if let Ok(mut chunk) = chunks.get_mut(*entity) {
-                commands.sort_by(|a, b| a.version.cmp(&b.version));
-                commands.retain_mut(|command| {
-                    if command.version == *version + 1 {
-                        command.operation.apply_local(&mut chunk, *version);
-                        *version = command.version;
-                        false
-                    } else if command.version > *version {
-                        log::info!(
-                            "Command is too early ({}) for chunk {:?} at version {}",
-                            command.version,
-                            chunk_id,
-                            version
-                        );
-                        true
-                    } else {
-                        log::debug!(
-                            "Command is too late ({}) for chunk {:?} at version {}",
-                            command.version,
-                            chunk_id,
-                            version
-                        );
-                        false
-                    }
-                });
-            }
-        }
+        std::mem::swap(&mut *commands, &mut updates.commands);
+        assert!(commands.is_empty());
     }
 }

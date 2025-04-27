@@ -1,27 +1,51 @@
 use bevy::{
-    app::{App, Update},
-    ecs::{
-        event::{Event, EventReader, Events},
-        system::{Commands, ResMut},
-    },
+    app::App,
+    ecs::event::Events,
+    platform::sync::{Arc, Mutex},
     tasks::{AsyncComputeTaskPool, BoxedFuture, TaskPool},
 };
+use serde::{Deserialize, Serialize};
 use shine_game::map2::{
-    Chunk, ChunkCommand, ChunkFactory, ChunkId, ChunkSize, NoOperation, TileMap, TileMapConfig, TileMapError,
-    TileMapPlugin,
+    operations, ChunkCommand, ChunkFactory, ChunkId, ChunkOperation, ChunkStore, DenseChunkStore, PersistedChunk,
+    TileMap, TileMapConfig, TileMapError, TileMapEvent, TileMapPlugin, UpdatedChunks,
 };
 use shine_test::test;
 
-#[derive(Clone)]
-pub struct U8TileMapConfig;
+#[derive(Serialize, Deserialize)]
+pub enum U8Operations {
+    SetTile(operations::SetTile<u8>),
+    GetTile(operations::Fill<u8>),
+}
 
-impl TileMapConfig for U8TileMapConfig {
+impl ChunkOperation for U8Operations {
+    type Tile = u8;
+
+    fn apply<C>(self, chunk: &mut C)
+    where
+        C: ChunkStore<Tile = u8>,
+    {
+        match self {
+            U8Operations::SetTile(op) => op.apply(chunk),
+            U8Operations::GetTile(op) => op.apply(chunk),
+        }
+    }
+}
+
+pub type U8Commands = ChunkCommand<U8Operations>;
+pub type U8MapEvent = TileMapEvent<U8MapConfig>;
+
+#[derive(Clone)]
+pub struct U8MapConfig;
+
+impl TileMapConfig for U8MapConfig {
     const NAME: &'static str = "test";
     type Tile = u8;
-    type ChunkOperation = NoOperation<Self>;
 
-    fn chunk_size(&self) -> ChunkSize {
-        ChunkSize { width: 16, height: 16 }
+    type PersistedChunkStore = DenseChunkStore<Self::Tile>;
+    type PersistedChunkOperation = U8Operations;
+
+    fn chunk_size(&self) -> (usize, usize) {
+        (16, 16)
     }
 
     fn max_retry_count(&self) -> usize {
@@ -30,45 +54,33 @@ impl TileMapConfig for U8TileMapConfig {
 }
 
 pub struct U8ChunkFactory;
-impl ChunkFactory<U8TileMapConfig> for U8ChunkFactory {
+impl ChunkFactory<U8MapConfig> for U8ChunkFactory {
     fn read<'a>(
         &'a self,
-        config: &'a U8TileMapConfig,
+        config: &'a U8MapConfig,
         _chunk_id: ChunkId,
-    ) -> BoxedFuture<'a, Result<(Chunk<U8TileMapConfig>, usize), TileMapError>> {
-        Box::pin(async move { Ok((Chunk::new(config.chunk_size()), 0)) })
+    ) -> BoxedFuture<'a, Result<(DenseChunkStore<u8>, usize), TileMapError>> {
+        Box::pin(async move {
+            let (w, h) = config.chunk_size();
+            Ok((DenseChunkStore::new(w, h), 0))
+        })
     }
 
     fn read_updates<'a>(
         &'a self,
-        config: &U8TileMapConfig,
-        chunk_id: ChunkId,
-        version: usize,
-    ) -> BoxedFuture<'a, Result<Vec<ChunkCommand<U8TileMapConfig>>, TileMapError>> {
+        _config: &U8MapConfig,
+        _chunk_id: ChunkId,
+        _version: usize,
+    ) -> BoxedFuture<'a, Result<Vec<U8Commands>, TileMapError>> {
         Box::pin(async move { Ok(vec![]) })
     }
-}
 
-#[derive(Event)]
-enum TestEvent {
-    Load(ChunkId),
-    Unload(ChunkId),
-}
-
-fn spawn_test_chunk(
-    mut tile_map: ResMut<TileMap<U8TileMapConfig>>,
-    mut commands: Commands,
-    mut ev: EventReader<TestEvent>,
-) {
-    for chunk_id in ev.read() {
-        match chunk_id {
-            TestEvent::Load(chunk_id) => {
-                tile_map.load_chunk(*chunk_id, &mut commands);
-            }
-            TestEvent::Unload(chunk_id) => {
-                tile_map.unload_chunk(*chunk_id, &mut commands);
-            }
-        }
+    fn listen_updates<'a>(
+        &'a self,
+        _config: &'a U8MapConfig,
+        _channel: Arc<Mutex<UpdatedChunks>>,
+    ) -> BoxedFuture<'a, Result<(), TileMapError>> {
+        Box::pin(async move { Ok(()) })
     }
 }
 
@@ -78,14 +90,12 @@ async fn test_map2_load_unload() {
     let mut app = App::new();
 
     // Initialize the TileMap
-    app.add_plugins(TileMapPlugin::<U8TileMapConfig>::new(U8TileMapConfig, U8ChunkFactory));
-    app.add_systems(Update, spawn_test_chunk);
-    app.add_event::<TestEvent>();
+    app.add_plugins(TileMapPlugin::<U8MapConfig>::new(U8MapConfig, U8ChunkFactory));
 
     app.update();
 
     {
-        let tile_map = app.world().get_resource::<TileMap<U8TileMapConfig>>().unwrap();
+        let tile_map = app.world().get_resource::<TileMap<U8MapConfig>>().unwrap();
         let stats = tile_map.statistics();
         log::info!("TileMap statistics: {:?}", stats);
         assert!(stats.load_requests == 0);
@@ -98,15 +108,15 @@ async fn test_map2_load_unload() {
     let chunk_entity_1;
 
     app.world_mut()
-        .resource_mut::<Events<TestEvent>>()
-        .send(TestEvent::Load(chunk_id_1));
+        .resource_mut::<Events<U8MapEvent>>()
+        .send(U8MapEvent::Load(chunk_id_1));
 
     app.update();
 
     {
-        let tile_map = app.world().get_resource::<TileMap<U8TileMapConfig>>().unwrap();
+        let tile_map = app.world().get_resource::<TileMap<U8MapConfig>>().unwrap();
         let stats = tile_map.statistics();
-        log::info!("TileMap statistics: {:?}", stats);
+        log::info!("Map statistics: {:?}", stats);
         assert!(stats.load_requests == 0);
         assert!(stats.loading_tasks == 0);
         assert!(stats.loaded_chunks == 1);
@@ -115,7 +125,7 @@ async fn test_map2_load_unload() {
         let chunk = app
             .world()
             .entity(chunk_entity_1)
-            .get::<Chunk<U8TileMapConfig>>()
+            .get::<PersistedChunk<U8MapConfig>>()
             .unwrap();
         assert_eq!(chunk.width(), 16);
         assert_eq!(chunk.height(), 16);
@@ -123,12 +133,12 @@ async fn test_map2_load_unload() {
 
     // unload a chunk
     app.world_mut()
-        .resource_mut::<Events<TestEvent>>()
-        .send(TestEvent::Unload(chunk_id_1));
+        .resource_mut::<Events<U8MapEvent>>()
+        .send(U8MapEvent::Unload(chunk_id_1));
 
     app.update();
     {
-        let tile_map = app.world().get_resource::<TileMap<U8TileMapConfig>>().unwrap();
+        let tile_map = app.world().get_resource::<TileMap<U8MapConfig>>().unwrap();
         let stats = tile_map.statistics();
         log::info!("TileMap statistics: {:?}", stats);
         assert!(stats.load_requests == 0);
