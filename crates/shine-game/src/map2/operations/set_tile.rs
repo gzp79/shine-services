@@ -3,9 +3,10 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 #[serde(bound = "T: Serialize + DeserializeOwned")]
+#[serde(rename_all = "camelCase")]
 pub struct SetTile<T>
 where
-    T: Tile + Serialize + DeserializeOwned + Clone,
+    T: Tile + Serialize + DeserializeOwned,
 {
     pub x: usize,
     pub y: usize,
@@ -14,7 +15,7 @@ where
 
 impl<T> ChunkOperation for SetTile<T>
 where
-    T: Tile + Serialize + DeserializeOwned + Clone,
+    T: Tile + Serialize + DeserializeOwned,
 {
     type Tile = T;
 

@@ -1,14 +1,12 @@
-use std::marker::PhantomData;
-
-use serde::Deserialize;
-
 use crate::db::{
     event_source::{
-        pg::{PgEventStoreStatement, PgSnapshotStatement},
+        pg::{migration_001, PgEventStoreStatement, PgSnapshotStatement},
         AggregateId, Event, EventDb, EventDbContext, EventNotification, EventStoreError,
     },
     DBError, PGConnectionPool, PGPooledConnection,
 };
+use serde::Deserialize;
+use std::marker::PhantomData;
 
 pub struct PgEventDbContext<'c, E, A>
 where
@@ -54,6 +52,10 @@ where
             ph: PhantomData,
         })
     }
+
+    pub fn migrations() -> Vec<String> {
+        vec![migration_001(E::NAME)]
+    }
 }
 
 impl<E, A> EventDb<E, A> for PgEventDb<E, A>
@@ -88,14 +90,14 @@ where
                 A: AggregateId,
             {
                 match self.operation.as_str() {
-                    "insert" => Ok(EventNotification::Insert {
+                    "create" => Ok(EventNotification::Created {
                         aggregate_id: A::from_string(self.aggregate_id),
                     }),
-                    "update" => Ok(EventNotification::Update {
+                    "update" => Ok(EventNotification::Updated {
                         aggregate_id: A::from_string(self.aggregate_id),
                         version: self.version.unwrap_or(0),
                     }),
-                    "delete" => Ok(EventNotification::Delete {
+                    "delete" => Ok(EventNotification::Deleted {
                         aggregate_id: A::from_string(self.aggregate_id),
                     }),
                     op => Err(format!("Invalid operation: {op}")),

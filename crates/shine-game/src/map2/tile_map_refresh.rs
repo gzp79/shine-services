@@ -25,9 +25,9 @@ impl<C> TileMapRefresh<C>
 where
     C: TileMapConfig,
 {
-    pub fn new() -> Self {
+    pub fn new(changes: UpdatedChunks) -> Self {
         Self {
-            changes: Arc::new(Mutex::new(Vec::new())),
+            changes: Arc::new(Mutex::new(changes)),
             phantom: PhantomData,
         }
     }
@@ -59,6 +59,9 @@ pub fn process_map_refresh<C>(
     assert!(updated_chunks.is_empty());
     mem::swap(&mut *map_refresh.changes.lock().unwrap(), &mut *updated_chunks);
 
+    if !updated_chunks.is_empty() {
+        log::trace!("Detected chunk updates: {:?}", updated_chunks);
+    }
     for chunk_id in updated_chunks.drain(..) {
         tile_map.refresh_chunk(chunk_id);
     }

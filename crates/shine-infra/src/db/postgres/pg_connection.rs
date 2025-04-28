@@ -2,6 +2,7 @@ use crate::db::cacerts::{get_root_cert_store, CertError};
 use crate::db::DBError;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use bb8_postgres::PostgresConnectionManager;
+use refinery::{Migration, Runner};
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -92,6 +93,25 @@ impl PGConnection<PGRawClient> {
             client: pg_client,
             listener,
         }
+    }
+
+    /// Handle migration manually. Allows to keep multiple (independent) migration in a single
+    /// database.
+    pub async fn migrate(&mut self, name: &str, migrations: &[String]) -> Result<(), DBError> {
+        let migrations = migrations
+            .iter()
+            .enumerate()
+            .map(|(i, m)| Migration::unapplied(&format!("V{i}__{name}"), m))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut runner = Runner::new(&migrations);
+        runner.set_migration_table_name(format!("__migration__{name}"));
+
+        runner
+            .run_async(&mut self.client)
+            .await
+            .map_err(DBError::SqlMigration)?;
+        Ok(())
     }
 
     #[inline]

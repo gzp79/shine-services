@@ -1,5 +1,8 @@
 use crate::map2::{ChunkStore, DenseChunk, Tile};
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DenseChunkStore<T>
 where
     T: Tile,

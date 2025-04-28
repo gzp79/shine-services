@@ -113,7 +113,7 @@ where
             .unwrap_or_else(|| Snapshot::new(aggregate_id.clone(), default));
 
         let events = self.get_events(aggregate_id, Some(snapshot.version()), None).await?;
-        snapshot.apply(&events)?;
+        snapshot.apply(events)?;
 
         Ok(snapshot)
     }

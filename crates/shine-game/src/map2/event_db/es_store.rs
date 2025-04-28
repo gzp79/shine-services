@@ -1,44 +1,93 @@
 use crate::map2::{
-    ChunkCommand, ChunkFactory, ChunkId, ChunkStore, PersistedChunkCommand, TileMapConfig, TileMapError, UpdatedChunks,
+    ChunkCommand, ChunkFactory, ChunkId, ChunkOperation, ChunkStore, PersistedChunkCommand, TileMapConfig,
+    TileMapError, UpdatedChunks,
 };
 use bevy::{
     platform::sync::{Arc, Mutex},
     tasks::BoxedFuture,
 };
-use shine_infra::db::event_source::{
-    pg::PgEventDb, Aggregate, Event, EventDb, EventNotification, EventStore, EventStoreError, SnapshotStore,
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use shine_infra::db::{
+    event_source::{
+        pg::PgEventDb, Aggregate, Event, EventDb, EventNotification, EventStore, EventStoreError, SnapshotStore,
+    },
+    PGConnectionPool,
 };
-use std::marker::PhantomData;
 
 #[allow(type_alias_bounds)]
 pub type ESChunkDB<C: TileMapConfig> = PgEventDb<C::PersistedChunkOperation, ChunkId>;
 
+/// Wrapper for the a ChunkStore to be used as an aggregate
+#[derive(Serialize, Deserialize)]
+#[serde(bound(deserialize = "C::PersistedChunkStore: Serialize + DeserializeOwned"))]
+#[serde(rename_all = "camelCase")]
+struct ESChunkAggregate<C>
+where
+    C: TileMapConfig,
+    C::PersistedChunkOperation: Event,
+{
+    data: C::PersistedChunkStore,
+}
+
+impl<C> ESChunkAggregate<C>
+where
+    C: TileMapConfig,
+    C::PersistedChunkOperation: Event,
+    C::PersistedChunkStore: Serialize + DeserializeOwned,
+{
+    pub fn new(width: usize, height: usize) -> Self {
+        Self {
+            data: C::PersistedChunkStore::new(width, height),
+        }
+    }
+
+    pub fn into_chunk(self) -> C::PersistedChunkStore {
+        self.data
+    }
+}
+
+impl<C> Aggregate for ESChunkAggregate<C>
+where
+    C: TileMapConfig,
+    C::PersistedChunkOperation: Event,
+    C::PersistedChunkStore: Serialize + DeserializeOwned,
+{
+    const NAME: &'static str = C::NAME;
+    type Event = C::PersistedChunkOperation;
+    type AggregateId = ChunkId;
+
+    fn apply(&mut self, event: Self::Event) -> Result<(), EventStoreError> {
+        event.apply(&mut self.data);
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
 pub struct ESChunkFactory<C>
 where
     C: TileMapConfig,
     C::PersistedChunkOperation: Event,
-    C::PersistedChunkStore: Aggregate<Event = C::PersistedChunkOperation, AggregateId = ChunkId>,
+    C::PersistedChunkStore: Serialize + DeserializeOwned,
 {
-    event_db: ESChunkDB<C>,
-    ph: PhantomData<C>,
+    event_db: Arc<ESChunkDB<C>>,
 }
 
 impl<C> ESChunkFactory<C>
 where
     C: TileMapConfig,
     C::PersistedChunkOperation: Event,
-    C::PersistedChunkStore: Aggregate<Event = C::PersistedChunkOperation, AggregateId = ChunkId>,
+    C::PersistedChunkStore: Serialize + DeserializeOwned,
 {
-    pub fn new(event_db: ESChunkDB<C>) -> Self {
-        Self {
-            event_db,
-            ph: PhantomData,
-        }
+    pub async fn new(pg_pool: &PGConnectionPool) -> Result<Self, EventStoreError> {
+        let event_db = ESChunkDB::<C>::new(pg_pool).await?;
+        Ok(Self {
+            event_db: Arc::new(event_db),
+        })
     }
 
-    fn create_chunk(size: (usize, usize)) -> C::PersistedChunkStore {
+    fn create_chunk(size: (usize, usize)) -> ESChunkAggregate<C> {
         let (w, h) = size;
-        <C::PersistedChunkStore as ChunkStore>::new(w, h)
+        ESChunkAggregate::new(w, h)
     }
 
     pub async fn read_chunk(
@@ -51,10 +100,10 @@ where
         match es.get_aggregate(&chunk_id, move || Self::create_chunk(size)).await {
             Ok(aggregate) => {
                 let version = aggregate.version();
-                let chunk = aggregate.into_aggregate();
+                let chunk = aggregate.into_aggregate().into_chunk();
                 Ok((chunk, version))
             }
-            Err(EventStoreError::NotFound) => Ok((Self::create_chunk(size), 0)),
+            Err(EventStoreError::NotFound) => Ok((Self::create_chunk(size).into_chunk(), 0)),
             Err(err) => Err(err.into()),
         }
     }
@@ -82,10 +131,11 @@ where
     pub async fn listen_changes(&self, _config: &C, queue: Arc<Mutex<UpdatedChunks>>) -> Result<(), TileMapError> {
         self.event_db
             .listen_to_stream_updates(move |notification| {
+                log::trace!("Received event notification: {:?}", notification);
                 let chunk_id = match notification {
-                    EventNotification::Update { aggregate_id, .. } => aggregate_id,
-                    EventNotification::Delete { aggregate_id } => aggregate_id,
-                    EventNotification::Insert { aggregate_id } => aggregate_id,
+                    EventNotification::Updated { aggregate_id, .. } => aggregate_id,
+                    EventNotification::Deleted { aggregate_id } => aggregate_id,
+                    EventNotification::Created { aggregate_id } => aggregate_id,
                 };
                 {
                     let mut queue = queue.lock().unwrap();
@@ -96,13 +146,12 @@ where
         Ok(())
     }
 
-    pub async fn store_operation(
-        &self,
-        chunk_id: ChunkId,
-        operation: C::PersistedChunkOperation,
-    ) -> Result<(), TileMapError> {
+    pub async fn store_operation<O>(&self, chunk_id: ChunkId, operation: O) -> Result<(), TileMapError>
+    where
+        O: Into<C::PersistedChunkOperation>,
+    {
         let mut es = self.event_db.create_context().await?;
-        es.store_events(&chunk_id, None, &[operation]).await?;
+        es.unchecked_store_events(&chunk_id, &[operation.into()]).await?;
         Ok(())
     }
 }
@@ -111,7 +160,7 @@ impl<C> ChunkFactory<C> for ESChunkFactory<C>
 where
     C: TileMapConfig,
     C::PersistedChunkOperation: Event,
-    C::PersistedChunkStore: Aggregate<Event = C::PersistedChunkOperation, AggregateId = ChunkId>,
+    C::PersistedChunkStore: Serialize + DeserializeOwned,
 {
     fn read<'a>(
         &'a self,

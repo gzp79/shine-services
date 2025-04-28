@@ -14,9 +14,9 @@ pub enum EventNotification<A>
 where
     A: AggregateId,
 {
-    Insert { aggregate_id: A },
-    Update { aggregate_id: A, version: usize },
-    Delete { aggregate_id: A },
+    Created { aggregate_id: A },
+    Updated { aggregate_id: A, version: usize },
+    Deleted { aggregate_id: A },
 }
 
 pub trait EventDb<E, A>: 'static + Send + Sync

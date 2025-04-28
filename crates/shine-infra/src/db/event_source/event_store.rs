@@ -40,13 +40,20 @@ pub trait EventStore {
         aggregate: &Self::AggregateId,
     ) -> impl Future<Output = Result<(), EventStoreError>> + Send;
 
-    /// Store events for an aggregate and return the new version
-    /// If expected_version is Some, the store will fail if the current version does not match, otherwise it will store the events
-    /// emulating a last-write-wins strategy.
+    /// Store events for an aggregate and return the new version.
+    /// This is a checked store operation and will fail if the stream has not ben created or if the expected version is not correct.
     fn store_events(
         &mut self,
         aggregate_id: &Self::AggregateId,
-        expected_version: Option<usize>,
+        expected_version: usize,
+        event: &[Self::Event],
+    ) -> impl Future<Output = Result<usize, EventStoreError>> + Send;
+
+    /// Store a new event for the given aggregate and return the new version.
+    /// This function will create the stream if it does not exist and will store the event with the next available version.
+    fn unchecked_store_events(
+        &mut self,
+        aggregate_id: &Self::AggregateId,
         event: &[Self::Event],
     ) -> impl Future<Output = Result<usize, EventStoreError>> + Send;
 

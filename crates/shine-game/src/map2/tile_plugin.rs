@@ -39,7 +39,7 @@ where
 {
     fn build(&self, app: &mut App) {
         app.insert_resource(TileMap::new(self.config.clone(), self.factory.clone()));
-        app.insert_resource(TileMapRefresh::<C>::new());
+        app.insert_resource(TileMapRefresh::<C>::new(Vec::new()));
         app.add_event::<TileMapEvent<C>>();
         app.add_systems(Startup, startup_map_refresh::<C>);
         app.add_systems(

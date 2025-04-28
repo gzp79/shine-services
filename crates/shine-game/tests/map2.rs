@@ -12,6 +12,7 @@ use shine_game::map2::{
 use shine_test::test;
 
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum U8Operations {
     SetTile(operations::SetTile<u8>),
     GetTile(operations::Fill<u8>),

@@ -101,17 +101,12 @@ where
 
     pub fn load_chunk(&mut self, chunk_id: ChunkId, commands: &mut Commands) {
         if let Entry::Vacant(entry) = self.loaded_chunks.entry(chunk_id) {
-            log::debug!("Chunk {:?} load was requested", chunk_id);
-            entry.insert(
-                commands
-                    .spawn_empty()
-                    .insert(chunk_id)
-                    .insert(PersistedVersion::new(0))
-                    .id(),
-            );
-        }
+            let entity = commands.spawn_empty().insert(chunk_id).id();
+            entry.insert(entity);
+            log::debug!("Chunk {:?} load was requested with entity {:?}", chunk_id, entity);
 
-        self.load_requests.push_back((chunk_id, self.config.max_retry_count()));
+            self.load_requests.push_back((chunk_id, self.config.max_retry_count()));
+        }
     }
 
     pub fn refresh_chunk(&mut self, chunk_id: ChunkId) {
@@ -155,14 +150,14 @@ where
         log::debug!("Processing load request for chunk {:?}", chunk_id);
 
         if loading_tasks.contains_key(&chunk_id) {
-            log::info!("Chunk {:?} is loading, differ the task", chunk_id);
+            log::info!("Chunk {:?} is already loading, differ the task", chunk_id);
             load_requests.push_back((chunk_id, retry_count));
             continue;
         }
-        let chunk_version = match loaded_chunks.get(&chunk_id).and_then(|entity| chunks.get(*entity).ok()) {
-            Some(chunk) => chunk.version,
+        let chunk_version = match loaded_chunks.get(&chunk_id) {
+            Some(entity) => chunks.get(*entity).ok().map(|v| v.version),
             None => {
-                log::warn!("Chunk {:?} is requested, but was removed from the tile map", chunk_id);
+                log::warn!("Chunk {:?} is not loaded, ignoring task", chunk_id);
                 continue;
             }
         };
@@ -170,9 +165,9 @@ where
         let config = config.clone();
         let factory = factory.clone();
 
-        let task = if chunk_version > 0 {
+        let task = if let Some(chunk_version) = chunk_version {
             log::info!(
-                "Chunk {:?} is already loaded with version {}, requesting updates",
+                "Chunk {:?} is already loaded at version {}, checking for updates",
                 chunk_id,
                 chunk_version
             );
@@ -183,18 +178,38 @@ where
                     chunk_version
                 );
                 match factory.read_updates(&config, chunk_id, chunk_version).await {
-                    Ok(updates) => TaskResult::Commands(updates),
-                    Err(TileMapError::ChunkNotFound) => TaskResult::Empty,
+                    Ok(updates) => {
+                        log::debug!(
+                            "Chunk {:?} updates loaded successfully (count: {})",
+                            chunk_id,
+                            updates.len()
+                        );
+                        TaskResult::Commands(updates)
+                    }
+                    Err(TileMapError::ChunkNotFound) => {
+                        log::debug!("Chunk {:?} does not exists", chunk_id);
+                        TaskResult::Empty
+                    }
                     #[cfg(feature = "persisted")]
-                    Err(_) => TaskResult::Retry(retry_count.saturating_sub(1)),
+                    Err(err) => {
+                        log::debug!("Chunk {:?} load failed with {:?}", chunk_id, err);
+                        TaskResult::Retry(retry_count.saturating_sub(1))
+                    }
                 }
             })
         } else {
+            log::info!("Chunk {:?} is at initial version, performing full load", chunk_id);
             task_pool.spawn(async move {
-                log::debug!("Start loading chunk {:?} ", chunk_id);
+                log::debug!("Start loading chunk {:?}", chunk_id);
                 match factory.read(&config, chunk_id).await {
-                    Ok((chunk, version)) => TaskResult::Chunk(PersistedChunk::<C>::new(chunk), version),
-                    Err(_) => TaskResult::Retry(retry_count.saturating_sub(1)),
+                    Ok((chunk, version)) => {
+                        log::debug!("Chunk {:?} loaded successfully", chunk_id);
+                        TaskResult::Chunk(PersistedChunk::<C>::new(chunk), version)
+                    }
+                    Err(err) => {
+                        log::debug!("Chunk {:?} load failed with {:?}", chunk_id, err);
+                        TaskResult::Retry(retry_count.saturating_sub(1))
+                    }
                 }
             })
         };
@@ -232,14 +247,14 @@ pub fn complete_chunk_load_system<C>(
         if let Some(task_result) = status {
             match task_result {
                 TaskResult::Chunk(chunk, version) => {
-                    log::debug!("Chunk {:?} loaded successfully", chunk_id);
+                    log::debug!("Chunk {:?} load task completed successfully", chunk_id);
                     commands
                         .entity(*entity)
                         .insert(chunk)
                         .insert(PersistedVersion::new(version));
                 }
                 TaskResult::Commands(cmds) => {
-                    log::debug!("Chunk {:?} updates loaded successfully", chunk_id);
+                    log::debug!("Chunk {:?} updates task completed successfully", chunk_id);
                     if let Ok(mut chunk_command) = chunk_commands.get_mut(*entity) {
                         chunk_command.extend(cmds);
                     } else {
@@ -267,17 +282,6 @@ pub fn complete_chunk_load_system<C>(
         retain
     });
 }
-
-/*pub fn process_refresh_system<C>(mut tile_map: ResMut<Map<C>>, mut local: Local<HashSet<ChunkId>>)
-where
-    C: MapConfig,
-{
-    mem::swap(&mut *tile_map.refresh_channel.lock().unwrap(), &mut local);
-
-    for chunk_id in local.drain() {
-        tile_map.refresh_chunk(chunk_id);
-    }
-}*/
 
 pub fn process_commands_system<C>(
     mut chunks: Query<(

@@ -1,19 +1,23 @@
+use std::ops::AddAssign;
+
 use crate::map2::{ChunkOperation, ChunkStore, Tile};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 #[serde(bound = "T: Serialize + DeserializeOwned")]
 #[serde(rename_all = "camelCase")]
-pub struct Fill<T>
+pub struct AddTile<T>
 where
-    T: Tile + Serialize + DeserializeOwned + Clone,
+    T: Tile + Serialize + DeserializeOwned + AddAssign,
 {
+    pub x: usize,
+    pub y: usize,
     pub tile: T,
 }
 
-impl<T> ChunkOperation for Fill<T>
+impl<T> ChunkOperation for AddTile<T>
 where
-    T: Tile + Serialize + DeserializeOwned + Clone,
+    T: Tile + Serialize + DeserializeOwned + AddAssign,
 {
     type Tile = T;
 
@@ -21,8 +25,6 @@ where
     where
         C: ChunkStore<Tile = T>,
     {
-        for (_, _, tile) in chunk.iter_mut() {
-            *tile = self.tile.clone();
-        }
+        (*chunk.get_mut(self.x, self.y)) += self.tile;
     }
 }

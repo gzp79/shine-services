@@ -45,6 +45,32 @@ pg_query!( StoreEvent =>
     "#
 );
 
+pg_query!( StoreNextEvent =>
+    in = aggregate: &str, event_type: &str, data: &str;
+    out = version: i32;
+    sql = r#"
+        WITH updated_stream AS (
+            UPDATE es_heads_%table%
+            SET version = version + 1
+            WHERE aggregate_id = $1
+            RETURNING version
+        ), created_stream AS (
+            INSERT INTO es_heads_%table% (aggregate_id, version)
+            SELECT $1, 1
+            WHERE NOT EXISTS (SELECT 1 FROM updated_stream)
+            RETURNING version
+        ), final_version AS (
+            SELECT version FROM updated_stream
+            UNION ALL
+            SELECT version FROM created_stream
+        )
+        INSERT INTO es_events_%table% (aggregate_id, version, event_type, data)
+        SELECT $1, version, $2, $3::jsonb
+        FROM final_version
+        RETURNING version;
+    "#
+);
+
 #[derive(FromRow)]
 struct EventRow {
     version: i32,
@@ -82,6 +108,7 @@ where
     get_version: GetStreamVersion,
     update_version: UpdateStreamVersion,
     store_event: StoreEvent,
+    store_next_event: StoreNextEvent,
     get_event: GetEvent,
 
     _ph: PhantomData<fn(&E)>,
@@ -98,6 +125,7 @@ where
             get_version: self.get_version,
             update_version: self.update_version,
             store_event: self.store_event,
+            store_next_event: self.store_next_event,
             get_event: self.get_event,
             _ph: self._ph,
         }
@@ -124,6 +152,9 @@ where
                 .await
                 .map_err(DBError::from)?,
             store_event: StoreEvent::new_with_process(client, table_name_process)
+                .await
+                .map_err(DBError::from)?,
+            store_next_event: StoreNextEvent::new_with_process(client, table_name_process)
                 .await
                 .map_err(DBError::from)?,
             get_event: GetEvent::new_with_process(client, table_name_process)
@@ -194,7 +225,7 @@ where
     async fn store_events(
         &mut self,
         aggregate_id: &Self::AggregateId,
-        expected_version: Option<usize>,
+        expected_version: usize,
         event: &[Self::Event],
     ) -> Result<usize, EventStoreError> {
         let transaction = self
@@ -214,7 +245,7 @@ where
             None => return Err(EventStoreError::NotFound),
         };
 
-        if old_version != expected_version.unwrap_or(old_version) {
+        if old_version != expected_version {
             transaction.rollback().await.map_err(DBError::from)?;
             return Err(EventStoreError::Conflict);
         }
@@ -254,6 +285,46 @@ where
         } else {
             transaction.commit().await.map_err(DBError::from)?;
             Ok(new_version)
+        }
+    }
+
+    async fn unchecked_store_events(
+        &mut self,
+        aggregate_id: &Self::AggregateId,
+        event: &[Self::Event],
+    ) -> Result<usize, EventStoreError> {
+        let mut version = None;
+        for event in event.iter() {
+            let data = serde_json::to_string(event).map_err(EventStoreError::EventSerialization)?;
+            let new_version: i32 = self
+                .stmts_store
+                .store_next_event
+                .query_opt(
+                    &self.client,
+                    &aggregate_id.to_string().as_str(),
+                    &event.event_type(),
+                    &data.as_str(),
+                )
+                .await
+                .map_err(DBError::from)?
+                .expect("Failed to store event without a DB error");
+            version = Some(new_version as usize);
+        }
+
+        if let Some(version) = version {
+            Ok(version)
+        } else {
+            log::warn!("Performance warning: store_event called without any events");
+            match self
+                .stmts_store
+                .get_version
+                .query_opt(&self.client, &aggregate_id.to_string().as_str())
+                .await
+                .map_err(DBError::from)?
+            {
+                Some(version) => Ok(version as usize),
+                None => Ok(0),
+            }
         }
     }
 

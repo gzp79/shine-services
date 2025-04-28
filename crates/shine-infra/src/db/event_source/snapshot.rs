@@ -8,7 +8,7 @@ pub trait Aggregate: 'static + Serialize + DeserializeOwned + Send + Sync {
 
     const NAME: &'static str;
 
-    fn apply(&mut self, event: &Self::Event) -> Result<(), EventStoreError>;
+    fn apply(&mut self, event: Self::Event) -> Result<(), EventStoreError>;
 }
 
 #[derive(Debug, Clone)]
@@ -62,7 +62,16 @@ where
         self.aggregate
     }
 
-    pub fn apply(&mut self, events: &[StoredEvent<A::Event>]) -> Result<(), EventStoreError> {
+    pub fn apply<I>(&mut self, events: I) -> Result<(), EventStoreError>
+    where
+        I: IntoIterator<Item = StoredEvent<A::Event>>,
+    {
+        log::debug!(
+            "Applying events to aggregate {:?} at version {}",
+            self.aggregate_id,
+            self.version
+        );
+
         for event in events {
             if event.version <= self.version {
                 continue;
@@ -70,9 +79,15 @@ where
             if event.version > self.version + 1 {
                 return Err(EventStoreError::EventOutOfOrder);
             }
-            self.aggregate.apply(&event.event)?;
+            self.aggregate.apply(event.event)?;
             self.version = event.version;
         }
+
+        log::debug!(
+            "Applied events to aggregate {:?} up to version {}",
+            self.aggregate_id,
+            self.version
+        );
 
         Ok(())
     }

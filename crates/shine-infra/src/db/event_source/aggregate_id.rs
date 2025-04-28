@@ -1,6 +1,7 @@
+use std::fmt::Debug;
 use uuid::Uuid;
 
-pub trait AggregateId: 'static + Clone + Send + Sync {
+pub trait AggregateId: 'static + Clone + Debug + Send + Sync {
     fn to_string(&self) -> String;
     fn from_string(value: String) -> Self;
 }

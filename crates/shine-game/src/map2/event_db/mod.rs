@@ -9,21 +9,25 @@
 //   2. Start tracking of the target chunk (State/2.)
 //   2. Server validates the command schema, and send rejection to the client if invalid
 //   3. Server saves the command to the event store and sends it to all clients (Client/3.)
-// Note: Commands are persisted independent if it can be applied. Stream server checks only the schema, ut not the semantics. State playbacks (Client, State flows) should
-//   skip outdated commands.
+// Note: Commands are persisted independent if it can be applied. Stream server checks only the schema, ut not the semantics.
+//   State playbacks (Client, State flows) should skip outdated commands.
 
 // State flow:
-//   1. Server listen to events (through PG Notification)
-//   2. On tracked chunks, apply the commands
+//   1. Server listen to event source events (for example through PG Notification)
+//   2. On a change on tracked chunks, apply the commands
 //   3. For every nth command create a snapshot
 
 // todo:
 //  - How to prevent multiple State instance saving the same same snapshot. Unique id will prevent it, is that enough?
 //  - Client can detect if states are drifted by comparing some hash of the state at a given version. But how should servers detect any drift
 //    to the snapshots ?
+//    A: When a new snapshot is created (similar to event listener), check the hash of the snapshot
+//      and compare to the tracked version. If the hash is different, then the snapshot is drifted, reload the aggregate from DB.
+//      But before creating the we snapshot, we should check if the snapshot is drifted even if no nfo exists about the prev snapshot.
+
 //  - Client should now when a local operation was persisted or rejected, how should the client be informed ? What could be the unique id of a (pending) operation ?
 
 mod es_chunk_id;
 //pub use self::ev_chunk_id::*;
-mod es_store_dense;
-pub use self::es_store_dense::*;
+mod es_store;
+pub use self::es_store::*;
