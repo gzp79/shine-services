@@ -1,21 +1,23 @@
 // Client flow:
 //   1. Client temporarily applies the command locally
 //   2. Client sends command to server using the store_operation
-//   3. Poll/Get new commands(events) from server
+//   3. Poll/Get new commands(events) from server (websocket)
 //   4. Client applies persisted commands locally and finalize the local update
 
-// Stream flow:
+// Stream flow (no bevy, very lightweight)
 //   1. Server receives command from client (Client/2.)
-//   2. Start tracking of the target chunk (State/2.)
-//   2. Server validates the command schema, and send rejection to the client if invalid
+//   2. Server validates the command schema and access to chunk. Send immediate rejection to the client if invalid
 //   3. Server saves the command to the event store and sends it to all clients (Client/3.)
-// Note: Commands are persisted independent if it can be applied. Stream server checks only the schema, ut not the semantics.
-//   State playbacks (Client, State flows) should skip outdated commands.
+// Note: Commands are persisted independent if it can be applied. Stream server checks only the schema, but not the semantics.
+//   State playbacks (Client, Replay flows) should skip outdated commands.
 
-// State flow:
+// Replay flow:
 //   1. Server listen to event source events (for example through PG Notification)
-//   2. On a change on tracked chunks, apply the commands
-//   3. For every nth command create a snapshot
+//   1.b Server listens to snapshot events 
+//   2. On a new event, apply the commands
+//   2.b On snapshot event, reload the chunk.
+//   3. For every nth command or in every n minutes, create a snapshot
+// Question: what chunks should it track ?
 
 // todo:
 //  - How to prevent multiple State instance saving the same same snapshot. Unique id will prevent it, is that enough?
