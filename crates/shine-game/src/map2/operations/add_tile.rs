@@ -25,6 +25,7 @@ where
     where
         C: ChunkStore<Tile = T>,
     {
+        log::trace!("AddTile: x: {}, y: {}, tile: {:?}", self.x, self.y, self.tile);
         (*chunk.get_mut(self.x, self.y)) += self.tile;
     }
 }

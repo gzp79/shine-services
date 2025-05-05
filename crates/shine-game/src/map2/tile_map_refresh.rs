@@ -7,9 +7,9 @@ use bevy::{
     platform::sync::{Arc, Mutex},
     tasks::block_on,
 };
-use std::{marker::PhantomData, mem};
+use std::{collections::HashSet, marker::PhantomData, mem};
 
-pub type UpdatedChunks = Vec<ChunkId>;
+pub type UpdatedChunks = HashSet<ChunkId>;
 
 /// Event to request chunk loading and unloading
 #[derive(Resource)]
@@ -62,7 +62,7 @@ pub fn process_map_refresh<C>(
     if !updated_chunks.is_empty() {
         log::trace!("Detected chunk updates: {:?}", updated_chunks);
     }
-    for chunk_id in updated_chunks.drain(..) {
+    for chunk_id in updated_chunks.drain() {
         tile_map.refresh_chunk(chunk_id);
     }
 }

@@ -100,6 +100,7 @@ impl PGConnection<PGRawClient> {
     pub async fn migrate(&mut self, name: &str, migrations: &[String]) -> Result<(), DBError> {
         let migrations = migrations
             .iter()
+            .inspect(|m| log::debug!("Migration: {m}"))
             .enumerate()
             .map(|(i, m)| Migration::unapplied(&format!("V{i}__{name}"), m))
             .collect::<Result<Vec<_>, _>>()?;
@@ -178,12 +179,6 @@ impl PGConnectionManager {
             prepared_statements_builder: Arc::new(RwLock::new(HashMap::default())),
             listener,
         }
-    }
-}
-
-impl Drop for PGConnectionManager {
-    fn drop(&mut self) {
-        self.listener.close();
     }
 }
 

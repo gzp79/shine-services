@@ -1,14 +1,13 @@
 use crate::map2::{
     complete_chunk_load_system, process_commands_system, process_map_events, process_map_refresh,
-    start_chunk_load_system, ChunkFactory, TileMap, TileMapConfig,
+    start_chunk_load_system, startup_map_refresh, ChunkFactory, TileMap, TileMapConfig, TileMapEvent, TileMapRefresh,
 };
 use bevy::{
     app::{App, Plugin, Startup, Update},
     ecs::schedule::IntoScheduleConfigs,
     platform::sync::Arc,
 };
-
-use super::{startup_map_refresh, TileMapEvent, TileMapRefresh};
+use std::collections::HashSet;
 
 pub struct TileMapPlugin<C>
 where
@@ -39,7 +38,7 @@ where
 {
     fn build(&self, app: &mut App) {
         app.insert_resource(TileMap::new(self.config.clone(), self.factory.clone()));
-        app.insert_resource(TileMapRefresh::<C>::new(Vec::new()));
+        app.insert_resource(TileMapRefresh::<C>::new(HashSet::new()));
         app.add_event::<TileMapEvent<C>>();
         app.add_systems(Startup, startup_map_refresh::<C>);
         app.add_systems(

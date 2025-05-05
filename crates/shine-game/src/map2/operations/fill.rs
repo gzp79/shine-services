@@ -21,6 +21,7 @@ where
     where
         C: ChunkStore<Tile = T>,
     {
+        log::trace!("Fill, tile: {:?}", self.tile);
         for (_, _, tile) in chunk.iter_mut() {
             *tile = self.tile.clone();
         }

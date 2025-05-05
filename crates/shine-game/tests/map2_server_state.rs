@@ -6,6 +6,7 @@ use bevy::{
     tasks::{AsyncComputeTaskPool, TaskPool},
     DefaultPlugins,
 };
+use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 use shine_game::map2::{
     event_db::{ESChunkDB, ESChunkFactory},
@@ -133,79 +134,92 @@ async fn test_map2_server_state() {
     app.add_plugins(DefaultPlugins)
         .add_plugins(TileMapPlugin::<U8MapConfig>::new(U8MapConfig, factory.clone()));
 
-    // start tracking chunk
-    let chunk_id_1: ChunkId = ChunkId(13, 42);
-    let tile_index_1 = (8, 8);
-    let tile_index_2 = (0, 0);
+    app.update();
 
-    app.world_mut()
-        .resource_mut::<Events<U8MapEvent>>()
-        .send(U8MapEvent::Load(chunk_id_1));
+    let rng = SystemRandom::new();
 
-    {
-        log::info!("Waiting initial chunk load...");
-        let instant = Instant::now();
-        loop {
-            app.update();
+    for _ in 0..1000 {
+        // start tracking chunk
+        let mut chunk_id_bytes = [0u8; 8];
+        rng.fill(&mut chunk_id_bytes).unwrap();
+        let chunk_id_1 = usize::from_ne_bytes(chunk_id_bytes);
 
-            let tile_map = app.world().get_resource::<TileMap<U8MapConfig>>().unwrap();
-            let stats = tile_map.statistics();
-            if stats.loading_tasks == 0 {
-                log::info!("Initial chunk load complete in {:?}", instant.elapsed());
-                break;
-            }
+        rng.fill(&mut chunk_id_bytes).unwrap();
+        let chunk_id_2 = usize::from_ne_bytes(chunk_id_bytes);
 
-            if instant.elapsed().as_secs() > 10 {
-                panic!("Timeout waiting for initial chunk load");
-            }
-        }
-    }
+        let chunk_id: ChunkId = ChunkId(chunk_id_1, chunk_id_2);
 
-    {
-        log::info!("Sending update command...");
-        factory
-            .store_operation(
-                chunk_id_1,
-                operations::AddTile {
-                    x: tile_index_2.0,
-                    y: tile_index_2.1,
-                    tile: 1,
-                },
-            )
-            .await
-            .unwrap();
-        factory
-            .store_operation(
-                chunk_id_1,
-                operations::SetTile {
-                    x: tile_index_1.0,
-                    y: tile_index_2.1,
-                    tile: 1,
-                },
-            )
-            .await
-            .unwrap();
-    }
+        let tile_index = (8, 8);
+        let mut value;
 
-    {
-        log::info!("Waiting chunk update ...");
-        let instant = Instant::now();
-        loop {
-            app.update();
+        app.world_mut()
+            .resource_mut::<Events<U8MapEvent>>()
+            .send(U8MapEvent::Load(chunk_id));
 
-            let tile_map = app.world().get_resource::<TileMap<U8MapConfig>>().unwrap();
-            let entity = tile_map.get_chunk_entity(chunk_id_1).unwrap();
-            let chunk = app.world().entity(entity).get::<PersistedChunk<U8MapConfig>>().unwrap();
+        {
+            log::info!("Waiting initial chunk load...");
+            let instant = Instant::now();
+            loop {
+                app.update();
 
-            if chunk.get(tile_index_1.0, tile_index_1.1) == &1 {
-                log::info!("Update count: {}", chunk.get(tile_index_2.0, tile_index_2.1));
-                log::info!("Chunk update completed in {:?}", instant.elapsed());
-                break;
-            }
+                let tile_map = app.world().get_resource::<TileMap<U8MapConfig>>().unwrap();
+                let stats = tile_map.statistics();
+                if stats.loading_tasks == 0 {
+                    log::info!("Initial chunk load complete in {:?}", instant.elapsed());
 
-            if instant.elapsed().as_secs() > 10 {
-                panic!("Timeout waiting for chunk update");
+                    let tile_map = app.world().get_resource::<TileMap<U8MapConfig>>().unwrap();
+                    let entity = tile_map.get_chunk_entity(chunk_id).unwrap();
+                    let chunk = app.world().entity(entity).get::<PersistedChunk<U8MapConfig>>().unwrap();
+
+                    value = *chunk.get(tile_index.0, tile_index.1);
+                    log::info!("Chunk value {}", value);
+                    value = if value == 255 { 1 } else { value + 1 };
+                    break;
+                }
+
+                if instant.elapsed().as_secs() > 10 {
+                    panic!("Timeout waiting for initial chunk load");
+                }
             }
         }
+
+        for _ in 0..10 {
+            log::info!("Sending update command {}...", value);
+            let instant = Instant::now();
+
+            factory
+                .store_operation(
+                    chunk_id,
+                    operations::SetTile {
+                        x: tile_index.0,
+                        y: tile_index.1,
+                        tile: value,
+                    },
+                )
+                .await
+                .unwrap();
+            log::info!("Chunk operation store completed in {:?}", instant.elapsed());
+
+            log::info!("Waiting chunk update ...");
+            loop {
+                app.update();
+
+                let tile_map = app.world().get_resource::<TileMap<U8MapConfig>>().unwrap();
+                let entity = tile_map.get_chunk_entity(chunk_id).unwrap();
+                let chunk = app.world().entity(entity).get::<PersistedChunk<U8MapConfig>>().unwrap();
+
+                if chunk.get(tile_index.0, tile_index.1) == &value {
+                    log::info!("Chunk update completed in {:?}", instant.elapsed());
+                    value = if value == 255 { 1 } else { value + 1 };
+                    break;
+                }
+
+                if instant.elapsed().as_secs() > 10 {
+                    panic!("Timeout waiting for chunk update");
+                }
+            }
+        }
+
+        log::info!("\n\n");
     }
 }

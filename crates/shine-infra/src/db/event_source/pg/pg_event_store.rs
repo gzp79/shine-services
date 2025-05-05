@@ -216,7 +216,7 @@ where
             .map_err(DBError::from)?
             != 1
         {
-            Err(EventStoreError::NotFound)
+            Err(EventStoreError::AggregateNotFound)
         } else {
             Ok(())
         }
@@ -242,7 +242,7 @@ where
             .map_err(DBError::from)?
         {
             Some(version) => version as usize,
-            None => return Err(EventStoreError::NotFound),
+            None => return Err(EventStoreError::AggregateNotFound),
         };
 
         if old_version != expected_version {
@@ -340,7 +340,7 @@ where
         //todo: checking has_stream and getting events are not atomic, it should be improved
 
         if !self.has_stream(aggregate_id).await? {
-            return Err(EventStoreError::NotFound);
+            return Err(EventStoreError::AggregateNotFound);
         }
 
         let events = self

@@ -1,4 +1,6 @@
-pub trait Tile: 'static + Default + Send + Sync {}
+use std::fmt::Debug;
+
+pub trait Tile: 'static + Default + Debug + Send + Sync {}
 
 impl Tile for u8 {}
 impl Tile for u16 {}
@@ -9,6 +11,7 @@ impl Tile for i16 {}
 impl Tile for i32 {}
 impl Tile for i64 {}
 
+#[derive(Debug)]
 pub struct VersionedTile<T>
 where
     T: Tile,

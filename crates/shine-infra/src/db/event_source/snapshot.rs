@@ -16,9 +16,10 @@ pub struct Snapshot<A>
 where
     A: Aggregate,
 {
-    aggregate_id: A::AggregateId,
-    version: usize,
-    aggregate: A,
+    pub aggregate_id: A::AggregateId,
+    pub start_version: usize,
+    pub version: usize,
+    pub aggregate: A,
 }
 
 impl<A> Snapshot<A>
@@ -31,31 +32,26 @@ where
     {
         Self {
             aggregate_id,
+            start_version: 0,
             version: 0,
             aggregate: default(),
         }
     }
 
-    pub fn new_from_data(aggregate_id: A::AggregateId, version: usize, data: &str) -> Result<Self, EventStoreError> {
+    pub fn from_json(
+        aggregate_id: A::AggregateId,
+        start_version: usize,
+        version: usize,
+        data: &str,
+    ) -> Result<Self, EventStoreError> {
         let aggregate = serde_json::from_str(data).map_err(EventStoreError::EventSerialization)?;
 
         Ok(Self {
             aggregate_id,
+            start_version,
             version,
             aggregate,
         })
-    }
-
-    pub fn version(&self) -> usize {
-        self.version
-    }
-
-    pub fn id(&self) -> &A::AggregateId {
-        &self.aggregate_id
-    }
-
-    pub fn aggregate(&self) -> &A {
-        &self.aggregate
     }
 
     pub fn into_aggregate(self) -> A {
@@ -107,16 +103,34 @@ pub trait SnapshotStore {
         G: Aggregate<Event = Self::Event, AggregateId = Self::AggregateId>,
         D: FnOnce() -> G + Send + Sync + 'static;
 
-    /// Get the last stored aggregate
+    /// Get the stored aggregate that is not older than the given version
+    /// If the version is not found, it will return the last snapshot.
     fn get_snapshot<G>(
         &mut self,
         aggregate_id: &Self::AggregateId,
+        version: Option<usize>,
     ) -> impl Future<Output = Result<Option<Snapshot<G>>, EventStoreError>> + Send
     where
         G: Aggregate<Event = Self::Event, AggregateId = Self::AggregateId>;
 
-    /// Store a new snapshot for an aggregate
-    fn store_snapshot<G>(&mut self, snapshot: &Snapshot<G>) -> impl Future<Output = Result<(), EventStoreError>> + Send
+    /// Store a new snapshot for an aggregate derived from the given snapshot.
+    /// A snapshot may have just a single parent and each but first snapshot must have a parent. That is the snapshots can be chained int a single line using the parent version.
+    fn store_snapshot<G>(
+        &mut self,
+        aggregate_id: &Self::AggregateId,
+        start_version: usize,
+        version: usize,
+        aggregate: &G,
+    ) -> impl Future<Output = Result<(), EventStoreError>> + Send
+    where
+        G: Aggregate<Event = Self::Event, AggregateId = Self::AggregateId>;
+
+    /// Delete the snapshots older than the given version.
+    fn prune_snapshot<G>(
+        &mut self,
+        aggregate_id: &Self::AggregateId,
+        version: usize,
+    ) -> impl Future<Output = Result<(), EventStoreError>> + Send
     where
         G: Aggregate<Event = Self::Event, AggregateId = Self::AggregateId>;
 }

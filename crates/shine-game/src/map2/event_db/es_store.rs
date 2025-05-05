@@ -103,7 +103,7 @@ where
                 let chunk = aggregate.into_aggregate().into_chunk();
                 Ok((chunk, version))
             }
-            Err(EventStoreError::NotFound) => Ok((Self::create_chunk(size).into_chunk(), 0)),
+            Err(EventStoreError::AggregateNotFound) => Ok((Self::create_chunk(size).into_chunk(), 0)),
             Err(err) => Err(err.into()),
         }
     }
@@ -123,7 +123,7 @@ where
                     operation: stored_event.event,
                 })
                 .collect::<Vec<_>>()),
-            Err(EventStoreError::NotFound) => Err(TileMapError::ChunkNotFound),
+            Err(EventStoreError::AggregateNotFound) => Err(TileMapError::ChunkNotFound),
             Err(err) => Err(err.into()),
         }
     }
@@ -131,7 +131,6 @@ where
     pub async fn listen_changes(&self, _config: &C, queue: Arc<Mutex<UpdatedChunks>>) -> Result<(), TileMapError> {
         self.event_db
             .listen_to_stream_updates(move |notification| {
-                log::trace!("Received event notification: {:?}", notification);
                 let chunk_id = match notification {
                     EventNotification::Updated { aggregate_id, .. } => aggregate_id,
                     EventNotification::Deleted { aggregate_id } => aggregate_id,
@@ -139,7 +138,9 @@ where
                 };
                 {
                     let mut queue = queue.lock().unwrap();
-                    queue.push(chunk_id);
+                    if queue.insert(chunk_id) {
+                        log::trace!("Chunk {:?} was updated", chunk_id);
+                    }
                 }
             })
             .await?;
