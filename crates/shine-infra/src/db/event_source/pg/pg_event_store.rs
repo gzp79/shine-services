@@ -33,8 +33,10 @@ pg_query!( GetStreamVersion =>
 
 pg_query!( UpdateStreamVersion =>
     in = aggregate:&str, old_version: i32, new_version: i32;
+    out = version: i32;
     sql = r#"
         UPDATE es_heads_%table% SET version = $3 WHERE aggregate_id = $1 AND version = $2
+        RETURNING version
     "#
 );
 
@@ -49,24 +51,16 @@ pg_query!( StoreNextEvent =>
     in = aggregate: &str, event_type: &str, data: &str;
     out = version: i32;
     sql = r#"
-        WITH updated_stream AS (
-            UPDATE es_heads_%table%
-            SET version = version + 1
-            WHERE aggregate_id = $1
-            RETURNING version
-        ), created_stream AS (
+        WITH upsert_stream AS (
             INSERT INTO es_heads_%table% (aggregate_id, version)
-            SELECT $1, 1
-            WHERE NOT EXISTS (SELECT 1 FROM updated_stream)
+            VALUES ($1, 1)
+            ON CONFLICT (aggregate_id) DO UPDATE
+            SET version = es_heads_test.version + 1
             RETURNING version
-        ), final_version AS (
-            SELECT version FROM updated_stream
-            UNION ALL
-            SELECT version FROM created_stream
         )
         INSERT INTO es_events_%table% (aggregate_id, version, event_type, data)
         SELECT $1, version, $2, $3::jsonb
-        FROM final_version
+        FROM upsert_stream
         RETURNING version;
     "#
 );
@@ -194,7 +188,7 @@ where
         }
     }
 
-    async fn has_stream(&mut self, aggregate_id: &Self::AggregateId) -> Result<bool, EventStoreError> {
+    async fn get_stream_version(&mut self, aggregate_id: &Self::AggregateId) -> Result<Option<usize>, EventStoreError> {
         match self
             .stmts_store
             .get_version
@@ -202,8 +196,8 @@ where
             .await
             .map_err(DBError::from)?
         {
-            Some(_) => Ok(true),
-            None => Ok(false),
+            Some(v) => Ok(Some(v as usize)),
+            None => Ok(None),
         }
     }
 
@@ -230,62 +224,74 @@ where
     ) -> Result<usize, EventStoreError> {
         let transaction = self
             .client
-            .transaction(Some(IsolationLevel::RepeatableRead))
+            // read_committed isolation level is used
+            //  - only committed changes should be used
+            //  - no need for more strict level as the version check ensures failure on concurrent updates
+            .transaction(Some(IsolationLevel::ReadCommitted))
             .await
             .map_err(DBError::from)?;
 
-        let old_version: usize = match self
+        // Update the header version with a check on the expected version and insert all the events.
+
+        let new_version = expected_version + event.len();
+
+        match self
             .stmts_store
-            .get_version
-            .query_opt(&transaction, &aggregate_id.to_string().as_str())
+            .update_version
+            .query_opt(
+                &transaction,
+                &aggregate_id.to_string().as_str(),
+                &(expected_version as i32),
+                &(new_version as i32),
+            )
             .await
-            .map_err(DBError::from)?
         {
-            Some(version) => version as usize,
-            None => return Err(EventStoreError::AggregateNotFound),
-        };
-
-        if old_version != expected_version {
-            transaction.rollback().await.map_err(DBError::from)?;
-            return Err(EventStoreError::Conflict);
+            Ok(Some(version)) => {
+                assert_eq!(version, new_version as i32);
+            }
+            Ok(None) => {
+                transaction.rollback().await.map_err(DBError::from)?;
+                // Check of the stream exists and return an error accordingly
+                return match self.get_stream_version(aggregate_id).await? {
+                    Some(_) => Err(EventStoreError::Conflict),
+                    None => Err(EventStoreError::AggregateNotFound),
+                };
+            }
+            Err(err) => {
+                transaction.rollback().await.map_err(DBError::from)?;
+                return Err(DBError::from(err).into());
+            }
         }
-
-        let new_version = old_version + event.len();
 
         for event in event.iter().enumerate() {
             let data = serde_json::to_string(event.1).map_err(EventStoreError::EventSerialization)?;
-            self.stmts_store
+            if let Err(err) = self
+                .stmts_store
                 .store_event
                 .execute(
                     &transaction,
                     &aggregate_id.to_string().as_str(),
-                    &((old_version + event.0 + 1) as i32),
+                    &((expected_version + event.0 + 1) as i32),
                     &event.1.event_type(),
                     &data.as_str(),
                 )
                 .await
-                .map_err(DBError::from)?;
+            {
+                if err.is_constraint(
+                    &format!("es_events_{}", <E as Event>::NAME),
+                    &format!("es_events_{}_pkey", <E as Event>::NAME),
+                ) {
+                    transaction.rollback().await.map_err(DBError::from)?;
+                    return Err(EventStoreError::Conflict);
+                } else {
+                    transaction.rollback().await.map_err(DBError::from)?;
+                    return Err(DBError::from(err).into());
+                }
+            }
         }
 
-        if self
-            .stmts_store
-            .update_version
-            .execute(
-                &transaction,
-                &aggregate_id.to_string().as_str(),
-                &(old_version as i32),
-                &(new_version as i32),
-            )
-            .await
-            .map_err(DBError::from)?
-            != 1
-        {
-            transaction.rollback().await.map_err(DBError::from)?;
-            Err(EventStoreError::Conflict)
-        } else {
-            transaction.commit().await.map_err(DBError::from)?;
-            Ok(new_version)
-        }
+        transaction.commit().await.map_err(DBError::from)?;
+        Ok(new_version)
     }
 
     async fn unchecked_store_events(
@@ -339,7 +345,7 @@ where
 
         //todo: checking has_stream and getting events are not atomic, it should be improved
 
-        if !self.has_stream(aggregate_id).await? {
+        if self.get_stream_version(aggregate_id).await?.is_none() {
             return Err(EventStoreError::AggregateNotFound);
         }
 

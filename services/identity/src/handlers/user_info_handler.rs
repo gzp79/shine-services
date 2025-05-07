@@ -64,11 +64,7 @@ where
             None => return Ok(None),
         };
 
-        Ok(Some(UserInfo {
-            identity,
-            roles,
-            is_linked,
-        }))
+        Ok(Some(UserInfo { identity, roles, is_linked }))
     }
 
     pub async fn create_user_session(

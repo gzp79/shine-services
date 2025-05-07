@@ -80,9 +80,7 @@ where
 {
     pub async fn new(pg_pool: &PGConnectionPool) -> Result<Self, EventStoreError> {
         let event_db = ESChunkDB::<C>::new(pg_pool).await?;
-        Ok(Self {
-            event_db: Arc::new(event_db),
-        })
+        Ok(Self { event_db: Arc::new(event_db) })
     }
 
     fn create_chunk(size: (usize, usize)) -> ESChunkAggregate<C> {

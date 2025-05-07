@@ -92,6 +92,7 @@ where
                 match self.operation.as_str() {
                     "create" => Ok(EventNotification::Created {
                         aggregate_id: A::from_string(self.aggregate_id),
+                        version: self.version.unwrap_or(0),
                     }),
                     "update" => Ok(EventNotification::Updated {
                         aggregate_id: A::from_string(self.aggregate_id),

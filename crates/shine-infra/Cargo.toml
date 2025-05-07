@@ -115,3 +115,4 @@ shine-infra-macros = { workspace = true }
 
 [dev-dependencies]
 shine-test = { workspace = true }
+itertools = { workspace = true }

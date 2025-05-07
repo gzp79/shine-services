@@ -25,4 +25,14 @@ pub fn setup_test() {
         static INIT: Once = Once::new();
         INIT.call_once(|| wasm_logger::init(::wasm_logger::Config::new(log::Level::Trace)));
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let orig_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            // invoke the default handler and exit the process
+            orig_hook(panic_info);
+            std::process::exit(-1);
+        }));
+    }
 }

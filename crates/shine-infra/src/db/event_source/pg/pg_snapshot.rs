@@ -130,7 +130,7 @@ where
     {
         //todo: checking has_stream and getting events are not atomic, it should be improved
 
-        if !self.has_stream(aggregate_id).await? {
+        if self.get_stream_version(aggregate_id).await?.is_none() {
             return Err(EventStoreError::AggregateNotFound);
         }
 

@@ -4855,6 +4855,7 @@ dependencies = [
  "futures-channel",
  "harsh",
  "hex",
+ "itertools 0.14.0",
  "log",
  "opentelemetry",
  "opentelemetry-application-insights",

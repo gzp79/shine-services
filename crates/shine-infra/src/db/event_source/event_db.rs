@@ -9,14 +9,27 @@ where
 {
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EventNotification<A>
 where
     A: AggregateId,
 {
-    Created { aggregate_id: A },
+    Created { aggregate_id: A, version: usize },
     Updated { aggregate_id: A, version: usize },
     Deleted { aggregate_id: A },
+}
+
+impl<A> EventNotification<A>
+where
+    A: AggregateId,
+{
+    pub fn aggregate_id(&self) -> &A {
+        match self {
+            EventNotification::Created { aggregate_id, .. } => aggregate_id,
+            EventNotification::Updated { aggregate_id, .. } => aggregate_id,
+            EventNotification::Deleted { aggregate_id } => aggregate_id,
+        }
+    }
 }
 
 pub trait EventDb<E, A>: 'static + Send + Sync

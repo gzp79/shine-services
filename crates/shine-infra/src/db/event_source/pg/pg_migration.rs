@@ -19,7 +19,8 @@ BEGIN
             'es_notification_{aggregate}',
             json_build_object(
                 'operation', 'create',
-                'aggregate_id', NEW.aggregate_id
+                'aggregate_id', NEW.aggregate_id,
+                'version', NEW.version
             )::text );
         RETURN NEW;
     ELSIF (TG_OP = 'UPDATE') THEN

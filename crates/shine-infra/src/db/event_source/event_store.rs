@@ -25,19 +25,19 @@ pub trait EventStore {
     /// If the aggregate already exists, the operation will fail with a Conflict error.
     fn create_stream(
         &mut self,
-        aggregate: &Self::AggregateId,
+        aggregate_id: &Self::AggregateId,
     ) -> impl Future<Output = Result<(), EventStoreError>> + Send;
 
-    /// Return if a stream exists
-    fn has_stream(
+    /// Get the current version of the given stream.
+    fn get_stream_version(
         &mut self,
-        aggregate: &Self::AggregateId,
-    ) -> impl Future<Output = Result<bool, EventStoreError>> + Send;
+        aggregate_id: &Self::AggregateId,
+    ) -> impl Future<Output = Result<Option<usize>, EventStoreError>> + Send;
 
     /// Delete a stream with all its events and snapshots.    
     fn delete_stream(
         &mut self,
-        aggregate: &Self::AggregateId,
+        aggregate_id: &Self::AggregateId,
     ) -> impl Future<Output = Result<(), EventStoreError>> + Send;
 
     /// Store events for an aggregate and return the new version.
@@ -57,7 +57,7 @@ pub trait EventStore {
         event: &[Self::Event],
     ) -> impl Future<Output = Result<usize, EventStoreError>> + Send;
 
-    /// Get a range of events for an aggregate
+    /// Get the events in the closed range for the given aggregate.
     fn get_events(
         &mut self,
         aggregate_id: &Self::AggregateId,

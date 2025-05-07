@@ -25,10 +25,7 @@ where
     T: Tile,
 {
     fn default() -> Self {
-        Self {
-            version: 0,
-            tile: T::default(),
-        }
+        Self { version: 0, tile: T::default() }
     }
 }
 

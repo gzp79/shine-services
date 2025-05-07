@@ -1,18 +1,18 @@
+use itertools::assert_equal;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use shine_infra::db::{
     self,
-    event_source::{pg::PgEventDb, Aggregate, Event, EventDb, EventStore, EventStoreError, SnapshotStore},
+    event_source::{
+        pg::PgEventDb, Aggregate, Event, EventDb, EventNotification, EventStore, EventStoreError, SnapshotStore,
+    },
     DBError, PGConnectionPool,
 };
 use shine_test::test;
 use std::{
-    collections::HashSet,
-    env, panic, process,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    env, iter,
+    ops::Deref,
+    sync::{atomic::AtomicUsize, Arc},
 };
 use tokio::sync::{Barrier, Mutex, OnceCell};
 use uuid::Uuid;
@@ -29,8 +29,8 @@ pub async fn create_pg_pool(cns: &str) -> Result<PGConnectionPool, DBError> {
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type")]
 pub enum TestEvent {
-    TestEvent1 { data: String },
-    TestEvent2 { aa: usize },
+    TestEvent1 { str: String },
+    TestEvent2 { num: usize },
 }
 
 impl Event for TestEvent {
@@ -47,15 +47,15 @@ impl Event for TestEvent {
 #[derive(Default, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TestAggregate {
-    e1: String,
-    aa: usize,
+    str_sum: String,
+    num_sum: usize,
 }
 
 impl TestAggregate {
     pub fn new(a: usize) -> Self {
         Self {
-            e1: format!("aa_{a}"),
-            aa: a,
+            str_sum: format!("sum_{a}"),
+            num_sum: a,
         }
     }
 }
@@ -68,11 +68,11 @@ impl Aggregate for TestAggregate {
 
     fn apply(&mut self, event: TestEvent) -> Result<(), EventStoreError> {
         match event {
-            TestEvent::TestEvent1 { data } => {
-                self.e1 += &data;
+            TestEvent::TestEvent1 { str } => {
+                self.str_sum += &str;
             }
-            TestEvent::TestEvent2 { aa } => {
-                self.aa = aa;
+            TestEvent::TestEvent2 { num } => {
+                self.num_sum += num;
             }
         }
         Ok(())
@@ -96,7 +96,7 @@ async fn initialize(cns: &str) {
 }
 
 #[test]
-async fn test_event_store() {
+async fn test_store_events() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
         Err(_) => {
@@ -109,70 +109,152 @@ async fn test_event_store() {
     let pool = create_pg_pool(&cns).await.unwrap();
     let event_db = PgEventDb::<TestEvent, Uuid>::new(&pool).await.unwrap();
 
+    let aggregate_id = uuid::Uuid::new_v4();
+
+    let received_events = Arc::new(Mutex::new(Vec::new()));
+    {
+        let received_events = received_events.clone();
+        event_db
+            .listen_to_stream_updates(move |event| {
+                if event.aggregate_id() != &aggregate_id {
+                    return;
+                }
+
+                let received_events = received_events.clone();
+                tokio::task::block_in_place(move || {
+                    tokio::runtime::Handle::current().block_on(async move {
+                        // emulate a slow consumer
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        received_events.lock().await.push(event);
+                    })
+                });
+            })
+            .await
+            .unwrap();
+    }
+
     let mut es = event_db.create_context().await.unwrap();
 
-    let aggregate = uuid::Uuid::new_v4();
-    es.create_stream(&aggregate).await.unwrap();
+    let events = [
+        TestEvent::TestEvent1 { str: "1".into() },
+        TestEvent::TestEvent2 { num: 2 },
+        TestEvent::TestEvent1 { str: "3".to_string() },
+        TestEvent::TestEvent2 { num: 4 },
+        TestEvent::TestEvent2 { num: 5 },
+    ];
+    log::info!("Creating aggregate: {aggregate_id}...");
 
-    let e1 = TestEvent::TestEvent1 { data: "aa".to_string() };
-    let e2 = TestEvent::TestEvent2 { aa: 5 };
-    let e3 = TestEvent::TestEvent2 { aa: 12 };
-
-    match es.create_stream(&aggregate).await {
-        Err(EventStoreError::Conflict) => (),
-        err => panic!("Expected Conflict error, {err:?}"),
+    // store_events should fail if the stream does not exist
+    match es.store_events(&aggregate_id, 0, &events[0..0]).await {
+        Err(EventStoreError::AggregateNotFound) => (),
+        err => panic!("Unexpected error: {err:?}"),
     };
 
-    es.store_events(&aggregate, 0, &[e1.clone(), e2.clone()]).await.unwrap();
-
-    match es.store_events(&aggregate, 1, &[e3.clone()]).await {
+    es.create_stream(&aggregate_id).await.unwrap();
+    match es.create_stream(&aggregate_id).await {
         Err(EventStoreError::Conflict) => (),
-        err => panic!("Expected Conflict error, {err:?}"),
+        err => panic!("Unexpected error: {err:?}"),
     };
 
-    match es.store_events(&aggregate, 3, &[e3.clone()]).await {
+    // wait for the create event to be received
+    {
+        let instant = std::time::Instant::now();
+        while instant.elapsed().as_secs() < 2 && received_events.lock().await.is_empty() {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let received_events = received_events.lock().await;
+        assert_equal(
+            received_events.deref(),
+            &[EventNotification::Created { aggregate_id, version: 0 }],
+        );
+    }
+
+    let version = es.store_events(&aggregate_id, 0, &events[0..1]).await.unwrap();
+    assert_eq!(version, 1);
+
+    // wait for the update event to be received
+    {
+        let instant = std::time::Instant::now();
+        while instant.elapsed().as_secs() < 2 && received_events.lock().await.len() < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let received_events = received_events.lock().await;
+        assert_equal(
+            received_events.deref(),
+            &[
+                EventNotification::Created { aggregate_id, version: 0 },
+                EventNotification::Updated { aggregate_id, version: 1 },
+            ],
+        );
+    }
+
+    match es.store_events(&aggregate_id, 0, &events[0..0]).await {
         Err(EventStoreError::Conflict) => (),
-        err => panic!("Expected Conflict error, {err:?}"),
+        err => panic!("Unexpected error: {err:?}"),
+    };
+    match es.store_events(&aggregate_id, 0, &events[0..1]).await {
+        Err(EventStoreError::Conflict) => (),
+        err => panic!("Unexpected error: {err:?}"),
+    };
+    match es.store_events(&aggregate_id, 2, &events[0..1]).await {
+        Err(EventStoreError::Conflict) => (),
+        err => panic!("Unexpected error: {err:?}"),
     };
 
-    es.store_events(&aggregate, 2, &[e3.clone()]).await.unwrap();
+    let version = es.store_events(&aggregate_id, 1, &events[1..]).await.unwrap();
+    assert_eq!(version, 5);
 
     {
-        let events = es.get_events(&aggregate, Some(1), Some(2)).await.unwrap();
-        log::info!("events [1..2]: {:#?}", events);
-        assert_eq!(2, events.len());
-        assert_eq!(1, events[0].version);
-        assert_eq!(&e1, &events[0].event);
-        assert_eq!(2, events[1].version);
-        assert_eq!(&e2, &events[1].event);
+        let stored_events = es.get_events(&aggregate_id, Some(1), Some(2)).await.unwrap();
+        assert_equal(stored_events.iter().map(|e| e.version), 1..=2);
+        assert_equal(stored_events.iter().map(|e| &e.event), events[0..2].iter());
     }
 
     {
-        let events = es.get_events(&aggregate, None, None).await.unwrap();
-        log::info!("all events: {:#?}", events);
-        assert_eq!(3, events.len());
-        assert_eq!(1, events[0].version);
-        assert_eq!(&e1, &events[0].event);
-        assert_eq!(2, events[1].version);
-        assert_eq!(&e2, &events[1].event);
-        assert_eq!(3, events[2].version);
-        assert_eq!(&e3, &events[2].event);
+        let stored_events = es.get_events(&aggregate_id, None, None).await.unwrap();
+        assert_equal(stored_events.iter().map(|e| e.version), 1..=events.len());
+        assert_equal(stored_events.iter().map(|e| &e.event), events.iter());
     }
 
-    es.delete_stream(&aggregate).await.unwrap();
-    assert!(!es.has_stream(&aggregate).await.unwrap());
-    match es.store_events(&aggregate, 0, &[e1.clone()]).await {
+    es.delete_stream(&aggregate_id).await.unwrap();
+    assert!(es.get_stream_version(&aggregate_id).await.unwrap().is_none());
+    match es.store_events(&aggregate_id, 0, &events[0..0]).await {
         Err(EventStoreError::AggregateNotFound) => (),
         other => panic!("Expected NotFound, {other:?}"),
     }
-    match es.delete_stream(&aggregate).await {
+    match es.store_events(&aggregate_id, 0, &events[0..1]).await {
         Err(EventStoreError::AggregateNotFound) => (),
         other => panic!("Expected NotFound, {other:?}"),
+    }
+    match es.delete_stream(&aggregate_id).await {
+        Err(EventStoreError::AggregateNotFound) => (),
+        other => panic!("Expected NotFound, {other:?}"),
+    }
+
+    //give some time for events to arrive
+    let instant = std::time::Instant::now();
+    while instant.elapsed().as_secs() < 4 && received_events.lock().await.len() != 4 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    {
+        let received_events = received_events.lock().await;
+        // events are stored in batched in a transaction, thus we one event per batch
+        assert_equal(
+            received_events.deref(),
+            &[
+                // creation and first update are different operation, thus we start by 0
+                EventNotification::Created { aggregate_id, version: 0 },
+                EventNotification::Updated { aggregate_id, version: 1 },
+                EventNotification::Updated { aggregate_id, version: 5 },
+                EventNotification::Deleted { aggregate_id },
+            ],
+        );
     }
 }
 
 #[test]
-async fn test_unchecked_event_store() {
+async fn test_unchecked_store_events() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
         Err(_) => {
@@ -185,45 +267,89 @@ async fn test_unchecked_event_store() {
     let pool = create_pg_pool(&cns).await.unwrap();
     let event_db = PgEventDb::<TestEvent, Uuid>::new(&pool).await.unwrap();
 
+    let aggregate_id = uuid::Uuid::new_v4();
+
+    let received_events = Arc::new(Mutex::new(Vec::new()));
+    {
+        let received_events = received_events.clone();
+        event_db
+            .listen_to_stream_updates(move |event| {
+                if event.aggregate_id() != &aggregate_id {
+                    return;
+                }
+
+                let received_events = received_events.clone();
+                tokio::task::block_in_place(move || {
+                    tokio::runtime::Handle::current().block_on(async move {
+                        // emulate a slow consumer
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        received_events.lock().await.push(event);
+                    })
+                });
+            })
+            .await
+            .unwrap();
+    }
+
     let mut es = event_db.create_context().await.unwrap();
 
-    let aggregate = uuid::Uuid::new_v4();
-    let e1 = TestEvent::TestEvent1 { data: "aa".to_string() };
-    let e2 = TestEvent::TestEvent2 { aa: 5 };
-    let e3 = TestEvent::TestEvent2 { aa: 12 };
+    let events = [
+        TestEvent::TestEvent1 { str: "1".into() },
+        TestEvent::TestEvent2 { num: 2 },
+        TestEvent::TestEvent1 { str: "3".to_string() },
+        TestEvent::TestEvent2 { num: 4 },
+        TestEvent::TestEvent2 { num: 5 },
+    ];
+    log::info!("Creating aggregate: {aggregate_id}...");
 
-    let mut version = es.unchecked_store_events(&aggregate, &[]).await.unwrap();
+    let mut version = es.unchecked_store_events(&aggregate_id, &[]).await.unwrap();
     assert_eq!(version, 0);
 
-    version = es
-        .unchecked_store_events(&aggregate, &[e1.clone(), e2.clone()])
-        .await
-        .unwrap();
-    assert_eq!(version, 2);
-
-    version = es.unchecked_store_events(&aggregate, &[e3.clone()]).await.unwrap();
+    version = es.unchecked_store_events(&aggregate_id, &events[0..3]).await.unwrap();
     assert_eq!(version, 3);
 
-    version = es.unchecked_store_events(&aggregate, &[]).await.unwrap();
-    assert_eq!(version, 3);
+    version = es.unchecked_store_events(&aggregate_id, &events[3..]).await.unwrap();
+    assert_eq!(version, 5);
+
+    version = es.unchecked_store_events(&aggregate_id, &[]).await.unwrap();
+    assert_eq!(version, 5);
 
     {
-        let events = es.get_events(&aggregate, None, None).await.unwrap();
-        log::info!("all events: {:#?}", events);
-        assert_eq!(3, events.len());
-        assert_eq!(1, events[0].version);
-        assert_eq!(&e1, &events[0].event);
-        assert_eq!(2, events[1].version);
-        assert_eq!(&e2, &events[1].event);
-        assert_eq!(3, events[2].version);
-        assert_eq!(&e3, &events[2].event);
+        let stored_events = es.get_events(&aggregate_id, Some(1), Some(2)).await.unwrap();
+        assert_equal(stored_events.iter().map(|e| e.version), 1..=2);
+        assert_equal(stored_events.iter().map(|e| &e.event), events[0..2].iter());
     }
 
-    es.delete_stream(&aggregate).await.unwrap();
+    {
+        let stored_events = es.get_events(&aggregate_id, None, None).await.unwrap();
+        assert_equal(stored_events.iter().map(|e| e.version), 1..=events.len());
+        assert_equal(stored_events.iter().map(|e| &e.event), events.iter());
+    }
+
+    es.delete_stream(&aggregate_id).await.unwrap();
+
+    //give some time for events to arrive
+    let instant = std::time::Instant::now();
+    while instant.elapsed().as_secs() < 4 && received_events.lock().await.len() != events.len() + 2 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    {
+        let received_events = received_events.lock().await;
+        // events are stored one-by-one, thus we should get a notification for each event
+        assert_equal(
+            received_events.deref(),
+            // creation and first update is a single operation, thus we start by 1 (instead of the usual 0)
+            &iter::once(EventNotification::Created { aggregate_id, version: 1 })
+                .chain((2..=events.len()).map(|v| EventNotification::Updated { aggregate_id, version: v }))
+                .chain(iter::once(EventNotification::Deleted { aggregate_id }))
+                .collect::<Vec<_>>(),
+        );
+    }
 }
 
 #[test]
-async fn test_event_snapshots() {
+async fn test_store_snapshot() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
         _ => {
@@ -231,33 +357,26 @@ async fn test_event_snapshots() {
             return;
         }
     };
-
     initialize(&cns).await;
+
     let pool = create_pg_pool(&cns).await.unwrap();
     let event_db = PgEventDb::<TestEvent, Uuid>::new(&pool).await.unwrap();
-
-    event_db
-        .listen_to_stream_updates(|event| {
-            log::info!("Received event: {:#?}", event);
-        })
-        .await
-        .unwrap();
-
     let mut es = event_db.create_context().await.unwrap();
 
     let aggregate_id = uuid::Uuid::new_v4();
+    let events = [
+        TestEvent::TestEvent1 { str: "1".into() },
+        TestEvent::TestEvent2 { num: 2 },
+        TestEvent::TestEvent1 { str: "3".to_string() },
+        TestEvent::TestEvent2 { num: 4 },
+        TestEvent::TestEvent2 { num: 5 },
+    ];
+    log::info!("Creating aggregate: {aggregate_id}...");
+
     es.create_stream(&aggregate_id).await.unwrap();
 
-    let e1 = TestEvent::TestEvent1 { data: "aa".to_string() };
-    let e2 = TestEvent::TestEvent2 { aa: 5 };
-    let e3 = TestEvent::TestEvent2 { aa: 12 };
-    let e4 = TestEvent::TestEvent1 {
-        data: "_bb".to_string(),
-    };
+    es.unchecked_store_events(&aggregate_id, &events[0..3]).await.unwrap();
 
-    es.store_events(&aggregate_id, 0, &[e1.clone(), e2.clone()])
-        .await
-        .unwrap();
     {
         let snapshot = es.get_snapshot::<TestAggregate>(&aggregate_id, None).await.unwrap();
         assert!(snapshot.is_none());
@@ -268,20 +387,17 @@ async fn test_event_snapshots() {
             .get_aggregate::<TestAggregate, _>(&aggregate_id, Default::default)
             .await
             .unwrap();
-        log::info!("snapshot: {:#?}", snapshot.aggregate);
         assert_eq!(0, snapshot.start_version);
-        assert_eq!(2, snapshot.version);
-        assert_eq!("aa", &snapshot.aggregate.e1);
-        assert_eq!(5, snapshot.aggregate.aa);
+        assert_eq!(3, snapshot.version);
+        assert_eq!("13", &snapshot.aggregate.str_sum);
+        assert_eq!(2, snapshot.aggregate.num_sum);
 
-        es.store_snapshot(&aggregate_id, 0, 2, &snapshot.aggregate)
+        es.store_snapshot(&aggregate_id, 0, 3, &snapshot.aggregate)
             .await
             .unwrap();
     }
 
-    es.store_events(&aggregate_id, 2, &[e3.clone(), e4.clone()])
-        .await
-        .unwrap();
+    es.unchecked_store_events(&aggregate_id, &events[3..5]).await.unwrap();
 
     {
         let snapshot = es
@@ -290,9 +406,9 @@ async fn test_event_snapshots() {
             .unwrap()
             .unwrap();
         assert_eq!(0, snapshot.start_version);
-        assert_eq!(2, snapshot.version);
-        assert_eq!("aa", &snapshot.aggregate.e1);
-        assert_eq!(5, snapshot.aggregate.aa);
+        assert_eq!(3, snapshot.version);
+        assert_eq!("13", &snapshot.aggregate.str_sum);
+        assert_eq!(2, snapshot.aggregate.num_sum);
     }
 
     {
@@ -300,14 +416,38 @@ async fn test_event_snapshots() {
             .get_aggregate::<TestAggregate, _>(&aggregate_id, Default::default)
             .await
             .unwrap();
-        assert_eq!(2, snapshot.start_version);
-        assert_eq!(4, snapshot.version);
-        assert_eq!("aa_bb", snapshot.aggregate.e1);
-        assert_eq!(12, snapshot.aggregate.aa);
+        log::info!("snapshot: {:#?}", snapshot.aggregate);
+        assert_eq!(3, snapshot.start_version);
+        assert_eq!(5, snapshot.version);
+        assert_eq!("13", &snapshot.aggregate.str_sum);
+        assert_eq!(11, snapshot.aggregate.num_sum);
 
-        es.store_snapshot(&aggregate_id, 2, 4, &snapshot.aggregate)
+        es.store_snapshot(&aggregate_id, 3, 5, &snapshot.aggregate)
             .await
             .unwrap();
+    }
+
+    {
+        let snapshot = es
+            .get_snapshot::<TestAggregate>(&aggregate_id, None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(3, snapshot.start_version);
+        assert_eq!(5, snapshot.version);
+        assert_eq!("13", &snapshot.aggregate.str_sum);
+        assert_eq!(11, snapshot.aggregate.num_sum);
+    }
+
+    {
+        let snapshot = es
+            .get_aggregate::<TestAggregate, _>(&aggregate_id, Default::default)
+            .await
+            .unwrap();
+        assert_eq!(5, snapshot.start_version);
+        assert_eq!(5, snapshot.version);
+        assert_eq!("13", &snapshot.aggregate.str_sum);
+        assert_eq!(11, snapshot.aggregate.num_sum);
     }
 
     es.delete_stream(&aggregate_id).await.unwrap();
@@ -325,7 +465,7 @@ async fn test_event_snapshots() {
 }
 
 #[test]
-async fn test_snapshots_chain() {
+async fn test_snapshot_chain() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
         _ => {
@@ -334,6 +474,7 @@ async fn test_snapshots_chain() {
         }
     };
     initialize(&cns).await;
+
     let pool = create_pg_pool(&cns).await.unwrap();
     let event_db = PgEventDb::<TestEvent, Uuid>::new(&pool).await.unwrap();
 
@@ -347,9 +488,7 @@ async fn test_snapshots_chain() {
         let range = if root_id == 0 { 0..15 } else { 0..30 };
         es.unchecked_store_events(
             &aggregate_id,
-            &range
-                .map(|i| TestEvent::TestEvent1 { data: i.to_string() })
-                .collect::<Vec<_>>(),
+            &range.map(|i| TestEvent::TestEvent2 { num: i }).collect::<Vec<_>>(),
         )
         .await
         .unwrap();
@@ -358,7 +497,7 @@ async fn test_snapshots_chain() {
         //  0,   3
         //  3,   5,
         //  5,   9
-        es.store_snapshot(&aggregate_id, root_id + 0, root_id + 3, &TestAggregate::new(1))
+        es.store_snapshot(&aggregate_id, root_id, root_id + 3, &TestAggregate::new(1))
             .await
             .unwrap();
         es.store_snapshot(&aggregate_id, root_id + 3, root_id + 5, &TestAggregate::new(2))
@@ -420,6 +559,7 @@ async fn test_prune_snapshots() {
         }
     };
     initialize(&cns).await;
+
     let pool = create_pg_pool(&cns).await.unwrap();
     let event_db = Arc::new(PgEventDb::<TestEvent, Uuid>::new(&pool).await.unwrap());
     let mut es = event_db.create_context().await.unwrap();
@@ -429,9 +569,7 @@ async fn test_prune_snapshots() {
     log::info!("Storing events for aggregate: {aggregate_id}...");
     es.unchecked_store_events(
         &aggregate_id,
-        &(0..100)
-            .map(|i| TestEvent::TestEvent1 { data: i.to_string() })
-            .collect::<Vec<_>>(),
+        &(0..100).map(|i| TestEvent::TestEvent2 { num: i }).collect::<Vec<_>>(),
     )
     .await
     .unwrap();
@@ -496,14 +634,7 @@ async fn test_prune_snapshots() {
 }
 
 #[test]
-async fn test_concurrent_snapshots_operation() {
-    let orig_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |panic_info| {
-        // invoke the default handler and exit the process
-        orig_hook(panic_info);
-        process::exit(-1);
-    }));
-
+async fn test_concurrent_store_events() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
         _ => {
@@ -512,6 +643,134 @@ async fn test_concurrent_snapshots_operation() {
         }
     };
     initialize(&cns).await;
+
+    let pool = create_pg_pool(&cns).await.unwrap();
+    let event_db = Arc::new(PgEventDb::<TestEvent, Uuid>::new(&pool).await.unwrap());
+
+    let aggregate_id = uuid::Uuid::new_v4();
+    log::info!("Creating aggregate: {aggregate_id}...");
+
+    let mut es = event_db.create_context().await.unwrap();
+    es.create_stream(&aggregate_id).await.unwrap();
+
+    let num_insert = 5;
+    let num_insert_unchecked = 5;
+    let max_num = 1000;
+    let last_num = Arc::new(AtomicUsize::new(0));
+    let counts = Arc::new(Mutex::new(Vec::new()));
+    let barrier = Arc::new(Barrier::new(num_insert + num_insert_unchecked + 1)); // wait far all the insertion threads
+
+    for i in 0..num_insert {
+        let event_db = event_db.clone();
+        let last_num = last_num.clone();
+        let counts = counts.clone();
+        let barrier = barrier.clone();
+
+        tokio::spawn(async move {
+            let mut count = 0;
+            let mut retry = 0;
+            loop {
+                let num = last_num.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if num >= max_num {
+                    break;
+                }
+
+                loop {
+                    retry += 1;
+                    let mut es = event_db.create_context().await.unwrap();
+                    let version = es.get_stream_version(&aggregate_id).await.unwrap().unwrap();
+                    match es
+                        .store_events(&aggregate_id, version, &[TestEvent::TestEvent2 { num }])
+                        .await
+                    {
+                        Ok(new_version) => {
+                            log::debug!("Number {num:?} stored at version {version:?}.");
+                            assert_eq!(new_version, version + 1);
+                            break;
+                        }
+                        Err(EventStoreError::Conflict) => {
+                            log::debug!("Number {num:?} store failed, retry");
+                            tokio::time::sleep(std::time::Duration::from_micros(100)).await;
+                            continue;
+                        }
+                        Err(err) => {
+                            panic!("Error storing number {num} at version {version}: {err:?}");
+                        }
+                    };
+                }
+
+                count += 1;
+            }
+            log::info!("Insert task {i} completed with {count} insertions an {retry} retries.");
+            counts.lock().await.push(count);
+            barrier.wait().await;
+        });
+    }
+
+    for i in 0..num_insert_unchecked {
+        let event_db = event_db.clone();
+        let last_num = last_num.clone();
+        let counts = counts.clone();
+        let barrier = barrier.clone();
+
+        tokio::spawn(async move {
+            let mut count = 0;
+            loop {
+                let num = last_num.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if num >= max_num {
+                    break;
+                }
+
+                let mut es = event_db.create_context().await.unwrap();
+                es.unchecked_store_events(&aggregate_id, &[TestEvent::TestEvent2 { num }])
+                    .await
+                    .unwrap();
+
+                count += 1;
+            }
+            log::info!("Unchecked insert task {i} completed with {count} insertions.");
+            counts.lock().await.push(count);
+            barrier.wait().await;
+        });
+    }
+
+    log::info!("Waiting tasks to complete...");
+    barrier.wait().await;
+
+    let mut es = event_db.create_context().await.unwrap();
+
+    assert_eq!(counts.lock().await.iter().sum::<usize>(), max_num);
+
+    let version = es.get_stream_version(&aggregate_id).await.unwrap().unwrap();
+    assert_eq!(version, max_num);
+
+    // event may get inserted in out of order, but all version should be inserted exactly once
+    let events = es.get_events(&aggregate_id, None, None).await.unwrap();
+    let mut num_list = events
+        .into_iter()
+        .map(|e| match e.event {
+            TestEvent::TestEvent2 { num } => num,
+            _ => panic!("Unexpected event type"),
+        })
+        .collect::<Vec<_>>();
+    num_list.sort();
+    assert_equal(num_list, 0..max_num);
+
+    log::info!("Cleaning up...");
+    es.delete_stream(&aggregate_id).await.unwrap();
+}
+
+#[test]
+async fn test_concurrent_snapshots_operation() {
+    let cns = match env::var("SHINE_TEST_PG_CNS") {
+        Ok(cns) => cns,
+        _ => {
+            log::warn!("Skipping test_stored_statements");
+            return;
+        }
+    };
+    initialize(&cns).await;
+
     let pool = create_pg_pool(&cns).await.unwrap();
     let event_db = Arc::new(PgEventDb::<TestEvent, Uuid>::new(&pool).await.unwrap());
     let mut es = event_db.create_context().await.unwrap();
@@ -519,109 +778,162 @@ async fn test_concurrent_snapshots_operation() {
     es.create_stream(&aggregate_id).await.unwrap();
 
     log::info!("Storing events for aggregate: {aggregate_id}...");
+    let version_gap = 3;
     let max_version = es
         .unchecked_store_events(
             &aggregate_id,
-            &(0..100)
-                .map(|i| TestEvent::TestEvent1 { data: i.to_string() })
-                .collect::<Vec<_>>(),
+            &(0..100).map(|i| TestEvent::TestEvent2 { num: i }).collect::<Vec<_>>(),
         )
         .await
         .unwrap();
 
-    let last_insertion = Arc::new(AtomicUsize::new(0));
-    let num_insert = 3;
-    let deletes = Arc::new(Mutex::new(HashSet::new()));
-    let barrier = Arc::new(Barrier::new(num_insert)); // wait far all the insertion threads
+    #[derive(Debug)]
+    #[allow(dead_code)]
+    enum Log {
+        Insert(usize, usize, usize),
+        Inserted(usize, usize, usize),
+        Delete(usize, usize),
+        Deleted(usize, usize),
+    }
 
-    // Spawn 3 threads for inserting snapshots
-    for _ in 0..num_insert {
+    let num_insert = 3;
+    let num_delete = 2;
+    let op_log = Arc::new(Mutex::new(Vec::new()));
+    let barrier = Arc::new(Barrier::new(num_insert + num_delete + 1)); // wait far all the insertion threads
+
+    // Tasks to insert snapshots
+    for i in 0..num_insert {
         let event_db = event_db.clone();
-        let aggregate_id = aggregate_id.clone();
-        let last_insertion = last_insertion.clone();
-        let deletes = deletes.clone();
+        let op_log = op_log.clone();
         let barrier = barrier.clone();
 
         tokio::spawn(async move {
             loop {
-                let idx = last_insertion.load(Ordering::SeqCst);
+                let last_version = op_log
+                    .lock()
+                    .await
+                    .iter()
+                    .map(|d| match d {
+                        // use after log as inserting duplicate is fine, but missing a completed insertion is not
+                        Log::Inserted(_, _, v) => *v,
+                        _ => 0,
+                    })
+                    .max()
+                    .unwrap_or(0);
 
-                let start = 3 * idx;
-                let end = start + 3;
-                let data = TestAggregate::new(idx);
+                let start = last_version;
+                let version = last_version + version_gap;
+                let data = TestAggregate::new(start);
 
-                if end >= max_version {
+                if version >= max_version {
                     break;
                 }
 
                 let mut es = event_db.create_context().await.unwrap();
-                match es.store_snapshot(&aggregate_id, start, end, &data).await {
-                    Ok(_) => log::debug!("Snapshot {:?} stored.", end),
-                    Err(EventStoreError::Conflict) => log::trace!("Snapshot already stored: {:?}", end),
-                    Err(EventStoreError::InvalidSnapshotVersion(a, b)) => {
-                        log::info!(
-                            "Snapshot insertion ({},{}) is behind delete. version:{}, current_version: {}, deletes: {:?}",
-                            a,
-                            b,
-                            idx * 3,
-                            last_insertion.load(Ordering::SeqCst) * 3,
-                            deletes.lock().await
+                op_log.lock().await.push(Log::Insert(i, start, version));
+                match es.store_snapshot(&aggregate_id, start, version, &data).await {
+                    Ok(_) => log::debug!("Snapshot {:?} stored.", version),
+                    Err(EventStoreError::Conflict) => {
+                        assert!(
+                            op_log.lock().await.iter().any(|d| match d {
+                                // use before log as after event might have not been stored yet, may produce false negative
+                                Log::Insert(_, s, v) => *s == start && *v == version,
+                                _ => false,
+                            }),
+                            "Store failed for: {start},{version}\n  log: {:?}",
+                            op_log.lock().await
                         );
-                        // insertion failed as snapshot chain was trimmed at a later version
-                        assert!(deletes.lock().await.iter().any(|d| *d >= a));
                     }
-                    Err(err) => panic!(
-                        "Error storing snapshot: {err:?}, idx: {idx}, last_insertion: {:?}",
-                        last_insertion.load(Ordering::SeqCst)
-                    ),
+                    Err(EventStoreError::InvalidSnapshotVersion(_, _)) => {
+                        assert!(
+                            // use before log as after event might have not been stored yet, may produce false negative
+                            op_log.lock().await.iter().any(|d| match d {
+                                Log::Delete(_, v) => *v >= start,
+                                _ => false,
+                            }),
+                            "Store failed for: {start},{version}\n  log: {:?}",
+                            op_log.lock().await,
+                        );
+                    }
+                    Err(err) => {
+                        panic!(
+                            "Error storing snapshot {start},{version}\n  log: {:?}\n  err: {err:?}",
+                            op_log.lock().await,
+                        );
+                    }
                 };
-
-                last_insertion.store(idx + 1, Ordering::SeqCst);
+                op_log.lock().await.push(Log::Inserted(i, start, version));
                 tokio::task::yield_now().await;
             }
+            log::info!("Insert task {i} completed.");
             barrier.wait().await;
         });
     }
 
-    {
+    // Tasks to delete a random snapshots
+    for i in 0..num_delete {
         let event_db = event_db.clone();
-        let aggregate_id = aggregate_id.clone();
-        let last_insertion = last_insertion.clone();
-        let deletes = deletes.clone();
+        let op_log = op_log.clone();
         let barrier = barrier.clone();
 
         tokio::spawn(async move {
-            let mut min_snapshot = 0;
-
             loop {
-                let max_snapshot = last_insertion.load(Ordering::SeqCst) * 3;
+                let last_version = op_log
+                    .lock()
+                    .await
+                    .iter()
+                    .map(|d| match d {
+                        // use after log as duplicate delete is fine, but deleting a future (incomplete insert) version is not
+                        Log::Inserted(_, _, v) => *v,
+                        _ => 0,
+                    })
+                    .max()
+                    .unwrap_or(0);
+                let last_deletion = op_log
+                    .lock()
+                    .await
+                    .iter()
+                    .map(|d| match d {
+                        // use before log as duplicate less safer
+                        Log::Delete(_, v) => *v,
+                        _ => 0,
+                    })
+                    .max()
+                    .unwrap_or(0);
 
-                if max_snapshot > min_snapshot {
-                    let snapshot_to_delete = rand::rng().random_range(min_snapshot..max_snapshot);
-                    min_snapshot = snapshot_to_delete + 1;
+                if last_version + version_gap >= max_version {
+                    break;
+                }
+
+                if last_version > last_deletion {
+                    let snapshot_to_delete = rand::rng().random_range(last_deletion..last_version);
                     let mut es = event_db.create_context().await.unwrap();
+                    op_log.lock().await.push(Log::Delete(i, snapshot_to_delete));
                     match es
                         .prune_snapshot::<TestAggregate>(&aggregate_id, snapshot_to_delete)
                         .await
                     {
-                        Ok(_) => {
-                            deletes.lock().await.insert(snapshot_to_delete);
-                            log::debug!("Snapshot pruned at version {:?}.", snapshot_to_delete);
+                        Ok(_) => log::debug!("Snapshot pruned at version {:?}.", snapshot_to_delete),
+                        Err(err) => {
+                            panic!(
+                                "Error deleting snapshot {}\n  log: {:?}\n  err: {err:?}",
+                                snapshot_to_delete,
+                                op_log.lock().await,
+                            );
                         }
-                        Err(err) => log::debug!("Snapshot prune failed : {:?}, err {:?}", snapshot_to_delete, err),
-                    }
-                }
-
-                if max_snapshot >= max_version {
-                    break;
+                    };
+                    op_log.lock().await.push(Log::Deleted(i, snapshot_to_delete));
                 }
                 tokio::task::yield_now().await;
             }
+            log::info!("Delete task {i} completed.");
             barrier.wait().await;
         });
     }
 
+    log::info!("Waiting tasks to complete...");
     barrier.wait().await;
 
-    //es.delete_stream(&aggregate_id).await.unwrap();
+    log::info!("Cleaning up...");
+    es.delete_stream(&aggregate_id).await.unwrap();
 }

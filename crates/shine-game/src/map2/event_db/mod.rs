@@ -13,7 +13,7 @@
 
 // Replay flow:
 //   1. Server listen to event source events (for example through PG Notification)
-//   1.b Server listens to snapshot events 
+//   1.b Server listens to snapshot events
 //   2. On a new event, apply the commands
 //   2.b On snapshot event, reload the chunk.
 //   3. For every nth command or in every n minutes, create a snapshot

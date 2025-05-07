@@ -57,10 +57,7 @@ where
     S: Scope,
 {
     pub fn new(version: usize) -> Self {
-        Self {
-            version,
-            phantom: PhantomData,
-        }
+        Self { version, phantom: PhantomData }
     }
 }
 
@@ -101,10 +98,7 @@ where
     O: ChunkOperation,
 {
     pub fn new(commands: Vec<ChunkCommand<O>>) -> Self {
-        Self {
-            commands,
-            phantom: PhantomData,
-        }
+        Self { commands, phantom: PhantomData }
     }
 }
 
@@ -146,10 +140,7 @@ where
     C: ChunkStore,
 {
     pub fn new(store: C) -> Self {
-        Self {
-            store,
-            phantom: PhantomData,
-        }
+        Self { store, phantom: PhantomData }
     }
 
     pub fn new_empty(size: (usize, usize)) -> Self {

@@ -43,10 +43,7 @@ impl OtelLayer {
 
     #[must_use]
     pub fn meter(self, meter: Meter) -> Self {
-        OtelLayer {
-            meter: Some(meter),
-            ..self
-        }
+        OtelLayer { meter: Some(meter), ..self }
     }
 }
 

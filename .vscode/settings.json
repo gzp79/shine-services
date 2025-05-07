@@ -32,6 +32,7 @@
     "idempotency",
     "ipcity",
     "ipcountry",
+    "itertools",
     "jbang",
     "jbangdev",
     "jwks",

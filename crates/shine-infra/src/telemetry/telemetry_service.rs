@@ -142,9 +142,7 @@ impl TelemetryService {
         let (reload_env_filter, reload_handle) = reload::Layer::new(env_filter);
         self.reconfigure = Some(Arc::new(RwLock::new(WrapHandle {
             handle: reload_handle,
-            config: DynConfig {
-                filter: filter.to_string(),
-            },
+            config: DynConfig { filter: filter.to_string() },
         })));
         Ok(reload_env_filter)
     }
@@ -309,11 +307,7 @@ impl TelemetryService {
         };
 
         let meter = provider.meter_with_scope(scope.clone());
-        self.metrics = Some(Metrics {
-            provider,
-            collect,
-            meter,
-        });
+        self.metrics = Some(Metrics { provider, collect, meter });
         Ok(())
     }
 
