@@ -7,9 +7,10 @@ use syn::{
     parse_macro_input, Ident, ItemFn, LitStr, ReturnType,
 };
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct TestAttributes {
     pub serial: Option<LitStr>,
+    pub skip: Option<LitStr>,
 }
 
 impl TestAttributes {
@@ -19,6 +20,9 @@ impl TestAttributes {
         let parser = meta::parser(|meta| {
             if meta.path.is_ident("serial") {
                 attrs.serial = Some(meta.value()?.parse()?);
+                Ok(())
+            } else if meta.path.is_ident("skip") {
+                attrs.skip = Some(meta.value()?.parse()?);
                 Ok(())
             } else {
                 Err(meta.error("unsupported tea property"))
@@ -30,6 +34,9 @@ impl TestAttributes {
     }
 }
 
+/// An improved test macro. Supported properties
+/// - serial - ensure the test is not running in parallel with other tests.
+/// - skip - skip the test
 #[proc_macro_attribute]
 pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
     let attrs = TestAttributes::parse(attr).unwrap();
@@ -48,6 +55,9 @@ pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     if let Some(serial) = attrs.serial {
         test_decors.push(quote! { #[::shine_test::serial_test::serial(#serial)] });
+    }
+    if let Some(skip) = attrs.skip {
+        test_decors.push(quote! { #[ignore = #skip] });
     }
 
     expand_wrapper(&test_decors, &input)
@@ -71,8 +81,7 @@ fn expand_wrapper(test_decors: &[Tokens], input: &ItemFn) -> TokenStream {
     let body = &input.block;
     let test_name = &input.sig.ident;
 
-    // Note that Rust does not allow us to have a test function with
-    // #[should_panic] that has a non-unit return value.
+    // Note: Rust does not allow us to have a test function with #[should_panic] that has a non-unit return value.
     let ret = match &input.sig.output {
         ReturnType::Default => quote! {},
         ReturnType::Type(_, ty) => quote! {-> #ty},

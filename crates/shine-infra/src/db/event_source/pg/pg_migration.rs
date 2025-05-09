@@ -8,16 +8,15 @@ CREATE TABLE es_heads_{aggregate} (
     version INT NOT NULL CHECK (version >= 0)
 );
 
--- Notify about stream changes (create, update, delete)
+-- Notify about stream version changes (create, update, delete)
 CREATE OR REPLACE FUNCTION notify_es_heads_{aggregate}()
 RETURNS TRIGGER AS $$
-DECLARE
-    notification TEXT;
 BEGIN
     IF (TG_OP = 'INSERT') THEN
         PERFORM pg_notify(
             'es_notification_{aggregate}',
             json_build_object(
+                'type', 'stream',
                 'operation', 'create',
                 'aggregate_id', NEW.aggregate_id,
                 'version', NEW.version
@@ -27,6 +26,7 @@ BEGIN
         PERFORM pg_notify(
             'es_notification_{aggregate}',
             json_build_object(
+                'type', 'stream',
                 'operation', 'update',
                 'aggregate_id', NEW.aggregate_id,
                 'version', NEW.version
@@ -36,6 +36,7 @@ BEGIN
         PERFORM pg_notify(
             'es_notification_{aggregate}',
             json_build_object(
+                'type', 'stream',
                 'operation', 'delete',
                 'aggregate_id', OLD.aggregate_id
             )::text );
@@ -126,6 +127,41 @@ CREATE TRIGGER enforce_es_snapshots_{aggregate}_root
 BEFORE INSERT OR UPDATE ON es_snapshots_{aggregate}
 FOR EACH ROW
 EXECUTE FUNCTION check_es_snapshots_{aggregate}_root();
+
+-- Notify about snapshot changes (create, delete)
+CREATE OR REPLACE FUNCTION notify_es_snapshots_{aggregate}()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF (TG_OP = 'INSERT') THEN
+        PERFORM pg_notify(
+            'es_notification_{aggregate}',
+            json_build_object(
+                'type', 'snapshot',
+                'operation', 'create',
+                'aggregate_id', NEW.aggregate_id,
+                'snapshot', NEW.snapshot,
+                'version', NEW.version
+            )::text );
+        RETURN NEW;    
+    ELSIF (TG_OP = 'DELETE') THEN
+        PERFORM pg_notify(
+            'es_notification_{aggregate}',
+            json_build_object(
+                'type', 'snapshot',
+                'operation', 'delete',
+                'aggregate_id', OLD.aggregate_id,
+                'snapshot', OLD.snapshot,
+                'version', OLD.version
+            )::text );
+        RETURN OLD;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER es_snapshots_{aggregate}_trigger
+AFTER INSERT OR DELETE ON es_snapshots_{aggregate}
+FOR EACH ROW
+EXECUTE FUNCTION notify_es_snapshots_{aggregate}();
 "#
     )
 }

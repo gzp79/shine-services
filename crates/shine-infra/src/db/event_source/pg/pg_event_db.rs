@@ -79,8 +79,11 @@ where
     {
         #[derive(Deserialize)]
         struct EventMsg {
+            #[serde(rename = "type")]
+            ty: String,
             operation: String,
             aggregate_id: String,
+            snapshot: Option<String>,
             version: Option<usize>,
         }
 
@@ -89,19 +92,29 @@ where
             where
                 A: AggregateId,
             {
-                match self.operation.as_str() {
-                    "create" => Ok(EventNotification::Created {
+                match (self.ty.as_str(), self.operation.as_str()) {
+                    ("stream", "create") => Ok(EventNotification::StreamCreated {
                         aggregate_id: A::from_string(self.aggregate_id),
                         version: self.version.unwrap_or(0),
                     }),
-                    "update" => Ok(EventNotification::Updated {
+                    ("stream", "update") => Ok(EventNotification::StreamUpdated {
                         aggregate_id: A::from_string(self.aggregate_id),
                         version: self.version.unwrap_or(0),
                     }),
-                    "delete" => Ok(EventNotification::Deleted {
+                    ("stream", "delete") => Ok(EventNotification::StreamDeleted {
                         aggregate_id: A::from_string(self.aggregate_id),
                     }),
-                    op => Err(format!("Invalid operation: {op}")),
+                    ("snapshot", "create") => Ok(EventNotification::SnapshotCreated {
+                        aggregate_id: A::from_string(self.aggregate_id),
+                        snapshot: self.snapshot.ok_or("Missing snapshot".to_string())?,
+                        version: self.version.unwrap_or(0),
+                    }),
+                    ("snapshot", "delete") => Ok(EventNotification::SnapshotDeleted {
+                        aggregate_id: A::from_string(self.aggregate_id),
+                        snapshot: self.snapshot.ok_or("Missing snapshot".to_string())?,
+                        version: self.version.unwrap_or(0),
+                    }),
+                    (ty, op) => Err(format!("Invalid event: [{op},{ty}]")),
                 }
             }
         }

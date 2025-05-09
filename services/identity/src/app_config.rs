@@ -155,15 +155,13 @@ mod test {
     };
     use shine_test::test;
 
-    #[test]
-    #[ignore = "This is not a test but a helper to generate cookie secret"]
+    #[test(skip = "This is not a test but a helper to generate cookie secret")]
     fn generate_cookie_secret() {
         let key = cookie::Key::generate();
         println!("{}", B64.encode(key.master()));
     }
 
-    #[test]
-    #[ignore = "This is not a test but a helper to generate an email secret"]
+    #[test(skip = "This is not a test but a helper to generate an email secret")]
     fn generate_email_token_secret() {
         let rng = SystemRandom::new();
         let mut key = vec![0u8; aead::AES_256_GCM.key_len()];

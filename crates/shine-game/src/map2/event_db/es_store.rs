@@ -8,9 +8,7 @@ use bevy::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use shine_infra::db::{
-    event_source::{
-        pg::PgEventDb, Aggregate, Event, EventDb, EventNotification, EventStore, EventStoreError, SnapshotStore,
-    },
+    event_source::{pg::PgEventDb, Aggregate, Event, EventDb, EventStore, EventStoreError, SnapshotStore},
     PGConnectionPool,
 };
 
@@ -97,8 +95,8 @@ where
         let size = config.chunk_size();
         match es.get_aggregate(&chunk_id, move || Self::create_chunk(size)).await {
             Ok(aggregate) => {
-                let version = aggregate.version();
-                let chunk = aggregate.into_aggregate().into_chunk();
+                let version = aggregate.version;
+                let chunk = aggregate.aggregate.into_chunk();
                 Ok((chunk, version))
             }
             Err(EventStoreError::AggregateNotFound) => Ok((Self::create_chunk(size).into_chunk(), 0)),
@@ -129,11 +127,7 @@ where
     pub async fn listen_changes(&self, _config: &C, queue: Arc<Mutex<UpdatedChunks>>) -> Result<(), TileMapError> {
         self.event_db
             .listen_to_stream_updates(move |notification| {
-                let chunk_id = match notification {
-                    EventNotification::Updated { aggregate_id, .. } => aggregate_id,
-                    EventNotification::Deleted { aggregate_id } => aggregate_id,
-                    EventNotification::Created { aggregate_id } => aggregate_id,
-                };
+                let chunk_id = *notification.aggregate_id();
                 {
                     let mut queue = queue.lock().unwrap();
                     if queue.insert(chunk_id) {

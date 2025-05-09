@@ -1,4 +1,4 @@
-use itertools::assert_equal;
+use itertools::{assert_equal, Itertools};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use shine_infra::db::{
@@ -124,7 +124,7 @@ async fn test_store_events() {
                 tokio::task::block_in_place(move || {
                     tokio::runtime::Handle::current().block_on(async move {
                         // emulate a slow consumer
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        tokio::time::sleep(std::time::Duration::from_micros(500)).await;
                         received_events.lock().await.push(event);
                     })
                 });
@@ -165,7 +165,7 @@ async fn test_store_events() {
         let received_events = received_events.lock().await;
         assert_equal(
             received_events.deref(),
-            &[EventNotification::Created { aggregate_id, version: 0 }],
+            &[EventNotification::StreamCreated { aggregate_id, version: 0 }],
         );
     }
 
@@ -182,8 +182,8 @@ async fn test_store_events() {
         assert_equal(
             received_events.deref(),
             &[
-                EventNotification::Created { aggregate_id, version: 0 },
-                EventNotification::Updated { aggregate_id, version: 1 },
+                EventNotification::StreamCreated { aggregate_id, version: 0 },
+                EventNotification::StreamUpdated { aggregate_id, version: 1 },
             ],
         );
     }
@@ -244,13 +244,91 @@ async fn test_store_events() {
             received_events.deref(),
             &[
                 // creation and first update are different operation, thus we start by 0
-                EventNotification::Created { aggregate_id, version: 0 },
-                EventNotification::Updated { aggregate_id, version: 1 },
-                EventNotification::Updated { aggregate_id, version: 5 },
-                EventNotification::Deleted { aggregate_id },
+                EventNotification::StreamCreated { aggregate_id, version: 0 },
+                EventNotification::StreamUpdated { aggregate_id, version: 1 },
+                EventNotification::StreamUpdated { aggregate_id, version: 5 },
+                EventNotification::StreamDeleted { aggregate_id },
             ],
         );
     }
+}
+
+#[test(skip = "stress test, too expensive")]
+async fn test_store_events_stress() {
+    let cns = match env::var("SHINE_TEST_PG_CNS") {
+        Ok(cns) => cns,
+        Err(_) => {
+            log::warn!("SHINE_TEST_PG_CNS not set, skipping test_event_store");
+            return;
+        }
+    };
+    initialize(&cns).await;
+
+    let pool = create_pg_pool(&cns).await.unwrap();
+    let event_db = PgEventDb::<TestEvent, Uuid>::new(&pool).await.unwrap();
+
+    let aggregate_id = uuid::Uuid::new_v4();
+    let mut es = event_db.create_context().await.unwrap();
+
+    log::info!("Creating aggregate: {aggregate_id}...");
+    es.create_stream(&aggregate_id).await.unwrap();
+
+    const BATCH_SIZE: usize = 1000;
+    const BATCH_COUNT: usize = 1000;
+    const SINGLE_COUNT: usize = 10;
+
+    // store events in batch
+    let mut batch_times = Vec::new();
+    let mut version = 0;
+    for i in 0..BATCH_COUNT {
+        let events = (0..BATCH_SIZE)
+            .map(|i| TestEvent::TestEvent2 { num: i })
+            .collect::<Vec<_>>();
+        let instant = std::time::Instant::now();
+        version = es.store_events(&aggregate_id, version, &events).await.unwrap();
+        let duration = instant.elapsed();
+        log::debug!("({i}) Stored {} events in {:?}", events.len(), duration);
+        batch_times.push(duration.as_micros());
+    }
+    log::info!(
+        "times: {}",
+        batch_times
+            .iter()
+            .enumerate()
+            .map(|(i, t)| format!("({}, {:?})", i, t))
+            .collect::<Vec<_>>()
+            .join("; ")
+    );
+    log::info!(
+        "{{\n \"x\": [{}],\n \"y\": [{}]\n}}",
+        (0..batch_times.len()).map(|i| format!("{i}")).join(","),
+        batch_times.iter().map(|t| format!("{t}")).join(",")
+    );
+
+    let instant = std::time::Instant::now();
+    for i in 0..SINGLE_COUNT {
+        let instant = std::time::Instant::now();
+        version = es
+            .store_events(&aggregate_id, version, &[TestEvent::TestEvent2 { num: 42 }])
+            .await
+            .unwrap();
+        log::debug!("({i}) Stored one more events in {:?}", instant.elapsed());
+    }
+    log::info!("Stored one more events in {:?}", instant.elapsed() / 10);
+
+    let instant = std::time::Instant::now();
+    for i in 0..SINGLE_COUNT {
+        let instant = std::time::Instant::now();
+        es.unchecked_store_events(&aggregate_id, &[TestEvent::TestEvent2 { num: 42 }])
+            .await
+            .unwrap();
+        log::info!("({i}) Unchecked stored one more events in {:?}", instant.elapsed());
+    }
+    log::info!("Unchecked stored one more events in {:?}", instant.elapsed() / 10);
+
+    let instant = std::time::Instant::now();
+    es.delete_stream(&aggregate_id).await.unwrap();
+    log::info!("Deleted {} events in {:?}", BATCH_COUNT * BATCH_SIZE, instant.elapsed());
 }
 
 #[test]
@@ -282,7 +360,7 @@ async fn test_unchecked_store_events() {
                 tokio::task::block_in_place(move || {
                     tokio::runtime::Handle::current().block_on(async move {
                         // emulate a slow consumer
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                        tokio::time::sleep(std::time::Duration::from_micros(500)).await;
                         received_events.lock().await.push(event);
                     })
                 });
@@ -340,9 +418,9 @@ async fn test_unchecked_store_events() {
         assert_equal(
             received_events.deref(),
             // creation and first update is a single operation, thus we start by 1 (instead of the usual 0)
-            &iter::once(EventNotification::Created { aggregate_id, version: 1 })
-                .chain((2..=events.len()).map(|v| EventNotification::Updated { aggregate_id, version: v }))
-                .chain(iter::once(EventNotification::Deleted { aggregate_id }))
+            &iter::once(EventNotification::StreamCreated { aggregate_id, version: 1 })
+                .chain((2..=events.len()).map(|v| EventNotification::StreamUpdated { aggregate_id, version: v }))
+                .chain(iter::once(EventNotification::StreamDeleted { aggregate_id }))
                 .collect::<Vec<_>>(),
         );
     }
@@ -562,17 +640,36 @@ async fn test_prune_snapshots() {
 
     let pool = create_pg_pool(&cns).await.unwrap();
     let event_db = Arc::new(PgEventDb::<TestEvent, Uuid>::new(&pool).await.unwrap());
-    let mut es = event_db.create_context().await.unwrap();
-    let aggregate_id = uuid::Uuid::new_v4();
-    es.create_stream(&aggregate_id).await.unwrap();
 
-    log::info!("Storing events for aggregate: {aggregate_id}...");
-    es.unchecked_store_events(
-        &aggregate_id,
-        &(0..100).map(|i| TestEvent::TestEvent2 { num: i }).collect::<Vec<_>>(),
-    )
-    .await
-    .unwrap();
+    let aggregate_id = uuid::Uuid::new_v4();
+    log::info!("Creating aggregate: {aggregate_id}...");
+
+    let received_events = Arc::new(Mutex::new(Vec::new()));
+    {
+        let received_events = received_events.clone();
+        event_db
+            .listen_to_stream_updates(move |event| {
+                log::info!("Received event: {event:?}");
+                if event.aggregate_id() != &aggregate_id {
+                    return;
+                }
+
+                let received_events = received_events.clone();
+                tokio::task::block_in_place(move || {
+                    tokio::runtime::Handle::current().block_on(async move {
+                        // emulate a slow consumer
+                        tokio::time::sleep(std::time::Duration::from_micros(500)).await;
+                        received_events.lock().await.push(event);
+                    })
+                });
+            })
+            .await
+            .unwrap();
+    }
+
+    let mut es = event_db.create_context().await.unwrap();
+    let events = (0..10).map(|i| TestEvent::TestEvent2 { num: i }).collect::<Vec<_>>();
+    es.unchecked_store_events(&aggregate_id, &events).await.unwrap();
 
     // parent, version,
     //  0,   3
@@ -631,6 +728,57 @@ async fn test_prune_snapshots() {
     assert!(snapshot.is_none());
 
     es.delete_stream(&aggregate_id).await.unwrap();
+
+    //give some time for events to arrive
+    let instant = std::time::Instant::now();
+    while instant.elapsed().as_secs() < 4 && received_events.lock().await.len() < events.len() + 7 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    {
+        let received_events = received_events.lock().await;
+        // events are stored one-by-one, thus we should get a notification for each event
+        assert_equal(
+            received_events.deref(),
+            // creation and first update is a single operation, thus we start by 1 (instead of the usual 0)
+            &iter::once(EventNotification::StreamCreated { aggregate_id, version: 1 })
+                .chain((2..=events.len()).map(|v| EventNotification::StreamUpdated { aggregate_id, version: v }))
+                .chain([
+                    EventNotification::SnapshotCreated {
+                        aggregate_id,
+                        snapshot: TestAggregate::NAME.into(),
+                        version: 3,
+                    },
+                    EventNotification::SnapshotCreated {
+                        aggregate_id,
+                        snapshot: TestAggregate::NAME.into(),
+                        version: 5,
+                    },
+                    EventNotification::SnapshotCreated {
+                        aggregate_id,
+                        snapshot: TestAggregate::NAME.into(),
+                        version: 9,
+                    },
+                    EventNotification::SnapshotDeleted {
+                        aggregate_id,
+                        snapshot: TestAggregate::NAME.into(),
+                        version: 3,
+                    },
+                    EventNotification::SnapshotDeleted {
+                        aggregate_id,
+                        snapshot: TestAggregate::NAME.into(),
+                        version: 5,
+                    },
+                    EventNotification::SnapshotDeleted {
+                        aggregate_id,
+                        snapshot: TestAggregate::NAME.into(),
+                        version: 9,
+                    },
+                ])
+                .chain(Some(EventNotification::StreamDeleted { aggregate_id }))
+                .collect::<Vec<_>>(),
+        );
+    }
 }
 
 #[test]

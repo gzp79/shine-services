@@ -14,9 +14,27 @@ pub enum EventNotification<A>
 where
     A: AggregateId,
 {
-    Created { aggregate_id: A, version: usize },
-    Updated { aggregate_id: A, version: usize },
-    Deleted { aggregate_id: A },
+    StreamCreated {
+        aggregate_id: A,
+        version: usize,
+    },
+    StreamUpdated {
+        aggregate_id: A,
+        version: usize,
+    },
+    StreamDeleted {
+        aggregate_id: A,
+    },
+    SnapshotCreated {
+        aggregate_id: A,
+        snapshot: String,
+        version: usize,
+    },
+    SnapshotDeleted {
+        aggregate_id: A,
+        snapshot: String,
+        version: usize,
+    },
 }
 
 impl<A> EventNotification<A>
@@ -25,9 +43,11 @@ where
 {
     pub fn aggregate_id(&self) -> &A {
         match self {
-            EventNotification::Created { aggregate_id, .. } => aggregate_id,
-            EventNotification::Updated { aggregate_id, .. } => aggregate_id,
-            EventNotification::Deleted { aggregate_id } => aggregate_id,
+            EventNotification::StreamCreated { aggregate_id, .. } => aggregate_id,
+            EventNotification::StreamUpdated { aggregate_id, .. } => aggregate_id,
+            EventNotification::StreamDeleted { aggregate_id } => aggregate_id,
+            EventNotification::SnapshotCreated { aggregate_id, .. } => aggregate_id,
+            EventNotification::SnapshotDeleted { aggregate_id, .. } => aggregate_id,
         }
     }
 }
