@@ -1,9 +1,8 @@
 # Cooperative edit.
 
-Cooperative as server is not keeping a strict control over the client. Clients can do anything and as long as the
-the replay works everyone is happy. Client may drift however they want to, the server only helps to keep in sync with the
-latest authentic version. It is up to the client to respect it or not, but it may happen that, the events from a drifted
-client will be ignored more often.
+Cooperative as server is not keeping a strict control over the client. Clients can do anything; as long as the
+replay works everyone is happy. Client may drift however they want to and the server only helps them to keep in sync with the
+latest authentic version. It is up to the client to respect it or not, but events from a drifted client will be ignored more often.
 
 ## Client load
 
