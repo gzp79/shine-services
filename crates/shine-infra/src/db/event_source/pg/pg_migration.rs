@@ -4,7 +4,7 @@ pub fn migration_001(aggregate: &str) -> String {
 -------------------------------------------------------------
 -- Event stream
 CREATE TABLE es_heads_{aggregate} (
-    aggregate_id VARCHAR(256) NOT NULL PRIMARY KEY,
+    stream_id VARCHAR(256) NOT NULL PRIMARY KEY,
     version INT NOT NULL CHECK (version >= 0)
 );
 
@@ -18,7 +18,7 @@ BEGIN
             json_build_object(
                 'type', 'stream',
                 'operation', 'create',
-                'aggregate_id', NEW.aggregate_id,
+                'stream_id', NEW.stream_id,
                 'version', NEW.version
             )::text );
         RETURN NEW;
@@ -28,7 +28,7 @@ BEGIN
             json_build_object(
                 'type', 'stream',
                 'operation', 'update',
-                'aggregate_id', NEW.aggregate_id,
+                'stream_id', NEW.stream_id,
                 'version', NEW.version
             )::text );
         RETURN NEW;
@@ -38,7 +38,7 @@ BEGIN
             json_build_object(
                 'type', 'stream',
                 'operation', 'delete',
-                'aggregate_id', OLD.aggregate_id
+                'stream_id', OLD.stream_id
             )::text );
         RETURN OLD;
     END IF;
@@ -53,12 +53,12 @@ EXECUTE FUNCTION notify_es_heads_{aggregate}();
 -------------------------------------------------------------
 -- Event stream events
 CREATE TABLE es_events_{aggregate} (
-    aggregate_id VARCHAR(256) NOT NULL,
+    stream_id VARCHAR(256) NOT NULL,
     version INT NOT NULL CHECK (version >= 0),
     event_type VARCHAR(255) NOT NULL,
     data JSONB NOT NULL,
-    PRIMARY KEY (aggregate_id, version),
-    FOREIGN KEY (aggregate_id) REFERENCES es_heads_{aggregate} (aggregate_id) ON DELETE CASCADE
+    PRIMARY KEY (stream_id, version),
+    FOREIGN KEY (stream_id) REFERENCES es_heads_{aggregate} (stream_id) ON DELETE CASCADE
 );
 
 -- Prevent updates on the events, make rows immutable
@@ -78,16 +78,17 @@ EXECUTE FUNCTION prevent_es_events_{aggregate}_update();
 -------------------------------------------------------------
 -- Event stream snapshots
 CREATE TABLE es_snapshots_{aggregate} (
-    aggregate_id VARCHAR(256) NOT NULL,
-    snapshot VARCHAR(255) NOT NULL,
+    stream_id VARCHAR(256) NOT NULL,
+    aggregate_id VARCHAR(255) NOT NULL,
     start_version INT NOT NULL CHECK (start_version >= 0),
     version INT NOT NULL CHECK (version > start_version),
     data JSONB NOT NULL,
+    hash TEXT NOT NULL,
 
-    PRIMARY KEY (aggregate_id, snapshot, version),
-    FOREIGN KEY (aggregate_id) REFERENCES es_heads_{aggregate} (aggregate_id) ON DELETE CASCADE,
-    FOREIGN KEY (aggregate_id, version) REFERENCES es_events_{aggregate} (aggregate_id, version) ON DELETE CASCADE,
-    CONSTRAINT es_snapshots_{aggregate}_no_branching UNIQUE (aggregate_id, snapshot, start_version)
+    PRIMARY KEY (stream_id, aggregate_id, version),
+    FOREIGN KEY (stream_id) REFERENCES es_heads_{aggregate} (stream_id) ON DELETE CASCADE,
+    FOREIGN KEY (stream_id, version) REFERENCES es_events_{aggregate} (stream_id, version) ON DELETE CASCADE,
+    CONSTRAINT es_snapshots_{aggregate}_no_branching UNIQUE (stream_id, aggregate_id, start_version)
 );
 
 -- Trigger function to enforce root constraint: 
@@ -103,15 +104,15 @@ BEGIN
     SELECT COALESCE(MIN(start_version), NEW.start_version)
     INTO min_start_version
     FROM es_snapshots_{aggregate}
-    WHERE aggregate_id = NEW.aggregate_id and snapshot = NEW.snapshot;
+    WHERE stream_id = NEW.stream_id and aggregate_id = NEW.aggregate_id;
 
     -- Make sure chain is not broken for non-root snapshots 
     IF NEW.start_version != min_start_version THEN
         IF NOT EXISTS (
             SELECT 1
             FROM es_snapshots_{aggregate}
-            WHERE aggregate_id = NEW.aggregate_id
-              AND snapshot = NEW.snapshot
+            WHERE stream_id = NEW.stream_id
+              AND aggregate_id = NEW.aggregate_id
               AND version = NEW.start_version
         ) THEN
             RAISE EXCEPTION 'Snapshot chain is broken. min: %, new: %', min_start_version, NEW.start_version;
@@ -138,9 +139,10 @@ BEGIN
             json_build_object(
                 'type', 'snapshot',
                 'operation', 'create',
+                'stream_id', NEW.stream_id,
                 'aggregate_id', NEW.aggregate_id,
-                'snapshot', NEW.snapshot,
-                'version', NEW.version
+                'version', NEW.version,
+                'hash', NEW.hash
             )::text );
         RETURN NEW;    
     ELSIF (TG_OP = 'DELETE') THEN
@@ -149,8 +151,8 @@ BEGIN
             json_build_object(
                 'type', 'snapshot',
                 'operation', 'delete',
+                'stream_id', OLD.stream_id,
                 'aggregate_id', OLD.aggregate_id,
-                'snapshot', OLD.snapshot,
                 'version', OLD.version
             )::text );
         RETURN OLD;

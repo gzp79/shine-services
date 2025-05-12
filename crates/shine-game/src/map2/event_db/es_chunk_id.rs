@@ -1,7 +1,7 @@
 use crate::map2::ChunkId;
-use shine_infra::db::event_source::AggregateId;
+use shine_infra::db::event_source::StreamId;
 
-impl AggregateId for ChunkId {
+impl StreamId for ChunkId {
     fn from_string(id: String) -> Self {
         let parts: Vec<&str> = id.split('-').collect();
         if parts.len() != 2 {

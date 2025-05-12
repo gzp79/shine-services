@@ -7,5 +7,5 @@ pub enum TileMapError {
 
     #[cfg(feature = "persisted")]
     #[error(transparent)]
-    EventStoreError(#[from] shine_infra::db::event_source::EventStoreError),
+    EventStoreError(#[from] shine_infra::db::event_source::EventSourceError),
 }

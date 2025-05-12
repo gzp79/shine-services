@@ -8,7 +8,7 @@ use bevy::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use shine_infra::db::{
-    event_source::{pg::PgEventDb, Aggregate, Event, EventDb, EventStore, EventStoreError, SnapshotStore},
+    event_source::{pg::PgEventDb, Aggregate, AggregateStore, Event, EventDb, EventSourceError, EventStore},
     PGConnectionPool,
 };
 
@@ -54,7 +54,7 @@ where
     type Event = C::PersistedChunkOperation;
     type AggregateId = ChunkId;
 
-    fn apply(&mut self, event: Self::Event) -> Result<(), EventStoreError> {
+    fn apply(&mut self, event: Self::Event) -> Result<(), EventSourceError> {
         event.apply(&mut self.data);
         Ok(())
     }
@@ -76,7 +76,7 @@ where
     C::PersistedChunkOperation: Event,
     C::PersistedChunkStore: Serialize + DeserializeOwned,
 {
-    pub async fn new(pg_pool: &PGConnectionPool) -> Result<Self, EventStoreError> {
+    pub async fn new(pg_pool: &PGConnectionPool) -> Result<Self, EventSourceError> {
         let event_db = ESChunkDB::<C>::new(pg_pool).await?;
         Ok(Self { event_db: Arc::new(event_db) })
     }
@@ -93,13 +93,13 @@ where
     ) -> Result<(C::PersistedChunkStore, usize), TileMapError> {
         let mut es = self.event_db.create_context().await?;
         let size = config.chunk_size();
-        match es.get_aggregate(&chunk_id, move || Self::create_chunk(size)).await {
+        match es.get_aggregate_with(&chunk_id, move || Self::create_chunk(size)).await {
             Ok(aggregate) => {
                 let version = aggregate.version;
                 let chunk = aggregate.aggregate.into_chunk();
                 Ok((chunk, version))
             }
-            Err(EventStoreError::AggregateNotFound) => Ok((Self::create_chunk(size).into_chunk(), 0)),
+            Err(EventSourceError::StreamNotFound) => Ok((Self::create_chunk(size).into_chunk(), 0)),
             Err(err) => Err(err.into()),
         }
     }
@@ -119,7 +119,7 @@ where
                     operation: stored_event.event,
                 })
                 .collect::<Vec<_>>()),
-            Err(EventStoreError::AggregateNotFound) => Err(TileMapError::ChunkNotFound),
+            Err(EventSourceError::StreamNotFound) => Err(TileMapError::ChunkNotFound),
             Err(err) => Err(err.into()),
         }
     }

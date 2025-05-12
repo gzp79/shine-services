@@ -1,7 +1,7 @@
 use crate::db::{
     event_source::{
-        pg::{migration_001, PgEventStoreStatement, PgSnapshotStatement},
-        AggregateId, Event, EventDb, EventDbContext, EventNotification, EventStoreError,
+        pg::{migration_001, PgAggregateStoreStatement, PgEventStoreStatement},
+        Event, EventDb, EventDbContext, EventNotification, EventSourceError, StreamId,
     },
     DBError, PGConnectionPool, PGPooledConnection,
 };
@@ -11,44 +11,44 @@ use std::marker::PhantomData;
 pub struct PgEventDbContext<'c, E, A>
 where
     E: Event,
-    A: AggregateId,
+    A: StreamId,
 {
     pub(in crate::db::event_source::pg) client: PGPooledConnection<'c>,
     pub(in crate::db::event_source::pg) stmts_store: PgEventStoreStatement<E>,
-    pub(in crate::db::event_source::pg) stmts_snapshot: PgSnapshotStatement<E>,
+    pub(in crate::db::event_source::pg) stmts_snapshot: PgAggregateStoreStatement<E>,
     ph: PhantomData<A>,
 }
 
 impl<'c, E, A> EventDbContext<'c, E, A> for PgEventDbContext<'c, E, A>
 where
     E: Event,
-    A: AggregateId,
+    A: StreamId,
 {
 }
 
 pub struct PgEventDb<E, A>
 where
     E: Event,
-    A: AggregateId,
+    A: StreamId,
 {
     client: PGConnectionPool,
     stmts_store: PgEventStoreStatement<E>,
-    stmts_snapshot: PgSnapshotStatement<E>,
+    stmts_snapshot: PgAggregateStoreStatement<E>,
     ph: PhantomData<A>,
 }
 
 impl<E, A> PgEventDb<E, A>
 where
     E: Event,
-    A: AggregateId,
+    A: StreamId,
 {
-    pub async fn new(postgres: &PGConnectionPool) -> Result<Self, EventStoreError> {
+    pub async fn new(postgres: &PGConnectionPool) -> Result<Self, EventSourceError> {
         let client = postgres.get().await.map_err(DBError::PGPoolError)?;
 
         Ok(Self {
             client: postgres.clone(),
             stmts_store: PgEventStoreStatement::new(&client).await?,
-            stmts_snapshot: PgSnapshotStatement::new(&client).await?,
+            stmts_snapshot: PgAggregateStoreStatement::new(&client).await?,
             ph: PhantomData,
         })
     }
@@ -61,9 +61,9 @@ where
 impl<E, A> EventDb<E, A> for PgEventDb<E, A>
 where
     E: Event,
-    A: AggregateId,
+    A: StreamId,
 {
-    async fn create_context(&self) -> Result<impl EventDbContext<'_, E, A>, EventStoreError> {
+    async fn create_context(&self) -> Result<impl EventDbContext<'_, E, A>, EventSourceError> {
         let client = self.client.get().await.map_err(DBError::PGPoolError)?;
         Ok(PgEventDbContext {
             client,
@@ -73,7 +73,7 @@ where
         })
     }
 
-    async fn listen_to_stream_updates<F>(&self, handler: F) -> Result<(), EventStoreError>
+    async fn listen_to_stream_updates<F>(&self, handler: F) -> Result<(), EventSourceError>
     where
         F: Fn(EventNotification<A>) + Send + Sync + 'static,
     {
@@ -82,36 +82,38 @@ where
             #[serde(rename = "type")]
             ty: String,
             operation: String,
-            aggregate_id: String,
-            snapshot: Option<String>,
+            stream_id: String,
+            aggregate_id: Option<String>,
             version: Option<usize>,
+            hash: Option<String>,
         }
 
         impl EventMsg {
             fn try_into_notification<A>(self) -> Result<EventNotification<A>, String>
             where
-                A: AggregateId,
+                A: StreamId,
             {
                 match (self.ty.as_str(), self.operation.as_str()) {
                     ("stream", "create") => Ok(EventNotification::StreamCreated {
-                        aggregate_id: A::from_string(self.aggregate_id),
+                        stream_id: A::from_string(self.stream_id),
                         version: self.version.unwrap_or(0),
                     }),
                     ("stream", "update") => Ok(EventNotification::StreamUpdated {
-                        aggregate_id: A::from_string(self.aggregate_id),
+                        stream_id: A::from_string(self.stream_id),
                         version: self.version.unwrap_or(0),
                     }),
                     ("stream", "delete") => Ok(EventNotification::StreamDeleted {
-                        aggregate_id: A::from_string(self.aggregate_id),
+                        stream_id: A::from_string(self.stream_id),
                     }),
                     ("snapshot", "create") => Ok(EventNotification::SnapshotCreated {
-                        aggregate_id: A::from_string(self.aggregate_id),
-                        snapshot: self.snapshot.ok_or("Missing snapshot".to_string())?,
+                        stream_id: A::from_string(self.stream_id),
+                        aggregate_id: self.aggregate_id.ok_or("Missing aggregate_id".to_string())?,
                         version: self.version.unwrap_or(0),
+                        hash: self.hash.ok_or("Missing hash".to_string())?,
                     }),
                     ("snapshot", "delete") => Ok(EventNotification::SnapshotDeleted {
-                        aggregate_id: A::from_string(self.aggregate_id),
-                        snapshot: self.snapshot.ok_or("Missing snapshot".to_string())?,
+                        stream_id: A::from_string(self.stream_id),
+                        aggregate_id: self.aggregate_id.ok_or("Missing aggregate_id".to_string())?,
                         version: self.version.unwrap_or(0),
                     }),
                     (ty, op) => Err(format!("Invalid event: [{op},{ty}]")),
@@ -143,7 +145,7 @@ where
         Ok(())
     }
 
-    async fn unlisten_to_stream_updates(&self) -> Result<(), EventStoreError> {
+    async fn unlisten_to_stream_updates(&self) -> Result<(), EventSourceError> {
         let client = self.client.get().await.map_err(DBError::PGPoolError)?;
         client.unlisten(&format!("es_notification_{}", E::NAME)).await?;
         Ok(())

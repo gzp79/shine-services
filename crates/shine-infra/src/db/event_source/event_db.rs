@@ -1,67 +1,68 @@
-use crate::db::event_source::{AggregateId, Event, EventStore, EventStoreError, SnapshotStore};
+use crate::db::event_source::{AggregateStore, Event, EventSourceError, EventStore, StreamId};
 use std::future::Future;
 
-pub trait EventDbContext<'c, E, A>:
-    EventStore<Event = E, AggregateId = A> + SnapshotStore<Event = E, AggregateId = A> + Send
+pub trait EventDbContext<'c, E, S>:
+    EventStore<Event = E, StreamId = S> + AggregateStore<Event = E, StreamId = S> + Send
 where
     E: Event,
-    A: AggregateId,
+    S: StreamId,
 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum EventNotification<A>
+pub enum EventNotification<S>
 where
-    A: AggregateId,
+    S: StreamId,
 {
     StreamCreated {
-        aggregate_id: A,
+        stream_id: S,
         version: usize,
     },
     StreamUpdated {
-        aggregate_id: A,
+        stream_id: S,
         version: usize,
     },
     StreamDeleted {
-        aggregate_id: A,
+        stream_id: S,
     },
     SnapshotCreated {
-        aggregate_id: A,
-        snapshot: String,
+        stream_id: S,
+        aggregate_id: String,
         version: usize,
+        hash: String,
     },
     SnapshotDeleted {
-        aggregate_id: A,
-        snapshot: String,
+        stream_id: S,
+        aggregate_id: String,
         version: usize,
     },
 }
 
-impl<A> EventNotification<A>
+impl<S> EventNotification<S>
 where
-    A: AggregateId,
+    S: StreamId,
 {
-    pub fn aggregate_id(&self) -> &A {
+    pub fn stream_id(&self) -> &S {
         match self {
-            EventNotification::StreamCreated { aggregate_id, .. } => aggregate_id,
-            EventNotification::StreamUpdated { aggregate_id, .. } => aggregate_id,
-            EventNotification::StreamDeleted { aggregate_id } => aggregate_id,
-            EventNotification::SnapshotCreated { aggregate_id, .. } => aggregate_id,
-            EventNotification::SnapshotDeleted { aggregate_id, .. } => aggregate_id,
+            EventNotification::StreamCreated { stream_id, .. } => stream_id,
+            EventNotification::StreamUpdated { stream_id, .. } => stream_id,
+            EventNotification::StreamDeleted { stream_id } => stream_id,
+            EventNotification::SnapshotCreated { stream_id, .. } => stream_id,
+            EventNotification::SnapshotDeleted { stream_id, .. } => stream_id,
         }
     }
 }
 
-pub trait EventDb<E, A>: 'static + Send + Sync
+pub trait EventDb<E, S>: 'static + Send + Sync
 where
     E: Event,
-    A: AggregateId,
+    S: StreamId,
 {
-    fn create_context(&self) -> impl Future<Output = Result<impl EventDbContext<'_, E, A>, EventStoreError>> + Send;
+    fn create_context(&self) -> impl Future<Output = Result<impl EventDbContext<'_, E, S>, EventSourceError>> + Send;
 
-    fn listen_to_stream_updates<F>(&self, handler: F) -> impl Future<Output = Result<(), EventStoreError>> + Send
+    fn listen_to_stream_updates<F>(&self, handler: F) -> impl Future<Output = Result<(), EventSourceError>> + Send
     where
-        F: Fn(EventNotification<A>) + Send + Sync + 'static;
+        F: Fn(EventNotification<S>) + Send + Sync + 'static;
 
-    fn unlisten_to_stream_updates(&self) -> impl Future<Output = Result<(), EventStoreError>> + Send;
+    fn unlisten_to_stream_updates(&self) -> impl Future<Output = Result<(), EventSourceError>> + Send;
 }

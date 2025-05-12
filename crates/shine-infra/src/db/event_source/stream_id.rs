@@ -1,12 +1,12 @@
 use std::fmt::Debug;
 use uuid::Uuid;
 
-pub trait AggregateId: 'static + Clone + Debug + Send + Sync {
+pub trait StreamId: 'static + Clone + PartialEq + Debug + Send + Sync {
     fn to_string(&self) -> String;
     fn from_string(value: String) -> Self;
 }
 
-impl AggregateId for String {
+impl StreamId for String {
     fn to_string(&self) -> String {
         self.clone()
     }
@@ -16,7 +16,7 @@ impl AggregateId for String {
     }
 }
 
-impl AggregateId for Uuid {
+impl StreamId for Uuid {
     fn to_string(&self) -> String {
         self.as_hyphenated().to_string()
     }
