@@ -1,4 +1,4 @@
-use crate::map2::{ChunkOperation, ChunkStore, Tile};
+use crate::map::{ChunkOperation, ChunkStore, Tile};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -21,7 +21,7 @@ where
     where
         C: ChunkStore<Tile = T>,
     {
-        log::trace!("Fill, tile: {:?}", self.tile);
+        log::trace!("Fill, tile: {:?}", serde_json::to_string(&self.tile).unwrap());
         for (_, _, tile) in chunk.iter_mut() {
             *tile = self.tile.clone();
         }

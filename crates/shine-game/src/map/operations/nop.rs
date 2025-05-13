@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::map2::{ChunkOperation, ChunkStore, Tile};
+use crate::map::{ChunkOperation, ChunkStore, Tile};
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Serialize, Deserialize)]

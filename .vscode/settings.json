@@ -19,6 +19,7 @@
     "cookiejar",
     "Deque",
     "despawn",
+    "despawned",
     "endgroup",
     "fkey",
     "hasher",

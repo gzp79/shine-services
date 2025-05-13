@@ -19,6 +19,7 @@ bevy = { version = "0.16", default-features = false, features = [
     "std",
     "async_executor",
     "bevy_state",
+    "track_location",
 ] }
 
 

@@ -1,22 +1,30 @@
-use serde::{de::DeserializeOwned, Serialize};
+use crate::map::{ChunkOperation, Tile};
+use bevy::ecs::component::{Component, Mutable};
 
-use crate::map2::Tile;
+pub trait ChunkType: 'static + Send + Sync {
+    const NAME: &'static str;
 
-pub trait ChunkOperation: 'static + Serialize + DeserializeOwned + Send + Sync {
     type Tile: Tile;
-
-    fn apply<C>(self, chunk: &mut C)
-    where
-        C: ChunkStore<Tile = Self::Tile>;
+    type Operation: ChunkOperation<Tile = Self::Tile>;
 }
 
-/// A 2d grid of tile data with a specific scope and size.
-pub trait ChunkStore: 'static + Send + Sync {
+pub trait ChunkStore: 'static + Component<Mutability = Mutable> {
+    const NAME: &'static str;
     type Tile: Tile;
+    type Operation: ChunkOperation<Tile = Self::Tile>;
+
+    fn new_empty() -> Self
+    where
+        Self: Sized;
 
     fn new(width: usize, height: usize) -> Self
     where
         Self: Sized;
+
+    fn is_empty(&self) -> bool;
+
+    fn version(&self) -> usize;
+    fn version_mut(&mut self) -> &mut usize;
 
     fn width(&self) -> usize;
     fn height(&self) -> usize;
@@ -55,8 +63,8 @@ pub trait ChunkStore: 'static + Send + Sync {
     }
 }
 
-/// A dense 2d grid of tile data with a specific scope and size.
-pub trait DenseChunk: ChunkStore {
+/// A dense 2d grid of tiles
+pub trait DenseChunkStore: ChunkStore {
     fn data(&self) -> &[Self::Tile];
     fn data_mut(&mut self) -> &mut [Self::Tile];
 }
