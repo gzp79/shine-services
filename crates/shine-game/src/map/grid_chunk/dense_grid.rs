@@ -1,28 +1,30 @@
-use crate::map::{ChunkStore, ChunkType, DenseChunkStore};
+use crate::map::{DenseGridChunk, GridChunk, GridChunkTypes, MapChunk, MapConfig, Tile};
 use bevy::ecs::component::Component;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// Chunk component storing a dense 2d grid of tiles.
 #[derive(Component, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[serde(bound = "C::Tile: Serialize + DeserializeOwned")]
-pub struct DenseChunk<C>
+#[serde(bound = "T::Tile: Serialize + DeserializeOwned")]
+pub struct DenseGrid<T>
 where
-    C: ChunkType,
+    T: GridChunkTypes,
+    T::Tile: Tile + Clone,
 {
     version: usize,
     width: usize,
     height: usize,
-    data: Vec<C::Tile>,
+    data: Vec<T::Tile>,
 }
 
-impl<C> ChunkStore for DenseChunk<C>
+impl<T> MapChunk for DenseGrid<T>
 where
-    C: ChunkType,
+    T: GridChunkTypes,
+    T::Tile: Clone,
 {
-    const NAME: &'static str = C::NAME;
-    type Tile = C::Tile;
-    type Operation = C::Operation;
+    fn name() -> &'static str {
+        T::name()
+    }
 
     fn new_empty() -> Self
     where
@@ -36,10 +38,13 @@ where
         }
     }
 
-    fn new(width: usize, height: usize) -> Self {
+    fn new(config: &MapConfig) -> Self {
+        let width = config.width;
+        let height = config.height;
+
         let area = width * height;
         let mut data = Vec::with_capacity(area);
-        data.resize_with(area, <Self::Tile as Default>::default);
+        data.resize_with(area, <T::Tile as Default>::default);
         Self {
             version: 0,
             width,
@@ -56,9 +61,17 @@ where
         self.version
     }
 
-    fn version_mut(&mut self) -> &mut usize {
-        &mut self.version
+    fn set_version(&mut self, version: usize) {
+        self.version = version;
     }
+}
+
+impl<T> GridChunk for DenseGrid<T>
+where
+    T: GridChunkTypes,
+    T::Tile: Clone,
+{
+    type Tile = T::Tile;
 
     fn width(&self) -> usize {
         self.width
@@ -85,9 +98,10 @@ where
     }
 }
 
-impl<C> DenseChunkStore for DenseChunk<C>
+impl<T> DenseGridChunk for DenseGrid<T>
 where
-    C: ChunkType,
+    T: GridChunkTypes,
+    T::Tile: Clone,
 {
     fn data(&self) -> &[Self::Tile] {
         &self.data

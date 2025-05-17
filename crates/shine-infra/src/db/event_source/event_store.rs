@@ -2,7 +2,7 @@ use crate::db::event_source::{EventSourceError, StreamId};
 use serde::{de::DeserializeOwned, Serialize};
 use std::future::Future;
 
-pub trait Event: 'static + Serialize + DeserializeOwned + Send + Sync {
+pub trait Event: Serialize + DeserializeOwned + Send + Sync + 'static {
     const NAME: &'static str;
 
     fn event_type(&self) -> &'static str;

@@ -3,7 +3,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::future::Future;
 
 /// Aggregate events into a single model object. Is is sometimes called a "projection".
-pub trait Aggregate: 'static + Serialize + DeserializeOwned + Send + Sync {
+pub trait Aggregate: Serialize + DeserializeOwned + Send + Sync + 'static {
     type Event: Event;
     type StreamId: StreamId;
 

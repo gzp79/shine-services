@@ -29,7 +29,7 @@ trait DynHandle: Send + Sync {
 
 struct WrapHandle<L, S>
 where
-    L: 'static + Layer<S> + From<EnvFilter> + Send + Sync,
+    L: Layer<S> + From<EnvFilter> + Send + Sync + 'static,
     S: Subscriber,
 {
     handle: reload::Handle<L, S>,
@@ -38,7 +38,7 @@ where
 
 impl<L, S> DynHandle for WrapHandle<L, S>
 where
-    L: 'static + Layer<S> + From<EnvFilter> + Send + Sync,
+    L: Layer<S> + From<EnvFilter> + Send + Sync + 'static,
     S: Subscriber,
 {
     fn set_configuration(&mut self, mut new_config: DynConfig) -> Result<(), String> {

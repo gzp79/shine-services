@@ -7,8 +7,8 @@ use bevy::{
 use serde::{Deserialize, Serialize};
 use shine_game::map::{
     operations, ChunkCommand, ChunkCommandQueue, ChunkHashTrack, ChunkHasher, ChunkId, ChunkLayer, ChunkLayerSetup,
-    ChunkOperation, ChunkRoot, ChunkStore, ChunkType, DenseChunk, DenseChunkStore, TileMap, TileMapConfig,
-    TileMapEvent, TileMapPlugin,
+    ChunkOperation, ChunkRoot, ChunkStore, ChunkType, DenseChunk, DenseChunkStore, TileMap, MapConfig,
+    MapEvent, MapPlugin,
 };
 use shine_test::test;
 
@@ -81,7 +81,7 @@ async fn test_tile_map_chunk_load_unload() {
 
     // Initialize the TileMap
     app.add_plugins(DefaultPlugins).add_plugins(
-        TileMapPlugin::new(TileMapConfig { width: 16, height: 16 }).with_layer(ChunkLayerSetup::new(command_queue)),
+        MapPlugin::new(MapConfig { width: 16, height: 16 }).with_layer(ChunkLayerSetup::new(command_queue)),
     );
 
     app.update();
@@ -91,8 +91,8 @@ async fn test_tile_map_chunk_load_unload() {
     let chunk_entity;
 
     app.world_mut()
-        .resource_mut::<Events<TileMapEvent>>()
-        .send(TileMapEvent::Load(chunk_id));
+        .resource_mut::<Events<MapEvent>>()
+        .send(MapEvent::Load(chunk_id));
 
     app.update();
 
@@ -112,8 +112,8 @@ async fn test_tile_map_chunk_load_unload() {
     }
 
     app.world_mut()
-        .resource_mut::<Events<TileMapEvent>>()
-        .send(TileMapEvent::Unload(chunk_id));
+        .resource_mut::<Events<MapEvent>>()
+        .send(MapEvent::Unload(chunk_id));
 
     app.update();
 
@@ -141,15 +141,15 @@ async fn test_tile_map_chunk_operations() {
     // Initialize the TileMap with a chunk
     app.add_plugins(DefaultPlugins);
     app.add_plugins(
-        TileMapPlugin::new(TileMapConfig { width: 16, height: 16 })
+        MapPlugin::new(MapConfig { width: 16, height: 16 })
             .with_layer(ChunkLayerSetup::new(command_queue.clone()).with_hash_tracker(U8Hasher)),
     );
 
     let chunk_id: ChunkId = ChunkId(13, 42);
 
     app.world_mut()
-        .resource_mut::<Events<TileMapEvent>>()
-        .send(TileMapEvent::Load(chunk_id));
+        .resource_mut::<Events<MapEvent>>()
+        .send(MapEvent::Load(chunk_id));
 
     app.update();
 

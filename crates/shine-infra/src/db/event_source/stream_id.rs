@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use uuid::Uuid;
 
-pub trait StreamId: 'static + Clone + PartialEq + Debug + Send + Sync {
+pub trait StreamId: Clone + PartialEq + Debug + Send + Sync + 'static {
     fn to_string(&self) -> String;
     fn from_string(value: String) -> Self;
 }

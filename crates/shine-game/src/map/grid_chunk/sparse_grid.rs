@@ -1,4 +1,4 @@
-use crate::map::{ChunkStore, ChunkType};
+use crate::map::{GridChunk, GridChunkTypes, MapChunk, MapConfig, SparseGridChunk, Tile};
 use bevy::ecs::component::Component;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
@@ -6,27 +6,27 @@ use std::collections::HashMap;
 /// Chunk component storing a sparse 2d grid of tiles.
 #[derive(Component, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[serde(bound = "C::Tile: Serialize + DeserializeOwned")]
-pub struct SparseChunk<C>
+#[serde(bound = "T::Tile: Serialize + DeserializeOwned")]
+pub struct SparseGrid<T>
 where
-    C: ChunkType,
-    C::Tile: Clone,
+    T: GridChunkTypes,
+    T::Tile: Tile + Clone,
 {
     version: usize,
     width: usize,
     height: usize,
-    default: C::Tile,
-    data: HashMap<(usize, usize), C::Tile>,
+    default: T::Tile,
+    data: HashMap<(usize, usize), T::Tile>,
 }
 
-impl<C> ChunkStore for SparseChunk<C>
+impl<T> MapChunk for SparseGrid<T>
 where
-    C: ChunkType,
-    C::Tile: Clone,
+    T: GridChunkTypes,
+    T::Tile: Clone,
 {
-    const NAME: &'static str = C::NAME;
-    type Tile = C::Tile;
-    type Operation = C::Operation;
+    fn name() -> &'static str {
+        T::name()
+    }
 
     fn new_empty() -> Self
     where
@@ -36,17 +36,17 @@ where
             version: 0,
             width: 0,
             height: 0,
-            default: <Self::Tile as Default>::default(),
+            default: <T::Tile as Default>::default(),
             data: HashMap::new(),
         }
     }
 
-    fn new(width: usize, height: usize) -> Self {
+    fn new(config: &MapConfig) -> Self {
         Self {
             version: 0,
-            width,
-            height,
-            default: <Self::Tile as Default>::default(),
+            width: config.width,
+            height: config.height,
+            default: <T::Tile as Default>::default(),
             data: HashMap::new(),
         }
     }
@@ -59,9 +59,17 @@ where
         self.version
     }
 
-    fn version_mut(&mut self) -> &mut usize {
-        &mut self.version
+    fn set_version(&mut self, version: usize) {
+        self.version = version;
     }
+}
+
+impl<T> GridChunk for SparseGrid<T>
+where
+    T: GridChunkTypes,
+    T::Tile: Clone,
+{
+    type Tile = T::Tile;
 
     fn width(&self) -> usize {
         self.width
@@ -86,5 +94,15 @@ where
         } else {
             None
         }
+    }
+}
+
+impl<T> SparseGridChunk for SparseGrid<T>
+where
+    T: GridChunkTypes,
+    T::Tile: Clone,
+{
+    fn occupied(&self) -> impl Iterator<Item = (usize, usize, &Self::Tile)> {
+        self.data.iter().map(|(&(x, y), tile)| (x, y, tile))
     }
 }

@@ -1,33 +1,22 @@
-use bevy::ecs::{component::Component, entity::Entity, resource::Resource, system::Commands};
+use crate::map::{ChunkId, ChunkRoot};
+use bevy::ecs::{entity::Entity, resource::Resource, system::Commands};
 use std::collections::{hash_map::Entry, HashMap};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct ChunkId(pub usize, pub usize);
-
-#[derive(Component)]
-pub struct ChunkRoot {
-    pub id: ChunkId,
-}
-
-#[derive(Clone, Debug)]
-pub struct TileMapConfig {
-    pub width: usize,
-    pub height: usize,
-}
-
+/// Tracks the loaded chunks in the world
 #[derive(Resource)]
-pub struct TileMap {
-    config: TileMapConfig,
-    chunks: HashMap<ChunkId, Entity>,
+pub struct MapChunkTracker {
+    pub chunks: HashMap<ChunkId, Entity>,
 }
 
-impl TileMap {
-    pub fn new(config: TileMapConfig) -> Self {
-        Self { config, chunks: HashMap::new() }
+impl Default for MapChunkTracker {
+    fn default() -> Self {
+        Self::new()
     }
+}
 
-    pub fn config(&self) -> &TileMapConfig {
-        &self.config
+impl MapChunkTracker {
+    pub fn new() -> Self {
+        Self { chunks: HashMap::new() }
     }
 
     pub fn load_chunk(&mut self, chunk_id: ChunkId, commands: &mut Commands) {

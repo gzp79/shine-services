@@ -1,4 +1,4 @@
-pub trait Tile: 'static + Default + Send + Sync {}
+pub trait Tile: Default + Send + Sync + 'static {}
 
 impl Tile for u8 {}
 impl Tile for u16 {}

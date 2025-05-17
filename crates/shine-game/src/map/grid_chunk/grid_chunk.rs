@@ -1,30 +1,15 @@
-use crate::map::{ChunkOperation, Tile};
-use bevy::ecs::component::{Component, Mutable};
+use crate::map::{MapChunk, Tile};
 
-pub trait ChunkType: 'static + Send + Sync {
-    const NAME: &'static str;
-
+/// Trait for chunk types that can be used in a grid
+pub trait GridChunkTypes: Send + Sync + 'static {
     type Tile: Tile;
-    type Operation: ChunkOperation<Tile = Self::Tile>;
+
+    fn name() -> &'static str;
 }
 
-pub trait ChunkStore: 'static + Component<Mutability = Mutable> {
-    const NAME: &'static str;
+/// Chunk component for a grid of tiles
+pub trait GridChunk: MapChunk {
     type Tile: Tile;
-    type Operation: ChunkOperation<Tile = Self::Tile>;
-
-    fn new_empty() -> Self
-    where
-        Self: Sized;
-
-    fn new(width: usize, height: usize) -> Self
-    where
-        Self: Sized;
-
-    fn is_empty(&self) -> bool;
-
-    fn version(&self) -> usize;
-    fn version_mut(&mut self) -> &mut usize;
 
     fn width(&self) -> usize;
     fn height(&self) -> usize;
@@ -39,23 +24,23 @@ pub trait ChunkStore: 'static + Component<Mutability = Mutable> {
         self.try_get_mut(x, y).expect("Out of bounds access")
     }
 
-    fn iter(&self) -> ChunkStoreIterator<Self>
+    fn iter(&self) -> GridChunkIterator<Self>
     where
         Self: Sized,
     {
-        ChunkStoreIterator {
+        GridChunkIterator {
             chunk: self,
             size: (self.width(), self.height()),
             index: (0, 0),
         }
     }
 
-    fn iter_mut(&mut self) -> ChunkStoreIteratorMut<Self>
+    fn iter_mut(&mut self) -> GridChunkIteratorMut<Self>
     where
         Self: Sized,
     {
         let size = (self.width(), self.height());
-        ChunkStoreIteratorMut {
+        GridChunkIteratorMut {
             chunk: self,
             size,
             index: (0, 0),
@@ -63,24 +48,29 @@ pub trait ChunkStore: 'static + Component<Mutability = Mutable> {
     }
 }
 
+/// A sparse 2d grid of tiles
+pub trait SparseGridChunk: GridChunk {
+    fn occupied(&self) -> impl Iterator<Item = (usize, usize, &Self::Tile)>;
+}
+
 /// A dense 2d grid of tiles
-pub trait DenseChunkStore: ChunkStore {
+pub trait DenseGridChunk: GridChunk {
     fn data(&self) -> &[Self::Tile];
     fn data_mut(&mut self) -> &mut [Self::Tile];
 }
 
-pub struct ChunkStoreIterator<'a, C>
+pub struct GridChunkIterator<'a, C>
 where
-    C: ChunkStore,
+    C: GridChunk,
 {
     chunk: &'a C,
     size: (usize, usize),
     index: (usize, usize),
 }
 
-impl<'a, C> Iterator for ChunkStoreIterator<'a, C>
+impl<'a, C> Iterator for GridChunkIterator<'a, C>
 where
-    C: ChunkStore,
+    C: GridChunk,
 {
     type Item = (usize, usize, &'a C::Tile);
 
@@ -98,18 +88,18 @@ where
     }
 }
 
-pub struct ChunkStoreIteratorMut<'a, C>
+pub struct GridChunkIteratorMut<'a, C>
 where
-    C: ChunkStore,
+    C: GridChunk,
 {
     chunk: &'a mut C,
     size: (usize, usize),
     index: (usize, usize),
 }
 
-impl<'a, C> Iterator for ChunkStoreIteratorMut<'a, C>
+impl<'a, C> Iterator for GridChunkIteratorMut<'a, C>
 where
-    C: ChunkStore,
+    C: GridChunk,
 {
     type Item = (usize, usize, &'a mut C::Tile);
 

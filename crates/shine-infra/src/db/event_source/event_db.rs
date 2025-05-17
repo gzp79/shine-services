@@ -53,7 +53,7 @@ where
     }
 }
 
-pub trait EventDb<E, S>: 'static + Send + Sync
+pub trait EventDb<E, S>: Send + Sync + 'static
 where
     E: Event,
     S: StreamId,

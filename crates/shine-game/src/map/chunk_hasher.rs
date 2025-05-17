@@ -1,77 +1,56 @@
-use crate::map::ChunkStore;
-use bevy::ecs::component::Component;
+use crate::map::MapChunk;
+use bevy::ecs::{component::Component, resource::Resource};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{collections::BTreeMap, marker::PhantomData};
 
-pub trait ChunkHasher: 'static + Clone + Send + Sync {
-    type Chunk: ChunkStore;
-    type Hash: Clone + Send + Sync + Serialize + DeserializeOwned;
+/// Hash the content of a chunk layer to fast compare.
+pub trait ChunkHasher<C>: Resource + Clone
+where
+    C: MapChunk,
+{
+    type Hash: PartialEq + Clone + Serialize + DeserializeOwned + Send + Sync + 'static;
 
-    fn hash(&self, chunk: &Self::Chunk) -> Self::Hash;
+    fn hash(&self, chunk: &C) -> Self::Hash;
 }
 
-///  A default no-hash implementation that returns an empty hash.
-pub struct NullHasher<C>
+///  A default no-hash implementation that returns an empty hash when hashing is not needed.
+#[derive(Resource, Clone, Default)]
+pub struct NullHasher;
+
+impl<C> ChunkHasher<C> for NullHasher
 where
-    C: ChunkStore,
+    C: MapChunk,
 {
+    type Hash = ();
+
+    fn hash(&self, _chunk: &C) -> Self::Hash {}
+}
+
+/// Component to store hashes of a chunk layer for a range of versions.
+#[derive(Component)]
+pub struct ChunkHashTrack<C, H>
+where
+    C: MapChunk,
+    H: ChunkHasher<C>,
+{
+    hash: BTreeMap<usize, H::Hash>,
     ph: PhantomData<C>,
 }
 
-impl<C> Default for NullHasher<C>
+impl<C, H> Default for ChunkHashTrack<C, H>
 where
-    C: ChunkStore,
+    C: MapChunk,
+    H: ChunkHasher<C>,
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<C> Clone for NullHasher<C>
-where
-    C: ChunkStore,
-{
-    fn clone(&self) -> Self {
-        Self::new()
-    }
-}
-
-impl<C> NullHasher<C>
-where
-    C: ChunkStore,
-{
-    pub fn new() -> Self {
-        Self { ph: PhantomData }
-    }
-}
-
-impl<C> ChunkHasher for NullHasher<C>
-where
-    C: ChunkStore,
-{
-    type Chunk = C;
-    type Hash = ();
-
-    fn hash(&self, _chunk: &Self::Chunk) -> Self::Hash {
-        ()
-    }
-}
-
-/// Store the chunk hash for a range of versions.
-#[derive(Component)]
-pub struct ChunkHashTrack<C, H>
-where
-    C: ChunkStore,
-    H: ChunkHasher<Chunk = C>,
-{
-    hash: BTreeMap<usize, H::Hash>,
-    ph: PhantomData<C>,
-}
-
 impl<C, H> ChunkHashTrack<C, H>
 where
-    C: ChunkStore,
-    H: ChunkHasher<Chunk = C>,
+    C: MapChunk,
+    H: ChunkHasher<C>,
 {
     pub fn new() -> Self {
         Self {

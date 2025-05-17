@@ -1,4 +1,4 @@
-use crate::map2::ChunkId;
+use crate::map::ChunkId;
 use shine_infra::db::event_source::StreamId;
 
 impl StreamId for ChunkId {

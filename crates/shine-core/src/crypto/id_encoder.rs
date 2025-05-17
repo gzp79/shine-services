@@ -10,7 +10,7 @@ pub enum IdEncoderError {
 }
 
 /// Sequence number obfuscation
-pub trait IdEncoder: 'static + Send + Sync {
+pub trait IdEncoder: Send + Sync + 'static {
     fn obfuscate(&self, id: u64) -> Result<String, IdEncoderError>;
     fn deobfuscate(&self, id: &str) -> Result<u64, IdEncoderError>;
 }
