@@ -7,6 +7,7 @@ use crate::db::{
 };
 use serde::Deserialize;
 use std::marker::PhantomData;
+use uuid::Uuid;
 
 pub struct PgEventDbContext<'c, E, A>
 where
@@ -83,6 +84,7 @@ where
             ty: String,
             operation: String,
             stream_id: String,
+            stream_token: Uuid,
             aggregate_id: Option<String>,
             version: Option<usize>,
             hash: Option<String>,
@@ -96,23 +98,28 @@ where
                 match (self.ty.as_str(), self.operation.as_str()) {
                     ("stream", "create") => Ok(EventNotification::StreamCreated {
                         stream_id: A::from_string(self.stream_id),
+                        stream_token: self.stream_token,
                         version: self.version.unwrap_or(0),
                     }),
                     ("stream", "update") => Ok(EventNotification::StreamUpdated {
                         stream_id: A::from_string(self.stream_id),
+                        stream_token: self.stream_token,
                         version: self.version.unwrap_or(0),
                     }),
                     ("stream", "delete") => Ok(EventNotification::StreamDeleted {
                         stream_id: A::from_string(self.stream_id),
+                        stream_token: self.stream_token,
                     }),
                     ("snapshot", "create") => Ok(EventNotification::SnapshotCreated {
                         stream_id: A::from_string(self.stream_id),
+                        stream_token: self.stream_token,
                         aggregate_id: self.aggregate_id.ok_or("Missing aggregate_id".to_string())?,
                         version: self.version.unwrap_or(0),
                         hash: self.hash.ok_or("Missing hash".to_string())?,
                     }),
                     ("snapshot", "delete") => Ok(EventNotification::SnapshotDeleted {
                         stream_id: A::from_string(self.stream_id),
+                        stream_token: self.stream_token,
                         aggregate_id: self.aggregate_id.ok_or("Missing aggregate_id".to_string())?,
                         version: self.version.unwrap_or(0),
                     }),

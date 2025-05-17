@@ -10,6 +10,7 @@ use crate::{
 };
 use postgres_from_row::FromRow;
 use std::{borrow::Cow, marker::PhantomData};
+use uuid::Uuid;
 
 pg_query!( StoreSnapshot =>
     in = stream_id: &str, aggregate_id: &str, start_version: i32, end_version: i32, data: &str, hash: &str;
@@ -21,6 +22,7 @@ pg_query!( StoreSnapshot =>
 
 #[derive(FromRow)]
 struct SnapshotRow {
+    stream_token: Uuid,
     start_version: i32,
     version: i32,
     data: String,
@@ -31,15 +33,17 @@ pg_query!( GetSnapshot =>
     in = stream_id: &str, aggregate_id: &str, version: Option<i32>;
     out = SnapshotRow;
     sql = r#"
-        SELECT start_version, version, data::text, hash FROM es_snapshots_%table% 
-            WHERE stream_id = $1 AND aggregate_id = $2 AND ($3 IS NULL OR version <= $3)
-            ORDER BY version DESC
-            LIMIT 1
+        SELECT h.stream_token, s.start_version, s.version, s.data::text, s.hash 
+        FROM es_snapshots_%table% s, es_heads_%table% h
+        WHERE s.stream_id = h.stream_id AND s.stream_id = $1 AND s.aggregate_id = $2 AND ($3 IS NULL OR s.version <= $3)
+        ORDER BY s.version DESC
+        LIMIT 1
     "#
 );
 
 #[derive(FromRow)]
 struct SnapshotInfoRow {
+    stream_token: Uuid,
     start_version: i32,
     version: i32,
     hash: String,
@@ -49,9 +53,10 @@ pg_query!( ListSnapshots =>
     in = stream_id: &str, aggregate_id: &str;
     out = SnapshotInfoRow;
     sql = r#"
-        SELECT start_version, version, hash FROM es_snapshots_%table% 
-            WHERE stream_id = $1 AND aggregate_id = $2
-            ORDER BY version ASC
+        SELECT h.stream_token, s.start_version, s.version, s.hash 
+        FROM es_snapshots_%table% s, es_heads_%table% h
+        WHERE s.stream_id = h.stream_id AND s.stream_id = $1 AND s.aggregate_id = $2
+        ORDER BY s.version ASC
     "#
 );
 
@@ -59,7 +64,7 @@ pg_query!( PruneSnapshot =>
     in = stream_id: &str, aggregate_id: &str, version: i32;
     sql = r#"
         DELETE FROM es_snapshots_%table%
-            WHERE stream_id = $1 AND aggregate_id = $2 AND version <= $3
+        WHERE stream_id = $1 AND aggregate_id = $2 AND version <= $3
     "#
 );
 
@@ -222,6 +227,7 @@ where
         {
             Ok(Some(StoredAggregate::from_json(
                 stream_id.clone(),
+                row.stream_token,
                 row.start_version as usize,
                 row.version as usize,
                 &row.data,
@@ -253,6 +259,7 @@ where
             .into_iter()
             .map(|row| AggregateInfo {
                 stream_id: stream_id.clone(),
+                stream_token: row.stream_token,
                 start_version: row.start_version as usize,
                 version: row.version as usize,
                 hash: row.hash,

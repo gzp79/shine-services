@@ -5,7 +5,7 @@ use shine_infra::db::{
     self,
     event_source::{
         pg::PgEventDb, Aggregate, AggregateInfo, AggregateStore, Event, EventDb, EventNotification, EventSourceError,
-        EventStore, Snapshot,
+        EventStore, Snapshot, UniqueStreamVersion,
     },
     DBError, PGConnectionPool,
 };
@@ -151,7 +151,9 @@ async fn test_store_events() {
         err => panic!("Unexpected error: {err:?}"),
     };
 
-    es.create_stream(&stream_id).await.unwrap();
+    let stream_token = es.create_stream(&stream_id).await.unwrap();
+    log::info!("Stream token: {stream_token}...");
+
     match es.create_stream(&stream_id).await {
         Err(EventSourceError::Conflict) => (),
         err => panic!("Unexpected error: {err:?}"),
@@ -166,7 +168,11 @@ async fn test_store_events() {
         let received_events = received_events.lock().await;
         assert_equal(
             received_events.deref(),
-            &[EventNotification::StreamCreated { stream_id, version: 0 }],
+            &[EventNotification::StreamCreated {
+                stream_id,
+                stream_token,
+                version: 0,
+            }],
         );
     }
 
@@ -184,8 +190,16 @@ async fn test_store_events() {
         assert_equal(
             received_events.deref(),
             &[
-                EventNotification::StreamCreated { stream_id, version: 0 },
-                EventNotification::StreamUpdated { stream_id, version: 1 },
+                EventNotification::StreamCreated {
+                    stream_id,
+                    stream_token,
+                    version: 0,
+                },
+                EventNotification::StreamUpdated {
+                    stream_id,
+                    stream_token,
+                    version: 1,
+                },
             ],
         );
     }
@@ -249,10 +263,22 @@ async fn test_store_events() {
             received_events.deref(),
             &[
                 // creation and first update are different operation, thus we start by 0
-                EventNotification::StreamCreated { stream_id, version: 0 },
-                EventNotification::StreamUpdated { stream_id, version: 1 },
-                EventNotification::StreamUpdated { stream_id, version: 5 },
-                EventNotification::StreamDeleted { stream_id },
+                EventNotification::StreamCreated {
+                    stream_id,
+                    stream_token,
+                    version: 0,
+                },
+                EventNotification::StreamUpdated {
+                    stream_id,
+                    stream_token,
+                    version: 1,
+                },
+                EventNotification::StreamUpdated {
+                    stream_id,
+                    stream_token,
+                    version: 5,
+                },
+                EventNotification::StreamDeleted { stream_id, stream_token },
             ],
         );
     }
@@ -307,17 +333,22 @@ async fn test_unchecked_store_events() {
 
     let mut es = event_db.create_context().await.unwrap();
 
-    // create stream and forst event
-    let mut version = es.unchecked_store_events(&stream_id, &[]).await.unwrap();
-    assert_eq!(version, 0);
+    // it won't create
+    let result = es.unchecked_store_events(&stream_id, &[]).await;
+    assert!(matches!(result, Err(EventSourceError::EventRequired)));
+
+    // create stream and add first event
+    let mut unique_version = es.unchecked_store_events(&stream_id, &events[0..1]).await.unwrap();
+    assert_eq!(unique_version.version, 1);
+    let stream_token = unique_version.stream_token;
+    log::info!("Stream token: {stream_token}...");
+
+    unique_version = es.get_stream_version(&stream_id).await.unwrap().unwrap();
+    assert_eq!(unique_version.stream_token, stream_token);
 
     // add a few more events
-    version = es.unchecked_store_events(&stream_id, &events[0..3]).await.unwrap();
-    assert_eq!(version, 3);
-    version = es.unchecked_store_events(&stream_id, &events[3..]).await.unwrap();
-    assert_eq!(version, 5);
-    version = es.unchecked_store_events(&stream_id, &[]).await.unwrap();
-    assert_eq!(version, 5);
+    unique_version = es.unchecked_store_events(&stream_id, &events[1..]).await.unwrap();
+    assert_eq!(unique_version, UniqueStreamVersion { version: 5, stream_token });
 
     {
         let stored_events = es.get_events(&stream_id, Some(1), Some(2)).await.unwrap();
@@ -346,10 +377,18 @@ async fn test_unchecked_store_events() {
         assert_equal(
             received_events.deref(),
             // creation and first update is a single operation, thus we start by 1 (instead of the usual 0)
-            &iter::once(EventNotification::StreamCreated { stream_id, version: 1 })
-                .chain((2..=events.len()).map(|v| EventNotification::StreamUpdated { stream_id, version: v }))
-                .chain(iter::once(EventNotification::StreamDeleted { stream_id }))
-                .collect::<Vec<_>>(),
+            &iter::once(EventNotification::StreamCreated {
+                stream_id,
+                stream_token,
+                version: 1,
+            })
+            .chain((2..=events.len()).map(|v| EventNotification::StreamUpdated {
+                stream_id,
+                stream_token,
+                version: v,
+            }))
+            .chain(iter::once(EventNotification::StreamDeleted { stream_id, stream_token }))
+            .collect::<Vec<_>>(),
         );
     }
 }
@@ -459,7 +498,8 @@ async fn test_store_snapshot() {
     log::info!("Stream id: {stream_id}...");
 
     // create a stream with a few events
-    es.create_stream(&stream_id).await.unwrap();
+    let stream_token = es.create_stream(&stream_id).await.unwrap();
+    log::info!("Stream token: {stream_token}...");
     es.unchecked_store_events(&stream_id, &events[0..3]).await.unwrap();
 
     // no snapshot yet
@@ -525,12 +565,14 @@ async fn test_store_snapshot() {
         [
             AggregateInfo {
                 stream_id,
+                stream_token,
                 start_version: 0,
                 version: 3,
                 hash: "hash-3".to_string(),
             },
             AggregateInfo {
                 stream_id,
+                stream_token,
                 start_version: 3,
                 version: 5,
                 hash: "hash-5".to_string(),
@@ -600,7 +642,8 @@ async fn test_snapshot_chain() {
         let stream_id = uuid::Uuid::new_v4();
         log::info!("Stream id: {stream_id}...");
 
-        es.create_stream(&stream_id).await.unwrap();
+        let stream_token = es.create_stream(&stream_id).await.unwrap();
+        log::info!("Stream token: {stream_token}...");
 
         // create some events
         let range = if root_id == 0 { 0..15 } else { 0..30 };
@@ -673,18 +716,21 @@ async fn test_snapshot_chain() {
                 [
                     AggregateInfo {
                         stream_id,
+                        stream_token,
                         start_version: root_id,
                         version: root_id + 3,
                         hash: "hash-1".to_string(),
                     },
                     AggregateInfo {
                         stream_id,
+                        stream_token,
                         start_version: root_id + 3,
                         version: root_id + 5,
                         hash: "hash-2".to_string(),
                     },
                     AggregateInfo {
                         stream_id,
+                        stream_token,
                         start_version: root_id + 5,
                         version: root_id + 9,
                         hash: "hash-3".to_string(),
@@ -741,7 +787,8 @@ async fn test_prune_snapshots() {
 
     let mut es = event_db.create_context().await.unwrap();
     let events = (0..10).map(|i| TestEvent::TestEvent2 { num: i }).collect::<Vec<_>>();
-    es.unchecked_store_events(&stream_id, &events).await.unwrap();
+    let UniqueStreamVersion { stream_token, .. } = es.unchecked_store_events(&stream_id, &events).await.unwrap();
+    log::info!("Stream token: {stream_token}...");
 
     // parent, version,
     //  0,   3
@@ -768,18 +815,21 @@ async fn test_prune_snapshots() {
         [
             AggregateInfo {
                 stream_id,
+                stream_token,
                 start_version: 0,
                 version: 3,
                 hash: "hash-1".to_string(),
             },
             AggregateInfo {
                 stream_id,
+                stream_token,
                 start_version: 3,
                 version: 5,
                 hash: "hash-2".to_string(),
             },
             AggregateInfo {
                 stream_id,
+                stream_token,
                 start_version: 5,
                 version: 9,
                 hash: "hash-3".to_string(),
@@ -801,12 +851,14 @@ async fn test_prune_snapshots() {
         [
             AggregateInfo {
                 stream_id,
+                stream_token,
                 start_version: 3,
                 version: 5,
                 hash: "hash-2".to_string(),
             },
             AggregateInfo {
                 stream_id,
+                stream_token,
                 start_version: 5,
                 version: 9,
                 hash: "hash-3".to_string(),
@@ -827,6 +879,7 @@ async fn test_prune_snapshots() {
         list,
         [AggregateInfo {
             stream_id,
+            stream_token,
             start_version: 5,
             version: 9,
             hash: "hash-3".to_string(),
@@ -859,45 +912,59 @@ async fn test_prune_snapshots() {
         assert_equal(
             received_events.deref(),
             // creation and first update is a single operation, thus we start by 1 (instead of the usual 0)
-            &iter::once(EventNotification::StreamCreated { stream_id, version: 1 })
-                .chain((2..=events.len()).map(|v| EventNotification::StreamUpdated { stream_id, version: v }))
-                .chain([
-                    EventNotification::SnapshotCreated {
-                        stream_id,
-                        aggregate_id: TestAggregate::NAME.into(),
-                        version: 3,
-                        hash: "hash-1".into(),
-                    },
-                    EventNotification::SnapshotCreated {
-                        stream_id,
-                        aggregate_id: TestAggregate::NAME.into(),
-                        version: 5,
-                        hash: "hash-2".into(),
-                    },
-                    EventNotification::SnapshotCreated {
-                        stream_id,
-                        aggregate_id: TestAggregate::NAME.into(),
-                        version: 9,
-                        hash: "hash-3".into(),
-                    },
-                    EventNotification::SnapshotDeleted {
-                        stream_id,
-                        aggregate_id: TestAggregate::NAME.into(),
-                        version: 3,
-                    },
-                    EventNotification::SnapshotDeleted {
-                        stream_id,
-                        aggregate_id: TestAggregate::NAME.into(),
-                        version: 5,
-                    },
-                    EventNotification::SnapshotDeleted {
-                        stream_id,
-                        aggregate_id: TestAggregate::NAME.into(),
-                        version: 9,
-                    },
-                ])
-                .chain(Some(EventNotification::StreamDeleted { stream_id }))
-                .collect::<Vec<_>>(),
+            &iter::once(EventNotification::StreamCreated {
+                stream_id,
+                stream_token,
+                version: 1,
+            })
+            .chain((2..=events.len()).map(|v| EventNotification::StreamUpdated {
+                stream_id,
+                stream_token,
+                version: v,
+            }))
+            .chain([
+                EventNotification::SnapshotCreated {
+                    stream_id,
+                    stream_token,
+                    aggregate_id: TestAggregate::NAME.into(),
+                    version: 3,
+                    hash: "hash-1".into(),
+                },
+                EventNotification::SnapshotCreated {
+                    stream_id,
+                    stream_token,
+                    aggregate_id: TestAggregate::NAME.into(),
+                    version: 5,
+                    hash: "hash-2".into(),
+                },
+                EventNotification::SnapshotCreated {
+                    stream_id,
+                    stream_token,
+                    aggregate_id: TestAggregate::NAME.into(),
+                    version: 9,
+                    hash: "hash-3".into(),
+                },
+                EventNotification::SnapshotDeleted {
+                    stream_id,
+                    stream_token,
+                    aggregate_id: TestAggregate::NAME.into(),
+                    version: 3,
+                },
+                EventNotification::SnapshotDeleted {
+                    stream_id,
+                    stream_token,
+                    aggregate_id: TestAggregate::NAME.into(),
+                    version: 5,
+                },
+                EventNotification::SnapshotDeleted {
+                    stream_id,
+                    stream_token,
+                    aggregate_id: TestAggregate::NAME.into(),
+                    version: 9,
+                },
+            ])
+            .chain(Some(EventNotification::StreamDeleted { stream_id, stream_token }))
+            .collect::<Vec<_>>(),
         );
     }
 }
@@ -920,7 +987,8 @@ async fn test_concurrent_store_events() {
     log::info!("Stream id: {stream_id}...");
 
     let mut es = event_db.create_context().await.unwrap();
-    es.create_stream(&stream_id).await.unwrap();
+    let stream_token = es.create_stream(&stream_id).await.unwrap();
+    log::info!("Stream token: {stream_token}...");
 
     let num_insert = 5;
     let num_insert_unchecked = 5;
@@ -947,7 +1015,7 @@ async fn test_concurrent_store_events() {
                 loop {
                     retry += 1;
                     let mut es = event_db.create_context().await.unwrap();
-                    let version = es.get_stream_version(&stream_id).await.unwrap().unwrap();
+                    let UniqueStreamVersion { version, .. } = es.get_stream_version(&stream_id).await.unwrap().unwrap();
                     match es
                         .store_events(&stream_id, version, &[TestEvent::TestEvent2 { num }])
                         .await
@@ -1010,8 +1078,9 @@ async fn test_concurrent_store_events() {
 
     assert_eq!(counts.lock().await.iter().sum::<usize>(), max_num);
 
-    let version = es.get_stream_version(&stream_id).await.unwrap().unwrap();
-    assert_eq!(version, max_num);
+    let unique_version = es.get_stream_version(&stream_id).await.unwrap().unwrap();
+    assert_eq!(unique_version.version, max_num);
+    assert_eq!(unique_version.stream_token, stream_token);
 
     // event may get inserted in out of order, but all version should be inserted exactly once
     let events = es.get_events(&stream_id, None, None).await.unwrap();
@@ -1023,6 +1092,7 @@ async fn test_concurrent_store_events() {
         })
         .collect::<Vec<_>>();
     num_list.sort();
+
     assert_equal(num_list, 0..max_num);
 
     log::info!("Cleaning up...");
@@ -1033,6 +1103,7 @@ async fn test_concurrent_store_events() {
 async fn test_concurrent_snapshots_operation() {
     let cns = match env::var("SHINE_TEST_PG_CNS") {
         Ok(cns) => cns,
+
         _ => {
             log::warn!("Skipping test_stored_statements");
             return;
@@ -1045,9 +1116,10 @@ async fn test_concurrent_snapshots_operation() {
     let mut es = event_db.create_context().await.unwrap();
 
     let stream_id = uuid::Uuid::new_v4();
-    es.create_stream(&stream_id).await.unwrap();
+    log::info!("Stream id: {stream_id}...");
+    let stream_token = es.create_stream(&stream_id).await.unwrap();
+    log::info!("Stream token: {stream_token}...");
 
-    log::info!("Storing events for aggregate: {stream_id}...");
     let version_gap = 3;
     let max_version = es
         .unchecked_store_events(
@@ -1055,7 +1127,8 @@ async fn test_concurrent_snapshots_operation() {
             &(0..100).map(|i| TestEvent::TestEvent2 { num: i }).collect::<Vec<_>>(),
         )
         .await
-        .unwrap();
+        .unwrap()
+        .version;
 
     #[derive(Debug)]
     #[allow(dead_code)]

@@ -1,6 +1,7 @@
 use crate::db::event_source::{Event, EventSourceError, StreamId};
 use serde::{de::DeserializeOwned, Serialize};
 use std::future::Future;
+use uuid::Uuid;
 
 /// Aggregate events into a single model object. Is is sometimes called a "projection".
 pub trait Aggregate: 'static + Serialize + DeserializeOwned + Send + Sync {
@@ -17,6 +18,7 @@ where
     A: Aggregate,
 {
     pub stream_id: A::StreamId,
+    pub stream_token: Uuid,
     pub start_version: usize,
     pub version: usize,
     pub aggregate: A,
@@ -29,6 +31,7 @@ where
 {
     pub fn from_json(
         stream_id: A::StreamId,
+        stream_token: Uuid,
         start_version: usize,
         version: usize,
         data: &str,
@@ -38,6 +41,7 @@ where
 
         Ok(Self {
             stream_id,
+            stream_token,
             start_version,
             version,
             aggregate,
@@ -52,6 +56,7 @@ where
     S: StreamId,
 {
     pub stream_id: S,
+    pub stream_token: Uuid,
     pub start_version: usize,
     pub version: usize,
     pub hash: String,

@@ -15,7 +15,6 @@ where
     height: usize,
     data: Vec<C::Tile>,
 }
-
 impl<C> ChunkStore for DenseChunk<C>
 where
     C: ChunkType,

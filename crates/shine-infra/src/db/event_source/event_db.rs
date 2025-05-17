@@ -1,3 +1,5 @@
+use uuid::Uuid;
+
 use crate::db::event_source::{AggregateStore, Event, EventSourceError, EventStore, StreamId};
 use std::future::Future;
 
@@ -16,23 +18,28 @@ where
 {
     StreamCreated {
         stream_id: S,
+        stream_token: Uuid,
         version: usize,
     },
     StreamUpdated {
         stream_id: S,
+        stream_token: Uuid,
         version: usize,
     },
     StreamDeleted {
         stream_id: S,
+        stream_token: Uuid,
     },
     SnapshotCreated {
         stream_id: S,
+        stream_token: Uuid,
         aggregate_id: String,
         version: usize,
         hash: String,
     },
     SnapshotDeleted {
         stream_id: S,
+        stream_token: Uuid,
         aggregate_id: String,
         version: usize,
     },
@@ -46,9 +53,19 @@ where
         match self {
             EventNotification::StreamCreated { stream_id, .. } => stream_id,
             EventNotification::StreamUpdated { stream_id, .. } => stream_id,
-            EventNotification::StreamDeleted { stream_id } => stream_id,
+            EventNotification::StreamDeleted { stream_id, .. } => stream_id,
             EventNotification::SnapshotCreated { stream_id, .. } => stream_id,
             EventNotification::SnapshotDeleted { stream_id, .. } => stream_id,
+        }
+    }
+
+    pub fn stream_token(&self) -> &Uuid {
+        match self {
+            EventNotification::StreamCreated { stream_token, .. } => stream_token,
+            EventNotification::StreamUpdated { stream_token, .. } => stream_token,
+            EventNotification::StreamDeleted { stream_token, .. } => stream_token,
+            EventNotification::SnapshotCreated { stream_token, .. } => stream_token,
+            EventNotification::SnapshotDeleted { stream_token, .. } => stream_token,
         }
     }
 }

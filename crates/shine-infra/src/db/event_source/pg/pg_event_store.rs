@@ -1,6 +1,8 @@
 use crate::{
     db::{
-        event_source::{pg::PgEventDbContext, Event, EventSourceError, EventStore, StoredEvent, StreamId},
+        event_source::{
+            pg::PgEventDbContext, Event, EventSourceError, EventStore, StoredEvent, StreamId, UniqueStreamVersion,
+        },
         DBError, PGClient, PGErrorChecks,
     },
     pg_query,
@@ -8,11 +10,12 @@ use crate::{
 use postgres_from_row::FromRow;
 use std::{borrow::Cow, marker::PhantomData};
 use tokio_postgres::IsolationLevel;
+use uuid::Uuid;
 
 pg_query!( CreateStream =>
-    in = stream_id: &str;
+    in = stream_id: &str, stream_token: Uuid;
     sql = r#"
-        INSERT INTO es_heads_%table% (stream_id, version) VALUES ($1, 0)
+        INSERT INTO es_heads_%table% (stream_id, version, stream_token) VALUES ($1, 0, $2)
     "#
 );
 
@@ -23,11 +26,17 @@ pg_query!( DeleteStream =>
     "#
 );
 
+#[derive(FromRow)]
+struct UniqueEventVersionRow {
+    version: i32,
+    stream_token: Uuid,
+}
+
 pg_query!( GetStreamVersion =>
     in = stream_id: &str;
-    out = version: i32;
+    out = UniqueEventVersionRow;
     sql = r#"
-        SELECT version FROM es_heads_%table% WHERE stream_id = $1
+        SELECT version, stream_token FROM es_heads_%table% WHERE stream_id = $1
     "#
 );
 
@@ -48,26 +57,29 @@ pg_query!( StoreEvent =>
 );
 
 pg_query!( StoreNextEvent =>
-    in = stream_id: &str, event_type: &str, data: &str;
-    out = version: i32;
+    in = stream_id: &str, stream_token: Uuid, event_type: &str, data: &str;
+    out = UniqueEventVersionRow;
     sql = r#"
         WITH upsert_stream AS (
-            INSERT INTO es_heads_%table% (stream_id, version)
-            VALUES ($1, 1)
+            INSERT INTO es_heads_%table% (stream_id, version, stream_token)
+            VALUES ($1, 1, $2)
             ON CONFLICT (stream_id) DO UPDATE
             SET version = es_heads_test.version + 1
-            RETURNING version
+            RETURNING version, stream_token
+        ),
+        inserted_event AS (
+            INSERT INTO es_events_%table% (stream_id, version, event_type, data)
+            SELECT $1, version, $3, $4::jsonb
+            FROM upsert_stream
         )
-        INSERT INTO es_events_%table% (stream_id, version, event_type, data)
-        SELECT $1, version, $2, $3::jsonb
-        FROM upsert_stream
-        RETURNING version;
+        SELECT version, stream_token FROM upsert_stream;
     "#
 );
 
 #[derive(FromRow)]
 struct EventRow {
     version: i32,
+    stream_token: Uuid,
     data: String,
 }
 
@@ -78,6 +90,7 @@ impl EventRow {
     {
         Ok(StoredEvent {
             version: self.version as usize,
+            stream_token: self.stream_token,
             event: serde_json::from_str(&self.data).map_err(EventSourceError::EventSerialization)?,
         })
     }
@@ -87,9 +100,10 @@ pg_query!( GetEvents =>
     in = aggregate: &str, from_version: i32, to_version: i32;
     out = EventRow;
     sql = r#"
-        SELECT version, data::text FROM es_events_%table% 
-            WHERE stream_id = $1 AND version >= $2 AND version <= $3
-            ORDER BY version
+        SELECT e.version, h.stream_token, e.data::text
+        FROM es_events_%table% e, es_heads_%table% h
+        WHERE e.stream_id = h.stream_id AND e.stream_id = $1 AND e.version >= $2 AND e.version <= $3
+        ORDER BY e.version
     "#
 );
 
@@ -168,11 +182,12 @@ where
     type Event = E;
     type StreamId = S;
 
-    async fn create_stream(&mut self, aggregate_id: &Self::StreamId) -> Result<(), EventSourceError> {
+    async fn create_stream(&mut self, aggregate_id: &Self::StreamId) -> Result<Uuid, EventSourceError> {
+        let stream_token = Uuid::new_v4();
         if let Err(err) = self
             .stmts_store
             .create_stream
-            .execute(&self.client, &aggregate_id.to_string().as_str())
+            .execute(&self.client, &aggregate_id.to_string().as_str(), &stream_token)
             .await
         {
             if err.is_constraint(
@@ -184,11 +199,14 @@ where
                 Err(DBError::from(err).into())
             }
         } else {
-            Ok(())
+            Ok(stream_token)
         }
     }
 
-    async fn get_stream_version(&mut self, aggregate_id: &Self::StreamId) -> Result<Option<usize>, EventSourceError> {
+    async fn get_stream_version(
+        &mut self,
+        aggregate_id: &Self::StreamId,
+    ) -> Result<Option<UniqueStreamVersion>, EventSourceError> {
         match self
             .stmts_store
             .get_version
@@ -196,7 +214,10 @@ where
             .await
             .map_err(DBError::from)?
         {
-            Some(v) => Ok(Some(v as usize)),
+            Some(info) => Ok(Some(UniqueStreamVersion {
+                version: info.version as usize,
+                stream_token: info.stream_token,
+            })),
             None => Ok(None),
         }
     }
@@ -297,41 +318,38 @@ where
     async fn unchecked_store_events(
         &mut self,
         aggregate_id: &Self::StreamId,
-        event: &[Self::Event],
-    ) -> Result<usize, EventSourceError> {
-        let mut version = None;
-        for event in event.iter() {
+        events: &[Self::Event],
+    ) -> Result<UniqueStreamVersion, EventSourceError> {
+        if events.is_empty() {
+            return Err(EventSourceError::EventRequired);
+        }
+
+        let mut info = None;
+        let stream_token = Uuid::new_v4();
+        for event in events.iter() {
             let data = serde_json::to_string(event).map_err(EventSourceError::EventSerialization)?;
-            let new_version: i32 = self
+            let new_info = self
                 .stmts_store
                 .store_next_event
                 .query_opt(
                     &self.client,
                     &aggregate_id.to_string().as_str(),
+                    &stream_token,
                     &event.event_type(),
                     &data.as_str(),
                 )
                 .await
                 .map_err(DBError::from)?
                 .expect("Failed to store event without a DB error");
-            version = Some(new_version as usize);
+            info = Some(new_info);
         }
 
-        if let Some(version) = version {
-            Ok(version)
-        } else {
-            log::warn!("Performance warning: store_event called without any events");
-            match self
-                .stmts_store
-                .get_version
-                .query_opt(&self.client, &aggregate_id.to_string().as_str())
-                .await
-                .map_err(DBError::from)?
-            {
-                Some(version) => Ok(version as usize),
-                None => Ok(0),
-            }
-        }
+        Ok(info
+            .map(|info| UniqueStreamVersion {
+                version: info.version as usize,
+                stream_token: info.stream_token,
+            })
+            .expect("Failed to store event without a DB error"))
     }
 
     async fn get_events(

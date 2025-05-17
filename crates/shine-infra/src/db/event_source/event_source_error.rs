@@ -7,6 +7,8 @@ pub enum EventSourceError {
     Conflict,
     #[error("Stream not found")]
     StreamNotFound,
+    #[error("Some events were required")]
+    EventRequired,
     #[error("The event to be applied is out of order")]
     EventOutOfOrder,
     #[error("Event with the given version {0} not found")]

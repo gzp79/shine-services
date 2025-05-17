@@ -5,6 +5,7 @@ pub fn migration_001(aggregate: &str) -> String {
 -- Event stream
 CREATE TABLE es_heads_{aggregate} (
     stream_id VARCHAR(256) NOT NULL PRIMARY KEY,
+    stream_token UUID NOT NULL,
     version INT NOT NULL CHECK (version >= 0)
 );
 
@@ -19,6 +20,7 @@ BEGIN
                 'type', 'stream',
                 'operation', 'create',
                 'stream_id', NEW.stream_id,
+                'stream_token', NEW.stream_token,
                 'version', NEW.version
             )::text );
         RETURN NEW;
@@ -29,6 +31,7 @@ BEGIN
                 'type', 'stream',
                 'operation', 'update',
                 'stream_id', NEW.stream_id,
+                'stream_token', NEW.stream_token,
                 'version', NEW.version
             )::text );
         RETURN NEW;
@@ -38,7 +41,8 @@ BEGIN
             json_build_object(
                 'type', 'stream',
                 'operation', 'delete',
-                'stream_id', OLD.stream_id
+                'stream_id', OLD.stream_id,
+                'stream_token', OLD.stream_token
             )::text );
         RETURN OLD;
     END IF;
@@ -132,7 +136,15 @@ EXECUTE FUNCTION check_es_snapshots_{aggregate}_root();
 -- Notify about snapshot changes (create, delete)
 CREATE OR REPLACE FUNCTION notify_es_snapshots_{aggregate}()
 RETURNS TRIGGER AS $$
+DECLARE
+    stream_token UUID;
 BEGIN
+    -- Fetch the stream_token from es_heads_{aggregate}
+    SELECT h.stream_token
+    INTO stream_token
+    FROM es_heads_{aggregate} h
+    WHERE h.stream_id = COALESCE(NEW.stream_id, OLD.stream_id);
+
     IF (TG_OP = 'INSERT') THEN
         PERFORM pg_notify(
             'es_notification_{aggregate}',
@@ -140,11 +152,12 @@ BEGIN
                 'type', 'snapshot',
                 'operation', 'create',
                 'stream_id', NEW.stream_id,
+                'stream_token', stream_token,
                 'aggregate_id', NEW.aggregate_id,
                 'version', NEW.version,
                 'hash', NEW.hash
             )::text );
-        RETURN NEW;    
+        RETURN NEW;
     ELSIF (TG_OP = 'DELETE') THEN
         PERFORM pg_notify(
             'es_notification_{aggregate}',
@@ -152,6 +165,7 @@ BEGIN
                 'type', 'snapshot',
                 'operation', 'delete',
                 'stream_id', OLD.stream_id,
+                'stream_token', stream_token,
                 'aggregate_id', OLD.aggregate_id,
                 'version', OLD.version
             )::text );

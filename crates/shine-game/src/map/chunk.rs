@@ -1,11 +1,20 @@
-use crate::map::{ChunkOperation, Tile};
+use crate::map::Tile;
 use bevy::ecs::component::{Component, Mutable};
+use serde::{de::DeserializeOwned, Serialize};
 
 pub trait ChunkType: 'static + Send + Sync {
     const NAME: &'static str;
 
     type Tile: Tile;
     type Operation: ChunkOperation<Tile = Self::Tile>;
+}
+
+pub trait ChunkOperation: 'static + Serialize + DeserializeOwned + Send + Sync {
+    type Tile: Tile;
+
+    fn apply<C>(self, chunk: &mut C)
+    where
+        C: ChunkStore<Tile = Self::Tile>;
 }
 
 pub trait ChunkStore: 'static + Component<Mutability = Mutable> {
