@@ -9,10 +9,10 @@ where
 {
     /// Chunk layer is created, start tracking data changes
     Track { id: ChunkId },
-
+    /// The tracking request was rejected by the server
+    TrackRejected { id: ChunkId },
     /// Chunk was unloaded, stop tracking data changes
     Untrack { id: ChunkId },
-
     /// Some operations are missing from the stream
     /// The first,last is an inclusive range of the missing operations
     OperationGap { id: ChunkId, first: usize, last: usize },

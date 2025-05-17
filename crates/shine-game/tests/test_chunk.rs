@@ -68,9 +68,8 @@ where
 
         app.update();
 
+        log::debug!("Check if chunk is created");
         {
-            log::debug!("Check if chunk is created");
-
             let tile_map = app.world().get_resource::<MapChunkTracker>().unwrap();
             chunk_entity = tile_map.get_entity(chunk_id).unwrap();
 
@@ -96,38 +95,43 @@ where
                 assert!(hash_tracker.is_none());
             }
         }
+
+        log::debug!("Check if events were sent");
+        {
+            let mut events = app.world_mut().resource_mut::<Events<ChunkEvent<T::Chunk>>>();
+            let mut event_reader = events.get_cursor();
+            let event = event_reader.read(&*events).next().unwrap();
+            match event {
+                ChunkEvent::Track { id } => {
+                    assert_eq!(id, &chunk_id);
+                }
+                _ => panic!("Unexpected event"),
+            }
+
+            assert!(event_reader.read(&*events).next().is_none());
+            // emulate a new frame w.r.t. the event reader
+            events.clear();
+        }
     }
 
     log::info!("Start chunk tracking, send an empty data");
     {
-        let mut events = app.world_mut().resource_mut::<Events<ChunkEvent<T::Chunk>>>();
-        let mut event_reader = events.get_cursor();
-        let event = event_reader.read(&*events).next().unwrap();
-        match event {
-            ChunkEvent::Track { id } => {
-                assert_eq!(id, &chunk_id);
-            }
-            _ => panic!("Unexpected event"),
-        }
-
-        assert!(event_reader.read(&*events).next().is_none());
-        // emulate a new frame w.r.t. the event reader
-        events.clear();
-
         command_queue.add_command(chunk_id, ChunkCommand::Empty);
         app.update();
 
-        // Check if the chunk is empty
-        let (chunk_root, test_data) = app.world().entity(chunk_entity).components::<(&ChunkRoot, &T::Chunk)>();
-        let hash_tracker = app
-            .world()
-            .entity(chunk_entity)
-            .get_components::<&ChunkHashTrack<T::Chunk, T::Hasher>>();
-        assert_eq!(chunk_root.id, chunk_id);
-        assert!(!test_data.is_empty());
-        assert_eq!(test_data.version(), 0);
+        log::debug!("Check if the chunk is empty");
+        {
+            let (chunk_root, test_data) = app.world().entity(chunk_entity).components::<(&ChunkRoot, &T::Chunk)>();
+            let hash_tracker = app
+                .world()
+                .entity(chunk_entity)
+                .get_components::<&ChunkHashTrack<T::Chunk, T::Hasher>>();
+            assert_eq!(chunk_root.id, chunk_id);
+            assert!(!test_data.is_empty());
+            assert_eq!(test_data.version(), 0);
 
-        test_case.test_default_chunk(test_data, hash_tracker.and_then(|h| h.get(0)));
+            test_case.test_default_chunk(test_data, hash_tracker.and_then(|h| h.get(0)));
+        }
     }
 
     log::info!("Unloading chunk");
@@ -138,9 +142,8 @@ where
 
         app.update();
 
+        log::debug!("Check if chunk is dropped");
         {
-            log::debug!("Check if chunk is dropped");
-
             let chunk_tracker = app.world().get_resource::<MapChunkTracker>().unwrap();
             assert!(chunk_tracker.get_entity(chunk_id).is_none());
 
@@ -150,21 +153,21 @@ where
             let result = app.world().get_entity(chunk_entity);
             assert!(result.is_err());
         }
-    }
 
-    log::info!("Stop chunk tracking");
-    {
-        let events = app.world().resource::<Events<ChunkEvent<T::Chunk>>>();
-        let mut event_reader = events.get_cursor();
-        let event = event_reader.read(events).next().unwrap();
-        match event {
-            ChunkEvent::Untrack { id } => {
-                assert_eq!(id, &chunk_id);
+        log::info!("Check if untrack event was sent");
+        {
+            let events = app.world().resource::<Events<ChunkEvent<T::Chunk>>>();
+            let mut event_reader = events.get_cursor();
+            let event = event_reader.read(events).next().unwrap();
+            match event {
+                ChunkEvent::Untrack { id } => {
+                    assert_eq!(id, &chunk_id);
+                }
+                _ => panic!("Unexpected event"),
             }
-            _ => panic!("Unexpected event"),
-        }
 
-        assert!(event_reader.read(events).next().is_none());
+            assert!(event_reader.read(events).next().is_none());
+        }
     }
 }
 

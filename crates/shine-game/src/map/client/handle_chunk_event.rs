@@ -101,6 +101,11 @@ pub fn process_chunk_events_system<C, EH>(
             ChunkEvent::Untrack { id } => *id,
             ChunkEvent::OperationGap { id, .. } => *id,
             ChunkEvent::_Phantom(_) => unreachable!(),
+            ChunkEvent::TrackRejected { id } => {
+                log::debug!("Chunk [{:?}]: Track request rejected", id);
+                tasks.tasks.remove(id);
+                continue;
+            }
         };
 
         // check if the task has finished

@@ -1,7 +1,7 @@
 use crate::map::{ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkId, ChunkRoot, MapChunk};
 use bevy::ecs::{
     entity::Entity,
-    event::EventWriter,
+    event::{EventReader, EventWriter},
     query::{Added, Without},
     removal_detection::RemovedComponents,
     resource::Resource,
@@ -97,6 +97,25 @@ pub fn remove_layer_system<C>(
             chunk_layer.chunks_to_entity.remove(&chunk_id);
             // commands.entity(entity).remove::<C>(); - It would causes warning as entity has been released
             events.write(ChunkEvent::Untrack { id: chunk_id });
+        }
+    }
+}
+
+/// Remove the layers when the chunk was rejected.
+pub fn remove_rejected_chunks_system<C>(
+    mut chunk_layer: ResMut<ChunkLayer<C>>,
+    mut events: EventReader<ChunkEvent<C>>,
+    mut commands: Commands,
+) where
+    C: MapChunk,
+{
+    for event in events.read() {
+        if let ChunkEvent::TrackRejected { id } = event {
+            if let Some(entity) = chunk_layer.chunks_to_entity.remove(id) {
+                log::debug!("Chunk [{:?}]: Chunk layer {} is removed", id, C::name());
+                chunk_layer.entity_to_chunk.remove(&entity);
+                commands.entity(entity).remove::<C>();
+            }
         }
     }
 }

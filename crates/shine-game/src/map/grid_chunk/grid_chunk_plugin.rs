@@ -1,6 +1,7 @@
 use crate::map::{
     client, create_layer_system, process_layer_commands_system, process_map_event_system, remove_layer_system,
-    ChunkCommandQueue, ChunkEvent, ChunkHasher, ChunkLayer, ChunkOperation, GridChunk, LayerSetup, NullHasher,
+    remove_rejected_chunks_system, ChunkCommandQueue, ChunkEvent, ChunkHasher, ChunkLayer, ChunkOperation, GridChunk,
+    LayerSetup, NullHasher,
 };
 use bevy::{
     app::{App, PostUpdate, PreUpdate, Update},
@@ -71,6 +72,8 @@ where
         );
 
         app.add_systems(Update, process_layer_commands_system::<C, O, H>);
+
+        app.add_systems(PostUpdate, remove_rejected_chunks_system::<C>);
 
         if let Some(client_send_service) = &self.client_send_service {
             app.insert_resource(client_send_service.clone());

@@ -9,6 +9,7 @@ use bevy::{
 };
 use std::collections::{BTreeMap, VecDeque};
 
+/// Command to be applied to a chunk.
 pub enum ChunkCommand<C, O, H>
 where
     C: MapChunk,
@@ -23,10 +24,14 @@ where
     Operations(Vec<(usize, O)>),
     /// A list of hashes corresponding to versions to detect drifts compared to the authoritative snapshot.    
     DriftDetect(Vec<(usize, H::Hash)>),
+    /// The chunk is not available for the user.
+    Rejected,
 }
 
 pub type CommandVec<C, O, H> = Vec<(ChunkId, Option<ChunkCommand<C, O, H>>)>;
 
+/// A queue of commands to be applied to chunks in receiving order. It is used to inject updates outside of
+/// the bevy world.
 #[derive(Resource)]
 pub struct ChunkCommandQueue<C, O, H>
 where
@@ -140,6 +145,11 @@ pub fn process_layer_commands_system<C, O, H>(
                     if hash_track.is_some() {
                         chunk_hashes.extend(drift_detect);
                     }
+                    false
+                }
+                ChunkCommand::Rejected => {
+                    log::debug!("Chunk [{:?}]: Rejected", chunk_root.id);
+                    events.write(ChunkEvent::TrackRejected { id: chunk_id });
                     false
                 }
             };
