@@ -1,0 +1,24 @@
+[package]
+name = "shine-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+log = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+uuid = { workspace = true }
+rand = { workspace = true }
+ring = { workspace = true }
+
+bevy = { workspace = true, default-features = true }
+
+shine-game = { workspace = true }
+shine-core = { workspace = true }
+
+[dev-dependencies]
+shine-test = { workspace = true }

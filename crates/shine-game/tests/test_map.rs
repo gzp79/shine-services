@@ -4,7 +4,7 @@ use bevy::{
     tasks::{AsyncComputeTaskPool, TaskPool},
     DefaultPlugins,
 };
-use shine_game::map::{ChunkId, ChunkRoot, MapChunk, MapChunkTracker, MapConfig, MapEvent, MapPlugin};
+use shine_game::map::{ChunkId, ChunkRoot, ChunkVersion, MapChunk, MapChunkTracker, MapConfig, MapEvent, MapPlugin};
 use shine_test::test;
 
 #[path = "shared/test_data.rs"]
@@ -90,10 +90,14 @@ async fn test_map_chunk_load() {
         assert_eq!(layer.get_entity(chunk_id), Some(chunk_entity));
         assert_eq!(layer.get_chunk_id(chunk_entity), Some(chunk_id));
 
-        let (chunk_root, test_data) = app.world().entity(chunk_entity).components::<(&ChunkRoot, &TestData)>();
+        let (chunk_root, chunk_version, test_data) =
+            app.world()
+                .entity(chunk_entity)
+                .components::<(&ChunkRoot, &ChunkVersion<TestData>, &TestData)>();
         assert_eq!(chunk_root.id, chunk_id);
         assert!(test_data.is_empty());
         assert_eq!(test_data.data(), None);
+        assert_eq!(chunk_version.version, 0);
     }
 
     app.world_mut()

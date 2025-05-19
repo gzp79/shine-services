@@ -87,7 +87,7 @@
           "SHINE--SERVICE--PORT": "8443",
           "SHINE--SERVICE--SESSION_REDIS_CNS": "${env:SHINE_REDIS_CNS}",
           "SHINE--IDENTITY--AUTH--AUTH_BASE_URL": "https://local-cloud.scytta.com:8443/identity/auth/",
-          "SHINE--IDENTITY--DB--REDIS_CNS": "${env:SHINE_REDIS_CNS}",
+          "SHINE--IDENTITY--DB--REDIS_CNS": "${env:SHINE_REDIS_CNS}"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -103,7 +103,7 @@
           "RUST_BACKTRACE": "full",
           "SHINE--SERVICE--TLS--CERT": "../../certs/test.crt",
           "SHINE--SERVICE--TLS--KEY": "../../certs/test.key",
-          "SHINE--SERVICE--PORT": "8443",
+          "SHINE--SERVICE--PORT": "8443"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -139,6 +139,19 @@
       },
       "problemMatcher": ["$rustc"],
       "group": "build"
+    },
+    {
+      "label": "client: local",
+      "type": "shell",
+      "command": "cargo run -p shine-client --release",
+      "options": {
+        "cwd": "client",
+        "env": {
+          "RUST_BACKTRACE": "full"
+        }
+      },
+      "problemMatcher": ["$rustc"],
+      "group": "build"
     }
   ],
   "inputs": [
@@ -148,12 +161,16 @@
       "description": "Select project",
       "options": [
         { "label": "all", "value": "" },
+        { "label": "shine-client", "value": "-p shine-client" },
         { "label": "shine-builder", "value": "-p shine-builder" },
         { "label": "shine-identity", "value": "-p shine-identity" },
         { "label": "shine-infra", "value": "-p shine-infra" },
         { "label": "shine-infra-macros", "value": "-p shine-infra-macros" },
         { "label": "shine-game", "value": "-p shine-game" },
-        { "label": "shine-game + persist", "value": "-p shine-game --features persisted" },
+        {
+          "label": "shine-game + persist",
+          "value": "-p shine-game --features persisted"
+        },
         { "label": "shine-core", "value": "-p shine-core" },
         { "label": "shine-test", "value": "-p shine-test" },
         { "label": "shine-test-macros", "value": "-p shine-test-macros" }

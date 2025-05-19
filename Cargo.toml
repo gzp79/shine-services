@@ -10,6 +10,7 @@ members = [
 	"crates/shine-infra",
 	"services/identity",
 	"services/builder",
+	"client",
 ]
 
 [workspace.package]
@@ -90,6 +91,9 @@ utoipa = { version = "5.3", features = [
 utoipa-axum = "0.2"
 utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
 
+############################# GAME ENGINE #############################
+bevy = { version = "0.16", default-features = false }
+
 ############################# WASM #############################
 wasm-logger = "0.2"
 wasm-bindgen-test = "0.3"
@@ -101,3 +105,4 @@ shine-test = { path = "./crates/shine-test" }
 shine-core = { path = "./crates/shine-core" }
 shine-infra-macros = { path = "./crates/shine-infra-macros" }
 shine-infra = { path = "./crates/shine-infra" }
+shine-game = { path = "./crates/shine-game" }

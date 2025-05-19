@@ -6,8 +6,8 @@ use bevy::{
 };
 use shine_game::map::{
     client, ChunkCommand, ChunkCommandQueue, ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkId, ChunkLayer,
-    ChunkLayerSetup, ChunkOperation, ChunkRoot, DenseGridChunk, GridChunk, LayerSetup, MapChunk, MapChunkTracker,
-    MapConfig, MapEvent, MapPlugin, SparseGridChunk,
+    ChunkLayerSetup, ChunkOperation, ChunkRoot, ChunkVersion, DenseGridChunk, GridChunk, LayerSetup, MapChunk,
+    MapChunkTracker, MapConfig, MapEvent, MapPlugin, SparseGridChunk,
 };
 use shine_test::test;
 use std::fmt;
@@ -121,14 +121,17 @@ where
 
         log::debug!("Check if the chunk is empty");
         {
-            let (chunk_root, test_data) = app.world().entity(chunk_entity).components::<(&ChunkRoot, &T::Chunk)>();
+            let (chunk_root, chunk_version, test_data) =
+                app.world()
+                    .entity(chunk_entity)
+                    .components::<(&ChunkRoot, &ChunkVersion<T::Chunk>, &T::Chunk)>();
             let hash_tracker = app
                 .world()
                 .entity(chunk_entity)
                 .get_components::<&ChunkHashTrack<T::Chunk, T::Hasher>>();
             assert_eq!(chunk_root.id, chunk_id);
             assert!(!test_data.is_empty());
-            assert_eq!(test_data.version(), 0);
+            assert_eq!(chunk_version.version, 0);
 
             test_case.test_default_chunk(test_data, hash_tracker.and_then(|h| h.get(0)));
         }
@@ -193,7 +196,6 @@ impl TestCase for TestDataTestCase {
 
     fn test_default_chunk(&self, chunk: &Self::Chunk, hash: Option<&usize>) {
         assert_eq!(chunk.data(), Some(WIDTH * HEIGHT));
-        assert_eq!(chunk.version(), 0);
         assert_eq!(hash, Some(&(WIDTH * HEIGHT)));
     }
 }

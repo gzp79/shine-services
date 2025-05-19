@@ -24,6 +24,10 @@ impl<T> ChunkOperation<T> for GridU8Operation
 where
     T: GridChunk<Tile = u8>,
 {
+    fn check_precondition(&self, _chunk: &T) -> bool {
+        true
+    }
+
     fn apply(self, chunk: &mut T) {
         match self {
             GridU8Operation::SetTile(x, y, tile) => {

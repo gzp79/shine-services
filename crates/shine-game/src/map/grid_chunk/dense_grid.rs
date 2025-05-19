@@ -56,14 +56,6 @@ where
     fn is_empty(&self) -> bool {
         self.width == 0 && self.height == 0
     }
-
-    fn version(&self) -> usize {
-        self.version
-    }
-
-    fn set_version(&mut self, version: usize) {
-        self.version = version;
-    }
 }
 
 impl<T> GridChunk for DenseGrid<T>

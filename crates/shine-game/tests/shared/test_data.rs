@@ -16,6 +16,10 @@ pub struct TestDataOperation {
 }
 
 impl ChunkOperation<TestData> for TestDataOperation {
+    fn check_precondition(&self, _chunk: &TestData) -> bool {
+        true
+    }
+
     fn apply(self, chunk: &mut TestData) {
         chunk.data = Some(self.value);
     }
@@ -24,7 +28,6 @@ impl ChunkOperation<TestData> for TestDataOperation {
 #[derive(Component, Debug)]
 pub struct TestData {
     data: Option<usize>,
-    version: usize,
 }
 
 impl TestData {
@@ -39,25 +42,17 @@ impl MapChunk for TestData {
     }
 
     fn new_empty() -> Self {
-        Self { data: None, version: 0 }
+        Self { data: None }
     }
 
     fn new(config: &MapConfig) -> Self {
         Self {
             data: Some(config.width * config.height),
-            version: 0,
         }
     }
 
     fn is_empty(&self) -> bool {
         self.data.is_none()
-    }
-
-    fn version(&self) -> usize {
-        self.version
-    }
-    fn set_version(&mut self, version: usize) {
-        self.version = version;
     }
 }
 

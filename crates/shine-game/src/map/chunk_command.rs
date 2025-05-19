@@ -9,6 +9,8 @@ use bevy::{
 };
 use std::collections::{BTreeMap, VecDeque};
 
+use super::ChunkVersion;
+
 /// Command to be applied to a chunk.
 pub enum ChunkCommand<C, O, H>
 where
@@ -19,7 +21,7 @@ where
     /// Indicates a missing or deleted chunk. Chunk data is reset to an empty state and any previous operations are discarded.
     Empty,
     /// Indicates a new chunk snapshot. Any operations older than the snapshot has been already applied.
-    Data(C),
+    Data((usize, C)),
     /// A list of operations to be applied to the chunk in the order of the versions.
     Operations(Vec<(usize, O)>),
     /// A list of hashes corresponding to versions to detect drifts compared to the authoritative snapshot.    
@@ -103,7 +105,12 @@ pub fn process_layer_commands_system<C, O, H>(
     map_config: Res<MapConfig>,
     hasher: Option<Res<H>>,
     chunk_command_queue: Res<ChunkCommandQueue<C, O, H>>,
-    mut chunks: Query<(&ChunkRoot, &mut C, Option<&mut ChunkHashTrack<C, H>>)>,
+    mut chunks: Query<(
+        &ChunkRoot,
+        &mut ChunkVersion<C>,
+        &mut C,
+        Option<&mut ChunkHashTrack<C, H>>,
+    )>,
     mut events: EventWriter<ChunkEvent<C>>,
 
     // some optimization to avoid continuous memory allocation
@@ -115,8 +122,9 @@ pub fn process_layer_commands_system<C, O, H>(
     O: ChunkOperation<C>,
     H: ChunkHasher<C>,
 {
-    for (chunk_root, mut chunk, mut hash_track) in chunks.iter_mut() {
+    for (chunk_root, mut chunk_version, mut chunk, mut hash_track) in chunks.iter_mut() {
         let chunk_id = chunk_root.id;
+
         assert!(chunk_commands.is_empty());
         assert!(chunk_operations.is_empty());
         chunk_command_queue.take_commands(chunk_id, &mut chunk_commands);
@@ -128,13 +136,14 @@ pub fn process_layer_commands_system<C, O, H>(
                     *chunk = C::new(&map_config);
                     true
                 }
-                ChunkCommand::Data(data) => {
+                ChunkCommand::Data((data_version, data)) => {
                     log::debug!(
                         "Chunk [{:?}]: Replace with a new data at version ({})",
                         chunk_root.id,
-                        data.version()
+                        data_version
                     );
                     *chunk = data;
+                    chunk_version.version = data_version;
                     true
                 }
                 ChunkCommand::Operations(operations) => {
@@ -160,12 +169,12 @@ pub fn process_layer_commands_system<C, O, H>(
                 chunk_hashes.clear();
                 if let (Some(hasher), Some(hash_track)) = (&hasher, &mut hash_track) {
                     hash_track.clear();
-                    hash_track.set(chunk.version(), hasher.hash(&*chunk));
+                    hash_track.set(chunk_version.version, hasher.hash(&chunk));
                     log::debug!(
                         "Chunk [{:?}]: Hash cleared and stored [{}] -> [{}]",
                         chunk_id,
-                        chunk.version(),
-                        serde_json::to_string(hash_track.get(chunk.version()).unwrap()).unwrap()
+                        chunk_version.version,
+                        serde_json::to_string(hash_track.get(chunk_version.version).unwrap()).unwrap()
                     );
                 }
             }
@@ -175,30 +184,32 @@ pub fn process_layer_commands_system<C, O, H>(
         if !chunk_commands.is_empty() {
             log::debug!("Chunk [{:?}]: Applying {} operations", chunk_id, chunk_operations.len());
             while let Some((version, operation)) = chunk_operations.pop_first() {
-                if version <= chunk.version() {
+                if version <= chunk_version.version {
                     log::trace!("Chunk [{:?}]: Operation is too old {}, ignoring", chunk_id, version);
-                } else if version == chunk.version() + 1 {
-                    operation.apply(&mut *chunk);
-                    chunk.set_version(version);
+                } else if version == chunk_version.version + 1 {
+                    if operation.check_precondition(&chunk) {
+                        operation.apply(&mut *chunk);
+                    }
+                    chunk_version.version = version;
                     if let (Some(hasher), Some(hash_track)) = (&hasher, &mut hash_track) {
-                        hash_track.set(chunk.version(), hasher.hash(&*chunk));
+                        hash_track.set(chunk_version.version, hasher.hash(&chunk));
                         log::debug!(
                             "Chunk [{:?}]: Hash stored [{}] -> [{}]",
                             chunk_id,
-                            chunk.version(),
-                            serde_json::to_string(hash_track.get(chunk.version()).unwrap()).unwrap()
+                            chunk_version.version,
+                            serde_json::to_string(hash_track.get(chunk_version.version).unwrap()).unwrap()
                         );
                     }
                 } else {
                     log::debug!(
                         "Chunk [{:?}]: Operation version gap detected: [{}..{})",
                         chunk_id,
-                        chunk.version() + 1,
+                        chunk_version.version + 1,
                         version
                     );
                     events.write(ChunkEvent::OperationGap {
                         id: chunk_id,
-                        first: chunk.version() + 1,
+                        first: chunk_version.version + 1,
                         last: version,
                     });
                     break;
