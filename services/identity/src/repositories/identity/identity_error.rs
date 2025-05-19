@@ -1,5 +1,4 @@
-use shine_core::crypto::IdEncoderError;
-use shine_infra::{db::DBError, web::Problem};
+use shine_infra::{crypto::IdEncoderError, db::DBError, web::Problem};
 use thiserror::Error as ThisError;
 
 mod pr {

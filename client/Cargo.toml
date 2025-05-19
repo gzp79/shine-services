@@ -12,8 +12,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 uuid = { workspace = true }
-rand = { workspace = true }
-ring = { workspace = true }
 
 bevy = { workspace = true, default-features = true }
 
@@ -22,3 +20,6 @@ shine-core = { workspace = true }
 
 [dev-dependencies]
 shine-test = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+bevy = { workspace = true, features = ["webgl2"] }

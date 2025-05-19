@@ -5,8 +5,10 @@ use crate::{
 use axum::{extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};
 use serde::Deserialize;
-use shine_core::crypto::random;
-use shine_infra::web::{ErrorResponse, InputError, ValidatedQuery};
+use shine_infra::{
+    crypto::random,
+    web::{ErrorResponse, InputError, ValidatedQuery},
+};
 use std::sync::Arc;
 use url::Url;
 use utoipa::IntoParams;

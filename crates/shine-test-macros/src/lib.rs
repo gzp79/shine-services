@@ -43,14 +43,12 @@ pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
 
     let mut test_decors = Vec::new();
-    // wasm_bindgen_test for wasm targets
-    test_decors.push(quote! { #[cfg_attr(target_arch = "wasm32", ::wasm_bindgen_test::wasm_bindgen_test)] });
     if input.sig.asyncness.is_some() {
-        // tokio::test for async test
         test_decors.push(quote! { #[cfg_attr(not(target_arch = "wasm32"), ::tokio::test(flavor = "multi_thread"))] });
+        test_decors.push(quote! { #[cfg_attr(target_arch = "wasm32", ::wasm_bindgen_test::wasm_bindgen_test)] });
     } else {
-        // core::test for none-async test
         test_decors.push(quote! { #[cfg_attr(not(target_arch = "wasm32"), ::core::prelude::v1::test)] });
+        test_decors.push(quote! { #[cfg_attr(target_arch = "wasm32", ::wasm_bindgen_test::wasm_bindgen_test)] });
     };
 
     if let Some(serial) = attrs.serial {

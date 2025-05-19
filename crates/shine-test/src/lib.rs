@@ -1,14 +1,9 @@
 pub use shine_test_macros::test;
 
 #[cfg(target_arch = "wasm32")]
-pub use wasm_bindgen_test::wasm_bindgen_test as impl_test_async;
+pub use wasm_bindgen_test::wasm_bindgen_test;
 #[cfg(target_arch = "wasm32")]
-pub use wasm_bindgen_test::wasm_bindgen_test as impl_test;
-
-#[cfg(not(target_arch = "wasm32"))]
-pub use core::prelude::v1::test as impl_test;
-#[cfg(not(target_arch = "wasm32"))]
-pub use tokio::test as impl_test_async;
+pub use wasm_bindgen_test::wasm_bindgen_test_configure;
 
 /// Test setup executed before each test.
 pub fn setup_test() {

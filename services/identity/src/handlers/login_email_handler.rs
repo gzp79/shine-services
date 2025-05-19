@@ -8,8 +8,8 @@ use crate::{
     services::{hash_email, IdentityService, MailerService, SettingsService},
 };
 use ring::rand::SystemRandom;
-use shine_core::crypto::random;
 use shine_infra::{
+    crypto::random,
     language::Language,
     web::{Problem, SiteInfo},
 };

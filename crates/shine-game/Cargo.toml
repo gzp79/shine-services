@@ -3,16 +3,12 @@ name = "shine-game"
 version.workspace = true
 edition.workspace = true
 
-[features]
-persisted = ['shine-infra']
-
 [dependencies]
 log = { workspace = true }
 thiserror = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
-ring = { workspace = true }
 
 tokio = { workspace = true }
 bevy = { workspace = true, features = [
@@ -22,12 +18,12 @@ bevy = { workspace = true, features = [
     "track_location",
 ] }
 
-
 shine-infra = { workspace = true, optional = true }
 
 [dev-dependencies]
 shine-test = { workspace = true }
-tokio = { workspace = true }
-rustls = { workspace = true }
-tokio-rustls = { workspace = true }
-refinery = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }

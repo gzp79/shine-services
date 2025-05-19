@@ -6768,8 +6768,6 @@ dependencies = [
  "anyhow",
  "bevy",
  "log",
- "rand 0.9.1",
- "ring",
  "serde",
  "serde_json",
  "shine-core",
@@ -6794,7 +6792,6 @@ dependencies = [
  "pin-project",
  "primal-check",
  "regex",
- "ring",
  "serde",
  "serde_json",
  "shine-test",
@@ -6803,6 +6800,7 @@ dependencies = [
  "tokio",
  "url",
  "uuid",
+ "wasm-bindgen-test",
 ]
 
 [[package]]
@@ -6811,16 +6809,13 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "log",
- "refinery",
- "ring",
- "rustls",
  "serde",
  "serde_json",
  "shine-infra",
  "shine-test",
  "thiserror 2.0.12",
  "tokio",
- "tokio-rustls",
+ "wasm-bindgen-test",
 ]
 
 [[package]]

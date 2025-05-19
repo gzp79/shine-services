@@ -6,8 +6,10 @@ use crate::{
     },
     services::{IdentityService, SessionService, UserEvent, UserLinkEvent},
 };
-use shine_core::sync::EventHandler;
-use shine_infra::web::{ClientFingerprint, CurrentUser, Problem, SessionKey, SiteInfo};
+use shine_infra::{
+    sync::EventHandler,
+    web::{ClientFingerprint, CurrentUser, Problem, SessionKey, SiteInfo},
+};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 

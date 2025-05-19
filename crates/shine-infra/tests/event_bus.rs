@@ -1,4 +1,4 @@
-use shine_core::sync::{Event, EventBus, EventHandler};
+use shine_infra::sync::{Event, EventBus, EventHandler};
 use shine_test::test;
 use std::sync::{
     atomic::{AtomicIsize, Ordering},

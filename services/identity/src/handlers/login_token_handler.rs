@@ -5,8 +5,10 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use ring::rand::SystemRandom;
-use shine_core::crypto::random;
-use shine_infra::web::{ClientFingerprint, Problem, SiteInfo};
+use shine_infra::{
+    crypto::random,
+    web::{ClientFingerprint, Problem, SiteInfo},
+};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 

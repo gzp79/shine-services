@@ -18,9 +18,23 @@
       "group": "build"
     },
     {
+      "label": "clippy wasm",
+      "type": "shell",
+      "command": "cargo clippy --target wasm32-unknown-unknown ${input:wasm-projects} --all-targets",
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
       "label": "build",
       "type": "shell",
       "command": "cargo build --release ${input:projects} --all-targets",
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "build wasm",
+      "type": "shell",
+      "command": "cargo build --target wasm32-unknown-unknown --release ${input:wasm-projects} --all-targets",
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
@@ -152,6 +166,19 @@
       },
       "problemMatcher": ["$rustc"],
       "group": "build"
+    },
+    {
+      "label": "client: local-wasm",
+      "type": "shell",
+      "command": "cargo run --target wasm32-unknown-unknown -p shine-client --release",
+      "options": {
+        "cwd": "client",
+        "env": {
+          "RUST_BACKTRACE": "full"
+        }
+      },
+      "problemMatcher": ["$rustc"],
+      "group": "build"
     }
   ],
   "inputs": [
@@ -174,6 +201,22 @@
         { "label": "shine-core", "value": "-p shine-core" },
         { "label": "shine-test", "value": "-p shine-test" },
         { "label": "shine-test-macros", "value": "-p shine-test-macros" }
+      ],
+      "default": "asset-service"
+    },
+    {
+      "type": "pickString",
+      "id": "wasm-projects",
+      "description": "Select project",
+      "options": [ 
+        {
+          "label": "all",
+          "value": "-p shine-client -p shine-game -p shine-core -p shine-test"
+        },
+        { "label": "shine-client", "value": "-p shine-client" },
+        { "label": "shine-game", "value": "-p shine-game" },
+        { "label": "shine-core", "value": "-p shine-core" },
+        { "label": "shine-test", "value": "-p shine-test" }
       ],
       "default": "asset-service"
     }

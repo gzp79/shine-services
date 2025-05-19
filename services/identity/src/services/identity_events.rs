@@ -1,4 +1,4 @@
-use shine_core::sync::{Event, TopicEvent};
+use shine_infra::sync::{Event, TopicEvent};
 use uuid::Uuid;
 
 pub struct IdentityTopic;
