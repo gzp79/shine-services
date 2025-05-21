@@ -6,7 +6,7 @@ use axum::{
 };
 use serde::Serialize;
 use serde_json::Value as JsonValue;
-use std::fmt;
+use std::fmt::{self, Display};
 use url::Url;
 
 pub trait ProblemType {
@@ -133,6 +133,13 @@ impl Problem {
         S: fmt::Debug,
     {
         self.with_sensitive(format!("{:#?}", extension))
+    }
+
+    pub fn with_sensitive_str<S>(self, extension: S) -> Self
+    where
+        S: Display,
+    {
+        self.with_sensitive(format!("{}", extension))
     }
 }
 

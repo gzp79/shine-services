@@ -8,7 +8,11 @@ use crate::{
 };
 use shine_infra::{
     sync::EventHandler,
-    web::{ClientFingerprint, CurrentUser, Problem, SessionKey, SiteInfo},
+    web::{
+        extracts::{ClientFingerprint, SiteInfo},
+        responses::Problem,
+        session::{CurrentUser, SessionKey},
+    },
 };
 use thiserror::Error as ThisError;
 use uuid::Uuid;

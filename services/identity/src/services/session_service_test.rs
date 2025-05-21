@@ -9,7 +9,10 @@ use chrono::{Duration, Utc};
 use ring::rand::SystemRandom;
 use shine_infra::{
     db,
-    web::{ClientFingerprint, SessionKey, SiteInfo},
+    web::{
+        extracts::{ClientFingerprint, SiteInfo},
+        session::SessionKey,
+    },
 };
 use shine_test::test;
 use std::env;

@@ -11,7 +11,7 @@ use ring::rand::SystemRandom;
 use shine_infra::{
     crypto::random,
     language::Language,
-    web::{Problem, SiteInfo},
+    web::{extracts::SiteInfo, responses::Problem},
 };
 use thiserror::Error as ThisError;
 use url::Url;

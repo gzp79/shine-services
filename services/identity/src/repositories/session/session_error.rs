@@ -1,6 +1,6 @@
 use shine_infra::{
     db::DBError,
-    web::{Problem, SessionKeyError},
+    web::{responses::Problem, session::SessionKeyError},
 };
 use thiserror::Error as ThisError;
 

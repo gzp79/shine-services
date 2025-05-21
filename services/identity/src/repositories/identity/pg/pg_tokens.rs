@@ -7,7 +7,7 @@ use postgres_from_row::FromRow;
 use shine_infra::{
     db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
     pg_query,
-    web::{ClientFingerprint, SiteInfo},
+    web::extracts::{ClientFingerprint, SiteInfo},
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type as PGType};
 use tracing::instrument;

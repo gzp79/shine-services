@@ -3,7 +3,11 @@ use axum::{extract::State, Extension};
 use serde::Deserialize;
 use shine_infra::{
     language::Language,
-    web::{CheckedCurrentUser, IntoProblemResponse, ProblemConfig, ProblemResponse, ValidatedJson, ValidatedQuery},
+    web::{
+        extracts::{ValidatedJson, ValidatedQuery},
+        responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
+        session::CheckedCurrentUser,
+    },
 };
 use utoipa::{IntoParams, ToSchema};
 use validator::Validate;

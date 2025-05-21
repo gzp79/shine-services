@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// The application configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -17,8 +16,6 @@ pub struct ServiceConfig {
     pub port: u16,
     /// Regular expressions for the allowed origins.
     pub allowed_origins: Vec<String>,
-    /// Regular expressions for the accepted hosts for each (endpoint) domain
-    pub allowed_hosts: HashMap<String, Vec<String>>,
     /// Indicates if the full problem response should be returned. In production, it should be `false`.
     pub full_problem_response: bool,
     /// The secret for the used captcha solution.

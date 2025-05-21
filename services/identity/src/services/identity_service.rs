@@ -7,7 +7,7 @@ use ring::digest;
 use shine_infra::{
     crypto::IdEncoder,
     sync::{EventHandler, EventHandlerId, TopicBus, TopicEvent},
-    web::{ClientFingerprint, SiteInfo},
+    web::extracts::{ClientFingerprint, SiteInfo},
 };
 use uuid::Uuid;
 
