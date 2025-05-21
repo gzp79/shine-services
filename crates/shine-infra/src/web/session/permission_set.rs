@@ -1,4 +1,4 @@
-use crate::web::{CurrentUser, Problem};
+use crate::web::{responses::Problem, session::CurrentUser};
 use std::collections::HashSet;
 use thiserror::Error as ThisError;
 

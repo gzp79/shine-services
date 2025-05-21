@@ -1,4 +1,4 @@
-use crate::web::Problem;
+use crate::web::responses::Problem;
 use opentelemetry_sdk::{metrics::MetricError, trace::TraceError};
 use std::error::Error as StdError;
 use thiserror::Error as ThisError;

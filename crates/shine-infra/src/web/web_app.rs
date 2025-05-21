@@ -2,7 +2,10 @@ use crate::{
     telemetry::TelemetryService,
     web::{
         controllers::{self, ApiUrl},
-        PoweredBy, ProblemConfig, UserSessionCacheReader, WebAppConfig,
+        middlewares::{HostGuard, PoweredBy},
+        responses::ProblemConfig,
+        session::UserSessionCacheReader,
+        FeatureConfig, WebAppConfig,
     },
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -12,8 +15,9 @@ use axum::{
     Extension,
 };
 use axum_server::Handle;
+use regex::bytes::Regex;
 use serde::de::DeserializeOwned;
-use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, time::Duration as StdDuration};
+use std::{collections::HashMap, env, fmt::Debug, fs, future::Future, net::SocketAddr, time::Duration as StdDuration};
 use tokio::{net::TcpListener, runtime::Runtime, signal};
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
@@ -28,8 +32,6 @@ use utoipa::{
 };
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
-
-use super::FeatureConfig;
 
 #[derive(OpenApi)]
 #[openapi(paths(), components(), tags())]
@@ -99,6 +101,7 @@ pub trait WebApplication {
         &self,
         config: &WebAppConfig<Self::AppConfig>,
     ) -> impl Future<Output = Result<Self::AppState, AnyError>> + Send;
+
     fn create_routes(
         &self,
         config: &WebAppConfig<Self::AppConfig>,
@@ -164,7 +167,7 @@ async fn create_web_app<A: WebApplication>(
                 .service
                 .allowed_origins
                 .iter()
-                .map(|r| regex::bytes::Regex::new(r))
+                .map(|r| Regex::new(r))
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|err| anyhow!("Cords config error: {err}"))?;
             AllowOrigin::predicate(move |origin, _| {
@@ -184,6 +187,22 @@ async fn create_web_app<A: WebApplication>(
             ])
             .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
             .allow_credentials(true)
+    };
+    let host_guard_layer = {
+        let allowed_hosts = config
+            .service
+            .allowed_hosts
+            .iter()
+            .map(|(domain, patterns)| {
+                let patterns = patterns
+                    .iter()
+                    .map(|r| Regex::new(r))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|err| anyhow!("Host guard config error: {err}"))?;
+                Ok::<_, AnyError>((domain.clone(), patterns))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        HostGuard::new(allowed_hosts)
     };
     let powered_by_layer = PoweredBy::from_service_info(app.feature_name(), &config.core.version)?;
 
@@ -241,6 +260,7 @@ async fn create_web_app<A: WebApplication>(
     Ok(router
         .merge(swagger)
         .layer(user_session_layer)
+        .layer(host_guard_layer)
         .layer(problem_detail_layer)
         .layer(powered_by_layer)
         .layer(cors_layer)

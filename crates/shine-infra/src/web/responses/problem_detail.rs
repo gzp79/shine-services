@@ -13,6 +13,7 @@ pub trait ProblemType {
     const TYPE: &'static str;
 }
 
+/// Some common problem types
 pub mod problems {
     pub const INPUT_PATH: &str = "input-path-format";
     pub const INPUT_QUERY: &str = "input-query-format";

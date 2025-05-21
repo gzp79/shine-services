@@ -153,32 +153,6 @@
       },
       "problemMatcher": ["$rustc"],
       "group": "build"
-    },
-    {
-      "label": "client: local",
-      "type": "shell",
-      "command": "cargo run -p shine-client --release",
-      "options": {
-        "cwd": "client",
-        "env": {
-          "RUST_BACKTRACE": "full"
-        }
-      },
-      "problemMatcher": ["$rustc"],
-      "group": "build"
-    },
-    {
-      "label": "client: local-wasm",
-      "type": "shell",
-      "command": "cargo run --target wasm32-unknown-unknown -p shine-client --release",
-      "options": {
-        "cwd": "client",
-        "env": {
-          "RUST_BACKTRACE": "full"
-        }
-      },
-      "problemMatcher": ["$rustc"],
-      "group": "build"
     }
   ],
   "inputs": [
@@ -188,16 +162,10 @@
       "description": "Select project",
       "options": [
         { "label": "all", "value": "" },
-        { "label": "shine-client", "value": "-p shine-client" },
         { "label": "shine-builder", "value": "-p shine-builder" },
         { "label": "shine-identity", "value": "-p shine-identity" },
         { "label": "shine-infra", "value": "-p shine-infra" },
         { "label": "shine-infra-macros", "value": "-p shine-infra-macros" },
-        { "label": "shine-game", "value": "-p shine-game" },
-        {
-          "label": "shine-game + persist",
-          "value": "-p shine-game --features persisted"
-        },
         { "label": "shine-core", "value": "-p shine-core" },
         { "label": "shine-test", "value": "-p shine-test" },
         { "label": "shine-test-macros", "value": "-p shine-test-macros" }
@@ -208,13 +176,11 @@
       "type": "pickString",
       "id": "wasm-projects",
       "description": "Select project",
-      "options": [ 
+      "options": [
         {
           "label": "all",
-          "value": "-p shine-client -p shine-game -p shine-core -p shine-test"
+          "value": "-p shine-core -p shine-test"
         },
-        { "label": "shine-client", "value": "-p shine-client" },
-        { "label": "shine-game", "value": "-p shine-game" },
         { "label": "shine-core", "value": "-p shine-core" },
         { "label": "shine-test", "value": "-p shine-test" }
       ],

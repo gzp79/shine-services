@@ -17,7 +17,7 @@ GET http://www.scytta.com/index.html
 GET http://www.scytta.com/missing.html
 ###
 
-########################################xx
+########################################
 
 GET https://scytta.com
 ###
@@ -35,4 +35,15 @@ GET https://www.scytta.com/index.html
 ###
 
 GET https://www.scytta.com/missing.html
+###
+
+
+########################################
+GET https://cloud.scytta.com/ping
+###
+
+GET https://shine-app.fly.dev/ping
+###
+
+GET https://ws.scytta.com/ping
 ###
