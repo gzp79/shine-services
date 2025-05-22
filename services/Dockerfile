@@ -8,22 +8,31 @@ RUN rustup component add rustfmt
 WORKDIR /shine
 COPY ./crates/shine-test-macros/Cargo.toml ./crates/shine-test-macros/
 RUN mkdir -p ./crates/shine-test-macros/src && touch ./crates/shine-test-macros/src/lib.rs
+
 COPY ./crates/shine-test/Cargo.toml ./crates/shine-test/
 RUN mkdir -p ./crates/shine-test/src && touch ./crates/shine-test/src/lib.rs
+
 COPY ./crates/shine-core/Cargo.toml ./crates/shine-core/
 RUN mkdir -p ./crates/shine-core/src && touch ./crates/shine-core/src/lib.rs
+
 COPY ./crates/shine-infra-macros/Cargo.toml ./crates/shine-infra-macros/
 RUN mkdir -p ./crates/shine-infra-macros/src && touch ./crates/shine-infra-macros/src/lib.rs
+
 COPY ./crates/shine-infra/Cargo.toml ./crates/shine-infra/
 RUN mkdir -p ./crates/shine-infra/src && touch ./crates/shine-infra/src/lib.rs
+
 COPY ./crates/shine-game/Cargo.toml ./crates/shine-game/
 RUN mkdir -p ./crates/shine-game/src && touch ./crates/shine-game/src/lib.rs
+
 COPY ./services/identity/Cargo.toml ./services/identity/
 RUN mkdir -p ./services/identity/src && echo "fn main() {}" >./services/identity/src/main.rs
+
 COPY ./services/builder/Cargo.toml ./services/builder/
 RUN mkdir -p ./services/builder/src && echo "fn main() {}" >./services/builder/src/main.rs
-COPY ./client/Cargo.toml ./services/builder/
-RUN mkdir -p ./client/src && echo "fn main() {}" >./client/src/main.rs
+
+# client is a dummy project, but required for the workspace to build
+RUN cargo new --bin client --name shine-client
+
 COPY ./rustfmt.toml ./
 COPY ./clippy.toml ./
 COPY ./Cargo.toml ./
@@ -32,16 +41,14 @@ COPY ./Cargo.lock ./
 RUN cargo build --release 
 RUN rm -rf ./crates \
     && rm -rf ./services \
-    && rm -rf ./client \
     && rm -f ./target/release/deps/libshine* \
-    && rm -f ./target/release/deps/shine* \
-    && rm -f ./target/release/libshine* \
-    && rm -f ./target/release/shine*
+    && rm -f ./target/release/deps/shine*
 
 # Copy the actual source code
 COPY ./crates ./crates
 COPY ./services ./services
-COPY ./client ./client
+# Skipping client, the dummy project is enough 
+# COPY ./client ./client  
 
 RUN cargo fmt --check
 
