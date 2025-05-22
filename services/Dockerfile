@@ -45,7 +45,6 @@ COPY ./Cargo.lock ./
 RUN cargo build --release 
 RUN rm -rf ./crates \
     && rm -rf ./services \
-    && rm -rf ./client \
     && rm -f ./target/release/deps/libshine* \
     && rm -f ./target/release/deps/shine*
 
