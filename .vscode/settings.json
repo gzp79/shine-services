@@ -2,11 +2,12 @@
   "terminal.integrated.env.windows": {
     "_RUST_BACKTRACE": "full",
     "MIRIFLAGS": "-Zmiri-backtrace=full",
-    "_RUST_LOG": "INFO,shine_infra=TRACE,shine_infra=TRACE,shine_identity=TRACE,shine_builder=TRACE",
+    "_RUST_LOG": "INFO,shine_infra=TRACE,shine_infra=TRACE,shine_identity=TRACE,shine_builder=TRACE,shine_game=TRACE",
 
     "SHINE_TEST_REDIS_CNS": "redis://redis.mockbox.com:6379",
     "SHINE_TEST_PG_CNS": "postgres://username:password@postgres.mockbox.com:5432/database-test?sslmode=disable"
   },
+  "rust-analyzer.cargo.features": [],
   "cSpell.words": [
     "asyncness",
     "autoescape",
@@ -16,6 +17,9 @@
     "cfhistu",
     "chrono",
     "cookiejar",
+    "Deque",
+    "despawn",
+    "despawned",
     "endgroup",
     "fkey",
     "hasher",
@@ -29,6 +33,7 @@
     "idempotency",
     "ipcity",
     "ipcountry",
+    "itertools",
     "jbang",
     "jbangdev",
     "jwks",

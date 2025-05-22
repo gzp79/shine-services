@@ -3,7 +3,7 @@ use crate::{
     controllers::auth::{AuthError, AuthPage, AuthSession},
     services::SettingsService,
 };
-use shine_infra::web::{Problem, ProblemConfig};
+use shine_infra::web::responses::{Problem, ProblemConfig};
 use tera::Tera;
 use url::Url;
 

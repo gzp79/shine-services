@@ -9,8 +9,9 @@ use axum_extra::{
 };
 use serde::{Deserialize, Serialize};
 use shine_infra::web::{
-    CheckedCurrentUser, IntoProblemResponse, PermissionError, Problem, ProblemConfig, ProblemResponse, ValidatedJson,
-    ValidatedPath,
+    extracts::{ValidatedJson, ValidatedPath},
+    responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
+    session::{CheckedCurrentUser, PermissionError},
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;

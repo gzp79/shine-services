@@ -14,7 +14,7 @@ pub struct TlsConfig {
 pub struct ServiceConfig {
     pub tls: Option<TlsConfig>,
     pub port: u16,
-    /// Regular expression for the allowed origins.
+    /// Regular expressions for the allowed origins.
     pub allowed_origins: Vec<String>,
     /// Indicates if the full problem response should be returned. In production, it should be `false`.
     pub full_problem_response: bool,

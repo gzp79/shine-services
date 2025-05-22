@@ -1,15 +1,5 @@
 pub use shine_test_macros::test;
 
-#[cfg(target_arch = "wasm32")]
-pub use wasm_bindgen_test::wasm_bindgen_test as impl_test_async;
-#[cfg(target_arch = "wasm32")]
-pub use wasm_bindgen_test::wasm_bindgen_test as impl_test;
-
-#[cfg(not(target_arch = "wasm32"))]
-pub use core::prelude::v1::test as impl_test;
-#[cfg(not(target_arch = "wasm32"))]
-pub use tokio::test as impl_test_async;
-
 /// Test setup executed before each test.
 pub fn setup_test() {
     #[cfg(not(any(target_arch = "wasm32", miri)))]
@@ -24,5 +14,15 @@ pub fn setup_test() {
         use std::sync::Once;
         static INIT: Once = Once::new();
         INIT.call_once(|| wasm_logger::init(::wasm_logger::Config::new(log::Level::Trace)));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let orig_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            // invoke the default handler and exit the process
+            orig_hook(panic_info);
+            std::process::exit(-1);
+        }));
     }
 }

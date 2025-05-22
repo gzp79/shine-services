@@ -43,7 +43,7 @@ These are the most frequently used cargo extensions in the shine project:
 ```shell
 cargo install cargo-outdated
 cargo install cargo-tree
-cargo install trunk
+cargo install wasm-server-runner
 ```
 
 ### Telemetry

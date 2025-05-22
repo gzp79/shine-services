@@ -1,7 +1,8 @@
 use axum::{extract::State, Extension, Json};
 use serde::Serialize;
 use shine_infra::web::{
-    permissions, CheckedCurrentUser, CorePermissions, IntoProblemResponse, ProblemConfig, ProblemResponse,
+    responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
+    session::{permissions, CheckedCurrentUser, CorePermissions},
 };
 use utoipa::ToSchema;
 

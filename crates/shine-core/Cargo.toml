@@ -16,7 +16,6 @@ uuid = { workspace = true }
 url = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
-ring = { workspace = true }
 regex = { workspace = true }
 harsh = "0.2"
 primal-check = "0.3"
@@ -26,7 +25,13 @@ pin-project = { workspace = true }
 futures = { workspace = true }
 futures-channel = { workspace = true }
 async-trait = { workspace = true }
-tokio = { workspace = true, features = ["macros", "signal", "sync"] }
+tokio = { workspace = true, features = ["macros", "sync"] }
 
 [dev-dependencies]
 shine-test = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { workspace = true, features = ["js"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use shine_infra::web::Problem;
+use shine_infra::web::responses::Problem;
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 use uuid::Uuid;
@@ -74,9 +74,7 @@ pub struct CaptchaValidator(Arc<Inner>);
 
 impl CaptchaValidator {
     pub fn new<S: ToString>(secret: S) -> Self {
-        Self(Arc::new(Inner {
-            secret: secret.to_string(),
-        }))
+        Self(Arc::new(Inner { secret: secret.to_string() }))
     }
 
     pub async fn validate_request(

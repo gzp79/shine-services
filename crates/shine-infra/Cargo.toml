@@ -26,6 +26,7 @@ url = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
 ring = { workspace = true }
+rand = { workspace = true }
 regex = { workspace = true }
 harsh = "0.2"
 primal-check = "0.3"
@@ -35,7 +36,7 @@ pin-project = { workspace = true }
 futures = { workspace = true }
 futures-channel = { workspace = true }
 async-trait = { workspace = true }
-tokio = { workspace = true, features = ["macros", "signal"] }
+tokio = { workspace = true, features = ["macros", "signal", "rt"] }
 
 ############################# TRACING #############################
 tracing = { workspace = true }
@@ -45,8 +46,8 @@ tracing-opentelemetry = { version = "0.30", features = [
     "metrics",
     "tracing-log",
 ] }
-tracing-opentelemetry-instrumentation-sdk = "0.26"
-prometheus = "0.13"
+tracing-opentelemetry-instrumentation-sdk = "0.28"
+prometheus = "0.14"
 opentelemetry = "0.29"
 opentelemetry-semantic-conventions = "0.29"
 opentelemetry_sdk = { version = "0.29", features = [
@@ -114,3 +115,4 @@ shine-infra-macros = { workspace = true }
 
 [dev-dependencies]
 shine-test = { workspace = true }
+itertools = { workspace = true }

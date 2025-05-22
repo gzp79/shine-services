@@ -4,11 +4,11 @@ use crate::repositories::identity::{
 };
 use chrono::Duration;
 use ring::digest;
-use shine_core::{
+use shine_infra::{
     crypto::IdEncoder,
     sync::{EventHandler, EventHandlerId, TopicBus, TopicEvent},
+    web::extracts::{ClientFingerprint, SiteInfo},
 };
-use shine_infra::web::{ClientFingerprint, SiteInfo};
 use uuid::Uuid;
 
 use super::{IdentityTopic, UserEvent, UserLinkEvent};

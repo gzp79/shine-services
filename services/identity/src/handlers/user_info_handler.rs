@@ -6,8 +6,14 @@ use crate::{
     },
     services::{IdentityService, SessionService, UserEvent, UserLinkEvent},
 };
-use shine_core::sync::EventHandler;
-use shine_infra::web::{ClientFingerprint, CurrentUser, Problem, SessionKey, SiteInfo};
+use shine_infra::{
+    sync::EventHandler,
+    web::{
+        extracts::{ClientFingerprint, SiteInfo},
+        responses::Problem,
+        session::{CurrentUser, SessionKey},
+    },
+};
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 
@@ -64,11 +70,7 @@ where
             None => return Ok(None),
         };
 
-        Ok(Some(UserInfo {
-            identity,
-            roles,
-            is_linked,
-        }))
+        Ok(Some(UserInfo { identity, roles, is_linked }))
     }
 
     pub async fn create_user_session(

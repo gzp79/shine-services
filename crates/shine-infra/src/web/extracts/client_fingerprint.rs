@@ -1,12 +1,10 @@
-use crate::web::{Problem, ProblemConfig};
+use crate::web::responses::{ErrorResponse, Problem, ProblemConfig};
 use axum::{extract::FromRequestParts, http::request::Parts, Extension, RequestPartsExt};
 use axum_extra::{headers::UserAgent, TypedHeader};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use reqwest::StatusCode;
 use ring::digest::{self, Context};
 use thiserror::Error as ThisError;
-
-use super::ErrorResponse;
 
 #[derive(Debug, ThisError)]
 pub enum ClientFingerprintError {

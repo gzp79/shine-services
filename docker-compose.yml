@@ -5,6 +5,8 @@ services:
       POSTGRES_MULTIPLE_DATABASES: database-test,database-identity,database-builder
       POSTGRES_PASSWORD: password
       POSTGRES_USER: username
+      PGOPTIONS: "-c log_lock_waits=on"
+      _PGOPTIONS: "-c log_lock_waits=on -c deadlock_timeout=1s"
     ports:
       - 5432:5432
     restart: on-failure:3

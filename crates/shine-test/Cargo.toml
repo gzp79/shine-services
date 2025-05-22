@@ -3,14 +3,9 @@ name = "shine-test"
 version.workspace = true
 edition.workspace = true
 
-[features]
-default = []
-web_default = ["shine-test-macros/wasm"]
-
 [dependencies]
 log = { workspace = true }
 
-############################# MEMBERS #############################
 shine-test-macros = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -21,3 +16,5 @@ tokio = { workspace = true, features = ["macros"] }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-logger = { workspace = true }
 wasm-bindgen-test = { workspace = true }
+
+shine-test-macros = { workspace = true, features = ["wasm"] }

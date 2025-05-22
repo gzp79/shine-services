@@ -4,7 +4,7 @@ use crate::{
     handlers::CreateUserError,
     repositories::identity::{ExternalUserInfo, IdentityError, TokenKind},
 };
-use shine_infra::web::{ClientFingerprint, SiteInfo};
+use shine_infra::web::extracts::{ClientFingerprint, SiteInfo};
 use url::Url;
 
 pub struct LinkUtils<'a> {

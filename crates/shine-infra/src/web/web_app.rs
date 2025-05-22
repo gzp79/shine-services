@@ -2,7 +2,10 @@ use crate::{
     telemetry::TelemetryService,
     web::{
         controllers::{self, ApiUrl},
-        PoweredBy, ProblemConfig, UserSessionCacheReader, WebAppConfig,
+        middlewares::PoweredBy,
+        responses::ProblemConfig,
+        session::UserSessionCacheReader,
+        FeatureConfig, WebAppConfig,
     },
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -12,6 +15,7 @@ use axum::{
     Extension,
 };
 use axum_server::Handle;
+use regex::bytes::Regex;
 use serde::de::DeserializeOwned;
 use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, time::Duration as StdDuration};
 use tokio::{net::TcpListener, runtime::Runtime, signal};
@@ -28,8 +32,6 @@ use utoipa::{
 };
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
-
-use super::FeatureConfig;
 
 #[derive(OpenApi)]
 #[openapi(paths(), components(), tags())]
@@ -99,6 +101,7 @@ pub trait WebApplication {
         &self,
         config: &WebAppConfig<Self::AppConfig>,
     ) -> impl Future<Output = Result<Self::AppState, AnyError>> + Send;
+
     fn create_routes(
         &self,
         config: &WebAppConfig<Self::AppConfig>,
@@ -164,7 +167,7 @@ async fn create_web_app<A: WebApplication>(
                 .service
                 .allowed_origins
                 .iter()
-                .map(|r| regex::bytes::Regex::new(r))
+                .map(|r| Regex::new(r))
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|err| anyhow!("Cords config error: {err}"))?;
             AllowOrigin::predicate(move |origin, _| {

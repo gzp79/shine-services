@@ -7,7 +7,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use shine_infra::{
     db::{DBError, RedisJsonValue},
-    web::SiteInfo,
+    web::extracts::SiteInfo,
 };
 use uuid::Uuid;
 

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use shine_infra::web::{ClientFingerprint, SiteInfo};
+use shine_infra::web::extracts::{ClientFingerprint, SiteInfo};
 use std::future::Future;
 use utoipa::ToSchema;
 use uuid::Uuid;

@@ -18,9 +18,23 @@
       "group": "build"
     },
     {
+      "label": "clippy wasm",
+      "type": "shell",
+      "command": "cargo clippy --target wasm32-unknown-unknown ${input:wasm-projects} --all-targets",
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
       "label": "build",
       "type": "shell",
       "command": "cargo build --release ${input:projects} --all-targets",
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "build wasm",
+      "type": "shell",
+      "command": "cargo build --target wasm32-unknown-unknown --release ${input:wasm-projects} --all-targets",
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
@@ -87,7 +101,7 @@
           "SHINE--SERVICE--PORT": "8443",
           "SHINE--SERVICE--SESSION_REDIS_CNS": "${env:SHINE_REDIS_CNS}",
           "SHINE--IDENTITY--AUTH--AUTH_BASE_URL": "https://local-cloud.scytta.com:8443/identity/auth/",
-          "SHINE--IDENTITY--DB--REDIS_CNS": "${env:SHINE_REDIS_CNS}",
+          "SHINE--IDENTITY--DB--REDIS_CNS": "${env:SHINE_REDIS_CNS}"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -103,7 +117,7 @@
           "RUST_BACKTRACE": "full",
           "SHINE--SERVICE--TLS--CERT": "../../certs/test.crt",
           "SHINE--SERVICE--TLS--KEY": "../../certs/test.key",
-          "SHINE--SERVICE--PORT": "8443",
+          "SHINE--SERVICE--PORT": "8443"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -155,6 +169,20 @@
         { "label": "shine-core", "value": "-p shine-core" },
         { "label": "shine-test", "value": "-p shine-test" },
         { "label": "shine-test-macros", "value": "-p shine-test-macros" }
+      ],
+      "default": "asset-service"
+    },
+    {
+      "type": "pickString",
+      "id": "wasm-projects",
+      "description": "Select project",
+      "options": [
+        {
+          "label": "all",
+          "value": "-p shine-core -p shine-test"
+        },
+        { "label": "shine-core", "value": "-p shine-core" },
+        { "label": "shine-test", "value": "-p shine-test" }
       ],
       "default": "asset-service"
     }

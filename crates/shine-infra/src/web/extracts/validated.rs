@@ -1,4 +1,4 @@
-use crate::web::{problems, ErrorResponse, Problem, ProblemConfig};
+use crate::web::responses::{problems, ErrorResponse, Problem, ProblemConfig};
 use axum::{
     extract::{
         rejection::{JsonRejection, PathRejection, QueryRejection},
@@ -95,7 +95,7 @@ impl From<InputError> for Problem {
 
 pub struct ValidatedPath<T>(pub T)
 where
-    T: 'static + DeserializeOwned + Validate;
+    T: DeserializeOwned + Validate + 'static;
 
 impl<S, T> FromRequestParts<S> for ValidatedPath<T>
 where
@@ -121,12 +121,12 @@ where
 
 pub struct ValidatedQuery<T>(pub T)
 where
-    T: 'static + DeserializeOwned + Validate;
+    T: DeserializeOwned + Validate + 'static;
 
 impl<S, T> FromRequestParts<S> for ValidatedQuery<T>
 where
     S: Send + Sync,
-    T: 'static + DeserializeOwned + Validate,
+    T: DeserializeOwned + Validate + 'static,
 {
     type Rejection = ErrorResponse<InputError>;
 

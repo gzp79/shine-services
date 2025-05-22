@@ -1,4 +1,4 @@
-use shine_infra::web::Problem;
+use shine_infra::web::responses::Problem;
 use thiserror::Error as ThisError;
 
 const INVALID_EMAIL: &str = "email-invalid-address";

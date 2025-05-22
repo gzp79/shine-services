@@ -1,102 +1,105 @@
-use serde::{Deserialize, Serialize};
-use std::future::Future;
-use uuid::Uuid;
+use crate::db::event_source::{Aggregate, AggregateStore, EventSourceError, EventStore, StoredAggregate, StoredEvent};
 
-use super::{Event, EventStoreError, StoredEvent};
-
-pub trait Aggregate: 'static + Default + Serialize + for<'de> Deserialize<'de> + Send + Sync {
-    type Event: Event;
-
-    const NAME: &'static str;
-
-    fn apply(&mut self, event: &Self::Event) -> Result<(), EventStoreError>;
-}
-
+/// Helper to replay events from the event store and apply them to an aggregate.
 #[derive(Debug, Clone)]
 pub struct Snapshot<A>
 where
     A: Aggregate,
 {
-    aggregate_id: Uuid,
-    version: usize,
-    aggregate: A,
+    pub stream_id: A::StreamId,
+    pub start_version: usize,
+    pub version: usize,
+    pub aggregate: A,
+}
+
+impl<A> From<StoredAggregate<A>> for Snapshot<A>
+where
+    A: Aggregate,
+{
+    fn from(stored_aggregate: StoredAggregate<A>) -> Self {
+        Self {
+            stream_id: stored_aggregate.stream_id,
+            start_version: stored_aggregate.start_version,
+            version: stored_aggregate.version,
+            aggregate: stored_aggregate.aggregate,
+        }
+    }
 }
 
 impl<A> Snapshot<A>
 where
     A: Aggregate,
 {
-    pub fn new(aggregate_id: Uuid) -> Self {
+    pub fn new(stream_id: A::StreamId, aggregate: A) -> Self {
         Self {
-            aggregate_id,
+            stream_id,
+            start_version: 0,
             version: 0,
-            aggregate: Default::default(),
+            aggregate,
         }
     }
 
-    pub fn new_from_data(aggregate_id: Uuid, version: usize, data: &str) -> Result<Self, EventStoreError> {
-        let aggregate = serde_json::from_str(data).map_err(EventStoreError::EventSerialization)?;
+    pub async fn load_from<DB>(
+        db: &mut DB,
+        stream_id: &A::StreamId,
+        version: Option<usize>,
+        init: A,
+    ) -> Result<Self, EventSourceError>
+    where
+        DB: EventStore<Event = A::Event, StreamId = A::StreamId>
+            + AggregateStore<Event = A::Event, StreamId = A::StreamId>,
+    {
+        let snapshot = db.get_aggregate::<A>(stream_id, version).await?.map(Snapshot::from);
+        let mut snapshot = snapshot.unwrap_or_else(|| Snapshot::new(stream_id.clone(), init));
+        snapshot.start_version = snapshot.version;
 
-        Ok(Self {
-            aggregate_id,
-            version,
-            aggregate,
-        })
+        snapshot.update_from(db, version).await?;
+        Ok(snapshot)
     }
 
-    pub fn version(&self) -> usize {
-        self.version
+    pub fn aggregate_id(&self) -> &str {
+        A::NAME
     }
 
-    pub fn id(&self) -> &Uuid {
-        &self.aggregate_id
+    pub async fn update_from<DB>(&mut self, db: &mut DB, version: Option<usize>) -> Result<(), EventSourceError>
+    where
+        DB: EventStore<Event = A::Event, StreamId = A::StreamId>
+            + AggregateStore<Event = A::Event, StreamId = A::StreamId>,
+    {
+        if version.unwrap_or(usize::MAX) > self.version {
+            let events = db.get_events(&self.stream_id, Some(self.version), version).await?;
+            self.apply(events)?;
+        }
+        Ok(())
     }
 
-    pub fn aggregate(&self) -> &A {
-        &self.aggregate
-    }
+    pub fn apply<I>(&mut self, events: I) -> Result<(), EventSourceError>
+    where
+        I: IntoIterator<Item = StoredEvent<A::Event>>,
+    {
+        log::debug!(
+            "Applying events to aggregate {:?} at version {}",
+            self.stream_id,
+            self.version
+        );
 
-    pub fn into_aggregate(self) -> A {
-        self.aggregate
-    }
-
-    pub fn apply(&mut self, events: &[StoredEvent<A::Event>]) -> Result<(), EventStoreError> {
         for event in events {
             if event.version <= self.version {
                 continue;
             }
             if event.version > self.version + 1 {
-                return Err(EventStoreError::EventOutOfOrder);
+                return Err(EventSourceError::EventOutOfOrder);
             }
-            self.aggregate.apply(&event.event)?;
+            self.aggregate.apply(event.event)?;
             self.version = event.version;
         }
 
+        log::debug!(
+            "Applied events to aggregate {:?} up to version {}",
+            self.stream_id,
+            self.version
+        );
+
         Ok(())
     }
-}
-
-pub trait SnapshotStore {
-    type Event: Event;
-
-    /// Get aggregate up to the latest version using the latest snapshot if present.
-    fn get_aggregate<A>(
-        &mut self,
-        aggregate_id: &Uuid,
-    ) -> impl Future<Output = Result<Option<Snapshot<A>>, EventStoreError>> + Send
-    where
-        A: Aggregate<Event = Self::Event>;
-
-    /// Get the last stored aggregate
-    fn get_snapshot<A>(
-        &mut self,
-        aggregate_id: &Uuid,
-    ) -> impl Future<Output = Result<Option<Snapshot<A>>, EventStoreError>> + Send
-    where
-        A: Aggregate<Event = Self::Event>;
-
-    /// Store a new snapshot for an aggregate
-    fn store_snapshot<A>(&mut self, snapshot: &Snapshot<A>) -> impl Future<Output = Result<(), EventStoreError>> + Send
-    where
-        A: Aggregate<Event = Self::Event>;
 }

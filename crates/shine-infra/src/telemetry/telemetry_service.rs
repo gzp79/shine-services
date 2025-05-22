@@ -29,7 +29,7 @@ trait DynHandle: Send + Sync {
 
 struct WrapHandle<L, S>
 where
-    L: 'static + Layer<S> + From<EnvFilter> + Send + Sync,
+    L: Layer<S> + From<EnvFilter> + Send + Sync + 'static,
     S: Subscriber,
 {
     handle: reload::Handle<L, S>,
@@ -38,7 +38,7 @@ where
 
 impl<L, S> DynHandle for WrapHandle<L, S>
 where
-    L: 'static + Layer<S> + From<EnvFilter> + Send + Sync,
+    L: Layer<S> + From<EnvFilter> + Send + Sync + 'static,
     S: Subscriber,
 {
     fn set_configuration(&mut self, mut new_config: DynConfig) -> Result<(), String> {
@@ -142,9 +142,7 @@ impl TelemetryService {
         let (reload_env_filter, reload_handle) = reload::Layer::new(env_filter);
         self.reconfigure = Some(Arc::new(RwLock::new(WrapHandle {
             handle: reload_handle,
-            config: DynConfig {
-                filter: filter.to_string(),
-            },
+            config: DynConfig { filter: filter.to_string() },
         })));
         Ok(reload_env_filter)
     }
@@ -309,11 +307,7 @@ impl TelemetryService {
         };
 
         let meter = provider.meter_with_scope(scope.clone());
-        self.metrics = Some(Metrics {
-            provider,
-            collect,
-            meter,
-        });
+        self.metrics = Some(Metrics { provider, collect, meter });
         Ok(())
     }
 

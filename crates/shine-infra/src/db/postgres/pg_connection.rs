@@ -2,6 +2,7 @@ use crate::db::cacerts::{get_root_cert_store, CertError};
 use crate::db::DBError;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use bb8_postgres::PostgresConnectionManager;
+use refinery::{Migration, Runner};
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -9,8 +10,7 @@ use std::sync::Arc;
 use std::{collections::HashMap, ops::DerefMut};
 use thiserror::Error as ThisError;
 use tokio::sync::RwLock;
-use tokio_postgres::tls::MakeTlsConnect;
-use tokio_postgres::{GenericClient, Statement};
+use tokio_postgres::{tls::MakeTlsConnect, GenericClient, IsolationLevel, Statement};
 use tokio_postgres_rustls::MakeRustlsConnect;
 
 use super::PGListener;
@@ -77,17 +77,6 @@ impl<T: PGRawConnection> PGConnection<T> {
     pub async fn unlisten(&self, channel: &str) -> Result<(), DBError> {
         self.listener.unlisten(channel).await
     }
-
-    #[inline]
-    pub async fn transaction(&mut self) -> Result<PGConnection<PGRawTransaction<'_>>, PGError> {
-        Ok(PGConnection {
-            prepared_statement_id: self.prepared_statement_id.clone(),
-            prepared_statements_builder: self.prepared_statements_builder.clone(),
-            prepared_statements: self.prepared_statements.clone(),
-            client: self.client.transaction().await?,
-            listener: self.listener.clone(),
-        })
-    }
 }
 
 impl PGConnection<PGRawClient> {
@@ -104,6 +93,45 @@ impl PGConnection<PGRawClient> {
             client: pg_client,
             listener,
         }
+    }
+
+    /// Handle migration manually. Allows to keep multiple (independent) migration in a single
+    /// database.
+    pub async fn migrate(&mut self, name: &str, migrations: &[String]) -> Result<(), DBError> {
+        let migrations = migrations
+            .iter()
+            .inspect(|m| log::debug!("Migration: {m}"))
+            .enumerate()
+            .map(|(i, m)| Migration::unapplied(&format!("V{i}__{name}"), m))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut runner = Runner::new(&migrations);
+        runner.set_migration_table_name(format!("__migration__{name}"));
+
+        runner
+            .run_async(&mut self.client)
+            .await
+            .map_err(DBError::SqlMigration)?;
+        Ok(())
+    }
+
+    #[inline]
+    pub async fn transaction(
+        &mut self,
+        isolation_level: Option<IsolationLevel>,
+    ) -> Result<PGConnection<PGRawTransaction<'_>>, PGError> {
+        let mut transaction_builder = self.client.build_transaction();
+        if let Some(level) = isolation_level {
+            transaction_builder = transaction_builder.isolation_level(level);
+        }
+        let transaction = transaction_builder.start().await?;
+        Ok(PGConnection {
+            prepared_statement_id: self.prepared_statement_id.clone(),
+            prepared_statements_builder: self.prepared_statements_builder.clone(),
+            prepared_statements: self.prepared_statements.clone(),
+            client: transaction,
+            listener: self.listener.clone(),
+        })
     }
 }
 
@@ -151,12 +179,6 @@ impl PGConnectionManager {
             prepared_statements_builder: Arc::new(RwLock::new(HashMap::default())),
             listener,
         }
-    }
-}
-
-impl Drop for PGConnectionManager {
-    fn drop(&mut self) {
-        self.listener.close();
     }
 }
 
