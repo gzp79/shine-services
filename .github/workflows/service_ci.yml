@@ -61,7 +61,7 @@ jobs:
       - name: Prepare MockBox
         id: mockbox
         run: |
-          docker compose -f docker-compose.yml -p shine up -d
+          docker compose -f services/docker-compose.yml -p shine up -d
           echo "pg_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-postgres-1)" >> $GITHUB_OUTPUT
           echo "redis_host=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' shine-redis-1)" >> $GITHUB_OUTPUT
           ls
@@ -71,6 +71,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: services/Dockerfile
           target: test
           push: false
           load: true
@@ -92,7 +93,7 @@ jobs:
       - name: Integration test
         run: |
           echo "::group::Starting service in the test environment"
-          docker compose -f ../docker-compose.yml -p shine --profile test up -d
+          docker compose -f ../services/docker-compose.yml -p shine --profile test up -d
           echo "::endgroup::"
           echo "::group::Running test"
           npm run test:local
@@ -119,6 +120,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
+          file: services/Dockerfile
           target: prod
           push: true
           # these setting are added to allow the reuse of the layer from the build step
@@ -132,9 +134,9 @@ jobs:
       - name: Create release artifacts
         if: github.ref == 'refs/heads/master'
         run: |
-          sed -i 's#%DOCKER_IMAGE%#${{ steps.meta.outputs.tags }}#g' fly.json
+          sed -i 's#%DOCKER_IMAGE%#${{ steps.meta.outputs.tags }}#g' services/fly.json
           mkdir -p release
-          cp fly.json ./release/
+          cp services/fly.json ./release/
 
       - name: Publish release artifacts
         if: github.ref == 'refs/heads/master'
