@@ -67,14 +67,14 @@
     {
       "label": "start dev environment",
       "type": "shell",
-      "command": "docker compose -f docker-compose.yml -p shine up",
+      "command": "docker compose -f services/docker-compose.yml -p shine up",
       "group": "build",
       "isBackground": true
     },
     {
       "label": "stop dev environment",
       "type": "shell",
-      "command": "docker compose -f docker-compose.yml -p shine down",
+      "command": "docker compose -f services/docker-compose.yml -p shine down",
       "group": "build",
       "isBackground": true
     },
