@@ -1,7 +1,7 @@
 use crate::app_state::AppState;
 use axum::{extract::State, Extension, Json};
 use serde::Serialize;
-use shine_infra::web::{IntoProblemResponse, ProblemConfig, ProblemResponse};
+use shine_infra::web::responses::{IntoProblemResponse, ProblemConfig, ProblemResponse};
 use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]

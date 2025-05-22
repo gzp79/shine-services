@@ -193,11 +193,7 @@
         { "label": "shine-identity", "value": "-p shine-identity" },
         { "label": "shine-infra", "value": "-p shine-infra" },
         { "label": "shine-infra-macros", "value": "-p shine-infra-macros" },
-        { "label": "shine-game", "value": "-p shine-game" },
-        {
-          "label": "shine-game + persist",
-          "value": "-p shine-game --features persisted"
-        },
+        { "label": "shine-game", "value": "-p shine-game" },       
         { "label": "shine-core", "value": "-p shine-core" },
         { "label": "shine-test", "value": "-p shine-test" },
         { "label": "shine-test-macros", "value": "-p shine-test-macros" }

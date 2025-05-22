@@ -7,7 +7,10 @@ use chrono::{DateTime, Duration, Utc};
 use ring::rand::SystemRandom;
 use shine_infra::{
     crypto::random,
-    web::{ClientFingerprint, Problem, SiteInfo},
+    web::{
+        extracts::{ClientFingerprint, SiteInfo},
+        responses::Problem,
+    },
 };
 use thiserror::Error as ThisError;
 use uuid::Uuid;

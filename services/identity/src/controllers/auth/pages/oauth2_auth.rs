@@ -7,7 +7,10 @@ use crate::{
 use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};
 use serde::Deserialize;
-use shine_infra::web::{ClientFingerprint, ErrorResponse, InputError, SiteInfo, ValidatedQuery};
+use shine_infra::web::{
+    extracts::{ClientFingerprint, InputError, SiteInfo, ValidatedQuery},
+    responses::ErrorResponse,
+};
 use std::sync::Arc;
 use utoipa::IntoParams;
 use validator::Validate;

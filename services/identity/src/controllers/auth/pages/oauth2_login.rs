@@ -7,7 +7,10 @@ use oauth2::{CsrfToken, PkceCodeChallenge};
 use serde::Deserialize;
 use shine_infra::{
     crypto::random,
-    web::{ErrorResponse, InputError, ValidatedQuery},
+    web::{
+        extracts::{InputError, ValidatedQuery},
+        responses::ErrorResponse,
+    },
 };
 use std::sync::Arc;
 use url::Url;

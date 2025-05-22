@@ -14,7 +14,7 @@ use chrono::Duration;
 use ring::{aead, rand::SystemRandom};
 use shine_infra::{
     crypto::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
-    web::{ProblemConfig, WebAppConfig},
+    web::{responses::ProblemConfig, WebAppConfig},
 };
 use std::sync::Arc;
 use tera::Tera;

@@ -96,6 +96,7 @@ bevy = { version = "0.16", default-features = false }
 
 ############################# WASM #############################
 wasm-logger = "0.2"
+web-sys = "0.3"
 wasm-bindgen = "0.2"
 wasm-bindgen-test = "0.3"
 

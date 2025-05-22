@@ -3,7 +3,7 @@ use crate::{
     repositories::{identity::IdentityError, session::SessionError, CaptchaError},
 };
 use reqwest::StatusCode;
-use shine_infra::web::{InputError, Problem};
+use shine_infra::web::{extracts::InputError, responses::Problem};
 use thiserror::Error as ThisError;
 
 const INPUT_ERROR: &str = "auth-input-error";

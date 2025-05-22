@@ -1,4 +1,4 @@
-use crate::web::{problems, ErrorResponse, Problem, ProblemConfig};
+use crate::web::responses::{problems, ErrorResponse, Problem, ProblemConfig};
 use axum::{
     extract::{
         rejection::{JsonRejection, PathRejection, QueryRejection},

@@ -4,7 +4,10 @@ use crate::{
 };
 use axum::extract::State;
 use serde::Deserialize;
-use shine_infra::web::{ErrorResponse, InputError, ValidatedQuery};
+use shine_infra::web::{
+    extracts::{InputError, ValidatedQuery},
+    responses::ErrorResponse,
+};
 use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
