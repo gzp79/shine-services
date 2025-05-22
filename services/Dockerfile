@@ -52,12 +52,8 @@ RUN rm -rf ./crates \
 # Copy the actual source code
 COPY ./crates ./crates
 COPY ./services ./services
-<<<<<<< HEAD:services/Dockerfile
 # Skipping client, the dummy project is enough 
 # COPY ./client ./client  
-=======
-COPY ./client ./client
->>>>>>> origin/master:Dockerfile
 
 RUN cargo fmt --check
 
