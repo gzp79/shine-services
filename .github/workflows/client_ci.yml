@@ -2,9 +2,9 @@ name: Web Client Build
 
 on:
   push:
-    branches: [ 114-wasm-build-pipeline-with-r2-deploy ]
+    branches: [114-wasm-build-pipeline-with-r2-deploy]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 # cancel outdated builds
 concurrency:
@@ -12,11 +12,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  wasm-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -25,15 +25,50 @@ jobs:
 
       - name: Compile Rust to WASM
         run: |
-            cargo build --target wasm32-unknown-unknown --profile wasm-release -p shine-client
+          cargo build --target wasm32-unknown-unknown --profile wasm-release -p shine-client
+          mkdir -p ./dist
+          cp target/wasm32-unknown-unknown/release-lto/shine-client.wasm ./dist
 
       - name: Collect artifacts
         run: |
-            mkdir -p ./dist
-            cp ./target/wasm32-unknown-unknown/release/shine_client.wasm ./dist
-      
+          mkdir -p ./dist
+          cp ./target/wasm32-unknown-unknown/release/shine_client.wasm ./dist
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
-        with:          
-          name: wasm-package
+        with:
+          name: game-wasm
           path: ./dist
+
+  deploy:
+    needs: wasm-build
+    #if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: game-wasm
+          path: ./dist
+
+      - name: Upload game
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          aws s3 sync ./dist s3://${BUCKET_NAME}/ \
+              --endpoint-url=${BUCKET_LINK} \
+              --cache-control "public, max-age=31536000, immutable"
+
+      - name: Upload latest.json
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          echo '{ "version": "'${{ github.sha }}'" }' > ./latest.json
+          aws s3 cp ./latest.json s3://${BUCKET_NAME}/latest.json \
+              --endpoint-url=${BUCKET_LINK} \
+              --cache-control "no-cache, no-store, must-revalidate"
