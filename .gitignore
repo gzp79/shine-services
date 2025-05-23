@@ -2,4 +2,6 @@
 /temp
 **/node_modules
 server_config_local.json
+dist
+
 
