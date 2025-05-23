@@ -17,16 +17,26 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+      - name: Cache
+        uses: actions/cache@v4
         with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Setup Rust
+        run: |
+          rustup target add wasm32-unknown-unknown
+          rustup component add rustfmt clippy
+          cargo install wasm-opt
 
       - name: Compile Rust to WASM
         run: |
           cargo build --target wasm32-unknown-unknown --profile release-lto -p shine-client
           mkdir -p ./dist
+          #wasm-opt -Oz -o ./dist/shine-client.wasm target/wasm32-unknown-unknown/release-lto/shine-client.wasm
           cp target/wasm32-unknown-unknown/release-lto/shine-client.wasm ./dist
 
       - name: Collect artifacts
