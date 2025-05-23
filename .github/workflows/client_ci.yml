@@ -1,0 +1,39 @@
+name: Web Client Build
+
+on:
+  push:
+    branches: [ 114-wasm-build-pipeline-with-r2-deploy ]
+  pull_request:
+    branches: [ main ]
+    
+# cancel outdated builds
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Compile Rust to WASM
+        run: |
+            cargo build --target wasm32-unknown-unknown --profile wasm-release -p shine_client
+
+      - name: Collect artifacts
+        run: |
+            mkdir -p ./dist
+            cp ./target/wasm32-unknown-unknown/release/shine_client.wasm ./dist
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: wasm-package
+          path: ./dist
