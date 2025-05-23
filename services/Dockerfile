@@ -57,11 +57,13 @@ COPY ./services ./services
 RUN cargo fmt --check
 
 ENV RUST_BACKTRACE=1
+ENV RUST_LOG="debug"
+
 ENV SHINE_TEST_REDIS_CNS="redis://redis.mockbox.com:6379"
 ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.mockbox.com:5432/database-test?sslmode=disable"
-RUN cargo test --release
 
 RUN cargo build --release
+RUN cargo test --release
 
 #######################################################
 FROM nginx:bookworm AS base
@@ -71,11 +73,11 @@ RUN apt update \
     && apt install -y --no-install-recommends ca-certificates supervisor \
     && mkdir -p /var/log/supervisor
 
-COPY ./docker/supervisord.conf /etc/supervisor/conf.d/supervisor.conf
-COPY ./docker/nginx.conf /etc/nginx/nginx.conf
+COPY ./services/docker/supervisord.conf /etc/supervisor/conf.d/supervisor.conf
+COPY ./services/docker/nginx.conf /etc/nginx/nginx.conf
 
 WORKDIR /app
-COPY ./docker/scripts/ ./
+COPY ./services/docker/scripts/ ./
 RUN  chmod +x ./wait-for-services.sh \
     && chmod +x ./start-identity.sh \
     && chmod +x ./start-builder.sh
@@ -89,11 +91,6 @@ WORKDIR /app/services/builder
 COPY --from=build /shine/target/release/shine-builder ./
 COPY ./services/server_version.json ./
 
-ENV IDENTITY_TENANT_ID=
-ENV IDENTITY_CLIENT_ID=
-ENV IDENTITY_CLIENT_SECRET=
-ENV WAIT_FOR_SERVICES=
-
 EXPOSE 80 443
 
 CMD ["/usr/bin/supervisord"]
@@ -104,7 +101,7 @@ FROM base AS test
 WORKDIR /app
 COPY ./certs/test.crt ./certs/test.crt
 COPY ./certs/test.key ./certs/test.key
-COPY ./docker/nginx.test.conf /etc/nginx/nginx-shine-server.conf
+COPY ./services/docker/nginx.test.conf /etc/nginx/nginx-shine-server.conf
 
 WORKDIR /app/services
 COPY ./services/server_config_test.json ./
@@ -122,7 +119,7 @@ ENV ENVIRONMENT=$ENVIRONMENT
 FROM base AS prod
 
 WORKDIR /app
-COPY ./docker/nginx.prod.conf /etc/nginx/nginx-shine-server.conf
+COPY ./services/docker/nginx.prod.conf /etc/nginx/nginx-shine-server.conf
 
 WORKDIR /app/services
 COPY ./services/server_config.json ./
