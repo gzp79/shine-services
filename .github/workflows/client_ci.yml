@@ -5,7 +5,7 @@ on:
     branches: [ 114-wasm-build-pipeline-with-r2-deploy ]
   pull_request:
     branches: [ main ]
-    
+
 # cancel outdated builds
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
@@ -33,7 +33,7 @@ jobs:
             cp ./target/wasm32-unknown-unknown/release/shine_client.wasm ./dist
       
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
-        with:
+        uses: actions/upload-artifact@v4
+        with:          
           name: wasm-package
           path: ./dist
