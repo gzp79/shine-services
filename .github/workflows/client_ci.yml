@@ -25,7 +25,7 @@ jobs:
 
       - name: Compile Rust to WASM
         run: |
-            cargo build --target wasm32-unknown-unknown --profile wasm-release -p shine_client
+            cargo build --target wasm32-unknown-unknown --profile wasm-release -p shine-client
 
       - name: Collect artifacts
         run: |
