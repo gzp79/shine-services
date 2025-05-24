@@ -75,18 +75,12 @@ jobs:
           aws configure set default.region "$AWS_DEFAULT_REGION"          
 
       - name: Upload game
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           aws s3 sync ./dist s3://${BUCKET_NAME}/ \
               --endpoint-url=${BUCKET_LINK} \
               --cache-control "public, max-age=31536000, immutable"
 
       - name: Upload latest.json
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           echo '{ "version": "'${{ github.sha }}'" }' > ./latest.json
           aws s3 cp ./latest.json s3://${BUCKET_NAME}/latest.json \
