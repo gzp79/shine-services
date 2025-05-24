@@ -72,13 +72,16 @@ jobs:
         run: |
           aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
           aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
-          aws configure set default.region "$AWS_DEFAULT_REGION"          
+          aws configure set default.region "$AWS_DEFAULT_REGION"   
+          aws configure set default.s3.max_concurrent_requests 2
+          aws configure set default.s3.multipart_threshold "50MB"
 
       - name: Upload game
         run: |
           aws s3 sync ./dist s3://${BUCKET_NAME}/ \
               --endpoint-url=${BUCKET_LINK} \
-              --cache-control "public, max-age=31536000, immutable"
+              --cache-control "public, max-age=31536000, immutable" \
+              --checksum-algorithm CRC32
 
       - name: Upload latest.json
         run: |
