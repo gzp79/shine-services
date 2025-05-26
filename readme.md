@@ -44,6 +44,8 @@ These are the most frequently used cargo extensions in the shine project:
 cargo install cargo-outdated
 cargo install cargo-tree
 cargo install wasm-server-runner
+cargo install wasm-bindgen-cli
+cargo install wasm-opt
 ```
 
 ### Telemetry
