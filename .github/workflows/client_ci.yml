@@ -35,14 +35,23 @@ jobs:
         run: |
           rustup target add wasm32-unknown-unknown
           rustup component add rustfmt clippy
-          cargo install wasm-opt
+          
+      - name: Install Wasm tools
+        run: |
+           curl https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh -sSf | sh
+           cargo binstall wasm-bindgen-cli
+           cargo binstall wasm-opt
 
       - name: Compile Rust to WASM
         run: |
           cargo build --target wasm32-unknown-unknown --profile release-lto -p shine-client
-          mkdir -p ./dist/${{ github.sha }}
-          #wasm-opt -Oz -o ./dist/${{ github.sha }}/shine-client.wasm target/wasm32-unknown-unknown/release-lto/shine-client.wasm
-          cp target/wasm32-unknown-unknown/release-lto/shine-client.wasm ./dist/${{ github.sha }}/
+          wasm-bindgen --no-typescript --target web \
+            --out-dir ./dist/${{ github.sha }}\
+            ./target/wasm32-unknown-unknown/release-lto/shine-client.wasm
+          wasm-opt -Oz -o ./dist/${{ github.sha }}/shine-client_opt.wasm ./dist/${{ github.sha }}/shine-client_bg.wasm
+          rm ./dist/${{ github.sha }}/shine-client_bg.wasm
+          mv ./dist/${{ github.sha }}/shine-client_opt.wasm ./dist/${{ github.sha }}/shine-client_bg.wasm
+          cp client/index.html ./dist/${{ github.sha }}/index.html
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
