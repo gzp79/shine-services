@@ -48,9 +48,10 @@ jobs:
           wasm-bindgen --no-typescript --target web \
             --out-dir ./dist/${{ github.sha }}\
             ./target/wasm32-unknown-unknown/release-lto/shine-client.wasm
-          wasm-opt -Oz -o ./dist/${{ github.sha }}/shine-client.wasm ./dist/${{ github.sha }}/shine-client_opt.wasm
-          rm ./dist/${{ github.sha }}/shine-client.wasm
-          mv ./dist/${{ github.sha }}/shine-client_opt.wasm ./dist/${{ github.sha }}/shine-client.wasm
+          wasm-opt -Oz -o ./dist/${{ github.sha }}/shine-client_opt.wasm ./dist/${{ github.sha }}/shine-client_bg.wasm
+          rm ./dist/${{ github.sha }}/shine-client_bg.wasm
+          mv ./dist/${{ github.sha }}/shine-client_opt.wasm ./dist/${{ github.sha }}/shine-client_bg.wasm
+          cp client/index.html ./dist/${{ github.sha }}/index.html
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
