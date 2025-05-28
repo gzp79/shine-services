@@ -1,16 +1,24 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
+  <body style="margin: 0px">
+    <script type="module">
+      import init from "./shine-client.js";
 
-<body style="margin: 0px;">
-  <script type="module">
-    import init from './shine-client.js'
+      init().catch((error) => {
+        if (
+          !error.message.startsWith(
+            "Using exceptions for control flow, don't mind me. This isn't actually an error!"
+          )
+        ) {
+          throw error;
+        }
+      });
 
-    init().catch((error) => {
-      if (!error.message.startsWith("Using exceptions for control flow, don't mind me. This isn't actually an error!")) {
-        throw error;
-      }
-    });
-  </script>
-</body>
+      start_game("#game-canvas");
+    </script>
 
+    <div style="width: 100vw; height: 100vh; overflow: hidden">
+      <canvas id="game-canvas" style="width: 100%; height: 100%"></canvas>
+    </div>
+  </body>
 </html>
