@@ -1,11 +1,20 @@
+$ErrorActionPreference = "Stop"
+
+$profile="release"
+$opt=$false
+
 Write-Host "Build"
-cargo build --target=wasm32-unknown-unknown -p shine-client --profile release-lto
+cargo build --target=wasm32-unknown-unknown -p shine-client --profile ${profile}
 
 Write-Host "Pack"
-wasm-bindgen --no-typescript --target web --out-name shine-client --out-dir ./dist/custom .\target\wasm32-unknown-unknown\release-lto\shine-client.wasm
+wasm-bindgen --no-typescript --target web --out-name shine-client --out-dir ./dist/custom .\target\wasm32-unknown-unknown\${profile}\shine-client.wasm
 
-Write-Host "Opt"
-wasm-opt -Oz --strip-debug -o ./dist/custom/shine-client.wasm ./dist/custom/shine-client_bg.wasm
+if ($opt) {
+    Write-Host "Opt"
+    wasm-opt -Oz --strip-debug -o ./dist/custom/shine-client_opt.wasm ./dist/custom/shine-client_bg.wasm
+    del ./dist/custom/shine-client_bg.wasm
+    copy ./dist/custom/shine-client_opt.wasm ./dist/custom/shine-client_bg.wasm
+}
 
-#del ./dist/custom/shine-client.wasm
-#ren ./dist/custom/shine-client_opt.wasm
+Write-Host "Index.html"
+copy ./client/index.html ./dist/custom/
