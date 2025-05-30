@@ -13,7 +13,9 @@ use prometheus::{Encoder, Registry as PromRegistry, TextEncoder};
 use std::sync::{Arc, RwLock};
 use tracing::{Dispatch, Subscriber};
 use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::{filter::EnvFilter, layer::SubscriberExt, registry::LookupSpan, reload, Layer};
+use tracing_subscriber::{
+    filter::EnvFilter, layer::SubscriberExt, registry::LookupSpan, reload, Layer,
+};
 
 use super::{Metering, OtelLayer, TelemetryBuildError, TelemetryConfig, TelemetryError, Tracing};
 
@@ -43,8 +45,13 @@ where
 {
     fn set_configuration(&mut self, mut new_config: DynConfig) -> Result<(), String> {
         new_config.filter.retain(|c| !c.is_whitespace());
-        let new_filter = new_config.filter.parse::<EnvFilter>().map_err(|e| format!("{}", e))?;
-        self.handle.reload(new_filter).map_err(|e| format!("{}", e))?;
+        let new_filter = new_config
+            .filter
+            .parse::<EnvFilter>()
+            .map_err(|e| format!("{}", e))?;
+        self.handle
+            .reload(new_filter)
+            .map_err(|e| format!("{}", e))?;
         self.config = new_config;
         Ok(())
     }
@@ -98,7 +105,10 @@ pub struct TelemetryService {
 }
 
 impl TelemetryService {
-    pub async fn new(service_name: &'static str, config: &TelemetryConfig) -> Result<Self, TelemetryBuildError> {
+    pub async fn new(
+        service_name: &'static str,
+        config: &TelemetryConfig,
+    ) -> Result<Self, TelemetryBuildError> {
         let mut service = TelemetryService {
             tracer_provider: None,
             metrics: None,
@@ -119,7 +129,10 @@ impl TelemetryService {
         Ok(())
     }
 
-    fn tracing_fixed_filter<S>(&mut self, config: &TelemetryConfig) -> Result<impl Layer<S>, TelemetryBuildError>
+    fn tracing_fixed_filter<S>(
+        &mut self,
+        config: &TelemetryConfig,
+    ) -> Result<impl Layer<S>, TelemetryBuildError>
     where
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
@@ -130,7 +143,10 @@ impl TelemetryService {
         Ok(env_filter)
     }
 
-    fn tracing_dyn_filter<S>(&mut self, config: &TelemetryConfig) -> Result<impl Layer<S>, TelemetryBuildError>
+    fn tracing_dyn_filter<S>(
+        &mut self,
+        config: &TelemetryConfig,
+    ) -> Result<impl Layer<S>, TelemetryBuildError>
     where
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
@@ -142,12 +158,17 @@ impl TelemetryService {
         let (reload_env_filter, reload_handle) = reload::Layer::new(env_filter);
         self.reconfigure = Some(Arc::new(RwLock::new(WrapHandle {
             handle: reload_handle,
-            config: DynConfig { filter: filter.to_string() },
+            config: DynConfig {
+                filter: filter.to_string(),
+            },
         })));
         Ok(reload_env_filter)
     }
 
-    fn tracing_console_log<S>(&mut self, _config: &TelemetryConfig) -> Result<impl Layer<S>, TelemetryBuildError>
+    fn tracing_console_log<S>(
+        &mut self,
+        _config: &TelemetryConfig,
+    ) -> Result<impl Layer<S>, TelemetryBuildError>
     where
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
@@ -191,11 +212,12 @@ impl TelemetryService {
             #[cfg(feature = "ot_app_insight")]
             Tracing::AppInsight { connection_string } => {
                 log::info!("Registering AppInsight tracing exporter...");
-                let exporter = opentelemetry_application_insights::Exporter::new_from_connection_string(
-                    connection_string,
-                    reqwest::Client::new(),
-                )
-                .map_err(TelemetryBuildError::AppInsightConfigError)?;
+                let exporter =
+                    opentelemetry_application_insights::Exporter::new_from_connection_string(
+                        connection_string,
+                        reqwest::Client::new(),
+                    )
+                    .map_err(TelemetryBuildError::AppInsightConfigError)?;
                 builder.with_batch_exporter(exporter)
             }
             Tracing::None => unreachable!("Tracing::None should not be used in this context"),
@@ -307,7 +329,11 @@ impl TelemetryService {
         };
 
         let meter = provider.meter_with_scope(scope.clone());
-        self.metrics = Some(Metrics { provider, collect, meter });
+        self.metrics = Some(Metrics {
+            provider,
+            collect,
+            meter,
+        });
         Ok(())
     }
 
@@ -349,7 +375,9 @@ impl TelemetryService {
     }
 
     pub fn create_meter(&self, metrics_scope: &'static str) -> Option<Meter> {
-        self.metrics.as_ref().map(|m| m.provider.meter(metrics_scope))
+        self.metrics
+            .as_ref()
+            .map(|m| m.provider.meter(metrics_scope))
     }
 
     pub fn service_meter(&self) -> Option<&Meter> {

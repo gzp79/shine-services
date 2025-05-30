@@ -1,6 +1,8 @@
 use crate::{
     db::{
-        event_source::{pg::PgEventDbContext, Event, EventSourceError, EventStore, StoredEvent, StreamId},
+        event_source::{
+            pg::PgEventDbContext, Event, EventSourceError, EventStore, StoredEvent, StreamId,
+        },
         DBError, PGClient, PGErrorChecks,
     },
     pg_query,
@@ -78,7 +80,8 @@ impl EventRow {
     {
         Ok(StoredEvent {
             version: self.version as usize,
-            event: serde_json::from_str(&self.data).map_err(EventSourceError::EventSerialization)?,
+            event: serde_json::from_str(&self.data)
+                .map_err(EventSourceError::EventSerialization)?,
         })
     }
 }
@@ -168,7 +171,10 @@ where
     type Event = E;
     type StreamId = S;
 
-    async fn create_stream(&mut self, aggregate_id: &Self::StreamId) -> Result<(), EventSourceError> {
+    async fn create_stream(
+        &mut self,
+        aggregate_id: &Self::StreamId,
+    ) -> Result<(), EventSourceError> {
         if let Err(err) = self
             .stmts_store
             .create_stream
@@ -188,7 +194,10 @@ where
         }
     }
 
-    async fn get_stream_version(&mut self, aggregate_id: &Self::StreamId) -> Result<Option<usize>, EventSourceError> {
+    async fn get_stream_version(
+        &mut self,
+        aggregate_id: &Self::StreamId,
+    ) -> Result<Option<usize>, EventSourceError> {
         match self
             .stmts_store
             .get_version
@@ -201,7 +210,10 @@ where
         }
     }
 
-    async fn delete_stream(&mut self, aggregate_id: &Self::StreamId) -> Result<(), EventSourceError> {
+    async fn delete_stream(
+        &mut self,
+        aggregate_id: &Self::StreamId,
+    ) -> Result<(), EventSourceError> {
         if self
             .stmts_store
             .delete_stream
@@ -264,7 +276,8 @@ where
         }
 
         for event in event.iter().enumerate() {
-            let data = serde_json::to_string(event.1).map_err(EventSourceError::EventSerialization)?;
+            let data =
+                serde_json::to_string(event.1).map_err(EventSourceError::EventSerialization)?;
             if let Err(err) = self
                 .stmts_store
                 .store_event
@@ -301,7 +314,8 @@ where
     ) -> Result<usize, EventSourceError> {
         let mut version = None;
         for event in event.iter() {
-            let data = serde_json::to_string(event).map_err(EventSourceError::EventSerialization)?;
+            let data =
+                serde_json::to_string(event).map_err(EventSourceError::EventSerialization)?;
             let new_version: i32 = self
                 .stmts_store
                 .store_next_event

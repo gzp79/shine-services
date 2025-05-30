@@ -76,7 +76,10 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Sessio
     let mut recv_task = {
         let message_sender = message_sender.clone();
         tokio::spawn(async move {
-            message_sender.send(Message::Chat(current_user_id, "${tr: Connected}".to_string()));
+            message_sender.send(Message::Chat(
+                current_user_id,
+                "${tr: Connected}".to_string(),
+            ));
 
             while let Some(Ok(message)) = ws_receiver.next().await {
                 log::info!("[{current_user_id}] WsMessage received");
@@ -84,8 +87,9 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Sessio
                     WsMessage::Text(text) => {
                         let msg = match serde_json::from_str::<RequestMessage>(&text) {
                             Ok(msg) => match msg {
-                                RequestMessage::Chat { text } => Some(Message::Chat(current_user_id, text)),
-                                //RequestMessage::
+                                RequestMessage::Chat { text } => {
+                                    Some(Message::Chat(current_user_id, text))
+                                }
                             },
                             Err(_) => {
                                 log::error!("[{current_user_id}] Received invalid message: {text}");
@@ -107,7 +111,10 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Sessio
         while let Ok(message) = message_receiver.recv().await {
             log::info!("[{current_user_id}] Message received");
             let msg = match message {
-                Message::Chat(user_id, text) => Some(ResponseMessage::Chat { from: user_id, text }),
+                Message::Chat(user_id, text) => Some(ResponseMessage::Chat {
+                    from: user_id,
+                    text,
+                }),
             };
 
             if let Some(msg) = msg {
@@ -123,7 +130,10 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Sessio
                     }
                 };
                 if let Err(err) = ws_sender.send(WsMessage::Text(data.into())).await {
-                    log::error!("[{current_user_id}] Failed to send message to the user: {:#?}", err);
+                    log::error!(
+                        "[{current_user_id}] Failed to send message to the user: {:#?}",
+                        err
+                    );
                 }
             }
         }
@@ -142,5 +152,8 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Sessio
     }
 
     session.disconnect_user(current_user_id).await;
-    message_sender.send(Message::Chat(current_user_id, "${tr: Disconnected}".to_string()));
+    message_sender.send(Message::Chat(
+        current_user_id,
+        "${tr: Disconnected}".to_string(),
+    ));
 }

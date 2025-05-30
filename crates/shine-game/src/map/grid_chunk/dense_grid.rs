@@ -1,4 +1,4 @@
-use crate::map::{DenseGridChunk, GridChunk, GridChunkTypes, MapChunk, MapConfig, Tile};
+use crate::map::{DenseGridChunk, GridChunk, GridChunkTypes, GridConfig, MapChunk, Tile};
 use bevy::ecs::component::Component;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -11,10 +11,43 @@ where
     T: GridChunkTypes,
     T::Tile: Tile + Clone,
 {
-    version: usize,
     width: usize,
     height: usize,
     data: Vec<T::Tile>,
+}
+
+impl<T> DenseGrid<T>
+where
+    T: GridChunkTypes,
+    T::Tile: Tile + Clone,
+{
+    pub fn new<CFG>(config: CFG) -> Self
+    where
+        CFG: GridConfig,
+    {
+        let width = config.width();
+        let height = config.height();
+
+        let area = width * height;
+        let mut data = Vec::with_capacity(area);
+        data.resize_with(area, <T::Tile as Default>::default);
+        Self {
+            width,
+            height,
+            data,
+        }
+    }
+}
+
+impl<CFG, T> From<CFG> for DenseGrid<T>
+where
+    CFG: GridConfig,
+    T: GridChunkTypes,
+    T::Tile: Clone,
+{
+    fn from(config: CFG) -> Self {
+        Self::new(config)
+    }
 }
 
 impl<T> MapChunk for DenseGrid<T>
@@ -31,25 +64,9 @@ where
         Self: Sized,
     {
         Self {
-            version: 0,
             width: 0,
             height: 0,
             data: Vec::new(),
-        }
-    }
-
-    fn new(config: &MapConfig) -> Self {
-        let width = config.width;
-        let height = config.height;
-
-        let area = width * height;
-        let mut data = Vec::with_capacity(area);
-        data.resize_with(area, <T::Tile as Default>::default);
-        Self {
-            version: 0,
-            width,
-            height,
-            data,
         }
     }
 

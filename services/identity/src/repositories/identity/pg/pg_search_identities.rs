@@ -1,5 +1,6 @@
 use crate::repositories::identity::{
-    Identity, IdentityError, IdentitySearch, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_RESULT_COUNT,
+    Identity, IdentityError, IdentitySearch, SearchIdentity, SearchIdentityOrder,
+    MAX_SEARCH_RESULT_COUNT,
 };
 use shine_infra::db::{DBError, QueryBuilder};
 use tokio_postgres::Row;
@@ -9,10 +10,14 @@ use super::PgIdentityDbContext;
 
 impl IdentitySearch for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
-    async fn search_identity(&mut self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, IdentityError> {
+    async fn search_identity(
+        &mut self,
+        search: SearchIdentity<'_>,
+    ) -> Result<Vec<Identity>, IdentityError> {
         log::info!("{search:?}");
-        let mut builder =
-            QueryBuilder::new("SELECT user_id, kind, name, email, email_confirmed, created FROM identities");
+        let mut builder = QueryBuilder::new(
+            "SELECT user_id, kind, name, email, email_confirmed, created FROM identities",
+        );
 
         fn into_identity(r: Row) -> Result<Identity, IdentityError> {
             Ok(Identity {
@@ -64,14 +69,24 @@ impl IdentitySearch for PgIdentityDbContext<'_> {
         };
         builder.order_by("user_id");
 
-        let count = usize::min(MAX_SEARCH_RESULT_COUNT, search.count.unwrap_or(MAX_SEARCH_RESULT_COUNT));
+        let count = usize::min(
+            MAX_SEARCH_RESULT_COUNT,
+            search.count.unwrap_or(MAX_SEARCH_RESULT_COUNT),
+        );
         builder.limit(count);
 
         let (stmt, params) = builder.build();
         log::info!("{stmt:?}");
-        let rows = self.client.query(&stmt, &params).await.map_err(DBError::from)?;
+        let rows = self
+            .client
+            .query(&stmt, &params)
+            .await
+            .map_err(DBError::from)?;
 
-        let identities = rows.into_iter().map(into_identity).collect::<Result<Vec<_>, _>>()?;
+        let identities = rows
+            .into_iter()
+            .map(into_identity)
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(identities)
     }
 }

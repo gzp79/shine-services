@@ -1,4 +1,6 @@
-use crate::db::event_source::{Aggregate, AggregateStore, EventSourceError, EventStore, StoredAggregate, StoredEvent};
+use crate::db::event_source::{
+    Aggregate, AggregateStore, EventSourceError, EventStore, StoredAggregate, StoredEvent,
+};
 
 /// Helper to replay events from the event store and apply them to an aggregate.
 #[derive(Debug, Clone)]
@@ -49,7 +51,10 @@ where
         DB: EventStore<Event = A::Event, StreamId = A::StreamId>
             + AggregateStore<Event = A::Event, StreamId = A::StreamId>,
     {
-        let snapshot = db.get_aggregate::<A>(stream_id, version).await?.map(Snapshot::from);
+        let snapshot = db
+            .get_aggregate::<A>(stream_id, version)
+            .await?
+            .map(Snapshot::from);
         let mut snapshot = snapshot.unwrap_or_else(|| Snapshot::new(stream_id.clone(), init));
         snapshot.start_version = snapshot.version;
 
@@ -61,13 +66,19 @@ where
         A::NAME
     }
 
-    pub async fn update_from<DB>(&mut self, db: &mut DB, version: Option<usize>) -> Result<(), EventSourceError>
+    pub async fn update_from<DB>(
+        &mut self,
+        db: &mut DB,
+        version: Option<usize>,
+    ) -> Result<(), EventSourceError>
     where
         DB: EventStore<Event = A::Event, StreamId = A::StreamId>
             + AggregateStore<Event = A::Event, StreamId = A::StreamId>,
     {
         if version.unwrap_or(usize::MAX) > self.version {
-            let events = db.get_events(&self.stream_id, Some(self.version), version).await?;
+            let events = db
+                .get_events(&self.stream_id, Some(self.version), version)
+                .await?;
             self.apply(events)?;
         }
         Ok(())

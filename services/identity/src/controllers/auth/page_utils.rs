@@ -66,13 +66,21 @@ impl<'a> PageUtils<'a> {
         self.redirect(auth_session, Some(&target_url), Some(&problem))
     }
 
-    pub fn redirect(&self, auth_session: AuthSession, target_url: Option<&Url>, problem: Option<&Problem>) -> AuthPage {
+    pub fn redirect(
+        &self,
+        auth_session: AuthSession,
+        target_url: Option<&Url>,
+        problem: Option<&Problem>,
+    ) -> AuthPage {
         let mut context = tera::Context::new();
 
         self.bind_timeout(&mut context);
         self.bind_app_nme(&mut context);
 
-        context.insert("targetUrl", target_url.unwrap_or(&self.settings.home_url).as_str());
+        context.insert(
+            "targetUrl",
+            target_url.unwrap_or(&self.settings.home_url).as_str(),
+        );
 
         let problem_json = problem
             .map(|p| serde_json::to_string_pretty(&p).unwrap())

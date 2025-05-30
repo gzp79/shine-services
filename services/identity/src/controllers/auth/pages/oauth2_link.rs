@@ -1,6 +1,8 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthError, AuthPage, AuthSession, ExternalLoginCookie, OAuth2Client, PageUtils},
+    controllers::auth::{
+        AuthError, AuthPage, AuthSession, ExternalLoginCookie, OAuth2Client, PageUtils,
+    },
 };
 use axum::{extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};

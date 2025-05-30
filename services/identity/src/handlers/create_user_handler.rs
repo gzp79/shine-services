@@ -50,9 +50,13 @@ where
         const MAX_RETRY_COUNT: usize = 10;
 
         let mut name = name.map(|e| e.to_owned());
-        let email = email.filter(|email| email.validate_email()).map(|email| (email, false));
+        let email = email
+            .filter(|email| email.validate_email())
+            .map(|email| (email, false));
 
-        assert!(email.as_ref().is_none_or(|(email, _)| email.validate_email()));
+        assert!(email
+            .as_ref()
+            .is_none_or(|(email, _)| email.validate_email()));
 
         let mut retry_count = 0;
         loop {

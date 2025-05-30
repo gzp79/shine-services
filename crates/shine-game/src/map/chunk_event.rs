@@ -15,7 +15,11 @@ where
     Untrack { id: ChunkId },
     /// Some operations are missing from the stream
     /// The first,last is an inclusive range of the missing operations
-    OperationGap { id: ChunkId, first: usize, last: usize },
+    OperationGap {
+        id: ChunkId,
+        first: usize,
+        last: usize,
+    },
 
     #[doc(hidden)]
     _Phantom(PhantomData<C>),

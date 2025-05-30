@@ -17,7 +17,10 @@ pub struct MessageSender {
 
 impl MessageSender {
     pub fn new(message_channel: broadcast::Sender<Message>, source: MessageSource) -> Self {
-        Self { source, message_channel }
+        Self {
+            source,
+            message_channel,
+        }
     }
 
     pub fn send(&self, message: Message) {

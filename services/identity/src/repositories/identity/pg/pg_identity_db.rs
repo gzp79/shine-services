@@ -1,8 +1,11 @@
-use crate::repositories::identity::{IdentityBuildError, IdentityDb, IdentityDbContext, IdentityError};
+use crate::repositories::identity::{
+    IdentityBuildError, IdentityDb, IdentityDbContext, IdentityError,
+};
 use shine_infra::db::{DBError, PGConnectionPool, PGPooledConnection};
 
 use super::{
-    PgExternalLinksStatements, PgIdSequencesStatements, PgIdentitiesStatements, PgRolesStatements, PgTokensStatements,
+    PgExternalLinksStatements, PgIdSequencesStatements, PgIdentitiesStatements, PgRolesStatements,
+    PgTokensStatements,
 };
 
 pub struct PgIdentityDbContext<'c> {

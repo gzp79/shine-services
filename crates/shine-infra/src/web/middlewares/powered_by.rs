@@ -19,7 +19,9 @@ impl PoweredBy {
     where
         S: TryInto<HeaderValue, Error = InvalidHeaderValue>,
     {
-        Ok(Self { version: version.try_into()? })
+        Ok(Self {
+            version: version.try_into()?,
+        })
     }
 
     pub fn from_service_info<S1: AsRef<str>, S2: AsRef<str>>(
@@ -36,7 +38,10 @@ impl<S> Layer<S> for PoweredBy {
     type Service = PoweredByMiddleware<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        PoweredByMiddleware { inner, layer: self.clone() }
+        PoweredByMiddleware {
+            inner,
+            layer: self.clone(),
+        }
     }
 }
 

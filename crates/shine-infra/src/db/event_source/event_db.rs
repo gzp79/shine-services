@@ -58,11 +58,18 @@ where
     E: Event,
     S: StreamId,
 {
-    fn create_context(&self) -> impl Future<Output = Result<impl EventDbContext<'_, E, S>, EventSourceError>> + Send;
+    fn create_context(
+        &self,
+    ) -> impl Future<Output = Result<impl EventDbContext<'_, E, S>, EventSourceError>> + Send;
 
-    fn listen_to_stream_updates<F>(&self, handler: F) -> impl Future<Output = Result<(), EventSourceError>> + Send
+    fn listen_to_stream_updates<F>(
+        &self,
+        handler: F,
+    ) -> impl Future<Output = Result<(), EventSourceError>> + Send
     where
         F: Fn(EventNotification<S>) + Send + Sync + 'static;
 
-    fn unlisten_to_stream_updates(&self) -> impl Future<Output = Result<(), EventSourceError>> + Send;
+    fn unlisten_to_stream_updates(
+        &self,
+    ) -> impl Future<Output = Result<(), EventSourceError>> + Send;
 }

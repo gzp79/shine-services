@@ -22,7 +22,12 @@ where
 {
     fn on_track(&self, chunk_id: ChunkId) -> impl Future<Output = ()> + Send + '_;
     fn on_untrack(&self, chunk_id: ChunkId) -> impl Future<Output = ()> + Send + '_;
-    fn on_missing_events(&self, chunk_id: ChunkId, first: usize, last: usize) -> impl Future<Output = ()> + Send + '_;
+    fn on_missing_events(
+        &self,
+        chunk_id: ChunkId,
+        first: usize,
+        last: usize,
+    ) -> impl Future<Output = ()> + Send + '_;
 }
 
 #[derive(Resource, Clone)]
@@ -156,7 +161,9 @@ pub fn process_chunk_events_system<C, EH>(
                         let chunk_id = *id;
                         let first = *first;
                         let last = *last;
-                        thread_pool.spawn(async move { handler.on_missing_events(chunk_id, first, last).await })
+                        thread_pool.spawn(async move {
+                            handler.on_missing_events(chunk_id, first, last).await
+                        })
                     };
                     tasks.tasks.insert(*id, task);
                 }

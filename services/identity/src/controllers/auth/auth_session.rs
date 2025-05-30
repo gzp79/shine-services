@@ -93,7 +93,9 @@ impl AuthSessionMeta {
         let config_auth_session = &config_auth.auth_session;
 
         let home_url = &config_auth.home_url;
-        let home_domain = home_url.domain().ok_or(AuthSessionError::MissingHomeDomain)?;
+        let home_domain = home_url
+            .domain()
+            .ok_or(AuthSessionError::MissingHomeDomain)?;
         let domain = {
             let mut parts = home_domain.split('.').rev().take(2).collect::<Vec<_>>();
             parts.reverse();
@@ -101,10 +103,15 @@ impl AuthSessionMeta {
         };
 
         let auth_base = &config_auth.auth_base_url;
-        let auth_domain = auth_base.domain().ok_or(AuthSessionError::MissingDomain)?.to_string();
+        let auth_domain = auth_base
+            .domain()
+            .ok_or(AuthSessionError::MissingDomain)?
+            .to_string();
         let auth_path = auth_base.path().to_string();
         if !auth_domain.ends_with(&domain) {
-            log::error!("Non-matching domains, home:{home_domain}, auth: {auth_domain}, common:{domain}");
+            log::error!(
+                "Non-matching domains, home:{home_domain}, auth: {auth_domain}, common:{domain}"
+            );
             return Err(AuthSessionError::InvalidApiDomain);
         }
 
@@ -112,7 +119,8 @@ impl AuthSessionMeta {
             let key = B64
                 .decode(&config_auth_session.token_cookie_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
-            let secret = Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
+            let secret = Key::try_from(&key[..])
+                .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             CookieSettings {
                 name: "tid".to_string(),
                 secret,
@@ -125,7 +133,8 @@ impl AuthSessionMeta {
             let key = B64
                 .decode(&config.service.session_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
-            let secret = Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
+            let secret = Key::try_from(&key[..])
+                .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             CookieSettings {
                 name: "sid".to_string(),
                 secret,
@@ -138,7 +147,8 @@ impl AuthSessionMeta {
             let key = B64
                 .decode(&config_auth_session.external_login_cookie_secret)
                 .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
-            let secret = Key::try_from(&key[..]).map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
+            let secret = Key::try_from(&key[..])
+                .map_err(|err| AuthSessionError::InvalidSecret(format!("{err}")))?;
             CookieSettings {
                 name: "eid".to_string(),
                 secret,
@@ -282,14 +292,23 @@ where
             .await
             .expect("Missing AuthSessionMeta extension");
 
-        let mut user = parts.extract::<CheckedCurrentUser>().await.ok().map(|x| x.into_user());
-        let mut external_login_cookie =
-            SignedCookieJar::from_headers(&parts.headers, meta.external_login_cookie_settings.secret.clone())
-                .get(&meta.external_login_cookie_settings.name)
-                .and_then(|session| serde_json::from_str::<ExternalLoginCookie>(session.value()).ok());
-        let token_cookie = SignedCookieJar::from_headers(&parts.headers, meta.token_cookie_settings.secret.clone())
-            .get(&meta.token_cookie_settings.name)
-            .and_then(|session| serde_json::from_str::<TokenCookie>(session.value()).ok());
+        let mut user = parts
+            .extract::<CheckedCurrentUser>()
+            .await
+            .ok()
+            .map(|x| x.into_user());
+        let mut external_login_cookie = SignedCookieJar::from_headers(
+            &parts.headers,
+            meta.external_login_cookie_settings.secret.clone(),
+        )
+        .get(&meta.external_login_cookie_settings.name)
+        .and_then(|session| serde_json::from_str::<ExternalLoginCookie>(session.value()).ok());
+        let token_cookie = SignedCookieJar::from_headers(
+            &parts.headers,
+            meta.token_cookie_settings.secret.clone(),
+        )
+        .get(&meta.token_cookie_settings.name)
+        .and_then(|session| serde_json::from_str::<TokenCookie>(session.value()).ok());
 
         log::debug!(
             "Auth sessions before validation:\n  user:{:#?}\n  external_login_cookie:{:#?}\n  token_cookie:{:#?}\n",
@@ -358,7 +377,8 @@ fn create_jar<T: Serialize, X: Into<Expiration>>(
 
         let nonce: Vec<u8> = (0..16).map(|_| rng().random::<u8>()).collect();
         let nonce = B64.encode(nonce);
-        let raw_data = serde_json::to_string(&Dummy { n: nonce }).expect("Failed to serialize user");
+        let raw_data =
+            serde_json::to_string(&Dummy { n: nonce }).expect("Failed to serialize user");
         let mut cookie = Cookie::new(settings.name.to_string(), raw_data);
         cookie.set_expires(OffsetDateTime::now_utc() - Duration::days(1));
         cookie
@@ -405,14 +425,17 @@ impl IntoResponseParts for AuthSession {
         );
         let external_login_cookie = create_jar(
             &meta.external_login_cookie_settings,
-            external_login_cookie.as_ref().map(|d| (d, Expiration::Session)),
+            external_login_cookie
+                .as_ref()
+                .map(|d| (d, Expiration::Session)),
         );
 
         let token_cookie = create_jar(
             &meta.token_cookie_settings,
             token_cookie.as_ref().map(|d| {
                 let naive_time = d.expire_at.naive_utc();
-                let naive_time = OffsetDateTime::from_unix_timestamp(naive_time.and_utc().timestamp()).unwrap();
+                let naive_time =
+                    OffsetDateTime::from_unix_timestamp(naive_time.and_utc().timestamp()).unwrap();
                 // disable cookie a few minutes before the token expiration
                 let token_expiration = naive_time - Duration::minutes(5);
                 (d, token_expiration)

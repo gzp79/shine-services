@@ -83,16 +83,18 @@ where
             .extract::<Extension<Arc<UserSessionCacheReader>>>()
             .await
             .expect("Missing UserSessionCacheReader extension");
-        let fingerprint = parts
-            .extract::<ClientFingerprint>()
-            .await
-            .map_err(|err| ErrorResponse::new(&problem_config, UserSessionError::from(err.problem)))?;
+        let fingerprint = parts.extract::<ClientFingerprint>().await.map_err(|err| {
+            ErrorResponse::new(&problem_config, UserSessionError::from(err.problem))
+        })?;
 
-        let jar = SignedCookieJar::from_headers(&parts.headers, session_cache.cookie_secret().clone());
+        let jar =
+            SignedCookieJar::from_headers(&parts.headers, session_cache.cookie_secret().clone());
         let session_cookie = jar
             .get(session_cache.cookie_name())
             .and_then(|cookie| serde_json::from_str::<SessionCookie>(cookie.value()).ok())
-            .ok_or_else(|| ErrorResponse::new(&problem_config, UserSessionError::Unauthenticated))?;
+            .ok_or_else(|| {
+                ErrorResponse::new(&problem_config, UserSessionError::Unauthenticated)
+            })?;
 
         log::debug!("Checking fingerprint: {:?}", session_cookie.user_id);
         if session_cookie.fingerprint != fingerprint.as_str() {

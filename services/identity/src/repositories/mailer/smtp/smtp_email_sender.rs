@@ -51,7 +51,9 @@ impl SmtpEmailSender {
     ) -> Result<Self, SmtpEmailSenderBuildError> {
         let (relay, port) = {
             let mut iter = smtp_url.splitn(2, ':');
-            let relay = iter.next().ok_or(SmtpEmailSenderBuildError::InvalidSmtpUrl)?;
+            let relay = iter
+                .next()
+                .ok_or(SmtpEmailSenderBuildError::InvalidSmtpUrl)?;
             let port = iter.next().map_or(Ok(SUBMISSIONS_PORT), |p| {
                 p.parse().map_err(|err| {
                     log::error!("Failed to parse SMTP port: {err}");
@@ -85,7 +87,12 @@ impl SmtpEmailSender {
 }
 
 impl EmailSender for SmtpEmailSender {
-    async fn send(&self, from_name: &str, to: &str, content: Email) -> Result<(), EmailSenderError> {
+    async fn send(
+        &self,
+        from_name: &str,
+        to: &str,
+        content: Email,
+    ) -> Result<(), EmailSenderError> {
         log::info!(
             "Sending email from {} to {} with subject {}...",
             to,

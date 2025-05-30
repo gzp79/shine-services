@@ -1,4 +1,7 @@
-use crate::map::{ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkId, ChunkOperation, ChunkRoot, MapChunk, MapConfig};
+use crate::map::{
+    ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkId, ChunkOperation, ChunkRoot, MapChunk,
+    MapConfig,
+};
 use bevy::{
     ecs::{
         event::EventWriter,
@@ -62,7 +65,9 @@ where
     H: ChunkHasher<C>,
 {
     fn clone(&self) -> Self {
-        Self { queue: self.queue.clone() }
+        Self {
+            queue: self.queue.clone(),
+        }
     }
 }
 
@@ -101,8 +106,8 @@ where
 
 /// Consume the ChunkCommand queue and integrate the commands into the chunk data.
 #[allow(clippy::type_complexity)]
-pub fn process_layer_commands_system<C, O, H>(
-    map_config: Res<MapConfig>,
+pub fn process_layer_commands_system<CFG, C, O, H>(
+    map_config: Res<CFG>,
     hasher: Option<Res<H>>,
     chunk_command_queue: Res<ChunkCommandQueue<C, O, H>>,
     mut chunks: Query<(
@@ -118,7 +123,8 @@ pub fn process_layer_commands_system<C, O, H>(
     mut chunk_operations: Local<BTreeMap<usize, O>>,
     mut chunk_hashes: Local<BTreeMap<usize, H::Hash>>,
 ) where
-    C: MapChunk,
+    CFG: MapConfig,
+    C: MapChunk + From<CFG>,
     O: ChunkOperation<C>,
     H: ChunkHasher<C>,
 {
@@ -133,7 +139,7 @@ pub fn process_layer_commands_system<C, O, H>(
             let is_chunk_data = match command {
                 ChunkCommand::Empty => {
                     log::debug!("Chunk [{:?}]: Reset to empty", chunk_root.id);
-                    *chunk = C::new(&map_config);
+                    *chunk = C::from(map_config.clone());
                     true
                 }
                 ChunkCommand::Data((data_version, data)) => {
@@ -174,7 +180,8 @@ pub fn process_layer_commands_system<C, O, H>(
                         "Chunk [{:?}]: Hash cleared and stored [{}] -> [{}]",
                         chunk_id,
                         chunk_version.version,
-                        serde_json::to_string(hash_track.get(chunk_version.version).unwrap()).unwrap()
+                        serde_json::to_string(hash_track.get(chunk_version.version).unwrap())
+                            .unwrap()
                     );
                 }
             }
@@ -182,10 +189,18 @@ pub fn process_layer_commands_system<C, O, H>(
 
         // apply operations by version
         if !chunk_commands.is_empty() {
-            log::debug!("Chunk [{:?}]: Applying {} operations", chunk_id, chunk_operations.len());
+            log::debug!(
+                "Chunk [{:?}]: Applying {} operations",
+                chunk_id,
+                chunk_operations.len()
+            );
             while let Some((version, operation)) = chunk_operations.pop_first() {
                 if version <= chunk_version.version {
-                    log::trace!("Chunk [{:?}]: Operation is too old {}, ignoring", chunk_id, version);
+                    log::trace!(
+                        "Chunk [{:?}]: Operation is too old {}, ignoring",
+                        chunk_id,
+                        version
+                    );
                 } else if version == chunk_version.version + 1 {
                     if operation.check_precondition(&chunk) {
                         operation.apply(&mut *chunk);
@@ -197,7 +212,8 @@ pub fn process_layer_commands_system<C, O, H>(
                             "Chunk [{:?}]: Hash stored [{}] -> [{}]",
                             chunk_id,
                             chunk_version.version,
-                            serde_json::to_string(hash_track.get(chunk_version.version).unwrap()).unwrap()
+                            serde_json::to_string(hash_track.get(chunk_version.version).unwrap())
+                                .unwrap()
                         );
                     }
                 } else {

@@ -76,8 +76,12 @@ pub enum InputError {
 impl From<InputError> for Problem {
     fn from(value: InputError) -> Self {
         match value {
-            InputError::PathFormat(err) => Problem::bad_request(problems::INPUT_PATH).with_detail(format!("{err:?}")),
-            InputError::QueryFormat(err) => Problem::bad_request(problems::INPUT_QUERY).with_detail(format!("{err}")),
+            InputError::PathFormat(err) => {
+                Problem::bad_request(problems::INPUT_PATH).with_detail(format!("{err:?}"))
+            }
+            InputError::QueryFormat(err) => {
+                Problem::bad_request(problems::INPUT_QUERY).with_detail(format!("{err}"))
+            }
             InputError::JsonFormat(JsonRejection::JsonSyntaxError(err)) => {
                 Problem::bad_request(problems::INPUT_BODY).with_detail(err.body_text())
             }
@@ -85,7 +89,9 @@ impl From<InputError> for Problem {
                 //todo: convert it into validation error
                 Problem::bad_request(problems::INPUT_BODY).with_detail(err.body_text())
             }
-            InputError::Constraint(detail) => Problem::bad_request(problems::INPUT_VALIDATION).with_extension(detail),
+            InputError::Constraint(detail) => {
+                Problem::bad_request(problems::INPUT_VALIDATION).with_extension(detail)
+            }
             err => Problem::internal_error()
                 .with_detail(err.to_string())
                 .with_sensitive_dbg(err),

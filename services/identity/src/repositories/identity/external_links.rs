@@ -35,7 +35,10 @@ pub trait ExternalLinks {
         user_id: Uuid,
     ) -> impl Future<Output = Result<Vec<ExternalLink>, IdentityError>> + Send;
 
-    fn is_linked(&mut self, user_id: Uuid) -> impl Future<Output = Result<bool, IdentityError>> + Send;
+    fn is_linked(
+        &mut self,
+        user_id: Uuid,
+    ) -> impl Future<Output = Result<bool, IdentityError>> + Send;
 
     fn find_by_external_link(
         &mut self,

@@ -16,12 +16,17 @@ impl Default for MapChunkTracker {
 
 impl MapChunkTracker {
     pub fn new() -> Self {
-        Self { chunks: HashMap::new() }
+        Self {
+            chunks: HashMap::new(),
+        }
     }
 
     pub fn load_chunk(&mut self, chunk_id: ChunkId, commands: &mut Commands) {
         if let Entry::Vacant(entry) = self.chunks.entry(chunk_id) {
-            let entity = commands.spawn_empty().insert(ChunkRoot { id: chunk_id }).id();
+            let entity = commands
+                .spawn_empty()
+                .insert(ChunkRoot { id: chunk_id })
+                .id();
             entry.insert(entity);
             log::debug!("Chunk [{:?}]: Spawned chunk: {:?}", chunk_id, entity);
         }

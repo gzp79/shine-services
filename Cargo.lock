@@ -6845,6 +6845,7 @@ name = "shine-game"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "itertools 0.14.0",
  "log",
  "serde",
  "serde_json",

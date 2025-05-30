@@ -4,7 +4,8 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use oauth2::{
-    basic::BasicClient, AuthUrl, ClientId, ClientSecret, EndpointNotSet, EndpointSet, RedirectUrl, Scope, TokenUrl,
+    basic::BasicClient, AuthUrl, ClientId, ClientSecret, EndpointNotSet, EndpointSet, RedirectUrl,
+    Scope, TokenUrl,
 };
 use openidconnect::UserInfoUrl;
 use reqwest::{header, Client as HttpClient};
@@ -46,7 +47,11 @@ pub struct OAuth2Client {
 }
 
 impl OAuth2Client {
-    pub async fn new(provider: &str, auth_base_url: &Url, config: &OAuth2Config) -> Result<Self, AnyError> {
+    pub async fn new(
+        provider: &str,
+        auth_base_url: &Url,
+        config: &OAuth2Config,
+    ) -> Result<Self, AnyError> {
         let client_id = ClientId::new(config.client_id.clone());
         let client_secret = ClientSecret::new(config.client_secret.clone());
         let redirect_url = auth_base_url.join(&format!("{provider}/auth"))?;
@@ -68,7 +73,11 @@ impl OAuth2Client {
 
         Ok(Self {
             provider: provider.to_string(),
-            scopes: config.scopes.iter().map(|scope| Scope::new(scope.clone())).collect(),
+            scopes: config
+                .scopes
+                .iter()
+                .map(|scope| Scope::new(scope.clone()))
+                .collect(),
             user_info_url,
             user_info_mapping: config.user_info_mapping.clone(),
             extensions: config.extensions.iter().cloned().collect(),
@@ -122,10 +131,19 @@ impl OAuth2Client {
         log::debug!("{external_id_id} - {external_id:?}");
 
         let name_id = id_mapping.get("name").map(|s| s.as_str()).unwrap_or("name");
-        let name = user_info.get(name_id).and_then(|v| v.as_str()).map(ToOwned::to_owned);
+        let name = user_info
+            .get(name_id)
+            .and_then(|v| v.as_str())
+            .map(ToOwned::to_owned);
         log::debug!("{name_id} - {name:?}");
-        let email_id = id_mapping.get("email").map(|s| s.as_str()).unwrap_or("email");
-        let email = user_info.get(email_id).and_then(|v| v.as_str()).map(ToOwned::to_owned);
+        let email_id = id_mapping
+            .get("email")
+            .map(|s| s.as_str())
+            .unwrap_or("email");
+        let email = user_info
+            .get(email_id)
+            .and_then(|v| v.as_str())
+            .map(ToOwned::to_owned);
         log::debug!("{email_id} - {email:?}");
 
         let mut external_user_info = ExternalUserInfo {
@@ -139,7 +157,9 @@ impl OAuth2Client {
         for extension in extensions {
             match extension {
                 ExternalUserInfoExtensions::GithubEmail => {
-                    external_user_info = self.get_github_user_email(external_user_info, app_name, token).await?
+                    external_user_info = self
+                        .get_github_user_email(external_user_info, app_name, token)
+                        .await?
                 }
             };
         }

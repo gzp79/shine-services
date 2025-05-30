@@ -37,7 +37,8 @@ impl UserSessionCacheReader {
             let key = B64
                 .decode(cookie_secret)
                 .map_err(|err| UserSessionError::InvalidSecret(format!("{err}")))?;
-            Key::try_from(&key[..]).map_err(|err| UserSessionError::InvalidSecret(format!("{err}")))?
+            Key::try_from(&key[..])
+                .map_err(|err| UserSessionError::InvalidSecret(format!("{err}")))?
         };
         let ttl_session = ttl_session
             .try_into()
@@ -91,22 +92,39 @@ impl UserSessionCacheReader {
             let key_hash = digest::digest(&digest::SHA256, session_key.as_bytes());
             let key_hash = hex::encode(key_hash);
 
-            let prefix = format!("{}session:{}:{}", self.key_prefix, user_id.as_simple(), key_hash);
+            let prefix = format!(
+                "{}session:{}:{}",
+                self.key_prefix,
+                user_id.as_simple(),
+                key_hash
+            );
             let sentinel_key = format!("{prefix}:sentinel");
             let key = format!("{prefix}:data");
             (sentinel_key, key)
         };
 
-        let mut client = self.redis.get().await.map_err(UserSessionError::RedisPoolError)?;
+        let mut client = self
+            .redis
+            .get()
+            .await
+            .map_err(UserSessionError::RedisPoolError)?;
 
         // query sentinel
-        let sentinel: SessionSentinel = match client.get(&sentinel_key).await.map_err(UserSessionError::RedisError)? {
+        let sentinel: SessionSentinel = match client
+            .get(&sentinel_key)
+            .await
+            .map_err(UserSessionError::RedisError)?
+        {
             Some(sentinel) => sentinel,
             _ => return Err(UserSessionError::SessionExpired),
         };
 
         // find user data. In a very unlikely case data could have been just deleted.
-        let data: SessionData = match client.get(&key).await.map_err(UserSessionError::RedisError)? {
+        let data: SessionData = match client
+            .get(&key)
+            .await
+            .map_err(UserSessionError::RedisError)?
+        {
             Some(data) => data,
             _ => return Err(UserSessionError::SessionExpired),
         };
