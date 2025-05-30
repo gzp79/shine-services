@@ -38,7 +38,8 @@ impl AuthController {
 
         let mut oauth2_clients = Vec::new();
         for (provider, provider_config) in &config_auth.oauth2 {
-            let connect = OAuth2Client::new(provider, &config_auth.auth_base_url, provider_config).await?;
+            let connect =
+                OAuth2Client::new(provider, &config_auth.auth_base_url, provider_config).await?;
             oauth2_clients.push(connect);
         }
 

@@ -46,18 +46,20 @@ pub async fn delete_user(
         Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
 
-    let (user_id, user_name, session_key) =
-        match auth_session.user_session().map(|u| (u.user_id, u.name.clone(), u.key)) {
-            Some(user) => user,
-            None => {
-                return PageUtils::new(&state).error(
-                    auth_session,
-                    AuthError::LoginRequired,
-                    query.error_url.as_ref(),
-                    query.redirect_url.as_ref(),
-                )
-            }
-        };
+    let (user_id, user_name, session_key) = match auth_session
+        .user_session()
+        .map(|u| (u.user_id, u.name.clone(), u.key))
+    {
+        Some(user) => user,
+        None => {
+            return PageUtils::new(&state).error(
+                auth_session,
+                AuthError::LoginRequired,
+                query.error_url.as_ref(),
+                query.redirect_url.as_ref(),
+            )
+        }
+    };
 
     // check for user confirmation
     if query.confirmation != Some(user_name) {
@@ -91,7 +93,12 @@ pub async fn delete_user(
     };
 
     if let Err(err) = state.identity_service().cascaded_delete(user_id).await {
-        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), query.redirect_url.as_ref());
+        return PageUtils::new(&state).error(
+            auth_session,
+            err,
+            query.error_url.as_ref(),
+            query.redirect_url.as_ref(),
+        );
     }
 
     // End of validations, from this point
@@ -100,7 +107,11 @@ pub async fn delete_user(
     let response_session = auth_session.cleared();
 
     if let Err(err) = state.session_service().remove_all(user_id).await {
-        log::warn!("Failed to clear all sessions for user {}: {:?}", user_id, err);
+        log::warn!(
+            "Failed to clear all sessions for user {}: {:?}",
+            user_id,
+            err
+        );
     }
 
     PageUtils::new(&state).redirect(response_session, query.redirect_url.as_ref(), None)

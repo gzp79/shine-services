@@ -45,7 +45,12 @@ mod platform {
     #[wasm_bindgen]
     pub fn start_game(canvas: String) {
         if IS_APPLICATION
-            .compare_exchange(false, true, atomic::Ordering::SeqCst, atomic::Ordering::SeqCst)
+            .compare_exchange(
+                false,
+                true,
+                atomic::Ordering::SeqCst,
+                atomic::Ordering::SeqCst,
+            )
             .is_err()
         {
             log::error!("Game is already running.");
@@ -126,7 +131,10 @@ mod overlay {
             })
             .with_child((
                 Text::new("Resolution"),
-                TextFont { font_size: 42.0, ..default() },
+                TextFont {
+                    font_size: 42.0,
+                    ..default()
+                },
                 ResolutionText,
             ));
     }

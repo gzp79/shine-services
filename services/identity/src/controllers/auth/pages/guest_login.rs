@@ -47,8 +47,17 @@ pub async fn guest_login(
 
     log::debug!("Query: {:#?}", query);
 
-    if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
-        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), query.redirect_url.as_ref());
+    if let Err(err) = state
+        .captcha_validator()
+        .validate(query.captcha.as_deref())
+        .await
+    {
+        return PageUtils::new(&state).error(
+            auth_session,
+            err,
+            query.error_url.as_ref(),
+            query.redirect_url.as_ref(),
+        );
     };
 
     log::debug!("New user registration flow triggered...");
@@ -60,7 +69,11 @@ pub async fn guest_login(
         .await;
 
     // create a new user
-    let identity = match state.create_user_service().create_user(None, None, None).await {
+    let identity = match state
+        .create_user_service()
+        .create_user(None, None, None)
+        .await
+    {
         Ok(identity) => identity,
         Err(err) => {
             return PageUtils::new(&state).error(

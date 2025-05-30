@@ -1,4 +1,9 @@
-use crate::map::{MapChunk, Tile};
+use crate::map::{MapChunk, MapConfig, Tile};
+
+pub trait GridConfig: MapConfig {
+    fn width(&self) -> usize;
+    fn height(&self) -> usize;
+}
 
 /// Trait for chunk types that can be used in a grid
 pub trait GridChunkTypes: Send + Sync + 'static {

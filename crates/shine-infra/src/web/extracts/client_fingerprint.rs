@@ -15,7 +15,9 @@ pub enum ClientFingerprintError {
 impl From<ClientFingerprintError> for Problem {
     fn from(err: ClientFingerprintError) -> Self {
         match err {
-            ClientFingerprintError::MissingUserAgent => Problem::new(StatusCode::BAD_REQUEST, "missing_user_agent"),
+            ClientFingerprintError::MissingUserAgent => {
+                Problem::new(StatusCode::BAD_REQUEST, "missing_user_agent")
+            }
         }
     }
 }
@@ -75,7 +77,8 @@ where
         if agent.is_empty() {
             Ok(ClientFingerprint::unknown())
         } else {
-            ClientFingerprint::from_agent(agent).map_err(|err| ErrorResponse::new(&problem_config, err))
+            ClientFingerprint::from_agent(agent)
+                .map_err(|err| ErrorResponse::new(&problem_config, err))
         }
     }
 }

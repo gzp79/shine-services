@@ -11,7 +11,10 @@ pub trait Roles {
         role: &str,
     ) -> impl Future<Output = Result<Option<Vec<String>>, IdentityError>> + Send;
 
-    fn get_roles(&mut self, user_id: Uuid) -> impl Future<Output = Result<Option<Vec<String>>, IdentityError>> + Send;
+    fn get_roles(
+        &mut self,
+        user_id: Uuid,
+    ) -> impl Future<Output = Result<Option<Vec<String>>, IdentityError>> + Send;
 
     fn delete_role(
         &mut self,

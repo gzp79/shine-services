@@ -57,7 +57,10 @@ where
     IDB: IdentityDb,
 {
     pub fn new(random: &'a SystemRandom, identity_service: &'a IdentityService<IDB>) -> Self {
-        Self { random, identity_service }
+        Self {
+            random,
+            identity_service,
+        }
     }
 
     pub async fn create_user_token(

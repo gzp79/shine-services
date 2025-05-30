@@ -70,7 +70,11 @@ where
             None => return Ok(None),
         };
 
-        Ok(Some(UserInfo { identity, roles, is_linked }))
+        Ok(Some(UserInfo {
+            identity,
+            roles,
+            is_linked,
+        }))
     }
 
     pub async fn create_user_session(
@@ -174,7 +178,9 @@ impl AppState {
                 }
             }
         }
-        self.identity_service().subscribe(OnUserEvent(self.clone())).await;
+        self.identity_service()
+            .subscribe(OnUserEvent(self.clone()))
+            .await;
 
         #[derive(Clone)]
         pub struct OnUserLinkEvent(AppState);
@@ -196,6 +202,8 @@ impl AppState {
                 }
             }
         }
-        self.identity_service().subscribe(OnUserLinkEvent(self.clone())).await;
+        self.identity_service()
+            .subscribe(OnUserLinkEvent(self.clone()))
+            .await;
     }
 }

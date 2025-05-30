@@ -1,6 +1,8 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient, PageUtils},
+    controllers::auth::{
+        AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient, PageUtils,
+    },
 };
 use axum::{extract::State, Extension};
 use chrono::Duration;
@@ -54,8 +56,17 @@ pub async fn oidc_login(
         Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
 
-    if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
-        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), query.redirect_url.as_ref());
+    if let Err(err) = state
+        .captcha_validator()
+        .validate(query.captcha.as_deref())
+        .await
+    {
+        return PageUtils::new(&state).error(
+            auth_session,
+            err,
+            query.error_url.as_ref(),
+            query.redirect_url.as_ref(),
+        );
     }
 
     let core_client = match client.client().await {

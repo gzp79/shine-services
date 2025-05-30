@@ -39,13 +39,28 @@
       "group": "build"
     },
     {
-      "label": "test unit",
+      "label": "test native",
       "type": "shell",
       "command": "cargo test ${input:projects}",
       "options": {
         "env": {
           "_RUST_LOG": "debug",
           "RUST_BACKTRACE": "full"
+        }
+      },
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "test wasm",
+      "type": "shell",
+      "command": "cargo test --config .cargo/wasm-test-config.toml --target wasm32-unknown-unknown ${input:wasm-projects}",
+      "options": {
+        "env": {
+          "_RUST_LOG": "debug",
+          "RUST_BACKTRACE": "full",
+          "CHROMEDRIVER": "${workspaceFolder}\\target\\browser-drivers\\chromedriver-win64\\chromedriver.exe",
+          "_GECKODRIVER": "${workspaceFolder}\\target\\browser-drivers\\geckodriver.exe"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -65,16 +80,9 @@
       "group": "build"
     },
     {
-      "label": "start dev environment",
+      "label": "dev environment",
       "type": "shell",
-      "command": "docker compose -f services/docker-compose.yml -p shine up",
-      "group": "build",
-      "isBackground": true
-    },
-    {
-      "label": "stop dev environment",
-      "type": "shell",
-      "command": "docker compose -f services/docker-compose.yml -p shine down",
+      "command": "docker compose -f services/docker-compose.yml -p shine ${input:env-task}",
       "group": "build",
       "isBackground": true
     },
@@ -193,7 +201,7 @@
         { "label": "shine-identity", "value": "-p shine-identity" },
         { "label": "shine-infra", "value": "-p shine-infra" },
         { "label": "shine-infra-macros", "value": "-p shine-infra-macros" },
-        { "label": "shine-game", "value": "-p shine-game" },       
+        { "label": "shine-game", "value": "-p shine-game" },
         { "label": "shine-core", "value": "-p shine-core" },
         { "label": "shine-test", "value": "-p shine-test" },
         { "label": "shine-test-macros", "value": "-p shine-test-macros" }
@@ -204,7 +212,7 @@
       "type": "pickString",
       "id": "wasm-projects",
       "description": "Select project",
-      "options": [ 
+      "options": [
         {
           "label": "all",
           "value": "-p shine-client -p shine-game -p shine-core -p shine-test"
@@ -213,6 +221,17 @@
         { "label": "shine-game", "value": "-p shine-game" },
         { "label": "shine-core", "value": "-p shine-core" },
         { "label": "shine-test", "value": "-p shine-test" }
+      ],
+      "default": "asset-service"
+    },
+    {
+      "type": "pickString",
+      "id": "env-task",
+      "description": "Select env task",
+      "options": [
+        { "label": "up", "value": "up" },
+        { "label": "restart", "value": "--build up" },
+        { "label": "down", "value": "down" }
       ],
       "default": "asset-service"
     }

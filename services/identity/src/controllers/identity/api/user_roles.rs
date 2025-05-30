@@ -71,7 +71,8 @@ pub async fn add_user_role(
         log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
             return Err(
-                PermissionError::MissingPermission(permissions::UPDATE_ANY_USER_ROLE).into_response(&problem_config)
+                PermissionError::MissingPermission(permissions::UPDATE_ANY_USER_ROLE)
+                    .into_response(&problem_config),
             );
         }
     } else {
@@ -121,7 +122,8 @@ pub async fn get_user_roles(
         log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key_hash).unwrap_or(false) {
             return Err(
-                PermissionError::MissingPermission(permissions::READ_ANY_USER_ROLE).into_response(&problem_config)
+                PermissionError::MissingPermission(permissions::READ_ANY_USER_ROLE)
+                    .into_response(&problem_config),
             );
         }
     } else {
@@ -183,7 +185,8 @@ pub async fn delete_user_role(
         log::trace!("Using api key");
         if !bcrypt::verify(auth_key, master_key).unwrap_or(false) {
             return Err(
-                PermissionError::MissingPermission(permissions::UPDATE_ANY_USER_ROLE).into_response(&problem_config)
+                PermissionError::MissingPermission(permissions::UPDATE_ANY_USER_ROLE)
+                    .into_response(&problem_config),
             );
         }
     } else {
@@ -214,7 +217,11 @@ mod test {
     #[test]
     #[ignore = "This is not a test but a helper to generate master key"]
     fn generate_master_key() {
-        let key: String = rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
+        let key: String = rng()
+            .sample_iter(&Alphanumeric)
+            .take(32)
+            .map(char::from)
+            .collect();
 
         let hash = bcrypt::hash(&key, 5).unwrap();
         println!("key: {key}");

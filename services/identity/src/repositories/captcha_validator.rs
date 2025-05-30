@@ -27,9 +27,13 @@ impl From<CaptchaError> for Problem {
             CaptchaError::FailedValidation(err) => Problem::bad_request(CAPTCHA_FAILED)
                 .with_detail(detail)
                 .with_sensitive_dbg(err),
-            CaptchaError::MissingCaptcha => Problem::bad_request(CAPTCHA_MISSING).with_detail(detail),
+            CaptchaError::MissingCaptcha => {
+                Problem::bad_request(CAPTCHA_MISSING).with_detail(detail)
+            }
 
-            _ => Problem::internal_error().with_detail(detail).with_sensitive_dbg(value),
+            _ => Problem::internal_error()
+                .with_detail(detail)
+                .with_sensitive_dbg(value),
         }
     }
 }
@@ -74,7 +78,9 @@ pub struct CaptchaValidator(Arc<Inner>);
 
 impl CaptchaValidator {
     pub fn new<S: ToString>(secret: S) -> Self {
-        Self(Arc::new(Inner { secret: secret.to_string() }))
+        Self(Arc::new(Inner {
+            secret: secret.to_string(),
+        }))
     }
 
     pub async fn validate_request(
@@ -97,10 +103,16 @@ impl CaptchaValidator {
             ];
             if test_site_keys.contains(&token) {
                 log::info!("Using an always passing secret");
-                ("1x0000000000000000000000000000000AA", "XXXX.DUMMY.TOKEN.XXXX")
+                (
+                    "1x0000000000000000000000000000000AA",
+                    "XXXX.DUMMY.TOKEN.XXXX",
+                )
             } else {
                 log::info!("Using an always failing secret");
-                ("2x0000000000000000000000000000000AA", "XXXX.DUMMY.TOKEN.XXXX")
+                (
+                    "2x0000000000000000000000000000000AA",
+                    "XXXX.DUMMY.TOKEN.XXXX",
+                )
             }
         } else {
             (self.0.secret.as_str(), token)
@@ -131,7 +143,9 @@ impl CaptchaValidator {
             match self.validate_request(token, None).await {
                 Ok(result) => {
                     if !result.success {
-                        Err(CaptchaError::FailedValidation(result.error_codes.join(", ")))
+                        Err(CaptchaError::FailedValidation(
+                            result.error_codes.join(", "),
+                        ))
                     } else {
                         Ok(())
                     }

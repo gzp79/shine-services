@@ -1,7 +1,5 @@
 #![allow(clippy::module_inception)]
 
-mod tile;
-pub use self::tile::*;
 mod grid_chunk;
 pub use self::grid_chunk::*;
 mod sparse_grid;

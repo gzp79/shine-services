@@ -1,7 +1,8 @@
 use crate::{
     app_state::AppState,
     controllers::auth::{
-        AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, LinkUtils, OAuth2Client, PageUtils,
+        AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, LinkUtils, OAuth2Client,
+        PageUtils,
     },
 };
 use axum::{extract::State, Extension};
@@ -66,7 +67,12 @@ pub async fn oauth2_auth(
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
         Err(error) => {
-            return PageUtils::new(&state).error(auth_session, error.problem, error_url.as_ref(), redirect_url.as_ref())
+            return PageUtils::new(&state).error(
+                auth_session,
+                error.problem,
+                error_url.as_ref(),
+                redirect_url.as_ref(),
+            )
         }
     };
     let auth_code = AuthorizationCode::new(query.code);
@@ -128,7 +134,12 @@ pub async fn oauth2_auth(
 
     if linked_user.is_some() {
         LinkUtils::new(&state)
-            .complete_external_link(auth_session, &external_user, redirect_url.as_ref(), error_url.as_ref())
+            .complete_external_link(
+                auth_session,
+                &external_user,
+                redirect_url.as_ref(),
+                error_url.as_ref(),
+            )
             .await
     } else {
         LinkUtils::new(&state)

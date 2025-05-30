@@ -44,7 +44,8 @@ impl AppState {
             let email_key = &B64
                 .decode(config_auth.auth_session.email_token_secret.as_bytes())
                 .map_err(|e| anyhow!(e))?;
-            let email_key = aead::UnboundKey::new(&aead::AES_256_GCM, email_key).map_err(|e| anyhow!(e))?;
+            let email_key =
+                aead::UnboundKey::new(&aead::AES_256_GCM, email_key).map_err(|e| anyhow!(e))?;
 
             SettingsService {
                 app_name: config_auth.app_name.clone(),
@@ -53,10 +54,18 @@ impl AppState {
                 link_url: config_auth.link_url.clone(),
                 error_url: config_auth.error_url.clone(),
                 token: TokenSettings {
-                    ttl_access_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_access_token)?),
-                    ttl_single_access: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_single_access)?),
-                    ttl_api_key: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_api_key)?),
-                    ttl_email_login_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_email_token)?),
+                    ttl_access_token: Duration::seconds(i64::try_from(
+                        config_auth.auth_session.ttl_access_token,
+                    )?),
+                    ttl_single_access: Duration::seconds(i64::try_from(
+                        config_auth.auth_session.ttl_single_access,
+                    )?),
+                    ttl_api_key: Duration::seconds(i64::try_from(
+                        config_auth.auth_session.ttl_api_key,
+                    )?),
+                    ttl_email_login_token: Duration::seconds(i64::try_from(
+                        config_auth.auth_session.ttl_email_token,
+                    )?),
                     email_key: aead::LessSafeKey::new(email_key),
                 },
                 external_providers: config_auth.collect_providers(),
@@ -93,7 +102,8 @@ impl AppState {
 
         let session_service = {
             let ttl_session = Duration::seconds(i64::try_from(config.service.session_ttl)?);
-            let session_db = RedisSessionDb::new(&db_pool.redis, "".to_string(), ttl_session).await?;
+            let session_db =
+                RedisSessionDb::new(&db_pool.redis, "".to_string(), ttl_session).await?;
             SessionService::new(session_db)
         };
 

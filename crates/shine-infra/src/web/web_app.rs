@@ -62,7 +62,9 @@ impl ApiDoc {
 
 async fn shutdown_signal() {
     let ctrl_c = async {
-        signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
         log::warn!("Received ctrl-c, shutting down the server...")
     };
 
@@ -112,7 +114,10 @@ async fn prepare_web_app<A: WebApplication>(
     app: &A,
 ) -> Result<(WebAppConfig<A::AppConfig>, TelemetryService), AnyError> {
     let args: Vec<String> = env::args().collect();
-    let stage = args.get(1).ok_or(anyhow!("Missing config stage parameter"))?.clone();
+    let stage = args
+        .get(1)
+        .ok_or(anyhow!("Missing config stage parameter"))?
+        .clone();
 
     // initialize a pre-init logger
     let _pre_init_log_guard = {
@@ -120,7 +125,10 @@ async fn prepare_web_app<A: WebApplication>(
         let env_filter = EnvFilter::builder()
             .with_default_directive(LevelFilter::INFO.into())
             .from_env_lossy();
-        let pre_init_log = tracing_subscriber::fmt().with_env_filter(env_filter).compact().finish();
+        let pre_init_log = tracing_subscriber::fmt()
+            .with_env_filter(env_filter)
+            .compact()
+            .finish();
         tracing::dispatcher::set_default(&pre_init_log.into())
     };
 
@@ -222,7 +230,8 @@ async fn create_web_app<A: WebApplication>(
     let app_state = app.create_state(config).await?;
 
     log::info!("Creating common routes...");
-    let health_controller = controllers::HealthController::new(app.feature_name(), config)?.into_routes();
+    let health_controller =
+        controllers::HealthController::new(app.feature_name(), config)?.into_routes();
     router = router.nest(&format!("/{}", app.feature_name()), health_controller);
 
     log::info!("Creating application routes...");

@@ -1,46 +1,64 @@
 use crate::map::{process_map_event_system, MapChunkTracker, MapConfig, MapEvent};
 use bevy::app::{App, Plugin, PreUpdate};
+use std::marker::PhantomData;
 
 /// Trait to setup a single layer of the map
-pub trait LayerSetup: Send + Sync + 'static {
+pub trait LayerSetup<CFG>: Send + Sync + 'static
+where
+    CFG: MapConfig,
+{
     fn build(&self, app: &mut App);
 }
 
-impl LayerSetup for () {
+impl<CFG> LayerSetup<CFG> for ()
+where
+    CFG: MapConfig,
+{
     fn build(&self, _app: &mut App) {}
 }
 
 /// Trait to setup a chain of layers of the map
 #[doc(hidden)]
-pub trait LayerSetupChain: LayerSetup {
-    fn add_layer<L>(self, layer: L) -> impl LayerSetupChain
+pub trait LayerSetupChain<CFG>: LayerSetup<CFG>
+where
+    CFG: MapConfig,
+{
+    fn add_layer<L>(self, layer: L) -> impl LayerSetupChain<CFG>
     where
-        L: LayerSetup;
+        L: LayerSetup<CFG>;
 }
 
 /// The setup chain for the map layers
-pub struct MapLayersPlugin<B = (), N = ()>
+pub struct MapLayersPlugin<CFG, B = (), N = ()>
 where
-    B: LayerSetup,
-    N: LayerSetup,
+    CFG: MapConfig,
+    B: LayerSetup<CFG>,
+    N: LayerSetup<CFG>,
 {
     builder: B,
     next: N,
+    ph: PhantomData<CFG>,
 }
 
-impl<B> MapLayersPlugin<B, ()>
+impl<CFG, B> MapLayersPlugin<CFG, B, ()>
 where
-    B: LayerSetup,
+    CFG: MapConfig,
+    B: LayerSetup<CFG>,
 {
     pub fn new(builder: B) -> Self {
-        Self { builder, next: () }
+        Self {
+            builder,
+            next: (),
+            ph: PhantomData,
+        }
     }
 }
 
-impl<B, N> LayerSetup for MapLayersPlugin<B, N>
+impl<CFG, B, N> LayerSetup<CFG> for MapLayersPlugin<CFG, B, N>
 where
-    B: LayerSetup,
-    N: LayerSetup,
+    CFG: MapConfig,
+    B: LayerSetup<CFG>,
+    N: LayerSetup<CFG>,
 {
     fn build(&self, app: &mut App) {
         self.builder.build(app);
@@ -48,46 +66,53 @@ where
     }
 }
 
-impl<B, N> LayerSetupChain for MapLayersPlugin<B, N>
+impl<CFG, B, N> LayerSetupChain<CFG> for MapLayersPlugin<CFG, B, N>
 where
-    B: LayerSetup,
-    N: LayerSetup,
+    CFG: MapConfig,
+    B: LayerSetup<CFG>,
+    N: LayerSetup<CFG>,
 {
-    fn add_layer<C>(self, layer: C) -> impl LayerSetupChain
+    fn add_layer<C>(self, layer: C) -> impl LayerSetupChain<CFG>
     where
-        C: LayerSetup,
+        C: LayerSetup<CFG>,
     {
         MapLayersPlugin {
             builder: self.builder,
             next: MapLayersPlugin::new(layer),
+            ph: PhantomData,
         }
     }
 }
 
-pub struct MapPlugin<L = MapLayersPlugin>
+pub struct MapPlugin<CFG, L = MapLayersPlugin<CFG>>
 where
-    L: LayerSetupChain,
+    CFG: MapConfig,
+    L: LayerSetupChain<CFG>,
 {
-    config: MapConfig,
+    config: CFG,
     layers: L,
 }
 
-impl MapPlugin<MapLayersPlugin> {
-    pub fn new(config: MapConfig) -> Self {
+impl<CFG> MapPlugin<CFG, MapLayersPlugin<CFG>>
+where
+    CFG: MapConfig,
+{
+    pub fn new(config: CFG) -> Self {
         Self {
             config,
-            layers: MapLayersPlugin::new(()),
+            layers: MapLayersPlugin::<CFG>::new(()),
         }
     }
 }
 
-impl<L> MapPlugin<L>
+impl<CFG, L> MapPlugin<CFG, L>
 where
-    L: LayerSetupChain,
+    CFG: MapConfig,
+    L: LayerSetupChain<CFG>,
 {
-    pub fn with_layer<C>(self, layer: C) -> MapPlugin<impl LayerSetupChain>
+    pub fn with_layer<S>(self, layer: S) -> MapPlugin<CFG, impl LayerSetupChain<CFG>>
     where
-        C: LayerSetup,
+        S: LayerSetup<CFG>,
     {
         MapPlugin {
             config: self.config,
@@ -96,9 +121,10 @@ where
     }
 }
 
-impl<L> Plugin for MapPlugin<L>
+impl<CFG, L> Plugin for MapPlugin<CFG, L>
 where
-    L: LayerSetupChain,
+    CFG: MapConfig,
+    L: LayerSetupChain<CFG>,
 {
     fn build(&self, app: &mut App) {
         app.insert_resource(self.config.clone());

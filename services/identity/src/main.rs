@@ -20,7 +20,10 @@ impl WebApplication for Application {
     type AppConfig = AppConfig;
     type AppState = AppState;
 
-    async fn create_state(&self, config: &WebAppConfig<Self::AppConfig>) -> Result<Self::AppState, AnyError> {
+    async fn create_state(
+        &self,
+        config: &WebAppConfig<Self::AppConfig>,
+    ) -> Result<Self::AppState, AnyError> {
         let state = AppState::new(config).await?;
 
         state.subscribe_user_info_handler().await;
@@ -36,7 +39,9 @@ impl WebApplication for Application {
         let identity_controller = identity::IdentityController::new().into_router();
         let auth_controller = auth::AuthController::new(config).await?.into_router();
 
-        Ok(health_controller.merge(identity_controller).merge(auth_controller))
+        Ok(health_controller
+            .merge(identity_controller)
+            .merge(auth_controller))
     }
 }
 

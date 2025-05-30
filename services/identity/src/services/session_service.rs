@@ -74,7 +74,12 @@ where
     /// Update the user information in all the session of a user
     /// This is not an atomic operation, if new sessions are created they are not touched, but they should
     /// have the new value already.
-    pub async fn update_all(&self, identity: &Identity, roles: &[String], is_linked: bool) -> Result<(), SessionError> {
+    pub async fn update_all(
+        &self,
+        identity: &Identity,
+        roles: &[String],
+        is_linked: bool,
+    ) -> Result<(), SessionError> {
         let mut db = self.db.create_context().await?;
 
         let key_hashes = db.find_all_session_hashes_by_user(identity.id).await?;
@@ -93,14 +98,22 @@ where
         db.find_all_sessions_by_user(user_id).await
     }
 
-    pub async fn find(&self, user_id: Uuid, session_key: &SessionKey) -> Result<Option<Session>, SessionError> {
+    pub async fn find(
+        &self,
+        user_id: Uuid,
+        session_key: &SessionKey,
+    ) -> Result<Option<Session>, SessionError> {
         let session_key_hash = hash_key(session_key);
         let mut db = self.db.create_context().await?;
         db.find_session_by_hash(user_id, &session_key_hash).await
     }
 
     /// Remove an active session of the given user.
-    pub async fn remove(&self, user_id: Uuid, session_key: &SessionKey) -> Result<(), SessionError> {
+    pub async fn remove(
+        &self,
+        user_id: Uuid,
+        session_key: &SessionKey,
+    ) -> Result<(), SessionError> {
         let session_key_hash = hash_key(session_key);
         let mut db = self.db.create_context().await?;
         db.delete_session_by_hash(user_id, &session_key_hash).await

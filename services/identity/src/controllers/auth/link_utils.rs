@@ -42,7 +42,9 @@ impl<'a> LinkUtils<'a> {
                     redirect_url,
                 )
             }
-            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
+            Err(err) => {
+                return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url)
+            }
         };
 
         log::debug!(
@@ -75,7 +77,10 @@ impl<'a> LinkUtils<'a> {
         let identity = match self
             .state
             .identity_service()
-            .find_by_external_link(external_user.provider.as_str(), external_user.provider_id.as_str())
+            .find_by_external_link(
+                external_user.provider.as_str(),
+                external_user.provider_id.as_str(),
+            )
             .await
         {
             // Found an existing (linked) account
@@ -100,9 +105,18 @@ impl<'a> LinkUtils<'a> {
                         redirect_url,
                     )
                 }
-                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
+                Err(err) => {
+                    return PageUtils::new(self.state).error(
+                        auth_session,
+                        err,
+                        error_url,
+                        redirect_url,
+                    )
+                }
             },
-            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
+            Err(err) => {
+                return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url)
+            }
         };
 
         // create a new remember me token
@@ -120,7 +134,14 @@ impl<'a> LinkUtils<'a> {
                 .await
             {
                 Ok(token_cookie) => Some(token_cookie),
-                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
+                Err(err) => {
+                    return PageUtils::new(self.state).error(
+                        auth_session,
+                        err,
+                        error_url,
+                        redirect_url,
+                    )
+                }
             }
         } else {
             None
@@ -142,7 +163,9 @@ impl<'a> LinkUtils<'a> {
                     redirect_url,
                 );
             }
-            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
+            Err(err) => {
+                return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url)
+            }
         };
 
         let response_session = auth_session

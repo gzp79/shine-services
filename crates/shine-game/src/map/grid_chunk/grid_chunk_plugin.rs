@@ -1,7 +1,7 @@
 use crate::map::{
-    client, create_layer_system, process_layer_commands_system, process_map_event_system, remove_layer_system,
-    remove_rejected_chunks_system, ChunkCommandQueue, ChunkEvent, ChunkHasher, ChunkLayer, ChunkOperation, GridChunk,
-    LayerSetup, NullHasher,
+    client, create_layer_system, process_layer_commands_system, process_map_event_system,
+    remove_layer_system, remove_rejected_chunks_system, ChunkCommandQueue, ChunkEvent, ChunkHasher,
+    ChunkLayer, ChunkOperation, GridChunk, GridConfig, LayerSetup, NullHasher,
 };
 use bevy::{
     app::{App, PostUpdate, PreUpdate, Update},
@@ -47,9 +47,10 @@ where
     }
 }
 
-impl<C, O, H, EH> LayerSetup for ChunkLayerSetup<C, O, H, EH>
+impl<CFG, C, O, H, EH> LayerSetup<CFG> for ChunkLayerSetup<C, O, H, EH>
 where
-    C: GridChunk,
+    CFG: GridConfig,
+    C: GridChunk + From<CFG>,
     O: ChunkOperation<C>,
     H: ChunkHasher<C>,
     EH: client::SendChunkEventService<C>,
@@ -71,7 +72,7 @@ where
                 .after(process_map_event_system),
         );
 
-        app.add_systems(Update, process_layer_commands_system::<C, O, H>);
+        app.add_systems(Update, process_layer_commands_system::<CFG, C, O, H>);
 
         app.add_systems(PostUpdate, remove_rejected_chunks_system::<C>);
 

@@ -9,6 +9,7 @@ thiserror = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
+itertools = { workspace = true }
 
 tokio = { workspace = true }
 bevy = { workspace = true, features = [
@@ -23,6 +24,13 @@ shine-infra = { workspace = true, optional = true }
 [dev-dependencies]
 shine-test = { workspace = true }
 
+################# native dependencies #################
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+
+################## wasm dependencies ##################
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]

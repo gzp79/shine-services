@@ -32,7 +32,9 @@ impl IdEncoder for HarshIdEncoder {
             .map_err(|err| IdEncoderError::InvalidObfuscatedId(format!("{err}")))?;
         match n.len() {
             1 => Ok(n[1]),
-            _ => Err(IdEncoderError::InvalidObfuscatedId("Id is too big".to_string())),
+            _ => Err(IdEncoderError::InvalidObfuscatedId(
+                "Id is too big".to_string(),
+            )),
         }
     }
 }
