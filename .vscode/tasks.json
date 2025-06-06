@@ -163,9 +163,9 @@
       "group": "build"
     },
     {
-      "label": "client: local",
+      "label": "client: build",
       "type": "shell",
-      "command": "cargo run -p shine-client --release",
+      "command": "cargo build -p shine-client",
       "options": {
         "cwd": "client",
         "env": {
@@ -176,9 +176,9 @@
       "group": "build"
     },
     {
-      "label": "client: local-wasm",
+      "label": "client: build-wasm",
       "type": "shell",
-      "command": "cargo run --target wasm32-unknown-unknown -p shine-client --release",
+      "command": "cargo build --target wasm32-unknown-emscripten -p shine-client",
       "options": {
         "cwd": "client",
         "env": {

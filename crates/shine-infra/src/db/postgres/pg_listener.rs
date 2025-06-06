@@ -29,11 +29,7 @@ impl ListenClient {
         }
     }
 
-    async fn connect(
-        &mut self,
-        config: PGConfig,
-        tls: MakeRustlsConnect,
-    ) -> Result<PGRawSocketConnection, DBError> {
+    async fn connect(&mut self, config: PGConfig, tls: MakeRustlsConnect) -> Result<PGRawSocketConnection, DBError> {
         assert!(self.client.is_none(), "PGListener already connected");
 
         log::trace!("PGListener connecting to PostgreSQL...");
@@ -66,11 +62,7 @@ impl ListenClient {
     {
         let channel = ident(channel);
 
-        if self
-            .handlers
-            .insert(channel.clone(), Box::new(handler))
-            .is_none()
-        {
+        if self.handlers.insert(channel.clone(), Box::new(handler)).is_none() {
             if let Some(client) = self.client.as_ref() {
                 log::info!("PGListener start listening to channels {:?}...", channel);
                 let cmd = format!(r#"LISTEN "{}""#, channel);
@@ -141,20 +133,12 @@ impl PGListener {
             while notify_keep_alive.1.load(Ordering::Relaxed) {
                 log::info!("PGListener reconnection triggered...");
 
-                let connection = client
-                    .write()
-                    .await
-                    .connect(config.clone(), tls.clone())
-                    .await;
+                let connection = client.write().await.connect(config.clone(), tls.clone()).await;
                 match connection {
                     Ok(connection) => {
                         log::info!("PGListener reconnected to PostgreSQL.");
 
-                        Self::start_streaming_thread(
-                            client.clone(),
-                            connection,
-                            notify_keep_alive.clone(),
-                        );
+                        Self::start_streaming_thread(client.clone(), connection, notify_keep_alive.clone());
                         notify_keep_alive.0.notified().await;
                     }
                     Err(e) => {
@@ -174,21 +158,20 @@ impl PGListener {
     ) {
         log::trace!("PGListener starting streaming thread...");
 
-        let messages =
-            stream::poll_fn(move |cx| connection.poll_message(cx)).map(|msg| match msg {
-                Ok(AsyncMessage::Notification(notification)) => {
-                    log::trace!("PGListener received notification: {:?}", notification);
-                    Some(notification)
-                }
-                Ok(_) => {
-                    log::trace!("PGListener received no notification");
-                    None
-                }
-                Err(e) => {
-                    log::error!("PGListener notification error: {:#?}", e);
-                    None
-                }
-            });
+        let messages = stream::poll_fn(move |cx| connection.poll_message(cx)).map(|msg| match msg {
+            Ok(AsyncMessage::Notification(notification)) => {
+                log::trace!("PGListener received notification: {:?}", notification);
+                Some(notification)
+            }
+            Ok(_) => {
+                log::trace!("PGListener received no notification");
+                None
+            }
+            Err(e) => {
+                log::error!("PGListener notification error: {:#?}", e);
+                None
+            }
+        });
 
         tokio::spawn(async move {
             let mut stream = Box::pin(messages);
@@ -215,12 +198,7 @@ impl PGListener {
         let notify_keep_alive = Arc::new((Notify::new(), AtomicBool::new(true)));
         let client = Arc::new(RwLock::new(ListenClient::new()));
 
-        Self::start_keep_alive_thread(
-            config.clone(),
-            tls.clone(),
-            client.clone(),
-            notify_keep_alive.clone(),
-        );
+        Self::start_keep_alive_thread(config.clone(), tls.clone(), client.clone(), notify_keep_alive.clone());
 
         Self {
             config,
@@ -242,14 +220,8 @@ impl PGListener {
         let mut client = self.client.write().await;
 
         if !client.is_connected() {
-            let connection = client
-                .connect(self.config.clone(), self.tls.clone())
-                .await?;
-            Self::start_streaming_thread(
-                self.client.clone(),
-                connection,
-                self.notify_keep_alive.clone(),
-            );
+            let connection = client.connect(self.config.clone(), self.tls.clone()).await?;
+            Self::start_streaming_thread(self.client.clone(), connection, self.notify_keep_alive.clone());
         }
 
         client.listen(channel, handler).await?;

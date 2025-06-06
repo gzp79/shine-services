@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-    BUCKET_LINK: https://ce847ac4c44fb11af63e62ba34ec40db.r2.cloudflarestorage.com
-    BUCKET_NAME: shine-games  
+  BUCKET_LINK: https://ce847ac4c44fb11af63e62ba34ec40db.r2.cloudflarestorage.com
+  BUCKET_NAME: shine-games
 
 jobs:
   wasm-build:
@@ -30,19 +30,24 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-
       - name: Setup Rust
         run: |
           rustup target add wasm32-unknown-unknown
           rustup component add rustfmt clippy
-          
+
       - name: Install Wasm tools
         run: |
-           curl https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh -sSf | sh
-           cargo binstall wasm-bindgen-cli
-           cargo binstall wasm-opt
+          curl https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh -sSf | sh
+          cargo binstall wasm-bindgen-cli
+          cargo binstall wasm-opt
 
-      - name: Compile Rust to WASM
+      #todo: setup browser and related driver
+      #- name: Test creates for WASM
+      #  run: |
+      #    cargo test --config .cargo/wasm-test-config.toml --target wasm32-unknown-unknown --release\
+      #      -p shine-client -p shine-game -p shine-core -p shine-test
+
+      - name: Compile client for WASM
         run: |
           cargo build --target wasm32-unknown-unknown --profile release-lto -p shine-client
           wasm-bindgen --no-typescript --target web \
@@ -72,7 +77,7 @@ jobs:
         with:
           name: game-wasm
           path: ./dist
-          
+
       - name: Setup AWS CLI
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

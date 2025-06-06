@@ -60,9 +60,7 @@ async fn complete_email_login(
     // during email verification the captcha is used to check the link is from the email
     let query_email_hash = query.captcha.as_ref();
 
-    if confirmed_email_hash != identity_email_hash
-        || confirmed_email_hash.as_ref() != query_email_hash
-    {
+    if confirmed_email_hash != identity_email_hash || confirmed_email_hash.as_ref() != query_email_hash {
         log::info!(
             "Identity {} has non-matching emails to verify. [{:?}], [{:?}], [{:?}]",
             identity.id,
@@ -119,11 +117,7 @@ async fn authenticate_with_query_token(
             .expect("It shall be called only if there is a token in the query");
 
         // Any token provided as a query token is removed from the DB as it's been used in a non-secure way.
-        match state
-            .identity_service()
-            .take_token(TokenKind::all(), token)
-            .await
-        {
+        match state.identity_service().take_token(TokenKind::all(), token).await {
             Ok(Some(info)) => info,
             Ok(None) => {
                 log::debug!("Expired single access token ...");
@@ -184,9 +178,7 @@ async fn authenticate_with_query_token(
                 auth_session: response_session,
                 rotated_token: None,
             }),
-            TokenKind::EmailAccess => {
-                complete_email_login(state, query, token_info, identity, response_session).await
-            }
+            TokenKind::EmailAccess => complete_email_login(state, query, token_info, identity, response_session).await,
             TokenKind::Persistent => unreachable!(),
             TokenKind::Access => unreachable!(),
         }
@@ -265,20 +257,14 @@ async fn authenticate_with_header_token(
             "Non-persistent token ({:?}) used in the header, revoking compromised token ...",
             token_info.kind
         );
-        state
-            .user_info_handler()
-            .revoke_access(token_info.kind, token)
-            .await;
+        state.user_info_handler().revoke_access(token_info.kind, token).await;
         Err(AuthenticationFailure {
             error: AuthError::InvalidToken,
             auth_session: response_session,
         })
     } else if token_info.is_expired {
         log::debug!("Token expired, removing from DB ...");
-        state
-            .user_info_handler()
-            .revoke_access(token_info.kind, token)
-            .await;
+        state.user_info_handler().revoke_access(token_info.kind, token).await;
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -289,10 +275,7 @@ async fn authenticate_with_header_token(
             token_info.bound_fingerprint,
             fingerprint
         );
-        state
-            .user_info_handler()
-            .revoke_access(token_info.kind, token)
-            .await;
+        state.user_info_handler().revoke_access(token_info.kind, token).await;
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -324,11 +307,7 @@ async fn authenticate_with_cookie_token(
     // cookies are sent securely and any non-access token wil be revoked later in the flow
 
     let (identity, token_info) = {
-        match state
-            .identity_service()
-            .test_token(TokenKind::all(), &token)
-            .await
-        {
+        match state.identity_service().test_token(TokenKind::all(), &token).await {
             Ok(Some(info)) => info,
             Ok(None) => {
                 log::debug!("Invalid or expired Access token ...");
@@ -379,20 +358,14 @@ async fn authenticate_with_cookie_token(
             "Non-access token ({:?}) used in the cookie, revoking compromised token ...",
             token_info.kind
         );
-        state
-            .user_info_handler()
-            .revoke_access(token_info.kind, &token)
-            .await;
+        state.user_info_handler().revoke_access(token_info.kind, &token).await;
         Err(AuthenticationFailure {
             error: AuthError::InvalidToken,
             auth_session: response_session,
         })
     } else if token_info.is_expired {
         log::debug!("Token expired, removing from DB ...");
-        state
-            .user_info_handler()
-            .revoke_access(token_info.kind, &token)
-            .await;
+        state.user_info_handler().revoke_access(token_info.kind, &token).await;
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -405,10 +378,7 @@ async fn authenticate_with_cookie_token(
             token_user_id,
             token
         );
-        state
-            .user_info_handler()
-            .revoke_access(token_info.kind, &token)
-            .await;
+        state.user_info_handler().revoke_access(token_info.kind, &token).await;
         Err(AuthenticationFailure {
             error: AuthError::InvalidToken,
             auth_session: response_session,
@@ -419,10 +389,7 @@ async fn authenticate_with_cookie_token(
             token_info.bound_fingerprint,
             fingerprint
         );
-        state
-            .user_info_handler()
-            .revoke_access(token_info.kind, &token)
-            .await;
+        state.user_info_handler().revoke_access(token_info.kind, &token).await;
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -516,14 +483,7 @@ async fn authenticate(
         }
     };
     if let Some(auth_header) = auth_header {
-        return authenticate_with_header_token(
-            state,
-            query,
-            auth_header,
-            fingerprint,
-            auth_session,
-        )
-        .await;
+        return authenticate_with_header_token(state, query, auth_header, fingerprint, auth_session).await;
     }
 
     if auth_session.access().is_some() {
@@ -587,10 +547,7 @@ pub async fn token_login(
         }
     };
 
-    assert!(
-        auth_session.user_session().is_none(),
-        "Session shall have been cleared"
-    );
+    assert!(auth_session.user_session().is_none(), "Session shall have been cleared");
     assert!(
         auth_session.external_login().is_none(),
         "External login cookie shall have been cleared"

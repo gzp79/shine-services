@@ -3,6 +3,9 @@ name = "shine-game"
 version.workspace = true
 edition.workspace = true
 
+[features]
+render = []
+
 [dependencies]
 log = { workspace = true }
 thiserror = { workspace = true }

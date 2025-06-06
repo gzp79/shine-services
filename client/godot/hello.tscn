@@ -1,0 +1,15 @@
+[gd_scene load_steps=2 format=3 uid="uid://s4ir0h7d30j4"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_i7k7o"]
+
+[node name="Node" type="Node"]
+
+[node name="BevyApp" type="BevyApp" parent="."]
+
+[node name="Map" type="Node3D" parent="."]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Map"]
+mesh = SubResource("PlaneMesh_i7k7o")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.890022, 0.455918, 0, -0.455918, 0.890022, 0, 1.35515, 2.51576)

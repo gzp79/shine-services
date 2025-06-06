@@ -96,9 +96,7 @@ where
                             log::debug!("User found by email: {identity:#?}");
                             (false, identity)
                         }
-                        None => {
-                            return Err(LoginEmailError::IdentityError(IdentityError::UserDeleted))
-                        }
+                        None => return Err(LoginEmailError::IdentityError(IdentityError::UserDeleted)),
                     }
                 }
                 Err(err) => return Err(err.into()),

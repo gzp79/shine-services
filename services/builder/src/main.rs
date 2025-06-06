@@ -16,10 +16,7 @@ impl WebApplication for Application {
     type AppConfig = AppConfig;
     type AppState = AppState;
 
-    async fn create_state(
-        &self,
-        config: &WebAppConfig<Self::AppConfig>,
-    ) -> Result<Self::AppState, AnyError> {
+    async fn create_state(&self, config: &WebAppConfig<Self::AppConfig>) -> Result<Self::AppState, AnyError> {
         AppState::new(config).await
     }
 

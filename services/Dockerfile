@@ -62,8 +62,8 @@ ENV RUST_LOG="debug"
 ENV SHINE_TEST_REDIS_CNS="redis://redis.mockbox.com:6379"
 ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.mockbox.com:5432/database-test?sslmode=disable"
 
-RUN cargo build --release
 RUN cargo test --release
+RUN cargo build --release
 
 #######################################################
 FROM nginx:bookworm AS base

@@ -48,24 +48,14 @@ pub enum IdentityError {
 impl From<IdentityError> for Problem {
     fn from(err: IdentityError) -> Self {
         match err {
-            IdentityError::UserIdConflict => {
-                Problem::conflict(pr::ID_CONFLICT).with_detail(err.to_string())
-            }
-            IdentityError::NameConflict => {
-                Problem::conflict(pr::NAME_CONFLICT).with_detail(err.to_string())
-            }
-            IdentityError::EmailConflict => {
-                Problem::conflict(pr::EMAIL_CONFLICT).with_detail(err.to_string())
-            }
+            IdentityError::UserIdConflict => Problem::conflict(pr::ID_CONFLICT).with_detail(err.to_string()),
+            IdentityError::NameConflict => Problem::conflict(pr::NAME_CONFLICT).with_detail(err.to_string()),
+            IdentityError::EmailConflict => Problem::conflict(pr::EMAIL_CONFLICT).with_detail(err.to_string()),
             IdentityError::LinkProviderConflict => {
                 Problem::conflict(pr::EXTERNAL_ID_CONFLICT).with_detail(err.to_string())
             }
-            IdentityError::MissingEmail => {
-                Problem::precondition_failed(pr::MISSING_EMAIL).with_detail(err.to_string())
-            }
-            IdentityError::UserDeleted => {
-                Problem::conflict(pr::DELETE_CONFLICT).with_detail(err.to_string())
-            }
+            IdentityError::MissingEmail => Problem::precondition_failed(pr::MISSING_EMAIL).with_detail(err.to_string()),
+            IdentityError::UserDeleted => Problem::conflict(pr::DELETE_CONFLICT).with_detail(err.to_string()),
 
             err => Problem::internal_error()
                 .with_detail(err.to_string())

@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use shine_infra::db::{
     self,
     event_source::{
-        pg::PgEventDb, Aggregate, AggregateInfo, AggregateStore, Event, EventDb, EventNotification,
-        EventSourceError, EventStore, Snapshot,
+        pg::PgEventDb, Aggregate, AggregateInfo, AggregateStore, Event, EventDb, EventNotification, EventSourceError,
+        EventStore, Snapshot,
     },
     DBError, PGConnectionPool,
 };
@@ -114,9 +114,7 @@ async fn test_store_events() {
     let events = [
         TestEvent::TestEvent1 { str: "1".into() },
         TestEvent::TestEvent2 { num: 2 },
-        TestEvent::TestEvent1 {
-            str: "3".to_string(),
-        },
+        TestEvent::TestEvent1 { str: "3".to_string() },
         TestEvent::TestEvent2 { num: 4 },
         TestEvent::TestEvent2 { num: 5 },
     ];
@@ -168,10 +166,7 @@ async fn test_store_events() {
         let received_events = received_events.lock().await;
         assert_equal(
             received_events.deref(),
-            &[EventNotification::StreamCreated {
-                stream_id,
-                version: 0,
-            }],
+            &[EventNotification::StreamCreated { stream_id, version: 0 }],
         );
     }
 
@@ -189,14 +184,8 @@ async fn test_store_events() {
         assert_equal(
             received_events.deref(),
             &[
-                EventNotification::StreamCreated {
-                    stream_id,
-                    version: 0,
-                },
-                EventNotification::StreamUpdated {
-                    stream_id,
-                    version: 1,
-                },
+                EventNotification::StreamCreated { stream_id, version: 0 },
+                EventNotification::StreamUpdated { stream_id, version: 1 },
             ],
         );
     }
@@ -260,18 +249,9 @@ async fn test_store_events() {
             received_events.deref(),
             &[
                 // creation and first update are different operation, thus we start by 0
-                EventNotification::StreamCreated {
-                    stream_id,
-                    version: 0,
-                },
-                EventNotification::StreamUpdated {
-                    stream_id,
-                    version: 1,
-                },
-                EventNotification::StreamUpdated {
-                    stream_id,
-                    version: 5,
-                },
+                EventNotification::StreamCreated { stream_id, version: 0 },
+                EventNotification::StreamUpdated { stream_id, version: 1 },
+                EventNotification::StreamUpdated { stream_id, version: 5 },
                 EventNotification::StreamDeleted { stream_id },
             ],
         );
@@ -296,9 +276,7 @@ async fn test_unchecked_store_events() {
     let events = [
         TestEvent::TestEvent1 { str: "1".into() },
         TestEvent::TestEvent2 { num: 2 },
-        TestEvent::TestEvent1 {
-            str: "3".to_string(),
-        },
+        TestEvent::TestEvent1 { str: "3".to_string() },
         TestEvent::TestEvent2 { num: 4 },
         TestEvent::TestEvent2 { num: 5 },
     ];
@@ -334,15 +312,9 @@ async fn test_unchecked_store_events() {
     assert_eq!(version, 0);
 
     // add a few more events
-    version = es
-        .unchecked_store_events(&stream_id, &events[0..3])
-        .await
-        .unwrap();
+    version = es.unchecked_store_events(&stream_id, &events[0..3]).await.unwrap();
     assert_eq!(version, 3);
-    version = es
-        .unchecked_store_events(&stream_id, &events[3..])
-        .await
-        .unwrap();
+    version = es.unchecked_store_events(&stream_id, &events[3..]).await.unwrap();
     assert_eq!(version, 5);
     version = es.unchecked_store_events(&stream_id, &[]).await.unwrap();
     assert_eq!(version, 5);
@@ -364,8 +336,7 @@ async fn test_unchecked_store_events() {
 
     //give some time for the notifications to arrive
     let instant = std::time::Instant::now();
-    while instant.elapsed().as_secs() < 4 && received_events.lock().await.len() != events.len() + 2
-    {
+    while instant.elapsed().as_secs() < 4 && received_events.lock().await.len() != events.len() + 2 {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
@@ -375,18 +346,10 @@ async fn test_unchecked_store_events() {
         assert_equal(
             received_events.deref(),
             // creation and first update is a single operation, thus we start by 1 (instead of the usual 0)
-            &iter::once(EventNotification::StreamCreated {
-                stream_id,
-                version: 1,
-            })
-            .chain(
-                (2..=events.len()).map(|v| EventNotification::StreamUpdated {
-                    stream_id,
-                    version: v,
-                }),
-            )
-            .chain(iter::once(EventNotification::StreamDeleted { stream_id }))
-            .collect::<Vec<_>>(),
+            &iter::once(EventNotification::StreamCreated { stream_id, version: 1 })
+                .chain((2..=events.len()).map(|v| EventNotification::StreamUpdated { stream_id, version: v }))
+                .chain(iter::once(EventNotification::StreamDeleted { stream_id }))
+                .collect::<Vec<_>>(),
         );
     }
 }
@@ -461,23 +424,13 @@ async fn test_store_events_stress() {
         es.unchecked_store_events(&stream_id, &[TestEvent::TestEvent2 { num: 42 }])
             .await
             .unwrap();
-        log::info!(
-            "({i}) Unchecked stored one more events in {:?}",
-            instant.elapsed()
-        );
+        log::info!("({i}) Unchecked stored one more events in {:?}", instant.elapsed());
     }
-    log::info!(
-        "Unchecked stored one more events in {:?}",
-        instant.elapsed() / 10
-    );
+    log::info!("Unchecked stored one more events in {:?}", instant.elapsed() / 10);
 
     let instant = std::time::Instant::now();
     es.delete_stream(&stream_id).await.unwrap();
-    log::info!(
-        "Deleted {} events in {:?}",
-        BATCH_COUNT * BATCH_SIZE,
-        instant.elapsed()
-    );
+    log::info!("Deleted {} events in {:?}", BATCH_COUNT * BATCH_SIZE, instant.elapsed());
 }
 
 #[test]
@@ -499,9 +452,7 @@ async fn test_store_snapshot() {
     let events = [
         TestEvent::TestEvent1 { str: "1".into() },
         TestEvent::TestEvent2 { num: 2 },
-        TestEvent::TestEvent1 {
-            str: "3".to_string(),
-        },
+        TestEvent::TestEvent1 { str: "3".to_string() },
         TestEvent::TestEvent2 { num: 4 },
         TestEvent::TestEvent2 { num: 5 },
     ];
@@ -509,27 +460,17 @@ async fn test_store_snapshot() {
 
     // create a stream with a few events
     es.create_stream(&stream_id).await.unwrap();
-    es.unchecked_store_events(&stream_id, &events[0..3])
-        .await
-        .unwrap();
+    es.unchecked_store_events(&stream_id, &events[0..3]).await.unwrap();
 
     // no snapshot yet
-    let snapshot = es
-        .get_aggregate::<TestAggregate>(&stream_id, None)
-        .await
-        .unwrap();
+    let snapshot = es.get_aggregate::<TestAggregate>(&stream_id, None).await.unwrap();
     assert!(snapshot.is_none());
 
     // replay and create a snapshot at version 3
     {
-        let snapshot = Snapshot::<TestAggregate>::load_from(
-            &mut es,
-            &stream_id,
-            None,
-            TestAggregate::default(),
-        )
-        .await
-        .unwrap();
+        let snapshot = Snapshot::<TestAggregate>::load_from(&mut es, &stream_id, None, TestAggregate::default())
+            .await
+            .unwrap();
         assert_eq!(0, snapshot.start_version);
         assert_eq!(3, snapshot.version);
         assert_eq!("13", &snapshot.aggregate.str_sum);
@@ -562,19 +503,12 @@ async fn test_store_snapshot() {
 
     // store some more events, replay and create a new snapshot
     {
-        es.unchecked_store_events(&stream_id, &events[3..5])
-            .await
-            .unwrap();
+        es.unchecked_store_events(&stream_id, &events[3..5]).await.unwrap();
 
         // replay the events and create a new snapshot
-        let snapshot = Snapshot::<TestAggregate>::load_from(
-            &mut es,
-            &stream_id,
-            None,
-            TestAggregate::default(),
-        )
-        .await
-        .unwrap();
+        let snapshot = Snapshot::<TestAggregate>::load_from(&mut es, &stream_id, None, TestAggregate::default())
+            .await
+            .unwrap();
         assert_eq!(3, snapshot.start_version);
         assert_eq!(5, snapshot.version);
         assert_eq!("13", &snapshot.aggregate.str_sum);
@@ -585,10 +519,7 @@ async fn test_store_snapshot() {
             .unwrap();
     }
 
-    let list = es
-        .list_aggregates::<TestAggregate>(&stream_id)
-        .await
-        .unwrap();
+    let list = es.list_aggregates::<TestAggregate>(&stream_id).await.unwrap();
     assert_equal(
         list,
         [
@@ -632,25 +563,13 @@ async fn test_store_snapshot() {
     assert_eq!("hash-5", &snapshot.hash);
 
     // query some more versions
-    let snapshot = es
-        .get_aggregate::<TestAggregate>(&stream_id, Some(2))
-        .await
-        .unwrap();
+    let snapshot = es.get_aggregate::<TestAggregate>(&stream_id, Some(2)).await.unwrap();
     assert!(snapshot.is_none());
-    let snapshot = es
-        .get_aggregate::<TestAggregate>(&stream_id, Some(3))
-        .await
-        .unwrap();
+    let snapshot = es.get_aggregate::<TestAggregate>(&stream_id, Some(3)).await.unwrap();
     assert_eq!(3, snapshot.map(|s| s.version).unwrap());
-    let snapshot = es
-        .get_aggregate::<TestAggregate>(&stream_id, Some(4))
-        .await
-        .unwrap();
+    let snapshot = es.get_aggregate::<TestAggregate>(&stream_id, Some(4)).await.unwrap();
     assert_eq!(3, snapshot.map(|s| s.version).unwrap());
-    let snapshot = es
-        .get_aggregate::<TestAggregate>(&stream_id, Some(5))
-        .await
-        .unwrap();
+    let snapshot = es.get_aggregate::<TestAggregate>(&stream_id, Some(5)).await.unwrap();
     assert_eq!(5, snapshot.map(|s| s.version).unwrap());
 
     // cleanup
@@ -687,9 +606,7 @@ async fn test_snapshot_chain() {
         let range = if root_id == 0 { 0..15 } else { 0..30 };
         es.unchecked_store_events(
             &stream_id,
-            &range
-                .map(|i| TestEvent::TestEvent2 { num: i })
-                .collect::<Vec<_>>(),
+            &range.map(|i| TestEvent::TestEvent2 { num: i }).collect::<Vec<_>>(),
         )
         .await
         .unwrap();
@@ -698,33 +615,15 @@ async fn test_snapshot_chain() {
         //  0,   3
         //  3,   5,
         //  5,   9
-        es.store_aggregate(
-            &stream_id,
-            root_id,
-            root_id + 3,
-            &TestAggregate::new(1),
-            "hash-1",
-        )
-        .await
-        .unwrap();
-        es.store_aggregate(
-            &stream_id,
-            root_id + 3,
-            root_id + 5,
-            &TestAggregate::new(2),
-            "hash-2",
-        )
-        .await
-        .unwrap();
-        es.store_aggregate(
-            &stream_id,
-            root_id + 5,
-            root_id + 9,
-            &TestAggregate::new(3),
-            "hash-3",
-        )
-        .await
-        .unwrap();
+        es.store_aggregate(&stream_id, root_id, root_id + 3, &TestAggregate::new(1), "hash-1")
+            .await
+            .unwrap();
+        es.store_aggregate(&stream_id, root_id + 3, root_id + 5, &TestAggregate::new(2), "hash-2")
+            .await
+            .unwrap();
+        es.store_aggregate(&stream_id, root_id + 5, root_id + 9, &TestAggregate::new(3), "hash-3")
+            .await
+            .unwrap();
 
         for (idx, (start, end, expected)) in [
             (0, 3, EventSourceError::Conflict),
@@ -755,9 +654,9 @@ async fn test_snapshot_chain() {
                 )
                 .await
             {
-                Err(EventSourceError::InvalidAggregateVersion(a, b)) => Err(
-                    EventSourceError::InvalidAggregateVersion(a - root_id, b - root_id),
-                ),
+                Err(EventSourceError::InvalidAggregateVersion(a, b)) => {
+                    Err(EventSourceError::InvalidAggregateVersion(a - root_id, b - root_id))
+                }
                 Err(EventSourceError::EventVersionNotFound(a)) => {
                     Err(EventSourceError::EventVersionNotFound(a - root_id))
                 }
@@ -768,10 +667,7 @@ async fn test_snapshot_chain() {
             let expected = format!("{:?}", expected);
             assert_eq!(err, expected);
 
-            let list = es
-                .list_aggregates::<TestAggregate>(&stream_id)
-                .await
-                .unwrap();
+            let list = es.list_aggregates::<TestAggregate>(&stream_id).await.unwrap();
             assert_equal(
                 list,
                 [
@@ -844,12 +740,8 @@ async fn test_prune_snapshots() {
     }
 
     let mut es = event_db.create_context().await.unwrap();
-    let events = (0..10)
-        .map(|i| TestEvent::TestEvent2 { num: i })
-        .collect::<Vec<_>>();
-    es.unchecked_store_events(&stream_id, &events)
-        .await
-        .unwrap();
+    let events = (0..10).map(|i| TestEvent::TestEvent2 { num: i }).collect::<Vec<_>>();
+    es.unchecked_store_events(&stream_id, &events).await.unwrap();
 
     // parent, version,
     //  0,   3
@@ -867,18 +759,10 @@ async fn test_prune_snapshots() {
 
     // nothing is removed
     // chain: 0,3 3,5 5,9
-    es.prune_aggregate::<TestAggregate>(&stream_id, 2)
-        .await
-        .unwrap();
-    let snapshot = es
-        .get_aggregate::<TestAggregate>(&stream_id, Some(3))
-        .await
-        .unwrap();
+    es.prune_aggregate::<TestAggregate>(&stream_id, 2).await.unwrap();
+    let snapshot = es.get_aggregate::<TestAggregate>(&stream_id, Some(3)).await.unwrap();
     assert_eq!(3, snapshot.map(|s| s.version).unwrap());
-    let list = es
-        .list_aggregates::<TestAggregate>(&stream_id)
-        .await
-        .unwrap();
+    let list = es.list_aggregates::<TestAggregate>(&stream_id).await.unwrap();
     assert_equal(
         list,
         [
@@ -906,23 +790,12 @@ async fn test_prune_snapshots() {
     // remove at exact version (3)
     // chain: 0,3 3,5 5,9
     // keep: 3,5 5,9
-    es.prune_aggregate::<TestAggregate>(&stream_id, 3)
-        .await
-        .unwrap();
-    let snapshot = es
-        .get_aggregate::<TestAggregate>(&stream_id, Some(3))
-        .await
-        .unwrap();
+    es.prune_aggregate::<TestAggregate>(&stream_id, 3).await.unwrap();
+    let snapshot = es.get_aggregate::<TestAggregate>(&stream_id, Some(3)).await.unwrap();
     assert!(snapshot.is_none());
-    let snapshot = es
-        .get_aggregate::<TestAggregate>(&stream_id, Some(5))
-        .await
-        .unwrap();
+    let snapshot = es.get_aggregate::<TestAggregate>(&stream_id, Some(5)).await.unwrap();
     assert_eq!(5, snapshot.map(|s| s.version).unwrap());
-    let list = es
-        .list_aggregates::<TestAggregate>(&stream_id)
-        .await
-        .unwrap();
+    let list = es.list_aggregates::<TestAggregate>(&stream_id).await.unwrap();
     assert_equal(
         list,
         [
@@ -944,23 +817,12 @@ async fn test_prune_snapshots() {
     // remove at a version (6)
     // chain: 3,5 5,9
     // keep: 5,9
-    es.prune_aggregate::<TestAggregate>(&stream_id, 6)
-        .await
-        .unwrap();
-    let snapshot = es
-        .get_aggregate::<TestAggregate>(&stream_id, Some(5))
-        .await
-        .unwrap();
+    es.prune_aggregate::<TestAggregate>(&stream_id, 6).await.unwrap();
+    let snapshot = es.get_aggregate::<TestAggregate>(&stream_id, Some(5)).await.unwrap();
     assert!(snapshot.is_none());
-    let snapshot = es
-        .get_aggregate::<TestAggregate>(&stream_id, Some(9))
-        .await
-        .unwrap();
+    let snapshot = es.get_aggregate::<TestAggregate>(&stream_id, Some(9)).await.unwrap();
     assert_eq!(9, snapshot.map(|s| s.version).unwrap());
-    let list = es
-        .list_aggregates::<TestAggregate>(&stream_id)
-        .await
-        .unwrap();
+    let list = es.list_aggregates::<TestAggregate>(&stream_id).await.unwrap();
     assert_equal(
         list,
         [AggregateInfo {
@@ -974,23 +836,12 @@ async fn test_prune_snapshots() {
     // remove at a future version (99)
     // chain: 5,9
     // keep: nothing
-    es.prune_aggregate::<TestAggregate>(&stream_id, 99)
-        .await
-        .unwrap();
-    let snapshot = es
-        .get_aggregate::<TestAggregate>(&stream_id, Some(9))
-        .await
-        .unwrap();
+    es.prune_aggregate::<TestAggregate>(&stream_id, 99).await.unwrap();
+    let snapshot = es.get_aggregate::<TestAggregate>(&stream_id, Some(9)).await.unwrap();
     assert!(snapshot.is_none());
-    let snapshot = es
-        .get_aggregate::<TestAggregate>(&stream_id, None)
-        .await
-        .unwrap();
+    let snapshot = es.get_aggregate::<TestAggregate>(&stream_id, None).await.unwrap();
     assert!(snapshot.is_none());
-    let list = es
-        .list_aggregates::<TestAggregate>(&stream_id)
-        .await
-        .unwrap();
+    let list = es.list_aggregates::<TestAggregate>(&stream_id).await.unwrap();
     assert_eq!(list.len(), 0);
 
     // cleanup
@@ -1008,53 +859,45 @@ async fn test_prune_snapshots() {
         assert_equal(
             received_events.deref(),
             // creation and first update is a single operation, thus we start by 1 (instead of the usual 0)
-            &iter::once(EventNotification::StreamCreated {
-                stream_id,
-                version: 1,
-            })
-            .chain(
-                (2..=events.len()).map(|v| EventNotification::StreamUpdated {
-                    stream_id,
-                    version: v,
-                }),
-            )
-            .chain([
-                EventNotification::SnapshotCreated {
-                    stream_id,
-                    aggregate_id: TestAggregate::NAME.into(),
-                    version: 3,
-                    hash: "hash-1".into(),
-                },
-                EventNotification::SnapshotCreated {
-                    stream_id,
-                    aggregate_id: TestAggregate::NAME.into(),
-                    version: 5,
-                    hash: "hash-2".into(),
-                },
-                EventNotification::SnapshotCreated {
-                    stream_id,
-                    aggregate_id: TestAggregate::NAME.into(),
-                    version: 9,
-                    hash: "hash-3".into(),
-                },
-                EventNotification::SnapshotDeleted {
-                    stream_id,
-                    aggregate_id: TestAggregate::NAME.into(),
-                    version: 3,
-                },
-                EventNotification::SnapshotDeleted {
-                    stream_id,
-                    aggregate_id: TestAggregate::NAME.into(),
-                    version: 5,
-                },
-                EventNotification::SnapshotDeleted {
-                    stream_id,
-                    aggregate_id: TestAggregate::NAME.into(),
-                    version: 9,
-                },
-            ])
-            .chain(Some(EventNotification::StreamDeleted { stream_id }))
-            .collect::<Vec<_>>(),
+            &iter::once(EventNotification::StreamCreated { stream_id, version: 1 })
+                .chain((2..=events.len()).map(|v| EventNotification::StreamUpdated { stream_id, version: v }))
+                .chain([
+                    EventNotification::SnapshotCreated {
+                        stream_id,
+                        aggregate_id: TestAggregate::NAME.into(),
+                        version: 3,
+                        hash: "hash-1".into(),
+                    },
+                    EventNotification::SnapshotCreated {
+                        stream_id,
+                        aggregate_id: TestAggregate::NAME.into(),
+                        version: 5,
+                        hash: "hash-2".into(),
+                    },
+                    EventNotification::SnapshotCreated {
+                        stream_id,
+                        aggregate_id: TestAggregate::NAME.into(),
+                        version: 9,
+                        hash: "hash-3".into(),
+                    },
+                    EventNotification::SnapshotDeleted {
+                        stream_id,
+                        aggregate_id: TestAggregate::NAME.into(),
+                        version: 3,
+                    },
+                    EventNotification::SnapshotDeleted {
+                        stream_id,
+                        aggregate_id: TestAggregate::NAME.into(),
+                        version: 5,
+                    },
+                    EventNotification::SnapshotDeleted {
+                        stream_id,
+                        aggregate_id: TestAggregate::NAME.into(),
+                        version: 9,
+                    },
+                ])
+                .chain(Some(EventNotification::StreamDeleted { stream_id }))
+                .collect::<Vec<_>>(),
         );
     }
 }
@@ -1209,9 +1052,7 @@ async fn test_concurrent_snapshots_operation() {
     let max_version = es
         .unchecked_store_events(
             &stream_id,
-            &(0..100)
-                .map(|i| TestEvent::TestEvent2 { num: i })
-                .collect::<Vec<_>>(),
+            &(0..100).map(|i| TestEvent::TestEvent2 { num: i }).collect::<Vec<_>>(),
         )
         .await
         .unwrap();
@@ -1261,13 +1102,7 @@ async fn test_concurrent_snapshots_operation() {
                 let mut es = event_db.create_context().await.unwrap();
                 op_log.lock().await.push(Log::Insert(i, start, version));
                 match es
-                    .store_aggregate(
-                        &stream_id,
-                        start,
-                        version,
-                        &data,
-                        &format!("hash-{version}"),
-                    )
+                    .store_aggregate(&stream_id, start, version, &data, &format!("hash-{version}"))
                     .await
                 {
                     Ok(_) => log::debug!("Snapshot {:?} stored.", version),
@@ -1362,10 +1197,7 @@ async fn test_concurrent_snapshots_operation() {
                             );
                         }
                     };
-                    op_log
-                        .lock()
-                        .await
-                        .push(Log::Deleted(i, snapshot_to_delete));
+                    op_log.lock().await.push(Log::Deleted(i, snapshot_to_delete));
                 }
                 tokio::task::yield_now().await;
             }

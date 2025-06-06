@@ -1,8 +1,8 @@
 use crate::{
     db::{
         event_source::{
-            pg::PgEventDbContext, Aggregate, AggregateInfo, AggregateStore, Event,
-            EventSourceError, EventStore, StoredAggregate, StreamId,
+            pg::PgEventDbContext, Aggregate, AggregateInfo, AggregateStore, Event, EventSourceError, EventStore,
+            StoredAggregate, StreamId,
         },
         DBError, PGClient, PGErrorChecks,
     },
@@ -142,8 +142,7 @@ where
             start_version,
             version
         );
-        let data =
-            serde_json::to_string(aggregate).map_err(EventSourceError::EventSerialization)?;
+        let data = serde_json::to_string(aggregate).map_err(EventSourceError::EventSerialization)?;
 
         match self
             .stmts_snapshot
@@ -181,19 +180,13 @@ where
                     Err(EventSourceError::Conflict)
                 } else if err.is_raise_exception("Snapshot chain is broken.") {
                     log::trace!("Snapshot parent version does not exist: {:#?}", err);
-                    Err(EventSourceError::InvalidAggregateVersion(
-                        start_version,
-                        version,
-                    ))
+                    Err(EventSourceError::InvalidAggregateVersion(start_version, version))
                 } else if err.is_constraint(
                     &format!("es_snapshots_{}", <E as Event>::NAME),
                     &format!("es_snapshots_{}_check", <E as Event>::NAME),
                 ) {
                     log::trace!("Snapshot versions are invalid: {:#?}", err);
-                    Err(EventSourceError::InvalidAggregateVersion(
-                        start_version,
-                        version,
-                    ))
+                    Err(EventSourceError::InvalidAggregateVersion(start_version, version))
                 } else {
                     log::info!("Insert snapshot error: {:#?}", err);
                     Err(DBError::from(err).into())

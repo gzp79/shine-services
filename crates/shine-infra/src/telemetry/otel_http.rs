@@ -70,10 +70,7 @@ pub fn extract_context(headers: &HeaderMap) -> Context {
 
         /// Collect all the keys from the HeaderMap.
         fn keys(&self) -> Vec<&str> {
-            self.0
-                .keys()
-                .map(|value| value.as_str())
-                .collect::<Vec<_>>()
+            self.0.keys().map(|value| value.as_str()).collect::<Vec<_>>()
         }
     }
 
@@ -128,9 +125,7 @@ where
 {
     span.record("otel.status_code", "ERROR");
     span.record("exception.message", error.to_string());
-    error
-        .source()
-        .map(|s| span.record("exception.message", s.to_string()));
+    error.source().map(|s| span.record("exception.message", s.to_string()));
 }
 
 pub fn update_span_from_response_or_error<B, E>(span: &Span, response: &Result<Response<B>, E>)

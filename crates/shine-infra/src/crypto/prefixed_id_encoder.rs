@@ -17,9 +17,7 @@ impl<E: IdEncoder> IdEncoder for PrefixedIdEncoder<E> {
         if let Some(id) = id.strip_prefix(&self.0) {
             self.1.deobfuscate(id)
         } else {
-            Err(IdEncoderError::InvalidObfuscatedId(
-                "Invalid prefix".to_string(),
-            ))
+            Err(IdEncoderError::InvalidObfuscatedId("Invalid prefix".to_string()))
         }
     }
 }

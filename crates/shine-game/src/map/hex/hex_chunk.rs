@@ -1,9 +1,9 @@
 use crate::{
     hex::{AxialCoord, SpiralIterator},
-    map::{MapChunk, Tile},
+    map::{MapChunk, MapConfig, Tile},
 };
 
-pub trait HexConfig {
+pub trait HexConfig: MapConfig {
     /// Get the radius of the hexagonal grid chunks.
     fn radius(&self) -> u32;
 }
@@ -23,24 +23,24 @@ pub trait HexChunk: MapChunk {
     fn radius(&self) -> u32;
 
     /// Try to get a tile at the given axial coordinates
-    fn try_get(&self, coord: AxialCoord) -> Option<&Self::Tile>;
+    fn try_get(&self, coord: &AxialCoord) -> Option<&Self::Tile>;
 
     /// Get a tile at the given axial coordinates, panics if out of bounds
-    fn get(&self, coord: AxialCoord) -> &Self::Tile {
+    fn get(&self, coord: &AxialCoord) -> &Self::Tile {
         self.try_get(coord).expect("Out of bounds access")
     }
 
     /// Try to get a mutable reference to a tile at the given axial coordinates
-    fn try_get_mut(&mut self, coord: AxialCoord) -> Option<&mut Self::Tile>;
+    fn try_get_mut(&mut self, coord: &AxialCoord) -> Option<&mut Self::Tile>;
 
     /// Get a mutable reference to a tile at the given axial coordinates, panics if out of bounds
-    fn get_mut(&mut self, coord: AxialCoord) -> &mut Self::Tile {
+    fn get_mut(&mut self, coord: &AxialCoord) -> &mut Self::Tile {
         self.try_get_mut(coord).expect("Out of bounds access")
     }
 
     /// Check if the given axial coordinates are within the chunk's bounds
-    fn is_in_bounds(&self, coord: AxialCoord) -> bool {
-        coord.distance(&AxialCoord::new(0, 0)) <= self.radius() as i32
+    fn is_in_bounds(&self, coord: &AxialCoord) -> bool {
+        AxialCoord::origin().distance(coord) <= self.radius() as i32
     }
 
     /// Iterator over all valid coordinates and their tiles in the chunk
@@ -93,9 +93,7 @@ where
     type Item = (AxialCoord, &'a C::Tile);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.spiral
-            .next()
-            .map(|coord| (coord, self.chunk.get(coord)))
+        self.spiral.next().map(|coord| (coord, self.chunk.get(&coord)))
     }
 }
 
@@ -128,7 +126,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(coord) = self.spiral.next() {
-            let tile = self.chunk.get_mut(coord);
+            let tile = self.chunk.get_mut(&coord);
             // SAFETY: This is safe because we are iterating over the same mutable reference and subsequent calls cannot access the same tile.
             let tile: &'a mut C::Tile = unsafe { std::mem::transmute(tile) };
             Some((coord, tile))

@@ -125,14 +125,10 @@ where
                 }
 
                 let core_stage = core_stage.ok_or_else(|| SerdeError::missing_field("stage"))?;
-                let core_version =
-                    core_version.ok_or_else(|| SerdeError::missing_field("version"))?;
-                let core_root_file =
-                    core_root_file.ok_or_else(|| SerdeError::missing_field("rootFile"))?;
-                let core_before_layers =
-                    core_before_layers.ok_or_else(|| SerdeError::missing_field("beforeLayers"))?;
-                let core_after_layers =
-                    core_after_layers.ok_or_else(|| SerdeError::missing_field("afterLayers"))?;
+                let core_version = core_version.ok_or_else(|| SerdeError::missing_field("version"))?;
+                let core_root_file = core_root_file.ok_or_else(|| SerdeError::missing_field("rootFile"))?;
+                let core_before_layers = core_before_layers.ok_or_else(|| SerdeError::missing_field("beforeLayers"))?;
+                let core_after_layers = core_after_layers.ok_or_else(|| SerdeError::missing_field("afterLayers"))?;
                 let service = service.ok_or_else(|| SerdeError::missing_field("service"))?;
                 let telemetry = telemetry.ok_or_else(|| SerdeError::missing_field("telemetry"))?;
                 let feature = feature.ok_or_else(|| SerdeError::missing_field(F::NAME))?;
@@ -152,9 +148,7 @@ where
             }
         }
 
-        deserializer.deserialize_map(WebAppConfigVisitor {
-            marker: PhantomData,
-        })
+        deserializer.deserialize_map(WebAppConfigVisitor { marker: PhantomData })
     }
 }
 

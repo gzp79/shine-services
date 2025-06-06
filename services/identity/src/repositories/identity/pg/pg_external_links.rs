@@ -1,6 +1,5 @@
 use crate::repositories::identity::{
-    ExternalLink, ExternalLinks, ExternalUserInfo, Identity, IdentityBuildError, IdentityError,
-    IdentityKind,
+    ExternalLink, ExternalLinks, ExternalUserInfo, Identity, IdentityBuildError, IdentityError, IdentityKind,
 };
 use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
@@ -98,9 +97,7 @@ pub struct PgExternalLinksStatements {
 impl PgExternalLinksStatements {
     pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
         Ok(Self {
-            insert: InsertExternalLogin::new(client)
-                .await
-                .map_err(DBError::from)?,
+            insert: InsertExternalLogin::new(client).await.map_err(DBError::from)?,
             find_by_provider_id: FindByProviderId::new(client).await.map_err(DBError::from)?,
             list_by_user_id: ListByUserId::new(client).await.map_err(DBError::from)?,
             exists_by_user_id: ExistsByUserId::new(client).await.map_err(DBError::from)?,
@@ -111,11 +108,7 @@ impl PgExternalLinksStatements {
 
 impl ExternalLinks for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
-    async fn link_user(
-        &mut self,
-        user_id: Uuid,
-        external_user: &ExternalUserInfo,
-    ) -> Result<(), IdentityError> {
+    async fn link_user(&mut self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError> {
         match self
             .stmts_external_links
             .insert

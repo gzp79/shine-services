@@ -8,3 +8,6 @@ impl Tile for i8 {}
 impl Tile for i16 {}
 impl Tile for i32 {}
 impl Tile for i64 {}
+
+impl Tile for f32 {}
+impl Tile for f64 {}

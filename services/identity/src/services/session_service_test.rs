@@ -63,13 +63,7 @@ async fn create_get_remove() {
 
     log::info!("Creating a new session...");
     let (session, session_key) = session_manager
-        .create(
-            &identity,
-            roles.clone(),
-            is_linked,
-            &fingerprint,
-            &site_info,
-        )
+        .create(&identity, roles.clone(), is_linked, &fingerprint, &site_info)
         .await
         .unwrap();
     log::debug!("session: {session:#?}");
@@ -93,10 +87,7 @@ async fn create_get_remove() {
     assert_eq!(roles, found_session.user.roles);
 
     log::info!("Remove session...");
-    session_manager
-        .remove(identity.id, &session_key)
-        .await
-        .unwrap();
+    session_manager.remove(identity.id, &session_key).await.unwrap();
     {
         let sessions = session_manager.find_all(identity.id).await.unwrap();
         assert!(
@@ -106,10 +97,7 @@ async fn create_get_remove() {
     }
 
     log::info!("Finding after remove...");
-    let found_session = session_manager
-        .find(identity.id, &session_key)
-        .await
-        .unwrap();
+    let found_session = session_manager.find(identity.id, &session_key).await.unwrap();
     assert!(found_session.is_none());
 }
 
@@ -135,12 +123,7 @@ async fn update_invalid_key() {
     let roles = vec!["R1".into(), "R2".into()];
 
     let session: Option<crate::repositories::session::Session> = session_manager
-        .update_user_info(
-            &SessionKey::new_random(&random).unwrap(),
-            &identity,
-            &roles,
-            false,
-        )
+        .update_user_info(&SessionKey::new_random(&random).unwrap(), &identity, &roles, false)
         .await
         .unwrap();
     assert!(session.is_none());
@@ -175,13 +158,7 @@ async fn create_update() {
 
     log::info!("Creating a new session...");
     let (session, session_key) = session_manager
-        .create(
-            &identity1,
-            roles1.clone(),
-            is_linked1,
-            &fingerprint,
-            &site_info,
-        )
+        .create(&identity1, roles1.clone(), is_linked1, &fingerprint, &site_info)
         .await
         .unwrap();
 
@@ -199,10 +176,7 @@ async fn create_update() {
     assert_eq!(identity2.id, updated_session.info.user_id);
     assert_eq!(fingerprint.as_str(), updated_session.info.fingerprint);
     assert_eq!(identity2.name, updated_session.user.name);
-    assert_eq!(
-        identity2.is_email_confirmed,
-        updated_session.user.is_email_confirmed
-    );
+    assert_eq!(identity2.is_email_confirmed, updated_session.user.is_email_confirmed);
     assert_eq!(roles2, updated_session.user.roles);
     assert_eq!(is_linked2, updated_session.user.is_linked);
 

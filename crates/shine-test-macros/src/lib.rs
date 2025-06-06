@@ -45,15 +45,10 @@ pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut test_decors = Vec::new();
     if input.sig.asyncness.is_some() {
         test_decors.push(quote! { #[cfg_attr(not(target_arch = "wasm32"), ::tokio::test(flavor = "multi_thread"))] });
-        test_decors.push(
-            quote! { #[cfg_attr(target_arch = "wasm32", ::wasm_bindgen_test::wasm_bindgen_test)] },
-        );
+        test_decors.push(quote! { #[cfg_attr(target_arch = "wasm32", ::wasm_bindgen_test::wasm_bindgen_test)] });
     } else {
-        test_decors
-            .push(quote! { #[cfg_attr(not(target_arch = "wasm32"), ::core::prelude::v1::test)] });
-        test_decors.push(
-            quote! { #[cfg_attr(target_arch = "wasm32", ::wasm_bindgen_test::wasm_bindgen_test)] },
-        );
+        test_decors.push(quote! { #[cfg_attr(not(target_arch = "wasm32"), ::core::prelude::v1::test)] });
+        test_decors.push(quote! { #[cfg_attr(target_arch = "wasm32", ::wasm_bindgen_test::wasm_bindgen_test)] });
     };
 
     if let Some(serial) = attrs.serial {

@@ -3,7 +3,7 @@ use bevy::ecs::{component::Component, resource::Resource};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{collections::BTreeMap, marker::PhantomData};
 
-/// Hash the content of a chunk layer to fast compare.
+/// Hash the content of a chunk to fast compare for changes.
 pub trait ChunkHasher<C>: Resource + Clone
 where
     C: MapChunk,
@@ -13,7 +13,7 @@ where
     fn hash(&self, chunk: &C) -> Self::Hash;
 }
 
-///  A default no-hash implementation that returns an empty hash when hashing is not needed.
+/// A default no-hash implementation that returns an empty hash when hashing is not needed.
 #[derive(Resource, Clone, Default)]
 pub struct NullHasher;
 
@@ -26,7 +26,7 @@ where
     fn hash(&self, _chunk: &C) -> Self::Hash {}
 }
 
-/// Component to store hashes of a chunk layer for a range of versions.
+/// Track chunk hashes for a range of versions.
 #[derive(Component)]
 pub struct ChunkHashTrack<C, H>
 where

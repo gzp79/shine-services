@@ -10,7 +10,7 @@ members = [
 	"crates/shine-infra",
 	"services/identity",
 	"services/builder",
-	"client",
+	"client/rust",
 ]
 
 [workspace.package]

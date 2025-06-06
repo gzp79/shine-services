@@ -1,6 +1,7 @@
 use crate::hex::AxialCoord;
 use crate::map::{
-    DenseHexChunk, HexChunk, HexChunkTypes, HexConfig, HexDenseIndexer, MapChunk, Tile,
+    hex::{DenseHexChunk, HexChunk, HexChunkTypes, HexConfig, HexDenseIndexer},
+    MapChunk, Tile,
 };
 use bevy::ecs::component::Component;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -84,18 +85,18 @@ where
         self.row_starts.radius()
     }
 
-    fn try_get(&self, coord: AxialCoord) -> Option<&Self::Tile> {
+    fn try_get(&self, coord: &AxialCoord) -> Option<&Self::Tile> {
         if self.is_in_bounds(coord) {
-            let index = self.row_starts.get_dense_index(&coord);
+            let index = self.row_starts.get_dense_index(coord);
             Some(&self.data[index])
         } else {
             None
         }
     }
 
-    fn try_get_mut(&mut self, coord: AxialCoord) -> Option<&mut Self::Tile> {
+    fn try_get_mut(&mut self, coord: &AxialCoord) -> Option<&mut Self::Tile> {
         if self.is_in_bounds(coord) {
-            let index = self.row_starts.get_dense_index(&coord);
+            let index = self.row_starts.get_dense_index(coord);
             Some(&mut self.data[index])
         } else {
             None

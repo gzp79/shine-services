@@ -33,11 +33,7 @@ struct RedisSessionUser {
     pub roles: Vec<String>,
 }
 
-fn create_session_info(
-    user_id: Uuid,
-    key_hash: String,
-    sentinel: RedisSessionSentinel,
-) -> SessionInfo {
+fn create_session_info(user_id: Uuid, key_hash: String, sentinel: RedisSessionSentinel) -> SessionInfo {
     SessionInfo {
         created_at: sentinel.created_at,
         user_id,
@@ -111,11 +107,7 @@ impl RedisSessionDbContext<'_> {
         //log::debug!("pattern: {pattern}");
 
         let mut keys = vec![];
-        let mut iter: redis::AsyncIter<String> = self
-            .client
-            .scan_match(pattern)
-            .await
-            .map_err(DBError::RedisError)?;
+        let mut iter: redis::AsyncIter<String> = self.client.scan_match(pattern).await.map_err(DBError::RedisError)?;
         while let Some(key) = iter.next_item().await {
             keys.push(key);
         }
@@ -207,10 +199,7 @@ impl Sessions for RedisSessionDbContext<'_> {
         }
     }
 
-    async fn find_all_session_hashes_by_user(
-        &mut self,
-        user_id: Uuid,
-    ) -> Result<Vec<String>, SessionError> {
+    async fn find_all_session_hashes_by_user(&mut self, user_id: Uuid) -> Result<Vec<String>, SessionError> {
         let keys = self.find_redis_keys(user_id).await?;
 
         let mut key_hashes = vec![];
@@ -227,10 +216,7 @@ impl Sessions for RedisSessionDbContext<'_> {
         Ok(key_hashes)
     }
 
-    async fn find_all_sessions_by_user(
-        &mut self,
-        user_id: Uuid,
-    ) -> Result<Vec<Session>, SessionError> {
+    async fn find_all_sessions_by_user(&mut self, user_id: Uuid) -> Result<Vec<Session>, SessionError> {
         let keys = self.find_redis_keys(user_id).await?;
 
         let mut sessions = vec![];
@@ -239,10 +225,7 @@ impl Sessions for RedisSessionDbContext<'_> {
             let (key_user_id, key_session_key_hash, key_role) = self.parse_redis_key(&key)?;
             assert_eq!(key_user_id, user_id);
             if key_role == "sentinel" {
-                if let Some(session) = self
-                    .find_session_by_hash(user_id, key_session_key_hash)
-                    .await?
-                {
+                if let Some(session) = self.find_session_by_hash(user_id, key_session_key_hash).await? {
                     sessions.push(session);
                 }
             }
@@ -311,11 +294,7 @@ impl Sessions for RedisSessionDbContext<'_> {
             identity.id
         );
 
-        let is_open = self
-            .client
-            .exists(sentinel_key)
-            .await
-            .map_err(DBError::RedisError)?;
+        let is_open = self.client.exists(sentinel_key).await.map_err(DBError::RedisError)?;
         if is_open {
             // an update on the session extends the expiration time
             let data = RedisSessionUser {
@@ -332,19 +311,14 @@ impl Sessions for RedisSessionDbContext<'_> {
                 .query_async::<()>(&mut *self.client)
                 .await
                 .map_err(DBError::RedisError)?;
-            self.find_session_by_hash(identity.id, session_key_hash)
-                .await
+            self.find_session_by_hash(identity.id, session_key_hash).await
         } else {
             // sentinel is gone, session is closed.
             Ok(None)
         }
     }
 
-    async fn delete_session_by_hash(
-        &mut self,
-        user_id: Uuid,
-        session_key_hash: &str,
-    ) -> Result<(), SessionError> {
+    async fn delete_session_by_hash(&mut self, user_id: Uuid, session_key_hash: &str) -> Result<(), SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(user_id, session_key_hash);
         log::debug!(
             "Removing session, user:[{}], sentinel: [{sentinel_key}], data:[{key}]",

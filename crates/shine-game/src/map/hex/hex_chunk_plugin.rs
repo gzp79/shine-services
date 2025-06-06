@@ -1,16 +1,16 @@
 use crate::map::{
-    client, create_layer_system, process_layer_commands_system, process_map_event_system,
-    remove_layer_system, remove_rejected_chunks_system, ChunkCommandQueue, ChunkEvent, ChunkHasher,
-    ChunkLayer, ChunkOperation, GridChunk, GridConfig, LayerSetup, NullHasher,
+    client,
+    hex::{HexChunk, HexConfig},
+    ChunkCommandQueue, ChunkEvent, ChunkHasher, ChunkLayer, ChunkOperation, LayerSetup,
 };
 use bevy::{
     app::{App, PostUpdate, PreUpdate, Update},
     ecs::schedule::IntoScheduleConfigs,
 };
 
-pub struct ChunkLayerSetup<C, O, H = NullHasher, EH = client::NullChunkEventService>
+pub struct HexChunkLayerSetup<C, O, H, EH = client::NullChunkEventService>
 where
-    C: GridChunk,
+    C: HexChunk,
     O: ChunkOperation<C>,
     H: ChunkHasher<C>,
     EH: client::SendChunkEventService<C>,
@@ -20,9 +20,9 @@ where
     command_queue: ChunkCommandQueue<C, O, H>,
 }
 
-impl<C, O, H, EH> ChunkLayerSetup<C, O, H, EH>
+impl<C, O, H, EH> HexChunkLayerSetup<C, O, H, EH>
 where
-    C: GridChunk,
+    C: HexChunk,
     O: ChunkOperation<C>,
     H: ChunkHasher<C>,
     EH: client::SendChunkEventService<C>,
@@ -35,7 +35,7 @@ where
         }
     }
 
-    /// Start tracking the chunk hashes for each update operation using the given hasher.
+    /// Start tracking the chunk changes using the given hasher
     pub fn with_hash_tracker(mut self, hasher: H) -> Self {
         self.hasher = Some(hasher);
         self
@@ -47,16 +47,17 @@ where
     }
 }
 
-impl<CFG, C, O, H, EH> LayerSetup<CFG> for ChunkLayerSetup<C, O, H, EH>
+impl<CFG, C, O, H, EH> LayerSetup<CFG> for HexChunkLayerSetup<C, O, H, EH>
 where
-    CFG: GridConfig,
-    C: GridChunk + From<CFG>,
+    CFG: HexConfig,
+    C: HexChunk + From<CFG>,
     O: ChunkOperation<C>,
     H: ChunkHasher<C>,
     EH: client::SendChunkEventService<C>,
 {
     fn build(&self, app: &mut App) {
-        log::debug!("Adding map layer: {}", C::name());
+        log::debug!("Adding hex map layer: {}", C::name());
+
         if let Some(hasher) = &self.hasher {
             app.insert_resource(hasher.clone());
         }
@@ -67,14 +68,17 @@ where
 
         app.add_systems(
             PreUpdate,
-            (create_layer_system::<C, H>, remove_layer_system::<C>)
+            (
+                crate::map::create_layer_system::<C, H>,
+                crate::map::remove_layer_system::<C>,
+            )
                 .chain()
-                .after(process_map_event_system),
+                .after(crate::map::process_map_event_system),
         );
 
-        app.add_systems(Update, process_layer_commands_system::<CFG, C, O, H>);
+        app.add_systems(Update, crate::map::process_layer_commands_system::<CFG, C, O, H>);
 
-        app.add_systems(PostUpdate, remove_rejected_chunks_system::<C>);
+        app.add_systems(PostUpdate, crate::map::remove_rejected_chunks_system::<C>);
 
         if let Some(client_send_service) = &self.client_send_service {
             app.insert_resource(client_send_service.clone());

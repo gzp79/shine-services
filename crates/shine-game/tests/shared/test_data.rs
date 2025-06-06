@@ -4,28 +4,15 @@ use bevy::{
 };
 use serde::{Deserialize, Serialize};
 use shine_game::map::{
-    create_layer_system, process_layer_commands_system, process_map_event_system,
-    remove_layer_system, ChunkCommandQueue, ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkLayer,
-    ChunkOperation, GridConfig, LayerSetup, MapChunk, MapConfig,
+    create_layer_system, grid::GridConfig, process_layer_commands_system, process_map_event_system,
+    remove_layer_system, ChunkCommandQueue, ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkLayer, ChunkOperation,
+    LayerSetup, MapChunk, MapConfig,
 };
 
 #[derive(Resource, Clone)]
-pub struct TestGridConfig {
-    pub width: usize,
-    pub height: usize,
-}
+pub struct TestConfig;
 
-impl MapConfig for TestGridConfig {}
-
-impl GridConfig for TestGridConfig {
-    fn width(&self) -> usize {
-        self.width
-    }
-
-    fn height(&self) -> usize {
-        self.height
-    }
-}
+impl MapConfig for TestConfig {}
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,11 +41,9 @@ impl TestData {
     }
 }
 
-impl From<TestGridConfig> for TestData {
-    fn from(config: TestGridConfig) -> Self {
-        Self {
-            data: Some(config.width * config.height),
-        }
+impl From<TestConfig> for TestData {
+    fn from(_config: TestConfig) -> Self {
+        Self { data: Some(42) }
     }
 }
 
@@ -109,14 +94,12 @@ impl TestDataLayerSetup {
         }
     }
 
-    pub fn new_with_queue(
-        command_queue: ChunkCommandQueue<TestData, TestDataOperation, TestDataHasher>,
-    ) -> Self {
+    pub fn new_with_queue(command_queue: ChunkCommandQueue<TestData, TestDataOperation, TestDataHasher>) -> Self {
         Self { command_queue }
     }
 }
 
-impl LayerSetup<TestGridConfig> for TestDataLayerSetup {
+impl LayerSetup<TestConfig> for TestDataLayerSetup {
     fn build(&self, app: &mut App) {
         log::debug!("Adding map layer: {}", TestData::name());
         app.insert_resource(TestDataHasher);
@@ -137,12 +120,7 @@ impl LayerSetup<TestGridConfig> for TestDataLayerSetup {
 
         app.add_systems(
             Update,
-            process_layer_commands_system::<
-                TestGridConfig,
-                TestData,
-                TestDataOperation,
-                TestDataHasher,
-            >,
+            process_layer_commands_system::<TestConfig, TestData, TestDataOperation, TestDataHasher>,
         );
     }
 }

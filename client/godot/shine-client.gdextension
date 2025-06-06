@@ -1,0 +1,16 @@
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.4
+reloadable = true
+
+[libraries]
+#linux.debug.x86_64 =     "res://../../target/debug/libshine_client.so"
+#linux.release.x86_64 =   "res://../../target/release/libshine_client.so"
+windows.debug.x86_64 =   "res://../../target/debug/shine_client.dll"
+windows.release.x86_64 = "res://../../target/release/shine_client.dll"
+#macos.debug =            "res://../../target/debug/libshine_client.dylib"
+#macos.release =          "res://../../target/release/libshine_client.dylib"
+#macos.debug.arm64 =      "res://../../target/debug/libshine_client.dylib"
+#macos.release.arm64 =    "res://../../target/release/libshine_client.dylib"
+web.debug.wasm32 =       "res://../../target/wasm32-unknown-emscripten/debug/shine_client.wasm"
+web.release.wasm32 =     "res://../../target/wasm32-unknown-emscripten/release/shine_client.wasm"libshine_client

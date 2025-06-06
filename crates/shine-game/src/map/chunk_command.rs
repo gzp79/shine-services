@@ -1,6 +1,5 @@
 use crate::map::{
-    ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkId, ChunkOperation, ChunkRoot, MapChunk,
-    MapConfig,
+    ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkId, ChunkOperation, ChunkRoot, ChunkVersion, MapChunk, MapConfig,
 };
 use bevy::{
     ecs::{
@@ -12,8 +11,6 @@ use bevy::{
 };
 use std::collections::{BTreeMap, VecDeque};
 
-use super::ChunkVersion;
-
 /// Command to be applied to a chunk.
 pub enum ChunkCommand<C, O, H>
 where
@@ -21,13 +18,15 @@ where
     O: ChunkOperation<C>,
     H: ChunkHasher<C>,
 {
-    /// Indicates a missing or deleted chunk. Chunk data is reset to an empty state and any previous operations are discarded.
+    /// Indicates a missing or deleted layer of a chunk.
+    /// Data is reset to an empty state and any previous operations are discarded.
     Empty,
-    /// Indicates a new chunk snapshot. Any operations older than the snapshot has been already applied.
+    /// A new snapshot for a layer of a chunk. Any operations older than the snapshot has been either applied or
+    /// discarded.
     Data((usize, C)),
-    /// A list of operations to be applied to the chunk in the order of the versions.
+    /// A list of operations to be applied to the layer of a chunk in the order of the versions (first parameter of the tuple).
     Operations(Vec<(usize, O)>),
-    /// A list of hashes corresponding to versions to detect drifts compared to the authoritative snapshot.    
+    /// A list of hashes corresponding to versions to detect drifts compared to an authoritative snapshot.
     DriftDetect(Vec<(usize, H::Hash)>),
     /// The chunk is not available for the user.
     Rejected,
@@ -65,9 +64,7 @@ where
     H: ChunkHasher<C>,
 {
     fn clone(&self) -> Self {
-        Self {
-            queue: self.queue.clone(),
-        }
+        Self { queue: self.queue.clone() }
     }
 }
 
@@ -180,8 +177,7 @@ pub fn process_layer_commands_system<CFG, C, O, H>(
                         "Chunk [{:?}]: Hash cleared and stored [{}] -> [{}]",
                         chunk_id,
                         chunk_version.version,
-                        serde_json::to_string(hash_track.get(chunk_version.version).unwrap())
-                            .unwrap()
+                        serde_json::to_string(hash_track.get(chunk_version.version).unwrap()).unwrap()
                     );
                 }
             }
@@ -189,18 +185,10 @@ pub fn process_layer_commands_system<CFG, C, O, H>(
 
         // apply operations by version
         if !chunk_commands.is_empty() {
-            log::debug!(
-                "Chunk [{:?}]: Applying {} operations",
-                chunk_id,
-                chunk_operations.len()
-            );
+            log::debug!("Chunk [{:?}]: Applying {} operations", chunk_id, chunk_operations.len());
             while let Some((version, operation)) = chunk_operations.pop_first() {
                 if version <= chunk_version.version {
-                    log::trace!(
-                        "Chunk [{:?}]: Operation is too old {}, ignoring",
-                        chunk_id,
-                        version
-                    );
+                    log::trace!("Chunk [{:?}]: Operation is too old {}, ignoring", chunk_id, version);
                 } else if version == chunk_version.version + 1 {
                     if operation.check_precondition(&chunk) {
                         operation.apply(&mut *chunk);
@@ -212,8 +200,7 @@ pub fn process_layer_commands_system<CFG, C, O, H>(
                             "Chunk [{:?}]: Hash stored [{}] -> [{}]",
                             chunk_id,
                             chunk_version.version,
-                            serde_json::to_string(hash_track.get(chunk_version.version).unwrap())
-                                .unwrap()
+                            serde_json::to_string(hash_track.get(chunk_version.version).unwrap()).unwrap()
                         );
                     }
                 } else {

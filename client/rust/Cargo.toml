@@ -3,6 +3,9 @@ name = "shine-client"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+crate-type = ["cdylib"]
+
 [dependencies]
 log = { workspace = true }
 thiserror = { workspace = true }
@@ -13,9 +16,8 @@ serde_json = { workspace = true }
 
 uuid = { workspace = true }
 
-bevy = { workspace = true, default-features = true, features = [
-    "bevy_dev_tools",
-] }
+godot = { version = "0.3", features = ["api-4-4"] }
+bevy = { workspace = true }
 
 shine-game = { workspace = true }
 shine-core = { workspace = true }
@@ -24,5 +26,5 @@ shine-core = { workspace = true }
 shine-test = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-bevy = { workspace = true, features = ["webgl2"] }
 wasm-bindgen = { workspace = true }
+godot = { version = "0.3", features = ["experimental-wasm"] }

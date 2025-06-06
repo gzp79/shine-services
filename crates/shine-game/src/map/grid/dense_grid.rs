@@ -1,4 +1,7 @@
-use crate::map::{DenseGridChunk, GridChunk, GridChunkTypes, GridConfig, MapChunk, Tile};
+use crate::map::{
+    grid::{DenseGridChunk, GridChunk, GridChunkTypes, GridConfig},
+    MapChunk, Tile,
+};
 use bevy::ecs::component::Component;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -31,11 +34,7 @@ where
         let area = width * height;
         let mut data = Vec::with_capacity(area);
         data.resize_with(area, <T::Tile as Default>::default);
-        Self {
-            width,
-            height,
-            data,
-        }
+        Self { width, height, data }
     }
 }
 

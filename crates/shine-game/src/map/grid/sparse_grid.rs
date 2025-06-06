@@ -1,4 +1,7 @@
-use crate::map::{GridChunk, GridChunkTypes, GridConfig, MapChunk, SparseGridChunk, Tile};
+use crate::map::{
+    grid::{GridChunk, GridChunkTypes, GridConfig, SparseGridChunk},
+    MapChunk, Tile,
+};
 use bevy::ecs::component::Component;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
@@ -98,10 +101,7 @@ where
 
     fn try_get_mut(&mut self, x: usize, y: usize) -> Option<&mut Self::Tile> {
         if x < self.width && y < self.height {
-            let tile = self
-                .data
-                .entry((x, y))
-                .or_insert_with(|| self.default.clone());
+            let tile = self.data.entry((x, y)).or_insert_with(|| self.default.clone());
             Some(tile)
         } else {
             None

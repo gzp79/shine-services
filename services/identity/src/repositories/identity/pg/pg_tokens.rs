@@ -349,11 +349,7 @@ impl Tokens for PgIdentityDbContext<'_> {
     }
 
     #[instrument(skip(self))]
-    async fn delete_token_by_hash(
-        &mut self,
-        kind: TokenKind,
-        token_hash: &str,
-    ) -> Result<Option<()>, IdentityError> {
+    async fn delete_token_by_hash(&mut self, kind: TokenKind, token_hash: &str) -> Result<Option<()>, IdentityError> {
         let count = self
             .stmts_tokens
             .delete
@@ -368,11 +364,7 @@ impl Tokens for PgIdentityDbContext<'_> {
     }
 
     #[instrument(skip(self))]
-    async fn delete_token_by_user(
-        &mut self,
-        user_id: Uuid,
-        token_hash: &str,
-    ) -> Result<Option<()>, IdentityError> {
+    async fn delete_token_by_user(&mut self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
         let count = self
             .stmts_tokens
             .delete_by_user
@@ -387,11 +379,7 @@ impl Tokens for PgIdentityDbContext<'_> {
     }
 
     #[instrument(skip(self))]
-    async fn delete_all_token_by_user(
-        &mut self,
-        user_id: Uuid,
-        kinds: &[TokenKind],
-    ) -> Result<(), IdentityError> {
+    async fn delete_all_token_by_user(&mut self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
         for kind in kinds {
             self.stmts_tokens
                 .delete_all_by_user

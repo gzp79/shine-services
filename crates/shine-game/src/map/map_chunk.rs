@@ -43,17 +43,11 @@ where
     C: MapChunk,
 {
     pub fn new() -> Self {
-        Self {
-            version: 0,
-            ph: PhantomData,
-        }
+        Self { version: 0, ph: PhantomData }
     }
 
     pub fn with_version(version: usize) -> Self {
-        Self {
-            version,
-            ph: PhantomData,
-        }
+        Self { version, ph: PhantomData }
     }
 }
 
@@ -103,4 +97,8 @@ pub trait MapChunk: Component<Mutability = Mutable> {
 
     /// Return if the chunk is empty (on-loaded) or not.
     fn is_empty(&self) -> bool;
+
+    fn hash(&self) -> u64 {
+        0 // Default implementation, can be overridden
+    }
 }
