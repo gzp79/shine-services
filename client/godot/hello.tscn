@@ -1,15 +1,50 @@
-[gd_scene load_steps=2 format=3 uid="uid://s4ir0h7d30j4"]
+[gd_scene load_steps=8 format=3 uid="uid://s4ir0h7d30j4"]
+
+[ext_resource type="Script" uid="uid://kx7ps2whn8rn" path="res://map_manager.gd" id="1_k4cps"]
+[ext_resource type="Script" uid="uid://bfg2qwm101fq2" path="res://camera_3d.gd" id="1_p3r8j"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_i7k7o"]
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_k4cps"]
+albedo_color = Color(1, 0.254902, 1, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_y0xoj"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_nfq8h"]
+albedo_color = Color(1, 1, 0.164706, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_l3eim"]
+albedo_color = Color(0.160784, 1, 1, 1)
+
 [node name="Node" type="Node"]
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.619566, -0.318404, -0.717466, 0.658282, -0.287102, 0.695871, -0.427554, -0.903433, 0.031721, -0.316392, 2.92357, 0)
 
 [node name="BevyApp" type="BevyApp" parent="."]
 
 [node name="Map" type="Node3D" parent="."]
+script = ExtResource("1_k4cps")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="Map"]
 mesh = SubResource("PlaneMesh_i7k7o")
+surface_material_override/0 = SubResource("StandardMaterial3D_k4cps")
 
-[node name="Camera3D" type="Camera3D" parent="."]
+[node name="MeshInstance3D2" type="MeshInstance3D" parent="Map"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0, 0)
+mesh = SubResource("PlaneMesh_i7k7o")
+surface_material_override/0 = SubResource("StandardMaterial3D_y0xoj")
+
+[node name="MeshInstance3D3" type="MeshInstance3D" parent="Map"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 0, 0)
+mesh = SubResource("PlaneMesh_i7k7o")
+surface_material_override/0 = SubResource("StandardMaterial3D_nfq8h")
+
+[node name="MeshInstance3D4" type="MeshInstance3D" parent="Map"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 0, 0)
+mesh = SubResource("PlaneMesh_i7k7o")
+surface_material_override/0 = SubResource("StandardMaterial3D_l3eim")
+
+[node name="Camera" type="Camera3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 0.890022, 0.455918, 0, -0.455918, 0.890022, 0, 1.35515, 2.51576)
+script = ExtResource("1_p3r8j")

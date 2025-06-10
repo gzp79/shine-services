@@ -1,0 +1,20 @@
+[gd_scene load_steps=4 format=3 uid="uid://s4ir0h7d30j4"]
+
+[ext_resource type="Script" uid="uid://kx7ps2whn8rn" path="res://map_manager.gd" id="1_k4cps"]
+[ext_resource type="Script" uid="uid://bfg2qwm101fq2" path="res://camera_3d.gd" id="1_p3r8j"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_i7k7o"]
+
+[node name="Node" type="Node"]
+
+[node name="BevyApp" type="BevyApp" parent="."]
+
+[node name="Map" type="Node3D" parent="."]
+script = ExtResource("1_k4cps")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Map"]
+mesh = SubResource("PlaneMesh_i7k7o")
+
+[node name="Camera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.890022, 0.455918, 0, -0.455918, 0.890022, 0, 1.35515, 2.51576)
+script = ExtResource("1_p3r8j")

@@ -1,0 +1,2 @@
+const CHUNK_SIZE := 2.0
+const MAX_CHUNK_DISTANCE := CHUNK_SIZE * 2.0;

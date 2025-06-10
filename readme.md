@@ -51,11 +51,6 @@ cargo install wasm-opt
 ### godot wasm build
 
 <https://godot-rust.github.io/book/toolchain/export-web.html>
-```
-rustup toolchain install nightly
-rustup component add rust-src --toolchain nightly
-rustup target add wasm32-unknown-emscripten --toolchain nightly
-```
 
 ### Telemetry
 

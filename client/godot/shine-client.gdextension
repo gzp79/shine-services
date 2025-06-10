@@ -12,5 +12,5 @@ windows.release.x86_64 = "res://../../target/release/shine_client.dll"
 #macos.release =          "res://../../target/release/libshine_client.dylib"
 #macos.debug.arm64 =      "res://../../target/debug/libshine_client.dylib"
 #macos.release.arm64 =    "res://../../target/release/libshine_client.dylib"
-web.debug.wasm32 =       "res://../../target/wasm32-unknown-emscripten/debug/shine_client.wasm"
-web.release.wasm32 =     "res://../../target/wasm32-unknown-emscripten/release/shine_client.wasm"libshine_client
+#web.debug.wasm32 =       "res://../../target/wasm32-unknown-emscripten/debug/shine_client.wasm"
+#web.release.wasm32 =     "res://../../target/wasm32-unknown-emscripten/release/shine_client.wasm"libshine_client
