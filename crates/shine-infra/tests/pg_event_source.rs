@@ -1186,7 +1186,9 @@ async fn test_concurrent_snapshots_operation() {
                         .prune_aggregate::<TestAggregate>(&stream_id, snapshot_to_delete)
                         .await
                     {
-                        Ok(_) => log::debug!("Snapshot pruned at version {:?}.", snapshot_to_delete),
+                        Ok(_) => {
+                            log::debug!("Snapshot pruned at version {:?}.", snapshot_to_delete)
+                        }
                         Err(err) => {
                             panic!(
                                 "Error deleting snapshot {}\n  log: {:?}\n  err: {err:?}",

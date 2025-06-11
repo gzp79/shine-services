@@ -1,4 +1,35 @@
-use bevy::app::App;
+use bevy::{
+    app::{App, AppExit, Update},
+    ecs::{
+        event::EventWriter,
+        system::{Res, ResMut},
+    },
+    input::{keyboard::KeyCode, ButtonInput},
+    state::{
+        app::AppExtStates,
+        state::{NextState, State, States},
+    },
+};
+
+use crate::{camera::CameraPlugin, world::WorldPlugin};
+
+mod camera;
+mod camera_rig;
+mod world;
+
+mod poc;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
+pub enum GameState {
+    //MainMenu,
+    Playing,
+
+    //POCs
+    CameraOrbitPOC,
+    CameraFreePOC,
+    CameraLookAtPOC,
+    CameraFollowPOC,
+}
 
 #[cfg(target_arch = "wasm32")]
 mod platform {
@@ -88,64 +119,46 @@ fn create_application(config: platform::Config) {
     let mut app = App::new();
     platform::platform_init(&mut app, config);
 
-    app.add_plugins(bevy::dev_tools::fps_overlay::FpsOverlayPlugin::default());
-    app.add_plugins(overlay::SizeOverlayPlugin);
+    app.insert_state(GameState::CameraOrbitPOC);
+
+    app.add_plugins(CameraPlugin { state: GameState::Playing });
+    app.add_plugins(WorldPlugin { state: GameState::Playing });
+
+    app.add_plugins(poc::CameraOrbitPOC {
+        state: GameState::CameraOrbitPOC,
+    });
+    app.add_plugins(poc::CameraFreePOC {
+        state: GameState::CameraFreePOC,
+    });
+    app.add_plugins(poc::CameraLookAtPOC {
+        state: GameState::CameraLookAtPOC,
+    });
+    app.add_plugins(poc::CameraFollowPOC {
+        state: GameState::CameraFollowPOC,
+    });
+    app.add_systems(Update, next_poc);
 
     app.run();
 }
 
-mod overlay {
-    use bevy::{
-        app::{App, Plugin, Startup, Update},
-        core_pipeline::core_2d::Camera2d,
-        ecs::{
-            component::Component,
-            event::EventReader,
-            query::With,
-            system::{Commands, Single},
-        },
-        text::TextFont,
-        ui::{widget::Text, Node, Val},
-        utils::default,
-        window::WindowResized,
-    };
-
-    #[derive(Component)]
-    struct ResolutionText;
-
-    fn setup_camera(mut commands: Commands) {
-        commands.spawn(Camera2d);
-    }
-
-    fn setup_ui(mut commands: Commands) {
-        commands
-            .spawn(Node {
-                width: Val::Percent(100.),
-                top: Val::Px(30.),
-                ..default()
-            })
-            .with_child((
-                Text::new("Resolution"),
-                TextFont { font_size: 42.0, ..default() },
-                ResolutionText,
-            ));
-    }
-
-    fn on_resize_system(
-        mut text: Single<&mut Text, With<ResolutionText>>,
-        mut resize_reader: EventReader<WindowResized>,
-    ) {
-        for e in resize_reader.read() {
-            text.0 = format!("{:.1} x {:.1}", e.width, e.height);
+fn next_poc(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    game_state: Res<State<GameState>>,
+    mut next_game_state: ResMut<NextState<GameState>>,
+    mut exit: EventWriter<AppExit>,
+) {
+    if keyboard_input.just_pressed(KeyCode::Tab) {
+        match game_state.get() {
+            GameState::CameraOrbitPOC => next_game_state.set(GameState::CameraFreePOC),
+            GameState::CameraFreePOC => next_game_state.set(GameState::CameraLookAtPOC),
+            GameState::CameraLookAtPOC => next_game_state.set(GameState::CameraFollowPOC),
+            GameState::CameraFollowPOC => next_game_state.set(GameState::CameraOrbitPOC),
+            _ => {}
         }
     }
 
-    pub struct SizeOverlayPlugin;
-
-    impl Plugin for SizeOverlayPlugin {
-        fn build(&self, app: &mut App) {
-            app.add_systems(Startup, (setup_camera, setup_ui))
-                .add_systems(Update, on_resize_system);
-        }
+    #[cfg(not(target_arch = "wasm32"))]
+    if keyboard_input.just_pressed(KeyCode::Escape) {
+        exit.write(AppExit::Success);
     }
 }

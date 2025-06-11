@@ -1,5 +1,3 @@
-mod map_config;
-pub use self::map_config::*;
 mod map_chunk;
 pub use self::map_chunk::*;
 mod map_chunk_tracker;
@@ -18,8 +16,12 @@ pub use self::chunk_command::*;
 mod chunk_layer;
 pub use self::chunk_layer::*;
 
+mod tile;
+pub use self::tile::*;
 mod grid_chunk;
 pub use self::grid_chunk::*;
+mod hex_chunk;
+pub use self::hex_chunk::*;
 
 pub mod client;
 //pub mod server;

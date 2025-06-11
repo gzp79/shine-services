@@ -1,11 +1,12 @@
+use bevy::ecs::{
+    component::{Component, Mutable},
+    resource::Resource,
+};
+use serde::{de::DeserializeOwned, Serialize};
 use std::{
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
-
-use crate::map::MapConfig;
-use bevy::ecs::component::{Component, Mutable};
-use serde::{de::DeserializeOwned, Serialize};
 
 /// Unique identifier for a chunk in the world
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -76,6 +77,9 @@ pub trait ChunkOperation<C>: Serialize + DeserializeOwned + Send + Sync + 'stati
     fn apply(self, chunk: &mut C);
 }
 
+/// Configuration for the map that applies to all chunks
+pub trait MapConfig: Resource + Clone {}
+
 /// Trait to define a layer of a chunk in the map.
 pub trait MapChunk: Component<Mutability = Mutable> {
     /// Name of the layer.
@@ -86,10 +90,10 @@ pub trait MapChunk: Component<Mutability = Mutable> {
     where
         Self: Sized;
 
-    /// Create a new chunk default component with the given configuration.
-    fn new(config: &MapConfig) -> Self
+    /*/// Create a new chunk default component with the given configuration.
+    fn new(config: &CFG) -> Self
     where
-        Self: Sized;
+        Self: Sized;*/
 
     /// Return if the chunk is empty (on-loaded) or not.
     fn is_empty(&self) -> bool;

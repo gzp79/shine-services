@@ -101,8 +101,8 @@ where
 
 /// Consume the ChunkCommand queue and integrate the commands into the chunk data.
 #[allow(clippy::type_complexity)]
-pub fn process_layer_commands_system<C, O, H>(
-    map_config: Res<MapConfig>,
+pub fn process_layer_commands_system<CFG, C, O, H>(
+    map_config: Res<CFG>,
     hasher: Option<Res<H>>,
     chunk_command_queue: Res<ChunkCommandQueue<C, O, H>>,
     mut chunks: Query<(
@@ -118,7 +118,8 @@ pub fn process_layer_commands_system<C, O, H>(
     mut chunk_operations: Local<BTreeMap<usize, O>>,
     mut chunk_hashes: Local<BTreeMap<usize, H::Hash>>,
 ) where
-    C: MapChunk,
+    CFG: MapConfig,
+    C: MapChunk + From<CFG>,
     O: ChunkOperation<C>,
     H: ChunkHasher<C>,
 {
@@ -133,7 +134,7 @@ pub fn process_layer_commands_system<C, O, H>(
             let is_chunk_data = match command {
                 ChunkCommand::Empty => {
                     log::debug!("Chunk [{:?}]: Reset to empty", chunk_root.id);
-                    *chunk = C::new(&map_config);
+                    *chunk = C::from(map_config.clone());
                     true
                 }
                 ChunkCommand::Data((data_version, data)) => {

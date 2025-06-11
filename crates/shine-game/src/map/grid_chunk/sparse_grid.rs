@@ -1,4 +1,4 @@
-use crate::map::{GridChunk, GridChunkTypes, MapChunk, MapConfig, SparseGridChunk, Tile};
+use crate::map::{GridChunk, GridChunkTypes, GridConfig, MapChunk, SparseGridChunk, Tile};
 use bevy::ecs::component::Component;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
@@ -12,11 +12,39 @@ where
     T: GridChunkTypes,
     T::Tile: Tile + Clone,
 {
-    version: usize,
     width: usize,
     height: usize,
     default: T::Tile,
     data: HashMap<(usize, usize), T::Tile>,
+}
+
+impl<T> SparseGrid<T>
+where
+    T: GridChunkTypes,
+    T::Tile: Tile + Clone,
+{
+    fn new<CFG>(config: CFG) -> Self
+    where
+        CFG: GridConfig,
+    {
+        Self {
+            width: config.width(),
+            height: config.height(),
+            default: <T::Tile as Default>::default(),
+            data: HashMap::new(),
+        }
+    }
+}
+
+impl<CFG, T> From<CFG> for SparseGrid<T>
+where
+    CFG: GridConfig,
+    T: GridChunkTypes,
+    T::Tile: Clone,
+{
+    fn from(config: CFG) -> Self {
+        Self::new(config)
+    }
 }
 
 impl<T> MapChunk for SparseGrid<T>
@@ -33,19 +61,8 @@ where
         Self: Sized,
     {
         Self {
-            version: 0,
             width: 0,
             height: 0,
-            default: <T::Tile as Default>::default(),
-            data: HashMap::new(),
-        }
-    }
-
-    fn new(config: &MapConfig) -> Self {
-        Self {
-            version: 0,
-            width: config.width,
-            height: config.height,
             default: <T::Tile as Default>::default(),
             data: HashMap::new(),
         }

@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $profile="release"
-$opt=$false
+$opt=$true
 
 Write-Host "Build"
 cargo build --target=wasm32-unknown-unknown -p shine-client --profile ${profile}

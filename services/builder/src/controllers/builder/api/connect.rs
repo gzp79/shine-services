@@ -85,7 +85,6 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Sessio
                         let msg = match serde_json::from_str::<RequestMessage>(&text) {
                             Ok(msg) => match msg {
                                 RequestMessage::Chat { text } => Some(Message::Chat(current_user_id, text)),
-                                //RequestMessage::
                             },
                             Err(_) => {
                                 log::error!("[{current_user_id}] Received invalid message: {text}");
