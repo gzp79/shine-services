@@ -2,19 +2,21 @@
 <html lang="en">
   <body style="margin: 0px">
     <script type="module">
-      import init from "./shine-client.js";
+      import init, { start_game } from "./shine-client.js";
 
-      init().catch((error) => {
-        if (
-          !error.message.startsWith(
-            "Using exceptions for control flow, don't mind me. This isn't actually an error!"
-          )
-        ) {
-          throw error;
-        }
-      });
-
-      start_game("#game-canvas");
+      init()
+        .catch((error) => {
+          if (
+            !error.message.startsWith(
+              "Using exceptions for control flow, don't mind me. This isn't actually an error!"
+            )
+          ) {
+            throw error;
+          }
+        })
+        .then(() => {
+          start_game("#game-canvas");
+        });
     </script>
 
     <div style="width: 100vw; height: 100vh; overflow: hidden">
