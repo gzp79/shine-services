@@ -107,17 +107,13 @@ where
                     }),
                     ("snapshot", "create") => Ok(EventNotification::SnapshotCreated {
                         stream_id: A::from_string(self.stream_id),
-                        aggregate_id: self
-                            .aggregate_id
-                            .ok_or("Missing aggregate_id".to_string())?,
+                        aggregate_id: self.aggregate_id.ok_or("Missing aggregate_id".to_string())?,
                         version: self.version.unwrap_or(0),
                         hash: self.hash.ok_or("Missing hash".to_string())?,
                     }),
                     ("snapshot", "delete") => Ok(EventNotification::SnapshotDeleted {
                         stream_id: A::from_string(self.stream_id),
-                        aggregate_id: self
-                            .aggregate_id
-                            .ok_or("Missing aggregate_id".to_string())?,
+                        aggregate_id: self.aggregate_id.ok_or("Missing aggregate_id".to_string())?,
                         version: self.version.unwrap_or(0),
                     }),
                     (ty, op) => Err(format!("Invalid event: [{op},{ty}]")),
@@ -151,9 +147,7 @@ where
 
     async fn unlisten_to_stream_updates(&self) -> Result<(), EventSourceError> {
         let client = self.client.get().await.map_err(DBError::PGPoolError)?;
-        client
-            .unlisten(&format!("es_notification_{}", E::NAME))
-            .await?;
+        client.unlisten(&format!("es_notification_{}", E::NAME)).await?;
         Ok(())
     }
 }

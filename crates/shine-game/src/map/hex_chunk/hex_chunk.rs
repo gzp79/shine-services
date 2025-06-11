@@ -93,9 +93,7 @@ where
     type Item = (AxialCoord, &'a C::Tile);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.spiral
-            .next()
-            .map(|coord| (coord, self.chunk.get(coord)))
+        self.spiral.next().map(|coord| (coord, self.chunk.get(coord)))
     }
 }
 

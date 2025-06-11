@@ -79,11 +79,7 @@ fn spawn_world(
     commands.spawn(camera).insert(POCEntity);
 }
 
-fn despawn_world(
-    mut windows: Query<&mut Window>,
-    to_despawn: Query<Entity, With<POCEntity>>,
-    mut commands: Commands,
-) {
+fn despawn_world(mut windows: Query<&mut Window>, to_despawn: Query<Entity, With<POCEntity>>, mut commands: Commands) {
     let mut window = windows.single_mut().unwrap();
     window.cursor_options.grab_mode = CursorGrabMode::None;
     window.title = String::new();
@@ -131,10 +127,7 @@ fn handle_input(
     }
 }
 
-fn update_camera(
-    mut query: Query<(&mut Transform, &mut CameraRig), With<Camera3d>>,
-    time: Res<Time>,
-) {
+fn update_camera(mut query: Query<(&mut Transform, &mut CameraRig), With<Camera3d>>, time: Res<Time>) {
     for (mut transform, mut rig) in query.iter_mut() {
         *transform = rig.update(time.delta_secs());
     }

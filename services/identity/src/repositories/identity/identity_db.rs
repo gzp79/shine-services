@@ -8,7 +8,5 @@ pub trait IdentityDbContext<'c>:
 }
 
 pub trait IdentityDb: Send + Sync {
-    fn create_context(
-        &self,
-    ) -> impl Future<Output = Result<impl IdentityDbContext<'_>, IdentityError>> + Send;
+    fn create_context(&self) -> impl Future<Output = Result<impl IdentityDbContext<'_>, IdentityError>> + Send;
 }

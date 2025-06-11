@@ -1,7 +1,4 @@
-use crate::map::{
-    ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkId, ChunkOperation, ChunkRoot, MapChunk,
-    MapConfig,
-};
+use crate::map::{ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkId, ChunkOperation, ChunkRoot, MapChunk, MapConfig};
 use bevy::{
     ecs::{
         event::EventWriter,
@@ -65,9 +62,7 @@ where
     H: ChunkHasher<C>,
 {
     fn clone(&self) -> Self {
-        Self {
-            queue: self.queue.clone(),
-        }
+        Self { queue: self.queue.clone() }
     }
 }
 
@@ -180,8 +175,7 @@ pub fn process_layer_commands_system<CFG, C, O, H>(
                         "Chunk [{:?}]: Hash cleared and stored [{}] -> [{}]",
                         chunk_id,
                         chunk_version.version,
-                        serde_json::to_string(hash_track.get(chunk_version.version).unwrap())
-                            .unwrap()
+                        serde_json::to_string(hash_track.get(chunk_version.version).unwrap()).unwrap()
                     );
                 }
             }
@@ -189,18 +183,10 @@ pub fn process_layer_commands_system<CFG, C, O, H>(
 
         // apply operations by version
         if !chunk_commands.is_empty() {
-            log::debug!(
-                "Chunk [{:?}]: Applying {} operations",
-                chunk_id,
-                chunk_operations.len()
-            );
+            log::debug!("Chunk [{:?}]: Applying {} operations", chunk_id, chunk_operations.len());
             while let Some((version, operation)) = chunk_operations.pop_first() {
                 if version <= chunk_version.version {
-                    log::trace!(
-                        "Chunk [{:?}]: Operation is too old {}, ignoring",
-                        chunk_id,
-                        version
-                    );
+                    log::trace!("Chunk [{:?}]: Operation is too old {}, ignoring", chunk_id, version);
                 } else if version == chunk_version.version + 1 {
                     if operation.check_precondition(&chunk) {
                         operation.apply(&mut *chunk);
@@ -212,8 +198,7 @@ pub fn process_layer_commands_system<CFG, C, O, H>(
                             "Chunk [{:?}]: Hash stored [{}] -> [{}]",
                             chunk_id,
                             chunk_version.version,
-                            serde_json::to_string(hash_track.get(chunk_version.version).unwrap())
-                                .unwrap()
+                            serde_json::to_string(hash_track.get(chunk_version.version).unwrap()).unwrap()
                         );
                     }
                 } else {

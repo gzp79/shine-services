@@ -1,7 +1,7 @@
 use crate::map::{
-    client, create_layer_system, process_layer_commands_system, process_map_event_system,
-    remove_layer_system, remove_rejected_chunks_system, ChunkCommandQueue, ChunkEvent, ChunkHasher,
-    ChunkLayer, ChunkOperation, GridChunk, GridConfig, LayerSetup, NullHasher,
+    client, create_layer_system, process_layer_commands_system, process_map_event_system, remove_layer_system,
+    remove_rejected_chunks_system, ChunkCommandQueue, ChunkEvent, ChunkHasher, ChunkLayer, ChunkOperation, GridChunk,
+    GridConfig, LayerSetup, NullHasher,
 };
 use bevy::{
     app::{App, PostUpdate, PreUpdate, Update},

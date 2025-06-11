@@ -1,17 +1,16 @@
 use bevy::{app::App, ecs::event::Events, DefaultPlugins};
 use shine_game::map::{
-    client, ChunkCommand, ChunkCommandQueue, ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkId,
-    ChunkLayer, ChunkLayerSetup, ChunkOperation, ChunkRoot, ChunkVersion, DenseGridChunk,
-    GridChunk, LayerSetup, MapChunk, MapChunkTracker, MapEvent, MapPlugin, SparseGridChunk,
+    client, ChunkCommand, ChunkCommandQueue, ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkId, ChunkLayer,
+    ChunkLayerSetup, ChunkOperation, ChunkRoot, ChunkVersion, DenseGridChunk, GridChunk, LayerSetup, MapChunk,
+    MapChunkTracker, MapEvent, MapPlugin, SparseGridChunk,
 };
 use shine_test::test;
 use std::fmt;
 
 mod shared;
 use shared::{
-    test_init_bevy, DenseGridU8, DenseGridU8Hasher, GridU8Operation, SparseGridU8,
-    SparseGridU8Hasher, TestData, TestDataHasher, TestDataLayerSetup, TestDataOperation,
-    TestGridConfig,
+    test_init_bevy, DenseGridU8, DenseGridU8Hasher, GridU8Operation, SparseGridU8, SparseGridU8Hasher, TestData,
+    TestDataHasher, TestDataLayerSetup, TestDataOperation, TestGridConfig,
 };
 
 const WIDTH: usize = 16;
@@ -30,11 +29,7 @@ trait TestCase {
 
     fn has_hash_tracker(&self) -> bool;
     fn test_empty_chunk(&self, chunk: &Self::Chunk);
-    fn test_default_chunk(
-        &self,
-        chunk: &Self::Chunk,
-        hash: Option<&<Self::Hasher as ChunkHasher<Self::Chunk>>::Hash>,
-    );
+    fn test_default_chunk(&self, chunk: &Self::Chunk, hash: Option<&<Self::Hasher as ChunkHasher<Self::Chunk>>::Hash>);
 }
 
 async fn test_chunk_impl<T>(test_case: T)
@@ -49,11 +44,8 @@ where
         let command_queue = ChunkCommandQueue::<T::Chunk, T::Operation, T::Hasher>::new();
 
         app.add_plugins(DefaultPlugins).add_plugins(
-            MapPlugin::new(TestGridConfig {
-                width: WIDTH,
-                height: HEIGHT,
-            })
-            .with_layer(test_case.layer(command_queue.clone())),
+            MapPlugin::new(TestGridConfig { width: WIDTH, height: HEIGHT })
+                .with_layer(test_case.layer(command_queue.clone())),
         );
 
         command_queue
@@ -81,10 +73,7 @@ where
             assert_eq!(layer.get_entity(chunk_id), Some(chunk_entity));
             assert_eq!(layer.get_chunk_id(chunk_entity), Some(chunk_id));
 
-            let (chunk_root, test_data) = app
-                .world()
-                .entity(chunk_entity)
-                .components::<(&ChunkRoot, &T::Chunk)>();
+            let (chunk_root, test_data) = app.world().entity(chunk_entity).components::<(&ChunkRoot, &T::Chunk)>();
             assert_eq!(chunk_root.id, chunk_id);
             assert!(test_data.is_empty());
             test_case.test_empty_chunk(test_data);
@@ -105,9 +94,7 @@ where
 
         log::debug!("Check if events were sent");
         {
-            let mut events = app
-                .world_mut()
-                .resource_mut::<Events<ChunkEvent<T::Chunk>>>();
+            let mut events = app.world_mut().resource_mut::<Events<ChunkEvent<T::Chunk>>>();
             let mut event_reader = events.get_cursor();
             let event = event_reader.read(&*events).next().unwrap();
             match event {
@@ -130,10 +117,10 @@ where
 
         log::debug!("Check if the chunk is empty");
         {
-            let (chunk_root, chunk_version, test_data) = app
-                .world()
-                .entity(chunk_entity)
-                .components::<(&ChunkRoot, &ChunkVersion<T::Chunk>, &T::Chunk)>();
+            let (chunk_root, chunk_version, test_data) =
+                app.world()
+                    .entity(chunk_entity)
+                    .components::<(&ChunkRoot, &ChunkVersion<T::Chunk>, &T::Chunk)>();
             let hash_tracker = app
                 .world()
                 .entity(chunk_entity)
@@ -232,12 +219,8 @@ impl TestCase for DenseGridTestCase {
         &self,
         command_queue: ChunkCommandQueue<Self::Chunk, Self::Operation, Self::Hasher>,
     ) -> impl LayerSetup<TestGridConfig> {
-        let mut layer = ChunkLayerSetup::<
-            Self::Chunk,
-            Self::Operation,
-            Self::Hasher,
-            Self::ClientEventService,
-        >::new(command_queue);
+        let mut layer =
+            ChunkLayerSetup::<Self::Chunk, Self::Operation, Self::Hasher, Self::ClientEventService>::new(command_queue);
         if self.with_hasher {
             layer = layer.with_hash_tracker(DenseGridU8Hasher);
         }
@@ -309,12 +292,8 @@ impl TestCase for SparseGridTestCase {
         &self,
         command_queue: ChunkCommandQueue<Self::Chunk, Self::Operation, Self::Hasher>,
     ) -> impl LayerSetup<TestGridConfig> {
-        let mut layer = ChunkLayerSetup::<
-            Self::Chunk,
-            Self::Operation,
-            Self::Hasher,
-            Self::ClientEventService,
-        >::new(command_queue);
+        let mut layer =
+            ChunkLayerSetup::<Self::Chunk, Self::Operation, Self::Hasher, Self::ClientEventService>::new(command_queue);
         if self.with_hasher {
             layer = layer.with_hash_tracker(SparseGridU8Hasher);
         }

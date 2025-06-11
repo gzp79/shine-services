@@ -17,12 +17,8 @@ pub enum EmailSenderError {
 impl From<EmailSenderError> for Problem {
     fn from(err: EmailSenderError) -> Self {
         match err {
-            EmailSenderError::InvalidEmailAddress => {
-                Problem::bad_request(INVALID_EMAIL).with_detail(err.to_string())
-            }
-            EmailSenderError::InvalidContent => {
-                Problem::bad_request(INVALID_CONTENT).with_detail(err.to_string())
-            }
+            EmailSenderError::InvalidEmailAddress => Problem::bad_request(INVALID_EMAIL).with_detail(err.to_string()),
+            EmailSenderError::InvalidContent => Problem::bad_request(INVALID_CONTENT).with_detail(err.to_string()),
 
             err => Problem::internal_error()
                 .with_detail(err.to_string())

@@ -2,8 +2,7 @@ use async_trait::async_trait;
 use azure_core::credentials::TokenCredential;
 use azure_security_keyvault_secrets::SecretClient;
 use config::{
-    AsyncSource as ConfigAsyncSource, ConfigError, Map as ConfigMap, Value as ConfigValue,
-    ValueKind as ConfigValueKind,
+    AsyncSource as ConfigAsyncSource, ConfigError, Map as ConfigMap, Value as ConfigValue, ValueKind as ConfigValueKind,
 };
 use core::fmt;
 use futures::TryStreamExt;
@@ -38,8 +37,7 @@ impl AzureKeyvaultConfigSource {
         azure_credentials: Arc<dyn TokenCredential>,
         keyvault_url: &str,
     ) -> Result<AzureKeyvaultConfigSource, ConfigError> {
-        let client = SecretClient::new(keyvault_url, azure_credentials, None)
-            .map_err(AzureKeyvaultConfigError)?;
+        let client = SecretClient::new(keyvault_url, azure_credentials, None).map_err(AzureKeyvaultConfigError)?;
         Ok(Self {
             keyvault_url: keyvault_url.to_owned(),
             client: Arc::new(client),
@@ -60,11 +58,7 @@ impl ConfigAsyncSource for AzureKeyvaultConfigSource {
             .map_err(AzureKeyvaultConfigError)?
             .into_stream();
         while let Some(response) = stream.try_next().await.map_err(AzureKeyvaultConfigError)? {
-            let secrets = response
-                .into_body()
-                .await
-                .map_err(AzureKeyvaultConfigError)?
-                .value;
+            let secrets = response.into_body().await.map_err(AzureKeyvaultConfigError)?.value;
 
             for raw in secrets {
                 if let Some(id) = raw.id {

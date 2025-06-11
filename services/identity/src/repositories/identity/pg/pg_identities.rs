@@ -1,6 +1,4 @@
-use crate::repositories::identity::{
-    Identities, Identity, IdentityBuildError, IdentityError, IdentityKind,
-};
+use crate::repositories::identity::{Identities, Identity, IdentityBuildError, IdentityError, IdentityKind};
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
@@ -150,17 +148,11 @@ impl Identities for PgIdentityDbContext<'_> {
         {
             Ok(created) => created,
             Err(err) if err.is_constraint("identities", "identities_pkey") => {
-                log::info!(
-                    "Conflicting user id: {}, rolling back user creation",
-                    user_id
-                );
+                log::info!("Conflicting user id: {}, rolling back user creation", user_id);
                 return Err(IdentityError::UserIdConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_name") => {
-                log::info!(
-                    "Conflicting name: {}, rolling back user creation",
-                    user_name
-                );
+                log::info!("Conflicting name: {}, rolling back user creation", user_name);
                 return Err(IdentityError::NameConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_email") => {
@@ -228,13 +220,7 @@ impl Identities for PgIdentityDbContext<'_> {
         let identity_row = match self
             .stmts_identities
             .update
-            .query_opt(
-                &self.client,
-                &id,
-                &name,
-                &email.map(|x| x.0),
-                &email.map(|x| x.1),
-            )
+            .query_opt(&self.client, &id, &name, &email.map(|x| x.0), &email.map(|x| x.1))
             .await
         {
             Ok(Some(row)) => row,

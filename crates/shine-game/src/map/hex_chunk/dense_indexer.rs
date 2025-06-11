@@ -72,10 +72,7 @@ mod tests {
         assert_eq!(total_size, coords.len());
 
         // Get dense indices for all coordinates
-        let mut indices: Vec<_> = coords
-            .iter()
-            .map(|coord| indexer.get_dense_index(coord))
-            .collect();
+        let mut indices: Vec<_> = coords.iter().map(|coord| indexer.get_dense_index(coord)).collect();
         indices.sort_unstable();
 
         // Check if indices are continuous from 0 to len-1

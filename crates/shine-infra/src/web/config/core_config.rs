@@ -26,8 +26,7 @@ impl CoreConfig {
     pub fn new(stage: &str, config_file: Option<PathBuf>) -> Result<Self, ConfigError> {
         log::info!("Loading configuration for {}", stage);
 
-        let root_file = config_file
-            .unwrap_or_else(|| Path::new(&format!("server_config.{}.json", stage)).to_owned());
+        let root_file = config_file.unwrap_or_else(|| Path::new(&format!("server_config.{}.json", stage)).to_owned());
         let mut builder = Config::builder().add_source(File::from(root_file.as_path()));
 
         let version_path = Path::new(DEFAULT_VERSION_CONFIG_FILE);
@@ -75,19 +74,11 @@ impl CoreConfig {
         }
 
         let mut layers = Vec::with_capacity(self.before_layers.len() + self.after_layers.len() + 1);
-        for l in self
-            .before_layers
-            .iter()
-            .map(|x| Layer::from_layer(x.as_str()))
-        {
+        for l in self.before_layers.iter().map(|x| Layer::from_layer(x.as_str())) {
             layers.push(l?);
         }
         layers.push(Layer::Base);
-        for l in self
-            .after_layers
-            .iter()
-            .map(|x| Layer::from_layer(x.as_str()))
-        {
+        for l in self.after_layers.iter().map(|x| Layer::from_layer(x.as_str())) {
             layers.push(l?);
         }
 
@@ -125,43 +116,32 @@ impl CoreConfig {
                         cause: "Missing azure keyvault location".into(),
                     })?;
                     if azure_credentials.is_none() {
-                        azure_credentials =
-                            if let (Some(tenant_id), Some(client_id), Some(client_secret)) = (
-                                env::var("AZURE_TENANT_ID").ok(),
-                                env::var("AZURE_CLIENT_ID").ok(),
-                                env::var("AZURE_CLIENT_SECRET").ok(),
-                            ) {
-                                let credentials: Arc<dyn TokenCredential> =
-                                    ClientSecretCredential::new(
-                                        &tenant_id,
-                                        client_id,
-                                        client_secret.into(),
-                                        None,
-                                    )
-                                    .map_err(|err| {
-                                        ConfigError::FileParse {
-                                            uri: Some(url.to_owned()),
-                                            cause: err.into(),
-                                        }
+                        azure_credentials = if let (Some(tenant_id), Some(client_id), Some(client_secret)) = (
+                            env::var("AZURE_TENANT_ID").ok(),
+                            env::var("AZURE_CLIENT_ID").ok(),
+                            env::var("AZURE_CLIENT_SECRET").ok(),
+                        ) {
+                            let credentials: Arc<dyn TokenCredential> =
+                                ClientSecretCredential::new(&tenant_id, client_id, client_secret.into(), None)
+                                    .map_err(|err| ConfigError::FileParse {
+                                        uri: Some(url.to_owned()),
+                                        cause: err.into(),
                                     })?;
-                                log::info!("Getting azure credentials through environment...");
-                                Some(credentials)
-                            } else {
-                                log::info!("Getting azure credentials through azure cli...");
-                                let credentials: Arc<dyn TokenCredential> =
-                                    AzureCliCredential::new(None).map_err(|err| {
-                                        ConfigError::FileParse {
-                                            uri: Some(url.to_owned()),
-                                            cause: err.into(),
-                                        }
-                                    })?;
-                                Some(credentials)
-                            };
+                            log::info!("Getting azure credentials through environment...");
+                            Some(credentials)
+                        } else {
+                            log::info!("Getting azure credentials through azure cli...");
+                            let credentials: Arc<dyn TokenCredential> =
+                                AzureCliCredential::new(None).map_err(|err| ConfigError::FileParse {
+                                    uri: Some(url.to_owned()),
+                                    cause: err.into(),
+                                })?;
+                            Some(credentials)
+                        };
                     }
                     let azure_credentials = azure_credentials.clone().unwrap();
                     let keyvault_url = format!("https://{}", path);
-                    let keyvault =
-                        AzureKeyvaultConfigSource::new(azure_credentials.clone(), &keyvault_url)?;
+                    let keyvault = AzureKeyvaultConfigSource::new(azure_credentials.clone(), &keyvault_url)?;
                     builder = builder.add_async_source(keyvault);
                 }
                 Layer::Config(schema, url, _) => {

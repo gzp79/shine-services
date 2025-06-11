@@ -44,10 +44,7 @@ impl<T: PGRawConnection> PGConnection<T> {
     }
 
     #[inline]
-    pub async fn get_prepared_statement(
-        &self,
-        prepared_id: PGStatementId,
-    ) -> Result<Statement, PGError> {
+    pub async fn get_prepared_statement(&self, prepared_id: PGStatementId) -> Result<Statement, PGError> {
         {
             let prepared_statements = self.prepared_statements.read().await;
             if let Some(prepared_statements) = prepared_statements.get(&prepared_id.0) {

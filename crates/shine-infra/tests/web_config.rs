@@ -51,15 +51,11 @@ async fn test_web_config_with_env() {
     env::set_var("SHINE--FEATURE--SOME_DATA--OVERRIDE_VALUE", "from env");
     env::set_var("SHINE--FEATURE--SOME_DATA--ENV_VALUE", "from env");
 
-    let config =
-        WebAppConfig::<Feature>::load("dev", Some(format!("{CONFIG_ROOT}/env.json").into()))
-            .await
-            .unwrap();
+    let config = WebAppConfig::<Feature>::load("dev", Some(format!("{CONFIG_ROOT}/env.json").into()))
+        .await
+        .unwrap();
     assert_eq!(config.service.captcha_secret, "from env");
     assert_eq!(config.feature.some_data.file_value, "from file");
     assert_eq!(config.feature.some_data.override_value, "from env");
-    assert_eq!(
-        config.feature.some_data.env_value.as_deref(),
-        Some("from env")
-    );
+    assert_eq!(config.feature.some_data.env_value.as_deref(), Some("from env"));
 }

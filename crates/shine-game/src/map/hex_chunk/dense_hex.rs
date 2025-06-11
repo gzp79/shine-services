@@ -1,7 +1,5 @@
 use crate::hex::AxialCoord;
-use crate::map::{
-    DenseHexChunk, HexChunk, HexChunkTypes, HexConfig, HexDenseIndexer, MapChunk, Tile,
-};
+use crate::map::{DenseHexChunk, HexChunk, HexChunkTypes, HexConfig, HexDenseIndexer, MapChunk, Tile};
 use bevy::ecs::component::Component;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 

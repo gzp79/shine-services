@@ -35,10 +35,7 @@ impl<S: States> Plugin for CameraPlugin<S> {
         app.add_plugins(InputManagerPlugin::<CameraAction>::default());
 
         app.add_systems(OnEnter(self.state.clone()), spawn_camera);
-        app.add_systems(
-            Update,
-            (camera_control_system).run_if(in_state(self.state.clone())),
-        );
+        app.add_systems(Update, (camera_control_system).run_if(in_state(self.state.clone())));
     }
 }
 

@@ -36,9 +36,7 @@ pub async fn put_telemetry_config(
 
     log::trace!("reconfigure telemetry: {:#?}", body);
     telemetry
-        .set_configuration(DynConfig {
-            filter: body.filter,
-        })
+        .set_configuration(DynConfig { filter: body.filter })
         .map_err(|err| err.into_response(&problem_config))?;
 
     Ok(())
@@ -67,7 +65,5 @@ pub async fn get_telemetry_config(
         .get_configuration()
         .map_err(|err| err.into_response(&problem_config))?;
 
-    Ok(Json(TraceConfig {
-        filter: config.filter,
-    }))
+    Ok(Json(TraceConfig { filter: config.filter }))
 }

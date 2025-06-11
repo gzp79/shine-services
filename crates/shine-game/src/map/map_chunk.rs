@@ -43,17 +43,11 @@ where
     C: MapChunk,
 {
     pub fn new() -> Self {
-        Self {
-            version: 0,
-            ph: PhantomData,
-        }
+        Self { version: 0, ph: PhantomData }
     }
 
     pub fn with_version(version: usize) -> Self {
-        Self {
-            version,
-            ph: PhantomData,
-        }
+        Self { version, ph: PhantomData }
     }
 }
 

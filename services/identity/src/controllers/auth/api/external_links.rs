@@ -102,9 +102,7 @@ pub async fn delete_external_link(
             params.provider, params.provider_id
         ))
         .ok();
-        Err(Problem::not_found()
-            .with_instance(url)
-            .into_response(&problem_config))
+        Err(Problem::not_found().with_instance(url).into_response(&problem_config))
     } else {
         Ok(())
     }

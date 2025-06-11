@@ -52,17 +52,8 @@ pub async fn email_login(
 
     log::debug!("Query: {:#?}", query);
 
-    if let Err(err) = state
-        .captcha_validator()
-        .validate(query.captcha.as_deref())
-        .await
-    {
-        return PageUtils::new(&state).error(
-            auth_session,
-            err,
-            query.error_url.as_ref(),
-            query.redirect_url.as_ref(),
-        );
+    if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
+        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), query.redirect_url.as_ref());
     };
 
     log::debug!("Email registration flow triggered...");
@@ -96,10 +87,5 @@ pub async fn email_login(
     };
 
     log::info!("Email flow completed for: {}", identity.id);
-    PageUtils::new(&state).error(
-        auth_session,
-        AuthError::EmailLogin,
-        query.error_url.as_ref(),
-        None,
-    )
+    PageUtils::new(&state).error(auth_session, AuthError::EmailLogin, query.error_url.as_ref(), None)
 }

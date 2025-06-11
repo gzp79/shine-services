@@ -42,9 +42,7 @@ pub enum ExternalLoginError {
 impl From<ExternalLoginError> for Problem {
     fn from(value: ExternalLoginError) -> Self {
         match value {
-            ExternalLoginError::MissingExternalLoginCookie => {
-                Problem::bad_request(EXTERNAL_MISSING_COOKIE)
-            }
+            ExternalLoginError::MissingExternalLoginCookie => Problem::bad_request(EXTERNAL_MISSING_COOKIE),
             ExternalLoginError::MissingNonce => Problem::bad_request(EXTERNAL_INVALID_NONCE),
             ExternalLoginError::InvalidCSRF => Problem::bad_request(EXTERNAL_INVALID_CSRF),
             ExternalLoginError::TokenExchangeFailed(error) => {
@@ -110,18 +108,10 @@ impl From<AuthError> for Problem {
     fn from(value: AuthError) -> Self {
         match value {
             AuthError::LoginRequired => Problem::unauthorized_ty(LOGIN_REQUIRED),
-            AuthError::InvalidHeader => {
-                Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("invalidHeader")
-            }
-            AuthError::TokenExpired => {
-                Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("expiredToken")
-            }
-            AuthError::InvalidToken => {
-                Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("invalidToken")
-            }
-            AuthError::EmailConflict => {
-                Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("emailConflict")
-            }
+            AuthError::InvalidHeader => Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("invalidHeader"),
+            AuthError::TokenExpired => Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("expiredToken"),
+            AuthError::InvalidToken => Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("invalidToken"),
+            AuthError::EmailConflict => Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("emailConflict"),
             AuthError::SessionExpired => Problem::unauthorized_ty(SESSION_EXPIRED),
             AuthError::ProviderAlreadyUsed => Problem::conflict(EXTERNAL_ID_CONFLICT),
             AuthError::EmailAlreadyUsed => Problem::conflict(EMAIL_CONFLICT),
@@ -165,9 +155,7 @@ impl From<AuthError> for Problem {
             AuthError::UserInfoError(error) => {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
-            AuthError::InternalServerError(error) => {
-                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(error)
-            }
+            AuthError::InternalServerError(error) => Problem::internal_error_ty(AUTH_ERROR).with_sensitive(error),
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::repositories::identity::{
-    ExternalLink, ExternalLinks, ExternalUserInfo, IdSequences, Identities, Identity, IdentityDb,
-    IdentityError, IdentitySearch, Roles, SearchIdentity, TokenInfo, TokenKind, Tokens,
+    ExternalLink, ExternalLinks, ExternalUserInfo, IdSequences, Identities, Identity, IdentityDb, IdentityError,
+    IdentitySearch, Roles, SearchIdentity, TokenInfo, TokenKind, Tokens,
 };
 use chrono::Duration;
 use ring::digest;
@@ -55,11 +55,7 @@ where
         if let Some(external_user_info) = external_user_info {
             if let Err(err) = db.link_user(user_id, external_user_info).await {
                 if let Err(err) = db.cascaded_delete(user_id).await {
-                    log::error!(
-                        "Failed to delete user ({}) after failed link: {}",
-                        user_id,
-                        err
-                    );
+                    log::error!("Failed to delete user ({}) after failed link: {}", user_id, err);
                 }
                 return Err(err);
             }
@@ -67,9 +63,7 @@ where
 
         self.event_bus.publish(&UserEvent::Created(user_id)).await;
         if external_user_info.is_some() {
-            self.event_bus
-                .publish(&UserLinkEvent::Linked(user_id))
-                .await;
+            self.event_bus.publish(&UserLinkEvent::Linked(user_id)).await;
         }
 
         Ok(identity)
@@ -124,9 +118,7 @@ where
     ) -> Result<(), IdentityError> {
         let mut db = self.db.create_context().await?;
         db.link_user(user_id, external_user).await?;
-        self.event_bus
-            .publish(&UserLinkEvent::Linked(user_id))
-            .await;
+        self.event_bus.publish(&UserLinkEvent::Linked(user_id)).await;
         Ok(())
     }
 
@@ -139,9 +131,7 @@ where
         let mut db = self.db.create_context().await?;
         match db.delete_link(user_id, provider, provider_id).await? {
             Some(_) => {
-                self.event_bus
-                    .publish(&UserLinkEvent::Unlinked(user_id))
-                    .await;
+                self.event_bus.publish(&UserLinkEvent::Unlinked(user_id)).await;
                 Ok(Some(()))
             }
             None => Ok(None),
@@ -153,10 +143,7 @@ where
         db.is_linked(user_id).await
     }
 
-    pub async fn list_external_links_by_user(
-        &self,
-        user_id: Uuid,
-    ) -> Result<Vec<ExternalLink>, IdentityError> {
+    pub async fn list_external_links_by_user(&self, user_id: Uuid) -> Result<Vec<ExternalLink>, IdentityError> {
         let mut db = self.db.create_context().await?;
         db.find_all_links(user_id).await
     }
@@ -190,18 +177,12 @@ where
         .await
     }
 
-    pub async fn find_token_by_hash(
-        &self,
-        token_hash: &str,
-    ) -> Result<Option<TokenInfo>, IdentityError> {
+    pub async fn find_token_by_hash(&self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError> {
         let mut db = self.db.create_context().await?;
         db.find_by_hash(token_hash).await
     }
 
-    pub async fn list_all_tokens_by_user(
-        &self,
-        user_id: &Uuid,
-    ) -> Result<Vec<TokenInfo>, IdentityError> {
+    pub async fn list_all_tokens_by_user(&self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
         let mut db = self.db.create_context().await?;
         db.find_by_user(user_id).await
     }
@@ -228,11 +209,7 @@ where
         db.take_token(allowed_kind, &token_hash).await
     }
 
-    pub async fn delete_token(
-        &self,
-        kind: TokenKind,
-        token: &str,
-    ) -> Result<Option<()>, IdentityError> {
+    pub async fn delete_token(&self, kind: TokenKind, token: &str) -> Result<Option<()>, IdentityError> {
         let mut db = self.db.create_context().await?;
         let token_hash = hash_token(token);
         db.delete_token_by_hash(kind, &token_hash).await
@@ -247,25 +224,15 @@ where
         db.delete_token_by_user(user_id, token_hash).await
     }
 
-    pub async fn delete_all_tokens_by_user(
-        &self,
-        user_id: Uuid,
-        kinds: &[TokenKind],
-    ) -> Result<(), IdentityError> {
+    pub async fn delete_all_tokens_by_user(&self, user_id: Uuid, kinds: &[TokenKind]) -> Result<(), IdentityError> {
         let mut db = self.db.create_context().await?;
         db.delete_all_token_by_user(user_id, kinds).await
     }
 
-    pub async fn add_role(
-        &self,
-        user_id: Uuid,
-        role: &str,
-    ) -> Result<Option<Vec<String>>, IdentityError> {
+    pub async fn add_role(&self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         let mut db = self.db.create_context().await?;
         if let Some(roles) = db.add_role(user_id, role).await? {
-            self.event_bus
-                .publish(&UserEvent::RoleChange(user_id))
-                .await;
+            self.event_bus.publish(&UserEvent::RoleChange(user_id)).await;
             Ok(Some(roles))
         } else {
             Ok(None)
@@ -277,16 +244,10 @@ where
         db.get_roles(user_id).await
     }
 
-    pub async fn delete_role(
-        &self,
-        user_id: Uuid,
-        role: &str,
-    ) -> Result<Option<Vec<String>>, IdentityError> {
+    pub async fn delete_role(&self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         let mut db = self.db.create_context().await?;
         if let Some(roles) = db.delete_role(user_id, role).await? {
-            self.event_bus
-                .publish(&UserEvent::RoleChange(user_id))
-                .await;
+            self.event_bus.publish(&UserEvent::RoleChange(user_id)).await;
             Ok(Some(roles))
         } else {
             Ok(None)

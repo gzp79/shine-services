@@ -11,9 +11,7 @@ pub enum SessionError {
 impl From<SessionError> for Problem {
     fn from(value: SessionError) -> Self {
         match value {
-            SessionError::UserAlreadyConnected => {
-                Problem::new(StatusCode::CONFLICT, "User already connected")
-            }
+            SessionError::UserAlreadyConnected => Problem::new(StatusCode::CONFLICT, "User already connected"),
         }
     }
 }

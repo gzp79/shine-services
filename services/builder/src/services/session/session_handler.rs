@@ -15,11 +15,7 @@ impl SessionHandler {
         }
     }
 
-    pub async fn acquire_session(
-        &self,
-        session_id: &Uuid,
-        user_id: &Uuid,
-    ) -> Result<Arc<Session>, SessionError> {
+    pub async fn acquire_session(&self, session_id: &Uuid, user_id: &Uuid) -> Result<Arc<Session>, SessionError> {
         let mut sessions = self.sessions.write().await;
         let session = sessions
             .entry(*session_id)

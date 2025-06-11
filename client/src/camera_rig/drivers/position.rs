@@ -8,9 +8,7 @@ pub struct Position {
 
 impl Default for Position {
     fn default() -> Self {
-        Self {
-            position: Vec3::ZERO,
-        }
+        Self { position: Vec3::ZERO }
     }
 }
 

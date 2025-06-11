@@ -31,11 +31,7 @@ where
         let area = width * height;
         let mut data = Vec::with_capacity(area);
         data.resize_with(area, <T::Tile as Default>::default);
-        Self {
-            width,
-            height,
-            data,
-        }
+        Self { width, height, data }
     }
 }
 

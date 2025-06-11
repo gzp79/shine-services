@@ -74,8 +74,5 @@ pub trait Sessions {
         session_key_hash: &str,
     ) -> impl Future<Output = Result<(), SessionError>> + Send;
 
-    fn delete_all_sessions_by_user(
-        &mut self,
-        user_id: Uuid,
-    ) -> impl Future<Output = Result<(), SessionError>> + Send;
+    fn delete_all_sessions_by_user(&mut self, user_id: Uuid) -> impl Future<Output = Result<(), SessionError>> + Send;
 }

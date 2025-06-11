@@ -1,7 +1,5 @@
 use anyhow::Error as AnyError;
-use oauth2::{
-    ClientId, ClientSecret, EndpointMaybeSet, EndpointNotSet, EndpointSet, RedirectUrl, Scope,
-};
+use oauth2::{ClientId, ClientSecret, EndpointMaybeSet, EndpointNotSet, EndpointSet, RedirectUrl, Scope};
 use openidconnect::{
     core::{CoreClient as OIDCCoreClient, CoreProviderMetadata},
     IssuerUrl,
@@ -36,14 +34,7 @@ type CoreClient<
     HasRevocationUrl = EndpointNotSet,
     HasTokenUrl = EndpointMaybeSet,
     HasUserInfoUrl = EndpointMaybeSet,
-> = OIDCCoreClient<
-    HasAuthUrl,
-    HasDeviceAuthUrl,
-    HasIntrospectionUrl,
-    HasRevocationUrl,
-    HasTokenUrl,
-    HasUserInfoUrl,
->;
+> = OIDCCoreClient<HasAuthUrl, HasDeviceAuthUrl, HasIntrospectionUrl, HasRevocationUrl, HasTokenUrl, HasUserInfoUrl>;
 
 #[derive(Clone)]
 struct CachedClient {
@@ -86,11 +77,7 @@ impl OIDCClient {
 
         let client = Self {
             provider: provider.to_string(),
-            scopes: config
-                .scopes
-                .iter()
-                .map(|scope| Scope::new(scope.clone()))
-                .collect(),
+            scopes: config.scopes.iter().map(|scope| Scope::new(scope.clone())).collect(),
             client_info: ClientInfo {
                 client_id,
                 client_secret,
@@ -120,36 +107,31 @@ impl OIDCClient {
                 if age < self.client_info.ttl_client {
                     return Ok(cached_client.client.clone());
                 }
-                log::warn!(
-                    "Discovery expired({}s) for {} ",
-                    self.provider,
-                    age.as_secs()
-                );
+                log::warn!("Discovery expired({}s) for {} ", self.provider, age.as_secs());
             }
         }
 
         // get client configuration from discovery
-        let client = {
-            let provider_metadata = match CoreProviderMetadata::discover_async(
-                client_info.discovery_url.clone(),
-                &self.http_client,
-            )
-            .await
+        let client =
             {
-                Ok(meta) => meta,
-                Err(err) => {
-                    log::warn!("Discovery failed for {}: {:#?}", self.provider, err);
-                    return Err(OIDCDiscoveryError(format!("{err:#?}")));
-                }
-            };
+                let provider_metadata =
+                    match CoreProviderMetadata::discover_async(client_info.discovery_url.clone(), &self.http_client)
+                        .await
+                    {
+                        Ok(meta) => meta,
+                        Err(err) => {
+                            log::warn!("Discovery failed for {}: {:#?}", self.provider, err);
+                            return Err(OIDCDiscoveryError(format!("{err:#?}")));
+                        }
+                    };
 
-            CoreClient::from_provider_metadata(
-                provider_metadata,
-                client_info.client_id.clone(),
-                client_info.client_secret.clone(),
-            )
-            .set_redirect_uri(client_info.redirect_url.clone())
-        };
+                CoreClient::from_provider_metadata(
+                    provider_metadata,
+                    client_info.client_id.clone(),
+                    client_info.client_secret.clone(),
+                )
+                .set_redirect_uri(client_info.redirect_url.clone())
+            };
 
         // cache the new client (last writer wins)
         {

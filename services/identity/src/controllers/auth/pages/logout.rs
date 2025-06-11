@@ -51,10 +51,7 @@ pub async fn logout(
                 //remove all non-api-key tokens
                 if let Err(err) = state
                     .identity_service()
-                    .delete_all_tokens_by_user(
-                        user_id,
-                        &[TokenKind::Access, TokenKind::SingleAccess],
-                    )
+                    .delete_all_tokens_by_user(user_id, &[TokenKind::Access, TokenKind::SingleAccess])
                     .await
                 {
                     return PageUtils::new(&state).error(
@@ -67,25 +64,14 @@ pub async fn logout(
 
                 log::debug!("Removing all the session for user {}", user_id);
                 if let Err(err) = state.session_service().remove_all(user_id).await {
-                    log::warn!(
-                        "Failed to clear all sessions for user {}: {:?}",
-                        user_id,
-                        err
-                    );
+                    log::warn!("Failed to clear all sessions for user {}: {:?}", user_id, err);
                 }
             }
             false => {
-                log::debug!(
-                    "Removing remember me token for user, if cookie is present {}",
-                    user_id
-                );
+                log::debug!("Removing remember me token for user, if cookie is present {}", user_id);
                 if let Some(token) = auth_session.access().map(|t| t.key.clone()) {
                     log::debug!("Removing token {} for user {}", token, user_id);
-                    if let Err(err) = state
-                        .identity_service()
-                        .delete_token(TokenKind::Access, &token)
-                        .await
-                    {
+                    if let Err(err) = state.identity_service().delete_token(TokenKind::Access, &token).await {
                         return PageUtils::new(&state).error(
                             auth_session,
                             err,

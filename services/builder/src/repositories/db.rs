@@ -32,10 +32,7 @@ impl DBPool {
     async fn migrate(&self) -> Result<(), DBError> {
         log::info!("Migrating database...");
         let mut backend = self.postgres.get().await.map_err(DBError::PGPoolError)?;
-        log::debug!(
-            "migrations: {:#?}",
-            embedded::migrations::runner().get_migrations()
-        );
+        log::debug!("migrations: {:#?}", embedded::migrations::runner().get_migrations());
         let client = &mut **backend;
         embedded::migrations::runner().run_async(client).await?;
         Ok(())

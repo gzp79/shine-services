@@ -78,11 +78,7 @@ fn spawn_world(
     commands.spawn(camera).insert(POCEntity);
 }
 
-fn despawn_world(
-    mut windows: Query<&mut Window>,
-    to_despawn: Query<Entity, With<POCEntity>>,
-    mut commands: Commands,
-) {
+fn despawn_world(mut windows: Query<&mut Window>, to_despawn: Query<Entity, With<POCEntity>>, mut commands: Commands) {
     let mut window = windows.single_mut().unwrap();
     window.title = String::new();
 
@@ -91,10 +87,7 @@ fn despawn_world(
     }
 }
 
-fn handle_input(
-    mut query: Query<&mut CameraRig, With<Camera3d>>,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-) {
+fn handle_input(mut query: Query<&mut CameraRig, With<Camera3d>>, keyboard_input: Res<ButtonInput<KeyCode>>) {
     for mut rig in query.iter_mut() {
         if keyboard_input.just_pressed(KeyCode::KeyZ) {
             rig.driver_mut::<YawPitch>().rotate_yaw_pitch(-90.0, 0.0);
@@ -105,10 +98,7 @@ fn handle_input(
     }
 }
 
-fn update_camera(
-    mut query: Query<(&mut Transform, &mut CameraRig), With<Camera3d>>,
-    time: Res<Time>,
-) {
+fn update_camera(mut query: Query<(&mut Transform, &mut CameraRig), With<Camera3d>>, time: Res<Time>) {
     for (mut transform, mut rig) in query.iter_mut() {
         *transform = rig.update(time.delta_secs());
     }

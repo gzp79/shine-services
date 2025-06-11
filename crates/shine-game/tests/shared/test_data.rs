@@ -4,9 +4,9 @@ use bevy::{
 };
 use serde::{Deserialize, Serialize};
 use shine_game::map::{
-    create_layer_system, process_layer_commands_system, process_map_event_system,
-    remove_layer_system, ChunkCommandQueue, ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkLayer,
-    ChunkOperation, GridConfig, LayerSetup, MapChunk, MapConfig,
+    create_layer_system, process_layer_commands_system, process_map_event_system, remove_layer_system,
+    ChunkCommandQueue, ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkLayer, ChunkOperation, GridConfig, LayerSetup,
+    MapChunk, MapConfig,
 };
 
 #[derive(Resource, Clone)]
@@ -109,9 +109,7 @@ impl TestDataLayerSetup {
         }
     }
 
-    pub fn new_with_queue(
-        command_queue: ChunkCommandQueue<TestData, TestDataOperation, TestDataHasher>,
-    ) -> Self {
+    pub fn new_with_queue(command_queue: ChunkCommandQueue<TestData, TestDataOperation, TestDataHasher>) -> Self {
         Self { command_queue }
     }
 }
@@ -137,12 +135,7 @@ impl LayerSetup<TestGridConfig> for TestDataLayerSetup {
 
         app.add_systems(
             Update,
-            process_layer_commands_system::<
-                TestGridConfig,
-                TestData,
-                TestDataOperation,
-                TestDataHasher,
-            >,
+            process_layer_commands_system::<TestGridConfig, TestData, TestDataOperation, TestDataHasher>,
         );
     }
 }

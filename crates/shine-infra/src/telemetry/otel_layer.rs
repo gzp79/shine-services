@@ -43,10 +43,7 @@ impl OtelLayer {
 
     #[must_use]
     pub fn meter(self, meter: Meter) -> Self {
-        OtelLayer {
-            meter: Some(meter),
-            ..self
-        }
+        OtelLayer { meter: Some(meter), ..self }
     }
 }
 
@@ -116,10 +113,7 @@ where
             start: Instant::now(),
         };
 
-        let span = if self
-            .request_filter
-            .is_none_or(|f| f(req.method(), req.uri().path()))
-        {
+        let span = if self.request_filter.is_none_or(|f| f(req.method(), req.uri().path())) {
             let span = otel_http::make_span_from_request(&req);
             span.set_parent(otel_http::extract_context(req.headers()));
             span
@@ -171,9 +165,7 @@ where
             }
 
             meters.request_counter.add(1, &ep_attribute);
-            let duration = Instant::now()
-                .duration_since(this.context.start)
-                .as_secs_f64();
+            let duration = Instant::now().duration_since(this.context.start).as_secs_f64();
             meters.request_duration.record(duration, &ep_attribute);
         }
 

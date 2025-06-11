@@ -76,12 +76,7 @@ mod platform {
     #[wasm_bindgen]
     pub fn start_game(canvas: String) {
         if IS_APPLICATION
-            .compare_exchange(
-                false,
-                true,
-                atomic::Ordering::SeqCst,
-                atomic::Ordering::SeqCst,
-            )
+            .compare_exchange(false, true, atomic::Ordering::SeqCst, atomic::Ordering::SeqCst)
             .is_err()
         {
             log::error!("Game is already running.");
@@ -126,12 +121,8 @@ fn create_application(config: platform::Config) {
 
     app.insert_state(GameState::CameraOrbitPOC);
 
-    app.add_plugins(CameraPlugin {
-        state: GameState::Playing,
-    });
-    app.add_plugins(WorldPlugin {
-        state: GameState::Playing,
-    });
+    app.add_plugins(CameraPlugin { state: GameState::Playing });
+    app.add_plugins(WorldPlugin { state: GameState::Playing });
 
     app.add_plugins(poc::CameraOrbitPOC {
         state: GameState::CameraOrbitPOC,

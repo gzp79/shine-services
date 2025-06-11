@@ -49,17 +49,8 @@ pub async fn oauth2_login(
         Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
 
-    if let Err(err) = state
-        .captcha_validator()
-        .validate(query.captcha.as_deref())
-        .await
-    {
-        return PageUtils::new(&state).error(
-            auth_session,
-            err,
-            query.error_url.as_ref(),
-            query.redirect_url.as_ref(),
-        );
+    if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
+        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), query.redirect_url.as_ref());
     }
 
     let key = random::hex_16(state.random());

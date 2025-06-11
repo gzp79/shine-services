@@ -134,11 +134,7 @@ pub async fn create_token(
             .into_response(&problem_config));
     }
 
-    let site_fingerprint = if params.bind_to_site {
-        Some(&fingerprint)
-    } else {
-        None
-    };
+    let site_fingerprint = if params.bind_to_site { Some(&fingerprint) } else { None };
     let user_token = state
         .login_token_handler()
         .create_user_token(

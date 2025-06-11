@@ -1,8 +1,7 @@
 use crate::{
     app_state::AppState,
     controllers::auth::{
-        AuthError, AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient,
-        PageUtils,
+        AuthError, AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient, PageUtils,
     },
 };
 use axum::{extract::State, Extension};

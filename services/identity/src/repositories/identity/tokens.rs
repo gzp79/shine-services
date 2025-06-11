@@ -58,8 +58,7 @@ pub struct TokenInfo {
 
 impl TokenInfo {
     pub fn check_fingerprint(&self, fingerprint: &ClientFingerprint) -> bool {
-        self.bound_fingerprint.is_none()
-            || Some(fingerprint.as_str()) == self.bound_fingerprint.as_deref()
+        self.bound_fingerprint.is_none() || Some(fingerprint.as_str()) == self.bound_fingerprint.as_deref()
     }
 }
 
@@ -81,10 +80,7 @@ pub trait Tokens {
         token_hash: &str,
     ) -> impl Future<Output = Result<Option<TokenInfo>, IdentityError>> + Send;
 
-    fn find_by_user(
-        &mut self,
-        user_id: &Uuid,
-    ) -> impl Future<Output = Result<Vec<TokenInfo>, IdentityError>> + Send;
+    fn find_by_user(&mut self, user_id: &Uuid) -> impl Future<Output = Result<Vec<TokenInfo>, IdentityError>> + Send;
 
     fn delete_token_by_hash(
         &mut self,

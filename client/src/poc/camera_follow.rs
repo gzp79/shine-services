@@ -59,9 +59,7 @@ fn spawn_world(
     commands.spawn(player).insert(POCEntity);
 
     let floor = (
-        Mesh3d(meshes.add(Mesh::from(
-            Plane3d::default().mesh().subdivisions(10).size(15.0, 15.0),
-        ))),
+        Mesh3d(meshes.add(Mesh::from(Plane3d::default().mesh().subdivisions(10).size(15.0, 15.0)))),
         MeshMaterial3d(materials.add(Color::Srgba(css::DARK_GREEN))),
     );
     commands.spawn(floor).insert(POCEntity);
@@ -83,11 +81,7 @@ fn spawn_world(
         .with(Smooth::new_position(1.25).predictive(true))
         .with(Arm::new(Vec3::new(0.0, 3.5, -5.5)))
         .with(Smooth::new_position(2.5).predictive(true))
-        .with(
-            LookAt::new(start_position + Vec3::Y)
-                .smoothness(1.25)
-                .predictive(true),
-        )
+        .with(LookAt::new(start_position + Vec3::Y).smoothness(1.25).predictive(true))
         .build();
     let camera = (
         Camera3d::default(),
@@ -98,11 +92,7 @@ fn spawn_world(
     commands.spawn(camera).insert(POCEntity);
 }
 
-fn despawn_world(
-    mut windows: Query<&mut Window>,
-    to_despawn: Query<Entity, With<POCEntity>>,
-    mut commands: Commands,
-) {
+fn despawn_world(mut windows: Query<&mut Window>, to_despawn: Query<Entity, With<POCEntity>>, mut commands: Commands) {
     let mut window = windows.single_mut().unwrap();
     window.title = String::new();
 
@@ -163,10 +153,7 @@ fn handle_input(
     rig.driver_mut::<LookAt>().target = player.translation + Vec3::Y;
 }
 
-fn update_camera(
-    mut query: Query<(&mut Transform, &mut CameraRig), With<Camera3d>>,
-    time: Res<Time>,
-) {
+fn update_camera(mut query: Query<(&mut Transform, &mut CameraRig), With<Camera3d>>, time: Res<Time>) {
     for (mut transform, mut rig) in query.iter_mut() {
         *transform = rig.update(time.delta_secs());
     }

@@ -1,8 +1,8 @@
 use bevy::ecs::resource::Resource;
 use serde::{Deserialize, Serialize};
 use shine_game::map::{
-    ChunkCommandQueue, ChunkHashTrack, ChunkHasher, ChunkLayer, ChunkLayerSetup, ChunkOperation,
-    DenseGrid, DenseGridChunk, GridChunk, GridChunkTypes, SparseGrid, SparseGridChunk,
+    ChunkCommandQueue, ChunkHashTrack, ChunkHasher, ChunkLayer, ChunkLayerSetup, ChunkOperation, DenseGrid,
+    DenseGridChunk, GridChunk, GridChunkTypes, SparseGrid, SparseGridChunk,
 };
 
 pub struct GridU8Types;
@@ -47,9 +47,10 @@ where
     type Hash = u64;
 
     fn hash(&self, chunk: &T) -> Self::Hash {
-        chunk.data().iter().fold(0, |acc, &tile| {
-            acc.wrapping_mul(31).wrapping_add(tile as u64)
-        })
+        chunk
+            .data()
+            .iter()
+            .fold(0, |acc, &tile| acc.wrapping_mul(31).wrapping_add(tile as u64))
     }
 }
 
@@ -64,8 +65,7 @@ where
 
     fn hash(&self, chunk: &T) -> Self::Hash {
         chunk.occupied().fold(0, |acc, (x, y, tile)| {
-            acc.wrapping_mul(31)
-                .wrapping_add((x + y + *tile as usize) as u64)
+            acc.wrapping_mul(31).wrapping_add((x + y + *tile as usize) as u64)
         })
     }
 }
@@ -73,14 +73,11 @@ where
 pub type DenseGridU8 = DenseGrid<GridU8Types>;
 pub type DenseGridU8Layer = ChunkLayer<DenseGridU8>;
 pub type DenseGridU8HashTracker = ChunkHashTrack<DenseGridU8, DenseGridU8Hasher>;
-pub type DenseGridU8CommandQueue =
-    ChunkCommandQueue<DenseGridU8, GridU8Operation, DenseGridU8Hasher>;
+pub type DenseGridU8CommandQueue = ChunkCommandQueue<DenseGridU8, GridU8Operation, DenseGridU8Hasher>;
 pub type DenseGridU8LayerSetup = ChunkLayerSetup<DenseGridU8, GridU8Operation, DenseGridU8Hasher>;
 
 pub type SparseGridU8 = SparseGrid<GridU8Types>;
 pub type SparseGridU8Layer = ChunkLayer<SparseGridU8>;
 pub type SparseGridU8HashTracker = ChunkHashTrack<SparseGridU8, DenseGridU8Hasher>;
-pub type SparseGridU8CommandQueue =
-    ChunkCommandQueue<SparseGridU8, GridU8Operation, SparseGridU8Hasher>;
-pub type SparseGridU8LayerSetup =
-    ChunkLayerSetup<SparseGridU8, GridU8Operation, SparseGridU8Hasher>;
+pub type SparseGridU8CommandQueue = ChunkCommandQueue<SparseGridU8, GridU8Operation, SparseGridU8Hasher>;
+pub type SparseGridU8LayerSetup = ChunkLayerSetup<SparseGridU8, GridU8Operation, SparseGridU8Hasher>;

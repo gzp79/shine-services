@@ -47,29 +47,17 @@ impl From<EmailTokenError> for Problem {
     fn from(err: EmailTokenError) -> Self {
         match err {
             EmailTokenError::InvalidToken => Problem::bad_request(INVALID_TOKEN),
-            EmailTokenError::TokenExpired => {
-                Problem::bad_request(TOKEN_EXPIRED).with_sensitive("tokenExpired")
-            }
-            EmailTokenError::TokenWrongUser => {
-                Problem::bad_request(TOKEN_EXPIRED).with_sensitive("wrongUser")
-            }
-            EmailTokenError::TokenWrongEmail => {
-                Problem::bad_request(TOKEN_EXPIRED).with_sensitive("wrongEmail")
-            }
+            EmailTokenError::TokenExpired => Problem::bad_request(TOKEN_EXPIRED).with_sensitive("tokenExpired"),
+            EmailTokenError::TokenWrongUser => Problem::bad_request(TOKEN_EXPIRED).with_sensitive("wrongUser"),
+            EmailTokenError::TokenWrongEmail => Problem::bad_request(TOKEN_EXPIRED).with_sensitive("wrongEmail"),
             EmailTokenError::MissingEmail => Problem::precondition_failed(MISSING_EMAIL),
             EmailTokenError::EmailConflict => Problem::precondition_failed(EMAIL_CONFLICT),
             EmailTokenError::IdentityError(IdentityError::UserDeleted { .. }) => {
                 Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("userDeleted")
             }
-            EmailTokenError::EncryptionError => {
-                Problem::internal_error().with_sensitive("encryptionError")
-            }
-            EmailTokenError::IdentityError(error) => {
-                Problem::internal_error().with_sensitive(Problem::from(error))
-            }
-            EmailTokenError::EmailSenderError(error) => {
-                Problem::internal_error().with_sensitive(Problem::from(error))
-            }
+            EmailTokenError::EncryptionError => Problem::internal_error().with_sensitive("encryptionError"),
+            EmailTokenError::IdentityError(error) => Problem::internal_error().with_sensitive(Problem::from(error)),
+            EmailTokenError::EmailSenderError(error) => Problem::internal_error().with_sensitive(Problem::from(error)),
         }
     }
 }
@@ -136,29 +124,16 @@ where
     }
 
     fn decrypt(&self, token: &[u8]) -> Result<(Uuid, String, String), EmailTokenError> {
-        let cipher_text = B64
-            .decode(token)
-            .map_err(|_| EmailTokenError::InvalidToken)?;
+        let cipher_text = B64.decode(token).map_err(|_| EmailTokenError::InvalidToken)?;
 
-        let nonce_offset = cipher_text
-            .len()
-            .checked_sub(12)
-            .ok_or(EmailTokenError::InvalidToken)?;
+        let nonce_offset = cipher_text.len().checked_sub(12).ok_or(EmailTokenError::InvalidToken)?;
         let (cipher_text, nonce) = cipher_text.split_at(nonce_offset);
 
-        let tag_offset = cipher_text
-            .len()
-            .checked_sub(16)
-            .ok_or(EmailTokenError::InvalidToken)?;
+        let tag_offset = cipher_text.len().checked_sub(16).ok_or(EmailTokenError::InvalidToken)?;
         let (cipher_text, tag) = cipher_text.split_at(tag_offset);
 
-        let expire_at = i64::from_le_bytes(
-            nonce[0..8]
-                .try_into()
-                .map_err(|_| EmailTokenError::InvalidToken)?,
-        );
-        let expire_at =
-            DateTime::<Utc>::from_timestamp(expire_at, 0).ok_or(EmailTokenError::InvalidToken)?;
+        let expire_at = i64::from_le_bytes(nonce[0..8].try_into().map_err(|_| EmailTokenError::InvalidToken)?);
+        let expire_at = DateTime::<Utc>::from_timestamp(expire_at, 0).ok_or(EmailTokenError::InvalidToken)?;
         if expire_at < Utc::now() {
             return Err(EmailTokenError::TokenExpired);
         }
@@ -166,8 +141,7 @@ where
         let mut in_out: Vec<u8> = cipher_text.to_vec();
 
         let key = &self.settings.token.email_key;
-        let nonce =
-            Nonce::try_assume_unique_for_key(nonce).map_err(|_| EmailTokenError::InvalidToken)?;
+        let nonce = Nonce::try_assume_unique_for_key(nonce).map_err(|_| EmailTokenError::InvalidToken)?;
         let tag = aead::Tag::try_from(tag).map_err(|_| EmailTokenError::InvalidToken)?;
         key.open_in_place_separate_tag(nonce, aead::Aad::from(&[]), tag, &mut in_out, 0..)
             .map_err(|_| EmailTokenError::InvalidToken)?;
@@ -176,22 +150,12 @@ where
         let mut tokens = data.split(',');
         let user_id = Uuid::parse_str(tokens.next().ok_or(EmailTokenError::InvalidToken)?)
             .map_err(|_| EmailTokenError::InvalidToken)?;
-        let current_email = tokens
-            .next()
-            .ok_or(EmailTokenError::InvalidToken)?
-            .to_string();
-        let new_email = tokens
-            .next()
-            .ok_or(EmailTokenError::InvalidToken)?
-            .to_string();
+        let current_email = tokens.next().ok_or(EmailTokenError::InvalidToken)?.to_string();
+        let new_email = tokens.next().ok_or(EmailTokenError::InvalidToken)?.to_string();
         Ok((user_id, current_email, new_email))
     }
 
-    pub async fn start_email_confirm_flow(
-        &self,
-        user_id: Uuid,
-        lang: Option<Language>,
-    ) -> Result<(), EmailTokenError> {
+    pub async fn start_email_confirm_flow(&self, user_id: Uuid, lang: Option<Language>) -> Result<(), EmailTokenError> {
         let user = self
             .identity_service
             .find_by_id(user_id)
@@ -234,11 +198,7 @@ where
         Ok(())
     }
 
-    pub async fn complete_email_flow(
-        &self,
-        user_id: Uuid,
-        token: &str,
-    ) -> Result<(), EmailTokenError> {
+    pub async fn complete_email_flow(&self, user_id: Uuid, token: &str) -> Result<(), EmailTokenError> {
         let (token_user_id, token_old_email, token_new_email) = self.decrypt(token.as_bytes())?;
         if user_id != token_user_id {
             return Err(EmailTokenError::TokenWrongUser);

@@ -16,11 +16,7 @@ pub struct MailerService<'a, E: EmailSender> {
 
 impl<'a, E: EmailSender> MailerService<'a, E> {
     pub fn new(settings: &'a SettingsService, mailer: &'a E, tera: &'a Tera) -> Self {
-        Self {
-            settings,
-            mailer,
-            tera,
-        }
+        Self { settings, mailer, tera }
     }
 
     fn find_subject(&self, html: &str) -> Option<String> {
@@ -83,8 +79,7 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
             .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?;
         redirect_url.set_query(Some(&format!("token={}&hint=email-confirm", token)));
 
-        self.send_email(to, redirect_url, user_name, lang, "confirm.html")
-            .await
+        self.send_email(to, redirect_url, user_name, lang, "confirm.html").await
     }
 
     pub async fn send_email_change(
@@ -101,8 +96,7 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
             .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?;
         redirect_url.set_query(Some(&format!("token={}&hint=email-change", token)));
 
-        self.send_email(to, redirect_url, user_name, lang, "change.html")
-            .await
+        self.send_email(to, redirect_url, user_name, lang, "change.html").await
     }
 
     pub async fn send_email_login(
@@ -112,8 +106,7 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
         user_name: &str,
         lang: Option<Language>,
     ) -> Result<(), EmailSenderError> {
-        self.send_email(to, redirect_url, user_name, lang, "login.html")
-            .await
+        self.send_email(to, redirect_url, user_name, lang, "login.html").await
     }
 
     pub async fn send_email_register(

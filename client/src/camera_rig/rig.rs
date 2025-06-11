@@ -14,12 +14,8 @@ impl CameraRig {
     /// ## Panics
     /// If multiple or no driver of the matching type is present.
     pub fn driver_mut<T: RigDriver>(&mut self) -> &mut T {
-        self.try_driver_mut::<T>().unwrap_or_else(|| {
-            panic!(
-                "No {} driver found in the CameraRig",
-                std::any::type_name::<T>()
-            )
-        })
+        self.try_driver_mut::<T>()
+            .unwrap_or_else(|| panic!("No {} driver found in the CameraRig", std::any::type_name::<T>()))
     }
 
     /// Returns the driver of the matching type, or `None` if no such driver is present.
@@ -30,24 +26,15 @@ impl CameraRig {
             .iter_mut()
             .filter_map(|driver| driver.as_mut().as_any_mut().downcast_mut::<T>())
             .at_most_one()
-            .unwrap_or_else(|_| {
-                panic!(
-                    "Multiple {} driver found in the CameraRig",
-                    std::any::type_name::<T>()
-                )
-            })
+            .unwrap_or_else(|_| panic!("Multiple {} driver found in the CameraRig", std::any::type_name::<T>()))
     }
 
     /// Returns the driver of the matching type.
     /// ## Panics
     /// If multiple or no driver of the matching type is present.
     pub fn driver<T: RigDriver>(&self) -> &T {
-        self.try_driver::<T>().unwrap_or_else(|| {
-            panic!(
-                "No {} driver found in the CameraRig",
-                std::any::type_name::<T>()
-            )
-        })
+        self.try_driver::<T>()
+            .unwrap_or_else(|| panic!("No {} driver found in the CameraRig", std::any::type_name::<T>()))
     }
 
     /// Returns the driver of the matching type, or `None` if no such driver is present.
@@ -58,12 +45,7 @@ impl CameraRig {
             .iter()
             .filter_map(|driver| driver.as_ref().as_any().downcast_ref::<T>())
             .at_most_one()
-            .unwrap_or_else(|_| {
-                panic!(
-                    "Multiple {} driver found in the CameraRig",
-                    std::any::type_name::<T>()
-                )
-            })
+            .unwrap_or_else(|_| panic!("Multiple {} driver found in the CameraRig", std::any::type_name::<T>()))
     }
 
     /// Runs all the drivers in sequence, animating the rig, and producing a final transform of the camera.
@@ -90,9 +72,7 @@ impl CameraRig {
 
     /// Use this to make a new rig
     pub fn builder() -> CameraRigBuilder {
-        CameraRigBuilder {
-            drivers: Default::default(),
-        }
+        CameraRigBuilder { drivers: Default::default() }
     }
 }
 

@@ -60,8 +60,7 @@ impl AxialCoord {
     pub fn distance(&self, other: &AxialCoord) -> i32 {
         let a_cube = self.to_cube();
         let b_cube = other.to_cube();
-        ((a_cube.0 - b_cube.0).abs() + (a_cube.1 - b_cube.1).abs() + (a_cube.2 - b_cube.2).abs())
-            / 2
+        ((a_cube.0 - b_cube.0).abs() + (a_cube.1 - b_cube.1).abs() + (a_cube.2 - b_cube.2).abs()) / 2
     }
 
     /// Get the coordinates of all hexes in a ring at the given radius
@@ -222,10 +221,7 @@ mod tests {
         let ring: Vec<_> = center.ring(radius).collect();
         let dist = radius as i32;
         let count = (radius * 6).max(1) as usize;
-        assert_equal(
-            ring.iter().map(|c| c.distance(&center)),
-            repeat_n(dist, count),
-        );
+        assert_equal(ring.iter().map(|c| c.distance(&center)), repeat_n(dist, count));
 
         if let Some(expected) = centered_expected {
             assert_equal(
@@ -296,8 +292,7 @@ mod tests {
         let spiral: Vec<_> = AxialCoord::origin().spiral(2).collect();
         assert_equal(
             spiral.iter().cloned(),
-            (RING0.iter().chain(RING1.iter()).chain(RING2.iter()))
-                .map(|(q, r)| AxialCoord::new(*q, *r)),
+            (RING0.iter().chain(RING1.iter()).chain(RING2.iter())).map(|(q, r)| AxialCoord::new(*q, *r)),
         );
     }
 
@@ -307,12 +302,8 @@ mod tests {
         let spiral: Vec<_> = AxialCoord::origin().spiral(3).collect();
         assert_equal(
             spiral.iter().cloned(),
-            (RING0
-                .iter()
-                .chain(RING1.iter())
-                .chain(RING2.iter())
-                .chain(RING3.iter()))
-            .map(|(q, r)| AxialCoord::new(*q, *r)),
+            (RING0.iter().chain(RING1.iter()).chain(RING2.iter()).chain(RING3.iter()))
+                .map(|(q, r)| AxialCoord::new(*q, *r)),
         );
     }
 }

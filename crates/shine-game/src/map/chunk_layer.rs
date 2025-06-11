@@ -1,6 +1,4 @@
-use crate::map::{
-    ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkId, ChunkRoot, ChunkVersion, MapChunk,
-};
+use crate::map::{ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkId, ChunkRoot, ChunkVersion, MapChunk};
 use bevy::ecs::{
     entity::Entity,
     event::{EventReader, EventWriter},
@@ -73,9 +71,7 @@ pub fn create_layer_system<C, H>(
     for (entity, chunk_root) in new_entities.iter() {
         log::debug!("Chunk [{:?}]: Create {} layer", chunk_root.id, C::name());
         let mut command = commands.entity(entity);
-        command
-            .insert(ChunkVersion::<C>::new())
-            .insert(C::new_empty());
+        command.insert(ChunkVersion::<C>::new()).insert(C::new_empty());
         if hasher.is_some() {
             command.insert(ChunkHashTrack::<C, H>::new());
         }
