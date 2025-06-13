@@ -80,7 +80,7 @@
       "group": "build"
     },
     {
-      "label": "start dev environment",
+      "label": "dev environment",
       "type": "shell",
       "command": "docker compose -f services/docker-compose.yml -p shine ${input:env-task}",
       "group": "build",
