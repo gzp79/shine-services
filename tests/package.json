@@ -15,7 +15,7 @@
         "lint:eslint": "eslint .",
         "lint:build": "tsc -b --noEmit",
         "test:local": "playwright test --project=local",
-        "mock:id_provider": "tsx ./tools/mock_id_provider"
+        "mock:services": "tsx ./tools/mock_services"
     },
     "author": "",
     "license": "MIT",

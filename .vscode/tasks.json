@@ -80,16 +80,16 @@
       "group": "build"
     },
     {
-      "label": "dev environment",
+      "label": "start dev environment",
       "type": "shell",
       "command": "docker compose -f services/docker-compose.yml -p shine ${input:env-task}",
       "group": "build",
       "isBackground": true
     },
     {
-      "label": "start mocked id provider",
+      "label": "start mocked services",
       "type": "shell",
-      "command": "npm run mock:id_provider",
+      "command": "npm run mock:services",
       "options": {
         "cwd": "${workspaceFolder}/tests"
       },
@@ -178,9 +178,8 @@
     {
       "label": "client: local-wasm",
       "type": "shell",
-      "command": "cargo run --target wasm32-unknown-unknown -p shine-client --release",
+      "command": "${workspaceFolder}/scripts/emulate_github_client_build.ps1",
       "options": {
-        "cwd": "client",
         "env": {
           "RUST_BACKTRACE": "full"
         }
@@ -230,7 +229,7 @@
       "description": "Select env task",
       "options": [
         { "label": "up", "value": "up" },
-        { "label": "restart", "value": "--build up" },
+        { "label": "restart", "value": "up --build" },
         { "label": "down", "value": "down" }
       ],
       "default": "asset-service"

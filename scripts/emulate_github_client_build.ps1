@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $profile="release"
-$opt=$true
+$opt=$false
 
 Write-Host "Build"
 cargo build --target=wasm32-unknown-unknown -p shine-client --profile ${profile}
@@ -15,6 +15,9 @@ if ($opt) {
     del ./dist/custom/shine-client_bg.wasm
     copy ./dist/custom/shine-client_opt.wasm ./dist/custom/shine-client_bg.wasm
 }
+
+Write-Host "Latest.json"
+echo "{ ""version"": ""custom"" }" > ./dist/latest.json
 
 Write-Host "Index.html"
 copy ./client/index.html ./dist/custom/
