@@ -51,10 +51,12 @@ export class MockServer {
         this.log('Init server');
         this.initCommon();
         this.init();
-        this.log(`Start listening at port ${this.port}...`);
+        this.log(`Start listening at port ${this.port} with baseurl ${this.baseUrl} ...`);
         if (this.tls) {
+            this.log('TLS enabled');
             this.server = await https.createServer(this.tls, this.app).listen(this.port);
         } else {
+            this.log('TLS disabled');
             this.server = await http.createServer(this.app).listen(this.port);
         }
 

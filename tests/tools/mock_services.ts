@@ -2,10 +2,18 @@ import { getEmailLink } from '$lib/api/utils';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIDMockServer from '$lib/mocks/openid';
+import { StaticFileServer } from '$lib/mocks/static_file_server';
 import debug from 'debug';
+import path from 'path';
 
 async function main() {
     debug.enable('test:mock:*');
+
+    const mock_static = new StaticFileServer('game', {
+        url: new URL('https://game.local-scytta.com:8092'),
+        staticFilesPath: path.join(__dirname, '../..', 'dist')
+    });
+    await mock_static.start();
 
     const mock_smtp = new MockSmtp();
     await mock_smtp.start();

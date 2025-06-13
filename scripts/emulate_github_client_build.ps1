@@ -16,5 +16,8 @@ if ($opt) {
     copy ./dist/custom/shine-client_opt.wasm ./dist/custom/shine-client_bg.wasm
 }
 
+Write-Host "Latest.json"
+echo "{ ""version"": ""custom"" }" > ./dist/latest.json
+
 Write-Host "Index.html"
 copy ./client/index.html ./dist/custom/
