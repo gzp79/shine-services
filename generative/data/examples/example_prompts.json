@@ -1,0 +1,59 @@
+[
+  {
+    "input": "A red circle in the center",
+    "dsl": "fill_circle(x=256, y=256, radius=50, color=\"red\")\ndraw_circle(x=256, y=256, radius=50, color=\"black\")",
+    "description": "a red circle in the center of the image"
+  },
+  {
+    "input": "A blue rectangle on the left side",
+    "dsl": "fill_rect(x=50, y=200, w=100, h=80, color=\"blue\")\ndraw_rect(x=50, y=200, w=100, h=80, color=\"black\")",
+    "description": "a blue rectangle positioned on the left side"
+  },
+  {
+    "input": "A green triangle pointing up",
+    "dsl": "draw_line(x1=256, y1=150, x2=200, y2=250, color=\"green\", width=3)\ndraw_line(x1=200, y1=250, x2=312, y2=250, color=\"green\", width=3)\ndraw_line(x1=312, y1=250, x2=256, y2=150, color=\"green\", width=3)",
+    "description": "a green triangle pointing upward"
+  },
+  {
+    "input": "A yellow star in the top right",
+    "dsl": "fill_circle(x=400, y=100, radius=30, color=\"yellow\")\ndraw_circle(x=400, y=100, radius=30, color=\"black\")",
+    "description": "a yellow star shape in the top right corner"
+  },
+  {
+    "input": "A black line from top to bottom",
+    "dsl": "draw_line(x1=256, y1=50, x2=256, y2=462, color=\"black\", width=5)",
+    "description": "a vertical black line running from top to bottom"
+  },
+  {
+    "input": "a red shape",
+    "dsl": "set_background(color=\"white\")\nfill_circle(x=385, y=290, radius=29, color=\"gray\")\nfill_ellipse(x=317, y=66, w=54, h=55, color=\"brown\")\nfill_circle(x=214, y=84, radius=48, color=\"brown\")\nfill_rect(x=89, y=267, w=68, h=55, color=\"black\")\nfill_circle(x=190, y=350, radius=58, color=\"green\")",
+    "description": "an illustration of a red and white logo\n",
+    "from_exploration": true,
+    "confidence": 0.76,
+    "generation_type": "semantic"
+  },
+  {
+    "input": "a red circle",
+    "dsl": "draw_rect(x=381, y=248, w=148, h=36, color=\"white\")\nfill_circle(x=137, y=160, radius=98, color=\"green\")\ndraw_line(x1=204, y1=138, x2=196, y2=227, color=\"red\", width=4)\ndraw_line(x1=113, y1=266, x2=138, y2=86, color=\"red\", width=10)\nfill_ellipse(x=102, y=353, w=104, h=101, color=\"red\")",
+    "description": "an illustration of a small wooden cross with a red circle\n",
+    "from_exploration": true,
+    "blip_confidence": 0.32804709672927856,
+    "generation_type": "random"
+  },
+  {
+    "input": "a geometric shape",
+    "dsl": "draw_rect(x=312, y=209, w=133, h=161, color=\"blue\")\nfill_circle(x=117, y=280, radius=64, color=\"brown\")\nfill_rect(x=235, y=269, w=162, h=40, color=\"gray\")\nfill_rect(x=123, y=113, w=143, h=76, color=\"white\")",
+    "description": "the diagram shows us the position of the left and right sides of the body\n",
+    "from_exploration": true,
+    "blip_confidence": 0.3033445179462433,
+    "generation_type": "random"
+  },
+  {
+    "input": "a green shape",
+    "dsl": "set_background(color=\"white\")\nfill_ellipse(x=382, y=129, w=40, h=76, color=\"orange\")\nfill_ellipse(x=456, y=418, w=87, h=43, color=\"green\")\nfill_rect(x=116, y=363, w=69, h=68, color=\"orange\")\nfill_rect(x=321, y=127, w=78, h=77, color=\"yellow\")\nfill_ellipse(x=452, y=457, w=86, h=68, color=\"purple\")",
+    "description": "a white background with some white and green text\n",
+    "from_exploration": true,
+    "blip_confidence": 0.3021291196346283,
+    "generation_type": "semantic"
+  }
+]

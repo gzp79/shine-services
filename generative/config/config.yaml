@@ -35,6 +35,7 @@ generator:
 
 learning:
   similarity_threshold: 0.8
+  blip_confidence_threshold: 0.5  # Minimum BLIP confidence to proceed with similarity check
   max_examples_per_rule: 100
   min_confidence: 0.7
   learning_rate: 0.1

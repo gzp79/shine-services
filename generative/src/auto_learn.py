@@ -86,6 +86,13 @@ def run_auto_learning(input_texts, enable_exploration=True, exploration_interval
         description, blip_confidence = descriptor.describe_with_confidence(image)
         logger.info(f"BLIP-2 Description: {description} (confidence: {blip_confidence:.3f})")
 
+        # Check if BLIP has sufficient confidence before proceeding
+        blip_confidence_threshold = getattr(config.learning, 'blip_confidence_threshold', 0.5)
+        if blip_confidence < blip_confidence_threshold:
+            logger.warning(f"BLIP confidence {blip_confidence:.3f} below threshold {blip_confidence_threshold}, skipping similarity check")
+            logger.info(f"=== Skipped: {input_text} ===\n")
+            continue
+
         # 4. Vectorize and compare input/description
         similarity = vectorizer.calculate_similarity(input_text, description)
         logger.info(f"Input/Output Similarity: {similarity:.3f}")
