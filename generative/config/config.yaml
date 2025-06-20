@@ -1,0 +1,121 @@
+models:
+  mistral:
+    model_name: "mistralai/Mistral-7B-Instruct-v0.2"
+    max_length: 512
+    temperature: 0.7
+    top_p: 0.9
+    do_sample: true
+    device: "auto"  # "auto", "cpu", "cuda", "mps"
+    
+  blip:
+    model_name: "Salesforce/blip2-opt-2.7b"
+    max_length: 100
+    device: "auto"
+    
+  vectorizer:
+    model_name: "sentence-transformers/all-MiniLM-L6-v2"
+    similarity_metric: "cosine"
+    device: "auto"
+
+generator:
+  type: "placeholder"
+  output_dir: "data/outputs"
+  image_size: [512, 512]
+  format: "PNG"
+  
+  # Placeholder generator specific settings
+  placeholder:
+    background_color: [255, 255, 255]  # White
+    text_color: [0, 0, 0]  # Black
+    font_size: 24
+    padding: 20
+
+learning:
+  similarity_threshold: 0.8
+  max_examples_per_rule: 100
+  min_confidence: 0.7
+  learning_rate: 0.1
+  batch_size: 32
+  
+  # Rule categories
+  rules:
+    - name: "object_placement"
+      description: "Rules for object positioning and placement"
+      weight: 1.0
+    - name: "color_mapping"
+      description: "Rules for color interpretation"
+      weight: 1.0
+    - name: "spatial_relationships"
+      description: "Rules for spatial relationships between objects"
+      weight: 1.0
+    - name: "style_transfer"
+      description: "Rules for artistic style and rendering"
+      weight: 0.8
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  workers: 1
+  
+  # Rate limiting
+  rate_limit:
+    requests_per_minute: 60
+    burst_size: 10
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/generative_ai.log"
+  max_size: "10MB"
+  backup_count: 5
+
+data:
+  examples_dir: "data/examples"
+  rules_dir: "data/rules"
+  outputs_dir: "data/outputs"
+  cache_dir: "data/cache"
+  
+  # Data retention
+  max_examples_age_days: 30
+  max_outputs_age_days: 7
+  cleanup_interval_hours: 24
+
+# DSL (Domain Specific Language) configuration
+dsl:
+  commands:
+    - name: "create_object"
+      description: "Create a new object in the scene"
+      parameters: ["type", "position", "color", "size"]
+    - name: "set_position"
+      description: "Set the position of an object"
+      parameters: ["object_id", "x", "y", "z"]
+    - name: "set_color"
+      description: "Set the color of an object"
+      parameters: ["object_id", "r", "g", "b"]
+    - name: "set_size"
+      description: "Set the size of an object"
+      parameters: ["object_id", "width", "height", "depth"]
+    - name: "add_lighting"
+      description: "Add lighting to the scene"
+      parameters: ["type", "position", "intensity", "color"]
+    - name: "set_camera"
+      description: "Set camera position and angle"
+      parameters: ["position", "target", "fov"]
+    - name: "apply_style"
+      description: "Apply artistic style to the scene"
+      parameters: ["style", "intensity"]
+    - name: "set_background"
+      description: "Set the background of the scene"
+      parameters: ["type", "color", "texture"]
+
+# Performance and optimization
+performance:
+  use_cache: true
+  cache_size: 1000
+  parallel_processing: true
+  max_workers: 4
+  
+  # Memory management
+  max_memory_usage_gb: 8
+  cleanup_threshold: 0.8 

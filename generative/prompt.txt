@@ -1,0 +1,39 @@
+Create a new python project that 
+- uses misrtal-7b to convert text to dsl generative steps
+- calls the custom generator with the dsl commands (a placeholder where the inputs are the commands and output is an image)
+- use blip-2 to describe the image
+- vectorize the input and compare the input text and described output
+- if the inout and result are close add it to the input rule as an example
+- make it iterative auto-learning tool that I can extend later 
+
+Place this project under a new generative folder 
+
+SUBSEQUENT IMPROVEMENT PROMPTS:
+
+1. "update the placheloder denerator to accept draw rect and draw circle commands and implement them"
+   - Added draw_rect and draw_circle command parsing
+   - Implemented shape rendering with parameter parsing
+   - Added support for color names and RGB tuples
+
+2. "remove the text rendering from the generator"
+   - Removed text rendering for unrecognized commands
+   - Generator now only renders shapes for recognized DSL commands
+
+3. "improve mistral input rules"
+   - Enhanced prompt engineering with explicit rules
+   - Added concrete examples for DSL command generation
+   - Improved instructions for parameter formatting and defaults
+   - Added rules for lowercase commands, integer values, color formats
+
+4. "update setup to use python env not to mix the required packages with the global packages"
+   - Created virtual environment setup scripts for Windows and Unix
+   - Added .gitignore to exclude virtual environment and generated files
+   - Created env.example template for environment variables
+   - Updated README with comprehensive installation instructions
+   - Added troubleshooting and performance tips
+
+5. "collect the prompt used to generate this generative project in a prompt.txt"
+   - Created this file to document the project's development history
+
+6. "add the other prompts too that improved the project"
+   - Added this prompt to document all improvements made to the project 
