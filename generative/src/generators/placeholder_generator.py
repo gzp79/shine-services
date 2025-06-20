@@ -64,10 +64,16 @@ class PlaceholderGenerator(BaseGenerator, LoggerMixin):
             line = line.strip()
             if not line:
                 continue
-            if line.startswith("draw_rect"):
+            if line.startswith("draw_rect") or line.startswith("fill_rect"):
                 self._draw_rect(draw, line)
-            elif line.startswith("draw_circle"):
+            elif line.startswith("draw_circle") or line.startswith("fill_circle"):
                 self._draw_circle(draw, line)
+            elif line.startswith("draw_ellipse") or line.startswith("fill_ellipse"):
+                self._draw_ellipse(draw, line)
+            elif line.startswith("draw_line"):
+                self._draw_line(draw, line)
+            elif line.startswith("draw_text"):
+                self._draw_text(draw, line)
             # No text rendering for unrecognized commands
         return img
 
@@ -84,7 +90,7 @@ class PlaceholderGenerator(BaseGenerator, LoggerMixin):
                 k = k.strip()
                 v = v.strip().strip('"')
                 # Try to convert to int or tuple
-                if k in {'x', 'y', 'w', 'h', 'r', 'g', 'b', 'radius'}:
+                if k in {'x', 'y', 'w', 'h', 'r', 'g', 'b', 'radius', 'x1', 'y1', 'x2', 'y2', 'width', 'font_size'}:
                     try:
                         v = int(v)
                     except Exception:
@@ -105,7 +111,11 @@ class PlaceholderGenerator(BaseGenerator, LoggerMixin):
         color = args.get('color', (200, 0, 0))
         if isinstance(color, str):
             color = color if color else 'red'
-        draw.rectangle([x, y, x + w, y + h], outline=color, width=3)
+        
+        if line.startswith("fill_rect"):
+            draw.rectangle([x, y, x + w, y + h], fill=color)
+        else:
+            draw.rectangle([x, y, x + w, y + h], outline=color, width=3)
 
     def _draw_circle(self, draw: ImageDraw.ImageDraw, line: str):
         args = self._parse_args(line)
@@ -116,4 +126,53 @@ class PlaceholderGenerator(BaseGenerator, LoggerMixin):
         if isinstance(color, str):
             color = color if color else 'blue'
         bbox = [x - radius, y - radius, x + radius, y + radius]
-        draw.ellipse(bbox, outline=color, width=3) 
+        
+        if line.startswith("fill_circle"):
+            draw.ellipse(bbox, fill=color)
+        else:
+            draw.ellipse(bbox, outline=color, width=3)
+
+    def _draw_ellipse(self, draw: ImageDraw.ImageDraw, line: str):
+        args = self._parse_args(line)
+        x = args.get('x', 100)
+        y = args.get('y', 100)
+        w = args.get('w', 80)
+        h = args.get('h', 60)
+        color = args.get('color', (0, 200, 0))
+        if isinstance(color, str):
+            color = color if color else 'green'
+        bbox = [x, y, x + w, y + h]
+        
+        if line.startswith("fill_ellipse"):
+            draw.ellipse(bbox, fill=color)
+        else:
+            draw.ellipse(bbox, outline=color, width=3)
+
+    def _draw_line(self, draw: ImageDraw.ImageDraw, line: str):
+        args = self._parse_args(line)
+        x1 = args.get('x1', 10)
+        y1 = args.get('y1', 10)
+        x2 = args.get('x2', 100)
+        y2 = args.get('y2', 100)
+        color = args.get('color', (0, 0, 0))
+        width = args.get('width', 2)
+        if isinstance(color, str):
+            color = color if color else 'black'
+        draw.line([x1, y1, x2, y2], fill=color, width=width)
+
+    def _draw_text(self, draw: ImageDraw.ImageDraw, line: str):
+        args = self._parse_args(line)
+        x = args.get('x', 10)
+        y = args.get('y', 10)
+        text = args.get('text', 'Hello')
+        font_size = args.get('font_size', 24)
+        color = args.get('color', (0, 0, 0))
+        if isinstance(color, str):
+            color = color if color else 'black'
+        
+        try:
+            font = ImageFont.truetype("arial.ttf", font_size)
+        except Exception:
+            font = ImageFont.load_default()
+        
+        draw.text((x, y), text, fill=color, font=font) 

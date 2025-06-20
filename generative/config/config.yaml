@@ -1,6 +1,6 @@
 models:
   mistral:
-    model_name: "microsoft/DialoGPT-medium"
+    model_name: "gpt2"
     max_length: 512
     temperature: 0.7
     top_p: 0.9
@@ -67,7 +67,7 @@ api:
     burst_size: 10
 
 logging:
-  level: "INFO"
+  level: "DEBUG"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   file: "logs/generative_ai.log"
   max_size: "10MB"
@@ -87,12 +87,27 @@ data:
 # DSL (Domain Specific Language) configuration
 dsl:
   commands:
-    - name: "draw_circle"
-      description: "Draw a circle with specified parameters"
-      parameters: ["x", "y", "radius", "color"]
-    - name: "draw_rectangle"
-      description: "Draw a rectangle with specified parameters"
+    - name: "draw_rect"
+      description: "Draw an unfilled rectangle with specified parameters"
       parameters: ["x", "y", "width", "height", "color"]
+    - name: "fill_rect"
+      description: "Draw a filled rectangle with specified parameters"
+      parameters: ["x", "y", "width", "height", "color"]
+    - name: "draw_circle"
+      description: "Draw an unfilled circle with specified parameters"
+      parameters: ["x", "y", "radius", "color"]
+    - name: "fill_circle"
+      description: "Draw a filled circle with specified parameters"
+      parameters: ["x", "y", "radius", "color"]
+    - name: "draw_ellipse"
+      description: "Draw an unfilled ellipse with specified parameters"
+      parameters: ["x", "y", "width", "height", "color"]
+    - name: "fill_ellipse"
+      description: "Draw a filled ellipse with specified parameters"
+      parameters: ["x", "y", "width", "height", "color"]
+    - name: "draw_line"
+      description: "Draw a line between two points"
+      parameters: ["x1", "y1", "x2", "y2", "color", "width"]
     - name: "draw_text"
       description: "Draw text with specified parameters"
       parameters: ["x", "y", "text", "font_size", "color"]
