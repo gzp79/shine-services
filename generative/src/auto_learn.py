@@ -1,12 +1,12 @@
 """Main orchestrator for the generative auto-learning loop."""
 
-from models.mistral_dsl import MistralDSLConverter
-from generators.placeholder_generator import PlaceholderGenerator
-from models.blip_descriptor import BLIPDescriptor
-from models.vectorizer import TextVectorizer
-from learning.rule_manager import RuleManager
-from utils.config import get_config
-from utils.logging import setup_logging
+from src.models.mistral_dsl import MistralDSLConverter
+from src.generators.placeholder_generator import PlaceholderGenerator
+from src.models.blip_descriptor import BLIPDescriptor
+from src.models.vectorizer import TextVectorizer
+from src.learning.rule_manager import RuleManager
+from src.utils.config import get_config
+from src.utils.logging import setup_logging
 
 from PIL import Image
 import os

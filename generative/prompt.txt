@@ -31,9 +31,3 @@ SUBSEQUENT IMPROVEMENT PROMPTS:
    - Created env.example template for environment variables
    - Updated README with comprehensive installation instructions
    - Added troubleshooting and performance tips
-
-5. "collect the prompt used to generate this generative project in a prompt.txt"
-   - Created this file to document the project's development history
-
-6. "add the other prompts too that improved the project"
-   - Added this prompt to document all improvements made to the project 
