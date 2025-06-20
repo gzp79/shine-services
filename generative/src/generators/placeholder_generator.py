@@ -15,13 +15,28 @@ class PlaceholderGenerator(BaseGenerator, LoggerMixin):
     def __init__(self):
         self.config = get_config()
         gen_cfg = self.config.generator
+        
         self.image_size = tuple(gen_cfg.image_size)
-        self.bg_color = tuple(gen_cfg.placeholder.get("background_color", [255, 255, 255]))
-        self.text_color = tuple(gen_cfg.placeholder.get("text_color", [0, 0, 0]))
+        
+        # Convert hex colors to RGB tuples
+        bg_color = gen_cfg.placeholder.get("background_color", "#ffffff")
+        text_color = gen_cfg.placeholder.get("text_color", "#000000")
+        
+        self.bg_color = self._hex_to_rgb(bg_color)
+        self.text_color = self._hex_to_rgb(text_color)
+        
         self.font_size = gen_cfg.placeholder.get("font_size", 24)
         self.padding = gen_cfg.placeholder.get("padding", 20)
         self.font = self._load_font()
         self.logger.info(f"Initialized PlaceholderGenerator with size {self.image_size}")
+    
+    def _hex_to_rgb(self, hex_color: str) -> tuple:
+        """Convert hex color string to RGB tuple."""
+        if hex_color.startswith('#'):
+            hex_color = hex_color[1:]
+        if len(hex_color) == 3:
+            hex_color = ''.join([c*2 for c in hex_color])
+        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
     
     def _load_font(self) -> ImageFont.ImageFont:
         try:

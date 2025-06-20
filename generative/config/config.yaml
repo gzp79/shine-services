@@ -10,6 +10,9 @@ models:
   blip:
     model_name: "Salesforce/blip2-opt-2.7b"
     max_length: 100
+    temperature: 0.7
+    top_p: 0.9
+    do_sample: true
     device: "auto"
     
   vectorizer:
@@ -25,8 +28,8 @@ generator:
   
   # Placeholder generator specific settings
   placeholder:
-    background_color: [255, 255, 255]  # White
-    text_color: [0, 0, 0]  # Black
+    background_color: "#f0f0f0"
+    text_color: "#333333"
     font_size: 24
     padding: 20
 
@@ -84,30 +87,18 @@ data:
 # DSL (Domain Specific Language) configuration
 dsl:
   commands:
-    - name: "create_object"
-      description: "Create a new object in the scene"
-      parameters: ["type", "position", "color", "size"]
-    - name: "set_position"
-      description: "Set the position of an object"
-      parameters: ["object_id", "x", "y", "z"]
-    - name: "set_color"
-      description: "Set the color of an object"
-      parameters: ["object_id", "r", "g", "b"]
-    - name: "set_size"
-      description: "Set the size of an object"
-      parameters: ["object_id", "width", "height", "depth"]
-    - name: "add_lighting"
-      description: "Add lighting to the scene"
-      parameters: ["type", "position", "intensity", "color"]
-    - name: "set_camera"
-      description: "Set camera position and angle"
-      parameters: ["position", "target", "fov"]
-    - name: "apply_style"
-      description: "Apply artistic style to the scene"
-      parameters: ["style", "intensity"]
+    - name: "draw_circle"
+      description: "Draw a circle with specified parameters"
+      parameters: ["x", "y", "radius", "color"]
+    - name: "draw_rectangle"
+      description: "Draw a rectangle with specified parameters"
+      parameters: ["x", "y", "width", "height", "color"]
+    - name: "draw_text"
+      description: "Draw text with specified parameters"
+      parameters: ["x", "y", "text", "font_size", "color"]
     - name: "set_background"
-      description: "Set the background of the scene"
-      parameters: ["type", "color", "texture"]
+      description: "Set the background color"
+      parameters: ["color"]
 
 # Performance and optimization
 performance:
