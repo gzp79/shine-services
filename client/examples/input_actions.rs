@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use shine_game::input_manager::{
-    ActionLike, ActionState, CircleBoundsProcessor, GamepadAxisInput, GamepadButtonInput, InputManagerPlugin, InputMap,
-    KeyboardInput, VirtualDpad,
+    ActionLike, ActionState, CircleBoundsProcessor, GamepadButtonInput, GamepadStickInput, InputManagerPlugin,
+    InputMap, KeyboardInput, MouseButtonInput, VirtualDpad,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -48,7 +48,8 @@ fn setup(mut commands: Commands) {
             )
             .with_circle_bounds(1.0),
         )
-        .with_button(Action::Fire, KeyboardInput::new(KeyCode::KeyZ));
+        .with_button(Action::Fire, KeyboardInput::new(KeyCode::KeyZ))
+        .with_button(Action::Fire, MouseButtonInput::new(MouseButton::Left));
 
     commands.spawn((
         PlayerA { gamepad: None },
@@ -113,9 +114,13 @@ fn join_gamepad(
                 )
                 .add_dual_axis(
                     Action::Movement,
-                    GamepadAxisInput::new(gamepad_entity, false)
+                    GamepadStickInput::new(gamepad_entity, false)
                         .with_circle_bounds(1.0)
                         .with_circle_dead_zone(0.2),
+                )
+                .add_button(
+                    Action::Fire,
+                    GamepadButtonInput::new(gamepad_entity, GamepadButton::RightTrigger),
                 );
         } else if player_b.gamepad.is_none() && player_a.gamepad != Some(gamepad_entity) {
             log::info!("Player B joined gamepad {}", gamepad_entity);
@@ -133,15 +138,18 @@ fn join_gamepad(
                 )
                 .add_dual_axis(
                     Action::Movement,
-                    GamepadAxisInput::new(gamepad_entity, false)
+                    GamepadStickInput::new(gamepad_entity, false)
                         .with_circle_bounds(1.0)
                         .with_circle_dead_zone(0.2),
+                )
+                .add_button(
+                    Action::Fire,
+                    GamepadButtonInput::new(gamepad_entity, GamepadButton::RightTrigger),
                 );
         }
     }
 }
 
-/// System that shows the state of the `MoveForward` action on the screen.
 fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, time: Res<Time>) {
     for (action_state, mut text) in players.iter_mut() {
         let move_kind = action_state.kind(&Action::Movement);

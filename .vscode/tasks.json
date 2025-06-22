@@ -235,7 +235,8 @@
         { "label": "camera_follow", "value": "--example camera_follow" },
         { "label": "camera_free", "value": "--example camera_free" },
         { "label": "camera_look_at", "value": "--example camera_look_at" },
-        { "label": "move_forward", "value": "--example move_forward" }
+        { "label": "input_actions", "value": "--example input_actions" },
+        { "label": "input_mouse", "value": "--example input_mouse" }
       ],
       "default": "asset-service"
     },

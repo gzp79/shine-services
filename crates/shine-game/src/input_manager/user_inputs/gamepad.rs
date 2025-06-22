@@ -47,13 +47,13 @@ impl ButtonLike for GamepadButtonInput {
     }
 }
 
-pub struct GamepadAxisInput {
+pub struct GamepadStickInput {
     gamepad: Entity,
     left: bool,
     value: Vec2,
 }
 
-impl GamepadAxisInput {
+impl GamepadStickInput {
     pub fn new(gamepad: Entity, left: bool) -> Self {
         Self {
             gamepad,
@@ -63,7 +63,7 @@ impl GamepadAxisInput {
     }
 }
 
-impl UserInput for GamepadAxisInput {
+impl UserInput for GamepadStickInput {
     fn integrate(&mut self, input: &InputSources) {
         if let Some(gamepad) = input.get_component::<Gamepad>(self.gamepad) {
             self.value = if self.left {
@@ -78,7 +78,7 @@ impl UserInput for GamepadAxisInput {
     }
 }
 
-impl DualAxisLike for GamepadAxisInput {
+impl DualAxisLike for GamepadStickInput {
     fn value_pair(&self) -> Vec2 {
         self.value
     }

@@ -29,6 +29,14 @@ impl Default for ButtonData {
 }
 
 impl ButtonData {
+    pub fn just_pressed(&self) -> bool {
+        matches!(self.status, ButtonStatus::JustPressed)
+    }
+
+    pub fn just_released(&self) -> bool {
+        matches!(self.status, ButtonStatus::JustReleased)
+    }
+
     pub fn is_down(&self) -> bool {
         matches!(self.status, ButtonStatus::JustPressed | ButtonStatus::Pressed)
     }
