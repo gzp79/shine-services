@@ -1,4 +1,4 @@
-use crate::input_manager::{input_map::update_action_state, input_source::integrate_default_inputs, ActionLike};
+use crate::input_manager::{integrate_default_inputs, update_action_state, ActionLike, GamepadManager};
 use bevy::{
     ecs::schedule::SystemSet,
     {
@@ -26,6 +26,8 @@ impl<A: ActionLike> Default for InputManagerPlugin<A> {
 
 impl<A: ActionLike> Plugin for InputManagerPlugin<A> {
     fn build(&self, app: &mut App) {
+        app.insert_resource(GamepadManager);
+
         app.configure_sets(
             PreUpdate,
             (InputManagerSystem::Integrate, InputManagerSystem::UpdateActionState).chain(),

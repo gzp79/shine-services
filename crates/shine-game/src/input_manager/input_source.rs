@@ -1,4 +1,4 @@
-use crate::input_manager::{ActionLike, InputMap};
+use crate::input_manager::{ActionLike, GamepadManager, InputMap};
 use bevy::{
     ecs::{
         entity::Entity,
@@ -79,14 +79,18 @@ pub fn integrate_default_inputs<A>(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
     gamepads: Query<(Entity, &Gamepad)>,
+    gamepad_manager: Res<GamepadManager>,
     mut input_query: Query<&mut InputMap<A>>,
 ) where
     A: ActionLike,
 {
     for mut input_map in input_query.iter_mut() {
         let mut input_source = InputSources::new();
+
         input_source.add_resource(&*time);
         input_source.add_resource(&*keyboard);
+
+        input_source.add_resource(&*gamepad_manager);
         for (entity, gamepad) in gamepads.iter() {
             input_source.add_component(entity, gamepad);
         }

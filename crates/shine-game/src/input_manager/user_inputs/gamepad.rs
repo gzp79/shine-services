@@ -1,17 +1,23 @@
-use crate::input_manager::{ButtonLike, ButtonStatus, DualAxisLike, InputSource, InputSources, UserInput};
+use crate::input_manager::{ButtonLike, DualAxisLike, InputSource, InputSources, UserInput};
 use bevy::{
-    ecs::entity::Entity,
+    ecs::{entity::Entity, resource::Resource},
     input::gamepad::{Gamepad, GamepadButton},
     math::Vec2,
 };
 
+/// A utility resource to distinct if indicate if input source contains gamepad information or not
+/// independent of any gamepad being connected or not.
+#[derive(Resource)]
+pub struct GamepadManager;
+
+impl InputSource for GamepadManager {}
 impl InputSource for Gamepad {}
 
 /// A gamepad button input.
 pub struct GamepadButtonInput {
     gamepad: Entity,
     button: GamepadButton,
-    status: ButtonStatus,
+    pressed: bool,
 }
 
 impl GamepadButtonInput {
@@ -19,7 +25,7 @@ impl GamepadButtonInput {
         Self {
             gamepad,
             button,
-            status: ButtonStatus::Released,
+            pressed: false,
         }
     }
 }
@@ -27,20 +33,17 @@ impl GamepadButtonInput {
 impl UserInput for GamepadButtonInput {
     fn integrate(&mut self, input: &InputSources) {
         if let Some(gamepad) = input.get_component::<Gamepad>(self.gamepad) {
-            if gamepad.just_pressed(self.button) {
-                self.status = ButtonStatus::JustPressed;
-            } else if gamepad.pressed(self.button) {
-                self.status = ButtonStatus::Pressed;
-            } else if gamepad.just_released(self.button) {
-                self.status = ButtonStatus::JustReleased;
-            }
+            self.pressed = gamepad.pressed(self.button);
+        } else if let Some(_gamepad_settings) = input.get_resource::<GamepadManager>() {
+            // we have gamepad in the input store, but our gamepad is not found
+            self.pressed = false;
         }
     }
 }
 
 impl ButtonLike for GamepadButtonInput {
     fn is_down(&self) -> bool {
-        matches!(self.status, ButtonStatus::JustPressed | ButtonStatus::Pressed)
+        self.pressed
     }
 }
 
@@ -68,6 +71,9 @@ impl UserInput for GamepadAxisInput {
             } else {
                 gamepad.right_stick()
             };
+        } else if let Some(_gamepad_manager) = input.get_resource::<GamepadManager>() {
+            // we have gamepad in the input store, but our gamepad is not found
+            self.value = Vec2::ZERO;
         }
     }
 }
