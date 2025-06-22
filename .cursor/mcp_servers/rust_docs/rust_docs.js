@@ -1,11 +1,4 @@
 // https://raw.githubusercontent.com/0xKoda/mcp-rust-docs/refs/heads/main/index.js
-// index.js - Plain JavaScript version
-
-console.error('=== MCP Rust Docs Server Starting ===');
-console.error('Node.js version:', process.version);
-console.error('Current working directory:', process.cwd());
-console.error('Script location:', __filename);
-
 const axios = require('axios');
 const { convert: htmlToText } = require('html-to-text');
 
@@ -20,7 +13,7 @@ console.error('MCP SDK modules loaded successfully');
 
 // Redirect console.log to stderr to avoid breaking the MCP protocol
 const originalConsoleLog = console.log;
-console.log = function() {
+console.log = function () {
   console.error.apply(console, arguments);
 };
 
@@ -34,18 +27,18 @@ const server = new McpServer({
 server.tool(
   'lookup_crate_docs',
   'Lookup documentation for a Rust crate from docs.rs',
-  { crateName: z.string().optional().describe('Name of the Rust crate to lookup documentation for') },
+  { crateName: z.string().describe('Name of the Rust crate to lookup documentation for') },
   async (args) => {
     try {
       // Extract crateName from args or use default
-      const crateName = args.crateName || "tokio";
-      
+      const crateName = args.crateName;
+
       console.error(`Fetching documentation for crate: ${crateName}`);
-      
+
       // Construct the docs.rs URL for the crate
       const url = `https://docs.rs/${crateName}/latest/${crateName}/index.html`;
       console.error(`Making request to: ${url}`);
-      
+
       // Fetch the HTML content
       const response = await axios.get(url, {
         timeout: 10000, // 10 second timeout
@@ -54,7 +47,7 @@ server.tool(
         }
       });
       console.error(`Received response with status: ${response.status}`);
-      
+
       // Convert HTML to text
       const text = htmlToText(response.data, {
         wordwrap: 130,
@@ -65,45 +58,45 @@ server.tool(
           { selector: 'style', format: 'skip' }
         ]
       });
-      
+
       // Truncate if necessary
       const maxLength = 8000;
-      const truncatedText = text.length > maxLength 
-        ? text.substring(0, maxLength) + `\n\n[Content truncated. Full documentation available at ${url}]` 
+      const truncatedText = text.length > maxLength
+        ? text.substring(0, maxLength) + `\n\n[Content truncated. Full documentation available at ${url}]`
         : text;
-      
+
       console.error(`Successfully processed docs for ${crateName}`);
       return {
         content: [{ type: "text", text: truncatedText }]
       };
     } catch (error) {
       console.error(`Error fetching documentation:`, error.message);
-      
+
       // Return a proper error response
       if (error.response) {
         // HTTP error response
         return {
-          content: [{ 
-            type: "text", 
-            text: `Error: Could not fetch documentation for crate. HTTP ${error.response.status}: ${error.response.statusText}. Please check if the crate name is correct.` 
+          content: [{
+            type: "text",
+            text: `Error: Could not fetch documentation for crate. HTTP ${error.response.status}: ${error.response.statusText}. Please check if the crate name is correct.`
           }],
           isError: true
         };
       } else if (error.code === 'ECONNABORTED') {
         // Timeout error
         return {
-          content: [{ 
-            type: "text", 
-            text: `Error: Request timed out while fetching documentation. Please try again.` 
+          content: [{
+            type: "text",
+            text: `Error: Request timed out while fetching documentation. Please try again.`
           }],
           isError: true
         };
       } else {
         // Other errors
         return {
-          content: [{ 
-            type: "text", 
-            text: `Error: Could not fetch documentation. ${error.message}` 
+          content: [{
+            type: "text",
+            text: `Error: Could not fetch documentation. ${error.message}`
           }],
           isError: true
         };

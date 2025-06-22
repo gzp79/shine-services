@@ -1,11 +1,11 @@
-use crate::camera_rig::{RigDriver, RigDriverTraits, RigUpdateParams};
+use crate::camera_rig::{RigDriver, AnyRigDriver, RigUpdateParams};
 use bevy::{ecs::component::Component, transform::components::Transform};
 use itertools::Itertools;
 
 #[derive(Component)]
 /// A chain of drivers, calculating displacements, and animating in succession.
 pub struct CameraRig {
-    pub drivers: Vec<Box<dyn RigDriverTraits>>,
+    pub drivers: Vec<Box<dyn AnyRigDriver>>,
     pub final_transform: Transform,
 }
 
@@ -77,13 +77,13 @@ impl CameraRig {
 }
 
 pub struct CameraRigBuilder {
-    drivers: Vec<Box<dyn RigDriverTraits>>,
+    drivers: Vec<Box<dyn AnyRigDriver>>,
 }
 
 impl CameraRigBuilder {
     pub fn with<R>(mut self, driver: R) -> Self
     where
-        R: RigDriverTraits,
+        R: AnyRigDriver,
     {
         self.drivers.push(Box::new(driver));
         self

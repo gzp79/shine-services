@@ -5,19 +5,21 @@ use bevy::{
         system::{Res, ResMut},
     },
     input::{keyboard::KeyCode, ButtonInput},
+    prelude::*,
     state::{
         app::AppExtStates,
         state::{NextState, State, States},
     },
 };
 
-use crate::{camera::CameraPlugin, world::WorldPlugin};
+use crate::world::WorldPlugin;
 
-mod camera;
+//mod camera;
+mod bevy_utils;
 mod camera_rig;
-mod world;
 
 mod poc;
+mod world;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
 pub enum GameState {
@@ -121,7 +123,7 @@ fn create_application(config: platform::Config) {
 
     app.insert_state(GameState::CameraOrbitPOC);
 
-    app.add_plugins(CameraPlugin { state: GameState::Playing });
+    //app.add_plugins(CameraPlugin { state: GameState::Playing });
     app.add_plugins(WorldPlugin { state: GameState::Playing });
 
     app.add_plugins(poc::CameraOrbitPOC {
@@ -137,6 +139,16 @@ fn create_application(config: platform::Config) {
         state: GameState::CameraFollowPOC,
     });
     app.add_systems(Update, next_poc);
+
+    /*app.init_resource::<InputMap<PlayerActions>>();
+    app.init_resource::<ActionState<PlayerActions>>();
+    app.init_resource::<InputSource>();
+
+    app.add_system(ActionStateDriver::<PlayerActions>::update_action_state.before(CoreSet::Update));
+    app.add_system(clear_input_events_system_set());
+
+    app.add_startup_system(setup);
+    app.add_system(debug_player_actions);*/
 
     app.run();
 }

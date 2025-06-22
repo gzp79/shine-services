@@ -13,7 +13,7 @@ pub trait RigDriver: std::any::Any {
 }
 
 /// A utility trait for all camera rig drivers to help with type erasure and dynamic dispatch.
-pub trait RigDriverTraits: RigDriver + Sync + Send + std::any::Any {
+pub trait AnyRigDriver: RigDriver + Sync + Send + std::any::Any {
     /// Returns `self` as `&dyn Any`
     fn as_any(&self) -> &dyn std::any::Any;
 
@@ -21,7 +21,7 @@ pub trait RigDriverTraits: RigDriver + Sync + Send + std::any::Any {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
-impl<T> RigDriverTraits for T
+impl<T> AnyRigDriver for T
 where
     T: RigDriver + std::any::Any + Sync + Send,
 {
