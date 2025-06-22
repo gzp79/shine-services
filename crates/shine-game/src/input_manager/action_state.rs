@@ -142,7 +142,7 @@ impl ActionData {
     }
 }
 
-#[derive(Resource, Debug, Clone)]
+#[derive(Component, Debug, Clone)]
 pub struct ActionState<A>
 where
     A: ActionLike,

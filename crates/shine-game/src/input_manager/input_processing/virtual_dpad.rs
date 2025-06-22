@@ -1,6 +1,5 @@
-use bevy::math::Vec2;
-
-use crate::input_manager::{ButtonLike, DualAxisLike, InputSources, UserInput};
+use crate::input_manager::{ButtonLike, CircleBoundsProcessor, DualAxisLike, InputSources, KeyboardInput, UserInput};
+use bevy::{input::keyboard::KeyCode, math::Vec2};
 
 /// A virtual dpad that converts 4 buttons into a dual axis.
 pub struct VirtualDpad<U, D, L, R>
@@ -65,5 +64,27 @@ where
             value.x += 1.0;
         }
         value
+    }
+}
+
+impl VirtualDpad<KeyboardInput, KeyboardInput, KeyboardInput, KeyboardInput> {
+    pub fn wasd() -> impl DualAxisLike {
+        Self::new(
+            KeyboardInput::new(KeyCode::KeyW),
+            KeyboardInput::new(KeyCode::KeyS),
+            KeyboardInput::new(KeyCode::KeyA),
+            KeyboardInput::new(KeyCode::KeyD),
+        )
+        .with_circle_bounds(1.0)
+    }
+
+    pub fn ijkl() -> impl DualAxisLike {
+        Self::new(
+            KeyboardInput::new(KeyCode::KeyI),
+            KeyboardInput::new(KeyCode::KeyK),
+            KeyboardInput::new(KeyCode::KeyJ),
+            KeyboardInput::new(KeyCode::KeyL),
+        )
+        .with_circle_bounds(1.0)
     }
 }
