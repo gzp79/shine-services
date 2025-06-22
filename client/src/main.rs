@@ -1,8 +1,6 @@
 use bevy::prelude::*;
-use shine_client::bevy_utils::application::{self, create_application, platform};
+use shine_game::application::{self, create_application, platform};
 
-mod bevy_utils;
-mod camera_rig;
 mod world;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]

@@ -1,4 +1,4 @@
-use crate::bevy_utils::input_manager::{ActionLike, ActionState, AxisLike, ButtonLike, DualAxisLike, InputSources};
+use crate::input_manager::{ActionLike, ActionState, AxisLike, ButtonLike, DualAxisLike, InputKind, InputSources};
 use bevy::{
     ecs::{
         resource::Resource,
@@ -46,22 +46,35 @@ where
         self.enabled = enabled;
     }
 
+    pub fn kind(&self, action: &A) -> InputKind {
+        if self.buttons.contains_key(action) {
+            InputKind::Button
+        } else if self.axes.contains_key(action) {
+            InputKind::Axis
+        } else if self.dual_axes.contains_key(action) {
+            InputKind::DualAxis
+        } else {
+            InputKind::None
+        }
+    }
+
     pub fn bind_button(&mut self, action: A, input: impl ButtonLike) {
-        if self.axes.contains_key(&action) || self.dual_axes.contains_key(&action) {
+        if !matches!(self.kind(&action), InputKind::Button | InputKind::None) {
             panic!("Action is already bound to a different input type");
         }
+
         self.buttons.entry(action).or_default().push(Box::new(input));
     }
 
     pub fn bind_axis(&mut self, action: A, input: impl AxisLike) {
-        if self.buttons.contains_key(&action) || self.dual_axes.contains_key(&action) {
+        if !matches!(self.kind(&action), InputKind::Axis | InputKind::None) {
             panic!("Action is already bound to a different input type");
         }
         self.axes.entry(action).or_default().push(Box::new(input));
     }
 
     pub fn bind_dual_axis(&mut self, action: A, input: impl DualAxisLike) {
-        if self.buttons.contains_key(&action) || self.axes.contains_key(&action) {
+        if !matches!(self.kind(&action), InputKind::DualAxis | InputKind::None) {
             panic!("Action is already bound to a different input type");
         }
         self.dual_axes.entry(action).or_default().push(Box::new(input));
@@ -98,8 +111,10 @@ where
         return;
     }
 
+    action_state.start_update();
+
     for (action, inputs) in &input_map.buttons {
-        let button_state = action_state.button_data_mut(action);
+        let button_state = action_state.set_button(action.clone());
 
         let mut pressed = false;
         for button_like in inputs {
@@ -109,14 +124,12 @@ where
             }
         }
 
-        if button_state.pressed != pressed {
-            button_state.start_time = time.elapsed().as_secs_f32();
-        }
-        button_state.pressed = pressed;
+        button_state.update(pressed, time.elapsed().as_secs_f32());
     }
 
     for (action, inputs) in &input_map.axes {
-        let axis_state = action_state.axis_data_mut(action);
+        let axis_state = action_state.set_axis(action.clone());
+
         let max_value = inputs
             .iter()
             .map(|a| a.value())
@@ -126,7 +139,8 @@ where
     }
 
     for (action, inputs) in &input_map.dual_axes {
-        let dual_axis_state = action_state.dual_axis_data_mut(action);
+        let dual_axis_state = action_state.set_dual_axis(action.clone());
+
         let max_value = inputs
             .iter()
             .map(|a| a.value_pair())
@@ -134,4 +148,6 @@ where
             .unwrap_or(Vec2::ZERO);
         dual_axis_state.value = max_value;
     }
+
+    action_state.finish_update();
 }

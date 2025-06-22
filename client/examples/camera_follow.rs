@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
-use shine_client::{
-    bevy_utils::application,
+use shine_game::{
+    application,
     camera_rig::{
         drivers::{Arm, LookAt, Position, Rotation, Smooth},
         CameraRig,
@@ -10,7 +10,7 @@ use shine_client::{
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_client::bevy_utils::application::{create_application, platform::Config};
+    use shine_game::application::{create_application, platform::Config};
 
     application::init(setup_game);
     let mut app = create_application(Config::default());

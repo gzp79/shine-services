@@ -6808,6 +6808,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shine-core",
+ "shine-forge",
  "shine-game",
  "shine-test",
  "thiserror 2.0.12",
@@ -6838,6 +6839,22 @@ dependencies = [
  "tokio",
  "url",
  "uuid",
+ "wasm-bindgen-test",
+]
+
+[[package]]
+name = "shine-forge"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "itertools 0.14.0",
+ "log",
+ "serde",
+ "serde_json",
+ "shine-infra",
+ "shine-test",
+ "thiserror 2.0.12",
+ "tokio",
  "wasm-bindgen-test",
 ]
 

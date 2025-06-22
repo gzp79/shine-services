@@ -19,6 +19,7 @@ bevy = { workspace = true, default-features = true, features = [
 ] }
 
 
+shine-forge = { workspace = true }
 shine-game = { workspace = true }
 shine-core = { workspace = true }
 

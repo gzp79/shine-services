@@ -1,4 +1,4 @@
-use crate::bevy_utils::input_manager::{ActionLike, InputMap};
+use crate::input_manager::{ActionLike, InputMap};
 use bevy::{
     ecs::{
         resource::Resource,
@@ -46,14 +46,11 @@ impl<'w> InputSources<'w> {
         self.sources.insert(source.type_id(), source.as_any());
     }
 
-    pub fn get_source<T>(&self) -> &T
+    pub fn get_source<T>(&self) -> Option<&T>
     where
         T: InputSource,
     {
-        self.sources
-            .get(&TypeId::of::<T>())
-            .and_then(|s| s.downcast_ref::<T>())
-            .unwrap_or_else(|| panic!("Source {} not found", std::any::type_name::<T>()))
+        self.sources.get(&TypeId::of::<T>()).and_then(|s| s.downcast_ref::<T>())
     }
 }
 

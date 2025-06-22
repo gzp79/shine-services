@@ -1,5 +1,5 @@
 use bevy::{app::App, ecs::event::Events, DefaultPlugins};
-use shine_game::map::{
+use shine_forge::map::{
     client, ChunkCommand, ChunkCommandQueue, ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkId, ChunkLayer,
     ChunkLayerSetup, ChunkOperation, ChunkRoot, ChunkVersion, DenseGridChunk, GridChunk, LayerSetup, MapChunk,
     MapChunkTracker, MapEvent, MapPlugin, SparseGridChunk,

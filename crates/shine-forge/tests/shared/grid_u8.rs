@@ -1,6 +1,6 @@
 use bevy::ecs::resource::Resource;
 use serde::{Deserialize, Serialize};
-use shine_game::map::{
+use shine_forge::map::{
     ChunkCommandQueue, ChunkHashTrack, ChunkHasher, ChunkLayer, ChunkLayerSetup, ChunkOperation, DenseGrid,
     DenseGridChunk, GridChunk, GridChunkTypes, SparseGrid, SparseGridChunk,
 };

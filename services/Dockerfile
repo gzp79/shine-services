@@ -17,14 +17,17 @@ RUN mkdir -p ./crates/shine-test/src && touch ./crates/shine-test/src/lib.rs
 COPY ./crates/shine-core/Cargo.toml ./crates/shine-core/
 RUN mkdir -p ./crates/shine-core/src && touch ./crates/shine-core/src/lib.rs
 
+COPY ./crates/shine-forge/Cargo.toml ./crates/shine-forge/
+RUN mkdir -p ./crates/shine-forge/src && touch ./crates/shine-forge/src/lib.rs
+
+COPY ./crates/shine-game/Cargo.toml ./crates/shine-game/
+RUN mkdir -p ./crates/shine-game/src && touch ./crates/shine-game/src/lib.rs
+
 COPY ./crates/shine-infra-macros/Cargo.toml ./crates/shine-infra-macros/
 RUN mkdir -p ./crates/shine-infra-macros/src && touch ./crates/shine-infra-macros/src/lib.rs
 
 COPY ./crates/shine-infra/Cargo.toml ./crates/shine-infra/
 RUN mkdir -p ./crates/shine-infra/src && touch ./crates/shine-infra/src/lib.rs
-
-COPY ./crates/shine-game/Cargo.toml ./crates/shine-game/
-RUN mkdir -p ./crates/shine-game/src && touch ./crates/shine-game/src/lib.rs
 
 # services
 COPY ./services/identity/Cargo.toml ./services/identity/

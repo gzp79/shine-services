@@ -1,13 +1,15 @@
-use crate::bevy_utils::input_manager::{
+use crate::input_manager::{
     action_state::ActionState,
     input_map::{update_action_state, InputMap},
     input_source::integrate_default_inputs,
     ActionLike,
 };
-use bevy::ecs::schedule::SystemSet;
 use bevy::{
-    app::{App, Plugin, PreUpdate},
-    ecs::schedule::IntoScheduleConfigs,
+    ecs::schedule::SystemSet,
+    {
+        app::{App, Plugin, PreUpdate},
+        ecs::schedule::IntoScheduleConfigs,
+    },
 };
 use std::marker::PhantomData;
 

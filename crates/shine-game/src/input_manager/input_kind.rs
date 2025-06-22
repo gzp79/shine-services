@@ -1,13 +1,19 @@
-use crate::bevy_utils::input_manager::InputSources;
+use crate::input_manager::InputSources;
 use bevy::math::Vec2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum InputKind {
+    Button,
+    Axis,
+    DualAxis,
+    None,
+}
 
 pub trait UserInput: Send + Sync + 'static {
     fn integrate(&mut self, input: &InputSources);
 }
 
 pub trait ButtonLike: UserInput {
-    fn pressed(&self) -> bool;
-    fn released(&self) -> bool;
     fn is_down(&self) -> bool;
 }
 
