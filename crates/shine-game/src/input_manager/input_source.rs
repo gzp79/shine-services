@@ -8,6 +8,7 @@ use bevy::{
         gamepad::Gamepad,
         keyboard::KeyCode,
         mouse::{AccumulatedMouseMotion, MouseButton},
+        touch::Touches,
         ButtonInput,
     },
     time::Time,
@@ -87,6 +88,7 @@ pub fn integrate_default_inputs<A>(
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     accumulated_mouse_motion: Res<AccumulatedMouseMotion>,
+    touches: Res<Touches>,
     gamepads: Query<(Entity, &Gamepad)>,
     gamepad_manager: Res<GamepadManager>,
     mut input_query: Query<&mut InputMap<A>>,
@@ -103,6 +105,7 @@ pub fn integrate_default_inputs<A>(
         input_source.add_resource(&*keyboard);
         input_source.add_resource(&*mouse);
         input_source.add_resource(&*accumulated_mouse_motion);
+        input_source.add_resource(&*touches);
 
         input_source.add_resource(&*gamepad_manager);
         for (entity, gamepad) in gamepads.iter() {

@@ -1,7 +1,7 @@
 use bevy::{prelude::*, window::CursorGrabMode};
 use shine_game::input_manager::{
     ActionLike, ActionState, InputManagerPlugin, InputMap, KeyboardInput, MouseMotionInput,
-    MouseNormalizedPositionInput, MousePositionInput,
+    MouseNormalizedPositionInput, MousePositionInput, TouchPositionInput,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -9,6 +9,7 @@ enum Action {
     Motion,
     Position,
     NormalizedPosition,
+    TouchPosition,
 
     Grab,
 }
@@ -37,6 +38,7 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
         .with_dual_axis(Action::Motion, MouseMotionInput::new())
         .with_dual_axis(Action::Position, MousePositionInput::new())
         .with_dual_axis(Action::NormalizedPosition, MouseNormalizedPositionInput::new())
+        .with_dual_axis(Action::TouchPosition, TouchPositionInput::new())
         .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
 
     commands.spawn((
@@ -85,6 +87,16 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>) {
         let normalized_position_value = action_state.dual_axis(&Action::NormalizedPosition);
         let normalized_position_str = format!("Normalized Position: {:?}", normalized_position_value.value);
 
-        text.0 = format!("{}\n{}\n{}", motion_str, position_str, normalized_position_str);
+        let touch_position_value = action_state.dual_axis(&Action::TouchPosition);
+        let touch_position_str = if touch_position_value.value == Vec2::MAX {
+            "Touch Position: None".to_string()
+        } else {
+            format!("Touch Position: {:?}", touch_position_value.value)
+        };
+
+        text.0 = format!(
+            "{}\n{}\n{}\n{}",
+            motion_str, position_str, normalized_position_str, touch_position_str
+        );
     }
 }
