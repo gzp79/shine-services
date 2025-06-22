@@ -1,42 +1,72 @@
-use std::any::Any;
-
 use crate::bevy_utils::input_manager::{ActionLike, InputMap};
 use bevy::{
     ecs::{
         resource::Resource,
-        system::{Res, ResMut, StaticSystemParam, SystemParam},
+        system::{Res, ResMut},
     },
+    input::{keyboard::KeyCode, ButtonInput},
     time::Time,
 };
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+};
 
-pub trait InputSource: Resource + Send + Sync + 'static {
-    //fn integrate<A: ActionLike>(provider: Res<Self>, time: Res<Time>, input_map: &mut InputMap<A>);
-}
+pub trait InputSource: Resource + Any + 'static {}
 
-pub trait AnyInputSource: InputSource {
+impl InputSource for Time {}
+impl InputSource for ButtonInput<KeyCode> {}
+
+pub trait AnyInputSource {
     fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 impl<T> AnyInputSource for T
 where
-    T: InputSource + Any + Sync + Send,
+    T: InputSource,
 {
     fn as_any(&self) -> &dyn Any {
         self
     }
+}
 
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+pub struct InputSources<'w> {
+    pub sources: HashMap<TypeId, &'w dyn Any>,
+}
+
+impl<'w> InputSources<'w> {
+    pub fn new() -> Self {
+        Self { sources: HashMap::new() }
+    }
+
+    pub fn add_source<T>(&mut self, source: &'w T)
+    where
+        T: InputSource,
+    {
+        self.sources.insert(source.type_id(), source.as_any());
+    }
+
+    pub fn get_source<T>(&self) -> &T
+    where
+        T: InputSource,
+    {
+        self.sources
+            .get(&TypeId::of::<T>())
+            .and_then(|s| s.downcast_ref::<T>())
+            .unwrap_or_else(|| panic!("Source {} not found", std::any::type_name::<T>()))
     }
 }
 
-pub trait InputProvider: InputSource {
-    fn integrate<A: ActionLike>(provider: Res<Self>, time: Res<Time>, input_map: &mut InputMap<A>);
-}
+pub fn integrate_default_inputs<A>(
+    time: Res<Time>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut input_map: ResMut<InputMap<A>>,
+) where
+    A: ActionLike,
+{
+    let mut input_source = InputSources::new();
+    input_source.add_source(&*time);
+    input_source.add_source(&*keyboard);
 
-pub trait ComputedInputProvider: InputSource {
-    type SourceData: SystemParam;
-
-    fn compute(source: StaticSystemParam<Self::SourceData>, provider: ResMut<Self>);
+    input_map.integrate(input_source);
 }

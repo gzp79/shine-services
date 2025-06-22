@@ -1,176 +1,31 @@
-use bevy::{
-    app::{App, AppExit, Update},
-    ecs::{
-        event::EventWriter,
-        system::{Res, ResMut},
-    },
-    input::{keyboard::KeyCode, ButtonInput},
-    prelude::*,
-    state::{
-        app::AppExtStates,
-        state::{NextState, State, States},
-    },
-};
+use bevy::prelude::*;
+use shine_client::bevy_utils::application::{self, create_application, platform};
 
-use crate::world::WorldPlugin;
-
-//mod camera;
 mod bevy_utils;
 mod camera_rig;
-
-mod poc;
 mod world;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
 pub enum GameState {
-    //MainMenu,
+    /// Main gameplay state.
     Playing,
-
-    //POCs
-    CameraOrbitPOC,
-    CameraFreePOC,
-    CameraLookAtPOC,
-    CameraFollowPOC,
 }
 
-#[cfg(target_arch = "wasm32")]
-mod platform {
-    use super::create_application;
-    use bevy::{
-        app::{App, AppExit, PluginGroup, PostUpdate},
-        ecs::event::EventWriter,
-        utils::default,
-        window::{Window, WindowPlugin},
-        DefaultPlugins,
-    };
-    use std::sync::atomic::{self, AtomicBool};
-    use wasm_bindgen::prelude::*;
+/// Add all the game plugins to the app.
+fn setup_game(app: &mut App) {
+    app.add_plugins(world::WorldPlugin { state: GameState::Playing });
 
-    static IS_APPLICATION: AtomicBool = AtomicBool::new(false);
-    static EXIT_APPLICATION: AtomicBool = AtomicBool::new(false);
-
-    pub struct Config {
-        canvas: String,
-    }
-
-    pub fn platform_init(app: &mut App, config: Config) {
-        let Config { canvas } = config;
-
-        app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                canvas: Some(canvas.clone()),
-                ..default()
-            }),
-            ..default()
-        }));
-        app.add_systems(PostUpdate, exit_system);
-
-        log::info!("Initializing game for canvas: {}", canvas);
-    }
-
-    fn exit_system(mut exit: EventWriter<AppExit>) {
-        if EXIT_APPLICATION.load(atomic::Ordering::SeqCst) {
-            log::info!("Exiting application...");
-            exit.write(AppExit::Success);
-        }
-    }
-
-    #[wasm_bindgen]
-    pub fn start_game(canvas: String) {
-        if IS_APPLICATION
-            .compare_exchange(false, true, atomic::Ordering::SeqCst, atomic::Ordering::SeqCst)
-            .is_err()
-        {
-            log::error!("Game is already running.");
-            return;
-        }
-
-        log::info!("Starting game...");
-        create_application(Config { canvas });
-    }
-
-    #[wasm_bindgen]
-    pub fn stop_game() {
-        log::info!("Stopping game...");
-        EXIT_APPLICATION.store(true, atomic::Ordering::SeqCst);
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-mod platform {
-    use bevy::{app::App, DefaultPlugins};
-
-    pub struct Config;
-
-    pub fn platform_init(app: &mut App, _config: Config) {
-        app.add_plugins(DefaultPlugins);
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn main() {
-    /* in wasm the application is created in the start_game to handle  */
+    app.insert_state(GameState::Playing);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    create_application(platform::Config);
-}
-
-fn create_application(config: platform::Config) {
-    let mut app = App::new();
-    platform::platform_init(&mut app, config);
-
-    app.insert_state(GameState::CameraOrbitPOC);
-
-    //app.add_plugins(CameraPlugin { state: GameState::Playing });
-    app.add_plugins(WorldPlugin { state: GameState::Playing });
-
-    app.add_plugins(poc::CameraOrbitPOC {
-        state: GameState::CameraOrbitPOC,
-    });
-    app.add_plugins(poc::CameraFreePOC {
-        state: GameState::CameraFreePOC,
-    });
-    app.add_plugins(poc::CameraLookAtPOC {
-        state: GameState::CameraLookAtPOC,
-    });
-    app.add_plugins(poc::CameraFollowPOC {
-        state: GameState::CameraFollowPOC,
-    });
-    app.add_systems(Update, next_poc);
-
-    /*app.init_resource::<InputMap<PlayerActions>>();
-    app.init_resource::<ActionState<PlayerActions>>();
-    app.init_resource::<InputSource>();
-
-    app.add_system(ActionStateDriver::<PlayerActions>::update_action_state.before(CoreSet::Update));
-    app.add_system(clear_input_events_system_set());
-
-    app.add_startup_system(setup);
-    app.add_system(debug_player_actions);*/
-
+    application::init(setup_game);
+    let mut app = create_application(platform::Config::default());
     app.run();
 }
 
-fn next_poc(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    game_state: Res<State<GameState>>,
-    mut next_game_state: ResMut<NextState<GameState>>,
-    mut exit: EventWriter<AppExit>,
-) {
-    if keyboard_input.just_pressed(KeyCode::Tab) {
-        match game_state.get() {
-            GameState::CameraOrbitPOC => next_game_state.set(GameState::CameraFreePOC),
-            GameState::CameraFreePOC => next_game_state.set(GameState::CameraLookAtPOC),
-            GameState::CameraLookAtPOC => next_game_state.set(GameState::CameraFollowPOC),
-            GameState::CameraFollowPOC => next_game_state.set(GameState::CameraOrbitPOC),
-            _ => {}
-        }
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    if keyboard_input.just_pressed(KeyCode::Escape) {
-        exit.write(AppExit::Success);
-    }
+#[cfg(target_arch = "wasm32")]
+pub fn main() {
+    application::init(setup_game);
 }

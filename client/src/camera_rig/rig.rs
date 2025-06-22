@@ -1,4 +1,4 @@
-use crate::camera_rig::{RigDriver, AnyRigDriver, RigUpdateParams};
+use crate::camera_rig::{AnyRigDriver, RigDriver, RigUpdateParams};
 use bevy::{ecs::component::Component, transform::components::Transform};
 use itertools::Itertools;
 

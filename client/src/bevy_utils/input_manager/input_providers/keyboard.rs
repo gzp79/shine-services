@@ -1,11 +1,5 @@
-use crate::bevy_utils::input_manager::{
-    ActionLike, AnyInputSource, ButtonLike, InputMap, InputProvider, InputSource, IntegratedInput, UserInput,
-};
-use bevy::{
-    ecs::system::Res,
-    input::{keyboard::KeyCode, ButtonInput},
-    time::Time,
-};
+use crate::bevy_utils::input_manager::{ButtonLike, InputSources, UserInput};
+use bevy::input::{keyboard::KeyCode, ButtonInput};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum KeyboardStatus {
@@ -13,36 +7,6 @@ enum KeyboardStatus {
     Pressed,
     JustReleased,
     Released,
-}
-
-impl Default for KeyboardStatus {
-    fn default() -> Self {
-        Self::Released
-    }
-}
-
-impl UserInput for KeyboardStatus {}
-
-impl ButtonLike for KeyboardStatus {
-    fn pressed(&self) -> bool {
-        matches!(self, KeyboardStatus::JustPressed)
-    }
-
-    fn released(&self) -> bool {
-        matches!(self, KeyboardStatus::JustReleased)
-    }
-
-    fn is_down(&self) -> bool {
-        matches!(self, KeyboardStatus::JustPressed | KeyboardStatus::Pressed)
-    }
-}
-
-impl InputSource for ButtonInput<KeyCode> {}
-
-impl InputProvider for ButtonInput<KeyCode> {
-    fn integrate<A: ActionLike>(provider: Res<Self>, time: Res<Time>, input_map: &mut InputMap<A>) {
-        input_map.integrate(&*provider, &time);
-    }
 }
 
 pub struct KeyboardInput {
@@ -59,25 +23,9 @@ impl KeyboardInput {
     }
 }
 
-impl UserInput for KeyboardInput {}
-
-impl ButtonLike for KeyboardInput {
-    fn pressed(&self) -> bool {
-        self.status.pressed()
-    }
-
-    fn released(&self) -> bool {
-        self.status.released()
-    }
-
-    fn is_down(&self) -> bool {
-        self.status.is_down()
-    }
-}
-
-impl IntegratedInput for KeyboardInput {
-    fn integrate(&mut self, input: &dyn AnyInputSource, _time: &Time) {
-        if let Some(keyboard) = input.as_any().downcast_ref::<ButtonInput<KeyCode>>() {
+impl UserInput for KeyboardInput {
+    fn integrate(&mut self, input: &InputSources) {
+        if let Some(keyboard) = input.get_source::<ButtonInput<KeyCode>>() {
             if keyboard.just_pressed(self.key) {
                 self.status = KeyboardStatus::JustPressed;
             } else if keyboard.pressed(self.key) {
@@ -88,5 +36,19 @@ impl IntegratedInput for KeyboardInput {
                 self.status = KeyboardStatus::Released;
             }
         }
+    }
+}
+
+impl ButtonLike for KeyboardInput {
+    fn pressed(&self) -> bool {
+        matches!(self.status, KeyboardStatus::JustPressed)
+    }
+
+    fn released(&self) -> bool {
+        matches!(self.status, KeyboardStatus::JustReleased)
+    }
+
+    fn is_down(&self) -> bool {
+        matches!(self.status, KeyboardStatus::JustPressed | KeyboardStatus::Pressed)
     }
 }

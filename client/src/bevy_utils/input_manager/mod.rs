@@ -6,5 +6,5 @@ mod input_source;
 pub use self::input_source::*;
 mod input_map;
 pub use self::input_map::*;
-mod input_providers;
-pub use self::input_providers::*;
+mod input_plugin;
+pub use self::input_plugin::*;

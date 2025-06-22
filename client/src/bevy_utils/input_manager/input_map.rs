@@ -1,6 +1,4 @@
-use crate::bevy_utils::input_manager::{
-    ActionLike, ActionState,  AnyInputSource, AxisLike, ButtonLike, DualAxisLike, InputSource,
-};
+use crate::bevy_utils::input_manager::{ActionLike, ActionState, AxisLike, ButtonLike, DualAxisLike, InputSources};
 use bevy::{
     ecs::{
         resource::Resource,
@@ -11,25 +9,15 @@ use bevy::{
 };
 use std::collections::HashMap;
 
-/// A trait for inputs that can be integrated into the input map.
-pub trait IntegratedInput {
-    /// Integrate the input into the input map.
-    fn integrate(&mut self, input: &dyn AnyInputSource, time: &Time);
-}
-
-pub trait IntegratedButtonLike: ButtonLike + IntegratedInput {}
-pub trait IntegratedAxisLike: AxisLike + IntegratedInput {}
-pub trait IntegratedDualAxisLike: DualAxisLike + IntegratedInput {}
-
 #[derive(Resource)]
 pub struct InputMap<A>
 where
     A: ActionLike,
 {
     enabled: bool,
-    buttons: HashMap<A, Vec<Box<dyn IntegratedButtonLike>>>,
-    axes: HashMap<A, Vec<Box<dyn IntegratedAxisLike>>>,
-    dual_axes: HashMap<A, Vec<Box<dyn IntegratedDualAxisLike>>>,
+    buttons: HashMap<A, Vec<Box<dyn ButtonLike>>>,
+    axes: HashMap<A, Vec<Box<dyn AxisLike>>>,
+    dual_axes: HashMap<A, Vec<Box<dyn DualAxisLike>>>,
 }
 
 impl<A> Default for InputMap<A>
@@ -58,43 +46,43 @@ where
         self.enabled = enabled;
     }
 
-    pub fn bind_button(&mut self, action: A, input: impl IntegratedButtonLike) {
+    pub fn bind_button(&mut self, action: A, input: impl ButtonLike) {
         if self.axes.contains_key(&action) || self.dual_axes.contains_key(&action) {
             panic!("Action is already bound to a different input type");
         }
         self.buttons.entry(action).or_default().push(Box::new(input));
     }
 
-    pub fn bind_axis(&mut self, action: A, input: impl IntegratedAxisLike) {
+    pub fn bind_axis(&mut self, action: A, input: impl AxisLike) {
         if self.buttons.contains_key(&action) || self.dual_axes.contains_key(&action) {
             panic!("Action is already bound to a different input type");
         }
         self.axes.entry(action).or_default().push(Box::new(input));
     }
 
-    pub fn bind_dual_axis(&mut self, action: A, input: impl IntegratedDualAxisLike) {
+    pub fn bind_dual_axis(&mut self, action: A, input: impl DualAxisLike) {
         if self.buttons.contains_key(&action) || self.axes.contains_key(&action) {
             panic!("Action is already bound to a different input type");
         }
         self.dual_axes.entry(action).or_default().push(Box::new(input));
     }
 
-    pub fn integrate(&mut self, provider: &dyn AnyInputSource, time: &Time) {
+    pub fn integrate(&mut self, input_source: InputSources) {
         for inputs in self.buttons.values_mut() {
             for input in inputs {
-                input.integrate(provider, time);
+                input.integrate(&input_source);
             }
         }
 
         for inputs in self.axes.values_mut() {
             for input in inputs {
-                input.integrate(provider, time);
+                input.integrate(&input_source);
             }
         }
 
         for inputs in self.dual_axes.values_mut() {
             for input in inputs {
-                input.integrate(provider, time);
+                input.integrate(&input_source);
             }
         }
     }

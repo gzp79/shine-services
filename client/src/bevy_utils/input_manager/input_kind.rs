@@ -1,7 +1,9 @@
-use crate::bevy_utils::input_manager::InputSource;
-use bevy::{math::Vec2, time::Time};
+use crate::bevy_utils::input_manager::InputSources;
+use bevy::math::Vec2;
 
-pub trait UserInput: Send + Sync + 'static {}
+pub trait UserInput: Send + Sync + 'static {
+    fn integrate(&mut self, input: &InputSources);
+}
 
 pub trait ButtonLike: UserInput {
     fn pressed(&self) -> bool;
@@ -16,4 +18,3 @@ pub trait AxisLike: UserInput {
 pub trait DualAxisLike: UserInput {
     fn value_pair(&self) -> Vec2;
 }
-
