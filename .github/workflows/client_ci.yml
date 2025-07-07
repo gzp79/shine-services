@@ -43,37 +43,30 @@ jobs:
            cargo binstall wasm-bindgen-cli
            cargo binstall wasm-opt
 
-      - name: Compile Rust to WASM
+      - name: Compile to WASM
         run: |
-          cargo build --target wasm32-unknown-unknown --profile release-lto -p shine-client
+          cargo build --target wasm32-unknown-unknown --profile release-lto -p shine-client --bins --examples
 
           echo "Run bindgen for shine-client"
           wasm-bindgen --no-typescript --target web \
             --out-dir ./dist/${{ github.sha }}\
             ./target/wasm32-unknown-unknown/release-lto/shine-client.wasm
-
           echo "Optimize shine-client"
           wasm-opt -Oz -o ./dist/${{ github.sha }}/shine-client_opt.wasm ./dist/${{ github.sha }}/shine-client_bg.wasm
           rm ./dist/${{ github.sha }}/shine-client_bg.wasm
           mv ./dist/${{ github.sha }}/shine-client_opt.wasm ./dist/${{ github.sha }}/shine-client_bg.wasm
-
           echo "Copy index.html"
           cp client/index.html ./dist/${{ github.sha }}/index.html
-
-      - name: Compile examples
-        run: |
-          cargo build --target wasm32-unknown-unknown --profile release-lto -p shine-client --examples
+          
           for example in ${{ env.EXAMPLES }}; do
             echo "Run bindgen for ${example}"
             wasm-bindgen --no-typescript --target web \
               --out-dir ./dist/${{ github.sha }} \
               ./target/wasm32-unknown-unknown/release-lto/examples/${example}.wasm
-
             echo "Optimize ${example}"
             wasm-opt -Oz -o ./dist/${{ github.sha }}/${example}_opt.wasm ./dist/${{ github.sha }}/${example}_bg.wasm
             rm ./dist/${{ github.sha }}/${example}_bg.wasm
             mv ./dist/${{ github.sha }}/${example}_opt.wasm ./dist/${{ github.sha }}/${example}_bg.wasm
-            
             echo "Create ${example}.html"
             sed 's/shine-client/${example}/g' client/index.html > ./dist/${{ github.sha }}/${example}.html
           done
