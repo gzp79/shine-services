@@ -14,7 +14,7 @@ concurrency:
 env:
     BUCKET_LINK: https://ce847ac4c44fb11af63e62ba34ec40db.r2.cloudflarestorage.com
     BUCKET_NAME: shine-games
-    EXAMPLES: camera_follow camera_free camera_look_at camera_orbit input_actions input_pointer
+    EXAMPLES: "camera_follow camera_free camera_look_at camera_orbit input_actions input_pointer"
 
 jobs:
   wasm-build:
