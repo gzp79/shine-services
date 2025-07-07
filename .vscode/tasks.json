@@ -236,7 +236,7 @@
         { "label": "camera_free", "value": "--example camera_free" },
         { "label": "camera_look_at", "value": "--example camera_look_at" },
         { "label": "input_actions", "value": "--example input_actions" },
-        { "label": "input_mouse", "value": "--example input_mouse" }
+        { "label": "input_pointer", "value": "--example input_pointer" }
       ],
       "default": "asset-service"
     },

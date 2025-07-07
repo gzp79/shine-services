@@ -1,12 +1,10 @@
-use axum::{extract::State, Extension, Json};
+use axum::{Extension, Json};
 use serde::Serialize;
 use shine_infra::web::{
     responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
     session::{permissions, CheckedCurrentUser, CorePermissions},
 };
 use utoipa::ToSchema;
-
-use crate::app_state::AppState;
 
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -21,7 +19,7 @@ pub struct ServiceStatus {}
     )
 )]
 pub async fn get_service_status(
-    State(state): State<AppState>,
+    //State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
     user: CheckedCurrentUser,
 ) -> Result<Json<ServiceStatus>, ProblemResponse> {

@@ -76,8 +76,12 @@ fn grab_mouse(players: Query<&ActionState<Action>, Without<Window>>, mut window:
     }
 }
 
-fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>) {
+fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Query<&Window>) {
     for (action_state, mut text) in players.iter_mut() {
+        let window = window.single().unwrap();
+        let (width, height) = (window.width(), window.height());
+        let size_str = format!("Size: {}x{}", width, height);
+
         let motion_value = action_state.dual_axis(&Action::Motion);
         let motion_str = format!("Motion: {:?}", motion_value.value);
 
@@ -94,9 +98,13 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>) {
             format!("Touch Position: {:?}", touch_position_value.value)
         };
 
-        text.0 = format!(
-            "{}\n{}\n{}\n{}",
-            motion_str, position_str, normalized_position_str, touch_position_str
-        );
+        text.0 = [
+            size_str,
+            motion_str,
+            position_str,
+            normalized_position_str,
+            touch_position_str,
+        ]
+        .join("\n");
     }
 }

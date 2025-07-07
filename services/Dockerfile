@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1-labs
+
 FROM rust:bookworm AS build
 
 RUN USER=root
@@ -7,66 +9,55 @@ RUN rustup component add rustfmt
 # Create a dummy project to cache dependencies as a separate layer
 WORKDIR /shine
 
-# crates
-COPY ./crates/shine-test-macros/Cargo.toml ./crates/shine-test-macros/
-RUN mkdir -p ./crates/shine-test-macros/src && touch ./crates/shine-test-macros/src/lib.rs
+ENV ALL_BINS="services/identity services/builder client"
+ENV ALL_LIBS="crates/shine-test-macros crates/shine-test crates/shine-core crates/shine-forge crates/shine-game crates/shine-infra-macros crates/shine-infra"
+ENV SERVICE_PROJECTS="shine-test-macros shine-test shine-core shine-forge shine-infra-macros shine-infra shine-identity shine-builder"
 
-COPY ./crates/shine-test/Cargo.toml ./crates/shine-test/
-RUN mkdir -p ./crates/shine-test/src && touch ./crates/shine-test/src/lib.rs
-
-COPY ./crates/shine-core/Cargo.toml ./crates/shine-core/
-RUN mkdir -p ./crates/shine-core/src && touch ./crates/shine-core/src/lib.rs
-
-COPY ./crates/shine-forge/Cargo.toml ./crates/shine-forge/
-RUN mkdir -p ./crates/shine-forge/src && touch ./crates/shine-forge/src/lib.rs
-
-COPY ./crates/shine-game/Cargo.toml ./crates/shine-game/
-RUN mkdir -p ./crates/shine-game/src && touch ./crates/shine-game/src/lib.rs
-
-COPY ./crates/shine-infra-macros/Cargo.toml ./crates/shine-infra-macros/
-RUN mkdir -p ./crates/shine-infra-macros/src && touch ./crates/shine-infra-macros/src/lib.rs
-
-COPY ./crates/shine-infra/Cargo.toml ./crates/shine-infra/
-RUN mkdir -p ./crates/shine-infra/src && touch ./crates/shine-infra/src/lib.rs
-
-# services
-COPY ./services/identity/Cargo.toml ./services/identity/
-RUN mkdir -p ./services/identity/src && echo "fn main() {}" >./services/identity/src/main.rs
-
-COPY ./services/builder/Cargo.toml ./services/builder/
-RUN mkdir -p ./services/builder/src && echo "fn main() {}" >./services/builder/src/main.rs
-
-# client
-# A dummy empty project
-RUN cargo new --bin client --name shine-client
+# copy all cargo.toml files
+COPY --parents ./**/Cargo.toml ./
+# create empty main projects
+RUN for bin in $ALL_BINS; do \
+        mkdir -p ./$bin/src; \
+        echo "fn main() {}" > ./$bin/src/main.rs; \
+    done
+# create empty lib projects
+RUN for lib in $ALL_LIBS; do \
+        mkdir -p ./$lib/src; \
+        touch ./$lib/src/lib.rs; \
+    done
 
 COPY ./rustfmt.toml ./
 COPY ./clippy.toml ./
 COPY ./Cargo.toml ./
 COPY ./Cargo.lock ./
 
-RUN cargo build --release 
+RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \
+    && cargo build --release $PROJECTS
+
 RUN rm -rf ./crates \
     && rm -rf ./services \
-    && rm -f ./target/release/deps/libshine* \
-    && rm -f ./target/release/deps/shine*
+    && rm -rf ./client \
+    && rm -rf ./target/release/deps/libshine* \
+    && rm -rf ./target/release/deps/shine*
 
 # Copy the actual source code
 COPY ./crates ./crates
 COPY ./services ./services
-# Skipping client, the dummy project is enough 
-# COPY ./client ./client  
+COPY ./client ./client
 
 RUN cargo fmt --check
 
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG="debug"
-
 ENV SHINE_TEST_REDIS_CNS="redis://redis.mockbox.com:6379"
 ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.mockbox.com:5432/database-test?sslmode=disable"
 
-RUN cargo build --release
-RUN cargo test --release
+# build the final project  
+RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \
+  && cargo build --release $PROJECTS
+# running tests
+RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \
+  && cargo test --release $PROJECTS 
 
 #######################################################
 FROM nginx:bookworm AS base

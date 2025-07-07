@@ -3,7 +3,7 @@ use std::future::Future;
 
 pub enum EmailContent {
     Html(String),
-    Text(String),
+    //Text(String),
 }
 
 pub struct Email {

@@ -3,8 +3,8 @@ use bevy::{input::touch::Touches, math::Vec2};
 
 impl InputSource for Touches {}
 
-/// Return touch position in screen coordinates.
-/// When there is no touch, an extreme Vec2:MAX value is returned.
+/// Return touch position for the first finger in screen coordinates.
+/// When there is no touch, an extreme Vec2::MAX value is returned.
 pub struct TouchPositionInput {
     id: Option<u64>,
     value: Vec2,

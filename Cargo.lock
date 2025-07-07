@@ -6871,6 +6871,7 @@ dependencies = [
  "shine-test",
  "thiserror 2.0.12",
  "tokio",
+ "wasm-bindgen",
  "wasm-bindgen-test",
 ]
 

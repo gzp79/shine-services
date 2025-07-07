@@ -13,7 +13,8 @@ concurrency:
 
 env:
     BUCKET_LINK: https://ce847ac4c44fb11af63e62ba34ec40db.r2.cloudflarestorage.com
-    BUCKET_NAME: shine-games  
+    BUCKET_NAME: shine-games
+    EXAMPLES: camera_follow camera_free camera_look_at camera_orbit input_actions input_pointer
 
 jobs:
   wasm-build:
@@ -45,13 +46,37 @@ jobs:
       - name: Compile Rust to WASM
         run: |
           cargo build --target wasm32-unknown-unknown --profile release-lto -p shine-client
+
+          echo "Run bindgen for shine-client"
           wasm-bindgen --no-typescript --target web \
             --out-dir ./dist/${{ github.sha }}\
             ./target/wasm32-unknown-unknown/release-lto/shine-client.wasm
+
+          echo "Optimize shine-client"
           wasm-opt -Oz -o ./dist/${{ github.sha }}/shine-client_opt.wasm ./dist/${{ github.sha }}/shine-client_bg.wasm
           rm ./dist/${{ github.sha }}/shine-client_bg.wasm
           mv ./dist/${{ github.sha }}/shine-client_opt.wasm ./dist/${{ github.sha }}/shine-client_bg.wasm
+
+          echo "Copy index.html"
           cp client/index.html ./dist/${{ github.sha }}/index.html
+
+      - name: Compile examples
+        run: |
+          cargo build --target wasm32-unknown-unknown --profile release-lto -p shine-client --examples
+          for example in ${{ env.EXAMPLES }}; do
+            echo "Run bindgen for ${example}"
+            wasm-bindgen --no-typescript --target web \
+              --out-dir ./dist/${{ github.sha }} \
+              ./target/wasm32-unknown-unknown/release-lto/examples/${example}.wasm
+
+            echo "Optimize ${example}"
+            wasm-opt -Oz -o ./dist/${{ github.sha }}/${example}_opt.wasm ./dist/${{ github.sha }}/${example}_bg.wasm
+            rm ./dist/${{ github.sha }}/${example}_bg.wasm
+            mv ./dist/${{ github.sha }}/${example}_opt.wasm ./dist/${{ github.sha }}/${example}_bg.wasm
+            
+            echo "Create ${example}.html"
+            sed 's/shine-client/${example}/g' client/index.html > ./dist/${{ github.sha }}/${example}.html
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -67,8 +92,8 @@ jobs:
       contents: read
 
     steps:
-      - name: Download artifacts
         uses: actions/download-artifact@v4
+      - name: Download artifacts
         with:
           name: game-wasm
           path: ./dist

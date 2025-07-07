@@ -15,7 +15,7 @@ pub fn init(setup_fn: SetupFn) {
 /// Platform-specific initialization.
 #[cfg(target_arch = "wasm32")]
 pub mod platform {
-    use super::{create_application, SETUP_FN};
+    use super::create_application;
     use bevy::{
         app::{App, AppExit, PluginGroup, PostUpdate},
         ecs::event::EventWriter,
@@ -36,6 +36,7 @@ pub mod platform {
         app.add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 canvas: Some(canvas.clone()),
+                fit_canvas_to_parent: true,
                 ..default()
             }),
             ..default()
@@ -46,10 +47,10 @@ pub mod platform {
     static IS_APPLICATION: AtomicBool = AtomicBool::new(false);
     static EXIT_APPLICATION: AtomicBool = AtomicBool::new(false);
 
-    fn exit_system(mut exit: EventWriter<bevy::app::AppExit>) {
+    fn exit_system(mut exit: EventWriter<AppExit>) {
         if EXIT_APPLICATION.load(atomic::Ordering::SeqCst) {
             log::info!("Exiting application...");
-            exit.write(bevy::app::AppExit::Success);
+            exit.write(AppExit::Success);
         }
     }
 
