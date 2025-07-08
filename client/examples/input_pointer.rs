@@ -1,7 +1,10 @@
 use bevy::{prelude::*, window::CursorGrabMode};
-use shine_game::input_manager::{
-    ActionLike, ActionState, InputManagerPlugin, InputMap, KeyboardInput, MouseMotionInput,
-    MouseNormalizedPositionInput, MousePositionInput, TouchPositionInput,
+use shine_game::{
+    application,
+    input_manager::{
+        ActionLike, ActionState, InputManagerPlugin, InputMap, KeyboardInput, MouseMotionInput,
+        MouseNormalizedPositionInput, MousePositionInput, TouchPositionInput,
+    },
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -19,13 +22,24 @@ impl ActionLike for Action {}
 #[derive(Component)]
 struct StatusText;
 
-fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugins(InputManagerPlugin::<Action>::default())
+#[cfg(not(target_arch = "wasm32"))]
+pub fn main() {
+    use shine_game::application::{create_application, platform::Config};
+
+    application::init(setup_game);
+    let mut app = create_application(Config::default());
+    app.run();
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn main() {
+    application::init(setup_game);
+}
+
+fn setup_game(app: &mut App) {
+    app.add_plugins(InputManagerPlugin::<Action>::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, (show_status, grab_mouse))
-        .run();
+        .add_systems(Update, (show_status, grab_mouse));
 }
 
 fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
