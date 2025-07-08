@@ -3,6 +3,9 @@ name: Cleanup Packages
 on:
   workflow_dispatch:
 
+permissions:
+  packages: write
+
 env:
   REGISTRY: ghcr.io
   PACKAGE_NAME: ${{ github.event.repository.name }}
