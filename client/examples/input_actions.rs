@@ -1,7 +1,10 @@
 use bevy::prelude::*;
-use shine_game::input_manager::{
-    ActionLike, ActionState, CircleBoundsProcessor, GamepadButtonInput, GamepadStickInput, InputManagerPlugin,
-    InputMap, KeyboardInput, MouseButtonInput, VirtualDpad,
+use shine_game::{
+    application,
+    input_manager::{
+        ActionLike, ActionState, CircleBoundsProcessor, GamepadButtonInput, GamepadStickInput, InputManagerPlugin,
+        InputMap, KeyboardInput, MouseButtonInput, VirtualDpad,
+    },
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -25,13 +28,24 @@ struct PlayerB {
     gamepad: Option<Entity>,
 }
 
-fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugins(InputManagerPlugin::<Action>::default())
+#[cfg(not(target_arch = "wasm32"))]
+pub fn main() {
+    use shine_game::application::{create_application, platform::Config};
+
+    application::init(setup_game);
+    let mut app = create_application(Config::default());
+    app.run();
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn main() {
+    application::init(setup_game);
+}
+
+fn setup_game(app: &mut App) {
+    app.add_plugins(InputManagerPlugin::<Action>::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, (join_gamepad, show_status))
-        .run();
+        .add_systems(Update, (join_gamepad, show_status));
 }
 
 fn setup(mut commands: Commands) {
