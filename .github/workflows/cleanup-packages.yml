@@ -3,9 +3,12 @@ name: Cleanup Packages
 on:
   workflow_dispatch:
 
+permissions:
+  packages: write
+
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  PACKAGE_NAME: ${{ github.event.repository.name }}
 
 jobs:
   cleanup:
@@ -16,5 +19,5 @@ jobs:
         with:
           delete-only-untagged-versions: false
           min-versions-to-keep: 3
-          package-name: ${{ env.IMAGE_NAME }}
+          package-name: ${{ env.PACKAGE_NAME }}
           package-type: container
