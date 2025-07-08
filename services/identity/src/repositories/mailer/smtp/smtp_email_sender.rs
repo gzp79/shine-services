@@ -100,7 +100,7 @@ impl EmailSender for SmtpEmailSender {
 
         let message = match content.body {
             EmailContent::Html(html) => builder.header(ContentType::TEXT_HTML).body(html)?,
-            EmailContent::Text(text) => builder.header(ContentType::TEXT_PLAIN).body(text)?,
+            //EmailContent::Text(text) => builder.header(ContentType::TEXT_PLAIN).body(text)?,
         };
 
         self.mailer.send(&message)?;

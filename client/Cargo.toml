@@ -17,9 +17,9 @@ itertools = { workspace = true }
 bevy = { workspace = true, default-features = true, features = [
     "bevy_dev_tools",
 ] }
-leafwing-input-manager = "0.17"
 
 
+shine-forge = { workspace = true }
 shine-game = { workspace = true }
 shine-core = { workspace = true }
 

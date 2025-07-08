@@ -1,5 +1,5 @@
 use bevy::{app::App, ecs::event::Events, DefaultPlugins};
-use shine_game::map::{ChunkId, ChunkRoot, ChunkVersion, MapChunk, MapChunkTracker, MapEvent, MapPlugin};
+use shine_forge::map::{ChunkId, ChunkRoot, ChunkVersion, MapChunk, MapChunkTracker, MapEvent, MapPlugin};
 use shine_test::test;
 
 mod shared;

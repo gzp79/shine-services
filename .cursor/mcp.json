@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rust-docs": {
+      "command": "powershell",
+      "args": ["-Command", "Set-Location $env:WORKSPACE_FOLDER_PATHS/.cursor/mcp_servers/rust_docs; npm start"]
+    }
+  }
+} 

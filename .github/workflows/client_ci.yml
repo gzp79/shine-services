@@ -11,9 +11,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
   cancel-in-progress: true
 
-env:
-    BUCKET_LINK: https://ce847ac4c44fb11af63e62ba34ec40db.r2.cloudflarestorage.com
-    BUCKET_NAME: shine-games  
+env:    
+    EXAMPLES: camera_follow camera_free camera_look_at camera_orbit input_actions input_pointer
+    PROFILE: release
+    S3_BUCKET_LINK: https://ce847ac4c44fb11af63e62ba34ec40db.r2.cloudflarestorage.com
+    S3_BUCKET_NAME: shine-games
 
 jobs:
   wasm-build:
@@ -42,16 +44,33 @@ jobs:
            cargo binstall wasm-bindgen-cli
            cargo binstall wasm-opt
 
-      - name: Compile Rust to WASM
+      - name: Compile to WASM
         run: |
-          cargo build --target wasm32-unknown-unknown --profile release-lto -p shine-client
+          cargo build --target wasm32-unknown-unknown --profile ${{ env.PROFILE }} -p shine-client --bins --examples
+
+          echo "Run bindgen for shine-client"
           wasm-bindgen --no-typescript --target web \
             --out-dir ./dist/${{ github.sha }}\
-            ./target/wasm32-unknown-unknown/release-lto/shine-client.wasm
+            ./target/wasm32-unknown-unknown/${{ env.PROFILE }}/shine-client.wasm
+          echo "Optimize shine-client"
           wasm-opt -Oz -o ./dist/${{ github.sha }}/shine-client_opt.wasm ./dist/${{ github.sha }}/shine-client_bg.wasm
           rm ./dist/${{ github.sha }}/shine-client_bg.wasm
           mv ./dist/${{ github.sha }}/shine-client_opt.wasm ./dist/${{ github.sha }}/shine-client_bg.wasm
+          echo "Copy index.html"
           cp client/index.html ./dist/${{ github.sha }}/index.html
+          
+          for example in ${{ env.EXAMPLES }}; do
+            echo "Run bindgen for ${example}"
+            wasm-bindgen --no-typescript --target web \
+              --out-dir ./dist/${{ github.sha }} \
+              ./target/wasm32-unknown-unknown/${{ env.PROFILE }}/examples/${example}.wasm
+            echo "Optimize ${example}"
+            wasm-opt -Oz -o ./dist/${{ github.sha }}/${example}_opt.wasm ./dist/${{ github.sha }}/${example}_bg.wasm
+            rm ./dist/${{ github.sha }}/${example}_bg.wasm
+            mv ./dist/${{ github.sha }}/${example}_opt.wasm ./dist/${{ github.sha }}/${example}_bg.wasm
+            echo "Create ${example}.html"
+            sed 's/shine-client/${example}/g' client/index.html > ./dist/${{ github.sha }}/${example}.html
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -87,14 +106,14 @@ jobs:
 
       - name: Upload game
         run: |
-          aws s3 sync ./dist s3://${BUCKET_NAME}/ \
-              --endpoint-url=${BUCKET_LINK} \
+          aws s3 sync ./dist s3://${S3_BUCKET_NAME}/ \
+              --endpoint-url=${S3_BUCKET_LINK} \
               --cache-control "public, max-age=31536000, immutable" \
               --checksum-algorithm CRC32
 
       - name: Upload latest.json
         run: |
           echo '{ "version": "'${{ github.sha }}'" }' > ./latest.json
-          aws s3 cp ./latest.json s3://${BUCKET_NAME}/latest.json \
-              --endpoint-url=${BUCKET_LINK} \
+          aws s3 cp ./latest.json s3://${S3_BUCKET_NAME}/latest.json \
+              --endpoint-url=${S3_BUCKET_LINK} \
               --cache-control "no-cache, no-store, must-revalidate"

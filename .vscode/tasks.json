@@ -165,7 +165,7 @@
     {
       "label": "client: local",
       "type": "shell",
-      "command": "cargo run -p shine-client --release",
+      "command": "cargo run -p shine-client --release ${input:client}",
       "options": {
         "cwd": "client",
         "env": {
@@ -201,6 +201,7 @@
         { "label": "shine-infra", "value": "-p shine-infra" },
         { "label": "shine-infra-macros", "value": "-p shine-infra-macros" },
         { "label": "shine-game", "value": "-p shine-game" },
+        { "label": "shine-forge", "value": "-p shine-forge" },
         { "label": "shine-core", "value": "-p shine-core" },
         { "label": "shine-test", "value": "-p shine-test" },
         { "label": "shine-test-macros", "value": "-p shine-test-macros" }
@@ -214,12 +215,28 @@
       "options": [
         {
           "label": "all",
-          "value": "-p shine-client -p shine-game -p shine-core -p shine-test"
+          "value": "-p shine-client -p shine-game -p shine-forge -p shine-core -p shine-test"
         },
         { "label": "shine-client", "value": "-p shine-client" },
         { "label": "shine-game", "value": "-p shine-game" },
+        { "label": "shine-forge", "value": "-p shine-forge" },
         { "label": "shine-core", "value": "-p shine-core" },
         { "label": "shine-test", "value": "-p shine-test" }
+      ],
+      "default": "asset-service"
+    },
+    {
+      "type": "pickString",
+      "id": "client",
+      "description": "Select client example",
+      "options": [
+        { "label": "main", "value": "" },
+        { "label": "camera_orbit", "value": "--example camera_orbit" },
+        { "label": "camera_follow", "value": "--example camera_follow" },
+        { "label": "camera_free", "value": "--example camera_free" },
+        { "label": "camera_look_at", "value": "--example camera_look_at" },
+        { "label": "input_actions", "value": "--example input_actions" },
+        { "label": "input_pointer", "value": "--example input_pointer" }
       ],
       "default": "asset-service"
     },

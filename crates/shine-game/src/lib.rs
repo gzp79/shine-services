@@ -1,2 +1,3 @@
-pub mod hex;
-pub mod map;
+pub mod application;
+pub mod camera_rig;
+pub mod input_manager;

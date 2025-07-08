@@ -1,40 +1,41 @@
-use crate::camera_rig::{
-    drivers::{Arm, Smooth, YawPitch},
-    CameraRig,
-};
 use bevy::prelude::*;
 use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
+use shine_game::{
+    application,
+    camera_rig::{
+        drivers::{Arm, Smooth, YawPitch},
+        CameraRig,
+    },
+};
 
-pub struct CameraOrbitPOC<S>
-where
-    S: States,
-{
-    pub state: S,
+#[cfg(not(target_arch = "wasm32"))]
+pub fn main() {
+    use shine_game::application::{create_application, platform::Config};
+
+    application::init(setup_game);
+    let mut app = create_application(Config::default());
+    app.run();
 }
 
-impl<S> Plugin for CameraOrbitPOC<S>
-where
-    S: States,
-{
-    fn build(&self, app: &mut App) {
-        app.add_systems(
-            OnEnter(self.state.clone()),
-            (spawn_world, spawn_camera).chain(),
-        );
-        app.add_systems(
-            Update,
-            (handle_input, update_camera)
-                .chain()
-                .run_if(in_state(self.state.clone())),
-        );
-    }
+#[cfg(target_arch = "wasm32")]
+pub fn main() {
+    application::init(setup_game);
+}
+
+fn setup_game(app: &mut App) {
+    app.add_systems(Startup, spawn_world);
+    app.add_systems(Update, (handle_input, update_camera).chain());
 }
 
 fn spawn_world(
+    mut windows: Query<&mut Window>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    let mut window = windows.single_mut().unwrap();
+    window.title = "Camera Orbit POC".to_string();
+
     let player = (
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(Color::Srgba(css::DARK_BLUE))),
@@ -58,27 +59,22 @@ fn spawn_world(
         Transform::from_xyz(0.0, 5.0, 3.0),
     );
     commands.spawn(light);
-}
 
-fn spawn_camera(mut commands: Commands) {
     let rig: CameraRig = CameraRig::builder()
         .with(YawPitch::new().yaw_degrees(45.0).pitch_degrees(-30.0))
         .with(Smooth::new_rotation(1.5))
         .with(Arm::new(Vec3::Z * 8.0))
         .build();
-
-    commands.spawn((
+    let camera = (
         Camera3d::default(),
         NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-        rig.transform().clone(),
+        *rig.transform(),
         rig,
-    ));
+    );
+    commands.spawn(camera);
 }
 
-fn handle_input(
-    mut query: Query<&mut CameraRig, With<Camera3d>>,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-) {
+fn handle_input(mut query: Query<&mut CameraRig, With<Camera3d>>, keyboard_input: Res<ButtonInput<KeyCode>>) {
     for mut rig in query.iter_mut() {
         if keyboard_input.just_pressed(KeyCode::KeyZ) {
             rig.driver_mut::<YawPitch>().rotate_yaw_pitch(-90.0, 0.0);
@@ -89,10 +85,7 @@ fn handle_input(
     }
 }
 
-fn update_camera(
-    mut query: Query<(&mut Transform, &mut CameraRig), With<Camera3d>>,
-    time: Res<Time>,
-) {
+fn update_camera(mut query: Query<(&mut Transform, &mut CameraRig), With<Camera3d>>, time: Res<Time>) {
     for (mut transform, mut rig) in query.iter_mut() {
         *transform = rig.update(time.delta_secs());
     }

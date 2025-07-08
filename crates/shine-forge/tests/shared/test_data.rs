@@ -3,7 +3,7 @@ use bevy::{
     ecs::{component::Component, resource::Resource, schedule::IntoScheduleConfigs},
 };
 use serde::{Deserialize, Serialize};
-use shine_game::map::{
+use shine_forge::map::{
     create_layer_system, process_layer_commands_system, process_map_event_system, remove_layer_system,
     ChunkCommandQueue, ChunkEvent, ChunkHashTrack, ChunkHasher, ChunkLayer, ChunkOperation, GridConfig, LayerSetup,
     MapChunk, MapConfig,

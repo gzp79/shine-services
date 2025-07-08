@@ -1,35 +1,31 @@
-use crate::camera_rig::{
-    drivers::{LookAt, Position},
-    CameraRig,
-};
 use bevy::prelude::*;
 use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
+use shine_game::{
+    application,
+    camera_rig::{
+        drivers::{LookAt, Position},
+        CameraRig,
+    },
+};
 
-pub struct CameraLookAtPOC<S>
-where
-    S: States,
-{
-    pub state: S,
+#[cfg(not(target_arch = "wasm32"))]
+pub fn main() {
+    use shine_game::application::{create_application, platform::Config};
+
+    application::init(setup_game);
+    let mut app = create_application(Config::default());
+    app.run();
 }
 
-impl<S> Plugin for CameraLookAtPOC<S>
-where
-    S: States,
-{
-    fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(self.state.clone()), spawn_world);
-        app.add_systems(OnExit(self.state.clone()), despawn_world);
-        app.add_systems(
-            Update,
-            (handle_input, update_camera)
-                .chain()
-                .run_if(in_state(self.state.clone())),
-        );
-    }
+#[cfg(target_arch = "wasm32")]
+pub fn main() {
+    application::init(setup_game);
 }
 
-#[derive(Component)]
-pub struct POCEntity;
+fn setup_game(app: &mut App) {
+    app.add_systems(Startup, spawn_world);
+    app.add_systems(Update, (handle_input, update_camera).chain());
+}
 
 #[derive(Component)]
 pub struct Player;
@@ -49,13 +45,13 @@ fn spawn_world(
         Transform::from_xyz(0.0, 0.5, 0.0),
         Player,
     );
-    commands.spawn(player).insert(POCEntity);
+    commands.spawn(player);
 
     let floor = (
         Mesh3d(meshes.add(Mesh::from(Plane3d::default().mesh().subdivisions(10).size(15.0, 15.0)))),
         MeshMaterial3d(materials.add(Color::Srgba(css::DARK_GREEN))),
     );
-    commands.spawn(floor).insert(POCEntity);
+    commands.spawn(floor);
 
     let light = (
         PointLight {
@@ -66,7 +62,7 @@ fn spawn_world(
         },
         Transform::from_xyz(0.0, 5.0, 0.0),
     );
-    commands.spawn(light).insert(POCEntity);
+    commands.spawn(light);
 
     let rig = CameraRig::builder()
         .with(Position::new(Vec3::new(-2.0, 2.5, 5.0)))
@@ -78,16 +74,7 @@ fn spawn_world(
         *rig.transform(),
         rig,
     );
-    commands.spawn(camera).insert(POCEntity);
-}
-
-fn despawn_world(mut windows: Query<&mut Window>, to_despawn: Query<Entity, With<POCEntity>>, mut commands: Commands) {
-    let mut window = windows.single_mut().unwrap();
-    window.title = String::new();
-
-    for entity in &to_despawn {
-        commands.entity(entity).despawn();
-    }
+    commands.spawn(camera);
 }
 
 fn handle_input(
