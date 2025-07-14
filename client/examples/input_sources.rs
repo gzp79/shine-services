@@ -2,8 +2,9 @@ use bevy::{prelude::*, window::CursorGrabMode};
 use shine_game::{
     application,
     input_manager::{
-        ActionState, EdgeSize, GamepadButtonInput, GamepadStick, GamepadStickInput, InputManagerPlugin, InputMap,
-        KeyboardInput, MouseMotionInput, MousePositionInput, ScreenPositionProcessor, TouchPositionInput,
+        ActionState, ButtonChord, DualAxisChord, EdgeSize, GamepadButtonInput, GamepadStick, GamepadStickInput,
+        InputManagerPlugin, InputMap, KeyboardInput, MouseButtonInput, MouseMotionInput, MousePositionInput,
+        ScreenPositionProcessor, TouchPositionInput,
     },
 };
 
@@ -21,6 +22,12 @@ enum Action {
     GamePadLeftStick,
     GamePadRightStick,
     GamePadRightTrigger,
+
+    ButtonChardCtrlA,
+    ButtonChardAB,
+
+    DualAxisChordMouseLeft,
+    DualAxisChordCtrlAGamepadLeftStick,
 
     Grab,
 }
@@ -78,6 +85,21 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
         .with_dual_axis(
             Action::TouchEdgeScroll,
             TouchPositionInput::new().edge_scroll(EdgeSize::Fixed(50.)),
+        )
+        .with_button(
+            Action::ButtonChardAB,
+            ButtonChord::new2(KeyboardInput::new(KeyCode::KeyA), KeyboardInput::new(KeyCode::KeyB)),
+        )
+        .with_button(
+            Action::ButtonChardCtrlA,
+            ButtonChord::new2(
+                KeyboardInput::new(KeyCode::ControlLeft),
+                KeyboardInput::new(KeyCode::KeyA),
+            ),
+        )
+        .with_dual_axis(
+            Action::DualAxisChordMouseLeft,
+            DualAxisChord::new(MouseButtonInput::new(MouseButton::Left), MouseMotionInput::new()),
         )
         .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
 
@@ -138,6 +160,16 @@ fn join_gamepad(
                 .add_button(
                     Action::GamePadRightTrigger,
                     GamepadButtonInput::new(gamepad_entity, GamepadButton::RightTrigger),
+                )
+                .add_dual_axis(
+                    Action::DualAxisChordCtrlAGamepadLeftStick,
+                    DualAxisChord::new(
+                        ButtonChord::new2(
+                            KeyboardInput::new(KeyCode::ControlLeft),
+                            KeyboardInput::new(KeyCode::KeyA),
+                        ),
+                        GamepadStickInput::new(gamepad_entity, GamepadStick::Left),
+                    ),
                 );
         }
     }
@@ -193,6 +225,25 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Qu
             action_state.button_value(&Action::GamePadRightTrigger)
         );
 
+        let button_chord_ab = format!(
+            "Button Chord A+B: {:?}",
+            action_state.button_value(&Action::ButtonChardAB)
+        );
+        let button_chord_ctrl_a = format!(
+            "Button Chord Ctrl+A: {:?}",
+            action_state.button_value(&Action::ButtonChardCtrlA)
+        );
+
+        let dual_axis_chord_mouse_left = match action_state.try_dual_axis_value(&Action::DualAxisChordMouseLeft) {
+            None => "Mouse Left + Move: None".to_string(),
+            Some(value) => format!("Mouse Left + Move: {:?}", value),
+        };
+        let dual_axis_chord_ctrl_a_gamepad_left =
+            match action_state.try_dual_axis_value(&Action::DualAxisChordCtrlAGamepadLeftStick) {
+                None => "Ctrl-A + GamePad Left Stick: None".to_string(),
+                Some(value) => format!("Ctrl-A + GamePad Left Stick: {:?}", value),
+            };
+
         text.0 = [
             size,
             motion,
@@ -205,6 +256,10 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Qu
             gamepad_left_stick,
             gamepad_right_stick,
             gamepad_right_trigger,
+            button_chord_ab,
+            button_chord_ctrl_a,
+            dual_axis_chord_mouse_left,
+            dual_axis_chord_ctrl_a_gamepad_left,
         ]
         .join("\n");
     }
