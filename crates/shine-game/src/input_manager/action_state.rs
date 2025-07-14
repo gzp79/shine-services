@@ -201,7 +201,7 @@ where
 
     /// Return the button state bound to the action. If data is not available or not a button, None is returned.
     pub fn as_button(&self, action: &A) -> Option<&ButtonData> {
-        self.data.get(action).map(|data| data.1.try_as_button()).flatten()
+        self.data.get(action).and_then(|data| data.1.try_as_button())
     }
 
     /// A convenience method to get the button state. If data is not available, None is returned.
@@ -213,19 +213,19 @@ where
     /// A convenience method to get the button state, returning if action was just pressed. If data is not available, false is returned.
     #[inline]
     pub fn just_pressed(&self, action: &A) -> bool {
-        self.as_button(action).map_or(false, |data| data.just_pressed())
+        self.as_button(action).is_some_and(|data| data.just_pressed())
     }
 
     /// A convenience method to get the button state, returning if action was just released. If data is not available, false is returned.
     #[inline]
     pub fn just_released(&self, action: &A) -> bool {
-        self.as_button(action).map_or(false, |data| data.just_released())
+        self.as_button(action).is_some_and(|data| data.just_released())
     }
 
     /// A convenience method to get the button state, returning if action in pressed. If data is not available, false is returned.
     #[inline]
     pub fn is_pressed(&self, action: &A) -> bool {
-        self.as_button(action).map_or(false, |data| data.is_down())
+        self.as_button(action).is_some_and(|data| data.is_down())
     }
 
     pub fn set_button(&mut self, action: A) -> &mut ButtonData {
@@ -247,7 +247,7 @@ where
     /// Return the axis state bound to the action. If data is not available or not a axis input, None is returned.
     #[inline]
     pub fn as_axis(&self, action: &A) -> Option<&AxisData> {
-        self.data.get(action).map(|data| data.1.try_as_axis()).flatten()
+        self.data.get(action).and_then(|data| data.1.try_as_axis())
     }
 
     /// A convenience method to get the axis value, returning None if data is not available.
@@ -281,7 +281,7 @@ where
     /// Return the dual-axis state bound to the action. If data is not available or not a dual-axis input, None is returned.
     #[inline]
     pub fn as_dual_axis(&self, action: &A) -> Option<&DualAxisData> {
-        self.data.get(action).map(|data| data.1.try_as_dual_axis()).flatten()
+        self.data.get(action).and_then(|data| data.1.try_as_dual_axis())
     }
 
     /// A convenience method to get the dual-axis value, returning None if data is not available.

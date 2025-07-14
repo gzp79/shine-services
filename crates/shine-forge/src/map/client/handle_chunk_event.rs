@@ -33,20 +33,15 @@ where
     C: MapChunk,
 {
     async fn on_track(&self, chunk_id: ChunkId) {
-        log::debug!("NullChunkEventService: on_track({:?})", chunk_id);
+        log::debug!("NullChunkEventService: on_track({chunk_id:?})");
     }
 
     async fn on_untrack(&self, chunk_id: ChunkId) {
-        log::debug!("NullChunkEventService: on_untrack({:?})", chunk_id);
+        log::debug!("NullChunkEventService: on_untrack({chunk_id:?})");
     }
 
     async fn on_missing_events(&self, chunk_id: ChunkId, first: usize, last: usize) {
-        log::debug!(
-            "NullChunkEventService: on_missing_events({:?}, {}, {})",
-            chunk_id,
-            first,
-            last
-        );
+        log::debug!("NullChunkEventService: on_missing_events({chunk_id:?}, {first}, {last})");
     }
 }
 
@@ -102,7 +97,7 @@ pub fn process_chunk_events_system<C, EH>(
             ChunkEvent::OperationGap { id, .. } => *id,
             ChunkEvent::_Phantom(_) => unreachable!(),
             ChunkEvent::TrackRejected { id } => {
-                log::debug!("Chunk [{:?}]: Track request rejected", id);
+                log::debug!("Chunk [{id:?}]: Track request rejected");
                 tasks.tasks.remove(id);
                 continue;
             }
@@ -113,7 +108,7 @@ pub fn process_chunk_events_system<C, EH>(
             Entry::Vacant(_) => true,
             Entry::Occupied(mut entry) => {
                 if block_on(future::poll_once(entry.get_mut())).is_some() {
-                    log::debug!("Chunk [{:?}]: Task finished", chunk_id);
+                    log::debug!("Chunk [{chunk_id:?}]: Task finished");
                     // it's finished, we can safely drop the task
                     mem::drop(entry.remove());
                     true
@@ -127,7 +122,7 @@ pub fn process_chunk_events_system<C, EH>(
         if ready {
             match event {
                 ChunkEvent::Track { id } => {
-                    log::debug!("Chunk [{:?}]: Start track request", id);
+                    log::debug!("Chunk [{id:?}]: Start track request");
                     let task = {
                         let handler = handler.clone();
                         let chunk_id = *id;
@@ -136,7 +131,7 @@ pub fn process_chunk_events_system<C, EH>(
                     tasks.tasks.insert(*id, task);
                 }
                 ChunkEvent::Untrack { id } => {
-                    log::debug!("Chunk [{:?}]: Start untrack request", id);
+                    log::debug!("Chunk [{id:?}]: Start untrack request");
                     let task = {
                         let handler = handler.clone();
                         let chunk_id = *id;
@@ -145,12 +140,7 @@ pub fn process_chunk_events_system<C, EH>(
                     tasks.tasks.insert(*id, task);
                 }
                 ChunkEvent::OperationGap { id, first, last } => {
-                    log::debug!(
-                        "Chunk [{:?}]: Start get missing operation request ({},{})",
-                        id,
-                        first,
-                        last
-                    );
+                    log::debug!("Chunk [{id:?}]: Start get missing operation request ({first},{last})");
                     let task = {
                         let handler = handler.clone();
                         let chunk_id = *id;

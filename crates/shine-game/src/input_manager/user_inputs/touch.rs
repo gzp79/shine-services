@@ -9,6 +9,12 @@ pub struct TouchPositionInput {
     value: Option<Vec2>,
 }
 
+impl Default for TouchPositionInput {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TouchPositionInput {
     pub fn new() -> Self {
         Self { id: None, value: None }

@@ -1,4 +1,7 @@
-use crate::input_manager::{integrate_default_inputs, process_inputs, update_action_state, ActionLike, GamepadManager};
+use crate::input_manager::{
+    integrate_gamepad_inputs, integrate_keyboard_mouse_inputs, integrate_touch_inputs, process_inputs,
+    update_action_state, ActionLike, GamepadManager,
+};
 use bevy::{
     ecs::schedule::SystemSet,
     {
@@ -36,7 +39,9 @@ impl<A: ActionLike> Plugin for InputManagerPlugin<A> {
         .add_systems(
             PreUpdate,
             (
-                integrate_default_inputs::<A>.in_set(InputManagerSystem::Integrate),
+                integrate_keyboard_mouse_inputs::<A>.in_set(InputManagerSystem::Integrate),
+                integrate_touch_inputs::<A>.in_set(InputManagerSystem::Integrate),
+                integrate_gamepad_inputs::<A>.in_set(InputManagerSystem::Integrate),
                 process_inputs::<A>.in_set(InputManagerSystem::Process),
                 update_action_state::<A>.in_set(InputManagerSystem::UpdateActionState),
             ),

@@ -130,19 +130,19 @@ where
     pub fn process(&mut self, time: &Time) {
         for inputs in self.buttons.values_mut() {
             for (input, value) in inputs {
-                *value = input.process(&time);
+                *value = input.process(time);
             }
         }
 
         for inputs in self.axes.values_mut() {
             for (input, value) in inputs {
-                *value = input.process(&time);
+                *value = input.process(time);
             }
         }
 
         for inputs in self.dual_axes.values_mut() {
             for (input, value) in inputs {
-                *value = input.process(&time);
+                *value = input.process(time);
             }
         }
     }

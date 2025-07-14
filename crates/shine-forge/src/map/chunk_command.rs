@@ -186,7 +186,7 @@ pub fn process_layer_commands_system<CFG, C, O, H>(
             log::debug!("Chunk [{:?}]: Applying {} operations", chunk_id, chunk_operations.len());
             while let Some((version, operation)) = chunk_operations.pop_first() {
                 if version <= chunk_version.version {
-                    log::trace!("Chunk [{:?}]: Operation is too old {}, ignoring", chunk_id, version);
+                    log::trace!("Chunk [{chunk_id:?}]: Operation is too old {version}, ignoring");
                 } else if version == chunk_version.version + 1 {
                     if operation.check_precondition(&chunk) {
                         operation.apply(&mut *chunk);

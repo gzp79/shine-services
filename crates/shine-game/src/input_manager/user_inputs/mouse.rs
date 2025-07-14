@@ -43,6 +43,12 @@ pub struct MouseMotionInput {
     value: Vec2,
 }
 
+impl Default for MouseMotionInput {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MouseMotionInput {
     pub fn new() -> Self {
         Self { value: Vec2::ZERO }
@@ -68,6 +74,12 @@ impl DualAxisLike for MouseMotionInput {
 /// Return mouse position in screen coordinates
 pub struct MousePositionInput {
     value: Option<Vec2>,
+}
+
+impl Default for MousePositionInput {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MousePositionInput {

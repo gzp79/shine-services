@@ -41,6 +41,12 @@ pub struct InputSources<'w> {
     pub components: HashMap<(Entity, TypeId), &'w dyn Any>,
 }
 
+impl Default for InputSources<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'w> InputSources<'w> {
     pub fn new() -> Self {
         Self {
@@ -82,15 +88,12 @@ impl<'w> InputSources<'w> {
     }
 }
 
-pub fn integrate_default_inputs<A>(
+pub fn integrate_keyboard_mouse_inputs<A>(
     time: Res<Time>,
     window: Query<&Window>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     accumulated_mouse_motion: Res<AccumulatedMouseMotion>,
-    touches: Res<Touches>,
-    gamepads: Query<(Entity, &Gamepad)>,
-    gamepad_manager: Res<GamepadManager>,
     mut input_query: Query<&mut InputMap<A>>,
 ) where
     A: ActionLike,
@@ -105,8 +108,48 @@ pub fn integrate_default_inputs<A>(
         input_source.add_resource(&*keyboard);
         input_source.add_resource(&*mouse);
         input_source.add_resource(&*accumulated_mouse_motion);
+
+        input_map.integrate(input_source);
+    }
+}
+
+pub fn integrate_touch_inputs<A>(
+    time: Res<Time>,
+    window: Query<&Window>,
+    touches: Res<Touches>,
+    mut input_query: Query<&mut InputMap<A>>,
+) where
+    A: ActionLike,
+{
+    let window = window.single().expect("Only single window is supported");
+
+    for mut input_map in input_query.iter_mut() {
+        let mut input_source = InputSources::new();
+
+        input_source.add_resource(window);
+        input_source.add_resource(&*time);
         input_source.add_resource(&*touches);
 
+        input_map.integrate(input_source);
+    }
+}
+
+pub fn integrate_gamepad_inputs<A>(
+    time: Res<Time>,
+    window: Query<&Window>,
+    gamepads: Query<(Entity, &Gamepad)>,
+    gamepad_manager: Res<GamepadManager>,
+    mut input_query: Query<&mut InputMap<A>>,
+) where
+    A: ActionLike,
+{
+    let window = window.single().expect("Only single window is supported");
+
+    for mut input_map in input_query.iter_mut() {
+        let mut input_source = InputSources::new();
+
+        input_source.add_resource(window);
+        input_source.add_resource(&*time);
         input_source.add_resource(&*gamepad_manager);
         for (entity, gamepad) in gamepads.iter() {
             input_source.add_component(entity, gamepad);

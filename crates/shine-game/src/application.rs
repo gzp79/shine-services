@@ -94,7 +94,7 @@ pub mod platform {
 
     /// Platform-specific configuration.
     #[derive(Default)]
-    pub struct Config;
+    pub struct Config {}
 
     /// Initializes platform-specific plugins.
     pub fn platform_init(app: &mut App, _config: Config) {

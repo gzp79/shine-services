@@ -111,7 +111,7 @@ fn join_gamepad(
 
     for (gamepad_entity, _) in gamepads.iter() {
         if player_a.gamepad.is_none() && player_b.gamepad != Some(gamepad_entity) {
-            log::info!("Player A joined gamepad {}", gamepad_entity);
+            log::info!("Player A joined gamepad {gamepad_entity}");
             player_a.gamepad = Some(gamepad_entity);
             input_a
                 .add_dual_axis(
@@ -135,7 +135,7 @@ fn join_gamepad(
                     GamepadButtonInput::new(gamepad_entity, GamepadButton::RightTrigger),
                 );
         } else if player_b.gamepad.is_none() && player_a.gamepad != Some(gamepad_entity) {
-            log::info!("Player B joined gamepad {}", gamepad_entity);
+            log::info!("Player B joined gamepad {gamepad_entity}");
             player_b.gamepad = Some(gamepad_entity);
             input_b
                 .add_dual_axis(

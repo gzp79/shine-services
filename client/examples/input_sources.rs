@@ -146,7 +146,7 @@ fn join_gamepad(
 
     if player.gamepad.is_none() {
         if let Some((gamepad_entity, _)) = gamepads_q.iter().next() {
-            log::info!("Player joined gamepad {}", gamepad_entity);
+            log::info!("Player joined gamepad {gamepad_entity}");
             player.gamepad = Some(gamepad_entity);
             input
                 .add_dual_axis(
@@ -182,43 +182,43 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Qu
         let size = {
             let window = window.single().unwrap();
             let (width, height) = (window.width(), window.height());
-            format!("Size: {}x{}", width, height)
+            format!("Size: {width}x{height}")
         };
 
         let motion = format!("Motion: {:?}", action_state.dual_axis_value(&Action::Motion));
         let position = match action_state.try_dual_axis_value(&Action::Position) {
             None => "Position: None".to_string(),
-            Some(value) => format!("Position: {:?}", value),
+            Some(value) => format!("Position: {value:?}"),
         };
         let normalized_position = match action_state.try_dual_axis_value(&Action::NormalizedPosition) {
             None => "Normalized Position: None".to_string(),
-            Some(value) => format!("Normalized Position: {:?}", value),
+            Some(value) => format!("Normalized Position: {value:?}"),
         };
         let edge_scroll = match action_state.try_dual_axis_value(&Action::EdgeScroll) {
             None => "Edge Scroll: None".to_string(),
-            Some(value) => format!("Edge Scroll: {:?}", value),
+            Some(value) => format!("Edge Scroll: {value:?}"),
         };
 
         let touch_position = match action_state.try_dual_axis_value(&Action::TouchPosition) {
             None => "Touch Position: None".to_string(),
-            Some(value) => format!("Touch Position: {:?}", value),
+            Some(value) => format!("Touch Position: {value:?}"),
         };
         let touch_normalized_position = match action_state.try_dual_axis_value(&Action::TouchNormalizedPosition) {
             None => "Touch Normalized Position: None".to_string(),
-            Some(value) => format!("Touch Normalized Position: {:?}", value),
+            Some(value) => format!("Touch Normalized Position: {value:?}"),
         };
         let touch_edge_scroll = match action_state.try_dual_axis_value(&Action::TouchEdgeScroll) {
             None => "Touch Edge Scroll: None".to_string(),
-            Some(value) => format!("Touch Edge Scroll: {:?}", value),
+            Some(value) => format!("Touch Edge Scroll: {value:?}"),
         };
 
         let gamepad_left_stick = match action_state.try_dual_axis_value(&Action::GamePadLeftStick) {
             None => "GamePad Left Stick: None".to_string(),
-            Some(value) => format!("GamePad Left Stick: {:?}", value),
+            Some(value) => format!("GamePad Left Stick: {value:?}"),
         };
         let gamepad_right_stick = match action_state.try_dual_axis_value(&Action::GamePadRightStick) {
             None => "GamePad Right Stick: None".to_string(),
-            Some(value) => format!("GamePad Right Stick: {:?}", value),
+            Some(value) => format!("GamePad Right Stick: {value:?}"),
         };
         let gamepad_right_trigger = format!(
             "GamePad Right Trigger: {:?}",
@@ -236,12 +236,12 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Qu
 
         let dual_axis_chord_mouse_left = match action_state.try_dual_axis_value(&Action::DualAxisChordMouseLeft) {
             None => "Mouse Left + Move: None".to_string(),
-            Some(value) => format!("Mouse Left + Move: {:?}", value),
+            Some(value) => format!("Mouse Left + Move: {value:?}"),
         };
         let dual_axis_chord_ctrl_a_gamepad_left =
             match action_state.try_dual_axis_value(&Action::DualAxisChordCtrlAGamepadLeftStick) {
                 None => "Ctrl-A + GamePad Left Stick: None".to_string(),
-                Some(value) => format!("Ctrl-A + GamePad Left Stick: {:?}", value),
+                Some(value) => format!("Ctrl-A + GamePad Left Stick: {value:?}"),
             };
 
         text.0 = [
