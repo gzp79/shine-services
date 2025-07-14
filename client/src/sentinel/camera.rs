@@ -1,15 +1,15 @@
-use crate::sentinel::Sentinel;
+use crate::{sentinel::Sentinel, GameState};
 use bevy::{
     core_pipeline::core_3d::Camera3d,
     ecs::{
         component::Component,
-        entity::Entity,
         error::BevyError,
         query::{With, Without},
         system::{Commands, Query, Res},
     },
     math::Vec3,
     render::view::NoIndirectDrawing,
+    state::state_scoped::StateScoped,
     time::Time,
     transform::components::Transform,
 };
@@ -34,6 +34,7 @@ pub fn spawn(sentinel_q: Query<&Transform, With<Sentinel>>, mut commands: Comman
 
     let camera = (
         MainCamera,
+        StateScoped(GameState::InWorld),
         Camera3d::default(),
         NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
         *rig.transform(),
@@ -41,12 +42,6 @@ pub fn spawn(sentinel_q: Query<&Transform, With<Sentinel>>, mut commands: Comman
     );
 
     commands.spawn(camera);
-    Ok(())
-}
-
-pub fn despawn(camera_q: Query<Entity, With<MainCamera>>, mut commands: Commands) -> Result<(), BevyError> {
-    let camera_entity = camera_q.single()?;
-    commands.entity(camera_entity).despawn();
     Ok(())
 }
 

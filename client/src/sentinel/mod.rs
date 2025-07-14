@@ -1,9 +1,10 @@
+use crate::{DebugState, GameState};
 use bevy::{
     app::{App, Plugin, Update},
     ecs::schedule::IntoScheduleConfigs,
     state::{
         condition::in_state,
-        state::{OnEnter, OnExit, States},
+        state::{OnEnter, OnExit},
     },
 };
 use shine_game::input_manager::InputManagerPlugin;
@@ -18,35 +19,33 @@ pub use self::{
     sentinel::{Sentinel, SentinelAction, SentinelConfig},
 };
 
-pub struct SentinelPlugin<S: States> {
-    pub state: S,
-}
+pub struct SentinelPlugin;
 
-impl<S: States> Plugin for SentinelPlugin<S> {
+impl Plugin for SentinelPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(InputManagerPlugin::<SentinelAction>::default());
-        app.add_plugins(InputManagerPlugin::<DebugAction>::default());
 
         app.insert_resource(SentinelConfig { speed: 5.0 });
 
         app.add_systems(
-            OnEnter(self.state.clone()),
+            OnEnter(GameState::InWorld),
             (sentinel::spawn_sentinel, sentinel::spawn_sentinel_debug, camera::spawn).chain(),
-        )
-        .add_systems(
-            OnExit(self.state.clone()),
-            (sentinel::despawn_sentinel, camera::despawn).chain(),
-        )
-        .add_systems(
+        );
+        app.add_systems(
             Update,
-            (
+            ((
                 (sentinel::move_sentinel, camera::follow_sentinel).chain(),
                 sentinel::update_debug,
-                debug_camera::enable,
-                debug_camera::disable,
-                debug_camera::handle_input,
-            )
-                .run_if(in_state(self.state.clone())),
+            ))
+                .run_if(in_state(GameState::InWorld)),
+        );
+
+        app.add_plugins(InputManagerPlugin::<DebugAction>::default());
+        app.add_systems(OnEnter(DebugState::HasFreeCamera), debug_camera::enable);
+        app.add_systems(OnExit(DebugState::HasFreeCamera), debug_camera::disable);
+        app.add_systems(
+            Update,
+            debug_camera::handle_input.run_if(in_state(DebugState::HasFreeCamera)),
         );
     }
 }

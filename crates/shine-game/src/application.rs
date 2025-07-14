@@ -124,20 +124,20 @@ pub fn create_application(config: platform::Config) -> App {
 
 /// Helpers for working with Bevy's `Window` component.
 pub trait WindowExt {
-    fn start_grab(&mut self, is_confined: bool);
+    fn start_grab(&mut self, mode: CursorGrabMode);
 }
 
 impl WindowExt for Window {
-    fn start_grab(&mut self, is_confined: bool) {
-        let center = Vec2 {
-            x: self.width(),
-            y: self.height(),
-        } / 2.0;
-        self.set_cursor_position(Some(center));
-        self.cursor_options.grab_mode = if is_confined {
-            CursorGrabMode::Confined
-        } else {
-            CursorGrabMode::Locked
-        };
+    fn start_grab(&mut self, mode: CursorGrabMode) {
+        if mode != CursorGrabMode::None {
+            let center = Vec2 {
+                x: self.width(),
+                y: self.height(),
+            } / 2.0;
+            self.set_cursor_position(Some(center));
+        }
+
+        self.cursor_options.grab_mode = mode;
+        self.cursor_options.visible = mode != CursorGrabMode::Locked;
     }
 }

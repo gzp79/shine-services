@@ -1,3 +1,4 @@
+use crate::{DebugState, GameState};
 use bevy::{
     asset::Assets,
     color::{palettes::css, Color},
@@ -5,6 +6,7 @@ use bevy::{
         component::Component,
         entity::Entity,
         error::BevyError,
+        name::Name,
         query::With,
         resource::Resource,
         system::{Commands, Query, Res, ResMut},
@@ -16,9 +18,13 @@ use bevy::{
         mesh::{Mesh, Mesh3d},
         view::Visibility,
     },
+    state::{
+        state::{NextState, State},
+        state_scoped::StateScoped,
+    },
     time::Time,
     transform::components::Transform,
-    window::Window,
+    window::{CursorGrabMode, Window},
 };
 use shine_game::{
     application::WindowExt,
@@ -48,7 +54,7 @@ pub struct Sentinel;
 
 pub fn spawn_sentinel(mut windows: Query<&mut Window>, mut commands: Commands) {
     let mut window = windows.single_mut().unwrap();
-    window.start_grab(true);
+    window.start_grab(CursorGrabMode::Confined);
 
     let input_map = InputMap::<SentinelAction>::new()
         .with_dual_axis(SentinelAction::Move, VirtualDPad::wasd())
@@ -64,14 +70,14 @@ pub fn spawn_sentinel(mut windows: Query<&mut Window>, mut commands: Commands) {
         .with_button(SentinelAction::ToggleShowSentinel, KeyboardInput::new(KeyCode::F3))
         .with_button(SentinelAction::ToggleFreeView, KeyboardInput::new(KeyCode::F4));
 
-    let sentinel = (Sentinel, Transform::IDENTITY, input_map);
+    let sentinel = (
+        Name::new("Sentinel"),
+        Sentinel,
+        StateScoped(GameState::InWorld),
+        Transform::IDENTITY,
+        input_map,
+    );
     commands.spawn(sentinel);
-}
-
-pub fn despawn_sentinel(sentinel_q: Query<Entity, With<Sentinel>>, mut commands: Commands) -> Result<(), BevyError> {
-    let sentinel = sentinel_q.single()?;
-    commands.entity(sentinel).despawn();
-    Ok(())
 }
 
 pub fn spawn_sentinel_debug(
@@ -100,6 +106,8 @@ pub fn spawn_sentinel_debug(
 
 pub fn update_debug(
     mut sentinel_q: Query<(&ActionState<SentinelAction>, &mut Visibility), With<Sentinel>>,
+    state: Res<State<DebugState>>,
+    mut next_state: ResMut<NextState<DebugState>>,
 ) -> Result<(), BevyError> {
     let (action_state, mut visibility) = sentinel_q.single_mut()?;
     if action_state.button(&SentinelAction::ToggleShowSentinel).just_pressed() {
@@ -108,6 +116,16 @@ pub fn update_debug(
             Visibility::Hidden => Visibility::Inherited,
         };
         log::info!("Toggling sentinel visibility, {:?}", visibility);
+    }
+
+    if action_state.button(&SentinelAction::ToggleFreeView).just_pressed() {
+        let new_state = if *state == DebugState::NoDebug {
+            DebugState::HasFreeCamera
+        } else {
+            DebugState::NoDebug
+        };
+        log::info!("Enter debug state, {:?}", new_state);
+        next_state.set(new_state);
     }
     Ok(())
 }

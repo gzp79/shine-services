@@ -7,20 +7,28 @@ mod world;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
 #[states(scoped_entities)]
 pub enum GameState {
-    /// Main gameplay state.
-    Playing,
+    InWorld,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
+#[states(scoped_entities)]
+pub enum DebugState {
+    NoDebug,
+    HasFreeCamera,
 }
 
 /// Add all the game plugins to the app.
 fn setup_game(app: &mut App) {
-    app.add_plugins(world::WorldPlugin { state: GameState::Playing })
-        .add_plugins(sentinel::SentinelPlugin { state: GameState::Playing });
+    app.add_plugins(world::WorldPlugin)
+        .add_plugins(sentinel::SentinelPlugin);
 
-    app.insert_state(GameState::Playing);
+    app.insert_state(GameState::InWorld);
+    app.insert_state(DebugState::NoDebug);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
+    use bevy_inspector_egui::{bevy_egui::EguiPlugin, quick::WorldInspectorPlugin};
     use shine_game::application::{create_application, platform};
 
     application::init(setup_game);

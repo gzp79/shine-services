@@ -1,6 +1,8 @@
 use bevy::color::palettes::css;
 use bevy::prelude::*;
 
+use crate::GameState;
+
 const COLORS: &[Color] = &[
     Color::Srgba(css::DARK_GREEN),
     Color::Srgba(css::DARK_RED),
@@ -16,19 +18,11 @@ const COLORS: &[Color] = &[
     Color::Srgba(css::WHITE),
 ];
 
-pub struct WorldPlugin<S>
-where
-    S: States,
-{
-    pub state: S,
-}
+pub struct WorldPlugin;
 
-impl<S> Plugin for WorldPlugin<S>
-where
-    S: States,
-{
+impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(self.state.clone()), (spawn_floor, spawn_light));
+        app.add_systems(OnEnter(GameState::InWorld), (spawn_floor, spawn_light));
     }
 }
 #[derive(Component)]
@@ -42,21 +36,29 @@ fn spawn_floor(
     let scl = 10.0;
     let mut c = 0;
     let mesh = Mesh3d(meshes.add(Mesh::from(Plane3d::default().mesh().size(scl, scl))));
-    for x in -5..=5 {
-        for z in -5..=5 {
-            let material = MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: COLORS[c % COLORS.len()],
-                ..default()
-            }));
-            let transform = Transform::from_xyz(x as f32 * scl, 0.0, z as f32 * scl);
-            c += 1;
-            commands.spawn((mesh.clone(), material, transform, ChunkRender));
-        }
-    }
+
+    commands
+        .spawn((Name::new("Floor"), StateScoped(GameState::InWorld), Transform::IDENTITY))
+        .with_children(|parent| {
+            for x in -5..=5 {
+                for z in -5..=5 {
+                    let material = MeshMaterial3d(materials.add(StandardMaterial {
+                        base_color: COLORS[c % COLORS.len()],
+                        ..default()
+                    }));
+                    let transform = Transform::from_xyz(x as f32 * scl, 0.0, z as f32 * scl);
+                    c += 1;
+
+                    parent.spawn((mesh.clone(), material, transform, ChunkRender, Visibility::Visible));
+                }
+            }
+        });
 }
 
 fn spawn_light(mut commands: Commands) {
     let light = (
+        Name::new("WorldLight"),
+        StateScoped(GameState::InWorld),
         PointLight {
             intensity: 2000.0 * 1000.0,
             ..default()

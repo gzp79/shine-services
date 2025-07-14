@@ -1,15 +1,27 @@
-use crate::sentinel::{camera::MainCamera, DebugAction, Sentinel, SentinelAction};
+use crate::{
+    sentinel::{camera::MainCamera, DebugAction},
+    GameState,
+};
 use bevy::{
+    asset::Assets,
+    color::{palettes::css, Color},
     core_pipeline::core_3d::Camera3d,
     ecs::{
         component::Component,
         entity::Entity,
         error::BevyError,
-        query::{QuerySingleError, With},
-        system::{Commands, Query, Res},
+        name::Name,
+        query::{QuerySingleError, With, Without},
+        system::{Commands, Query, Res, ResMut},
     },
     math::Vec3,
-    render::camera::Camera,
+    pbr::{MeshMaterial3d, StandardMaterial},
+    render::{
+        camera::Camera,
+        mesh::{Mesh, Mesh3d},
+        primitives,
+    },
+    state::state_scoped::StateScoped,
     time::Time,
     transform::components::Transform,
     window::{CursorGrabMode, Window},
@@ -24,30 +36,12 @@ use shine_game::{
 pub struct DebugCamera;
 
 pub fn enable(
-    sentinel_q: Query<&ActionState<SentinelAction>, With<Sentinel>>,
-    debug_camera_q: Query<Entity, With<DebugCamera>>,
     mut main_camera_q: Query<(&mut Camera, &Transform), With<MainCamera>>,
     mut windows: Query<&mut Window>,
     mut commands: Commands,
 ) -> Result<(), BevyError> {
-    let sentinel_actions = sentinel_q.single()?;
-    if !sentinel_actions.button(&SentinelAction::ToggleFreeView).just_pressed() {
-        return Ok(());
-    }
-
-    match debug_camera_q.single() {
-        Ok(_) => {
-            log::info!("Debug camera is already enabled");
-            return Ok(());
-        }
-        Err(QuerySingleError::NoEntities(..)) => {
-            log::info!("Enabling debug camera");
-        }
-        Err(err) => return Err(err.into()),
-    };
-
     let mut window = windows.single_mut().unwrap();
-    window.start_grab(false);
+    window.start_grab(CursorGrabMode::Locked);
 
     // disable the main camera
     let (mut main_camera, main_camera_transform) = main_camera_q.single_mut()?;
@@ -59,51 +53,63 @@ pub fn enable(
         .with_dual_axis(DebugAction::RotateCamera, MouseMotionInput::new());
 
     let rig: CameraRig = CameraRig::builder()
-        .with(rigs::Position::new(main_camera_transform.translation))
-        .with(rigs::YawPitch::new())
+        .with(rigs::Position::new(Vec3::new(-2.0, 2.5, 5.0)))
+        .with(rigs::YawPitch::new().yaw_degrees(90.0).pitch_degrees(-30.0))
         .with(rigs::Smooth::new_position_rotation(1.0, 1.0))
         .build();
+    /*let rig: CameraRig = CameraRig::builder()
+    .with(rigs::Position::new(main_camera_transform.translation))
+    .with(rigs::YawPitch::new())
+    .with(rigs::Smooth::new_position_rotation(1.0, 1.0))
+    .build();*/
 
-    let debug_camera = (DebugCamera, Camera3d::default(), *rig.transform(), rig, input_map);
+    let debug_camera = (
+        Name::new("DebugCamera"),
+        DebugCamera,
+        StateScoped(GameState::InWorld),
+        Camera3d::default(),
+        //NoIndirectDrawing,
+        *rig.transform(),
+        rig,
+        input_map,
+    );
     commands.spawn(debug_camera);
 
     Ok(())
 }
 
+/*
+pub fn spawn_camera_frustums(
+    frustum_q: Query<&Transform, Without<DebugCamera>>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let debug_frustums = commands
+        .spawn((Name::new("DebugFrustums"), Transform::IDENTITY))
+        .with_children(|parent| {
+            for transform in frustum_q.iter() {
+                let frustum = (
+                    Mesh3d(meshes.add(primitives::Frustum::from_clip_from_world(&transform.compute_matrix()))),
+                    MeshMaterial3d(materials.add(Color::Srgba(css::DARK_BLUE))),
+                );
+                parent.spawn(frustum);
+            }
+        });
+}*/
+
 pub fn disable(
-    sentinel_q: Query<&ActionState<SentinelAction>, With<Sentinel>>,
-    debug_camera_q: Query<Entity, With<DebugCamera>>,
     mut main_camera_q: Query<&mut Camera, With<MainCamera>>,
     mut windows: Query<&mut Window>,
     mut commands: Commands,
 ) -> Result<(), BevyError> {
-    let sentinel_actions = sentinel_q.single()?;
-    if !sentinel_actions.button(&SentinelAction::ToggleFreeView).just_pressed() {
-        return Ok(());
-    }
-
-    let debug_camera_entity = match debug_camera_q.single() {
-        Ok(debug_camera) => {
-            log::info!("Disabling debug camera");
-            debug_camera
-        }
-        Err(QuerySingleError::NoEntities(..)) => {
-            log::info!("Debug camera is already disabled");
-            return Ok(());
-        }
-        Err(err) => return Err(err.into()),
-    };
-
     let mut window = windows.single_mut().unwrap();
-    window.cursor_options.grab_mode = CursorGrabMode::Confined;
+    window.start_grab(CursorGrabMode::Confined);
     window.title = String::new();
 
     // re-enable the main camera
     let mut main_camera = main_camera_q.single_mut()?;
     main_camera.is_active = true;
-
-    // Despawn the debug camera entity
-    commands.entity(debug_camera_entity).despawn();
 
     Ok(())
 }

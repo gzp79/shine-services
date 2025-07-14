@@ -7238,6 +7238,8 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "shine-forge",
+ "shine-game",
  "thiserror 2.0.12",
  "uuid",
  "wasm-bindgen",
