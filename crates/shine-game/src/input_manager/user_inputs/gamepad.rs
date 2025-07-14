@@ -3,6 +3,7 @@ use bevy::{
     ecs::{entity::Entity, resource::Resource},
     input::gamepad::{Gamepad, GamepadButton},
     math::Vec2,
+    time::Time,
 };
 
 /// A utility resource to distinct if indicate if input source contains gamepad information or not
@@ -42,7 +43,7 @@ impl UserInput for GamepadButtonInput {
 }
 
 impl ButtonLike for GamepadButtonInput {
-    fn is_down(&self) -> bool {
+    fn process(&mut self, _time: &Time) -> bool {
         self.pressed
     }
 }
@@ -79,7 +80,7 @@ impl UserInput for GamepadStickInput {
 }
 
 impl DualAxisLike for GamepadStickInput {
-    fn value_pair(&self) -> Vec2 {
+    fn process(&mut self, _time: &Time) -> Vec2 {
         self.value
     }
 }

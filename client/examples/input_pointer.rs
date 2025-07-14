@@ -2,8 +2,8 @@ use bevy::{prelude::*, window::CursorGrabMode};
 use shine_game::{
     application,
     input_manager::{
-        ActionLike, ActionState, InputManagerPlugin, InputMap, KeyboardInput, MouseMotionInput,
-        MouseNormalizedPositionInput, MousePositionInput, TouchPositionInput,
+        ActionState, EdgeSize, InputManagerPlugin, InputMap, KeyboardInput, MouseMotionInput, MousePositionInput,
+        ScreenPositionProcessor, TouchPositionInput,
     },
 };
 
@@ -11,13 +11,15 @@ use shine_game::{
 enum Action {
     Motion,
     Position,
+    EdgeScroll,
     NormalizedPosition,
+
     TouchPosition,
+    TouchNormalizedPosition,
+    TouchEdgeScroll,
 
     Grab,
 }
-
-impl ActionLike for Action {}
 
 #[derive(Component)]
 struct StatusText;
@@ -51,8 +53,23 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
     let input_map = InputMap::new()
         .with_dual_axis(Action::Motion, MouseMotionInput::new())
         .with_dual_axis(Action::Position, MousePositionInput::new())
-        .with_dual_axis(Action::NormalizedPosition, MouseNormalizedPositionInput::new())
+        .with_dual_axis(
+            Action::NormalizedPosition,
+            MousePositionInput::new().normalize_to_screen(),
+        )
+        .with_dual_axis(
+            Action::EdgeScroll,
+            MousePositionInput::new().edge_scroll(EdgeSize::Fixed(50.)),
+        )
         .with_dual_axis(Action::TouchPosition, TouchPositionInput::new())
+        .with_dual_axis(
+            Action::TouchNormalizedPosition,
+            TouchPositionInput::new().normalize_to_screen(),
+        )
+        .with_dual_axis(
+            Action::TouchEdgeScroll,
+            TouchPositionInput::new().edge_scroll(EdgeSize::Fixed(50.)),
+        )
         .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
 
     commands.spawn((
@@ -92,24 +109,53 @@ fn grab_mouse(players: Query<&ActionState<Action>, Without<Window>>, mut window:
 
 fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Query<&Window>) {
     for (action_state, mut text) in players.iter_mut() {
-        let window = window.single().unwrap();
-        let (width, height) = (window.width(), window.height());
-        let size_str = format!("Size: {}x{}", width, height);
+        let size_str = {
+            let window = window.single().unwrap();
+            let (width, height) = (window.width(), window.height());
+            format!("Size: {}x{}", width, height)
+        };
 
-        let motion_value = action_state.dual_axis(&Action::Motion);
-        let motion_str = format!("Motion: {:?}", motion_value.value);
+        let motion_str = {
+            let value = action_state.dual_axis(&Action::Motion);
+            format!("Motion: {:?}", value.value)
+        };
 
-        let position_value = action_state.dual_axis(&Action::Position);
-        let position_str = format!("Position: {:?}", position_value.value);
+        let position_str = {
+            let value = action_state.dual_axis(&Action::Position);
+            format!("Position: {:?}", value.value)
+        };
 
-        let normalized_position_value = action_state.dual_axis(&Action::NormalizedPosition);
-        let normalized_position_str = format!("Normalized Position: {:?}", normalized_position_value.value);
+        let normalized_position_str = {
+            let value = action_state.dual_axis(&Action::NormalizedPosition);
+            format!("Normalized Position: {:?}", value.value)
+        };
 
-        let touch_position_value = action_state.dual_axis(&Action::TouchPosition);
-        let touch_position_str = if touch_position_value.value == Vec2::MAX {
-            "Touch Position: None".to_string()
-        } else {
-            format!("Touch Position: {:?}", touch_position_value.value)
+        let edge_scroll_str = {
+            let value = action_state.dual_axis(&Action::EdgeScroll);
+            format!("Edge Scroll: {:?}", value.value)
+        };
+
+        let touch_position_str = {
+            let value = action_state.dual_axis(&Action::TouchPosition);
+            if value.value == Vec2::MAX {
+                "Touch Position: None".to_string()
+            } else {
+                format!("Touch - Position: {:?}", value.value)
+            }
+        };
+
+        let touch_normalized_position_str = {
+            let value = action_state.dual_axis(&Action::TouchNormalizedPosition);
+            if value.value == Vec2::MAX {
+                "Normalized Touch Position: None".to_string()
+            } else {
+                format!("Touch - Normalized Position: {:?}", value.value)
+            }
+        };
+
+        let touch_edge_scroll_str = {
+            let value = action_state.dual_axis(&Action::TouchEdgeScroll);
+            format!("Touch - Edge Scroll: {:?}", value.value)
         };
 
         text.0 = [
@@ -117,7 +163,10 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Qu
             motion_str,
             position_str,
             normalized_position_str,
+            edge_scroll_str,
             touch_position_str,
+            touch_normalized_position_str,
+            touch_edge_scroll_str,
         ]
         .join("\n");
     }

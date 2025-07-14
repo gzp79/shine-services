@@ -29,7 +29,6 @@ where
 {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(self.state.clone()), (spawn_floor, spawn_light));
-        //app.add_systems(Startup, (spawn_floor, spawn_light));
     }
 }
 #[derive(Component)]
@@ -40,15 +39,16 @@ fn spawn_floor(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    let scl = 10.0;
     let mut c = 0;
-    let mesh = Mesh3d(meshes.add(Mesh::from(Plane3d::default().mesh().size(1.0, 1.0))));
+    let mesh = Mesh3d(meshes.add(Mesh::from(Plane3d::default().mesh().size(scl, scl))));
     for x in -5..=5 {
         for z in -5..=5 {
             let material = MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: COLORS[c % COLORS.len()],
                 ..default()
             }));
-            let transform = Transform::from_xyz(x as f32, 0.0, z as f32);
+            let transform = Transform::from_xyz(x as f32 * scl, 0.0, z as f32 * scl);
             c += 1;
             commands.spawn((mesh.clone(), material, transform, ChunkRender));
         }

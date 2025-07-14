@@ -1,8 +1,10 @@
-use crate::input_manager::{ButtonLike, CircleBoundsProcessor, DualAxisLike, InputSources, KeyboardInput, UserInput};
-use bevy::{input::keyboard::KeyCode, math::Vec2};
+use crate::input_manager::{
+    ButtonLike, DualAxisCircleBoundsProcessor, DualAxisLike, InputSources, KeyboardInput, UserInput,
+};
+use bevy::{input::keyboard::KeyCode, math::Vec2, time::Time};
 
 /// A virtual dpad that converts 4 buttons into a dual axis.
-pub struct VirtualDpad<U, D, L, R>
+pub struct VirtualDPad<U, D, L, R>
 where
     U: ButtonLike,
     D: ButtonLike,
@@ -15,7 +17,7 @@ where
     right: R,
 }
 
-impl<U, D, L, R> VirtualDpad<U, D, L, R>
+impl<U, D, L, R> VirtualDPad<U, D, L, R>
 where
     U: ButtonLike,
     D: ButtonLike,
@@ -27,7 +29,7 @@ where
     }
 }
 
-impl<U, D, L, R> UserInput for VirtualDpad<U, D, L, R>
+impl<U, D, L, R> UserInput for VirtualDPad<U, D, L, R>
 where
     U: ButtonLike,
     D: ButtonLike,
@@ -42,32 +44,32 @@ where
     }
 }
 
-impl<U, D, L, R> DualAxisLike for VirtualDpad<U, D, L, R>
+impl<U, D, L, R> DualAxisLike for VirtualDPad<U, D, L, R>
 where
     U: ButtonLike,
     D: ButtonLike,
     L: ButtonLike,
     R: ButtonLike,
 {
-    fn value_pair(&self) -> Vec2 {
+    fn process(&mut self, time: &Time) -> Vec2 {
         let mut value = Vec2::ZERO;
-        if self.up.is_down() {
+        if self.up.process(time) {
             value.y += 1.0;
         }
-        if self.down.is_down() {
+        if self.down.process(time) {
             value.y -= 1.0;
         }
-        if self.left.is_down() {
+        if self.left.process(time) {
             value.x -= 1.0;
         }
-        if self.right.is_down() {
+        if self.right.process(time) {
             value.x += 1.0;
         }
         value
     }
 }
 
-impl VirtualDpad<KeyboardInput, KeyboardInput, KeyboardInput, KeyboardInput> {
+impl VirtualDPad<KeyboardInput, KeyboardInput, KeyboardInput, KeyboardInput> {
     pub fn wasd() -> impl DualAxisLike {
         Self::new(
             KeyboardInput::new(KeyCode::KeyW),
@@ -75,7 +77,7 @@ impl VirtualDpad<KeyboardInput, KeyboardInput, KeyboardInput, KeyboardInput> {
             KeyboardInput::new(KeyCode::KeyA),
             KeyboardInput::new(KeyCode::KeyD),
         )
-        .with_circle_bounds(1.0)
+        .with_bounds(1.0)
     }
 
     pub fn ijkl() -> impl DualAxisLike {
@@ -85,6 +87,6 @@ impl VirtualDpad<KeyboardInput, KeyboardInput, KeyboardInput, KeyboardInput> {
             KeyboardInput::new(KeyCode::KeyJ),
             KeyboardInput::new(KeyCode::KeyL),
         )
-        .with_circle_bounds(1.0)
+        .with_bounds(1.0)
     }
 }

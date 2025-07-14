@@ -4,6 +4,8 @@ use std::{collections::HashMap, hash::Hash};
 
 pub trait ActionLike: Clone + Eq + Hash + Send + Sync + 'static {}
 
+impl<A> ActionLike for A where A: Clone + Eq + Hash + Send + Sync + 'static {}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ButtonStatus {
     JustPressed,

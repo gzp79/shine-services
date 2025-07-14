@@ -2,8 +2,8 @@ use bevy::prelude::*;
 use shine_game::{
     application,
     input_manager::{
-        ActionLike, ActionState, CircleBoundsProcessor, GamepadButtonInput, GamepadStickInput, InputManagerPlugin,
-        InputMap, KeyboardInput, MouseButtonInput, VirtualDpad,
+        ActionState, DualAxisCircleBoundsProcessor, GamepadButtonInput, GamepadStickInput, InputManagerPlugin,
+        InputMap, KeyboardInput, MouseButtonInput, VirtualDPad,
     },
 };
 
@@ -12,8 +12,6 @@ enum Action {
     Movement,
     Fire,
 }
-
-impl ActionLike for Action {}
 
 #[derive(Component)]
 struct StatusText;
@@ -54,13 +52,13 @@ fn setup(mut commands: Commands) {
     let input_map_a = InputMap::new()
         .with_dual_axis(
             Action::Movement,
-            VirtualDpad::new(
+            VirtualDPad::new(
                 KeyboardInput::new(KeyCode::KeyW),
                 KeyboardInput::new(KeyCode::KeyS),
                 KeyboardInput::new(KeyCode::KeyA),
                 KeyboardInput::new(KeyCode::KeyD),
             )
-            .with_circle_bounds(1.0),
+            .with_bounds(1.0),
         )
         .with_button(Action::Fire, KeyboardInput::new(KeyCode::KeyZ))
         .with_button(Action::Fire, MouseButtonInput::new(MouseButton::Left));
@@ -80,13 +78,13 @@ fn setup(mut commands: Commands) {
     let input_map_b = InputMap::new()
         .with_dual_axis(
             Action::Movement,
-            VirtualDpad::new(
+            VirtualDPad::new(
                 KeyboardInput::new(KeyCode::KeyI),
                 KeyboardInput::new(KeyCode::KeyK),
                 KeyboardInput::new(KeyCode::KeyJ),
                 KeyboardInput::new(KeyCode::KeyL),
             )
-            .with_circle_bounds(1.0),
+            .with_bounds(1.0),
         )
         .with_button(Action::Fire, KeyboardInput::new(KeyCode::KeyN));
 
@@ -118,19 +116,19 @@ fn join_gamepad(
             input_a
                 .add_dual_axis(
                     Action::Movement,
-                    VirtualDpad::new(
+                    VirtualDPad::new(
                         GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadUp),
                         GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadDown),
                         GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadLeft),
                         GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadRight),
                     )
-                    .with_circle_bounds(1.0),
+                    .with_bounds(1.0),
                 )
                 .add_dual_axis(
                     Action::Movement,
                     GamepadStickInput::new(gamepad_entity, false)
-                        .with_circle_bounds(1.0)
-                        .with_circle_dead_zone(0.2),
+                        .with_bounds(1.0)
+                        .with_dead_zone(0.2),
                 )
                 .add_button(
                     Action::Fire,
@@ -142,19 +140,19 @@ fn join_gamepad(
             input_b
                 .add_dual_axis(
                     Action::Movement,
-                    VirtualDpad::new(
+                    VirtualDPad::new(
                         GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadUp),
                         GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadDown),
                         GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadLeft),
                         GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadRight),
                     )
-                    .with_circle_bounds(1.0),
+                    .with_bounds(1.0),
                 )
                 .add_dual_axis(
                     Action::Movement,
                     GamepadStickInput::new(gamepad_entity, false)
-                        .with_circle_bounds(1.0)
-                        .with_circle_dead_zone(0.2),
+                        .with_bounds(1.0)
+                        .with_dead_zone(0.2),
                 )
                 .add_button(
                     Action::Fire,

@@ -7,7 +7,7 @@ use bevy::{
 use shine_game::{
     application,
     camera_rig::{
-        drivers::{Position, Smooth, YawPitch},
+        rigs::{Position, Smooth, YawPitch},
         CameraRig,
     },
 };

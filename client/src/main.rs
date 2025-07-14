@@ -1,9 +1,11 @@
 use bevy::prelude::*;
 use shine_game::application;
 
+mod sentinel;
 mod world;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
+#[states(scoped_entities)]
 pub enum GameState {
     /// Main gameplay state.
     Playing,
@@ -11,7 +13,8 @@ pub enum GameState {
 
 /// Add all the game plugins to the app.
 fn setup_game(app: &mut App) {
-    app.add_plugins(world::WorldPlugin { state: GameState::Playing });
+    app.add_plugins(world::WorldPlugin { state: GameState::Playing })
+        .add_plugins(sentinel::SentinelPlugin { state: GameState::Playing });
 
     app.insert_state(GameState::Playing);
 }
@@ -22,6 +25,10 @@ pub fn main() {
 
     application::init(setup_game);
     let mut app = create_application(platform::Config::default());
+
+    app.add_plugins(EguiPlugin::default())
+        .add_plugins(WorldInspectorPlugin::new());
+
     app.run();
 }
 

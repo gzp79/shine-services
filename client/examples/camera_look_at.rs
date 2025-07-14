@@ -3,7 +3,7 @@ use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
 use shine_game::{
     application,
     camera_rig::{
-        drivers::{LookAt, Position},
+        rigs::{LookAt, Position},
         CameraRig,
     },
 };

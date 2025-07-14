@@ -5,4 +5,4 @@ pub use self::driver::*;
 mod rig;
 pub use self::rig::*;
 
-pub mod drivers;
+pub mod rigs;
