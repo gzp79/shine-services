@@ -2,10 +2,7 @@ use bevy::prelude::*;
 use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
 use shine_game::{
     application,
-    camera_rig::{
-        drivers::{Arm, LookAt, Position, Rotation, Smooth},
-        CameraRig,
-    },
+    camera_rig::{rigs, CameraRig},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -72,12 +69,16 @@ fn spawn_world(
     commands.spawn(light);
 
     let rig = CameraRig::builder()
-        .with(Position::new(start_position))
-        .with(Rotation::new(Quat::default()))
-        .with(Smooth::new_position(1.25).predictive(true))
-        .with(Arm::new(Vec3::new(0.0, 3.5, -5.5)))
-        .with(Smooth::new_position(2.5).predictive(true))
-        .with(LookAt::new(start_position + Vec3::Y).smoothness(1.25).predictive(true))
+        .with(rigs::Position::new(start_position))
+        .with(rigs::Rotation::new(Quat::default()))
+        .with(rigs::Smooth::new_position(1.25).predictive(true))
+        .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))
+        .with(rigs::Smooth::new_position(2.5).predictive(true))
+        .with(
+            rigs::LookAt::new(start_position + Vec3::Y)
+                .smoothness(1.25)
+                .predictive(true),
+        )
         .build();
     let camera = (
         Camera3d::default(),
@@ -135,9 +136,9 @@ fn handle_input(
 
     player.translation += move_vec;
 
-    rig.driver_mut::<Position>().position = player.translation;
-    rig.driver_mut::<Rotation>().rotation = player.rotation;
-    rig.driver_mut::<LookAt>().target = player.translation + Vec3::Y;
+    rig.driver_mut::<rigs::Position>().position = player.translation;
+    rig.driver_mut::<rigs::Rotation>().rotation = player.rotation;
+    rig.driver_mut::<rigs::LookAt>().target = player.translation + Vec3::Y;
 }
 
 fn update_camera(mut query: Query<(&mut Transform, &mut CameraRig), With<Camera3d>>, time: Res<Time>) {

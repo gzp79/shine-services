@@ -1,4 +1,4 @@
-use crate::input_manager::{integrate_default_inputs, update_action_state, ActionLike, GamepadManager};
+use crate::input_manager::{integrate_default_inputs, process_inputs, update_action_state, ActionLike, GamepadManager};
 use bevy::{
     ecs::schedule::SystemSet,
     {
@@ -11,6 +11,7 @@ use std::marker::PhantomData;
 #[derive(SystemSet, Clone, Hash, Debug, PartialEq, Eq)]
 pub enum InputManagerSystem {
     Integrate,
+    Process,
     UpdateActionState,
 }
 
@@ -36,6 +37,7 @@ impl<A: ActionLike> Plugin for InputManagerPlugin<A> {
             PreUpdate,
             (
                 integrate_default_inputs::<A>.in_set(InputManagerSystem::Integrate),
+                process_inputs::<A>.in_set(InputManagerSystem::Process),
                 update_action_state::<A>.in_set(InputManagerSystem::UpdateActionState),
             ),
         );

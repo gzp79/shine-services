@@ -1,5 +1,8 @@
 use crate::input_manager::{ButtonLike, InputSource, InputSources, UserInput};
-use bevy::input::{keyboard::KeyCode, ButtonInput};
+use bevy::{
+    input::{keyboard::KeyCode, ButtonInput},
+    time::Time,
+};
 
 impl InputSource for ButtonInput<KeyCode> {}
 
@@ -24,7 +27,7 @@ impl UserInput for KeyboardInput {
 }
 
 impl ButtonLike for KeyboardInput {
-    fn is_down(&self) -> bool {
-        self.pressed
+    fn process(&mut self, _time: &Time) -> Option<bool> {
+        Some(self.pressed)
     }
 }

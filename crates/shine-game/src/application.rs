@@ -1,4 +1,8 @@
-use bevy::app::App;
+use bevy::{
+    app::App,
+    math::Vec2,
+    window::{CursorGrabMode, Window},
+};
 use std::sync::OnceLock;
 
 /// The setup function for the application.
@@ -81,7 +85,12 @@ pub mod platform {
 /// Platform-specific initialization.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod platform {
-    use bevy::{app::App, DefaultPlugins};
+    use bevy::{
+        app::{App, PluginGroup},
+        utils::default,
+        window::{MonitorSelection, Window, WindowPlugin, WindowPosition},
+        DefaultPlugins,
+    };
 
     /// Platform-specific configuration.
     #[derive(Default)]
@@ -89,7 +98,13 @@ pub mod platform {
 
     /// Initializes platform-specific plugins.
     pub fn platform_init(app: &mut App, _config: Config) {
-        app.add_plugins(DefaultPlugins);
+        app.add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                position: WindowPosition::Centered(MonitorSelection::Primary),
+                ..default()
+            }),
+            ..default()
+        }));
     }
 }
 
@@ -105,4 +120,24 @@ pub fn create_application(config: platform::Config) -> App {
     }
 
     app
+}
+
+/// Helpers for working with Bevy's `Window` component.
+pub trait WindowExt {
+    fn start_grab(&mut self, mode: CursorGrabMode);
+}
+
+impl WindowExt for Window {
+    fn start_grab(&mut self, mode: CursorGrabMode) {
+        if mode != CursorGrabMode::None {
+            let center = Vec2 {
+                x: self.width(),
+                y: self.height(),
+            } / 2.0;
+            self.set_cursor_position(Some(center));
+        }
+
+        self.cursor_options.grab_mode = mode;
+        self.cursor_options.visible = mode != CursorGrabMode::Locked;
+    }
 }

@@ -2,10 +2,7 @@ use bevy::prelude::*;
 use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
 use shine_game::{
     application,
-    camera_rig::{
-        drivers::{LookAt, Position},
-        CameraRig,
-    },
+    camera_rig::{rigs, CameraRig},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -65,8 +62,8 @@ fn spawn_world(
     commands.spawn(light);
 
     let rig = CameraRig::builder()
-        .with(Position::new(Vec3::new(-2.0, 2.5, 5.0)))
-        .with(LookAt::new(Vec3::new(0.0, 0.5, 0.0)))
+        .with(rigs::Position::new(Vec3::new(-2.0, 2.5, 5.0)))
+        .with(rigs::LookAt::new(Vec3::new(0.0, 0.5, 0.0)))
         .build();
     let camera = (
         Camera3d::default(),
@@ -105,7 +102,7 @@ fn handle_input(
     }
     player.translation += move_vec * 5.0 * time.delta_secs();
 
-    rig.driver_mut::<LookAt>().target = player.translation;
+    rig.driver_mut::<rigs::LookAt>().target = player.translation;
 }
 
 fn update_camera(mut query: Query<(&mut Transform, &mut CameraRig), With<Camera3d>>, time: Res<Time>) {

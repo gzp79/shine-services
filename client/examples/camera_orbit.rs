@@ -2,10 +2,7 @@ use bevy::prelude::*;
 use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
 use shine_game::{
     application,
-    camera_rig::{
-        drivers::{Arm, Smooth, YawPitch},
-        CameraRig,
-    },
+    camera_rig::{rigs, CameraRig},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -61,9 +58,9 @@ fn spawn_world(
     commands.spawn(light);
 
     let rig: CameraRig = CameraRig::builder()
-        .with(YawPitch::new().yaw_degrees(45.0).pitch_degrees(-30.0))
-        .with(Smooth::new_rotation(1.5))
-        .with(Arm::new(Vec3::Z * 8.0))
+        .with(rigs::YawPitch::new().yaw_degrees(45.0).pitch_degrees(-30.0))
+        .with(rigs::Smooth::new_rotation(1.5))
+        .with(rigs::Arm::new(Vec3::Z * 8.0))
         .build();
     let camera = (
         Camera3d::default(),
@@ -77,10 +74,10 @@ fn spawn_world(
 fn handle_input(mut query: Query<&mut CameraRig, With<Camera3d>>, keyboard_input: Res<ButtonInput<KeyCode>>) {
     for mut rig in query.iter_mut() {
         if keyboard_input.just_pressed(KeyCode::KeyZ) {
-            rig.driver_mut::<YawPitch>().rotate_yaw_pitch(-90.0, 0.0);
+            rig.driver_mut::<rigs::YawPitch>().rotate_yaw_pitch(-90.0, 0.0);
         }
         if keyboard_input.just_pressed(KeyCode::KeyX) {
-            rig.driver_mut::<YawPitch>().rotate_yaw_pitch(90.0, 0.0);
+            rig.driver_mut::<rigs::YawPitch>().rotate_yaw_pitch(90.0, 0.0);
         }
     }
 }
