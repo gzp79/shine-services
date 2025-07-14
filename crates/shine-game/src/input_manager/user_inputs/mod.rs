@@ -6,3 +6,5 @@ mod gamepad;
 pub use self::gamepad::*;
 mod touch;
 pub use self::touch::*;
+mod constants;
+pub use self::constants::*;

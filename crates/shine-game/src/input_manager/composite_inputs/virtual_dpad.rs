@@ -1,6 +1,4 @@
-use crate::input_manager::{
-    ButtonLike, DualAxisCircleBoundsProcessor, DualAxisLike, InputSources, KeyboardInput, UserInput,
-};
+use crate::input_manager::{ButtonLike, DualAxisLike, DualAxisRadialProcessor, InputSources, KeyboardInput, UserInput};
 use bevy::{input::keyboard::KeyCode, math::Vec2, time::Time};
 
 /// A virtual dpad that converts 4 buttons into a dual axis.

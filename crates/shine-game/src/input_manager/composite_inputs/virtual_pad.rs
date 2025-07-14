@@ -1,4 +1,4 @@
-use crate::input_manager::{AxisCircleBoundsProcessor, AxisLike, ButtonLike, InputSources, KeyboardInput, UserInput};
+use crate::input_manager::{AxisLike, AxisRadialProcessor, ButtonLike, InputSources, KeyboardInput, UserInput};
 use bevy::{input::keyboard::KeyCode, time::Time};
 
 /// A virtual pad that converts 2 buttons into an axis.

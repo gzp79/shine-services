@@ -3,14 +3,14 @@ use crate::input_manager::{
 };
 use bevy::math::Vec2;
 
-pub struct CircleBounds {
+pub struct RadialClamp {
     radius: f32,
 }
 
-impl CircleBounds {
-    pub fn new(max: f32) -> Self {
-        assert!(max >= 0.0);
-        Self { radius: max }
+impl RadialClamp {
+    pub fn new(radius: f32) -> Self {
+        assert!(radius >= 0.0);
+        Self { radius }
     }
 
     pub fn radius(&self) -> f32 {
@@ -25,35 +25,35 @@ impl CircleBounds {
         input_value.clamp(-self.radius, self.radius)
     }
 
-    pub fn contains2(&self, input_value: Vec2) -> bool {
+    pub fn contains_vec2(&self, input_value: Vec2) -> bool {
         input_value.length() <= self.radius
     }
 
-    pub fn clamp2(&self, input_value: Vec2) -> Vec2 {
+    pub fn clamp_vec2(&self, input_value: Vec2) -> Vec2 {
         input_value.clamp_length_max(self.radius)
     }
 }
 
-impl AxisProcessor for CircleBounds {
+impl AxisProcessor for RadialClamp {
     fn process(&mut self, input_value: Option<f32>) -> Option<f32> {
         input_value.map(|v| self.clamp(v))
     }
 }
 
-impl DualAxisProcessor for CircleBounds {
+impl DualAxisProcessor for RadialClamp {
     fn process(&mut self, input_value: Option<Vec2>) -> Option<Vec2> {
-        input_value.map(|v| self.clamp2(v))
+        input_value.map(|v| self.clamp_vec2(v))
     }
 }
 
-pub struct CircleDeadZone {
+pub struct RadialDeadZone {
     radius: f32,
 }
 
-impl CircleDeadZone {
-    pub fn new(max: f32) -> Self {
-        assert!(max >= 0.0);
-        Self { radius: max }
+impl RadialDeadZone {
+    pub fn new(radius: f32) -> Self {
+        assert!(radius >= 0.0);
+        Self { radius }
     }
 
     pub fn radius(&self) -> f32 {
@@ -72,12 +72,12 @@ impl CircleDeadZone {
         }
     }
 
-    pub fn contains2(&self, input_value: Vec2) -> bool {
+    pub fn contains_vec2(&self, input_value: Vec2) -> bool {
         input_value.length() <= self.radius
     }
 
-    pub fn clamp2(&self, input_value: Vec2) -> Vec2 {
-        if self.contains2(input_value) {
+    pub fn clamp_vec2(&self, input_value: Vec2) -> Vec2 {
+        if self.contains_vec2(input_value) {
             Vec2::ZERO
         } else {
             input_value
@@ -85,68 +85,68 @@ impl CircleDeadZone {
     }
 }
 
-impl AxisProcessor for CircleDeadZone {
+impl AxisProcessor for RadialDeadZone {
     fn process(&mut self, input_value: Option<f32>) -> Option<f32> {
         input_value.map(|v| self.clamp(v))
     }
 }
 
-impl DualAxisProcessor for CircleDeadZone {
+impl DualAxisProcessor for RadialDeadZone {
     fn process(&mut self, input_value: Option<Vec2>) -> Option<Vec2> {
-        input_value.map(|v| self.clamp2(v))
+        input_value.map(|v| self.clamp_vec2(v))
     }
 }
 
-/// Helper to add circle bounds processing to an [`AxisLike`] input.
-pub trait AxisCircleBoundsProcessor: AxisLike {
-    fn with_bounds(self, radius: f32) -> ProcessedAxis<Self, CircleBounds>
+/// Helper to add radial clamp processing to an [`AxisLike`] input.
+pub trait AxisRadialProcessor: AxisLike {
+    fn with_bounds(self, radius: f32) -> ProcessedAxis<Self, RadialClamp>
     where
         Self: Sized;
 
-    fn with_dead_zone(self, radius: f32) -> ProcessedAxis<Self, CircleDeadZone>
-    where
-        Self: Sized;
-}
-
-impl<T: AxisLike> AxisCircleBoundsProcessor for T {
-    fn with_bounds(self, radius: f32) -> ProcessedAxis<Self, CircleBounds>
-    where
-        Self: Sized,
-    {
-        ProcessedAxis::new(self, CircleBounds::new(radius))
-    }
-
-    fn with_dead_zone(self, radius: f32) -> ProcessedAxis<Self, CircleDeadZone>
-    where
-        Self: Sized,
-    {
-        ProcessedAxis::new(self, CircleDeadZone::new(radius))
-    }
-}
-
-/// Helper to add circle bounds processing to an [`DualAxisLike`] input.
-pub trait DualAxisCircleBoundsProcessor: DualAxisLike {
-    fn with_bounds(self, radius: f32) -> ProcessedDualAxis<Self, CircleBounds>
-    where
-        Self: Sized;
-
-    fn with_dead_zone(self, radius: f32) -> ProcessedDualAxis<Self, CircleDeadZone>
+    fn with_dead_zone(self, radius: f32) -> ProcessedAxis<Self, RadialDeadZone>
     where
         Self: Sized;
 }
 
-impl<T: DualAxisLike> DualAxisCircleBoundsProcessor for T {
-    fn with_bounds(self, radius: f32) -> ProcessedDualAxis<Self, CircleBounds>
+impl<T: AxisLike> AxisRadialProcessor for T {
+    fn with_bounds(self, radius: f32) -> ProcessedAxis<Self, RadialClamp>
     where
         Self: Sized,
     {
-        ProcessedDualAxis::new(self, CircleBounds::new(radius))
+        ProcessedAxis::new(self, RadialClamp::new(radius))
     }
 
-    fn with_dead_zone(self, radius: f32) -> ProcessedDualAxis<Self, CircleDeadZone>
+    fn with_dead_zone(self, radius: f32) -> ProcessedAxis<Self, RadialDeadZone>
     where
         Self: Sized,
     {
-        ProcessedDualAxis::new(self, CircleDeadZone::new(radius))
+        ProcessedAxis::new(self, RadialDeadZone::new(radius))
+    }
+}
+
+/// Helper to add radial bounds processing to an [`DualAxisLike`] input.
+pub trait DualAxisRadialProcessor: DualAxisLike {
+    fn with_bounds(self, radius: f32) -> ProcessedDualAxis<Self, RadialClamp>
+    where
+        Self: Sized;
+
+    fn with_dead_zone(self, radius: f32) -> ProcessedDualAxis<Self, RadialDeadZone>
+    where
+        Self: Sized;
+}
+
+impl<T: DualAxisLike> DualAxisRadialProcessor for T {
+    fn with_bounds(self, radius: f32) -> ProcessedDualAxis<Self, RadialClamp>
+    where
+        Self: Sized,
+    {
+        ProcessedDualAxis::new(self, RadialClamp::new(radius))
+    }
+
+    fn with_dead_zone(self, radius: f32) -> ProcessedDualAxis<Self, RadialDeadZone>
+    where
+        Self: Sized,
+    {
+        ProcessedDualAxis::new(self, RadialDeadZone::new(radius))
     }
 }

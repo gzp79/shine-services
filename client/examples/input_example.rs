@@ -2,8 +2,8 @@ use bevy::prelude::*;
 use shine_game::{
     application,
     input_manager::{
-        ActionState, DualAxisCircleBoundsProcessor, GamepadButtonInput, GamepadStick, GamepadStickInput,
-        InputManagerPlugin, InputMap, KeyboardInput, MouseButtonInput, VirtualDPad,
+        ActionState, DualAxisRadialProcessor, GamepadButtonInput, GamepadStick, GamepadStickInput, InputManagerPlugin,
+        InputMap, KeyboardInput, MouseButtonInput, VirtualDPad,
     },
 };
 
