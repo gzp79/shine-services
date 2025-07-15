@@ -6,10 +6,7 @@ use bevy::{
 };
 use shine_game::{
     application,
-    camera_rig::{
-        drivers::{Position, Smooth, YawPitch},
-        CameraRig,
-    },
+    camera_rig::{rigs, CameraRig},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -66,9 +63,9 @@ fn spawn_world(
     commands.spawn(light);
 
     let rig: CameraRig = CameraRig::builder()
-        .with(Position::new(Vec3::new(-2.0, 2.5, 5.0)))
-        .with(YawPitch::new().yaw_degrees(90.0).pitch_degrees(-30.0))
-        .with(Smooth::new_position_rotation(1.0, 1.0))
+        .with(rigs::Position::new(Vec3::new(-2.0, 2.5, 5.0)))
+        .with(rigs::YawPitch::new().yaw_degrees(90.0).pitch_degrees(-30.0))
+        .with(rigs::Smooth::new_position_rotation(1.0, 1.0))
         .build();
     let camera = (
         Camera3d::default(),
@@ -110,9 +107,9 @@ fn handle_input(
             delta += event.delta;
         }
 
-        rig.driver_mut::<YawPitch>()
+        rig.driver_mut::<rigs::YawPitch>()
             .rotate_yaw_pitch(-0.1 * delta.x, -0.1 * delta.y);
-        rig.driver_mut::<Position>()
+        rig.driver_mut::<rigs::Position>()
             .translate(move_vec * time.delta_secs() * 10.0);
     }
 }

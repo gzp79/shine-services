@@ -1,10 +1,12 @@
-use crate::input_manager::{ButtonLike, DualAxisLike, InputSource, InputSources, UserInput};
+use crate::input_manager::{ActionLike, ButtonLike, DualAxisLike, InputMap, InputSource, InputSources, UserInput};
 use bevy::{
+    ecs::system::{Query, Res},
     input::{
         mouse::{AccumulatedMouseMotion, MouseButton},
         ButtonInput,
     },
     math::Vec2,
+    time::Time,
     window::Window,
 };
 
@@ -33,13 +35,19 @@ impl UserInput for MouseButtonInput {
 }
 
 impl ButtonLike for MouseButtonInput {
-    fn is_down(&self) -> bool {
-        self.pressed
+    fn process(&mut self, _time: &Time) -> Option<bool> {
+        Some(self.pressed)
     }
 }
 
 pub struct MouseMotionInput {
     value: Vec2,
+}
+
+impl Default for MouseMotionInput {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MouseMotionInput {
@@ -59,69 +67,61 @@ impl UserInput for MouseMotionInput {
 }
 
 impl DualAxisLike for MouseMotionInput {
-    fn value_pair(&self) -> Vec2 {
-        self.value
+    fn process(&mut self, _time: &Time) -> Option<Vec2> {
+        Some(self.value)
     }
 }
 
 /// Return mouse position in screen coordinates
 pub struct MousePositionInput {
-    value: Vec2,
+    value: Option<Vec2>,
+}
+
+impl Default for MousePositionInput {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MousePositionInput {
     pub fn new() -> Self {
-        Self { value: Vec2::ZERO }
+        Self { value: None }
     }
 }
 
 impl UserInput for MousePositionInput {
     fn integrate(&mut self, input: &InputSources) {
         if let Some(window) = input.get_resource::<Window>() {
-            // if cursor if off-screen, preserve the last position
-            if let Some(pos) = window.cursor_position() {
-                self.value = pos;
-            }
+            self.value = window.cursor_position()
         }
     }
 }
 
 impl DualAxisLike for MousePositionInput {
-    fn value_pair(&self) -> Vec2 {
+    fn process(&mut self, _time: &Time) -> Option<Vec2> {
         self.value
     }
 }
 
-/// Return normalized mouse position.
-/// The value for the smaller dimension is in the range [-1.0, 1.0],
-/// the larger dimension is kept proportional to keep the aspect ratio.
-pub struct MouseNormalizedPositionInput {
-    value: Vec2,
-}
+pub fn integrate_mouse_inputs<A>(
+    time: Res<Time>,
+    window: Query<&Window>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    accumulated_mouse_motion: Res<AccumulatedMouseMotion>,
+    mut input_query: Query<&mut InputMap<A>>,
+) where
+    A: ActionLike,
+{
+    let window = window.single().expect("Only single window is supported");
 
-impl MouseNormalizedPositionInput {
-    pub fn new() -> Self {
-        Self { value: Vec2::ZERO }
-    }
-}
+    for mut input_map in input_query.iter_mut() {
+        let mut input_source = InputSources::new();
 
-impl UserInput for MouseNormalizedPositionInput {
-    fn integrate(&mut self, input: &InputSources) {
-        if let Some(window) = input.get_resource::<Window>() {
-            // if cursor if off-screen, preserve the last position
-            if let Some(pos) = window.cursor_position() {
-                let (w, h) = (window.width(), window.height());
-                let s = (w.min(h) / 2.0).max(1.0);
-                self.value = Vec2::new((pos.x - w / 2.0) / s, (pos.y - h / 2.0) / s);
-                // Invert the y-axis because in the input system, upward movement is positive
-                self.value.y = -self.value.y;
-            }
-        }
-    }
-}
+        input_source.add_resource(window);
+        input_source.add_resource(&*time);
+        input_source.add_resource(&*mouse);
+        input_source.add_resource(&*accumulated_mouse_motion);
 
-impl DualAxisLike for MouseNormalizedPositionInput {
-    fn value_pair(&self) -> Vec2 {
-        self.value
+        input_map.integrate(input_source);
     }
 }

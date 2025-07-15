@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $profile="release"
-$exampleWasmFiles = "camera_follow camera_free camera_look_at camera_orbit input_actions input_pointer" -split ' '
+$exampleWasmFiles = "camera_follow camera_free camera_look_at camera_orbit input_actions" -split ' '
 $bindgen=$true
 $opt=$false
 

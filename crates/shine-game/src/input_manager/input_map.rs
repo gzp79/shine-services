@@ -16,9 +16,9 @@ where
     A: ActionLike,
 {
     enabled: bool,
-    buttons: HashMap<A, Vec<Box<dyn ButtonLike>>>,
-    axes: HashMap<A, Vec<Box<dyn AxisLike>>>,
-    dual_axes: HashMap<A, Vec<Box<dyn DualAxisLike>>>,
+    buttons: HashMap<A, Vec<(Box<dyn ButtonLike>, Option<bool>)>>,
+    axes: HashMap<A, Vec<(Box<dyn AxisLike>, Option<f32>)>>,
+    dual_axes: HashMap<A, Vec<(Box<dyn DualAxisLike>, Option<Vec2>)>>,
 }
 
 impl<A> Default for InputMap<A>
@@ -48,7 +48,7 @@ where
             panic!("Action is already bound to a different input type");
         }
 
-        self.buttons.entry(action).or_default().push(Box::new(input));
+        self.buttons.entry(action).or_default().push((Box::new(input), None));
         self
     }
 
@@ -64,7 +64,7 @@ where
             panic!("Action is already bound to a different input type");
         }
 
-        self.axes.entry(action).or_default().push(Box::new(input));
+        self.axes.entry(action).or_default().push((Box::new(input), None));
         self
     }
 
@@ -80,7 +80,7 @@ where
             panic!("Action is already bound to a different input type");
         }
 
-        self.dual_axes.entry(action).or_default().push(Box::new(input));
+        self.dual_axes.entry(action).or_default().push((Box::new(input), None));
         self
     }
 
@@ -109,22 +109,56 @@ where
 
     pub fn integrate(&mut self, input_source: InputSources) {
         for inputs in self.buttons.values_mut() {
-            for input in inputs {
+            for (input, _) in inputs {
                 input.integrate(&input_source);
             }
         }
 
         for inputs in self.axes.values_mut() {
-            for input in inputs {
+            for (input, _) in inputs {
                 input.integrate(&input_source);
             }
         }
 
         for inputs in self.dual_axes.values_mut() {
-            for input in inputs {
+            for (input, _) in inputs {
                 input.integrate(&input_source);
             }
         }
+    }
+
+    pub fn process(&mut self, time: &Time) {
+        for inputs in self.buttons.values_mut() {
+            for (input, value) in inputs {
+                *value = input.process(time);
+            }
+        }
+
+        for inputs in self.axes.values_mut() {
+            for (input, value) in inputs {
+                *value = input.process(time);
+            }
+        }
+
+        for inputs in self.dual_axes.values_mut() {
+            for (input, value) in inputs {
+                *value = input.process(time);
+            }
+        }
+    }
+}
+
+/// Update the action state based on the input map.
+pub fn process_inputs<A>(mut input_query: Query<&mut InputMap<A>>, time: Res<Time>)
+where
+    A: ActionLike,
+{
+    for mut input_map in input_query.iter_mut() {
+        if !input_map.enabled {
+            continue;
+        }
+
+        input_map.process(&time);
     }
 }
 
@@ -144,14 +178,10 @@ where
         for (action, inputs) in &input_map.buttons {
             let button_state = action_state.set_button(action.clone());
 
-            let mut pressed = false;
-            for button_like in inputs {
-                if button_like.is_down() {
-                    pressed = true;
-                    break;
-                }
-            }
-
+            let pressed = inputs
+                .iter()
+                .filter_map(|(_, value)| *value)
+                .max_by(|a, b| a.partial_cmp(b).unwrap());
             button_state.update(pressed, time.elapsed().as_secs_f32());
         }
 
@@ -160,9 +190,8 @@ where
 
             let max_value = inputs
                 .iter()
-                .map(|a| a.value())
-                .max_by(|a, b| a.partial_cmp(b).unwrap())
-                .unwrap_or(0.0);
+                .filter_map(|(_, v)| *v)
+                .max_by(|a, b| a.partial_cmp(b).unwrap());
             axis_state.value = max_value;
         }
 
@@ -171,9 +200,8 @@ where
 
             let max_value = inputs
                 .iter()
-                .map(|a| a.value_pair())
-                .max_by(|a, b| a.length_squared().partial_cmp(&b.length_squared()).unwrap())
-                .unwrap_or(Vec2::ZERO);
+                .filter_map(|(_, v)| *v)
+                .max_by(|a, b| a.length_squared().partial_cmp(&b.length_squared()).unwrap());
             dual_axis_state.value = max_value;
         }
 

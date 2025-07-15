@@ -18,7 +18,7 @@ pub fn process_map_event_system(
     mut commands: Commands,
 ) {
     for event in ev.read() {
-        log::debug!("Processing TileMapEvent: {:?}", event);
+        log::debug!("Processing TileMapEvent: {event:?}");
         match event {
             MapEvent::Load(chunk_id) => {
                 tile_map.load_chunk(*chunk_id, &mut commands);

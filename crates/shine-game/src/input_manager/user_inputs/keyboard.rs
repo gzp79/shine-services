@@ -1,5 +1,10 @@
-use crate::input_manager::{ButtonLike, InputSource, InputSources, UserInput};
-use bevy::input::{keyboard::KeyCode, ButtonInput};
+use crate::input_manager::{ActionLike, ButtonLike, InputMap, InputSource, InputSources, UserInput};
+use bevy::{
+    ecs::system::{Query, Res},
+    input::{keyboard::KeyCode, ButtonInput},
+    time::Time,
+    window::Window,
+};
 
 impl InputSource for ButtonInput<KeyCode> {}
 
@@ -24,7 +29,28 @@ impl UserInput for KeyboardInput {
 }
 
 impl ButtonLike for KeyboardInput {
-    fn is_down(&self) -> bool {
-        self.pressed
+    fn process(&mut self, _time: &Time) -> Option<bool> {
+        Some(self.pressed)
+    }
+}
+
+pub fn integrate_keyboard_inputs<A>(
+    time: Res<Time>,
+    window: Query<&Window>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut input_query: Query<&mut InputMap<A>>,
+) where
+    A: ActionLike,
+{
+    let window = window.single().expect("Only single window is supported");
+
+    for mut input_map in input_query.iter_mut() {
+        let mut input_source = InputSources::new();
+
+        input_source.add_resource(window);
+        input_source.add_resource(&*time);
+        input_source.add_resource(&*keyboard);
+
+        input_map.integrate(input_source);
     }
 }
