@@ -119,6 +119,13 @@ pub fn create_application(config: platform::Config) -> App {
         log::error!("The application setup function has not been initialized. Call `application::init` first.");
     }
 
+    #[cfg(feature = "dev_tools")]
+    {
+        bevy_mod_debugdump::print_schedule_graph(&mut app, bevy::app::PreUpdate);
+        bevy_mod_debugdump::print_schedule_graph(&mut app, bevy::app::Update);
+        bevy_mod_debugdump::print_render_graph(&mut app);
+    }
+
     app
 }
 

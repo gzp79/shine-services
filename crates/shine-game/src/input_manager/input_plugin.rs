@@ -1,21 +1,47 @@
 use crate::input_manager::{
-    integrate_gamepad_inputs, integrate_keyboard_mouse_inputs, integrate_touch_inputs, process_inputs,
-    update_action_state, ActionLike, GamepadManager,
+    integrate_gamepad_inputs, integrate_keyboard_inputs, integrate_mouse_inputs, integrate_touch_inputs,
+    integrate_two_finger_touch_inputs, process_inputs, update_action_state, update_two_finger_touch_gesture,
+    ActionLike, GamepadManager, TwoFingerTouchGesture,
 };
 use bevy::{
-    ecs::schedule::SystemSet,
-    {
-        app::{App, Plugin, PreUpdate},
-        ecs::schedule::IntoScheduleConfigs,
-    },
+    app::{App, Plugin, PreUpdate},
+    ecs::schedule::{IntoScheduleConfigs, SystemSet},
+    input::InputSystem,
 };
 use std::marker::PhantomData;
 
 #[derive(SystemSet, Clone, Hash, Debug, PartialEq, Eq)]
 pub enum InputManagerSystem {
+    SourceInput,
     Integrate,
     Process,
     UpdateActionState,
+}
+
+struct InputManagerCommonPlugin;
+
+impl Plugin for InputManagerCommonPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(GamepadManager);
+        app.insert_resource(TwoFingerTouchGesture::default());
+
+        app.configure_sets(
+            PreUpdate,
+            (
+                InputManagerSystem::SourceInput,
+                InputManagerSystem::Integrate,
+                InputManagerSystem::Process,
+                InputManagerSystem::UpdateActionState,
+            )
+                .chain()
+                .after(InputSystem),
+        );
+
+        app.add_systems(
+            PreUpdate,
+            update_two_finger_touch_gesture.in_set(InputManagerSystem::SourceInput),
+        );
+    }
 }
 
 pub struct InputManagerPlugin<A: ActionLike> {
@@ -30,21 +56,27 @@ impl<A: ActionLike> Default for InputManagerPlugin<A> {
 
 impl<A: ActionLike> Plugin for InputManagerPlugin<A> {
     fn build(&self, app: &mut App) {
-        app.insert_resource(GamepadManager);
+        if !app.is_plugin_added::<InputManagerCommonPlugin>() {
+            app.add_plugins(InputManagerCommonPlugin);
+        }
 
-        app.configure_sets(
-            PreUpdate,
-            (InputManagerSystem::Integrate, InputManagerSystem::UpdateActionState).chain(),
-        )
-        .add_systems(
+        app.add_systems(
             PreUpdate,
             (
-                integrate_keyboard_mouse_inputs::<A>.in_set(InputManagerSystem::Integrate),
-                integrate_touch_inputs::<A>.in_set(InputManagerSystem::Integrate),
-                integrate_gamepad_inputs::<A>.in_set(InputManagerSystem::Integrate),
-                process_inputs::<A>.in_set(InputManagerSystem::Process),
-                update_action_state::<A>.in_set(InputManagerSystem::UpdateActionState),
-            ),
+                integrate_keyboard_inputs::<A>,
+                integrate_mouse_inputs::<A>,
+                integrate_touch_inputs::<A>,
+                integrate_two_finger_touch_inputs::<A>,
+                integrate_gamepad_inputs::<A>,
+            )
+                .in_set(InputManagerSystem::Integrate),
+        );
+
+        app.add_systems(PreUpdate, process_inputs::<A>.in_set(InputManagerSystem::Process));
+
+        app.add_systems(
+            PreUpdate,
+            update_action_state::<A>.in_set(InputManagerSystem::UpdateActionState),
         );
     }
 }

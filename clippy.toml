@@ -1,3 +1,4 @@
 large-error-threshold = 512
 enum-variant-name-threshold = 99
 too-many-arguments-threshold = 8
+type-complexity-threshold = 500

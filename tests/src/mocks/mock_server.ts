@@ -54,10 +54,10 @@ export class MockServer {
         this.log(`Start listening at port ${this.port} with baseurl ${this.baseUrl} ...`);
         if (this.tls) {
             this.log('TLS enabled');
-            this.server = await https.createServer(this.tls, this.app).listen(this.port);
+            this.server = await https.createServer(this.tls, this.app).listen(parseInt(this.port), '0.0.0.0');
         } else {
             this.log('TLS disabled');
-            this.server = await http.createServer(this.app).listen(this.port);
+            this.server = await http.createServer(this.app).listen(parseInt(this.port), '0.0.0.0');
         }
 
         // keep track of the open connections

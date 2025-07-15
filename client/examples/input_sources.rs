@@ -3,8 +3,8 @@ use shine_game::{
     application,
     input_manager::{
         ActionState, ButtonChord, DualAxisChord, EdgeSize, GamepadButtonInput, GamepadStick, GamepadStickInput,
-        InputManagerPlugin, InputMap, KeyboardInput, MouseButtonInput, MouseMotionInput, MousePositionInput,
-        ScreenPositionProcessor, TouchPositionInput,
+        InputManagerPlugin, InputMap, KeyboardInput, MouseButtonInput, MouseMotionInput, MousePositionInput, PinchPan,
+        PinchRotate, PinchZoom, ScreenPositionProcessor, TouchPositionInput,
     },
 };
 
@@ -18,6 +18,10 @@ enum Action {
     TouchPosition,
     TouchNormalizedPosition,
     TouchEdgeScroll,
+
+    PinchPan,
+    PinchZoom,
+    PinchRotate,
 
     GamePadLeftStick,
     GamePadRightStick,
@@ -86,6 +90,9 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
             Action::TouchEdgeScroll,
             TouchPositionInput::new().edge_scroll(EdgeSize::Fixed(50.)),
         )
+        .with_dual_axis(Action::PinchPan, PinchPan::new())
+        .with_axis(Action::PinchZoom, PinchZoom::new())
+        .with_axis(Action::PinchRotate, PinchRotate::new())
         .with_button(
             Action::ButtonChardAB,
             ButtonChord::new2(KeyboardInput::new(KeyCode::KeyA), KeyboardInput::new(KeyCode::KeyB)),
@@ -212,6 +219,19 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Qu
             Some(value) => format!("Touch Edge Scroll: {value:?}"),
         };
 
+        let pinch_pan = match action_state.try_dual_axis_value(&Action::PinchPan) {
+            None => "Pinch Pan: None".to_string(),
+            Some(value) => format!("Pinch Pan: {value:?}"),
+        };
+        let pinch_zoom = match action_state.try_axis_value(&Action::PinchZoom) {
+            None => "Pinch Zoom: None".to_string(),
+            Some(value) => format!("Pinch Zoom: {value:?}"),
+        };
+        let pinch_rotate = match action_state.try_axis_value(&Action::PinchRotate) {
+            None => "Pinch Rotate: None".to_string(),
+            Some(value) => format!("Pinch Rotate: {value:?}"),
+        };
+
         let gamepad_left_stick = match action_state.try_dual_axis_value(&Action::GamePadLeftStick) {
             None => "GamePad Left Stick: None".to_string(),
             Some(value) => format!("GamePad Left Stick: {value:?}"),
@@ -253,6 +273,9 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Qu
             touch_position,
             touch_normalized_position,
             touch_edge_scroll,
+            pinch_pan,
+            pinch_zoom,
+            pinch_rotate,
             gamepad_left_stick,
             gamepad_right_stick,
             gamepad_right_trigger,

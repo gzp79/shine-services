@@ -1,5 +1,6 @@
-use crate::input_manager::{ButtonLike, DualAxisLike, InputSource, InputSources, UserInput};
+use crate::input_manager::{ActionLike, ButtonLike, DualAxisLike, InputMap, InputSource, InputSources, UserInput};
 use bevy::{
+    ecs::system::{Query, Res},
     input::{
         mouse::{AccumulatedMouseMotion, MouseButton},
         ButtonInput,
@@ -99,5 +100,28 @@ impl UserInput for MousePositionInput {
 impl DualAxisLike for MousePositionInput {
     fn process(&mut self, _time: &Time) -> Option<Vec2> {
         self.value
+    }
+}
+
+pub fn integrate_mouse_inputs<A>(
+    time: Res<Time>,
+    window: Query<&Window>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    accumulated_mouse_motion: Res<AccumulatedMouseMotion>,
+    mut input_query: Query<&mut InputMap<A>>,
+) where
+    A: ActionLike,
+{
+    let window = window.single().expect("Only single window is supported");
+
+    for mut input_map in input_query.iter_mut() {
+        let mut input_source = InputSources::new();
+
+        input_source.add_resource(window);
+        input_source.add_resource(&*time);
+        input_source.add_resource(&*mouse);
+        input_source.add_resource(&*accumulated_mouse_motion);
+
+        input_map.integrate(input_source);
     }
 }

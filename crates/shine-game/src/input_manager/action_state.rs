@@ -79,26 +79,14 @@ impl ButtonData {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AxisData {
     pub value: Option<f32>,
 }
 
-impl Default for AxisData {
-    fn default() -> Self {
-        Self { value: None }
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DualAxisData {
     pub value: Option<Vec2>,
-}
-
-impl Default for DualAxisData {
-    fn default() -> Self {
-        Self { value: None }
-    }
 }
 
 #[derive(Debug, Clone)]
