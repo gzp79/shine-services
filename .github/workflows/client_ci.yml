@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  EXAMPLES: camera_follow camera_free camera_look_at camera_orbit input_sources
+  EXAMPLES: camera_follow camera_free camera_look_at camera_orbit input_actions
   PROFILE: release
   S3_BUCKET_LINK: https://ce847ac4c44fb11af63e62ba34ec40db.r2.cloudflarestorage.com
   S3_BUCKET_NAME: shine-games
