@@ -1,5 +1,5 @@
 use crate::input_manager::InputSources;
-use bevy::math::Vec2;
+use bevy::{math::Vec2, time::Time};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InputKind {
@@ -14,13 +14,13 @@ pub trait UserInput: Send + Sync + 'static {
 }
 
 pub trait ButtonLike: UserInput {
-    fn is_down(&self) -> bool;
+    fn process(&mut self, time: &Time) -> Option<bool>;
 }
 
 pub trait AxisLike: UserInput {
-    fn value(&self) -> f32;
+    fn process(&mut self, time: &Time) -> Option<f32>;
 }
 
 pub trait DualAxisLike: UserInput {
-    fn value_pair(&self) -> Vec2;
+    fn process(&mut self, time: &Time) -> Option<Vec2>;
 }

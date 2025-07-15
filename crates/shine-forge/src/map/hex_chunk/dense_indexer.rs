@@ -20,7 +20,7 @@ impl HexDenseIndexer {
 
         // Calculate start indices for each row
         for r in -(radius as i32)..=radius as i32 {
-            log::info!("r: {}, current_width: {}", r, current_width);
+            log::info!("r: {r}, current_width: {current_width}");
             row_starts.push(current_start);
             current_start += current_width;
             if r < 0 {

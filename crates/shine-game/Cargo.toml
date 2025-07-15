@@ -3,6 +3,11 @@ name = "shine-game"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = ["dev_tools"]
+
+dev_tools = ["bevy_mod_debugdump"]
+
 [dependencies]
 log = { workspace = true }
 thiserror = { workspace = true }
@@ -13,6 +18,8 @@ itertools = { workspace = true }
 
 tokio = { workspace = true }
 bevy = { workspace = true }
+
+bevy_mod_debugdump = { version = "0.13", optional = true }
 
 shine-infra = { workspace = true, optional = true }
 

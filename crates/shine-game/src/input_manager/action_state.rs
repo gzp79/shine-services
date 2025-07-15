@@ -4,8 +4,11 @@ use std::{collections::HashMap, hash::Hash};
 
 pub trait ActionLike: Clone + Eq + Hash + Send + Sync + 'static {}
 
+impl<A> ActionLike for A where A: Clone + Eq + Hash + Send + Sync + 'static {}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ButtonStatus {
+    None,
     JustPressed,
     Pressed,
     JustReleased,
@@ -23,7 +26,7 @@ impl Default for ButtonData {
     fn default() -> Self {
         Self {
             start_time: 0.0,
-            status: ButtonStatus::Released,
+            status: ButtonStatus::None,
         }
     }
 }
@@ -46,71 +49,58 @@ impl ButtonData {
         (time.elapsed().as_secs_f32() - self.start_time).max(0.0)
     }
 
-    pub fn update(&mut self, pressed: bool, time: f32) {
-        if pressed {
-            match self.status {
-                ButtonStatus::JustPressed => self.status = ButtonStatus::Pressed,
-                ButtonStatus::Pressed => { /* keep */ }
-                ButtonStatus::JustReleased | ButtonStatus::Released => {
-                    self.status = ButtonStatus::JustPressed;
-                    self.start_time = time;
+    pub fn update(&mut self, pressed: Option<bool>, time: f32) {
+        match pressed {
+            None => {
+                self.status = ButtonStatus::None;
+                self.start_time = time;
+            }
+            Some(true) => {
+                match self.status {
+                    ButtonStatus::JustPressed => self.status = ButtonStatus::Pressed,
+                    ButtonStatus::Pressed => { /* keep */ }
+                    ButtonStatus::JustReleased | ButtonStatus::Released | ButtonStatus::None => {
+                        self.status = ButtonStatus::JustPressed;
+                        self.start_time = time;
+                    }
                 }
             }
-        } else {
-            match self.status {
-                ButtonStatus::JustPressed | ButtonStatus::Pressed => {
-                    self.status = ButtonStatus::JustReleased;
-                    self.start_time = time;
+            Some(false) => {
+                match self.status {
+                    ButtonStatus::JustPressed | ButtonStatus::Pressed => {
+                        self.status = ButtonStatus::JustReleased;
+                        self.start_time = time;
+                    }
+                    ButtonStatus::None | ButtonStatus::JustReleased => self.status = ButtonStatus::Released,
+                    ButtonStatus::Released => { /* keep */ }
                 }
-                ButtonStatus::JustReleased => self.status = ButtonStatus::Released,
-                ButtonStatus::Released => { /* keep */ }
             }
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AxisData {
-    pub value: f32,
+    pub value: Option<f32>,
 }
 
-impl Default for AxisData {
-    fn default() -> Self {
-        Self { value: 0.0 }
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DualAxisData {
-    pub value: Vec2,
-}
-
-impl Default for DualAxisData {
-    fn default() -> Self {
-        Self { value: Vec2::ZERO }
-    }
+    pub value: Option<Vec2>,
 }
 
 #[derive(Debug, Clone)]
-pub enum ActionData {
+enum ActionData {
     Button(ButtonData),
     Axis(AxisData),
     DualAxis(DualAxisData),
 }
 
 impl ActionData {
-    pub fn clear(&mut self) {
+    pub fn try_as_button(&self) -> Option<&ButtonData> {
         match self {
-            ActionData::Button(data) => *data = ButtonData::default(),
-            ActionData::Axis(data) => *data = AxisData::default(),
-            ActionData::DualAxis(data) => *data = DualAxisData::default(),
-        }
-    }
-
-    pub fn to_button(&self) -> ButtonData {
-        match self {
-            ActionData::Button(data) => data.clone(),
-            _ => ButtonData::default(),
+            ActionData::Button(data) => Some(data),
+            _ => None,
         }
     }
 
@@ -121,10 +111,10 @@ impl ActionData {
         }
     }
 
-    pub fn to_axis(&self) -> AxisData {
+    pub fn try_as_axis(&self) -> Option<&AxisData> {
         match self {
-            ActionData::Axis(data) => data.clone(),
-            _ => AxisData::default(),
+            ActionData::Axis(data) => Some(data),
+            _ => None,
         }
     }
 
@@ -135,10 +125,10 @@ impl ActionData {
         }
     }
 
-    pub fn to_dual_axis(&self) -> DualAxisData {
+    pub fn try_as_dual_axis(&self) -> Option<&DualAxisData> {
         match self {
-            ActionData::DualAxis(data) => data.clone(),
-            _ => DualAxisData::default(),
+            ActionData::DualAxis(data) => Some(data),
+            _ => None,
         }
     }
 
@@ -155,8 +145,8 @@ pub struct ActionState<A>
 where
     A: ActionLike,
 {
-    pub version: usize,
-    pub data: HashMap<A, (usize, ActionData)>,
+    version: usize,
+    data: HashMap<A, (usize, ActionData)>,
 }
 
 impl<A> Default for ActionState<A>
@@ -197,12 +187,35 @@ where
         }
     }
 
-    /// Return the button state bound to the action. If not bound or not a button, a default button data.
-    pub fn button(&self, action: &A) -> ButtonData {
-        self.data.get(action).map(|data| data.1.to_button()).unwrap_or_default()
+    /// Return the button state bound to the action. If data is not available or not a button, None is returned.
+    pub fn as_button(&self, action: &A) -> Option<&ButtonData> {
+        self.data.get(action).and_then(|data| data.1.try_as_button())
     }
 
-    /// Return the bound button state. If not bound or not a button, create a new button data.
+    /// A convenience method to get the button state. If data is not available, None is returned.
+    #[inline]
+    pub fn button_value(&self, action: &A) -> ButtonStatus {
+        self.as_button(action).map_or(ButtonStatus::None, |data| data.status)
+    }
+
+    /// A convenience method to get the button state, returning if action was just pressed. If data is not available, false is returned.
+    #[inline]
+    pub fn just_pressed(&self, action: &A) -> bool {
+        self.as_button(action).is_some_and(|data| data.just_pressed())
+    }
+
+    /// A convenience method to get the button state, returning if action was just released. If data is not available, false is returned.
+    #[inline]
+    pub fn just_released(&self, action: &A) -> bool {
+        self.as_button(action).is_some_and(|data| data.just_released())
+    }
+
+    /// A convenience method to get the button state, returning if action in pressed. If data is not available, false is returned.
+    #[inline]
+    pub fn is_pressed(&self, action: &A) -> bool {
+        self.as_button(action).is_some_and(|data| data.is_down())
+    }
+
     pub fn set_button(&mut self, action: A) -> &mut ButtonData {
         let entry = self
             .data
@@ -219,8 +232,22 @@ where
         }
     }
 
-    pub fn axis(&self, action: &A) -> AxisData {
-        self.data.get(action).map(|data| data.1.to_axis()).unwrap_or_default()
+    /// Return the axis state bound to the action. If data is not available or not a axis input, None is returned.
+    #[inline]
+    pub fn as_axis(&self, action: &A) -> Option<&AxisData> {
+        self.data.get(action).and_then(|data| data.1.try_as_axis())
+    }
+
+    /// A convenience method to get the axis value, returning None if data is not available.
+    #[inline]
+    pub fn try_axis_value(&self, action: &A) -> Option<f32> {
+        self.as_axis(action).and_then(|data| data.value)
+    }
+
+    /// A convenience method to get the axis value, returning 0.0 if data is not available.
+    #[inline]
+    pub fn axis_value(&self, action: &A) -> f32 {
+        self.try_axis_value(action).unwrap_or(0.0)
     }
 
     pub fn set_axis(&mut self, action: A) -> &mut AxisData {
@@ -239,11 +266,22 @@ where
         }
     }
 
-    pub fn dual_axis(&self, action: &A) -> DualAxisData {
-        self.data
-            .get(action)
-            .map(|data| data.1.to_dual_axis())
-            .unwrap_or_default()
+    /// Return the dual-axis state bound to the action. If data is not available or not a dual-axis input, None is returned.
+    #[inline]
+    pub fn as_dual_axis(&self, action: &A) -> Option<&DualAxisData> {
+        self.data.get(action).and_then(|data| data.1.try_as_dual_axis())
+    }
+
+    /// A convenience method to get the dual-axis value, returning None if data is not available.
+    #[inline]
+    pub fn try_dual_axis_value(&self, action: &A) -> Option<Vec2> {
+        self.as_dual_axis(action).and_then(|data| data.value)
+    }
+
+    /// A convenience method to get the dual-axis value, returning Vec2::ZERO if data is not available.
+    #[inline]
+    pub fn dual_axis_value(&self, action: &A) -> Vec2 {
+        self.try_dual_axis_value(action).unwrap_or(Vec2::ZERO)
     }
 
     pub fn set_dual_axis(&mut self, action: A) -> &mut DualAxisData {

@@ -11,11 +11,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
   cancel-in-progress: true
 
-env:    
-    EXAMPLES: camera_follow camera_free camera_look_at camera_orbit input_actions input_pointer
-    PROFILE: release
-    S3_BUCKET_LINK: https://ce847ac4c44fb11af63e62ba34ec40db.r2.cloudflarestorage.com
-    S3_BUCKET_NAME: shine-games
+env:
+  EXAMPLES: camera_follow camera_free camera_look_at camera_orbit input_actions
+  PROFILE: release
+  S3_BUCKET_LINK: https://ce847ac4c44fb11af63e62ba34ec40db.r2.cloudflarestorage.com
+  S3_BUCKET_NAME: shine-games
 
 jobs:
   wasm-build:
@@ -32,17 +32,16 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-
       - name: Setup Rust
         run: |
           rustup target add wasm32-unknown-unknown
           rustup component add rustfmt clippy
-          
+
       - name: Install Wasm tools
         run: |
-           curl https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh -sSf | sh
-           cargo binstall wasm-bindgen-cli
-           cargo binstall wasm-opt
+          curl https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh -sSf | sh
+          cargo binstall wasm-bindgen-cli
+          cargo binstall wasm-opt
 
       - name: Compile to WASM
         run: |
@@ -58,7 +57,7 @@ jobs:
           mv ./dist/${{ github.sha }}/shine-client_opt.wasm ./dist/${{ github.sha }}/shine-client_bg.wasm
           echo "Copy index.html"
           cp client/index.html ./dist/${{ github.sha }}/index.html
-          
+
           for example in ${{ env.EXAMPLES }}; do
             echo "Run bindgen for ${example}"
             wasm-bindgen --no-typescript --target web \
@@ -91,7 +90,7 @@ jobs:
         with:
           name: game-wasm
           path: ./dist
-          
+
       - name: Setup AWS CLI
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

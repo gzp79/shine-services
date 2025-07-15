@@ -1,4 +1,4 @@
-use crate::camera_rig::{drivers::ExpSmoothed, RigDriver, RigUpdateParams};
+use crate::camera_rig::{rigs::ExpSmoothed, RigDriver, RigUpdateParams};
 use bevy::{math::Vec3, transform::components::Transform};
 
 /// Rotates the camera to point at a world-space position.

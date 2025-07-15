@@ -1,76 +1,78 @@
-use crate::input_manager::{DualAxisLike, InputSource, InputSources, UserInput};
-use bevy::{input::touch::Touches, math::Vec2};
+use crate::input_manager::{ActionLike, DualAxisLike, InputMap, InputSource, InputSources, UserInput};
+use bevy::{
+    ecs::system::{Query, Res},
+    input::touch::Touches,
+    math::Vec2,
+    time::Time,
+    window::Window,
+};
 
 impl InputSource for Touches {}
 
 /// Return touch position for the first finger in screen coordinates.
-/// When there is no touch, an extreme Vec2::MAX value is returned.
 pub struct TouchPositionInput {
     id: Option<u64>,
-    value: Vec2,
+    value: Option<Vec2>,
+}
+
+impl Default for TouchPositionInput {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TouchPositionInput {
     pub fn new() -> Self {
-        Self { id: None, value: Vec2::ZERO }
+        Self { id: None, value: None }
     }
 }
 
 impl UserInput for TouchPositionInput {
     fn integrate(&mut self, input: &InputSources) {
         if let Some(touches) = input.get_resource::<Touches>() {
-            let finger = if let Some(id) = self.id {
-                touches.iter().find(|f| f.id() == id)
-            } else {
-                touches.iter().next()
-            };
-
-            if let Some(finger) = finger {
-                self.value = finger.position();
-            } else {
-                self.value = Vec2::MAX;
+            // check if the touch is still active
+            if let Some(id) = self.id {
+                if touches.get_pressed(id).is_none() {
+                    self.id = None;
+                }
             }
+
+            // Assign new id from the first active touch
+            for touch in touches.iter() {
+                if self.id.is_none() {
+                    self.id = Some(touch.id());
+                    break;
+                }
+            }
+
+            self.value = self.id.and_then(|id| touches.get_pressed(id)).map(|t| t.position());
         }
     }
 }
 
 impl DualAxisLike for TouchPositionInput {
-    fn value_pair(&self) -> Vec2 {
+    fn process(&mut self, _time: &Time) -> Option<Vec2> {
         self.value
     }
 }
 
-/*
-/// Return normalized mouse position.
-/// The value for the smaller dimension is in the range [-1.0, 1.0],
-/// the larger dimension is kept proportional to keep the aspect ratio.
-pub struct MouseNormalizedPositionInput {
-    value: Vec2,
-}
+pub fn integrate_touch_inputs<A>(
+    time: Res<Time>,
+    window: Query<&Window>,
+    touches: Res<Touches>,
+    mut input_query: Query<&mut InputMap<A>>,
+) where
+    A: ActionLike,
+{
+    let window = window.single().expect("Only single window is supported");
 
-impl MouseNormalizedPositionInput {
-    pub fn new() -> Self {
-        Self { value: Vec2::ZERO }
+    for mut input_map in input_query.iter_mut() {
+        let mut input_source = InputSources::new();
+
+        input_source.add_resource(window);
+        input_source.add_resource(&*time);
+        input_source.add_resource(&*touches);
+
+        input_map.integrate(input_source);
     }
 }
-
-impl UserInput for MouseNormalizedPositionInput {
-    fn integrate(&mut self, input: &InputSources) {
-        if let Some(window) = input.get_resource::<Window>() {
-            // if cursor if off-screen, preserve the last position
-            if let Some(pos) = window.cursor_position() {
-                let (w, h) = (window.width(), window.height());
-                let s = (w.min(h) / 2.0).max(1.0);
-                self.value = Vec2::new((pos.x - w / 2.0) / s, (pos.y - h / 2.0) / s);
-                // Invert the y-axis because in the input system, upward movement is positive
-                self.value.y = -self.value.y;
-            }
-        }
-    }
-}
-
-impl DualAxisLike for MouseNormalizedPositionInput {
-    fn value_pair(&self) -> Vec2 {
-        self.value
-    }
-}*/

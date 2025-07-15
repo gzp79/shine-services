@@ -1,19 +1,4 @@
-use crate::input_manager::{ActionLike, GamepadManager, InputMap};
-use bevy::{
-    ecs::{
-        entity::Entity,
-        system::{Query, Res},
-    },
-    input::{
-        gamepad::Gamepad,
-        keyboard::KeyCode,
-        mouse::{AccumulatedMouseMotion, MouseButton},
-        touch::Touches,
-        ButtonInput,
-    },
-    time::Time,
-    window::Window,
-};
+use bevy::{ecs::entity::Entity, time::Time};
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
@@ -39,6 +24,12 @@ where
 pub struct InputSources<'w> {
     pub resources: HashMap<TypeId, &'w dyn Any>,
     pub components: HashMap<(Entity, TypeId), &'w dyn Any>,
+}
+
+impl Default for InputSources<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<'w> InputSources<'w> {
@@ -79,39 +70,5 @@ impl<'w> InputSources<'w> {
         self.components
             .get(&(entity, TypeId::of::<T>()))
             .and_then(|s| s.downcast_ref::<T>())
-    }
-}
-
-pub fn integrate_default_inputs<A>(
-    time: Res<Time>,
-    window: Query<&Window>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mouse: Res<ButtonInput<MouseButton>>,
-    accumulated_mouse_motion: Res<AccumulatedMouseMotion>,
-    touches: Res<Touches>,
-    gamepads: Query<(Entity, &Gamepad)>,
-    gamepad_manager: Res<GamepadManager>,
-    mut input_query: Query<&mut InputMap<A>>,
-) where
-    A: ActionLike,
-{
-    let window = window.single().expect("Only single window is supported");
-
-    for mut input_map in input_query.iter_mut() {
-        let mut input_source = InputSources::new();
-
-        input_source.add_resource(window);
-        input_source.add_resource(&*time);
-        input_source.add_resource(&*keyboard);
-        input_source.add_resource(&*mouse);
-        input_source.add_resource(&*accumulated_mouse_motion);
-        input_source.add_resource(&*touches);
-
-        input_source.add_resource(&*gamepad_manager);
-        for (entity, gamepad) in gamepads.iter() {
-            input_source.add_component(entity, gamepad);
-        }
-
-        input_map.integrate(input_source);
     }
 }

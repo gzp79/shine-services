@@ -3,5 +3,5 @@ pub use self::input_processor::*;
 mod circle;
 pub use self::circle::*;
 
-mod virtual_dpad;
-pub use self::virtual_dpad::*;
+mod screen_position;
+pub use self::screen_position::*;
