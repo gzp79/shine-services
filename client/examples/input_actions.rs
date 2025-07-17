@@ -2,18 +2,21 @@ use bevy::{prelude::*, window::CursorGrabMode};
 use shine_game::{
     application,
     input_manager::{
-        ActionState, ButtonChord, DualAxisChord, EdgeSize, GamepadButtonInput, GamepadStick, GamepadStickInput,
-        InputManagerPlugin, InputMap, KeyboardInput, MouseButtonInput, MouseMotion, MousePosition, PinchPan,
-        PinchRotate, PinchZoom, ScreenPositionProcessor, TouchPosition,
+        ActionState, EdgeSize, GamepadButtonInput, GamepadStick, GamepadStickInput, InputManagerPlugin, InputMap,
+        KeyboardInput, MouseButtonInput, MouseMotion, MousePosition, PinchCenter, PinchPan, PinchRotate, PinchZoom,
+        ScreenPositionProcessor, TouchPosition,
     },
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Action {
-    Motion,
-    Position,
-    EdgeScroll,
-    NormalizedPosition,
+    MouseLeft,
+    MouseMiddle,
+    MouseRight,
+    MouseMotion,
+    MousePosition,
+    MouseNormalizedPosition,
+    MouseEdgeScroll,
 
     TouchPosition,
     TouchNormalizedPosition,
@@ -22,17 +25,15 @@ enum Action {
     PinchPan,
     PinchPanTotal,
     PinchZoom,
+    PinchZoomTotal,
     PinchRotate,
+    PinchRotateTotal,
+    PinchCenter,
 
     GamePadLeftStick,
     GamePadRightStick,
+    GamePadLeftTrigger,
     GamePadRightTrigger,
-
-    ButtonChardCtrlA,
-    ButtonChardAB,
-
-    DualAxisChordMouseLeft,
-    DualAxisChordCtrlAGamepadLeftStick,
 
     Grab,
 }
@@ -72,11 +73,17 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
     commands.spawn((Camera2d, Camera { ..default() }));
 
     let input_map = InputMap::new()
-        .with_dual_axis(Action::Motion, MouseMotion::new())
-        .with_dual_axis(Action::Position, MousePosition::new())
-        .with_dual_axis(Action::NormalizedPosition, MousePosition::new().normalize_to_screen())
+        .with_button(Action::MouseLeft, MouseButtonInput::new(MouseButton::Left))
+        .with_button(Action::MouseMiddle, MouseButtonInput::new(MouseButton::Middle))
+        .with_button(Action::MouseRight, MouseButtonInput::new(MouseButton::Right))
+        .with_dual_axis(Action::MouseMotion, MouseMotion::new())
+        .with_dual_axis(Action::MousePosition, MousePosition::new())
         .with_dual_axis(
-            Action::EdgeScroll,
+            Action::MouseNormalizedPosition,
+            MousePosition::new().normalize_to_screen(),
+        )
+        .with_dual_axis(
+            Action::MouseEdgeScroll,
             MousePosition::new().edge_scroll(EdgeSize::Fixed(50.)),
         )
         .with_dual_axis(Action::TouchPosition, TouchPosition::new())
@@ -91,22 +98,10 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
         .with_dual_axis(Action::PinchPan, PinchPan::delta())
         .with_dual_axis(Action::PinchPanTotal, PinchPan::total())
         .with_axis(Action::PinchZoom, PinchZoom::delta())
+        .with_axis(Action::PinchZoomTotal, PinchZoom::total())
         .with_axis(Action::PinchRotate, PinchRotate::delta())
-        .with_button(
-            Action::ButtonChardAB,
-            ButtonChord::new2(KeyboardInput::new(KeyCode::KeyA), KeyboardInput::new(KeyCode::KeyB)),
-        )
-        .with_button(
-            Action::ButtonChardCtrlA,
-            ButtonChord::new2(
-                KeyboardInput::new(KeyCode::ControlLeft),
-                KeyboardInput::new(KeyCode::KeyA),
-            ),
-        )
-        .with_dual_axis(
-            Action::DualAxisChordMouseLeft,
-            DualAxisChord::new(MouseButtonInput::new(MouseButton::Left), MouseMotion::new()),
-        )
+        .with_axis(Action::PinchRotateTotal, PinchRotate::total())
+        .with_dual_axis(Action::PinchCenter, PinchCenter::new())
         .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
 
     commands.spawn((
@@ -164,18 +159,12 @@ fn join_gamepad(
                     GamepadStickInput::new(gamepad_entity, GamepadStick::Right),
                 )
                 .add_button(
+                    Action::GamePadLeftTrigger,
+                    GamepadButtonInput::new(gamepad_entity, GamepadButton::LeftTrigger),
+                )
+                .add_button(
                     Action::GamePadRightTrigger,
                     GamepadButtonInput::new(gamepad_entity, GamepadButton::RightTrigger),
-                )
-                .add_dual_axis(
-                    Action::DualAxisChordCtrlAGamepadLeftStick,
-                    DualAxisChord::new(
-                        ButtonChord::new2(
-                            KeyboardInput::new(KeyCode::ControlLeft),
-                            KeyboardInput::new(KeyCode::KeyA),
-                        ),
-                        GamepadStickInput::new(gamepad_entity, GamepadStick::Left),
-                    ),
                 );
         }
     }
@@ -191,102 +180,105 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Qu
             format!("Size: {width}x{height}")
         };
 
-        let motion = format!("Motion: {:?}", action_state.dual_axis_value(&Action::Motion));
-        let position = match action_state.try_dual_axis_value(&Action::Position) {
-            None => "Position: None".to_string(),
-            Some(value) => format!("Position: {value:?}"),
-        };
-        let normalized_position = match action_state.try_dual_axis_value(&Action::NormalizedPosition) {
-            None => "Normalized Position: None".to_string(),
-            Some(value) => format!("Normalized Position: {value:?}"),
-        };
-        let edge_scroll = match action_state.try_dual_axis_value(&Action::EdgeScroll) {
+        let mouse_button = format!(
+            "Mouse Button: {:?} {:?} {:?}",
+            action_state.button_value(&Action::MouseLeft),
+            action_state.button_value(&Action::MouseMiddle),
+            action_state.button_value(&Action::MouseRight)
+        );
+        let mouse_motion = format!("Mouse Motion: {:?}", action_state.dual_axis_value(&Action::MouseMotion));
+        let mouse_position = format!(
+            "Mouse Position: {} ({})",
+            action_state
+                .try_dual_axis_value(&Action::MousePosition)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+            action_state
+                .try_dual_axis_value(&Action::MouseNormalizedPosition)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".to_string())
+        );
+        let mouse_edge_scroll = match action_state.try_dual_axis_value(&Action::MouseEdgeScroll) {
             None => "Edge Scroll: None".to_string(),
             Some(value) => format!("Edge Scroll: {value:?}"),
         };
 
-        let touch_position = match action_state.try_dual_axis_value(&Action::TouchPosition) {
-            None => "Touch Position: None".to_string(),
-            Some(value) => format!("Touch Position: {value:?}"),
-        };
-        let touch_normalized_position = match action_state.try_dual_axis_value(&Action::TouchNormalizedPosition) {
-            None => "Touch Normalized Position: None".to_string(),
-            Some(value) => format!("Touch Normalized Position: {value:?}"),
-        };
+        let touch_position = format!(
+            "Touch Position: {} ({})",
+            action_state
+                .try_dual_axis_value(&Action::TouchPosition)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+            action_state
+                .try_dual_axis_value(&Action::TouchNormalizedPosition)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".to_string())
+        );
         let touch_edge_scroll = match action_state.try_dual_axis_value(&Action::TouchEdgeScroll) {
             None => "Touch Edge Scroll: None".to_string(),
             Some(value) => format!("Touch Edge Scroll: {value:?}"),
         };
 
-        let pinch_pan = match action_state.try_dual_axis_value(&Action::PinchPan) {
-            None => "Pinch Pan: None".to_string(),
-            Some(value) => format!("Pinch Pan: {value:?}"),
-        };
-        let pinch_pan_total = match action_state.try_dual_axis_value(&Action::PinchPanTotal) {
-            None => "Pinch Pan Total: None".to_string(),
-            Some(value) => format!("Pinch Pan Total: {value:?}"),
-        };
-        let pinch_zoom = match action_state.try_axis_value(&Action::PinchZoom) {
-            None => "Pinch Zoom: None".to_string(),
-            Some(value) => format!("Pinch Zoom: {value:?}"),
-        };
-        let pinch_rotate = match action_state.try_axis_value(&Action::PinchRotate) {
-            None => "Pinch Rotate: None".to_string(),
-            Some(value) => format!("Pinch Rotate: {value:?}"),
-        };
+        let pinch_gesture = format!(
+            "Pinch Pan: {} ({}), Zoom: {} ({}), Rotate: {} ({}), Center: {}",
+            action_state
+                .try_dual_axis_value(&Action::PinchPan)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+            action_state
+                .try_dual_axis_value(&Action::PinchPanTotal)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+            action_state
+                .try_axis_value(&Action::PinchZoom)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+            action_state
+                .try_axis_value(&Action::PinchZoomTotal)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+            action_state
+                .try_axis_value(&Action::PinchRotate)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+            action_state
+                .try_axis_value(&Action::PinchRotateTotal)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+            action_state
+                .try_dual_axis_value(&Action::PinchCenter)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".to_string())
+        );
 
-        let gamepad_left_stick = match action_state.try_dual_axis_value(&Action::GamePadLeftStick) {
-            None => "GamePad Left Stick: None".to_string(),
-            Some(value) => format!("GamePad Left Stick: {value:?}"),
-        };
-        let gamepad_right_stick = match action_state.try_dual_axis_value(&Action::GamePadRightStick) {
-            None => "GamePad Right Stick: None".to_string(),
-            Some(value) => format!("GamePad Right Stick: {value:?}"),
-        };
-        let gamepad_right_trigger = format!(
-            "GamePad Right Trigger: {:?}",
+        let gamepad_stick = format!(
+            "Gamepad Sticks: {:?} {:?}",
+            action_state
+                .try_dual_axis_value(&Action::GamePadLeftStick)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+            action_state
+                .try_dual_axis_value(&Action::GamePadRightStick)
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "None".to_string())
+        );
+        let gamepad_trigger = format!(
+            "GamePad Triggers: {:?} {:?}",
+            action_state.button_value(&Action::GamePadLeftTrigger),
             action_state.button_value(&Action::GamePadRightTrigger)
         );
 
-        let button_chord_ab = format!(
-            "Button Chord A+B: {:?}",
-            action_state.button_value(&Action::ButtonChardAB)
-        );
-        let button_chord_ctrl_a = format!(
-            "Button Chord Ctrl+A: {:?}",
-            action_state.button_value(&Action::ButtonChardCtrlA)
-        );
-
-        let dual_axis_chord_mouse_left = match action_state.try_dual_axis_value(&Action::DualAxisChordMouseLeft) {
-            None => "Mouse Left + Move: None".to_string(),
-            Some(value) => format!("Mouse Left + Move: {value:?}"),
-        };
-        let dual_axis_chord_ctrl_a_gamepad_left =
-            match action_state.try_dual_axis_value(&Action::DualAxisChordCtrlAGamepadLeftStick) {
-                None => "Ctrl-A + GamePad Left Stick: None".to_string(),
-                Some(value) => format!("Ctrl-A + GamePad Left Stick: {value:?}"),
-            };
-
         text.0 = [
             size,
-            motion,
-            position,
-            normalized_position,
-            edge_scroll,
+            mouse_button,
+            mouse_motion,
+            mouse_position,
+            mouse_edge_scroll,
             touch_position,
-            touch_normalized_position,
             touch_edge_scroll,
-            pinch_pan,
-            pinch_pan_total,
-            pinch_zoom,
-            pinch_rotate,
-            gamepad_left_stick,
-            gamepad_right_stick,
-            gamepad_right_trigger,
-            button_chord_ab,
-            button_chord_ctrl_a,
-            dual_axis_chord_mouse_left,
-            dual_axis_chord_ctrl_a_gamepad_left,
+            pinch_gesture,
+            gamepad_stick,
+            gamepad_trigger,
         ]
         .join("\n");
     }

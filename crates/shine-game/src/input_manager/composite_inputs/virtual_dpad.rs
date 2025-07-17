@@ -1,5 +1,12 @@
-use crate::input_manager::{ButtonLike, DualAxisLike, DualAxisRadialProcessor, InputSources, KeyboardInput, UserInput};
-use bevy::{input::keyboard::KeyCode, math::Vec2, time::Time};
+use crate::input_manager::{
+    ButtonLike, DualAxisLike, DualAxisRadialProcessor, GamepadButtonInput, InputSources, KeyboardInput, UserInput,
+};
+use bevy::{
+    ecs::entity::Entity,
+    input::{gamepad::GamepadButton, keyboard::KeyCode},
+    math::Vec2,
+    time::Time,
+};
 
 /// A virtual dpad that converts 4 buttons into a dual axis.
 pub struct VirtualDPad<U, D, L, R>
@@ -84,6 +91,18 @@ impl VirtualDPad<KeyboardInput, KeyboardInput, KeyboardInput, KeyboardInput> {
             KeyboardInput::new(KeyCode::KeyK),
             KeyboardInput::new(KeyCode::KeyJ),
             KeyboardInput::new(KeyCode::KeyL),
+        )
+        .with_bounds(1.0)
+    }
+}
+
+impl VirtualDPad<GamepadButtonInput, GamepadButtonInput, GamepadButtonInput, GamepadButtonInput> {
+    pub fn gamepad_dpad(gamepad_entity: Entity) -> impl DualAxisLike {
+        Self::new(
+            GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadUp),
+            GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadDown),
+            GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadLeft),
+            GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadRight),
         )
         .with_bounds(1.0)
     }

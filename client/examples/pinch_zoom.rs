@@ -125,11 +125,11 @@ fn is_simple_mode(camera: Query<&Mode>) -> bool {
 
 fn update_camera_simple(
     actions_q: Query<&ActionState<Action>>,
-    mut camera_q: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
+    mut camera_q: Query<(&GlobalTransform, &mut Transform, &mut Projection), With<Camera2d>>,
     mut window_q: Query<&mut Window>,
 ) -> Result<(), BevyError> {
     let action = actions_q.single()?;
-    let (mut transform, mut projection) = camera_q.single_mut()?;
+    let (global_transform, mut transform, mut projection) = camera_q.single_mut()?;
     let mut window = window_q.single_mut()?;
 
     let Projection::Orthographic(projection) = &mut *projection else {
@@ -138,8 +138,9 @@ fn update_camera_simple(
 
     if let Some(pan) = action.try_dual_axis_value(&Action::PinchPan) {
         // pan is given in viewport coordinates
-        let ndc_pan = Vec3::new(-pan.x, pan.y, 0.0) * 2.0 * projection.scale;
-        let world_pan = transform.compute_matrix().transform_vector3(ndc_pan);
+        let view_matrix = global_transform.compute_matrix().inverse();
+        let ndc_pan = Vec3::new(pan.x, -pan.y, 0.0) * 2.0 * projection.scale;
+        let world_pan = view_matrix.transform_vector3(ndc_pan);
         transform.translation += world_pan;
     }
 

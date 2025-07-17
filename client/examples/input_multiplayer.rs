@@ -50,16 +50,7 @@ fn setup(mut commands: Commands) {
     commands.spawn((Camera2d, Camera { ..default() }));
 
     let input_map_a = InputMap::new()
-        .with_dual_axis(
-            Action::Movement,
-            VirtualDPad::new(
-                KeyboardInput::new(KeyCode::KeyW),
-                KeyboardInput::new(KeyCode::KeyS),
-                KeyboardInput::new(KeyCode::KeyA),
-                KeyboardInput::new(KeyCode::KeyD),
-            )
-            .with_bounds(1.0),
-        )
+        .with_dual_axis(Action::Movement, VirtualDPad::wasd())
         .with_button(Action::Fire, KeyboardInput::new(KeyCode::KeyZ))
         .with_button(Action::Fire, MouseButtonInput::new(MouseButton::Left));
 
@@ -76,16 +67,7 @@ fn setup(mut commands: Commands) {
     ));
 
     let input_map_b = InputMap::new()
-        .with_dual_axis(
-            Action::Movement,
-            VirtualDPad::new(
-                KeyboardInput::new(KeyCode::KeyI),
-                KeyboardInput::new(KeyCode::KeyK),
-                KeyboardInput::new(KeyCode::KeyJ),
-                KeyboardInput::new(KeyCode::KeyL),
-            )
-            .with_bounds(1.0),
-        )
+        .with_dual_axis(Action::Movement, VirtualDPad::ijkl())
         .with_button(Action::Fire, KeyboardInput::new(KeyCode::KeyN));
 
     commands.spawn((
@@ -114,16 +96,7 @@ fn join_gamepad(
             log::info!("Player A joined gamepad {gamepad_entity}");
             player_a.gamepad = Some(gamepad_entity);
             input_a
-                .add_dual_axis(
-                    Action::Movement,
-                    VirtualDPad::new(
-                        GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadUp),
-                        GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadDown),
-                        GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadLeft),
-                        GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadRight),
-                    )
-                    .with_bounds(1.0),
-                )
+                .add_dual_axis(Action::Movement, VirtualDPad::gamepad_dpad(gamepad_entity))
                 .add_dual_axis(
                     Action::Movement,
                     GamepadStickInput::new(gamepad_entity, GamepadStick::Right)
@@ -138,16 +111,7 @@ fn join_gamepad(
             log::info!("Player B joined gamepad {gamepad_entity}");
             player_b.gamepad = Some(gamepad_entity);
             input_b
-                .add_dual_axis(
-                    Action::Movement,
-                    VirtualDPad::new(
-                        GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadUp),
-                        GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadDown),
-                        GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadLeft),
-                        GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadRight),
-                    )
-                    .with_bounds(1.0),
-                )
+                .add_dual_axis(Action::Movement, VirtualDPad::gamepad_dpad(gamepad_entity))
                 .add_dual_axis(
                     Action::Movement,
                     GamepadStickInput::new(gamepad_entity, GamepadStick::Right)
