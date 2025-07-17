@@ -49,12 +49,17 @@ fn setup_game(app: &mut App) {
 fn setup(mut commands: Commands) {
     commands.spawn((Camera2d, Camera { ..default() }));
 
+    // note due to keyboard ghosting, some action combinations may not work as expected
+    // for example, pressing W + S + I may not register all the keys at once.
+    // Use gaming keyboards :)
+
     let input_map_a = InputMap::new()
         .with_dual_axis(Action::Movement, VirtualDPad::wasd())
         .with_button(Action::Fire, KeyboardInput::new(KeyCode::KeyZ))
         .with_button(Action::Fire, MouseButtonInput::new(MouseButton::Left));
 
     commands.spawn((
+        Name::new("Player A"),
         PlayerA { gamepad: None },
         input_map_a,
         Text::default(),
@@ -71,13 +76,14 @@ fn setup(mut commands: Commands) {
         .with_button(Action::Fire, KeyboardInput::new(KeyCode::KeyN));
 
     commands.spawn((
+        Name::new("Player B"),
         PlayerB { gamepad: None },
         input_map_b,
         Text::default(),
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(12.0),
-            right: Val::Px(12.0),
+            top: Val::Px(64.0),
+            left: Val::Px(12.0),
             ..default()
         },
     ));
@@ -127,8 +133,8 @@ fn join_gamepad(
     Ok(())
 }
 
-fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, time: Res<Time>) {
-    for (action_state, mut text) in players.iter_mut() {
+fn show_status(mut players: Query<(&ActionState<Action>, &Name, &mut Text)>, time: Res<Time>) {
+    for (action_state, name, mut text) in players.iter_mut() {
         let move_kind = action_state.kind(&Action::Movement);
         let move_value = action_state.dual_axis_value(&Action::Movement);
 
@@ -136,7 +142,8 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, time: Res<
         let fire_value = action_state.as_button(&Action::Fire).cloned().unwrap_or_default();
 
         text.0 = format!(
-            "Movement: {:?} {:?}\nFire: {:?} {:?} ({:.2}s)",
+            "{} Movement: {:?} {:?}\nFire: {:?} {:?} ({:.2}s)",
+            name.as_str(),
             move_kind,
             move_value,
             fire_kind,
