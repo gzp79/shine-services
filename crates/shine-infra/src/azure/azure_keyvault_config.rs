@@ -15,7 +15,7 @@ pub struct AzureKeyvaultConfigError(#[source] azure_core::Error);
 
 impl From<AzureKeyvaultConfigError> for ConfigError {
     fn from(err: AzureKeyvaultConfigError) -> Self {
-        log::error!("{:?}", err);
+        log::error!("{err:?}");
         ConfigError::Foreign(Box::new(err))
     }
 }
