@@ -3,6 +3,9 @@ use crate::input_manager::{
 };
 use bevy::math::Vec2;
 
+/// Clamps the input value to a maximum distance of `radius` from the origin.
+/// - For single-axis inputs (`f32`), the value is clamped to the range `[-radius, radius]`.
+/// - For dual-axis inputs (`Vec2`), the vector's length is limited to `radius`, preserving its direction.
 pub struct RadialClamp {
     radius: f32,
 }
@@ -46,6 +49,9 @@ impl DualAxisProcessor for RadialClamp {
     }
 }
 
+/// Converts the input value to a dead zone, where values within the specified radius are set to 0.
+/// - For single-axis inputs (`f32`), the value is set to 0 if it is within the radius.
+/// - For dual-axis inputs (`Vec2`), the vector is set to 0 if its length is within the radius.
 pub struct RadialDeadZone {
     radius: f32,
 }

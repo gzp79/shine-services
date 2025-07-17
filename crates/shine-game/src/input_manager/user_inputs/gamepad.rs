@@ -11,15 +11,45 @@ use bevy::{
     window::Window,
 };
 
-/// A utility resource to distinct if input source contains gamepad information or not.
-/// This resurce is always present if gamepad input is available in the INputSource independent of the gamepad connection state.
+/// Marker resource indicating that gamepad input source is available in [`InputSources`].
+///
+/// This resource is always present if gamepad input is supported, regardless of whether any gamepad is currently connected.
+/// Use this to check for gamepad capability, not connection state.
 #[derive(Resource)]
 pub struct GamepadManager;
 
 impl InputSource for GamepadManager {}
 impl InputSource for Gamepad {}
 
-/// A gamepad button input.
+pub fn integrate_gamepad_inputs<A>(
+    time: Res<Time>,
+    window: Query<&Window>,
+    gamepads: Query<(Entity, &Gamepad)>,
+    gamepad_manager: Res<GamepadManager>,
+    mut input_query: Query<&mut InputMap<A>>,
+) where
+    A: ActionLike,
+{
+    let window = window.single().expect("Only single window is supported");
+
+    for mut input_map in input_query.iter_mut() {
+        let mut input_source = InputSources::new();
+
+        input_source.add_resource(window);
+        input_source.add_resource(&*time);
+        input_source.add_resource(&*gamepad_manager);
+        for (entity, gamepad) in gamepads.iter() {
+            input_source.add_component(entity, gamepad);
+        }
+
+        input_map.integrate(input_source);
+    }
+}
+
+/// Represents button input from a gamepad.
+///
+/// Returns a boolean value indicating whether the button is pressed.
+/// If the gamepad is disconnected or unavailable, returns `None`.
 pub struct GamepadButtonInput {
     gamepad: Entity,
     button: GamepadButton,
@@ -55,6 +85,12 @@ pub enum GamepadStick {
     Right,
 }
 
+/// Represents analog stick input from a gamepad (left or right).
+///
+/// Returns a [`Vec2`] where each component is typically in the range [-1.0, 1.0],
+/// corresponding to the stick's X and Y axes in the device's native coordinate system.
+///
+/// If the gamepad is disconnected or unavailable, returns `None`.
 pub struct GamepadStickInput {
     gamepad: Entity,
     stick: GamepadStick,
@@ -84,30 +120,5 @@ impl UserInput for GamepadStickInput {
 impl DualAxisLike for GamepadStickInput {
     fn process(&mut self, _time: &Time) -> Option<Vec2> {
         self.value
-    }
-}
-
-pub fn integrate_gamepad_inputs<A>(
-    time: Res<Time>,
-    window: Query<&Window>,
-    gamepads: Query<(Entity, &Gamepad)>,
-    gamepad_manager: Res<GamepadManager>,
-    mut input_query: Query<&mut InputMap<A>>,
-) where
-    A: ActionLike,
-{
-    let window = window.single().expect("Only single window is supported");
-
-    for mut input_map in input_query.iter_mut() {
-        let mut input_source = InputSources::new();
-
-        input_source.add_resource(window);
-        input_source.add_resource(&*time);
-        input_source.add_resource(&*gamepad_manager);
-        for (entity, gamepad) in gamepads.iter() {
-            input_source.add_component(entity, gamepad);
-        }
-
-        input_map.integrate(input_source);
     }
 }

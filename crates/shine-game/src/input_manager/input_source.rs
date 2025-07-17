@@ -1,4 +1,4 @@
-use bevy::{ecs::entity::Entity, time::Time};
+use bevy::{ecs::entity::Entity, time::Time, window::Window};
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
@@ -7,6 +7,7 @@ use std::{
 pub trait InputSource: Any + 'static {}
 
 impl InputSource for Time {}
+impl InputSource for Window {}
 
 pub trait AnyInputSource {
     fn as_any(&self) -> &dyn Any;

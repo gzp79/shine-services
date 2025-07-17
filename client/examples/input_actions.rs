@@ -20,6 +20,7 @@ enum Action {
     TouchEdgeScroll,
 
     PinchPan,
+    PinchPanTotal,
     PinchZoom,
     PinchRotate,
 
@@ -90,9 +91,10 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
             Action::TouchEdgeScroll,
             TouchPositionInput::new().edge_scroll(EdgeSize::Fixed(50.)),
         )
-        .with_dual_axis(Action::PinchPan, PinchPan::new())
-        .with_axis(Action::PinchZoom, PinchZoom::new())
-        .with_axis(Action::PinchRotate, PinchRotate::new())
+        .with_dual_axis(Action::PinchPan, PinchPan::delta())
+        .with_dual_axis(Action::PinchPanTotal, PinchPan::total())
+        .with_axis(Action::PinchZoom, PinchZoom::delta())
+        .with_axis(Action::PinchRotate, PinchRotate::delta())
         .with_button(
             Action::ButtonChardAB,
             ButtonChord::new2(KeyboardInput::new(KeyCode::KeyA), KeyboardInput::new(KeyCode::KeyB)),
@@ -223,6 +225,10 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Qu
             None => "Pinch Pan: None".to_string(),
             Some(value) => format!("Pinch Pan: {value:?}"),
         };
+        let pinch_pan_total = match action_state.try_dual_axis_value(&Action::PinchPanTotal) {
+            None => "Pinch Pan Total: None".to_string(),
+            Some(value) => format!("Pinch Pan Total: {value:?}"),
+        };
         let pinch_zoom = match action_state.try_axis_value(&Action::PinchZoom) {
             None => "Pinch Zoom: None".to_string(),
             Some(value) => format!("Pinch Zoom: {value:?}"),
@@ -274,6 +280,7 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Qu
             touch_normalized_position,
             touch_edge_scroll,
             pinch_pan,
+            pinch_pan_total,
             pinch_zoom,
             pinch_rotate,
             gamepad_left_stick,

@@ -1,10 +1,12 @@
 use crate::input_manager::{DualAxisLike, InputSources, UserInput};
 use bevy::{math::Vec2, time::Time, window::Window};
 
-/// Return normalized screen position.
-/// The value for the smaller screen dimension is in the range [-1.0, 1.0],
-/// the larger dimension is kept proportional to keep the aspect ratio.
-pub struct ScreenNormalizedPosition<I>
+/// Converts a position from screen coordinates to a normalized coordinate system, such that the smaller screen dimension
+/// maps to the range [-1.0, 1.0], preserving the aspect ratio for the larger dimension.
+///
+/// Input: Expects a position in screen space, where (0, 0) is the top-left corner and the Y axis increases downward.
+/// Output: Produces a normalized position where (0, 0) is at the center of the screen, the Y axis increases upward.
+pub struct ViewportNormalizedPosition<I>
 where
     I: DualAxisLike,
 {
@@ -12,7 +14,7 @@ where
     screen_size: Vec2,
 }
 
-impl<I> ScreenNormalizedPosition<I>
+impl<I> ViewportNormalizedPosition<I>
 where
     I: DualAxisLike,
 {
@@ -21,7 +23,7 @@ where
     }
 }
 
-impl<I> UserInput for ScreenNormalizedPosition<I>
+impl<I> UserInput for ViewportNormalizedPosition<I>
 where
     I: DualAxisLike,
 {
@@ -37,7 +39,7 @@ where
     }
 }
 
-impl<I> DualAxisLike for ScreenNormalizedPosition<I>
+impl<I> DualAxisLike for ViewportNormalizedPosition<I>
 where
     I: DualAxisLike,
 {
@@ -65,7 +67,11 @@ pub enum EdgeSize {
     Percent(f32),
 }
 
-/// Interpret the position as an edge scroll dual axis value in the [-1,1]^2 range.
+/// Converts a screen position into an edge scroll vector within the range [-1, 1] for both axes.
+/// The value approaches -1 or 1 as the position nears the respective screen edge, and is 0 when away from the edge.
+///
+/// The input is assumed to be in screen coordinates, with the origin at the top-left corner, with positive Y pointing down.
+/// The output is also in screen coordinates, with positive Y pointing down.
 pub struct ScreenEdgeScroll<I>
 where
     I: DualAxisLike,
@@ -123,21 +129,21 @@ where
             if ew > EPS {
                 if pos.x <= ew {
                     // Left edge
-                    value.x += (1.0 - pos.x / ew).clamp(0.0, 1.0)
+                    value.x -= (1.0 - pos.x / ew).clamp(0.0, 1.0)
                 }
                 if pos.x >= w - ew {
                     // Right edge
-                    value.x -= (1.0 - (w - pos.x) / ew).clamp(0.0, 1.0);
+                    value.x += (1.0 - (w - pos.x) / ew).clamp(0.0, 1.0);
                 }
             }
             if eh > EPS {
                 if pos.y <= eh {
                     // Top edge
-                    value.y += (1.0 - pos.y / eh).clamp(0.0, 1.0);
+                    value.y -= (1.0 - pos.y / eh).clamp(0.0, 1.0);
                 }
                 if pos.y >= self.screen_size.y - eh {
                     // Bottom edge
-                    value.y -= (1.0 - (h - pos.y) / eh).clamp(0.0, 1.0);
+                    value.y += (1.0 - (h - pos.y) / eh).clamp(0.0, 1.0);
                 }
             }
 
@@ -148,9 +154,9 @@ where
     }
 }
 
-/// Helper to add circle bounds processing to an [`DualAxisLike`] input.
+/// Helper to add screen position processing to an [`DualAxisLike`] input.
 pub trait ScreenPositionProcessor: DualAxisLike {
-    fn normalize_to_screen(self) -> ScreenNormalizedPosition<Self>
+    fn normalize_to_screen(self) -> ViewportNormalizedPosition<Self>
     where
         Self: Sized;
 
@@ -160,11 +166,11 @@ pub trait ScreenPositionProcessor: DualAxisLike {
 }
 
 impl<T: DualAxisLike> ScreenPositionProcessor for T {
-    fn normalize_to_screen(self) -> ScreenNormalizedPosition<Self>
+    fn normalize_to_screen(self) -> ViewportNormalizedPosition<Self>
     where
         Self: Sized,
     {
-        ScreenNormalizedPosition::new(self)
+        ViewportNormalizedPosition::new(self)
     }
 
     fn edge_scroll(self, edge: EdgeSize) -> ScreenEdgeScroll<Self>

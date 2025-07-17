@@ -1,7 +1,7 @@
 use crate::input_manager::{
     integrate_gamepad_inputs, integrate_keyboard_inputs, integrate_mouse_inputs, integrate_touch_inputs,
     integrate_two_finger_touch_inputs, process_inputs, update_action_state, update_two_finger_touch_gesture,
-    ActionLike, GamepadManager, TwoFingerTouchGesture,
+    ActionLike, GamepadManager, PinchGestureState,
 };
 use bevy::{
     app::{App, Plugin, PreUpdate},
@@ -23,7 +23,7 @@ struct InputManagerCommonPlugin;
 impl Plugin for InputManagerCommonPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(GamepadManager);
-        app.insert_resource(TwoFingerTouchGesture::default());
+        app.insert_resource(PinchGestureState::default());
 
         app.configure_sets(
             PreUpdate,

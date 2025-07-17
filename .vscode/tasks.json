@@ -236,7 +236,8 @@
         { "label": "camera_free", "value": "--example camera_free" },
         { "label": "camera_look_at", "value": "--example camera_look_at" },
         { "label": "input_example", "value": "--example input_example" },
-        { "label": "input_actions", "value": "--example input_actions" }
+        { "label": "input_actions", "value": "--example input_actions" },
+        { "label": "pinch_zoom", "value": "--example pinch_zoom" }        
       ],
       "default": "asset-service"
     },
