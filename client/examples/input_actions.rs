@@ -3,8 +3,8 @@ use shine_game::{
     application,
     input_manager::{
         ActionState, ButtonChord, DualAxisChord, EdgeSize, GamepadButtonInput, GamepadStick, GamepadStickInput,
-        InputManagerPlugin, InputMap, KeyboardInput, MouseButtonInput, MouseMotionInput, MousePositionInput, PinchPan,
-        PinchRotate, PinchZoom, ScreenPositionProcessor, TouchPositionInput,
+        InputManagerPlugin, InputMap, KeyboardInput, MouseButtonInput, MouseMotion, MousePosition, PinchPan,
+        PinchRotate, PinchZoom, ScreenPositionProcessor, TouchPosition,
     },
 };
 
@@ -72,24 +72,24 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
     commands.spawn((Camera2d, Camera { ..default() }));
 
     let input_map = InputMap::new()
-        .with_dual_axis(Action::Motion, MouseMotionInput::new())
-        .with_dual_axis(Action::Position, MousePositionInput::new())
+        .with_dual_axis(Action::Motion, MouseMotion::new())
+        .with_dual_axis(Action::Position, MousePosition::new())
         .with_dual_axis(
             Action::NormalizedPosition,
-            MousePositionInput::new().normalize_to_screen(),
+            MousePosition::new().normalize_to_screen(),
         )
         .with_dual_axis(
             Action::EdgeScroll,
-            MousePositionInput::new().edge_scroll(EdgeSize::Fixed(50.)),
+            MousePosition::new().edge_scroll(EdgeSize::Fixed(50.)),
         )
-        .with_dual_axis(Action::TouchPosition, TouchPositionInput::new())
+        .with_dual_axis(Action::TouchPosition, TouchPosition::new())
         .with_dual_axis(
             Action::TouchNormalizedPosition,
-            TouchPositionInput::new().normalize_to_screen(),
+            TouchPosition::new().normalize_to_screen(),
         )
         .with_dual_axis(
             Action::TouchEdgeScroll,
-            TouchPositionInput::new().edge_scroll(EdgeSize::Fixed(50.)),
+            TouchPosition::new().edge_scroll(EdgeSize::Fixed(50.)),
         )
         .with_dual_axis(Action::PinchPan, PinchPan::delta())
         .with_dual_axis(Action::PinchPanTotal, PinchPan::total())
@@ -108,7 +108,7 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
         )
         .with_dual_axis(
             Action::DualAxisChordMouseLeft,
-            DualAxisChord::new(MouseButtonInput::new(MouseButton::Left), MouseMotionInput::new()),
+            DualAxisChord::new(MouseButtonInput::new(MouseButton::Left), MouseMotion::new()),
         )
         .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
 

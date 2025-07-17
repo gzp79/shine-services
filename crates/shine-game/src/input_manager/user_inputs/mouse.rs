@@ -70,11 +70,15 @@ impl ButtonLike for MouseButtonInput {
     }
 }
 
-pub struct MouseMotionInput {
+/// Represents mouse motion input (delta movement).
+///
+/// Returns a [`Vec2`] where each component is in UI space (pixels), with Y axis pointing down.
+/// This matches the convention of screen/UI coordinates, not world coordinates.
+pub struct MouseMotion {
     value: Vec2,
 }
 
-impl Default for MouseMotionInput {
+impl Default for MouseMotion {
     fn default() -> Self {
         Self::new()
     }
@@ -84,13 +88,13 @@ impl Default for MouseMotionInput {
 ///
 /// Returns a [`Vec2`] where each component is in UI space (pixels), with Y axis pointing down.
 /// This matches the convention of screen/UI coordinates, not world coordinates.
-impl MouseMotionInput {
+impl MouseMotion {
     pub fn new() -> Self {
         Self { value: Vec2::ZERO }
     }
 }
 
-impl UserInput for MouseMotionInput {
+impl UserInput for MouseMotion {
     fn integrate(&mut self, input: &InputSources) {
         if let Some(motion) = input.get_resource::<AccumulatedMouseMotion>() {
             self.value = Vec2::new(motion.delta.x, motion.delta.y);
@@ -98,7 +102,7 @@ impl UserInput for MouseMotionInput {
     }
 }
 
-impl DualAxisLike for MouseMotionInput {
+impl DualAxisLike for MouseMotion {
     fn process(&mut self, _time: &Time) -> Option<Vec2> {
         Some(self.value)
     }
@@ -108,23 +112,23 @@ impl DualAxisLike for MouseMotionInput {
 ///
 /// Returns a [`Vec2`] where each component is in screen space (pixels), with Y axis pointing down.
 /// This matches the convention of screen/UI coordinates, not world coordinates.
-pub struct MousePositionInput {
+pub struct MousePosition {
     value: Option<Vec2>,
 }
 
-impl Default for MousePositionInput {
+impl Default for MousePosition {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MousePositionInput {
+impl MousePosition {
     pub fn new() -> Self {
         Self { value: None }
     }
 }
 
-impl UserInput for MousePositionInput {
+impl UserInput for MousePosition {
     fn integrate(&mut self, input: &InputSources) {
         if let Some(window) = input.get_resource::<Window>() {
             self.value = window.cursor_position()
@@ -132,7 +136,7 @@ impl UserInput for MousePositionInput {
     }
 }
 
-impl DualAxisLike for MousePositionInput {
+impl DualAxisLike for MousePosition {
     fn process(&mut self, _time: &Time) -> Option<Vec2> {
         self.value
     }

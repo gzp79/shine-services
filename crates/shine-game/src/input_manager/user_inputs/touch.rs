@@ -40,24 +40,24 @@ where
 ///
 /// Returns a [`Vec2`] where each component is in screen space (pixels), with Y axis pointing down.
 /// This matches the convention of screen/UI coordinates, not world coordinates.
-pub struct TouchPositionInput {
+pub struct TouchPosition {
     id: Option<u64>,
     value: Option<Vec2>,
 }
 
-impl Default for TouchPositionInput {
+impl Default for TouchPosition {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl TouchPositionInput {
+impl TouchPosition {
     pub fn new() -> Self {
         Self { id: None, value: None }
     }
 }
 
-impl UserInput for TouchPositionInput {
+impl UserInput for TouchPosition {
     fn integrate(&mut self, input: &InputSources) {
         if let Some(touches) = input.get_resource::<Touches>() {
             // check if the touch is still active
@@ -80,7 +80,7 @@ impl UserInput for TouchPositionInput {
     }
 }
 
-impl DualAxisLike for TouchPositionInput {
+impl DualAxisLike for TouchPosition {
     fn process(&mut self, _time: &Time) -> Option<Vec2> {
         self.value
     }
