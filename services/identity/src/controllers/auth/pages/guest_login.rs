@@ -45,7 +45,7 @@ pub async fn guest_login(
         Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
 
-    log::debug!("Query: {:#?}", query);
+    log::debug!("Query: {query:#?}");
 
     if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
         return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), query.redirect_url.as_ref());
@@ -71,7 +71,7 @@ pub async fn guest_login(
             )
         }
     };
-    log::debug!("New user created: {:#?}", identity);
+    log::debug!("New user created: {identity:#?}");
 
     // Create access token
     let user_access = {

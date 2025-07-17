@@ -16,7 +16,7 @@ impl IdEncoder for OptimusIdEncoder {
     fn deobfuscate(&self, id: &str) -> Result<u64, IdEncoderError> {
         let n = id
             .parse::<u64>()
-            .map_err(|err| IdEncoderError::InvalidObfuscatedId(format!("{}", err)))?;
+            .map_err(|err| IdEncoderError::InvalidObfuscatedId(format!("{err}")))?;
         Ok(self.0.decode(n))
     }
 }

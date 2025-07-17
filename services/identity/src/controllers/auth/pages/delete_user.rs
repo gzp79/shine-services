@@ -100,7 +100,7 @@ pub async fn delete_user(
     let response_session = auth_session.cleared();
 
     if let Err(err) = state.session_service().remove_all(user_id).await {
-        log::warn!("Failed to clear all sessions for user {}: {:?}", user_id, err);
+        log::warn!("Failed to clear all sessions for user {user_id}: {err:?}");
     }
 
     PageUtils::new(&state).redirect(response_session, query.redirect_url.as_ref(), None)

@@ -34,7 +34,7 @@ pub async fn put_telemetry_config(
         .check(permissions::UPDATE_TRACE)
         .map_err(|err| err.into_response(&problem_config))?;
 
-    log::trace!("reconfigure telemetry: {:#?}", body);
+    log::trace!("reconfigure telemetry: {body:#?}");
     telemetry
         .set_configuration(DynConfig { filter: body.filter })
         .map_err(|err| err.into_response(&problem_config))?;

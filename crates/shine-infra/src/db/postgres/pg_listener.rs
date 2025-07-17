@@ -37,8 +37,8 @@ impl ListenClient {
         log::trace!("PGListener client connected...");
 
         for channel in self.handlers.keys() {
-            log::info!("PGListener start listening to channels {:?}...", channel);
-            let cmd = format!(r#"LISTEN "{}""#, channel);
+            log::info!("PGListener start listening to channels {channel:?}...");
+            let cmd = format!(r#"LISTEN "{channel}""#);
             client.execute(&cmd, &[]).await?;
             log::info!("PGListener start listening done.");
         }
@@ -64,8 +64,8 @@ impl ListenClient {
 
         if self.handlers.insert(channel.clone(), Box::new(handler)).is_none() {
             if let Some(client) = self.client.as_ref() {
-                log::info!("PGListener start listening to channels {:?}...", channel);
-                let cmd = format!(r#"LISTEN "{}""#, channel);
+                log::info!("PGListener start listening to channels {channel:?}...");
+                let cmd = format!(r#"LISTEN "{channel}""#);
                 client.execute(&cmd, &[]).await?;
                 log::info!("PGListener start listening done.");
             }
@@ -79,8 +79,8 @@ impl ListenClient {
 
         if self.handlers.remove(&channel).is_some() {
             if let Some(client) = self.client.as_ref() {
-                log::info!("PGListener stopping listening to channel {}...", channel);
-                let cmd = format!(r#"UNLISTEN "{}""#, channel);
+                log::info!("PGListener stopping listening to channel {channel}...");
+                let cmd = format!(r#"UNLISTEN "{channel}""#);
                 client.execute(&cmd, &[]).await?;
                 log::info!("PGListener stopped listening");
             }
@@ -142,7 +142,7 @@ impl PGListener {
                         notify_keep_alive.0.notified().await;
                     }
                     Err(e) => {
-                        log::error!("PGListener reconnection error: {:#?}", e);
+                        log::error!("PGListener reconnection error: {e:#?}");
                         tokio::time::sleep(tokio::time::Duration::from_millis(RETRY)).await;
                     }
                 }
@@ -160,7 +160,7 @@ impl PGListener {
 
         let messages = stream::poll_fn(move |cx| connection.poll_message(cx)).map(|msg| match msg {
             Ok(AsyncMessage::Notification(notification)) => {
-                log::trace!("PGListener received notification: {:?}", notification);
+                log::trace!("PGListener received notification: {notification:?}");
                 Some(notification)
             }
             Ok(_) => {
@@ -168,7 +168,7 @@ impl PGListener {
                 None
             }
             Err(e) => {
-                log::error!("PGListener notification error: {:#?}", e);
+                log::error!("PGListener notification error: {e:#?}");
                 None
             }
         });

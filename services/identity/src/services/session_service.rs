@@ -79,7 +79,7 @@ where
 
         let key_hashes = db.find_all_session_hashes_by_user(identity.id).await?;
         for key_hash in key_hashes {
-            log::debug!("Updating session user info for: {}", key_hash);
+            log::debug!("Updating session user info for: {key_hash}");
             db.update_session_user_by_hash(&key_hash, identity, roles, is_linked)
                 .await?;
         }

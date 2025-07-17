@@ -23,7 +23,7 @@ impl<'a> LinkUtils<'a> {
         redirect_url: Option<&Url>,
         error_url: Option<&Url>,
     ) -> AuthPage {
-        log::debug!("Completing external link for user: {:#?}", external_user);
+        log::debug!("Completing external link for user: {external_user:#?}");
         assert!(auth_session.user_session().is_some());
 
         let user = auth_session.user_session().unwrap();
@@ -66,7 +66,7 @@ impl<'a> LinkUtils<'a> {
         error_url: Option<&Url>,
         create_token: bool,
     ) -> AuthPage {
-        log::debug!("Completing external login for user: {:#?}", external_user);
+        log::debug!("Completing external login for user: {external_user:#?}");
         assert!(auth_session.user_session().is_none());
         assert!(auth_session.access().is_none());
 

@@ -36,9 +36,9 @@ async fn test_config_with_env() {
         .add_source(Environment::new())
         .build()
         .unwrap();
-    log::info!("{:#?}", cfg);
+    log::info!("{cfg:#?}");
     let cfg = cfg.try_deserialize::<Data>().unwrap();
-    log::debug!("{:#?}", cfg);
+    log::debug!("{cfg:#?}");
 
     assert_eq!(cfg.file_value, "from file");
     assert_eq!(cfg.env_value.as_deref(), Some("from env"));

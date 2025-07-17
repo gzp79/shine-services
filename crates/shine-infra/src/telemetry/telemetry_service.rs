@@ -43,8 +43,8 @@ where
 {
     fn set_configuration(&mut self, mut new_config: DynConfig) -> Result<(), String> {
         new_config.filter.retain(|c| !c.is_whitespace());
-        let new_filter = new_config.filter.parse::<EnvFilter>().map_err(|e| format!("{}", e))?;
-        self.handle.reload(new_filter).map_err(|e| format!("{}", e))?;
+        let new_filter = new_config.filter.parse::<EnvFilter>().map_err(|e| format!("{e}"))?;
+        self.handle.reload(new_filter).map_err(|e| format!("{e}"))?;
         self.config = new_config;
         Ok(())
     }

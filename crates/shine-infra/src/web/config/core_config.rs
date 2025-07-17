@@ -24,9 +24,9 @@ pub struct CoreConfig {
 
 impl CoreConfig {
     pub fn new(stage: &str, config_file: Option<PathBuf>) -> Result<Self, ConfigError> {
-        log::info!("Loading configuration for {}", stage);
+        log::info!("Loading configuration for {stage}");
 
-        let root_file = config_file.unwrap_or_else(|| Path::new(&format!("server_config.{}.json", stage)).to_owned());
+        let root_file = config_file.unwrap_or_else(|| Path::new(&format!("server_config.{stage}.json")).to_owned());
         let mut builder = Config::builder().add_source(File::from(root_file.as_path()));
 
         let version_path = Path::new(DEFAULT_VERSION_CONFIG_FILE);
@@ -44,7 +44,7 @@ impl CoreConfig {
         let s = builder.build()?;
         let cfg: CoreConfig = s.try_deserialize()/*.inspect(|a| log::error!("{a:#?}"))*/?;
 
-        log::debug!("pre-init configuration: {:#?}", cfg);
+        log::debug!("pre-init configuration: {cfg:#?}");
         Ok(cfg)
     }
 
@@ -84,7 +84,7 @@ impl CoreConfig {
 
         let mut azure_credentials: Option<Arc<dyn TokenCredential>> = None;
         for layer in layers {
-            log::debug!("Adding layer: {:?}", layer);
+            log::debug!("Adding layer: {layer:?}");
             match layer {
                 Layer::Base => {
                     builder = builder.add_source(File::from(Path::new(&self.root_file)));
@@ -106,7 +106,7 @@ impl CoreConfig {
                     })?;
 
                     if Path::new(path).exists() {
-                        log::info!("Adding optional config file {}...", path);
+                        log::info!("Adding optional config file {path}...");
                         builder = builder.add_source(File::from(Path::new(path)));
                     }
                 }
@@ -140,7 +140,7 @@ impl CoreConfig {
                         };
                     }
                     let azure_credentials = azure_credentials.clone().unwrap();
-                    let keyvault_url = format!("https://{}", path);
+                    let keyvault_url = format!("https://{path}");
                     let keyvault = AzureKeyvaultConfigSource::new(azure_credentials.clone(), &keyvault_url)?;
                     builder = builder.add_async_source(keyvault);
                 }

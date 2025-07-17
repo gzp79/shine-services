@@ -86,7 +86,7 @@ where
         };
 
         // Create session
-        log::debug!("Creating session for identity: {:#?}", identity);
+        log::debug!("Creating session for identity: {identity:#?}");
         let (user_session, user_session_key) = self
             .session_service
             .create(identity, roles, is_linked, fingerprint, site_info)
@@ -118,12 +118,12 @@ where
                 Ok(())
             }
             Ok(None) => {
-                log::warn!("User ({}) not found, removing all the sessions", user_id);
+                log::warn!("User ({user_id}) not found, removing all the sessions");
                 self.session_service.remove_all(user_id).await?;
                 Ok(())
             }
             Err(err) => {
-                log::warn!("Failed to refresh session for user ({}):", err);
+                log::warn!("Failed to refresh session for user ({err}):");
                 //self.session_service.remove_all(user_id).await?; - keep sessions, it could be a temporary issue
                 Err(err)
             }
@@ -132,13 +132,13 @@ where
 
     pub async fn revoke_session(&self, user_id: Uuid, session_key: &SessionKey) {
         if let Err(err) = self.session_service.remove(user_id, session_key).await {
-            log::error!("Failed to revoke session for user {}: {}", user_id, err);
+            log::error!("Failed to revoke session for user {user_id}: {err}");
         }
     }
 
     pub async fn revoke_access(&self, kind: TokenKind, token: &str) {
         if let Err(err) = self.identity_service.delete_token(kind, token).await {
-            log::error!("Failed to revoke ({:?}) token ({}): {}", kind, token, err);
+            log::error!("Failed to revoke ({kind:?}) token ({token}): {err}");
         }
     }
 }
@@ -165,12 +165,7 @@ impl AppState {
 
                 let handler = self.0.user_info_handler();
                 if let Err(err) = handler.refresh_user_session(user_id).await {
-                    log::error!(
-                        "Failed to refresh session for user ({}) after an UserEvent {:?}: {:?}",
-                        user_id,
-                        event,
-                        err
-                    );
+                    log::error!("Failed to refresh session for user ({user_id}) after an UserEvent {event:?}: {err:?}");
                 }
             }
         }
@@ -187,12 +182,7 @@ impl AppState {
 
                 let handler = self.0.user_info_handler();
                 if let Err(err) = handler.refresh_user_session(user_id).await {
-                    log::error!(
-                        "Failed to refresh session for user ({}) after an UserEvent {:?}: {:?}",
-                        user_id,
-                        event,
-                        err
-                    );
+                    log::error!("Failed to refresh session for user ({user_id}) after an UserEvent {event:?}: {err:?}");
                 }
             }
         }

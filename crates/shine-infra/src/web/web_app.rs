@@ -294,14 +294,14 @@ pub fn run_web_app<A: WebApplication>(app: A) {
     let handle = rt.handle();
 
     if let Err(err) = handle.block_on(start_web_app(app)) {
-        eprintln!("[ERROR] {}", err);
+        eprintln!("[ERROR] {err}");
         if let Some(cause) = err.source() {
             eprintln!();
             eprintln!("Caused by:");
             let mut cause = Some(cause);
             let mut i = 0;
             while let Some(e) = cause {
-                eprintln!("   {}: {}", i, e);
+                eprintln!("   {i}: {e}");
                 cause = e.source();
                 i += 1;
             }

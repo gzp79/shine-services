@@ -44,7 +44,7 @@ impl UserSessionCacheReader {
             .map_err(|err| UserSessionError::InvalidTtl(format!("{err}")))?;
 
         Ok(Self {
-            cookie_name: format!("sid{}", name_suffix),
+            cookie_name: format!("sid{name_suffix}"),
             cookie_secret,
             key_prefix: key_prefix.to_string(),
             ttl_session,

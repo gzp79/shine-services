@@ -155,7 +155,7 @@ impl Sessions for RedisSessionDbContext<'_> {
             city: site_info.city.clone(),
         };
 
-        log::debug!("sentinel:{:#?}", sentinel);
+        log::debug!("sentinel:{sentinel:#?}");
         let created = self
             .client
             .set_nx(&sentinel_key, &sentinel)
@@ -168,7 +168,7 @@ impl Sessions for RedisSessionDbContext<'_> {
                 is_linked,
                 roles,
             };
-            log::debug!("data:{:#?}", sentinel);
+            log::debug!("data:{sentinel:#?}");
             redis::pipe()
                 .expire(&sentinel_key, self.ttl_session)
                 .set(&key, &data)
@@ -240,10 +240,7 @@ impl Sessions for RedisSessionDbContext<'_> {
         session_key_hash: &str,
     ) -> Result<Option<Session>, SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(user_id, session_key_hash);
-        log::debug!(
-            "Finding session, user:[{}], sentinel: [{sentinel_key}], data:[{key}]",
-            user_id
-        );
+        log::debug!("Finding session, user:[{user_id}], sentinel: [{sentinel_key}], data:[{key}]");
 
         // query sentinel and the available data versions
         let (sentinel, sentinel_ttl, data, data_ttl): (
@@ -320,10 +317,7 @@ impl Sessions for RedisSessionDbContext<'_> {
 
     async fn delete_session_by_hash(&mut self, user_id: Uuid, session_key_hash: &str) -> Result<(), SessionError> {
         let (sentinel_key, key) = self.to_redis_keys(user_id, session_key_hash);
-        log::debug!(
-            "Removing session, user:[{}], sentinel: [{sentinel_key}], data:[{key}]",
-            user_id
-        );
+        log::debug!("Removing session, user:[{user_id}], sentinel: [{sentinel_key}], data:[{key}]");
 
         // todo: https://github.com/redis-rs/redis-rs/issues/1228, https://github.com/redis-rs/redis-rs/issues/1322
         () = self

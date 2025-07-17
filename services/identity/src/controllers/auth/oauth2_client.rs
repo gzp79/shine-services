@@ -108,7 +108,7 @@ impl OAuth2Client {
                 response.text().await.unwrap_or_default(),
             )));
         };
-        log::info!("external user info: {:?}", user_info);
+        log::info!("external user info: {user_info:?}");
 
         let external_id_id = id_mapping.get("id").map(|s| s.as_str()).unwrap_or("id");
         let external_id = user_info
@@ -135,7 +135,7 @@ impl OAuth2Client {
             email,
         };
 
-        log::info!("Checking extensions: {:?}", extensions);
+        log::info!("Checking extensions: {extensions:?}");
         for extension in extensions {
             match extension {
                 ExternalUserInfoExtensions::GithubEmail => {
@@ -183,7 +183,7 @@ impl OAuth2Client {
                     response.text().await.unwrap_or_default(),
                 )));
             };
-            log::info!("{:?}", email_info);
+            log::info!("{email_info:?}");
 
             external_user_info.email = email_info
                 .into_iter()

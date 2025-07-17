@@ -397,7 +397,7 @@ async fn test_store_events_stress() {
         batch_times
             .iter()
             .enumerate()
-            .map(|(i, t)| format!("({}, {:?})", i, t))
+            .map(|(i, t)| format!("({i}, {t:?})"))
             .collect::<Vec<_>>()
             .join("; ")
     );
@@ -643,7 +643,7 @@ async fn test_snapshot_chain() {
         .into_iter()
         .enumerate()
         {
-            log::info!("Case ({}): {} ({},{})", stream_id, idx, start, end);
+            log::info!("Case ({stream_id}): {idx} ({start},{end})");
             let res = match es
                 .store_aggregate(
                     &stream_id,
@@ -663,8 +663,8 @@ async fn test_snapshot_chain() {
                 res => res,
             };
 
-            let err = res.err().map(|e| format!("{:?}", e)).unwrap();
-            let expected = format!("{:?}", expected);
+            let err = res.err().map(|e| format!("{e:?}")).unwrap();
+            let expected = format!("{expected:?}");
             assert_eq!(err, expected);
 
             let list = es.list_aggregates::<TestAggregate>(&stream_id).await.unwrap();
@@ -1105,7 +1105,7 @@ async fn test_concurrent_snapshots_operation() {
                     .store_aggregate(&stream_id, start, version, &data, &format!("hash-{version}"))
                     .await
                 {
-                    Ok(_) => log::debug!("Snapshot {:?} stored.", version),
+                    Ok(_) => log::debug!("Snapshot {version:?} stored."),
                     Err(EventSourceError::Conflict) => {
                         assert!(
                             op_log.lock().await.iter().any(|d| match d {
@@ -1187,7 +1187,7 @@ async fn test_concurrent_snapshots_operation() {
                         .await
                     {
                         Ok(_) => {
-                            log::debug!("Snapshot pruned at version {:?}.", snapshot_to_delete)
+                            log::debug!("Snapshot pruned at version {snapshot_to_delete:?}.")
                         }
                         Err(err) => {
                             panic!(
