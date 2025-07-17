@@ -74,10 +74,7 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
     let input_map = InputMap::new()
         .with_dual_axis(Action::Motion, MouseMotion::new())
         .with_dual_axis(Action::Position, MousePosition::new())
-        .with_dual_axis(
-            Action::NormalizedPosition,
-            MousePosition::new().normalize_to_screen(),
-        )
+        .with_dual_axis(Action::NormalizedPosition, MousePosition::new().normalize_to_screen())
         .with_dual_axis(
             Action::EdgeScroll,
             MousePosition::new().edge_scroll(EdgeSize::Fixed(50.)),
