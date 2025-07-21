@@ -167,6 +167,7 @@ where
 ///
 /// When the gesture is not active, the value is `None`.
 pub struct PinchPan {
+    name: Option<String>,
     is_delta: bool,
     value: Option<Vec2>,
 }
@@ -175,17 +176,42 @@ impl PinchPan {
     /// Creates a [`PinchPan`] configured to compute the pan delta since the previous frame.
     #[inline]
     pub fn delta() -> Self {
-        Self { is_delta: true, value: None }
+        Self {
+            name: None,
+            is_delta: true,
+            value: None,
+        }
     }
 
     /// Creates a [`PinchPan`] configured to compute the total pan offset since the gesture started.
     #[inline]
     pub fn total() -> Self {
-        Self { is_delta: false, value: None }
+        Self {
+            name: None,
+            is_delta: false,
+            value: None,
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
 impl UserInput for PinchPan {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name() == Some(name) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         if let Some(gesture) = input.get_resource::<PinchGestureState>() {
             if let Some(positions) = gesture.positions.as_ref() {
@@ -214,6 +240,7 @@ impl DualAxisLike for PinchPan {
 ///
 /// When the gesture is not active, the value is `None`.
 pub struct PinchZoom {
+    name: Option<String>,
     is_delta: bool,
     value: Option<f32>,
 }
@@ -222,17 +249,42 @@ impl PinchZoom {
     /// Creates a [`PinchZoom`] configured to compute the zoom delta since the previous frame.
     #[inline]
     pub fn delta() -> Self {
-        Self { is_delta: true, value: None }
+        Self {
+            name: None,
+            is_delta: true,
+            value: None,
+        }
     }
 
     /// Creates a [`PinchZoom`] configured to compute the total zoom factor since the gesture started.
     #[inline]
     pub fn total() -> Self {
-        Self { is_delta: false, value: None }
+        Self {
+            name: None,
+            is_delta: false,
+            value: None,
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
 impl UserInput for PinchZoom {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name() == Some(name) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         if let Some(gesture) = input.get_resource::<PinchGestureState>() {
             if let Some(positions) = &gesture.positions {
@@ -262,21 +314,47 @@ impl AxisLike for PinchZoom {
 ///
 /// When the gesture is not active, the value is `None`.
 pub struct PinchRotate {
+    name: Option<String>,
     is_delta: bool,
     value: Option<f32>,
 }
 
 impl PinchRotate {
     pub fn delta() -> Self {
-        Self { is_delta: true, value: None }
+        Self {
+            name: None,
+            is_delta: true,
+            value: None,
+        }
     }
 
     pub fn total() -> Self {
-        Self { is_delta: false, value: None }
+        Self {
+            name: None,
+            is_delta: false,
+            value: None,
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
 impl UserInput for PinchRotate {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name() == Some(name) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         if let Some(gesture) = input.get_resource::<PinchGestureState>() {
             if let Some(positions) = gesture.positions.as_ref() {
@@ -305,6 +383,7 @@ impl AxisLike for PinchRotate {
 ///
 /// When the gesture is not active, the value is `None`.
 pub struct PinchCenter {
+    name: Option<String>,
     value: Option<Vec2>,
 }
 
@@ -316,11 +395,28 @@ impl Default for PinchCenter {
 
 impl PinchCenter {
     pub fn new() -> Self {
-        Self { value: None }
+        Self { name: None, value: None }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
 impl UserInput for PinchCenter {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name() == Some(name) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         if let Some(gesture) = input.get_resource::<PinchGestureState>() {
             if let Some(positions) = gesture.positions.as_ref() {

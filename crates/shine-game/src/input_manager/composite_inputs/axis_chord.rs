@@ -7,6 +7,7 @@ where
     B: ButtonLike,
     A: AxisLike,
 {
+    name: Option<String>,
     button: B,
     axis: A,
 }
@@ -17,7 +18,12 @@ where
     A: AxisLike,
 {
     pub fn new(button: B, axis: A) -> Self {
-        Self { button, axis }
+        Self { name: None, button, axis }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
@@ -26,6 +32,18 @@ where
     B: ButtonLike,
     A: AxisLike,
 {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name.as_deref() == Some(name) {
+            Some(self)
+        } else {
+            self.button.find(name).or_else(|| self.axis.find(name))
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         self.button.integrate(input);
         self.axis.integrate(input);

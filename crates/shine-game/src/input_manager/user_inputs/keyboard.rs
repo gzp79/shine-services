@@ -40,17 +40,43 @@ where
 /// Returns a boolean value indicating whether the key is pressed.
 /// If the keyboard input resource is unavailable, returns `None`.
 pub struct KeyboardInput {
+    name: Option<String>,
     key: KeyCode,
     pressed: bool,
 }
 
 impl KeyboardInput {
     pub fn new(key: KeyCode) -> Self {
-        Self { key, pressed: false }
+        Self {
+            name: None,
+            key,
+            pressed: false,
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn is_pressed(&self) -> bool {
+        self.pressed
     }
 }
 
 impl UserInput for KeyboardInput {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name.as_deref() == Some(name) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         if let Some(keyboard) = input.get_resource::<ButtonInput<KeyCode>>() {
             self.pressed = keyboard.pressed(self.key);

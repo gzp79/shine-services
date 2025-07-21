@@ -51,6 +51,7 @@ pub fn integrate_gamepad_inputs<A>(
 /// Returns a boolean value indicating whether the button is pressed.
 /// If the gamepad is disconnected or unavailable, returns `None`.
 pub struct GamepadButtonInput {
+    name: Option<String>,
     gamepad: Entity,
     button: GamepadButton,
     pressed: Option<bool>,
@@ -58,11 +59,33 @@ pub struct GamepadButtonInput {
 
 impl GamepadButtonInput {
     pub fn new(gamepad: Entity, button: GamepadButton) -> Self {
-        Self { gamepad, button, pressed: None }
+        Self {
+            name: None,
+            gamepad,
+            button,
+            pressed: None,
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
 impl UserInput for GamepadButtonInput {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name.as_deref() == Some(name) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         if let Some(gamepad) = input.get_component::<Gamepad>(self.gamepad) {
             self.pressed = Some(gamepad.pressed(self.button));
@@ -92,6 +115,7 @@ pub enum GamepadStick {
 ///
 /// If the gamepad is disconnected or unavailable, returns `None`.
 pub struct GamepadStickInput {
+    name: Option<String>,
     gamepad: Entity,
     stick: GamepadStick,
     value: Option<Vec2>,
@@ -99,11 +123,33 @@ pub struct GamepadStickInput {
 
 impl GamepadStickInput {
     pub fn new(gamepad: Entity, stick: GamepadStick) -> Self {
-        Self { gamepad, stick, value: None }
+        Self {
+            name: None,
+            gamepad,
+            stick,
+            value: None,
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
 impl UserInput for GamepadStickInput {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name.as_deref() == Some(name) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         if let Some(gamepad) = input.get_component::<Gamepad>(self.gamepad) {
             self.value = Some(match self.stick {

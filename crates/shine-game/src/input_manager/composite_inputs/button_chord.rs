@@ -9,6 +9,7 @@ where
     B3: ButtonLike,
     B4: ButtonLike,
 {
+    name: Option<String>,
     chord: (B1, B2, B3, B4),
 }
 
@@ -20,7 +21,15 @@ where
     B4: ButtonLike,
 {
     pub fn new4(b1: B1, b2: B2, b3: B3, b4: B4) -> Self {
-        Self { chord: (b1, b2, b3, b4) }
+        Self {
+            name: None,
+            chord: (b1, b2, b3, b4),
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
@@ -52,6 +61,23 @@ where
     B3: ButtonLike,
     B4: ButtonLike,
 {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name.as_deref() == Some(name) {
+            Some(self)
+        } else {
+            self.chord
+                .0
+                .find(name)
+                .or_else(|| self.chord.1.find(name))
+                .or_else(|| self.chord.2.find(name))
+                .or_else(|| self.chord.3.find(name))
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         self.chord.0.integrate(input);
         self.chord.1.integrate(input);

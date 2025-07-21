@@ -5,6 +5,14 @@ use bevy::time::Time;
 pub struct PressedButton;
 
 impl UserInput for PressedButton {
+    fn name(&self) -> Option<&str> {
+        None
+    }
+
+    fn find(&self, _name: &str) -> Option<&dyn UserInput> {
+        None
+    }
+
     fn integrate(&mut self, _input: &InputSources) {}
 }
 

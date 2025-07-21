@@ -10,6 +10,7 @@ pub struct ViewportNormalizedPosition<I>
 where
     I: DualAxisLike,
 {
+    name: Option<String>,
     input: I,
     screen_size: Vec2,
 }
@@ -19,7 +20,16 @@ where
     I: DualAxisLike,
 {
     pub fn new(input: I) -> Self {
-        Self { input, screen_size: Vec2::ZERO }
+        Self {
+            name: None,
+            input,
+            screen_size: Vec2::ZERO,
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
@@ -27,6 +37,18 @@ impl<I> UserInput for ViewportNormalizedPosition<I>
 where
     I: DualAxisLike,
 {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name.as_deref() == Some(name) {
+            Some(self)
+        } else {
+            self.input.find(name)
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         self.input.integrate(input);
 
@@ -76,6 +98,7 @@ pub struct ScreenEdgeScroll<I>
 where
     I: DualAxisLike,
 {
+    name: Option<String>,
     input: I,
     edge: EdgeSize,
     screen_size: Vec2,
@@ -87,10 +110,16 @@ where
 {
     pub fn new(input: I, edge: EdgeSize) -> Self {
         Self {
+            name: None,
             input,
             edge,
             screen_size: Vec2::ZERO,
         }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
@@ -98,6 +127,18 @@ impl<I> UserInput for ScreenEdgeScroll<I>
 where
     I: DualAxisLike,
 {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name.as_deref() == Some(name) {
+            Some(self)
+        } else {
+            self.input.find(name)
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         self.input.integrate(input);
 

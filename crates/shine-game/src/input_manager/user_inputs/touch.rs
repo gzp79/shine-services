@@ -58,6 +58,18 @@ impl TouchPosition {
 }
 
 impl UserInput for TouchPosition {
+    fn name(&self) -> Option<&str> {
+        Some("touch_position")
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name() == Some(name) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         if let Some(touches) = input.get_resource::<Touches>() {
             // check if the touch is still active

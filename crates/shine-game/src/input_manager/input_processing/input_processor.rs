@@ -7,17 +7,35 @@ pub trait ButtonProcessor: Send + Sync + 'static {
 }
 
 pub struct ProcessedButton<I: ButtonLike, P: ButtonProcessor> {
-    pub input: I,
-    pub processor: P,
+    name: Option<String>,
+    input: I,
+    processor: P,
 }
 
 impl<I: ButtonLike, P: ButtonProcessor> ProcessedButton<I, P> {
     pub fn new(input: I, processor: P) -> Self {
-        Self { input, processor }
+        Self { name: None, input, processor }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
 impl<I: ButtonLike, P: ButtonProcessor> UserInput for ProcessedButton<I, P> {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name.as_deref() == Some(name) {
+            Some(self)
+        } else {
+            self.input.find(name)
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         self.input.integrate(input);
     }
@@ -36,17 +54,35 @@ pub trait AxisProcessor: Send + Sync + 'static {
 }
 
 pub struct ProcessedAxis<I: AxisLike, P: AxisProcessor> {
-    pub input: I,
-    pub processor: P,
+    name: Option<String>,
+    input: I,
+    processor: P,
 }
 
 impl<I: AxisLike, P: AxisProcessor> ProcessedAxis<I, P> {
     pub fn new(input: I, processor: P) -> Self {
-        Self { input, processor }
+        Self { name: None, input, processor }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
 impl<I: AxisLike, P: AxisProcessor> UserInput for ProcessedAxis<I, P> {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name.as_deref() == Some(name) {
+            Some(self)
+        } else {
+            self.input.find(name)
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         self.input.integrate(input);
     }
@@ -65,17 +101,35 @@ pub trait DualAxisProcessor: Send + Sync + 'static {
 }
 
 pub struct ProcessedDualAxis<I: DualAxisLike, P: DualAxisProcessor> {
-    pub input: I,
-    pub processor: P,
+    name: Option<String>,
+    input: I,
+    processor: P,
 }
 
 impl<I: DualAxisLike, P: DualAxisProcessor> ProcessedDualAxis<I, P> {
     pub fn new(input: I, processor: P) -> Self {
-        Self { input, processor }
+        Self { name: None, input, processor }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
 impl<I: DualAxisLike, P: DualAxisProcessor> UserInput for ProcessedDualAxis<I, P> {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name.as_deref() == Some(name) {
+            Some(self)
+        } else {
+            self.input.find(name)
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         self.input.integrate(input);
     }

@@ -1,4 +1,7 @@
-use crate::input_manager::{ActionLike, ActionState, AxisLike, ButtonLike, DualAxisLike, InputKind, InputSources};
+use crate::input_manager::{
+    ActionLike, ActionState, AxisCompose, AxisLike, ButtonCompose, ButtonLike, DualAxisCompose, DualAxisLike,
+    InputKind, InputSources,
+};
 use bevy::{
     ecs::{
         component::Component,
@@ -7,7 +10,7 @@ use bevy::{
     math::Vec2,
     time::Time,
 };
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
 #[derive(Component)]
 #[require(ActionState<A>)]
@@ -16,9 +19,9 @@ where
     A: ActionLike,
 {
     enabled: bool,
-    buttons: HashMap<A, Vec<(Box<dyn ButtonLike>, Option<bool>)>>,
-    axes: HashMap<A, Vec<(Box<dyn AxisLike>, Option<f32>)>>,
-    dual_axes: HashMap<A, Vec<(Box<dyn DualAxisLike>, Option<Vec2>)>>,
+    buttons: HashMap<A, (Option<Box<dyn ButtonLike>>, Option<bool>)>,
+    axes: HashMap<A, (Option<Box<dyn AxisLike>>, Option<f32>)>,
+    dual_axes: HashMap<A, (Option<Box<dyn DualAxisLike>>, Option<Vec2>)>,
 }
 
 impl<A> Default for InputMap<A>
@@ -43,12 +46,27 @@ where
         Self::default()
     }
 
+    pub fn button(&self, action: &A) -> Option<&Box<dyn ButtonLike>> {
+        self.buttons.get(action).and_then(|(input, _)| input.as_ref())
+    }
+
     pub fn add_button(&mut self, action: A, input: impl ButtonLike) -> &mut Self {
         if !matches!(self.kind(&action), InputKind::Button | InputKind::None) {
             panic!("Action is already bound to a different input type");
         }
 
-        self.buttons.entry(action).or_default().push((Box::new(input), None));
+        match self.buttons.entry(action) {
+            Entry::Occupied(occupied_entry) => {
+                let process = occupied_entry.into_mut();
+                let btn = process.0.take().unwrap();
+                let btn: Box<dyn ButtonLike> = Box::new(btn.or(input));
+                process.0 = Some(btn);
+            }
+            Entry::Vacant(vacant_entry) => {
+                let btn: Box<dyn ButtonLike> = Box::new(input);
+                vacant_entry.insert((Some(btn), None));
+            }
+        }
         self
     }
 
@@ -59,12 +77,27 @@ where
         self
     }
 
+    pub fn axis(&self, action: &A) -> Option<&Box<dyn AxisLike>> {
+        self.axes.get(action).and_then(|(input, _)| input.as_ref())
+    }
+
     pub fn add_axis(&mut self, action: A, input: impl AxisLike) -> &mut Self {
         if !matches!(self.kind(&action), InputKind::Axis | InputKind::None) {
             panic!("Action is already bound to a different input type");
         }
 
-        self.axes.entry(action).or_default().push((Box::new(input), None));
+        match self.axes.entry(action) {
+            Entry::Occupied(occupied_entry) => {
+                let process = occupied_entry.into_mut();
+                let axis = process.0.take().unwrap();
+                let axis: Box<dyn AxisLike> = Box::new(axis.max(input));
+                process.0 = Some(axis);
+            }
+            Entry::Vacant(vacant_entry) => {
+                let axis: Box<dyn AxisLike> = Box::new(input);
+                vacant_entry.insert((Some(axis), None));
+            }
+        }
         self
     }
 
@@ -75,12 +108,27 @@ where
         self
     }
 
+    pub fn dual_axis(&self, action: &A) -> Option<&Box<dyn DualAxisLike>> {
+        self.dual_axes.get(action).and_then(|(input, _)| input.as_ref())
+    }
+
     pub fn add_dual_axis(&mut self, action: A, input: impl DualAxisLike) -> &mut Self {
         if !matches!(self.kind(&action), InputKind::DualAxis | InputKind::None) {
             panic!("Action is already bound to a different input type");
         }
 
-        self.dual_axes.entry(action).or_default().push((Box::new(input), None));
+        match self.dual_axes.entry(action) {
+            Entry::Occupied(occupied_entry) => {
+                let process = occupied_entry.into_mut();
+                let dual_axis = process.0.take().unwrap();
+                let axis: Box<dyn DualAxisLike> = Box::new(dual_axis.max(input));
+                process.0 = Some(axis);
+            }
+            Entry::Vacant(vacant_entry) => {
+                let axis: Box<dyn DualAxisLike> = Box::new(input);
+                vacant_entry.insert((Some(axis), None));
+            }
+        }
         self
     }
 
@@ -108,40 +156,40 @@ where
     }
 
     pub fn integrate(&mut self, input_source: InputSources) {
-        for inputs in self.buttons.values_mut() {
-            for (input, _) in inputs {
+        for input in self.buttons.values_mut() {
+            if let (Some(input), _) = input {
                 input.integrate(&input_source);
             }
         }
 
-        for inputs in self.axes.values_mut() {
-            for (input, _) in inputs {
+        for input in self.axes.values_mut() {
+            if let (Some(input), _) = input {
                 input.integrate(&input_source);
             }
         }
 
-        for inputs in self.dual_axes.values_mut() {
-            for (input, _) in inputs {
+        for input in self.dual_axes.values_mut() {
+            if let (Some(input), _) = input {
                 input.integrate(&input_source);
             }
         }
     }
 
     pub fn process(&mut self, time: &Time) {
-        for inputs in self.buttons.values_mut() {
-            for (input, value) in inputs {
+        for input in self.buttons.values_mut() {
+            if let (Some(input), value) = input {
                 *value = input.process(time);
             }
         }
 
-        for inputs in self.axes.values_mut() {
-            for (input, value) in inputs {
+        for input in self.axes.values_mut() {
+            if let (Some(input), value) = input {
                 *value = input.process(time);
             }
         }
 
-        for inputs in self.dual_axes.values_mut() {
-            for (input, value) in inputs {
+        for input in self.dual_axes.values_mut() {
+            if let (Some(input), value) = input {
                 *value = input.process(time);
             }
         }
@@ -175,34 +223,19 @@ where
 
         action_state.start_update();
 
-        for (action, inputs) in &input_map.buttons {
+        for (action, input) in &input_map.buttons {
             let button_state = action_state.set_button(action.clone());
-
-            let pressed = inputs
-                .iter()
-                .filter_map(|(_, value)| *value)
-                .max_by(|a, b| a.partial_cmp(b).unwrap());
-            button_state.update(pressed, time.elapsed().as_secs_f32());
+            button_state.update(input.1, time.elapsed().as_secs_f32());
         }
 
-        for (action, inputs) in &input_map.axes {
+        for (action, input) in &input_map.axes {
             let axis_state = action_state.set_axis(action.clone());
-
-            let max_value = inputs
-                .iter()
-                .filter_map(|(_, v)| *v)
-                .max_by(|a, b| a.partial_cmp(b).unwrap());
-            axis_state.value = max_value;
+            axis_state.value = input.1;
         }
 
-        for (action, inputs) in &input_map.dual_axes {
+        for (action, input) in &input_map.dual_axes {
             let dual_axis_state = action_state.set_dual_axis(action.clone());
-
-            let max_value = inputs
-                .iter()
-                .filter_map(|(_, v)| *v)
-                .max_by(|a, b| a.length_squared().partial_cmp(&b.length_squared()).unwrap());
-            dual_axis_state.value = max_value;
+            dual_axis_state.value = input.1;
         }
 
         action_state.finish_update();

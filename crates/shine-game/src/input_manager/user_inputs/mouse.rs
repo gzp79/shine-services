@@ -46,17 +46,43 @@ where
 ///
 /// Returns a boolean value indicating whether the button is pressed.
 pub struct MouseButtonInput {
+    name: Option<String>,
     key: MouseButton,
     pressed: bool,
 }
 
 impl MouseButtonInput {
     pub fn new(key: MouseButton) -> Self {
-        Self { key, pressed: false }
+        Self {
+            name: None,
+            key,
+            pressed: false,
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn is_pressed(&self) -> bool {
+        self.pressed
     }
 }
 
 impl UserInput for MouseButtonInput {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name.as_deref() == Some(name) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         if let Some(keyboard) = input.get_resource::<ButtonInput<MouseButton>>() {
             self.pressed = keyboard.pressed(self.key);
@@ -75,6 +101,7 @@ impl ButtonLike for MouseButtonInput {
 /// Returns a [`Vec2`] where each component is in UI space (pixels), with Y axis pointing down.
 /// This matches the convention of screen/UI coordinates, not world coordinates.
 pub struct MouseMotion {
+    name: Option<String>,
     value: Vec2,
 }
 
@@ -90,11 +117,28 @@ impl Default for MouseMotion {
 /// This matches the convention of screen/UI coordinates, not world coordinates.
 impl MouseMotion {
     pub fn new() -> Self {
-        Self { value: Vec2::ZERO }
+        Self { name: None, value: Vec2::ZERO }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
 impl UserInput for MouseMotion {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name() == Some(name) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         if let Some(motion) = input.get_resource::<AccumulatedMouseMotion>() {
             self.value = Vec2::new(motion.delta.x, motion.delta.y);
@@ -113,6 +157,7 @@ impl DualAxisLike for MouseMotion {
 /// Returns a [`Vec2`] where each component is in screen space (pixels), with Y axis pointing down.
 /// This matches the convention of screen/UI coordinates, not world coordinates.
 pub struct MousePosition {
+    name: Option<String>,
     value: Option<Vec2>,
 }
 
@@ -124,11 +169,28 @@ impl Default for MousePosition {
 
 impl MousePosition {
     pub fn new() -> Self {
-        Self { value: None }
+        Self { name: None, value: None }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
 impl UserInput for MousePosition {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name() == Some(name) {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         if let Some(window) = input.get_resource::<Window>() {
             self.value = window.cursor_position()

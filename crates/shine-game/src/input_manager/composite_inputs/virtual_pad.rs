@@ -7,6 +7,7 @@ where
     U: ButtonLike,
     D: ButtonLike,
 {
+    name: Option<String>,
     up: U,
     down: D,
 }
@@ -17,7 +18,12 @@ where
     D: ButtonLike,
 {
     pub fn new(up: U, down: D) -> Self {
-        Self { up, down }
+        Self { name: None, up, down }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
@@ -26,6 +32,18 @@ where
     U: ButtonLike,
     D: ButtonLike,
 {
+    fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    fn find(&self, name: &str) -> Option<&dyn UserInput> {
+        if self.name.as_deref() == Some(name) {
+            Some(self)
+        } else {
+            self.up.find(name).or_else(|| self.down.find(name))
+        }
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         self.up.integrate(input);
         self.down.integrate(input);

@@ -2,8 +2,8 @@ use bevy::prelude::*;
 use shine_game::{
     application,
     input_manager::{
-        ActionState, DualAxisRadialProcessor, GamepadButtonInput, GamepadStick, GamepadStickInput, InputManagerPlugin,
-        InputMap, KeyboardInput, MouseButtonInput, VirtualDPad,
+        ActionState, ButtonCompose, DualAxisRadialProcessor, GamepadButtonInput, GamepadStick, GamepadStickInput,
+        InputManagerPlugin, InputMap, KeyboardInput, MouseButtonInput, VirtualDPad,
     },
 };
 
@@ -55,8 +55,10 @@ fn setup(mut commands: Commands) {
 
     let input_map_a = InputMap::new()
         .with_dual_axis(Action::Movement, VirtualDPad::wasd())
-        .with_button(Action::Fire, KeyboardInput::new(KeyCode::KeyZ))
-        .with_button(Action::Fire, MouseButtonInput::new(MouseButton::Left));
+        .with_button(
+            Action::Fire,
+            KeyboardInput::new(KeyCode::KeyZ).or(MouseButtonInput::new(MouseButton::Left)),
+        );
 
     commands.spawn((
         Name::new("Player A"),

@@ -139,6 +139,7 @@ fn update_camera_simple(
     if let Some(pan) = action.try_dual_axis_value(&Action::PinchPan) {
         // pan is given in viewport coordinates
         let view_matrix = global_transform.compute_matrix().inverse();
+        //todo: should it consider the viewport size ? (viewport is in pixel, ndc is in -1..1 range)
         let ndc_pan = Vec3::new(pan.x, -pan.y, 0.0) * 2.0 * projection.scale;
         let world_pan = view_matrix.transform_vector3(ndc_pan);
         transform.translation += world_pan;
