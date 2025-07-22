@@ -10,6 +10,7 @@ use bevy::{
     time::Time,
     window::Window,
 };
+use std::borrow::Cow;
 
 /// Marker resource indicating that gamepad input source is available in [`InputSources`].
 ///
@@ -74,16 +75,18 @@ impl GamepadButtonInput {
 }
 
 impl UserInput for GamepadButtonInput {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "GamepadButtonInput"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name.as_deref() == Some(name) {
-            Some(self)
-        } else {
-            None
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name
+            .as_deref()
+            .map_or_else(|| format!("{:?}", self.button).into(), Cow::from)
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
     }
 
     fn integrate(&mut self, input: &InputSources) {
@@ -138,16 +141,18 @@ impl GamepadStickInput {
 }
 
 impl UserInput for GamepadStickInput {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "GamepadStickInput"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name.as_deref() == Some(name) {
-            Some(self)
-        } else {
-            None
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name
+            .as_deref()
+            .map_or_else(|| format!("{:?}", self.stick).into(), Cow::from)
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
     }
 
     fn integrate(&mut self, input: &InputSources) {

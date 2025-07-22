@@ -10,7 +10,7 @@ use shine_game::{
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Action {
     EitherABMouseLeft,
-    MaxMouseVPadGPad,
+    MaxMouseVPad,
 
     ButtonChardCtrlA,
     ButtonChardAB,
@@ -57,7 +57,7 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
                 .or(KeyboardInput::new(KeyCode::KeyB).with_name("B"))
                 .or(MouseButtonInput::new(MouseButton::Left).with_name("Mouse left")),
         )
-        .with_dual_axis(Action::MaxMouseVPadGPad, MouseMotion::new().max(VirtualDPad::wasd()))
+        .with_dual_axis(Action::MaxMouseVPad, MouseMotion::new().max(VirtualDPad::wasd()))
         .with_button(
             Action::ButtonChardAB,
             ButtonChord::new2(KeyboardInput::new(KeyCode::KeyA), KeyboardInput::new(KeyCode::KeyB)),
@@ -84,6 +84,21 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
             ),
         )
         .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
+
+    for action in [
+        Action::EitherABMouseLeft,
+        Action::MaxMouseVPad,
+        Action::ButtonChardAB,
+        Action::ButtonChardCtrlA,
+        Action::DualAxisChordMouseLeft,
+        Action::DualAxisChordCtrlAMousePosition,
+    ] {
+        input_map.user_input(&action).map(|input| {
+            let mut result = String::new();
+            input.dump_pipeline(&mut result).unwrap();
+            log::info!("{:?}:\n{}", action, result);
+        });
+    }
 
     commands.spawn((
         input_map,

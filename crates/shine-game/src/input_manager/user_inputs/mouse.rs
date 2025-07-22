@@ -12,6 +12,7 @@ use bevy::{
     time::Time,
     window::Window,
 };
+use std::borrow::Cow;
 
 impl InputSource for ButtonInput<MouseButton> {}
 impl InputSource for AccumulatedMouseMotion {}
@@ -71,16 +72,18 @@ impl MouseButtonInput {
 }
 
 impl UserInput for MouseButtonInput {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "MouseButtonInput"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name.as_deref() == Some(name) {
-            Some(self)
-        } else {
-            None
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name
+            .as_deref()
+            .map_or_else(|| format!("{:?}", self.key).into(), Cow::from)
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
     }
 
     fn integrate(&mut self, input: &InputSources) {
@@ -127,16 +130,16 @@ impl MouseMotion {
 }
 
 impl UserInput for MouseMotion {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "MouseMotion"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name() == Some(name) {
-            Some(self)
-        } else {
-            None
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
     }
 
     fn integrate(&mut self, input: &InputSources) {
@@ -179,16 +182,16 @@ impl MousePosition {
 }
 
 impl UserInput for MousePosition {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "MousePosition"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name() == Some(name) {
-            Some(self)
-        } else {
-            None
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
     }
 
     fn integrate(&mut self, input: &InputSources) {

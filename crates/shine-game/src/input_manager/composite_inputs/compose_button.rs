@@ -1,5 +1,6 @@
 use crate::input_manager::{ButtonLike, InputSources, UserInput};
 use bevy::time::Time;
+use std::borrow::Cow;
 
 /// A button combination that return pressed state if either button is pressed.
 pub struct ButtonAny<I1, I2>
@@ -31,16 +32,18 @@ where
     I1: ButtonLike,
     I2: ButtonLike,
 {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "ButtonAny"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name.as_deref() == Some(name) {
-            Some(self)
-        } else {
-            self.inputs.0.find(name).or_else(|| self.inputs.1.find(name))
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
+            && self.inputs.0.visit_recursive(depth + 1, visitor)
+            && self.inputs.1.visit_recursive(depth + 1, visitor)
     }
 
     fn integrate(&mut self, input: &InputSources) {

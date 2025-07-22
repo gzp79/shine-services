@@ -1,6 +1,6 @@
 use crate::input_manager::InputSources;
 use bevy::{math::Vec2, time::Time};
-use std::any::Any;
+use std::{any::Any, borrow::Cow, fmt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InputKind {
@@ -11,8 +11,9 @@ pub enum InputKind {
 }
 
 pub trait UserInput: Any + Send + Sync + 'static {
-    fn name(&self) -> Option<&str>;
-    fn find(&self, name: &str) -> Option<&dyn UserInput>;
+    fn name(&self) -> Cow<'_, str>;
+    fn type_name(&self) -> &'static str;
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool;
     fn integrate(&mut self, input: &InputSources);
 }
 
@@ -21,12 +22,16 @@ pub trait ButtonLike: UserInput {
 }
 
 impl UserInput for Box<dyn ButtonLike> {
-    fn name(&self) -> Option<&str> {
+    fn name(&self) -> Cow<'_, str> {
         self.as_ref().name()
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        self.as_ref().find(name)
+    fn type_name(&self) -> &'static str {
+        self.as_ref().type_name()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        self.as_ref().visit_recursive(depth, visitor)
     }
 
     fn integrate(&mut self, input: &InputSources) {
@@ -45,12 +50,16 @@ pub trait AxisLike: UserInput {
 }
 
 impl UserInput for Box<dyn AxisLike> {
-    fn name(&self) -> Option<&str> {
+    fn name(&self) -> Cow<'_, str> {
         self.as_ref().name()
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        self.as_ref().find(name)
+    fn type_name(&self) -> &'static str {
+        self.as_ref().type_name()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        self.as_ref().visit_recursive(depth, visitor)
     }
 
     fn integrate(&mut self, input: &InputSources) {
@@ -69,12 +78,16 @@ pub trait DualAxisLike: UserInput {
 }
 
 impl UserInput for Box<dyn DualAxisLike> {
-    fn name(&self) -> Option<&str> {
+    fn name(&self) -> Cow<'_, str> {
         self.as_ref().name()
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        self.as_ref().find(name)
+    fn type_name(&self) -> &'static str {
+        self.as_ref().type_name()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        self.as_ref().visit_recursive(depth, visitor)
     }
 
     fn integrate(&mut self, input: &InputSources) {
@@ -89,29 +102,78 @@ impl DualAxisLike for Box<dyn DualAxisLike> {
 }
 
 pub trait UserInputExt: UserInput {
-    fn find_button_component<T: ButtonLike>(&self, name: &str) -> Option<&T>
+    fn traverse<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) {
+        self.visit_recursive(0, visitor);
+    }
+
+    fn find_by_name<'a>(&'a self, name: &str) -> Option<&'a dyn UserInput> {
+        let mut result = None;
+
+        self.traverse(&mut |_, node| {
+            if result.is_none() && node.name() == name {
+                result = Some(node);
+            }
+            result.is_none()
+        });
+
+        result
+    }
+
+    fn find_button_component<T>(&self, name: &str) -> Option<&T>
     where
-        T: Sized,
+        T: ButtonLike,
     {
-        self.find(name).and_then(|input| {
+        self.find_by_name(name).and_then(|input| {
             let s = input as &dyn Any;
             s.downcast_ref::<T>()
         })
     }
 
-    fn find_axis_component<T: AxisLike>(&self, name: &str) -> Option<&T> {
-        self.find(name).and_then(|input| {
+    fn find_axis_component<T>(&self, name: &str) -> Option<&T>
+    where
+        T: AxisLike,
+    {
+        self.find_by_name(name).and_then(|input| {
             let s = input as &dyn Any;
             s.downcast_ref::<T>()
         })
     }
 
-    fn find_dual_axis_component<T: DualAxisLike>(&self, name: &str) -> Option<&T> {
-        self.find(name).and_then(|input| {
+    fn find_dual_axis_component<T>(&self, name: &str) -> Option<&T>
+    where
+        T: DualAxisLike,
+    {
+        self.find_by_name(name).and_then(|input| {
             let s = input as &dyn Any;
             s.downcast_ref::<T>()
         })
+    }
+
+    fn dump_pipeline<W>(&self, writer: &mut W) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        let mut error = None;
+
+        self.traverse(&mut |depth, node| {
+            if let Err(e) = write!(
+                writer,
+                "{}{} ({})\n",
+                " ".repeat(depth * 2),
+                node.type_name(),
+                node.name()
+            ) {
+                error = Some(e);
+            }
+            error.is_none()
+        });
+
+        if let Some(e) = error {
+            Err(e)
+        } else {
+            Ok(())
+        }
     }
 }
 
-impl<T: UserInput> UserInputExt for T {}
+impl<T: UserInput + ?Sized> UserInputExt for T {}

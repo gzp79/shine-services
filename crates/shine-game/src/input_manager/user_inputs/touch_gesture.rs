@@ -10,6 +10,7 @@ use bevy::{
     time::Time,
     window::Window,
 };
+use std::borrow::Cow;
 
 /// Stores the positions of two touch points (fingers) during a pinch gesture,
 /// including their initial, previous, and current positions. This enables
@@ -200,16 +201,16 @@ impl PinchPan {
 }
 
 impl UserInput for PinchPan {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "PinchPan"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name() == Some(name) {
-            Some(self)
-        } else {
-            None
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
     }
 
     fn integrate(&mut self, input: &InputSources) {
@@ -273,16 +274,16 @@ impl PinchZoom {
 }
 
 impl UserInput for PinchZoom {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "PinchZoom"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name() == Some(name) {
-            Some(self)
-        } else {
-            None
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
     }
 
     fn integrate(&mut self, input: &InputSources) {
@@ -343,16 +344,16 @@ impl PinchRotate {
 }
 
 impl UserInput for PinchRotate {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "PinchRotate"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name() == Some(name) {
-            Some(self)
-        } else {
-            None
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
     }
 
     fn integrate(&mut self, input: &InputSources) {
@@ -405,16 +406,16 @@ impl PinchCenter {
 }
 
 impl UserInput for PinchCenter {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "PinchCenter"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name() == Some(name) {
-            Some(self)
-        } else {
-            None
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
     }
 
     fn integrate(&mut self, input: &InputSources) {

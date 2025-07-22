@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::input_manager::{ActionLike, DualAxisLike, InputMap, InputSource, InputSources, UserInput};
 use bevy::{
     ecs::{
@@ -41,6 +43,7 @@ where
 /// Returns a [`Vec2`] where each component is in screen space (pixels), with Y axis pointing down.
 /// This matches the convention of screen/UI coordinates, not world coordinates.
 pub struct TouchPosition {
+    name: Option<String>,
     id: Option<u64>,
     value: Option<Vec2>,
 }
@@ -53,21 +56,30 @@ impl Default for TouchPosition {
 
 impl TouchPosition {
     pub fn new() -> Self {
-        Self { id: None, value: None }
+        Self {
+            name: None,
+            id: None,
+            value: None,
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
 impl UserInput for TouchPosition {
-    fn name(&self) -> Option<&str> {
-        Some("touch_position")
+    fn type_name(&self) -> &'static str {
+        "TouchPosition"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name() == Some(name) {
-            Some(self)
-        } else {
-            None
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
     }
 
     fn integrate(&mut self, input: &InputSources) {

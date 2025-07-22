@@ -38,12 +38,20 @@ impl RadialClamp {
 }
 
 impl AxisProcessor for RadialClamp {
+    fn type_name(&self) -> &'static str {
+        "RadialClamp"
+    }
+
     fn process(&mut self, input_value: Option<f32>) -> Option<f32> {
         input_value.map(|v| self.clamp(v))
     }
 }
 
 impl DualAxisProcessor for RadialClamp {
+    fn type_name(&self) -> &'static str {
+        "RadialClamp"
+    }
+
     fn process(&mut self, input_value: Option<Vec2>) -> Option<Vec2> {
         input_value.map(|v| self.clamp_vec2(v))
     }
@@ -92,12 +100,20 @@ impl RadialDeadZone {
 }
 
 impl AxisProcessor for RadialDeadZone {
+    fn type_name(&self) -> &'static str {
+        "RadialDeadZone"
+    }
+
     fn process(&mut self, input_value: Option<f32>) -> Option<f32> {
         input_value.map(|v| self.clamp(v))
     }
 }
 
 impl DualAxisProcessor for RadialDeadZone {
+    fn type_name(&self) -> &'static str {
+        "RadialDeadZone"
+    }
+
     fn process(&mut self, input_value: Option<Vec2>) -> Option<Vec2> {
         input_value.map(|v| self.clamp_vec2(v))
     }

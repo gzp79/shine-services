@@ -1,5 +1,6 @@
 use crate::input_manager::{DualAxisLike, InputSources, UserInput};
 use bevy::{math::Vec2, time::Time, window::Window};
+use std::borrow::Cow;
 
 /// Converts a position from screen coordinates to a normalized coordinate system, such that the smaller screen dimension
 /// maps to the range [-1.0, 1.0], preserving the aspect ratio for the larger dimension.
@@ -37,16 +38,16 @@ impl<I> UserInput for ViewportNormalizedPosition<I>
 where
     I: DualAxisLike,
 {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "ViewportNormalizedPosition"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name.as_deref() == Some(name) {
-            Some(self)
-        } else {
-            self.input.find(name)
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self) && self.input.visit_recursive(depth + 1, visitor)
     }
 
     fn integrate(&mut self, input: &InputSources) {
@@ -127,16 +128,16 @@ impl<I> UserInput for ScreenEdgeScroll<I>
 where
     I: DualAxisLike,
 {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "ScreenEdgeScroll"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name.as_deref() == Some(name) {
-            Some(self)
-        } else {
-            self.input.find(name)
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self) && self.input.visit_recursive(depth + 1, visitor)
     }
 
     fn integrate(&mut self, input: &InputSources) {

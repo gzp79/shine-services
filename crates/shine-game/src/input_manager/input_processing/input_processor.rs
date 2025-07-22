@@ -1,8 +1,10 @@
 use crate::input_manager::{AxisLike, ButtonLike, DualAxisLike, InputSources, UserInput};
 use bevy::{math::Vec2, time::Time};
+use std::borrow::Cow;
 
 /// A trait that processes a [`ButtonLike`] input value.
 pub trait ButtonProcessor: Send + Sync + 'static {
+    fn type_name(&self) -> &'static str;
     fn process(&mut self, input_value: Option<bool>) -> Option<bool>;
 }
 
@@ -24,16 +26,16 @@ impl<I: ButtonLike, P: ButtonProcessor> ProcessedButton<I, P> {
 }
 
 impl<I: ButtonLike, P: ButtonProcessor> UserInput for ProcessedButton<I, P> {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        self.processor.type_name()
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name.as_deref() == Some(name) {
-            Some(self)
-        } else {
-            self.input.find(name)
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self) && self.input.visit_recursive(depth + 1, visitor)
     }
 
     fn integrate(&mut self, input: &InputSources) {
@@ -50,6 +52,7 @@ impl<I: ButtonLike, P: ButtonProcessor> ButtonLike for ProcessedButton<I, P> {
 
 /// A trait that processes a [`AxisLike`] input value.
 pub trait AxisProcessor: Send + Sync + 'static {
+    fn type_name(&self) -> &'static str;
     fn process(&mut self, input_value: Option<f32>) -> Option<f32>;
 }
 
@@ -71,16 +74,16 @@ impl<I: AxisLike, P: AxisProcessor> ProcessedAxis<I, P> {
 }
 
 impl<I: AxisLike, P: AxisProcessor> UserInput for ProcessedAxis<I, P> {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        self.processor.type_name()
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name.as_deref() == Some(name) {
-            Some(self)
-        } else {
-            self.input.find(name)
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self) && self.input.visit_recursive(depth + 1, visitor)
     }
 
     fn integrate(&mut self, input: &InputSources) {
@@ -97,6 +100,7 @@ impl<I: AxisLike, P: AxisProcessor> AxisLike for ProcessedAxis<I, P> {
 
 /// A trait that processes a [`DualAxisLike`] input value.
 pub trait DualAxisProcessor: Send + Sync + 'static {
+    fn type_name(&self) -> &'static str;
     fn process(&mut self, input_value: Option<Vec2>) -> Option<Vec2>;
 }
 
@@ -118,16 +122,16 @@ impl<I: DualAxisLike, P: DualAxisProcessor> ProcessedDualAxis<I, P> {
 }
 
 impl<I: DualAxisLike, P: DualAxisProcessor> UserInput for ProcessedDualAxis<I, P> {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        self.processor.type_name()
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name.as_deref() == Some(name) {
-            Some(self)
-        } else {
-            self.input.find(name)
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self) && self.input.visit_recursive(depth + 1, visitor)
     }
 
     fn integrate(&mut self, input: &InputSources) {

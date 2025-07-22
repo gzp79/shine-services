@@ -1,5 +1,6 @@
 use crate::input_manager::{AxisLike, ButtonLike, InputSources, UserInput};
 use bevy::time::Time;
+use std::borrow::Cow;
 
 /// An axis that returns value only when the button is pressed.
 pub struct AxisChord<B, A>
@@ -32,16 +33,18 @@ where
     B: ButtonLike,
     A: AxisLike,
 {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "AxisChord"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name.as_deref() == Some(name) {
-            Some(self)
-        } else {
-            self.button.find(name).or_else(|| self.axis.find(name))
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
+            && self.button.visit_recursive(depth + 1, visitor)
+            && self.axis.visit_recursive(depth + 1, visitor)
     }
 
     fn integrate(&mut self, input: &InputSources) {

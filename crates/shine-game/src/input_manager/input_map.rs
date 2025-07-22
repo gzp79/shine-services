@@ -1,6 +1,6 @@
 use crate::input_manager::{
     ActionLike, ActionState, AxisCompose, AxisLike, ButtonCompose, ButtonLike, DualAxisCompose, DualAxisLike,
-    InputKind, InputSources,
+    InputKind, InputSources, UserInput,
 };
 use bevy::{
     ecs::{
@@ -46,8 +46,8 @@ where
         Self::default()
     }
 
-    pub fn button(&self, action: &A) -> Option<&Box<dyn ButtonLike>> {
-        self.buttons.get(action).and_then(|(input, _)| input.as_ref())
+    pub fn button(&self, action: &A) -> Option<&dyn ButtonLike> {
+        self.buttons.get(action).and_then(|(input, _)| input.as_deref())
     }
 
     pub fn add_button(&mut self, action: A, input: impl ButtonLike) -> &mut Self {
@@ -77,8 +77,8 @@ where
         self
     }
 
-    pub fn axis(&self, action: &A) -> Option<&Box<dyn AxisLike>> {
-        self.axes.get(action).and_then(|(input, _)| input.as_ref())
+    pub fn axis(&self, action: &A) -> Option<&dyn AxisLike> {
+        self.axes.get(action).and_then(|(input, _)| input.as_deref())
     }
 
     pub fn add_axis(&mut self, action: A, input: impl AxisLike) -> &mut Self {
@@ -108,8 +108,8 @@ where
         self
     }
 
-    pub fn dual_axis(&self, action: &A) -> Option<&Box<dyn DualAxisLike>> {
-        self.dual_axes.get(action).and_then(|(input, _)| input.as_ref())
+    pub fn dual_axis(&self, action: &A) -> Option<&dyn DualAxisLike> {
+        self.dual_axes.get(action).and_then(|(input, _)| input.as_deref())
     }
 
     pub fn add_dual_axis(&mut self, action: A, input: impl DualAxisLike) -> &mut Self {
@@ -137,6 +137,18 @@ where
     pub fn with_dual_axis(mut self, action: A, input: impl DualAxisLike) -> Self {
         self.add_dual_axis(action, input);
         self
+    }
+
+    pub fn user_input(&self, action: &A) -> Option<&dyn UserInput> {
+        if let Some(button) = self.button(action) {
+            Some(button)
+        } else if let Some(axis) = self.axis(action) {
+            Some(axis)
+        } else if let Some(dual_axis) = self.dual_axis(action) {
+            Some(dual_axis)
+        } else {
+            None
+        }
     }
 
     pub fn set_enabled(&mut self, enabled: bool) {

@@ -8,6 +8,7 @@ use bevy::{
     time::Time,
     window::Window,
 };
+use std::borrow::Cow;
 
 impl InputSource for ButtonInput<KeyCode> {}
 
@@ -65,16 +66,18 @@ impl KeyboardInput {
 }
 
 impl UserInput for KeyboardInput {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "KeyboardInput"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name.as_deref() == Some(name) {
-            Some(self)
-        } else {
-            None
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name
+            .as_deref()
+            .map_or_else(|| format!("{:?}", self.key).into(), Cow::from)
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
     }
 
     fn integrate(&mut self, input: &InputSources) {

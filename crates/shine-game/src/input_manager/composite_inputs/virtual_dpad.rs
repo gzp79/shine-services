@@ -7,6 +7,7 @@ use bevy::{
     math::Vec2,
     time::Time,
 };
+use std::borrow::Cow;
 
 /// A virtual dpad that converts 4 buttons into a dual axis.
 pub struct VirtualDPad<U, D, L, R>
@@ -53,20 +54,20 @@ where
     L: ButtonLike,
     R: ButtonLike,
 {
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn type_name(&self) -> &'static str {
+        "VirtualDPad"
     }
 
-    fn find(&self, name: &str) -> Option<&dyn UserInput> {
-        if self.name.as_deref() == Some(name) {
-            Some(self)
-        } else {
-            self.up
-                .find(name)
-                .or_else(|| self.down.find(name))
-                .or_else(|| self.left.find(name))
-                .or_else(|| self.right.find(name))
-        }
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
+            && self.up.visit_recursive(depth + 1, visitor)
+            && self.down.visit_recursive(depth + 1, visitor)
+            && self.left.visit_recursive(depth + 1, visitor)
+            && self.right.visit_recursive(depth + 1, visitor)
     }
 
     fn integrate(&mut self, input: &InputSources) {
