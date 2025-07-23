@@ -7,6 +7,7 @@ pub enum InputKind {
     Button,
     Axis,
     DualAxis,
+    Classification,
     None,
 }
 
@@ -101,6 +102,42 @@ impl DualAxisLike for Box<dyn DualAxisLike> {
     }
 }
 
+pub trait BoxedDualAxisLike: DualAxisLike + Sized {
+    fn boxed(self) -> Box<dyn DualAxisLike> {
+        Box::new(self)
+    }
+}
+
+impl<T: DualAxisLike + Sized> BoxedDualAxisLike for T {}
+
+pub trait ClassificationLike: UserInput {
+    fn process(&mut self, time: &Time) -> Option<(usize, f32)>;
+}
+
+impl UserInput for Box<dyn ClassificationLike> {
+    fn name(&self) -> Cow<'_, str> {
+        self.as_ref().name()
+    }
+
+    fn type_name(&self) -> &'static str {
+        self.as_ref().type_name()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        self.as_ref().visit_recursive(depth, visitor)
+    }
+
+    fn integrate(&mut self, input: &InputSources) {
+        self.as_mut().integrate(input);
+    }
+}
+
+impl ClassificationLike for Box<dyn ClassificationLike> {
+    fn process(&mut self, time: &Time) -> Option<(usize, f32)> {
+        self.as_mut().process(time)
+    }
+}
+
 pub trait UserInputExt: UserInput {
     fn traverse<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) {
         self.visit_recursive(0, visitor);
@@ -119,29 +156,9 @@ pub trait UserInputExt: UserInput {
         result
     }
 
-    fn find_button_component<T>(&self, name: &str) -> Option<&T>
+    fn find_by_name_as<T>(&self, name: &str) -> Option<&T>
     where
-        T: ButtonLike,
-    {
-        self.find_by_name(name).and_then(|input| {
-            let s = input as &dyn Any;
-            s.downcast_ref::<T>()
-        })
-    }
-
-    fn find_axis_component<T>(&self, name: &str) -> Option<&T>
-    where
-        T: AxisLike,
-    {
-        self.find_by_name(name).and_then(|input| {
-            let s = input as &dyn Any;
-            s.downcast_ref::<T>()
-        })
-    }
-
-    fn find_dual_axis_component<T>(&self, name: &str) -> Option<&T>
-    where
-        T: DualAxisLike,
+        T: UserInput,
     {
         self.find_by_name(name).and_then(|input| {
             let s = input as &dyn Any;

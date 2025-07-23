@@ -1,6 +1,6 @@
 use crate::input_manager::{
-    ActionLike, ActionState, AxisCompose, AxisLike, ButtonCompose, ButtonLike, DualAxisCompose, DualAxisLike,
-    InputKind, InputSources, UserInput,
+    ActionLike, ActionState, AxisCompose, AxisLike, ButtonCompose, ButtonLike, ClassificationCompose,
+    ClassificationLike, DualAxisCompose, DualAxisLike, InputKind, InputSources, UserInput,
 };
 use bevy::{
     ecs::{
@@ -22,6 +22,7 @@ where
     buttons: HashMap<A, (Option<Box<dyn ButtonLike>>, Option<bool>)>,
     axes: HashMap<A, (Option<Box<dyn AxisLike>>, Option<f32>)>,
     dual_axes: HashMap<A, (Option<Box<dyn DualAxisLike>>, Option<Vec2>)>,
+    classifications: HashMap<A, (Option<Box<dyn ClassificationLike>>, Option<(usize, f32)>)>,
 }
 
 impl<A> Default for InputMap<A>
@@ -34,6 +35,7 @@ where
             buttons: HashMap::new(),
             axes: HashMap::new(),
             dual_axes: HashMap::new(),
+            classifications: HashMap::new(),
         }
     }
 }
@@ -139,6 +141,37 @@ where
         self
     }
 
+    pub fn classification(&self, action: &A) -> Option<&dyn ClassificationLike> {
+        self.classifications.get(action).and_then(|(input, _)| input.as_deref())
+    }
+
+    pub fn add_classification(&mut self, action: A, input: impl ClassificationLike) -> &mut Self {
+        if !matches!(self.kind(&action), InputKind::Classification | InputKind::None) {
+            panic!("Action is already bound to a different input type");
+        }
+
+        match self.classifications.entry(action) {
+            Entry::Occupied(occupied_entry) => {
+                let process = occupied_entry.into_mut();
+                let classification = process.0.take().unwrap();
+                let classification: Box<dyn ClassificationLike> = Box::new(classification.max(input));
+                process.0 = Some(classification);
+            }
+            Entry::Vacant(vacant_entry) => {
+                let classification: Box<dyn ClassificationLike> = Box::new(input);
+                vacant_entry.insert((Some(classification), None));
+            }
+        }
+        self
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub fn with_classification(mut self, action: A, input: impl ClassificationLike) -> Self {
+        self.add_classification(action, input);
+        self
+    }
+
     pub fn user_input(&self, action: &A) -> Option<&dyn UserInput> {
         if let Some(button) = self.button(action) {
             Some(button)
@@ -146,6 +179,8 @@ where
             Some(axis)
         } else if let Some(dual_axis) = self.dual_axis(action) {
             Some(dual_axis)
+        } else if let Some(classification) = self.classification(action) {
+            Some(classification)
         } else {
             None
         }
@@ -162,6 +197,8 @@ where
             InputKind::Axis
         } else if self.dual_axes.contains_key(action) {
             InputKind::DualAxis
+        } else if self.classifications.contains_key(action) {
+            InputKind::Classification
         } else {
             InputKind::None
         }
@@ -185,6 +222,12 @@ where
                 input.integrate(&input_source);
             }
         }
+
+        for input in self.classifications.values_mut() {
+            if let (Some(input), _) = input {
+                input.integrate(&input_source);
+            }
+        }
     }
 
     pub fn process(&mut self, time: &Time) {
@@ -201,6 +244,12 @@ where
         }
 
         for input in self.dual_axes.values_mut() {
+            if let (Some(input), value) = input {
+                *value = input.process(time);
+            }
+        }
+
+        for input in self.classifications.values_mut() {
             if let (Some(input), value) = input {
                 *value = input.process(time);
             }
@@ -248,6 +297,11 @@ where
         for (action, input) in &input_map.dual_axes {
             let dual_axis_state = action_state.set_dual_axis(action.clone());
             dual_axis_state.value = input.1;
+        }
+
+        for (action, input) in &input_map.classifications {
+            let classification_state = action_state.set_classification(action.clone());
+            classification_state.value = input.1;
         }
 
         action_state.finish_update();

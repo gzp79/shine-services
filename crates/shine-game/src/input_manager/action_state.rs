@@ -17,7 +17,6 @@ pub enum ButtonStatus {
 
 #[derive(Debug, Clone)]
 pub struct ButtonData {
-    /// The time since the beginning of the current state
     pub start_time: f32,
     pub status: ButtonStatus,
 }
@@ -89,11 +88,17 @@ pub struct DualAxisData {
     pub value: Option<Vec2>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ClassificationData {
+    pub value: Option<(usize, f32)>,
+}
+
 #[derive(Debug, Clone)]
 enum ActionData {
     Button(ButtonData),
     Axis(AxisData),
     DualAxis(DualAxisData),
+    Classification(ClassificationData),
 }
 
 impl ActionData {
@@ -136,6 +141,20 @@ impl ActionData {
         match self {
             ActionData::DualAxis(data) => data,
             _ => panic!("Action is not a dual axis"),
+        }
+    }
+
+    pub fn try_as_classification(&self) -> Option<&ClassificationData> {
+        match self {
+            ActionData::Classification(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn as_classification_mut(&mut self) -> &mut ClassificationData {
+        match self {
+            ActionData::Classification(data) => data,
+            _ => panic!("Action is not a classification"),
         }
     }
 }
@@ -183,6 +202,7 @@ where
             Some((_, ActionData::Button(_))) => InputKind::Button,
             Some((_, ActionData::Axis(_))) => InputKind::Axis,
             Some((_, ActionData::DualAxis(_))) => InputKind::DualAxis,
+            Some((_, ActionData::Classification(_))) => InputKind::Classification,
             None => InputKind::None,
         }
     }
@@ -296,6 +316,34 @@ where
             data => {
                 *data = ActionData::DualAxis(DualAxisData::default());
                 data.as_dual_axis_mut()
+            }
+        }
+    }
+
+    /// Return the classification state bound to the action. If data is not available or not a classification input, None is returned.
+    #[inline]
+    pub fn as_classification(&self, action: &A) -> Option<&ClassificationData> {
+        self.data.get(action).and_then(|data| data.1.try_as_classification())
+    }
+
+    /// A convenience method to get the classification value, returning None if data is not available.
+    #[inline]
+    pub fn try_classification_value(&self, action: &A) -> Option<(usize, f32)> {
+        self.as_classification(action).and_then(|data| data.value)
+    }
+
+    pub fn set_classification(&mut self, action: A) -> &mut ClassificationData {
+        let entry = self
+            .data
+            .entry(action)
+            .or_insert_with(|| (self.version, ActionData::Classification(ClassificationData::default())));
+        entry.0 = self.version;
+
+        match &mut entry.1 {
+            ActionData::Classification(data) => data,
+            data => {
+                *data = ActionData::Classification(ClassificationData::default());
+                data.as_classification_mut()
             }
         }
     }

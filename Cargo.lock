@@ -6889,6 +6889,7 @@ dependencies = [
  "bevy_mod_debugdump",
  "itertools 0.14.0",
  "log",
+ "rand 0.9.1",
  "serde",
  "serde_json",
  "shine-infra",
