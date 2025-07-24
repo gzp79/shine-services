@@ -26,8 +26,8 @@ pub struct JackknifeConfig {
 impl JackknifeConfig {
     pub fn inner_product() -> Self {
         Self {
-            resample_count: 32,
-            dtw_radius: 4,
+            resample_count: 24,
+            dtw_radius: 3,
             method: JackknifeMethod::InnerProduct,
             z_normalize: false,
             abs_correction: true,
@@ -38,8 +38,8 @@ impl JackknifeConfig {
 
     pub fn euclidean_distance() -> Self {
         Self {
-            resample_count: 16,
-            dtw_radius: 2,
+            resample_count: 24,
+            dtw_radius: 3,
             method: JackknifeMethod::EuclideanDistance,
             z_normalize: true,
             abs_correction: true,

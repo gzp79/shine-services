@@ -1,6 +1,6 @@
 use crate::{
     input_manager::{ActionLike, ActionState},
-    math::{GestureId, JackknifeClassifier, JackknifeTemplateSet},
+    math::{GestureId, JackknifeClassifier, JackknifeClassifierInternals, JackknifeTemplateSet},
 };
 use bevy::{
     ecs::{
@@ -76,6 +76,10 @@ where
         self.value
     }
 
+    pub fn internal(&self) -> JackknifeClassifierInternals<'_> {
+        self.classifier.internal()
+    }
+
     fn add_point(&mut self, position: Option<Vec2>, gesture_set: &GestureSet) -> Option<GestureId> {
         if let Some(position) = position {
             if self
@@ -99,6 +103,7 @@ where
 
             self.value.as_ref().map(|(gesture_id, _, _)| *gesture_id)
         } else {
+            self.points.clear();
             None
         }
     }

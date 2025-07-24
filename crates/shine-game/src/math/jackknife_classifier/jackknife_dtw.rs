@@ -57,6 +57,30 @@ impl CostMatrix {
 
         self[(n - 1, m - 1)]
     }
+
+    pub fn matching(&self) -> Vec<(usize, usize)> {
+        let mut matching = Vec::new();
+        let (n, m) = self.size;
+
+        let mut i = n - 1;
+        let mut j = m - 1;
+
+        while i > 0 && j > 0 {
+            matching.push((i - 1, j - 1));
+
+            if self[(i - 1, j)] <= self[(i, j - 1)] && self[(i - 1, j)] <= self[(i - 1, j - 1)] {
+                i -= 1; // repeat v1 element
+            } else if self[(i, j - 1)] <= self[(i - 1, j)] && self[(i, j - 1)] <= self[(i - 1, j - 1)] {
+                j -= 1; // repeat v2 element
+            } else {
+                i -= 1;
+                j -= 1; // new element
+            }
+        }
+
+        matching.reverse();
+        matching
+    }
 }
 
 impl ops::Index<(usize, usize)> for CostMatrix {
