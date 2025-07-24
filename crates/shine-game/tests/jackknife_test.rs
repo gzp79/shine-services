@@ -72,7 +72,7 @@ fn load_kinect_templates(config: &JackknifeConfig, paths: &[&str]) -> JackknifeT
 
 #[test]
 fn test_jackknife_foo() {
-    let config = JackknifeConfig::inner_product();
+    let config = JackknifeConfig::euclidean_distance();
 
     let mut template_set = JackknifeTemplateSet::new(config.clone());
 

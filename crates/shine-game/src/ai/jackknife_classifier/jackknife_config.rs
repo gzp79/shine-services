@@ -35,4 +35,16 @@ impl JackknifeConfig {
             use_lower_bound: true,
         }
     }
+
+    pub fn euclidean_distance() -> Self {
+        Self {
+            resample_count: 16,
+            dtw_radius: 2,
+            method: JackknifeMethod::EuclideanDistance,
+            z_normalize: true,
+            abs_correction: true,
+            extent_correction: true,
+            use_lower_bound: true,
+        }
+    }
 }
