@@ -1,6 +1,6 @@
 use core::f32;
 
-use crate::ai::{JackknifeConfig, JackknifeFeatures, JackknifePointMath};
+use crate::math::{JackknifeConfig, JackknifeFeatures, JackknifePointMath};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -85,12 +85,12 @@ where
             let mut maximum = V::splat(dimension, f32::NEG_INFINITY);
             let mut minimum = V::splat(dimension, f32::INFINITY);
 
-            let range_min = if i >= radius { i - radius } else { 0 };
+            let range_min = i.saturating_sub(radius);
             let range_max = (i + radius + 1).min(trajectory.len());
 
-            for j in range_min..range_max {
-                minimum = minimum.min_component(&trajectory[j]);
-                maximum = maximum.max_component(&trajectory[j]);
+            for point in trajectory.iter().take(range_max).skip(range_min) {
+                minimum = minimum.min_component(point);
+                maximum = maximum.max_component(point);
             }
 
             bounds.push((minimum, maximum));

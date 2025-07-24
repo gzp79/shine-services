@@ -1,4 +1,4 @@
-use crate::ai::JackknifePoint;
+use crate::math::JackknifePoint;
 
 impl<const N: usize> JackknifePoint for [f32; N] {
     fn dimension(&self) -> usize {

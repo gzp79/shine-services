@@ -1,5 +1,5 @@
 use bevy::math::Vec2;
-use shine_game::ai::{unistroke_templates, GestureId, JackknifeClassifier, JackknifeConfig, JackknifeTemplateSet};
+use shine_game::math::{unistroke_templates, GestureId, JackknifeClassifier, JackknifeConfig, JackknifeTemplateSet};
 use shine_test::test;
 use std::fs;
 use std::path::{Path, PathBuf};

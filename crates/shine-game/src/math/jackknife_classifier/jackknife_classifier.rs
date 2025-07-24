@@ -1,4 +1,4 @@
-use crate::ai::{
+use crate::math::{
     CostMatrix, JackknifeConfig, JackknifeFeatures, JackknifeMethod, JackknifePointMath, JackknifeTemplate,
     JackknifeTemplateSet,
 };
@@ -107,7 +107,7 @@ where
             self.correction_factors.push(cf);
 
             let lb = if config.use_lower_bound {
-                cf * self.lower_bound(&config, &sample_features.trajectory, template)
+                cf * self.lower_bound(config, &sample_features.trajectory, template)
             } else {
                 // a negative value disables any lower_bound logic
                 -1.0
@@ -136,15 +136,13 @@ where
 
             let mut score = self.correction_factors[id];
             let dwt_score = match config.method {
-                JackknifeMethod::InnerProduct => V::dtw(
-                    &mut self.cost_matrix,
+                JackknifeMethod::InnerProduct => self.cost_matrix.dtw(
                     &sample_features.trajectory,
                     &template.features().trajectory,
                     config.dtw_radius,
                     |a: &V, b: &V| 1.0 - a.dot(b),
                 ),
-                JackknifeMethod::EuclideanDistance => V::dtw(
-                    &mut self.cost_matrix,
+                JackknifeMethod::EuclideanDistance => self.cost_matrix.dtw(
                     &sample_features.trajectory,
                     &template.features().trajectory,
                     config.dtw_radius,

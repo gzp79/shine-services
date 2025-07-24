@@ -1,6 +1,6 @@
 use crate::{
-    ai::{GestureId, JackknifeClassifier, JackknifeTemplateSet},
     input_manager::{ActionLike, ActionState},
+    math::{GestureId, JackknifeClassifier, JackknifeTemplateSet},
 };
 use bevy::{
     ecs::{

@@ -5,9 +5,11 @@
 
 mod jackknife_math;
 pub use self::jackknife_math::*;
+mod jackknife_dtw;
 mod jackknife_math_array_n;
 mod jackknife_math_vec2;
 mod jackknife_math_vec3;
+pub use self::jackknife_dtw::*;
 
 mod jackknife_error;
 pub use self::jackknife_error::*;

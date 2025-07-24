@@ -1,13 +1,13 @@
 use bevy::{prelude::*, window::CursorGrabMode};
 use core::f32;
 use shine_game::{
-    ai::{unistroke_templates, GestureId, JackknifeConfig, JackknifeTemplateSet},
     application,
     input_manager::{
         ActionState, ButtonChord, ButtonCompose, DualAxisChord, DualAxisCompose, GestureSet, InputManagerPlugin,
         InputMap, KeyboardInput, MouseButtonInput, MouseMotion, MousePosition, UnistrokeGesture, UserInputExt,
         VirtualDPad,
     },
+    math::{unistroke_templates, GestureId, JackknifeConfig, JackknifeTemplateSet},
 };
 use std::collections::HashMap;
 
