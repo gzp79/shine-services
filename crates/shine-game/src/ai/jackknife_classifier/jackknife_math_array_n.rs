@@ -10,6 +10,11 @@ impl<const N: usize> JackknifePoint for [f32; N] {
         [0.0; N]
     }
 
+    fn splat(dimension: usize, value: f32) -> Self {
+        debug_assert_eq!(dimension, N);
+        [value; N]
+    }
+
     fn from_sub(a: &Self, b: &Self) -> Self {
         let mut result = [0.0; N];
         for i in 0..N {
@@ -48,15 +53,15 @@ impl<const N: usize> JackknifePoint for [f32; N] {
     }
 
     fn mul(mut self, other: f32) -> Self {
-        for i in 0..N {
-            self[i] *= other;
+        for item in self.iter_mut() {
+            *item *= other;
         }
         self
     }
 
     fn div(mut self, other: f32) -> Self {
-        for i in 0..N {
-            self[i] /= other;
+        for item in self.iter_mut() {
+            *item /= other;
         }
         self
     }

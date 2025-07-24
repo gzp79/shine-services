@@ -5,6 +5,8 @@ pub trait JackknifePoint: Clone + ops::Index<usize, Output = f32> + ops::IndexMu
 
     #[must_use]
     fn zero(dimension: usize) -> Self;
+    #[must_use]
+    fn splat(dimension: usize, value: f32) -> Self;
 
     #[must_use]
     fn from_sub(a: &Self, b: &Self) -> Self;
@@ -143,4 +145,10 @@ where
             *point = V::from_sub(point, &mean).div_component(&var);
         }
     }
+}
+
+pub fn windowed_range(width: usize, i: usize, radius: usize) -> ops::RangeInclusive<usize> {
+    let min = if i > radius { i - radius } else { 1 };
+    let max = (i + radius).min(width - 1);
+    min..=max
 }

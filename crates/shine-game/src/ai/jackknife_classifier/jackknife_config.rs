@@ -32,7 +32,7 @@ impl JackknifeConfig {
             z_normalize: false,
             abs_correction: true,
             extent_correction: true,
-            use_lower_bound: /*true*/false,
+            use_lower_bound: true,
         }
     }
 }

@@ -13,6 +13,8 @@ mod composite_inputs;
 pub use self::composite_inputs::*;
 mod input_processing;
 pub use self::input_processing::*;
+mod action_processing;
+pub use self::action_processing::*;
 
 mod input_plugin;
 pub use self::input_plugin::*;

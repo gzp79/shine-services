@@ -1,3 +1,8 @@
+#![allow(clippy::module_inception)]
+
+//! Jackknife Classifier Module based on Jackknife: A Reliable Recognizer with Few Samples and Many Modalities
+//! see: <https://github.com/ISUE/Jackknife>
+
 mod jackknife_math;
 pub use self::jackknife_math::*;
 mod jackknife_math_array_n;

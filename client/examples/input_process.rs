@@ -1,11 +1,11 @@
 use bevy::{prelude::*, window::CursorGrabMode};
 use shine_game::{
-    ai::unistroke_templates,
+    ai::{unistroke_templates, JackknifeConfig, JackknifeTemplateSet},
     application,
     input_manager::{
-        ActionState, BoxedDualAxisLike, ButtonChord, ButtonCompose, ClassificationCompose, DualAxisChord,
-        DualAxisCompose, InputManagerPlugin, InputMap, KeyboardInput, MouseButtonInput, MouseMotion, MousePosition,
-        TouchPosition, UnistrokeGesture, UserInputExt, VirtualDPad,
+        ActionState, ButtonChord, ButtonCompose, DualAxisChord, DualAxisCompose, GestureSet, InputManagerPlugin,
+        InputMap, KeyboardInput, MouseButtonInput, MouseMotion, MousePosition, UnistrokeGesture, UserInputExt,
+        VirtualDPad,
     },
 };
 
@@ -20,7 +20,7 @@ enum Action {
     DualAxisChordMouseLeft,
     DualAxisChordCtrlAMousePosition,
 
-    Gesture,
+    MousePosition,
 
     Grab,
 }
@@ -61,7 +61,7 @@ const GESTURES: &[(&str, &[Vec2])] = &[
 fn setup_game(app: &mut App) {
     app.add_plugins(InputManagerPlugin::<Action>::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, (grab_mouse, show_status));
+        .add_systems(Update, (grab_mouse, show_status, show_gesture));
 }
 
 fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
@@ -103,28 +103,16 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
                 MousePosition::new(),
             ),
         )
-        .with_classification(Action::Gesture, {
-            let mut gesture = UnistrokeGesture::new(
-                // boxed to type erase and access the gesture with partial type information
-                DualAxisChord::new(MouseButtonInput::new(MouseButton::Left), MousePosition::new()).boxed(),
-                10.0,
-            );
-            for (_, template) in GESTURES {
-                gesture = gesture.with_gesture(template);
-            }
-
-            let mut gesture2 = UnistrokeGesture::new(
-                // boxed to type erase and access the gesture with partial type information
-                TouchPosition::new().boxed(),
-                10.0,
-            );
-            for (_, template) in GESTURES {
-                gesture2 = gesture2.with_gesture(template);
-            }
-
-            gesture.min(gesture2)
-        })
+        .with_dual_axis(
+            Action::MousePosition,
+            DualAxisChord::new(MouseButtonInput::new(MouseButton::Left), MousePosition::new()),
+        )
         .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
+
+    let mut template_set = JackknifeTemplateSet::new(JackknifeConfig::inner_product());
+    for (_, points) in GESTURES {
+        template_set.add_template(points);
+    }
 
     for action in [
         Action::EitherABMouseLeft,
@@ -134,15 +122,17 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
         Action::DualAxisChordMouseLeft,
         Action::DualAxisChordCtrlAMousePosition,
     ] {
-        input_map.user_input(&action).map(|input| {
+        if let Some(input) = input_map.user_input(&action) {
             let mut result = String::new();
             input.dump_pipeline(&mut result).unwrap();
-            log::info!("{:?}:\n{}", action, result);
-        });
+            log::info!("{action:?}:\n{result}");
+        };
     }
 
     commands.spawn((
         input_map,
+        GestureSet { template_set },
+        UnistrokeGesture::new(Action::MousePosition, 10.0),
         Text::default(),
         Node {
             position_type: PositionType::Absolute,
@@ -181,19 +171,52 @@ pub struct LastGesture {
     pub gesture: Option<(usize, f32)>,
 }
 
-impl LastGesture {
-    pub fn elapsed_time(&self, time: &Time) -> f32 {
-        (time.elapsed().as_secs_f32() - self.start_time).max(0.0)
+fn show_gesture(
+    gesture_q: Query<(&GestureSet, &UnistrokeGesture<Action>)>,
+    window: Query<&Window>,
+    mut gizmos: Gizmos,
+) -> Result<(), BevyError> {
+    let window = window.single()?;
+    let (width, height) = (window.width(), window.height());
+
+    let (gesture_set, recognizer) = gesture_q.single()?;
+
+    // raw input
+    let points = recognizer.points();
+    let dt = Vec3::new(-width / 2.0, height / 2.0, 0.0);
+    gizmos.linestrip(
+        points.iter().map(|p| Vec3::new(p.x, -p.y, 0.0) + dt),
+        Color::srgb(1.0, 1.0, 1.0),
+    );
+
+    // resampled input
+    if let Some(points) = recognizer.resampled_points() {
+        let cs = 1.0 / points.len() as f32;
+        gizmos.linestrip_gradient(points.iter().enumerate().map(|(i, p)| {
+            (
+                Vec3::new(p.x, -p.y, 0.0) * 0.5,
+                Color::srgb((i as f32) * cs, 0.0, (i as f32) * cs),
+            )
+        }));
     }
+
+    // detected gesture
+    if let Some((index, _)) = recognizer.classification() {
+        let template = &gesture_set.template_set.templates()[index];
+        let points = template.resampled_points();
+        let cs = 1.0 / points.len() as f32;
+        gizmos.linestrip_gradient(points.iter().enumerate().map(|(i, p)| {
+            (
+                Vec3::new(p.x, -p.y, 0.0) * 0.5,
+                Color::srgb(0.0, (i as f32) * cs, (i as f32) * cs),
+            )
+        }));
+    }
+
+    Ok(())
 }
 
-fn show_status(
-    mut players: Query<(&InputMap<Action>, &ActionState<Action>, &mut Text)>,
-    mut gizmos: Gizmos,
-    window: Query<&Window>,
-    time: Res<Time>,
-    mut last_gesture: Local<LastGesture>,
-) {
+fn show_status(mut players: Query<(&InputMap<Action>, &ActionState<Action>, &mut Text)>, window: Query<&Window>) {
     for (input_map, action_state, mut text) in players.iter_mut() {
         let window = window.single().unwrap();
         let (width, height) = (window.width(), window.height());
@@ -240,62 +263,6 @@ fn show_status(
                 .unwrap_or_else(|| "None".to_string())
         );
 
-        if let Some((index, score)) = action_state.try_classification_value(&Action::Gesture) {
-            // quick hack
-            if score > 2.0 {
-                last_gesture.gesture = None;
-            } else {
-                last_gesture.gesture = Some((index, score));
-            }
-            last_gesture.start_time = time.elapsed().as_secs_f32();
-        }
-        let gesture = format!(
-            "Last Gesture: {:?} ({:.2}s)",
-            last_gesture
-                .gesture
-                .as_ref()
-                .map(|(index, score)| format!("{} ({:.2})", GESTURES[*index].0, score))
-                .unwrap_or_else(|| "None".to_string()),
-            last_gesture.elapsed_time(&time)
-        );
-
-        if let Some(gesture) = input_map
-            .classification(&Action::Gesture)
-            .and_then(|c| c.find_by_name_as::<UnistrokeGesture>(""))
-        {
-            // raw input
-            let points = gesture.points();
-            let dt = Vec3::new(-width / 2.0, height / 2.0, 0.0);
-            gizmos.linestrip(
-                points.iter().map(|p| Vec3::new(p.x, -p.y, 0.0) + dt),
-                Color::srgb(1.0, 1.0, 1.0),
-            );
-
-            // resampled input
-            if let Some(points) = gesture.resampled_points() {
-                let cs = 1.0 / points.len() as f32;
-                gizmos.linestrip_gradient(points.iter().enumerate().map(|(i, p)| {
-                    (
-                        Vec3::new(p.x, -p.y, 0.0) * 0.5,
-                        Color::srgb((i as f32) * cs, 0.0, (i as f32) * cs),
-                    )
-                }));
-            }
-
-            // detected gesture
-            if let Some((index, _)) = last_gesture.gesture {
-                let points = GESTURES[index].1;
-
-                let cs = 1.0 / points.len() as f32;
-                gizmos.linestrip_gradient(points.iter().enumerate().map(|(i, p)| {
-                    (
-                        Vec3::new(p.x, -p.y, 0.0) * 0.5,
-                        Color::srgb(0.0, (i as f32) * cs, (i as f32) * cs),
-                    )
-                }));
-            }
-        }
-
-        text.0 = [size, button_or, button_chord, dual_axis_chord, gesture].join("\n");
+        text.0 = [size, button_or, button_chord, dual_axis_chord].join("\n");
     }
 }

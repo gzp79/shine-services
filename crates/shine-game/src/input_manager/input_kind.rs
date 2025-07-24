@@ -7,7 +7,6 @@ pub enum InputKind {
     Button,
     Axis,
     DualAxis,
-    Classification,
     None,
 }
 
@@ -46,6 +45,14 @@ impl ButtonLike for Box<dyn ButtonLike> {
     }
 }
 
+pub trait BoxedButtonLike: ButtonLike + Sized {
+    fn boxed(self) -> Box<dyn ButtonLike> {
+        Box::new(self)
+    }
+}
+
+impl<T: ButtonLike + Sized> BoxedButtonLike for T {}
+
 pub trait AxisLike: UserInput {
     fn process(&mut self, time: &Time) -> Option<f32>;
 }
@@ -73,6 +80,14 @@ impl AxisLike for Box<dyn AxisLike> {
         self.as_mut().process(time)
     }
 }
+
+pub trait BoxedAxisLike: AxisLike + Sized {
+    fn boxed(self) -> Box<dyn AxisLike> {
+        Box::new(self)
+    }
+}
+
+impl<T: AxisLike + Sized> BoxedAxisLike for T {}
 
 pub trait DualAxisLike: UserInput {
     fn process(&mut self, time: &Time) -> Option<Vec2>;
@@ -110,34 +125,6 @@ pub trait BoxedDualAxisLike: DualAxisLike + Sized {
 
 impl<T: DualAxisLike + Sized> BoxedDualAxisLike for T {}
 
-pub trait ClassificationLike: UserInput {
-    fn process(&mut self, time: &Time) -> Option<(usize, f32)>;
-}
-
-impl UserInput for Box<dyn ClassificationLike> {
-    fn name(&self) -> Cow<'_, str> {
-        self.as_ref().name()
-    }
-
-    fn type_name(&self) -> &'static str {
-        self.as_ref().type_name()
-    }
-
-    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
-        self.as_ref().visit_recursive(depth, visitor)
-    }
-
-    fn integrate(&mut self, input: &InputSources) {
-        self.as_mut().integrate(input);
-    }
-}
-
-impl ClassificationLike for Box<dyn ClassificationLike> {
-    fn process(&mut self, time: &Time) -> Option<(usize, f32)> {
-        self.as_mut().process(time)
-    }
-}
-
 pub trait UserInputExt: UserInput {
     fn traverse<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) {
         self.visit_recursive(0, visitor);
@@ -173,9 +160,9 @@ pub trait UserInputExt: UserInput {
         let mut error = None;
 
         self.traverse(&mut |depth, node| {
-            if let Err(e) = write!(
+            if let Err(e) = writeln!(
                 writer,
-                "{}{} ({})\n",
+                "{}{} ({})",
                 " ".repeat(depth * 2),
                 node.type_name(),
                 node.name()

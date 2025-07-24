@@ -1,7 +1,7 @@
 use crate::input_manager::{
-    integrate_gamepad_inputs, integrate_keyboard_inputs, integrate_mouse_inputs, integrate_touch_inputs,
-    integrate_two_finger_touch_inputs, process_inputs, update_action_state, update_two_finger_touch_gesture,
-    ActionLike, GamepadManager, PinchGestureState,
+    detect_unistroke_gesture, integrate_gamepad_inputs, integrate_keyboard_inputs, integrate_mouse_inputs,
+    integrate_touch_inputs, integrate_two_finger_touch_inputs, process_inputs, update_action_state,
+    update_two_finger_touch_gesture, ActionLike, GamepadManager, PinchGestureState,
 };
 use bevy::{
     app::{App, Plugin, PreUpdate},
@@ -15,7 +15,8 @@ pub enum InputManagerSystem {
     SourceInput,
     Integrate,
     Process,
-    UpdateActionState,
+    UpdateActions,
+    ProcessActions,
 }
 
 struct InputManagerCommonPlugin;
@@ -31,7 +32,8 @@ impl Plugin for InputManagerCommonPlugin {
                 InputManagerSystem::SourceInput,
                 InputManagerSystem::Integrate,
                 InputManagerSystem::Process,
-                InputManagerSystem::UpdateActionState,
+                InputManagerSystem::UpdateActions,
+                InputManagerSystem::ProcessActions,
             )
                 .chain()
                 .after(InputSystem),
@@ -76,7 +78,12 @@ impl<A: ActionLike> Plugin for InputManagerPlugin<A> {
 
         app.add_systems(
             PreUpdate,
-            update_action_state::<A>.in_set(InputManagerSystem::UpdateActionState),
+            update_action_state::<A>.in_set(InputManagerSystem::UpdateActions),
+        );
+
+        app.add_systems(
+            PreUpdate,
+            detect_unistroke_gesture::<A>.in_set(InputManagerSystem::ProcessActions),
         );
     }
 }

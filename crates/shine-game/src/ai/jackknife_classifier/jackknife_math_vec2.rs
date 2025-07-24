@@ -11,6 +11,11 @@ impl JackknifePoint for Vec2 {
         Vec2::ZERO
     }
 
+    fn splat(dimension: usize, value: f32) -> Self {
+        debug_assert_eq!(dimension, 2);
+        Vec2::splat(value)
+    }
+
     fn from_sub(a: &Self, b: &Self) -> Self {
         a - b
     }
