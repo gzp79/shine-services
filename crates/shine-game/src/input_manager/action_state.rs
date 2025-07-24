@@ -45,7 +45,7 @@ impl ButtonData {
 
     /// Return the time since the start of this state.
     pub fn elapsed_time(&self, time: &Time) -> f32 {
-        (time.elapsed().as_secs_f32() - self.start_time).max(0.0)
+        (time.elapsed_secs() - self.start_time).max(0.0)
     }
 
     pub fn update(&mut self, pressed: Option<bool>, time: f32) {

@@ -237,7 +237,7 @@ where
 
         for (action, input) in &input_map.buttons {
             let button_state = action_state.set_button(action.clone());
-            button_state.update(input.1, time.elapsed().as_secs_f32());
+            button_state.update(input.1, time.elapsed_secs());
         }
 
         for (action, input) in &input_map.axes {

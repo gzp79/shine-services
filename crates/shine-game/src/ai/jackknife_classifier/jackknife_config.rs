@@ -26,8 +26,8 @@ pub struct JackknifeConfig {
 impl JackknifeConfig {
     pub fn inner_product() -> Self {
         Self {
-            resample_count: 16,
-            dtw_radius: 2,
+            resample_count: 32,
+            dtw_radius: 4,
             method: JackknifeMethod::InnerProduct,
             z_normalize: false,
             abs_correction: true,

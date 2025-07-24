@@ -1,5 +1,5 @@
 use crate::ai::{
-    windowed_range, JackknifeConfig, JackknifeFeatures, JackknifeMethod, JackknifePointMath, JackknifeTemplate,
+    CostMatrix, JackknifeConfig, JackknifeFeatures, JackknifeMethod, JackknifePointMath, JackknifeTemplate,
     JackknifeTemplateSet,
 };
 
@@ -7,8 +7,7 @@ use crate::ai::{
 pub struct JackknifeClassifierInternals<'a> {
     pub correction_factors: &'a [f32],
     pub lower_bounds: &'a [(usize, f32)],
-    pub cost_size: (usize, usize),
-    pub cost: &'a [f32],
+    pub cost_matrix: &'a CostMatrix,
 }
 
 pub struct JackknifeClassifier<V>
@@ -19,9 +18,7 @@ where
 
     correction_factors: Vec<f32>,
     lower_bounds: Vec<(usize, f32)>,
-    cost_size: (usize, usize),
-    cost: Vec<f32>,
-
+    cost_matrix: CostMatrix,
     classification: Option<(usize, f32)>,
 }
 
@@ -43,8 +40,7 @@ where
             sample_features: None,
             correction_factors: Vec::new(),
             lower_bounds: Vec::new(),
-            cost_size: (0, 0),
-            cost: Vec::new(),
+            cost_matrix: CostMatrix::new(),
             classification: None,
         }
     }
@@ -59,8 +55,7 @@ where
         JackknifeClassifierInternals {
             correction_factors: &self.correction_factors,
             lower_bounds: &self.lower_bounds,
-            cost_size: self.cost_size,
-            cost: &self.cost,
+            cost_matrix: &self.cost_matrix,
         }
     }
 
@@ -72,14 +67,15 @@ where
     pub fn clear(&mut self) {
         self.sample_features = None;
 
-        self.cost_size = (0, 0);
         self.correction_factors.clear();
         self.lower_bounds.clear();
-        self.cost.clear();
+        self.cost_matrix.clear();
 
         self.classification = None;
     }
 
+    /// Classifies a sample against the template set, returning the best-matching template index and its cost.
+    /// Note: The index refers to the template's position in the set, not its GestureId.
     pub fn classify(&mut self, template_set: &JackknifeTemplateSet<V>, sample_points: &[V]) -> Option<(usize, f32)> {
         self.clear();
 
@@ -130,20 +126,36 @@ where
             let (id, lb) = self.lower_bounds[i];
             let template = &templates[id];
 
-            /*if *lb > template.rejection_threshold {
+            if lb > template.rejection_threshold() {
                 continue;
-            }*/
+            }
 
             if lb > best.map(|(_, score)| score).unwrap_or(f32::INFINITY) {
                 continue;
             }
 
             let mut score = self.correction_factors[id];
-            score *= self.dtw(config, &sample_features.trajectory, &template.features().trajectory);
+            let dwt_score = match config.method {
+                JackknifeMethod::InnerProduct => V::dtw(
+                    &mut self.cost_matrix,
+                    &sample_features.trajectory,
+                    &template.features().trajectory,
+                    config.dtw_radius,
+                    |a: &V, b: &V| 1.0 - a.dot(b),
+                ),
+                JackknifeMethod::EuclideanDistance => V::dtw(
+                    &mut self.cost_matrix,
+                    &sample_features.trajectory,
+                    &template.features().trajectory,
+                    config.dtw_radius,
+                    |a: &V, b: &V| a.distance_square(b),
+                ),
+            };
+            score *= dwt_score;
 
-            /*if score > template.rejection_threshold {
+            if score > template.rejection_threshold() {
                 continue;
-            }*/
+            }
 
             if let Some((_, best_score)) = best {
                 if score < best_score {
@@ -202,50 +214,5 @@ where
         }
 
         lb
-    }
-
-    fn init_cost(&mut self, size1: usize, size2: usize) {
-        let v1 = size1 + 1;
-        let v2 = size2 + 1;
-        self.cost_size = (v1, v2);
-        self.cost.resize(v1 * v2, f32::INFINITY);
-        self.cost.fill(f32::INFINITY);
-
-        *self.cost_mut(0, 0) = 0.0;
-    }
-
-    fn cost(&self, i: usize, j: usize) -> f32 {
-        debug_assert!(i < self.cost_size.0 && j < self.cost_size.1);
-        self.cost[i * self.cost_size.1 + j]
-    }
-
-    fn cost_mut(&mut self, i: usize, j: usize) -> &mut f32 {
-        debug_assert!(i < self.cost_size.0 && j < self.cost_size.1);
-        &mut self.cost[i * self.cost_size.1 + j]
-    }
-
-    fn dtw(&mut self, config: &JackknifeConfig, v1: &[V], v2: &[V]) -> f32 {
-        self.init_cost(v1.len(), v2.len());
-
-        // using DP to find solution
-        for i in 1..=v1.len() {
-            for j in windowed_range(v2.len() + 1, i, config.dtw_radius) {
-                // pick minimum cost path (neighbor) to extend to this ii, jj element
-                let minimum: f32 = (self.cost(i - 1, j)) // repeat v1 element
-                    .min(self.cost(i, j - 1)) // repeat v2 element
-                    .min(self.cost(i - 1, j - 1)); // don't repeat either
-                *self.cost_mut(i, j) = minimum;
-                match config.method {
-                    JackknifeMethod::InnerProduct => {
-                        *self.cost_mut(i, j) += 1.0 - v1[i - 1].dot(&v2[j - 1]);
-                    }
-                    JackknifeMethod::EuclideanDistance => {
-                        *self.cost_mut(i, j) += v1[i - 1].distance_square(&v2[j - 1]);
-                    }
-                }
-            }
-        }
-
-        self.cost(v1.len(), v2.len())
     }
 }

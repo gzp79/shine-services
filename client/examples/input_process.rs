@@ -1,6 +1,7 @@
 use bevy::{prelude::*, window::CursorGrabMode};
+use core::f32;
 use shine_game::{
-    ai::{unistroke_templates, JackknifeConfig, JackknifeTemplateSet},
+    ai::{unistroke_templates, GestureId, JackknifeConfig, JackknifeTemplateSet},
     application,
     input_manager::{
         ActionState, ButtonChord, ButtonCompose, DualAxisChord, DualAxisCompose, GestureSet, InputManagerPlugin,
@@ -8,6 +9,7 @@ use shine_game::{
         VirtualDPad,
     },
 };
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Action {
@@ -21,6 +23,9 @@ enum Action {
     DualAxisChordCtrlAMousePosition,
 
     MousePosition,
+    GestureCircle,
+    GestureTriangle,
+    GestureRectangle,
 
     Grab,
 }
@@ -42,20 +47,20 @@ pub fn main() {
     application::init(setup_game);
 }
 
-const GESTURES: &[(&str, &[Vec2])] = &[
-    ("Line 0", unistroke_templates::LINE_0),
-    ("Line 45", unistroke_templates::LINE_45),
-    ("Line 90", unistroke_templates::LINE_90),
-    ("Line 135", unistroke_templates::LINE_135),
-    ("Line 180", unistroke_templates::LINE_180),
-    ("Line 225", unistroke_templates::LINE_225),
-    ("Line 270", unistroke_templates::LINE_270),
-    ("Line 315", unistroke_templates::LINE_315),
-    ("V", unistroke_templates::V),
-    ("Triangle", unistroke_templates::TRIANGLE),
-    ("Rectangle", unistroke_templates::RECTANGLE),
-    ("Circle", unistroke_templates::CIRCLE),
-    ("Zig Zag", unistroke_templates::ZIG_ZAG),
+const GESTURES: &[(&str, &[Vec2], GestureId)] = &[
+    ("Line 0", unistroke_templates::LINE_0, GestureId(0)),
+    ("Line 45", unistroke_templates::LINE_45, GestureId(1)),
+    ("Line 90", unistroke_templates::LINE_90, GestureId(2)),
+    ("Line 135", unistroke_templates::LINE_135, GestureId(3)),
+    ("Line 180", unistroke_templates::LINE_180, GestureId(4)),
+    ("Line 225", unistroke_templates::LINE_225, GestureId(5)),
+    ("Line 270", unistroke_templates::LINE_270, GestureId(6)),
+    ("Line 315", unistroke_templates::LINE_315, GestureId(7)),
+    ("V", unistroke_templates::V, GestureId(8)),
+    ("Triangle", unistroke_templates::TRIANGLE, GestureId(9)),
+    ("Rectangle", unistroke_templates::RECTANGLE, GestureId(10)),
+    ("Circle", unistroke_templates::CIRCLE, GestureId(11)),
+    ("Zig Zag", unistroke_templates::ZIG_ZAG, GestureId(12)),
 ];
 
 fn setup_game(app: &mut App) {
@@ -110,8 +115,8 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
         .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
 
     let mut template_set = JackknifeTemplateSet::new(JackknifeConfig::inner_product());
-    for (_, points) in GESTURES {
-        template_set.add_template(points);
+    for (_, points, id) in GESTURES {
+        template_set.add_template(*id, points);
     }
 
     for action in [
@@ -132,7 +137,10 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
     commands.spawn((
         input_map,
         GestureSet { template_set },
-        UnistrokeGesture::new(Action::MousePosition, 10.0),
+        UnistrokeGesture::new(Action::MousePosition, 10.0)
+            .with_button_target(GestureId(9), Action::GestureTriangle)
+            .with_button_target(GestureId(10), Action::GestureRectangle)
+            .with_button_target(GestureId(11), Action::GestureCircle),
         Text::default(),
         Node {
             position_type: PositionType::Absolute,
@@ -166,9 +174,8 @@ fn grab_mouse(players: Query<&ActionState<Action>, Without<Window>>, mut window:
 }
 
 #[derive(Default)]
-pub struct LastGesture {
-    pub start_time: f32,
-    pub gesture: Option<(usize, f32)>,
+struct GestureHistory {
+    last_gesture_time: HashMap<Action, f32>,
 }
 
 fn show_gesture(
@@ -201,22 +208,37 @@ fn show_gesture(
     }
 
     // detected gesture
-    if let Some((index, _)) = recognizer.classification() {
-        let template = &gesture_set.template_set.templates()[index];
-        let points = template.resampled_points();
-        let cs = 1.0 / points.len() as f32;
-        gizmos.linestrip_gradient(points.iter().enumerate().map(|(i, p)| {
-            (
-                Vec3::new(p.x, -p.y, 0.0) * 0.5,
-                Color::srgb(0.0, (i as f32) * cs, (i as f32) * cs),
-            )
-        }));
+    if let Some((gesture_id, gesture_index, _)) = recognizer.classification() {
+        for (index, template) in gesture_set
+            .template_set
+            .templates()
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.id() == gesture_id)
+        {
+            let points = template.resampled_points();
+            gizmos.linestrip_gradient(points.iter().enumerate().map(|(i, p)| {
+                (
+                    Vec3::new(p.x, -p.y, 0.0) * 0.5,
+                    if index == gesture_index {
+                        Color::srgb(0.0, (i as f32) * 0.1, 0.0)
+                    } else {
+                        Color::srgb(0.0, (i as f32) * 0.1, (i as f32) * 0.1)
+                    },
+                )
+            }));
+        }
     }
 
     Ok(())
 }
 
-fn show_status(mut players: Query<(&InputMap<Action>, &ActionState<Action>, &mut Text)>, window: Query<&Window>) {
+fn show_status(
+    mut players: Query<(&InputMap<Action>, &ActionState<Action>, &mut Text)>,
+    window: Query<&Window>,
+    time: Res<Time>,
+    mut gesture_history: Local<GestureHistory>,
+) {
     for (input_map, action_state, mut text) in players.iter_mut() {
         let window = window.single().unwrap();
         let (width, height) = (window.width(), window.height());
@@ -263,6 +285,30 @@ fn show_status(mut players: Query<(&InputMap<Action>, &ActionState<Action>, &mut
                 .unwrap_or_else(|| "None".to_string())
         );
 
-        text.0 = [size, button_or, button_chord, dual_axis_chord].join("\n");
+        for action in [Action::GestureCircle, Action::GestureTriangle, Action::GestureRectangle] {
+            if action_state.just_pressed(&action) {
+                gesture_history.last_gesture_time.insert(action, time.elapsed_secs());
+            } else {
+                gesture_history.last_gesture_time.entry(action).or_insert(f32::INFINITY);
+            }
+        }
+        let gesture_time = gesture_history
+            .last_gesture_time
+            .iter()
+            .map(|(action, &t)| {
+                format!(
+                    "{:?}: {:.2}s",
+                    action,
+                    if t != f32::INFINITY {
+                        (time.elapsed_secs() - t).max(0.0)
+                    } else {
+                        t
+                    }
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        text.0 = [size, button_or, button_chord, dual_axis_chord, gesture_time].join("\n");
     }
 }
