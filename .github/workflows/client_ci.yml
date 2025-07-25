@@ -72,6 +72,9 @@ jobs:
             sed 's/shine-client/${example}/g' client/index.html > ./dist/${{ github.sha }}/${example}.html
           done
 
+          jq -n --arg version '${{ github.sha }}' --arg examples '${{ env.EXAMPLES }}' \
+            '{version: $version, examples: ($examples | split(" "))}' > /dist/sample_latest.json
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -113,7 +116,8 @@ jobs:
 
       - name: Upload latest.json
         run: |
-          echo '{ "version": "'${{ github.sha }}'" }' > ./latest.json
+          jq -n --arg version '${{ github.sha }}' --arg examples '${{ env.EXAMPLES }}' \
+            '{version: $version, examples: ($examples | split(" "))}' > ./latest.json
           aws s3 cp ./latest.json s3://${S3_BUCKET_NAME}/latest.json \
               --endpoint-url=${S3_BUCKET_LINK} \
               --cache-control "no-cache, no-store, must-revalidate"
