@@ -29,3 +29,4 @@ shine-test = { workspace = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 bevy = { workspace = true, features = ["webgl2"] }
 wasm-bindgen = { workspace = true }
+getrandom = { workspace = true, features = ["wasm_js"] }
