@@ -3,8 +3,8 @@ use core::f32;
 use shine_game::{
     application,
     input_manager::{
-        ActionState, DualAxisChord, GestureSet, InputManagerPlugin, InputMap, KeyboardInput, MouseButtonInput,
-        MousePosition, UnistrokeGesture,
+        ActionState, AttachedToGestureSet, DualAxisChord, GestureInput, GestureSet, InputManagerPlugin, InputMap,
+        KeyboardInput, MouseButtonInput, MousePosition, TouchPosition, UnistrokeGesture,
     },
     math::{unistroke_templates, GestureId, JackknifeConfig, JackknifeTemplateSet},
 };
@@ -12,7 +12,10 @@ use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Action {
-    MousePosition,
+    MouseClickPosition,
+    CtrlMousePosition,
+    TouchPosition,
+
     GestureCircle,
     GestureTriangle,
     GestureRectangle,
@@ -67,31 +70,50 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
 
     let input_map = InputMap::new()
         .with_dual_axis(
-            Action::MousePosition,
+            Action::MouseClickPosition,
             DualAxisChord::new(MouseButtonInput::new(MouseButton::Left), MousePosition::new()),
         )
+        .with_dual_axis(
+            Action::CtrlMousePosition,
+            DualAxisChord::new(KeyboardInput::new(KeyCode::ControlLeft), MousePosition::new()),
+        )
+        .with_dual_axis(Action::TouchPosition, TouchPosition::new())
+        .with_button(Action::GestureTriangle, GestureInput::new(GestureId(9)))
+        .with_button(Action::GestureRectangle, GestureInput::new(GestureId(10)))
+        .with_button(Action::GestureCircle, GestureInput::new(GestureId(11)))
         .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
 
-    //let mut template_set = JackknifeTemplateSet::new(JackknifeConfig::inner_product());
+    // Template-Set can be saved and loaded to speed up the setup.
     let mut template_set = JackknifeTemplateSet::new(JackknifeConfig::euclidean_distance());
     for (_, points, id) in GESTURES {
         template_set.add_template(*id, points);
     }
 
+    //template_set.train(1000, 1.0, 16, 0.25, 2);
+
+    let root = commands
+        .spawn((
+            input_map,
+            GestureSet(template_set),
+            UnistrokeGesture::new(Action::MouseClickPosition, 10.0),
+            Text::default(),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(12.0),
+                left: Val::Px(12.0),
+                ..default()
+            },
+        ))
+        .id();
+
+    // Spawn some more recognizers for different input devices
     commands.spawn((
-        input_map,
-        GestureSet { template_set },
-        UnistrokeGesture::new(Action::MousePosition, 10.0)
-            .with_button_target(GestureId(9), Action::GestureTriangle)
-            .with_button_target(GestureId(10), Action::GestureRectangle)
-            .with_button_target(GestureId(11), Action::GestureCircle),
-        Text::default(),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(12.0),
-            left: Val::Px(12.0),
-            ..default()
-        },
+        AttachedToGestureSet(root),
+        UnistrokeGesture::new(Action::TouchPosition, 10.0),
+    ));
+    commands.spawn((
+        AttachedToGestureSet(root),
+        UnistrokeGesture::new(Action::CtrlMousePosition, 10.0),
     ));
 }
 
@@ -123,80 +145,82 @@ struct GestureHistory {
 }
 
 fn show_gesture(
-    gesture_q: Query<(&GestureSet, &UnistrokeGesture<Action>)>,
+    gesture_q: Query<&GestureSet>,
+    recognizer_q: Query<&UnistrokeGesture<Action>>,
     window: Query<&Window>,
     mut gizmos: Gizmos,
 ) -> Result<(), BevyError> {
     let window = window.single()?;
     let (width, height) = (window.width(), window.height());
 
-    let (gesture_set, recognizer) = gesture_q.single()?;
+    let gesture_set = gesture_q.single()?;
 
-    // raw input
-    let points = recognizer.points();
-    let dt = Vec3::new(-width / 2.0, height / 2.0, 0.0);
-    gizmos.linestrip(
-        points.iter().map(|p| Vec3::new(p.x, -p.y, 0.0) + dt),
-        Color::srgb(1.0, 1.0, 1.0),
-    );
-
-    let mut resampled_points = Vec::new();
-    let mut gesture_points = Vec::new();
-
-    let map_point = move |p: &Vec2| -> Vec2 { Vec2::new(p.x - width / 2.0, -p.y + height / 3.0) * 0.8 };
-
-    // resampled input
-    if let Some(points) = recognizer.resampled_points() {
-        resampled_points = points.iter().map(&map_point).collect::<Vec<_>>();
-
-        let cs = 1.0 / points.len() as f32;
-        gizmos.linestrip_gradient_2d(
-            resampled_points
-                .iter()
-                .enumerate()
-                .map(|(i, p)| (*p, Color::srgb((i as f32) * cs, 0.0, (i as f32) * cs))),
+    for recognizer in recognizer_q.iter() {
+        // raw input
+        let points = recognizer.points();
+        let dt = Vec3::new(-width / 2.0, height / 2.0, 0.0);
+        gizmos.linestrip(
+            points.iter().map(|p| Vec3::new(p.x, -p.y, 0.0) + dt),
+            Color::srgb(1.0, 1.0, 1.0),
         );
-    }
 
-    // detected gesture
-    if let Some((gesture_id, gesture_index, _)) = recognizer.classification() {
-        for (index, template) in gesture_set
-            .template_set
-            .templates()
-            .iter()
-            .enumerate()
-            .filter(|(_, t)| t.id() == gesture_id)
-        {
-            let points = template.resampled_points();
+        let mut resampled_points = Vec::new();
+        let mut gesture_points = Vec::new();
 
-            if index == gesture_index {
-                gesture_points = points.iter().map(&map_point).collect::<Vec<_>>();
-            }
+        let map_point = move |p: &Vec2| -> Vec2 { Vec2::new(p.x - width / 2.0, -p.y + height / 3.0) * 0.8 };
+
+        // resampled input
+        if let Some(points) = recognizer.resampled_points() {
+            resampled_points = points.iter().map(&map_point).collect::<Vec<_>>();
 
             let cs = 1.0 / points.len() as f32;
-            gizmos.linestrip_gradient_2d(points.iter().enumerate().map(|(i, p)| {
-                (
-                    map_point(p),
-                    if index == gesture_index {
-                        Color::srgb(0.0, (i as f32) * cs, 0.0)
-                    } else {
-                        Color::srgb(0.0, (i as f32) * cs, (i as f32) * cs)
-                    },
-                )
-            }));
+            gizmos.linestrip_gradient_2d(
+                resampled_points
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| (*p, Color::srgb((i as f32) * cs, 0.0, (i as f32) * cs))),
+            );
         }
-    }
 
-    if !gesture_points.is_empty() && !resampled_points.is_empty() {
-        let cs = 1.0 / gesture_points.len() as f32;
-        let matching = recognizer.internal().cost_matrix.matching();
-        for (i, j) in matching {
-            if i < resampled_points.len() && j < gesture_points.len() {
-                gizmos.line_2d(
-                    resampled_points[i],
-                    gesture_points[j],
-                    Color::srgb((i as f32) * cs, 0.0, 0.0),
-                );
+        // detected gesture
+        if let Some((gesture_id, gesture_index, _)) = recognizer.classification() {
+            for (index, template) in gesture_set
+                .templates()
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| t.id() == gesture_id)
+            {
+                let points = template.resampled_points();
+
+                if index == gesture_index {
+                    gesture_points = points.iter().map(&map_point).collect::<Vec<_>>();
+                }
+
+                let cs = 1.0 / points.len() as f32;
+                gizmos.linestrip_gradient_2d(points.iter().enumerate().map(|(i, p)| {
+                    (
+                        map_point(p),
+                        if index == gesture_index {
+                            Color::srgb(0.0, (i as f32) * cs, 0.0)
+                        } else {
+                            Color::srgb(0.0, (i as f32) * cs, (i as f32) * cs)
+                        },
+                    )
+                }));
+            }
+        }
+
+        if !gesture_points.is_empty() && !resampled_points.is_empty() {
+            let cs = 1.0 / gesture_points.len() as f32;
+            let matching = recognizer.internal().cost_matrix.matching();
+            for (i, j) in matching {
+                if i < resampled_points.len() && j < gesture_points.len() {
+                    gizmos.line_2d(
+                        resampled_points[i],
+                        gesture_points[j],
+                        Color::srgb((i as f32) * cs, 0.0, 0.0),
+                    );
+                }
             }
         }
     }

@@ -165,7 +165,7 @@ where
                 EdgeSize::Percent(percent) => (w * percent, h * percent),
             };
 
-            const EPS: f32 = 1e-4;
+            const EPS: f32 = 1e-8;
             let mut value = Vec2::ZERO;
 
             if ew > EPS {

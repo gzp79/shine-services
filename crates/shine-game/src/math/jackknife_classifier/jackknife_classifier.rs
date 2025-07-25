@@ -87,7 +87,7 @@ where
         let templates = template_set.templates();
         let config = template_set.config();
 
-        let sample_features = JackknifeFeatures::from_points(sample_points, config);
+        let sample_features = JackknifeFeatures::from_points(config, sample_points);
 
         self.correction_factors.reserve(templates.len());
         self.lower_bounds.reserve(templates.len());
@@ -149,6 +149,14 @@ where
                     |a: &V, b: &V| a.distance_square(b),
                 ),
             };
+            if !dwt_score.is_finite() {
+                log::error!("Internal error, non-finite DWT score for template {id}: {dwt_score}");
+                log::error!("config.method: {:?}", config.method);
+                log::error!("config.dtw_radius: {}", config.dtw_radius);
+                log::error!("Sample features: {:?}", sample_features.trajectory);
+                log::error!("Template features: {:?}", template.features().trajectory);
+                continue;
+            }
             score *= dwt_score;
 
             if score > template.rejection_threshold() {

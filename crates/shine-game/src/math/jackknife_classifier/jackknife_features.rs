@@ -28,7 +28,7 @@ where
     V: JackknifePointMath<V>,
 {
     /// Compute the features from a set of input points.
-    pub fn from_points(sample_points: &[V], config: &JackknifeConfig) -> Self {
+    pub fn from_points(config: &JackknifeConfig, sample_points: &[V]) -> Self {
         let m = sample_points[0].dimension();
         let points = V::resample(sample_points, config.resample_count);
 

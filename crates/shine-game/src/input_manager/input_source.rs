@@ -1,7 +1,7 @@
 use bevy::{ecs::entity::Entity, time::Time, window::Window};
 use std::{
     any::{Any, TypeId},
-    collections::HashMap,
+    collections::{HashMap, HashSet},
 };
 
 pub trait InputSource: Any + 'static {}
@@ -25,6 +25,7 @@ where
 pub struct InputSources<'w> {
     pub resources: HashMap<TypeId, &'w dyn Any>,
     pub components: HashMap<(Entity, TypeId), &'w dyn Any>,
+    pub markers: HashSet<TypeId>,
 }
 
 impl Default for InputSources<'_> {
@@ -38,7 +39,22 @@ impl<'w> InputSources<'w> {
         Self {
             resources: HashMap::new(),
             components: HashMap::new(),
+            markers: HashSet::new(),
         }
+    }
+
+    pub fn add_marker<T>(&mut self)
+    where
+        T: InputSource,
+    {
+        self.markers.insert(TypeId::of::<T>());
+    }
+
+    pub fn has_marker<T>(&self) -> bool
+    where
+        T: InputSource,
+    {
+        self.markers.contains(&TypeId::of::<T>())
     }
 
     pub fn add_resource<T>(&mut self, source: &'w T)
@@ -64,12 +80,21 @@ impl<'w> InputSources<'w> {
         self.components.insert((entity, source.type_id()), source.as_any());
     }
 
+    pub fn get_all_components<T>(&self) -> impl Iterator<Item = &T>
+    where
+        T: InputSource,
+    {
+        self.components
+            .iter()
+            .filter_map(|(_, &source)| source.downcast_ref::<T>())
+    }
+
     pub fn get_component<T>(&self, entity: Entity) -> Option<&T>
     where
         T: InputSource,
     {
         self.components
             .get(&(entity, TypeId::of::<T>()))
-            .and_then(|s| s.downcast_ref::<T>())
+            .and_then(|source| source.downcast_ref::<T>())
     }
 }

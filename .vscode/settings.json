@@ -26,6 +26,7 @@
     "endgroup",
     "fkey",
     "gamepads",
+    "GPSR",
     "hasher",
     "hashids",
     "hget",

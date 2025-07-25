@@ -29,15 +29,14 @@ where
 {
     let window = window.single()?;
 
+    let mut input_sources = InputSources::new();
+    input_sources.add_resource(window);
+    input_sources.add_resource(&*time);
+    input_sources.add_resource(&*mouse);
+    input_sources.add_resource(&*accumulated_mouse_motion);
+
     for mut input_map in input_query.iter_mut() {
-        let mut input_source = InputSources::new();
-
-        input_source.add_resource(window);
-        input_source.add_resource(&*time);
-        input_source.add_resource(&*mouse);
-        input_source.add_resource(&*accumulated_mouse_motion);
-
-        input_map.integrate(input_source);
+        input_map.integrate(&input_sources);
     }
 
     Ok(())

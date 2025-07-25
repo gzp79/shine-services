@@ -167,22 +167,22 @@ where
         }
     }
 
-    pub fn integrate(&mut self, input_source: InputSources) {
+    pub fn integrate(&mut self, input_source: &InputSources) {
         for input in self.buttons.values_mut() {
             if let (Some(input), _) = input {
-                input.integrate(&input_source);
+                input.integrate(input_source);
             }
         }
 
         for input in self.axes.values_mut() {
             if let (Some(input), _) = input {
-                input.integrate(&input_source);
+                input.integrate(input_source);
             }
         }
 
         for input in self.dual_axes.values_mut() {
             if let (Some(input), _) = input {
-                input.integrate(&input_source);
+                input.integrate(input_source);
             }
         }
     }

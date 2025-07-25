@@ -1,3 +1,5 @@
+pub mod statistics;
+
 mod jackknife_classifier;
 pub use self::jackknife_classifier::*;
 

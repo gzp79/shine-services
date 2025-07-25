@@ -1,5 +1,8 @@
 use bevy::math::Vec2;
-use shine_game::math::{unistroke_templates, GestureId, JackknifeClassifier, JackknifeConfig, JackknifeTemplateSet};
+use shine_game::math::{
+    unistroke_templates, CostMatrix, GestureId, JackknifeClassifier, JackknifeConfig, JackknifeFeatures,
+    JackknifePoint, JackknifeTemplate, JackknifeTemplateSet,
+};
 use shine_test::test;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -74,6 +77,22 @@ fn load_kinect_templates(config: &JackknifeConfig, paths: &[(String, GestureId)]
 fn test_jackknife_foo() {
     let config = JackknifeConfig::euclidean_distance();
 
+    let ff1 = JackknifeTemplate::from_points(&config, GestureId(0), unistroke_templates::LINE_270);
+    let ff2 = JackknifeTemplate::from_points(
+        &config,
+        GestureId(0),
+        &[Vec2::new(0.0, 60.0), Vec2::new(0.0, 30.0), Vec2::new(0.0, -60.0)],
+    );
+
+    let mut cost = CostMatrix::new();
+    let cost = cost.dtw(
+        &ff1.features().trajectory,
+        &ff2.features().trajectory,
+        config.dtw_radius,
+        |a: &Vec2, b: &Vec2| a.distance_square(b),
+    );
+    log::info!("Jackknife features: {:#?}", cost);
+
     let mut template_set = JackknifeTemplateSet::new(config.clone());
 
     template_set.add_template(GestureId(0), unistroke_templates::ZIG_ZAG);
@@ -97,7 +116,10 @@ fn test_jackknife_foo() {
         Vec2::new(118.0, 476.0),
     ];
 
-    //template_set.train_rejection();
+    template_set.train(1000, 1.0, 6, 0.25, 2);
+    for template in template_set.templates() {
+        log::info!("Template: {:?}", template.rejection_threshold());
+    }
 
     let mut classify = JackknifeClassifier::new();
     classify.classify(&template_set, sample);

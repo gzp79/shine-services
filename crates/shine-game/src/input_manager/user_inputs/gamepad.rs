@@ -2,7 +2,6 @@ use crate::input_manager::{ActionLike, ButtonLike, DualAxisLike, InputMap, Input
 use bevy::{
     ecs::{
         entity::Entity,
-        resource::Resource,
         system::{Query, Res},
     },
     input::gamepad::{Gamepad, GamepadButton},
@@ -12,38 +11,29 @@ use bevy::{
 };
 use std::borrow::Cow;
 
-/// Marker resource indicating that gamepad input source is available in [`InputSources`].
-///
-/// This resource is always present if gamepad input is supported, regardless of whether any gamepad is currently connected.
-/// Use this to check for gamepad capability, not connection state.
-#[derive(Resource)]
-pub struct GamepadManager;
-
-impl InputSource for GamepadManager {}
 impl InputSource for Gamepad {}
 
 pub fn integrate_gamepad_inputs<A>(
     time: Res<Time>,
     window: Query<&Window>,
     gamepads: Query<(Entity, &Gamepad)>,
-    gamepad_manager: Res<GamepadManager>,
     mut input_query: Query<&mut InputMap<A>>,
 ) where
     A: ActionLike,
 {
     let window = window.single().expect("Only single window is supported");
 
+    let mut input_sources = InputSources::new();
+    input_sources.add_resource(window);
+    input_sources.add_resource(&*time);
+
+    input_sources.add_marker::<Gamepad>();
+    for (entity, gamepad) in gamepads.iter() {
+        input_sources.add_component(entity, gamepad);
+    }
+
     for mut input_map in input_query.iter_mut() {
-        let mut input_source = InputSources::new();
-
-        input_source.add_resource(window);
-        input_source.add_resource(&*time);
-        input_source.add_resource(&*gamepad_manager);
-        for (entity, gamepad) in gamepads.iter() {
-            input_source.add_component(entity, gamepad);
-        }
-
-        input_map.integrate(input_source);
+        input_map.integrate(&input_sources);
     }
 }
 
@@ -92,7 +82,7 @@ impl UserInput for GamepadButtonInput {
     fn integrate(&mut self, input: &InputSources) {
         if let Some(gamepad) = input.get_component::<Gamepad>(self.gamepad) {
             self.pressed = Some(gamepad.pressed(self.button));
-        } else if let Some(_gamepad_settings) = input.get_resource::<GamepadManager>() {
+        } else if input.has_marker::<Gamepad>() {
             // we have gamepad in the input store, but our gamepad is not found
             self.pressed = None;
         }
@@ -161,7 +151,7 @@ impl UserInput for GamepadStickInput {
                 GamepadStick::Left => gamepad.left_stick(),
                 GamepadStick::Right => gamepad.right_stick(),
             });
-        } else if let Some(_gamepad_manager) = input.get_resource::<GamepadManager>() {
+        } else if input.has_marker::<Gamepad>() {
             // we have gamepad in the input store, but our gamepad is not found
             self.value = None;
         }

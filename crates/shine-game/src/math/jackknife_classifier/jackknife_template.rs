@@ -1,6 +1,5 @@
-use core::f32;
-
-use crate::math::{JackknifeConfig, JackknifeFeatures, JackknifePointMath};
+use crate::math::{statistics, CostMatrix, JackknifeConfig, JackknifeFeatures, JackknifeMethod, JackknifePointMath};
+use rand::Rng;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -43,7 +42,7 @@ where
     V: JackknifePointMath<V>,
 {
     pub fn from_points(config: &JackknifeConfig, id: GestureId, points: &[V]) -> Self {
-        let features = JackknifeFeatures::from_points(points, config);
+        let features = JackknifeFeatures::from_points(config, points);
         let bounds = Self::find_bounds(&features.trajectory, config.dtw_radius);
         Self {
             id,
@@ -132,5 +131,126 @@ where
         let template = JackknifeTemplate::from_points(&self.config, id, points);
         self.templates.push(template);
         self
+    }
+
+    /// Learn rejection template for each gesture.
+    ///
+    /// * Parameters:
+    ///   - `batch_size`: The number of samples to generate for each template.
+    ///   - `beta`: The target F-score for the rejection threshold.
+    ///   - `gpsr_count`: The number of the resampled GPSR points.
+    ///   - `variance`: The variance on the intervals to use for stochastic resampling.
+    ///   - `gpsr_remove`: The number of GPSR points removal for corner cuts.
+    pub fn train(&mut self, batch_size: usize, beta: f32, gpsr_count: usize, variance: f32, gpsr_remove: usize) {
+        let mut cost_matrix = CostMatrix::new();
+
+        // I. Create negative samples
+        let mut negative_per_templates = Vec::new();
+        negative_per_templates.resize_with(self.templates.len(), || Vec::with_capacity(batch_size));
+
+        for _ in 0..batch_size {
+            // create a negative sample by splicing two random templates
+            let sample_features = {
+                let mut rng = rand::rng();
+                let idx1 = rng.random_range(0..self.templates.len());
+                let idx2 = rng.random_range(0..self.templates.len());
+                if idx1 == idx2 {
+                    continue;
+                }
+
+                let cnt = self.config.resample_count / 2;
+                let mut synthetic = Vec::with_capacity(self.config.resample_count);
+                synthetic.extend_from_slice(&self.templates[idx1].resampled_points()[..cnt]);
+                synthetic.extend_from_slice(&self.templates[idx2].resampled_points()[cnt..]);
+
+                JackknifeFeatures::from_points(&self.config, &synthetic)
+            };
+
+            // find negative score for each template
+            for (i, template) in self.templates.iter().enumerate() {
+                let dwt_score = match self.config.method {
+                    JackknifeMethod::InnerProduct => cost_matrix.dtw(
+                        &sample_features.trajectory,
+                        &template.features().trajectory,
+                        self.config.dtw_radius,
+                        |a: &V, b: &V| 1.0 - a.dot(b),
+                    ),
+                    JackknifeMethod::EuclideanDistance => cost_matrix.dtw(
+                        &sample_features.trajectory,
+                        &template.features().trajectory,
+                        self.config.dtw_radius,
+                        |a: &V, b: &V| a.distance_square(b),
+                    ),
+                };
+
+                if dwt_score.is_finite() {
+                    negative_per_templates[i].push(dwt_score);
+                } else {
+                    log::warn!("Non-finite DWT score for negative sample: {dwt_score}");
+                }
+            }
+        }
+
+        // II. Create positive samples
+        let mut positive_per_templates = Vec::new();
+        positive_per_templates.resize_with(self.templates.len(), || Vec::with_capacity(batch_size));
+
+        for (i, template) in self.templates.iter().enumerate() {
+            for _ in 0..batch_size {
+                let synthetic = V::stochastic_variance(template.resampled_points(), gpsr_count, variance, gpsr_remove);
+
+                let sample_features = JackknifeFeatures::from_points(&self.config, &synthetic);
+                let dwt_score = match self.config.method {
+                    JackknifeMethod::InnerProduct => cost_matrix.dtw(
+                        &sample_features.trajectory,
+                        &template.features().trajectory,
+                        self.config.dtw_radius,
+                        |a: &V, b: &V| 1.0 - a.dot(b),
+                    ),
+                    JackknifeMethod::EuclideanDistance => cost_matrix.dtw(
+                        &sample_features.trajectory,
+                        &template.features().trajectory,
+                        self.config.dtw_radius,
+                        |a: &V, b: &V| a.distance_square(b),
+                    ),
+                };
+
+                if dwt_score.is_finite() {
+                    positive_per_templates[i].push(dwt_score);
+                } else {
+                    log::warn!("Non-finite DWT score for positive sample: {dwt_score}");
+                }
+            }
+        }
+
+        // III. Compute rejection threshold for each template with the given target F-score.
+        for (i, template) in self.templates.iter_mut().enumerate() {
+            let id = template.id.id();
+            let negative_scores = &mut negative_per_templates[i];
+            let positive_scores = &mut positive_per_templates[i];
+
+            /*{
+                negative_scores.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                positive_scores.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                statistics::dump_classification_scores_to_csv(
+                    &format!("../temp/jackknife_template_{}_scores.csv", id),
+                    positive_scores,
+                    negative_scores,
+                )
+                .unwrap();
+            }*/
+
+            // let's see how good the classifier is
+            let auc = statistics::roc_auc(positive_scores, negative_scores);
+            log::debug!("Template ID: {id}, ROC AUC: {auc:.3}");
+
+            // Find the optimal threshold that maximizes F-score
+            template.rejection_threshold =
+                statistics::find_optimal_threshold(positive_scores, negative_scores, beta).unwrap_or(f32::INFINITY);
+            log::debug!(
+                "Template ID: {id}, Rejection Threshold: {}",
+                template.rejection_threshold
+            );
+        }
     }
 }
