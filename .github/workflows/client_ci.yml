@@ -72,9 +72,6 @@ jobs:
             sed 's/shine-client/${example}/g' client/index.html > ./dist/${{ github.sha }}/${example}.html
           done
 
-          jq -n --arg version '${{ github.sha }}' --arg examples '${{ env.EXAMPLES }}' \
-            '{version: $version, examples: ($examples | split(" "))}' > /dist/sample_latest.json
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
