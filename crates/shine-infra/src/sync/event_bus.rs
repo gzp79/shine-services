@@ -66,7 +66,7 @@ where
 
     pub async fn publish(&self, event: &E) {
         let handlers = self.0.handlers.read().await;
-        let futures = handlers.iter().map(|(_id, h)| h.handle(event));
+        let futures = handlers.values().map(|h| h.handle(event));
         join_all(futures).await;
     }
 }

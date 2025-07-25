@@ -525,7 +525,7 @@ pub async fn token_login(
         Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
 
-    log::debug!("Query: {:#?}", query);
+    log::debug!("Query: {query:#?}");
 
     // clear external login cookie, it shall be only for the authorize callback from the external provider
     let auth_session = auth_session.with_external_login(None);
@@ -555,7 +555,7 @@ pub async fn token_login(
 
     // Create a new access token. It can be either a rotated or a new token
     let auth_session = if create_access_token {
-        log::debug!("Creating access token for identity: {:#?}", identity);
+        log::debug!("Creating access token for identity: {identity:#?}");
         // create a new access token
         let user_token = match state
             .login_token_handler()

@@ -52,7 +52,7 @@ impl From<EmailTokenError> for Problem {
             EmailTokenError::TokenWrongEmail => Problem::bad_request(TOKEN_EXPIRED).with_sensitive("wrongEmail"),
             EmailTokenError::MissingEmail => Problem::precondition_failed(MISSING_EMAIL),
             EmailTokenError::EmailConflict => Problem::precondition_failed(EMAIL_CONFLICT),
-            EmailTokenError::IdentityError(IdentityError::UserDeleted { .. }) => {
+            EmailTokenError::IdentityError(IdentityError::UserDeleted) => {
                 Problem::unauthorized_ty(TOKEN_EXPIRED).with_sensitive("userDeleted")
             }
             EmailTokenError::EncryptionError => Problem::internal_error().with_sensitive("encryptionError"),
@@ -107,7 +107,7 @@ where
             .fill(&mut raw_nonce[8..])
             .map_err(|_| EmailTokenError::EncryptionError)?;
 
-        let mut in_out = format!("{},{},{}", user_id, current_email, new_email).into_bytes();
+        let mut in_out = format!("{user_id},{current_email},{new_email}").into_bytes();
         // in theory neither part of the message should contain a ",", thus there should be exactly 2 of them
         // just a sanity check to avoid any potential decryption issues
         if in_out.iter().filter(|&&c| c == b',').count() != 2 {

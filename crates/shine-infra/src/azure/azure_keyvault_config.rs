@@ -15,7 +15,7 @@ pub struct AzureKeyvaultConfigError(#[source] azure_core::Error);
 
 impl From<AzureKeyvaultConfigError> for ConfigError {
     fn from(err: AzureKeyvaultConfigError) -> Self {
-        log::error!("{:?}", err);
+        log::error!("{err:?}");
         ConfigError::Foreign(Box::new(err))
     }
 }
@@ -62,10 +62,10 @@ impl ConfigAsyncSource for AzureKeyvaultConfigSource {
 
             for raw in secrets {
                 if let Some(id) = raw.id {
-                    let key = id.split('/').last();
+                    let key = id.split('/').next_back();
                     if let Some(key) = key {
                         let path = key.replace('-', ".");
-                        log::info!("Reading secret {:?}", key);
+                        log::info!("Reading secret {key:?}");
                         let secret = self
                             .client
                             .get_secret(key, "", None)

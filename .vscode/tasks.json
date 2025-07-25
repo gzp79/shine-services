@@ -169,6 +169,7 @@
       "options": {
         "cwd": "client",
         "env": {
+          "RUST_LOG": "info,shine_game=debug,shine_factory=debug,shine_client=debug",
           "RUST_BACKTRACE": "full"
         }
       },
@@ -235,8 +236,11 @@
         { "label": "camera_follow", "value": "--example camera_follow" },
         { "label": "camera_free", "value": "--example camera_free" },
         { "label": "camera_look_at", "value": "--example camera_look_at" },
-        { "label": "input_example", "value": "--example input_example" },
-        { "label": "input_actions", "value": "--example input_actions" }
+        { "label": "input_actions", "value": "--example input_actions" },
+        { "label": "input_process", "value": "--example input_process" },
+        { "label": "input_gesture", "value": "--example input_gesture" },
+        { "label": "input_multiplayer", "value": "--example input_multiplayer" },
+        { "label": "pinch_zoom", "value": "--example pinch_zoom" }
       ],
       "default": "asset-service"
     },

@@ -135,13 +135,7 @@ where
         A: Aggregate<Event = Self::Event, StreamId = Self::StreamId>,
     {
         let id = stream_id.to_string();
-        log::trace!(
-            "Storing snapshot {} ({}) with version ({}..{:?}]",
-            id,
-            hash,
-            start_version,
-            version
-        );
+        log::trace!("Storing snapshot {id} ({hash}) with version ({start_version}..{version:?}]");
         let data = serde_json::to_string(aggregate).map_err(EventSourceError::EventSerialization)?;
 
         match self
@@ -164,31 +158,31 @@ where
                     &format!("es_snapshots_{}", <E as Event>::NAME),
                     &format!("es_snapshots_{}_pkey", <E as Event>::NAME),
                 ) {
-                    log::trace!("Snapshot already exists: {:#?}", err);
+                    log::trace!("Snapshot already exists: {err:#?}");
                     Err(EventSourceError::Conflict)
                 } else if err.is_constraint(
                     &format!("es_snapshots_{}", <E as Event>::NAME),
                     &format!("es_snapshots_{}_stream_id_version_fkey", <E as Event>::NAME),
                 ) {
-                    log::trace!("Missing event for snapshot: {:#?}", err);
+                    log::trace!("Missing event for snapshot: {err:#?}");
                     Err(EventSourceError::EventVersionNotFound(version))
                 } else if err.is_constraint(
                     &format!("es_snapshots_{}", <E as Event>::NAME),
                     &format!("es_snapshots_{}_no_branching", <E as Event>::NAME),
                 ) {
-                    log::trace!("Snapshots shall have no branching: {:#?}", err);
+                    log::trace!("Snapshots shall have no branching: {err:#?}");
                     Err(EventSourceError::Conflict)
                 } else if err.is_raise_exception("Snapshot chain is broken.") {
-                    log::trace!("Snapshot parent version does not exist: {:#?}", err);
+                    log::trace!("Snapshot parent version does not exist: {err:#?}");
                     Err(EventSourceError::InvalidAggregateVersion(start_version, version))
                 } else if err.is_constraint(
                     &format!("es_snapshots_{}", <E as Event>::NAME),
                     &format!("es_snapshots_{}_check", <E as Event>::NAME),
                 ) {
-                    log::trace!("Snapshot versions are invalid: {:#?}", err);
+                    log::trace!("Snapshot versions are invalid: {err:#?}");
                     Err(EventSourceError::InvalidAggregateVersion(start_version, version))
                 } else {
-                    log::info!("Insert snapshot error: {:#?}", err);
+                    log::info!("Insert snapshot error: {err:#?}");
                     Err(DBError::from(err).into())
                 }
             }
@@ -269,7 +263,7 @@ where
         version: usize,
     ) -> Result<(), EventSourceError> {
         let id = stream_id.to_string();
-        log::trace!("Pruning snapshot for {} at version {}", id, version);
+        log::trace!("Pruning snapshot for {id} at version {version}");
 
         self.stmts_snapshot
             .prune_snapshot

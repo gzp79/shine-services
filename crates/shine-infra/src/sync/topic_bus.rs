@@ -50,7 +50,7 @@ impl TopicHandler {
         let invoke_handler: InvokeHandler = |handlers, event| {
             let handlers = handlers.downcast_ref::<HandlerMap<E>>().unwrap();
             let event = event.downcast_ref::<E>().unwrap();
-            let futures = handlers.iter().map(|(_id, h)| h.handle(event));
+            let futures = handlers.values().map(|h| h.handle(event));
             async {
                 futures::future::join_all(futures).await;
             }

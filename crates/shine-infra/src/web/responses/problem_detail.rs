@@ -115,7 +115,7 @@ impl Problem {
     where
         S: fmt::Debug,
     {
-        self.with_extension(format!("{:#?}", extension))
+        self.with_extension(format!("{extension:#?}"))
     }
 
     pub fn with_sensitive<S>(self, extension: S) -> Self
@@ -132,14 +132,14 @@ impl Problem {
     where
         S: fmt::Debug,
     {
-        self.with_sensitive(format!("{:#?}", extension))
+        self.with_sensitive(format!("{extension:#?}"))
     }
 
     pub fn with_sensitive_str<S>(self, extension: S) -> Self
     where
         S: Display,
     {
-        self.with_sensitive(format!("{}", extension))
+        self.with_sensitive(format!("{extension}"))
     }
 }
 
@@ -207,7 +207,7 @@ impl ProblemResponse {
 impl IntoResponse for ProblemResponse {
     fn into_response(self) -> Response {
         let ProblemResponse { problem, config } = self;
-        log::info!("problem response: {:#?}", problem);
+        log::info!("problem response: {problem:#?}");
         let problem = config.transform(problem);
         (problem.status, Json(problem)).into_response()
     }

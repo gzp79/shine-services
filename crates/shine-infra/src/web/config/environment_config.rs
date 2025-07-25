@@ -67,7 +67,7 @@ impl Source for Environment {
                 .map(|k| self.convert_key_case(k))
                 .collect::<Vec<_>>()
                 .join(".");
-            log::debug!("Reading env {} as {}...", env_key, key);
+            log::debug!("Reading env {env_key} as {key}...");
 
             let value = if try_parsing {
                 // convert to lowercase because bool parsing expects all lowercase
@@ -107,7 +107,7 @@ impl Source for Environment {
 
         env::vars().for_each(collector);
 
-        log::trace!("Environment: {:#?}", m);
+        log::trace!("Environment: {m:#?}");
         Ok(m)
     }
 }

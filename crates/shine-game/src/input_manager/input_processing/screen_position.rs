@@ -1,30 +1,55 @@
 use crate::input_manager::{DualAxisLike, InputSources, UserInput};
 use bevy::{math::Vec2, time::Time, window::Window};
+use std::borrow::Cow;
 
-/// Return normalized screen position.
-/// The value for the smaller screen dimension is in the range [-1.0, 1.0],
-/// the larger dimension is kept proportional to keep the aspect ratio.
-pub struct ScreenNormalizedPosition<I>
+/// Converts a position from screen coordinates to a normalized coordinate system, such that the smaller screen dimension
+/// maps to the range [-1.0, 1.0], preserving the aspect ratio for the larger dimension.
+///
+/// Input: Expects a position in screen space, where (0, 0) is the top-left corner and the Y axis increases downward.
+/// Output: Produces a normalized position where (0, 0) is at the center of the screen, the Y axis increases upward.
+pub struct ViewportNormalizedPosition<I>
 where
     I: DualAxisLike,
 {
+    name: Option<String>,
     input: I,
     screen_size: Vec2,
 }
 
-impl<I> ScreenNormalizedPosition<I>
+impl<I> ViewportNormalizedPosition<I>
 where
     I: DualAxisLike,
 {
     pub fn new(input: I) -> Self {
-        Self { input, screen_size: Vec2::ZERO }
+        Self {
+            name: None,
+            input,
+            screen_size: Vec2::ZERO,
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
-impl<I> UserInput for ScreenNormalizedPosition<I>
+impl<I> UserInput for ViewportNormalizedPosition<I>
 where
     I: DualAxisLike,
 {
+    fn type_name(&self) -> &'static str {
+        "ViewportNormalizedPosition"
+    }
+
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self) && self.input.visit_recursive(depth + 1, visitor)
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         self.input.integrate(input);
 
@@ -37,7 +62,7 @@ where
     }
 }
 
-impl<I> DualAxisLike for ScreenNormalizedPosition<I>
+impl<I> DualAxisLike for ViewportNormalizedPosition<I>
 where
     I: DualAxisLike,
 {
@@ -65,11 +90,16 @@ pub enum EdgeSize {
     Percent(f32),
 }
 
-/// Interpret the position as an edge scroll dual axis value in the [-1,1]^2 range.
+/// Converts a screen position into an edge scroll vector within the range [-1, 1] for both axes.
+/// The value approaches -1 or 1 as the position nears the respective screen edge, and is 0 when away from the edge.
+///
+/// The input is assumed to be in screen coordinates, with the origin at the top-left corner, with positive Y pointing down.
+/// The output is also in screen coordinates, with positive Y pointing down.
 pub struct ScreenEdgeScroll<I>
 where
     I: DualAxisLike,
 {
+    name: Option<String>,
     input: I,
     edge: EdgeSize,
     screen_size: Vec2,
@@ -81,10 +111,16 @@ where
 {
     pub fn new(input: I, edge: EdgeSize) -> Self {
         Self {
+            name: None,
             input,
             edge,
             screen_size: Vec2::ZERO,
         }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
@@ -92,6 +128,18 @@ impl<I> UserInput for ScreenEdgeScroll<I>
 where
     I: DualAxisLike,
 {
+    fn type_name(&self) -> &'static str {
+        "ScreenEdgeScroll"
+    }
+
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self) && self.input.visit_recursive(depth + 1, visitor)
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         self.input.integrate(input);
 
@@ -117,27 +165,27 @@ where
                 EdgeSize::Percent(percent) => (w * percent, h * percent),
             };
 
-            const EPS: f32 = 1e-4;
+            const EPS: f32 = 1e-8;
             let mut value = Vec2::ZERO;
 
             if ew > EPS {
                 if pos.x <= ew {
                     // Left edge
-                    value.x += (1.0 - pos.x / ew).clamp(0.0, 1.0)
+                    value.x -= (1.0 - pos.x / ew).clamp(0.0, 1.0)
                 }
                 if pos.x >= w - ew {
                     // Right edge
-                    value.x -= (1.0 - (w - pos.x) / ew).clamp(0.0, 1.0);
+                    value.x += (1.0 - (w - pos.x) / ew).clamp(0.0, 1.0);
                 }
             }
             if eh > EPS {
                 if pos.y <= eh {
                     // Top edge
-                    value.y += (1.0 - pos.y / eh).clamp(0.0, 1.0);
+                    value.y -= (1.0 - pos.y / eh).clamp(0.0, 1.0);
                 }
                 if pos.y >= self.screen_size.y - eh {
                     // Bottom edge
-                    value.y -= (1.0 - (h - pos.y) / eh).clamp(0.0, 1.0);
+                    value.y += (1.0 - (h - pos.y) / eh).clamp(0.0, 1.0);
                 }
             }
 
@@ -148,9 +196,9 @@ where
     }
 }
 
-/// Helper to add circle bounds processing to an [`DualAxisLike`] input.
+/// Helper to add screen position processing to an [`DualAxisLike`] input.
 pub trait ScreenPositionProcessor: DualAxisLike {
-    fn normalize_to_screen(self) -> ScreenNormalizedPosition<Self>
+    fn normalize_to_screen(self) -> ViewportNormalizedPosition<Self>
     where
         Self: Sized;
 
@@ -160,11 +208,11 @@ pub trait ScreenPositionProcessor: DualAxisLike {
 }
 
 impl<T: DualAxisLike> ScreenPositionProcessor for T {
-    fn normalize_to_screen(self) -> ScreenNormalizedPosition<Self>
+    fn normalize_to_screen(self) -> ViewportNormalizedPosition<Self>
     where
         Self: Sized,
     {
-        ScreenNormalizedPosition::new(self)
+        ViewportNormalizedPosition::new(self)
     }
 
     fn edge_scroll(self, edge: EdgeSize) -> ScreenEdgeScroll<Self>

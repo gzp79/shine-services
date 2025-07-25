@@ -133,7 +133,7 @@ impl From<AuthError> for Problem {
             AuthError::SessionError(error) => {
                 Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
-            AuthError::IdentityError(IdentityError::UserDeleted { .. }) => {
+            AuthError::IdentityError(IdentityError::UserDeleted) => {
                 Problem::unauthorized_ty(SESSION_EXPIRED).with_sensitive("userDeleted")
             }
             AuthError::IdentityError(error) => {

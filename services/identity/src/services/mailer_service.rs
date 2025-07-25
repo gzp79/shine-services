@@ -49,7 +49,7 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
         let lang = lang.unwrap_or(Language::En);
         let html = self
             .tera
-            .render(&format!("mail/{}/{}", lang, template), &context)
+            .render(&format!("mail/{lang}/{template}"), &context)
             .expect("Failed to generate email html");
 
         self.mailer
@@ -77,7 +77,7 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
             .link_url
             .join("email-verify")
             .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?;
-        redirect_url.set_query(Some(&format!("token={}&hint=email-confirm", token)));
+        redirect_url.set_query(Some(&format!("token={token}&hint=email-confirm")));
 
         self.send_email(to, redirect_url, user_name, lang, "confirm.html").await
     }
@@ -94,7 +94,7 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
             .link_url
             .join("email-verify")
             .map_err(|err| EmailSenderError::SendFailed(err.to_string()))?;
-        redirect_url.set_query(Some(&format!("token={}&hint=email-change", token)));
+        redirect_url.set_query(Some(&format!("token={token}&hint=email-change")));
 
         self.send_email(to, redirect_url, user_name, lang, "change.html").await
     }

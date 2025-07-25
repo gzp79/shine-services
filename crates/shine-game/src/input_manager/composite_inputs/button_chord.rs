@@ -1,5 +1,6 @@
 use crate::input_manager::{ButtonLike, InputSources, PressedButton, UserInput};
 use bevy::time::Time;
+use std::borrow::Cow;
 
 /// A button chord that processes multiple buttons as a single input.
 pub struct ButtonChord<B1, B2, B3, B4>
@@ -9,6 +10,7 @@ where
     B3: ButtonLike,
     B4: ButtonLike,
 {
+    name: Option<String>,
     chord: (B1, B2, B3, B4),
 }
 
@@ -20,7 +22,15 @@ where
     B4: ButtonLike,
 {
     pub fn new4(b1: B1, b2: B2, b3: B3, b4: B4) -> Self {
-        Self { chord: (b1, b2, b3, b4) }
+        Self {
+            name: None,
+            chord: (b1, b2, b3, b4),
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 }
 
@@ -52,6 +62,22 @@ where
     B3: ButtonLike,
     B4: ButtonLike,
 {
+    fn type_name(&self) -> &'static str {
+        "ButtonChord"
+    }
+
+    fn name(&self) -> Cow<'_, str> {
+        self.name.as_deref().unwrap_or("").into()
+    }
+
+    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
+        visitor(depth, self)
+            && self.chord.0.visit_recursive(depth + 1, visitor)
+            && self.chord.1.visit_recursive(depth + 1, visitor)
+            && self.chord.2.visit_recursive(depth + 1, visitor)
+            && self.chord.3.visit_recursive(depth + 1, visitor)
+    }
+
     fn integrate(&mut self, input: &InputSources) {
         self.chord.0.integrate(input);
         self.chord.1.integrate(input);

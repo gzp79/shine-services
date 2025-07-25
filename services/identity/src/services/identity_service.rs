@@ -55,7 +55,7 @@ where
         if let Some(external_user_info) = external_user_info {
             if let Err(err) = db.link_user(user_id, external_user_info).await {
                 if let Err(err) = db.cascaded_delete(user_id).await {
-                    log::error!("Failed to delete user ({}) after failed link: {}", user_id, err);
+                    log::error!("Failed to delete user ({user_id}) after failed link: {err}");
                 }
                 return Err(err);
             }

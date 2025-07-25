@@ -26,7 +26,7 @@ impl From<PermissionError> for Problem {
     fn from(value: PermissionError) -> Self {
         match value {
             PermissionError::MissingPermission(perm) => {
-                Problem::forbidden().with_detail(format!("Missing [{:?}] permission", perm))
+                Problem::forbidden().with_detail(format!("Missing [{perm:?}] permission"))
             }
         }
     }

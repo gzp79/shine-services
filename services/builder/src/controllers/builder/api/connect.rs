@@ -113,16 +113,12 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Sessio
                 let data = match serde_json::to_string(&msg) {
                     Ok(data) => data,
                     Err(err) => {
-                        log::error!(
-                            "[{current_user_id}] Failed to serialize message {:#?} with error {:#?}",
-                            msg,
-                            err
-                        );
+                        log::error!("[{current_user_id}] Failed to serialize message {msg:#?} with error {err:#?}");
                         continue;
                     }
                 };
                 if let Err(err) = ws_sender.send(WsMessage::Text(data.into())).await {
-                    log::error!("[{current_user_id}] Failed to send message to the user: {:#?}", err);
+                    log::error!("[{current_user_id}] Failed to send message to the user: {err:#?}");
                 }
             }
         }

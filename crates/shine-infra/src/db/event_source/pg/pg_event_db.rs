@@ -123,7 +123,7 @@ where
 
         let client = self.client.get().await.map_err(DBError::PGPoolError)?;
         let channel = format!("es_notification_{}", E::NAME);
-        log::info!("Listening to event notifications for {}", channel);
+        log::info!("Listening to event notifications for {channel}");
         client
             .listen(&channel, move |p| {
                 // log::trace!(
@@ -132,7 +132,7 @@ where
                 //     p
                 // );
                 match serde_json::from_str::<EventMsg>(p)
-                    .map_err(|err| format!("Error deserializing event notification: {:#?}", err))
+                    .map_err(|err| format!("Error deserializing event notification: {err:#?}"))
                     .and_then(|msg| msg.try_into_notification())
                 {
                     Ok(m) => {

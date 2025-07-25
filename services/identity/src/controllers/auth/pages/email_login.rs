@@ -50,7 +50,7 @@ pub async fn email_login(
         Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
 
-    log::debug!("Query: {:#?}", query);
+    log::debug!("Query: {query:#?}");
 
     if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
         return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), query.redirect_url.as_ref());

@@ -67,7 +67,7 @@ impl PgRolesStatements {
 impl Roles for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
     async fn add_role(&mut self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
-        log::debug!("Adding role {} to user {}", role, user_id);
+        log::debug!("Adding role {role} to user {user_id}");
         match self.stmts_roles.add.execute(&self.client, &user_id, &role).await {
             Ok(_) => (),
             Err(err) if err.is_constraint("roles", "fkey_user_id") => {

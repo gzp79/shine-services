@@ -72,7 +72,7 @@ pub async fn search_identity(
         })
         .await
         .map_err(|err| err.into_response(&problem_config))?;
-    log::info!("identities: {:?}", identities);
+    log::info!("identities: {identities:?}");
     todo!()
     /* let identities = identities
         .into_iter()

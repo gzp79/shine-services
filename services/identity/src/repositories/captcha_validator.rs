@@ -119,10 +119,10 @@ impl CaptchaValidator {
             .form(&request)
             .send()
             .await
-            .map_err(|err| CaptchaError::Request(format!("{:?}", err)))?
+            .map_err(|err| CaptchaError::Request(format!("{err:?}")))?
             .json::<TurnstileValidationResponse>()
             .await
-            .map_err(|err| CaptchaError::Request(format!("{:?}", err)))?;
+            .map_err(|err| CaptchaError::Request(format!("{err:?}")))?;
         Ok(response)
     }
 
@@ -157,7 +157,7 @@ mod test {
             .validate_request(token, None)
             .await
             .expect("Validation request failed");
-        log::info!("response: {:?}", response);
+        log::info!("response: {response:?}");
         assert!(response.success);
     }
 
@@ -169,7 +169,7 @@ mod test {
             .validate_request(token, None)
             .await
             .expect("Validation request failed");
-        log::info!("response: {:?}", response);
+        log::info!("response: {response:?}");
         assert!(!response.success);
         assert_eq!(response.error_codes, vec!["invalid-input-response"]);
     }
@@ -182,7 +182,7 @@ mod test {
             .validate_request(token, None)
             .await
             .expect("Validation request failed");
-        log::info!("response: {:?}", response);
+        log::info!("response: {response:?}");
         assert!(!response.success);
         assert_eq!(response.error_codes, vec!["timeout-or-duplicate"]);
     }
@@ -197,7 +197,7 @@ mod test {
                 .validate_request(token, None)
                 .await
                 .expect("Validation request failed");
-            log::info!("response: {:?}", response);
+            log::info!("response: {response:?}");
             assert!(!response.success);
             assert_eq!(response.error_codes, vec!["invalid-input-response"]);
         } else {
@@ -215,7 +215,7 @@ mod test {
                 .validate_request(token, None)
                 .await
                 .expect("Validation request failed");
-            log::info!("response: {:?}", response);
+            log::info!("response: {response:?}");
             assert!(!response.success);
             assert_eq!(response.error_codes, vec!["timeout-or-duplicate"]);
         } else {

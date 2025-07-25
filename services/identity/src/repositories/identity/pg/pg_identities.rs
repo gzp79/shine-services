@@ -148,15 +148,15 @@ impl Identities for PgIdentityDbContext<'_> {
         {
             Ok(created) => created,
             Err(err) if err.is_constraint("identities", "identities_pkey") => {
-                log::info!("Conflicting user id: {}, rolling back user creation", user_id);
+                log::info!("Conflicting user id: {user_id}, rolling back user creation");
                 return Err(IdentityError::UserIdConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_name") => {
-                log::info!("Conflicting name: {}, rolling back user creation", user_name);
+                log::info!("Conflicting name: {user_name}, rolling back user creation");
                 return Err(IdentityError::NameConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_email") => {
-                log::info!("Conflicting email: {}, rolling back user creation", user_id);
+                log::info!("Conflicting email: {user_id}, rolling back user creation");
                 return Err(IdentityError::EmailConflict);
             }
             Err(err) => {
@@ -226,11 +226,11 @@ impl Identities for PgIdentityDbContext<'_> {
             Ok(Some(row)) => row,
             Ok(None) => return Ok(None),
             Err(err) if err.is_constraint("identities", "idx_name") => {
-                log::info!("Conflicting name: {:?}, rolling back user update", name);
+                log::info!("Conflicting name: {name:?}, rolling back user update");
                 return Err(IdentityError::NameConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_email") => {
-                log::info!("Conflicting email: {:?}, rolling back user update", email);
+                log::info!("Conflicting email: {email:?}, rolling back user update");
                 return Err(IdentityError::EmailConflict);
             }
             Err(err) => return Err(DBError::from(err).into()),

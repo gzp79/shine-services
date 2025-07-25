@@ -47,7 +47,7 @@ pub async fn logout(
     if let Some((user_id, session_key)) = auth_session.user_session().map(|u| (u.user_id, u.key)) {
         match query.terminate_all.unwrap_or(false) {
             true => {
-                log::debug!("Removing all the (non-api-key) tokens for user {}", user_id);
+                log::debug!("Removing all the (non-api-key) tokens for user {user_id}");
                 //remove all non-api-key tokens
                 if let Err(err) = state
                     .identity_service()
@@ -62,15 +62,15 @@ pub async fn logout(
                     );
                 }
 
-                log::debug!("Removing all the session for user {}", user_id);
+                log::debug!("Removing all the session for user {user_id}");
                 if let Err(err) = state.session_service().remove_all(user_id).await {
-                    log::warn!("Failed to clear all sessions for user {}: {:?}", user_id, err);
+                    log::warn!("Failed to clear all sessions for user {user_id}: {err:?}");
                 }
             }
             false => {
-                log::debug!("Removing remember me token for user, if cookie is present {}", user_id);
+                log::debug!("Removing remember me token for user, if cookie is present {user_id}");
                 if let Some(token) = auth_session.access().map(|t| t.key.clone()) {
-                    log::debug!("Removing token {} for user {}", token, user_id);
+                    log::debug!("Removing token {token} for user {user_id}");
                     if let Err(err) = state.identity_service().delete_token(TokenKind::Access, &token).await {
                         return PageUtils::new(&state).error(
                             auth_session,
@@ -81,9 +81,9 @@ pub async fn logout(
                     }
                 }
 
-                log::debug!("Removing session for user {}", user_id);
+                log::debug!("Removing session for user {user_id}");
                 if let Err(err) = state.session_service().remove(user_id, &session_key).await {
-                    log::warn!("Failed to clear session for user {}: {:?}", user_id, err);
+                    log::warn!("Failed to clear session for user {user_id}: {err:?}");
                 }
             }
         };

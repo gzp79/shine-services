@@ -1,7 +1,7 @@
 use crate::input_manager::{
-    integrate_gamepad_inputs, integrate_keyboard_inputs, integrate_mouse_inputs, integrate_touch_inputs,
-    integrate_two_finger_touch_inputs, process_inputs, update_action_state, update_two_finger_touch_gesture,
-    ActionLike, GamepadManager, TwoFingerTouchGesture,
+    detect_attached_unistroke_gesture, detect_unistroke_gesture, integrate_gamepad_inputs, integrate_gesture_inputs,
+    integrate_keyboard_inputs, integrate_mouse_inputs, integrate_touch_inputs, integrate_two_finger_touch_inputs,
+    process_inputs, update_action_state, update_two_finger_touch_gesture, ActionLike, PinchGestureState,
 };
 use bevy::{
     app::{App, Plugin, PreUpdate},
@@ -15,15 +15,15 @@ pub enum InputManagerSystem {
     SourceInput,
     Integrate,
     Process,
-    UpdateActionState,
+    UpdateActions,
+    ProcessActions,
 }
 
 struct InputManagerCommonPlugin;
 
 impl Plugin for InputManagerCommonPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(GamepadManager);
-        app.insert_resource(TwoFingerTouchGesture::default());
+        app.insert_resource(PinchGestureState::default());
 
         app.configure_sets(
             PreUpdate,
@@ -31,7 +31,8 @@ impl Plugin for InputManagerCommonPlugin {
                 InputManagerSystem::SourceInput,
                 InputManagerSystem::Integrate,
                 InputManagerSystem::Process,
-                InputManagerSystem::UpdateActionState,
+                InputManagerSystem::UpdateActions,
+                InputManagerSystem::ProcessActions,
             )
                 .chain()
                 .after(InputSystem),
@@ -68,6 +69,7 @@ impl<A: ActionLike> Plugin for InputManagerPlugin<A> {
                 integrate_touch_inputs::<A>,
                 integrate_two_finger_touch_inputs::<A>,
                 integrate_gamepad_inputs::<A>,
+                integrate_gesture_inputs::<A>,
             )
                 .in_set(InputManagerSystem::Integrate),
         );
@@ -76,7 +78,13 @@ impl<A: ActionLike> Plugin for InputManagerPlugin<A> {
 
         app.add_systems(
             PreUpdate,
-            update_action_state::<A>.in_set(InputManagerSystem::UpdateActionState),
+            update_action_state::<A>.in_set(InputManagerSystem::UpdateActions),
+        );
+
+        app.add_systems(
+            PreUpdate,
+            (detect_unistroke_gesture::<A>, detect_attached_unistroke_gesture::<A>)
+                .in_set(InputManagerSystem::ProcessActions),
         );
     }
 }
