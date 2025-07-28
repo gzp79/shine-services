@@ -96,7 +96,7 @@ where
             )?;
 
             if samples.dwt_scores.len() > max_row {
-                max_row = samples.samples.len();
+                max_row = samples.dwt_scores.len();
             }
             if samples.corrected_scores.len() > max_row {
                 max_row = samples.corrected_scores.len();

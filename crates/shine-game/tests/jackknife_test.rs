@@ -75,6 +75,7 @@ fn load_kinect_templates(config: &JackknifeConfig, paths: &[(String, GestureId)]
 }
 
 #[test]
+#[ignore = "This is for beginning the training, not for testing"]
 fn test_jackknife_train() {
     let config = JackknifeConfig::inner_product();
 
@@ -113,13 +114,30 @@ fn test_jackknife_train() {
         template_set
     };
 
-    /*let mut template_set = {
+    /* let mut template_set = {
         let trains = {
             let base = "tests/jackknife_data/kinect/train";
             &[
                 (format!("{base}/cartwheel_left/ex_1.txt"), GestureId(0)),
                 (format!("{base}/cartwheel_left/ex_2.txt"), GestureId(0)),
-                (format!("{base}/cartwheel_right/ex_1.txt"), GestureId(2)),
+                (format!("{base}/cartwheel_right/ex_1.txt"), GestureId(1)),
+                (format!("{base}/cartwheel_right/ex_2.txt"), GestureId(1)),
+                (format!("{base}/duck/ex_1.txt"), GestureId(2)),
+                (format!("{base}/duck/ex_2.txt"), GestureId(2)),
+                (format!("{base}/hook_left/ex_1.txt"), GestureId(3)),
+                (format!("{base}/hook_left/ex_2.txt"), GestureId(3)),
+                (format!("{base}/hook_right/ex_1.txt"), GestureId(4)),
+                (format!("{base}/hook_right/ex_2.txt"), GestureId(4)),
+                (format!("{base}/jab_left/ex_1.txt"), GestureId(5)),
+                (format!("{base}/jab_left/ex_2.txt"), GestureId(5)),
+                (format!("{base}/jab_right/ex_1.txt"), GestureId(6)),
+                (format!("{base}/jab_right/ex_2.txt"), GestureId(6)),
+                (format!("{base}/kick_left/ex_1.txt"), GestureId(7)),
+                (format!("{base}/kick_left/ex_2.txt"), GestureId(7)),
+                (format!("{base}/kick_right/ex_1.txt"), GestureId(8)),
+                (format!("{base}/kick_right/ex_2.txt"), GestureId(8)),
+                (format!("{base}/push/ex_1.txt"), GestureId(9)),
+                (format!("{base}/push/ex_2.txt"), GestureId(9)),
             ]
         };
         load_kinect_templates(&config, trains)
@@ -131,7 +149,7 @@ fn test_jackknife_train() {
         config.resample_count,
         0.25,
         config.resample_count / 5,
-        0.2,
+        0.4,
         Some(&mut legend),
     );
 
@@ -167,8 +185,8 @@ fn test_jackknife_train() {
                 .unwrap();
         }
 
+        // roc curve
         let roc = statistics::roc(&pos, &neg, ScoringMode::LowerIsBetter);
-        //dump roc curve
         {
             let filename = format!("../../temp/roc_{i}.csv");
             let mut file = fs::File::create(filename).unwrap();
@@ -182,24 +200,31 @@ fn test_jackknife_train() {
         // reclassify scores based on the threshold
         let mut final_neg = Vec::new();
         let mut final_pos = Vec::new();
-
-        for p in pos {
-            if p < th {
-                final_pos.push(p);
+        for p in pos.iter() {
+            if *p < th {
+                final_pos.push(*p);
             } else {
-                final_neg.push(p);
+                final_neg.push(*p);
             }
         }
-        for n in neg {
-            if n < th {
-                final_pos.push(n);
+        for n in neg.iter() {
+            if *n < th {
+                final_pos.push(*n);
             } else {
-                final_neg.push(n);
+                final_neg.push(*n);
             }
         }
 
+        log::info!(
+            "Template {i} reclassify (pos,neg): {},{} -> {},{}",
+            pos.len(),
+            neg.len(),
+            final_pos.len(),
+            final_neg.len()
+        );
+
+        // roc curve for new classification
         let true_roc = statistics::roc(&final_pos, &final_neg, ScoringMode::LowerIsBetter);
-        //dump roc curve
         {
             let filename = format!("../../temp/true_roc_{i}.csv");
             let mut file = fs::File::create(filename).unwrap();
