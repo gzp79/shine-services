@@ -6,7 +6,7 @@ use shine_game::{
         ActionState, AttachedToGestureSet, DualAxisChord, GestureInput, GestureSet, InputManagerPlugin, InputMap,
         KeyboardInput, MouseButtonInput, MousePosition, TouchPosition, UnistrokeGesture,
     },
-    math::{unistroke_templates, GestureId, JackknifeConfig, JackknifeTemplateSet},
+    math::{unistroke_templates, GestureId, JackknifeConfig, JackknifePointMath, JackknifeTemplateSet},
 };
 use std::collections::HashMap;
 
@@ -89,7 +89,7 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
         template_set.add_template(*id, points);
     }
 
-    //template_set.train(1000, 1.0, 16, 0.25, 2);
+    template_set.train(1000, 1.0, 16, 0.25, 2, 0.2, None);
 
     let root = commands
         .spawn((
@@ -179,6 +179,15 @@ fn show_gesture(
                     .iter()
                     .enumerate()
                     .map(|(i, p)| (*p, Color::srgb((i as f32) * cs, 0.0, (i as f32) * cs))),
+            );
+
+            let random = Vec2::stochastic_variance(&resampled_points, 16, 0.25, 4, 0.2);
+            let cs = 1.0 / points.len() as f32;
+            gizmos.linestrip_gradient_2d(
+                random
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| (*p, Color::srgb((i as f32) * cs, 1.0, (i as f32) * cs))),
             );
         }
 

@@ -1,6 +1,6 @@
-use crate::math::{statistics, CostMatrix, JackknifeConfig, JackknifeFeatures, JackknifeMethod, JackknifePointMath};
-use rand::Rng;
+use crate::math::{CostMatrix, JackknifeConfig, JackknifeFeatures, JackknifePointMath};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::{io, ops};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -21,6 +21,122 @@ impl From<usize> for GestureId {
 impl From<GestureId> for usize {
     fn from(gesture_id: GestureId) -> Self {
         gesture_id.id()
+    }
+}
+
+pub struct TrainingSamples<V>
+where
+    V: JackknifePointMath<V>,
+{
+    pub is_positive: bool,
+    pub samples: Vec<Vec<V>>,
+    pub dwt_scores: Vec<f32>,
+    pub corrected_scores: Vec<f32>,
+}
+
+impl<V> TrainingSamples<V>
+where
+    V: JackknifePointMath<V>,
+{
+    fn new(is_positive: bool, sample_count: usize) -> Self {
+        Self {
+            is_positive,
+            samples: Vec::with_capacity(sample_count),
+            dwt_scores: Vec::with_capacity(sample_count),
+            corrected_scores: Vec::with_capacity(sample_count),
+        }
+    }
+}
+
+pub struct TrainLegend<V>(pub Vec<Vec<TrainingSamples<V>>>)
+where
+    V: JackknifePointMath<V>;
+
+impl<V> Default for TrainLegend<V>
+where
+    V: JackknifePointMath<V>,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<V> TrainLegend<V>
+where
+    V: JackknifePointMath<V>,
+{
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn dump<F>(&self, file: &mut dyn io::Write, i: usize, header: F) -> io::Result<()>
+    where
+        F: Fn(usize, bool, bool) -> String,
+    {
+        let template = &self.0[i];
+        // write header
+        let mut max_row = 0;
+        for (j, samples) in template.iter().enumerate() {
+            write!(
+                file,
+                "{},{},",
+                header(j, samples.is_positive, false),
+                header(j, samples.is_positive, true),
+            )?;
+
+            if samples.dwt_scores.len() > max_row {
+                max_row = samples.samples.len();
+            }
+            if samples.corrected_scores.len() > max_row {
+                max_row = samples.corrected_scores.len();
+            }
+        }
+        writeln!(file)?;
+
+        // write values
+        for i in 0..max_row {
+            for samples in template.iter() {
+                let dwt_score = samples.dwt_scores.get(i).map(|v| v.to_string()).unwrap_or_default();
+                let corrected_score = samples
+                    .corrected_scores
+                    .get(i)
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+                write!(file, "{dwt_score},{corrected_score},")?;
+            }
+            writeln!(file)?;
+        }
+        Ok(())
+    }
+}
+
+impl<V> ops::Deref for TrainLegend<V>
+where
+    V: JackknifePointMath<V>,
+{
+    type Target = Vec<Vec<TrainingSamples<V>>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<V> ops::Index<usize> for TrainLegend<V>
+where
+    V: JackknifePointMath<V>,
+{
+    type Output = Vec<TrainingSamples<V>>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
     }
 }
 
@@ -88,8 +204,8 @@ where
             let range_max = (i + radius + 1).min(trajectory.len());
 
             for point in trajectory.iter().take(range_max).skip(range_min) {
-                minimum = minimum.min_component(point);
-                maximum = maximum.max_component(point);
+                minimum.min_component_assign(point);
+                maximum.max_component_assign(point);
             }
 
             bounds.push((minimum, maximum));
@@ -141,116 +257,66 @@ where
     ///   - `gpsr_count`: The number of the resampled GPSR points.
     ///   - `variance`: The variance on the intervals to use for stochastic resampling.
     ///   - `gpsr_remove`: The number of GPSR points removal for corner cuts.
-    pub fn train(&mut self, batch_size: usize, beta: f32, gpsr_count: usize, variance: f32, gpsr_remove: usize) {
+    pub fn train(
+        &mut self,
+        batch_size: usize,
+        beta: f32,
+        gpsr_count: usize,
+        variance: f32,
+        gpsr_remove: usize,
+        jitter: f32,
+        mut legend: Option<&mut TrainLegend<V>>,
+    ) {
         let mut cost_matrix = CostMatrix::new();
 
-        // I. Create negative samples
-        let mut negative_per_templates = Vec::new();
-        negative_per_templates.resize_with(self.templates.len(), || Vec::with_capacity(batch_size));
-
-        for _ in 0..batch_size {
-            // create a negative sample by splicing two random templates
-            let sample_features = {
-                let mut rng = rand::rng();
-                let idx1 = rng.random_range(0..self.templates.len());
-                let idx2 = rng.random_range(0..self.templates.len());
-                if idx1 == idx2 {
-                    continue;
-                }
-
-                let cnt = self.config.resample_count / 2;
-                let mut synthetic = Vec::with_capacity(self.config.resample_count);
-                synthetic.extend_from_slice(&self.templates[idx1].resampled_points()[..cnt]);
-                synthetic.extend_from_slice(&self.templates[idx2].resampled_points()[cnt..]);
-
-                JackknifeFeatures::from_points(&self.config, &synthetic)
-            };
-
-            // find negative score for each template
-            for (i, template) in self.templates.iter().enumerate() {
-                let dwt_score = match self.config.method {
-                    JackknifeMethod::InnerProduct => cost_matrix.dtw(
-                        &sample_features.trajectory,
-                        &template.features().trajectory,
-                        self.config.dtw_radius,
-                        |a: &V, b: &V| 1.0 - a.dot(b),
-                    ),
-                    JackknifeMethod::EuclideanDistance => cost_matrix.dtw(
-                        &sample_features.trajectory,
-                        &template.features().trajectory,
-                        self.config.dtw_radius,
-                        |a: &V, b: &V| a.distance_square(b),
-                    ),
-                };
-
-                if dwt_score.is_finite() {
-                    negative_per_templates[i].push(dwt_score);
-                } else {
-                    log::warn!("Non-finite DWT score for negative sample: {dwt_score}");
-                }
-            }
+        if let Some(TrainLegend(legend)) = legend.as_mut() {
+            legend.clear();
         }
-
-        // II. Create positive samples
-        let mut positive_per_templates = Vec::new();
-        positive_per_templates.resize_with(self.templates.len(), || Vec::with_capacity(batch_size));
 
         for (i, template) in self.templates.iter().enumerate() {
-            for _ in 0..batch_size {
-                let synthetic = V::stochastic_variance(template.resampled_points(), gpsr_count, variance, gpsr_remove);
+            log::info!("Training template {i} for gesture {}", template.id().id());
+            if let Some(TrainLegend(legend)) = legend.as_mut() {
+                legend.push(Vec::with_capacity(self.templates.len()));
+            }
 
-                let sample_features = JackknifeFeatures::from_points(&self.config, &synthetic);
-                let dwt_score = match self.config.method {
-                    JackknifeMethod::InnerProduct => cost_matrix.dtw(
-                        &sample_features.trajectory,
-                        &template.features().trajectory,
-                        self.config.dtw_radius,
-                        |a: &V, b: &V| 1.0 - a.dot(b),
-                    ),
-                    JackknifeMethod::EuclideanDistance => cost_matrix.dtw(
-                        &sample_features.trajectory,
-                        &template.features().trajectory,
-                        self.config.dtw_radius,
-                        |a: &V, b: &V| a.distance_square(b),
-                    ),
-                };
+            for (j, sample_template) in self.templates.iter().enumerate() {
+                log::info!(
+                    "  Generating scores for template {j} for gesture {}",
+                    sample_template.id().id()
+                );
+                if let Some(TrainLegend(legend)) = legend.as_mut() {
+                    legend[i].push(TrainingSamples::new(template.id() == sample_template.id(), batch_size));
+                }
 
-                if dwt_score.is_finite() {
-                    positive_per_templates[i].push(dwt_score);
-                } else {
-                    log::warn!("Non-finite DWT score for positive sample: {dwt_score}");
+                for _ in 0..batch_size {
+                    let synthetic_sample = V::stochastic_variance(
+                        sample_template.resampled_points(),
+                        gpsr_count,
+                        variance,
+                        gpsr_remove,
+                        jitter,
+                    );
+                    let samples_features = JackknifeFeatures::from_points(&self.config, &synthetic_sample);
+
+                    let cf = samples_features.correction_factor(
+                        &template.features(),
+                        self.config.abs_correction,
+                        self.config.extent_correction,
+                    );
+                    let dwt_score = samples_features.dwt_score(
+                        &mut cost_matrix,
+                        &template.features(),
+                        self.config.dtw_radius,
+                        self.config.method,
+                    );
+
+                    if let Some(TrainLegend(legend)) = legend.as_mut() {
+                        legend[i][j].samples.push(synthetic_sample);
+                        legend[i][j].dwt_scores.push(dwt_score);
+                        legend[i][j].corrected_scores.push(cf * dwt_score);
+                    }
                 }
             }
-        }
-
-        // III. Compute rejection threshold for each template with the given target F-score.
-        for (i, template) in self.templates.iter_mut().enumerate() {
-            let id = template.id.id();
-            let negative_scores = &mut negative_per_templates[i];
-            let positive_scores = &mut positive_per_templates[i];
-
-            /*{
-                negative_scores.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                positive_scores.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                statistics::dump_classification_scores_to_csv(
-                    &format!("../temp/jackknife_template_{}_scores.csv", id),
-                    positive_scores,
-                    negative_scores,
-                )
-                .unwrap();
-            }*/
-
-            // let's see how good the classifier is
-            let auc = statistics::roc_auc(positive_scores, negative_scores);
-            log::debug!("Template ID: {id}, ROC AUC: {auc:.3}");
-
-            // Find the optimal threshold that maximizes F-score
-            template.rejection_threshold =
-                statistics::find_optimal_threshold(positive_scores, negative_scores, beta).unwrap_or(f32::INFINITY);
-            log::debug!(
-                "Template ID: {id}, Rejection Threshold: {}",
-                template.rejection_threshold
-            );
         }
     }
 }

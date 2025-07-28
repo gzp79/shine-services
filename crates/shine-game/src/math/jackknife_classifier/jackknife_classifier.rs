@@ -93,17 +93,10 @@ where
         self.lower_bounds.reserve(templates.len());
 
         for (i, template) in templates.iter().enumerate() {
-            let mut cf = 1.0;
-
             let template_features = template.features();
 
-            if config.abs_correction {
-                cf *= 1.0 / sample_features.cf_abs.dot(&template_features.cf_abs).max(0.01);
-            }
-
-            if config.extent_correction {
-                cf *= 1.0 / sample_features.cf_extent.dot(&template_features.cf_extent).max(0.01);
-            }
+            let cf =
+                sample_features.correction_factor(template_features, config.abs_correction, config.extent_correction);
             self.correction_factors.push(cf);
 
             let lb = if config.use_lower_bound {
@@ -135,20 +128,12 @@ where
             }
 
             let mut score = self.correction_factors[id];
-            let dwt_score = match config.method {
-                JackknifeMethod::InnerProduct => self.cost_matrix.dtw(
-                    &sample_features.trajectory,
-                    &template.features().trajectory,
-                    config.dtw_radius,
-                    |a: &V, b: &V| 1.0 - a.dot(b),
-                ),
-                JackknifeMethod::EuclideanDistance => self.cost_matrix.dtw(
-                    &sample_features.trajectory,
-                    &template.features().trajectory,
-                    config.dtw_radius,
-                    |a: &V, b: &V| a.distance_square(b),
-                ),
-            };
+            let dwt_score = sample_features.dwt_score(
+                &mut self.cost_matrix,
+                template.features(),
+                config.dtw_radius,
+                config.method,
+            );
             if !dwt_score.is_finite() {
                 log::error!("Internal error, non-finite DWT score for template {id}: {dwt_score}");
                 log::error!("config.method: {:?}", config.method);
