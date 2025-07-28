@@ -152,9 +152,7 @@ where
 {
     id: GestureId,
     features: JackknifeFeatures<V>,
-    bounds: Vec<(V, V)>,
     rejection_threshold: f32,
-    moments: (f32, f32),
 }
 
 impl<V> JackknifeTemplate<V>
@@ -163,13 +161,10 @@ where
 {
     pub fn from_points(config: &JackknifeConfig, id: GestureId, points: &[V]) -> Self {
         let features = JackknifeFeatures::from_points(config, points);
-        let bounds = Self::find_bounds(&features.trajectory, config.dtw_radius);
         Self {
             id,
             features,
-            bounds,
             rejection_threshold: f32::INFINITY,
-            moments: (f32::INFINITY, f32::NEG_INFINITY),
         }
     }
 
@@ -185,41 +180,8 @@ where
         &self.features.points
     }
 
-    pub fn bounds(&self) -> &[(V, V)] {
-        &self.bounds
-    }
-
     pub fn rejection_threshold(&self) -> f32 {
         self.rejection_threshold
-    }
-
-    pub fn moments(&self) -> (f32, f32) {
-        self.moments
-    }
-
-    /// Find the min and max value within the radius (Sakoe-Chiba band).
-    fn find_bounds(trajectory: &[V], radius: usize) -> Vec<(V, V)> {
-        let mut bounds = Vec::with_capacity(trajectory.len());
-
-        let dimension = trajectory[0].dimension();
-
-        // For each component
-        for i in 0..trajectory.len() {
-            let mut maximum = V::splat(dimension, f32::NEG_INFINITY);
-            let mut minimum = V::splat(dimension, f32::INFINITY);
-
-            let range_min = i.saturating_sub(radius);
-            let range_max = (i + radius + 1).min(trajectory.len());
-
-            for point in trajectory.iter().take(range_max).skip(range_min) {
-                minimum.min_component_assign(point);
-                maximum.max_component_assign(point);
-            }
-
-            bounds.push((minimum, maximum));
-        }
-
-        bounds
     }
 }
 
@@ -264,6 +226,7 @@ where
     ///   - `gpsr_count`: The number of the resampled GPSR points.
     ///   - `variance`: The variance on the intervals to use for stochastic resampling.
     ///   - `gpsr_remove`: The number of GPSR points removal for corner cuts.
+    ///   - `jitter`: The jitter to apply to the resampled points.
     pub fn train(
         &mut self,
         batch_size: usize,
@@ -276,14 +239,13 @@ where
         let mut cost_matrix = CostMatrix::new();
         let mut sample_moments = Vec::new();
         let mut thresholds = Vec::with_capacity(self.templates.len());
-        let mut moments = Vec::with_capacity(self.templates.len());
 
         if let Some(TrainLegend(legend)) = legend.as_mut() {
             legend.clear();
         }
 
         for (i, template) in self.templates.iter().enumerate() {
-            log::info!("Training template {i} for gesture {}", template.id().id());
+            log::debug!("Training template {i} for gesture {}", template.id().id());
 
             sample_moments.clear();
             if let Some(TrainLegend(legend)) = legend.as_mut() {
@@ -291,7 +253,7 @@ where
             }
 
             for (j, sample_template) in self.templates.iter().enumerate() {
-                log::info!(
+                log::trace!(
                     "  Generating scores for template {j} for gesture {}",
                     sample_template.id().id()
                 );
@@ -334,57 +296,40 @@ where
                 sample_moments.push(moments);
             }
 
-            log::info!(
+            log::trace!(
                 "  Template {i} mean: {}, std_dev: {}",
                 sample_moments[i].mean(),
                 sample_moments[i].std_dev()
             );
 
-            moments.push((sample_moments[i].mean(), sample_moments[i].std_dev()));
+            // Find the smallest threshold for the template from all the negative samples
+            let mut threshold = f32::INFINITY;
+            for j in 0..sample_moments.len() {
+                //skip positive samples
+                if template.id() == self.templates[j].id() {
+                    continue;
+                }
 
-            // find the closest (negative) sample
-            let min_sample_id = sample_moments
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| self.templates[*i].id() != template.id()) // only negative samples
-                .map(|(i, m)| (i, m.mean())) // we are interested in the mean
-                .min_by(|(_, m1), (_, m2)| m1.partial_cmp(m2).unwrap()) // find the minimum
-                .map(|(i, _)| i);
-
-            let threshold = if let Some(j) = min_sample_id {
-                log::info!(
-                    "  Closest template {j} mean: {}, std_dev: {}",
-                    sample_moments[j].mean(),
-                    sample_moments[j].std_dev()
-                );
-
-                statistics::bayesian_threshold(
+                let th = statistics::bayesian_threshold(
                     sample_moments[i].mean(),
                     sample_moments[i].std_dev(),
-                    1.0,
                     sample_moments[j].mean(),
                     sample_moments[j].std_dev(),
-                    1.0,
-                )
-            } else {
-                log::warn!("  No samples generated for template {i}, skipping rejection threshold");
-                f32::INFINITY
-            };
+                );
 
-            log::info!("  Template {i} threshold: {threshold}",);
+                if threshold > th {
+                    threshold = th;
+                }
+            }
+
+            log::trace!("  Template {i} threshold: {threshold}");
             thresholds.push(threshold);
         }
 
-        // Apply th training data to the templates
+        // Apply the training data to the templates
         for (i, template) in self.templates.iter_mut().enumerate() {
-            log::info!(
-                "  Template {} rejection threshold: {}, moments: {:?}",
-                template.id().id(),
-                thresholds[i],
-                moments[i]
-            );
+            log::debug!("  Template {i} rejection threshold: {}", thresholds[i]);
             template.rejection_threshold = thresholds[i];
-            template.moments = moments[i];
         }
     }
 }

@@ -1,16 +1,16 @@
 /// Calculate the Bayesian threshold between two distributions.
-pub fn bayesian_threshold(mean1: f32, std1: f32, prior1: f32, mean2: f32, std2: f32, prior2: f32) -> f32 {
+pub fn bayesian_threshold(mean1: f32, std1: f32, mean2: f32, std2: f32) -> f32 {
     let var1 = std1 * std1;
     let var2 = std2 * std2;
 
     if (var1 - var2).abs() < f32::EPSILON {
         // Equal variances
-        (mean1 + mean2) / 2.0 + (var1 / (mean2 - mean1)) * (prior2 / prior1).ln()
+        (mean1 + mean2) / 2.0 + (var1 / (mean2 - mean1)).ln()
     } else {
         // Unequal variances - solve quadratic equation
         let a = var2 - var1;
         let b = 2.0 * (mean1 * var2 - mean2 * var1);
-        let c = var1 * mean2.powi(2) - var2 * mean1.powi(2) + 2.0 * var1 * var2 * (prior2 / prior1).ln();
+        let c = var1 * mean2.powi(2) - var2 * mean1.powi(2) + 2.0 * var1 * var2.ln();
 
         let discriminant = b * b - 4.0 * a * c;
         if discriminant >= 0.0 {
