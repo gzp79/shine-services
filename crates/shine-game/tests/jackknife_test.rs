@@ -1,4 +1,5 @@
-use shine_game::math::statistics::ScoringMode;
+use core::f32;
+use shine_game::math::statistics::{RunningMoments, ScoringMode};
 use shine_game::math::{statistics, TrainLegend};
 use shine_game::math::{unistroke_templates, GestureId, JackknifeClassifier, JackknifeConfig, JackknifeTemplateSet};
 use shine_test::test;
@@ -86,11 +87,29 @@ fn test_jackknife_train() {
         template_set
     };*/
 
-    let mut template_set = {
+    /*let mut template_set = {
         let mut template_set = JackknifeTemplateSet::new(config.clone());
         template_set.add_template(GestureId(0), unistroke_templates::CIRCLE);
         template_set.add_template(GestureId(1), unistroke_templates::TRIANGLE);
         template_set.add_template(GestureId(2), unistroke_templates::RECTANGLE);
+        template_set
+    };*/
+
+    let mut template_set = {
+        let mut template_set = JackknifeTemplateSet::new(config.clone());
+        template_set.add_template(GestureId(0), unistroke_templates::LINE_0);
+        template_set.add_template(GestureId(1), unistroke_templates::LINE_45);
+        template_set.add_template(GestureId(2), unistroke_templates::LINE_90);
+        template_set.add_template(GestureId(3), unistroke_templates::LINE_135);
+        template_set.add_template(GestureId(4), unistroke_templates::LINE_180);
+        template_set.add_template(GestureId(5), unistroke_templates::LINE_225);
+        template_set.add_template(GestureId(6), unistroke_templates::LINE_270);
+        template_set.add_template(GestureId(7), unistroke_templates::LINE_315);
+        template_set.add_template(GestureId(8), unistroke_templates::V);
+        template_set.add_template(GestureId(9), unistroke_templates::TRIANGLE);
+        template_set.add_template(GestureId(10), unistroke_templates::RECTANGLE);
+        template_set.add_template(GestureId(11), unistroke_templates::CIRCLE);
+        template_set.add_template(GestureId(12), unistroke_templates::ZIG_ZAG);
         template_set
     };
 
@@ -109,7 +128,6 @@ fn test_jackknife_train() {
     let mut legend = TrainLegend::default();
     template_set.train(
         1000,
-        1.0,
         config.resample_count,
         0.25,
         config.resample_count / 5,
@@ -120,25 +138,18 @@ fn test_jackknife_train() {
     for i in 0..legend.len() {
         let mut neg = Vec::new();
         let mut pos = Vec::new();
+        let mut moments = Vec::new();
 
         for (j, samples) in legend[i].iter().enumerate() {
             log::info!("Template {i}, Sample {j}: Positive: {}", samples.is_positive);
+            moments.push(RunningMoments::new());
+            moments[j].add_slice(&samples.corrected_scores);
             if samples.is_positive {
                 pos.extend_from_slice(&samples.corrected_scores);
             } else {
                 neg.extend_from_slice(&samples.corrected_scores);
             }
         }
-
-        let roc = statistics::roc(&pos, &neg, ScoringMode::LowerIsBetter);
-        //dump roc curve
-        {
-            let filename = format!("../../temp/roc_{i}.csv");
-            let mut file = fs::File::create(filename).unwrap();
-            statistics::dump_roc(&roc, &mut file).unwrap();
-        }
-        let auc = statistics::auc(&roc);
-        log::info!("Template {i} AUC: {auc}");
 
         // dump scores
         {
@@ -156,7 +167,17 @@ fn test_jackknife_train() {
                 .unwrap();
         }
 
-        let th = statistics::find_optimal_threshold(&pos, &neg, 1.0);
+        let roc = statistics::roc(&pos, &neg, ScoringMode::LowerIsBetter);
+        //dump roc curve
+        {
+            let filename = format!("../../temp/roc_{i}.csv");
+            let mut file = fs::File::create(filename).unwrap();
+            statistics::dump_roc(&roc, &mut file).unwrap();
+        }
+        let auc = statistics::auc(&roc);
+        log::info!("Template {i} AUC: {auc}");
+
+        let th = template_set.templates()[i].rejection_threshold();
 
         // reclassify scores based on the threshold
         let mut final_neg = Vec::new();
@@ -177,15 +198,15 @@ fn test_jackknife_train() {
             }
         }
 
-        let roc = statistics::roc(&final_pos, &final_neg, ScoringMode::LowerIsBetter);
+        let true_roc = statistics::roc(&final_pos, &final_neg, ScoringMode::LowerIsBetter);
         //dump roc curve
         {
             let filename = format!("../../temp/true_roc_{i}.csv");
             let mut file = fs::File::create(filename).unwrap();
-            statistics::dump_roc(&roc, &mut file).unwrap();
+            statistics::dump_roc(&true_roc, &mut file).unwrap();
         }
-        let auc = statistics::auc(&roc);
-        log::info!("Template {i} Threshold: {th} TRUE AUC: {auc}");
+        let true_auc = statistics::auc(&true_roc);
+        log::info!("Template {i} Threshold: {th} AUC: {auc} -> {true_auc}");
     }
 }
 

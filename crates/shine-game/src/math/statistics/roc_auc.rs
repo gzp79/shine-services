@@ -12,7 +12,7 @@ pub enum ScoringMode {
 
 /// Find the ROC curve and return the TPR and FPR value pairs.
 /// Based on 'ROC Graphs: Notes and Practical Considerations for Researchers - Tom Fawcett (Algorithm 2)'
-pub fn roc(positive_scores: &[f32], negative_scores: &[f32], mode: ScoringMode) -> Vec<(f32, f32)> {
+pub fn roc(positive_scores: &[f32], negative_scores: &[f32], mode: ScoringMode) -> Vec<(f32, f32, f32)> {
     assert!(
         !positive_scores.is_empty() && !negative_scores.is_empty(),
         "Scores must not be empty"
@@ -39,7 +39,7 @@ pub fn roc(positive_scores: &[f32], negative_scores: &[f32], mode: ScoringMode) 
 
     for (f_i, label) in all_scores.into_iter() {
         if f_i != f_prev {
-            roc.push((true_positives / all_positives, false_positives / all_negative));
+            roc.push((f_i, true_positives / all_positives, false_positives / all_negative));
             f_prev = f_i;
         }
 
@@ -49,25 +49,25 @@ pub fn roc(positive_scores: &[f32], negative_scores: &[f32], mode: ScoringMode) 
             false_positives += 1.0;
         }
     }
-    roc.push((true_positives / all_positives, false_positives / all_negative));
+    roc.push((f_prev, true_positives / all_positives, false_positives / all_negative));
     roc
 }
 
-pub fn dump_roc(roc: &[(f32, f32)], file: &mut dyn io::Write) -> io::Result<()> {
-    writeln!(file, "fpr,tpr")?;
-    for (tpr, fpr) in roc {
-        writeln!(file, "{},{}", fpr, tpr)?;
+pub fn dump_roc(roc: &[(f32, f32, f32)], file: &mut dyn io::Write) -> io::Result<()> {
+    writeln!(file, "score,fpr,tpr")?;
+    for (score, tpr, fpr) in roc {
+        writeln!(file, "{},{},{}", score, fpr, tpr)?;
     }
     Ok(())
 }
 
 // Find the area under the ROC curve
-pub fn auc(roc: &[(f32, f32)]) -> f32 {
+pub fn auc(roc: &[(f32, f32, f32)]) -> f32 {
     // Area under the ROC curve (AUC)
     let mut auc = 0.0;
     for i in 1..roc.len() {
-        let (tpr1, fpr1) = roc[i - 1];
-        let (tpr2, fpr2) = roc[i];
+        let (_, tpr1, fpr1) = roc[i - 1];
+        let (_, tpr2, fpr2) = roc[i];
         let w = fpr2 - fpr1;
         let h = (tpr1 + tpr2) / 2.0;
         auc += w * h;

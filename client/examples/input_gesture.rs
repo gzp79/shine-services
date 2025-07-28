@@ -84,12 +84,12 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
         .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
 
     // Template-Set can be saved and loaded to speed up the setup.
-    let mut template_set = JackknifeTemplateSet::new(JackknifeConfig::euclidean_distance());
+    let mut template_set = JackknifeTemplateSet::new(JackknifeConfig::inner_product());
     for (_, points, id) in GESTURES {
         template_set.add_template(*id, points);
     }
 
-    template_set.train(1000, 1.0, 16, 0.25, 2, 0.2, None);
+    template_set.train(1000, 16, 0.25, 4, 0.4, None);
 
     let root = commands
         .spawn((
@@ -181,7 +181,7 @@ fn show_gesture(
                     .map(|(i, p)| (*p, Color::srgb((i as f32) * cs, 0.0, (i as f32) * cs))),
             );
 
-            let random = Vec2::stochastic_variance(&resampled_points, 16, 0.25, 4, 0.2);
+            let random = Vec2::stochastic_variance(&resampled_points, 16, 0.25, 4, 0.4);
             let cs = 1.0 / points.len() as f32;
             gizmos.linestrip_gradient_2d(
                 random

@@ -1,4 +1,7 @@
-use crate::math::{CostMatrix, JackknifeConfig, JackknifeFeatures, JackknifePointMath};
+use crate::math::{
+    statistics::{self, RunningMoments},
+    CostMatrix, JackknifeConfig, JackknifeFeatures, JackknifePointMath,
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{io, ops};
 
@@ -151,6 +154,7 @@ where
     features: JackknifeFeatures<V>,
     bounds: Vec<(V, V)>,
     rejection_threshold: f32,
+    moments: (f32, f32),
 }
 
 impl<V> JackknifeTemplate<V>
@@ -164,8 +168,8 @@ where
             id,
             features,
             bounds,
-            // an positive infinite value disables rejection
             rejection_threshold: f32::INFINITY,
+            moments: (f32::INFINITY, f32::NEG_INFINITY),
         }
     }
 
@@ -187,6 +191,10 @@ where
 
     pub fn rejection_threshold(&self) -> f32 {
         self.rejection_threshold
+    }
+
+    pub fn moments(&self) -> (f32, f32) {
+        self.moments
     }
 
     /// Find the min and max value within the radius (Sakoe-Chiba band).
@@ -253,14 +261,12 @@ where
     ///
     /// * Parameters:
     ///   - `batch_size`: The number of samples to generate for each template.
-    ///   - `beta`: The target F-score for the rejection threshold.
     ///   - `gpsr_count`: The number of the resampled GPSR points.
     ///   - `variance`: The variance on the intervals to use for stochastic resampling.
     ///   - `gpsr_remove`: The number of GPSR points removal for corner cuts.
     pub fn train(
         &mut self,
         batch_size: usize,
-        beta: f32,
         gpsr_count: usize,
         variance: f32,
         gpsr_remove: usize,
@@ -268,6 +274,9 @@ where
         mut legend: Option<&mut TrainLegend<V>>,
     ) {
         let mut cost_matrix = CostMatrix::new();
+        let mut sample_moments = Vec::new();
+        let mut thresholds = Vec::with_capacity(self.templates.len());
+        let mut moments = Vec::with_capacity(self.templates.len());
 
         if let Some(TrainLegend(legend)) = legend.as_mut() {
             legend.clear();
@@ -275,6 +284,8 @@ where
 
         for (i, template) in self.templates.iter().enumerate() {
             log::info!("Training template {i} for gesture {}", template.id().id());
+
+            sample_moments.clear();
             if let Some(TrainLegend(legend)) = legend.as_mut() {
                 legend.push(Vec::with_capacity(self.templates.len()));
             }
@@ -288,6 +299,7 @@ where
                     legend[i].push(TrainingSamples::new(template.id() == sample_template.id(), batch_size));
                 }
 
+                let mut moments = RunningMoments::new();
                 for _ in 0..batch_size {
                     let synthetic_sample = V::stochastic_variance(
                         sample_template.resampled_points(),
@@ -310,13 +322,69 @@ where
                         self.config.method,
                     );
 
+                    moments.add(cf * dwt_score);
+
                     if let Some(TrainLegend(legend)) = legend.as_mut() {
                         legend[i][j].samples.push(synthetic_sample);
                         legend[i][j].dwt_scores.push(dwt_score);
                         legend[i][j].corrected_scores.push(cf * dwt_score);
                     }
                 }
+
+                sample_moments.push(moments);
             }
+
+            log::info!(
+                "  Template {i} mean: {}, std_dev: {}",
+                sample_moments[i].mean(),
+                sample_moments[i].std_dev()
+            );
+
+            moments.push((sample_moments[i].mean(), sample_moments[i].std_dev()));
+
+            // find the closest (negative) sample
+            let min_sample_id = sample_moments
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| self.templates[*i].id() != template.id()) // only negative samples
+                .map(|(i, m)| (i, m.mean())) // we are interested in the mean
+                .min_by(|(_, m1), (_, m2)| m1.partial_cmp(m2).unwrap()) // find the minimum
+                .map(|(i, _)| i);
+
+            let threshold = if let Some(j) = min_sample_id {
+                log::info!(
+                    "  Closest template {j} mean: {}, std_dev: {}",
+                    sample_moments[j].mean(),
+                    sample_moments[j].std_dev()
+                );
+
+                statistics::bayesian_threshold(
+                    sample_moments[i].mean(),
+                    sample_moments[i].std_dev(),
+                    1.0,
+                    sample_moments[j].mean(),
+                    sample_moments[j].std_dev(),
+                    1.0,
+                )
+            } else {
+                log::warn!("  No samples generated for template {i}, skipping rejection threshold");
+                f32::INFINITY
+            };
+
+            log::info!("  Template {i} threshold: {threshold}",);
+            thresholds.push(threshold);
+        }
+
+        // Apply th training data to the templates
+        for (i, template) in self.templates.iter_mut().enumerate() {
+            log::info!(
+                "  Template {} rejection threshold: {}, moments: {:?}",
+                template.id().id(),
+                thresholds[i],
+                moments[i]
+            );
+            template.rejection_threshold = thresholds[i];
+            template.moments = moments[i];
         }
     }
 }

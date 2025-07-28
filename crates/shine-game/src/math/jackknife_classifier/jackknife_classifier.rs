@@ -113,21 +113,21 @@ where
             self.lower_bounds.sort_by(|&a, &b| a.1.partial_cmp(&b.1).unwrap());
         }
 
-        let mut best: Option<(usize, f32)> = None;
+        log::info!("Classifying sample with {} templates", self.lower_bounds.len());
 
-        for i in 0..self.lower_bounds.len() {
-            let (id, lb) = self.lower_bounds[i];
-            let template = &templates[id];
+        let mut best_score = f32::INFINITY;
+        let mut best_i = None;
+        for (i, lb) in self.lower_bounds.iter().cloned() {
+            let template = &templates[i];
 
-            if lb > template.rejection_threshold() {
+            /*if lb > template.rejection_threshold() {
                 continue;
             }
 
-            if lb > best.map(|(_, score)| score).unwrap_or(f32::INFINITY) {
+            if lb > best_score {
                 continue;
-            }
+            }*/
 
-            let mut score = self.correction_factors[id];
             let dwt_score = sample_features.dwt_score(
                 &mut self.cost_matrix,
                 template.features(),
@@ -135,30 +135,34 @@ where
                 config.method,
             );
             if !dwt_score.is_finite() {
-                log::error!("Internal error, non-finite DWT score for template {id}: {dwt_score}");
+                log::error!("Internal error, non-finite DWT score for template {i}: {dwt_score}");
                 log::error!("config.method: {:?}", config.method);
                 log::error!("config.dtw_radius: {}", config.dtw_radius);
                 log::error!("Sample features: {:?}", sample_features.trajectory);
                 log::error!("Template features: {:?}", template.features().trajectory);
                 continue;
             }
-            score *= dwt_score;
+            let score = self.correction_factors[i] * dwt_score;
+
+            log::info!(
+                "Template {:?} - Score: {score}, th: {}, moments: {:?}",
+                template.id(),
+                template.rejection_threshold(),
+                template.moments()
+            );
 
             if score > template.rejection_threshold() {
                 continue;
             }
 
-            if let Some((_, best_score)) = best {
-                if score < best_score {
-                    best = Some((id, score));
-                }
-            } else {
-                best = Some((id, score));
+            if score < best_score {
+                best_i = Some(i);
+                best_score = score;
             }
         }
 
         self.sample_features = Some(sample_features);
-        self.classification = best;
+        self.classification = best_i.map(|id| (id, best_score));
 
         self.classification
     }
