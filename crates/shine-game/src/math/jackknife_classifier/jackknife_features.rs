@@ -1,4 +1,4 @@
-use crate::math::{JackknifeConfig, JackknifeMethod, JackknifePointMath};
+use crate::math::{CostMatrix, JackknifeConfig, JackknifeMethod, JackknifePointMath};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// Store extracted information and features from a sample.
@@ -16,10 +16,10 @@ where
     /// Depending on DTW measure it can be either m-dimensional points or direction vectors.
     pub trajectory: Vec<V>,
 
-    /// Correction factor vector from the normalized distance traversed by each component.
+    /// Vector of correction factor from the normalized distance traversed by each component.
     pub cf_abs: V,
 
-    /// Correction factor vector from the normalized bounding box size
+    /// Vector of correction factor from the normalized bounding box size
     pub cf_extent: V,
 }
 
@@ -41,15 +41,15 @@ where
             // In-between point direction vector.
             let mut vec = V::from_sub(&points[i], &points[i - 1]);
 
-            abs = abs.add_abs(&vec);
-            minimum = minimum.min_component(&points[i]);
-            maximum = maximum.max_component(&points[i]);
+            abs.add_abs_assign(&vec);
+            minimum.min_component_assign(&points[i]);
+            maximum.max_component_assign(&points[i]);
 
             // Save the points or direction vectors,
             // depending on the selected measure.
             match config.method {
                 JackknifeMethod::InnerProduct => {
-                    vec = vec.normalize();
+                    vec = vec.normalized();
                     trajectory.push(vec);
                 }
                 JackknifeMethod::EuclideanDistance => {
@@ -65,8 +65,8 @@ where
         if config.z_normalize {
             V::z_normalize(&mut trajectory);
         }
-        abs = abs.normalize();
-        let extent = V::from_sub(&maximum, &minimum).normalize();
+        abs.normalize();
+        let extent = V::from_sub(&maximum, &minimum).normalized();
 
         Self {
             points,
@@ -74,5 +74,28 @@ where
             cf_abs: abs,
             cf_extent: extent,
         }
+    }
+
+    pub fn correction_factor(&self, other: &Self, abs_correction: bool, extent_correction: bool) -> f32 {
+        let mut cf = 1.0;
+
+        if abs_correction {
+            cf *= 1.0 / self.cf_abs.dot(&other.cf_abs).max(0.01);
+        }
+
+        if extent_correction {
+            cf *= 1.0 / self.cf_extent.dot(&other.cf_extent).max(0.01);
+        }
+
+        cf
+    }
+
+    pub fn dwt_score(&self, cost_matrix: &mut CostMatrix, other: &Self, radius: usize, method: JackknifeMethod) -> f32 {
+        let distance = match method {
+            JackknifeMethod::InnerProduct => |a: &V, b: &V| 1.0 - a.dot(b),
+            JackknifeMethod::EuclideanDistance => |a: &V, b: &V| a.distance_square(b),
+        };
+
+        cost_matrix.dtw(&self.trajectory, &other.trajectory, radius, distance)
     }
 }

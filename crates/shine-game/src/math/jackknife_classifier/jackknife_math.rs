@@ -1,57 +1,174 @@
 use core::fmt;
+use noise::{NoiseFn, Perlin};
 use rand::Rng;
 use std::ops;
+
+pub const EPS: f32 = 1e-6;
 
 pub trait JackknifePoint:
     Clone + ops::Index<usize, Output = f32> + ops::IndexMut<usize, Output = f32> + fmt::Debug
 {
     fn dimension(&self) -> usize;
-
-    #[must_use]
     fn zero(dimension: usize) -> Self;
-    #[must_use]
-    fn splat(dimension: usize, value: f32) -> Self;
 
-    #[must_use]
-    fn from_sub(a: &Self, b: &Self) -> Self;
-    #[must_use]
-    fn from_add(a: &Self, b: &Self) -> Self;
+    fn random<R: Rng>(dimension: usize, rng: &mut R) -> Self {
+        let mut point = Self::zero(dimension);
+        for i in 0..dimension {
+            point[i] = rng.random_range(-1.0..1.0);
+        }
+        point
+    }
 
-    #[must_use]
-    fn sub(self, other: &Self) -> Self;
-    #[must_use]
-    fn add(self, other: &Self) -> Self;
-    #[must_use]
-    fn add_abs(self, other: &Self) -> Self;
-    #[must_use]
-    fn mul(self, other: f32) -> Self;
-    #[must_use]
-    fn div(self, other: f32) -> Self;
+    fn splat(dimension: usize, value: f32) -> Self {
+        let mut point = Self::zero(dimension);
+        for i in 0..dimension {
+            point[i] = value;
+        }
+        point
+    }
 
-    #[must_use]
-    fn div_component(self, other: &Self) -> Self;
-    #[must_use]
-    fn min_component(self, other: &Self) -> Self;
-    #[must_use]
-    fn max_component(self, other: &Self) -> Self;
+    fn from_sub(a: &Self, b: &Self) -> Self {
+        let mut result = Self::zero(a.dimension());
+        for i in 0..a.dimension() {
+            result[i] = a[i] - b[i];
+        }
+        result
+    }
 
-    #[must_use]
-    fn normalize(self) -> Self;
-    fn length(&self) -> f32;
-    fn dot(&self, other: &Self) -> f32;
-    fn distance_square(&self, other: &Self) -> f32;
+    fn from_add(a: &Self, b: &Self) -> Self {
+        let mut result = Self::zero(a.dimension());
+        for i in 0..a.dimension() {
+            result[i] = a[i] + b[i];
+        }
+        result
+    }
+
+    fn sub_assign(&mut self, other: &Self) {
+        for i in 0..self.dimension() {
+            self[i] -= other[i];
+        }
+    }
+
+    fn add_assign(&mut self, other: &Self) {
+        for i in 0..self.dimension() {
+            self[i] += other[i];
+        }
+    }
+
+    fn add_abs_assign(&mut self, other: &Self) {
+        for i in 0..self.dimension() {
+            self[i] += other[i].abs();
+        }
+    }
+
+    fn mul_assign(&mut self, other: f32) {
+        for i in 0..self.dimension() {
+            self[i] *= other;
+        }
+    }
+
+    fn div_assign(&mut self, other: f32) {
+        for i in 0..self.dimension() {
+            self[i] /= other;
+        }
+    }
+
+    fn div_component_assign(&mut self, other: &Self) {
+        for i in 0..self.dimension() {
+            self[i] /= other[i];
+        }
+    }
+
+    fn min_component_assign(&mut self, other: &Self) {
+        for i in 0..self.dimension() {
+            self[i] = self[i].min(other[i]);
+        }
+    }
+
+    fn max_component_assign(&mut self, other: &Self) {
+        for i in 0..self.dimension() {
+            self[i] = self[i].max(other[i]);
+        }
+    }
+
+    fn length(&self) -> f32 {
+        let mut sum = 0.0;
+        for i in 0..self.dimension() {
+            sum += self[i] * self[i];
+        }
+        sum.sqrt()
+    }
+
+    fn normalize(&mut self) {
+        let length = self.length();
+        self.div_assign(length)
+    }
+
+    fn normalized(&self) -> Self {
+        let mut result = self.clone();
+        result.normalize();
+        result
+    }
+
+    fn dot(&self, other: &Self) -> f32 {
+        let mut result = 0.0;
+        for i in 0..self.dimension() {
+            result += self[i] * other[i];
+        }
+        result
+    }
+
+    fn distance_square(&self, other: &Self) -> f32 {
+        let mut result = 0.0;
+        for i in 0..self.dimension() {
+            let diff = self[i] - other[i];
+            result += diff * diff;
+        }
+        result
+    }
 
     /// Interpolate between two points, where 0 <= t <= 1,
-    /// t = 0 => a, and t = 1 => b.
-    #[must_use]
-    fn lerp(a: &Self, b: &Self, t: f32) -> Self;
+    /// t = 0 => a, and t = 1 => b.    
+
+    fn lerp(a: &Self, b: &Self, t: f32) -> Self {
+        let mut result = Self::zero(a.dimension());
+        for i in 0..a.dimension() {
+            result[i] = a[i] + (b[i] - a[i]) * t;
+        }
+        result
+    }
+
+    fn sub(mut self, other: &Self) -> Self {
+        self.sub_assign(other);
+        self
+    }
+
+    fn add(mut self, other: &Self) -> Self {
+        self.add_assign(other);
+        self
+    }
+
+    fn mul(mut self, other: f32) -> Self {
+        self.mul_assign(other);
+        self
+    }
+
+    fn div(mut self, other: f32) -> Self {
+        self.div_assign(other);
+        self
+    }
+
+    fn div_component(mut self, other: &Self) -> Self {
+        self.div_component_assign(other);
+        self
+    }
 }
 
 pub trait JackknifePointMath<V>: JackknifePoint {
     fn path_length(points: &[V]) -> f32;
     fn resample(points: &[V], count: usize) -> Vec<V>;
     fn stochastic_resample(points: &[V], count: usize, variance: f32) -> Vec<V>;
-    fn stochastic_variance(points: &[V], n: usize, variance: f32, remove: usize) -> Vec<V>;
+    fn stochastic_variance(points: &[V], n: usize, variance: f32, remove: usize, jitter: f32) -> Vec<V>;
     fn z_normalize(points: &mut [V]);
 }
 
@@ -189,9 +306,7 @@ where
     /// Proceedings of the 29th Annual Symposium on User Interface Software and Technology
     /// 2016
     ///
-    fn stochastic_variance(points: &[V], count: usize, variance: f32, remove: usize) -> Vec<V> {
-        let dimension = points[0].dimension();
-
+    fn stochastic_variance(points: &[V], count: usize, variance: f32, remove: usize, jitter: f32) -> Vec<V> {
         // Create a non-uniformly resampled trajectory.
         let mut resample = V::stochastic_resample(points, count + remove, variance);
 
@@ -202,19 +317,39 @@ where
             resample.remove(remove_index);
         }
 
-        // Convert the resampled trajectory into a set of direction vectors.
-        let mut result = Vec::with_capacity(count);
-
-        let mut point = V::zero(dimension);
-        result.push(point.clone());
+        let perlin = Perlin::new(rng.random());
+        let mut len = 0.0;
+        let dimension = resample[0].dimension();
 
         for i in 1..count {
-            let delta = V::from_sub(&resample[i], &resample[i - 1]).normalize();
-            point = point.add(&delta);
-            result.push(point.clone());
+            let delta = V::from_sub(&resample[i], &resample[i - 1]);
+            let delta_normalized = delta.normalized();
+            let segment_length = delta.length();
+
+            // Generate a random perpendicular vector
+            let perpendicular = {
+                let mut random_vec = V::random(dimension, &mut rng);
+                random_vec.normalize();
+
+                // Make it perpendicular by subtracting its projection onto delta
+                let projection_magnitude = random_vec.dot(&delta_normalized);
+                let projection = delta_normalized.mul(projection_magnitude);
+                random_vec.sub(&projection)
+            };
+
+            if perpendicular.length() > EPS {
+                // Apply noise scaling
+                let noise = perlin.get([len as f64]) as f32;
+                let noise_magnitude = noise * segment_length * jitter;
+
+                let jitter = perpendicular.normalized().mul(noise_magnitude);
+                resample[i - 1].add_assign(&jitter);
+            }
+
+            len += segment_length;
         }
 
-        result
+        resample
     }
 
     fn z_normalize(points: &mut [V])
@@ -242,7 +377,6 @@ where
         var = var.div((n - 1) as f32);
 
         // If variance is zero, all values are nearly identical, so setting the divisor to 1 avoids division by zero and preserves the normalized value as approximately zero.
-        const EPS: f32 = 1e-8;
         for i in 0..m {
             var[i] = if var[i] < EPS { 1.0 } else { var[i].sqrt() };
         }

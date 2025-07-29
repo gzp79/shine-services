@@ -1,12 +1,8 @@
-use crate::math::{
-    CostMatrix, JackknifeConfig, JackknifeFeatures, JackknifeMethod, JackknifePointMath, JackknifeTemplate,
-    JackknifeTemplateSet,
-};
+use crate::math::{CostMatrix, JackknifeFeatures, JackknifePointMath, JackknifeTemplateSet};
 
 /// Some internal state of the classifier.
 pub struct JackknifeClassifierInternals<'a> {
     pub correction_factors: &'a [f32],
-    pub lower_bounds: &'a [(usize, f32)],
     pub cost_matrix: &'a CostMatrix,
 }
 
@@ -17,7 +13,6 @@ where
     sample_features: Option<JackknifeFeatures<V>>,
 
     correction_factors: Vec<f32>,
-    lower_bounds: Vec<(usize, f32)>,
     cost_matrix: CostMatrix,
     classification: Option<(usize, f32)>,
 }
@@ -39,7 +34,6 @@ where
         Self {
             sample_features: None,
             correction_factors: Vec::new(),
-            lower_bounds: Vec::new(),
             cost_matrix: CostMatrix::new(),
             classification: None,
         }
@@ -54,7 +48,6 @@ where
     pub fn internal(&self) -> JackknifeClassifierInternals<'_> {
         JackknifeClassifierInternals {
             correction_factors: &self.correction_factors,
-            lower_bounds: &self.lower_bounds,
             cost_matrix: &self.cost_matrix,
         }
     }
@@ -68,7 +61,6 @@ where
         self.sample_features = None;
 
         self.correction_factors.clear();
-        self.lower_bounds.clear();
         self.cost_matrix.clear();
 
         self.classification = None;
@@ -90,135 +82,51 @@ where
         let sample_features = JackknifeFeatures::from_points(config, sample_points);
 
         self.correction_factors.reserve(templates.len());
-        self.lower_bounds.reserve(templates.len());
-
-        for (i, template) in templates.iter().enumerate() {
-            let mut cf = 1.0;
-
+        for template in templates.iter() {
             let template_features = template.features();
-
-            if config.abs_correction {
-                cf *= 1.0 / sample_features.cf_abs.dot(&template_features.cf_abs).max(0.01);
-            }
-
-            if config.extent_correction {
-                cf *= 1.0 / sample_features.cf_extent.dot(&template_features.cf_extent).max(0.01);
-            }
+            let cf =
+                sample_features.correction_factor(template_features, config.abs_correction, config.extent_correction);
             self.correction_factors.push(cf);
-
-            let lb = if config.use_lower_bound {
-                cf * self.lower_bound(config, &sample_features.trajectory, template)
-            } else {
-                // a negative value disables any lower_bound logic
-                -1.0
-            };
-            self.lower_bounds.push((i, lb));
         }
 
-        // Without lower bounds, we can skip sorting, as it would result in the same order
-        if config.use_lower_bound {
-            self.lower_bounds.sort_by(|&a, &b| a.1.partial_cmp(&b.1).unwrap());
-        }
-
-        let mut best: Option<(usize, f32)> = None;
-
-        for i in 0..self.lower_bounds.len() {
-            let (id, lb) = self.lower_bounds[i];
-            let template = &templates[id];
-
-            if lb > template.rejection_threshold() {
-                continue;
-            }
-
-            if lb > best.map(|(_, score)| score).unwrap_or(f32::INFINITY) {
-                continue;
-            }
-
-            let mut score = self.correction_factors[id];
-            let dwt_score = match config.method {
-                JackknifeMethod::InnerProduct => self.cost_matrix.dtw(
-                    &sample_features.trajectory,
-                    &template.features().trajectory,
-                    config.dtw_radius,
-                    |a: &V, b: &V| 1.0 - a.dot(b),
-                ),
-                JackknifeMethod::EuclideanDistance => self.cost_matrix.dtw(
-                    &sample_features.trajectory,
-                    &template.features().trajectory,
-                    config.dtw_radius,
-                    |a: &V, b: &V| a.distance_square(b),
-                ),
-            };
+        let mut best_score = f32::INFINITY;
+        let mut best_i = None;
+        for (i, template) in templates.iter().enumerate() {
+            let dwt_score = sample_features.dwt_score(
+                &mut self.cost_matrix,
+                template.features(),
+                config.dtw_radius,
+                config.method,
+            );
             if !dwt_score.is_finite() {
-                log::error!("Internal error, non-finite DWT score for template {id}: {dwt_score}");
+                log::error!("Internal error, non-finite DWT score for template {i}: {dwt_score}");
                 log::error!("config.method: {:?}", config.method);
                 log::error!("config.dtw_radius: {}", config.dtw_radius);
                 log::error!("Sample features: {:?}", sample_features.trajectory);
                 log::error!("Template features: {:?}", template.features().trajectory);
                 continue;
             }
-            score *= dwt_score;
+            let score = self.correction_factors[i] * dwt_score;
+
+            log::debug!(
+                "Template {:?} - Score: {score}, Threshold: {}",
+                template.id(),
+                template.rejection_threshold()
+            );
 
             if score > template.rejection_threshold() {
                 continue;
             }
 
-            if let Some((_, best_score)) = best {
-                if score < best_score {
-                    best = Some((id, score));
-                }
-            } else {
-                best = Some((id, score));
+            if score < best_score {
+                best_i = Some(i);
+                best_score = score;
             }
         }
 
         self.sample_features = Some(sample_features);
-        self.classification = best;
+        self.classification = best_i.map(|id| (id, best_score));
 
         self.classification
-    }
-
-    fn lower_bound(&self, config: &JackknifeConfig, trajectory: &[V], template: &JackknifeTemplate<V>) -> f32 {
-        let mut lb = 0.0;
-
-        let dimension = trajectory[0].dimension();
-        let bounds = template.bounds();
-
-        for (point, bound) in trajectory.iter().zip(bounds.iter()) {
-            let mut cost = 0.0;
-            let (lower, upper) = bound;
-
-            for j in 0..dimension {
-                match config.method {
-                    JackknifeMethod::InnerProduct => {
-                        if point[j] < 0.0 {
-                            cost += point[j] * lower[j];
-                        } else {
-                            cost += point[j] * upper[j];
-                        }
-                    }
-                    JackknifeMethod::EuclideanDistance => {
-                        let mut diff = 0.0;
-
-                        if point[j] < lower[j] {
-                            diff = point[j] - lower[j];
-                        } else if point[j] > upper[j] {
-                            diff = point[j] - upper[j];
-                        }
-
-                        cost += diff * diff;
-                    }
-                }
-            }
-
-            // inner products are bounded
-            if config.method == JackknifeMethod::InnerProduct {
-                cost = 1.0 - cost.clamp(-1.0, 1.0);
-            }
-
-            lb += cost;
-        }
-
-        lb
     }
 }
