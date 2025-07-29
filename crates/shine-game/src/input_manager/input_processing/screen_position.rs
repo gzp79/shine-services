@@ -7,7 +7,7 @@ use std::borrow::Cow;
 ///
 /// Input: Expects a position in screen space, where (0, 0) is the top-left corner and the Y axis increases downward.
 /// Output: Produces a normalized position where (0, 0) is at the center of the screen, the Y axis increases upward.
-pub struct ViewportNormalizedPosition<I>
+pub struct NormalizedPosition<I>
 where
     I: DualAxisLike,
 {
@@ -16,7 +16,7 @@ where
     screen_size: Vec2,
 }
 
-impl<I> ViewportNormalizedPosition<I>
+impl<I> NormalizedPosition<I>
 where
     I: DualAxisLike,
 {
@@ -34,7 +34,7 @@ where
     }
 }
 
-impl<I> UserInput for ViewportNormalizedPosition<I>
+impl<I> UserInput for NormalizedPosition<I>
 where
     I: DualAxisLike,
 {
@@ -62,7 +62,7 @@ where
     }
 }
 
-impl<I> DualAxisLike for ViewportNormalizedPosition<I>
+impl<I> DualAxisLike for NormalizedPosition<I>
 where
     I: DualAxisLike,
 {
@@ -198,7 +198,7 @@ where
 
 /// Helper to add screen position processing to an [`DualAxisLike`] input.
 pub trait ScreenPositionProcessor: DualAxisLike {
-    fn normalize_to_screen(self) -> ViewportNormalizedPosition<Self>
+    fn normalize_to_screen(self) -> NormalizedPosition<Self>
     where
         Self: Sized;
 
@@ -208,11 +208,11 @@ pub trait ScreenPositionProcessor: DualAxisLike {
 }
 
 impl<T: DualAxisLike> ScreenPositionProcessor for T {
-    fn normalize_to_screen(self) -> ViewportNormalizedPosition<Self>
+    fn normalize_to_screen(self) -> NormalizedPosition<Self>
     where
         Self: Sized,
     {
-        ViewportNormalizedPosition::new(self)
+        NormalizedPosition::new(self)
     }
 
     fn edge_scroll(self, edge: EdgeSize) -> ScreenEdgeScroll<Self>

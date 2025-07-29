@@ -1,15 +1,11 @@
-use bevy::prelude::*;
+use bevy::{color::palettes::css, prelude::*};
 use shine_game::{
     application,
-    input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput, PinchPan, PinchRotate, PinchZoom},
+    input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput, TwoFingerGesture},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Action {
-    PinchPan,
-    PinchZoom,
-    PinchRotate,
-
     ToggleMode,
 }
 
@@ -41,7 +37,13 @@ impl Mode {
 fn setup_game(app: &mut App) {
     app.add_plugins(InputManagerPlugin::<Action>::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, (toggle_mode, update_camera_simple.run_if(is_simple_mode)));
+        .add_systems(
+            Update,
+            (
+                toggle_mode,
+                /*update_camera_simple.run_if(is_simple_mode),*/ show_status,
+            ),
+        );
 }
 
 fn setup(
@@ -52,7 +54,7 @@ fn setup(
 ) -> Result<(), BevyError> {
     let mut window = window.single_mut()?;
 
-    commands.spawn((Camera2d, Camera { ..default() }));
+    let camera = commands.spawn((Camera2d, Camera { ..default() })).id();
 
     // spawn some content
     {
@@ -80,7 +82,7 @@ fn setup(
             commands.spawn((
                 Mesh2d(shape),
                 MeshMaterial2d(materials.add(color)),
-                Transform::from_xyz(-200. + x as f32 * 100., -200. + y as f32 * 100., 0.0),
+                Transform::from_xyz(-100. + x as f32 * 100., -100. + y as f32 * 100., 0.0),
             ));
 
             x += 1;
@@ -91,15 +93,23 @@ fn setup(
         }
     }
 
-    let input_map = InputMap::new()
-        .with_dual_axis(Action::PinchPan, PinchPan::delta())
-        .with_axis(Action::PinchZoom, PinchZoom::delta())
-        .with_axis(Action::PinchRotate, PinchRotate::delta())
-        .with_button(Action::ToggleMode, KeyboardInput::new(KeyCode::Space));
+    let input_map = InputMap::new().with_button(Action::ToggleMode, KeyboardInput::new(KeyCode::Space));
     let mode = Mode { is_simple: true };
 
     window.title = mode.title();
-    commands.spawn((Name::new("Input control"), input_map, mode));
+    commands.spawn((
+        Name::new("Input control"),
+        input_map,
+        TwoFingerGesture::new().with_camera(camera),
+        mode,
+        Text::default(),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(12.0),
+            left: Val::Px(12.0),
+            ..default()
+        },
+    ));
 
     Ok(())
 }
@@ -123,37 +133,77 @@ fn is_simple_mode(camera: Query<&Mode>) -> bool {
     camera.single().map(|m| m.is_simple).unwrap_or_default()
 }
 
-fn update_camera_simple(
-    actions_q: Query<&ActionState<Action>>,
-    mut camera_q: Query<(&GlobalTransform, &mut Transform, &mut Projection), With<Camera2d>>,
-    mut window_q: Query<&mut Window>,
+// fn update_camera(
+//     actions_q: Query<&ActionState<Action>, &TwoFingerGesture>,
+//     mut camera_q: Query<(&GlobalTransform, &mut Transform, &mut Projection), With<Camera2d>>,
+//     mut window_q: Query<&mut Window>,
+// ) -> Result<(), BevyError> {
+//     let action = actions_q.single()?;
+//     let (global_transform, mut transform, mut projection) = camera_q.single_mut()?;
+//     let mut window = window_q.single_mut()?;
+
+//     let Projection::Orthographic(projection) = &mut *projection else {
+//         unreachable!();
+//     };
+
+//     if let Some(pan) = action.try_dual_axis_value(&Action::PinchPan) {
+//         // pan is given in viewport coordinates
+//         let view_matrix = global_transform.compute_matrix().inverse();
+//         //todo: should it consider the viewport size ? (viewport is in pixel, ndc is in -1..1 range)
+//         let ndc_pan = Vec3::new(-pan.x, pan.y, 0.0) * projection.scale;
+//         let world_pan = view_matrix.transform_vector3(ndc_pan);
+//         transform.translation += world_pan;
+//     }
+
+//     if let Some(zoom) = action.try_axis_value(&Action::PinchZoom) {
+//         projection.scale /= zoom;
+//     }
+
+//     if let Some(rotate) = action.try_axis_value(&Action::PinchRotate) {
+//         transform.rotate(Quat::from_rotation_z(rotate));
+//     }
+
+//     window.title = format!("Camera: {:?}", projection.scale);
+
+//     Ok(())
+// }
+
+fn show_status(
+    mut players: Query<(&ActionState<Action>, &TwoFingerGesture, &mut Text)>,
+    mut gizmo: Gizmos,
 ) -> Result<(), BevyError> {
-    let action = actions_q.single()?;
-    let (global_transform, mut transform, mut projection) = camera_q.single_mut()?;
-    let mut window = window_q.single_mut()?;
+    for (_action_state, gesture, mut text) in players.iter_mut() {
+        let mut logs = Vec::new();
 
-    let Projection::Orthographic(projection) = &mut *projection else {
-        unreachable!();
-    };
+        if let Some(screen_pos) = gesture.screen_positions() {
+            logs.push(format!(
+                "Pan: {:?}, {:?}",
+                screen_pos.delta_pan(),
+                screen_pos.total_pan()
+            ));
+            logs.push(format!(
+                "Zoom: {}, {}",
+                screen_pos.delta_zoom(),
+                screen_pos.total_zoom()
+            ));
+            logs.push(format!(
+                "Rotate: {}, {}",
+                screen_pos.delta_rotate(),
+                screen_pos.total_rotate()
+            ));
+        } else {
+            logs.push("Pan: None".to_string());
+            logs.push("Zoom: None".to_string());
+            logs.push("Rotate: None".to_string());
+        };
 
-    if let Some(pan) = action.try_dual_axis_value(&Action::PinchPan) {
-        // pan is given in viewport coordinates
-        let view_matrix = global_transform.compute_matrix().inverse();
-        //todo: should it consider the viewport size ? (viewport is in pixel, ndc is in -1..1 range)
-        let ndc_pan = Vec3::new(pan.x, -pan.y, 0.0) * 2.0 * projection.scale;
-        let world_pan = view_matrix.transform_vector3(ndc_pan);
-        transform.translation += world_pan;
+        gizmo.rect_2d(Isometry2d::IDENTITY, Vec2::new(500.0, 500.0), css::BLUE);
+        gizmo.rect_2d(Isometry2d::IDENTITY, Vec2::new(100.0, 100.0), css::GREEN);
+        gizmo.rect_2d(Isometry2d::IDENTITY, Vec2::new(20.0, 20.0), css::RED);
+        gizmo.line_2d(Vec2::ZERO, Vec2::X * 100., css::RED);
+        gizmo.line_2d(Vec2::ZERO, Vec2::Y * 100., css::GREEN);
+
+        text.0 = logs.join("\n");
     }
-
-    if let Some(zoom) = action.try_axis_value(&Action::PinchZoom) {
-        projection.scale /= zoom;
-    }
-
-    if let Some(rotate) = action.try_axis_value(&Action::PinchRotate) {
-        transform.rotate(Quat::from_rotation_z(rotate));
-    }
-
-    window.title = format!("Camera: {:?}", projection.scale);
-
     Ok(())
 }

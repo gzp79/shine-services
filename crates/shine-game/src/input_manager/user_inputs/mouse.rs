@@ -86,8 +86,8 @@ impl UserInput for MouseButtonInput {
     }
 
     fn integrate(&mut self, input: &InputSources) {
-        if let Some(keyboard) = input.get_resource::<ButtonInput<MouseButton>>() {
-            self.pressed = keyboard.pressed(self.key);
+        if let Some(mouse) = input.get_resource::<ButtonInput<MouseButton>>() {
+            self.pressed = mouse.pressed(self.key);
         }
     }
 }

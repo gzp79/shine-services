@@ -1,7 +1,7 @@
 use crate::input_manager::{
     detect_attached_unistroke_gesture, detect_unistroke_gesture, integrate_gamepad_inputs, integrate_gesture_inputs,
-    integrate_keyboard_inputs, integrate_mouse_inputs, integrate_touch_inputs, integrate_two_finger_touch_inputs,
-    process_inputs, update_action_state, update_two_finger_touch_gesture, ActionLike, PinchGestureState,
+    integrate_keyboard_inputs, integrate_mouse_inputs, integrate_touch_inputs, process_inputs, update_action_state,
+    update_pinch_gesture_emulate, ActionLike,
 };
 use bevy::{
     app::{App, Plugin, PreUpdate},
@@ -23,8 +23,6 @@ struct InputManagerCommonPlugin;
 
 impl Plugin for InputManagerCommonPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(PinchGestureState::default());
-
         app.configure_sets(
             PreUpdate,
             (
@@ -40,7 +38,7 @@ impl Plugin for InputManagerCommonPlugin {
 
         app.add_systems(
             PreUpdate,
-            update_two_finger_touch_gesture.in_set(InputManagerSystem::SourceInput),
+            update_pinch_gesture_emulate.in_set(InputManagerSystem::SourceInput),
         );
     }
 }
@@ -67,7 +65,7 @@ impl<A: ActionLike> Plugin for InputManagerPlugin<A> {
                 integrate_keyboard_inputs::<A>,
                 integrate_mouse_inputs::<A>,
                 integrate_touch_inputs::<A>,
-                integrate_two_finger_touch_inputs::<A>,
+                //integrate_pinch_gesture::<A>,
                 integrate_gamepad_inputs::<A>,
                 integrate_gesture_inputs::<A>,
             )

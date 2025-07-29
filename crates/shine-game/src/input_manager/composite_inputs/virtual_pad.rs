@@ -71,7 +71,7 @@ where
 }
 
 impl VirtualPad<KeyboardInput, KeyboardInput> {
-    pub fn qe() -> impl AxisLike {
-        Self::new(KeyboardInput::new(KeyCode::KeyQ), KeyboardInput::new(KeyCode::KeyE)).with_bounds(1.0)
+    pub fn from_keys(up: KeyCode, down: KeyCode) -> impl AxisLike {
+        Self::new(KeyboardInput::new(up), KeyboardInput::new(down)).with_bounds(1.0)
     }
 }

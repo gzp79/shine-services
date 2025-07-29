@@ -1,5 +1,9 @@
-mod input_processor;
-pub use self::input_processor::*;
+mod button_processor;
+pub use self::button_processor::*;
+mod axis_processor;
+pub use self::axis_processor::*;
+mod dualaxis_processor;
+pub use self::dualaxis_processor::*;
 mod radial;
 pub use self::radial::*;
 

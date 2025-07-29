@@ -104,24 +104,22 @@ where
 }
 
 impl VirtualDPad<KeyboardInput, KeyboardInput, KeyboardInput, KeyboardInput> {
-    pub fn wasd() -> impl DualAxisLike {
+    pub fn from_keys(up: KeyCode, down: KeyCode, left: KeyCode, right: KeyCode) -> impl DualAxisLike {
         Self::new(
-            KeyboardInput::new(KeyCode::KeyW),
-            KeyboardInput::new(KeyCode::KeyS),
-            KeyboardInput::new(KeyCode::KeyA),
-            KeyboardInput::new(KeyCode::KeyD),
+            KeyboardInput::new(up),
+            KeyboardInput::new(down),
+            KeyboardInput::new(left),
+            KeyboardInput::new(right),
         )
         .with_bounds(1.0)
     }
 
+    pub fn wasd() -> impl DualAxisLike {
+        Self::from_keys(KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyA, KeyCode::KeyD)
+    }
+
     pub fn ijkl() -> impl DualAxisLike {
-        Self::new(
-            KeyboardInput::new(KeyCode::KeyI),
-            KeyboardInput::new(KeyCode::KeyK),
-            KeyboardInput::new(KeyCode::KeyJ),
-            KeyboardInput::new(KeyCode::KeyL),
-        )
-        .with_bounds(1.0)
+        Self::from_keys(KeyCode::KeyI, KeyCode::KeyK, KeyCode::KeyJ, KeyCode::KeyL)
     }
 }
 

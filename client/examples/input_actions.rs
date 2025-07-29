@@ -3,8 +3,7 @@ use shine_game::{
     application,
     input_manager::{
         ActionState, EdgeSize, GamepadButtonInput, GamepadStick, GamepadStickInput, InputManagerPlugin, InputMap,
-        KeyboardInput, MouseButtonInput, MouseMotion, MousePosition, PinchCenter, PinchPan, PinchRotate, PinchZoom,
-        ScreenPositionProcessor, TouchPosition,
+        KeyboardInput, MouseButtonInput, MouseMotion, MousePosition, ScreenPositionProcessor, TouchPosition,
     },
 };
 
@@ -21,14 +20,6 @@ enum Action {
     TouchPosition,
     TouchNormalizedPosition,
     TouchEdgeScroll,
-
-    PinchPan,
-    PinchPanTotal,
-    PinchZoom,
-    PinchZoomTotal,
-    PinchRotate,
-    PinchRotateTotal,
-    PinchCenter,
 
     GamePadLeftStick,
     GamePadRightStick,
@@ -95,13 +86,6 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
             Action::TouchEdgeScroll,
             TouchPosition::new().edge_scroll(EdgeSize::Fixed(50.)),
         )
-        .with_dual_axis(Action::PinchPan, PinchPan::delta())
-        .with_dual_axis(Action::PinchPanTotal, PinchPan::total())
-        .with_axis(Action::PinchZoom, PinchZoom::delta())
-        .with_axis(Action::PinchZoomTotal, PinchZoom::total())
-        .with_axis(Action::PinchRotate, PinchRotate::delta())
-        .with_axis(Action::PinchRotateTotal, PinchRotate::total())
-        .with_dual_axis(Action::PinchCenter, PinchCenter::new())
         .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
 
     commands.spawn((
@@ -174,20 +158,23 @@ fn join_gamepad(
 
 fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Query<&Window>) {
     for (action_state, mut text) in players.iter_mut() {
-        let size = {
-            let window = window.single().unwrap();
-            let (width, height) = (window.width(), window.height());
-            format!("Size: {width}x{height}")
-        };
+        let mut logs = Vec::new();
 
-        let mouse_button = format!(
+        let window = window.single().unwrap();
+        let (width, height) = (window.width(), window.height());
+        logs.push(format!("Size: {width}x{height}"));
+
+        logs.push(format!(
             "Mouse Button: {:?} {:?} {:?}",
             action_state.button_value(&Action::MouseLeft),
             action_state.button_value(&Action::MouseMiddle),
             action_state.button_value(&Action::MouseRight)
-        );
-        let mouse_motion = format!("Mouse Motion: {:?}", action_state.dual_axis_value(&Action::MouseMotion));
-        let mouse_position = format!(
+        ));
+        logs.push(format!(
+            "Mouse Motion: {:?}",
+            action_state.dual_axis_value(&Action::MouseMotion)
+        ));
+        logs.push(format!(
             "Mouse Position: {} ({})",
             action_state
                 .try_dual_axis_value(&Action::MousePosition)
@@ -197,13 +184,13 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Qu
                 .try_dual_axis_value(&Action::MouseNormalizedPosition)
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "None".to_string())
-        );
-        let mouse_edge_scroll = match action_state.try_dual_axis_value(&Action::MouseEdgeScroll) {
-            None => "Edge Scroll: None".to_string(),
-            Some(value) => format!("Edge Scroll: {value:?}"),
+        ));
+        match action_state.try_dual_axis_value(&Action::MouseEdgeScroll) {
+            None => logs.push("Edge Scroll: None".to_string()),
+            Some(value) => logs.push(format!("Edge Scroll: {value:?}")),
         };
 
-        let touch_position = format!(
+        logs.push(format!(
             "Touch Position: {} ({})",
             action_state
                 .try_dual_axis_value(&Action::TouchPosition)
@@ -213,45 +200,13 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Qu
                 .try_dual_axis_value(&Action::TouchNormalizedPosition)
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "None".to_string())
-        );
-        let touch_edge_scroll = match action_state.try_dual_axis_value(&Action::TouchEdgeScroll) {
-            None => "Touch Edge Scroll: None".to_string(),
-            Some(value) => format!("Touch Edge Scroll: {value:?}"),
+        ));
+        match action_state.try_dual_axis_value(&Action::TouchEdgeScroll) {
+            None => logs.push("Touch Edge Scroll: None".to_string()),
+            Some(value) => logs.push(format!("Touch Edge Scroll: {value:?}")),
         };
 
-        let pinch_gesture = format!(
-            "Pinch Pan: {} ({}), Zoom: {} ({}), Rotate: {} ({}), Center: {}",
-            action_state
-                .try_dual_axis_value(&Action::PinchPan)
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "None".to_string()),
-            action_state
-                .try_dual_axis_value(&Action::PinchPanTotal)
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "None".to_string()),
-            action_state
-                .try_axis_value(&Action::PinchZoom)
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "None".to_string()),
-            action_state
-                .try_axis_value(&Action::PinchZoomTotal)
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "None".to_string()),
-            action_state
-                .try_axis_value(&Action::PinchRotate)
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "None".to_string()),
-            action_state
-                .try_axis_value(&Action::PinchRotateTotal)
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "None".to_string()),
-            action_state
-                .try_dual_axis_value(&Action::PinchCenter)
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "None".to_string())
-        );
-
-        let gamepad_stick = format!(
+        logs.push(format!(
             "Gamepad Sticks: {:?} {:?}",
             action_state
                 .try_dual_axis_value(&Action::GamePadLeftStick)
@@ -261,25 +216,13 @@ fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Qu
                 .try_dual_axis_value(&Action::GamePadRightStick)
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "None".to_string())
-        );
-        let gamepad_trigger = format!(
+        ));
+        logs.push(format!(
             "GamePad Triggers: {:?} {:?}",
             action_state.button_value(&Action::GamePadLeftTrigger),
             action_state.button_value(&Action::GamePadRightTrigger)
-        );
+        ));
 
-        text.0 = [
-            size,
-            mouse_button,
-            mouse_motion,
-            mouse_position,
-            mouse_edge_scroll,
-            touch_position,
-            touch_edge_scroll,
-            pinch_gesture,
-            gamepad_stick,
-            gamepad_trigger,
-        ]
-        .join("\n");
+        text.0 = logs.join("\n");
     }
 }
