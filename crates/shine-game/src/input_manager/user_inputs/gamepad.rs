@@ -1,4 +1,4 @@
-use crate::input_manager::{ActionLike, ButtonLike, DualAxisLike, InputMap, InputSource, InputSources, UserInput};
+use crate::input_manager::{ActionLike, InputMap, InputSource, InputSources, TypedUserInput, UserInput};
 use bevy::{
     ecs::{
         entity::Entity,
@@ -89,8 +89,8 @@ impl UserInput for GamepadButtonInput {
     }
 }
 
-impl ButtonLike for GamepadButtonInput {
-    fn process(&mut self, _time: &Time) -> Option<bool> {
+impl TypedUserInput<bool> for GamepadButtonInput {
+    fn process(&mut self, _time: f32) -> Option<bool> {
         self.pressed
     }
 }
@@ -158,8 +158,8 @@ impl UserInput for GamepadStickInput {
     }
 }
 
-impl DualAxisLike for GamepadStickInput {
-    fn process(&mut self, _time: &Time) -> Option<Vec2> {
+impl TypedUserInput<Vec2> for GamepadStickInput {
+    fn process(&mut self, _time: f32) -> Option<Vec2> {
         self.value
     }
 }

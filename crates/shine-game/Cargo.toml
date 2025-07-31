@@ -16,9 +16,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 rand = { workspace = true }
 itertools = { workspace = true }
+smallbox = { workspace = true }
 
 tokio = { workspace = true }
-bevy = { workspace = true, features = ["bevy_window"]}
+bevy = { workspace = true, features = ["bevy_window"] }
 
 bevy_mod_debugdump = { version = "0.13", optional = true }
 

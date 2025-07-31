@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use shine_game::{
     application,
     input_manager::{
-        ActionState, ButtonCompose, DualAxisRadialProcessor, GamepadButtonInput, GamepadStick, GamepadStickInput,
+        ActionStates, ButtonCompose, DualAxisRadialProcessor, GamepadButtonInput, GamepadStick, GamepadStickInput,
         InputManagerPlugin, InputMap, KeyboardInput, MouseButtonInput, VirtualDPad,
     },
 };
@@ -135,7 +135,7 @@ fn join_gamepad(
     Ok(())
 }
 
-fn show_status(mut players: Query<(&ActionState<Action>, &Name, &mut Text)>, time: Res<Time>) {
+fn show_status(mut players: Query<(&ActionStates<Action>, &Name, &mut Text)>, time: Res<Time>) {
     for (action_state, name, mut text) in players.iter_mut() {
         let move_kind = action_state.kind(&Action::Movement);
         let move_value = action_state.dual_axis_value(&Action::Movement);

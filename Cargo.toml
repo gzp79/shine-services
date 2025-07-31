@@ -42,7 +42,9 @@ rand = "0.9"
 getrandom = "0.3"
 bcrypt = "0.17"
 regex = "1.10"
+
 itertools = "0.14"
+smallbox = "0.8"
 
 ############################# RUNTIME #############################
 pin-project = "1.1"

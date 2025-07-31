@@ -1,12 +1,13 @@
-use bevy::{color::palettes::css, prelude::*};
+use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
     application,
-    input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput, TwoFingerGesture},
+    input_manager::{ActionStates, InputManagerPlugin, InputMap, KeyboardInput, TwoFingerGesture},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Action {
     ToggleMode,
+    ResetCamera,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -24,11 +25,14 @@ pub fn main() {
 }
 
 #[derive(Component)]
-struct Mode {
+struct AppState {
     is_simple: bool,
+    // during advanced mode, we keep track of the world center that should be fixed relative to the gesture's current center
+    world_center: Option<Vec3>,
+    start_matrix: Option<Transform>,
 }
 
-impl Mode {
+impl AppState {
     fn title(&self) -> String {
         format!("Mode: {}", if self.is_simple { "simple" } else { "advanced" })
     }
@@ -37,13 +41,7 @@ impl Mode {
 fn setup_game(app: &mut App) {
     app.add_plugins(InputManagerPlugin::<Action>::default())
         .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (
-                toggle_mode,
-                /*update_camera_simple.run_if(is_simple_mode),*/ show_status,
-            ),
-        );
+        .add_systems(Update, (handle_control, update_camera_world_pos, show_status));
 }
 
 fn setup(
@@ -54,7 +52,13 @@ fn setup(
 ) -> Result<(), BevyError> {
     let mut window = window.single_mut()?;
 
-    let camera = commands.spawn((Camera2d, Camera { ..default() })).id();
+    let camera = commands
+        .spawn((
+            Camera2d,
+            Camera { ..default() },
+            NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
+        ))
+        .id();
 
     // spawn some content
     {
@@ -93,8 +97,14 @@ fn setup(
         }
     }
 
-    let input_map = InputMap::new().with_button(Action::ToggleMode, KeyboardInput::new(KeyCode::Space));
-    let mode = Mode { is_simple: true };
+    let input_map = InputMap::new()
+        .with_button(Action::ResetCamera, KeyboardInput::new(KeyCode::Backspace))
+        .with_button(Action::ToggleMode, KeyboardInput::new(KeyCode::Space));
+    let mode = AppState {
+        is_simple: true,
+        world_center: None,
+        start_matrix: None,
+    };
 
     window.title = mode.title();
     commands.spawn((
@@ -114,11 +124,13 @@ fn setup(
     Ok(())
 }
 
-fn toggle_mode(
-    mut actions_q: Query<(&ActionState<Action>, &mut Mode)>,
+fn handle_control(
+    mut actions_q: Query<(&ActionStates<Action>, &mut AppState)>,
+    mut camera_q: Query<&mut Transform, With<Camera2d>>,
     mut window_q: Query<&mut Window>,
 ) -> Result<(), BevyError> {
     let (action, mut mode) = actions_q.single_mut()?;
+    let mut camera_transform = camera_q.single_mut()?;
     let mut window = window_q.single_mut()?;
 
     if action.just_pressed(&Action::ToggleMode) {
@@ -126,11 +138,52 @@ fn toggle_mode(
         window.title = mode.title();
     }
 
+    if action.just_pressed(&Action::ResetCamera) {
+        *camera_transform = Transform::IDENTITY;
+    }
+
     Ok(())
 }
 
-fn is_simple_mode(camera: Query<&Mode>) -> bool {
-    camera.single().map(|m| m.is_simple).unwrap_or_default()
+fn update_camera_world_pos(
+    mut player_q: Query<(&TwoFingerGesture, &mut AppState)>,
+    mut camera_q: Query<&mut Transform, With<Camera2d>>,
+) -> Result<(), BevyError> {
+    let (gesture, mut app_state) = player_q.single_mut()?;
+
+    if app_state.is_simple {
+        return Ok(());
+    }
+
+    let mut camera_transform = camera_q.single_mut()?;
+
+    if let (Some(screen_data), Some(world_data)) = (gesture.screen_data(), gesture.world_data()) {
+        let _ = app_state.world_center.get_or_insert(world_data.start_ray.origin);
+        let start_matrix = app_state.start_matrix.get_or_insert_with(|| camera_transform.clone());
+
+        let zoom = screen_data.zoom(true);
+        let rotate = screen_data.rotate(true);
+        let pan = world_data.pan(true);
+        let center = world_data.center();
+
+        let v = Mat3::new(
+            screen_data.start.0.x, screen_data.start.0.x, screen_data.start.0.x,
+        )
+
+        /*let pivot = center;
+        let dt = Transform::from_translation(-pivot)
+            .mul_transform(Transform::from_scale(Vec3::splat(1. / zoom)))
+            .mul_transform(Transform::from_rotation(Quat::from_rotation_z(rotate)))
+            .mul_transform(Transform::from_translation(pivot));
+        *camera_transform = start_matrix.mul_transform(dt);*/
+
+        *camera_transform = start_matrix.mul_transform(Transform::from_translation(-pan));
+    } else {
+        app_state.world_center = None;
+        app_state.start_matrix = None;
+    }
+
+    Ok(())
 }
 
 // fn update_camera(
@@ -169,33 +222,60 @@ fn is_simple_mode(camera: Query<&Mode>) -> bool {
 // }
 
 fn show_status(
-    mut players: Query<(&ActionState<Action>, &TwoFingerGesture, &mut Text)>,
+    mut players: Query<(&ActionStates<Action>, &TwoFingerGesture, &AppState, &mut Text)>,
+    camera: Query<(&Camera, &GlobalTransform, &Projection)>,
     mut gizmo: Gizmos,
 ) -> Result<(), BevyError> {
-    for (_action_state, gesture, mut text) in players.iter_mut() {
+    let (camera, camera_transform, projection) = camera.single()?;
+
+    for (_action_state, gesture, app_state, mut text) in players.iter_mut() {
         let mut logs = Vec::new();
 
-        if let Some(screen_pos) = gesture.screen_positions() {
-            logs.push(format!(
-                "Pan: {:?}, {:?}",
-                screen_pos.delta_pan(),
-                screen_pos.total_pan()
-            ));
-            logs.push(format!(
-                "Zoom: {}, {}",
-                screen_pos.delta_zoom(),
-                screen_pos.total_zoom()
-            ));
-            logs.push(format!(
-                "Rotate: {}, {}",
-                screen_pos.delta_rotate(),
-                screen_pos.total_rotate()
-            ));
+        //logs.push(format!("Pan: {projection:?}"));
+
+        logs.push(if app_state.is_simple {
+            "Mode: Simple".to_string()
+        } else {
+            "Mode: Advanced".to_string()
+        });
+
+        if let Some(screen_data) = gesture.screen_data() {
+            logs.push(format!("Pan: {:?}", screen_data.pan(true)));
+            logs.push(format!("Zoom: {}", screen_data.zoom(true)));
+            logs.push(format!("Rotate: {}", screen_data.rotate(true)));
+
+            // show touch points
+            if let Ok(p0) = camera.viewport_to_world_2d(camera_transform, screen_data.current.0) {
+                gizmo.circle_2d(Isometry2d::from_translation(p0), 10., css::GRAY);
+            }
+            if let Ok(p1) = camera.viewport_to_world_2d(camera_transform, screen_data.current.1) {
+                gizmo.circle_2d(Isometry2d::from_translation(p1), 10., css::GRAY);
+            }
         } else {
             logs.push("Pan: None".to_string());
             logs.push("Zoom: None".to_string());
             logs.push("Rotate: None".to_string());
         };
+
+        if let Some(world_data) = gesture.world_data() {
+            logs.push("World Center: Active".to_string());
+            let start_center = world_data.start_ray.origin;
+            let prev_center = world_data.prev_ray.origin;
+            let current_center = world_data.current_ray.origin;
+
+            gizmo.circle(Isometry3d::from_translation(start_center), 25., css::RED);
+            gizmo.circle(Isometry3d::from_translation(prev_center), 10., css::GREEN);
+            gizmo.circle(Isometry3d::from_translation(current_center), 4., css::BLUE);
+        } else {
+            logs.push("World Center: None".to_string());
+        };
+
+        if let Some(center) = app_state.world_center {
+            gizmo.circle(Isometry3d::from_translation(center), 15.0, css::YELLOW);
+            logs.push(format!("Gesture world center: {:.2},{:.2}", center.x, center.y));
+        } else {
+            logs.push("Gesture world center: None".to_string());
+        }
 
         gizmo.rect_2d(Isometry2d::IDENTITY, Vec2::new(500.0, 500.0), css::BLUE);
         gizmo.rect_2d(Isometry2d::IDENTITY, Vec2::new(100.0, 100.0), css::GREEN);

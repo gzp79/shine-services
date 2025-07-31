@@ -2,7 +2,7 @@ use bevy::{prelude::*, window::CursorGrabMode};
 use shine_game::{
     application,
     input_manager::{
-        ActionState, ButtonChord, ButtonCompose, DualAxisChord, DualAxisCompose, InputManagerPlugin, InputMap,
+        ActionStates, ButtonChord, ButtonCompose, DualAxisChord, DualAxisCompose, InputManagerPlugin, InputMap,
         KeyboardInput, MouseButtonInput, MouseMotion, MousePosition, UserInputExt, VirtualDPad,
     },
 };
@@ -112,7 +112,7 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
     ));
 }
 
-fn grab_mouse(players: Query<&ActionState<Action>, Without<Window>>, mut window: Query<&mut Window>) {
+fn grab_mouse(players: Query<&ActionStates<Action>, Without<Window>>, mut window: Query<&mut Window>) {
     let action_state = players.single().unwrap();
     let mut window = window.single_mut().unwrap();
 
@@ -134,7 +134,7 @@ fn grab_mouse(players: Query<&ActionState<Action>, Without<Window>>, mut window:
     }
 }
 
-fn show_status(mut players: Query<(&InputMap<Action>, &ActionState<Action>, &mut Text)>, window: Query<&Window>) {
+fn show_status(mut players: Query<(&InputMap<Action>, &ActionStates<Action>, &mut Text)>, window: Query<&Window>) {
     for (input_map, action_state, mut text) in players.iter_mut() {
         let window = window.single().unwrap();
         let (width, height) = (window.width(), window.height());

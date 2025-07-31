@@ -1,4 +1,4 @@
-use crate::input_manager::{ActionLike, ButtonLike, InputMap, InputSource, InputSources, UserInput};
+use crate::input_manager::{ActionLike, InputMap, InputSource, InputSources, TypedUserInput, UserInput};
 use bevy::{
     ecs::{
         error::BevyError,
@@ -86,8 +86,8 @@ impl UserInput for KeyboardInput {
     }
 }
 
-impl ButtonLike for KeyboardInput {
-    fn process(&mut self, _time: &Time) -> Option<bool> {
+impl TypedUserInput<bool> for KeyboardInput {
+    fn process(&mut self, _time: f32) -> Option<bool> {
         Some(self.pressed)
     }
 }

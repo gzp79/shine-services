@@ -79,6 +79,7 @@
     "scytta",
     "serde",
     "slerp",
+    "smallbox",
     "splitn",
     "srgb",
     "srgba",

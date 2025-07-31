@@ -1,27 +1,94 @@
-use crate::input_manager::{
-    ActionLike, ActionState, AxisCompose, AxisLike, ButtonCompose, ButtonLike, DualAxisCompose, DualAxisLike,
-    InputKind, InputSources, UserInput,
-};
+use crate::input_manager::{ActionLike, ActionState, ActionStates, InputSources, TypedUserInput, UserInput};
 use bevy::{
     ecs::{
         component::Component,
         system::{Query, Res},
     },
-    math::Vec2,
     time::Time,
 };
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::HashMap;
+
+pub trait IntoActionState: Send + Sync + 'static {
+    type State: ActionState + Default;
+
+    fn update_action_state(&self, state: &mut Self::State, time_s: f32);
+}
+
+trait InputPipeline<A>: Send + Sync + 'static
+where
+    A: ActionLike,
+{
+    fn input(&self) -> &dyn UserInput;
+
+    fn integrate(&mut self, input_source: &InputSources);
+    fn pull_pipeline(&mut self, time_s: f32);
+    fn store_state(&self, action_state: &mut ActionStates<A>, action: &A);
+}
+
+/// Store the result of an input processing pipeline and converts it into an `ActionState`.
+struct StoredInput<T, I>
+where
+    T: IntoActionState,
+    I: TypedUserInput<T>,
+{
+    input: I,
+    /// the last pull time
+    time_s: f32,
+    /// the last pulled value
+    value: Option<T>,
+}
+
+impl<T, I> StoredInput<T, I>
+where
+    T: IntoActionState,
+    I: TypedUserInput<T>,
+{
+    pub fn new(input: I) -> Self {
+        Self {
+            input,
+            time_s: 0.0,
+            value: None,
+        }
+    }
+}
+
+impl<A, T, I> InputPipeline<A> for StoredInput<T, I>
+where
+    A: ActionLike,
+    T: IntoActionState,
+    I: TypedUserInput<T>,
+{
+    fn input(&self) -> &dyn UserInput {
+        &self.input
+    }
+
+    fn integrate(&mut self, input_source: &InputSources) {
+        self.input.integrate(input_source);
+    }
+
+    fn pull_pipeline(&mut self, time_s: f32) {
+        self.time_s = time_s;
+        self.value = self.input.process(time_s);
+    }
+
+    fn store_state(&self, action_state: &mut ActionStates<A>, action: &A) {
+        if let Some(value) = &self.value {
+            let state = action_state.set_as::<T::State>(action.clone());
+            value.update_action_state(state, self.time_s);
+        } else {
+            action_state.remove(action);
+        }
+    }
+}
 
 #[derive(Component)]
-#[require(ActionState<A>)]
+#[require(ActionStates<A>)]
 pub struct InputMap<A>
 where
     A: ActionLike,
 {
     enabled: bool,
-    buttons: HashMap<A, (Option<Box<dyn ButtonLike>>, Option<bool>)>,
-    axes: HashMap<A, (Option<Box<dyn AxisLike>>, Option<f32>)>,
-    dual_axes: HashMap<A, (Option<Box<dyn DualAxisLike>>, Option<Vec2>)>,
+    bindings: HashMap<A, Box<dyn InputPipeline<A>>>,
 }
 
 impl<A> Default for InputMap<A>
@@ -31,9 +98,7 @@ where
     fn default() -> Self {
         Self {
             enabled: true,
-            buttons: HashMap::new(),
-            axes: HashMap::new(),
-            dual_axes: HashMap::new(),
+            bindings: HashMap::new(),
         }
     }
 }
@@ -46,164 +111,32 @@ where
         Self::default()
     }
 
-    pub fn button(&self, action: &A) -> Option<&dyn ButtonLike> {
-        self.buttons.get(action).and_then(|(input, _)| input.as_deref())
+    pub fn bind<T, I>(&mut self, action: &A, input: I)
+    where
+        I: TypedUserInput<T>,
+        T: IntoActionState,
+    {
+        let input = Box::new(StoredInput::new(input));
+        self.bindings.insert(action.clone(), input);
     }
 
-    pub fn add_button(&mut self, action: A, input: impl ButtonLike) -> &mut Self {
-        if !matches!(self.kind(&action), InputKind::Button | InputKind::None) {
-            panic!("Action is already bound to a different input type");
-        }
-
-        match self.buttons.entry(action) {
-            Entry::Occupied(occupied_entry) => {
-                let process = occupied_entry.into_mut();
-                let btn = process.0.take().unwrap();
-                let btn: Box<dyn ButtonLike> = Box::new(btn.or(input));
-                process.0 = Some(btn);
-            }
-            Entry::Vacant(vacant_entry) => {
-                let btn: Box<dyn ButtonLike> = Box::new(input);
-                vacant_entry.insert((Some(btn), None));
-            }
-        }
-        self
-    }
-
-    #[must_use]
-    #[inline(always)]
-    pub fn with_button(mut self, action: A, input: impl ButtonLike) -> Self {
-        self.add_button(action, input);
-        self
-    }
-
-    pub fn axis(&self, action: &A) -> Option<&dyn AxisLike> {
-        self.axes.get(action).and_then(|(input, _)| input.as_deref())
-    }
-
-    pub fn add_axis(&mut self, action: A, input: impl AxisLike) -> &mut Self {
-        if !matches!(self.kind(&action), InputKind::Axis | InputKind::None) {
-            panic!("Action is already bound to a different input type");
-        }
-
-        match self.axes.entry(action) {
-            Entry::Occupied(occupied_entry) => {
-                let process = occupied_entry.into_mut();
-                let axis = process.0.take().unwrap();
-                let axis: Box<dyn AxisLike> = Box::new(axis.max(input));
-                process.0 = Some(axis);
-            }
-            Entry::Vacant(vacant_entry) => {
-                let axis: Box<dyn AxisLike> = Box::new(input);
-                vacant_entry.insert((Some(axis), None));
-            }
-        }
-        self
-    }
-
-    #[must_use]
-    #[inline(always)]
-    pub fn with_axis(mut self, action: A, input: impl AxisLike) -> Self {
-        self.add_axis(action, input);
-        self
-    }
-
-    pub fn dual_axis(&self, action: &A) -> Option<&dyn DualAxisLike> {
-        self.dual_axes.get(action).and_then(|(input, _)| input.as_deref())
-    }
-
-    pub fn add_dual_axis(&mut self, action: A, input: impl DualAxisLike) -> &mut Self {
-        if !matches!(self.kind(&action), InputKind::DualAxis | InputKind::None) {
-            panic!("Action is already bound to a different input type");
-        }
-
-        match self.dual_axes.entry(action) {
-            Entry::Occupied(occupied_entry) => {
-                let process = occupied_entry.into_mut();
-                let dual_axis = process.0.take().unwrap();
-                let axis: Box<dyn DualAxisLike> = Box::new(dual_axis.max(input));
-                process.0 = Some(axis);
-            }
-            Entry::Vacant(vacant_entry) => {
-                let axis: Box<dyn DualAxisLike> = Box::new(input);
-                vacant_entry.insert((Some(axis), None));
-            }
-        }
-        self
-    }
-
-    #[must_use]
-    #[inline(always)]
-    pub fn with_dual_axis(mut self, action: A, input: impl DualAxisLike) -> Self {
-        self.add_dual_axis(action, input);
-        self
-    }
-
-    pub fn user_input(&self, action: &A) -> Option<&dyn UserInput> {
-        if let Some(button) = self.button(action) {
-            Some(button)
-        } else if let Some(axis) = self.axis(action) {
-            Some(axis)
-        } else if let Some(dual_axis) = self.dual_axis(action) {
-            Some(dual_axis)
-        } else {
-            None
-        }
+    pub fn get(&self, action: &A) -> Option<&dyn UserInput> {
+        self.bindings.get(action).map(|pipeline| pipeline.input())
     }
 
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
 
-    pub fn kind(&self, action: &A) -> InputKind {
-        if self.buttons.contains_key(action) {
-            InputKind::Button
-        } else if self.axes.contains_key(action) {
-            InputKind::Axis
-        } else if self.dual_axes.contains_key(action) {
-            InputKind::DualAxis
-        } else {
-            InputKind::None
-        }
-    }
-
     pub fn integrate(&mut self, input_source: &InputSources) {
-        for input in self.buttons.values_mut() {
-            if let (Some(input), _) = input {
-                input.integrate(input_source);
-            }
-        }
-
-        for input in self.axes.values_mut() {
-            if let (Some(input), _) = input {
-                input.integrate(input_source);
-            }
-        }
-
-        for input in self.dual_axes.values_mut() {
-            if let (Some(input), _) = input {
-                input.integrate(input_source);
-            }
+        for input in self.bindings.values_mut() {
+            input.integrate(input_source);
         }
     }
 
-    pub fn process(&mut self, time: &Time) {
-        for input in self.buttons.values_mut() {
-            if let (Some(input), value) = input {
-                *value = input.process(time);
-            }
-        }
-
-        for input in self.axes.values_mut() {
-            if let (Some(input), value) = input {
-                *value = input.process(time);
-            }
-        }
-
-        for input in self.dual_axes.values_mut() {
-            if let (Some(input), value) = input {
-                *value = input.process(time);
-            }
+    pub fn process(&mut self, time_s: f32) {
+        for input in self.bindings.values_mut() {
+            input.pull_pipeline(time_s);
         }
     }
 }
@@ -218,12 +151,12 @@ where
             continue;
         }
 
-        input_map.process(&time);
+        input_map.process(time.elapsed_secs());
     }
 }
 
 /// Update the action state based on the input map.
-pub fn update_action_state<A>(mut input_query: Query<(&InputMap<A>, &mut ActionState<A>)>, time: Res<Time>)
+pub fn update_action_state<A>(mut input_query: Query<(&InputMap<A>, &mut ActionStates<A>)>)
 where
     A: ActionLike,
 {
@@ -235,19 +168,8 @@ where
 
         action_state.start_update();
 
-        for (action, input) in &input_map.buttons {
-            let button_state = action_state.set_button(action.clone());
-            button_state.update(input.1, time.elapsed_secs());
-        }
-
-        for (action, input) in &input_map.axes {
-            let axis_state = action_state.set_axis(action.clone());
-            axis_state.value = input.1;
-        }
-
-        for (action, input) in &input_map.dual_axes {
-            let dual_axis_state = action_state.set_dual_axis(action.clone());
-            dual_axis_state.value = input.1;
+        for (action, input) in &input_map.bindings {
+            input.store_state(&mut action_state, action);
         }
 
         action_state.finish_update();

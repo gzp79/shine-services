@@ -1,183 +1,108 @@
-use crate::input_manager::InputSources;
+use crate::input_manager::IntoActionState;
 use bevy::{math::Vec2, time::Time};
-use std::{any::Any, borrow::Cow, fmt};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum InputKind {
-    Button,
-    Axis,
-    DualAxis,
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ButtonStatus {
     None,
+    JustPressed,
+    Pressed,
+    JustReleased,
+    Released,
 }
 
-pub trait UserInput: Any + Send + Sync + 'static {
-    fn name(&self) -> Cow<'_, str>;
-    fn type_name(&self) -> &'static str;
-    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool;
-    fn integrate(&mut self, input: &InputSources);
+#[derive(Debug, Clone)]
+pub struct ButtonState {
+    pub start_time: f32,
+    pub status: ButtonStatus,
 }
 
-pub trait ButtonLike: UserInput {
-    fn process(&mut self, time: &Time) -> Option<bool>;
-}
-
-impl UserInput for Box<dyn ButtonLike> {
-    fn name(&self) -> Cow<'_, str> {
-        self.as_ref().name()
-    }
-
-    fn type_name(&self) -> &'static str {
-        self.as_ref().type_name()
-    }
-
-    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
-        self.as_ref().visit_recursive(depth, visitor)
-    }
-
-    fn integrate(&mut self, input: &InputSources) {
-        self.as_mut().integrate(input);
-    }
-}
-
-impl ButtonLike for Box<dyn ButtonLike> {
-    fn process(&mut self, time: &Time) -> Option<bool> {
-        self.as_mut().process(time)
-    }
-}
-
-pub trait BoxedButtonLike: ButtonLike + Sized {
-    fn boxed(self) -> Box<dyn ButtonLike> {
-        Box::new(self)
-    }
-}
-
-impl<T: ButtonLike + Sized> BoxedButtonLike for T {}
-
-pub trait AxisLike: UserInput {
-    fn process(&mut self, time: &Time) -> Option<f32>;
-}
-
-impl UserInput for Box<dyn AxisLike> {
-    fn name(&self) -> Cow<'_, str> {
-        self.as_ref().name()
-    }
-
-    fn type_name(&self) -> &'static str {
-        self.as_ref().type_name()
-    }
-
-    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
-        self.as_ref().visit_recursive(depth, visitor)
-    }
-
-    fn integrate(&mut self, input: &InputSources) {
-        self.as_mut().integrate(input);
-    }
-}
-
-impl AxisLike for Box<dyn AxisLike> {
-    fn process(&mut self, time: &Time) -> Option<f32> {
-        self.as_mut().process(time)
-    }
-}
-
-pub trait BoxedAxisLike: AxisLike + Sized {
-    fn boxed(self) -> Box<dyn AxisLike> {
-        Box::new(self)
-    }
-}
-
-impl<T: AxisLike + Sized> BoxedAxisLike for T {}
-
-pub trait DualAxisLike: UserInput {
-    fn process(&mut self, time: &Time) -> Option<Vec2>;
-}
-
-impl UserInput for Box<dyn DualAxisLike> {
-    fn name(&self) -> Cow<'_, str> {
-        self.as_ref().name()
-    }
-
-    fn type_name(&self) -> &'static str {
-        self.as_ref().type_name()
-    }
-
-    fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool {
-        self.as_ref().visit_recursive(depth, visitor)
-    }
-
-    fn integrate(&mut self, input: &InputSources) {
-        self.as_mut().integrate(input);
-    }
-}
-
-impl DualAxisLike for Box<dyn DualAxisLike> {
-    fn process(&mut self, time: &Time) -> Option<Vec2> {
-        self.as_mut().process(time)
-    }
-}
-
-pub trait BoxedDualAxisLike: DualAxisLike + Sized {
-    fn boxed(self) -> Box<dyn DualAxisLike> {
-        Box::new(self)
-    }
-}
-
-impl<T: DualAxisLike + Sized> BoxedDualAxisLike for T {}
-
-pub trait UserInputExt: UserInput {
-    fn traverse<'a>(&'a self, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) {
-        self.visit_recursive(0, visitor);
-    }
-
-    fn find_by_name<'a>(&'a self, name: &str) -> Option<&'a dyn UserInput> {
-        let mut result = None;
-
-        self.traverse(&mut |_, node| {
-            if result.is_none() && node.name() == name {
-                result = Some(node);
-            }
-            result.is_none()
-        });
-
-        result
-    }
-
-    fn find_by_name_as<T>(&self, name: &str) -> Option<&T>
-    where
-        T: UserInput,
-    {
-        self.find_by_name(name).and_then(|input| {
-            let s = input as &dyn Any;
-            s.downcast_ref::<T>()
-        })
-    }
-
-    fn dump_pipeline<W>(&self, writer: &mut W) -> fmt::Result
-    where
-        W: fmt::Write,
-    {
-        let mut error = None;
-
-        self.traverse(&mut |depth, node| {
-            if let Err(e) = writeln!(
-                writer,
-                "{}{} ({})",
-                " ".repeat(depth * 2),
-                node.type_name(),
-                node.name()
-            ) {
-                error = Some(e);
-            }
-            error.is_none()
-        });
-
-        if let Some(e) = error {
-            Err(e)
-        } else {
-            Ok(())
+impl Default for ButtonState {
+    fn default() -> Self {
+        Self {
+            start_time: 0.0,
+            status: ButtonStatus::None,
         }
     }
 }
 
-impl<T: UserInput + ?Sized> UserInputExt for T {}
+impl ButtonState {
+    pub fn just_pressed(&self) -> bool {
+        matches!(self.status, ButtonStatus::JustPressed)
+    }
+
+    pub fn just_released(&self) -> bool {
+        matches!(self.status, ButtonStatus::JustReleased)
+    }
+
+    pub fn is_down(&self) -> bool {
+        matches!(self.status, ButtonStatus::JustPressed | ButtonStatus::Pressed)
+    }
+
+    /// Return the time since the start of this state.
+    pub fn elapsed_time(&self, time: &Time) -> f32 {
+        (time.elapsed_secs() - self.start_time).max(0.0)
+    }
+
+    pub fn update(&mut self, pressed: Option<bool>, time: f32) {
+        match pressed {
+            None => {
+                self.status = ButtonStatus::None;
+                self.start_time = time;
+            }
+            Some(true) => {
+                match self.status {
+                    ButtonStatus::JustPressed => self.status = ButtonStatus::Pressed,
+                    ButtonStatus::Pressed => { /* keep */ }
+                    ButtonStatus::JustReleased | ButtonStatus::Released | ButtonStatus::None => {
+                        self.status = ButtonStatus::JustPressed;
+                        self.start_time = time;
+                    }
+                }
+            }
+            Some(false) => {
+                match self.status {
+                    ButtonStatus::JustPressed | ButtonStatus::Pressed => {
+                        self.status = ButtonStatus::JustReleased;
+                        self.start_time = time;
+                    }
+                    ButtonStatus::None | ButtonStatus::JustReleased => self.status = ButtonStatus::Released,
+                    ButtonStatus::Released => { /* keep */ }
+                }
+            }
+        }
+    }
+}
+
+impl IntoActionState for bool {
+    type State = ButtonState;
+
+    fn update_action_state(&self, state: &mut Self::State, time_s: f32) {
+        state.update(Some(*self), time_s);
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AxisState {
+    pub value: Option<f32>,
+}
+
+impl IntoActionState for f32 {
+    type State = AxisState;
+
+    fn update_action_state(&self, state: &mut Self::State, _time_s: f32) {
+        state.value = Some(*self);
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DualAxisState {
+    pub value: Option<Vec2>,
+}
+
+impl IntoActionState for Vec2 {
+    type State = DualAxisState;
+
+    fn update_action_state(&self, state: &mut Self::State, _time_s: f32) {
+        state.value = Some(*self);
+    }
+}

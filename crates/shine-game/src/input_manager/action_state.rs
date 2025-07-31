@@ -1,154 +1,48 @@
-use crate::input_manager::InputKind;
-use bevy::{ecs::prelude::*, math::Vec2, time::Time};
-use std::{collections::HashMap, hash::Hash};
+use bevy::ecs::component::Component;
+use smallbox::{smallbox, SmallBox};
+use std::{
+    any::Any,
+    collections::{hash_map::Entry, HashMap},
+    hash::Hash,
+};
 
 pub trait ActionLike: Clone + Eq + Hash + Send + Sync + 'static {}
 
 impl<A> ActionLike for A where A: Clone + Eq + Hash + Send + Sync + 'static {}
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ButtonStatus {
-    None,
-    JustPressed,
-    Pressed,
-    JustReleased,
-    Released,
+pub trait ActionState: Sync + Send + Any {
+    /// Returns `self` as `&dyn Any`
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Returns `self` as `&mut dyn Any`
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
-#[derive(Debug, Clone)]
-pub struct ButtonData {
-    pub start_time: f32,
-    pub status: ButtonStatus,
-}
+impl<T> ActionState for T
+where
+    T: Sync + Send + Any,
+{
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 
-impl Default for ButtonData {
-    fn default() -> Self {
-        Self {
-            start_time: 0.0,
-            status: ButtonStatus::None,
-        }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
-impl ButtonData {
-    pub fn just_pressed(&self) -> bool {
-        matches!(self.status, ButtonStatus::JustPressed)
-    }
+type BoxedState = SmallBox<dyn ActionState, smallbox::space::S64>;
 
-    pub fn just_released(&self) -> bool {
-        matches!(self.status, ButtonStatus::JustReleased)
-    }
-
-    pub fn is_down(&self) -> bool {
-        matches!(self.status, ButtonStatus::JustPressed | ButtonStatus::Pressed)
-    }
-
-    /// Return the time since the start of this state.
-    pub fn elapsed_time(&self, time: &Time) -> f32 {
-        (time.elapsed_secs() - self.start_time).max(0.0)
-    }
-
-    pub fn update(&mut self, pressed: Option<bool>, time: f32) {
-        match pressed {
-            None => {
-                self.status = ButtonStatus::None;
-                self.start_time = time;
-            }
-            Some(true) => {
-                match self.status {
-                    ButtonStatus::JustPressed => self.status = ButtonStatus::Pressed,
-                    ButtonStatus::Pressed => { /* keep */ }
-                    ButtonStatus::JustReleased | ButtonStatus::Released | ButtonStatus::None => {
-                        self.status = ButtonStatus::JustPressed;
-                        self.start_time = time;
-                    }
-                }
-            }
-            Some(false) => {
-                match self.status {
-                    ButtonStatus::JustPressed | ButtonStatus::Pressed => {
-                        self.status = ButtonStatus::JustReleased;
-                        self.start_time = time;
-                    }
-                    ButtonStatus::None | ButtonStatus::JustReleased => self.status = ButtonStatus::Released,
-                    ButtonStatus::Released => { /* keep */ }
-                }
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct AxisData {
-    pub value: Option<f32>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct DualAxisData {
-    pub value: Option<Vec2>,
-}
-
-#[derive(Debug, Clone)]
-enum ActionData {
-    Button(ButtonData),
-    Axis(AxisData),
-    DualAxis(DualAxisData),
-}
-
-impl ActionData {
-    pub fn try_as_button(&self) -> Option<&ButtonData> {
-        match self {
-            ActionData::Button(data) => Some(data),
-            _ => None,
-        }
-    }
-
-    pub fn as_button_mut(&mut self) -> &mut ButtonData {
-        match self {
-            ActionData::Button(data) => data,
-            _ => panic!("Action is not a button"),
-        }
-    }
-
-    pub fn try_as_axis(&self) -> Option<&AxisData> {
-        match self {
-            ActionData::Axis(data) => Some(data),
-            _ => None,
-        }
-    }
-
-    pub fn as_axis_mut(&mut self) -> &mut AxisData {
-        match self {
-            ActionData::Axis(data) => data,
-            _ => panic!("Action is not an axis"),
-        }
-    }
-
-    pub fn try_as_dual_axis(&self) -> Option<&DualAxisData> {
-        match self {
-            ActionData::DualAxis(data) => Some(data),
-            _ => None,
-        }
-    }
-
-    pub fn as_dual_axis_mut(&mut self) -> &mut DualAxisData {
-        match self {
-            ActionData::DualAxis(data) => data,
-            _ => panic!("Action is not a dual axis"),
-        }
-    }
-}
-
-#[derive(Component, Debug, Clone)]
-pub struct ActionState<A>
+#[derive(Component)]
+pub struct ActionStates<A>
 where
     A: ActionLike,
 {
     version: usize,
-    data: HashMap<A, (usize, ActionData)>,
+    data: HashMap<A, (usize, BoxedState)>,
 }
 
-impl<A> Default for ActionState<A>
+impl<A> Default for ActionStates<A>
 where
     A: ActionLike,
 {
@@ -160,7 +54,7 @@ where
     }
 }
 
-impl<A> ActionState<A>
+impl<A> ActionStates<A>
 where
     A: ActionLike,
 {
@@ -177,125 +71,41 @@ where
         self.data.retain(|_, data| data.0 == self.version);
     }
 
-    pub fn kind(&self, action: &A) -> InputKind {
-        match self.data.get(action) {
-            Some((_, ActionData::Button(_))) => InputKind::Button,
-            Some((_, ActionData::Axis(_))) => InputKind::Axis,
-            Some((_, ActionData::DualAxis(_))) => InputKind::DualAxis,
-            None => InputKind::None,
-        }
-    }
-
     /// Return the button state bound to the action. If data is not available or not a button, None is returned.
-    pub fn as_button(&self, action: &A) -> Option<&ButtonData> {
-        self.data.get(action).and_then(|data| data.1.try_as_button())
+    pub fn get_as<T>(&self, action: &A) -> Option<&T>
+    where
+        T: ActionState,
+    {
+        self.data
+            .get(action)
+            .and_then(|data| data.1.as_any().downcast_ref::<T>())
     }
 
-    /// A convenience method to get the button state. If data is not available, None is returned.
-    #[inline]
-    pub fn button_value(&self, action: &A) -> ButtonStatus {
-        self.as_button(action).map_or(ButtonStatus::None, |data| data.status)
-    }
+    pub fn set_as<T>(&mut self, action: A) -> &mut T
+    where
+        T: ActionState + Default,
+    {
+        let entry = self.data.entry(action);
 
-    /// A convenience method to get the button state, returning if action was just pressed. If data is not available, false is returned.
-    #[inline]
-    pub fn just_pressed(&self, action: &A) -> bool {
-        self.as_button(action).is_some_and(|data| data.just_pressed())
-    }
-
-    /// A convenience method to get the button state, returning if action was just released. If data is not available, false is returned.
-    #[inline]
-    pub fn just_released(&self, action: &A) -> bool {
-        self.as_button(action).is_some_and(|data| data.just_released())
-    }
-
-    /// A convenience method to get the button state, returning if action in pressed. If data is not available, false is returned.
-    #[inline]
-    pub fn is_pressed(&self, action: &A) -> bool {
-        self.as_button(action).is_some_and(|data| data.is_down())
-    }
-
-    pub fn set_button(&mut self, action: A) -> &mut ButtonData {
-        let entry = self
-            .data
-            .entry(action)
-            .or_insert_with(|| (self.version, ActionData::Button(ButtonData::default())));
-        entry.0 = self.version;
-
-        match &mut entry.1 {
-            ActionData::Button(data) => data,
-            data => {
-                *data = ActionData::Button(ButtonData::default());
-                data.as_button_mut()
+        match entry {
+            Entry::Vacant(entry) => {
+                let pipeline: BoxedState = smallbox!(T::default());
+                let entry = entry.insert((self.version, pipeline));
+                entry.1.as_any_mut().downcast_mut::<T>().unwrap()
+            }
+            Entry::Occupied(entry) => {
+                let entry = entry.into_mut();
+                entry.0 = self.version;
+                if entry.1.as_any_mut().downcast_mut::<T>().is_none() {
+                    let pipeline: BoxedState = smallbox!(T::default());
+                    entry.1 = pipeline;
+                }
+                entry.1.as_any_mut().downcast_mut::<T>().unwrap()
             }
         }
     }
 
-    /// Return the axis state bound to the action. If data is not available or not a axis input, None is returned.
-    #[inline]
-    pub fn as_axis(&self, action: &A) -> Option<&AxisData> {
-        self.data.get(action).and_then(|data| data.1.try_as_axis())
-    }
-
-    /// A convenience method to get the axis value, returning None if data is not available.
-    #[inline]
-    pub fn try_axis_value(&self, action: &A) -> Option<f32> {
-        self.as_axis(action).and_then(|data| data.value)
-    }
-
-    /// A convenience method to get the axis value, returning 0.0 if data is not available.
-    #[inline]
-    pub fn axis_value(&self, action: &A) -> f32 {
-        self.try_axis_value(action).unwrap_or(0.0)
-    }
-
-    pub fn set_axis(&mut self, action: A) -> &mut AxisData {
-        let entry = self
-            .data
-            .entry(action)
-            .or_insert_with(|| (self.version, ActionData::Axis(AxisData::default())));
-        entry.0 = self.version;
-
-        match &mut entry.1 {
-            ActionData::Axis(data) => data,
-            data => {
-                *data = ActionData::Axis(AxisData::default());
-                data.as_axis_mut()
-            }
-        }
-    }
-
-    /// Return the dual-axis state bound to the action. If data is not available or not a dual-axis input, None is returned.
-    #[inline]
-    pub fn as_dual_axis(&self, action: &A) -> Option<&DualAxisData> {
-        self.data.get(action).and_then(|data| data.1.try_as_dual_axis())
-    }
-
-    /// A convenience method to get the dual-axis value, returning None if data is not available.
-    #[inline]
-    pub fn try_dual_axis_value(&self, action: &A) -> Option<Vec2> {
-        self.as_dual_axis(action).and_then(|data| data.value)
-    }
-
-    /// A convenience method to get the dual-axis value, returning Vec2::ZERO if data is not available.
-    #[inline]
-    pub fn dual_axis_value(&self, action: &A) -> Vec2 {
-        self.try_dual_axis_value(action).unwrap_or(Vec2::ZERO)
-    }
-
-    pub fn set_dual_axis(&mut self, action: A) -> &mut DualAxisData {
-        let entry = self
-            .data
-            .entry(action)
-            .or_insert_with(|| (self.version, ActionData::DualAxis(DualAxisData::default())));
-        entry.0 = self.version;
-
-        match &mut entry.1 {
-            ActionData::DualAxis(data) => data,
-            data => {
-                *data = ActionData::DualAxis(DualAxisData::default());
-                data.as_dual_axis_mut()
-            }
-        }
+    pub fn remove(&mut self, action: &A) {
+        self.data.remove(action);
     }
 }
