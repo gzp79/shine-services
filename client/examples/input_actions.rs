@@ -3,7 +3,7 @@ use shine_game::{
     application,
     input_manager::{
         ActionStates, EdgeSize, GamepadButtonInput, GamepadStick, GamepadStickInput, InputManagerPlugin, InputMap,
-        KeyboardInput, MouseButtonInput, MouseMotion, MousePosition, ScreenPositionProcessor, TouchPosition,
+        KeyboardInput, MouseButtonInput, MouseMotion, MousePosition, ScreenPositionProcess, TouchPosition,
     },
 };
 
@@ -25,6 +25,8 @@ enum Action {
     GamePadRightStick,
     GamePadLeftTrigger,
     GamePadRightTrigger,
+
+    MultiBindABLeftMouse,
 
     Grab,
 }
@@ -57,36 +59,39 @@ struct Player {
     gamepad: Option<Entity>,
 }
 
-fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
+fn setup(mut commands: Commands, mut windows: Query<&mut Window>) -> Result<(), BevyError> {
     let mut window = windows.single_mut().unwrap();
     window.title = "None".to_string();
 
     commands.spawn((Camera2d, Camera { ..default() }));
 
     let input_map = InputMap::new()
-        .with_button(Action::MouseLeft, MouseButtonInput::new(MouseButton::Left))
-        .with_button(Action::MouseMiddle, MouseButtonInput::new(MouseButton::Middle))
-        .with_button(Action::MouseRight, MouseButtonInput::new(MouseButton::Right))
-        .with_dual_axis(Action::MouseMotion, MouseMotion::new())
-        .with_dual_axis(Action::MousePosition, MousePosition::new())
-        .with_dual_axis(
+        .with_binding(Action::MouseLeft, MouseButtonInput::new(MouseButton::Left))?
+        .with_binding(Action::MouseMiddle, MouseButtonInput::new(MouseButton::Middle))?
+        .with_binding(Action::MouseRight, MouseButtonInput::new(MouseButton::Right))?
+        .with_binding(Action::MouseMotion, MouseMotion::new())?
+        .with_binding(Action::MousePosition, MousePosition::new())?
+        .with_binding(
             Action::MouseNormalizedPosition,
             MousePosition::new().normalize_to_screen(),
-        )
-        .with_dual_axis(
+        )?
+        .with_binding(
             Action::MouseEdgeScroll,
             MousePosition::new().edge_scroll(EdgeSize::Fixed(50.)),
-        )
-        .with_dual_axis(Action::TouchPosition, TouchPosition::new())
-        .with_dual_axis(
+        )?
+        .with_binding(Action::TouchPosition, TouchPosition::new())?
+        .with_binding(
             Action::TouchNormalizedPosition,
             TouchPosition::new().normalize_to_screen(),
-        )
-        .with_dual_axis(
+        )?
+        .with_binding(
             Action::TouchEdgeScroll,
             TouchPosition::new().edge_scroll(EdgeSize::Fixed(50.)),
-        )
-        .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
+        )?
+        .with_binding(Action::MultiBindABLeftMouse, KeyboardInput::new(KeyCode::KeyA))?
+        .with_binding(Action::MultiBindABLeftMouse, KeyboardInput::new(KeyCode::KeyB))?
+        .with_binding(Action::MultiBindABLeftMouse, MouseButtonInput::new(MouseButton::Left))?
+        .with_binding(Action::Grab, KeyboardInput::new(KeyCode::Space))?;
 
     commands.spawn((
         Player { gamepad: None },
@@ -99,6 +104,7 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
             ..default()
         },
     ));
+    Ok(())
 }
 
 fn grab_mouse(players: Query<&ActionStates<Action>, Without<Window>>, mut window: Query<&mut Window>) {
@@ -134,22 +140,22 @@ fn join_gamepad(
             log::info!("Player joined gamepad {gamepad_entity}");
             player.gamepad = Some(gamepad_entity);
             input
-                .add_dual_axis(
+                .add_binding(
                     Action::GamePadLeftStick,
                     GamepadStickInput::new(gamepad_entity, GamepadStick::Left),
-                )
-                .add_dual_axis(
+                )?
+                .add_binding(
                     Action::GamePadRightStick,
                     GamepadStickInput::new(gamepad_entity, GamepadStick::Right),
-                )
-                .add_button(
+                )?
+                .add_binding(
                     Action::GamePadLeftTrigger,
                     GamepadButtonInput::new(gamepad_entity, GamepadButton::LeftTrigger),
-                )
-                .add_button(
+                )?
+                .add_binding(
                     Action::GamePadRightTrigger,
                     GamepadButtonInput::new(gamepad_entity, GamepadButton::RightTrigger),
-                );
+                )?;
         }
     }
 
@@ -221,6 +227,11 @@ fn show_status(mut players: Query<(&ActionStates<Action>, &mut Text)>, window: Q
             "GamePad Triggers: {:?} {:?}",
             action_state.button_value(&Action::GamePadLeftTrigger),
             action_state.button_value(&Action::GamePadRightTrigger)
+        ));
+
+        logs.push(format!(
+            "Bind to A, B, Mouse left: {:?}",
+            action_state.button_value(&Action::MultiBindABLeftMouse)
         ));
 
         text.0 = logs.join("\n");

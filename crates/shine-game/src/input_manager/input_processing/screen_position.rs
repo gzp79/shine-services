@@ -1,5 +1,5 @@
-use crate::input_manager::{DualAxisLike, InputSources, UserInput};
-use bevy::{math::Vec2, time::Time, window::Window};
+use crate::input_manager::{InputSources, TypedUserInput, UserInput};
+use bevy::{math::Vec2, window::Window};
 use std::borrow::Cow;
 
 /// Converts a position from screen coordinates to a normalized coordinate system, such that the smaller screen dimension
@@ -9,7 +9,7 @@ use std::borrow::Cow;
 /// Output: Produces a normalized position where (0, 0) is at the center of the screen, the Y axis increases upward.
 pub struct NormalizedPosition<I>
 where
-    I: DualAxisLike,
+    I: TypedUserInput<Vec2>,
 {
     name: Option<String>,
     input: I,
@@ -18,7 +18,7 @@ where
 
 impl<I> NormalizedPosition<I>
 where
-    I: DualAxisLike,
+    I: TypedUserInput<Vec2>,
 {
     pub fn new(input: I) -> Self {
         Self {
@@ -36,7 +36,7 @@ where
 
 impl<I> UserInput for NormalizedPosition<I>
 where
-    I: DualAxisLike,
+    I: TypedUserInput<Vec2>,
 {
     fn type_name(&self) -> &'static str {
         "ViewportNormalizedPosition"
@@ -62,12 +62,12 @@ where
     }
 }
 
-impl<I> DualAxisLike for NormalizedPosition<I>
+impl<I> TypedUserInput<Vec2> for NormalizedPosition<I>
 where
-    I: DualAxisLike,
+    I: TypedUserInput<Vec2>,
 {
-    fn process(&mut self, time: &Time) -> Option<Vec2> {
-        if let Some(pos) = self.input.process(time) {
+    fn process(&mut self, time_s: f32) -> Option<Vec2> {
+        if let Some(pos) = self.input.process(time_s) {
             let w = self.screen_size.x;
             let h = self.screen_size.y;
             let s = (w.min(h) / 2.0).max(1.0);
@@ -97,7 +97,7 @@ pub enum EdgeSize {
 /// The output is also in screen coordinates, with positive Y pointing down.
 pub struct ScreenEdgeScroll<I>
 where
-    I: DualAxisLike,
+    I: TypedUserInput<Vec2>,
 {
     name: Option<String>,
     input: I,
@@ -107,7 +107,7 @@ where
 
 impl<I> ScreenEdgeScroll<I>
 where
-    I: DualAxisLike,
+    I: TypedUserInput<Vec2>,
 {
     pub fn new(input: I, edge: EdgeSize) -> Self {
         Self {
@@ -126,7 +126,7 @@ where
 
 impl<I> UserInput for ScreenEdgeScroll<I>
 where
-    I: DualAxisLike,
+    I: TypedUserInput<Vec2>,
 {
     fn type_name(&self) -> &'static str {
         "ScreenEdgeScroll"
@@ -152,12 +152,12 @@ where
     }
 }
 
-impl<I> DualAxisLike for ScreenEdgeScroll<I>
+impl<I> TypedUserInput<Vec2> for ScreenEdgeScroll<I>
 where
-    I: DualAxisLike,
+    I: TypedUserInput<Vec2>,
 {
-    fn process(&mut self, time: &Time) -> Option<Vec2> {
-        if let Some(pos) = self.input.process(time) {
+    fn process(&mut self, time_s: f32) -> Option<Vec2> {
+        if let Some(pos) = self.input.process(time_s) {
             let w = self.screen_size.x;
             let h = self.screen_size.y;
             let (ew, eh) = match self.edge {
@@ -196,18 +196,8 @@ where
     }
 }
 
-/// Helper to add screen position processing to an [`DualAxisLike`] input.
-pub trait ScreenPositionProcessor: DualAxisLike {
-    fn normalize_to_screen(self) -> NormalizedPosition<Self>
-    where
-        Self: Sized;
-
-    fn edge_scroll(self, edge: EdgeSize) -> ScreenEdgeScroll<Self>
-    where
-        Self: Sized;
-}
-
-impl<T: DualAxisLike> ScreenPositionProcessor for T {
+/// Trait to extend `UserInput` with screen position processing capabilities.
+pub trait ScreenPositionProcess: TypedUserInput<Vec2> {
     fn normalize_to_screen(self) -> NormalizedPosition<Self>
     where
         Self: Sized,
@@ -222,3 +212,5 @@ impl<T: DualAxisLike> ScreenPositionProcessor for T {
         ScreenEdgeScroll::new(self, edge)
     }
 }
+
+impl<T> ScreenPositionProcess for T where T: TypedUserInput<Vec2> + Sized {}

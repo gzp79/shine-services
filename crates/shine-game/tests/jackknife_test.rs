@@ -1,7 +1,7 @@
 use bevy::math::Vec2;
 use shine_game::math::{
-    unistroke_templates, CostMatrix, GestureId, JackknifeClassifier, JackknifeConfig, JackknifeFeatures,
-    JackknifePoint, JackknifeTemplate, JackknifeTemplateSet,
+    unistroke_templates, CostMatrix, GestureId, JackknifeClassifier, JackknifeConfig, JackknifePoint,
+    JackknifeTemplate, JackknifeTemplateSet,
 };
 use shine_test::test;
 use std::fs;
@@ -91,7 +91,7 @@ fn test_jackknife_foo() {
         config.dtw_radius,
         |a: &Vec2, b: &Vec2| a.distance_square(b),
     );
-    log::info!("Jackknife features: {:#?}", cost);
+    log::info!("Jackknife features: {cost:#?}");
 
     let mut template_set = JackknifeTemplateSet::new(config.clone());
 

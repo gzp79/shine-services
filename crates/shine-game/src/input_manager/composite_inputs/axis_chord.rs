@@ -1,12 +1,11 @@
-use crate::input_manager::{AxisLike, ButtonLike, InputSources, UserInput};
-use bevy::time::Time;
+use crate::input_manager::{InputSources, TypedUserInput, UserInput};
 use std::borrow::Cow;
 
 /// An axis that returns value only when the button is pressed.
 pub struct AxisChord<B, A>
 where
-    B: ButtonLike,
-    A: AxisLike,
+    B: TypedUserInput<bool>,
+    A: TypedUserInput<f32>,
 {
     name: Option<String>,
     button: B,
@@ -15,8 +14,8 @@ where
 
 impl<B, A> AxisChord<B, A>
 where
-    B: ButtonLike,
-    A: AxisLike,
+    B: TypedUserInput<bool>,
+    A: TypedUserInput<f32>,
 {
     pub fn new(button: B, axis: A) -> Self {
         Self { name: None, button, axis }
@@ -30,8 +29,8 @@ where
 
 impl<B, A> UserInput for AxisChord<B, A>
 where
-    B: ButtonLike,
-    A: AxisLike,
+    B: TypedUserInput<bool>,
+    A: TypedUserInput<f32>,
 {
     fn type_name(&self) -> &'static str {
         "AxisChord"
@@ -53,14 +52,14 @@ where
     }
 }
 
-impl<B, A> AxisLike for AxisChord<B, A>
+impl<B, A> TypedUserInput<f32> for AxisChord<B, A>
 where
-    B: ButtonLike,
-    A: AxisLike,
+    B: TypedUserInput<bool>,
+    A: TypedUserInput<f32>,
 {
-    fn process(&mut self, time: &Time) -> Option<f32> {
-        let button = self.button.process(time).unwrap_or(false);
-        let value = self.axis.process(time);
+    fn process(&mut self, time_s: f32) -> Option<f32> {
+        let button = self.button.process(time_s).unwrap_or(false);
+        let value = self.axis.process(time_s);
 
         if button {
             value
