@@ -3,7 +3,7 @@ use core::f32;
 use shine_game::{
     application,
     input_manager::{
-        ActionStates, AttachedToGestureSet, DualAxisChord, GestureInput, GestureSet, InputManagerPlugin, InputMap,
+        ActionState, AttachedToGestureSet, DualAxisChord, GestureInput, GestureSet, InputManagerPlugin, InputMap,
         KeyboardInput, MouseButtonInput, MousePosition, TouchPosition, UnistrokeGesture,
     },
     math::{unistroke_templates, GestureId, JackknifeConfig, JackknifeTemplateSet},
@@ -117,7 +117,7 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
     ));
 }
 
-fn grab_mouse(players: Query<&ActionStates<Action>, Without<Window>>, mut window: Query<&mut Window>) {
+fn grab_mouse(players: Query<&ActionState<Action>, Without<Window>>, mut window: Query<&mut Window>) {
     let action_state = players.single().unwrap();
     let mut window = window.single_mut().unwrap();
 
@@ -229,7 +229,7 @@ fn show_gesture(
 }
 
 fn show_status(
-    mut players: Query<(&ActionStates<Action>, &mut Text)>,
+    mut players: Query<(&ActionState<Action>, &mut Text)>,
     time: Res<Time>,
     mut gesture_history: Local<GestureHistory>,
 ) {

@@ -1,5 +1,34 @@
-use crate::input_manager::{ActionState, IntoActionState};
+use crate::input_manager::{AndFold, InputValueFold, IntoActionValue, MaxFold};
 use bevy::{math::Vec2, time::Time};
+use std::any::Any;
+
+/// Marker trait for types that represent the state or value of an input action.
+///
+/// Implement this trait for any type that you want to use as an action value
+/// in the input system (e.g., button, axis, or dual-axis values).
+pub trait ActionValue: Sync + Send + 'static {}
+
+/// Blank trait for type erased action values.
+pub trait AnyActionValue: ActionValue + Any {
+    /// Returns `self` as `&dyn Any`
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Returns `self` as `&mut dyn Any`
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+}
+
+impl<T> AnyActionValue for T
+where
+    T: ActionValue + Any,
+{
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ButtonStatus {
@@ -11,14 +40,14 @@ pub enum ButtonStatus {
 }
 
 #[derive(Debug, Clone)]
-pub struct ButtonState {
+pub struct ButtonValue {
     pub input: Option<bool>,
 
     pub start_time: f32,
     pub status: ButtonStatus,
 }
 
-impl Default for ButtonState {
+impl Default for ButtonValue {
     fn default() -> Self {
         Self {
             input: None,
@@ -29,7 +58,7 @@ impl Default for ButtonState {
     }
 }
 
-impl ButtonState {
+impl ButtonValue {
     pub fn just_pressed(&self) -> bool {
         matches!(self.status, ButtonStatus::JustPressed)
     }
@@ -77,20 +106,16 @@ impl ButtonState {
     }
 }
 
-impl ActionState for ButtonState {}
+impl ActionValue for ButtonValue {}
 
-impl IntoActionState for bool {
-    type State = ButtonState;
+impl IntoActionValue for bool {
+    type State = ButtonValue;
 
-    fn accumulate(state: Option<Self>, value: Option<Self>) -> Option<Self>
+    fn default_fold() -> Box<dyn InputValueFold<Self>>
     where
         Self: Sized,
     {
-        match (state, value) {
-            (Some(prev), Some(current)) => Some(prev || current),
-            (Some(v), None) | (None, Some(v)) => Some(v),
-            (None, None) => None,
-        }
+        Box::new(AndFold)
     }
 
     fn update_state(state: &mut Self::State, value: Option<Self>, time_s: f32) {
@@ -99,24 +124,20 @@ impl IntoActionState for bool {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct AxisState {
+pub struct AxisValue {
     pub value: Option<f32>,
 }
 
-impl ActionState for AxisState {}
+impl ActionValue for AxisValue {}
 
-impl IntoActionState for f32 {
-    type State = AxisState;
+impl IntoActionValue for f32 {
+    type State = AxisValue;
 
-    fn accumulate(prev: Option<Self>, current: Option<Self>) -> Option<Self>
+    fn default_fold() -> Box<dyn InputValueFold<Self>>
     where
         Self: Sized,
     {
-        match (prev, current) {
-            (Some(v1), Some(v2)) => Some(v1.max(v2)),
-            (Some(v), None) | (None, Some(v)) => Some(v),
-            (None, None) => None,
-        }
+        Box::new(MaxFold)
     }
 
     fn update_state(state: &mut Self::State, value: Option<Self>, _time_s: f32) {
@@ -125,30 +146,20 @@ impl IntoActionState for f32 {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct DualAxisState {
+pub struct DualAxisValue {
     pub value: Option<Vec2>,
 }
 
-impl ActionState for DualAxisState {}
+impl ActionValue for DualAxisValue {}
 
-impl IntoActionState for Vec2 {
-    type State = DualAxisState;
+impl IntoActionValue for Vec2 {
+    type State = DualAxisValue;
 
-    fn accumulate(prev: Option<Self>, current: Option<Self>) -> Option<Self>
+    fn default_fold() -> Box<dyn InputValueFold<Self>>
     where
         Self: Sized,
     {
-        match (prev, current) {
-            (Some(v1), Some(v2)) => {
-                if v1.length_squared() >= v2.length_squared() {
-                    Some(v1)
-                } else {
-                    Some(v2)
-                }
-            }
-            (Some(v), None) | (None, Some(v)) => Some(v),
-            (None, None) => None,
-        }
+        Box::new(MaxFold)
     }
 
     fn update_state(state: &mut Self::State, value: Option<Self>, _time_s: f32) {

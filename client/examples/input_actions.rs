@@ -2,7 +2,7 @@ use bevy::{prelude::*, window::CursorGrabMode};
 use shine_game::{
     application,
     input_manager::{
-        ActionStates, EdgeSize, GamepadButtonInput, GamepadStick, GamepadStickInput, InputManagerPlugin, InputMap,
+        ActionState, EdgeSize, GamepadButtonInput, GamepadStick, GamepadStickInput, InputManagerPlugin, InputMap,
         KeyboardInput, MouseButtonInput, MouseMotion, MousePosition, ScreenPositionProcess, TouchPosition,
     },
 };
@@ -107,7 +107,7 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) -> Result<(), 
     Ok(())
 }
 
-fn grab_mouse(players: Query<&ActionStates<Action>, Without<Window>>, mut window: Query<&mut Window>) {
+fn grab_mouse(players: Query<&ActionState<Action>, Without<Window>>, mut window: Query<&mut Window>) {
     let action_state = players.single().unwrap();
     let mut window = window.single_mut().unwrap();
 
@@ -162,7 +162,7 @@ fn join_gamepad(
     Ok(())
 }
 
-fn show_status(mut players: Query<(&ActionStates<Action>, &mut Text)>, window: Query<&Window>) {
+fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>, window: Query<&Window>) {
     for (action_state, mut text) in players.iter_mut() {
         let mut logs = Vec::new();
 

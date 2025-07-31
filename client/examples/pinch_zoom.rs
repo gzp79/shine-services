@@ -1,7 +1,7 @@
 use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
     application,
-    input_manager::{ActionStates, InputManagerPlugin, InputMap, KeyboardInput, TwoFingerGesture},
+    input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput, TwoFingerGesture},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -125,7 +125,7 @@ fn setup(
 }
 
 fn handle_control(
-    mut actions_q: Query<(&ActionStates<Action>, &mut AppState)>,
+    mut actions_q: Query<(&ActionState<Action>, &mut AppState)>,
     mut camera_q: Query<&mut Transform, With<Camera2d>>,
     mut window_q: Query<&mut Window>,
 ) -> Result<(), BevyError> {
@@ -222,7 +222,7 @@ fn update_camera_world_pos(
 // }
 
 fn show_status(
-    mut players: Query<(&ActionStates<Action>, &TwoFingerGesture, &AppState, &mut Text)>,
+    mut players: Query<(&ActionState<Action>, &TwoFingerGesture, &AppState, &mut Text)>,
     camera: Query<(&Camera, &GlobalTransform, &Projection)>,
     mut gizmo: Gizmos,
 ) -> Result<(), BevyError> {

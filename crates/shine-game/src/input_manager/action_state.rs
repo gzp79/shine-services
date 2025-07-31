@@ -1,54 +1,32 @@
+use crate::input_manager::{
+    ActionValue, AnyActionValue, AxisValue, ButtonStatus, ButtonValue, DualAxisValue, InputValueFold,
+};
 use bevy::{ecs::component::Component, math::Vec2};
 use smallbox::{smallbox, SmallBox};
 use std::{
-    any::Any,
     collections::{hash_map::Entry, HashMap},
     hash::Hash,
     ops::{Deref, DerefMut},
 };
 
-use crate::input_manager::{AxisState, ButtonState, ButtonStatus, DualAxisState};
-
 pub trait ActionLike: Clone + Eq + Hash + Send + Sync + 'static {}
 impl<A> ActionLike for A where A: Clone + Eq + Hash + Send + Sync + 'static {}
 
-pub trait ActionState: Sync + Send + 'static {}
+/// A trait to convert InputValue into an ActionValue.
+pub trait IntoActionValue: Clone + Send + Sync + 'static {
+    type State: ActionValue + Default;
 
-pub trait AnyActionState: ActionState + Any {
-    /// Returns `self` as `&dyn Any`
-    fn as_any(&self) -> &dyn std::any::Any;
-
-    /// Returns `self` as `&mut dyn Any`
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-}
-
-impl<T> AnyActionState for T
-where
-    T: ActionState + Any,
-{
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-pub trait IntoActionState: Clone + Send + Sync + 'static {
-    type State: ActionState + Default;
-
-    fn accumulate(prev: Option<Self>, current: Option<Self>) -> Option<Self>
+    fn default_fold() -> Box<dyn InputValueFold<Self>>
     where
         Self: Sized;
 
     fn update_state(state: &mut Self::State, value: Option<Self>, time_s: f32);
 }
 
-type BoxedState = SmallBox<dyn AnyActionState, smallbox::space::S64>;
+type BoxedState = SmallBox<dyn AnyActionValue, smallbox::space::S64>;
 
 #[derive(Component)]
-pub struct ActionStates<A>
+pub struct ActionState<A>
 where
     A: ActionLike,
 {
@@ -56,7 +34,7 @@ where
     data: HashMap<A, (usize, BoxedState)>,
 }
 
-impl<A> Default for ActionStates<A>
+impl<A> Default for ActionState<A>
 where
     A: ActionLike,
 {
@@ -68,7 +46,7 @@ where
     }
 }
 
-impl<A> ActionStates<A>
+impl<A> ActionState<A>
 where
     A: ActionLike,
 {
@@ -89,7 +67,7 @@ where
     /// Return the button state bound to the action. If data is not available or not a button, None is returned.
     pub fn get_as<T>(&self, action: &A) -> Option<&T>
     where
-        T: ActionState,
+        T: ActionValue,
     {
         self.data
             .get(action)
@@ -98,7 +76,7 @@ where
 
     pub fn set_as<T>(&mut self, action: A) -> &mut T
     where
-        T: ActionState + Default,
+        T: ActionValue + Default,
     {
         let entry = self.data.entry(action);
 
@@ -127,34 +105,34 @@ where
     /// A convenience method to get the button state. If action is not available or not a button, None is returned.
     #[inline]
     pub fn button_value(&self, action: &A) -> ButtonStatus {
-        self.get_as::<ButtonState>(action)
+        self.get_as::<ButtonValue>(action)
             .map_or(ButtonStatus::None, |state| state.status)
     }
 
     /// A convenience method to get if button was just pressed. If action is not available or not a button, None is returned.
     #[inline]
     pub fn just_pressed(&self, action: &A) -> bool {
-        self.get_as::<ButtonState>(action)
+        self.get_as::<ButtonValue>(action)
             .is_some_and(|state| state.just_pressed())
     }
 
     /// A convenience method to get if button was just released. If action is not available or not a button, None is returned.
     #[inline]
     pub fn just_released(&self, action: &A) -> bool {
-        self.get_as::<ButtonState>(action)
+        self.get_as::<ButtonValue>(action)
             .is_some_and(|state| state.just_released())
     }
 
     /// A convenience method to get if button is currently pressed. If action is not available or not a button, None is returned.
     #[inline]
     pub fn is_pressed(&self, action: &A) -> bool {
-        self.get_as::<ButtonState>(action).is_some_and(|state| state.is_down())
+        self.get_as::<ButtonValue>(action).is_some_and(|state| state.is_down())
     }
 
     /// A convenience method to get the axis value, returning None if data is not available.
     #[inline]
     pub fn try_axis_value(&self, action: &A) -> Option<f32> {
-        self.get_as::<AxisState>(action).and_then(|state| state.value)
+        self.get_as::<AxisValue>(action).and_then(|state| state.value)
     }
 
     /// A convenience method to get the axis value, returning 0.0 if data is not available.
@@ -166,7 +144,7 @@ where
     /// A convenience method to get the dual-axis value, returning None if data is not available.
     #[inline]
     pub fn try_dual_axis_value(&self, action: &A) -> Option<Vec2> {
-        self.get_as::<DualAxisState>(action).and_then(|state| state.value)
+        self.get_as::<DualAxisValue>(action).and_then(|state| state.value)
     }
 
     /// A convenience method to get the dual-axis value, returning Vec2::ZERO if data is not available.

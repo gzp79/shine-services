@@ -1,4 +1,6 @@
-use crate::input_manager::{ActionLike, ActionStates, InputSources, IntoActionState, TypedUserInput, UserInput};
+use crate::input_manager::{
+    ActionLike, ActionState, InputSources, InputValueFold, IntoActionValue, TypedUserInput, UserInput,
+};
 use std::{any::Any, marker::PhantomData};
 
 pub trait InputPipeline<A>: Send + Sync + 'static
@@ -9,16 +11,18 @@ where
 
     fn integrate(&mut self, input_source: &InputSources);
     fn pull_pipeline(&mut self, time_s: f32);
-    fn store_state(&mut self, action_state: &mut ActionStates<A>, action: &A);
+    fn store_state(&mut self, action_state: &mut ActionState<A>, action: &A);
 }
 
 pub trait TypedInputPipeline<A, T>: InputPipeline<A>
 where
     A: ActionLike,
-    T: IntoActionState,
+    T: IntoActionValue,
 {
     fn add_input(&mut self, id: usize, input: Box<dyn TypedUserInput<T>>);
     fn get_input(&self, id: usize) -> Option<&dyn TypedUserInput<T>>;
+
+    fn configure(&mut self, fold: Box<dyn InputValueFold<T>>);
 }
 
 pub trait AnyInputPipeline<A>: InputPipeline<A> + Any
@@ -47,44 +51,46 @@ where
 }
 
 /// Store the result of an input processing pipeline and converts it into an `ActionState`.
-pub struct StoredInput<A, T>
+pub struct CollectingPipeline<A, T>
 where
     A: ActionLike,
-    T: IntoActionState,
+    T: IntoActionValue,
 {
     inputs: Vec<(usize, Box<dyn TypedUserInput<T>>, Option<T>)>,
     time_s: f32,
+    fold: Box<dyn InputValueFold<T>>,
     _ph: PhantomData<A>,
 }
 
-impl<A, T> Default for StoredInput<A, T>
+impl<A, T> Default for CollectingPipeline<A, T>
 where
     A: ActionLike,
-    T: IntoActionState,
+    T: IntoActionValue,
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<A, T> StoredInput<A, T>
+impl<A, T> CollectingPipeline<A, T>
 where
     A: ActionLike,
-    T: IntoActionState,
+    T: IntoActionValue,
 {
     pub fn new() -> Self {
         Self {
             inputs: Vec::new(),
             time_s: 0.0,
+            fold: T::default_fold(),
             _ph: PhantomData,
         }
     }
 }
 
-impl<A, T> InputPipeline<A> for StoredInput<A, T>
+impl<A, T> InputPipeline<A> for CollectingPipeline<A, T>
 where
     A: ActionLike,
-    T: IntoActionState,
+    T: IntoActionValue,
 {
     fn remove_input(&mut self, id: usize) {
         self.inputs.retain(|(pid, _, _)| *pid != id);
@@ -103,11 +109,11 @@ where
         }
     }
 
-    fn store_state(&mut self, action_state: &mut ActionStates<A>, action: &A) {
+    fn store_state(&mut self, action_state: &mut ActionState<A>, action: &A) {
         let mut cumulated_value = None;
 
         for (_, _, value) in self.inputs.iter_mut() {
-            cumulated_value = T::accumulate(cumulated_value.take(), value.take());
+            cumulated_value = self.fold.fold(cumulated_value.take(), value.take());
         }
 
         let state = action_state.set_as::<T::State>(action.clone());
@@ -115,10 +121,10 @@ where
     }
 }
 
-impl<A, T> TypedInputPipeline<A, T> for StoredInput<A, T>
+impl<A, T> TypedInputPipeline<A, T> for CollectingPipeline<A, T>
 where
     A: ActionLike,
-    T: IntoActionState,
+    T: IntoActionValue,
 {
     fn add_input(&mut self, id: usize, input: Box<dyn TypedUserInput<T>>) {
         assert!(
@@ -134,5 +140,9 @@ where
             .iter()
             .find(|(pid, _, _)| *pid == id)
             .map(|(_, input, _)| input.as_ref())
+    }
+
+    fn configure(&mut self, fold: Box<dyn InputValueFold<T>>) {
+        self.fold = fold;
     }
 }

@@ -1,6 +1,6 @@
 use crate::input_manager::{
-    ActionLike, ActionStates, AnyInputPipeline, InputError, InputSources, IntoActionState, StoredInput,
-    TypedInputPipeline, TypedUserInput,
+    ActionLike, ActionState, AnyInputPipeline, CollectingPipeline, InputError, InputSources, InputValueFold,
+    IntoActionValue, TypedInputPipeline, TypedUserInput,
 };
 use bevy::{
     ecs::{
@@ -26,7 +26,7 @@ where
 }
 
 #[derive(Component)]
-#[require(ActionStates<A>)]
+#[require(ActionState<A>)]
 pub struct InputMap<A>
 where
     A: ActionLike,
@@ -67,19 +67,41 @@ where
     pub fn bind<T, I>(&mut self, action: A, input: I) -> Result<BindingId<A>, InputError>
     where
         I: TypedUserInput<T>,
-        T: IntoActionState,
+        T: IntoActionValue,
     {
         let id = self.next_id();
         let pipeline = self.bindings.entry(action.clone()).or_insert_with(|| {
-            let pipeline: Box<dyn AnyInputPipeline<A>> = Box::new(StoredInput::<A, T>::new());
+            let pipeline: Box<dyn AnyInputPipeline<A>> = Box::new(CollectingPipeline::<A, T>::new());
             pipeline
         });
 
-        if let Some(pipeline) = pipeline.deref_mut().as_any_mut().downcast_mut::<StoredInput<A, T>>() {
+        if let Some(pipeline) = pipeline
+            .deref_mut()
+            .as_any_mut()
+            .downcast_mut::<CollectingPipeline<A, T>>()
+        {
             pipeline.add_input(id, Box::new(input));
             Ok(BindingId(action, id))
         } else {
-            Err(InputError::IncompatibleState)
+            Err(InputError::IncompatibleValue)
+        }
+    }
+
+    pub fn configure<T, F>(&mut self, action: A, fold: F) -> Result<(), InputError>
+    where
+        T: IntoActionValue,
+        F: InputValueFold<T>,
+    {
+        let pipeline = match self.bindings.get_mut(&action) {
+            Some(pipeline) => pipeline,
+            None => return Err(InputError::ActionNotBound),
+        };
+
+        if let Some(pipeline) = pipeline.as_any_mut().downcast_mut::<CollectingPipeline<A, T>>() {
+            pipeline.configure(Box::new(fold));
+            Ok(())
+        } else {
+            Err(InputError::IncompatibleValue)
         }
     }
 
@@ -87,9 +109,18 @@ where
     pub fn with_binding<T, I>(mut self, action: A, input: I) -> Result<Self, InputError>
     where
         I: TypedUserInput<T>,
-        T: IntoActionState,
+        T: IntoActionValue,
     {
         self.bind(action, input)?;
+        Ok(self)
+    }
+
+    pub fn with_configure<T, F>(mut self, action: A, fold: F) -> Result<Self, InputError>
+    where
+        T: IntoActionValue,
+        F: InputValueFold<T>,
+    {
+        self.configure(action, fold)?;
         Ok(self)
     }
 
@@ -97,7 +128,7 @@ where
     pub fn add_binding<T, I>(&mut self, action: A, input: I) -> Result<&mut Self, InputError>
     where
         I: TypedUserInput<T>,
-        T: IntoActionState,
+        T: IntoActionValue,
     {
         self.bind(action, input)?;
         Ok(self)
@@ -117,11 +148,11 @@ where
 
     pub fn get_binding<T>(&self, id: &BindingId<A>) -> Option<&dyn TypedUserInput<T>>
     where
-        T: IntoActionState,
+        T: IntoActionValue,
     {
         self.bindings
             .get(&id.0)
-            .and_then(|pipelines| pipelines.as_any().downcast_ref::<StoredInput<A, T>>())
+            .and_then(|pipelines| pipelines.as_any().downcast_ref::<CollectingPipeline<A, T>>())
             .and_then(|pipelines| pipelines.get_input(id.1))
     }
 
@@ -157,7 +188,7 @@ where
 }
 
 /// Update the action state based on the input map.
-pub fn update_action_state<A>(mut input_query: Query<(&mut InputMap<A>, &mut ActionStates<A>)>)
+pub fn update_action_state<A>(mut input_query: Query<(&mut InputMap<A>, &mut ActionState<A>)>)
 where
     A: ActionLike,
 {

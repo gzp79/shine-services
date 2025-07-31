@@ -10,8 +10,10 @@ mod input_pipeline;
 pub use self::input_pipeline::*;
 mod input_map;
 pub use self::input_map::*;
-mod input_kind;
-pub use self::input_kind::*;
+mod input_fold;
+pub use self::input_fold::*;
+mod action_value;
+pub use self::action_value::*;
 
 mod user_inputs;
 pub use self::user_inputs::*;
