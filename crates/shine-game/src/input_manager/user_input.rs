@@ -7,6 +7,7 @@ pub trait UserInput: Any + Send + Sync + 'static {
     fn visit_recursive<'a>(&'a self, depth: usize, visitor: &mut dyn FnMut(usize, &'a dyn UserInput) -> bool) -> bool;
     fn integrate(&mut self, input: &InputSources);
 }
+
 pub trait TypedUserInput<T>: UserInput
 where
     T: Send + Sync + 'static,

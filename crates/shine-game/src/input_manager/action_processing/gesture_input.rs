@@ -1,5 +1,5 @@
 use crate::{
-    input_manager::{ActionLike, ButtonLike, DetectedGesture, InputMap, InputSource, InputSources, UserInput},
+    input_manager::{ActionLike, DetectedGesture, InputMap, InputSource, InputSources, TypedUserInput, UserInput},
     math::GestureId,
 };
 use bevy::{
@@ -37,10 +37,10 @@ where
     Ok(())
 }
 
-/// Represents button input from a keyboard key.
+/// Represents boolean input from gestures recognition.
 ///
-/// Returns a boolean value indicating whether the key is pressed.
-/// If the keyboard input resource is unavailable, returns `None`.
+/// Returns a boolean value indicating whether the gesture is recognized.
+/// If no gesture is available, returns `None`.
 pub struct GestureInput {
     name: Option<String>,
     gesture: GestureId,
@@ -96,8 +96,8 @@ impl UserInput for GestureInput {
     }
 }
 
-impl ButtonLike for GestureInput {
-    fn process(&mut self, _time: &Time) -> Option<bool> {
+impl TypedUserInput<bool> for GestureInput {
+    fn process(&mut self, _time_s: f32) -> Option<bool> {
         Some(self.pressed)
     }
 }

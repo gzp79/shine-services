@@ -1,5 +1,5 @@
 use crate::{
-    input_manager::{ActionLike, ActionStates, AttachedRecognizers, AttachedToGestureSet, DetectedGesture, GestureSet},
+    input_manager::{ActionLike, ActionState, AttachedRecognizers, AttachedToGestureSet, DetectedGesture, GestureSet},
     math::{GestureId, JackknifeClassifier, JackknifeClassifierInternals},
 };
 use bevy::{
@@ -94,7 +94,7 @@ where
 pub fn detect_unistroke_gesture<A>(
     mut gesture_q: Query<(
         &GestureSet,
-        &ActionStates<A>,
+        &ActionState<A>,
         &mut UnistrokeGesture<A>,
         &mut DetectedGesture,
     )>,
@@ -113,7 +113,7 @@ where
 /// Assume the gesture and state is on the parent and the children stores the recognizer.
 /// It allows to use the same gesture recognizer for multiple actions.
 pub fn detect_attached_unistroke_gesture<A>(
-    mut gesture_q: Query<(Entity, &GestureSet, &ActionStates<A>)>,
+    mut gesture_q: Query<(Entity, &GestureSet, &ActionState<A>)>,
     mut recognizer_q: Query<(Entity, &mut UnistrokeGesture<A>, &mut DetectedGesture), With<AttachedToGestureSet>>,
     attachments_q: Query<&AttachedRecognizers>,
 ) -> Result<(), BevyError>

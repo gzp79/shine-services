@@ -62,26 +62,26 @@ fn setup_game(app: &mut App) {
         .add_systems(Update, (grab_mouse, show_status, show_gesture));
 }
 
-fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
+fn setup(mut commands: Commands, mut windows: Query<&mut Window>) -> Result<(), BevyError> {
     let mut window = windows.single_mut().unwrap();
     window.title = "None".to_string();
 
     commands.spawn((Camera2d, Camera { ..default() }));
 
     let input_map = InputMap::new()
-        .with_dual_axis(
+        .with_binding(
             Action::MouseClickPosition,
             DualAxisChord::new(MouseButtonInput::new(MouseButton::Left), MousePosition::new()),
-        )
-        .with_dual_axis(
+        )?
+        .with_binding(
             Action::CtrlMousePosition,
             DualAxisChord::new(KeyboardInput::new(KeyCode::ControlLeft), MousePosition::new()),
-        )
-        .with_dual_axis(Action::TouchPosition, TouchPosition::new())
-        .with_button(Action::GestureTriangle, GestureInput::new(GestureId(9)))
-        .with_button(Action::GestureRectangle, GestureInput::new(GestureId(10)))
-        .with_button(Action::GestureCircle, GestureInput::new(GestureId(11)))
-        .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
+        )?
+        .with_binding(Action::TouchPosition, TouchPosition::new())?
+        .with_binding(Action::GestureTriangle, GestureInput::new(GestureId(9)))?
+        .with_binding(Action::GestureRectangle, GestureInput::new(GestureId(10)))?
+        .with_binding(Action::GestureCircle, GestureInput::new(GestureId(11)))?
+        .with_binding(Action::Grab, KeyboardInput::new(KeyCode::Space))?;
 
     // Template-Set can be saved and loaded to speed up the setup.
     let mut template_set = JackknifeTemplateSet::new(JackknifeConfig::euclidean_distance());
@@ -89,7 +89,7 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
         template_set.add_template(*id, points);
     }
 
-    //template_set.train(1000, 1.0, 16, 0.25, 2);
+    template_set.train(1000, 1.0, 16, 0.25, 2);
 
     let root = commands
         .spawn((
@@ -115,6 +115,8 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
         AttachedToGestureSet(root),
         UnistrokeGesture::new(Action::CtrlMousePosition, 10.0),
     ));
+
+    Ok(())
 }
 
 fn grab_mouse(players: Query<&ActionState<Action>, Without<Window>>, mut window: Query<&mut Window>) {
