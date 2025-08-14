@@ -2,14 +2,8 @@ use crate::input_manager::{AndFold, InputValueFold, IntoActionValue, MaxFold};
 use bevy::{math::Vec2, time::Time};
 use std::any::Any;
 
-/// Marker trait for types that represent the state or value of an input action.
-///
-/// Implement this trait for any type that you want to use as an action value
-/// in the input system (e.g., button, axis, or dual-axis values).
-pub trait ActionValue: Sync + Send + 'static {}
-
 /// Blank trait for type erased action values.
-pub trait AnyActionValue: ActionValue + Any {
+pub trait AnyActionValue: Sync + Send + Any {
     /// Returns `self` as `&dyn Any`
     fn as_any(&self) -> &dyn std::any::Any;
 
@@ -19,7 +13,7 @@ pub trait AnyActionValue: ActionValue + Any {
 
 impl<T> AnyActionValue for T
 where
-    T: ActionValue + Any,
+    T: Sync + Send + Any,
 {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -106,10 +100,8 @@ impl ButtonValue {
     }
 }
 
-impl ActionValue for ButtonValue {}
-
 impl IntoActionValue for bool {
-    type State = ButtonValue;
+    type ActionValue = ButtonValue;
 
     fn default_fold() -> Box<dyn InputValueFold<Self>>
     where
@@ -118,7 +110,7 @@ impl IntoActionValue for bool {
         Box::new(AndFold)
     }
 
-    fn update_state(state: &mut Self::State, value: Option<Self>, time_s: f32) {
+    fn update_state(state: &mut Self::ActionValue, value: Option<Self>, time_s: f32) {
         state.update(value, time_s);
     }
 }
@@ -128,10 +120,8 @@ pub struct AxisValue {
     pub value: Option<f32>,
 }
 
-impl ActionValue for AxisValue {}
-
 impl IntoActionValue for f32 {
-    type State = AxisValue;
+    type ActionValue = AxisValue;
 
     fn default_fold() -> Box<dyn InputValueFold<Self>>
     where
@@ -140,7 +130,7 @@ impl IntoActionValue for f32 {
         Box::new(MaxFold)
     }
 
-    fn update_state(state: &mut Self::State, value: Option<Self>, _time_s: f32) {
+    fn update_state(state: &mut Self::ActionValue, value: Option<Self>, _time_s: f32) {
         state.value = value;
     }
 }
@@ -150,10 +140,8 @@ pub struct DualAxisValue {
     pub value: Option<Vec2>,
 }
 
-impl ActionValue for DualAxisValue {}
-
 impl IntoActionValue for Vec2 {
-    type State = DualAxisValue;
+    type ActionValue = DualAxisValue;
 
     fn default_fold() -> Box<dyn InputValueFold<Self>>
     where
@@ -162,7 +150,7 @@ impl IntoActionValue for Vec2 {
         Box::new(MaxFold)
     }
 
-    fn update_state(state: &mut Self::State, value: Option<Self>, _time_s: f32) {
+    fn update_state(state: &mut Self::ActionValue, value: Option<Self>, _time_s: f32) {
         state.value = value;
     }
 }

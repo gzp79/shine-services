@@ -1,17 +1,15 @@
 use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
     application,
-    input_manager::{
-        ActionState, InputManagerConfigurePlugin, InputManagerPlugin, InputMap, KeyboardInput, PinchData,
-        TwoFingerGesture,
-    },
+    input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput, PinchData, TwoFingerGesture},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Action {
-    Action1,
-    Action2,
+    ToggleHelp,
+    SwitchMode,
     ResetCamera,
+    Debug,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -30,13 +28,14 @@ pub fn main() {
 
 #[derive(Component)]
 struct AppState {
-    // we keep track of the world center that should be fixed relative to the gesture's current center
+    show_help: bool,
+    use_start_value: bool,
     start_matrix: Option<Transform>,
 }
 
 fn setup_game(app: &mut App) {
     app.add_plugins((
-        InputManagerConfigurePlugin::default().with_emulate_pinch_gesture(true),
+        //InputManagerConfigurePlugin::default().with_emulate_pinch_gesture(true)
         InputManagerPlugin::<Action>::default(),
     ))
     .add_systems(Startup, setup)
@@ -93,9 +92,15 @@ fn setup(
 
     let input_map = InputMap::new()
         .with_binding(Action::ResetCamera, KeyboardInput::new(KeyCode::Backspace))?
-        .with_binding(Action::Action1, KeyboardInput::new(KeyCode::F1))?
-        .with_binding(Action::Action2, KeyboardInput::new(KeyCode::F2))?;
-    let mode = AppState { start_matrix: None };
+        .with_binding(Action::ToggleHelp, KeyboardInput::new(KeyCode::F1))?
+        .with_binding(Action::SwitchMode, KeyboardInput::new(KeyCode::F2))?
+        .with_binding(Action::ResetCamera, KeyboardInput::new(KeyCode::F5))?
+        .with_binding(Action::Debug, KeyboardInput::new(KeyCode::F9))?;
+    let mode = AppState {
+        show_help: true,
+        use_start_value: true,
+        start_matrix: None,
+    };
 
     commands.spawn((
         Name::new("Input control"),
@@ -115,21 +120,28 @@ fn setup(
 }
 
 fn handle_control(
-    mut actions_q: Query<&ActionState<Action>>,
+    mut actions_q: Query<(&ActionState<Action>, &mut AppState)>,
     mut camera_q: Query<(&Camera, &GlobalTransform, &mut Transform)>,
 ) -> Result<(), BevyError> {
-    let action = actions_q.single_mut()?;
+    let (action, mut app_state) = actions_q.single_mut()?;
     let (camera, gt, mut camera_transform) = camera_q.single_mut()?;
 
     if action.just_pressed(&Action::ResetCamera) {
         *camera_transform = Transform::IDENTITY;
     }
 
-    if action.just_pressed(&Action::Action1) {
-        camera_transform.translation += Vec3::new(10.0, 10.0, 0.0);
+    if action.just_pressed(&Action::ToggleHelp) {
+        app_state.show_help = !app_state.show_help;
     }
 
-    if action.just_pressed(&Action::Action2) {
+    if action.just_pressed(&Action::SwitchMode) {
+        app_state.use_start_value = !app_state.use_start_value;
+        if !app_state.use_start_value {
+            app_state.start_matrix = None;
+        }
+    }
+
+    if action.just_pressed(&Action::Debug) {
         // perform a manual gesture emulation to see if it works
 
         /*let p1 = Vec2::new(100., 100.);
@@ -142,11 +154,11 @@ fn handle_control(
         let q1 = Vec2::new(210., 21.);
         let q2 = Vec2::new(40., 105.);
 
-        log::info!("p1 {:?} p2 {:?}", p1, p2);
-        log::info!("q1 {:?} q2 {:?}", q1, q2);
+        log::info!("p1 {p1:?} p2 {p2:?}");
+        log::info!("q1 {q1:?} q2 {q2:?}");
 
-        log::info!("gt {:?}", gt);
-        log::info!("camera_transform {:?}", camera_transform.compute_matrix());
+        log::info!("global_transform {gt:?}");
+        log::info!("camera_transform {camera_transform:?}");
         log::info!("Clip_from_view {:?}", camera.clip_from_view());
         log::info!("inv Clip_from_view {:?}", camera.clip_from_view().inverse());
         log::info!("viewport_rect {:?}", camera.logical_viewport_rect());
@@ -154,7 +166,7 @@ fn handle_control(
         let w1 = camera.viewport_to_world_2d(gt, p1)?;
         let w2 = camera.viewport_to_world_2d(gt, p2)?;
 
-        log::info!("w1 {:?} w2 {:?}", w1, w2);
+        log::info!("w1 {w1:?} w2 {w2:?}");
 
         let screen = PinchData {
             start: (p1, p2),
@@ -173,7 +185,7 @@ fn handle_control(
             screen.current.1 - rot * p1
         };
 
-        log::info!("s {:?} phi {:?} t {:?}", s, phi, t);
+        log::info!("s {s:?} phi {phi:?} t {t:?}");
 
         let (s, phi, t) = {
             let inv_s = 1.0 / s;
@@ -183,7 +195,7 @@ fn handle_control(
             (inv_s, inv_phi, inv_t)
         };
 
-        log::info!("inv s {:?} inv phi {:?} inv t {:?}", s, phi, t);
+        log::info!("inv s {s:?} inv phi {phi:?} inv t {t:?}");
 
         let delta = Transform {
             translation: t.extend(0.0),
@@ -195,12 +207,12 @@ fn handle_control(
 
         let w1_ = camera.viewport_to_world_2d(&new_gt, q1)?;
         let w2_ = camera.viewport_to_world_2d(&new_gt, q2)?;
-        log::info!("w1_ {:?} w2_ {:?}", w1_, w2_);
+        log::info!("w1_ {w1_:?} w2_ {w2_:?}");
 
         let q1_ = camera.world_to_viewport(&new_gt, w1.extend(0.0));
         let q2_ = camera.world_to_viewport(&new_gt, w2.extend(0.0));
 
-        log::info!("q1_ {:?} q2_ {:?}", q1_, q2_);
+        log::info!("q1_ {q1_:?} q2_ {q2_:?}");
     }
 
     Ok(())
@@ -214,29 +226,46 @@ fn update_camera_world_pos(
 
     let (camera, mut camera_transform) = camera_q.single_mut()?;
 
-    if let Some(start_matrix) = app_state.start_matrix.as_ref() {
-        if let Some(view) = gesture.transform_view_2d(camera, &start_matrix, true) {
+    #[allow(clippy::collapsible_else_if)]
+    if !app_state.use_start_value {
+        if let Some(view) = gesture.transform_view_2d(camera, &camera_transform, false) {
             *camera_transform = view;
-        } else {
-            app_state.start_matrix = None;
         }
-    } else if gesture.screen_data().is_some() {
-        log::info!("Pinch gesture started, saving start matrix");
-        app_state.start_matrix = Some(camera_transform.clone());
+    } else {
+        if let Some(start_matrix) = app_state.start_matrix.as_ref() {
+            if let Some(view) = gesture.transform_view_2d(camera, start_matrix, true) {
+                *camera_transform = view;
+            } else {
+                app_state.start_matrix = None;
+            }
+        } else if gesture.screen_data().is_some() {
+            log::info!("Pinch gesture started, saving start matrix");
+            app_state.start_matrix = Some(*camera_transform);
+        }
     }
 
     Ok(())
 }
 
 fn show_status(
-    mut players: Query<(&ActionState<Action>, &TwoFingerGesture, &mut Text)>,
+    mut players: Query<(&AppState, &ActionState<Action>, &TwoFingerGesture, &mut Text)>,
     camera: Query<(&Camera, &GlobalTransform)>,
     mut gizmo: Gizmos,
 ) -> Result<(), BevyError> {
     let (camera, camera_transform) = camera.single()?;
 
-    for (_action_state, gesture, mut text) in players.iter_mut() {
+    for (app_state, _action_state, gesture, mut text) in players.iter_mut() {
         let mut logs = Vec::new();
+
+        if app_state.show_help {
+            logs.push("F1 - toggle help".to_string());
+            logs.push("F2 - toggle mode".to_string());
+            logs.push("F5 - reset camera".to_string());
+            //logs.push(format!("F9 - debug"));
+            logs.push("".to_string());
+        }
+
+        logs.push(format!("Using start value: {:?}", app_state.use_start_value));
 
         if let Some(screen_data) = gesture.screen_data() {
             logs.push(format!("Pan: {:?}", screen_data.pan(true)));

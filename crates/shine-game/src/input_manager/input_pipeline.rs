@@ -116,7 +116,7 @@ where
             cumulated_value = self.fold.fold(cumulated_value.take(), value.take());
         }
 
-        let state = action_state.set_as::<T::State>(action.clone());
+        let state = action_state.set_as::<T::ActionValue>(action.clone());
         T::update_state(state, cumulated_value, self.time_s);
     }
 }

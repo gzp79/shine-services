@@ -25,6 +25,12 @@ pub struct InputManagerConfigurePlugin {
 
 impl Default for InputManagerConfigurePlugin {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl InputManagerConfigurePlugin {
+    pub fn new() -> Self {
         Self { emulate_pinch_gesture: false }
     }
 }

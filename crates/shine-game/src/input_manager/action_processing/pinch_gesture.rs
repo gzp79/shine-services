@@ -228,10 +228,11 @@ pub fn update_pinch_gesture(mut gestures_q: Query<&mut TwoFingerGesture>, touche
 }
 
 /// Helper function to test two-finger gestures with mouse emulation
-/// To update touch position:
+/// Updating touch position:
 ///  - finger - 1: Left + mouse,
 ///  - finger - 2: Right + mouse
-/// To cancel gesture:
+///
+/// Canceling gesture:
 ///  - Middle button
 pub fn update_pinch_gesture_emulate(
     mut gestures_q: Query<&mut TwoFingerGesture>,

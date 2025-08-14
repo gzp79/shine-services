@@ -1,6 +1,4 @@
-use crate::input_manager::{
-    ActionValue, AnyActionValue, AxisValue, ButtonStatus, ButtonValue, DualAxisValue, InputValueFold,
-};
+use crate::input_manager::{AnyActionValue, AxisValue, ButtonStatus, ButtonValue, DualAxisValue, InputValueFold};
 use bevy::{ecs::component::Component, math::Vec2};
 use smallbox::{smallbox, SmallBox};
 use std::{
@@ -12,15 +10,15 @@ use std::{
 pub trait ActionLike: Clone + Eq + Hash + Send + Sync + 'static {}
 impl<A> ActionLike for A where A: Clone + Eq + Hash + Send + Sync + 'static {}
 
-/// A trait to convert InputValue into an ActionValue.
+/// A trait to convert InputValue into action value.
 pub trait IntoActionValue: Clone + Send + Sync + 'static {
-    type State: ActionValue + Default;
+    type ActionValue: Sync + Send + Default + 'static;
 
     fn default_fold() -> Box<dyn InputValueFold<Self>>
     where
         Self: Sized;
 
-    fn update_state(state: &mut Self::State, value: Option<Self>, time_s: f32);
+    fn update_state(state: &mut Self::ActionValue, value: Option<Self>, time_s: f32);
 }
 
 type BoxedState = SmallBox<dyn AnyActionValue, smallbox::space::S64>;
@@ -67,7 +65,7 @@ where
     /// Return the button state bound to the action. If data is not available or not a button, None is returned.
     pub fn get_as<T>(&self, action: &A) -> Option<&T>
     where
-        T: ActionValue,
+        T: Sync + Send + 'static,
     {
         self.data
             .get(action)
@@ -76,7 +74,7 @@ where
 
     pub fn set_as<T>(&mut self, action: A) -> &mut T
     where
-        T: ActionValue + Default,
+        T: Sync + Send + Default + 'static,
     {
         let entry = self.data.entry(action);
 
