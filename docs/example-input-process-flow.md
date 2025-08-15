@@ -1,3 +1,5 @@
+
+### Simple pipeline
 ```mermaid
 ---
 config:
@@ -5,53 +7,112 @@ config:
 ---
 flowchart TD;
     subgraph "DeviceLayer"
-        Device1["Device"]
-        Device2["Mouse"]
-        Keyboard
-        Gesture
+        Device
     end
     
     subgraph "ProcessLayer"
-        DevProc1["Process"]
-        DevProc2["Process"]
-        DevProc["Process"]
-        AnyOf["AnyOf"]
-        AnyOf2["AnyOf"]
-           
-        SelectGesture1["SelectGesture"]
-        SelectGesture2["SelectGesture"]
+        Process1
+        Process2
     end
     
     subgraph "ActionLayer"
-        Action1["Action"]
-        Action2["Action"]
-        Action3["Action"]
-        Action4["Action"]
+        Action        
     end
 
     DeviceLayer ~~~ ProcessLayer
     ProcessLayer ~~~ ActionLayer
     
-    Device1-->DevProc1;
-    DevProc1-->AnyOf;
-    Device2-->DevProc2;
-    DevProc2-->AnyOf;
-    AnyOf-->Action1;
-
-    Device1-->DevProc;
-    DevProc-->Action2;
-
-    Keyboard-->AnyOf2
-   
-    Action1-.frame-1.->Gesture
-    Action2-.frame-1.->Gesture;
-    Gesture-->SelectGesture1;
-    Gesture-->SelectGesture2;
-    SelectGesture1-->AnyOf2;
-    AnyOf2-->Action4;
-    SelectGesture2-->Action3;
-
-    
+    Device-->Process1;
+    Process1-->Process2;
+    Process2-->Action;
 ```
 
+### Multiple pipeline for a single action
+```mermaid
+---
+config:
+  layout: elk
+---
+flowchart TD;
+    subgraph "DeviceLayer"
+        Keyboard
+        Mouse
+    end
+    
+    subgraph "ProcessLayer"
+        MouseClick        
+        KeySpace
+        KeyW
+        KeyA
+        KeyS
+        KeyD
+        VirtaulDPad
+        MouseMove
+    end
+    
+    subgraph "ActionLayer"
+        FoldAny
+        FoldMax
+        Fire
+        Move
+    end
 
+    DeviceLayer ~~~ ProcessLayer
+    ProcessLayer ~~~ ActionLayer
+    
+    Mouse-->MouseMove;
+    Mouse-->MouseClick;
+
+    Keyboard-->KeyW
+    Keyboard-->KeyA
+    Keyboard-->KeyS
+    Keyboard-->KeyD
+    Keyboard-->KeySpace
+
+    KeyW-->VirtaulDPad
+    KeyA-->VirtaulDPad
+    KeyS-->VirtaulDPad
+    KeyD-->VirtaulDPad
+
+    VirtaulDPad-->FoldMax
+    MouseMove-->FoldMax
+    FoldMax-->Move
+
+    KeySpace-->FoldAny
+    MouseClick-->FoldAny
+    FoldAny-->Fire
+```
+
+### Action as "virtual" device 
+```mermaid
+---
+config:
+  layout: elk
+---
+flowchart TD;
+    subgraph "DeviceLayer"
+        Touch
+        UnistrokeGesture
+    end
+    
+    subgraph "ProcessLayer"
+        TouchPosition
+        CircleGesture
+    end
+    
+    subgraph "ActionLayer"
+        GesturePosition
+        CastFireball 
+    end
+
+    DeviceLayer ~~~ ProcessLayer
+    ProcessLayer ~~~ ActionLayer
+    
+    Touch-->TouchPosition;
+    TouchPosition-->GesturePosition;
+
+    GesturePosition-.frame-1.->UnistrokeGesture
+
+    UnistrokeGesture-->CircleGesture;
+    CircleGesture-->CastFireball;
+```
