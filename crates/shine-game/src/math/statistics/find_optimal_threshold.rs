@@ -1,6 +1,6 @@
 /// Finds the threshold that maximizes the F-score (with the given beta) for separating positive and negative scores.
 /// Higher beta favors recall; lower beta favors precision.
-pub fn find_optimal_threshold(positive_scores: &[f32], negative_scores: &[f32], beta: f32) -> Option<f32> {
+pub fn find_optimal_threshold(positive_scores: &[f32], negative_scores: &[f32], beta: f32) -> f32 {
     assert!(
         !positive_scores.is_empty() && !negative_scores.is_empty(),
         "Scores must not be empty"
@@ -18,7 +18,7 @@ pub fn find_optimal_threshold(positive_scores: &[f32], negative_scores: &[f32], 
     let mut false_negative = positive_scores.len() as f32;
 
     let mut best_f_beta = 0.0;
-    let mut best_threshold = None;
+    let mut best_threshold = f32::NEG_INFINITY;
 
     for (score, label) in all_scores {
         if label {
@@ -47,7 +47,7 @@ pub fn find_optimal_threshold(positive_scores: &[f32], negative_scores: &[f32], 
 
         if f_beta > best_f_beta {
             best_f_beta = f_beta;
-            best_threshold = Some(score);
+            best_threshold = score;
         }
     }
 

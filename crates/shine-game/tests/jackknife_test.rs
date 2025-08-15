@@ -1,11 +1,12 @@
-use bevy::math::Vec2;
-use shine_game::math::{
-    unistroke_templates, CostMatrix, GestureId, JackknifeClassifier, JackknifeConfig, JackknifePoint,
-    JackknifeTemplate, JackknifeTemplateSet,
-};
+use core::f32;
+use shine_game::math::statistics::{RunningMoments, ScoringMode};
+use shine_game::math::{statistics, TrainLegend};
+use shine_game::math::{unistroke_templates, GestureId, JackknifeClassifier, JackknifeConfig, JackknifeTemplateSet};
 use shine_test::test;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 type KinectPoint = [f32; 63];
 
@@ -74,64 +75,164 @@ fn load_kinect_templates(config: &JackknifeConfig, paths: &[(String, GestureId)]
 }
 
 #[test]
-fn test_jackknife_foo() {
-    let config = JackknifeConfig::euclidean_distance();
+#[ignore = "This is for beginning the training, not for testing"]
+fn test_jackknife_train() {
+    let config = JackknifeConfig::inner_product();
 
-    let ff1 = JackknifeTemplate::from_points(&config, GestureId(0), unistroke_templates::LINE_270);
-    let ff2 = JackknifeTemplate::from_points(
-        &config,
-        GestureId(0),
-        &[Vec2::new(0.0, 60.0), Vec2::new(0.0, 30.0), Vec2::new(0.0, -60.0)],
+    /*let mut template_set = {
+        let mut template_set = JackknifeTemplateSet::new(config.clone());
+        template_set.add_template(GestureId(0), unistroke_templates::LINE_0);
+        template_set.add_template(GestureId(1), unistroke_templates::LINE_90);
+        template_set.add_template(GestureId(2), unistroke_templates::LINE_180);
+        template_set.add_template(GestureId(3), unistroke_templates::LINE_270);
+        template_set
+    };*/
+
+    /*let mut template_set = {
+        let mut template_set = JackknifeTemplateSet::new(config.clone());
+        template_set.add_template(GestureId(0), unistroke_templates::CIRCLE);
+        template_set.add_template(GestureId(1), unistroke_templates::TRIANGLE);
+        template_set.add_template(GestureId(2), unistroke_templates::RECTANGLE);
+        template_set
+    };*/
+
+    let mut template_set = {
+        let mut template_set = JackknifeTemplateSet::new(config.clone());
+        template_set.add_template(GestureId(0), unistroke_templates::LINE_0);
+        template_set.add_template(GestureId(1), unistroke_templates::LINE_45);
+        template_set.add_template(GestureId(2), unistroke_templates::LINE_90);
+        template_set.add_template(GestureId(3), unistroke_templates::LINE_135);
+        template_set.add_template(GestureId(4), unistroke_templates::LINE_180);
+        template_set.add_template(GestureId(5), unistroke_templates::LINE_225);
+        template_set.add_template(GestureId(6), unistroke_templates::LINE_270);
+        template_set.add_template(GestureId(7), unistroke_templates::LINE_315);
+        template_set.add_template(GestureId(8), unistroke_templates::V);
+        template_set.add_template(GestureId(9), unistroke_templates::TRIANGLE);
+        template_set.add_template(GestureId(10), unistroke_templates::RECTANGLE);
+        template_set.add_template(GestureId(11), unistroke_templates::CIRCLE);
+        template_set.add_template(GestureId(12), unistroke_templates::ZIG_ZAG);
+        template_set
+    };
+
+    /* let mut template_set = {
+        let trains = {
+            let base = "tests/jackknife_data/kinect/train";
+            &[
+                (format!("{base}/cartwheel_left/ex_1.txt"), GestureId(0)),
+                (format!("{base}/cartwheel_left/ex_2.txt"), GestureId(0)),
+                (format!("{base}/cartwheel_right/ex_1.txt"), GestureId(1)),
+                (format!("{base}/cartwheel_right/ex_2.txt"), GestureId(1)),
+                (format!("{base}/duck/ex_1.txt"), GestureId(2)),
+                (format!("{base}/duck/ex_2.txt"), GestureId(2)),
+                (format!("{base}/hook_left/ex_1.txt"), GestureId(3)),
+                (format!("{base}/hook_left/ex_2.txt"), GestureId(3)),
+                (format!("{base}/hook_right/ex_1.txt"), GestureId(4)),
+                (format!("{base}/hook_right/ex_2.txt"), GestureId(4)),
+                (format!("{base}/jab_left/ex_1.txt"), GestureId(5)),
+                (format!("{base}/jab_left/ex_2.txt"), GestureId(5)),
+                (format!("{base}/jab_right/ex_1.txt"), GestureId(6)),
+                (format!("{base}/jab_right/ex_2.txt"), GestureId(6)),
+                (format!("{base}/kick_left/ex_1.txt"), GestureId(7)),
+                (format!("{base}/kick_left/ex_2.txt"), GestureId(7)),
+                (format!("{base}/kick_right/ex_1.txt"), GestureId(8)),
+                (format!("{base}/kick_right/ex_2.txt"), GestureId(8)),
+                (format!("{base}/push/ex_1.txt"), GestureId(9)),
+                (format!("{base}/push/ex_2.txt"), GestureId(9)),
+            ]
+        };
+        load_kinect_templates(&config, trains)
+    };*/
+
+    let mut legend = TrainLegend::default();
+    template_set.train(
+        1000,
+        config.resample_count,
+        0.25,
+        config.resample_count / 5,
+        0.4,
+        Some(&mut legend),
     );
 
-    let mut cost = CostMatrix::new();
-    let cost = cost.dtw(
-        &ff1.features().trajectory,
-        &ff2.features().trajectory,
-        config.dtw_radius,
-        |a: &Vec2, b: &Vec2| a.distance_square(b),
-    );
-    log::info!("Jackknife features: {cost:#?}");
+    for i in 0..legend.len() {
+        let mut neg = Vec::new();
+        let mut pos = Vec::new();
+        let mut moments = Vec::new();
 
-    let mut template_set = JackknifeTemplateSet::new(config.clone());
+        for (j, samples) in legend[i].iter().enumerate() {
+            log::info!("Template {i}, Sample {j}: Positive: {}", samples.is_positive);
+            moments.push(RunningMoments::new());
+            moments[j].add_slice(&samples.corrected_scores);
+            if samples.is_positive {
+                pos.extend_from_slice(&samples.corrected_scores);
+            } else {
+                neg.extend_from_slice(&samples.corrected_scores);
+            }
+        }
 
-    template_set.add_template(GestureId(0), unistroke_templates::ZIG_ZAG);
-    template_set.add_template(
-        GestureId(0),
-        &[
-            Vec2::new(207.0, 16.0),
-            Vec2::new(313.0, 86.0),
-            Vec2::new(356.0, 315.0),
-            Vec2::new(375.0, 386.0),
-            Vec2::new(399.0, 416.0),
-            Vec2::new(418.0, 486.0),
-        ],
-    );
-    let sample = &[
-        Vec2::new(247.0, 164.0),
-        Vec2::new(313.0, 862.0),
-        Vec2::new(336.0, 115.0),
-        Vec2::new(325.0, 386.0),
-        Vec2::new(399.0, 456.0),
-        Vec2::new(118.0, 476.0),
-    ];
+        // dump scores
+        {
+            let filename = format!("../../temp/train_template_{i}.csv");
+            let mut file = fs::File::create(filename).unwrap();
+            legend
+                .dump(&mut file, i, |i, p, c| {
+                    format!(
+                        "{:?}_{}_{}",
+                        template_set.templates()[i].id().0,
+                        if p { "positive" } else { "negative" },
+                        if c { "corrected" } else { "score" }
+                    )
+                })
+                .unwrap();
+        }
 
-    template_set.train(1000, 1.0, 6, 0.25, 2);
-    for template in template_set.templates() {
-        log::info!("Template: {:?}", template.rejection_threshold());
+        // roc curve
+        let roc = statistics::roc(&pos, &neg, ScoringMode::LowerIsBetter);
+        {
+            let filename = format!("../../temp/roc_{i}.csv");
+            let mut file = fs::File::create(filename).unwrap();
+            statistics::dump_roc(&roc, &mut file).unwrap();
+        }
+        let auc = statistics::auc(&roc);
+        log::info!("Template {i} AUC: {auc}");
+
+        let th = template_set.templates()[i].rejection_threshold();
+
+        // reclassify scores based on the threshold
+        let mut final_neg = Vec::new();
+        let mut final_pos = Vec::new();
+        for p in pos.iter() {
+            if *p < th {
+                final_pos.push(*p);
+            } else {
+                final_neg.push(*p);
+            }
+        }
+        for n in neg.iter() {
+            if *n < th {
+                final_pos.push(*n);
+            } else {
+                final_neg.push(*n);
+            }
+        }
+
+        log::info!(
+            "Template {i} reclassify (pos,neg): {},{} -> {},{}",
+            pos.len(),
+            neg.len(),
+            final_pos.len(),
+            final_neg.len()
+        );
+
+        // roc curve for new classification
+        let true_roc = statistics::roc(&final_pos, &final_neg, ScoringMode::LowerIsBetter);
+        {
+            let filename = format!("../../temp/true_roc_{i}.csv");
+            let mut file = fs::File::create(filename).unwrap();
+            statistics::dump_roc(&true_roc, &mut file).unwrap();
+        }
+        let true_auc = statistics::auc(&true_roc);
+        log::info!("Template {i} Threshold: {th} AUC: {auc} -> {true_auc}");
     }
-
-    let mut classify = JackknifeClassifier::new();
-    classify.classify(&template_set, sample);
-
-    /*log::info!("template: {}", serde_json::to_string_pretty(&template_set).unwrap());
-    log::info!(
-        "sample: {}",
-        serde_json::to_string_pretty(&classify.sample_features().unwrap()).unwrap()
-    );
-    log::info!("correction_factors: {:?}", classify.internal().correction_factors);
-    log::info!("lower_bounds: {:?}", classify.internal().lower_bounds);
-    log::info!("classification: {:?}", classify.classification());*/
 }
 
 #[test]
