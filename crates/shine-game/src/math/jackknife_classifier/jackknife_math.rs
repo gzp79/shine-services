@@ -129,7 +129,6 @@ pub trait JackknifePoint:
 
     /// Interpolate between two points, where 0 <= t <= 1,
     /// t = 0 => a, and t = 1 => b.    
-
     fn lerp(a: &Self, b: &Self, t: f32) -> Self {
         let mut result = Self::zero(a.dimension());
         for i in 0..a.dimension() {

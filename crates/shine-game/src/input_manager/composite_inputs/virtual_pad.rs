@@ -1,12 +1,12 @@
-use crate::input_manager::{AxisLike, AxisRadialProcessor, ButtonLike, InputSources, KeyboardInput, UserInput};
-use bevy::{input::keyboard::KeyCode, time::Time};
+use crate::input_manager::{InputSources, KeyboardInput, RadialInputProcess, TypedUserInput, UserInput};
+use bevy::input::keyboard::KeyCode;
 use std::borrow::Cow;
 
 /// A virtual pad that converts 2 buttons into an axis.
 pub struct VirtualPad<U, D>
 where
-    U: ButtonLike,
-    D: ButtonLike,
+    U: TypedUserInput<bool>,
+    D: TypedUserInput<bool>,
 {
     name: Option<String>,
     up: U,
@@ -15,8 +15,8 @@ where
 
 impl<U, D> VirtualPad<U, D>
 where
-    U: ButtonLike,
-    D: ButtonLike,
+    U: TypedUserInput<bool>,
+    D: TypedUserInput<bool>,
 {
     pub fn new(up: U, down: D) -> Self {
         Self { name: None, up, down }
@@ -30,8 +30,8 @@ where
 
 impl<U, D> UserInput for VirtualPad<U, D>
 where
-    U: ButtonLike,
-    D: ButtonLike,
+    U: TypedUserInput<bool>,
+    D: TypedUserInput<bool>,
 {
     fn type_name(&self) -> &'static str {
         "VirtualPad"
@@ -53,17 +53,17 @@ where
     }
 }
 
-impl<U, D> AxisLike for VirtualPad<U, D>
+impl<U, D> TypedUserInput<f32> for VirtualPad<U, D>
 where
-    U: ButtonLike,
-    D: ButtonLike,
+    U: TypedUserInput<bool>,
+    D: TypedUserInput<bool>,
 {
-    fn process(&mut self, time: &Time) -> Option<f32> {
+    fn process(&mut self, time_s: f32) -> Option<f32> {
         let mut value = 0.0;
-        if self.up.process(time).unwrap_or(false) {
+        if self.up.process(time_s).unwrap_or(false) {
             value += 1.0;
         }
-        if self.down.process(time).unwrap_or(false) {
+        if self.down.process(time_s).unwrap_or(false) {
             value -= 1.0;
         }
         Some(value)
@@ -71,7 +71,7 @@ where
 }
 
 impl VirtualPad<KeyboardInput, KeyboardInput> {
-    pub fn qe() -> impl AxisLike {
-        Self::new(KeyboardInput::new(KeyCode::KeyQ), KeyboardInput::new(KeyCode::KeyE)).with_bounds(1.0)
+    pub fn from_keys(up: KeyCode, down: KeyCode) -> impl TypedUserInput<f32> {
+        Self::new(KeyboardInput::new(up), KeyboardInput::new(down)).with_bounds(1.0)
     }
 }

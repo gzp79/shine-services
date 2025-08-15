@@ -1,6 +1,6 @@
-use crate::input_manager::{
-    AxisLike, AxisProcessor, DualAxisLike, DualAxisProcessor, ProcessedAxis, ProcessedDualAxis,
-};
+use std::borrow::Cow;
+
+use crate::input_manager::{MapInput, MappedInput, TypedUserInput, UserInput};
 use bevy::math::Vec2;
 
 /// Clamps the input value to a maximum distance of `radius` from the origin.
@@ -37,22 +37,22 @@ impl RadialClamp {
     }
 }
 
-impl AxisProcessor for RadialClamp {
-    fn type_name(&self) -> &'static str {
-        "RadialClamp"
+impl MapInput<f32, f32> for RadialClamp {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::from("RadialClamp")
     }
 
-    fn process(&mut self, input_value: Option<f32>) -> Option<f32> {
+    fn map_value(&mut self, input_value: Option<f32>) -> Option<f32> {
         input_value.map(|v| self.clamp(v))
     }
 }
 
-impl DualAxisProcessor for RadialClamp {
-    fn type_name(&self) -> &'static str {
-        "RadialClamp"
+impl MapInput<Vec2, Vec2> for RadialClamp {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::from("RadialClamp")
     }
 
-    fn process(&mut self, input_value: Option<Vec2>) -> Option<Vec2> {
+    fn map_value(&mut self, input_value: Option<Vec2>) -> Option<Vec2> {
         input_value.map(|v| self.clamp_vec2(v))
     }
 }
@@ -99,76 +99,45 @@ impl RadialDeadZone {
     }
 }
 
-impl AxisProcessor for RadialDeadZone {
-    fn type_name(&self) -> &'static str {
-        "RadialDeadZone"
+impl MapInput<f32, f32> for RadialDeadZone {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::from("RadialDeadZone")
     }
 
-    fn process(&mut self, input_value: Option<f32>) -> Option<f32> {
+    fn map_value(&mut self, input_value: Option<f32>) -> Option<f32> {
         input_value.map(|v| self.clamp(v))
     }
 }
 
-impl DualAxisProcessor for RadialDeadZone {
-    fn type_name(&self) -> &'static str {
-        "RadialDeadZone"
+impl MapInput<Vec2, Vec2> for RadialDeadZone {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::from("RadialDeadZone")
     }
 
-    fn process(&mut self, input_value: Option<Vec2>) -> Option<Vec2> {
+    fn map_value(&mut self, input_value: Option<Vec2>) -> Option<Vec2> {
         input_value.map(|v| self.clamp_vec2(v))
     }
 }
 
-/// Helper to add radial clamp processing to an [`AxisLike`] input.
-pub trait AxisRadialProcessor: AxisLike {
-    fn with_bounds(self, radius: f32) -> ProcessedAxis<Self, RadialClamp>
+/// Trait to extend `UserInput` with radial input processing capabilities.
+pub trait RadialInputProcess: UserInput {
+    fn with_bounds<T>(self, radius: f32) -> MappedInput<T, T, Self, RadialClamp>
     where
-        Self: Sized;
-
-    fn with_dead_zone(self, radius: f32) -> ProcessedAxis<Self, RadialDeadZone>
-    where
-        Self: Sized;
-}
-
-impl<T: AxisLike> AxisRadialProcessor for T {
-    fn with_bounds(self, radius: f32) -> ProcessedAxis<Self, RadialClamp>
-    where
-        Self: Sized,
+        T: Send + Sync + 'static,
+        RadialClamp: MapInput<T, T>,
+        Self: TypedUserInput<T> + Sized,
     {
-        ProcessedAxis::new(self, RadialClamp::new(radius))
+        MappedInput::new(self, RadialClamp::new(radius))
     }
 
-    fn with_dead_zone(self, radius: f32) -> ProcessedAxis<Self, RadialDeadZone>
+    fn with_dead_zone<T>(self, radius: f32) -> MappedInput<T, T, Self, RadialDeadZone>
     where
-        Self: Sized,
+        T: Send + Sync + 'static,
+        RadialDeadZone: MapInput<T, T>,
+        Self: TypedUserInput<T> + Sized,
     {
-        ProcessedAxis::new(self, RadialDeadZone::new(radius))
+        MappedInput::new(self, RadialDeadZone::new(radius))
     }
 }
 
-/// Helper to add radial bounds processing to an [`DualAxisLike`] input.
-pub trait DualAxisRadialProcessor: DualAxisLike {
-    fn with_bounds(self, radius: f32) -> ProcessedDualAxis<Self, RadialClamp>
-    where
-        Self: Sized;
-
-    fn with_dead_zone(self, radius: f32) -> ProcessedDualAxis<Self, RadialDeadZone>
-    where
-        Self: Sized;
-}
-
-impl<T: DualAxisLike> DualAxisRadialProcessor for T {
-    fn with_bounds(self, radius: f32) -> ProcessedDualAxis<Self, RadialClamp>
-    where
-        Self: Sized,
-    {
-        ProcessedDualAxis::new(self, RadialClamp::new(radius))
-    }
-
-    fn with_dead_zone(self, radius: f32) -> ProcessedDualAxis<Self, RadialDeadZone>
-    where
-        Self: Sized,
-    {
-        ProcessedDualAxis::new(self, RadialDeadZone::new(radius))
-    }
-}
+impl<T> RadialInputProcess for T where T: UserInput + Sized {}

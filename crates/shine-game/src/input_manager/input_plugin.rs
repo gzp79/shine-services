@@ -1,7 +1,7 @@
 use crate::input_manager::{
     detect_attached_unistroke_gesture, detect_unistroke_gesture, integrate_gamepad_inputs, integrate_gesture_inputs,
-    integrate_keyboard_inputs, integrate_mouse_inputs, integrate_touch_inputs, integrate_two_finger_touch_inputs,
-    process_inputs, update_action_state, update_two_finger_touch_gesture, ActionLike, PinchGestureState,
+    integrate_keyboard_inputs, integrate_mouse_inputs, integrate_touch_inputs, process_inputs, update_action_state,
+    update_pinch_gesture, update_pinch_gesture_emulate, ActionLike,
 };
 use bevy::{
     app::{App, Plugin, PreUpdate},
@@ -19,12 +19,31 @@ pub enum InputManagerSystem {
     ProcessActions,
 }
 
-struct InputManagerCommonPlugin;
+pub struct InputManagerConfigurePlugin {
+    emulate_pinch_gesture: bool,
+}
 
-impl Plugin for InputManagerCommonPlugin {
+impl Default for InputManagerConfigurePlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl InputManagerConfigurePlugin {
+    pub fn new() -> Self {
+        Self { emulate_pinch_gesture: false }
+    }
+}
+
+impl InputManagerConfigurePlugin {
+    pub fn with_emulate_pinch_gesture(mut self, emulate: bool) -> Self {
+        self.emulate_pinch_gesture = emulate;
+        self
+    }
+}
+
+impl Plugin for InputManagerConfigurePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(PinchGestureState::default());
-
         app.configure_sets(
             PreUpdate,
             (
@@ -38,10 +57,15 @@ impl Plugin for InputManagerCommonPlugin {
                 .after(InputSystem),
         );
 
-        app.add_systems(
-            PreUpdate,
-            update_two_finger_touch_gesture.in_set(InputManagerSystem::SourceInput),
-        );
+        if self.emulate_pinch_gesture {
+            log::info!("Emulating pinch gesture input");
+            app.add_systems(
+                PreUpdate,
+                update_pinch_gesture_emulate.in_set(InputManagerSystem::SourceInput),
+            );
+        } else {
+            app.add_systems(PreUpdate, update_pinch_gesture.in_set(InputManagerSystem::SourceInput));
+        }
     }
 }
 
@@ -57,8 +81,8 @@ impl<A: ActionLike> Default for InputManagerPlugin<A> {
 
 impl<A: ActionLike> Plugin for InputManagerPlugin<A> {
     fn build(&self, app: &mut App) {
-        if !app.is_plugin_added::<InputManagerCommonPlugin>() {
-            app.add_plugins(InputManagerCommonPlugin);
+        if !app.is_plugin_added::<InputManagerConfigurePlugin>() {
+            app.add_plugins(InputManagerConfigurePlugin::default());
         }
 
         app.add_systems(
@@ -67,7 +91,6 @@ impl<A: ActionLike> Plugin for InputManagerPlugin<A> {
                 integrate_keyboard_inputs::<A>,
                 integrate_mouse_inputs::<A>,
                 integrate_touch_inputs::<A>,
-                integrate_two_finger_touch_inputs::<A>,
                 integrate_gamepad_inputs::<A>,
                 integrate_gesture_inputs::<A>,
             )

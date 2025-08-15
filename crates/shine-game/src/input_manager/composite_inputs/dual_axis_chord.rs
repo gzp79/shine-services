@@ -1,12 +1,12 @@
-use crate::input_manager::{ButtonLike, DualAxisLike, InputSources, UserInput};
-use bevy::{math::Vec2, time::Time};
+use crate::input_manager::{InputSources, TypedUserInput, UserInput};
+use bevy::math::Vec2;
 use std::borrow::Cow;
 
 /// A dual axis that returns value only when the button is pressed.
 pub struct DualAxisChord<B, D>
 where
-    B: ButtonLike,
-    D: DualAxisLike,
+    B: TypedUserInput<bool>,
+    D: TypedUserInput<Vec2>,
 {
     name: Option<String>,
     button: B,
@@ -15,8 +15,8 @@ where
 
 impl<B, D> DualAxisChord<B, D>
 where
-    B: ButtonLike,
-    D: DualAxisLike,
+    B: TypedUserInput<bool>,
+    D: TypedUserInput<Vec2>,
 {
     pub fn new(button: B, dual_axis: D) -> Self {
         Self { name: None, button, dual_axis }
@@ -30,8 +30,8 @@ where
 
 impl<B, D> UserInput for DualAxisChord<B, D>
 where
-    B: ButtonLike,
-    D: DualAxisLike,
+    B: TypedUserInput<bool>,
+    D: TypedUserInput<Vec2>,
 {
     fn type_name(&self) -> &'static str {
         "DualAxisChord"
@@ -53,14 +53,14 @@ where
     }
 }
 
-impl<B, D> DualAxisLike for DualAxisChord<B, D>
+impl<B, D> TypedUserInput<Vec2> for DualAxisChord<B, D>
 where
-    B: ButtonLike,
-    D: DualAxisLike,
+    B: TypedUserInput<bool>,
+    D: TypedUserInput<Vec2>,
 {
-    fn process(&mut self, time: &Time) -> Option<Vec2> {
-        let button = self.button.process(time).unwrap_or(false);
-        let value = self.dual_axis.process(time);
+    fn process(&mut self, time_s: f32) -> Option<Vec2> {
+        let button = self.button.process(time_s).unwrap_or(false);
+        let value = self.dual_axis.process(time_s);
 
         if button {
             value

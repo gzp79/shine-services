@@ -2,19 +2,18 @@ use bevy::{prelude::*, window::CursorGrabMode};
 use shine_game::{
     application,
     input_manager::{
-        ActionState, ButtonChord, ButtonCompose, DualAxisChord, DualAxisCompose, InputManagerPlugin, InputMap,
-        KeyboardInput, MouseButtonInput, MouseMotion, MousePosition, UserInputExt, VirtualDPad,
+        ActionState, ButtonChord, DualAxisChord, InputManagerPlugin, InputMap, KeyboardInput, MouseButtonInput,
+        MouseMotion, MousePosition, VirtualDPad, VirtualPad,
     },
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Action {
-    EitherABMouseLeft,
-    MaxMouseVPad,
+    VirtualDPad,
+    VirtualPad,
 
-    ButtonChardCtrlA,
     ButtonChardAB,
-
+    ButtonChardCtrlA,
     DualAxisChordMouseLeft,
     DualAxisChordCtrlAMousePosition,
 
@@ -44,48 +43,43 @@ fn setup_game(app: &mut App) {
         .add_systems(Update, (grab_mouse, show_status));
 }
 
-fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
+fn setup(mut commands: Commands, mut windows: Query<&mut Window>) -> Result<(), BevyError> {
     let mut window = windows.single_mut().unwrap();
     window.title = "None".to_string();
 
     commands.spawn((Camera2d, Camera { ..default() }));
 
     let input_map = InputMap::new()
-        .with_button(
-            Action::EitherABMouseLeft,
-            (KeyboardInput::new(KeyCode::KeyA).with_name("A"))
-                .or(KeyboardInput::new(KeyCode::KeyB).with_name("B"))
-                .or(MouseButtonInput::new(MouseButton::Left).with_name("Mouse left")),
-        )
-        .with_dual_axis(Action::MaxMouseVPad, MouseMotion::new().max(VirtualDPad::wasd()))
-        .with_button(
+        .with_binding(Action::VirtualPad, VirtualPad::from_keys(KeyCode::KeyQ, KeyCode::KeyE))?
+        .with_binding(Action::VirtualDPad, VirtualDPad::wasd())?
+        .with_binding(
             Action::ButtonChardAB,
-            ButtonChord::new2(KeyboardInput::new(KeyCode::KeyA), KeyboardInput::new(KeyCode::KeyB)),
-        )
-        .with_button(
+            ButtonChord::new(KeyboardInput::new(KeyCode::KeyA), KeyboardInput::new(KeyCode::KeyB)),
+        )?
+        .with_binding(
             Action::ButtonChardCtrlA,
-            ButtonChord::new2(
+            ButtonChord::new(
                 KeyboardInput::new(KeyCode::ControlLeft),
                 KeyboardInput::new(KeyCode::KeyA),
             ),
-        )
-        .with_dual_axis(
+        )?
+        .with_binding(
             Action::DualAxisChordMouseLeft,
             DualAxisChord::new(MouseButtonInput::new(MouseButton::Left), MouseMotion::new()),
-        )
-        .with_dual_axis(
+        )?
+        .with_binding(
             Action::DualAxisChordCtrlAMousePosition,
             DualAxisChord::new(
-                ButtonChord::new2(
+                ButtonChord::new(
                     KeyboardInput::new(KeyCode::ControlLeft),
                     KeyboardInput::new(KeyCode::KeyA),
                 ),
                 MousePosition::new(),
             ),
-        )
-        .with_button(Action::Grab, KeyboardInput::new(KeyCode::Space));
+        )?
+        .with_binding(Action::Grab, KeyboardInput::new(KeyCode::Space))?;
 
-    for action in [
+    /*for action in [
         Action::EitherABMouseLeft,
         Action::MaxMouseVPad,
         Action::ButtonChardAB,
@@ -98,7 +92,7 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
             input.dump_pipeline(&mut result).unwrap();
             log::info!("{action:?}:\n{result}");
         };
-    }
+    }*/
 
     commands.spawn((
         input_map,
@@ -110,6 +104,8 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) {
             ..default()
         },
     ));
+
+    Ok(())
 }
 
 fn grab_mouse(players: Query<&ActionState<Action>, Without<Window>>, mut window: Query<&mut Window>) {
@@ -134,53 +130,43 @@ fn grab_mouse(players: Query<&ActionState<Action>, Without<Window>>, mut window:
     }
 }
 
-fn show_status(mut players: Query<(&InputMap<Action>, &ActionState<Action>, &mut Text)>, window: Query<&Window>) {
-    for (input_map, action_state, mut text) in players.iter_mut() {
-        let window = window.single().unwrap();
-        let (width, height) = (window.width(), window.height());
+fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>) {
+    for (action_state, mut text) in players.iter_mut() {
+        let mut logs = Vec::new();
 
-        let size = { format!("Size: {width}x{height}") };
+        logs.push(format!(
+            "VirtualPad QE: {:?}",
+            action_state.axis_value(&Action::VirtualPad)
+        ));
+        logs.push(format!(
+            "VirtualDPad WASD: {:?}",
+            action_state.dual_axis_value(&Action::VirtualDPad)
+        ));
 
-        let button_or = {
-            let a = input_map
-                .button(&Action::EitherABMouseLeft)
-                .and_then(|b| b.find_by_name_as::<KeyboardInput>("A"))
-                .map(|b| b.is_pressed());
-            let b = input_map
-                .button(&Action::EitherABMouseLeft)
-                .and_then(|b| b.find_by_name_as::<KeyboardInput>("B"))
-                .map(|b| b.is_pressed());
-            let left = input_map
-                .button(&Action::EitherABMouseLeft)
-                .and_then(|b| b.find_by_name_as::<MouseButtonInput>("Mouse left"))
-                .map(|b| b.is_pressed());
-            format!(
-                "Or - A, B, Mouse left: {:?} ({:?}, {:?}, {:?})",
-                action_state.button_value(&Action::EitherABMouseLeft),
-                a,
-                b,
-                left
-            )
-        };
-
-        let button_chord = format!(
-            "Button Chord - A+B: {:?}\n   Ctrl+A: {:?}",
+        logs.push(format!(
+            "Button Chord - A+B: {:?}",
             action_state.button_value(&Action::ButtonChardAB),
+        ));
+        logs.push(format!(
+            "               Ctrl+A: {:?}",
             action_state.button_value(&Action::ButtonChardCtrlA)
-        );
+        ));
 
-        let dual_axis_chord = format!(
-            "DualAxis Chord - Mouse Left + Motion: {}\n   Ctrl-A + Mouse Position: {}",
+        logs.push(format!(
+            "DualAxis Chord - Mouse Left + Motion: {}",
             action_state
                 .try_dual_axis_value(&Action::DualAxisChordMouseLeft)
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "None".to_string()),
+        ));
+        logs.push(format!(
+            "                 Ctrl-A + Mouse Position: {}",
             action_state
                 .try_dual_axis_value(&Action::DualAxisChordCtrlAMousePosition)
                 .map(|v| v.to_string())
                 .unwrap_or_else(|| "None".to_string())
-        );
+        ));
 
-        text.0 = [size, button_or, button_chord, dual_axis_chord].join("\n");
+        text.0 = logs.join("\n");
     }
 }

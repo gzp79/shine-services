@@ -237,7 +237,7 @@
         { "label": "camera_free", "value": "--example camera_free" },
         { "label": "camera_look_at", "value": "--example camera_look_at" },
         { "label": "input_actions", "value": "--example input_actions" },
-        { "label": "input_process", "value": "--example input_process" },
+        { "label": "input_compose", "value": "--example input_compose" },
         { "label": "input_gesture", "value": "--example input_gesture" },
         { "label": "input_multiplayer", "value": "--example input_multiplayer" },
         { "label": "pinch_zoom", "value": "--example pinch_zoom" }

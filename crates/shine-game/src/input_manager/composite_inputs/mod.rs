@@ -1,10 +1,3 @@
-mod compose_button;
-pub use self::compose_button::*;
-mod compose_axis;
-pub use self::compose_axis::*;
-mod compose_dual_axis;
-pub use self::compose_dual_axis::*;
-
 mod button_chord;
 pub use self::button_chord::*;
 mod axis_chord;

@@ -1,4 +1,4 @@
-use crate::input_manager::{ActionLike, ButtonLike, DualAxisLike, InputMap, InputSource, InputSources, UserInput};
+use crate::input_manager::{ActionLike, InputMap, InputSource, InputSources, TypedUserInput, UserInput};
 use bevy::{
     ecs::{
         error::BevyError,
@@ -86,14 +86,14 @@ impl UserInput for MouseButtonInput {
     }
 
     fn integrate(&mut self, input: &InputSources) {
-        if let Some(keyboard) = input.get_resource::<ButtonInput<MouseButton>>() {
-            self.pressed = keyboard.pressed(self.key);
+        if let Some(mouse) = input.get_resource::<ButtonInput<MouseButton>>() {
+            self.pressed = mouse.pressed(self.key);
         }
     }
 }
 
-impl ButtonLike for MouseButtonInput {
-    fn process(&mut self, _time: &Time) -> Option<bool> {
+impl TypedUserInput<bool> for MouseButtonInput {
+    fn process(&mut self, _time: f32) -> Option<bool> {
         Some(self.pressed)
     }
 }
@@ -148,8 +148,8 @@ impl UserInput for MouseMotion {
     }
 }
 
-impl DualAxisLike for MouseMotion {
-    fn process(&mut self, _time: &Time) -> Option<Vec2> {
+impl TypedUserInput<Vec2> for MouseMotion {
+    fn process(&mut self, _time: f32) -> Option<Vec2> {
         Some(self.value)
     }
 }
@@ -200,8 +200,8 @@ impl UserInput for MousePosition {
     }
 }
 
-impl DualAxisLike for MousePosition {
-    fn process(&mut self, _time: &Time) -> Option<Vec2> {
+impl TypedUserInput<Vec2> for MousePosition {
+    fn process(&mut self, _time: f32) -> Option<Vec2> {
         self.value
     }
 }

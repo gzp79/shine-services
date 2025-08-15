@@ -1,21 +1,20 @@
 use crate::input_manager::{
-    ButtonLike, DualAxisLike, DualAxisRadialProcessor, GamepadButtonInput, InputSources, KeyboardInput, UserInput,
+    GamepadButtonInput, InputSources, KeyboardInput, RadialInputProcess, TypedUserInput, UserInput,
 };
 use bevy::{
     ecs::entity::Entity,
     input::{gamepad::GamepadButton, keyboard::KeyCode},
     math::Vec2,
-    time::Time,
 };
 use std::borrow::Cow;
 
 /// A virtual dpad that converts 4 buttons into a dual axis.
 pub struct VirtualDPad<U, D, L, R>
 where
-    U: ButtonLike,
-    D: ButtonLike,
-    L: ButtonLike,
-    R: ButtonLike,
+    U: TypedUserInput<bool>,
+    D: TypedUserInput<bool>,
+    L: TypedUserInput<bool>,
+    R: TypedUserInput<bool>,
 {
     name: Option<String>,
     up: U,
@@ -26,10 +25,10 @@ where
 
 impl<U, D, L, R> VirtualDPad<U, D, L, R>
 where
-    U: ButtonLike,
-    D: ButtonLike,
-    L: ButtonLike,
-    R: ButtonLike,
+    U: TypedUserInput<bool>,
+    D: TypedUserInput<bool>,
+    L: TypedUserInput<bool>,
+    R: TypedUserInput<bool>,
 {
     pub fn new(up: U, down: D, left: L, right: R) -> Self {
         Self {
@@ -49,10 +48,10 @@ where
 
 impl<U, D, L, R> UserInput for VirtualDPad<U, D, L, R>
 where
-    U: ButtonLike,
-    D: ButtonLike,
-    L: ButtonLike,
-    R: ButtonLike,
+    U: TypedUserInput<bool>,
+    D: TypedUserInput<bool>,
+    L: TypedUserInput<bool>,
+    R: TypedUserInput<bool>,
 {
     fn type_name(&self) -> &'static str {
         "VirtualDPad"
@@ -78,25 +77,25 @@ where
     }
 }
 
-impl<U, D, L, R> DualAxisLike for VirtualDPad<U, D, L, R>
+impl<U, D, L, R> TypedUserInput<Vec2> for VirtualDPad<U, D, L, R>
 where
-    U: ButtonLike,
-    D: ButtonLike,
-    L: ButtonLike,
-    R: ButtonLike,
+    U: TypedUserInput<bool>,
+    D: TypedUserInput<bool>,
+    L: TypedUserInput<bool>,
+    R: TypedUserInput<bool>,
 {
-    fn process(&mut self, time: &Time) -> Option<Vec2> {
+    fn process(&mut self, time_s: f32) -> Option<Vec2> {
         let mut value = Vec2::ZERO;
-        if self.up.process(time).unwrap_or(false) {
+        if self.up.process(time_s).unwrap_or(false) {
             value.y += 1.0;
         }
-        if self.down.process(time).unwrap_or(false) {
+        if self.down.process(time_s).unwrap_or(false) {
             value.y -= 1.0;
         }
-        if self.left.process(time).unwrap_or(false) {
+        if self.left.process(time_s).unwrap_or(false) {
             value.x -= 1.0;
         }
-        if self.right.process(time).unwrap_or(false) {
+        if self.right.process(time_s).unwrap_or(false) {
             value.x += 1.0;
         }
         Some(value)
@@ -104,29 +103,27 @@ where
 }
 
 impl VirtualDPad<KeyboardInput, KeyboardInput, KeyboardInput, KeyboardInput> {
-    pub fn wasd() -> impl DualAxisLike {
+    pub fn from_keys(up: KeyCode, down: KeyCode, left: KeyCode, right: KeyCode) -> impl TypedUserInput<Vec2> {
         Self::new(
-            KeyboardInput::new(KeyCode::KeyW),
-            KeyboardInput::new(KeyCode::KeyS),
-            KeyboardInput::new(KeyCode::KeyA),
-            KeyboardInput::new(KeyCode::KeyD),
+            KeyboardInput::new(up),
+            KeyboardInput::new(down),
+            KeyboardInput::new(left),
+            KeyboardInput::new(right),
         )
         .with_bounds(1.0)
     }
 
-    pub fn ijkl() -> impl DualAxisLike {
-        Self::new(
-            KeyboardInput::new(KeyCode::KeyI),
-            KeyboardInput::new(KeyCode::KeyK),
-            KeyboardInput::new(KeyCode::KeyJ),
-            KeyboardInput::new(KeyCode::KeyL),
-        )
-        .with_bounds(1.0)
+    pub fn wasd() -> impl TypedUserInput<Vec2> {
+        Self::from_keys(KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyA, KeyCode::KeyD)
+    }
+
+    pub fn ijkl() -> impl TypedUserInput<Vec2> {
+        Self::from_keys(KeyCode::KeyI, KeyCode::KeyK, KeyCode::KeyJ, KeyCode::KeyL)
     }
 }
 
 impl VirtualDPad<GamepadButtonInput, GamepadButtonInput, GamepadButtonInput, GamepadButtonInput> {
-    pub fn gamepad_dpad(gamepad_entity: Entity) -> impl DualAxisLike {
+    pub fn gamepad_dpad(gamepad_entity: Entity) -> impl TypedUserInput<Vec2> {
         Self::new(
             GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadUp),
             GamepadButtonInput::new(gamepad_entity, GamepadButton::DPadDown),

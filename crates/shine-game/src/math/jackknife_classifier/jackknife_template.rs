@@ -76,6 +76,10 @@ where
         self.0.clear();
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -273,13 +277,13 @@ where
                     let samples_features = JackknifeFeatures::from_points(&self.config, &synthetic_sample);
 
                     let cf = samples_features.correction_factor(
-                        &template.features(),
+                        template.features(),
                         self.config.abs_correction,
                         self.config.extent_correction,
                     );
                     let dwt_score = samples_features.dwt_score(
                         &mut cost_matrix,
-                        &template.features(),
+                        template.features(),
                         self.config.dtw_radius,
                         self.config.method,
                     );

@@ -1,6 +1,4 @@
-use std::borrow::Cow;
-
-use crate::input_manager::{ActionLike, DualAxisLike, InputMap, InputSource, InputSources, UserInput};
+use crate::input_manager::{ActionLike, InputMap, InputSource, InputSources, TypedUserInput, UserInput};
 use bevy::{
     ecs::{
         error::BevyError,
@@ -11,6 +9,7 @@ use bevy::{
     time::Time,
     window::Window,
 };
+use std::borrow::Cow;
 
 impl InputSource for Touches {}
 
@@ -103,8 +102,8 @@ impl UserInput for TouchPosition {
     }
 }
 
-impl DualAxisLike for TouchPosition {
-    fn process(&mut self, _time: &Time) -> Option<Vec2> {
+impl TypedUserInput<Vec2> for TouchPosition {
+    fn process(&mut self, _time: f32) -> Option<Vec2> {
         self.value
     }
 }

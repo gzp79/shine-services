@@ -56,7 +56,7 @@ pub fn roc(positive_scores: &[f32], negative_scores: &[f32], mode: ScoringMode) 
 pub fn dump_roc(roc: &[(f32, f32, f32)], file: &mut dyn io::Write) -> io::Result<()> {
     writeln!(file, "score,fpr,tpr")?;
     for (score, tpr, fpr) in roc {
-        writeln!(file, "{},{},{}", score, fpr, tpr)?;
+        writeln!(file, "{score},{fpr},{tpr}")?;
     }
     Ok(())
 }

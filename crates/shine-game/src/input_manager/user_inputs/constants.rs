@@ -1,5 +1,4 @@
-use crate::input_manager::{ButtonLike, InputSources, UserInput};
-use bevy::time::Time;
+use crate::input_manager::{InputSources, TypedUserInput, UserInput};
 use std::borrow::Cow;
 
 /// A constant button input that is always pressed.
@@ -21,8 +20,8 @@ impl UserInput for PressedButton {
     fn integrate(&mut self, _input: &InputSources) {}
 }
 
-impl ButtonLike for PressedButton {
-    fn process(&mut self, _time: &Time) -> Option<bool> {
+impl TypedUserInput<bool> for PressedButton {
+    fn process(&mut self, _time: f32) -> Option<bool> {
         Some(true)
     }
 }
