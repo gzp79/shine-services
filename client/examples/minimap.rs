@@ -33,7 +33,8 @@ fn setup_game(app: &mut App) {
             sync_minimap_entities,
             update_minimap_camera,
             manage_minimap_menu,
-            handle_menu_buttons,
+            handle_tab_buttons,
+            update_content_visibility,
         )
             .chain(),
     );
@@ -50,6 +51,13 @@ enum Action {
 #[derive(Resource, Default)]
 struct MinimapState {
     is_fullscreen: bool,
+    active_tab: TabAction,
+}
+
+impl Default for TabAction {
+    fn default() -> Self {
+        TabAction::Map
+    }
 }
 
 // Component markers for entities that exist in both 3D world and 2D minimap
@@ -62,6 +70,12 @@ pub struct Floor;
 // Component markers for minimap-specific entities
 #[derive(Component)]
 pub struct MinimapEntity;
+
+#[derive(Component)]
+pub struct MinimapRoot;
+
+#[derive(Component)]
+pub struct UiRoot;
 
 #[derive(Component)]
 pub struct MinimapPlayer;
@@ -82,17 +96,22 @@ pub struct MainCamera;
 #[derive(Component)]
 pub struct MinimapMenu;
 
-#[derive(Component)]
-pub struct MenuButton {
-    pub action: MenuAction,
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum MenuAction {
+pub enum TabAction {
     Settings,
     Inventory,
     Map,
     Exit,
+}
+
+#[derive(Component)]
+pub struct TabButton {
+    pub action: TabAction,
+}
+
+#[derive(Component)]
+pub struct ContentPlaceholder {
+    pub tab: TabAction,
 }
 
 fn spawn_world(
@@ -212,37 +231,54 @@ fn spawn_minimap_entities(
     col_materials: &mut ResMut<Assets<ColorMaterial>>,
     start_position: Vec3,
 ) {
+    // Create minimap root node
+    let minimap_root = commands
+        .spawn((
+            Transform::default(),
+            Visibility::default(),
+            MinimapRoot,
+            MinimapEntity,
+            Name::new("MinimapRoot"),
+        ))
+        .id();
+
     // Minimap gradient background - render behind everything else
     // Use a large size that will cover any reasonable viewport
     let gradient_material = create_gradient_material(col_materials);
-    let minimap_background = (
-        Mesh2d(meshes.add(Rectangle::new(1000.0, 1000.0))), // Large enough to cover any viewport
-        MeshMaterial2d(gradient_material),
-        Transform::from_translation(Vec3::new(0.0, 0.0, -1.0)), // Behind other elements
-        MinimapEntity,
-        MinimapBackground,
-    );
-    commands.spawn(minimap_background);
+    let minimap_background = commands
+        .spawn((
+            Mesh2d(meshes.add(Rectangle::new(1000.0, 1000.0))), // Large enough to cover any viewport
+            MeshMaterial2d(gradient_material),
+            Transform::from_translation(Vec3::new(0.0, 0.0, -1.0)), // Behind other elements
+            MinimapEntity,
+            MinimapBackground,
+            Name::new("MinimapBackground"),
+        ))
+        .id();
 
     // Minimap player - different shape (circle) - made much bigger
-    let minimap_player = (
-        Mesh2d(meshes.add(Circle::new(2.0))), // Increased from 1.2 to 2.0
-        MeshMaterial2d(col_materials.add(Color::Srgba(css::BLUE))),
-        Transform::from_translation(Vec3::new(start_position.x, start_position.z, 0.0)),
-        MinimapEntity,
-        MinimapPlayer,
-    );
-    commands.spawn(minimap_player);
+    let minimap_player = commands
+        .spawn((
+            Mesh2d(meshes.add(Circle::new(2.0))), // Increased from 1.2 to 2.0
+            MeshMaterial2d(col_materials.add(Color::Srgba(css::BLUE))),
+            Transform::from_translation(Vec3::new(start_position.x, start_position.z, 0.0)),
+            MinimapEntity,
+            MinimapPlayer,
+            Name::new("MinimapPlayer"),
+        ))
+        .id();
 
     // Minimap floor - different representation (large square) - keep the same
-    let minimap_floor = (
-        Mesh2d(meshes.add(Rectangle::new(15.0, 15.0))),
-        MeshMaterial2d(col_materials.add(Color::Srgba(css::GREEN).with_alpha(0.3))),
-        Transform::from_translation(Vec3::ZERO),
-        MinimapEntity,
-        MinimapFloor,
-    );
-    commands.spawn(minimap_floor);
+    let minimap_floor = commands
+        .spawn((
+            Mesh2d(meshes.add(Rectangle::new(15.0, 15.0))),
+            MeshMaterial2d(col_materials.add(Color::Srgba(css::GREEN).with_alpha(0.3))),
+            Transform::from_translation(Vec3::ZERO),
+            MinimapEntity,
+            MinimapFloor,
+            Name::new("MinimapFloor"),
+        ))
+        .id();
 
     // Minimap objects (small squares for the cubes) - made much bigger
     let cube_positions = [
@@ -254,14 +290,25 @@ fn spawn_minimap_entities(
         Vec3::new(5.0, 0.0, 0.0),
     ];
 
-    for position in cube_positions.iter() {
-        commands.spawn((
-            Mesh2d(meshes.add(Rectangle::new(2.0, 2.0))), // Increased from 1.2 to 2.0
-            MeshMaterial2d(col_materials.add(Color::Srgba(css::ORANGE_RED))),
-            Transform::from_translation(Vec3::new(position.x, position.z, 0.0)),
-            MinimapEntity,
-        ));
+    let mut minimap_objects = Vec::new();
+    for (i, position) in cube_positions.iter().enumerate() {
+        let object = commands
+            .spawn((
+                Mesh2d(meshes.add(Rectangle::new(2.0, 2.0))), // Increased from 1.2 to 2.0
+                MeshMaterial2d(col_materials.add(Color::Srgba(css::ORANGE_RED))),
+                Transform::from_translation(Vec3::new(position.x, position.z, 0.0)),
+                MinimapEntity,
+                Name::new(format!("MinimapObject_{}", i)),
+            ))
+            .id();
+        minimap_objects.push(object);
     }
+
+    // Parent all minimap entities to the root
+    commands
+        .entity(minimap_root)
+        .add_children(&[minimap_background, minimap_player, minimap_floor]);
+    commands.entity(minimap_root).add_children(&minimap_objects);
 }
 
 fn create_gradient_material(col_materials: &mut ResMut<Assets<ColorMaterial>>) -> Handle<ColorMaterial> {
@@ -426,138 +473,317 @@ fn update_minimap_on_resize(
 fn manage_minimap_menu(
     mut commands: Commands,
     minimap_state: Res<MinimapState>,
-    existing_menu: Query<Entity, With<MinimapMenu>>,
+    existing_menu: Query<Entity, With<UiRoot>>,
     windows: Query<&Window>,
+    mut last_fullscreen_state: Local<Option<bool>>,
 ) -> Result<(), BevyError> {
     let window = windows.single()?;
 
-    if minimap_state.is_changed() {
-        // Remove existing menu if any
+    // Only recreate UI when fullscreen state changes, not when active tab changes
+    let current_fullscreen = minimap_state.is_fullscreen;
+    let should_update = last_fullscreen_state.is_none() || *last_fullscreen_state != Some(current_fullscreen);
+
+    if should_update {
+        *last_fullscreen_state = Some(current_fullscreen);
+
+        // Remove existing UI root if any
         for entity in existing_menu.iter() {
             commands.entity(entity).despawn();
         }
 
         // Only spawn menu when fullscreen
         if minimap_state.is_fullscreen {
-            spawn_minimap_menu(&mut commands, window)?;
+            spawn_fullscreen_ui(&mut commands, window)?;
         }
     }
 
     Ok(())
 }
 
-fn spawn_minimap_menu(commands: &mut Commands, window: &Window) -> Result<(), BevyError> {
-    info!("Spawning menu for window: {}x{}", window.width(), window.height());
+fn spawn_fullscreen_ui(commands: &mut Commands, window: &Window) -> Result<(), BevyError> {
+    info!(
+        "Spawning fullscreen UI for window: {}x{}",
+        window.width(),
+        window.height()
+    );
 
-    // Create a side menu panel
-    commands
+    // Create UI root node
+    let ui_root = commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
-                right: Val::Px(20.0),  // Position from right edge
-                top: Val::Px(20.0),    // Position from top
-                width: Val::Px(200.0), // Fixed width for side menu
-                height: Val::Auto,     // Auto height based on content
+                top: Val::Px(0.0),
+                left: Val::Px(0.0),
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            UiRoot,
+            MinimapMenu,
+            Name::new("UiRoot"),
+        ))
+        .id();
+
+    // Create tab bar at the top
+    let tab_bar = commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Px(60.0),
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                padding: UiRect::all(Val::Px(10.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.9)),
+            Name::new("TabBar"),
+        ))
+        .id();
+
+    // Create tab buttons
+    let tabs = [
+        ("Settings", TabAction::Settings),
+        ("Inventory", TabAction::Inventory),
+        ("Map", TabAction::Map),
+        ("Exit", TabAction::Exit),
+    ];
+
+    let mut tab_buttons = Vec::new();
+    for (text, action) in tabs.iter() {
+        let is_active = *action == TabAction::Map; // Map is default active
+        let tab_button = commands
+            .spawn((
+                Button,
+                Node {
+                    width: Val::Px(120.0),
+                    height: Val::Px(40.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    margin: UiRect::horizontal(Val::Px(5.0)),
+                    ..default()
+                },
+                BackgroundColor(if is_active {
+                    Color::srgba(0.4, 0.4, 0.5, 1.0)
+                } else {
+                    Color::srgba(0.2, 0.2, 0.3, 0.9)
+                }),
+                BorderColor(Color::srgba(0.5, 0.5, 0.6, 1.0)),
+                BorderRadius::all(Val::Px(8.0)),
+                TabButton { action: *action },
+                Name::new(format!("TabButton_{:?}", action)),
+            ))
+            .with_children(|button| {
+                button.spawn((
+                    Text::new(*text),
+                    TextFont { font_size: 16.0, ..default() },
+                    TextColor(Color::WHITE),
+                    Name::new(format!("TabText_{:?}", action)),
+                ));
+            })
+            .id();
+        tab_buttons.push(tab_button);
+    }
+
+    // Create content area
+    let content_area = commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                row_gap: Val::Px(10.0),
+                ..default()
+            },
+            Name::new("ContentArea"),
+        ))
+        .id();
+
+    // Create content placeholders for non-map tabs
+    let mut content_placeholders = Vec::new();
+
+    // Settings placeholder
+    let settings_content = commands.spawn((
+        Node {
+            width: Val::Percent(80.0),
+            height: Val::Percent(80.0),
+            flex_direction: FlexDirection::Column,
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            padding: UiRect::all(Val::Px(20.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.2, 0.3, 0.2, 0.9)),
+        BorderRadius::all(Val::Px(10.0)),
+        Visibility::Hidden, // Hidden by default
+        ContentPlaceholder { tab: TabAction::Settings },
+        Name::new("SettingsContent"),
+    )).with_children(|parent| {
+        parent.spawn((
+            Text::new("SETTINGS PANEL"),
+            TextFont { font_size: 32.0, ..default() },
+            TextColor(Color::WHITE),
+            Node { margin: UiRect::bottom(Val::Px(20.0)), ..default() },
+        ));
+        parent.spawn((
+            Text::new("This is a placeholder for the Settings UI.\nHere you would configure game options,\nvideo settings, audio settings, etc."),
+            TextFont { font_size: 18.0, ..default() },
+            TextColor(Color::srgba(0.8, 0.8, 0.8, 1.0)),
+        ));
+    }).id();
+
+    // Inventory placeholder
+    let inventory_content = commands.spawn((
+        Node {
+            width: Val::Percent(80.0),
+            height: Val::Percent(80.0),
+            flex_direction: FlexDirection::Column,
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            padding: UiRect::all(Val::Px(20.0)),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.3, 0.2, 0.2, 0.9)),
+        BorderRadius::all(Val::Px(10.0)),
+        Visibility::Hidden, // Hidden by default
+        ContentPlaceholder { tab: TabAction::Inventory },
+        Name::new("InventoryContent"),
+    )).with_children(|parent| {
+        parent.spawn((
+            Text::new("INVENTORY PANEL"),
+            TextFont { font_size: 32.0, ..default() },
+            TextColor(Color::WHITE),
+            Node { margin: UiRect::bottom(Val::Px(20.0)), ..default() },
+        ));
+        parent.spawn((
+            Text::new("This is a placeholder for the Inventory UI.\nHere you would see your items,\nequipment, resources, etc."),
+            TextFont { font_size: 18.0, ..default() },
+            TextColor(Color::srgba(0.8, 0.8, 0.8, 1.0)),
+        ));
+    }).id();
+
+    // Exit placeholder
+    let exit_content = commands
+        .spawn((
+            Node {
+                width: Val::Percent(80.0),
+                height: Val::Percent(80.0),
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
                 padding: UiRect::all(Val::Px(20.0)),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.2, 0.2, 0.2, 0.9)), // Dark panel background
-            ZIndex(1000),                                      // High z-index to ensure it's on top
-            MinimapMenu,
+            BackgroundColor(Color::srgba(0.3, 0.2, 0.3, 0.9)),
+            BorderRadius::all(Val::Px(10.0)),
+            Visibility::Hidden, // Hidden by default
+            ContentPlaceholder { tab: TabAction::Exit },
+            Name::new("ExitContent"),
         ))
         .with_children(|parent| {
-            // Menu panel
-            parent
-                .spawn((
-                    Node {
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(15.0),
-                        padding: UiRect::all(Val::Px(20.0)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.2, 0.2, 0.3, 0.95)),
-                    BorderColor(Color::srgba(0.5, 0.5, 0.6, 1.0)),
-                    BorderRadius::all(Val::Px(10.0)),
-                ))
-                .with_children(|menu_panel| {
-                    // Title
-                    menu_panel.spawn((
-                        Text::new("MINIMAP MENU"),
-                        TextFont { font_size: 24.0, ..default() },
-                        TextColor(Color::WHITE),
-                        Node {
-                            margin: UiRect::bottom(Val::Px(10.0)),
-                            ..default()
-                        },
-                    ));
+            parent.spawn((
+                Text::new("EXIT CONFIRMATION"),
+                TextFont { font_size: 32.0, ..default() },
+                TextColor(Color::WHITE),
+                Node {
+                    margin: UiRect::bottom(Val::Px(20.0)),
+                    ..default()
+                },
+            ));
+            parent.spawn((
+                Text::new("Are you sure you want to exit the game?\nThis is a placeholder for exit confirmation."),
+                TextFont { font_size: 18.0, ..default() },
+                TextColor(Color::srgba(0.8, 0.8, 0.8, 1.0)),
+            ));
+        })
+        .id();
 
-                    // Menu buttons
-                    let buttons = [
-                        ("Settings", MenuAction::Settings),
-                        ("Inventory", MenuAction::Inventory),
-                        ("Map", MenuAction::Map),
-                        ("Exit", MenuAction::Exit),
-                    ];
+    content_placeholders.extend([settings_content, inventory_content, exit_content]);
 
-                    for (text, action) in buttons.iter() {
-                        menu_panel
-                            .spawn((
-                                Button,
-                                Node {
-                                    width: Val::Px(200.0),
-                                    height: Val::Px(50.0),
-                                    justify_content: JustifyContent::Center,
-                                    align_items: AlignItems::Center,
-                                    margin: UiRect::all(Val::Px(5.0)),
-                                    ..default()
-                                },
-                                BackgroundColor(Color::srgba(0.3, 0.3, 0.4, 0.9)),
-                                BorderColor(Color::srgba(0.5, 0.5, 0.6, 1.0)),
-                                BorderRadius::all(Val::Px(8.0)),
-                                MenuButton { action: *action },
-                            ))
-                            .with_children(|button| {
-                                button.spawn((
-                                    Text::new(*text),
-                                    TextFont { font_size: 18.0, ..default() },
-                                    TextColor(Color::WHITE),
-                                ));
-                            });
-                    }
-                });
-        });
+    // Parent everything to the UI root
+    commands.entity(ui_root).add_child(tab_bar);
+    commands.entity(ui_root).add_child(content_area);
+    commands.entity(tab_bar).add_children(&tab_buttons);
+    commands.entity(content_area).add_children(&content_placeholders);
 
     Ok(())
 }
 
-fn handle_menu_buttons(
+fn handle_tab_buttons(
     mut interaction_query: Query<
-        (&Interaction, &MenuButton, &mut BackgroundColor),
+        (&Interaction, &TabButton, &mut BackgroundColor),
         (Changed<Interaction>, With<Button>),
     >,
+    mut minimap_state: ResMut<MinimapState>,
+    mut tab_buttons: Query<(&TabButton, &mut BackgroundColor), Without<Interaction>>,
 ) {
-    for (interaction, menu_button, mut color) in &mut interaction_query {
+    for (interaction, tab_button, mut color) in &mut interaction_query {
         match *interaction {
             Interaction::Pressed => {
-                *color = BackgroundColor(Color::srgba(0.1, 0.1, 0.2, 0.9));
-                // Handle button actions
-                match menu_button.action {
-                    MenuAction::Settings => info!("Settings button pressed"),
-                    MenuAction::Inventory => info!("Inventory button pressed"),
-                    MenuAction::Map => info!("Map button pressed"),
-                    MenuAction::Exit => info!("Exit button pressed"),
+                info!("{:?} tab selected", tab_button.action);
+
+                // Update active tab
+                minimap_state.active_tab = tab_button.action;
+
+                // Update all tab button colors
+                for (tab, mut bg_color) in tab_buttons.iter_mut() {
+                    if tab.action == minimap_state.active_tab {
+                        *bg_color = BackgroundColor(Color::srgba(0.4, 0.4, 0.5, 1.0));
+                    // Active
+                    } else {
+                        *bg_color = BackgroundColor(Color::srgba(0.2, 0.2, 0.3, 0.9));
+                        // Inactive
+                    }
                 }
+
+                // Set pressed color
+                *color = BackgroundColor(Color::srgba(0.5, 0.5, 0.6, 1.0));
             }
             Interaction::Hovered => {
-                *color = BackgroundColor(Color::srgba(0.3, 0.3, 0.4, 0.9));
+                if minimap_state.active_tab != tab_button.action {
+                    *color = BackgroundColor(Color::srgba(0.3, 0.3, 0.4, 0.9));
+                }
             }
             Interaction::None => {
-                *color = BackgroundColor(Color::srgba(0.2, 0.2, 0.3, 0.8));
+                if minimap_state.active_tab == tab_button.action {
+                    *color = BackgroundColor(Color::srgba(0.4, 0.4, 0.5, 1.0)); // Active
+                } else {
+                    *color = BackgroundColor(Color::srgba(0.2, 0.2, 0.3, 0.9)); // Inactive
+                }
             }
         }
     }
+}
+
+fn update_content_visibility(
+    minimap_state: Res<MinimapState>,
+    mut minimap_root_query: Query<&mut Visibility, (With<MinimapRoot>, Without<ContentPlaceholder>)>,
+    mut content_query: Query<(&ContentPlaceholder, &mut Visibility), Without<MinimapRoot>>,
+) -> Result<(), BevyError> {
+    if minimap_state.is_changed() {
+        // Handle minimap root visibility
+        if let Ok(mut minimap_visibility) = minimap_root_query.single_mut() {
+            // Minimap is always visible when minimized, only hidden in fullscreen when non-map tab is active
+            if !minimap_state.is_fullscreen || minimap_state.active_tab == TabAction::Map {
+                *minimap_visibility = Visibility::Visible;
+            } else {
+                *minimap_visibility = Visibility::Hidden;
+            }
+        }
+
+        // Handle content placeholder visibility (only when fullscreen)
+        if minimap_state.is_fullscreen {
+            for (placeholder, mut visibility) in content_query.iter_mut() {
+                if placeholder.tab == minimap_state.active_tab && minimap_state.active_tab != TabAction::Map {
+                    *visibility = Visibility::Visible;
+                } else {
+                    *visibility = Visibility::Hidden;
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
