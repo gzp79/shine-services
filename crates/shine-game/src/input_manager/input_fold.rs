@@ -24,20 +24,20 @@ where
     }
 }
 
-/// Fold bool values by taking the logical AND of the inputs.
-pub struct AndFold;
+/// Fold bool values by taking the logical OR of the inputs.
+pub struct AnyFold;
 
-impl InputValueFold<bool> for AndFold {
+impl InputValueFold<bool> for AnyFold {
     fn fold(&self, prev: Option<bool>, current: Option<bool>) -> Option<bool> {
         match (prev, current) {
-            (Some(true), Some(true)) => Some(true),
-            (Some(true), None) | (None, Some(true)) => Some(true),
+            (Some(v1), Some(v2)) => Some(v1 || v2),
+            (Some(v), None) | (None, Some(v)) => Some(v),
             _ => None,
         }
     }
 }
 
-/// Fold vlues by taking the input with the bigger norm.
+/// Fold values by taking the input with the bigger norm.
 pub struct MaxFold;
 
 impl InputValueFold<f32> for MaxFold {

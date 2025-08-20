@@ -43,7 +43,9 @@ impl LookAt {
 
 impl RigDriver for LookAt {
     fn update(&mut self, params: RigUpdateParams) -> Transform {
-        let target = self.smoothed_target.exp_smooth_towards(&self.target, params.delta_time);
+        let target = self
+            .smoothed_target
+            .exp_smooth_towards(&self.target, params.delta_time_s);
 
         let parent_position = params.parent.translation;
         Transform::from_translation(parent_position).looking_at(target, Vec3::Y)

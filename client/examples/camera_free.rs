@@ -5,27 +5,31 @@ use bevy::{
     {color::palettes::css, render::view::NoIndirectDrawing},
 };
 use shine_game::{
-    application,
-    camera_rig::{rigs, CameraRig},
+    app::{init_application, AppGameSchedule},
+    camera_rig::{rigs, CameraPose, CameraRig, CameraRigPlugin},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::application::{create_application, platform::Config};
+    use shine_game::app::{create_application, platform::Config};
 
-    application::init(setup_game);
+    init_application(setup_game);
     let mut app = create_application(Config::default());
     app.run();
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    application::init(setup_game);
+    init_application(setup_game);
 }
 
 fn setup_game(app: &mut App) {
+    app.add_plugins(CameraRigPlugin::default());
+
     app.add_systems(Startup, spawn_world);
-    app.add_systems(Update, (handle_input, update_camera).chain());
+
+    app.add_input(handle_input);
+    app.add_render(update_camera);
 }
 
 fn spawn_world(
@@ -36,7 +40,7 @@ fn spawn_world(
 ) {
     let mut window = windows.single_mut().unwrap();
     window.cursor_options.grab_mode = CursorGrabMode::Locked;
-    window.title = "Camera Free POC".to_string();
+    window.title = "Camera Free (Mouse, WASD)".to_string();
 
     let player = (
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
@@ -62,17 +66,19 @@ fn spawn_world(
     );
     commands.spawn(light);
 
-    let rig: CameraRig = CameraRig::builder()
-        .with(rigs::Position::new(Vec3::new(-2.0, 2.5, 5.0)))
-        .with(rigs::YawPitch::new().yaw_degrees(90.0).pitch_degrees(-30.0))
-        .with(rigs::Smooth::new_position_rotation(1.0, 1.0))
-        .build();
-    let camera = (
-        Camera3d::default(),
-        NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-        *rig.transform(),
-        rig,
-    );
+    let camera = {
+        let mut rig: CameraRig = CameraRig::new()
+            .with(rigs::Position::new(Vec3::new(-2.0, 2.5, 5.0)))
+            .with(rigs::YawPitch::new().yaw_degrees(90.0).pitch_degrees(-30.0))
+            .with(rigs::Smooth::new_position_rotation(1.0, 1.0));
+
+        (
+            Camera3d::default(),
+            NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
+            rig.calculate_transform(0.0),
+            rig,
+        )
+    };
     commands.spawn(camera);
 }
 
@@ -114,8 +120,8 @@ fn handle_input(
     }
 }
 
-fn update_camera(mut query: Query<(&mut Transform, &mut CameraRig), With<Camera3d>>, time: Res<Time>) {
-    for (mut transform, mut rig) in query.iter_mut() {
-        *transform = rig.update(time.delta_secs());
+fn update_camera(query: Query<(&mut Transform, &CameraPose)>) {
+    for (mut transform, pose) in query {
+        *transform = pose.transform;
     }
 }

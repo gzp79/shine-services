@@ -1,27 +1,31 @@
 use bevy::prelude::*;
 use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
 use shine_game::{
-    application,
-    camera_rig::{rigs, CameraRig},
+    app::{init_application, AppGameSchedule},
+    camera_rig::{rigs, CameraPose, CameraRig, CameraRigPlugin},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::application::{create_application, platform::Config};
+    use shine_game::app::{create_application, platform::Config};
 
-    application::init(setup_game);
+    init_application(setup_game);
     let mut app = create_application(Config::default());
     app.run();
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    application::init(setup_game);
+    init_application(setup_game);
 }
 
 fn setup_game(app: &mut App) {
+    app.add_plugins(CameraRigPlugin::default());
+
     app.add_systems(Startup, spawn_world);
-    app.add_systems(Update, (handle_input, update_camera).chain());
+
+    app.add_input(handle_input);
+    app.add_render(update_camera);
 }
 
 #[derive(Component)]
@@ -34,7 +38,7 @@ fn spawn_world(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let mut window = windows.single_mut().unwrap();
-    window.title = "Camera Follow POC".to_string();
+    window.title = "Camera Follow (WASD, QE)".to_string();
 
     let start_position = Vec3::new(0.0, 0.0, 0.0);
 
@@ -68,24 +72,26 @@ fn spawn_world(
     );
     commands.spawn(light);
 
-    let rig = CameraRig::builder()
-        .with(rigs::Position::new(start_position))
-        .with(rigs::Rotation::new(Quat::default()))
-        .with(rigs::Smooth::new_position(1.25).predictive(true))
-        .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))
-        .with(rigs::Smooth::new_position(2.5).predictive(true))
-        .with(
-            rigs::LookAt::new(start_position + Vec3::Y)
-                .smoothness(1.25)
-                .predictive(true),
+    let camera = {
+        let mut rig = CameraRig::new()
+            .with(rigs::Position::new(start_position))
+            .with(rigs::Rotation::new(Quat::default()))
+            .with(rigs::Smooth::new_position(1.25).predictive(true))
+            .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))
+            .with(rigs::Smooth::new_position(2.5).predictive(true))
+            .with(
+                rigs::LookAt::new(start_position + Vec3::Y)
+                    .smoothness(1.25)
+                    .predictive(true),
+            );
+
+        (
+            Camera3d::default(),
+            NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
+            rig.calculate_transform(0.0),
+            rig,
         )
-        .build();
-    let camera = (
-        Camera3d::default(),
-        NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-        *rig.transform(),
-        rig,
-    );
+    };
     commands.spawn(camera);
 }
 
@@ -141,8 +147,8 @@ fn handle_input(
     rig.driver_mut::<rigs::LookAt>().target = player.translation + Vec3::Y;
 }
 
-fn update_camera(mut query: Query<(&mut Transform, &mut CameraRig), With<Camera3d>>, time: Res<Time>) {
-    for (mut transform, mut rig) in query.iter_mut() {
-        *transform = rig.update(time.delta_secs());
+fn update_camera(query: Query<(&mut Transform, &CameraPose)>) {
+    for (mut transform, pose) in query {
+        *transform = pose.transform;
     }
 }

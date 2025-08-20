@@ -1,15 +1,40 @@
-use crate::camera_rig::{AnyRigDriver, RigDriver, RigUpdateParams};
-use bevy::{ecs::component::Component, transform::components::Transform};
+use crate::camera_rig::{AnyRigDriver, CameraPose, RigDriver, RigUpdateParams};
+use bevy::{
+    ecs::{
+        component::Component,
+        system::{Query, Res},
+    },
+    time::Time,
+    transform::components::Transform,
+};
 use itertools::Itertools;
 
 #[derive(Component)]
+#[require(CameraPose)]
 /// A chain of drivers, calculating displacements, and animating in succession.
 pub struct CameraRig {
     pub drivers: Vec<Box<dyn AnyRigDriver>>,
-    pub final_transform: Transform,
+}
+
+impl Default for CameraRig {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CameraRig {
+    pub fn new() -> Self {
+        Self { drivers: Vec::new() }
+    }
+
+    pub fn with<R>(mut self, driver: R) -> Self
+    where
+        R: AnyRigDriver,
+    {
+        self.drivers.push(Box::new(driver));
+        self
+    }
+
     /// Returns the driver of the matching type.
     /// ## Panics
     /// If multiple or no driver of the matching type is present.
@@ -49,54 +74,22 @@ impl CameraRig {
     }
 
     /// Runs all the drivers in sequence, animating the rig, and producing a final transform of the camera.
-    pub fn update(&mut self, delta_time: f32) -> Transform {
-        let mut parent_transform = Transform::IDENTITY;
+    pub fn calculate_transform(&mut self, delta_time_s: f32) -> Transform {
+        let mut transform = Transform::IDENTITY;
 
         for driver in self.drivers.iter_mut() {
-            let transform = driver.update(RigUpdateParams {
-                parent: &parent_transform,
-                delta_time,
+            transform = driver.update(RigUpdateParams {
+                parent: &transform,
+                delta_time_s,
             });
-
-            parent_transform = transform;
         }
 
-        self.final_transform = parent_transform;
-        self.final_transform
-    }
-
-    /// Returns the transform of the last update.
-    pub fn transform(&self) -> &Transform {
-        &self.final_transform
-    }
-
-    /// Use this to make a new rig
-    pub fn builder() -> CameraRigBuilder {
-        CameraRigBuilder { drivers: Default::default() }
+        transform
     }
 }
 
-pub struct CameraRigBuilder {
-    drivers: Vec<Box<dyn AnyRigDriver>>,
-}
-
-impl CameraRigBuilder {
-    pub fn with<R>(mut self, driver: R) -> Self
-    where
-        R: AnyRigDriver,
-    {
-        self.drivers.push(Box::new(driver));
-        self
-    }
-
-    pub fn build(self) -> CameraRig {
-        let mut rig = CameraRig {
-            drivers: self.drivers,
-            final_transform: Transform::IDENTITY,
-        };
-
-        // Initialize the rig by updating it with a delta time of 0.0
-        rig.update(0.0);
-        rig
+pub fn update_camera_pose(camera_q: Query<(&mut CameraRig, &mut CameraPose)>, time: Res<Time>) {
+    for (mut rig, mut pose) in camera_q {
+        pose.transform = rig.calculate_transform(time.delta_secs());
     }
 }

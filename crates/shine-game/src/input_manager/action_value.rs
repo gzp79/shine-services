@@ -1,4 +1,4 @@
-use crate::input_manager::{AndFold, InputValueFold, IntoActionValue, MaxFold};
+use crate::input_manager::{AnyFold, InputValueFold, IntoActionValue, MaxFold};
 use bevy::{math::Vec2, time::Time};
 use std::any::Any;
 
@@ -107,7 +107,7 @@ impl IntoActionValue for bool {
     where
         Self: Sized,
     {
-        Box::new(AndFold)
+        Box::new(AnyFold)
     }
 
     fn update_state(state: &mut Self::ActionValue, value: Option<Self>, time_s: f32) {

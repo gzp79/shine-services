@@ -58,12 +58,12 @@ impl RigDriver for Smooth {
         let target_position = params.parent.translation;
         let position = self
             .smoothed_position
-            .exp_smooth_towards(&target_position, params.delta_time);
+            .exp_smooth_towards(&target_position, params.delta_time_s);
 
         let target_rotation = params.parent.rotation;
         let rotation = self
             .smoothed_rotation
-            .exp_smooth_towards(&target_rotation, params.delta_time);
+            .exp_smooth_towards(&target_rotation, params.delta_time_s);
 
         Transform::from_translation(position).with_rotation(rotation)
     }

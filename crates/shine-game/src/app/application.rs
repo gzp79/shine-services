@@ -1,5 +1,7 @@
+use crate::app::GameSystem;
 use bevy::{
-    app::App,
+    app::{App, Update},
+    ecs::schedule::IntoScheduleConfigs,
     math::Vec2,
     window::{CursorGrabMode, Window},
 };
@@ -10,7 +12,7 @@ type SetupFn = fn(&mut App);
 static SETUP_FN: OnceLock<SetupFn> = OnceLock::new();
 
 /// This function is called by the main application to initialize the application setup.
-pub fn init(setup_fn: SetupFn) {
+pub fn init_application(setup_fn: SetupFn) {
     if SETUP_FN.set(setup_fn).is_err() {
         log::warn!("The application setup function has already been initialized.");
     }
@@ -112,6 +114,17 @@ pub mod platform {
 pub fn create_application(config: platform::Config) -> App {
     let mut app = App::new();
     platform::platform_init(&mut app, config);
+
+    app.configure_sets(
+        Update,
+        (
+            GameSystem::Input,
+            GameSystem::Logic,
+            GameSystem::Physics,
+            GameSystem::Render,
+        )
+            .chain(),
+    );
 
     if let Some(setup_fn) = SETUP_FN.get() {
         (setup_fn)(&mut app);

@@ -1,28 +1,30 @@
-use bevy::prelude::*;
-use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
-use shine_game::input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput, VirtualDPad, VirtualPad};
+use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
-    application,
-    camera_rig::{rigs, CameraRig},
+    app::{init_application, AppGameSchedule},
+    camera_rig::{rigs, CameraPose, CameraRig, CameraRigPlugin},
+    input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput, VirtualDPad, VirtualPad},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::application::{create_application, platform::Config};
+    use shine_game::app::{create_application, platform::Config};
 
-    application::init(setup_game);
+    init_application(setup_game);
     let mut app = create_application(Config::default());
     app.run();
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    application::init(setup_game);
+    init_application(setup_game);
 }
 
 fn setup_game(app: &mut App) {
+    app.add_plugins(CameraRigPlugin::default());
     app.add_plugins(InputManagerPlugin::<Action>::default());
+
     app.insert_resource(MinimapState::default());
+
     app.add_systems(Startup, spawn_world);
     app.add_systems(
         Update,
@@ -172,27 +174,28 @@ fn spawn_world(
     commands.spawn(light);
 
     // Spawn main 3D camera
-    let rig = CameraRig::builder()
-        .with(rigs::Position::new(start_position))
-        .with(rigs::Rotation::new(Quat::default()))
-        .with(rigs::Smooth::new_position(1.25).predictive(true))
-        .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))
-        .with(rigs::Smooth::new_position(2.5).predictive(true))
-        .with(
-            rigs::LookAt::new(start_position + Vec3::Y)
-                .smoothness(1.25)
-                .predictive(true),
-        )
-        .build();
+    let camera = {
+        let mut rig = CameraRig::new()
+            .with(rigs::Position::new(start_position))
+            .with(rigs::Rotation::new(Quat::default()))
+            .with(rigs::Smooth::new_position(1.25).predictive(true))
+            .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))
+            .with(rigs::Smooth::new_position(2.5).predictive(true))
+            .with(
+                rigs::LookAt::new(start_position + Vec3::Y)
+                    .smoothness(1.25)
+                    .predictive(true),
+            );
 
-    let camera = (
-        Camera3d::default(),
-        Camera { order: 0, ..Default::default() },
-        NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-        *rig.transform(),
-        rig,
-        MainCamera,
-    );
+        (
+            Camera3d::default(),
+            Camera { order: 0, ..Default::default() },
+            NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
+            rig.calculate_transform(0.0),
+            rig,
+            MainCamera,
+        )
+    };
     commands.spawn(camera);
 
     // Spawn minimap camera (2D, top-down view)
@@ -415,7 +418,6 @@ fn follow_player(
     camera_rig.driver_mut::<rigs::Rotation>().rotation = player_transform.rotation;
     camera_rig.driver_mut::<rigs::LookAt>().target = player_transform.translation + Vec3::Y;
 
-    *camera_transform = camera_rig.update(time.delta_secs());
     Ok(())
 }
 

@@ -2,7 +2,11 @@
 
 mod driver;
 pub use self::driver::*;
+mod camera_pose;
+pub use self::camera_pose::*;
 mod rig;
 pub use self::rig::*;
+mod rig_plugin;
+pub use self::rig_plugin::*;
 
 pub mod rigs;

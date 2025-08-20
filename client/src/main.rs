@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use shine_game::application;
+use shine_game::app::init_application;
 
 mod world;
 
@@ -18,14 +18,14 @@ fn setup_game(app: &mut App) {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::application::{create_application, platform};
+    use shine_game::app::{create_application, platform};
 
-    application::init(setup_game);
+    init_application(setup_game);
     let mut app = create_application(platform::Config::default());
     app.run();
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    application::init(setup_game);
+    init_application(setup_game);
 }

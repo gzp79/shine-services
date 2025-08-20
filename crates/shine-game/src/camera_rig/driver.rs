@@ -2,7 +2,7 @@ use bevy::transform::components::Transform;
 
 pub struct RigUpdateParams<'a> {
     pub parent: &'a Transform,
-    pub delta_time: f32,
+    pub delta_time_s: f32,
 }
 
 /// A building block of a camera rig, to calculate the transform of the camera.

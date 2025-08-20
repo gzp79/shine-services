@@ -1,6 +1,6 @@
 use bevy::{prelude::*, window::CursorGrabMode};
 use shine_game::{
-    application,
+    app::init_application,
     input_manager::{
         ActionState, ButtonChord, DualAxisChord, InputManagerPlugin, InputMap, KeyboardInput, MouseButtonInput,
         MouseMotion, MousePosition, VirtualDPad, VirtualPad,
@@ -25,16 +25,16 @@ struct StatusText;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::application::{create_application, platform::Config};
+    use shine_game::app::{create_application, platform::Config};
 
-    application::init(setup_game);
+    init_application(setup_game);
     let mut app = create_application(Config::default());
     app.run();
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    application::init(setup_game);
+    init_application(setup_game);
 }
 
 fn setup_game(app: &mut App) {
