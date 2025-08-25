@@ -1,7 +1,8 @@
-use crate::app::GameSystem;
+use crate::app::{CameraSimulate, GameSystem};
 use bevy::{
     app::{App, Update},
     ecs::schedule::IntoScheduleConfigs,
+    log,
     math::Vec2,
     window::{CursorGrabMode, Window},
 };
@@ -118,12 +119,23 @@ pub fn create_application(config: platform::Config) -> App {
     app.configure_sets(
         Update,
         (
-            GameSystem::Input,
-            GameSystem::Logic,
-            GameSystem::Physics,
-            GameSystem::Render,
+            GameSystem::Action,
+            GameSystem::PrepareSimulate,
+            GameSystem::Simulate,
+            GameSystem::PrepareRender,
         )
             .chain(),
+    );
+
+    app.configure_sets(
+        Update,
+        (
+            CameraSimulate::PreparePose,
+            CameraSimulate::SimulatePose,
+            CameraSimulate::WithPose,
+        )
+            .chain()
+            .in_set(GameSystem::PrepareSimulate),
     );
 
     if let Some(setup_fn) = SETUP_FN.get() {

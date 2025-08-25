@@ -20,7 +20,7 @@ pub fn main() {
 }
 
 fn setup_game(app: &mut App) {
-    app.add_plugins(CameraRigPlugin::default());
+    app.add_plugins(CameraRigPlugin);
     app.add_plugins(InputManagerPlugin::<Action>::default());
 
     app.insert_resource(MinimapState::default());

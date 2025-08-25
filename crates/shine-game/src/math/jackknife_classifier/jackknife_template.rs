@@ -2,6 +2,7 @@ use crate::math::{
     statistics::{self, RunningMoments},
     CostMatrix, JackknifeConfig, JackknifeFeatures, JackknifePointMath,
 };
+use bevy::log;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{io, ops};
 

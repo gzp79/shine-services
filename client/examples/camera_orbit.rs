@@ -1,8 +1,9 @@
 use bevy::prelude::*;
 use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
+use shine_game::app::GameSystem;
 use shine_game::{
     app::{init_application, AppGameSchedule},
-    camera_rig::{rigs, CameraPose, CameraRig, CameraRigPlugin},
+    camera_rig::{rigs, CameraRig, CameraRigPlugin},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -20,12 +21,10 @@ pub fn main() {
 }
 
 fn setup_game(app: &mut App) {
-    app.add_plugins(CameraRigPlugin::default());
+    app.add_plugins(CameraRigPlugin);
 
     app.add_systems(Startup, spawn_world);
-
-    app.add_input(handle_input);
-    app.add_render(update_camera);
+    app.add_update_systems(GameSystem::Action, handle_input);
 }
 
 fn spawn_world(
@@ -85,11 +84,5 @@ fn handle_input(mut query: Query<&mut CameraRig, With<Camera3d>>, keyboard_input
         if keyboard_input.just_pressed(KeyCode::KeyE) {
             rig.driver_mut::<rigs::YawPitch>().rotate_yaw_pitch(90.0, 0.0);
         }
-    }
-}
-
-fn update_camera(query: Query<(&mut Transform, &CameraPose)>) {
-    for (mut transform, pose) in query {
-        *transform = pose.transform;
     }
 }

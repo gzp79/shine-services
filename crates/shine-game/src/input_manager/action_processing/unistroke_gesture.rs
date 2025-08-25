@@ -4,6 +4,7 @@ use crate::{
 };
 use bevy::{
     ecs::{component::Component, entity::Entity, error::BevyError, query::With, system::Query},
+    log,
     math::Vec2,
 };
 

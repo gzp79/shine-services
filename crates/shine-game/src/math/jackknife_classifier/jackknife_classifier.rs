@@ -1,4 +1,5 @@
 use crate::math::{CostMatrix, JackknifeFeatures, JackknifePointMath, JackknifeTemplateSet};
+use bevy::log;
 
 /// Some internal state of the classifier.
 pub struct JackknifeClassifierInternals<'a> {

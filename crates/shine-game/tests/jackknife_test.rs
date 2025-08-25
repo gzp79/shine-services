@@ -1,3 +1,4 @@
+use bevy::log;
 use core::f32;
 use shine_game::math::statistics::{RunningMoments, ScoringMode};
 use shine_game::math::{statistics, TrainLegend};

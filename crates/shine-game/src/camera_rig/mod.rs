@@ -8,5 +8,7 @@ mod rig;
 pub use self::rig::*;
 mod rig_plugin;
 pub use self::rig_plugin::*;
+mod debug_camera_plugin;
+pub use self::debug_camera_plugin::*;
 
 pub mod rigs;
