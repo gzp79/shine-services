@@ -1,7 +1,7 @@
 use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
-    app::{init_application, AppGameSchedule},
-    camera_rig::{rigs, CameraPose, CameraRig, CameraRigPlugin},
+    app::init_application,
+    camera_rig::{rigs, CameraRig, CameraRigPlugin},
     input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput, VirtualDPad, VirtualPad},
 };
 
@@ -20,7 +20,7 @@ pub fn main() {
 }
 
 fn setup_game(app: &mut App) {
-    app.add_plugins(CameraRigPlugin);
+    app.add_plugins(CameraRigPlugin::default());
     app.add_plugins(InputManagerPlugin::<Action>::default());
 
     app.insert_resource(MinimapState::default());

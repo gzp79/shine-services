@@ -1,4 +1,4 @@
-use crate::avatar::Avatar;
+use crate::{avatar::Avatar, HUD_LAYER};
 use bevy::{
     app::{App, Plugin, PreUpdate, Startup},
     core_pipeline::core_3d::Camera3d,
@@ -15,7 +15,7 @@ use bevy::{
 };
 use shine_game::{
     app::{AppGameSchedule, CameraSimulate},
-    camera_rig::{rigs, CameraRig, CameraRigPlugin, DebugTargetCamera},
+    camera_rig::{rigs, CameraRig, CameraRigPlugin, DebugCameraTarget},
     input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput},
 };
 
@@ -23,10 +23,11 @@ pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(CameraRigPlugin);
+        app.add_plugins(CameraRigPlugin { enable_debug: true });
         app.add_plugins(InputManagerPlugin::<CameraAction>::default());
 
         app.add_systems(Startup, spawn_camera);
+
         app.add_systems(PreUpdate, toggle_camera_debug);
         app.add_update_systems(CameraSimulate::PreparePose, follow_avatar);
     }
@@ -63,15 +64,17 @@ fn spawn_camera(mut commands: Commands) -> Result<(), BevyError> {
 }
 
 fn toggle_camera_debug(
-    camera_q: Query<(Entity, &ActionState<CameraAction>, Option<&DebugTargetCamera>), With<Camera>>,
+    camera_q: Query<(Entity, &ActionState<CameraAction>, Option<&DebugCameraTarget>), With<Camera>>,
     mut commands: Commands,
 ) {
     for (entity, action, debug_target) in camera_q.iter() {
         if action.just_pressed(&CameraAction::Debug) {
             if debug_target.is_some() {
-                commands.entity(entity).remove::<DebugTargetCamera>();
+                commands.entity(entity).remove::<DebugCameraTarget>();
             } else {
-                commands.entity(entity).insert(DebugTargetCamera);
+                commands.entity(entity).insert(DebugCameraTarget {
+                    watermark_layer: Some(HUD_LAYER),
+                });
             }
         }
     }

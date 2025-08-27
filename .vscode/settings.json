@@ -21,6 +21,7 @@
     "clippy",
     "cookiejar",
     "deque",
+    "derivable_impls",
     "despawn",
     "despawned",
     "endgroup",

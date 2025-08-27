@@ -1,6 +1,3 @@
-pub mod bevy_ext;
-pub use self::bevy_ext::*;
-
 pub mod statistics;
 
 mod jackknife_classifier;

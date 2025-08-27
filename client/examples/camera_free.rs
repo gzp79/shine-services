@@ -25,7 +25,7 @@ pub fn main() {
 }
 
 fn setup_game(app: &mut App) {
-    app.add_plugins(CameraRigPlugin);
+    app.add_plugins(CameraRigPlugin::default());
 
     app.add_systems(Startup, spawn_world);
     app.add_update_systems(GameSystem::Action, handle_input);

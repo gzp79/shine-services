@@ -1,12 +1,16 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, render::view::RenderLayers};
 use shine_game::app::init_application;
 
 mod avatar;
 mod camera;
+mod hud;
 mod world;
+
+pub const HUD_LAYER: RenderLayers = RenderLayers::layer(31);
 
 /// Add all the game plugins to the app.
 fn setup_game(app: &mut App) {
+    app.add_plugins(hud::HUDPlugin);
     app.add_plugins(world::WorldPlugin);
     app.add_plugins(avatar::AvatarPlugin);
     app.add_plugins(camera::CameraPlugin);

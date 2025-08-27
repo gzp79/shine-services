@@ -1,3 +1,4 @@
+use crate::bevy_ext::CameraExt;
 use bevy::{
     color::palettes::css,
     ecs::{
@@ -12,8 +13,6 @@ use bevy::{
     transform::components::{GlobalTransform, Transform},
     window::Window,
 };
-
-use crate::math::CameraExt;
 
 // disable touch update when the distance between two touches is too small
 const MIN_PIXEL_DISTANCE: f32 = 5.0;

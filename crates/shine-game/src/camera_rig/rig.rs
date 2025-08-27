@@ -1,4 +1,8 @@
-use crate::camera_rig::{AnyRigDriver, CameraPose, DebugCameraPose, DebugTargetCamera, RigDriver, RigUpdateParams};
+use crate::camera_rig::{
+    camera_pose::CameraPose,
+    debug_camera_plugin::{DebugCameraRig, DebugCameraTarget},
+    driver::{AnyRigDriver, RigDriver, RigUpdateParams},
+};
 use bevy::{
     ecs::{
         component::Component,
@@ -96,9 +100,9 @@ pub fn update_camera_pose(camera_q: Query<(&mut CameraRig, &mut CameraPose)>, ti
     }
 }
 
-/// Update the transformation for all the camera with a rig excluding the DebugTargetCamera.
+/// Update the transformation for all the camera with a rig excluding the FreeFlyDebugCamera.
 pub fn update_camera_transform(
-    query: Query<(&mut Transform, &CameraPose), (With<Camera>, Without<DebugTargetCamera>)>,
+    query: Query<(&mut Transform, &CameraPose), (With<Camera>, Without<DebugCameraTarget>)>,
 ) {
     for (mut transform, pose) in query {
         *transform = pose.transform;
@@ -107,10 +111,9 @@ pub fn update_camera_transform(
 
 /// Update the transformation of the debug target
 pub fn update_debug_camera_transform(
-    mut camera_q: Query<&mut Transform, (With<Camera>, With<DebugTargetCamera>)>,
-    pose_q: Query<&CameraPose, (With<DebugCameraPose>, Without<DebugTargetCamera>)>,
+    mut camera_q: Query<&mut Transform, (With<Camera>, With<DebugCameraTarget>)>,
+    pose_q: Query<&CameraPose, (With<DebugCameraRig>, Without<DebugCameraTarget>)>,
 ) {
-    bevy::log::debug!("Has target: {}, pose: {}", camera_q.is_empty(), pose_q.is_empty());
     if let (Some(mut camera_transform), Some(pose)) = (camera_q.single_mut().ok(), pose_q.single().ok()) {
         *camera_transform = pose.transform;
     }
