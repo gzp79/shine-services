@@ -4,20 +4,20 @@ use bevy::{
     transform::components::Transform,
 };
 
-/// Smooths the parent transformation.
-pub struct Smooth {
+/// Predict the parent transformation. Similar to smooth it overshots the target and then smooths to the target.
+pub struct Predict {
     position: ExpSmoothed<Vec3>,
     rotation: ExpSmoothed<Quat>,
 }
 
-impl Default for Smooth {
+impl Default for Predict {
     fn default() -> Self {
         Self::position_rotation(1.0, 1.0)
     }
 }
 
-impl Smooth {
-    /// Smooth position
+impl Predict {
+    /// Predict position
     pub fn position(position_smoothness: f32) -> Self {
         Self {
             position: ExpSmoothed::new().smoothness(position_smoothness),
@@ -25,7 +25,7 @@ impl Smooth {
         }
     }
 
-    /// Smooth rotation
+    /// Predict rotation
     pub fn rotation(rotation_smoothness: f32) -> Self {
         Self {
             position: ExpSmoothed::new().smoothness(0.0),
@@ -33,7 +33,7 @@ impl Smooth {
         }
     }
 
-    /// Smooth both position and rotation
+    /// Predict both position and rotation
     pub fn position_rotation(position_smoothness: f32, rotation_smoothness: f32) -> Self {
         Self {
             position: ExpSmoothed::new().smoothness(position_smoothness),
@@ -42,13 +42,13 @@ impl Smooth {
     }
 }
 
-impl RigDriver for Smooth {
+impl RigDriver for Predict {
     fn update(&mut self, params: RigUpdateParams) -> Transform {
         let target_position = params.parent.translation;
-        let position = self.position.exp_smooth_towards(&target_position, params.delta_time_s);
+        let position = self.position.exp_predict_from(&target_position, params.delta_time_s);
 
         let target_rotation = params.parent.rotation;
-        let rotation = self.rotation.exp_smooth_towards(&target_rotation, params.delta_time_s);
+        let rotation = self.rotation.exp_predict_from(&target_rotation, params.delta_time_s);
 
         Transform::from_translation(position).with_rotation(rotation)
     }

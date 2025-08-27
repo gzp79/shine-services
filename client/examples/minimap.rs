@@ -178,9 +178,9 @@ fn spawn_world(
         let mut rig = CameraRig::new()
             .with(rigs::Position::new(start_position))
             .with(rigs::Rotation::new(Quat::default()))
-            .with(rigs::Smooth::new_position(1.25).predictive(true))
+            .with(rigs::Predict::position(1.25))
             .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))
-            .with(rigs::Smooth::new_position(2.5).predictive(true))
+            .with(rigs::Predict::position(2.5))
             .with(
                 rigs::LookAt::new(start_position + Vec3::Y)
                     .smoothness(1.25)
@@ -191,7 +191,7 @@ fn spawn_world(
             Camera3d::default(),
             Camera { order: 0, ..Default::default() },
             NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-            rig.calculate_transform(0.0),
+            rig.calculate_transform(0.0, None),
             rig,
             MainCamera,
         )

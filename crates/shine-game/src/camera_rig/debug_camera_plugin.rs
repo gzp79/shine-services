@@ -1,6 +1,6 @@
-use crate::camera_rig::{rigs, CameraPose, CameraRig};
+use crate::camera_rig::{rigs, CameraPose, CameraPoseDebug, CameraRig};
 use bevy::{
-    color::Color,
+    color::{palettes::css, Color},
     ecs::{
         component::Component,
         error::BevyError,
@@ -11,8 +11,11 @@ use bevy::{
     gizmos::gizmos::Gizmos,
     input::{keyboard::KeyCode, mouse::MouseMotion, ButtonInput},
     log,
-    math::{EulerRot, Vec2, Vec3},
-    render::{camera::Projection, view::RenderLayers},
+    math::{EulerRot, Vec2, Vec3, Vec3A},
+    render::{
+        camera::{Camera, CameraProjection, Projection},
+        view::RenderLayers,
+    },
     state::state::{NextState, State, States},
     text::{TextColor, TextFont},
     time::Time,
@@ -41,10 +44,11 @@ pub struct DebugCameraTarget {
     pub watermark_layer: Option<RenderLayers>,
 }
 
-#[allow(clippy::derivable_impls)]
 impl Default for DebugCameraTarget {
     fn default() -> Self {
-        Self { watermark_layer: None }
+        Self {
+            watermark_layer: Some(RenderLayers::layer(0)),
+        }
     }
 }
 
@@ -78,7 +82,7 @@ pub fn spawn_debug_camera(
         let mut rig = CameraRig::new()
             .with(rigs::Position::new(target_camera.translation))
             .with(rigs::YawPitch::new().yaw_degrees(yaw).pitch_degrees(pitch))
-            .with(rigs::Smooth::new_position_rotation(1.0, 1.0));
+            .with(rigs::Smooth::position_rotation(1.0, 1.0));
         (
             DebugCameraComponents,
             DebugCameraRig,
@@ -86,7 +90,7 @@ pub fn spawn_debug_camera(
                 saved_grab_state: window.cursor_options.grab_mode,
                 saved_cursor_visible: window.cursor_options.visible,
             },
-            rig.calculate_transform(0.0),
+            rig.calculate_transform(0.0, None),
             rig,
         )
     };
@@ -219,74 +223,54 @@ pub fn handle_debug_inputs(
     }
 }
 
-/*fn render_debug_border(window_q: Query<&Window, With<PrimaryWindow>>, mut gizmos: HUDGizmos) {
-    if let Ok(window) = window_q.single() {
-        let window_width = window.width();
-        let window_height = window.height();
+fn render_frustum(gizmos: &mut Gizmos, transform: &Transform, corners: &[Vec3A; 8], color: impl Into<Color>) {
+    let [tln, trn, brn, bln, tlf, trf, brf, blf] = corners.map(|x| transform.transform_point(Vec3::from(x)));
 
-        // Calculate border coordinates in screen space
-        // The Debug2dOverlayCamera (order 100) will render these 2D gizmos
-        let half_width = window_width / 2.0;
-        let half_height = window_height / 2.0;
+    #[rustfmt::skip]
+    let positions = [
+        // Near
+        tln, trn, brn, bln, tln, 
+        // Far
+        tlf, trf, brf, blf, tlf, 
+        // Near to far
+        Vec3::NAN, trn, trf, 
+        Vec3::NAN, tln, tlf,
+        Vec3::NAN, brn, brf,
+        Vec3::NAN, bln, blf,
+    ];
 
-        let border_thickness = 5.0;
+    gizmos.linestrip(positions, color);
+}
 
-        // Draw border lines around the screen edges
-        // Top border
-        gizmos.line_2d(
-            Vec2::new(-half_width, half_height),
-            Vec2::new(half_width, half_height),
-            css::RED,
-        );
+pub fn render_camera_gizmos(
+    camera_q: Query<(&CameraPose, &Projection, Option<&CameraPoseDebug>), With<Camera>>,
+    mut gizmos: Gizmos,
+) {
+    for (pose, projection, pose_debug) in camera_q.iter() {
+        let near = match projection {
+            Projection::Perspective(projection) => projection.near,
+            Projection::Orthographic(projection) => projection.near,
+            Projection::Custom(_) => 0.0,
+        };
+        let far = projection.far();
 
-        // Bottom border
-        gizmos.line_2d(
-            Vec2::new(-half_width, -half_height),
-            Vec2::new(half_width, -half_height),
-            css::RED,
-        );
+        let corners = projection.get_frustum_corners(-near, -far);
+        render_frustum(&mut gizmos, &pose.transform, &corners, css::GREEN);
 
-        // Left border
-        gizmos.line_2d(
-            Vec2::new(-half_width, -half_height),
-            Vec2::new(-half_width, half_height),
-            css::RED,
-        );
+        if let Some(pose_debug) = pose_debug {
+            let steps = &pose_debug.update_steps;
+            for (step_id, step) in steps.iter().enumerate() {
+                let color = {
+                    let t = if steps.len() <= 1 {
+                        1.0
+                    } else {
+                        step_id as f32 / (steps.len() - 1) as f32
+                    };
+                    Color::srgb(t, t, 0.0)
+                };
 
-        // Right border
-        gizmos.line_2d(
-            Vec2::new(half_width, -half_height),
-            Vec2::new(half_width, half_height),
-            css::RED,
-        );
-
-        // Draw a second set of lines slightly inward to make it thicker
-        let inner_offset = border_thickness;
-        gizmos.line_2d(
-            Vec2::new(-half_width + inner_offset, half_height - inner_offset),
-            Vec2::new(half_width - inner_offset, half_height - inner_offset),
-            css::RED,
-        );
-        gizmos.line_2d(
-            Vec2::new(-half_width + inner_offset, -half_height + inner_offset),
-            Vec2::new(half_width - inner_offset, -half_height + inner_offset),
-            css::RED,
-        );
-        gizmos.line_2d(
-            Vec2::new(-half_width + inner_offset, -half_height + inner_offset),
-            Vec2::new(-half_width + inner_offset, half_height - inner_offset),
-            css::RED,
-        );
-        gizmos.line_2d(
-            Vec2::new(half_width - inner_offset, -half_height + inner_offset),
-            Vec2::new(half_width - inner_offset, half_height - inner_offset),
-            css::RED,
-        );
-    }
-}*/
-
-pub fn render_camera_gizmos(camera_q: Query<(&CameraPose, &Projection)>, _gizmos: Gizmos) {
-    for (_pose, _projection) in camera_q.iter() {
-        // add frustum of the camera
+                render_frustum(&mut gizmos, step, &corners, color);
+            }
+        }
     }
 }

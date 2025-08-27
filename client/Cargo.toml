@@ -18,6 +18,8 @@ bevy = { workspace = true, default-features = true, features = [
     "bevy_dev_tools",
 ] }
 
+bevy-inspector-egui = "0.33"
+
 
 shine-forge = { workspace = true }
 shine-game = { workspace = true }

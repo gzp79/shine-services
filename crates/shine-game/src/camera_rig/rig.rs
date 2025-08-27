@@ -1,5 +1,5 @@
 use crate::camera_rig::{
-    camera_pose::CameraPose,
+    camera_pose::{CameraPose, CameraPoseDebug},
     debug_camera_plugin::{DebugCameraRig, DebugCameraTarget},
     driver::{AnyRigDriver, RigDriver, RigUpdateParams},
 };
@@ -80,10 +80,22 @@ impl CameraRig {
     }
 
     /// Runs all the drivers in sequence, animating the rig, and producing a final transform of the camera.
-    pub fn calculate_transform(&mut self, delta_time_s: f32) -> Transform {
+    pub fn calculate_transform(
+        &mut self,
+        delta_time_s: f32,
+        mut update_steps: Option<&mut Vec<Transform>>,
+    ) -> Transform {
         let mut transform = Transform::IDENTITY;
 
+        if let Some(steps) = &mut update_steps {
+            steps.clear();
+        }
+
         for driver in self.drivers.iter_mut() {
+            if let Some(steps) = &mut update_steps {
+                steps.push(transform);
+            }
+
             transform = driver.update(RigUpdateParams {
                 parent: &transform,
                 delta_time_s,
@@ -94,9 +106,13 @@ impl CameraRig {
     }
 }
 
-pub fn update_camera_pose(camera_q: Query<(&mut CameraRig, &mut CameraPose)>, time: Res<Time>) {
-    for (mut rig, mut pose) in camera_q {
-        pose.transform = rig.calculate_transform(time.delta_secs());
+pub fn update_camera_pose(
+    camera_q: Query<(&mut CameraRig, &mut CameraPose, Option<&mut CameraPoseDebug>)>,
+    time: Res<Time>,
+) {
+    for (mut rig, mut pose, mut debug) in camera_q {
+        let update_steps = debug.as_mut().map(|d| &mut d.update_steps);
+        pose.transform = rig.calculate_transform(time.delta_secs(), update_steps);
     }
 }
 

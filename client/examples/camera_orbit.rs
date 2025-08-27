@@ -1,9 +1,7 @@
-use bevy::prelude::*;
-use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
-use shine_game::app::GameSystem;
+use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
-    app::{init_application, AppGameSchedule},
-    camera_rig::{rigs, CameraRig, CameraRigPlugin},
+    app::{init_application, AppGameSchedule, GameSystem},
+    camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -21,10 +19,13 @@ pub fn main() {
 }
 
 fn setup_game(app: &mut App) {
-    app.add_plugins(CameraRigPlugin::default());
+    app.add_plugins(CameraRigPlugin {
+        enable_debug: true,
+        ..Default::default()
+    });
 
     app.add_systems(Startup, spawn_world);
-    app.add_update_systems(GameSystem::Action, handle_input);
+    app.add_update_systems(GameSystem::Action, (handle_input, toggle_camera_debug));
 }
 
 fn spawn_world(
@@ -63,17 +64,36 @@ fn spawn_world(
     let camera = {
         let mut rig: CameraRig = CameraRig::new()
             .with(rigs::YawPitch::new().yaw_degrees(45.0).pitch_degrees(-30.0))
-            .with(rigs::Smooth::new_rotation(1.5))
+            .with(rigs::Smooth::rotation(1.5))
             .with(rigs::Arm::new(Vec3::Z * 8.0));
+        let mut rig_debug = CameraPoseDebug::default();
+        let transform = rig.calculate_transform(0.0, Some(&mut rig_debug.update_steps));
 
         (
             Camera3d::default(),
             NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-            rig.calculate_transform(0.0),
             rig,
+            rig_debug,
+            transform,
         )
     };
     commands.spawn(camera);
+}
+
+fn toggle_camera_debug(
+    camera_q: Query<(Entity, Option<&DebugCameraTarget>), With<Camera>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
+) {
+    for (entity, debug_target) in camera_q.iter() {
+        if keyboard_input.just_pressed(KeyCode::F12) {
+            if debug_target.is_some() {
+                commands.entity(entity).remove::<DebugCameraTarget>();
+            } else {
+                commands.entity(entity).insert(DebugCameraTarget::default());
+            }
+        }
+    }
 }
 
 fn handle_input(mut query: Query<&mut CameraRig, With<Camera3d>>, keyboard_input: Res<ButtonInput<KeyCode>>) {

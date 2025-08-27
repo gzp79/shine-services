@@ -13,3 +13,5 @@ mod look_at;
 pub use self::look_at::*;
 mod smooth;
 pub use self::smooth::*;
+mod predict;
+pub use self::predict::*;

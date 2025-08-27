@@ -5,6 +5,7 @@ use bevy::{
     ecs::{
         entity::Entity,
         error::BevyError,
+        name::Name,
         query::With,
         system::{Commands, Query},
     },
@@ -43,17 +44,18 @@ fn spawn_camera(mut commands: Commands) -> Result<(), BevyError> {
         let mut rig = CameraRig::new()
             .with(rigs::Position::new(Vec3::ZERO))
             .with(rigs::Rotation::new(Quat::default()))
-            .with(rigs::Smooth::new_position(1.25).predictive(true))
+            .with(rigs::Predict::position(1.25))
             .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))
-            .with(rigs::Smooth::new_position(2.5).predictive(true))
+            .with(rigs::Predict::position(2.5))
             .with(rigs::LookAt::new(Vec3::Y).smoothness(1.25).predictive(true));
 
         let input_map = InputMap::new().with_binding(CameraAction::Debug, KeyboardInput::new(KeyCode::F12))?;
 
         (
+            Name::new("Main camera"),
             Camera3d::default(),
             NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-            rig.calculate_transform(0.0),
+            rig.calculate_transform(0.0, None),
             rig,
             input_map,
         )

@@ -7,6 +7,7 @@ use bevy::{math::Vec3, transform::components::Transform};
 pub struct LookAt {
     pub target: Vec3,
     smoothed_target: ExpSmoothed<Vec3>,
+    predictive: bool,
 }
 
 impl LookAt {
@@ -19,6 +20,7 @@ impl LookAt {
         Self {
             target,
             smoothed_target: Default::default(),
+            predictive: false,
         }
     }
 
@@ -30,22 +32,20 @@ impl LookAt {
         }
     }
 
-    /// Reverse target position smoothing, causing the camera to look ahead of it.
-    /// This can then be chained with [`Smooth`], to create
-    /// a camera that smoothly follows an object, but doesn't lag far behind it.
-    pub fn predictive(self, predictive: bool) -> Self {
-        Self {
-            smoothed_target: self.smoothed_target.predictive(predictive),
-            ..self
-        }
+    pub fn predictive(mut self, predictive: bool) -> Self {
+        self.predictive = predictive;
+        self
     }
 }
 
 impl RigDriver for LookAt {
     fn update(&mut self, params: RigUpdateParams) -> Transform {
-        let target = self
-            .smoothed_target
-            .exp_smooth_towards(&self.target, params.delta_time_s);
+        let target = if self.predictive {
+            self.smoothed_target.exp_predict_from(&self.target, params.delta_time_s)
+        } else {
+            self.smoothed_target
+                .exp_smooth_towards(&self.target, params.delta_time_s)
+        };
 
         let parent_position = params.parent.translation;
         Transform::from_translation(parent_position).looking_at(target, Vec3::Y)

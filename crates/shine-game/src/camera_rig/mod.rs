@@ -9,7 +9,7 @@ mod rig_plugin;
 pub mod rigs;
 
 pub use self::{
-    camera_pose::CameraPose,
+    camera_pose::{CameraPose, CameraPoseDebug},
     debug_camera_plugin::DebugCameraTarget,
     driver::{RigDriver, RigUpdateParams},
     rig::CameraRig,

@@ -10,6 +10,12 @@ pub const HUD_LAYER: RenderLayers = RenderLayers::layer(31);
 
 /// Add all the game plugins to the app.
 fn setup_game(app: &mut App) {
+    use bevy_inspector_egui::bevy_egui::EguiPlugin;
+    use bevy_inspector_egui::quick::WorldInspectorPlugin;
+
+    app.add_plugins(EguiPlugin::default())
+        .add_plugins(WorldInspectorPlugin::new());
+
     app.add_plugins(hud::HUDPlugin);
     app.add_plugins(world::WorldPlugin);
     app.add_plugins(avatar::AvatarPlugin);

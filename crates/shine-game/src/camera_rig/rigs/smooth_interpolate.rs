@@ -1,10 +1,22 @@
-use bevy::math::{Quat, Vec3};
+use bevy::math::{Quat, Vec2, Vec3};
 
 /// (Linear) interpolation trait for types that can be smoothly interpolated.
 pub trait Interpolate: Clone {
     /// return inerpolated value between `self` and `other` at time `t`.
     /// For t = 0.0, returns `self`, for t = 1.0, returns `other`.
     fn interpolate(self, other: Self, t: f32) -> Self;
+}
+
+impl Interpolate for f32 {
+    fn interpolate(self, other: Self, t: f32) -> Self {
+        self * (1.0 - t) + other * t
+    }
+}
+
+impl Interpolate for Vec2 {
+    fn interpolate(self, other: Self, t: f32) -> Self {
+        Vec2::lerp(self, other, t)
+    }
 }
 
 impl Interpolate for Vec3 {
@@ -28,7 +40,6 @@ where
     T: Interpolate,
 {
     smoothness: f32,
-    predictive: bool,
     prev: Option<T>,
 }
 
@@ -46,20 +57,11 @@ where
     T: Interpolate,
 {
     pub fn new() -> Self {
-        Self {
-            smoothness: 1.0,
-            predictive: false,
-            prev: None,
-        }
+        Self { smoothness: 1.0, prev: None }
     }
 
     pub fn smoothness(mut self, smoothness: f32) -> Self {
         self.smoothness = smoothness;
-        self
-    }
-
-    pub fn predictive(mut self, predictive: bool) -> Self {
-        self.predictive = predictive;
         self
     }
 
@@ -75,10 +77,11 @@ where
 
         self.prev = Some(smooth.clone());
 
-        if self.predictive {
-            Interpolate::interpolate(target.clone(), smooth, -1.0)
-        } else {
-            smooth
-        }
+        smooth
+    }
+
+    pub fn exp_predict_from(&mut self, target: &T, delta_time: f32) -> T {
+        let smooth = self.exp_smooth_towards(target, delta_time);
+        Interpolate::interpolate(target.clone(), smooth, -1.0)
     }
 }

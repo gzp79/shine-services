@@ -232,6 +232,7 @@
       "description": "Select client example",
       "options": [
         { "label": "main", "value": "" },
+        { "label": "curve", "value": "--example curve" },
         { "label": "camera_orbit", "value": "--example camera_orbit" },
         { "label": "camera_follow", "value": "--example camera_follow" },
         { "label": "camera_free", "value": "--example camera_free" },
@@ -243,8 +244,7 @@
           "label": "input_multiplayer",
           "value": "--example input_multiplayer"
         },
-        { "label": "pinch_zoom", "value": "--example pinch_zoom" },
-        { "label": "minimap", "value": "--example minimap" }
+        { "label": "pinch_zoom", "value": "--example pinch_zoom" }
       ],
       "default": "asset-service"
     },

@@ -5,6 +5,7 @@ use bevy::{
     ecs::{
         component::Component,
         error::{BevyError, Result},
+        name::Name,
         system::{Commands, Query, Res, ResMut},
     },
     input::keyboard::KeyCode,
@@ -53,6 +54,7 @@ fn spawn_avatar(
             )?;
 
         (
+            Name::new("Avatar"),
             Mesh3d(meshes.add(Tetrahedron::new(
                 Vec3::new(-1.0, 0.0, -1.0),
                 Vec3::new(1.0, 0.0, -1.0),

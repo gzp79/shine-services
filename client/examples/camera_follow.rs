@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
 use shine_game::app::GameSystem;
+use shine_game::camera_rig::{CameraPoseDebug, DebugCameraTarget};
 use shine_game::{
     app::{init_application, AppGameSchedule},
     camera_rig::{rigs, CameraRig, CameraRigPlugin},
@@ -21,10 +22,13 @@ pub fn main() {
 }
 
 fn setup_game(app: &mut App) {
-    app.add_plugins(CameraRigPlugin::default());
+    app.add_plugins(CameraRigPlugin {
+        enable_debug: true,
+        ..Default::default()
+    });
 
     app.add_systems(Startup, spawn_world);
-    app.add_update_systems(GameSystem::Action, handle_input);
+    app.add_update_systems(GameSystem::Action, (handle_input, toggle_camera_debug));
 }
 
 #[derive(Component)]
@@ -75,28 +79,47 @@ fn spawn_world(
         let mut rig = CameraRig::new()
             .with(rigs::Position::new(start_position))
             .with(rigs::Rotation::new(Quat::default()))
-            .with(rigs::Smooth::new_position(1.25).predictive(true))
+            .with(rigs::Predict::position(1.25))
             .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))
-            .with(rigs::Smooth::new_position(2.5).predictive(true))
+            .with(rigs::Predict::position(2.5))
             .with(
                 rigs::LookAt::new(start_position + Vec3::Y)
                     .smoothness(1.25)
                     .predictive(true),
             );
+        let mut rig_debug = CameraPoseDebug::default();
+        let transform = rig.calculate_transform(0.0, Some(&mut rig_debug.update_steps));
 
         (
             Camera3d::default(),
             NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-            rig.calculate_transform(0.0),
             rig,
+            rig_debug,
+            transform,
         )
     };
     commands.spawn(camera);
 }
 
+fn toggle_camera_debug(
+    camera_q: Query<(Entity, Option<&DebugCameraTarget>), With<Camera>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
+) {
+    for (entity, debug_target) in camera_q.iter() {
+        if keyboard_input.just_pressed(KeyCode::F12) {
+            if debug_target.is_some() {
+                commands.entity(entity).remove::<DebugCameraTarget>();
+            } else {
+                commands.entity(entity).insert(DebugCameraTarget::default());
+            }
+        }
+    }
+}
+
 fn handle_input(
     mut player_q: Query<&mut Transform, With<Player>>,
-    mut camera_q: Query<&mut CameraRig, Without<Player>>,
+    mut camera_q: Query<&mut CameraRig, (With<Camera>, Without<Player>)>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
 ) {

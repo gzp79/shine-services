@@ -1,7 +1,7 @@
 use crate::camera_rig::{RigDriver, RigUpdateParams};
 use bevy::{math::Vec3, transform::components::Transform};
 
-/// Offsets the camera along a vector, in the coordinate space of the parent.
+/// Offsets the camera along a vector in the coordinate space of the parent.
 pub struct Arm {
     pub offset: Vec3,
 }
