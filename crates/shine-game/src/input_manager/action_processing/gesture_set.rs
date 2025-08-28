@@ -1,4 +1,4 @@
-use crate::math::{GestureId, JackknifeTemplateSet};
+use crate::math::jackknife::{GestureId, JackknifeTemplateSet};
 use bevy::{
     ecs::{component::Component, entity::Entity},
     math::Vec2,

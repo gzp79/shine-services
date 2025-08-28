@@ -1,4 +1,4 @@
-use crate::math::JackknifePointMath;
+use crate::math::jackknife::JackknifePointMath;
 use std::ops;
 
 pub struct CostMatrix {

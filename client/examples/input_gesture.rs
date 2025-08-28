@@ -6,7 +6,10 @@ use shine_game::{
         ActionState, AttachedToGestureSet, DualAxisChord, GestureInput, GestureSet, InputManagerPlugin, InputMap,
         KeyboardInput, MouseButtonInput, MousePosition, TouchPosition, UnistrokeGesture,
     },
-    math::{unistroke_templates, GestureId, JackknifeConfig, JackknifePointMath, JackknifeTemplateSet},
+    math::{
+        jackknife::{GestureId, JackknifeConfig, JackknifePointMath, JackknifeTemplateSet},
+        unistroke_templates,
+    },
 };
 use std::collections::HashMap;
 

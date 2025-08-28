@@ -1,4 +1,4 @@
-use crate::math::{CostMatrix, JackknifeConfig, JackknifeMethod, JackknifePointMath};
+use crate::math::jackknife::{CostMatrix, JackknifeConfig, JackknifeMethod, JackknifePointMath};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// Store extracted information and features from a sample.

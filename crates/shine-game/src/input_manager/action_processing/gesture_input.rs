@@ -1,6 +1,6 @@
 use crate::{
     input_manager::{ActionLike, DetectedGesture, InputMap, InputSource, InputSources, TypedUserInput, UserInput},
-    math::GestureId,
+    math::jackknife::GestureId,
 };
 use bevy::{
     ecs::{

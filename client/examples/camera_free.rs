@@ -26,10 +26,7 @@ pub fn main() {
 }
 
 fn setup_game(app: &mut App) {
-    app.add_plugins(CameraRigPlugin {
-        enable_debug: true,
-        ..Default::default()
-    });
+    app.add_plugins(CameraRigPlugin { enable_debug: true });
 
     app.add_systems(Startup, spawn_world);
     app.add_update_systems(GameSystem::Action, (handle_input, toggle_camera_debug));

@@ -22,10 +22,7 @@ pub fn main() {
 }
 
 fn setup_game(app: &mut App) {
-    app.add_plugins(CameraRigPlugin {
-        enable_debug: true,
-        ..Default::default()
-    });
+    app.add_plugins(CameraRigPlugin { enable_debug: true });
 
     app.add_systems(Startup, spawn_world);
     app.add_update_systems(GameSystem::Action, (handle_input, toggle_camera_debug));
@@ -84,7 +81,7 @@ fn spawn_world(
             .with(rigs::Predict::position(2.5))
             .with(
                 rigs::LookAt::new(start_position + Vec3::Y)
-                    .smoothness(1.25)
+                    .duration(1.25)
                     .predictive(true),
             );
         let mut rig_debug = CameraPoseDebug::default();

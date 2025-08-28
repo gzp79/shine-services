@@ -1,6 +1,6 @@
 use crate::{
     input_manager::{ActionLike, ActionState, AttachedRecognizers, AttachedToGestureSet, DetectedGesture, GestureSet},
-    math::{GestureId, JackknifeClassifier, JackknifeClassifierInternals},
+    math::jackknife::{GestureId, JackknifeClassifier, JackknifeClassifierInternals},
 };
 use bevy::{
     ecs::{component::Component, entity::Entity, error::BevyError, query::With, system::Query},

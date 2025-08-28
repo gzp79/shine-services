@@ -47,7 +47,7 @@ fn spawn_camera(mut commands: Commands) -> Result<(), BevyError> {
             .with(rigs::Predict::position(1.25))
             .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))
             .with(rigs::Predict::position(2.5))
-            .with(rigs::LookAt::new(Vec3::Y).smoothness(1.25).predictive(true));
+            .with(rigs::LookAt::new(Vec3::Y).duration(1.25).predictive(true));
 
         let input_map = InputMap::new().with_binding(CameraAction::Debug, KeyboardInput::new(KeyCode::F12))?;
 

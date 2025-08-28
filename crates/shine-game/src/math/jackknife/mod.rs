@@ -2,13 +2,16 @@
 
 //! Jackknife Classifier Module based on Jackknife: A Reliable Recognizer with Few Samples and Many Modalities
 //! see: <https://github.com/ISUE/Jackknife>
+mod gesture_id;
+pub use self::gesture_id::*;
 
 mod jackknife_math;
-pub use self::jackknife_math::*;
-mod jackknife_dtw;
 mod jackknife_math_array_n;
 mod jackknife_math_vec2;
 mod jackknife_math_vec3;
+pub use self::jackknife_math::*;
+
+mod jackknife_dtw;
 pub use self::jackknife_dtw::*;
 
 mod jackknife_error;

@@ -183,7 +183,7 @@ fn spawn_world(
             .with(rigs::Predict::position(2.5))
             .with(
                 rigs::LookAt::new(start_position + Vec3::Y)
-                    .smoothness(1.25)
+                    .duration(1.25)
                     .predictive(true),
             );
 

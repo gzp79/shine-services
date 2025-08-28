@@ -1,4 +1,4 @@
-use crate::math::{CostMatrix, JackknifeFeatures, JackknifePointMath, JackknifeTemplateSet};
+use crate::math::jackknife::{CostMatrix, JackknifeFeatures, JackknifePointMath, JackknifeTemplateSet};
 use bevy::log;
 
 /// Some internal state of the classifier.

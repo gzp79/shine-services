@@ -1,4 +1,4 @@
-use crate::math::JackknifePoint;
+use crate::math::jackknife::JackknifePoint;
 use bevy::math::Vec3;
 
 impl JackknifePoint for Vec3 {

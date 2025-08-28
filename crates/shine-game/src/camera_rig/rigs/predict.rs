@@ -1,4 +1,7 @@
-use crate::camera_rig::{rigs::ExpSmoothed, RigDriver, RigUpdateParams};
+use crate::{
+    camera_rig::{RigDriver, RigUpdateParams},
+    math::interpolate::ExpSmoothed,
+};
 use bevy::{
     math::{Quat, Vec3},
     transform::components::Transform,
@@ -18,26 +21,26 @@ impl Default for Predict {
 
 impl Predict {
     /// Predict position
-    pub fn position(position_smoothness: f32) -> Self {
+    pub fn position(duration_s: f32) -> Self {
         Self {
-            position: ExpSmoothed::new().smoothness(position_smoothness),
-            rotation: ExpSmoothed::new().smoothness(0.0),
+            position: ExpSmoothed::new().duration(duration_s),
+            rotation: ExpSmoothed::new().duration(0.0),
         }
     }
 
     /// Predict rotation
-    pub fn rotation(rotation_smoothness: f32) -> Self {
+    pub fn rotation(duration_s: f32) -> Self {
         Self {
-            position: ExpSmoothed::new().smoothness(0.0),
-            rotation: ExpSmoothed::new().smoothness(rotation_smoothness),
+            position: ExpSmoothed::new().duration(0.0),
+            rotation: ExpSmoothed::new().duration(duration_s),
         }
     }
 
     /// Predict both position and rotation
-    pub fn position_rotation(position_smoothness: f32, rotation_smoothness: f32) -> Self {
+    pub fn position_rotation(position_duration_s: f32, rotation_duration_s: f32) -> Self {
         Self {
-            position: ExpSmoothed::new().smoothness(position_smoothness),
-            rotation: ExpSmoothed::new().smoothness(rotation_smoothness),
+            position: ExpSmoothed::new().duration(position_duration_s),
+            rotation: ExpSmoothed::new().duration(rotation_duration_s),
         }
     }
 }

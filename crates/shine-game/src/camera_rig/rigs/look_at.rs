@@ -1,4 +1,7 @@
-use crate::camera_rig::{rigs::ExpSmoothed, RigDriver, RigUpdateParams};
+use crate::{
+    camera_rig::{RigDriver, RigUpdateParams},
+    math::interpolate::ExpSmoothed,
+};
 use bevy::{math::Vec3, transform::components::Transform};
 
 /// Rotates the camera to point at a world-space position.
@@ -24,10 +27,10 @@ impl LookAt {
         }
     }
 
-    /// Set the exponential smoothing factor for target position tracking.
-    pub fn smoothness(self, smoothness: f32) -> Self {
+    /// Set the exponential smoothing duration for target position tracking.
+    pub fn duration(self, duration_s: f32) -> Self {
         Self {
-            smoothed_target: self.smoothed_target.smoothness(smoothness),
+            smoothed_target: self.smoothed_target.duration(duration_s),
             ..self
         }
     }

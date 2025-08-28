@@ -1,6 +1,3 @@
-mod smooth_interpolate;
-pub use self::smooth_interpolate::*;
-
 mod position;
 pub use self::position::*;
 mod rotation;
