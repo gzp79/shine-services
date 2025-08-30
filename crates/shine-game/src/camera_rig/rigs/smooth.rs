@@ -1,6 +1,6 @@
 use crate::{
-    camera_rig::{RigDriver, RigError, RigUpdateParams, ValueType},
-    math::interpolate::ExpSmoothed,
+    camera_rig::{RigDriver, RigError, RigUpdateParams},
+    math::value::{ExpSmoothed, ValueError, ValueType},
 };
 use bevy::{
     math::{Quat, Vec3},
@@ -47,11 +47,11 @@ impl RigDriver for Smooth {
     }
 
     fn set_parameter_value(&mut self, name: &str, _value: ValueType) -> Result<(), RigError> {
-        Err(RigError::UnknownParameter(name.into()))
+        Err(ValueError::UnknownParameter(name.into()).into())
     }
 
     fn get_parameter_value(&self, name: &str) -> Result<ValueType, RigError> {
-        Err(RigError::UnknownParameter(name.into()))
+        Err(ValueError::UnknownParameter(name.into()).into())
     }
 
     fn update(&mut self, params: RigUpdateParams) -> Transform {

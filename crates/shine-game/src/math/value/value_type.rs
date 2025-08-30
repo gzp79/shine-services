@@ -1,4 +1,4 @@
-use crate::camera_rig::RigError;
+use crate::math::value::ValueError;
 use bevy::math::{Quat, Vec2, Vec3, Vec4};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -10,7 +10,7 @@ pub enum ValueKind {
     Quat,
 }
 
-pub trait ValueLike: TryFrom<ValueType, Error = RigError> + Into<ValueType> + Clone + Send + Sync + 'static {
+pub trait ValueLike: TryFrom<ValueType, Error = ValueError> + Into<ValueType> + Clone + Send + Sync + 'static {
     const KIND: ValueKind;
 }
 
@@ -58,12 +58,12 @@ macro_rules! impl_try_from_value_type {
         }
 
         impl TryFrom<ValueType> for $target_type {
-            type Error = RigError;
+            type Error = ValueError;
 
             fn try_from(value: ValueType) -> Result<Self, Self::Error> {
                 match value {
                     ValueType::$variant(v) => Ok(v),
-                    value => Err(RigError::TypeMismatch {
+                    value => Err(ValueError::TypeMismatch {
                         expected: ValueKind::$variant,
                         found: value.kind(),
                     }),

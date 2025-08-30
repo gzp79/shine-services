@@ -1,8 +1,11 @@
-use crate::camera_rig::{
-    camera_pose::{CameraPose, CameraPoseDebug},
-    debug_camera_plugin::{DebugCameraRig, DebugCameraTarget},
-    driver::{AnyRigDriver, RigDriverExt, RigUpdateParams},
-    RigError, ValueLike, ValueType,
+use crate::{
+    camera_rig::{
+        camera_pose::{CameraPose, CameraPoseDebug},
+        debug_camera_plugin::{DebugCameraRig, DebugCameraTarget},
+        driver::{AnyRigDriver, RigDriverExt, RigUpdateParams},
+        RigError,
+    },
+    math::value::{ValueError, ValueLike, ValueType},
 };
 use bevy::{
     ecs::{
@@ -44,7 +47,7 @@ impl CameraRig {
     {
         let params = driver.parameter_names();
         if let Some(conflict) = params.iter().find(|&&name| self.parameter_map.contains_key(name)) {
-            return Err(RigError::DuplicateParameter(conflict.to_string()));
+            return Err(ValueError::DuplicateParameter(conflict.to_string()).into());
         }
 
         for name in params {
@@ -58,7 +61,7 @@ impl CameraRig {
         let driver_index = self
             .parameter_map
             .get(name)
-            .ok_or_else(|| RigError::UnknownParameter(name.to_string()))?;
+            .ok_or_else(|| ValueError::UnknownParameter(name.to_string()))?;
 
         Ok(&mut *self.drivers[*driver_index])
     }

@@ -1,10 +1,13 @@
-use crate::camera_rig::{RigDriver, RigError, RigParameter, RigUpdateParams, ValueType};
+use crate::{
+    camera_rig::{RigDriver, RigError, RigUpdateParams},
+    math::value::{TemporalValue, ValueError, ValueType},
+};
 use bevy::{math::Quat, transform::components::Transform};
 
 /// Directly sets the rotation of the camera
 pub struct Rotation<Q>
 where
-    Q: RigParameter<Value = Quat>,
+    Q: TemporalValue<Value = Quat>,
 {
     pub rotation: Q,
 }
@@ -17,7 +20,7 @@ impl Default for Rotation<Quat> {
 
 impl<Q> Rotation<Q>
 where
-    Q: RigParameter<Value = Quat>,
+    Q: TemporalValue<Value = Quat>,
 {
     pub fn new(rotation: Q) -> Self {
         Self { rotation }
@@ -26,7 +29,7 @@ where
 
 impl<Q> RigDriver for Rotation<Q>
 where
-    Q: RigParameter<Value = Quat>,
+    Q: TemporalValue<Value = Quat>,
 {
     fn parameter_names(&self) -> Vec<&str> {
         self.rotation.name().into_iter().collect()
@@ -37,7 +40,7 @@ where
             self.rotation.set(Quat::try_from(value)?);
             Ok(())
         } else {
-            Err(RigError::UnknownParameter(name.into()))
+            Err(ValueError::UnknownParameter(name.into()).into())
         }
     }
 
@@ -45,7 +48,7 @@ where
         if self.rotation.name() == Some(name) {
             Ok((*self.rotation.get()).into())
         } else {
-            Err(RigError::UnknownParameter(name.into()))
+            Err(ValueError::UnknownParameter(name.into()).into())
         }
     }
 

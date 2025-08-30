@@ -1,4 +1,7 @@
-use crate::camera_rig::{RigDriver, RigError, RigParameter, RigUpdateParams, ValueType};
+use crate::{
+    camera_rig::{RigDriver, RigError, RigUpdateParams},
+    math::value::{TemporalValue, ValueError, ValueType},
+};
 use bevy::{
     math::{EulerRot, Quat},
     transform::components::Transform,
@@ -7,8 +10,8 @@ use bevy::{
 /// Calculate camera rotation based on yaw and pitch angles.
 pub struct YawPitch<Y, P>
 where
-    Y: RigParameter<Value = f32>,
-    P: RigParameter<Value = f32>,
+    Y: TemporalValue<Value = f32>,
+    P: TemporalValue<Value = f32>,
 {
     /// [0..720)
     ///
@@ -29,8 +32,8 @@ impl Default for YawPitch<f32, f32> {
 
 impl<Y, P> YawPitch<Y, P>
 where
-    Y: RigParameter<Value = f32>,
-    P: RigParameter<Value = f32>,
+    Y: TemporalValue<Value = f32>,
+    P: TemporalValue<Value = f32>,
 {
     pub fn new(yaw: Y, pitch: P) -> Self {
         Self { yaw, pitch }
@@ -39,8 +42,8 @@ where
 
 impl<Y, P> RigDriver for YawPitch<Y, P>
 where
-    Y: RigParameter<Value = f32>,
-    P: RigParameter<Value = f32>,
+    Y: TemporalValue<Value = f32>,
+    P: TemporalValue<Value = f32>,
 {
     fn parameter_names(&self) -> Vec<&str> {
         (self.yaw.name().into_iter()).chain(self.pitch.name()).collect()
@@ -54,7 +57,7 @@ where
             self.pitch.set(f32::try_from(value)?.clamp(-90.0, 90.0));
             Ok(())
         } else {
-            Err(RigError::UnknownParameter(name.into()))
+            Err(ValueError::UnknownParameter(name.into()).into())
         }
     }
 
@@ -64,7 +67,7 @@ where
         } else if self.pitch.name() == Some(name) {
             Ok((*self.pitch.get()).into())
         } else {
-            Err(RigError::UnknownParameter(name.into()))
+            Err(ValueError::UnknownParameter(name.into()).into())
         }
     }
 

@@ -1,20 +1,17 @@
-use crate::{
-    camera_rig::RigParameter,
-    math::interpolate::{ExpSmoothed, Interpolate},
-};
+use crate::math::value::{ExpSmoothed, Interpolate, TemporalValue};
 
-pub struct PredictedParameter<P>
+pub struct SmoothedValue<P>
 where
-    P: RigParameter,
+    P: TemporalValue,
     P::Value: Interpolate,
 {
     inner: P,
     smoothed: ExpSmoothed<P::Value>,
 }
 
-impl<P> PredictedParameter<P>
+impl<P> SmoothedValue<P>
 where
-    P: RigParameter,
+    P: TemporalValue,
     P::Value: Interpolate,
 {
     pub fn new(inner: P, duration_s: f32) -> Self {
@@ -26,9 +23,9 @@ where
     }
 }
 
-impl<P> RigParameter for PredictedParameter<P>
+impl<P> TemporalValue for SmoothedValue<P>
 where
-    P: RigParameter,
+    P: TemporalValue,
     P::Value: Interpolate,
 {
     type Value = P::Value;
@@ -46,6 +43,6 @@ where
     }
 
     fn update(&mut self, delta_time_s: f32) -> Self::Value {
-        self.smoothed.predict_from(self.inner.get(), delta_time_s)
+        self.smoothed.smooth_towards(self.inner.get(), delta_time_s)
     }
 }

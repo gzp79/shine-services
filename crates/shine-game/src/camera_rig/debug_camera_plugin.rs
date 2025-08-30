@@ -1,4 +1,7 @@
-use crate::camera_rig::{rigs, CameraPose, CameraPoseDebug, CameraRig, RigParameterExt};
+use crate::{
+    camera_rig::{rigs, CameraPose, CameraPoseDebug, CameraRig},
+    math::value::TemporalValueExt,
+};
 use bevy::{
     color::{palettes::css, Color},
     ecs::{

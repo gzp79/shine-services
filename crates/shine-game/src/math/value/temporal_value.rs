@@ -1,11 +1,10 @@
-use crate::{
-    camera_rig::{NamedParameter, PredictedParameter, RigError, SmoothedParameter, ValueKind, ValueLike, ValueType},
-    math::interpolate::Interpolate,
+use crate::math::value::{
+    Interpolate, NamedValue, PredictedValue, SmoothedValue, ValueError, ValueKind, ValueLike, ValueType,
 };
 use bevy::math::{Quat, Vec2, Vec3, Vec4};
 use std::borrow::Cow;
 
-pub trait RigParameter: Send + Sync + 'static {
+pub trait TemporalValue: Send + Sync + 'static {
     type Value: ValueLike;
 
     fn name(&self) -> Option<&str>;
@@ -15,52 +14,52 @@ pub trait RigParameter: Send + Sync + 'static {
     fn update(&mut self, delta_time_s: f32) -> Self::Value;
 }
 
-/// Extension methods for RigParameter
-pub trait RigParameterExt: RigParameter {
+/// Extension methods for TemporalValue
+pub trait TemporalValueExt: TemporalValue {
     fn kind(&self) -> ValueKind {
         Self::Value::KIND
     }
 
-    fn set_value(&mut self, value: ValueType) -> Result<(), RigError> {
+    fn set_value(&mut self, value: ValueType) -> Result<(), ValueError> {
         let value = Self::Value::try_from(value)?;
         self.set(value);
         Ok(())
     }
 
-    fn set_value_with(&mut self, f: &dyn Fn(ValueType) -> ValueType) -> Result<(), RigError> {
+    fn set_value_with(&mut self, f: &dyn Fn(ValueType) -> ValueType) -> Result<(), ValueError> {
         let value: ValueType = self.get().clone().into();
         self.set_value(f(value))
     }
 
-    fn with_name(self, name: impl Into<Cow<'static, str>>) -> NamedParameter<Self>
+    fn with_name(self, name: impl Into<Cow<'static, str>>) -> NamedValue<Self>
     where
         Self: Sized + 'static,
     {
-        NamedParameter::new(name, self)
+        NamedValue::new(name, self)
     }
 
-    fn smoothed(self, duration_s: f32) -> SmoothedParameter<Self>
+    fn smoothed(self, duration_s: f32) -> SmoothedValue<Self>
     where
         Self: Sized + 'static,
         Self::Value: Interpolate,
     {
-        SmoothedParameter::new(self, duration_s)
+        SmoothedValue::new(self, duration_s)
     }
 
-    fn predicted(self, duration_s: f32) -> PredictedParameter<Self>
+    fn predicted(self, duration_s: f32) -> PredictedValue<Self>
     where
         Self: Sized + 'static,
         Self::Value: Interpolate,
     {
-        PredictedParameter::new(self, duration_s)
+        PredictedValue::new(self, duration_s)
     }
 }
 
-impl<P> RigParameterExt for P where P: RigParameter {}
+impl<P> TemporalValueExt for P where P: TemporalValue {}
 
 macro_rules! impl_rig_parameter_for_value_type {
     ($type:ty, $kind:ident) => {
-        impl RigParameter for $type {
+        impl TemporalValue for $type {
             type Value = $type;
 
             fn name(&self) -> Option<&str> {
@@ -82,7 +81,7 @@ macro_rules! impl_rig_parameter_for_value_type {
     };
 }
 
-// Implement RigParameter for basic value types
+// Implement TemporalValue for basic value types
 impl_rig_parameter_for_value_type!(f32, Float);
 impl_rig_parameter_for_value_type!(Vec2, Vec2);
 impl_rig_parameter_for_value_type!(Vec3, Vec3);

@@ -1,26 +1,26 @@
-use crate::camera_rig::RigParameter;
+use crate::math::value::TemporalValue;
 use std::borrow::Cow;
 
-pub struct NamedParameter<P>
+pub struct NamedValue<P>
 where
-    P: RigParameter,
+    P: TemporalValue,
 {
     name: Cow<'static, str>,
     inner: P,
 }
 
-impl<P> NamedParameter<P>
+impl<P> NamedValue<P>
 where
-    P: RigParameter,
+    P: TemporalValue,
 {
     pub fn new(name: impl Into<Cow<'static, str>>, inner: P) -> Self {
         Self { name: name.into(), inner }
     }
 }
 
-impl<P> RigParameter for NamedParameter<P>
+impl<P> TemporalValue for NamedValue<P>
 where
-    P: RigParameter,
+    P: TemporalValue,
 {
     type Value = P::Value;
 

@@ -3,7 +3,6 @@
 mod camera_pose;
 mod debug_camera_plugin;
 mod driver;
-mod parameters;
 mod rig;
 mod rig_error;
 mod rig_plugin;
@@ -14,7 +13,6 @@ pub use self::{
     camera_pose::{CameraPose, CameraPoseDebug},
     debug_camera_plugin::DebugCameraTarget,
     driver::{RigDriver, RigUpdateParams},
-    parameters::*,
     rig::CameraRig,
     rig_error::RigError,
     rig_plugin::CameraRigPlugin,

@@ -1,4 +1,7 @@
-use crate::camera_rig::{RigDriver, RigError, RigParameter, RigUpdateParams, ValueType};
+use crate::{
+    camera_rig::{RigDriver, RigError, RigUpdateParams},
+    math::value::{TemporalValue, ValueError, ValueType},
+};
 use bevy::{math::Vec3, transform::components::Transform};
 
 /// Rotates the camera to point at a world-space position.
@@ -6,14 +9,14 @@ use bevy::{math::Vec3, transform::components::Transform};
 /// The target tracking can be additionally smoothed, and made to look ahead of it.
 pub struct LookAt<T>
 where
-    T: RigParameter<Value = Vec3>,
+    T: TemporalValue<Value = Vec3>,
 {
     target: T,
 }
 
 impl<T> LookAt<T>
 where
-    T: RigParameter<Value = Vec3>,
+    T: TemporalValue<Value = Vec3>,
 {
     pub fn new(target: T) -> Self {
         Self { target }
@@ -22,7 +25,7 @@ where
 
 impl<T> RigDriver for LookAt<T>
 where
-    T: RigParameter<Value = Vec3>,
+    T: TemporalValue<Value = Vec3>,
 {
     fn parameter_names(&self) -> Vec<&str> {
         self.target.name().into_iter().collect()
@@ -33,7 +36,7 @@ where
             self.target.set(Vec3::try_from(value)?);
             Ok(())
         } else {
-            Err(RigError::UnknownParameter(name.into()))
+            Err(ValueError::UnknownParameter(name.into()).into())
         }
     }
 
@@ -41,7 +44,7 @@ where
         if self.target.name() == Some(name) {
             Ok((*self.target.get()).into())
         } else {
-            Err(RigError::UnknownParameter(name.into()))
+            Err(ValueError::UnknownParameter(name.into()).into())
         }
     }
 

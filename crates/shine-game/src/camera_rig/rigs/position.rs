@@ -1,10 +1,13 @@
-use crate::camera_rig::{RigDriver, RigError, RigParameter, RigUpdateParams, ValueType};
+use crate::{
+    camera_rig::{RigDriver, RigError, RigUpdateParams},
+    math::value::{TemporalValue, ValueError, ValueType},
+};
 use bevy::{math::Vec3, transform::components::Transform};
 
 /// Directly sets the position of the camera
 pub struct Position<P>
 where
-    P: RigParameter<Value = Vec3>,
+    P: TemporalValue<Value = Vec3>,
 {
     position: P,
 }
@@ -17,7 +20,7 @@ impl Default for Position<Vec3> {
 
 impl<P> Position<P>
 where
-    P: RigParameter<Value = Vec3>,
+    P: TemporalValue<Value = Vec3>,
 {
     pub fn new(position: P) -> Self {
         Self { position }
@@ -26,7 +29,7 @@ where
 
 impl<P> RigDriver for Position<P>
 where
-    P: RigParameter<Value = Vec3>,
+    P: TemporalValue<Value = Vec3>,
 {
     fn parameter_names(&self) -> Vec<&str> {
         self.position.name().into_iter().collect()
@@ -37,7 +40,7 @@ where
             self.position.set(Vec3::try_from(value)?);
             Ok(())
         } else {
-            Err(RigError::UnknownParameter(name.into()))
+            Err(ValueError::UnknownParameter(name.into()).into())
         }
     }
 
@@ -45,7 +48,7 @@ where
         if self.position.name() == Some(name) {
             Ok((*self.position.get()).into())
         } else {
-            Err(RigError::UnknownParameter(name.into()))
+            Err(ValueError::UnknownParameter(name.into()).into())
         }
     }
 

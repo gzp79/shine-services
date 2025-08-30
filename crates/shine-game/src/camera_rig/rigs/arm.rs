@@ -1,17 +1,20 @@
-use crate::camera_rig::{RigDriver, RigError, RigParameter, RigUpdateParams, ValueType};
+use crate::{
+    camera_rig::{RigDriver, RigError, RigUpdateParams},
+    math::value::{TemporalValue, ValueError, ValueType},
+};
 use bevy::{math::Vec3, transform::components::Transform};
 
 /// Offsets the camera along a vector in the coordinate space of the parent.
 pub struct Arm<A>
 where
-    A: RigParameter<Value = Vec3>,
+    A: TemporalValue<Value = Vec3>,
 {
     pub offset: A,
 }
 
 impl<A> Arm<A>
 where
-    A: RigParameter<Value = Vec3>,
+    A: TemporalValue<Value = Vec3>,
 {
     pub fn new(offset: A) -> Self {
         Self { offset }
@@ -20,7 +23,7 @@ where
 
 impl<A> RigDriver for Arm<A>
 where
-    A: RigParameter<Value = Vec3>,
+    A: TemporalValue<Value = Vec3>,
 {
     fn parameter_names(&self) -> Vec<&str> {
         self.offset.name().into_iter().collect()
@@ -31,7 +34,7 @@ where
             self.offset.set(Vec3::try_from(value)?);
             Ok(())
         } else {
-            Err(RigError::UnknownParameter(name.into()))
+            Err(ValueError::UnknownParameter(name.into()).into())
         }
     }
 
@@ -39,7 +42,7 @@ where
         if self.offset.name() == Some(name) {
             Ok((*self.offset.get()).into())
         } else {
-            Err(RigError::UnknownParameter(name.into()))
+            Err(ValueError::UnknownParameter(name.into()).into())
         }
     }
 
