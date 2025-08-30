@@ -1,10 +1,8 @@
-use bevy::prelude::*;
-use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
-use shine_game::app::GameSystem;
-use shine_game::camera_rig::{CameraPoseDebug, DebugCameraTarget};
+use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
-    app::{init_application, AppGameSchedule},
-    camera_rig::{rigs, CameraRig, CameraRigPlugin},
+    app::{init_application, AppGameSchedule, GameSystem},
+    camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
+    math::value::TemporalValueExt,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -36,7 +34,7 @@ fn spawn_world(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-) {
+) -> Result<(), BevyError> {
     let mut window = windows.single_mut().unwrap();
     window.title = "Camera Look At (WASD)".to_string();
 
@@ -67,8 +65,8 @@ fn spawn_world(
 
     let camera = {
         let mut rig = CameraRig::new()
-            .with(rigs::Position::new(Vec3::new(-2.0, 2.5, 5.0)))
-            .with(rigs::LookAt::new(Vec3::new(0.0, 0.5, 0.0)));
+            .with(rigs::Position::new(Vec3::new(-2.0, 2.5, 5.0)))?
+            .with(rigs::LookAt::new(Vec3::new(0.0, 0.5, 0.0).with_name("target")))?;
         let mut rig_debug = CameraPoseDebug::default();
         let transform = rig.calculate_transform(0.0, Some(&mut rig_debug.update_steps));
 
@@ -81,6 +79,8 @@ fn spawn_world(
         )
     };
     commands.spawn(camera);
+
+    Ok(())
 }
 
 fn toggle_camera_debug(
@@ -101,10 +101,10 @@ fn toggle_camera_debug(
 
 fn handle_input(
     mut player_q: Query<&mut Transform, With<Player>>,
-    mut camera_q: Query<&mut CameraRig, Without<Player>>,
+    mut camera_q: Query<&mut CameraRig, With<Camera3d>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-) {
+) -> Result<(), BevyError> {
     let mut player = player_q.single_mut().unwrap();
     let mut rig = camera_q.single_mut().unwrap();
 
@@ -127,5 +127,7 @@ fn handle_input(
     }
     player.translation += move_vec * 5.0 * time.delta_secs();
 
-    rig.driver_mut::<rigs::LookAt>().target = player.translation;
+    rig.set_parameter("target", player.translation)?;
+
+    Ok(())
 }

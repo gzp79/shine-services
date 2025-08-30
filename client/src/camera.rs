@@ -18,6 +18,7 @@ use shine_game::{
     app::{AppGameSchedule, CameraSimulate},
     camera_rig::{rigs, CameraRig, CameraRigPlugin, DebugCameraTarget},
     input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput},
+    math::value::TemporalValueExt,
 };
 
 pub struct CameraPlugin;
@@ -42,12 +43,12 @@ pub enum CameraAction {
 fn spawn_camera(mut commands: Commands) -> Result<(), BevyError> {
     let camera = {
         let mut rig = CameraRig::new()
-            .with(rigs::Position::new(Vec3::ZERO))
-            .with(rigs::Rotation::new(Quat::default()))
-            .with(rigs::Predict::position(1.25))
-            .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))
-            .with(rigs::Predict::position(2.5))
-            .with(rigs::LookAt::new(Vec3::Y).duration(1.25).predictive(true));
+            .with(rigs::Position::new(Vec3::ZERO.with_name("position")))?
+            .with(rigs::Rotation::new(Quat::default().with_name("rotation")))?
+            .with(rigs::Predict::position(1.25))?
+            .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))?
+            .with(rigs::Predict::position(2.5))?
+            .with(rigs::LookAt::new(Vec3::Y.with_name("lookAt").predicted(1.25)))?;
 
         let input_map = InputMap::new().with_binding(CameraAction::Debug, KeyboardInput::new(KeyCode::F12))?;
 
@@ -87,11 +88,11 @@ fn follow_avatar(
     mut camera_q: Query<&mut CameraRig, With<Camera>>,
 ) -> Result<(), BevyError> {
     let avatar = avatar_q.single()?;
-    let mut camera_rig = camera_q.single_mut()?;
+    let mut rig = camera_q.single_mut()?;
 
-    camera_rig.driver_mut::<rigs::Position>().position = avatar.translation;
-    camera_rig.driver_mut::<rigs::Rotation>().rotation = avatar.rotation;
-    camera_rig.driver_mut::<rigs::LookAt>().target = avatar.translation + Vec3::Y;
+    rig.set_parameter("position", avatar.translation)?;
+    rig.set_parameter("rotation", avatar.rotation)?;
+    rig.set_parameter("lookAt", avatar.translation + Vec3::Y)?;
 
     Ok(())
 }

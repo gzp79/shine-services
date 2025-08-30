@@ -1,10 +1,8 @@
-use bevy::prelude::*;
-use bevy::{color::palettes::css, render::view::NoIndirectDrawing};
-use shine_game::app::GameSystem;
-use shine_game::camera_rig::{CameraPoseDebug, DebugCameraTarget};
+use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
-    app::{init_application, AppGameSchedule},
-    camera_rig::{rigs, CameraRig, CameraRigPlugin},
+    app::{init_application, AppGameSchedule, GameSystem},
+    camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
+    math::value::TemporalValueExt,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -36,7 +34,7 @@ fn spawn_world(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-) {
+) -> Result<(), BevyError> {
     let mut window = windows.single_mut().unwrap();
     window.title = "Camera Follow (WASD, QE)".to_string();
 
@@ -74,16 +72,14 @@ fn spawn_world(
 
     let camera = {
         let mut rig = CameraRig::new()
-            .with(rigs::Position::new(start_position))
-            .with(rigs::Rotation::new(Quat::default()))
-            .with(rigs::Predict::position(1.25))
-            .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))
-            .with(rigs::Predict::position(2.5))
-            .with(
-                rigs::LookAt::new(start_position + Vec3::Y)
-                    .duration(1.25)
-                    .predictive(true),
-            );
+            .with(rigs::Position::new(start_position.with_name("position")))?
+            .with(rigs::Rotation::new(Quat::default().with_name("rotation")))?
+            .with(rigs::Predict::position(1.25))?
+            .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))?
+            .with(rigs::Predict::position(2.5))?
+            .with(rigs::LookAt::new(
+                (start_position + Vec3::Y).with_name("lookAt").predicted(1.25),
+            ))?;
         let mut rig_debug = CameraPoseDebug::default();
         let transform = rig.calculate_transform(0.0, Some(&mut rig_debug.update_steps));
 
@@ -96,6 +92,8 @@ fn spawn_world(
         )
     };
     commands.spawn(camera);
+
+    Ok(())
 }
 
 fn toggle_camera_debug(
@@ -116,10 +114,10 @@ fn toggle_camera_debug(
 
 fn handle_input(
     mut player_q: Query<&mut Transform, With<Player>>,
-    mut camera_q: Query<&mut CameraRig, (With<Camera>, Without<Player>)>,
+    mut camera_q: Query<&mut CameraRig, With<Camera3d>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-) {
+) -> Result<(), BevyError> {
     let mut player = player_q.single_mut().unwrap();
     let mut rig = camera_q.single_mut().unwrap();
 
@@ -161,7 +159,9 @@ fn handle_input(
 
     player.translation += move_vec;
 
-    rig.driver_mut::<rigs::Position>().position = player.translation;
-    rig.driver_mut::<rigs::Rotation>().rotation = player.rotation;
-    rig.driver_mut::<rigs::LookAt>().target = player.translation + Vec3::Y;
+    rig.set_parameter("position", player.translation)?;
+    rig.set_parameter("rotation", player.rotation)?;
+    rig.set_parameter("lookAt", player.translation + Vec3::Y)?;
+
+    Ok(())
 }

@@ -1,14 +1,13 @@
-use bevy::prelude::*;
 use bevy::{
     input::mouse::MouseMotion,
+    prelude::*,
     window::CursorGrabMode,
     {color::palettes::css, render::view::NoIndirectDrawing},
 };
-use shine_game::app::GameSystem;
-use shine_game::camera_rig::{CameraPoseDebug, DebugCameraTarget};
 use shine_game::{
-    app::{init_application, AppGameSchedule},
-    camera_rig::{rigs, CameraRig, CameraRigPlugin},
+    app::{init_application, AppGameSchedule, GameSystem},
+    camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
+    math::value::TemporalValueExt,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -37,7 +36,7 @@ fn spawn_world(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-) {
+) -> Result<(), BevyError> {
     let mut window = windows.single_mut().unwrap();
     window.cursor_options.grab_mode = CursorGrabMode::Locked;
     window.title = "Camera Free (Mouse, WASD)".to_string();
@@ -68,9 +67,9 @@ fn spawn_world(
 
     let camera = {
         let mut rig: CameraRig = CameraRig::new()
-            .with(rigs::Position::new(Vec3::new(-2.0, 2.5, 5.0)))
-            .with(rigs::YawPitch::new().yaw_degrees(90.0).pitch_degrees(-30.0))
-            .with(rigs::Smooth::position_rotation(1.0, 1.0));
+            .with(rigs::Position::new(Vec3::new(-2.0, 2.5, 5.0).with_name("position")))?
+            .with(rigs::YawPitch::new((90.0).with_name("yaw"), (-30.0).with_name("pitch")))?
+            .with(rigs::Smooth::position_rotation(1.0, 1.0))?;
 
         let mut rig_debug = CameraPoseDebug::default();
         let transform = rig.calculate_transform(0.0, Some(&mut rig_debug.update_steps));
@@ -84,6 +83,8 @@ fn spawn_world(
         )
     };
     commands.spawn(camera);
+
+    Ok(())
 }
 
 fn toggle_camera_debug(
@@ -107,7 +108,7 @@ fn handle_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut mouse_motion_events: EventReader<MouseMotion>,
     time: Res<Time>,
-) {
+) -> Result<(), BevyError> {
     for (transform, mut rig) in query.iter_mut() {
         let mut move_vec = Vec3::ZERO;
         if keyboard_input.pressed(KeyCode::KeyA) {
@@ -133,9 +134,10 @@ fn handle_input(
             delta += event.delta;
         }
 
-        rig.driver_mut::<rigs::YawPitch>()
-            .rotate_yaw_pitch(-0.1 * delta.x, -0.1 * delta.y);
-        rig.driver_mut::<rigs::Position>()
-            .translate(move_vec * time.delta_secs() * 10.0);
+        rig.set_parameter_with("yaw", |yaw: f32| yaw - 0.1 * delta.x)?;
+        rig.set_parameter_with("pitch", |pitch: f32| pitch - 0.1 * delta.y)?;
+        rig.set_parameter_with("position", |pos: Vec3| pos + move_vec * time.delta_secs() * 10.0)?;
     }
+
+    Ok(())
 }
