@@ -42,59 +42,34 @@ where
     T: Interpolate,
 {
     smoothness: f32,
-    prev: Option<T>,
-}
-
-impl<T> Default for ExpSmoothed<T>
-where
-    T: Interpolate,
-{
-    fn default() -> Self {
-        Self::new()
-    }
+    current: Option<T>,
 }
 
 impl<T> ExpSmoothed<T>
 where
     T: Interpolate,
 {
-    pub fn new() -> Self {
-        Self { smoothness: 1.0, prev: None }
+    /// Create a new exponential smoother that will reach the (99.9% percent of) target value in the given duration.
+    /// If `current` is `None`, it will start from the first target value.
+    pub fn new(duration_s: f32, current: Option<T>) -> Self {
+        const CONVERGENCE: f32 = 0.001;
+        let smoothness = -duration_s / CONVERGENCE.ln();
+        Self { smoothness, current }
     }
 
-    pub fn with_start(prev: T) -> Self {
-        Self {
-            smoothness: 1.0,
-            prev: Some(prev),
-        }
-    }
-
-    /*pub fn smoothness(mut self, smoothness: f32) -> Self {
-        self.smoothness = smoothness;
-        self
-    }*/
-
-    /// Set smoothing factor so that the target is reached in the given time with a precision of 99%
-    pub fn duration(mut self, duration_s: f32) -> Self {
-        const CONVERGENCE: f32 = 0.01;
-        self.smoothness = -duration_s / CONVERGENCE.ln();
-        self
-    }
-
-    pub fn exp_smooth_towards(&mut self, target: &T, delta_time_s: f32) -> T {
+    pub fn smooth_towards(&mut self, target: &T, delta_time_s: f32) -> T {
         // Calculate the exponential blending based on frame time
         let t = (-delta_time_s / self.smoothness.max(1e-5)).exp();
 
-        let prev = self.prev.clone().unwrap_or(target.clone());
-        let smooth = Interpolate::interpolate(target.clone(), prev, t);
+        let prev = self.current.take().unwrap_or_else(|| target.clone());
+        let smoothed = Interpolate::interpolate(target.clone(), prev, t);
+        self.current = Some(smoothed.clone());
 
-        self.prev = Some(smooth.clone());
-
-        smooth
+        smoothed
     }
 
-    pub fn exp_predict_from(&mut self, target: &T, delta_time: f32) -> T {
-        let smooth = self.exp_smooth_towards(target, delta_time);
+    pub fn predict_from(&mut self, target: &T, delta_time: f32) -> T {
+        let smooth = self.smooth_towards(target, delta_time);
         Interpolate::interpolate(target.clone(), smooth, -1.0)
     }
 }

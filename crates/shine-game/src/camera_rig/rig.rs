@@ -1,7 +1,8 @@
 use crate::camera_rig::{
     camera_pose::{CameraPose, CameraPoseDebug},
     debug_camera_plugin::{DebugCameraRig, DebugCameraTarget},
-    driver::{AnyRigDriver, RigDriver, RigUpdateParams},
+    driver::{AnyRigDriver, RigDriverExt, RigUpdateParams},
+    RigError, ValueLike, ValueType,
 };
 use bevy::{
     ecs::{
@@ -9,17 +10,18 @@ use bevy::{
         query::{With, Without},
         system::{Query, Res},
     },
+    platform::collections::HashMap,
     render::camera::Camera,
     time::Time,
     transform::components::Transform,
 };
-use itertools::Itertools;
 
 #[derive(Component)]
 #[require(CameraPose)]
 /// A chain of drivers, calculating displacements, and animating in succession.
 pub struct CameraRig {
-    pub drivers: Vec<Box<dyn AnyRigDriver>>,
+    drivers: Vec<Box<dyn AnyRigDriver>>,
+    parameter_map: HashMap<String, usize>,
 }
 
 impl Default for CameraRig {
@@ -30,53 +32,65 @@ impl Default for CameraRig {
 
 impl CameraRig {
     pub fn new() -> Self {
-        Self { drivers: Vec::new() }
+        Self {
+            drivers: Vec::new(),
+            parameter_map: HashMap::new(),
+        }
     }
 
-    pub fn with<R>(mut self, driver: R) -> Self
+    pub fn with<R>(mut self, driver: R) -> Result<Self, RigError>
     where
         R: AnyRigDriver,
     {
+        let params = driver.parameter_names();
+        if let Some(conflict) = params.iter().find(|&&name| self.parameter_map.contains_key(name)) {
+            return Err(RigError::DuplicateParameter(conflict.to_string()));
+        }
+
+        for name in params {
+            self.parameter_map.insert(name.to_string(), self.drivers.len());
+        }
         self.drivers.push(Box::new(driver));
-        self
+        Ok(self)
     }
 
-    /// Returns the driver of the matching type.
-    /// ## Panics
-    /// If multiple or no driver of the matching type is present.
-    pub fn driver_mut<T: RigDriver>(&mut self) -> &mut T {
-        self.try_driver_mut::<T>()
-            .unwrap_or_else(|| panic!("No {} driver found in the CameraRig", std::any::type_name::<T>()))
+    fn find_driver_by_parameter(&mut self, name: &str) -> Result<&mut dyn AnyRigDriver, RigError> {
+        let driver_index = self
+            .parameter_map
+            .get(name)
+            .ok_or_else(|| RigError::UnknownParameter(name.to_string()))?;
+
+        Ok(&mut *self.drivers[*driver_index])
     }
 
-    /// Returns the driver of the matching type, or `None` if no such driver is present.
-    /// ## Panics
-    /// If no driver of the matching type is present, panics.
-    pub fn try_driver_mut<T: RigDriver>(&mut self) -> Option<&mut T> {
-        self.drivers
-            .iter_mut()
-            .filter_map(|driver| driver.as_mut().as_any_mut().downcast_mut::<T>())
-            .at_most_one()
-            .unwrap_or_else(|_| panic!("Multiple {} driver found in the CameraRig", std::any::type_name::<T>()))
+    pub fn set_parameter<T>(&mut self, name: &str, value: T) -> Result<(), RigError>
+    where
+        T: ValueLike,
+    {
+        let driver = self.find_driver_by_parameter(name)?;
+        driver.set_parameter(name, value)
     }
 
-    /// Returns the driver of the matching type.
-    /// ## Panics
-    /// If multiple or no driver of the matching type is present.
-    pub fn driver<T: RigDriver>(&self) -> &T {
-        self.try_driver::<T>()
-            .unwrap_or_else(|| panic!("No {} driver found in the CameraRig", std::any::type_name::<T>()))
+    pub fn set_parameter_with<T, F>(&mut self, name: &str, f: F) -> Result<(), RigError>
+    where
+        T: ValueLike,
+        F: Fn(T) -> T,
+    {
+        let driver = self.find_driver_by_parameter(name)?;
+        driver.set_parameter_with(name, f)
     }
 
-    /// Returns the driver of the matching type, or `None` if no such driver is present.
-    /// ## Panics
-    /// If no driver of the matching type is present, panics.
-    pub fn try_driver<T: RigDriver>(&self) -> Option<&T> {
-        self.drivers
-            .iter()
-            .filter_map(|driver| driver.as_ref().as_any().downcast_ref::<T>())
-            .at_most_one()
-            .unwrap_or_else(|_| panic!("Multiple {} driver found in the CameraRig", std::any::type_name::<T>()))
+    pub fn set_parameter_value(&mut self, name: &str, value: ValueType) -> Result<(), RigError> {
+        let driver = self.find_driver_by_parameter(name)?;
+        driver.set_parameter_value(name, value)
+    }
+
+    pub fn set_parameter_value_with<F>(&mut self, name: &str, f: F) -> Result<(), RigError>
+    where
+        F: Fn(ValueType) -> ValueType,
+    {
+        let driver = self.find_driver_by_parameter(name)?;
+        driver.set_parameter_value_with(name, f)
     }
 
     /// Runs all the drivers in sequence, animating the rig, and producing a final transform of the camera.

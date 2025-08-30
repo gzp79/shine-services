@@ -1,4 +1,4 @@
-use crate::camera_rig::{rigs, CameraPose, CameraPoseDebug, CameraRig};
+use crate::camera_rig::{rigs, CameraPose, CameraPoseDebug, CameraRig, RigParameterExt};
 use bevy::{
     color::{palettes::css, Color},
     ecs::{
@@ -80,9 +80,9 @@ pub fn spawn_debug_camera(
 
     let camera = {
         let mut rig = CameraRig::new()
-            .with(rigs::Position::new(target_camera.translation))
-            .with(rigs::YawPitch::new().yaw_degrees(yaw).pitch_degrees(pitch))
-            .with(rigs::Smooth::position_rotation(1.0, 1.0));
+            .with(rigs::Position::new(target_camera.translation.with_name("position")))?
+            .with(rigs::YawPitch::new(yaw.with_name("yaw"), pitch.with_name("pitch")))?
+            .with(rigs::Smooth::position_rotation(1.0, 1.0))?;
         (
             DebugCameraComponents,
             DebugCameraRig,
@@ -184,7 +184,7 @@ pub fn handle_debug_inputs(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut mouse_motion_events: EventReader<MouseMotion>,
     time: Res<Time>,
-) {
+) -> Result<(), BevyError> {
     if let (Ok(transform), Ok(mut rig)) = (camera_q.single(), rig_q.single_mut()) {
         let mut move_vec = Vec3::ZERO;
         if keyboard_input.pressed(KeyCode::Numpad4) {
@@ -216,11 +216,12 @@ pub fn handle_debug_inputs(
             delta += event.delta;
         }
 
-        rig.driver_mut::<rigs::YawPitch>()
-            .rotate_yaw_pitch(-0.1 * delta.x, -0.1 * delta.y);
-        rig.driver_mut::<rigs::Position>()
-            .translate(move_vec * time.delta_secs() * 10.0);
+        rig.set_parameter_with("yaw", |yaw: f32| yaw - 0.1 * delta.x)?;
+        rig.set_parameter_with("pitch", |pitch: f32| pitch - 0.1 * delta.y)?;
+        rig.set_parameter_with("position", |pos: Vec3| pos + move_vec * time.delta_secs() * 10.0)?;
     }
+
+    Ok(())
 }
 
 fn render_frustum(gizmos: &mut Gizmos, transform: &Transform, corners: &[Vec3A; 8], color: impl Into<Color>) {

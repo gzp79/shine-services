@@ -30,6 +30,7 @@ bevy = { workspace = true, features = [
 
 bevy_mod_debugdump = { version = "0.13", optional = true }
 
+shine-core = { workspace = true }
 shine-infra = { workspace = true, optional = true }
 
 [dev-dependencies]

@@ -1,7 +1,7 @@
 use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
     app::{init_application, AppGameSchedule, GameSystem},
-    camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
+    camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget, RigParameterExt},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -30,7 +30,7 @@ fn spawn_world(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-) {
+) -> Result<(), BevyError> {
     let mut window = windows.single_mut().unwrap();
     window.title = "Camera Orbit (QE)".to_string();
 
@@ -60,9 +60,9 @@ fn spawn_world(
 
     let camera = {
         let mut rig: CameraRig = CameraRig::new()
-            .with(rigs::YawPitch::new().yaw_degrees(45.0).pitch_degrees(-30.0))
-            .with(rigs::Smooth::rotation(1.5))
-            .with(rigs::Arm::new(Vec3::Z * 8.0));
+            .with(rigs::YawPitch::new((45.0).with_name("yaw"), (-30.0).with_name("pitch")))?
+            .with(rigs::Smooth::rotation(1.5))?
+            .with(rigs::Arm::new(Vec3::Z * 8.0))?;
         let mut rig_debug = CameraPoseDebug::default();
         let transform = rig.calculate_transform(0.0, Some(&mut rig_debug.update_steps));
 
@@ -75,6 +75,8 @@ fn spawn_world(
         )
     };
     commands.spawn(camera);
+
+    Ok(())
 }
 
 fn toggle_camera_debug(
@@ -93,13 +95,18 @@ fn toggle_camera_debug(
     }
 }
 
-fn handle_input(mut query: Query<&mut CameraRig, With<Camera3d>>, keyboard_input: Res<ButtonInput<KeyCode>>) {
+fn handle_input(
+    mut query: Query<&mut CameraRig, With<Camera3d>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+) -> Result<(), BevyError> {
     for mut rig in query.iter_mut() {
         if keyboard_input.just_pressed(KeyCode::KeyQ) {
-            rig.driver_mut::<rigs::YawPitch>().rotate_yaw_pitch(-90.0, 0.0);
+            rig.set_parameter_with("yaw", |x: f32| x + -90.0)?;
         }
         if keyboard_input.just_pressed(KeyCode::KeyE) {
-            rig.driver_mut::<rigs::YawPitch>().rotate_yaw_pitch(90.0, 0.0);
+            rig.set_parameter_with("yaw", |x: f32| x + 90.0)?;
         }
     }
+
+    Ok(())
 }

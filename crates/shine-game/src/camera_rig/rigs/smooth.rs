@@ -1,5 +1,5 @@
 use crate::{
-    camera_rig::{RigDriver, RigUpdateParams},
+    camera_rig::{RigDriver, RigError, RigUpdateParams, ValueType},
     math::interpolate::ExpSmoothed,
 };
 use bevy::{
@@ -20,38 +20,46 @@ impl Default for Smooth {
 }
 
 impl Smooth {
-    /// Smooth position
-    pub fn position(duration_s: f32) -> Self {
-        Self {
-            position: ExpSmoothed::new().duration(duration_s),
-            rotation: ExpSmoothed::new().duration(0.0),
-        }
-    }
-
-    /// Smooth rotation
-    pub fn rotation(duration_s: f32) -> Self {
-        Self {
-            position: ExpSmoothed::new().duration(0.0),
-            rotation: ExpSmoothed::new().duration(duration_s),
-        }
-    }
-
-    /// Smooth both position and rotation
+    /// Predict both position and rotation
     pub fn position_rotation(position_duration_s: f32, rotation_duration_s: f32) -> Self {
+        // Initialize without a current value to allow smooth transitions from the first update.
+        // The initial state will be set when the first target value is provided.
         Self {
-            position: ExpSmoothed::new().duration(position_duration_s),
-            rotation: ExpSmoothed::new().duration(rotation_duration_s),
+            position: ExpSmoothed::new(position_duration_s, None),
+            rotation: ExpSmoothed::new(rotation_duration_s, None),
         }
+    }
+
+    /// Predict position
+    pub fn position(duration_s: f32) -> Self {
+        Self::position_rotation(duration_s, 0.0)
+    }
+
+    /// Predict rotation
+    pub fn rotation(duration_s: f32) -> Self {
+        Self::position_rotation(0.0, duration_s)
     }
 }
 
 impl RigDriver for Smooth {
+    fn parameter_names(&self) -> Vec<&str> {
+        vec![]
+    }
+
+    fn set_parameter_value(&mut self, name: &str, _value: ValueType) -> Result<(), RigError> {
+        Err(RigError::UnknownParameter(name.into()))
+    }
+
+    fn get_parameter_value(&self, name: &str) -> Result<ValueType, RigError> {
+        Err(RigError::UnknownParameter(name.into()))
+    }
+
     fn update(&mut self, params: RigUpdateParams) -> Transform {
         let target_position = params.parent.translation;
-        let position = self.position.exp_smooth_towards(&target_position, params.delta_time_s);
+        let position = self.position.smooth_towards(&target_position, params.delta_time_s);
 
         let target_rotation = params.parent.rotation;
-        let rotation = self.rotation.exp_smooth_towards(&target_rotation, params.delta_time_s);
+        let rotation = self.rotation.smooth_towards(&target_rotation, params.delta_time_s);
 
         Transform::from_translation(position).with_rotation(rotation)
     }

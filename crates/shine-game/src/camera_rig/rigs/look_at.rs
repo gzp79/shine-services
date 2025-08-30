@@ -1,54 +1,52 @@
-use crate::{
-    camera_rig::{RigDriver, RigUpdateParams},
-    math::interpolate::ExpSmoothed,
-};
+use crate::camera_rig::{RigDriver, RigError, RigParameter, RigUpdateParams, ValueType};
 use bevy::{math::Vec3, transform::components::Transform};
 
 /// Rotates the camera to point at a world-space position.
 ///
 /// The target tracking can be additionally smoothed, and made to look ahead of it.
-pub struct LookAt {
-    pub target: Vec3,
-    smoothed_target: ExpSmoothed<Vec3>,
-    predictive: bool,
+pub struct LookAt<T>
+where
+    T: RigParameter<Value = Vec3>,
+{
+    target: T,
 }
 
-impl LookAt {
-    pub fn new<P>(target: P) -> Self
-    where
-        P: Into<Vec3>,
-    {
-        let target = target.into();
-
-        Self {
-            target,
-            smoothed_target: Default::default(),
-            predictive: false,
-        }
-    }
-
-    /// Set the exponential smoothing duration for target position tracking.
-    pub fn duration(self, duration_s: f32) -> Self {
-        Self {
-            smoothed_target: self.smoothed_target.duration(duration_s),
-            ..self
-        }
-    }
-
-    pub fn predictive(mut self, predictive: bool) -> Self {
-        self.predictive = predictive;
-        self
+impl<T> LookAt<T>
+where
+    T: RigParameter<Value = Vec3>,
+{
+    pub fn new(target: T) -> Self {
+        Self { target }
     }
 }
 
-impl RigDriver for LookAt {
-    fn update(&mut self, params: RigUpdateParams) -> Transform {
-        let target = if self.predictive {
-            self.smoothed_target.exp_predict_from(&self.target, params.delta_time_s)
+impl<T> RigDriver for LookAt<T>
+where
+    T: RigParameter<Value = Vec3>,
+{
+    fn parameter_names(&self) -> Vec<&str> {
+        self.target.name().into_iter().collect()
+    }
+
+    fn set_parameter_value(&mut self, name: &str, value: ValueType) -> Result<(), RigError> {
+        if self.target.name() == Some(name) {
+            self.target.set(Vec3::try_from(value)?);
+            Ok(())
         } else {
-            self.smoothed_target
-                .exp_smooth_towards(&self.target, params.delta_time_s)
-        };
+            Err(RigError::UnknownParameter(name.into()))
+        }
+    }
+
+    fn get_parameter_value(&self, name: &str) -> Result<ValueType, RigError> {
+        if self.target.name() == Some(name) {
+            Ok((*self.target.get()).into())
+        } else {
+            Err(RigError::UnknownParameter(name.into()))
+        }
+    }
+
+    fn update(&mut self, params: RigUpdateParams) -> Transform {
+        let target = self.target.update(params.delta_time_s);
 
         let parent_position = params.parent.translation;
         Transform::from_translation(parent_position).looking_at(target, Vec3::Y)
