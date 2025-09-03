@@ -5,7 +5,7 @@ use crate::{
         driver::{AnyRigDriver, RigDriverExt, RigUpdateParams},
         RigError,
     },
-    math::value::{ValueError, ValueLike, ValueType},
+    math::temporal::{ValueError, ValueLike, ValueType},
 };
 use bevy::{
     ecs::{

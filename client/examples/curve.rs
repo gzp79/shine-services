@@ -1,7 +1,7 @@
 use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
     app::init_application,
-    math::value::{TemporalValue, TemporalValueExt},
+    math::temporal::{TemporalValue, TemporalValueExt},
 };
 
 #[cfg(not(target_arch = "wasm32"))]

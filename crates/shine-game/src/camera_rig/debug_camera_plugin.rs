@@ -1,6 +1,6 @@
 use crate::{
     camera_rig::{rigs, CameraPose, CameraPoseDebug, CameraRig},
-    math::value::TemporalValueExt,
+    math::temporal::TemporalValueExt,
 };
 use bevy::{
     color::{palettes::css, Color},

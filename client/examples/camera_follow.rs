@@ -2,7 +2,7 @@ use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
     app::{init_application, AppGameSchedule, GameSystem},
     camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
-    math::value::TemporalValueExt,
+    math::temporal::TemporalValueExt,
 };
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -18,7 +18,7 @@ use shine_game::{
     app::{AppGameSchedule, CameraSimulate},
     camera_rig::{rigs, CameraRig, CameraRigPlugin, DebugCameraTarget},
     input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput},
-    math::value::TemporalValueExt,
+    math::temporal::TemporalValueExt,
 };
 
 pub struct CameraPlugin;

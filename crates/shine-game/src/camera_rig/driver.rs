@@ -1,6 +1,6 @@
 use crate::{
     camera_rig::RigError,
-    math::value::{ValueLike, ValueType},
+    math::temporal::{ValueLike, ValueType},
 };
 use bevy::transform::components::Transform;
 use shine_core::utils::TypeErase;

@@ -1,6 +1,6 @@
 use crate::{
     camera_rig::{RigDriver, RigError, RigUpdateParams},
-    math::value::{ExpSmoothed, ValueError, ValueType},
+    math::temporal::{ExpSmoothed, ValueError, ValueType},
 };
 use bevy::{
     math::{Quat, Vec3},

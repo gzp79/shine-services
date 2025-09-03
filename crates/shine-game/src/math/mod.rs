@@ -1,5 +1,5 @@
 pub mod jackknife;
 pub mod statistics;
-pub mod value;
+pub mod temporal;
 
 pub mod unistroke_templates;

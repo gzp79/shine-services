@@ -1,6 +1,6 @@
 use crate::{
     camera_rig::{RigDriver, RigError, RigUpdateParams},
-    math::value::{TemporalValue, ValueError, ValueType},
+    math::temporal::{TemporalValue, ValueError, ValueType},
 };
 use bevy::{math::Quat, transform::components::Transform};
 
