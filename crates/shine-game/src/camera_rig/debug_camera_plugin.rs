@@ -1,6 +1,6 @@
 use crate::{
     camera_rig::{rigs, CameraPose, CameraPoseDebug, CameraRig},
-    math::temporal::TemporalValueExt,
+    math::value::WithNameVariable,
 };
 use bevy::{
     color::{palettes::css, Color},
@@ -233,11 +233,11 @@ fn render_frustum(gizmos: &mut Gizmos, transform: &Transform, corners: &[Vec3A; 
     #[rustfmt::skip]
     let positions = [
         // Near
-        tln, trn, brn, bln, tln, 
+        tln, trn, brn, bln, tln,
         // Far
-        tlf, trf, brf, blf, tlf, 
+        tlf, trf, brf, blf, tlf,
         // Near to far
-        Vec3::NAN, trn, trf, 
+        Vec3::NAN, trn, trf,
         Vec3::NAN, tln, tlf,
         Vec3::NAN, brn, brf,
         Vec3::NAN, bln, blf,

@@ -2,8 +2,8 @@
 
 mod camera_pose;
 mod debug_camera_plugin;
-mod driver;
 mod rig;
+mod rig_driver;
 mod rig_error;
 mod rig_plugin;
 
@@ -12,8 +12,8 @@ pub mod rigs;
 pub use self::{
     camera_pose::{CameraPose, CameraPoseDebug},
     debug_camera_plugin::DebugCameraTarget,
-    driver::{RigDriver, RigUpdateParams},
     rig::CameraRig,
+    rig_driver::{RigDriver, RigUpdateParams},
     rig_error::RigError,
     rig_plugin::CameraRigPlugin,
 };

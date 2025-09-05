@@ -1,6 +1,6 @@
 use crate::{
-    camera_rig::{RigDriver, RigError, RigUpdateParams},
-    math::temporal::{ExpSmoothed, ValueError, ValueType},
+    camera_rig::{RigDriver, RigUpdateParams},
+    math::value::{ExpSmoothed, Variable},
 };
 use bevy::{
     math::{Quat, Vec3},
@@ -42,16 +42,10 @@ impl Smooth {
 }
 
 impl RigDriver for Smooth {
-    fn parameter_names(&self) -> Vec<&str> {
-        vec![]
-    }
+    fn visit_parameters(&self, _visitor: &mut dyn FnMut(&dyn Variable) -> bool) {}
 
-    fn set_parameter_value(&mut self, name: &str, _value: ValueType) -> Result<(), RigError> {
-        Err(ValueError::UnknownParameter(name.into()).into())
-    }
-
-    fn get_parameter_value(&self, name: &str) -> Result<ValueType, RigError> {
-        Err(ValueError::UnknownParameter(name.into()).into())
+    fn parameter_mut(&mut self, _name: &str) -> Option<&mut dyn Variable> {
+        None
     }
 
     fn update(&mut self, params: RigUpdateParams) -> Transform {

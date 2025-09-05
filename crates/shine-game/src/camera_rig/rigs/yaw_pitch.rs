@@ -1,8 +1,9 @@
 use crate::{
-    camera_rig::{RigDriver, RigError, RigUpdateParams},
-    math::temporal::{TemporalValue, ValueError, ValueType},
+    camera_rig::{RigDriver, RigUpdateParams},
+    math::value::{AnimatedVariable, Variable},
 };
 use bevy::{
+    log,
     math::{EulerRot, Quat},
     transform::components::Transform,
 };
@@ -10,8 +11,8 @@ use bevy::{
 /// Calculate camera rotation based on yaw and pitch angles.
 pub struct YawPitch<Y, P>
 where
-    Y: TemporalValue<Value = f32>,
-    P: TemporalValue<Value = f32>,
+    Y: Variable + AnimatedVariable<Value = f32>,
+    P: Variable + AnimatedVariable<Value = f32>,
 {
     /// [0..720)
     ///
@@ -32,8 +33,8 @@ impl Default for YawPitch<f32, f32> {
 
 impl<Y, P> YawPitch<Y, P>
 where
-    Y: TemporalValue<Value = f32>,
-    P: TemporalValue<Value = f32>,
+    Y: Variable + AnimatedVariable<Value = f32>,
+    P: Variable + AnimatedVariable<Value = f32>,
 {
     pub fn new(yaw: Y, pitch: P) -> Self {
         Self { yaw, pitch }
@@ -42,38 +43,40 @@ where
 
 impl<Y, P> RigDriver for YawPitch<Y, P>
 where
-    Y: TemporalValue<Value = f32>,
-    P: TemporalValue<Value = f32>,
+    Y: Variable + AnimatedVariable<Value = f32>,
+    P: Variable + AnimatedVariable<Value = f32>,
 {
-    fn parameter_names(&self) -> Vec<&str> {
-        (self.yaw.name().into_iter()).chain(self.pitch.name()).collect()
+    fn visit_parameters(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
+        visitor(&self.yaw);
+        visitor(&self.pitch);
     }
 
-    fn set_parameter_value(&mut self, name: &str, value: ValueType) -> Result<(), RigError> {
+    fn parameter_mut(&mut self, name: &str) -> Option<&mut dyn Variable> {
         if self.yaw.name() == Some(name) {
-            self.yaw.set(f32::try_from(value)? % 720.0);
-            Ok(())
+            Some(&mut self.yaw)
         } else if self.pitch.name() == Some(name) {
-            self.pitch.set(f32::try_from(value)?.clamp(-90.0, 90.0));
-            Ok(())
+            Some(&mut self.pitch)
         } else {
-            Err(ValueError::UnknownParameter(name.into()).into())
-        }
-    }
-
-    fn get_parameter_value(&self, name: &str) -> Result<ValueType, RigError> {
-        if self.yaw.name() == Some(name) {
-            Ok((*self.yaw.get()).into())
-        } else if self.pitch.name() == Some(name) {
-            Ok((*self.pitch.get()).into())
-        } else {
-            Err(ValueError::UnknownParameter(name.into()).into())
+            None
         }
     }
 
     fn update(&mut self, params: RigUpdateParams) -> Transform {
-        let yaw = self.yaw.update(params.delta_time_s) % 720_f32;
-        let pitch = self.pitch.update(params.delta_time_s).clamp(-90.0, 90.0);
+        let yaw = self.yaw.animate(params.delta_time_s);
+
+        const YAW_PRECISION_THRESHOLD: f32 = 1440.0; // ~4 full rotations
+        if yaw.abs() > YAW_PRECISION_THRESHOLD {
+            log::warn!("Yaw exceeds safe rotation range, consider normalizing: {yaw}");
+        }
+        let yaw = yaw % 720_f32;
+
+        let pitch = self.pitch.animate(params.delta_time_s);
+
+        const PITCH_PRECISION_THRESHOLD: f32 = 270.0; // ~3 full rotations worth
+        if pitch.abs() > PITCH_PRECISION_THRESHOLD {
+            log::warn!("Pitch exceeds reasonable range, consider normalizing: {pitch}");
+        }
+        let pitch = pitch.clamp(-90.0, 90.0);
 
         let rotation = Quat::from_euler(EulerRot::YXZ, yaw.to_radians(), pitch.to_radians(), 0.0);
 

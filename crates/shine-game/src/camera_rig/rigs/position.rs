@@ -1,13 +1,13 @@
 use crate::{
-    camera_rig::{RigDriver, RigError, RigUpdateParams},
-    math::temporal::{TemporalValue, ValueError, ValueType},
+    camera_rig::{RigDriver, RigUpdateParams},
+    math::value::{AnimatedVariable, Variable},
 };
 use bevy::{math::Vec3, transform::components::Transform};
 
 /// Directly sets the position of the camera
 pub struct Position<P>
 where
-    P: TemporalValue<Value = Vec3>,
+    P: Variable + AnimatedVariable<Value = Vec3>,
 {
     position: P,
 }
@@ -20,7 +20,7 @@ impl Default for Position<Vec3> {
 
 impl<P> Position<P>
 where
-    P: TemporalValue<Value = Vec3>,
+    P: Variable + AnimatedVariable<Value = Vec3>,
 {
     pub fn new(position: P) -> Self {
         Self { position }
@@ -29,31 +29,22 @@ where
 
 impl<P> RigDriver for Position<P>
 where
-    P: TemporalValue<Value = Vec3>,
+    P: Variable + AnimatedVariable<Value = Vec3>,
 {
-    fn parameter_names(&self) -> Vec<&str> {
-        self.position.name().into_iter().collect()
+    fn visit_parameters(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
+        visitor(&self.position);
     }
 
-    fn set_parameter_value(&mut self, name: &str, value: ValueType) -> Result<(), RigError> {
+    fn parameter_mut(&mut self, name: &str) -> Option<&mut dyn Variable> {
         if self.position.name() == Some(name) {
-            self.position.set(Vec3::try_from(value)?);
-            Ok(())
+            Some(&mut self.position)
         } else {
-            Err(ValueError::UnknownParameter(name.into()).into())
-        }
-    }
-
-    fn get_parameter_value(&self, name: &str) -> Result<ValueType, RigError> {
-        if self.position.name() == Some(name) {
-            Ok((*self.position.get()).into())
-        } else {
-            Err(ValueError::UnknownParameter(name.into()).into())
+            None
         }
     }
 
     fn update(&mut self, params: RigUpdateParams) -> Transform {
-        let pos = self.position.update(params.delta_time_s);
+        let pos = self.position.animate(params.delta_time_s);
         Transform::from_translation(pos).with_rotation(params.parent.rotation)
     }
 }

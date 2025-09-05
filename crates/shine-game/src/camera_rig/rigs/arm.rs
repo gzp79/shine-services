@@ -1,20 +1,20 @@
 use crate::{
-    camera_rig::{RigDriver, RigError, RigUpdateParams},
-    math::temporal::{TemporalValue, ValueError, ValueType},
+    camera_rig::{RigDriver, RigUpdateParams},
+    math::value::{AnimatedVariable, Variable},
 };
 use bevy::{math::Vec3, transform::components::Transform};
 
 /// Offsets the camera along a vector in the coordinate space of the parent.
 pub struct Arm<A>
 where
-    A: TemporalValue<Value = Vec3>,
+    A: Variable + AnimatedVariable<Value = Vec3>,
 {
     pub offset: A,
 }
 
 impl<A> Arm<A>
 where
-    A: TemporalValue<Value = Vec3>,
+    A: Variable + AnimatedVariable<Value = Vec3>,
 {
     pub fn new(offset: A) -> Self {
         Self { offset }
@@ -23,33 +23,24 @@ where
 
 impl<A> RigDriver for Arm<A>
 where
-    A: TemporalValue<Value = Vec3>,
+    A: Variable + AnimatedVariable<Value = Vec3>,
 {
-    fn parameter_names(&self) -> Vec<&str> {
-        self.offset.name().into_iter().collect()
+    fn visit_parameters(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
+        visitor(&self.offset);
     }
 
-    fn set_parameter_value(&mut self, name: &str, value: ValueType) -> Result<(), RigError> {
+    fn parameter_mut(&mut self, name: &str) -> Option<&mut dyn Variable> {
         if self.offset.name() == Some(name) {
-            self.offset.set(Vec3::try_from(value)?);
-            Ok(())
+            Some(&mut self.offset)
         } else {
-            Err(ValueError::UnknownParameter(name.into()).into())
-        }
-    }
-
-    fn get_parameter_value(&self, name: &str) -> Result<ValueType, RigError> {
-        if self.offset.name() == Some(name) {
-            Ok((*self.offset.get()).into())
-        } else {
-            Err(ValueError::UnknownParameter(name.into()).into())
+            None
         }
     }
 
     fn update(&mut self, params: RigUpdateParams) -> Transform {
         let parent_position = params.parent.translation;
         let parent_rotation = params.parent.rotation;
-        let offset: Vec3 = self.offset.update(params.delta_time_s);
+        let offset: Vec3 = self.offset.animate(params.delta_time_s);
 
         let position = parent_position + parent_rotation * offset;
 

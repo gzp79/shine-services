@@ -2,10 +2,10 @@ use crate::{
     camera_rig::{
         camera_pose::{CameraPose, CameraPoseDebug},
         debug_camera_plugin::{DebugCameraRig, DebugCameraTarget},
-        driver::{AnyRigDriver, RigDriverExt, RigUpdateParams},
+        rig_driver::{RigDriver, RigDriverExt, RigUpdateParams},
         RigError,
     },
-    math::temporal::{ValueError, ValueLike, ValueType},
+    math::value::{ValueError, ValueLike, ValueType},
 };
 use bevy::{
     ecs::{
@@ -23,7 +23,7 @@ use bevy::{
 #[require(CameraPose)]
 /// A chain of drivers, calculating displacements, and animating in succession.
 pub struct CameraRig {
-    drivers: Vec<Box<dyn AnyRigDriver>>,
+    drivers: Vec<Box<dyn RigDriver>>,
     parameter_map: HashMap<String, usize>,
 }
 
@@ -43,21 +43,34 @@ impl CameraRig {
 
     pub fn with<R>(mut self, driver: R) -> Result<Self, RigError>
     where
-        R: AnyRigDriver,
+        R: RigDriver,
     {
-        let params = driver.parameter_names();
-        if let Some(conflict) = params.iter().find(|&&name| self.parameter_map.contains_key(name)) {
-            return Err(ValueError::DuplicateParameter(conflict.to_string()).into());
-        }
+        // check for parameter name conflicts
+        let mut error: Result<(), RigError> = Ok(());
+        driver.for_each_parameter(|param| {
+            if let Some(name) = param.name() {
+                if self.parameter_map.contains_key(name) {
+                    error = Err(ValueError::DuplicateParameter(name.to_string()).into());
+                    return false;
+                }
+            }
+            true
+        });
+        error?;
 
-        for name in params {
-            self.parameter_map.insert(name.to_string(), self.drivers.len());
-        }
+        // update parameter map with the new names
+        driver.for_each_parameter(|param| {
+            if let Some(name) = param.name() {
+                self.parameter_map.insert(name.to_string(), self.drivers.len());
+            }
+            true
+        });
         self.drivers.push(Box::new(driver));
+
         Ok(self)
     }
 
-    fn find_driver_by_parameter(&mut self, name: &str) -> Result<&mut dyn AnyRigDriver, RigError> {
+    fn find_driver_by_parameter(&mut self, name: &str) -> Result<&mut dyn RigDriver, RigError> {
         let driver_index = self
             .parameter_map
             .get(name)
@@ -90,7 +103,7 @@ impl CameraRig {
 
     pub fn set_parameter_value_with<F>(&mut self, name: &str, f: F) -> Result<(), RigError>
     where
-        F: Fn(ValueType) -> ValueType,
+        F: Fn(ValueType) -> Result<ValueType, ValueError>,
     {
         let driver = self.find_driver_by_parameter(name)?;
         driver.set_parameter_value_with(name, f)
