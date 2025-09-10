@@ -10,7 +10,7 @@ pub use self::animation::*;
 
 mod variable;
 pub use self::variable::*;
-mod named_variable;
-pub use self::named_variable::*;
-mod animated_variable;
-pub use self::animated_variable::*;
+mod named_value;
+pub use self::named_value::*;
+mod animated_value;
+pub use self::animated_value::*;

@@ -1,13 +1,13 @@
 use crate::{
     camera_rig::{RigDriver, RigUpdateParams},
-    math::value::{Animated, Variable},
+    math::value::{AnimatedVariable, Variable},
 };
 use bevy::{math::Vec3, transform::components::Transform};
 
 /// Directly sets the position of the camera
 pub struct Position<P>
 where
-    P: Animated<Value = Vec3>,
+    P: AnimatedVariable<Value = Vec3>,
 {
     position: P,
 }
@@ -20,7 +20,7 @@ impl Default for Position<Vec3> {
 
 impl<P> Position<P>
 where
-    P: Animated<Value = Vec3>,
+    P: AnimatedVariable<Value = Vec3>,
 {
     pub fn new(position: P) -> Self {
         Self { position }
@@ -29,7 +29,7 @@ where
 
 impl<P> RigDriver for Position<P>
 where
-    P: Animated<Value = Vec3>,
+    P: AnimatedVariable<Value = Vec3>,
 {
     fn visit_variables(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
         visitor(&self.position);

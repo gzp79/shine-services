@@ -56,7 +56,7 @@ impl_variable!(Vec4);
 impl_variable!(Quat);
 
 /// A value changing over time.
-pub trait Animated: Variable {
+pub trait AnimatedVariable: Variable {
     type Value: TweenLike;
 
     fn animate(&mut self, delta_time_s: f32) -> Self::Value;
@@ -64,7 +64,7 @@ pub trait Animated: Variable {
 
 macro_rules! impl_animated {
     ($target_type:ty) => {
-        impl Animated for $target_type {
+        impl AnimatedVariable for $target_type {
             type Value = $target_type;
 
             #[inline(always)]

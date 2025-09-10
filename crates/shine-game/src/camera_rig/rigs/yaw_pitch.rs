@@ -1,6 +1,6 @@
 use crate::{
     camera_rig::{RigDriver, RigUpdateParams},
-    math::value::{Animated, Variable},
+    math::value::{AnimatedVariable, Variable},
 };
 use bevy::{
     log,
@@ -11,8 +11,8 @@ use bevy::{
 /// Calculate camera rotation based on yaw and pitch angles.
 pub struct YawPitch<Y, P>
 where
-    Y: Animated<Value = f32>,
-    P: Animated<Value = f32>,
+    Y: AnimatedVariable<Value = f32>,
+    P: AnimatedVariable<Value = f32>,
 {
     /// [0..720)
     ///
@@ -33,8 +33,8 @@ impl Default for YawPitch<f32, f32> {
 
 impl<Y, P> YawPitch<Y, P>
 where
-    Y: Animated<Value = f32>,
-    P: Animated<Value = f32>,
+    Y: AnimatedVariable<Value = f32>,
+    P: AnimatedVariable<Value = f32>,
 {
     pub fn new(yaw: Y, pitch: P) -> Self {
         Self { yaw, pitch }
@@ -43,8 +43,8 @@ where
 
 impl<Y, P> RigDriver for YawPitch<Y, P>
 where
-    Y: Animated<Value = f32>,
-    P: Animated<Value = f32>,
+    Y: AnimatedVariable<Value = f32>,
+    P: AnimatedVariable<Value = f32>,
 {
     fn visit_variables(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
         visitor(&self.yaw);

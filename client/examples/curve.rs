@@ -1,7 +1,7 @@
 use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
     app::init_application,
-    math::value::{AnimatedVariable, IntoAnimatedVariable},
+    math::value::{AnimatedValue, IntoAnimatedVariable},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -201,7 +201,7 @@ fn show_exp_smooth_curve(mut gizmos: Gizmos) {
     }
 
     {
-        let mut param = AnimatedVariable::time();
+        let mut param = AnimatedValue::time();
         let mut pos = Vec::new();
 
         let y = param.animate(0.0);
