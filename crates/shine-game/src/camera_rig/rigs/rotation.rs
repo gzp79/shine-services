@@ -1,13 +1,13 @@
 use crate::{
     camera_rig::{RigDriver, RigUpdateParams},
-    math::value::{AnimatedVariable, Variable},
+    math::value::{Animated, Variable},
 };
 use bevy::{math::Quat, transform::components::Transform};
 
 /// Directly sets the rotation of the camera
 pub struct Rotation<Q>
 where
-    Q: Variable + AnimatedVariable<Value = Quat>,
+    Q: Animated<Value = Quat>,
 {
     pub rotation: Q,
 }
@@ -20,7 +20,7 @@ impl Default for Rotation<Quat> {
 
 impl<Q> Rotation<Q>
 where
-    Q: Variable + AnimatedVariable<Value = Quat>,
+    Q: Animated<Value = Quat>,
 {
     pub fn new(rotation: Q) -> Self {
         Self { rotation }
@@ -29,13 +29,13 @@ where
 
 impl<Q> RigDriver for Rotation<Q>
 where
-    Q: Variable + AnimatedVariable<Value = Quat>,
+    Q: Animated<Value = Quat>,
 {
-    fn visit_parameters(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
+    fn visit_variables(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
         visitor(&self.rotation);
     }
 
-    fn parameter_mut(&mut self, name: &str) -> Option<&mut dyn Variable> {
+    fn variable_mut(&mut self, name: &str) -> Option<&mut dyn Variable> {
         if self.rotation.name() == Some(name) {
             Some(&mut self.rotation)
         } else {

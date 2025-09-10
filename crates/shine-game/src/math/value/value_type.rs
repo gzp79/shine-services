@@ -3,6 +3,7 @@ use bevy::math::{Quat, Vec2, Vec3, Vec4};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ValueKind {
+    Unit,
     Float,
     Vec2,
     Vec3,
@@ -14,7 +15,7 @@ pub trait ValueLike: TryFrom<ValueType, Error = ValueError> + Into<ValueType> + 
     const KIND: ValueKind;
 }
 
-macro_rules! impl_try_from_value_kind {
+macro_rules! impl_value_kind {
     ($target_type:ty, $variant:ident) => {
         impl ValueLike for $target_type {
             const KIND: ValueKind = ValueKind::$variant;
@@ -22,14 +23,16 @@ macro_rules! impl_try_from_value_kind {
     };
 }
 
-impl_try_from_value_kind!(f32, Float);
-impl_try_from_value_kind!(Vec2, Vec2);
-impl_try_from_value_kind!(Vec3, Vec3);
-impl_try_from_value_kind!(Vec4, Vec4);
-impl_try_from_value_kind!(Quat, Quat);
+impl_value_kind!((), Unit);
+impl_value_kind!(f32, Float);
+impl_value_kind!(Vec2, Vec2);
+impl_value_kind!(Vec3, Vec3);
+impl_value_kind!(Vec4, Vec4);
+impl_value_kind!(Quat, Quat);
 
 #[derive(Clone, Debug)]
 pub enum ValueType {
+    Unit(()),
     Float(f32),
     Vec2(Vec2),
     Vec3(Vec3),
@@ -40,6 +43,7 @@ pub enum ValueType {
 impl ValueType {
     pub fn kind(&self) -> ValueKind {
         match self {
+            ValueType::Unit(_) => ValueKind::Unit,
             ValueType::Float(_) => ValueKind::Float,
             ValueType::Vec2(_) => ValueKind::Vec2,
             ValueType::Vec3(_) => ValueKind::Vec3,
@@ -75,6 +79,7 @@ macro_rules! impl_try_from_value_type {
     };
 }
 
+impl_try_from_value_type!((), Unit);
 impl_try_from_value_type!(f32, Float);
 impl_try_from_value_type!(Vec2, Vec2);
 impl_try_from_value_type!(Vec3, Vec3);

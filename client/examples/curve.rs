@@ -1,7 +1,7 @@
 use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
     app::init_application,
-    math::animated::{TemporalValue, TemporalValueExt},
+    math::value::{AnimatedVariable, IntoAnimatedVariable},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -103,16 +103,16 @@ fn show_axis(mut gizmos: Gizmos) {
 
 fn show_exp_smooth_curve(mut gizmos: Gizmos) {
     {
-        let mut param = START.smoothed(MAX_T);
+        let mut param = START.animated().smooth(MAX_T);
         let mut pos = Vec::new();
 
-        param.set(END);
-        let y = param.update(0.0);
+        param.set_target(END);
+        let y = param.animate(0.0);
         pos.push(Vec3::new(0.0, y, 0.0));
 
         let mut t = 0.0;
         while t < MAX_T * 1.1 {
-            let y = param.update(DELTA_T);
+            let y = param.animate(DELTA_T);
             t += DELTA_T;
 
             pos.push(Vec3::new(t * SCALE_T, y, 0.0));
@@ -122,16 +122,16 @@ fn show_exp_smooth_curve(mut gizmos: Gizmos) {
     }
 
     {
-        let mut param = START.predicted(MAX_T);
+        let mut param = START.animated().predict(MAX_T);
         let mut pos = Vec::new();
 
-        param.set(END);
-        let y = param.update(0.0);
+        param.set_target(END);
+        let y = param.animate(0.0);
         pos.push(Vec3::new(0.0, y, 0.0));
 
         let mut t = 0.0;
         while t < MAX_T * 1.1 {
-            let y = param.update(DELTA_T);
+            let y = param.animate(DELTA_T);
             t += DELTA_T;
 
             pos.push(Vec3::new(t * SCALE_T, y, 0.0));
@@ -141,26 +141,26 @@ fn show_exp_smooth_curve(mut gizmos: Gizmos) {
     }
 
     {
-        let mut param = START.smoothed(MAX_T);
+        let mut param = START.animated().smooth(MAX_T);
         let mut pos = Vec::new();
 
-        param.set(END);
-        let y = param.update(0.0);
+        param.set_target(END);
+        let y = param.animate(0.0);
         pos.push(Vec3::new(0.0, y, 0.0));
 
         let mut updated = 0;
         let mut t = 0.0;
         while t < MAX_T * 1.7 {
-            let y = param.update(DELTA_T);
+            let y = param.animate(DELTA_T);
             t += DELTA_T;
 
             if updated == 0 && t > MAX_T * 0.3 {
-                param.set(END + (END - START));
+                param.set_target(END + (END - START));
                 updated = 1;
             }
 
             if updated == 1 && t > MAX_T * 0.6 {
-                param.set(END - (END - START));
+                param.set_target(END - (END - START));
                 updated = 2;
             }
 
@@ -170,21 +170,51 @@ fn show_exp_smooth_curve(mut gizmos: Gizmos) {
         gizmos.linestrip(pos, css::YELLOW);
     }
 
-    /*{
+    {
+        let mut param = START.animated().predict(MAX_T);
         let mut pos = Vec::new();
-        let mut smooth = ExpSmoothed::with_start(START).duration(MAX_T);
 
-        let y = smooth.predict_from(&0.0, 0.0);
+        param.set_target(END);
+        let y = param.animate(0.0);
+        pos.push(Vec3::new(0.0, y, 0.0));
+
+        let mut updated = 0;
+        let mut t = 0.0;
+        while t < MAX_T * 1.7 {
+            let y = param.animate(DELTA_T);
+            t += DELTA_T;
+
+            if updated == 0 && t > MAX_T * 0.3 {
+                param.set_target(END + (END - START));
+                updated = 1;
+            }
+
+            if updated == 1 && t > MAX_T * 0.6 {
+                param.set_target(END - (END - START));
+                updated = 2;
+            }
+
+            pos.push(Vec3::new(t * SCALE_T, y, 0.0));
+        }
+
+        gizmos.linestrip(pos, css::LIGHT_CYAN);
+    }
+
+    {
+        let mut param = AnimatedVariable::time();
+        let mut pos = Vec::new();
+
+        let y = param.animate(0.0);
         pos.push(Vec3::new(0.0, y, 0.0));
 
         let mut t = 0.0;
-        while t < MAX_T {
-            let y = smooth.predict_from(&END, DELTA_T);
+        while t < MAX_T * 1.7 {
+            let y = param.animate(DELTA_T);
             t += DELTA_T;
 
             pos.push(Vec3::new(t * SCALE_T, y, 0.0));
         }
 
-        gizmos.linestrip(pos, css::BLUE);
-    }*/
+        gizmos.linestrip(pos, css::ORANGE);
+    }
 }

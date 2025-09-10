@@ -42,9 +42,9 @@ impl Predict {
 }
 
 impl RigDriver for Predict {
-    fn visit_parameters(&self, _visitor: &mut dyn FnMut(&dyn Variable) -> bool) {}
+    fn visit_variables(&self, _visitor: &mut dyn FnMut(&dyn Variable) -> bool) {}
 
-    fn parameter_mut(&mut self, _name: &str) -> Option<&mut dyn Variable> {
+    fn variable_mut(&mut self, _name: &str) -> Option<&mut dyn Variable> {
         None
     }
 

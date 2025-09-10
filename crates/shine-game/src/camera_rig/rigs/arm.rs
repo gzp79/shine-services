@@ -1,20 +1,20 @@
 use crate::{
     camera_rig::{RigDriver, RigUpdateParams},
-    math::value::{AnimatedVariable, Variable},
+    math::value::{Animated, Variable},
 };
 use bevy::{math::Vec3, transform::components::Transform};
 
 /// Offsets the camera along a vector in the coordinate space of the parent.
 pub struct Arm<A>
 where
-    A: Variable + AnimatedVariable<Value = Vec3>,
+    A: Animated<Value = Vec3>,
 {
     pub offset: A,
 }
 
 impl<A> Arm<A>
 where
-    A: Variable + AnimatedVariable<Value = Vec3>,
+    A: Animated<Value = Vec3>,
 {
     pub fn new(offset: A) -> Self {
         Self { offset }
@@ -23,13 +23,13 @@ where
 
 impl<A> RigDriver for Arm<A>
 where
-    A: Variable + AnimatedVariable<Value = Vec3>,
+    A: Animated<Value = Vec3>,
 {
-    fn visit_parameters(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
+    fn visit_variables(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
         visitor(&self.offset);
     }
 
-    fn parameter_mut(&mut self, name: &str) -> Option<&mut dyn Variable> {
+    fn variable_mut(&mut self, name: &str) -> Option<&mut dyn Variable> {
         if self.offset.name() == Some(name) {
             Some(&mut self.offset)
         } else {

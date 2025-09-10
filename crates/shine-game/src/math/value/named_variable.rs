@@ -1,4 +1,4 @@
-use crate::math::value::{AnimatedVariable, ValueError, ValueType, Variable};
+use crate::math::value::{Animated, TweenLike, ValueError, ValueKind, ValueType, Variable};
 use bevy::math::{Quat, Vec2, Vec3, Vec4};
 use std::borrow::Cow;
 
@@ -27,6 +27,10 @@ impl<T> Variable for NamedVariable<T>
 where
     T: Variable,
 {
+    fn kind(&self) -> ValueKind {
+        self.value.kind()
+    }
+
     fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
@@ -44,18 +48,18 @@ where
     }
 }
 
-impl<T> AnimatedVariable for NamedVariable<T>
+impl<T> Animated for NamedVariable<T>
 where
-    T: AnimatedVariable,
+    T: TweenLike + Variable,
 {
-    type Value = T::Value;
+    type Value = T;
 
-    fn animate(&mut self, delta_time_s: f32) -> Self::Value {
-        self.value.animate(delta_time_s)
+    fn animate(&mut self, _delta_time_s: f32) -> Self::Value {
+        self.value.clone()
     }
 }
 
-pub trait WithNameVariable: Variable {
+pub trait IntoNamedVariable: Variable {
     fn with_name(self, name: impl Into<Cow<'static, str>>) -> NamedVariable<Self>
     where
         Self: Sized,
@@ -64,8 +68,8 @@ pub trait WithNameVariable: Variable {
     }
 }
 
-impl WithNameVariable for f32 {}
-impl WithNameVariable for Vec2 {}
-impl WithNameVariable for Vec3 {}
-impl WithNameVariable for Vec4 {}
-impl WithNameVariable for Quat {}
+impl IntoNamedVariable for f32 {}
+impl IntoNamedVariable for Vec2 {}
+impl IntoNamedVariable for Vec3 {}
+impl IntoNamedVariable for Vec4 {}
+impl IntoNamedVariable for Quat {}

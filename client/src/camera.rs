@@ -18,7 +18,7 @@ use shine_game::{
     app::{AppGameSchedule, CameraSimulate},
     camera_rig::{rigs, CameraRig, CameraRigPlugin, DebugCameraTarget},
     input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput},
-    math::animated::TemporalValueExt,
+    math::value::{IntoAnimatedVariable, IntoNamedVariable},
 };
 
 pub struct CameraPlugin;
@@ -48,7 +48,7 @@ fn spawn_camera(mut commands: Commands) -> Result<(), BevyError> {
             .with(rigs::Predict::position(1.25))?
             .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))?
             .with(rigs::Predict::position(2.5))?
-            .with(rigs::LookAt::new(Vec3::Y.with_name("lookAt").predicted(1.25)))?;
+            .with(rigs::LookAt::new(Vec3::Y.animated().predict(1.25).with_name("lookAt")))?;
 
         let input_map = InputMap::new().with_binding(CameraAction::Debug, KeyboardInput::new(KeyCode::F12))?;
 

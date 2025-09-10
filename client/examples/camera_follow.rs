@@ -2,7 +2,7 @@ use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
     app::{init_application, AppGameSchedule, GameSystem},
     camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
-    math::animated::TemporalValueExt,
+    math::value::{IntoAnimatedVariable, IntoNamedVariable},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -78,7 +78,7 @@ fn spawn_world(
             .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))?
             .with(rigs::Predict::position(2.5))?
             .with(rigs::LookAt::new(
-                (start_position + Vec3::Y).with_name("lookAt").predicted(1.25),
+                (start_position + Vec3::Y).animated().predict(1.25).with_name("lookAt"),
             ))?;
         let mut rig_debug = CameraPoseDebug::default();
         let transform = rig.calculate_transform(0.0, Some(&mut rig_debug.update_steps));

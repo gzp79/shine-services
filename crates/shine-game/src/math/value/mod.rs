@@ -5,12 +5,12 @@ pub use self::value_error::*;
 
 mod interpolate;
 pub use self::interpolate::*;
+mod animation;
+pub use self::animation::*;
 
 mod variable;
 pub use self::variable::*;
 mod named_variable;
 pub use self::named_variable::*;
-mod animated;
-pub use self::animated::*;
 mod animated_variable;
 pub use self::animated_variable::*;

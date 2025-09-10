@@ -1,6 +1,6 @@
 use crate::{
     camera_rig::{RigDriver, RigUpdateParams},
-    math::value::{AnimatedVariable, Variable},
+    math::value::{Animated, Variable},
 };
 use bevy::{math::Vec3, transform::components::Transform};
 
@@ -9,14 +9,14 @@ use bevy::{math::Vec3, transform::components::Transform};
 /// The target tracking can be additionally smoothed, and made to look ahead of it.
 pub struct LookAt<T>
 where
-    T: Variable + AnimatedVariable<Value = Vec3>,
+    T: Animated<Value = Vec3>,
 {
     target: T,
 }
 
 impl<T> LookAt<T>
 where
-    T: Variable + AnimatedVariable<Value = Vec3>,
+    T: Animated<Value = Vec3>,
 {
     pub fn new(target: T) -> Self {
         Self { target }
@@ -25,13 +25,13 @@ where
 
 impl<T> RigDriver for LookAt<T>
 where
-    T: Variable + AnimatedVariable<Value = Vec3>,
+    T: Animated<Value = Vec3>,
 {
-    fn visit_parameters(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
+    fn visit_variables(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
         visitor(&self.target);
     }
 
-    fn parameter_mut(&mut self, name: &str) -> Option<&mut dyn Variable> {
+    fn variable_mut(&mut self, name: &str) -> Option<&mut dyn Variable> {
         if self.target.name() == Some(name) {
             Some(&mut self.target)
         } else {

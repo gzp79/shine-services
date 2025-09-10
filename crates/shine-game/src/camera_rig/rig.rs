@@ -13,6 +13,7 @@ use bevy::{
         query::{With, Without},
         system::{Query, Res},
     },
+    log,
     platform::collections::HashMap,
     render::camera::Camera,
     time::Time,
@@ -45,6 +46,11 @@ impl CameraRig {
     where
         R: RigDriver,
     {
+        log::info!("Adding driver to CameraRig {}", driver.type_name());
+
+        //the number of parameters we expect to find in the driver
+        let mut count = 0;
+
         // check for parameter name conflicts
         let mut error: Result<(), RigError> = Ok(());
         driver.for_each_parameter(|param| {
@@ -53,6 +59,7 @@ impl CameraRig {
                     error = Err(ValueError::DuplicateParameter(name.to_string()).into());
                     return false;
                 }
+                count += 1;
             }
             true
         });
@@ -62,8 +69,9 @@ impl CameraRig {
         driver.for_each_parameter(|param| {
             if let Some(name) = param.name() {
                 self.parameter_map.insert(name.to_string(), self.drivers.len());
+                count -= 1;
             }
-            true
+            count > 0
         });
         self.drivers.push(Box::new(driver));
 

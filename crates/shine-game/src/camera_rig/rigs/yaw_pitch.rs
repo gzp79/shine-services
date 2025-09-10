@@ -1,6 +1,6 @@
 use crate::{
     camera_rig::{RigDriver, RigUpdateParams},
-    math::value::{AnimatedVariable, Variable},
+    math::value::{Animated, Variable},
 };
 use bevy::{
     log,
@@ -11,8 +11,8 @@ use bevy::{
 /// Calculate camera rotation based on yaw and pitch angles.
 pub struct YawPitch<Y, P>
 where
-    Y: Variable + AnimatedVariable<Value = f32>,
-    P: Variable + AnimatedVariable<Value = f32>,
+    Y: Animated<Value = f32>,
+    P: Animated<Value = f32>,
 {
     /// [0..720)
     ///
@@ -33,8 +33,8 @@ impl Default for YawPitch<f32, f32> {
 
 impl<Y, P> YawPitch<Y, P>
 where
-    Y: Variable + AnimatedVariable<Value = f32>,
-    P: Variable + AnimatedVariable<Value = f32>,
+    Y: Animated<Value = f32>,
+    P: Animated<Value = f32>,
 {
     pub fn new(yaw: Y, pitch: P) -> Self {
         Self { yaw, pitch }
@@ -43,15 +43,15 @@ where
 
 impl<Y, P> RigDriver for YawPitch<Y, P>
 where
-    Y: Variable + AnimatedVariable<Value = f32>,
-    P: Variable + AnimatedVariable<Value = f32>,
+    Y: Animated<Value = f32>,
+    P: Animated<Value = f32>,
 {
-    fn visit_parameters(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
+    fn visit_variables(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
         visitor(&self.yaw);
         visitor(&self.pitch);
     }
 
-    fn parameter_mut(&mut self, name: &str) -> Option<&mut dyn Variable> {
+    fn variable_mut(&mut self, name: &str) -> Option<&mut dyn Variable> {
         if self.yaw.name() == Some(name) {
             Some(&mut self.yaw)
         } else if self.pitch.name() == Some(name) {
