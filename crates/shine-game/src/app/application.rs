@@ -26,6 +26,7 @@ pub mod platform {
     use bevy::{
         app::{App, AppExit, PluginGroup, PostUpdate},
         ecs::event::EventWriter,
+        log,
         utils::default,
         window::{Window, WindowPlugin},
         DefaultPlugins,
