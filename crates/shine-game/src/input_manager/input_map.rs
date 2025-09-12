@@ -1,6 +1,6 @@
 use crate::input_manager::{
-    ActionLike, ActionState, AnyInputPipeline, CollectingPipeline, InputError, InputSources, InputValueFold,
-    IntoActionValue, TypedInputPipeline, TypedUserInput,
+    ActionLike, ActionState, CollectingPipeline, InputDrivers, InputError, InputPipeline, InputValueFold,
+    IntoActionValue, TypedInputPipeline, TypedInputProcessor,
 };
 use bevy::{
     ecs::{
@@ -33,7 +33,7 @@ where
 {
     next_id: usize,
     enabled: bool,
-    bindings: HashMap<A, Box<dyn AnyInputPipeline<A>>>,
+    bindings: HashMap<A, Box<dyn InputPipeline<A>>>,
 }
 
 impl<A> Default for InputMap<A>
@@ -66,12 +66,12 @@ where
     /// Bind a new pipeline to an action and return its ID.
     pub fn bind<T, I>(&mut self, action: A, input: I) -> Result<BindingId<A>, InputError>
     where
-        I: TypedUserInput<T>,
+        I: TypedInputProcessor<T>,
         T: IntoActionValue,
     {
         let id = self.next_id();
         let pipeline = self.bindings.entry(action.clone()).or_insert_with(|| {
-            let pipeline: Box<dyn AnyInputPipeline<A>> = Box::new(CollectingPipeline::<A, T>::new());
+            let pipeline: Box<dyn InputPipeline<A>> = Box::new(CollectingPipeline::<A, T>::new());
             pipeline
         });
 
@@ -108,7 +108,7 @@ where
     /// Bind a new pipeline allowing chaining
     pub fn with_binding<T, I>(mut self, action: A, input: I) -> Result<Self, InputError>
     where
-        I: TypedUserInput<T>,
+        I: TypedInputProcessor<T>,
         T: IntoActionValue,
     {
         self.bind(action, input)?;
@@ -127,7 +127,7 @@ where
     /// Add a new pipeline to an action allowing chaining
     pub fn add_binding<T, I>(&mut self, action: A, input: I) -> Result<&mut Self, InputError>
     where
-        I: TypedUserInput<T>,
+        I: TypedInputProcessor<T>,
         T: IntoActionValue,
     {
         self.bind(action, input)?;
@@ -146,21 +146,15 @@ where
         self.bindings.remove(action);
     }
 
-    pub fn get_binding<T>(&self, id: &BindingId<A>) -> Option<&dyn TypedUserInput<T>>
-    where
-        T: IntoActionValue,
-    {
-        self.bindings
-            .get(&id.0)
-            .and_then(|pipelines| pipelines.as_any().downcast_ref::<CollectingPipeline<A, T>>())
-            .and_then(|pipelines| pipelines.get_input(id.1))
+    pub fn get_pipeline(&self, action: &A) -> Option<&dyn InputPipeline<A>> {
+        self.bindings.get(action).map(|pipeline| &**pipeline)
     }
 
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
 
-    pub fn integrate(&mut self, input_source: &InputSources) {
+    pub fn integrate(&mut self, input_source: &InputDrivers) {
         for pipeline in self.bindings.values_mut() {
             pipeline.integrate(input_source);
         }

@@ -1,31 +1,37 @@
-use bevy::prelude::*;
-use shine_game::application;
+use bevy::{prelude::*, render::view::RenderLayers};
+use shine_game::app::init_application;
 
+mod avatar;
+mod camera;
+mod hud;
 mod world;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
-pub enum GameState {
-    /// Main gameplay state.
-    Playing,
-}
+pub const HUD_LAYER: RenderLayers = RenderLayers::layer(31);
 
 /// Add all the game plugins to the app.
 fn setup_game(app: &mut App) {
-    app.add_plugins(world::WorldPlugin { state: GameState::Playing });
+    use bevy_inspector_egui::bevy_egui::EguiPlugin;
+    use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
-    app.insert_state(GameState::Playing);
+    app.add_plugins(EguiPlugin::default())
+        .add_plugins(WorldInspectorPlugin::new());
+
+    app.add_plugins(hud::HUDPlugin);
+    app.add_plugins(world::WorldPlugin);
+    app.add_plugins(avatar::AvatarPlugin);
+    app.add_plugins(camera::CameraPlugin);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::application::{create_application, platform};
+    use shine_game::app::{create_application, platform};
 
-    application::init(setup_game);
+    init_application(setup_game);
     let mut app = create_application(platform::Config::default());
     app.run();
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    application::init(setup_game);
+    init_application(setup_game);
 }

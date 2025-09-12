@@ -1,12 +1,15 @@
 use bevy::{prelude::*, window::CursorGrabMode};
 use core::f32;
 use shine_game::{
-    application,
+    app::init_application,
     input_manager::{
         ActionState, AttachedToGestureSet, DualAxisChord, GestureInput, GestureSet, InputManagerPlugin, InputMap,
         KeyboardInput, MouseButtonInput, MousePosition, TouchPosition, UnistrokeGesture,
     },
-    math::{unistroke_templates, GestureId, JackknifeConfig, JackknifePointMath, JackknifeTemplateSet},
+    math::{
+        jackknife::{GestureId, JackknifeConfig, JackknifePointMath, JackknifeTemplateSet},
+        unistroke_templates,
+    },
 };
 use std::collections::HashMap;
 
@@ -28,16 +31,16 @@ struct StatusText;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::application::{create_application, platform::Config};
+    use shine_game::app::{create_application, platform::Config};
 
-    application::init(setup_game);
+    init_application(setup_game);
     let mut app = create_application(Config::default());
     app.run();
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    application::init(setup_game);
+    init_application(setup_game);
 }
 
 const GESTURES: &[(&str, &[Vec2], GestureId)] = &[

@@ -1,7 +1,10 @@
+use bevy::log;
 use core::f32;
-use shine_game::math::statistics::{RunningMoments, ScoringMode};
-use shine_game::math::{statistics, TrainLegend};
-use shine_game::math::{unistroke_templates, GestureId, JackknifeClassifier, JackknifeConfig, JackknifeTemplateSet};
+use shine_game::math::{
+    jackknife::{GestureId, JackknifeClassifier, JackknifeConfig, JackknifeTemplateSet, TrainLegend},
+    statistics::{self, RunningMoments, ScoringMode},
+    unistroke_templates,
+};
 use shine_test::test;
 use std::{
     fs,

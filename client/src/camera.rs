@@ -1,98 +1,98 @@
+use crate::{avatar::Avatar, HUD_LAYER};
 use bevy::{
-    app::{App, Plugin, Update},
+    app::{App, Plugin, PreUpdate, Startup},
     core_pipeline::core_3d::Camera3d,
     ecs::{
+        entity::Entity,
+        error::BevyError,
+        name::Name,
         query::With,
-        schedule::IntoScheduleConfigs,
-        system::{Commands, Query, Res},
+        system::{Commands, Query},
     },
     input::keyboard::KeyCode,
-    math::Vec3,
-    reflect::Reflect,
-    render::view::NoIndirectDrawing,
-    state::{
-        condition::in_state,
-        state::{OnEnter, States},
-    },
+    math::{Quat, Vec3},
+    render::{camera::Camera, view::NoIndirectDrawing},
     transform::components::Transform,
 };
-use leafwing_input_manager::prelude::*;
+use shine_game::{
+    app::{AppGameSchedule, CameraSimulate},
+    camera_rig::{rigs, CameraRig, CameraRigPlugin, DebugCameraTarget},
+    input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput},
+    math::value::{IntoAnimatedVariable, IntoNamedVariable},
+};
 
-#[derive(Actionlike, Clone, Copy, PartialEq, Eq, Hash, Debug, Reflect)]
-enum CameraAction {
-    #[actionlike(DualAxis)]
-    Move,
-    #[actionlike(DualAxis)]
-    Look,
-}
+pub struct CameraPlugin;
 
-pub struct CameraPlugin<S: States> {
-    pub state: S,
-}
-
-impl<S: States> Plugin for CameraPlugin<S> {
+impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(CameraRigPlugin { enable_debug: true });
         app.add_plugins(InputManagerPlugin::<CameraAction>::default());
 
-        app.add_systems(OnEnter(self.state.clone()), spawn_camera);
-        app.add_systems(Update, (camera_control_system).run_if(in_state(self.state.clone())));
+        app.add_systems(Startup, spawn_camera);
+
+        app.add_systems(PreUpdate, toggle_camera_debug);
+        app.add_update_systems(CameraSimulate::PreparePose, follow_avatar);
     }
 }
 
-fn spawn_camera(mut commands: Commands) {
-    let input_map = InputMap::default()
-        .with_dual_axis(
-            CameraAction::Move,
-            VirtualDPad::new(KeyCode::KeyW, KeyCode::KeyS, KeyCode::KeyA, KeyCode::KeyD),
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum CameraAction {
+    Debug,
+}
+
+fn spawn_camera(mut commands: Commands) -> Result<(), BevyError> {
+    let camera = {
+        let mut rig = CameraRig::new()
+            .with(rigs::Position::new(Vec3::ZERO.with_name("position")))?
+            .with(rigs::Rotation::new(Quat::default().with_name("rotation")))?
+            .with(rigs::Predict::position(1.25))?
+            .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))?
+            .with(rigs::Predict::position(2.5))?
+            .with(rigs::LookAt::new(Vec3::Y.animated().predict(1.25).with_name("lookAt")))?;
+
+        let input_map = InputMap::new().with_binding(CameraAction::Debug, KeyboardInput::new(KeyCode::F12))?;
+
+        (
+            Name::new("Main camera"),
+            Camera3d::default(),
+            NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
+            rig.calculate_transform(0.0, None),
+            rig,
+            input_map,
         )
-        .with_dual_axis(CameraAction::Look, MouseMove::default());
+    };
+    commands.spawn(camera);
 
-    commands.spawn((
-        Camera3d::default(),
-        NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-        Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
-        input_map,
-    ));
+    Ok(())
 }
 
-fn camera_control_system(
-    mut query: Query<(&mut Transform, &ActionState<CameraAction>), With<Camera3d>>,
-    time: Res<bevy::prelude::Time>,
+fn toggle_camera_debug(
+    camera_q: Query<(Entity, &ActionState<CameraAction>, Option<&DebugCameraTarget>), With<Camera>>,
+    mut commands: Commands,
 ) {
-    let speed = 5.0;
-    for (mut transform, action_state) in &mut query {
-        // Get the axis pair for movement (X: left/right, Y: forward/backward)
-        let axis = action_state.axis_pair(&CameraAction::Move);
-        let x = axis.x;
-        let y = axis.y;
-
-        // move the camera parallel to the ground plane
-        if x != 0.0 || y != 0.0 {
-            // Get the forward and right vectors
-            let mut forward = Vec3::from(transform.forward());
-            forward.y = 0.0; // Zero out Y to keep movement parallel to ground
-            if forward.length_squared() > 0.0 {
-                forward = forward.normalize();
+    for (entity, action, debug_target) in camera_q.iter() {
+        if action.just_pressed(&CameraAction::Debug) {
+            if debug_target.is_some() {
+                commands.entity(entity).remove::<DebugCameraTarget>();
+            } else {
+                commands.entity(entity).insert(DebugCameraTarget {
+                    watermark_layer: Some(HUD_LAYER),
+                });
             }
-            let right = transform.right();
-
-            let move_vec = (forward * y + right * x).normalize_or_zero();
-            transform.translation += move_vec * speed * time.delta_secs();
-        }
-
-        let look = action_state.axis_pair(&CameraAction::Look);
-
-        // handle look around
-        let sensitivity = 0.2;
-        if look.x != 0.0 || look.y != 0.0 {
-            // Yaw (around global Y axis)
-            let yaw = -look.x * sensitivity * time.delta_secs();
-            transform.rotate_y(yaw);
-
-            // Pitch (around camera's local X axis)
-            /*let pitch = -look.y * sensitivity * time.delta_secs();
-            let right = transform.rotation * Vec3::X;
-            transform.rotate_axis(right.into_dir(), pitch);*/
         }
     }
+}
+
+fn follow_avatar(
+    avatar_q: Query<&Transform, With<Avatar>>,
+    mut camera_q: Query<&mut CameraRig, With<Camera>>,
+) -> Result<(), BevyError> {
+    let avatar = avatar_q.single()?;
+    let mut rig = camera_q.single_mut()?;
+
+    rig.set_parameter("position", avatar.translation)?;
+    rig.set_parameter("rotation", avatar.rotation)?;
+    rig.set_parameter("lookAt", avatar.translation + Vec3::Y)?;
+
+    Ok(())
 }

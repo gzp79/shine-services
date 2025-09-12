@@ -1,31 +1,34 @@
-use bevy::prelude::*;
 use bevy::{
     input::mouse::MouseMotion,
+    prelude::*,
     window::CursorGrabMode,
     {color::palettes::css, render::view::NoIndirectDrawing},
 };
 use shine_game::{
-    application,
-    camera_rig::{rigs, CameraRig},
+    app::{init_application, AppGameSchedule, GameSystem},
+    camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
+    math::value::IntoNamedVariable,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::application::{create_application, platform::Config};
+    use shine_game::app::{create_application, platform::Config};
 
-    application::init(setup_game);
+    init_application(setup_game);
     let mut app = create_application(Config::default());
     app.run();
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    application::init(setup_game);
+    init_application(setup_game);
 }
 
 fn setup_game(app: &mut App) {
+    app.add_plugins(CameraRigPlugin { enable_debug: true });
+
     app.add_systems(Startup, spawn_world);
-    app.add_systems(Update, (handle_input, update_camera).chain());
+    app.add_update_systems(GameSystem::Action, (handle_input, toggle_camera_debug));
 }
 
 fn spawn_world(
@@ -33,10 +36,10 @@ fn spawn_world(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-) {
+) -> Result<(), BevyError> {
     let mut window = windows.single_mut().unwrap();
     window.cursor_options.grab_mode = CursorGrabMode::Locked;
-    window.title = "Camera Free POC".to_string();
+    window.title = "Camera Free (Mouse, WASD)".to_string();
 
     let player = (
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
@@ -62,18 +65,42 @@ fn spawn_world(
     );
     commands.spawn(light);
 
-    let rig: CameraRig = CameraRig::builder()
-        .with(rigs::Position::new(Vec3::new(-2.0, 2.5, 5.0)))
-        .with(rigs::YawPitch::new().yaw_degrees(90.0).pitch_degrees(-30.0))
-        .with(rigs::Smooth::new_position_rotation(1.0, 1.0))
-        .build();
-    let camera = (
-        Camera3d::default(),
-        NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-        *rig.transform(),
-        rig,
-    );
+    let camera = {
+        let mut rig: CameraRig = CameraRig::new()
+            .with(rigs::Position::new(Vec3::new(-2.0, 2.5, 5.0).with_name("position")))?
+            .with(rigs::YawPitch::new((90.0).with_name("yaw"), (-30.0).with_name("pitch")))?
+            .with(rigs::Smooth::position_rotation(1.0, 1.0))?;
+
+        let mut rig_debug = CameraPoseDebug::default();
+        let transform = rig.calculate_transform(0.0, Some(&mut rig_debug.update_steps));
+
+        (
+            Camera3d::default(),
+            NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
+            rig,
+            rig_debug,
+            transform,
+        )
+    };
     commands.spawn(camera);
+
+    Ok(())
+}
+
+fn toggle_camera_debug(
+    camera_q: Query<(Entity, Option<&DebugCameraTarget>), With<Camera>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
+) {
+    for (entity, debug_target) in camera_q.iter() {
+        if keyboard_input.just_pressed(KeyCode::F12) {
+            if debug_target.is_some() {
+                commands.entity(entity).remove::<DebugCameraTarget>();
+            } else {
+                commands.entity(entity).insert(DebugCameraTarget::default());
+            }
+        }
+    }
 }
 
 fn handle_input(
@@ -81,7 +108,7 @@ fn handle_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut mouse_motion_events: EventReader<MouseMotion>,
     time: Res<Time>,
-) {
+) -> Result<(), BevyError> {
     for (transform, mut rig) in query.iter_mut() {
         let mut move_vec = Vec3::ZERO;
         if keyboard_input.pressed(KeyCode::KeyA) {
@@ -107,15 +134,10 @@ fn handle_input(
             delta += event.delta;
         }
 
-        rig.driver_mut::<rigs::YawPitch>()
-            .rotate_yaw_pitch(-0.1 * delta.x, -0.1 * delta.y);
-        rig.driver_mut::<rigs::Position>()
-            .translate(move_vec * time.delta_secs() * 10.0);
+        rig.set_parameter_with("yaw", |yaw: f32| yaw - 0.1 * delta.x)?;
+        rig.set_parameter_with("pitch", |pitch: f32| pitch - 0.1 * delta.y)?;
+        rig.set_parameter_with("position", |pos: Vec3| pos + move_vec * time.delta_secs() * 10.0)?;
     }
-}
 
-fn update_camera(mut query: Query<(&mut Transform, &mut CameraRig), With<Camera3d>>, time: Res<Time>) {
-    for (mut transform, mut rig) in query.iter_mut() {
-        *transform = rig.update(time.delta_secs());
-    }
+    Ok(())
 }

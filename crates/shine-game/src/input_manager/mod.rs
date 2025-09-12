@@ -1,28 +1,28 @@
 mod input_error;
 pub use self::input_error::*;
+
+mod input_driver;
+pub use self::input_driver::*;
+mod input_processor;
+pub use self::input_processor::*;
+mod input_processor_ext;
+pub use self::input_processor_ext::*;
 mod action_state;
 pub use self::action_state::*;
-mod user_input;
-pub use self::user_input::*;
-mod input_source;
-pub use self::input_source::*;
+
 mod input_pipeline;
 pub use self::input_pipeline::*;
 mod input_map;
 pub use self::input_map::*;
 mod input_fold;
 pub use self::input_fold::*;
-mod action_value;
-pub use self::action_value::*;
 
-mod user_inputs;
-pub use self::user_inputs::*;
-mod composite_inputs;
-pub use self::composite_inputs::*;
-mod input_processing;
-pub use self::input_processing::*;
-mod action_processing;
-pub use self::action_processing::*;
+mod drivers;
+pub use self::drivers::*;
+mod processors;
+pub use self::processors::*;
+mod actions;
+pub use self::actions::*;
 
 mod input_plugin;
 pub use self::input_plugin::*;
