@@ -1,10 +1,15 @@
 #![allow(clippy::module_inception)]
 
+mod axial_coord;
+pub use self::axial_coord::*;
+
+mod hex_config;
+pub use self::hex_config::*;
+mod hex_dense_indexer;
+pub use self::hex_dense_indexer::*;
 mod hex_chunk;
 pub use self::hex_chunk::*;
-mod dense_indexer;
-pub use self::dense_indexer::*;
 mod dense_hex;
 pub use self::dense_hex::*;
-//mod hex_chunk_plugin;
-//pub use self::hex_chunk_plugin::*;
+mod sparse_hex;
+pub use self::sparse_hex::*;

@@ -1,49 +1,60 @@
-use crate::map::{AxialCoord, DenseHexChunk, HexChunk, HexConfig, HexDenseIndexer, MapChunk, Tile};
+use crate::hex::AxialCoord;
+use crate::map::{DenseHexChunk, HexChunk, HexChunkTypes, HexConfig, HexDenseIndexer, MapChunk, Tile};
 use bevy::ecs::component::Component;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 /// Chunk component storing a dense hexagonal grid of tiles.
 #[derive(Component, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[serde(bound = "T: Tile")]
+#[serde(bound = "T::Tile: Serialize + DeserializeOwned")]
 pub struct DenseHex<T>
 where
-    T: Tile,
+    T: HexChunkTypes,
+    T::Tile: Tile + Clone,
 {
     row_starts: HexDenseIndexer,
-    data: Vec<T>,
+    data: Vec<T::Tile>,
 }
 
 impl<T> DenseHex<T>
 where
-    T: Tile,
+    T: HexChunkTypes,
+    T::Tile: Clone,
 {
-    pub fn new(config: &HexConfig<T>) -> Self {
-        let radius = config.radius;
+    pub fn new<CFG>(config: CFG) -> Self
+    where
+        CFG: HexConfig,
+    {
+        let radius = config.radius();
         let row_starts = HexDenseIndexer::new(radius);
         let total_size = row_starts.get_total_size();
 
         let mut data = Vec::with_capacity(total_size);
-        data.resize_with(total_size, <T as Default>::default);
+        data.resize_with(total_size, <T::Tile as Default>::default);
 
         Self { row_starts, data }
     }
 }
 
-impl<T> From<HexConfig<T>> for DenseHex<T>
+impl<CFG, T> From<CFG> for DenseHex<T>
 where
-    T: Tile,
+    CFG: HexConfig,
+    T: HexChunkTypes,
+    T::Tile: Clone,
 {
-    fn from(config: HexConfig<T>) -> Self {
-        Self::new(&config)
+    fn from(config: CFG) -> Self {
+        Self::new(config)
     }
 }
 
 impl<T> MapChunk for DenseHex<T>
 where
-    T: Tile,
+    T: HexChunkTypes,
+    T::Tile: Clone,
 {
-    type Tile = T;
+    fn name() -> &'static str {
+        T::name()
+    }
 
     fn new_empty() -> Self
     where
@@ -62,8 +73,11 @@ where
 
 impl<T> HexChunk for DenseHex<T>
 where
-    T: Tile,
+    T: HexChunkTypes,
+    T::Tile: Clone,
 {
+    type Tile = T::Tile;
+
     fn radius(&self) -> u32 {
         self.row_starts.radius()
     }
@@ -77,10 +91,6 @@ where
         }
     }
 
-    fn get(&self, coord: AxialCoord) -> &Self::Tile {
-        self.try_get(coord).expect("Out of bounds access")
-    }
-
     fn try_get_mut(&mut self, coord: AxialCoord) -> Option<&mut Self::Tile> {
         if self.is_in_bounds(coord) {
             let index = self.row_starts.get_dense_index(&coord);
@@ -89,15 +99,12 @@ where
             None
         }
     }
-
-    fn get_mut(&mut self, coord: AxialCoord) -> &mut Self::Tile {
-        self.try_get_mut(coord).expect("Out of bounds access")
-    }
 }
 
 impl<T> DenseHexChunk for DenseHex<T>
 where
-    T: Tile,
+    T: HexChunkTypes,
+    T::Tile: Clone,
 {
     fn data(&self) -> &[Self::Tile] {
         &self.data

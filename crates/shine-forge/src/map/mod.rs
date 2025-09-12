@@ -1,27 +1,11 @@
-mod map_chunk;
-pub use self::map_chunk::*;
-mod map_chunk_tracker;
-pub use self::map_chunk_tracker::*;
-mod map_event;
-pub use self::map_event::*;
-mod map_plugin;
-pub use self::map_plugin::*;
-
-mod chunk_hasher;
-pub use self::chunk_hasher::*;
-mod chunk_event;
-pub use self::chunk_event::*;
-mod chunk_command;
-pub use self::chunk_command::*;
-mod chunk_layer;
-pub use self::chunk_layer::*;
-
 mod tile;
 pub use self::tile::*;
-mod grid_chunk;
-pub use self::grid_chunk::*;
+mod map_chunk;
+pub use self::map_chunk::*;
+mod map_chunk_version;
+pub use self::map_chunk_version::*;
+
+mod rect_chunk;
+pub use self::rect_chunk::*;
 mod hex_chunk;
 pub use self::hex_chunk::*;
-
-pub mod client;
-//pub mod server;

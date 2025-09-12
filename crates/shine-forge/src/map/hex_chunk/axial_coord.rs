@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 //
 //                    ___
 //                  /  0  \
@@ -22,7 +24,7 @@
 //                  \ ___ /
 
 /// Axial coordinates for hexagonal grid
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AxialCoord {
     pub q: i32,
     pub r: i32,
