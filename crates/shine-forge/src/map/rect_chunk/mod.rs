@@ -11,3 +11,6 @@ mod rect_dense;
 pub use self::rect_dense::*;
 mod rect_sparse;
 pub use self::rect_sparse::*;
+
+pub mod rect_plugin;
+pub use self::rect_plugin::*;

@@ -2,21 +2,6 @@ use crate::map::{MapChunk, MapChunkId};
 use bevy::ecs::{component::Component, entity::Entity, resource::Resource};
 use std::{collections::HashMap, marker::PhantomData};
 
-/// The chunk root collecting the layers of a specific chunk id.
-/// A 'MapChunk' can be added either as a component to entity with a 'MapChunkRoot' component or
-/// as a child using the 'MapLayers' relationship.
-#[derive(Component)]
-#[require(MapLayers)]
-pub struct MapChunkRoot {
-    pub id: MapChunkId,
-}
-
-impl MapChunkRoot {
-    pub fn new(id: MapChunkId) -> Self {
-        Self { id }
-    }
-}
-
 /// Relationship component to attach multiple layers of a chunk to the root.
 #[derive(Component, Default)]
 #[relationship_target(relationship = MapLayerOf, linked_spawn)]

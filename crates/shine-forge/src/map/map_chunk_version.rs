@@ -7,7 +7,7 @@ use std::{
 
 /// Current version of a map-chunk of type T.
 #[derive(Component)]
-pub struct ChunkVersion<T>
+pub struct MapChunkVersion<T>
 where
     T: Tile,
 {
@@ -15,7 +15,7 @@ where
     ph: PhantomData<T>,
 }
 
-impl<T> Default for ChunkVersion<T>
+impl<T> Default for MapChunkVersion<T>
 where
     T: Tile,
 {
@@ -24,7 +24,7 @@ where
     }
 }
 
-impl<T> ChunkVersion<T>
+impl<T> MapChunkVersion<T>
 where
     T: Tile,
 {
@@ -37,7 +37,7 @@ where
     }
 }
 
-impl<T> Deref for ChunkVersion<T>
+impl<T> Deref for MapChunkVersion<T>
 where
     T: Tile,
 {
@@ -48,7 +48,7 @@ where
     }
 }
 
-impl<T> DerefMut for ChunkVersion<T>
+impl<T> DerefMut for MapChunkVersion<T>
 where
     T: Tile,
 {

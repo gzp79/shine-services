@@ -1,14 +1,17 @@
-use crate::map::{ChunkId, MapChunkTracker};
-use bevy::ecs::{
-    event::{Event, EventReader},
-    system::{Commands, ResMut},
+use crate::map::{map_chunk_root::MapChunkTracker, MapChunkId};
+use bevy::{
+    ecs::{
+        event::{Event, EventReader},
+        system::{Commands, ResMut},
+    },
+    log,
 };
 
 /// Event to request chunk loading and unloading
 #[derive(Event, Debug)]
 pub enum MapEvent {
-    Load(ChunkId),
-    Unload(ChunkId),
+    Load(MapChunkId),
+    Unload(MapChunkId),
 }
 
 /// Process TileMapEvent and perform chunk spawn/despawn

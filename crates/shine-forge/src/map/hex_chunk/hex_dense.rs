@@ -1,4 +1,4 @@
-use crate::map::{AxialCoord, HexChunk, HexConfig, HexDenseChunk, HexDenseIndexer, MapChunk, Tile};
+use crate::map::{hex_chunk::HexDenseIndexer, AxialCoord, HexChunk, HexConfig, HexDenseChunk, MapChunk, Tile};
 use bevy::ecs::component::Component;
 use serde::{Deserialize, Serialize};
 
