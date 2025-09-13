@@ -16,20 +16,11 @@ const COLORS: &[Color] = &[
     Color::Srgba(css::WHITE),
 ];
 
-pub struct WorldPlugin<S>
-where
-    S: States,
-{
-    pub state: S,
-}
+pub struct WorldPlugin;
 
-impl<S> Plugin for WorldPlugin<S>
-where
-    S: States,
-{
+impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(self.state.clone()), (spawn_floor, spawn_light));
-        //app.add_systems(Startup, (spawn_floor, spawn_light));
+        app.add_systems(Startup, (spawn_floor, spawn_light));
     }
 }
 #[derive(Component)]

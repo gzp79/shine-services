@@ -7,6 +7,7 @@ use bevy::{
     app::{App, Plugin, PreUpdate},
     ecs::schedule::{IntoScheduleConfigs, SystemSet},
     input::InputSystem,
+    log,
 };
 use std::marker::PhantomData;
 

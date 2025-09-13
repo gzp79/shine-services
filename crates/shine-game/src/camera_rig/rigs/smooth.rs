@@ -1,4 +1,7 @@
-use crate::camera_rig::{rigs::ExpSmoothed, RigDriver, RigUpdateParams};
+use crate::{
+    camera_rig::{RigDriver, RigUpdateParams},
+    math::value::{ExpSmoothed, Variable},
+};
 use bevy::{
     math::{Quat, Vec3},
     transform::components::Transform,
@@ -6,64 +9,51 @@ use bevy::{
 
 /// Smooths the parent transformation.
 pub struct Smooth {
-    smoothed_position: ExpSmoothed<Vec3>,
-    smoothed_rotation: ExpSmoothed<Quat>,
+    position: ExpSmoothed<Vec3>,
+    rotation: ExpSmoothed<Quat>,
 }
 
 impl Default for Smooth {
     fn default() -> Self {
-        Self::new_position_rotation(1.0, 1.0)
+        Self::position_rotation(1.0, 1.0)
     }
 }
 
 impl Smooth {
-    /// Only smooth position
-    pub fn new_position(position_smoothness: f32) -> Self {
+    /// Predict both position and rotation
+    pub fn position_rotation(position_duration_s: f32, rotation_duration_s: f32) -> Self {
+        // Initialize without a current value to allow smooth transitions from the first update.
+        // The initial state will be set when the first target value is provided.
         Self {
-            smoothed_position: ExpSmoothed::new().smoothness(position_smoothness),
-            smoothed_rotation: ExpSmoothed::new().smoothness(0.0),
+            position: ExpSmoothed::new(position_duration_s, None),
+            rotation: ExpSmoothed::new(rotation_duration_s, None),
         }
     }
 
-    /// Only smooth rotation
-    pub fn new_rotation(rotation_smoothness: f32) -> Self {
-        Self {
-            smoothed_position: ExpSmoothed::new().smoothness(0.0),
-            smoothed_rotation: ExpSmoothed::new().smoothness(rotation_smoothness),
-        }
+    /// Predict position
+    pub fn position(duration_s: f32) -> Self {
+        Self::position_rotation(duration_s, 0.0)
     }
 
-    /// Smooth both position and rotation
-    pub fn new_position_rotation(position_smoothness: f32, rotation_smoothness: f32) -> Self {
-        Self {
-            smoothed_position: ExpSmoothed::new().smoothness(position_smoothness),
-            smoothed_rotation: ExpSmoothed::new().smoothness(rotation_smoothness),
-        }
-    }
-
-    /// Reverse the smoothing, causing the camera to look ahead of the parent transform
-    ///
-    /// This can be useful on top of [`Position`], and before another `Smooth`
-    /// in the chain to create a soft yet responsive follower camera.
-    pub fn predictive(self, predictive: bool) -> Self {
-        Self {
-            smoothed_position: self.smoothed_position.predictive(predictive),
-            smoothed_rotation: self.smoothed_rotation.predictive(predictive),
-        }
+    /// Predict rotation
+    pub fn rotation(duration_s: f32) -> Self {
+        Self::position_rotation(0.0, duration_s)
     }
 }
 
 impl RigDriver for Smooth {
+    fn visit_variables(&self, _visitor: &mut dyn FnMut(&dyn Variable) -> bool) {}
+
+    fn variable_mut(&mut self, _name: &str) -> Option<&mut dyn Variable> {
+        None
+    }
+
     fn update(&mut self, params: RigUpdateParams) -> Transform {
         let target_position = params.parent.translation;
-        let position = self
-            .smoothed_position
-            .exp_smooth_towards(&target_position, params.delta_time);
+        let position = self.position.smooth_towards(&target_position, params.delta_time_s);
 
         let target_rotation = params.parent.rotation;
-        let rotation = self
-            .smoothed_rotation
-            .exp_smooth_towards(&target_rotation, params.delta_time);
+        let rotation = self.rotation.smooth_towards(&target_rotation, params.delta_time_s);
 
         Transform::from_translation(position).with_rotation(rotation)
     }

@@ -1,6 +1,3 @@
-mod smooth_interpolate;
-pub use self::smooth_interpolate::*;
-
 mod position;
 pub use self::position::*;
 mod rotation;
@@ -13,3 +10,5 @@ mod look_at;
 pub use self::look_at::*;
 mod smooth;
 pub use self::smooth::*;
+mod predict;
+pub use self::predict::*;

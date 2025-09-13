@@ -9,7 +9,6 @@ default = ["dev_tools"]
 dev_tools = ["bevy_mod_debugdump"]
 
 [dependencies]
-log = { workspace = true }
 thiserror = { workspace = true }
 
 serde = { workspace = true }
@@ -21,14 +20,17 @@ smallbox = { workspace = true }
 
 tokio = { workspace = true }
 bevy = { workspace = true, features = [
+    "bevy_log",
+    "bevy_state",
     "bevy_window",
-    "bevy_color",
-    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_ui",
     "bevy_gizmos",
 ] }
 
 bevy_mod_debugdump = { version = "0.13", optional = true }
 
+shine-core = { workspace = true }
 shine-infra = { workspace = true, optional = true }
 
 [dev-dependencies]

@@ -1,40 +1,50 @@
-use crate::camera_rig::{RigDriver, RigUpdateParams};
+use crate::{
+    camera_rig::{RigDriver, RigUpdateParams},
+    math::value::{AnimatedVariable, Variable},
+};
 use bevy::{math::Vec3, transform::components::Transform};
 
 /// Directly sets the position of the camera
-pub struct Position {
-    pub position: Vec3,
+pub struct Position<P>
+where
+    P: AnimatedVariable<Value = Vec3>,
+{
+    position: P,
 }
 
-impl Default for Position {
+impl Default for Position<Vec3> {
     fn default() -> Self {
-        Self { position: Vec3::ZERO }
+        Self::new(Vec3::ZERO)
     }
 }
 
-impl Position {
-    pub fn new<P>(position: P) -> Self
-    where
-        P: Into<Vec3>,
-    {
-        let position = position.into();
-
+impl<P> Position<P>
+where
+    P: AnimatedVariable<Value = Vec3>,
+{
+    pub fn new(position: P) -> Self {
         Self { position }
     }
-
-    /// Add the specified vector to the position of this component
-    pub fn translate<V>(&mut self, move_vec: V)
-    where
-        V: Into<Vec3>,
-    {
-        let position = self.position;
-        let move_vec = move_vec.into();
-        self.position = position + move_vec;
-    }
 }
 
-impl RigDriver for Position {
+impl<P> RigDriver for Position<P>
+where
+    P: AnimatedVariable<Value = Vec3>,
+{
+    fn visit_variables(&self, visitor: &mut dyn FnMut(&dyn Variable) -> bool) {
+        visitor(&self.position);
+    }
+
+    fn variable_mut(&mut self, name: &str) -> Option<&mut dyn Variable> {
+        if self.position.name() == Some(name) {
+            Some(&mut self.position)
+        } else {
+            None
+        }
+    }
+
     fn update(&mut self, params: RigUpdateParams) -> Transform {
-        Transform::from_translation(self.position).with_rotation(params.parent.rotation)
+        let pos = self.position.animate(params.delta_time_s);
+        Transform::from_translation(pos).with_rotation(params.parent.rotation)
     }
 }

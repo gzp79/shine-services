@@ -15,8 +15,9 @@ tokio = { workspace = true }
 bevy = { workspace = true, features = [
     "std",
     "async_executor",
-    "bevy_state",
     "track_location",
+    "bevy_log",
+    "bevy_state",
 ]  }
 
 shine-infra = { workspace = true, optional = true }

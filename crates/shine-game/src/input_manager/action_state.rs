@@ -1,7 +1,8 @@
-use crate::input_manager::{AnyActionValue, AxisValue, ButtonStatus, ButtonValue, DualAxisValue, InputValueFold};
+use crate::input_manager::{AxisValue, ButtonStatus, ButtonValue, DualAxisValue, InputValueFold};
 use bevy::{ecs::component::Component, math::Vec2};
 use smallbox::{smallbox, SmallBox};
 use std::{
+    any::Any,
     collections::{hash_map::Entry, HashMap},
     hash::Hash,
     ops::{Deref, DerefMut},
@@ -9,6 +10,28 @@ use std::{
 
 pub trait ActionLike: Clone + Eq + Hash + Send + Sync + 'static {}
 impl<A> ActionLike for A where A: Clone + Eq + Hash + Send + Sync + 'static {}
+
+/// Blank trait for type erased action values.
+pub trait AnyActionValue: Sync + Send + Any {
+    /// Returns `self` as `&dyn Any`
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Returns `self` as `&mut dyn Any`
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+}
+
+impl<T> AnyActionValue for T
+where
+    T: Sync + Send + Any,
+{
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
 
 /// A trait to convert InputValue into action value.
 pub trait IntoActionValue: Clone + Send + Sync + 'static {

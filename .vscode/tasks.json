@@ -232,14 +232,18 @@
       "description": "Select client example",
       "options": [
         { "label": "main", "value": "" },
+        { "label": "curve", "value": "--example curve" },
         { "label": "camera_orbit", "value": "--example camera_orbit" },
         { "label": "camera_follow", "value": "--example camera_follow" },
         { "label": "camera_free", "value": "--example camera_free" },
         { "label": "camera_look_at", "value": "--example camera_look_at" },
-        { "label": "input_actions", "value": "--example input_actions" },
-        { "label": "input_compose", "value": "--example input_compose" },
+        { "label": "input_drivers", "value": "--example input_drivers" },
+        { "label": "input_process", "value": "--example input_process" },
         { "label": "input_gesture", "value": "--example input_gesture" },
-        { "label": "input_multiplayer", "value": "--example input_multiplayer" },
+        {
+          "label": "input_multiplayer",
+          "value": "--example input_multiplayer"
+        },
         { "label": "pinch_zoom", "value": "--example pinch_zoom" }
       ],
       "default": "asset-service"
