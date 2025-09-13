@@ -16,14 +16,17 @@ pub trait RectChunk: MapChunk {
     }
 }
 
-/// Trait for rectangular chunks that efficiently store only non-default (occupied) tiles.
-/// Useful for representing large, mostly empty grids without allocating memory for every cell.
-pub trait SparseRectChunk: RectChunk {
+/// Rectangular chunk with sparse storage
+pub trait RectSparseChunk: RectChunk {
+    /// The value of the onoccupied entries.
+    fn default(&self) -> &Self::Tile;
+
+    /// Iterator over the occupied entires
     fn occupied(&self) -> impl Iterator<Item = (RectCoord, &Self::Tile)>;
 }
 
-/// Trait for rectangular chunks with dense (contiguous) storage of tiles.
-pub trait DenseRectChunk: RectChunk {
+/// Rectangular chunk with dense storage
+pub trait RectDenseChunk: RectChunk {
     fn data(&self) -> &[Self::Tile];
     fn data_mut(&mut self) -> &mut [Self::Tile];
 }

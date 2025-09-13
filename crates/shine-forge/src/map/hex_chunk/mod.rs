@@ -9,7 +9,10 @@ mod hex_dense_indexer;
 pub use self::hex_dense_indexer::*;
 mod hex_chunk;
 pub use self::hex_chunk::*;
-mod dense_hex;
-pub use self::dense_hex::*;
-mod sparse_hex;
-pub use self::sparse_hex::*;
+mod hex_dense;
+pub use self::hex_dense::*;
+mod hex_sparse;
+pub use self::hex_sparse::*;
+
+mod hex_plugin;
+pub use self::hex_plugin::*;

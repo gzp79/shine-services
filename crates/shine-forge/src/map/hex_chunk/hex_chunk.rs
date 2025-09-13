@@ -15,11 +15,17 @@ pub trait HexChunk: MapChunk {
     }
 }
 
-pub trait SparseHexChunk: HexChunk {
+/// Hexagonal chunk with sparse storage
+pub trait HexSparseChunk: HexChunk {
+    /// The value of the onoccupied entries.
+    fn default(&self) -> &Self::Tile;
+
+    /// Iterator over the occupied entires
     fn occupied(&self) -> impl Iterator<Item = (AxialCoord, &Self::Tile)>;
 }
 
-pub trait DenseHexChunk: HexChunk {
+/// Hexagonal chunk with dense storage
+pub trait HexDenseChunk: HexChunk {
     fn data(&self) -> &[Self::Tile];
     fn data_mut(&mut self) -> &mut [Self::Tile];
 }

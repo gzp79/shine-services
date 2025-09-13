@@ -1,4 +1,4 @@
-use crate::map::{AxialCoord, HexChunk, HexConfig, MapChunk, SparseHexChunk, Tile};
+use crate::map::{AxialCoord, HexChunk, HexConfig, HexSparseChunk, MapChunk, Tile};
 use bevy::ecs::component::Component;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -7,7 +7,7 @@ use std::collections::HashMap;
 #[derive(Component, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(bound = "T: Tile")]
-pub struct SparseHex<T>
+pub struct HexSparse<T>
 where
     T: Tile,
 {
@@ -16,7 +16,7 @@ where
     data: HashMap<AxialCoord, T>,
 }
 
-impl<T> SparseHex<T>
+impl<T> HexSparse<T>
 where
     T: Tile,
 {
@@ -29,7 +29,7 @@ where
     }
 }
 
-impl<T> From<HexConfig<T>> for SparseHex<T>
+impl<T> From<HexConfig<T>> for HexSparse<T>
 where
     T: Tile,
 {
@@ -38,7 +38,7 @@ where
     }
 }
 
-impl<T> MapChunk for SparseHex<T>
+impl<T> MapChunk for HexSparse<T>
 where
     T: Tile,
 {
@@ -60,7 +60,7 @@ where
     }
 }
 
-impl<T> HexChunk for SparseHex<T>
+impl<T> HexChunk for HexSparse<T>
 where
     T: Tile,
 {
@@ -114,10 +114,14 @@ where
     }
 }
 
-impl<T> SparseHexChunk for SparseHex<T>
+impl<T> HexSparseChunk for HexSparse<T>
 where
     T: Tile,
 {
+    fn default(&self) -> &Self::Tile {
+        &self.default
+    }
+
     fn occupied(&self) -> impl Iterator<Item = (AxialCoord, &Self::Tile)> {
         self.data.iter().map(|(coord, tile)| (*coord, tile))
     }

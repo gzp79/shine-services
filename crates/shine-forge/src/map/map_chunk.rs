@@ -3,7 +3,7 @@ use bevy::ecs::component::{Component, Mutable};
 use serde::{de::DeserializeOwned, Serialize};
 
 /// Unique identifier for a chunk in the world.
-#[derive(Component, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct MapChunkId(pub usize, pub usize);
 
 /// Trait to define a chunk in the map.

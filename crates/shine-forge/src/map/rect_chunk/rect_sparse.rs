@@ -1,4 +1,4 @@
-use crate::map::{MapChunk, RectChunk, RectConfig, RectCoord, SparseRectChunk, Tile};
+use crate::map::{MapChunk, RectChunk, RectConfig, RectCoord, RectSparseChunk, Tile};
 use bevy::ecs::component::Component;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -7,7 +7,7 @@ use std::collections::HashMap;
 #[derive(Component, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(bound = "T: Tile")]
-pub struct SparseRect<T>
+pub struct RectSparse<T>
 where
     T: Tile,
 {
@@ -17,7 +17,7 @@ where
     data: HashMap<RectCoord, T>,
 }
 
-impl<T> SparseRect<T>
+impl<T> RectSparse<T>
 where
     T: Tile,
 {
@@ -31,7 +31,7 @@ where
     }
 }
 
-impl<T> From<RectConfig<T>> for SparseRect<T>
+impl<T> From<RectConfig<T>> for RectSparse<T>
 where
     T: Tile,
 {
@@ -40,7 +40,7 @@ where
     }
 }
 
-impl<T> MapChunk for SparseRect<T>
+impl<T> MapChunk for RectSparse<T>
 where
     T: Tile,
 {
@@ -63,7 +63,7 @@ where
     }
 }
 
-impl<T> RectChunk for SparseRect<T>
+impl<T> RectChunk for RectSparse<T>
 where
     T: Tile,
 {
@@ -121,10 +121,14 @@ where
     }
 }
 
-impl<T> SparseRectChunk for SparseRect<T>
+impl<T> RectSparseChunk for RectSparse<T>
 where
     T: Tile,
 {
+    fn default(&self) -> &Self::Tile {
+        &self.default
+    }
+
     fn occupied(&self) -> impl Iterator<Item = (RectCoord, &Self::Tile)> {
         self.data.iter().map(|(coord, tile)| (*coord, tile))
     }

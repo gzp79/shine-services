@@ -102,7 +102,7 @@ impl PinchData {
     }
 }
 
-/// Resource that tracks the state of a two-finger touch gesture, including the IDs of the
+/// Component tracking the state of a two-finger touch gesture, including the IDs of the
 /// active touch points and their positions. This is used to calculate
 /// pan, zoom, and rotation deltas for multi-touch interactions.
 #[derive(Debug, Clone, Component)]

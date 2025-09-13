@@ -1,4 +1,4 @@
-use crate::map::{AxialCoord, DenseHexChunk, HexChunk, HexConfig, HexDenseIndexer, MapChunk, Tile};
+use crate::map::{AxialCoord, HexChunk, HexConfig, HexDenseChunk, HexDenseIndexer, MapChunk, Tile};
 use bevy::ecs::component::Component;
 use serde::{Deserialize, Serialize};
 
@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Component, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(bound = "T: Tile")]
-pub struct DenseHex<T>
+pub struct HexDense<T>
 where
     T: Tile,
 {
@@ -14,7 +14,7 @@ where
     data: Vec<T>,
 }
 
-impl<T> DenseHex<T>
+impl<T> HexDense<T>
 where
     T: Tile,
 {
@@ -30,7 +30,7 @@ where
     }
 }
 
-impl<T> From<HexConfig<T>> for DenseHex<T>
+impl<T> From<HexConfig<T>> for HexDense<T>
 where
     T: Tile,
 {
@@ -39,7 +39,7 @@ where
     }
 }
 
-impl<T> MapChunk for DenseHex<T>
+impl<T> MapChunk for HexDense<T>
 where
     T: Tile,
 {
@@ -60,7 +60,7 @@ where
     }
 }
 
-impl<T> HexChunk for DenseHex<T>
+impl<T> HexChunk for HexDense<T>
 where
     T: Tile,
 {
@@ -95,7 +95,7 @@ where
     }
 }
 
-impl<T> DenseHexChunk for DenseHex<T>
+impl<T> HexDenseChunk for HexDense<T>
 where
     T: Tile,
 {

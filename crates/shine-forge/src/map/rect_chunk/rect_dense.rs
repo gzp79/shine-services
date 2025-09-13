@@ -1,4 +1,4 @@
-use crate::map::{DenseRectChunk, MapChunk, RectChunk, RectConfig, RectCoord, Tile};
+use crate::map::{MapChunk, RectChunk, RectConfig, RectCoord, RectDenseChunk, Tile};
 use bevy::ecs::component::Component;
 use serde::{Deserialize, Serialize};
 
@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Component, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(bound = "T: Tile")]
-pub struct DenseRect<T>
+pub struct RectDense<T>
 where
     T: Tile,
 {
@@ -15,7 +15,7 @@ where
     data: Vec<T>,
 }
 
-impl<T> DenseRect<T>
+impl<T> RectDense<T>
 where
     T: Tile,
 {
@@ -30,7 +30,7 @@ where
     }
 }
 
-impl<T> From<RectConfig<T>> for DenseRect<T>
+impl<T> From<RectConfig<T>> for RectDense<T>
 where
     T: Tile,
 {
@@ -39,7 +39,7 @@ where
     }
 }
 
-impl<T> MapChunk for DenseRect<T>
+impl<T> MapChunk for RectDense<T>
 where
     T: Tile,
 {
@@ -61,7 +61,7 @@ where
     }
 }
 
-impl<T> RectChunk for DenseRect<T>
+impl<T> RectChunk for RectDense<T>
 where
     T: Tile,
 {
@@ -100,7 +100,7 @@ where
     }
 }
 
-impl<T> DenseRectChunk for DenseRect<T>
+impl<T> RectDenseChunk for RectDense<T>
 where
     T: Tile,
 {
