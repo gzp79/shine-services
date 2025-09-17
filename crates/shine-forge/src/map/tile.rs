@@ -1,6 +1,4 @@
-use serde::{de::DeserializeOwned, Serialize};
-
-pub trait Tile: Default + Clone + Serialize + DeserializeOwned + Send + Sync + 'static {}
+pub trait Tile: Default + Clone + Send + Sync + 'static {}
 
 impl Tile for u8 {}
 impl Tile for u16 {}

@@ -1,10 +1,9 @@
 use crate::map::AxialCoord;
-use serde::{Deserialize, Serialize};
 
 // todo: Convert HexDenseIndexer to Interned
 
 /// Helper to index into a dense hexagonal grid store
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct HexDenseIndexer {
     radius: u32,
     row_starts: Vec<usize>,
@@ -20,7 +19,6 @@ impl HexDenseIndexer {
 
         // Calculate start indices for each row
         for r in -(radius as i32)..=radius as i32 {
-            log::info!("r: {r}, current_width: {current_width}");
             row_starts.push(current_start);
             current_start += current_width;
             if r < 0 {
@@ -50,7 +48,9 @@ impl HexDenseIndexer {
         let row = a;
         let col = b - (r - a).max(0);
         let row_start = self.row_starts[row as usize];
-        row_start + col as usize
+        let idx = row_start + col as usize;
+        debug_assert!(idx < self.get_total_size());
+        idx
     }
 }
 

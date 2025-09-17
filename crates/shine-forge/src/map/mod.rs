@@ -1,30 +1,36 @@
+mod map_error;
+mod map_layer;
+mod map_layer_event;
+mod map_layer_info;
 mod tile;
 
-mod hex_chunk;
-mod map_chunk;
-mod rect_chunk;
+mod hex_layer;
+mod rect_layer;
 
-mod map_chunk_root;
-mod map_chunk_version;
+mod map_chunk;
 mod map_event;
-mod map_layers;
+mod map_layer_operation;
 
 mod map_plugin;
 pub use self::map_plugin::*;
 
+pub mod proto;
+
 pub use self::{
-    hex_chunk::{
-        AxialCoord, HexChunk, HexConfig, HexDense, HexDenseChunk, HexSparse, HexSparseChunk, MapHexDenseLayer,
-        MapHexDenseLayerPlugin, MapHexSparseLayer, MapHexSparseLayerPlugin,
+    hex_layer::{
+        AxialCoord, HexDenseLayer, HexDenseLayerPlugin, HexLayer, HexLayerConfig, HexSparseLayer, HexSparseLayerPlugin,
     },
-    map_chunk::MapChunk,
-    map_chunk_root::{MapChunkId, MapChunkRoot, MapChunkTracker},
-    map_chunk_version::MapChunkVersion,
+    map_chunk::{MapChunk, MapChunkId, MapChunkTracker, MapLayerOf, MapLayers},
+    map_error::MapError,
     map_event::MapEvent,
-    map_layers::{MapLayer, MapLayerOf, MapLayers},
-    rect_chunk::{
-        MapRectDenseLayer, MapRectDenseLayerPlugin, MapRectSparseLayer, MapRectSparseLayerPlugin, RectChunk,
-        RectConfig, RectCoord, RectDense, RectDenseChunk, RectSparse, RectSparseChunk,
+    map_layer::{MapLayer, MapLayerTracker},
+    map_layer_event::{MapLayerControlEvent, MapLayerSyncEvent},
+    map_layer_info::MapLayerInfo,
+    map_layer_operation::{BoxedMapLayerOperation, MapChunkOperationExt, MapLayerOperation},
+    map_layer_operation::{MapLayerChecksum, MapLayerVersion},
+    rect_layer::{
+        RectCoord, RectDenseIndexer, RectDenseLayer, RectDenseLayerPlugin, RectLayer, RectLayerConfig, RectSparseLayer,
+        RectSparseLayerPlugin,
     },
     tile::Tile,
 };

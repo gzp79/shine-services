@@ -1,12 +1,14 @@
 use bevy::{
-    app::App,
-    app::PluginGroup,
+    app::{App, PluginGroup},
     ecs::event::Events,
     log::{self, LogPlugin},
     DefaultPlugins,
 };
 use serde::{Deserialize, Serialize};
-use shine_forge::map::{HexConfig, MapChunkId, MapChunkRoot, MapChunkTracker, MapEvent, MapHexDenseLayerPlugin, Tile};
+use shine_forge::map::{
+    HexDenseLayer, HexDenseLayerPlugin, HexLayer, HexLayerConfig, MapChunk, MapChunkId, MapChunkTracker, MapEvent,
+    MapLayerControlEvent, MapLayerTracker, Tile,
+};
 use shine_test::test;
 
 mod shared;
@@ -16,6 +18,9 @@ use shared::test_init_bevy;
 pub struct TestTile {
     pub value: u8,
 }
+
+pub type TestLayer = HexDenseLayer<TestTile>;
+pub type TestLayerTracker = MapLayerTracker<TestLayer>;
 
 impl Tile for TestTile {}
 
@@ -28,44 +33,94 @@ async fn test_chunk_root_load_unload() {
     // Without layers only the chunk root entity is spawned and despawned.
 
     app.add_plugins(DefaultPlugins.build().disable::<LogPlugin>())
-        .add_plugins(MapHexDenseLayerPlugin::<TestTile>::new(HexConfig::new(16)));
+        .add_plugins(HexDenseLayerPlugin::<TestTile>::new(HexLayerConfig::new(16)));
 
     app.update();
 
     let chunk_id: MapChunkId = MapChunkId(13, 42);
-    let chunk_entity;
 
-    // create a chunk
-    app.world_mut()
-        .resource_mut::<Events<MapEvent>>()
-        .send(MapEvent::Load(chunk_id));
+    for i in 0..2 {
+        log::debug!("Pass {i} ...");
 
-    app.update();
+        let chunk_root_entity;
+        let chunk_entity;
 
-    {
-        log::debug!("Check if chunk is created");
+        // create a chunk
+        log::debug!("Send load event for chunk {chunk_id:?}");
+        app.world_mut()
+            .resource_mut::<Events<MapEvent>>()
+            .send(MapEvent::Load(chunk_id));
 
-        let tile_map = app.world().get_resource::<MapChunkTracker>().unwrap();
-        chunk_entity = tile_map.get_entity(chunk_id).unwrap();
+        app.update();
 
-        let chunk_root = app.world().entity(chunk_entity).components::<&MapChunkRoot>();
-        assert_eq!(chunk_root.id, chunk_id);
-    }
+        {
+            log::debug!("Check if root and chunk are created");
 
-    app.world_mut()
-        .resource_mut::<Events<MapEvent>>()
-        .send(MapEvent::Unload(chunk_id));
+            let tile_map = app.world().get_resource::<MapChunkTracker>().unwrap();
+            chunk_root_entity = tile_map.get_entity(chunk_id).unwrap();
+            let chunk_root = app.world().entity(chunk_root_entity).components::<&MapChunk>();
+            assert_eq!(chunk_root.id, chunk_id);
 
-    app.update();
+            log::debug!("Check if layer is created");
+            let tile_map = app.world().get_resource::<TestLayerTracker>().unwrap();
+            chunk_entity = tile_map.get_entity(chunk_id).unwrap();
+            let chunk = app
+                .world()
+                .entity(chunk_entity)
+                .components::<&HexDenseLayer<TestTile>>();
+            assert_eq!(chunk.radius(), 16);
 
-    {
-        log::debug!("Check if chunk is dropped");
+            let mut events = app
+                .world_mut()
+                .resource_mut::<Events<MapLayerControlEvent<TestLayer>>>();
+            let mut event_reader = events.get_cursor();
+            match event_reader.read(&*events).next() {
+                Some(MapLayerControlEvent::Track(id, _)) => {
+                    assert_eq!(id, &chunk_id);
+                }
+                other => panic!("Unexpected event, got: {other:?}"),
+            }
+            assert!(event_reader.read(&*events).next().is_none());
+            events.clear();
+        }
 
-        let chunk_tracker = app.world().get_resource::<MapChunkTracker>().unwrap();
-        assert!(chunk_tracker.get_entity(chunk_id).is_none());
+        log::debug!("Send unload event for chunk {chunk_id:?}");
+        app.world_mut()
+            .resource_mut::<Events<MapEvent>>()
+            .send(MapEvent::Unload(chunk_id));
 
-        let result = app.world().get_entity(chunk_entity);
-        assert!(result.is_err());
+        // complete cleanup happens in 2 updates
+        app.update();
+        app.update();
+
+        {
+            log::debug!("Check if chunk and root are dropped");
+
+            let chunk_tracker = app.world().get_resource::<MapChunkTracker>().unwrap();
+            assert!(chunk_tracker.get_entity(chunk_id).is_none());
+
+            let tile_map = app.world().get_resource::<TestLayerTracker>().unwrap();
+            assert_eq!(tile_map.get_entity(chunk_id), None);
+            assert_eq!(tile_map.get_chunk_id(chunk_entity), None);
+
+            let result = app.world().get_entity(chunk_entity);
+            assert!(result.is_err());
+            let result = app.world().get_entity(chunk_root_entity);
+            assert!(result.is_err());
+
+            let mut events = app
+                .world_mut()
+                .resource_mut::<Events<MapLayerControlEvent<TestLayer>>>();
+            let mut event_reader = events.get_cursor();
+            match event_reader.read(&*events).next() {
+                Some(MapLayerControlEvent::Untrack(id)) => {
+                    assert_eq!(id, &chunk_id);
+                }
+                other => panic!("Unexpected event, got: {other:?}"),
+            }
+            assert!(event_reader.read(&*events).next().is_none());
+            events.clear();
+        }
     }
 }
 

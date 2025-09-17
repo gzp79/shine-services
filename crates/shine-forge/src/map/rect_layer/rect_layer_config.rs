@@ -2,9 +2,9 @@ use crate::map::Tile;
 use bevy::ecs::resource::Resource;
 use std::marker::PhantomData;
 
-/// Defines the configuration for a rectangular chunk, parameterized by a tile type `T`.
+/// The configuration for a rectangular layer
 #[derive(Resource, Clone)]
-pub struct RectConfig<T>
+pub struct RectLayerConfig<T>
 where
     T: Tile,
 {
@@ -13,7 +13,7 @@ where
     _ph: PhantomData<T>,
 }
 
-impl<T> RectConfig<T>
+impl<T> RectLayerConfig<T>
 where
     T: Tile,
 {
