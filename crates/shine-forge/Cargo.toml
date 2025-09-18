@@ -9,10 +9,10 @@ thiserror = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
-prost = { workspace = true }
-prost-types = { workspace = true }
 itertools = { workspace = true }
 smallbox = { workspace = true }
+rmp-serde = { workspace = true }
+lz4_flex = { workspace = true }
 
 tokio = { workspace = true }
 bevy = { workspace = true, features = [
@@ -37,9 +37,6 @@ tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 ################## wasm dependencies ##################
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-
-[build-dependencies]
-prost-build = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { workspace = true }

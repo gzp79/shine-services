@@ -2,6 +2,7 @@ mod map_error;
 mod map_layer;
 mod map_layer_event;
 mod map_layer_info;
+mod map_layer_io;
 mod tile;
 
 mod hex_layer;
@@ -14,8 +15,6 @@ mod map_layer_operation;
 mod map_plugin;
 pub use self::map_plugin::*;
 
-pub mod proto;
-
 pub use self::{
     hex_layer::{
         AxialCoord, HexDenseLayer, HexDenseLayerPlugin, HexLayer, HexLayerConfig, HexSparseLayer, HexSparseLayerPlugin,
@@ -26,8 +25,10 @@ pub use self::{
     map_layer::{MapLayer, MapLayerTracker},
     map_layer_event::{MapLayerControlEvent, MapLayerSyncEvent},
     map_layer_info::MapLayerInfo,
+    map_layer_io::{MapLayerIO, MapLayerIOExt, VoldemortIOToken},
     map_layer_operation::{BoxedMapLayerOperation, MapChunkOperationExt, MapLayerOperation},
     map_layer_operation::{MapLayerChecksum, MapLayerVersion},
+    map_plugin::MapPreUpdateSystem,
     rect_layer::{
         RectCoord, RectDenseIndexer, RectDenseLayer, RectDenseLayerPlugin, RectLayer, RectLayerConfig, RectSparseLayer,
         RectSparseLayerPlugin,

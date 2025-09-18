@@ -1,8 +1,9 @@
-use crate::map::proto;
+use serde::{Deserialize, Serialize};
 
 /// Coordinates for a rectangular grid.
 /// Origin is the bottom left corner, with x increasing to the right and y increasing upwards.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(into = "(i32, i32)", from = "(i32, i32)")]
 pub struct RectCoord {
     pub x: i32,
     pub y: i32,
@@ -31,8 +32,8 @@ impl From<(i32, i32)> for RectCoord {
     }
 }
 
-impl From<proto::RectCoord> for RectCoord {
-    fn from(proto: proto::RectCoord) -> Self {
-        Self { x: proto.x, y: proto.y }
+impl From<RectCoord> for (i32, i32) {
+    fn from(coord: RectCoord) -> Self {
+        (coord.x, coord.y)
     }
 }

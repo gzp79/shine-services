@@ -1,6 +1,6 @@
 use crate::map::{
-    MapChunk, MapChunkId, MapError, MapLayerChecksum, MapLayerControlEvent, MapLayerInfo, MapLayerOf,
-    MapLayerSyncEvent, MapLayerVersion, Tile,
+    map_layer_io::MapLayerIOExt, MapChunk, MapChunkId, MapLayerChecksum, MapLayerControlEvent, MapLayerIO,
+    MapLayerInfo, MapLayerOf, MapLayerSyncEvent, MapLayerVersion, Tile,
 };
 use bevy::ecs::{
     component::{Component, Mutable},
@@ -24,9 +24,6 @@ pub trait MapLayer: Component<Mutability = Mutable> + 'static {
 
     fn is_empty(&self) -> bool;
     fn clear(&mut self);
-
-    fn load(&mut self, data: &[u8]) -> Result<(), MapError>;
-    fn save(&self) -> Vec<u8>;
 }
 
 /// Resource to track a layer of a chunk.
@@ -134,7 +131,7 @@ pub fn process_layer_sync_events<C>(
     mut sync_events: EventReader<MapLayerSyncEvent<C>>,
     mut control_events: EventWriter<MapLayerControlEvent<C>>,
 ) where
-    C: MapLayer,
+    C: MapLayer + MapLayerIO,
 {
     for event in sync_events.read() {
         match event {
@@ -149,7 +146,7 @@ pub fn process_layer_sync_events<C>(
                 {
                     info.version = *evt_version;
                     info.checksum = *evt_checksum;
-                    if let Err(e) = layer.load(snapshot) {
+                    if let Err(e) = layer.load_from_bytes(snapshot) {
                         log::error!("Chunk [{id:?}]: Failed to load layer data: {e}");
                         layer.clear();
                         info.version = MapLayerVersion::new();

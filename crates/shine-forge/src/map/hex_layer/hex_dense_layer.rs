@@ -1,5 +1,9 @@
-use crate::map::{hex_layer::HexDenseIndexer, AxialCoord, HexLayer, HexLayerConfig, MapError, MapLayer, Tile};
+use crate::map::{
+    hex_layer::HexDenseIndexer, AxialCoord, HexLayer, HexLayerConfig, MapError, MapLayer, MapLayerIO, Tile,
+    VoldemortIOToken,
+};
 use bevy::ecs::component::Component;
+use serde::{Deserialize, Serialize};
 
 /// A 2d hexagonal grid of tiles with dense memory layout.
 #[derive(Component)]
@@ -72,14 +76,6 @@ where
         self.indexer = HexDenseIndexer::new(0);
         self.data.clear();
     }
-
-    fn load(&mut self, data: &[u8]) -> Result<(), MapError> {
-        todo!()
-    }
-
-    fn save(&self) -> Vec<u8> {
-        todo!()
-    }
 }
 
 impl<T> From<HexLayerConfig<T>> for HexDenseLayer<T>
@@ -110,5 +106,75 @@ where
 
     fn get(&self, coord: AxialCoord) -> &Self::Tile {
         self.try_get(coord).expect("Out of bounds access")
+    }
+}
+
+impl<T> MapLayerIO for HexDenseLayer<T>
+where
+    T: Tile,
+{
+    fn load(&mut self, bytes: &[u8], _token: VoldemortIOToken) -> Result<(), MapError> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        #[serde(bound = "U: Tile")]
+        struct SnapshotV1<U>
+        where
+            U: Tile,
+        {
+            radius: u32,
+            data: Vec<U>,
+        }
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        #[serde(bound = "U: Tile")]
+        struct Snapshot<U>
+        where
+            U: Tile,
+        {
+            v1: Option<SnapshotV1<U>>,
+        }
+
+        let decoded: Snapshot<T> = rmp_serde::from_slice(bytes).map_err(MapError::LoadLayerError)?;
+        if let Some(decoded) = decoded.v1 {
+            self.indexer = HexDenseIndexer::new(decoded.radius);
+            self.data = decoded.data;
+            Ok(())
+        } else {
+            Err(MapError::LoadLayerError(rmp_serde::decode::Error::Syntax(
+                "Unsupported snapshot version".into(),
+            )))
+        }
+    }
+
+    fn save(&self, _token: VoldemortIOToken) -> Result<Vec<u8>, MapError> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        #[serde(bound = "U: Tile")]
+        struct SnapshotLatest<'a, U>
+        where
+            U: Tile,
+        {
+            radius: u32,
+            data: &'a [U],
+        }
+
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        #[serde(bound = "U: Tile")]
+        struct Snapshot<'a, U>
+        where
+            U: Tile,
+        {
+            v1: Option<SnapshotLatest<'a, U>>,
+        }
+
+        rmp_serde::to_vec(&Snapshot {
+            v1: Some(SnapshotLatest {
+                radius: self.indexer.radius(),
+                data: &self.data,
+            }),
+        })
+        .map_err(MapError::SaveLayerError)
     }
 }

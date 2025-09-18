@@ -24,15 +24,10 @@ use serde::{Deserialize, Serialize};
 ///                 \     2 /
 ///                  \ ___ /
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(into = "(i32, i32)", from = "(i32, i32)")]
 pub struct AxialCoord {
     pub q: i32,
     pub r: i32,
-}
-
-impl From<(i32, i32)> for AxialCoord {
-    fn from((q, r): (i32, i32)) -> Self {
-        Self { q, r }
-    }
 }
 
 impl AxialCoord {
@@ -88,6 +83,18 @@ impl AxialCoord {
         DIRECTIONS
             .into_iter()
             .map(move |(dq, dr)| AxialCoord::new(coord.q + dq, coord.r + dr))
+    }
+}
+
+impl From<(i32, i32)> for AxialCoord {
+    fn from((q, r): (i32, i32)) -> Self {
+        Self { q, r }
+    }
+}
+
+impl From<AxialCoord> for (i32, i32) {
+    fn from(coord: AxialCoord) -> Self {
+        (coord.q, coord.r)
     }
 }
 
