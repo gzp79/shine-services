@@ -22,7 +22,7 @@ pub use self::{
     map_chunk::{MapChunk, MapChunkId, MapChunkTracker, MapLayerOf, MapLayers},
     map_error::MapError,
     map_event::MapEvent,
-    map_layer::{MapLayer, MapLayerTracker},
+    map_layer::{MapLayer, MapLayerConfig, MapLayerTracker},
     map_layer_event::{MapLayerControlEvent, MapLayerSyncEvent},
     map_layer_info::MapLayerInfo,
     map_layer_io::{MapLayerIO, MapLayerIOExt, VoldemortIOToken},

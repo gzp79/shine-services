@@ -1,4 +1,4 @@
-use crate::map::Tile;
+use crate::map::{MapLayerConfig, Tile};
 use bevy::ecs::resource::Resource;
 use std::marker::PhantomData;
 
@@ -25,3 +25,5 @@ where
         }
     }
 }
+
+impl<T> MapLayerConfig for RectLayerConfig<T> where T: Tile {}

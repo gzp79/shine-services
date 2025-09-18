@@ -1,14 +1,14 @@
 use crate::map::{
     map_chunk::process_map_event,
-    map_layer::{create_layer_as_child, process_layer_sync_events, remove_layer},
+    map_layer::{
+        create_layer_as_child, process_layer_sync_events, remove_layer, LayerSpawnStrategy_Empty,
+        LayerSpawnStrategy_Initialized,
+    },
     MapChunkTracker, MapEvent, MapLayer, MapLayerControlEvent, MapLayerIO, MapLayerSyncEvent, MapLayerTracker,
 };
 use bevy::{
     app::{App, Plugin, PostUpdate, PreUpdate},
-    ecs::{
-        resource::Resource,
-        schedule::{IntoScheduleConfigs, SystemSet},
-    },
+    ecs::schedule::{IntoScheduleConfigs, SystemSet},
 };
 
 #[derive(SystemSet, Clone, Hash, Debug, PartialEq, Eq)]
@@ -45,10 +45,9 @@ impl Plugin for MapPlugin {
 
 pub trait MapAppExt {
     /// Helper to register a map layer with the given configuration.
-    fn add_map_layer<C, CFG>(&mut self, config: CFG)
+    fn add_map_layer<C>(&mut self, config: C::Config, spawn_initialized: bool)
     where
-        C: MapLayer + From<CFG>,
-        CFG: Resource + Clone;
+        C: MapLayer;
 
     /// Helper to enable sync event processing for a layer.
     fn add_map_sync_event_processing<C>(&mut self)
@@ -57,10 +56,9 @@ pub trait MapAppExt {
 }
 
 impl MapAppExt for App {
-    fn add_map_layer<C, CFG>(&mut self, config: CFG)
+    fn add_map_layer<C>(&mut self, config: C::Config, spawn_initialized: bool)
     where
-        C: MapLayer + From<CFG>,
-        CFG: Resource + Clone,
+        C: MapLayer,
     {
         if !self.is_plugin_added::<MapPlugin>() {
             self.add_plugins(MapPlugin::default());
@@ -71,10 +69,18 @@ impl MapAppExt for App {
         self.add_event::<MapLayerControlEvent<C>>();
         self.add_event::<MapLayerSyncEvent<C>>();
 
-        self.add_systems(
-            PreUpdate,
-            create_layer_as_child::<CFG, C>.in_set(MapPreUpdateSystem::CreateLayers),
-        );
+        if spawn_initialized {
+            self.add_systems(
+                PreUpdate,
+                create_layer_as_child::<C, LayerSpawnStrategy_Initialized>.in_set(MapPreUpdateSystem::CreateLayers),
+            );
+        } else {
+            self.add_systems(
+                PreUpdate,
+                create_layer_as_child::<C, LayerSpawnStrategy_Empty>.in_set(MapPreUpdateSystem::CreateLayers),
+            );
+        }
+
         self.add_systems(PostUpdate, remove_layer::<C>);
     }
 

@@ -18,14 +18,6 @@ impl<T> HexSparseLayer<T>
 where
     T: Tile,
 {
-    pub fn new(config: &HexLayerConfig<T>) -> Self {
-        Self {
-            radius: config.radius,
-            default: <T as Default>::default(),
-            data: HashMap::new(),
-        }
-    }
-
     pub fn default(&self) -> &T {
         &self.default
     }
@@ -49,8 +41,9 @@ where
     T: Tile,
 {
     type Tile = T;
+    type Config = HexLayerConfig<T>;
 
-    fn new_empty() -> Self
+    fn new() -> Self
     where
         Self: Sized,
     {
@@ -61,22 +54,19 @@ where
         }
     }
 
-    fn is_empty(&self) -> bool {
-        self.radius == 0
-    }
-
     fn clear(&mut self) {
         self.radius = 0;
         self.data.clear();
     }
-}
 
-impl<T> From<HexLayerConfig<T>> for HexSparseLayer<T>
-where
-    T: Tile,
-{
-    fn from(config: HexLayerConfig<T>) -> Self {
-        Self::new(&config)
+    fn initialize(&mut self, config: &Self::Config) {
+        self.radius = config.radius;
+        self.default = <T as Default>::default();
+        self.data.clear();
+    }
+
+    fn is_empty(&self) -> bool {
+        self.radius == 0
     }
 }
 

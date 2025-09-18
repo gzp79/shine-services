@@ -19,15 +19,6 @@ impl<T> RectSparseLayer<T>
 where
     T: Tile,
 {
-    pub fn new(config: &RectLayerConfig<T>) -> Self {
-        Self {
-            width: config.width,
-            height: config.height,
-            default: <T as Default>::default(),
-            data: HashMap::new(),
-        }
-    }
-
     pub fn default(&self) -> &T {
         &self.default
     }
@@ -51,8 +42,9 @@ where
     T: Tile,
 {
     type Tile = T;
+    type Config = RectLayerConfig<T>;
 
-    fn new_empty() -> Self
+    fn new() -> Self
     where
         Self: Sized,
     {
@@ -64,23 +56,21 @@ where
         }
     }
 
-    fn is_empty(&self) -> bool {
-        self.width == 0 && self.height == 0
-    }
-
     fn clear(&mut self) {
         self.width = 0;
         self.height = 0;
         self.data.clear();
     }
-}
 
-impl<T> From<RectLayerConfig<T>> for RectSparseLayer<T>
-where
-    T: Tile,
-{
-    fn from(config: RectLayerConfig<T>) -> Self {
-        Self::new(&config)
+    fn initialize(&mut self, config: &Self::Config) {
+        self.width = config.width;
+        self.height = config.height;
+        self.default = <T as Default>::default();
+        self.data.clear();
+    }
+
+    fn is_empty(&self) -> bool {
+        self.width == 0 && self.height == 0
     }
 }
 

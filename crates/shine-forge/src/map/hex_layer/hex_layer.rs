@@ -1,7 +1,7 @@
-use crate::map::{AxialCoord, HexLayerConfig, MapLayer};
+use crate::map::{AxialCoord, MapLayer};
 
 /// 2D hexagonal grid layer.
-pub trait HexLayer: MapLayer + From<HexLayerConfig<Self::Tile>> {
+pub trait HexLayer: MapLayer {
     fn radius(&self) -> u32;
 
     fn is_in_bounds(&self, coord: AxialCoord) -> bool {

@@ -18,17 +18,6 @@ impl<T> RectDenseLayer<T>
 where
     T: Tile,
 {
-    pub fn new(config: &RectLayerConfig<T>) -> Self {
-        let (width, height) = (config.width, config.height);
-        let indexer = RectDenseIndexer::new(width, height);
-        let total_size = indexer.get_total_size();
-
-        let mut data = Vec::with_capacity(total_size);
-        data.resize_with(total_size, <T as Default>::default);
-
-        Self { indexer, data }
-    }
-
     pub fn get_mut(&mut self, coord: RectCoord) -> &mut T {
         if self.is_in_bounds(coord) {
             let index = self.indexer.get_dense_index(&coord);
@@ -56,8 +45,9 @@ where
     T: Tile,
 {
     type Tile = T;
+    type Config = RectLayerConfig<T>;
 
-    fn new_empty() -> Self
+    fn new() -> Self
     where
         Self: Sized,
     {
@@ -67,22 +57,22 @@ where
         }
     }
 
-    fn is_empty(&self) -> bool {
-        self.indexer.width() == 0 && self.indexer.height() == 0
-    }
-
     fn clear(&mut self) {
         self.indexer = RectDenseIndexer::new(0, 0);
         self.data.clear();
     }
-}
 
-impl<T> From<RectLayerConfig<T>> for RectDenseLayer<T>
-where
-    T: Tile,
-{
-    fn from(config: RectLayerConfig<T>) -> Self {
-        Self::new(&config)
+    fn initialize(&mut self, config: &Self::Config) {
+        let (width, height) = (config.width, config.height);
+
+        self.indexer = RectDenseIndexer::new(width, height);
+        let total_size = self.indexer.get_total_size();
+
+        self.data.resize_with(total_size, <T as Default>::default);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.indexer.width() == 0 && self.indexer.height() == 0
     }
 }
 

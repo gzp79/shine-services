@@ -14,16 +14,25 @@ use bevy::ecs::{
 use shine_core::utils::simple_type_name;
 use std::{collections::HashMap, marker::PhantomData};
 
+pub trait MapLayerConfig: Resource + Clone + Send + Sync + 'static {}
+
 /// Trait to define a layer of a chunk.
 pub trait MapLayer: Component<Mutability = Mutable> + 'static {
     type Tile: Tile;
+    type Config: MapLayerConfig;
 
-    fn new_empty() -> Self
+    fn new() -> Self
     where
         Self: Sized;
 
-    fn is_empty(&self) -> bool;
+    /// Clear the layer to an empty state.
     fn clear(&mut self);
+
+    /// Initialize the layer into a default state.
+    fn initialize(&mut self, config: &Self::Config);
+
+    /// Check if the layer is empty (i.e. cleared and has not been initialized).
+    fn is_empty(&self) -> bool;
 }
 
 /// Resource to track a layer of a chunk.
@@ -67,17 +76,33 @@ where
     }
 }
 
+pub trait LayerSpawnStrategy: Send + Sync + 'static {
+    const IS_SPAWN_INITIALIZED: bool;
+}
+
+#[allow(non_camel_case_types)]
+pub struct LayerSpawnStrategy_Empty;
+impl LayerSpawnStrategy for LayerSpawnStrategy_Empty {
+    const IS_SPAWN_INITIALIZED: bool = false;
+}
+
+#[allow(non_camel_case_types)]
+pub struct LayerSpawnStrategy_Initialized;
+impl LayerSpawnStrategy for LayerSpawnStrategy_Initialized {
+    const IS_SPAWN_INITIALIZED: bool = true;
+}
+
 /// When a new chunk is created, this system creates layer components and performs some bookkeeping.
 #[allow(clippy::type_complexity)]
-pub fn create_layer_as_child<CFG, C>(
-    layer_config: Res<CFG>,
+pub fn create_layer_as_child<C, I>(
+    layer_config: Res<C::Config>,
     mut layer_tracker: ResMut<MapLayerTracker<C>>,
     new_root_query: Query<(Entity, &MapChunk), (Added<MapChunk>, Without<C>)>,
     mut commands: Commands,
     mut replay_control: EventWriter<MapLayerControlEvent<C>>,
 ) where
-    CFG: Resource + Clone,
-    C: MapLayer + From<CFG>,
+    C: MapLayer,
+    I: LayerSpawnStrategy,
 {
     for (root_entity, chunk_root) in new_root_query.iter() {
         log::debug!(
@@ -89,8 +114,11 @@ pub fn create_layer_as_child<CFG, C>(
         // spawn a new child entity with the layer component
         let layer = {
             let version = MapLayerInfo::<C>::new();
-            let chunk = C::from(layer_config.as_ref().clone());
-            (version, chunk, MapLayerOf(root_entity))
+            let mut layer = C::new();
+            if I::IS_SPAWN_INITIALIZED {
+                layer.initialize(&layer_config);
+            }
+            (version, layer, MapLayerOf(root_entity))
         };
         let layer_entity = commands.spawn(layer).id();
 
@@ -126,15 +154,26 @@ pub fn remove_layer<C>(
 
 /// Process 'MapLayerSyncEvent' events.
 pub fn process_layer_sync_events<C>(
+    layer_config: Res<C::Config>,
     layer_tracker: ResMut<MapLayerTracker<C>>,
     mut layers: Query<(&mut MapLayerInfo<C>, &mut C)>,
     mut sync_events: EventReader<MapLayerSyncEvent<C>>,
     mut control_events: EventWriter<MapLayerControlEvent<C>>,
 ) where
     C: MapLayer + MapLayerIO,
+    C::Config: Resource,
 {
     for event in sync_events.read() {
         match event {
+            MapLayerSyncEvent::Initial { id } => {
+                log::debug!("Chunk [{id:?}]: Empty layer");
+                if let Some((mut info, mut layer)) = layer_tracker.get_entity(*id).and_then(|e| layers.get_mut(e).ok())
+                {
+                    info.version = MapLayerVersion::new();
+                    info.checksum = MapLayerChecksum::new();
+                    layer.initialize(&layer_config);
+                }
+            }
             MapLayerSyncEvent::Snapshot {
                 id,
                 version: evt_version,

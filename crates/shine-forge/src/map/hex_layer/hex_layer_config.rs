@@ -1,4 +1,4 @@
-use crate::map::Tile;
+use crate::map::{MapLayerConfig, Tile};
 use bevy::ecs::resource::Resource;
 use std::marker::PhantomData;
 
@@ -20,3 +20,5 @@ where
         Self { radius, _ph: PhantomData }
     }
 }
+
+impl<T> MapLayerConfig for HexLayerConfig<T> where T: Tile {}

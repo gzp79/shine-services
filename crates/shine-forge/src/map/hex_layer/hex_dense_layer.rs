@@ -19,17 +19,6 @@ impl<T> HexDenseLayer<T>
 where
     T: Tile,
 {
-    pub fn new(config: &HexLayerConfig<T>) -> Self {
-        let radius = config.radius;
-        let indexer = HexDenseIndexer::new(radius);
-        let total_size = indexer.get_total_size();
-
-        let mut data = Vec::with_capacity(total_size);
-        data.resize_with(total_size, <T as Default>::default);
-
-        Self { indexer, data }
-    }
-
     pub fn get_mut(&mut self, coord: AxialCoord) -> &mut T {
         if self.is_in_bounds(coord) {
             let index = self.indexer.get_dense_index(&coord);
@@ -57,8 +46,9 @@ where
     T: Tile,
 {
     type Tile = T;
+    type Config = HexLayerConfig<T>;
 
-    fn new_empty() -> Self
+    fn new() -> Self
     where
         Self: Sized,
     {
@@ -68,22 +58,22 @@ where
         }
     }
 
-    fn is_empty(&self) -> bool {
-        self.indexer.radius() == 0
-    }
-
     fn clear(&mut self) {
         self.indexer = HexDenseIndexer::new(0);
         self.data.clear();
     }
-}
 
-impl<T> From<HexLayerConfig<T>> for HexDenseLayer<T>
-where
-    T: Tile,
-{
-    fn from(config: HexLayerConfig<T>) -> Self {
-        Self::new(&config)
+    fn initialize(&mut self, config: &Self::Config) {
+        let radius = config.radius;
+
+        self.indexer = HexDenseIndexer::new(radius);
+        let total_size = self.indexer.get_total_size();
+
+        self.data.resize_with(total_size, <T as Default>::default);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.indexer.radius() == 0
     }
 }
 

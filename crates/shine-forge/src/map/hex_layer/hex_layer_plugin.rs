@@ -7,6 +7,7 @@ where
     T: Tile,
 {
     config: HexLayerConfig<T>,
+    with_spawn_initialized: bool,
     with_sync: bool,
 }
 
@@ -15,7 +16,16 @@ where
     T: Tile,
 {
     pub fn new(config: HexLayerConfig<T>) -> Self {
-        Self { config, with_sync: false }
+        Self {
+            config,
+            with_spawn_initialized: false,
+            with_sync: false,
+        }
+    }
+
+    pub fn with_spawn_initialized(mut self, with_spawn_initialized: bool) -> Self {
+        self.with_spawn_initialized = with_spawn_initialized;
+        self
     }
 
     pub fn with_sync(mut self, with_sync: bool) -> Self {
@@ -29,7 +39,7 @@ where
     T: Tile,
 {
     fn build(&self, app: &mut App) {
-        app.add_map_layer::<HexDenseLayer<T>, _>(self.config.clone());
+        app.add_map_layer::<HexDenseLayer<T>>(self.config.clone(), self.with_spawn_initialized);
         if self.with_sync {
             app.add_map_sync_event_processing::<HexDenseLayer<T>>();
         }
@@ -42,6 +52,7 @@ where
     T: Tile,
 {
     config: HexLayerConfig<T>,
+    with_spawn_initialized: bool,
     with_sync: bool,
 }
 
@@ -50,7 +61,16 @@ where
     T: Tile,
 {
     pub fn new(config: HexLayerConfig<T>) -> Self {
-        Self { config, with_sync: false }
+        Self {
+            config,
+            with_spawn_initialized: false,
+            with_sync: false,
+        }
+    }
+
+    pub fn with_spawn_initialized(mut self, with_spawn_initialized: bool) -> Self {
+        self.with_spawn_initialized = with_spawn_initialized;
+        self
     }
 
     pub fn with_sync(mut self, with_sync: bool) -> Self {
@@ -64,7 +84,7 @@ where
     T: Tile,
 {
     fn build(&self, app: &mut App) {
-        app.add_map_layer::<HexSparseLayer<T>, _>(self.config.clone());
+        app.add_map_layer::<HexSparseLayer<T>>(self.config.clone(), self.with_spawn_initialized);
         if self.with_sync {
             app.add_map_sync_event_processing::<HexSparseLayer<T>>();
         }

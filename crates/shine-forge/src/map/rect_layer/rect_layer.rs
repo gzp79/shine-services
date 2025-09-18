@@ -1,7 +1,7 @@
-use crate::map::{MapLayer, RectCoord, RectLayerConfig};
+use crate::map::{MapLayer, RectCoord};
 
 /// 2D rectangular grid layer.
-pub trait RectLayer: MapLayer + From<RectLayerConfig<Self::Tile>> {
+pub trait RectLayer: MapLayer {
     fn width(&self) -> u32;
     fn height(&self) -> u32;
 

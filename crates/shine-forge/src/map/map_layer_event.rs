@@ -62,6 +62,9 @@ pub enum MapLayerSyncEvent<C>
 where
     C: MapLayer,
 {
+    /// A new layer that is not persisted yet.
+    Initial { id: MapChunkId },
+
     /// A full (authentic) snapshot of the layer.
     Snapshot {
         id: MapChunkId,
@@ -86,6 +89,9 @@ where
         write!(f, "{}::", simple_type_name::<Self>())?;
 
         match self {
+            MapLayerSyncEvent::Initial { id } => {
+                write!(f, "Initial({id:?})")?;
+            }
             MapLayerSyncEvent::Snapshot { id, version, checksum, .. } => {
                 write!(f, "Snapshot({id:?}, {version:?}, {checksum:?})")?;
             }
