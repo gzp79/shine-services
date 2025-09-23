@@ -1,7 +1,8 @@
 use crate::map::{
     map_chunk::process_map_event,
-    map_layer::{create_layer_as_child, process_layer_sync_events, remove_layer, MapLayerSystemConfig},
-    MapAuditedLayer, MapChunkTracker, MapEvent, MapLayerControlEvent, MapLayerIO, MapLayerSyncEvent, MapLayerTracker,
+    map_shard::{create_shard, process_shard_sync_events, remove_shard},
+    MapChunkTracker, MapEvent, MapLayerControlEvent, MapLayerSyncEvent, MapLayerTracker, MapShard,
+    MapShardSystemConfig,
 };
 use bevy::{
     app::{App, Plugin, PostUpdate, PreUpdate},
@@ -41,16 +42,15 @@ impl Plugin for MapPlugin {
 }
 
 pub trait MapAppExt {
-    /// Register a map layer with the given configuration.
-    fn add_map_layer<L>(&mut self, system_config: MapLayerSystemConfig<L>, layer_config: L::Config)
+    fn add_map_shard<S>(&mut self, system_config: MapShardSystemConfig<S>, layer_config: S::Config)
     where
-        L: MapAuditedLayer + MapLayerIO;
+        S: MapShard;
 }
 
 impl MapAppExt for App {
-    fn add_map_layer<L>(&mut self, system_config: MapLayerSystemConfig<L>, layer_config: L::Config)
+    fn add_map_shard<S>(&mut self, system_config: MapShardSystemConfig<S>, layer_config: S::Config)
     where
-        L: MapAuditedLayer + MapLayerIO,
+        S: MapShard,
     {
         if !self.is_plugin_added::<MapPlugin>() {
             self.add_plugins(MapPlugin::default());
@@ -58,21 +58,18 @@ impl MapAppExt for App {
 
         self.insert_resource(layer_config);
         self.insert_resource(system_config.clone());
-        self.insert_resource(MapLayerTracker::<L>::default());
-        self.add_event::<MapLayerControlEvent<L>>();
-        self.add_event::<MapLayerSyncEvent<L>>();
+        self.insert_resource(MapLayerTracker::<S::Primary>::default());
+        self.add_event::<MapLayerControlEvent<S::Primary>>();
+        self.add_event::<MapLayerSyncEvent<S::Primary>>();
 
-        self.add_systems(
-            PreUpdate,
-            create_layer_as_child::<L>.in_set(MapPreUpdateSystem::CreateLayers),
-        );
+        self.add_systems(PreUpdate, create_shard::<S>.in_set(MapPreUpdateSystem::CreateLayers));
         if system_config.process_sync_events {
             self.add_systems(
                 PreUpdate,
-                process_layer_sync_events::<L>.in_set(MapPreUpdateSystem::ProcessSyncEvents),
+                process_shard_sync_events::<S>.in_set(MapPreUpdateSystem::ProcessSyncEvents),
             );
         }
 
-        self.add_systems(PostUpdate, remove_layer::<L>);
+        self.add_systems(PostUpdate, remove_shard::<S>);
     }
 }

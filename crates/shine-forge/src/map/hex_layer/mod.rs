@@ -15,3 +15,6 @@ mod hex_sparse_layer;
 pub use self::hex_sparse_layer::*;
 mod hex_bitset_layer;
 pub use self::hex_bitset_layer::*;
+
+mod hex_shard;
+pub use self::hex_shard::*;

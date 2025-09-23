@@ -15,3 +15,6 @@ mod rect_sparse_layer;
 pub use self::rect_sparse_layer::*;
 mod rect_bitset_layer;
 pub use self::rect_bitset_layer::*;
+
+mod rect_shard;
+pub use self::rect_shard::*;
