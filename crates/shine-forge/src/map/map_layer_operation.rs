@@ -1,4 +1,4 @@
-use crate::map::MapLayer;
+use crate::map::MapAuditedLayer;
 use smallbox::{smallbox, SmallBox};
 use std::fmt;
 
@@ -36,31 +36,31 @@ impl MapLayerChecksum {
     }
 }
 
-pub trait MapLayerOperation<C>: fmt::Debug + Send + Sync + 'static
+pub trait MapLayerOperation<L>: fmt::Debug + Send + Sync + 'static
 where
-    C: MapLayer,
+    L: MapAuditedLayer,
 {
     fn name(&self) -> &str;
-    fn apply(&self, chunk: &mut C) -> MapLayerChecksum;
+    fn apply(&self, chunk: &mut L, audit: Option<&mut L::Audit>) -> MapLayerChecksum;
 }
 
 #[allow(type_alias_bounds)]
-pub type BoxedMapLayerOperation<C: MapLayer> = SmallBox<dyn MapLayerOperation<C>, smallbox::space::S32>;
+pub type BoxedMapLayerOperation<L: MapAuditedLayer> = SmallBox<dyn MapLayerOperation<L>, smallbox::space::S32>;
 
-pub trait MapChunkOperationExt<C>: MapLayerOperation<C>
+pub trait MapChunkOperationExt<L>: MapLayerOperation<L>
 where
-    C: MapLayer,
+    L: MapAuditedLayer,
 {
-    fn boxed(self) -> BoxedMapLayerOperation<C>
+    fn boxed(self) -> BoxedMapLayerOperation<L>
     where
         Self: Sized + 'static,
     {
         smallbox!(self)
     }
 }
-impl<T, C> MapChunkOperationExt<C> for T
+impl<T, L> MapChunkOperationExt<L> for T
 where
-    T: MapLayerOperation<C>,
-    C: MapLayer,
+    T: MapLayerOperation<L>,
+    L: MapAuditedLayer,
 {
 }

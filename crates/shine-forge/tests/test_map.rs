@@ -6,8 +6,8 @@ use bevy::{
 };
 use serde::{Deserialize, Serialize};
 use shine_forge::map::{
-    HexDenseLayer, HexDenseLayerPlugin, HexLayer, HexLayerConfig, MapChunk, MapChunkId, MapChunkTracker, MapEvent,
-    MapLayerControlEvent, MapLayerTracker, Tile,
+    HexDenseLayer, HexLayer, HexLayerConfig, MapAppExt, MapChunk, MapChunkId, MapChunkTracker, MapEvent,
+    MapLayerControlEvent, MapLayerSystemConfig, MapLayerTracker, Tile,
 };
 use shine_test::test;
 
@@ -33,7 +33,7 @@ async fn test_chunk_root_load_unload() {
     // Without layers only the chunk root entity is spawned and despawned.
 
     app.add_plugins(DefaultPlugins.build().disable::<LogPlugin>())
-        .add_plugins(HexDenseLayerPlugin::<TestTile>::new(HexLayerConfig::new(16)));
+        .add_map_layer::<TestLayer>(MapLayerSystemConfig::server(), HexLayerConfig::new(16));
 
     app.update();
 

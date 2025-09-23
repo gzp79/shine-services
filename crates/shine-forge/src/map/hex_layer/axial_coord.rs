@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Axial coordinates for hexagonal grid.
 ///
+/// ```text
 ///                    ___
 ///                  /  0  \
 ///             ___ /       \ ___
@@ -23,6 +24,7 @@ use serde::{Deserialize, Serialize};
 ///           \ ___ /       \ ___ /
 ///                 \     2 /
 ///                  \ ___ /
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(into = "(i32, i32)", from = "(i32, i32)")]
 pub struct AxialCoord {

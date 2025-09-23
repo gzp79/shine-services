@@ -1,5 +1,6 @@
 use crate::map::{
-    hex_layer::HexDenseIndexer, AxialCoord, HexLayer, HexLayerConfig, MapError, MapLayer, MapLayerIO, Tile,
+    hex_layer::{HexDenseIndexer, HexTileLayer},
+    AxialCoord, HexBitsetLayer, HexLayer, HexLayerConfig, MapAuditedLayer, MapError, MapLayer, MapLayerIO, Tile,
     VoldemortIOToken,
 };
 use bevy::ecs::component::Component;
@@ -45,7 +46,6 @@ impl<T> MapLayer for HexDenseLayer<T>
 where
     T: Tile,
 {
-    type Tile = T;
     type Config = HexLayerConfig<T>;
 
     fn new() -> Self
@@ -84,6 +84,13 @@ where
     fn radius(&self) -> u32 {
         self.indexer.radius()
     }
+}
+
+impl<T> HexTileLayer for HexDenseLayer<T>
+where
+    T: Tile,
+{
+    type Tile = T;
 
     fn try_get(&self, coord: AxialCoord) -> Option<&Self::Tile> {
         if self.is_in_bounds(coord) {
@@ -93,17 +100,26 @@ where
             None
         }
     }
+}
 
-    fn get(&self, coord: AxialCoord) -> &Self::Tile {
-        self.try_get(coord).expect("Out of bounds access")
-    }
+impl<T> MapAuditedLayer for HexDenseLayer<T>
+where
+    T: Tile,
+{
+    type Audit = HexBitsetLayer<T>;
 }
 
 impl<T> MapLayerIO for HexDenseLayer<T>
 where
     T: Tile,
 {
-    fn load(&mut self, bytes: &[u8], _token: VoldemortIOToken) -> Result<(), MapError> {
+    fn load(
+        &mut self,
+        _token: VoldemortIOToken,
+        config: &Self::Config,
+        bytes: &[u8],
+        audit: Option<&mut Self::Audit>,
+    ) -> Result<(), MapError> {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         #[serde(bound = "U: Tile")]
@@ -125,19 +141,29 @@ where
             v1: Option<SnapshotV1<U>>,
         }
 
-        let decoded: Snapshot<T> = rmp_serde::from_slice(bytes).map_err(MapError::LoadLayerError)?;
+        let decoded: Snapshot<T> = rmp_serde::from_slice(bytes).map_err(MapError::LoadLayerDataError)?;
         if let Some(decoded) = decoded.v1 {
+            if decoded.radius != config.radius {
+                return Err(MapError::LoadLayerSemanticError(format!(
+                    "Layer dimensions do not match config: expected {}, got {}",
+                    config.radius, decoded.radius
+                )));
+            }
+
             self.indexer = HexDenseIndexer::new(decoded.radius);
             self.data = decoded.data;
+
+            if let Some(audit) = audit {
+                audit.initialize(config);
+                audit.set_all();
+            }
             Ok(())
         } else {
-            Err(MapError::LoadLayerError(rmp_serde::decode::Error::Syntax(
-                "Unsupported snapshot version".into(),
-            )))
+            Err(MapError::LoadLayerSemanticError("Unsupported snapshot version".into()))
         }
     }
 
-    fn save(&self, _token: VoldemortIOToken) -> Result<Vec<u8>, MapError> {
+    fn save(&self, _token: VoldemortIOToken, _config: &Self::Config) -> Result<Vec<u8>, MapError> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         #[serde(bound = "U: Tile")]

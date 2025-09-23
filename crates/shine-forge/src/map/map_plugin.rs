@@ -1,10 +1,7 @@
 use crate::map::{
     map_chunk::process_map_event,
-    map_layer::{
-        create_layer_as_child, process_layer_sync_events, remove_layer, LayerSpawnStrategy_Empty,
-        LayerSpawnStrategy_Initialized,
-    },
-    MapChunkTracker, MapEvent, MapLayer, MapLayerControlEvent, MapLayerIO, MapLayerSyncEvent, MapLayerTracker,
+    map_layer::{create_layer_as_child, process_layer_sync_events, remove_layer, MapLayerSystemConfig},
+    MapAuditedLayer, MapChunkTracker, MapEvent, MapLayerControlEvent, MapLayerIO, MapLayerSyncEvent, MapLayerTracker,
 };
 use bevy::{
     app::{App, Plugin, PostUpdate, PreUpdate},
@@ -44,54 +41,38 @@ impl Plugin for MapPlugin {
 }
 
 pub trait MapAppExt {
-    /// Helper to register a map layer with the given configuration.
-    fn add_map_layer<C>(&mut self, config: C::Config, spawn_initialized: bool)
+    /// Register a map layer with the given configuration.
+    fn add_map_layer<L>(&mut self, system_config: MapLayerSystemConfig<L>, layer_config: L::Config)
     where
-        C: MapLayer;
-
-    /// Helper to enable sync event processing for a layer.
-    fn add_map_sync_event_processing<C>(&mut self)
-    where
-        C: MapLayer + MapLayerIO;
+        L: MapAuditedLayer + MapLayerIO;
 }
 
 impl MapAppExt for App {
-    fn add_map_layer<C>(&mut self, config: C::Config, spawn_initialized: bool)
+    fn add_map_layer<L>(&mut self, system_config: MapLayerSystemConfig<L>, layer_config: L::Config)
     where
-        C: MapLayer,
+        L: MapAuditedLayer + MapLayerIO,
     {
         if !self.is_plugin_added::<MapPlugin>() {
             self.add_plugins(MapPlugin::default());
         }
 
-        self.insert_resource(config);
-        self.insert_resource(MapLayerTracker::<C>::default());
-        self.add_event::<MapLayerControlEvent<C>>();
-        self.add_event::<MapLayerSyncEvent<C>>();
+        self.insert_resource(layer_config);
+        self.insert_resource(system_config.clone());
+        self.insert_resource(MapLayerTracker::<L>::default());
+        self.add_event::<MapLayerControlEvent<L>>();
+        self.add_event::<MapLayerSyncEvent<L>>();
 
-        if spawn_initialized {
+        self.add_systems(
+            PreUpdate,
+            create_layer_as_child::<L>.in_set(MapPreUpdateSystem::CreateLayers),
+        );
+        if system_config.process_sync_events {
             self.add_systems(
                 PreUpdate,
-                create_layer_as_child::<C, LayerSpawnStrategy_Initialized>.in_set(MapPreUpdateSystem::CreateLayers),
-            );
-        } else {
-            self.add_systems(
-                PreUpdate,
-                create_layer_as_child::<C, LayerSpawnStrategy_Empty>.in_set(MapPreUpdateSystem::CreateLayers),
+                process_layer_sync_events::<L>.in_set(MapPreUpdateSystem::ProcessSyncEvents),
             );
         }
 
-        self.add_systems(PostUpdate, remove_layer::<C>);
-    }
-
-    /// Helper to enable sync event processing for a layer.
-    fn add_map_sync_event_processing<C>(&mut self)
-    where
-        C: MapLayer + MapLayerIO,
-    {
-        self.add_systems(
-            PreUpdate,
-            process_layer_sync_events::<C>.in_set(MapPreUpdateSystem::ProcessSyncEvents),
-        );
+        self.add_systems(PostUpdate, remove_layer::<L>);
     }
 }

@@ -7238,6 +7238,7 @@ name = "shine-forge"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "fixedbitset",
  "itertools 0.14.0",
  "log",
  "lz4_flex",

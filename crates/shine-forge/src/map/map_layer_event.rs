@@ -1,4 +1,4 @@
-use crate::map::{BoxedMapLayerOperation, MapChunkId, MapLayer, MapLayerChecksum, MapLayerVersion};
+use crate::map::{BoxedMapLayerOperation, MapAuditedLayer, MapChunkId, MapLayer, MapLayerChecksum, MapLayerVersion};
 use bevy::ecs::event::Event;
 use core::fmt;
 use shine_core::utils::simple_type_name;
@@ -6,12 +6,12 @@ use std::marker::PhantomData;
 
 /// Control commands to bind external logic to layer lifecycle.
 #[derive(Event)]
-pub enum MapLayerControlEvent<C>
+pub enum MapLayerControlEvent<L>
 where
-    C: MapLayer,
+    L: MapLayer,
 {
     /// Request to track the given layer
-    Track(MapChunkId, PhantomData<C>),
+    Track(MapChunkId, PhantomData<L>),
 
     /// Request to untrack the given layer
     Untrack(MapChunkId),
@@ -25,9 +25,9 @@ where
     },
 }
 
-impl<C> fmt::Debug for MapLayerControlEvent<C>
+impl<L> fmt::Debug for MapLayerControlEvent<L>
 where
-    C: MapLayer,
+    L: MapLayer,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}::", simple_type_name::<Self>())?;
@@ -58,9 +58,9 @@ where
 /// Sync commands targeting the layer.
 #[derive(Event)]
 #[allow(clippy::large_enum_variant)]
-pub enum MapLayerSyncEvent<C>
+pub enum MapLayerSyncEvent<L>
 where
-    C: MapLayer,
+    L: MapAuditedLayer,
 {
     /// A new layer that is not persisted yet.
     Initial { id: MapChunkId },
@@ -77,13 +77,13 @@ where
     Update {
         id: MapChunkId,
         version: MapLayerVersion,
-        operation: BoxedMapLayerOperation<C>,
+        operation: BoxedMapLayerOperation<L>,
     },
 }
 
-impl<C> fmt::Debug for MapLayerSyncEvent<C>
+impl<L> fmt::Debug for MapLayerSyncEvent<L>
 where
-    C: MapLayer,
+    L: MapAuditedLayer,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}::", simple_type_name::<Self>())?;

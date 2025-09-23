@@ -32,4 +32,12 @@ impl RectDenseIndexer {
         debug_assert!(idx < self.get_total_size());
         idx
     }
+
+    /// Return the RectCoord for a given dense store index
+    pub fn get_coord(&self, index: usize) -> RectCoord {
+        debug_assert!(index < self.get_total_size());
+        let x = (index as u32 % self.width) as i32;
+        let y = (index as u32 / self.width) as i32;
+        RectCoord { x, y }
+    }
 }

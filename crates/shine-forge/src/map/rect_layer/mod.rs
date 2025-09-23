@@ -13,6 +13,5 @@ mod rect_dense_layer;
 pub use self::rect_dense_layer::*;
 mod rect_sparse_layer;
 pub use self::rect_sparse_layer::*;
-
-pub mod rect_layer_plugin;
-pub use self::rect_layer_plugin::*;
+mod rect_bitset_layer;
+pub use self::rect_bitset_layer::*;

@@ -52,6 +52,24 @@ impl HexDenseIndexer {
         debug_assert!(idx < self.get_total_size());
         idx
     }
+
+    /// Return the AxialCoord for a given dense store index
+    pub fn get_coord(&self, index: usize) -> AxialCoord {
+        debug_assert!(index < self.get_total_size());
+
+        // Find the row such that row_starts[row] <= index < row_starts[row+1]
+        let row = match self.row_starts.binary_search(&index) {
+            Ok(pos) => pos,
+            Err(pos) => pos - 1,
+        };
+
+        let row_start = self.row_starts[row];
+        let col = index - row_start;
+        let r = self.radius as i32;
+        let a = row as i32;
+        let b = col as i32 + (r - a).max(0);
+        AxialCoord { r: a - r, q: b - r }
+    }
 }
 
 #[cfg(test)]
@@ -76,6 +94,13 @@ mod tests {
 
         // Check if indices are continuous from 0 to len-1
         assert_equal(indices.iter().cloned(), 0..total_size);
+
+        // Check if conversion back to coordinates works correctly
+        for coord in coords.iter() {
+            let index = indexer.get_dense_index(coord);
+            let coord_back = indexer.get_coord(index);
+            assert_eq!(*coord, coord_back);
+        }
     }
 
     #[test]

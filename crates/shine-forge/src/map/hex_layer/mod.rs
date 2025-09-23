@@ -13,6 +13,5 @@ mod hex_dense_layer;
 pub use self::hex_dense_layer::*;
 mod hex_sparse_layer;
 pub use self::hex_sparse_layer::*;
-
-mod hex_layer_plugin;
-pub use self::hex_layer_plugin::*;
+mod hex_bitset_layer;
+pub use self::hex_bitset_layer::*;

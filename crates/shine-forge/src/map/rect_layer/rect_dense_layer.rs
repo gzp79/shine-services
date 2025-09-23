@@ -1,5 +1,6 @@
 use crate::map::{
-    MapError, MapLayer, MapLayerIO, RectCoord, RectDenseIndexer, RectLayer, RectLayerConfig, Tile, VoldemortIOToken,
+    rect_layer::RectTileLayer, MapAuditedLayer, MapError, MapLayer, MapLayerIO, RectBitsetLayer, RectCoord,
+    RectDenseIndexer, RectLayer, RectLayerConfig, Tile, VoldemortIOToken,
 };
 use bevy::ecs::component::Component;
 use serde::{Deserialize, Serialize};
@@ -44,7 +45,6 @@ impl<T> MapLayer for RectDenseLayer<T>
 where
     T: Tile,
 {
-    type Tile = T;
     type Config = RectLayerConfig<T>;
 
     fn new() -> Self
@@ -87,6 +87,13 @@ where
     fn height(&self) -> u32 {
         self.indexer.height()
     }
+}
+
+impl<T> RectTileLayer for RectDenseLayer<T>
+where
+    T: Tile,
+{
+    type Tile = T;
 
     fn try_get(&self, coord: RectCoord) -> Option<&Self::Tile> {
         if self.is_in_bounds(coord) {
@@ -96,17 +103,26 @@ where
             None
         }
     }
+}
 
-    fn get(&self, coord: RectCoord) -> &Self::Tile {
-        self.try_get(coord).expect("Out of bounds access")
-    }
+impl<T> MapAuditedLayer for RectDenseLayer<T>
+where
+    T: Tile,
+{
+    type Audit = RectBitsetLayer<T>;
 }
 
 impl<T> MapLayerIO for RectDenseLayer<T>
 where
     T: Tile,
 {
-    fn load(&mut self, bytes: &[u8], _token: VoldemortIOToken) -> Result<(), MapError> {
+    fn load(
+        &mut self,
+        _token: VoldemortIOToken,
+        config: &Self::Config,
+        bytes: &[u8],
+        audit: Option<&mut Self::Audit>,
+    ) -> Result<(), MapError> {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         #[serde(bound = "U: Tile")]
@@ -129,19 +145,29 @@ where
             v1: Option<SnapshotV1<U>>,
         }
 
-        let decoded: Snapshot<T> = rmp_serde::from_slice(bytes).map_err(MapError::LoadLayerError)?;
+        let decoded: Snapshot<T> = rmp_serde::from_slice(bytes).map_err(MapError::LoadLayerDataError)?;
         if let Some(decoded) = decoded.v1 {
+            if decoded.width != config.width || decoded.height != config.height {
+                return Err(MapError::LoadLayerSemanticError(format!(
+                    "Layer dimensions do not match config: expected ({}, {}), got ({}, {})",
+                    config.width, config.height, decoded.width, decoded.height
+                )));
+            }
+
             self.indexer = RectDenseIndexer::new(decoded.width, decoded.height);
             self.data = decoded.data;
+
+            if let Some(audit) = audit {
+                audit.initialize(config);
+                audit.set_all();
+            }
             Ok(())
         } else {
-            Err(MapError::LoadLayerError(rmp_serde::decode::Error::Syntax(
-                "Unsupported snapshot version".into(),
-            )))
+            Err(MapError::LoadLayerSemanticError("Unsupported snapshot version".into()))
         }
     }
 
-    fn save(&self, _token: VoldemortIOToken) -> Result<Vec<u8>, MapError> {
+    fn save(&self, _token: VoldemortIOToken, _config: &Self::Config) -> Result<Vec<u8>, MapError> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         #[serde(bound = "U: Tile")]

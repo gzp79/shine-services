@@ -4,27 +4,27 @@ use std::marker::PhantomData;
 
 /// Some meta information of a layer for change tracking.
 #[derive(Component)]
-pub struct MapLayerInfo<C>
+pub struct MapLayerInfo<L>
 where
-    C: MapLayer,
+    L: MapLayer,
 {
     pub version: MapLayerVersion,
     pub checksum: MapLayerChecksum,
-    ph: PhantomData<C>,
+    ph: PhantomData<L>,
 }
 
-impl<C> Default for MapLayerInfo<C>
+impl<L> Default for MapLayerInfo<L>
 where
-    C: MapLayer,
+    L: MapLayer,
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<C> MapLayerInfo<C>
+impl<L> MapLayerInfo<L>
 where
-    C: MapLayer,
+    L: MapLayer,
 {
     pub fn new() -> Self {
         Self {
