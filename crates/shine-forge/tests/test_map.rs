@@ -6,7 +6,7 @@ use bevy::{
 };
 use serde::{Deserialize, Serialize};
 use shine_forge::map::{
-    HexLayer, HexShard, MapChunk, MapChunkId, MapChunkTracker, MapEvent, MapLayer, MapLayerControlEvent,
+    HexLayer, HexShard, MapChunk, MapChunkId, MapChunkTracker, MapEvent, MapLayer, MapLayerActionEvent,
     MapLayerTracker, MapShard, Tile,
 };
 use shine_test::test;
@@ -70,12 +70,10 @@ async fn test_server_shard_lifecycle() {
             assert!(chunk_entity_ref.get_components::<&TestOverlayLayer>().is_none());
 
             log::debug!("Check control events");
-            let mut events = app
-                .world_mut()
-                .resource_mut::<Events<MapLayerControlEvent<TestLayer>>>();
+            let mut events = app.world_mut().resource_mut::<Events<MapLayerActionEvent<TestLayer>>>();
             let mut event_reader = events.get_cursor();
             match event_reader.read(&*events).next() {
-                Some(MapLayerControlEvent::Track(id, _)) => {
+                Some(MapLayerActionEvent::Track(id)) => {
                     assert_eq!(id, &chunk_id);
                 }
                 other => panic!("Unexpected event, got: {other:?}"),
@@ -106,12 +104,10 @@ async fn test_server_shard_lifecycle() {
             assert!(app.world().get_entity(chunk_entity).is_err());
 
             log::debug!("Check control events");
-            let mut events = app
-                .world_mut()
-                .resource_mut::<Events<MapLayerControlEvent<TestLayer>>>();
+            let mut events = app.world_mut().resource_mut::<Events<MapLayerActionEvent<TestLayer>>>();
             let mut event_reader = events.get_cursor();
             match event_reader.read(&*events).next() {
-                Some(MapLayerControlEvent::Untrack(id)) => {
+                Some(MapLayerActionEvent::Untrack(id)) => {
                     assert_eq!(id, &chunk_id);
                 }
                 other => panic!("Unexpected event, got: {other:?}"),
@@ -165,12 +161,10 @@ async fn test_client_shard_lifecycle() {
             assert!(chunk_entity_ref.components::<&TestOverlayLayer>().is_empty());
 
             log::debug!("Check control events");
-            let mut events = app
-                .world_mut()
-                .resource_mut::<Events<MapLayerControlEvent<TestLayer>>>();
+            let mut events = app.world_mut().resource_mut::<Events<MapLayerActionEvent<TestLayer>>>();
             let mut event_reader = events.get_cursor();
             match event_reader.read(&*events).next() {
-                Some(MapLayerControlEvent::Track(id, _)) => {
+                Some(MapLayerActionEvent::Track(id)) => {
                     assert_eq!(id, &chunk_id);
                 }
                 other => panic!("Unexpected event, got: {other:?}"),
@@ -201,12 +195,10 @@ async fn test_client_shard_lifecycle() {
             assert!(app.world().get_entity(chunk_entity).is_err());
 
             log::debug!("Check control events");
-            let mut events = app
-                .world_mut()
-                .resource_mut::<Events<MapLayerControlEvent<TestLayer>>>();
+            let mut events = app.world_mut().resource_mut::<Events<MapLayerActionEvent<TestLayer>>>();
             let mut event_reader = events.get_cursor();
             match event_reader.read(&*events).next() {
-                Some(MapLayerControlEvent::Untrack(id)) => {
+                Some(MapLayerActionEvent::Untrack(id)) => {
                     assert_eq!(id, &chunk_id);
                 }
                 other => panic!("Unexpected event, got: {other:?}"),

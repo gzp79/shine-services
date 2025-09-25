@@ -4,6 +4,7 @@ use shine_game::app::init_application;
 mod avatar;
 mod camera;
 mod hud;
+mod map;
 mod world;
 
 pub const HUD_LAYER: RenderLayers = RenderLayers::layer(31);
@@ -16,10 +17,11 @@ fn setup_game(app: &mut App) {
     app.add_plugins(EguiPlugin::default())
         .add_plugins(WorldInspectorPlugin::new());
 
-    app.add_plugins(hud::HUDPlugin);
-    app.add_plugins(world::WorldPlugin);
-    app.add_plugins(avatar::AvatarPlugin);
-    app.add_plugins(camera::CameraPlugin);
+    app.add_plugins(hud::HUDPlugin)
+        .add_plugins(world::WorldPlugin)
+        .add_plugins(map::MapPlugin)
+        .add_plugins(avatar::AvatarPlugin)
+        .add_plugins(camera::CameraPlugin);
 }
 
 #[cfg(not(target_arch = "wasm32"))]

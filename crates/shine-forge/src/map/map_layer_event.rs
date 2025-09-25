@@ -1,20 +1,27 @@
-use crate::map::{BoxedMapLayerOperation, MapAuditedLayer, MapChunkId, MapLayer, MapLayerChecksum, MapLayerVersion};
+use crate::map::{BoxedMapLayerOperation, MapAuditedLayer, MapChunkId, MapLayerChecksum, MapLayerVersion};
 use bevy::ecs::event::Event;
-use core::fmt;
 use shine_core::utils::simple_type_name;
-use std::marker::PhantomData;
+use std::fmt;
 
-/// Control commands to bind external logic to layer lifecycle.
+/// Event to request some action on the map servers.
+/// These events are usually sent to the servers.
 #[derive(Event)]
-pub enum MapLayerControlEvent<L>
+#[allow(clippy::large_enum_variant)]
+pub enum MapLayerActionEvent<L>
 where
-    L: MapLayer,
+    L: MapAuditedLayer,
 {
     /// Request to track the given layer
-    Track(MapChunkId, PhantomData<L>),
+    Track(MapChunkId),
 
     /// Request to untrack the given layer
     Untrack(MapChunkId),
+
+    /// Request an operation on the layer.
+    Update {
+        id: MapChunkId,
+        operation: BoxedMapLayerOperation<L>,
+    },
 
     /// Request to store or validate a snapshot.
     Snapshot {
@@ -25,21 +32,51 @@ where
     },
 }
 
-impl<L> fmt::Debug for MapLayerControlEvent<L>
+impl<L> Clone for MapLayerActionEvent<L>
 where
-    L: MapLayer,
+    L: MapAuditedLayer,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Self::Track(chunk_id) => Self::Track(*chunk_id),
+            Self::Untrack(chunk_id) => Self::Untrack(*chunk_id),
+            Self::Update { id, operation } => Self::Update {
+                id: *id,
+                operation: operation.boxed_clone(),
+            },
+            Self::Snapshot {
+                id,
+                version,
+                checksum,
+                snapshot,
+            } => Self::Snapshot {
+                id: *id,
+                version: *version,
+                checksum: *checksum,
+                snapshot: snapshot.clone(),
+            },
+        }
+    }
+}
+
+impl<L> fmt::Debug for MapLayerActionEvent<L>
+where
+    L: MapAuditedLayer,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}::", simple_type_name::<Self>())?;
 
         match self {
-            MapLayerControlEvent::Track(chunk_id, _) => {
+            MapLayerActionEvent::Track(chunk_id) => {
                 write!(f, "Track({chunk_id:?})")
             }
-            MapLayerControlEvent::Untrack(chunk_id) => {
+            MapLayerActionEvent::Untrack(chunk_id) => {
                 write!(f, "Untrack({chunk_id:?})")
             }
-            MapLayerControlEvent::Snapshot {
+            MapLayerActionEvent::Update { id, operation } => {
+                write!(f, "Update({id:?}, op={})", operation.name())
+            }
+            MapLayerActionEvent::Snapshot {
                 id,
                 version,
                 checksum,
@@ -55,10 +92,11 @@ where
     }
 }
 
-/// Sync commands targeting the layer.
+/// Notification events that some state has changed on the map.
+/// These events are usually sent to the clients.
 #[derive(Event)]
 #[allow(clippy::large_enum_variant)]
-pub enum MapLayerSyncEvent<L>
+pub enum MapLayerNotificationEvent<L>
 where
     L: MapAuditedLayer,
 {
@@ -81,7 +119,34 @@ where
     },
 }
 
-impl<L> fmt::Debug for MapLayerSyncEvent<L>
+impl<L> Clone for MapLayerNotificationEvent<L>
+where
+    L: MapAuditedLayer,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Self::Initial { id } => Self::Initial { id: *id },
+            Self::Snapshot {
+                id,
+                version,
+                checksum,
+                snapshot,
+            } => Self::Snapshot {
+                id: *id,
+                version: *version,
+                checksum: *checksum,
+                snapshot: snapshot.clone(),
+            },
+            Self::Update { id, version, operation } => Self::Update {
+                id: *id,
+                version: *version,
+                operation: operation.boxed_clone(),
+            },
+        }
+    }
+}
+
+impl<L> fmt::Debug for MapLayerNotificationEvent<L>
 where
     L: MapAuditedLayer,
 {
@@ -89,13 +154,13 @@ where
         write!(f, "{}::", simple_type_name::<Self>())?;
 
         match self {
-            MapLayerSyncEvent::Initial { id } => {
+            MapLayerNotificationEvent::Initial { id } => {
                 write!(f, "Initial({id:?})")?;
             }
-            MapLayerSyncEvent::Snapshot { id, version, checksum, .. } => {
+            MapLayerNotificationEvent::Snapshot { id, version, checksum, .. } => {
                 write!(f, "Snapshot({id:?}, {version:?}, {checksum:?})")?;
             }
-            MapLayerSyncEvent::Update { id, version, operation } => {
+            MapLayerNotificationEvent::Update { id, version, operation } => {
                 write!(f, "Update({id:?}, {version:?}, op={})", operation.name())?;
             }
         }

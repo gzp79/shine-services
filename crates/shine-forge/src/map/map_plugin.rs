@@ -1,7 +1,8 @@
 use crate::map::{
+    client::{forward_action_events_to_channel, receive_notification_events_from_channel},
     map_chunk::process_map_event,
-    map_shard::{create_shard, process_shard_sync_events, remove_shard},
-    MapChunkTracker, MapEvent, MapLayerControlEvent, MapLayerSyncEvent, MapLayerTracker, MapShard,
+    map_shard::{create_shard, process_shard_notification_events, remove_shard},
+    MapChunkTracker, MapEvent, MapLayerActionEvent, MapLayerNotificationEvent, MapLayerTracker, MapShard,
     MapShardSystemConfig,
 };
 use bevy::{
@@ -13,7 +14,9 @@ use bevy::{
 pub enum MapPreUpdateSystem {
     ProcessMapEvents,
     CreateLayers,
-    ProcessSyncEvents,
+    InjectNotifications,
+    ProcessNotifications,
+    ExtractActions,
 }
 
 #[derive(Default)]
@@ -29,7 +32,9 @@ impl Plugin for MapPlugin {
             (
                 MapPreUpdateSystem::ProcessMapEvents,
                 MapPreUpdateSystem::CreateLayers,
-                MapPreUpdateSystem::ProcessSyncEvents,
+                MapPreUpdateSystem::InjectNotifications,
+                MapPreUpdateSystem::ProcessNotifications,
+                MapPreUpdateSystem::ExtractActions,
             )
                 .chain(),
         );
@@ -59,17 +64,28 @@ impl MapAppExt for App {
         self.insert_resource(layer_config);
         self.insert_resource(system_config.clone());
         self.insert_resource(MapLayerTracker::<S::Primary>::default());
-        self.add_event::<MapLayerControlEvent<S::Primary>>();
-        self.add_event::<MapLayerSyncEvent<S::Primary>>();
+        self.add_event::<MapLayerActionEvent<S::Primary>>();
+        self.add_event::<MapLayerNotificationEvent<S::Primary>>();
 
-        self.add_systems(PreUpdate, create_shard::<S>.in_set(MapPreUpdateSystem::CreateLayers));
-        if system_config.process_sync_events {
+        self.add_systems(
+            PreUpdate,
+            (
+                create_shard::<S>.in_set(MapPreUpdateSystem::CreateLayers),
+                process_shard_notification_events::<S>.in_set(MapPreUpdateSystem::ProcessNotifications),
+            ),
+        );
+        self.add_systems(PostUpdate, remove_shard::<S>);
+
+        if let Some(channels) = system_config.client_channels {
+            self.insert_resource(channels);
+
             self.add_systems(
                 PreUpdate,
-                process_shard_sync_events::<S>.in_set(MapPreUpdateSystem::ProcessSyncEvents),
+                (
+                    forward_action_events_to_channel::<S::Primary>.in_set(MapPreUpdateSystem::InjectNotifications),
+                    receive_notification_events_from_channel::<S::Primary>.in_set(MapPreUpdateSystem::ExtractActions),
+                ),
             );
         }
-
-        self.add_systems(PostUpdate, remove_shard::<S>);
     }
 }

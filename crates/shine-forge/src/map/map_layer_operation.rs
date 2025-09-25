@@ -42,6 +42,8 @@ where
 {
     fn name(&self) -> &str;
     fn apply(&self, chunk: &mut L, audit: Option<&mut L::Audit>) -> MapLayerChecksum;
+
+    fn boxed_clone(&self) -> BoxedMapLayerOperation<L>;
 }
 
 #[allow(type_alias_bounds)]

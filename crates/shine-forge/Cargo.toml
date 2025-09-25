@@ -15,7 +15,7 @@ fixedbitset = { workspace = true }
 rmp-serde = { workspace = true }
 lz4_flex = { workspace = true }
 
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt"] }
 bevy = { workspace = true, features = [
     "std",
     "async_executor",

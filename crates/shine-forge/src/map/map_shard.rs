@@ -1,6 +1,7 @@
 use crate::map::{
-    MapAuditedLayer, MapChunk, MapLayer, MapLayerChecksum, MapLayerConfig, MapLayerControlEvent, MapLayerIO,
-    MapLayerIOExt, MapLayerInfo, MapLayerOf, MapLayerSyncEvent, MapLayerTracker, MapLayerVersion, Tile,
+    MapAuditedLayer, MapChunk, MapLayer, MapLayerActionEvent, MapLayerChecksum, MapLayerClientChannels, MapLayerConfig,
+    MapLayerIO, MapLayerIOExt, MapLayerInfo, MapLayerNotificationEvent, MapLayerOf, MapLayerTracker, MapLayerVersion,
+    Tile,
 };
 use bevy::ecs::{
     entity::Entity,
@@ -28,7 +29,7 @@ pub trait MapShard: Send + Sync + 'static {
 
 /// Configuration of the map layer systems.
 /// It is registered as a resource, but usually converted into a local resource for the systems.
-#[derive(Debug, Resource)]
+#[derive(Resource)]
 pub struct MapShardSystemConfig<S>
 where
     S: MapShard,
@@ -36,8 +37,8 @@ where
     pub initialize_on_spawn: bool,
     pub enable_audit: bool,
     pub enable_overlay: bool,
-    pub process_sync_events: bool,
     pub snapshot_frequency: usize,
+    pub client_channels: Option<MapLayerClientChannels<S::Primary>>,
     _ph: PhantomData<S>,
 }
 
@@ -50,8 +51,8 @@ where
             initialize_on_spawn: self.initialize_on_spawn,
             enable_audit: self.enable_audit,
             enable_overlay: self.enable_overlay,
-            process_sync_events: self.process_sync_events,
             snapshot_frequency: self.snapshot_frequency,
+            client_channels: None,
             _ph: self._ph,
         }
     }
@@ -66,8 +67,8 @@ where
             initialize_on_spawn: true,
             enable_audit: false,
             enable_overlay: false,
-            process_sync_events: true,
             snapshot_frequency: 10,
+            client_channels: None,
             _ph: PhantomData,
         }
     }
@@ -77,8 +78,19 @@ where
             initialize_on_spawn: false,
             enable_audit: true,
             enable_overlay: true,
-            process_sync_events: true,
             snapshot_frequency: 0,
+            client_channels: None,
+            _ph: PhantomData,
+        }
+    }
+
+    pub fn client_with_channels(client_channels: MapLayerClientChannels<S::Primary>) -> Self {
+        Self {
+            initialize_on_spawn: false,
+            enable_audit: true,
+            enable_overlay: true,
+            snapshot_frequency: 0,
+            client_channels: Some(client_channels),
             _ph: PhantomData,
         }
     }
@@ -161,14 +173,15 @@ where
     }
 }
 
-/// Create layer components and performs some bookkeeping when a new chunk root is spawned.
+/// Create layer components and performs some book-keeping
+/// when a new chunk root is spawned.
 #[allow(clippy::type_complexity)]
 pub fn create_shard<S>(
     layer_config: Res<S::Config>,
     mut layer_tracker: ResMut<MapLayerTracker<S::Primary>>,
     new_root_query: Query<(Entity, &MapChunk), (Added<MapChunk>, Without<S::Primary>)>,
     mut commands: Commands,
-    mut replay_control: EventWriter<MapLayerControlEvent<S::Primary>>,
+    mut replay_control: EventWriter<MapLayerActionEvent<S::Primary>>,
     system_config: Local<CreateShardState<S>>,
 ) where
     S: MapShard,
@@ -182,7 +195,7 @@ pub fn create_shard<S>(
 
         let layer_entity = system_config.spawn(&mut commands, root_entity, &layer_config).id();
         layer_tracker.track(chunk_root.id, layer_entity);
-        replay_control.write(MapLayerControlEvent::Track(chunk_root.id, PhantomData));
+        replay_control.write(MapLayerActionEvent::Track(chunk_root.id));
     }
 }
 
@@ -190,7 +203,7 @@ pub fn create_shard<S>(
 pub fn remove_shard<S>(
     mut layer_tracker: ResMut<MapLayerTracker<S::Primary>>,
     mut removed_component: RemovedComponents<S::Primary>,
-    mut replay_control: EventWriter<MapLayerControlEvent<S::Primary>>,
+    mut replay_control: EventWriter<MapLayerActionEvent<S::Primary>>,
 ) where
     S: MapShard,
 {
@@ -198,13 +211,13 @@ pub fn remove_shard<S>(
         if let Some(chunk_id) = layer_tracker.untrack(&entity) {
             log::debug!("Chunk [{chunk_id:?}]: Remove {} layer", simple_type_name::<S::Tile>());
             // Notify the replay system to untrack this layer
-            replay_control.write(MapLayerControlEvent::Untrack(chunk_id));
+            replay_control.write(MapLayerActionEvent::Untrack(chunk_id));
         }
     }
 }
 
-/// Local configuration and state for the `process_shard_sync_events` system
-pub struct ProcessShardSyncEventState<S>
+/// Local configuration and state for the `process_shard_notification_events` system
+pub struct ProcessNotificationEventState<S>
 where
     S: MapShard,
 {
@@ -213,7 +226,7 @@ where
     _ph: PhantomData<S>,
 }
 
-impl<S> FromWorld for ProcessShardSyncEventState<S>
+impl<S> FromWorld for ProcessNotificationEventState<S>
 where
     S: MapShard,
 {
@@ -234,7 +247,7 @@ where
     }
 }
 
-impl<S> ProcessShardSyncEventState<S>
+impl<S> ProcessNotificationEventState<S>
 where
     S: MapShard,
 {
@@ -251,20 +264,20 @@ where
     }
 }
 
-/// Process 'MapLayerSyncEvent' events.
-pub fn process_shard_sync_events<S>(
+/// Process 'MapLayerNotificationEvent' events.
+pub fn process_shard_notification_events<S>(
     layer_config: Res<S::Config>,
     layer_tracker: ResMut<MapLayerTracker<S::Primary>>,
     mut layers: Query<(&mut MapLayerInfo<S::Primary>, &mut S::Primary, Option<&mut S::Audit>)>,
-    mut sync_events: EventReader<MapLayerSyncEvent<S::Primary>>,
-    mut control_events: EventWriter<MapLayerControlEvent<S::Primary>>,
-    mut system_config: Local<ProcessShardSyncEventState<S>>,
+    mut sync_events: EventReader<MapLayerNotificationEvent<S::Primary>>,
+    mut control_events: EventWriter<MapLayerActionEvent<S::Primary>>,
+    mut system_config: Local<ProcessNotificationEventState<S>>,
 ) where
     S: MapShard,
 {
     for event in sync_events.read() {
         match event {
-            MapLayerSyncEvent::Initial { id } => {
+            MapLayerNotificationEvent::Initial { id } => {
                 log::debug!("Chunk [{id:?}]: Empty layer");
                 if let Some((mut info, mut layer, mut layer_change)) =
                     layer_tracker.get_entity(*id).and_then(|e| layers.get_mut(e).ok())
@@ -278,7 +291,7 @@ pub fn process_shard_sync_events<S>(
                 }
                 system_config.update_next_snapshot(0);
             }
-            MapLayerSyncEvent::Snapshot {
+            MapLayerNotificationEvent::Snapshot {
                 id,
                 version: evt_version,
                 checksum: evt_checksum,
@@ -303,7 +316,7 @@ pub fn process_shard_sync_events<S>(
                     }
                 }
             }
-            MapLayerSyncEvent::Update {
+            MapLayerNotificationEvent::Update {
                 id,
                 version: evt_version,
                 operation,
@@ -337,7 +350,7 @@ pub fn process_shard_sync_events<S>(
                             None
                         };
 
-                        control_events.write(MapLayerControlEvent::Snapshot {
+                        control_events.write(MapLayerActionEvent::Snapshot {
                             id: *id,
                             version: info.version,
                             checksum: info.checksum,
