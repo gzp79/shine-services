@@ -1,6 +1,7 @@
 use crate::map::{GroundConfig, GroundLayer, GroundShard};
 use bevy::app::{App, Plugin};
 use shine_forge::map::{shard_channels, MapAppExt, MapLayerServerChannels, MapShardSystemConfig, ServerEmulation};
+use shine_game::tokio::TokeAppExt;
 
 pub struct MapPlugin;
 
@@ -20,6 +21,7 @@ impl Plugin for MapPlugin {
             .world_mut()
             .remove_resource::<MapLayerServerChannels<GroundLayer>>()
             .expect("Expected server channels to exist");
-        ServerEmulation::new(server).run();
+
+        app.spawn_tokio_task(async move || ServerEmulation::new(server).run());
     }
 }

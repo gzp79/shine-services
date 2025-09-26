@@ -88,6 +88,7 @@
     "serde",
     "slerp",
     "smallbox",
+    "spawnable",
     "splitn",
     "srgb",
     "srgba",

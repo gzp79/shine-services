@@ -18,7 +18,7 @@ noise = { workspace = true }
 itertools = { workspace = true }
 smallbox = { workspace = true }
 
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync"] }
 bevy = { workspace = true, features = [
     "bevy_log",
     "bevy_state",
@@ -38,8 +38,6 @@ shine-test = { workspace = true }
 
 ################# native dependencies #################
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 ################## wasm dependencies ##################

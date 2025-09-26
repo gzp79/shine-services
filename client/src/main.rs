@@ -1,5 +1,5 @@
 use bevy::{prelude::*, render::view::RenderLayers};
-use shine_game::app::init_application;
+use shine_game::{app::init_application, tokio::TokioPlugin};
 
 mod avatar;
 mod camera;
@@ -15,7 +15,8 @@ fn setup_game(app: &mut App) {
     use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
     app.add_plugins(EguiPlugin::default())
-        .add_plugins(WorldInspectorPlugin::new());
+        .add_plugins(WorldInspectorPlugin::new())
+        .add_plugins(TokioPlugin);
 
     app.add_plugins(hud::HUDPlugin)
         .add_plugins(world::WorldPlugin)

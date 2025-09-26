@@ -32,8 +32,6 @@ shine-test = { workspace = true }
 
 ################# native dependencies #################
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 ################## wasm dependencies ##################
