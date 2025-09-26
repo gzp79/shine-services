@@ -1,6 +1,6 @@
 use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
 use shine_game::{
-    app::{init_application, AppGameSchedule, GameSystem},
+    app::{init_application, AppGameSchedule, GameSystems},
     camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
     math::value::{IntoAnimatedVariable, IntoNamedVariable},
 };
@@ -23,7 +23,7 @@ fn setup_game(app: &mut App) {
     app.add_plugins(CameraRigPlugin { enable_debug: true });
 
     app.add_systems(Startup, spawn_world);
-    app.add_update_systems(GameSystem::Action, (handle_input, toggle_camera_debug));
+    app.add_update_systems(GameSystems::Action, (handle_input, toggle_camera_debug));
 }
 
 #[derive(Component)]

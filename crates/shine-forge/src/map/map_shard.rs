@@ -3,14 +3,17 @@ use crate::map::{
     MapLayerIO, MapLayerIOExt, MapLayerInfo, MapLayerNotificationEvent, MapLayerOf, MapLayerTracker, MapLayerVersion,
     Tile,
 };
-use bevy::ecs::{
-    entity::Entity,
-    event::{EventReader, EventWriter},
-    query::{Added, Without},
-    removal_detection::RemovedComponents,
-    resource::Resource,
-    system::{Commands, EntityCommands, Local, Query, Res, ResMut},
-    world::{FromWorld, World},
+use bevy::{
+    ecs::{
+        entity::Entity,
+        event::{EventReader, EventWriter},
+        query::{Added, Without},
+        removal_detection::RemovedComponents,
+        resource::Resource,
+        system::{Commands, EntityCommands, Local, Query, Res, ResMut},
+        world::{FromWorld, World},
+    },
+    log,
 };
 use shine_core::utils::simple_type_name;
 use std::marker::PhantomData;
@@ -282,14 +285,23 @@ pub fn process_shard_notification_events<S>(
                 if let Some((mut info, mut layer, mut layer_change)) =
                     layer_tracker.get_entity(*id).and_then(|e| layers.get_mut(e).ok())
                 {
+                    log::debug!("Chunk [{id:?}]: Initializing layer from empty state");
                     info.version = MapLayerVersion::new();
                     info.checksum = MapLayerChecksum::new();
-                    layer.initialize(&layer_config);
-                    if let Some(change) = layer_change.as_deref_mut() {
-                        change.initialize(&layer_config);
+                    if let Err(err) = layer.load_from_empty(&layer_config, layer_change.as_deref_mut()) {
+                        log::error!("Chunk [{id:?}]: Failed to load empty layer data: {err}");
+                        layer.clear();
+                        info.version = MapLayerVersion::new();
+                        info.checksum = MapLayerChecksum::new();
+                        if let Some(change) = layer_change.as_deref_mut() {
+                            change.clear();
+                        }
+                    } else {
+                        system_config.update_next_snapshot(0);
                     }
+                } else {
+                    log::warn!("Chunk [{id:?}]: Received initial notification for unknown layer");
                 }
-                system_config.update_next_snapshot(0);
             }
             MapLayerNotificationEvent::Snapshot {
                 id,
@@ -314,6 +326,8 @@ pub fn process_shard_notification_events<S>(
                     } else {
                         system_config.update_next_snapshot(info.version.0);
                     }
+                } else {
+                    log::warn!("Chunk [{id:?}]: Received snapshot notification for unknown layer");
                 }
             }
             MapLayerNotificationEvent::Update {
@@ -364,6 +378,8 @@ pub fn process_shard_notification_events<S>(
                             *evt_version
                         );
                     }
+                } else {
+                    log::warn!("Chunk [{id:?}]: Received update notification for unknown layer");
                 }
             }
         }

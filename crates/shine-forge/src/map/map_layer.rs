@@ -16,15 +16,15 @@ pub trait MapLayer: Component<Mutability = Mutable> + 'static {
     where
         Self: Sized;
 
+    /// Check if the layer is empty (i.e. cleared and has not been initialized).
+    fn is_empty(&self) -> bool;
+
     /// Clears the layer, resetting it to an empty and uninitialized state.
     fn clear(&mut self);
 
     /// Initializes the layer with the provided configuration, setting it to a default, ready-to-use state.
     /// This can be called multiple times to reconfigure the layer.
     fn initialize(&mut self, config: &Self::Config);
-
-    /// Check if the layer is empty (i.e. cleared and has not been initialized).
-    fn is_empty(&self) -> bool;
 }
 
 /// Map layer with change tracking capabilities.

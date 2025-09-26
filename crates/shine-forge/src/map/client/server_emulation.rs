@@ -1,6 +1,7 @@
 use crate::map::{
     MapAuditedLayer, MapLayerActionEvent, MapLayerNotificationEvent, MapLayerServerChannels, MapLayerVersion,
 };
+use bevy::log;
 use std::collections::HashMap;
 
 /// A simple emulation of a map server that processes actions and sends notifications.

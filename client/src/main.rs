@@ -1,11 +1,16 @@
 use bevy::{prelude::*, render::view::RenderLayers};
-use shine_game::{app::init_application, tokio::TokioPlugin};
+use shine_game::{
+    app::{init_application, GameSystems},
+    tokio::TokioPlugin,
+};
 
 mod avatar;
 mod camera;
 mod hud;
 mod map;
 mod world;
+
+mod debug_functions;
 
 pub const HUD_LAYER: RenderLayers = RenderLayers::layer(31);
 
@@ -23,6 +28,8 @@ fn setup_game(app: &mut App) {
         .add_plugins(map::MapPlugin)
         .add_plugins(avatar::AvatarPlugin)
         .add_plugins(camera::CameraPlugin);
+
+    app.add_systems(Update, debug_functions::debug_load_chunk.in_set(GameSystems::Action));
 }
 
 #[cfg(not(target_arch = "wasm32"))]

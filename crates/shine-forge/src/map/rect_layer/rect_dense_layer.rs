@@ -116,6 +116,22 @@ impl<T> MapLayerIO for RectDenseLayer<T>
 where
     T: Tile,
 {
+    fn empty(
+        &mut self,
+        _token: VoldemortIOToken,
+        config: &Self::Config,
+        audit: Option<&mut Self::Audit>,
+    ) -> Result<(), MapError> {
+        self.initialize(config);
+
+        if let Some(audit) = audit {
+            audit.initialize(config);
+            audit.set_all();
+        }
+
+        Ok(())
+    }
+
     fn load(
         &mut self,
         _token: VoldemortIOToken,

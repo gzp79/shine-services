@@ -11,14 +11,14 @@ pub trait UpdateSystem: SystemSet + Sized {}
 
 /// Global schedule steps within the Update stage.
 #[derive(SystemSet, Clone, Hash, Debug, PartialEq, Eq)]
-pub enum GameSystem {
+pub enum GameSystems {
     Action,
     PrepareSimulate,
     Simulate,
     PrepareRender,
 }
 
-impl UpdateSystem for GameSystem {}
+impl UpdateSystem for GameSystems {}
 
 /// Fine grained PrepareSimulate steps for camera handling
 #[derive(SystemSet, Clone, Hash, Debug, PartialEq, Eq)]

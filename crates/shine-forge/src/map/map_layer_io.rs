@@ -4,6 +4,13 @@ use crate::map::{MapAuditedLayer, MapError};
 pub struct VoldemortIOToken(());
 
 pub trait MapLayerIO: MapAuditedLayer {
+    fn empty(
+        &mut self,
+        _token: VoldemortIOToken,
+        config: &Self::Config,
+        audit: Option<&mut Self::Audit>,
+    ) -> Result<(), MapError>;
+
     fn load(
         &mut self,
         _token: VoldemortIOToken,
@@ -16,6 +23,10 @@ pub trait MapLayerIO: MapAuditedLayer {
 }
 
 pub trait MapLayerIOExt: MapLayerIO {
+    fn load_from_empty(&mut self, config: &Self::Config, audit: Option<&mut Self::Audit>) -> Result<(), MapError> {
+        self.empty(VoldemortIOToken(()), config, audit)
+    }
+
     fn load_from_bytes(
         &mut self,
         config: &Self::Config,

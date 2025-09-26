@@ -11,7 +11,7 @@ use bevy::{
 };
 
 #[derive(SystemSet, Clone, Hash, Debug, PartialEq, Eq)]
-pub enum MapPreUpdateSystem {
+pub enum MapPreUpdateSystems {
     ProcessMapEvents,
     CreateLayers,
     InjectNotifications,
@@ -30,18 +30,18 @@ impl Plugin for MapPlugin {
         app.configure_sets(
             PreUpdate,
             (
-                MapPreUpdateSystem::ProcessMapEvents,
-                MapPreUpdateSystem::CreateLayers,
-                MapPreUpdateSystem::InjectNotifications,
-                MapPreUpdateSystem::ProcessNotifications,
-                MapPreUpdateSystem::ExtractActions,
+                MapPreUpdateSystems::ProcessMapEvents,
+                MapPreUpdateSystems::CreateLayers,
+                MapPreUpdateSystems::InjectNotifications,
+                MapPreUpdateSystems::ProcessNotifications,
+                MapPreUpdateSystems::ExtractActions,
             )
                 .chain(),
         );
 
         app.add_systems(
             PreUpdate,
-            process_map_event.in_set(MapPreUpdateSystem::ProcessMapEvents),
+            process_map_event.in_set(MapPreUpdateSystems::ProcessMapEvents),
         );
     }
 }
@@ -70,8 +70,8 @@ impl MapAppExt for App {
         self.add_systems(
             PreUpdate,
             (
-                create_shard::<S>.in_set(MapPreUpdateSystem::CreateLayers),
-                process_shard_notification_events::<S>.in_set(MapPreUpdateSystem::ProcessNotifications),
+                create_shard::<S>.in_set(MapPreUpdateSystems::CreateLayers),
+                process_shard_notification_events::<S>.in_set(MapPreUpdateSystems::ProcessNotifications),
             ),
         );
         self.add_systems(PostUpdate, remove_shard::<S>);
@@ -82,8 +82,8 @@ impl MapAppExt for App {
             self.add_systems(
                 PreUpdate,
                 (
-                    forward_action_events_to_channel::<S::Primary>.in_set(MapPreUpdateSystem::InjectNotifications),
-                    receive_notification_events_from_channel::<S::Primary>.in_set(MapPreUpdateSystem::ExtractActions),
+                    forward_action_events_to_channel::<S::Primary>.in_set(MapPreUpdateSystems::InjectNotifications),
+                    receive_notification_events_from_channel::<S::Primary>.in_set(MapPreUpdateSystems::ExtractActions),
                 ),
             );
         }

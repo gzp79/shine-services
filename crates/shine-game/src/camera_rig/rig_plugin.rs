@@ -1,5 +1,5 @@
 use crate::{
-    app::{AppGameSchedule, CameraSimulate, GameSystem},
+    app::{AppGameSchedule, CameraSimulate, GameSystems},
     bevy_ext::systems,
     camera_rig::{
         debug_camera_plugin::{
@@ -54,7 +54,7 @@ impl Plugin for CameraRigPlugin {
                 update_debug_camera_transform.run_if(in_state(CameraDebugState::Enabled)),
             );
             app.add_update_systems(
-                GameSystem::PrepareRender,
+                GameSystems::PrepareRender,
                 (render_camera_gizmos.after(update_camera_transform)).run_if(in_state(CameraDebugState::Enabled)),
             );
         }

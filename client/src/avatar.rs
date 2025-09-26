@@ -16,8 +16,8 @@ use bevy::{
     transform::components::Transform,
 };
 use shine_game::{
-    app::{AppGameSchedule, GameSystem},
-    input_manager::{ActionState, InputManagerPlugin, InputMap, VirtualPad},
+    app::{AppGameSchedule, GameSystems},
+    input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput, VirtualPad},
 };
 
 pub struct AvatarPlugin;
@@ -27,7 +27,7 @@ impl Plugin for AvatarPlugin {
         app.add_plugins(InputManagerPlugin::<AvatarAction>::default());
 
         app.add_systems(Startup, spawn_avatar);
-        app.add_update_systems(GameSystem::Action, handle_avatar_input);
+        app.add_update_systems(GameSystems::Action, handle_avatar_input);
     }
 }
 
@@ -35,6 +35,9 @@ impl Plugin for AvatarPlugin {
 pub enum AvatarAction {
     Move,
     Rotate,
+
+    Debug1,
+    Debug2,
 }
 
 #[derive(Component)]
@@ -51,7 +54,9 @@ fn spawn_avatar(
             .with_binding(
                 AvatarAction::Rotate,
                 VirtualPad::from_keys(KeyCode::KeyA, KeyCode::KeyD),
-            )?;
+            )?
+            .with_binding(AvatarAction::Debug1, KeyboardInput::new(KeyCode::F1))?
+            .with_binding(AvatarAction::Debug2, KeyboardInput::new(KeyCode::F2))?;
 
         (
             Name::new("Avatar"),

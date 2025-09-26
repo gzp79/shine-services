@@ -7240,7 +7240,6 @@ dependencies = [
  "bevy",
  "fixedbitset",
  "itertools 0.14.0",
- "log",
  "lz4_flex",
  "rmp-serde",
  "serde",

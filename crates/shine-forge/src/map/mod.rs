@@ -32,7 +32,7 @@ pub use self::{
     map_layer_operation::{
         BoxedMapLayerOperation, MapChunkOperationExt, MapLayerChecksum, MapLayerOperation, MapLayerVersion,
     },
-    map_plugin::MapPreUpdateSystem,
+    map_plugin::MapPreUpdateSystems,
     map_shard::{MapShard, MapShardSystemConfig},
     rect_layer::{
         RectBitsetLayer, RectCoord, RectDenseIndexer, RectDenseLayer, RectLayer, RectLayerConfig, RectShard,

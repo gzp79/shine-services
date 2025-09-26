@@ -169,7 +169,7 @@
       "options": {
         "cwd": "client",
         "env": {
-          "RUST_LOG": "info,shine_game=debug,shine_factory=debug,shine_client=debug",
+          "RUST_LOG": "info,shine_game=debug,shine_forge=debug,shine_client=debug",
           "RUST_BACKTRACE": "full"
         }
       },

@@ -1,4 +1,4 @@
-use crate::app::{CameraSimulate, GameSystem};
+use crate::app::{CameraSimulate, GameSystems};
 use bevy::{
     app::{App, Update},
     ecs::schedule::IntoScheduleConfigs,
@@ -120,10 +120,10 @@ pub fn create_application(config: platform::Config) -> App {
     app.configure_sets(
         Update,
         (
-            GameSystem::Action,
-            GameSystem::PrepareSimulate,
-            GameSystem::Simulate,
-            GameSystem::PrepareRender,
+            GameSystems::Action,
+            GameSystems::PrepareSimulate,
+            GameSystems::Simulate,
+            GameSystems::PrepareRender,
         )
             .chain(),
     );
@@ -136,7 +136,7 @@ pub fn create_application(config: platform::Config) -> App {
             CameraSimulate::WithPose,
         )
             .chain()
-            .in_set(GameSystem::PrepareSimulate),
+            .in_set(GameSystems::PrepareSimulate),
     );
 
     if let Some(setup_fn) = SETUP_FN.get() {
@@ -145,12 +145,12 @@ pub fn create_application(config: platform::Config) -> App {
         log::error!("The application setup function has not been initialized. Call `application::init` first.");
     }
 
-    #[cfg(feature = "dev_tools")]
+    /*#[cfg(feature = "dev_tools")]
     {
         bevy_mod_debugdump::print_schedule_graph(&mut app, bevy::app::PreUpdate);
         bevy_mod_debugdump::print_schedule_graph(&mut app, bevy::app::Update);
         bevy_mod_debugdump::print_render_graph(&mut app);
-    }
+    }*/
 
     app
 }

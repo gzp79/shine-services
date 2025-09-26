@@ -80,6 +80,7 @@ pub fn receive_notification_events_from_channel<L>(
     L: MapAuditedLayer,
 {
     while let Ok(event) = channels.notification_receiver.try_recv() {
+        log::debug!("Received notification event from channel: {:?}", event);
         notification_events.write(event);
     }
 }
