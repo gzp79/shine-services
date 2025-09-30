@@ -19,6 +19,15 @@ where
     _ph: PhantomData<T>,
 }
 
+impl<T> MapTileRender<T>
+where
+    T: Tile,
+{
+    pub fn new(coord: AxialCoord) -> Self {
+        Self { coord, _ph: PhantomData }
+    }
+}
+
 struct LookupCache {
     chunk_id: Option<MapChunkId>,
     render_root: Option<Entity>,
@@ -56,6 +65,10 @@ impl LookupCache {
         self.lookup.clear();
     }
 
+    pub fn root_entity(&self) -> Entity {
+        self.render_root.expect("No render root selected")
+    }
+
     pub fn get(&self, coord: &AxialCoord) -> Option<&Entity> {
         self.lookup.get(coord)
     }
@@ -84,31 +97,33 @@ where
     S: MapShard,
     F: QueryFilter + 'static,
 {
-    /// Selects the chunk to work with by the given layer entity and clears the lookup cache.
-    pub fn select_chunk_by_layer(&mut self, layer_entity: Entity) -> bool {
+    /// Selects the chunk(root) to work with by the given layer entity and returns the render root.
+    /// The lookup cache is cleared.
+    pub fn select_chunk_by_layer(&mut self, layer_entity: Entity) -> Option<Entity> {
         if let Some(chunk_id) = self.layer_tracker.get_chunk_id(layer_entity) {
             if let Some(render_root) = self.chunk_render_tracker.get_entity(chunk_id) {
                 self.lookup_cache.select(chunk_id, layer_entity, render_root);
                 log::debug!("Selected  chunk {chunk_id:?} for layer {layer_entity:?} with render root {render_root:?}");
-                return true;
+                return Some(render_root);
             }
         }
 
         self.lookup_cache.clear();
-        false
+        None
     }
 
-    /// Selects the chunk to work with by the given chunk id and clears the lookup cache.
-    pub fn select_chunk_by_id(&mut self, chunk_id: MapChunkId) -> bool {
+    /// Selects the chunk(root) to work with by the given chunk id and returns the render root.
+    /// The lookup cache is cleared.
+    pub fn select_chunk_by_id(&mut self, chunk_id: MapChunkId) -> Option<Entity> {
         if let Some(layer_entity) = self.layer_tracker.get_entity(chunk_id) {
             if let Some(render_root) = self.chunk_render_tracker.get_entity(chunk_id) {
                 self.lookup_cache.select(chunk_id, layer_entity, render_root);
-                return true;
+                return Some(render_root);
             }
         }
 
         self.lookup_cache.clear();
-        false
+        None
     }
 
     pub fn find_tile_render(&mut self, coord: AxialCoord) -> Option<Entity> {

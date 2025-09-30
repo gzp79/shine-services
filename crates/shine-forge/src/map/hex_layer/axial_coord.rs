@@ -1,3 +1,4 @@
+use bevy::math::Vec2;
 use serde::{Deserialize, Serialize};
 
 /// Axial coordinates for hexagonal grid.
@@ -85,6 +86,13 @@ impl AxialCoord {
         DIRECTIONS
             .into_iter()
             .map(move |(dq, dr)| AxialCoord::new(coord.q + dq, coord.r + dr))
+    }
+
+    pub fn world_coordinate(&self, hex_size: f32) -> Vec2 {
+        const SQRT_3: f32 = 1.732050807568877293527446341505872367_f32;
+        let x = hex_size * 1.5 * (self.q as f32);
+        let y = hex_size * SQRT_3 * (self.r as f32 + self.q as f32 / 2.0);
+        Vec2::new(x, y)
     }
 }
 

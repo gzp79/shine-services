@@ -1,12 +1,13 @@
 use crate::map::{
-    MapAuditedLayer, MapChunk, MapLayer, MapLayerActionEvent, MapLayerChecksum, MapLayerClientChannels, MapLayerConfig,
-    MapLayerIO, MapLayerIOExt, MapLayerInfo, MapLayerNotificationEvent, MapLayerOf, MapLayerTracker, MapLayerVersion,
-    Tile,
+    MapAuditedLayer, MapChunk, MapChunkId, MapLayer, MapLayerActionEvent, MapLayerChecksum, MapLayerClientChannels,
+    MapLayerConfig, MapLayerIO, MapLayerIOExt, MapLayerInfo, MapLayerNotificationEvent, MapLayerOf, MapLayerTracker,
+    MapLayerVersion, Tile,
 };
 use bevy::{
     ecs::{
         entity::Entity,
         event::{EventReader, EventWriter},
+        name::Name,
         query::{Added, Without},
         removal_detection::RemovedComponents,
         resource::Resource,
@@ -138,6 +139,7 @@ where
         &self,
         commands: &'c mut Commands,
         chunk_root: Entity,
+        chunk_id: MapChunkId,
         layer_config: &S::Config,
     ) -> EntityCommands<'c> {
         // spawn the layer as a child of the chunk root
@@ -149,7 +151,17 @@ where
                 layer.initialize(layer_config);
             }
 
-            (version, layer, MapLayerOf(chunk_root))
+            (
+                Name::new(format!(
+                    "{}({},{})",
+                    simple_type_name::<S::Tile>(),
+                    chunk_id.0,
+                    chunk_id.1
+                )),
+                version,
+                layer,
+                MapLayerOf(chunk_root),
+            )
         };
         let mut command = commands.spawn(layer);
 
@@ -196,7 +208,9 @@ pub fn create_shard<S>(
             simple_type_name::<S::Tile>()
         );
 
-        let layer_entity = system_config.spawn(&mut commands, root_entity, &layer_config).id();
+        let layer_entity = system_config
+            .spawn(&mut commands, root_entity, chunk_root.id, &layer_config)
+            .id();
         layer_tracker.track(chunk_root.id, layer_entity);
         replay_control.write(MapLayerActionEvent::Track(chunk_root.id));
     }

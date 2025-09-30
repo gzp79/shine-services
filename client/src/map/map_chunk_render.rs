@@ -1,17 +1,18 @@
-use std::collections::HashMap;
-
-use bevy::ecs::{
-    component::Component,
-    entity::Entity,
-    name::Name,
-    query::{Added, Without},
-    removal_detection::RemovedComponents,
-    resource::Resource,
-    system::{Commands, Query, ResMut},
+use crate::world::ChunkRender;
+use bevy::{
+    ecs::{
+        component::Component,
+        entity::Entity,
+        name::Name,
+        query::{Added, Without},
+        removal_detection::RemovedComponents,
+        resource::Resource,
+        system::{Commands, Query, ResMut},
+    },
+    transform::components::Transform,
 };
 use shine_forge::map::{MapChunk, MapChunkId};
-
-use crate::world::ChunkRender;
+use std::collections::HashMap;
 
 /// Rendering root of a map chunk.
 /// It is similar to `MapChunk`, but exists only for rendering purposes usually on the client side.
@@ -83,6 +84,7 @@ pub fn create_chunk_render(
             .spawn((
                 Name::new(format!("ChunkRender({:?})", chunk_root.id)),
                 MapChunkRender::new(chunk_root.id),
+                Transform::IDENTITY, // todo: use MapChunkId::relative to position it correctly
             ))
             .id();
         chunk_render_tracker.track(chunk_root.id, entity);

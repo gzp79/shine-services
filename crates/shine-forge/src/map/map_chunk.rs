@@ -1,9 +1,10 @@
-use crate::map::MapEvent;
+use crate::map::{AxialCoord, MapEvent};
 use bevy::{
     ecs::{
         component::Component,
         entity::Entity,
         event::EventReader,
+        name::Name,
         resource::Resource,
         system::{Commands, ResMut},
     },
@@ -14,6 +15,16 @@ use std::collections::{hash_map::Entry, HashMap};
 /// Unique identifier of a chunk of the map.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct MapChunkId(pub usize, pub usize);
+
+impl MapChunkId {
+    /// Return the relative axial coordinate of a chunk id relative to this chunk id.
+    /// This function interprets the chunk coordinates as the q,r components of the axial coordinates.
+    pub fn relative_axial_coord(&self, id: MapChunkId) -> AxialCoord {
+        let dx = id.0 as isize - self.0 as isize;
+        let dy = id.1 as isize - self.1 as isize;
+        AxialCoord::new(dx.try_into().unwrap(), dy.try_into().unwrap())
+    }
+}
 
 /// Relationship component to attach multiple layers of a chunk to the root.
 #[derive(Component, Default)]
@@ -61,7 +72,12 @@ impl MapChunkTracker {
 
     fn load_chunk(&mut self, chunk_id: MapChunkId, commands: &mut Commands) {
         if let Entry::Vacant(entry) = self.chunks.entry(chunk_id) {
-            let entity = commands.spawn_empty().insert(MapChunk::new(chunk_id)).id();
+            let entity = commands
+                .spawn((
+                    Name::new(format!("MapChunk({},{})", chunk_id.0, chunk_id.1)),
+                    MapChunk::new(chunk_id),
+                ))
+                .id();
             entry.insert(entity);
             log::debug!("Chunk [{chunk_id:?}]: Spawned chunk: {entity:?}");
         }
