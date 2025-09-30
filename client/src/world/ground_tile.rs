@@ -1,4 +1,4 @@
-use crate::map::{MapRenderTileQuery, MapTileRender, WorldMapConfig};
+use crate::world::{MapRenderTileQuery, MapTileRender, WorldConfig};
 use bevy::{
     color::palettes::css,
     ecs::{
@@ -54,7 +54,7 @@ pub type GroundRender = MapTileRender<GroundTile>;
 
 /// System to synchronize ground tiles with the rendering system.
 pub fn sync_ground_tiles(
-    world_config: Res<WorldMapConfig>,
+    world_config: Res<WorldConfig>,
     mut ground_layer_q: Query<(Entity, &GroundLayer, &mut GroundAudit)>,
     mut ground_render_tiles_q: MapRenderTileQuery<GroundShard>,
     mut commands: Commands,
@@ -86,7 +86,7 @@ pub fn sync_ground_tiles(
 
 /// Draw debug gizmos for ground tiles.
 pub fn debug_ground_tiles(
-    world_config: Res<WorldMapConfig>,
+    world_config: Res<WorldConfig>,
     mut ground_layer_q: Query<(&GroundRender, &GlobalTransform)>,
     mut gizmos: Gizmos,
 ) {

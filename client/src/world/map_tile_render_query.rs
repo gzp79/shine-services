@@ -1,4 +1,4 @@
-use crate::map::MapChunkRenderTracker;
+use crate::world::MapChunkRenderTracker;
 use bevy::ecs::{
     component::Component,
     entity::Entity,
@@ -63,10 +63,6 @@ impl LookupCache {
         self.tile_layer = None;
         self.render_root = None;
         self.lookup.clear();
-    }
-
-    pub fn root_entity(&self) -> Entity {
-        self.render_root.expect("No render root selected")
     }
 
     pub fn get(&self, coord: &AxialCoord) -> Option<&Entity> {

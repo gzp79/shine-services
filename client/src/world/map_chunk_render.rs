@@ -1,10 +1,9 @@
-use crate::world::ChunkRender;
 use bevy::{
     ecs::{
         component::Component,
         entity::Entity,
         name::Name,
-        query::{Added, Without},
+        query::Added,
         removal_detection::RemovedComponents,
         resource::Resource,
         system::{Commands, Query, ResMut},
@@ -56,12 +55,12 @@ impl MapChunkRenderTracker {
         self.entity_to_chunk.get(&root).cloned()
     }
 
-    pub(in crate::map) fn track(&mut self, chunk_id: MapChunkId, chunk_render: Entity) {
+    pub(in crate::world) fn track(&mut self, chunk_id: MapChunkId, chunk_render: Entity) {
         self.chunks_to_entity.insert(chunk_id, chunk_render);
         self.entity_to_chunk.insert(chunk_render, chunk_id);
     }
 
-    pub(in crate::map) fn untrack(&mut self, chunk_render: &Entity) -> Option<MapChunkId> {
+    pub(in crate::world) fn untrack(&mut self, chunk_render: &Entity) -> Option<MapChunkId> {
         if let Some(id) = self.entity_to_chunk.remove(chunk_render) {
             self.chunks_to_entity.remove(&id);
             Some(id)
@@ -74,7 +73,7 @@ impl MapChunkRenderTracker {
 /// Create chunk render and performs some book-keeping when a new chunk root is spawned.
 pub fn create_chunk_render(
     mut chunk_render_tracker: ResMut<MapChunkRenderTracker>,
-    new_root_query: Query<&MapChunk, (Added<MapChunk>, Without<ChunkRender>)>,
+    new_root_query: Query<&MapChunk, Added<MapChunk>>,
     mut commands: Commands,
 ) {
     for chunk_root in new_root_query.iter() {

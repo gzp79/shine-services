@@ -7,7 +7,6 @@ use shine_game::{
 mod avatar;
 mod camera;
 mod hud;
-mod map;
 mod world;
 
 mod debug_functions;
@@ -25,7 +24,6 @@ fn setup_game(app: &mut App) {
 
     app.add_plugins(hud::HUDPlugin)
         .add_plugins(world::WorldPlugin)
-        .add_plugins(map::MapPlugin)
         .add_plugins(avatar::AvatarPlugin)
         .add_plugins(camera::CameraPlugin);
 

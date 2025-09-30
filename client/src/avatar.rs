@@ -61,10 +61,10 @@ fn spawn_avatar(
         (
             Name::new("Avatar"),
             Mesh3d(meshes.add(Tetrahedron::new(
-                Vec3::new(-1.0, 0.0, -1.0),
-                Vec3::new(1.0, 0.0, -1.0),
-                Vec3::new(0.0, 0.0, 1.0),
-                Vec3::new(0.0, 0.5, -1.0),
+                Vec3::new(-1.0, -1.0, 0.0),
+                Vec3::new(1.0, -1.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+                Vec3::new(0.0, -1.0, 0.5),
             ))),
             MeshMaterial3d(materials.add(Color::Srgba(css::DARK_BLUE))),
             Transform::IDENTITY,
