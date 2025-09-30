@@ -1,4 +1,4 @@
-use crate::world::{MapRenderTileQuery, MapTileRender, WorldConfig};
+use crate::world::{MapTileRender, MapTileRenderQuery, WorldConfig};
 use bevy::{
     color::palettes::css,
     ecs::{
@@ -31,7 +31,7 @@ impl GroundTile {
         Self { tile: 0 }
     }
 
-    pub fn create_render_bundle(root: Entity, coord: AxialCoord, ground_tile_size: f32) -> impl Bundle {
+    pub fn create_render_bundle(&self, root: Entity, coord: AxialCoord, ground_tile_size: f32) -> impl Bundle {
         let local = coord.world_coordinate(ground_tile_size);
         let transform = Transform::from_translation(Vec3::new(local.x, local.y, 0.0));
         (
@@ -56,7 +56,7 @@ pub type GroundRender = MapTileRender<GroundTile>;
 pub fn sync_ground_tiles(
     world_config: Res<WorldConfig>,
     mut ground_layer_q: Query<(Entity, &GroundLayer, &mut GroundAudit)>,
-    mut ground_render_tiles_q: MapRenderTileQuery<GroundShard>,
+    mut ground_render_tiles_q: MapTileRenderQuery<GroundShard>,
     mut commands: Commands,
 ) {
     for (ground_entity, ground_layer, mut ground_audit) in ground_layer_q.iter_mut() {
@@ -69,15 +69,13 @@ pub fn sync_ground_tiles(
                 let tile = ground_layer.get(coord);
 
                 if let Some(entity) = ground_render_tiles_q.find_tile_render(coord) {
-                    log::info!("Updating existing ground tile render entity at {:?}", coord);
+                    log::debug!("Updating existing ground tile render entity at {:?}", coord);
+                    commands.entity(entity).despawn();
                 } else {
-                    log::info!("Creating new ground tile render entity at {:?}", coord);
-                    commands.spawn(GroundTile::create_render_bundle(
-                        render_root,
-                        coord,
-                        world_config.ground_tile_size,
-                    ));
+                    log::debug!("Creating new ground tile render entity at {:?}", coord);
                 }
+
+                commands.spawn(tile.create_render_bundle(render_root, coord, world_config.ground_tile_size));
             }
             ground_audit.reset_all();
         }
@@ -87,10 +85,10 @@ pub fn sync_ground_tiles(
 /// Draw debug gizmos for ground tiles.
 pub fn debug_ground_tiles(
     world_config: Res<WorldConfig>,
-    mut ground_layer_q: Query<(&GroundRender, &GlobalTransform)>,
+    ground_layer_q: Query<(&GroundRender, &GlobalTransform)>,
     mut gizmos: Gizmos,
 ) {
-    for (tile, transform) in ground_layer_q.iter() {
+    for (_tile, transform) in ground_layer_q.iter() {
         gizmos.circle(transform.translation(), world_config.ground_tile_size, css::YELLOW);
     }
 }

@@ -8,7 +8,7 @@ use bevy::{
         entity::Entity,
         event::{EventReader, EventWriter},
         name::Name,
-        query::{Added, Without},
+        query::Added,
         removal_detection::RemovedComponents,
         resource::Resource,
         system::{Commands, EntityCommands, Local, Query, Res, ResMut},
@@ -194,14 +194,14 @@ where
 pub fn create_shard<S>(
     layer_config: Res<S::Config>,
     mut layer_tracker: ResMut<MapLayerTracker<S::Primary>>,
-    new_root_query: Query<(Entity, &MapChunk), (Added<MapChunk>, Without<S::Primary>)>,
+    new_chunk_root_q: Query<(Entity, &MapChunk), Added<MapChunk>>,
     mut commands: Commands,
     mut replay_control: EventWriter<MapLayerActionEvent<S::Primary>>,
     system_config: Local<CreateShardState<S>>,
 ) where
     S: MapShard,
 {
-    for (root_entity, chunk_root) in new_root_query.iter() {
+    for (root_entity, chunk_root) in new_chunk_root_q.iter() {
         log::debug!(
             "Chunk [{:?}]: Create {} layer",
             chunk_root.id,

@@ -69,26 +69,6 @@ impl MapChunkTracker {
     pub fn get_entity(&self, chunk_id: MapChunkId) -> Option<Entity> {
         self.chunks.get(&chunk_id).cloned()
     }
-
-    fn load_chunk(&mut self, chunk_id: MapChunkId, commands: &mut Commands) {
-        if let Entry::Vacant(entry) = self.chunks.entry(chunk_id) {
-            let entity = commands
-                .spawn((
-                    Name::new(format!("MapChunk({},{})", chunk_id.0, chunk_id.1)),
-                    MapChunk::new(chunk_id),
-                ))
-                .id();
-            entry.insert(entity);
-            log::debug!("Chunk [{chunk_id:?}]: Spawned chunk: {entity:?}");
-        }
-    }
-
-    fn unload_chunk(&mut self, chunk_id: MapChunkId, commands: &mut Commands) {
-        if let Some(entity) = self.chunks.remove(&chunk_id) {
-            log::debug!("Chunk [{chunk_id:?}]: Despawn chunk: {entity:?}");
-            commands.entity(entity).despawn();
-        }
-    }
 }
 
 /// Process 'MapEvent' events.
@@ -101,10 +81,22 @@ pub fn process_map_event(
         log::debug!("Processing TileMapEvent: {event:?}");
         match event {
             MapEvent::Load(chunk_id) => {
-                chunk_tracker.load_chunk(*chunk_id, &mut commands);
+                if let Entry::Vacant(entry) = chunk_tracker.chunks.entry(*chunk_id) {
+                    let entity = commands
+                        .spawn((
+                            Name::new(format!("MapChunk({},{})", chunk_id.0, chunk_id.1)),
+                            MapChunk::new(*chunk_id),
+                        ))
+                        .id();
+                    entry.insert(entity);
+                    log::debug!("Chunk [{chunk_id:?}]: Spawned chunk: {entity:?}");
+                }
             }
             MapEvent::Unload(chunk_id) => {
-                chunk_tracker.unload_chunk(*chunk_id, &mut commands);
+                if let Some(entity) = chunk_tracker.chunks.remove(chunk_id) {
+                    log::debug!("Chunk [{chunk_id:?}]: Despawn chunk: {entity:?}");
+                    commands.entity(entity).despawn();
+                }
             }
         }
     }

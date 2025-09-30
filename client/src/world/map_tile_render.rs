@@ -75,20 +75,20 @@ impl LookupCache {
 }
 
 #[derive(SystemParam)]
-pub struct MapRenderTileQuery<'w, 's, S, F = ()>
+pub struct MapTileRenderQuery<'w, 's, S, F = ()>
 where
     S: MapShard,
     F: QueryFilter + 'static,
 {
-    chunk_render_tracker: Res<'w, MapChunkRenderTracker>,
     layer_tracker: Res<'w, MapLayerTracker<<S as MapShard>::Primary>>,
-    chunk_render_children: Query<'w, 's, &'static Children, F>,
-    layer_render: Query<'w, 's, (Entity, &'static MapTileRender<<S as MapShard>::Tile>), F>,
+    chunk_render_tracker: Res<'w, MapChunkRenderTracker>,
+    chunk_render_children_q: Query<'w, 's, &'static Children, F>,
+    tile_render_q: Query<'w, 's, (Entity, &'static MapTileRender<<S as MapShard>::Tile>), F>,
 
     lookup_cache: Local<'s, LookupCache>,
 }
 
-impl<'w, 's, S, F> MapRenderTileQuery<'w, 's, S, F>
+impl<'w, 's, S, F> MapTileRenderQuery<'w, 's, S, F>
 where
     S: MapShard,
     F: QueryFilter + 'static,
@@ -128,10 +128,10 @@ where
                 return Some(*entity);
             }
 
-            if let Ok(children) = self.chunk_render_children.get(render_root) {
+            if let Ok(children) = self.chunk_render_children_q.get(render_root) {
                 for child in children.iter() {
                     // Find the tile render for the given coord within the children of the chunk render.
-                    if let Ok((entity, render)) = self.layer_render.get(*child) {
+                    if let Ok((entity, render)) = self.tile_render_q.get(*child) {
                         if render.coord == coord {
                             self.lookup_cache.insert(coord, entity);
                             return Some(entity);
