@@ -115,7 +115,7 @@ where
 
         let span = if self.request_filter.is_none_or(|f| f(req.method(), req.uri().path())) {
             let span = otel_http::make_span_from_request(&req);
-            span.set_parent(otel_http::extract_context(req.headers()));
+            let _ = span.set_parent(otel_http::extract_context(req.headers()));
             span
         } else {
             tracing::Span::none()

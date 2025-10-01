@@ -1,4 +1,8 @@
-use bevy::{prelude::*, render::view::RenderLayers};
+use bevy::{
+    app::{App, Update},
+    camera::visibility::RenderLayers,
+    ecs::schedule::IntoScheduleConfigs,
+};
 use shine_game::{
     app::{init_application, GameSystems},
     tokio::TokioPlugin,
@@ -18,9 +22,11 @@ fn setup_game(app: &mut App) {
     use bevy_inspector_egui::bevy_egui::EguiPlugin;
     use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
+    /* panics, need some investigation
     app.add_plugins(EguiPlugin::default())
-        .add_plugins(WorldInspectorPlugin::new())
-        .add_plugins(TokioPlugin);
+       .add_plugins(WorldInspectorPlugin::new());*/
+
+    app.add_plugins(TokioPlugin);
 
     app.add_plugins(hud::HUDPlugin)
         .add_plugins(world::WorldPlugin)

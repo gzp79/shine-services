@@ -3,8 +3,6 @@ use bevy::{
     app::{App, Update},
     ecs::schedule::IntoScheduleConfigs,
     log,
-    math::Vec2,
-    window::{CursorGrabMode, Window},
 };
 use std::sync::OnceLock;
 
@@ -115,7 +113,13 @@ pub mod platform {
 /// Creates a Bevy application with common setup and allows for customization.
 pub fn create_application(config: platform::Config) -> App {
     let mut app = App::new();
+
     platform::platform_init(&mut app, config);
+
+    #[cfg(feature = "dev_tools")]
+    {
+        app.add_plugins(bevy_dev_tools::fps_overlay::FpsOverlayPlugin::default());
+    }
 
     app.configure_sets(
         Update,
@@ -153,24 +157,4 @@ pub fn create_application(config: platform::Config) -> App {
     }*/
 
     app
-}
-
-/// Helpers for working with Bevy's `Window` component.
-pub trait WindowExt {
-    fn start_grab(&mut self, mode: CursorGrabMode);
-}
-
-impl WindowExt for Window {
-    fn start_grab(&mut self, mode: CursorGrabMode) {
-        if mode != CursorGrabMode::None {
-            let center = Vec2 {
-                x: self.width(),
-                y: self.height(),
-            } / 2.0;
-            self.set_cursor_position(Some(center));
-        }
-
-        self.cursor_options.grab_mode = mode;
-        self.cursor_options.visible = mode != CursorGrabMode::Locked;
-    }
 }

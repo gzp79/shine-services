@@ -10,8 +10,8 @@ use bevy::{
     },
     input::keyboard::KeyCode,
     math::{primitives::Tetrahedron, Quat, Vec3},
+    mesh::{Mesh, Mesh3d},
     pbr::{MeshMaterial3d, StandardMaterial},
-    render::mesh::{Mesh, Mesh3d},
     time::Time,
     transform::components::Transform,
 };

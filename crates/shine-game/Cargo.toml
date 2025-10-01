@@ -6,7 +6,7 @@ edition.workspace = true
 [features]
 default = ["dev_tools"]
 
-dev_tools = ["bevy_mod_debugdump"]
+dev_tools = [ "bevy_mod_debugdump", "bevy_dev_tools" ]
 
 [dependencies]
 thiserror = { workspace = true }
@@ -27,8 +27,8 @@ bevy = { workspace = true, features = [
     "bevy_ui",
     "bevy_gizmos",
 ] }
-
-bevy_mod_debugdump = { version = "0.13", optional = true }
+bevy_dev_tools = { workspace = true, optional = true }
+bevy_mod_debugdump = { workspace = true, optional = true }
 
 shine-core = { workspace = true }
 shine-infra = { workspace = true, optional = true }

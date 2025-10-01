@@ -5,12 +5,10 @@ use crate::world::{
     GroundConfig, GroundLayer, GroundShard, MapChunkRenderTracker, WorldConfig,
 };
 use bevy::{
-    app::{App, Plugin, PostUpdate, PreUpdate, Startup, Update},
+    app::{App, Plugin, Startup, Update},
     ecs::schedule::IntoScheduleConfigs,
 };
-use shine_forge::map::{
-    shard_channels, MapAppExt, MapLayerServerChannels, MapPreUpdateSystems, MapShardSystemConfig, ServerEmulation,
-};
+use shine_forge::map::{shard_channels, MapAppExt, MapLayerServerChannels, MapShardSystemConfig, ServerEmulation};
 use shine_game::{app::GameSystems, tokio::TokeAppExt};
 
 pub struct WorldPlugin;
@@ -31,10 +29,10 @@ impl Plugin for WorldPlugin {
 
         app.add_systems(Startup, spawn_light);
 
-        app.add_systems(PreUpdate, create_chunk_render.in_set(MapPreUpdateSystems::CreateLayers));
+        app.add_observer(create_chunk_render);
+        app.add_observer(remove_chunk_render);
         app.add_systems(Update, sync_ground_tiles.in_set(GameSystems::PrepareSimulate));
-        app.add_systems(PostUpdate, debug_ground_tiles.in_set(GameSystems::PrepareRender));
-        app.add_systems(PostUpdate, remove_chunk_render);
+        app.add_systems(Update, debug_ground_tiles.in_set(GameSystems::PrepareRender));
     }
 
     fn finish(&self, app: &mut App) {

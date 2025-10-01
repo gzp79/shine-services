@@ -1,13 +1,13 @@
 use crate::map::{BoxedMapLayerOperation, MapAuditedLayer, MapChunkId, MapLayerChecksum, MapLayerVersion};
-use bevy::ecs::event::Event;
+use bevy::ecs::message::Message;
 use shine_core::utils::simple_type_name;
 use std::fmt;
 
-/// Event to request some action on the map servers.
-/// These events are usually sent to the servers.
-#[derive(Event)]
+/// Message to request some action on the map servers.
+/// These messages are usually sent to the servers.
+#[derive(Message)]
 #[allow(clippy::large_enum_variant)]
-pub enum MapLayerActionEvent<L>
+pub enum MapLayerActionMessage<L>
 where
     L: MapAuditedLayer,
 {
@@ -32,7 +32,7 @@ where
     },
 }
 
-impl<L> Clone for MapLayerActionEvent<L>
+impl<L> Clone for MapLayerActionMessage<L>
 where
     L: MapAuditedLayer,
 {
@@ -59,7 +59,7 @@ where
     }
 }
 
-impl<L> fmt::Debug for MapLayerActionEvent<L>
+impl<L> fmt::Debug for MapLayerActionMessage<L>
 where
     L: MapAuditedLayer,
 {
@@ -67,16 +67,16 @@ where
         write!(f, "{}::", simple_type_name::<Self>())?;
 
         match self {
-            MapLayerActionEvent::Track(chunk_id) => {
+            MapLayerActionMessage::Track(chunk_id) => {
                 write!(f, "Track({chunk_id:?})")
             }
-            MapLayerActionEvent::Untrack(chunk_id) => {
+            MapLayerActionMessage::Untrack(chunk_id) => {
                 write!(f, "Untrack({chunk_id:?})")
             }
-            MapLayerActionEvent::Update { id, operation } => {
+            MapLayerActionMessage::Update { id, operation } => {
                 write!(f, "Update({id:?}, op={})", operation.name())
             }
-            MapLayerActionEvent::Snapshot {
+            MapLayerActionMessage::Snapshot {
                 id,
                 version,
                 checksum,
@@ -92,11 +92,11 @@ where
     }
 }
 
-/// Notification events that some state has changed on the map.
-/// These events are usually sent to the clients.
-#[derive(Event)]
+/// Notification messages that some state has changed on the map.
+/// These messages are usually sent to the clients.
+#[derive(Message)]
 #[allow(clippy::large_enum_variant)]
-pub enum MapLayerNotificationEvent<L>
+pub enum MapLayerNotificationMessage<L>
 where
     L: MapAuditedLayer,
 {
@@ -119,7 +119,7 @@ where
     },
 }
 
-impl<L> Clone for MapLayerNotificationEvent<L>
+impl<L> Clone for MapLayerNotificationMessage<L>
 where
     L: MapAuditedLayer,
 {
@@ -146,7 +146,7 @@ where
     }
 }
 
-impl<L> fmt::Debug for MapLayerNotificationEvent<L>
+impl<L> fmt::Debug for MapLayerNotificationMessage<L>
 where
     L: MapAuditedLayer,
 {
@@ -154,13 +154,13 @@ where
         write!(f, "{}::", simple_type_name::<Self>())?;
 
         match self {
-            MapLayerNotificationEvent::Initial { id } => {
+            MapLayerNotificationMessage::Initial { id } => {
                 write!(f, "Initial({id:?})")?;
             }
-            MapLayerNotificationEvent::Snapshot { id, version, checksum, .. } => {
+            MapLayerNotificationMessage::Snapshot { id, version, checksum, .. } => {
                 write!(f, "Snapshot({id:?}, {version:?}, {checksum:?})")?;
             }
-            MapLayerNotificationEvent::Update { id, version, operation } => {
+            MapLayerNotificationMessage::Update { id, version, operation } => {
                 write!(f, "Update({id:?}, {version:?}, op={})", operation.name())?;
             }
         }

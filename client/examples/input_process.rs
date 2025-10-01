@@ -1,4 +1,17 @@
-use bevy::{prelude::*, window::CursorGrabMode};
+use bevy::{
+    app::{App, Startup, Update},
+    camera::{Camera, Camera2d},
+    ecs::{
+        component::Component,
+        error::BevyError,
+        query::With,
+        system::{Commands, Query},
+    },
+    input::{keyboard::KeyCode, mouse::MouseButton},
+    ui::{widget::Text, Node, PositionType, Val},
+    utils::default,
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
+};
 use shine_game::{
     app::init_application,
     input_manager::{
@@ -112,26 +125,33 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) -> Result<(), 
     Ok(())
 }
 
-fn grab_mouse(players: Query<&ActionState<Action>, Without<Window>>, mut window: Query<&mut Window>) {
-    let action_state = players.single().unwrap();
-    let mut window = window.single_mut().unwrap();
+fn grab_mouse(
+    players: Query<&ActionState<Action>>,
+    mut window: Query<&mut Window, With<PrimaryWindow>>,
+    mut cursor_options: Query<&mut CursorOptions, With<PrimaryWindow>>,
+) -> Result<(), BevyError> {
+    let action_state = players.single()?;
+    let mut cursor_options = cursor_options.single_mut()?;
+    let mut window = window.single_mut()?;
 
     if action_state.just_pressed(&Action::Grab) {
-        match window.cursor_options.grab_mode {
+        match cursor_options.grab_mode {
             CursorGrabMode::None => {
-                window.cursor_options.grab_mode = CursorGrabMode::Locked;
+                cursor_options.grab_mode = CursorGrabMode::Locked;
                 window.title = "Locked".to_string();
             }
             CursorGrabMode::Locked => {
-                window.cursor_options.grab_mode = CursorGrabMode::Confined;
+                cursor_options.grab_mode = CursorGrabMode::Confined;
                 window.title = "Confined".to_string();
             }
             CursorGrabMode::Confined => {
-                window.cursor_options.grab_mode = CursorGrabMode::None;
+                cursor_options.grab_mode = CursorGrabMode::None;
                 window.title = "None".to_string();
             }
         };
     }
+
+    Ok(())
 }
 
 fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>) {

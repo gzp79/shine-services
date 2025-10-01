@@ -1,4 +1,4 @@
-use bevy::{ecs::system::Commands, pbr::PointLight, transform::components::Transform, utils::default};
+use bevy::{ecs::system::Commands, light::PointLight, transform::components::Transform, utils::default};
 
 pub fn spawn_light(mut commands: Commands) {
     let light = (

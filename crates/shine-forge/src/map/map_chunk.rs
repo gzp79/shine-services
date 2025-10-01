@@ -1,9 +1,9 @@
-use crate::map::{AxialCoord, MapEvent};
+use crate::map::{AxialCoord, MapMessage};
 use bevy::{
     ecs::{
         component::Component,
         entity::Entity,
-        event::EventReader,
+        message::MessageReader,
         name::Name,
         resource::Resource,
         system::{Commands, ResMut},
@@ -71,16 +71,16 @@ impl MapChunkTracker {
     }
 }
 
-/// Process 'MapEvent' events.
-pub fn process_map_event(
+/// Process 'MapMessage' messages.
+pub fn process_map_messages(
     mut chunk_tracker: ResMut<MapChunkTracker>,
-    mut map_events: EventReader<MapEvent>,
+    mut map_messages: MessageReader<MapMessage>,
     mut commands: Commands,
 ) {
-    for event in map_events.read() {
-        log::debug!("Processing TileMapEvent: {event:?}");
-        match event {
-            MapEvent::Load(chunk_id) => {
+    for message in map_messages.read() {
+        log::debug!("Processing MapMessage: {message:?}");
+        match message {
+            MapMessage::Load(chunk_id) => {
                 if let Entry::Vacant(entry) = chunk_tracker.chunks.entry(*chunk_id) {
                     let entity = commands
                         .spawn((
@@ -92,7 +92,7 @@ pub fn process_map_event(
                     log::debug!("Chunk [{chunk_id:?}]: Spawned chunk: {entity:?}");
                 }
             }
-            MapEvent::Unload(chunk_id) => {
+            MapMessage::Unload(chunk_id) => {
                 if let Some(entity) = chunk_tracker.chunks.remove(chunk_id) {
                     log::debug!("Chunk [{chunk_id:?}]: Despawn chunk: {entity:?}");
                     commands.entity(entity).despawn();

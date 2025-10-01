@@ -1,9 +1,11 @@
 use crate::web::responses::Problem;
-use opentelemetry_sdk::{metrics::MetricError, trace::TraceError};
-use std::error::Error as StdError;
+use opentelemetry_sdk::trace::TraceError;
 use thiserror::Error as ThisError;
 use tracing::subscriber::SetGlobalDefaultError;
 use tracing_subscriber::filter::ParseError;
+
+#[cfg(feature = "ot_app_insight")]
+use std::error::Error as StdError;
 
 #[derive(Debug, ThisError)]
 pub enum TelemetryBuildError {
@@ -22,8 +24,6 @@ pub enum TelemetryBuildError {
     ZipkinBuildError(#[from] opentelemetry_zipkin::ExporterBuildError),
     #[error(transparent)]
     TraceError(#[from] TraceError),
-    #[error(transparent)]
-    MetricsError(#[from] MetricError),
 }
 
 #[derive(Debug, ThisError)]

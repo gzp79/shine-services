@@ -4,11 +4,15 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-default = ["ot_otlp", "ot_zipkin", "ot_app_insight"]
+default = [
+    "ot_otlp",
+    "ot_zipkin",
+    #"ot_app_insight"  disabled as it is not updated for opentelemetry 0.31
+]
 
 ot_otlp = ["opentelemetry-otlp"]
 ot_zipkin = ["opentelemetry-zipkin"]
-ot_app_insight = ["reqwest", "opentelemetry-application-insights"]
+ot_app_insight = ["opentelemetry-application-insights"]
 
 [dependencies]
 log = { workspace = true }
@@ -28,8 +32,8 @@ hex = { workspace = true }
 ring = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
-harsh = "0.2"
-primal-check = "0.3"
+harsh = { workspace = true }
+primal-check = { workspace = true }
 
 ############################# RUNTIME #############################
 pin-project = { workspace = true }
@@ -42,29 +46,27 @@ tokio = { workspace = true, features = ["macros", "signal", "rt"] }
 tracing = { workspace = true }
 tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
-tracing-opentelemetry = { version = "0.30", features = [
+tracing-opentelemetry = { version = "0.32", features = [
     "metrics",
     "tracing-log",
 ] }
-tracing-opentelemetry-instrumentation-sdk = "0.28"
-prometheus = "0.14"
-opentelemetry = "0.29"
-opentelemetry-semantic-conventions = "0.29"
-opentelemetry_sdk = { version = "0.29", features = [
+tracing-opentelemetry-instrumentation-sdk = "0.32"
+opentelemetry = "0.31"
+opentelemetry-semantic-conventions = "0.31"
+opentelemetry_sdk = { version = "0.31", features = [
     "rt-tokio",
     "metrics",
     "trace",
 ] }
-opentelemetry-stdout = { version = "0.29", features = ["logs", "trace"] }
-opentelemetry-otlp = { version = "0.29", features = [
+opentelemetry-stdout = { version = "0.31", features = ["logs", "trace"] }
+opentelemetry-otlp = { version = "0.31", features = [
     "tokio",
     "grpc-tonic",
 ], optional = true }
-opentelemetry-zipkin = { version = "0.29", features = [
+opentelemetry-zipkin = { version = "0.31", features = [
     "reqwest-client",
 ], default-features = false, optional = true }
-opentelemetry-prometheus = "0.29"
-opentelemetry-application-insights = { version = "0.40", features = [
+opentelemetry-application-insights = { version = "0.43", features = [
     "reqwest-client-rustls",
 ], optional = true }
 
@@ -90,8 +92,8 @@ azure_identity = { workspace = true }
 azure_security_keyvault_secrets = { workspace = true }
 
 ############################# NET #############################
-rustls = { workspace = true }
-reqwest = { workspace = true, optional = true }
+rustls = { workspace = true, features = ["ring"] }
+reqwest = { workspace = true }
 rustls-native-certs = "0.8"
 
 ############################# WEB #############################

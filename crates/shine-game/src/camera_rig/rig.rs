@@ -8,6 +8,7 @@ use crate::{
     math::value::{ValueError, ValueLike, ValueType},
 };
 use bevy::{
+    camera::Camera,
     ecs::{
         component::Component,
         query::{With, Without},
@@ -15,7 +16,6 @@ use bevy::{
     },
     log,
     platform::collections::HashMap,
-    render::camera::Camera,
     time::Time,
     transform::components::Transform,
 };

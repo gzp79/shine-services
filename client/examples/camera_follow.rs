@@ -1,4 +1,29 @@
-use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
+use bevy::{
+    app::{App, Startup},
+    asset::Assets,
+    camera::{Camera, Camera3d},
+    color::{palettes::css, Color},
+    ecs::{
+        component::Component,
+        entity::Entity,
+        error::BevyError,
+        query::With,
+        system::{Commands, Query, Res, ResMut},
+    },
+    input::{keyboard::KeyCode, ButtonInput},
+    light::PointLight,
+    math::{
+        primitives::{Plane3d, Tetrahedron},
+        Quat, Vec3,
+    },
+    mesh::{Mesh, Mesh3d, Meshable},
+    pbr::{MeshMaterial3d, StandardMaterial},
+    render::view::NoIndirectDrawing,
+    time::Time,
+    transform::components::Transform,
+    utils::default,
+    window::Window,
+};
 use shine_game::{
     app::{init_application, AppGameSchedule, GameSystems},
     camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},

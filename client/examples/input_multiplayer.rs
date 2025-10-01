@@ -1,4 +1,23 @@
-use bevy::prelude::*;
+use bevy::{
+    app::{App, Startup, Update},
+    camera::{Camera, Camera2d},
+    ecs::{
+        component::Component,
+        entity::Entity,
+        error::BevyError,
+        name::Name,
+        query::{With, Without},
+        system::{Commands, Query, Res},
+    },
+    input::{
+        gamepad::{Gamepad, GamepadButton},
+        keyboard::KeyCode,
+        mouse::MouseButton,
+    },
+    time::Time,
+    ui::{widget::Text, Node, PositionType, Val},
+    utils::default,
+};
 use shine_game::{
     app::init_application,
     input_manager::{

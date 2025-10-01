@@ -1,4 +1,17 @@
-use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
+use bevy::{
+    app::{App, Startup, Update},
+    asset::Assets,
+    camera::Camera2d,
+    color::{palettes::css, Color},
+    ecs::system::{Commands, Query, ResMut},
+    gizmos::gizmos::Gizmos,
+    math::{primitives::Cuboid, Vec3},
+    mesh::{Mesh, Mesh3d},
+    pbr::{MeshMaterial3d, StandardMaterial},
+    render::view::NoIndirectDrawing,
+    transform::components::Transform,
+    window::Window,
+};
 use shine_game::{
     app::init_application,
     math::value::{AnimatedValue, IntoAnimatedVariable},

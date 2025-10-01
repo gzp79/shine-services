@@ -1,15 +1,16 @@
 use crate::map::{
-    MapAuditedLayer, MapChunk, MapChunkId, MapLayer, MapLayerActionEvent, MapLayerChecksum, MapLayerClientChannels,
-    MapLayerConfig, MapLayerIO, MapLayerIOExt, MapLayerInfo, MapLayerNotificationEvent, MapLayerOf, MapLayerTracker,
+    MapAuditedLayer, MapChunk, MapChunkId, MapLayer, MapLayerActionMessage, MapLayerChecksum, MapLayerClientChannels,
+    MapLayerConfig, MapLayerIO, MapLayerIOExt, MapLayerInfo, MapLayerNotificationMessage, MapLayerOf, MapLayerTracker,
     MapLayerVersion, Tile,
 };
 use bevy::{
     ecs::{
         entity::Entity,
-        event::{EventReader, EventWriter},
+        error::BevyError,
+        lifecycle::{Add, Remove},
+        message::{MessageReader, MessageWriter},
         name::Name,
-        query::Added,
-        removal_detection::RemovedComponents,
+        observer::On,
         resource::Resource,
         system::{Commands, EntityCommands, Local, Query, Res, ResMut},
         world::{FromWorld, World},
@@ -188,53 +189,66 @@ where
     }
 }
 
-/// Create layer components and performs some book-keeping
-/// when a new chunk root is spawned.
+/// Spawn layer components and performs some book-keeping when a new MapChunk is spawned.
+/// MapChunk component is added only once during the root entity spawn, so this system runs only once per chunk.
 #[allow(clippy::type_complexity)]
 pub fn create_shard<S>(
+    new_chunk_trigger: On<Add, MapChunk>,
     layer_config: Res<S::Config>,
     mut layer_tracker: ResMut<MapLayerTracker<S::Primary>>,
-    new_chunk_root_q: Query<(Entity, &MapChunk), Added<MapChunk>>,
+    chunk_root_q: Query<&MapChunk>,
     mut commands: Commands,
-    mut replay_control: EventWriter<MapLayerActionEvent<S::Primary>>,
+    mut replay_control: MessageWriter<MapLayerActionMessage<S::Primary>>,
     system_config: Local<CreateShardState<S>>,
-) where
+) -> Result<(), BevyError>
+where
     S: MapShard,
 {
-    for (root_entity, chunk_root) in new_chunk_root_q.iter() {
-        log::debug!(
-            "Chunk [{:?}]: Create {} layer",
-            chunk_root.id,
-            simple_type_name::<S::Tile>()
-        );
+    let chunk_root_entity = new_chunk_trigger.entity;
+    let chunk_root = chunk_root_q.get(chunk_root_entity)?;
+    log::debug!(
+        "Chunk [{:?}]: Create {} layer",
+        chunk_root.id,
+        simple_type_name::<S::Tile>()
+    );
 
-        let layer_entity = system_config
-            .spawn(&mut commands, root_entity, chunk_root.id, &layer_config)
-            .id();
-        layer_tracker.track(chunk_root.id, layer_entity);
-        replay_control.write(MapLayerActionEvent::Track(chunk_root.id));
-    }
+    let layer_entity = system_config
+        .spawn(&mut commands, chunk_root_entity, chunk_root.id, &layer_config)
+        .id();
+    layer_tracker.track(chunk_root.id, layer_entity);
+
+    // Notify the replay system to start tracking this layer
+    replay_control.write(MapLayerActionMessage::Track(chunk_root.id));
+    Ok(())
 }
 
-/// When a chunk is despawned, perform some cleanup.
+/// When the (primary) map layer is removed, perform some cleanup.
+/// The layer component is removed only once when the entity is despawned.
 pub fn remove_shard<S>(
+    removed_layer_trigger: On<Remove, S::Primary>,
     mut layer_tracker: ResMut<MapLayerTracker<S::Primary>>,
-    mut removed_component: RemovedComponents<S::Primary>,
-    mut replay_control: EventWriter<MapLayerActionEvent<S::Primary>>,
-) where
+    mut replay_control: MessageWriter<MapLayerActionMessage<S::Primary>>,
+) -> Result<(), BevyError>
+where
     S: MapShard,
 {
-    for entity in removed_component.read() {
-        if let Some(chunk_id) = layer_tracker.untrack(&entity) {
-            log::debug!("Chunk [{chunk_id:?}]: Remove {} layer", simple_type_name::<S::Tile>());
-            // Notify the replay system to untrack this layer
-            replay_control.write(MapLayerActionEvent::Untrack(chunk_id));
-        }
-    }
+    let chunk_id = layer_tracker.untrack(&removed_layer_trigger.entity).ok_or_else(|| {
+        BevyError::from(format!(
+            "Failed to untrack {} layer for entity {:?}",
+            simple_type_name::<S::Tile>(),
+            removed_layer_trigger.entity
+        ))
+    })?;
+
+    log::debug!("Chunk [{chunk_id:?}]: Remove {} layer", simple_type_name::<S::Tile>());
+
+    // Notify the replay system to untrack this layer
+    replay_control.write(MapLayerActionMessage::Untrack(chunk_id));
+    Ok(())
 }
 
-/// Local configuration and state for the `process_shard_notification_events` system
-pub struct ProcessNotificationEventState<S>
+/// Local configuration and state for the `process_shard_notification_messages` system
+pub struct ProcessNotificationMessageState<S>
 where
     S: MapShard,
 {
@@ -243,7 +257,7 @@ where
     _ph: PhantomData<S>,
 }
 
-impl<S> FromWorld for ProcessNotificationEventState<S>
+impl<S> FromWorld for ProcessNotificationMessageState<S>
 where
     S: MapShard,
 {
@@ -264,7 +278,7 @@ where
     }
 }
 
-impl<S> ProcessNotificationEventState<S>
+impl<S> ProcessNotificationMessageState<S>
 where
     S: MapShard,
 {
@@ -281,20 +295,20 @@ where
     }
 }
 
-/// Process 'MapLayerNotificationEvent' events.
-pub fn process_shard_notification_events<S>(
+/// Process 'MapLayerNotificationMessage' messages.
+pub fn process_shard_notification_messages<S>(
     layer_config: Res<S::Config>,
     layer_tracker: ResMut<MapLayerTracker<S::Primary>>,
     mut layers: Query<(&mut MapLayerInfo<S::Primary>, &mut S::Primary, Option<&mut S::Audit>)>,
-    mut sync_events: EventReader<MapLayerNotificationEvent<S::Primary>>,
-    mut control_events: EventWriter<MapLayerActionEvent<S::Primary>>,
-    mut system_config: Local<ProcessNotificationEventState<S>>,
+    mut sync_messages: MessageReader<MapLayerNotificationMessage<S::Primary>>,
+    mut action_messages: MessageWriter<MapLayerActionMessage<S::Primary>>,
+    mut system_config: Local<ProcessNotificationMessageState<S>>,
 ) where
     S: MapShard,
 {
-    for event in sync_events.read() {
-        match event {
-            MapLayerNotificationEvent::Initial { id } => {
+    for message in sync_messages.read() {
+        match message {
+            MapLayerNotificationMessage::Initial { id } => {
                 log::debug!("Chunk [{id:?}]: Empty layer");
                 if let Some((mut info, mut layer, mut layer_change)) =
                     layer_tracker.get_entity(*id).and_then(|e| layers.get_mut(e).ok())
@@ -317,7 +331,7 @@ pub fn process_shard_notification_events<S>(
                     log::warn!("Chunk [{id:?}]: Received initial notification for unknown layer");
                 }
             }
-            MapLayerNotificationEvent::Snapshot {
+            MapLayerNotificationMessage::Snapshot {
                 id,
                 version: evt_version,
                 checksum: evt_checksum,
@@ -344,7 +358,7 @@ pub fn process_shard_notification_events<S>(
                     log::warn!("Chunk [{id:?}]: Received snapshot notification for unknown layer");
                 }
             }
-            MapLayerNotificationEvent::Update {
+            MapLayerNotificationMessage::Update {
                 id,
                 version: evt_version,
                 operation,
@@ -378,7 +392,7 @@ pub fn process_shard_notification_events<S>(
                             None
                         };
 
-                        control_events.write(MapLayerActionEvent::Snapshot {
+                        action_messages.write(MapLayerActionMessage::Snapshot {
                             id: *id,
                             version: info.version,
                             checksum: info.checksum,

@@ -1,11 +1,11 @@
 mod map_chunk;
 mod map_error;
-mod map_event;
 mod map_layer;
-mod map_layer_event;
 mod map_layer_info;
 mod map_layer_io;
+mod map_layer_message;
 mod map_layer_operation;
+mod map_message;
 mod map_shard;
 mod tile;
 
@@ -24,14 +24,14 @@ pub use self::{
     },
     map_chunk::{MapChunk, MapChunkId, MapChunkTracker, MapLayerOf, MapLayers},
     map_error::MapError,
-    map_event::MapEvent,
     map_layer::{MapAuditedLayer, MapLayer, MapLayerConfig, MapLayerTracker},
-    map_layer_event::{MapLayerActionEvent, MapLayerNotificationEvent},
     map_layer_info::MapLayerInfo,
     map_layer_io::{MapLayerIO, MapLayerIOExt, VoldemortIOToken},
+    map_layer_message::{MapLayerActionMessage, MapLayerNotificationMessage},
     map_layer_operation::{
         BoxedMapLayerOperation, MapChunkOperationExt, MapLayerChecksum, MapLayerOperation, MapLayerVersion,
     },
+    map_message::MapMessage,
     map_plugin::MapPreUpdateSystems,
     map_shard::{MapShard, MapShardSystemConfig},
     rect_layer::{

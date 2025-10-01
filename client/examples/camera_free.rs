@@ -1,8 +1,28 @@
 use bevy::{
-    input::mouse::MouseMotion,
-    prelude::*,
-    window::CursorGrabMode,
-    {color::palettes::css, render::view::NoIndirectDrawing},
+    app::{App, Startup},
+    asset::Assets,
+    camera::{Camera, Camera3d},
+    color::{palettes::css, Color},
+    ecs::{
+        entity::Entity,
+        error::BevyError,
+        message::MessageReader,
+        query::With,
+        system::{Commands, Query, Res, ResMut},
+    },
+    input::{keyboard::KeyCode, mouse::MouseMotion, ButtonInput},
+    light::PointLight,
+    math::{
+        primitives::{Cuboid, Plane3d},
+        Vec2, Vec3,
+    },
+    mesh::{Mesh, Mesh3d, Meshable},
+    pbr::{MeshMaterial3d, StandardMaterial},
+    render::view::NoIndirectDrawing,
+    time::Time,
+    transform::components::Transform,
+    utils::default,
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
 use shine_game::{
     app::{init_application, AppGameSchedule, GameSystems},
@@ -32,14 +52,17 @@ fn setup_game(app: &mut App) {
 }
 
 fn spawn_world(
-    mut windows: Query<&mut Window>,
+    mut window_q: Query<&mut Window, With<PrimaryWindow>>,
+    mut cursor_options_q: Query<&mut CursorOptions, With<PrimaryWindow>>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) -> Result<(), BevyError> {
-    let mut window = windows.single_mut().unwrap();
-    window.cursor_options.grab_mode = CursorGrabMode::Locked;
+    let mut window = window_q.single_mut()?;
     window.title = "Camera Free (Mouse, WASD)".to_string();
+
+    let mut cursor_options = cursor_options_q.single_mut()?;
+    cursor_options.grab_mode = CursorGrabMode::Locked;
 
     let player = (
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
@@ -106,7 +129,7 @@ fn toggle_camera_debug(
 fn handle_input(
     mut query: Query<(&Transform, &mut CameraRig), With<Camera3d>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut mouse_motion_events: EventReader<MouseMotion>,
+    mut mouse_motion_messages: MessageReader<MouseMotion>,
     time: Res<Time>,
 ) -> Result<(), BevyError> {
     for (transform, mut rig) in query.iter_mut() {
@@ -130,7 +153,7 @@ fn handle_input(
         let move_vec = transform.rotation * move_vec;
 
         let mut delta = Vec2::ZERO;
-        for event in mouse_motion_events.read() {
+        for event in mouse_motion_messages.read() {
             delta += event.delta;
         }
 

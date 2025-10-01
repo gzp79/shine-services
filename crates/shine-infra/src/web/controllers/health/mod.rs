@@ -27,7 +27,6 @@ impl HealthController {
     {
         let api = OpenApiRouter::new()
             .routes(routes!(api::get_ready))
-            .routes(routes!(api::get_metrics))
             .routes(routes!(api::get_telemetry_config))
             .routes(routes!(api::put_telemetry_config));
 

@@ -1,6 +1,6 @@
 use bevy::{
+    camera::primitives::{Frustum, HalfSpace},
     math::Vec3,
-    render::primitives::{Frustum, HalfSpace},
 };
 
 pub trait FrustumExt {

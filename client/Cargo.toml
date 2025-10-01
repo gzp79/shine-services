@@ -17,8 +17,7 @@ itertools = { workspace = true }
 bevy = { workspace = true, default-features = true, features = [
     "bevy_dev_tools",
 ] }
-
-bevy-inspector-egui = "0.33"
+bevy-inspector-egui = { workspace = true }
 
 
 shine-forge = { workspace = true }

@@ -6,7 +6,7 @@ use crate::input_manager::{
 use bevy::{
     app::{App, Plugin, PreUpdate},
     ecs::schedule::{IntoScheduleConfigs, SystemSet},
-    input::InputSystem,
+    input::InputSystems,
     log,
 };
 use std::marker::PhantomData;
@@ -55,7 +55,7 @@ impl Plugin for InputManagerConfigurePlugin {
                 InputManagerSystem::ProcessActions,
             )
                 .chain()
-                .after(InputSystem),
+                .after(InputSystems),
         );
 
         if self.emulate_pinch_gesture {

@@ -1,4 +1,29 @@
-use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
+use bevy::{
+    app::{App, Startup, Update},
+    asset::Assets,
+    camera::{Camera, Camera2d},
+    color::{palettes::css, Color},
+    ecs::{
+        component::Component,
+        error::BevyError,
+        name::Name,
+        system::{Commands, Query, ResMut},
+    },
+    gizmos::gizmos::Gizmos,
+    input::keyboard::KeyCode,
+    math::{
+        primitives::{
+            Annulus, Capsule2d, Circle, CircularSector, CircularSegment, Ellipse, Rectangle, RegularPolygon, Rhombus,
+        },
+        Isometry2d, Mat2, Quat, Vec2, Vec3,
+    },
+    mesh::{Mesh, Mesh2d},
+    render::view::NoIndirectDrawing,
+    sprite_render::{ColorMaterial, MeshMaterial2d},
+    transform::components::{GlobalTransform, Transform},
+    ui::{widget::Text, Node, PositionType, Val},
+    utils::default,
+};
 use shine_game::{
     app::init_application,
     input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput, PinchData, TwoFingerGesture},

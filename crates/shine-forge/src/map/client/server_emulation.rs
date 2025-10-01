@@ -1,5 +1,5 @@
 use crate::map::{
-    MapAuditedLayer, MapLayerActionEvent, MapLayerNotificationEvent, MapLayerServerChannels, MapLayerVersion,
+    MapAuditedLayer, MapLayerActionMessage, MapLayerNotificationMessage, MapLayerServerChannels, MapLayerVersion,
 };
 use bevy::log;
 use std::collections::HashMap;
@@ -32,25 +32,25 @@ where
 
         while let Some(event) = action_receiver.recv().await {
             match event {
-                MapLayerActionEvent::Track(chunk_id) => {
+                MapLayerActionMessage::Track(chunk_id) => {
                     log::info!("Start tracking {chunk_id:?}");
                     versions.insert(chunk_id, 0);
 
                     // send an empty, initial layer
-                    if let Err(err) = notification_sender.send(MapLayerNotificationEvent::Initial { id: chunk_id }) {
+                    if let Err(err) = notification_sender.send(MapLayerNotificationMessage::Initial { id: chunk_id }) {
                         log::error!("Failed to send initial notification: {err}");
                     }
                 }
-                MapLayerActionEvent::Untrack(chunk_id) => {
+                MapLayerActionMessage::Untrack(chunk_id) => {
                     log::info!("Stop tracking {chunk_id:?}");
                     versions.remove(&chunk_id);
                 }
-                MapLayerActionEvent::Update { id, operation } => {
+                MapLayerActionMessage::Update { id, operation } => {
                     log::info!("Update {id:?} with {:?}", operation.name());
                     if let Some(version) = versions.get_mut(&id) {
                         *version += 1;
                         let version = *version;
-                        if let Err(err) = notification_sender.send(MapLayerNotificationEvent::Update {
+                        if let Err(err) = notification_sender.send(MapLayerNotificationMessage::Update {
                             id,
                             version: MapLayerVersion(version),
                             operation,
@@ -61,7 +61,7 @@ where
                         log::warn!("Received update for untracked chunk {id:?}");
                     }
                 }
-                MapLayerActionEvent::Snapshot {
+                MapLayerActionMessage::Snapshot {
                     id,
                     version,
                     checksum,
