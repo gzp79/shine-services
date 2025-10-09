@@ -13,7 +13,7 @@ use bevy::{
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
 use shine_game::{
-    app::init_application,
+    app::{init_application, platform, PlatformInit},
     input_manager::{
         ActionState, ButtonChord, DualAxisChord, InputManagerPlugin, InputMap, InputPipelineExt, KeyboardInput,
         MouseButtonInput, MouseMotion, MousePosition, VirtualDPad, VirtualPad,
@@ -52,7 +52,9 @@ pub fn main() {
     init_application(setup_game);
 }
 
-fn setup_game(app: &mut App) {
+fn setup_game(app: &mut App, config: &platform::Config) {
+    app.platform_init(config);
+
     app.add_plugins(InputManagerPlugin::<Action>::default())
         .add_systems(Startup, setup)
         .add_systems(Update, (grab_mouse, show_status));

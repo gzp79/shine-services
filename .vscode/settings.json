@@ -84,6 +84,7 @@
     "rsplitn",
     "rustls",
     "samesite",
+    "Schedulable",
     "scytta",
     "serde",
     "slerp",
@@ -100,6 +101,7 @@
     "unistroke",
     "unlisten",
     "unorm",
+    "ureq",
     "utoipa",
     "wasd",
     "zipkin"

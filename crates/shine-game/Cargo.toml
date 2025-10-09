@@ -6,7 +6,7 @@ edition.workspace = true
 [features]
 default = ["dev_tools"]
 
-dev_tools = [ "bevy_mod_debugdump", "bevy_dev_tools" ]
+dev_tools = ["bevy_mod_debugdump", "bevy_dev_tools"]
 
 [dependencies]
 thiserror = { workspace = true }
@@ -19,6 +19,7 @@ itertools = { workspace = true }
 smallbox = { workspace = true }
 
 tokio = { workspace = true, features = ["rt", "sync"] }
+
 bevy = { workspace = true, features = [
     "bevy_log",
     "bevy_state",
@@ -39,6 +40,8 @@ shine-test = { workspace = true }
 ################# native dependencies #################
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+ureq = { workspace = true, features = ["rustls"] }
+blocking = { workspace = true }
 
 ################## wasm dependencies ##################
 [target.'cfg(target_arch = "wasm32")'.dependencies]

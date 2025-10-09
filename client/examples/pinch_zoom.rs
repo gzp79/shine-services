@@ -25,7 +25,7 @@ use bevy::{
     utils::default,
 };
 use shine_game::{
-    app::init_application,
+    app::{init_application, platform, PlatformInit},
     input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput, PinchData, TwoFingerGesture},
 };
 
@@ -58,13 +58,16 @@ struct AppState {
     start_matrix: Option<Transform>,
 }
 
-fn setup_game(app: &mut App) {
+fn setup_game(app: &mut App, config: &platform::Config) {
+    app.platform_init(config);
+
     app.add_plugins((
         //InputManagerConfigurePlugin::default().with_emulate_pinch_gesture(true)
         InputManagerPlugin::<Action>::default(),
-    ))
-    .add_systems(Startup, setup)
-    .add_systems(Update, (handle_control, update_camera_world_pos, show_status));
+    ));
+
+    app.add_systems(Startup, setup)
+        .add_systems(Update, (handle_control, update_camera_world_pos, show_status));
 }
 
 fn setup(

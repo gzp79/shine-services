@@ -13,7 +13,7 @@ use bevy::{
     window::Window,
 };
 use shine_game::{
-    app::init_application,
+    app::{init_application, platform, PlatformInit},
     math::value::{AnimatedValue, IntoAnimatedVariable},
 };
 
@@ -31,7 +31,9 @@ pub fn main() {
     init_application(setup_game);
 }
 
-fn setup_game(app: &mut App) {
+fn setup_game(app: &mut App, config: &platform::Config) {
+    app.platform_init(config);
+
     app.add_systems(Startup, spawn_world);
     app.add_systems(Update, (show_axis, show_exp_smooth_curve));
 }

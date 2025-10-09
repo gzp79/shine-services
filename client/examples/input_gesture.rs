@@ -18,7 +18,7 @@ use bevy::{
 };
 use core::f32;
 use shine_game::{
-    app::init_application,
+    app::{init_application, platform, PlatformInit},
     input_manager::{
         ActionState, AttachedToGestureSet, DualAxisChord, GestureInput, GestureSet, InputManagerPlugin, InputMap,
         KeyboardInput, MouseButtonInput, MousePosition, TouchPosition, UnistrokeGesture,
@@ -76,7 +76,9 @@ const GESTURES: &[(&str, &[Vec2], GestureId)] = &[
     ("Zig Zag", unistroke_templates::ZIG_ZAG, GestureId(12)),
 ];
 
-fn setup_game(app: &mut App) {
+fn setup_game(app: &mut App, config: &platform::Config) {
+    app.platform_init(config);
+
     app.add_plugins(InputManagerPlugin::<Action>::default())
         .add_systems(Startup, setup)
         .add_systems(Update, (grab_mouse, show_status, show_gesture));

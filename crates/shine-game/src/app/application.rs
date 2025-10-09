@@ -1,13 +1,15 @@
 use crate::app::{CameraSimulate, GameSystems};
 use bevy::{
     app::{App, Update},
+    asset::{AssetMetaCheck, AssetMode, AssetPlugin, UnapprovedPathMode},
     ecs::schedule::IntoScheduleConfigs,
     log,
+    utils::default,
 };
 use std::sync::OnceLock;
 
 /// The setup function for the application.
-type SetupFn = fn(&mut App);
+type SetupFn = fn(&mut App, &platform::Config);
 static SETUP_FN: OnceLock<SetupFn> = OnceLock::new();
 
 /// This function is called by the main application to initialize the application setup.
@@ -17,10 +19,14 @@ pub fn init_application(setup_fn: SetupFn) {
     }
 }
 
+pub trait PlatformInit {
+    fn platform_init(&mut self, config: &platform::Config);
+}
+
 /// Platform-specific initialization.
 #[cfg(target_arch = "wasm32")]
 pub mod platform {
-    use super::create_application;
+    use super::{create_application, customized_asset_plugin, PlatformInit};
     use bevy::{
         app::{App, AppExit, PluginGroup, PostUpdate},
         ecs::event::EventWriter,
@@ -36,18 +42,24 @@ pub mod platform {
         pub canvas: String,
     }
 
-    pub fn platform_init(app: &mut App, config: Config) {
-        let Config { canvas } = config;
+    impl PlatformInit for App {
+        fn platform_init(&mut self, config: &Config) {
+            let Config { canvas } = config;
 
-        app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                canvas: Some(canvas.clone()),
-                fit_canvas_to_parent: true,
-                ..default()
-            }),
-            ..default()
-        }));
-        log::info!("Initializing game for canvas: {}", canvas);
+            self.add_plugins(
+                DefaultPlugins
+                    .set(WindowPlugin {
+                        primary_window: Some(Window {
+                            canvas: Some(canvas.clone()),
+                            fit_canvas_to_parent: true,
+                            ..default()
+                        }),
+                        ..default()
+                    })
+                    .set(customized_asset_plugin()),
+            );
+            log::info!("Initializing game for canvas: {}", canvas);
+        }
     }
 
     static IS_APPLICATION: AtomicBool = AtomicBool::new(false);
@@ -87,6 +99,7 @@ pub mod platform {
 /// Platform-specific initialization.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod platform {
+    use super::{customized_asset_plugin, PlatformInit};
     use bevy::{
         app::{App, PluginGroup},
         utils::default,
@@ -99,22 +112,42 @@ pub mod platform {
     pub struct Config {}
 
     /// Initializes platform-specific plugins.
-    pub fn platform_init(app: &mut App, _config: Config) {
-        app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                position: WindowPosition::Centered(MonitorSelection::Primary),
-                ..default()
-            }),
-            ..default()
-        }));
+    impl PlatformInit for App {
+        fn platform_init(&mut self, _config: &Config) {
+            self.add_plugins(
+                DefaultPlugins
+                    .set(WindowPlugin {
+                        primary_window: Some(Window {
+                            position: WindowPosition::Centered(MonitorSelection::Primary),
+                            ..default()
+                        }),
+                        ..default()
+                    })
+                    .set(customized_asset_plugin()),
+            );
+        }
+    }
+}
+
+fn customized_asset_plugin() -> AssetPlugin {
+    AssetPlugin {
+        mode: AssetMode::Unprocessed,
+        meta_check: AssetMetaCheck::Never,
+        unapproved_path_mode: UnapprovedPathMode::Forbid,
+        watch_for_changes_override: Some(false),
+        ..default()
     }
 }
 
 /// Creates a Bevy application with common setup and allows for customization.
 pub fn create_application(config: platform::Config) -> App {
+    let Some(setup_fn) = SETUP_FN.get() else {
+        panic!("The application setup function has not been initialized. Call `init_application` first.");
+    };
+
     let mut app = App::new();
 
-    platform::platform_init(&mut app, config);
+    (setup_fn)(&mut app, &config);
 
     #[cfg(feature = "dev_tools")]
     {
@@ -142,12 +175,6 @@ pub fn create_application(config: platform::Config) -> App {
             .chain()
             .in_set(GameSystems::PrepareSimulate),
     );
-
-    if let Some(setup_fn) = SETUP_FN.get() {
-        (setup_fn)(&mut app);
-    } else {
-        log::error!("The application setup function has not been initialized. Call `application::init` first.");
-    }
 
     /*#[cfg(feature = "dev_tools")]
     {

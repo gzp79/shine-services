@@ -23,7 +23,7 @@ use bevy::{
     window::Window,
 };
 use shine_game::{
-    app::{init_application, AppGameSchedule, GameSystems},
+    app::{init_application, platform, AppGameSchedule, GameSystems, PlatformInit},
     camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
     math::value::IntoNamedVariable,
 };
@@ -42,7 +42,9 @@ pub fn main() {
     init_application(setup_game);
 }
 
-fn setup_game(app: &mut App) {
+fn setup_game(app: &mut App, config: &platform::Config) {
+    app.platform_init(config);
+
     app.add_plugins(CameraRigPlugin { enable_debug: true });
 
     app.add_systems(Startup, spawn_world);
