@@ -47,7 +47,8 @@ enum GameState {
 }
 
 fn setup_game(app: &mut App, config: &platform::Config) {
-    app.add_plugins(AssetSourcePlugin::new("https://assets.local.scytta.com:8093", true));
+    //app.add_plugins(AssetSourcePlugin::new("https://assets.local.scytta.com:8093", true));
+    app.add_plugins(AssetSourcePlugin::new("https://assets.scytta.com", false));
     app.platform_init(config);
     app.add_plugins(AssetPlugin::default());
 

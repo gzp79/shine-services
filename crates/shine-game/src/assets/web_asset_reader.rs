@@ -32,7 +32,8 @@ impl WebAssetReader {
         let mut base_path = PathBuf::from(&config.base_uri);
         if config.is_versioned {
             let version = Self::load_version(&agent, &base_path)?;
-            base_path = base_path.join(version);
+            let platform = if cfg!(target_arch = "wasm32") { "web" } else { "pc" };
+            base_path = base_path.join(version).join(platform);
         }
 
         log::info!("Using web asset base path: {}", base_path.display());
