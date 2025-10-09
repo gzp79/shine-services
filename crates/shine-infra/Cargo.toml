@@ -74,7 +74,7 @@ opentelemetry-application-insights = { version = "0.43", features = [
 ############################# DB #############################
 bb8 = { workspace = true }
 bb8-redis = { workspace = true }
-redis = { workspace = true, features = ["json"] }
+redis = { workspace = true, features = ["json", "safe_iterators"] }
 bb8-postgres = { workspace = true }
 tokio-postgres = { workspace = true, features = [
     "with-uuid-1",

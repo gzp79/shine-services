@@ -69,10 +69,10 @@ pub fn sync_ground_tiles(
                 let tile = ground_layer.get(coord);
 
                 if let Some(entity) = ground_render_tiles_q.find_tile_render(coord) {
-                    log::debug!("Updating existing ground tile render entity at {:?}", coord);
+                    log::debug!("Updating existing ground tile render entity at {coord:?}");
                     commands.entity(entity).despawn();
                 } else {
-                    log::debug!("Creating new ground tile render entity at {:?}", coord);
+                    log::debug!("Creating new ground tile render entity at {coord:?}");
                 }
 
                 commands.spawn(tile.create_render_bundle(render_root, coord, world_config.ground_tile_size));
