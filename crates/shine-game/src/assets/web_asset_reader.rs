@@ -1,17 +1,67 @@
 use bevy::{
-    asset::io::{AssetReader, AssetReaderError, PathStream, Reader},
+    asset::io::{AssetReader, AssetReaderError, PathStream, Reader, VecReader},
     log,
     tasks::ConditionalSendFuture,
 };
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
+
+#[cfg(not(target_arch = "wasm32"))]
 use ureq::{config::Config as UReqConfig, tls::TlsConfig, Agent};
+
+// A convenience alias to simplify conditional compilation.
+#[cfg(target_arch = "wasm32")]
+type Agent = ();
 
 #[derive(Clone)]
 pub struct WebAssetConfig {
     pub base_uri: String,
+    pub version: Option<String>,
     pub allow_insecure: bool,
-    pub is_versioned: bool,
+}
+
+impl WebAssetConfig {
+    pub fn with_version(self, version: String) -> Self {
+        Self { version: Some(version), ..self }
+    }
+
+    pub fn with_no_version(self) -> Self {
+        Self { version: None, ..self }
+    }
+
+    pub async fn with_loaded_version(self) -> Result<Self, AssetReaderError> {
+        #[derive(Deserialize)]
+        struct VersionManifest {
+            version: String,
+        }
+
+        let agent = self.create_agent();
+        let base_path = PathBuf::from(&self.base_uri);
+        let path = PathBuf::from("latest.json");
+
+        let buffer = get(agent, &base_path, &path).await?;
+        let manifest: VersionManifest = serde_json::from_slice(&buffer).map_err(|err| {
+            AssetReaderError::Io(std::io::Error::other(std::format!("failed to parse version manifest: {err}")).into())
+        })?;
+
+        Ok(self.with_version(manifest.version))
+    }
+
+    fn create_agent(&self) -> Agent {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            UReqConfig::builder()
+                .tls_config(TlsConfig::builder().disable_verification(self.allow_insecure).build())
+                .https_only(true)
+                .build()
+                .new_agent()
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            ()
+        }
+    }
 }
 
 /// Asset reader that treats paths as urls to load assets from.
@@ -23,15 +73,10 @@ pub struct WebAssetReader {
 
 impl WebAssetReader {
     pub fn new(config: WebAssetConfig) -> Result<Self, AssetReaderError> {
-        let agent = UReqConfig::builder()
-            .tls_config(TlsConfig::builder().disable_verification(config.allow_insecure).build())
-            .https_only(true)
-            .build()
-            .new_agent();
+        let agent = config.create_agent();
 
         let mut base_path = PathBuf::from(&config.base_uri);
-        if config.is_versioned {
-            let version = Self::load_version(&agent, &base_path)?;
+        if let Some(version) = config.version {
             let platform = if cfg!(target_arch = "wasm32") { "web" } else { "pc" };
             base_path = base_path.join(version).join(platform);
         }
@@ -39,38 +84,6 @@ impl WebAssetReader {
         log::info!("Using web asset base path: {}", base_path.display());
 
         Ok(Self { base_path, agent })
-    }
-
-    fn load_version(agent: &Agent, base_path: &Path) -> Result<String, AssetReaderError> {
-        let path = PathBuf::from("latest.json");
-        let uri = Self::make_uri(base_path, &path)?;
-
-        match agent.get(uri).call() {
-            Ok(mut response) => {
-                #[derive(Deserialize)]
-                struct VersionManifest {
-                    version: String,
-                }
-
-                let reader = response.body_mut().with_config().reader();
-                let manifest: VersionManifest = serde_json::from_reader(reader).map_err(|err| {
-                    AssetReaderError::Io(
-                        std::io::Error::other(std::format!("failed to parse version manifest: {err}")).into(),
-                    )
-                })?;
-                Ok(manifest.version)
-            }
-            Err(ureq::Error::StatusCode(code)) => {
-                if code == 404 {
-                    Err(AssetReaderError::NotFound(path))
-                } else {
-                    Err(AssetReaderError::HttpError(code))
-                }
-            }
-            Err(err) => Err(AssetReaderError::Io(
-                std::io::Error::other(std::format!("unexpected error while loading version manifest: {err}")).into(),
-            )),
-        }
     }
 
     fn make_uri(base: &Path, resolved_path: &Path) -> Result<String, AssetReaderError> {
@@ -84,21 +97,48 @@ impl WebAssetReader {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn get<'a>(base_path: &Path, path: &Path) -> Result<Box<dyn Reader>, AssetReaderError> {
-    use crate::io::wasm::HttpWasmAssetReader;
+async fn get<'a>(_agent: (), base_path: &Path, path: &Path) -> Result<Vec<u8>, AssetReaderError> {
+    // based on https://github.com/bevyengine/bevy/blob/main/crates/bevy_asset/src/io/wasm.rs
+
+    use js_sys::{Uint8Array, JSON};
+    use wasm_bindgen::{JsCast, JsValue};
+    use wasm_bindgen_futures::JsFuture;
+    use web_sys::Response;
 
     let uri = WebAssetReader::make_uri(&base_path, &path)?;
     log::debug!("Loading web asset: {}", uri);
 
-    HttpWasmAssetReader::new("")
-        .fetch_bytes(uri)
+    fn js_value_to_err(context: &str) -> impl FnOnce(JsValue) -> std::io::Error + '_ {
+        move |value| {
+            let message = match JSON::stringify(&value) {
+                Ok(js_str) => format!("Failed to {context}: {js_str}"),
+                Err(_) => format!("Failed to {context}"),
+            };
+            std::io::Error::other(message)
+        }
+    }
+
+    // The JS global scope includes a self-reference via a specializing name, which can be used to determine the type of global context available.
+    let window = web_sys::window().ok_or_else(|| std::io::Error::other("failed to get window"))?;
+    let resp_value = JsFuture::from(window.fetch_with_str(&uri))
         .await
-        .map(|r| Box::new(r) as Box<dyn Reader>)
+        .map_err(js_value_to_err("fetch path"))?;
+    let resp = resp_value
+        .dyn_into::<Response>()
+        .map_err(js_value_to_err("convert fetch to Response"))?;
+    match resp.status() {
+        200 => {
+            let data = JsFuture::from(resp.array_buffer().unwrap()).await.unwrap();
+            let bytes = Uint8Array::new(&data).to_vec();
+            Ok(bytes)
+        }
+        404 => Err(AssetReaderError::NotFound(path.to_path_buf())),
+        status => Err(AssetReaderError::HttpError(status)),
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn get(agent: Agent, base_path: &Path, path: &Path) -> Result<Box<dyn Reader>, AssetReaderError> {
-    use bevy::asset::io::VecReader;
+async fn get(agent: Agent, base_path: &Path, path: &Path) -> Result<Vec<u8>, AssetReaderError> {
     use blocking::unblock;
     use std::io::{BufReader, Read};
 
@@ -116,7 +156,7 @@ async fn get(agent: Agent, base_path: &Path, path: &Path) -> Result<Box<dyn Read
             let mut buffer = Vec::new();
             reader.read_to_end(&mut buffer)?;
 
-            Ok(Box::new(VecReader::new(buffer)))
+            Ok(buffer)
         }
         // ureq considers all >=400 status codes as errors
         Err(ureq::Error::StatusCode(code)) => {
@@ -142,7 +182,11 @@ impl AssetReader for WebAssetReader {
         &'a self,
         path: &'a Path,
     ) -> impl ConditionalSendFuture<Output = Result<Box<dyn Reader>, AssetReaderError>> {
-        get(self.agent.clone(), &self.base_path, path)
+        async {
+            let buffer = get(self.agent.clone(), &self.base_path, path).await?;
+            let reader: Box<dyn Reader> = Box::new(VecReader::new(buffer));
+            Ok(reader)
+        }
     }
 
     async fn read_meta<'a>(&'a self, path: &'a Path) -> Result<Box<dyn Reader>, AssetReaderError> {

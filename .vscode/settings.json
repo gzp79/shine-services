@@ -8,6 +8,7 @@
     "SHINE_TEST_PG_CNS": "postgres://username:password@postgres.mockbox.com:5432/database-test?sslmode=disable"
   },
   "rust-analyzer.cargo.features": [],
+  "rust-analyzer.cargo.target": "wasm32-unknown-unknown",
   "rust-analyzer.cargo.buildScripts.enable": true,
   "cSpell.words": [
     "actionlike",

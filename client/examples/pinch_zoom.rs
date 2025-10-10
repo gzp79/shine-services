@@ -20,12 +20,13 @@ use bevy::{
     mesh::{Mesh, Mesh2d},
     render::view::NoIndirectDrawing,
     sprite_render::{ColorMaterial, MeshMaterial2d},
+    tasks::BoxedFuture,
     transform::components::{GlobalTransform, Transform},
     ui::{widget::Text, Node, PositionType, Val},
     utils::default,
 };
 use shine_game::{
-    app::{init_application, platform, PlatformInit},
+    app::{init_application, platform, GameSetup, PlatformInit},
     input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput, PinchData, TwoFingerGesture},
 };
 
@@ -39,16 +40,15 @@ enum Action {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::app::{create_application, platform::Config};
+    use shine_game::app::platform::{start_game, Config};
 
-    init_application(setup_game);
-    let mut app = create_application(Config::default());
-    app.run();
+    init_application(GameExample);
+    start_game(Config::default());
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    init_application(setup_game);
+    init_application(GameExample);
 }
 
 #[derive(Component)]
@@ -58,16 +58,26 @@ struct AppState {
     start_matrix: Option<Transform>,
 }
 
-fn setup_game(app: &mut App, config: &platform::Config) {
-    app.platform_init(config);
+struct GameExample;
 
-    app.add_plugins((
-        //InputManagerConfigurePlugin::default().with_emulate_pinch_gesture(true)
-        InputManagerPlugin::<Action>::default(),
-    ));
+impl GameSetup for GameExample {
+    type GameConfig = ();
 
-    app.add_systems(Startup, setup)
-        .add_systems(Update, (handle_control, update_camera_world_pos, show_status));
+    fn create_setup(&self, _config: &platform::Config) -> BoxedFuture<'static, Self::GameConfig> {
+        Box::pin(async move {})
+    }
+
+    fn setup_application(&self, app: &mut App, config: &platform::Config, _game_config: ()) {
+        app.platform_init(config);
+
+        app.add_plugins((
+            //InputManagerConfigurePlugin::default().with_emulate_pinch_gesture(true)
+            InputManagerPlugin::<Action>::default(),
+        ));
+
+        app.add_systems(Startup, setup)
+            .add_systems(Update, (handle_control, update_camera_world_pos, show_status));
+    }
 }
 
 fn setup(

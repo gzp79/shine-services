@@ -12,8 +12,9 @@ cargo build --target=wasm32-unknown-unknown -p shine-client --profile ${profile}
 Write-Host "Build examples"
 cargo build --target=wasm32-unknown-unknown -p shine-client --profile ${profile} --examples
 
-Write-Host "Latest.json"
+Write-Host "Creating latest.json"
 echo "{ ""version"": ""custom"" }" > ./dist/latest.json
+New-Item -ItemType Directory -Force -Path ./dist/custom | Out-Null
 
 $wasmFiles = @("shine-client") + $exampleWasmFiles
 foreach ($wasmFile in $wasmFiles) {

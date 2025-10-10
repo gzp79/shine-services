@@ -15,51 +15,77 @@ use bevy::{
         app::AppExtStates,
         state::{NextState, OnEnter, States},
     },
+    tasks::BoxedFuture,
     time::Time,
     transform::components::Transform,
     utils::default,
 };
 use shine_game::{
-    app::{init_application, platform, PlatformInit},
-    assets::{AssetPlugin, AssetSourcePlugin, GameManifestRequests, GameManifests},
+    app::{init_application, platform, GameSetup, PlatformInit},
+    assets::{AssetPlugin, AssetSourcePlugin, GameManifestRequests, GameManifests, WebAssetConfig},
     bevy_ext::ScheduleExt,
 };
 use std::f32::consts::{FRAC_PI_4, PI};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::app::{create_application, platform::Config};
+    use shine_game::app::platform::{start_game, Config};
 
-    init_application(setup_game);
-    let mut app = create_application(Config::default());
-    app.run();
+    init_application(GameExample);
+    start_game(Config::default());
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    init_application(setup_game);
+    init_application(GameExample);
+}
+
+struct GameConfig {
+    asset_config: WebAssetConfig,
+}
+
+struct GameExample;
+
+impl GameSetup for GameExample {
+    type GameConfig = GameConfig;
+
+    fn create_setup(&self, _config: &platform::Config) -> BoxedFuture<'static, Self::GameConfig> {
+        Box::pin(async move {
+            let asset_config = WebAssetConfig {
+                base_uri: "https://assets.scytta.com".to_string(),
+                allow_insecure: false,
+                //base_uri: "https://assets.local.scytta.com:8093".to_string(),
+                //allow_insecure: true,
+                version: None,
+            }
+            .with_loaded_version()
+            .await
+            .unwrap();
+
+            GameConfig { asset_config }
+        })
+    }
+
+    fn setup_application(&self, app: &mut App, config: &platform::Config, game_config: GameConfig) {
+        app.add_plugins(AssetSourcePlugin::new(game_config.asset_config));
+        app.platform_init(config);
+        app.add_plugins(AssetPlugin::default());
+
+        app.insert_resource(DirectionalLightShadowMap { size: 4096 });
+
+        app.insert_state(GameState::Loading);
+
+        app.add_systems(Startup, start_loading)
+            .add_systems(Update, wait_loading_complete.in_state(GameState::Loading));
+        app.add_systems(OnEnter(GameState::Ready), setup_scene)
+            .add_systems(Update, animate_light_direction.in_state(GameState::Ready));
+    }
 }
 
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash)]
 enum GameState {
     Ready,
     Loading,
-}
-
-fn setup_game(app: &mut App, config: &platform::Config) {
-    //app.add_plugins(AssetSourcePlugin::new("https://assets.local.scytta.com:8093", true));
-    app.add_plugins(AssetSourcePlugin::new("https://assets.scytta.com", false));
-    app.platform_init(config);
-    app.add_plugins(AssetPlugin::default());
-
-    app.insert_resource(DirectionalLightShadowMap { size: 4096 });
-
-    app.insert_state(GameState::Loading);
-
-    app.add_systems(Startup, start_loading)
-        .add_systems(Update, wait_loading_complete.in_state(GameState::Loading));
-    app.add_systems(OnEnter(GameState::Ready), setup_scene)
-        .add_systems(Update, animate_light_direction.in_state(GameState::Ready));
 }
 
 fn start_loading(mut game_manifests: ResMut<GameManifestRequests>) {

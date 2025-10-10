@@ -13,12 +13,13 @@ use bevy::{
         keyboard::KeyCode,
         mouse::MouseButton,
     },
+    tasks::BoxedFuture,
     ui::{widget::Text, Node, PositionType, Val},
     utils::default,
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
 use shine_game::{
-    app::{init_application, platform, PlatformInit},
+    app::{init_application, platform, GameSetup, PlatformInit},
     input_manager::{
         ActionState, EdgeSize, GamepadButtonInput, GamepadStick, GamepadStickInput, InputManagerPlugin, InputMap,
         KeyboardInput, MouseButtonInput, MouseMotion, MousePosition, ScreenPositionProcess, TouchPosition,
@@ -52,24 +53,33 @@ struct StatusText;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::app::{create_application, platform::Config};
+    use shine_game::app::platform::{start_game, Config};
 
-    init_application(setup_game);
-    let mut app = create_application(Config::default());
-    app.run();
+    init_application(GameExample);
+    start_game(Config::default());
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    init_application(setup_game);
+    init_application(GameExample);
 }
 
-fn setup_game(app: &mut App, config: &platform::Config) {
-    app.platform_init(config);
+struct GameExample;
 
-    app.add_plugins(InputManagerPlugin::<Action>::default())
-        .add_systems(Startup, setup)
-        .add_systems(Update, (grab_mouse, join_gamepad, show_status));
+impl GameSetup for GameExample {
+    type GameConfig = ();
+
+    fn create_setup(&self, _config: &platform::Config) -> BoxedFuture<'static, Self::GameConfig> {
+        Box::pin(async move {})
+    }
+
+    fn setup_application(&self, app: &mut App, config: &platform::Config, _game_config: ()) {
+        app.platform_init(config);
+
+        app.add_plugins(InputManagerPlugin::<Action>::default())
+            .add_systems(Startup, setup)
+            .add_systems(Update, (grab_mouse, join_gamepad, show_status));
+    }
 }
 
 #[derive(Component)]

@@ -4,20 +4,68 @@ use bevy::{
     asset::{AssetMetaCheck, AssetMode, AssetPlugin, UnapprovedPathMode},
     ecs::schedule::IntoScheduleConfigs,
     log,
+    tasks::BoxedFuture,
     utils::default,
 };
-use std::sync::OnceLock;
+use std::{any::Any, sync::OnceLock};
 
-/// The setup function for the application.
-type SetupFn = fn(&mut App, &platform::Config);
-static SETUP_FN: OnceLock<SetupFn> = OnceLock::new();
+pub trait GameSetup: Send + Sync + 'static {
+    type GameConfig: Any + Send + Sync + 'static;
+
+    /// Asynchronously create the game configuration based on the platform configuration.
+    fn create_setup<'a>(&'a self, config: &'a platform::Config) -> BoxedFuture<'a, Self::GameConfig>;
+
+    /// Set up the application with the provided platform and game configurations.
+    fn setup_application(&self, app: &mut App, platform_config: &platform::Config, game_config: Self::GameConfig);
+}
 
 /// This function is called by the main application to initialize the application setup.
-pub fn init_application(setup_fn: SetupFn) {
-    if SETUP_FN.set(setup_fn).is_err() {
+pub fn init_application<G>(game_setup: G)
+where
+    G: GameSetup,
+{
+    if GAME_SETUP.set(Box::new(game_setup)).is_err() {
         log::warn!("The application setup function has already been initialized.");
     }
 }
+
+trait ErasedGameSetup: Send + Sync + 'static {
+    fn create_setup<'a>(&'a self, config: &'a platform::Config) -> BoxedFuture<'a, Box<dyn Any + Send + Sync>>;
+
+    fn setup_application(
+        &self,
+        app: &mut App,
+        platform_config: &platform::Config,
+        game_config: Box<dyn Any + Send + Sync>,
+    );
+}
+
+impl<T> ErasedGameSetup for T
+where
+    T: GameSetup,
+{
+    fn create_setup<'a>(&'a self, config: &'a platform::Config) -> BoxedFuture<'a, Box<dyn Any + Send + Sync>> {
+        Box::pin(async move {
+            let app_config: Box<dyn Any + Send + Sync> =
+                Box::new(<Self as GameSetup>::create_setup(self, config).await);
+            app_config
+        })
+    }
+
+    fn setup_application(
+        &self,
+        app: &mut App,
+        platform_config: &platform::Config,
+        game_config: Box<dyn Any + Send + Sync>,
+    ) {
+        let game_config = game_config
+            .downcast::<<Self as GameSetup>::GameConfig>()
+            .expect("Failed to downcast game configuration");
+        self.setup_application(app, platform_config, *game_config);
+    }
+}
+
+static GAME_SETUP: OnceLock<Box<dyn ErasedGameSetup>> = OnceLock::new();
 
 pub trait PlatformInit {
     fn platform_init(&mut self, config: &platform::Config);
@@ -26,25 +74,44 @@ pub trait PlatformInit {
 /// Platform-specific initialization.
 #[cfg(target_arch = "wasm32")]
 pub mod platform {
-    use super::{create_application, customized_asset_plugin, PlatformInit};
+    use super::{customized_asset_plugin, setup_application_common, PlatformInit, GAME_SETUP};
     use bevy::{
         app::{App, AppExit, PluginGroup, PostUpdate},
-        ecs::event::EventWriter,
+        ecs::message::MessageWriter,
         log,
         utils::default,
         window::{Window, WindowPlugin},
         DefaultPlugins,
     };
-    use std::sync::atomic::{self, AtomicBool};
+    use std::{
+        any::Any,
+        mem,
+        sync::{
+            atomic::{self, AtomicBool},
+            Mutex,
+        },
+    };
     use wasm_bindgen::prelude::*;
 
     pub struct Config {
         pub canvas: String,
+        pub enable_dev_tools: bool,
+        pub show_schedule_graphs: bool,
+    }
+
+    impl Config {
+        fn new(canvas: String) -> Self {
+            Self {
+                canvas,
+                enable_dev_tools: false,
+                show_schedule_graphs: false,
+            }
+        }
     }
 
     impl PlatformInit for App {
         fn platform_init(&mut self, config: &Config) {
-            let Config { canvas } = config;
+            let Config { canvas, .. } = config;
 
             self.add_plugins(
                 DefaultPlugins
@@ -62,10 +129,17 @@ pub mod platform {
         }
     }
 
-    static IS_APPLICATION: AtomicBool = AtomicBool::new(false);
+    enum AppState {
+        None,
+        Created(Config, Box<dyn Any + Send + Sync>),
+        Running,
+        InProcess,
+    }
+
+    static APPLICATION: Mutex<AppState> = Mutex::new(AppState::None);
     static EXIT_APPLICATION: AtomicBool = AtomicBool::new(false);
 
-    fn exit_system(mut exit: EventWriter<AppExit>) {
+    fn exit_system(mut exit: MessageWriter<AppExit>) {
         if EXIT_APPLICATION.load(atomic::Ordering::SeqCst) {
             log::info!("Exiting application...");
             exit.write(AppExit::Success);
@@ -73,20 +147,77 @@ pub mod platform {
     }
 
     #[wasm_bindgen]
-    pub fn start_game(canvas: String) {
-        if IS_APPLICATION
-            .compare_exchange(false, true, atomic::Ordering::SeqCst, atomic::Ordering::SeqCst)
-            .is_err()
-        {
-            log::error!("Game is already running.");
-            return;
+    pub async fn create_game(canvas: String) {
+        let game_setup = GAME_SETUP
+            .get()
+            .expect("The application setup function has not been initialized. Call init_application first.");
+
+        let mut current_app = APPLICATION.lock().unwrap();
+
+        match mem::replace(&mut *current_app, AppState::InProcess) {
+            AppState::None => {}
+            AppState::Created(..) => {
+                log::warn!("Game is re-created without running");
+            }
+            AppState::Running => {
+                *current_app = AppState::Running;
+                log::error!("Game is already running, stop it first.");
+                return;
+            }
+            AppState::InProcess => {
+                unimplemented!("InProcess state should be valid only temporarily in a critical section")
+            }
         }
 
-        log::info!("Starting game...");
-        let mut app = create_application(Config { canvas });
+        log::info!("Creating game...");
 
+        let platform_config = Config::new(canvas);
+        let game_config: Box<dyn Any + Send + Sync> = game_setup.create_setup(&platform_config).await;
+        *current_app = AppState::Created(platform_config, game_config);
+    }
+
+    #[wasm_bindgen]
+    pub fn start_game() {
+        let game_setup = GAME_SETUP
+            .get()
+            .expect("The application setup function has not been initialized. Call init_application first.");
+
+        let (platform_config, game_config) = {
+            let mut current_app = APPLICATION.lock().unwrap();
+            match mem::replace(&mut *current_app, AppState::InProcess) {
+                AppState::Created(platform_config, game_config) => {
+                    *current_app = AppState::Running;
+                    (platform_config, game_config)
+                }
+                AppState::Running => {
+                    *current_app = AppState::Running;
+                    log::error!("Game is already running, stop it first.");
+                    return;
+                }
+                AppState::None => {
+                    log::error!("Game has not been created. Call start_game first.");
+                    return;
+                }
+                AppState::InProcess => {
+                    unimplemented!("InProcess state should be valid only temporarily in a critical section")
+                }
+            }
+        };
+
+        let mut app = App::new();
+
+        game_setup.setup_application(&mut app, &platform_config, game_config);
         app.add_systems(PostUpdate, exit_system);
+        setup_application_common(&mut app, &platform_config);
+
         app.run();
+
+        log::info!("Application stopped...");
+        {
+            let mut current_app = APPLICATION.lock().unwrap();
+            log::info!("Application is release...");
+            *current_app = AppState::None;
+        }
     }
 
     #[wasm_bindgen]
@@ -99,17 +230,30 @@ pub mod platform {
 /// Platform-specific initialization.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod platform {
-    use super::{customized_asset_plugin, PlatformInit};
+    use super::{customized_asset_plugin, setup_application_common, PlatformInit, GAME_SETUP};
     use bevy::{
         app::{App, PluginGroup},
+        tasks::block_on,
         utils::default,
         window::{MonitorSelection, Window, WindowPlugin, WindowPosition},
         DefaultPlugins,
     };
 
     /// Platform-specific configuration.
-    #[derive(Default)]
-    pub struct Config {}
+    pub struct Config {
+        pub enable_dev_tools: bool,
+        pub show_schedule_graphs: bool,
+    }
+
+    #[allow(clippy::derivable_impls)]
+    impl Default for Config {
+        fn default() -> Self {
+            Self {
+                enable_dev_tools: false,
+                show_schedule_graphs: false,
+            }
+        }
+    }
 
     /// Initializes platform-specific plugins.
     impl PlatformInit for App {
@@ -127,6 +271,20 @@ pub mod platform {
             );
         }
     }
+
+    pub fn start_game(config: Config) {
+        let game_setup = GAME_SETUP
+            .get()
+            .expect("The application setup function has not been initialized. Call init_application first.");
+
+        let game_config = block_on(game_setup.create_setup(&config));
+
+        let mut app = App::new();
+        setup_application_common(&mut app, &config);
+        game_setup.setup_application(&mut app, &config, game_config);
+
+        app.run();
+    }
 }
 
 fn customized_asset_plugin() -> AssetPlugin {
@@ -139,19 +297,12 @@ fn customized_asset_plugin() -> AssetPlugin {
     }
 }
 
-/// Creates a Bevy application with common setup and allows for customization.
-pub fn create_application(config: platform::Config) -> App {
-    let Some(setup_fn) = SETUP_FN.get() else {
-        panic!("The application setup function has not been initialized. Call `init_application` first.");
-    };
-
-    let mut app = App::new();
-
-    (setup_fn)(&mut app, &config);
-
+fn setup_application_common(app: &mut App, config: &platform::Config) {
     #[cfg(feature = "dev_tools")]
     {
-        app.add_plugins(bevy_dev_tools::fps_overlay::FpsOverlayPlugin::default());
+        if config.enable_dev_tools {
+            app.add_plugins(bevy_dev_tools::fps_overlay::FpsOverlayPlugin::default());
+        }
     }
 
     app.configure_sets(
@@ -176,12 +327,12 @@ pub fn create_application(config: platform::Config) -> App {
             .in_set(GameSystems::PrepareSimulate),
     );
 
-    /*#[cfg(feature = "dev_tools")]
+    #[cfg(feature = "dev_tools")]
     {
-        bevy_mod_debugdump::print_schedule_graph(&mut app, bevy::app::PreUpdate);
-        bevy_mod_debugdump::print_schedule_graph(&mut app, bevy::app::Update);
-        bevy_mod_debugdump::print_render_graph(&mut app);
-    }*/
-
-    app
+        if config.show_schedule_graphs {
+            bevy_mod_debugdump::print_schedule_graph(app, bevy::app::PreUpdate);
+            bevy_mod_debugdump::print_schedule_graph(app, bevy::app::Update);
+            bevy_mod_debugdump::print_render_graph(app);
+        }
+    }
 }
