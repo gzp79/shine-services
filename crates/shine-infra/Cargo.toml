@@ -46,11 +46,13 @@ tokio = { workspace = true, features = ["macros", "signal", "rt"] }
 tracing = { workspace = true }
 tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+
 tracing-opentelemetry = { version = "0.32", features = [
     "metrics",
     "tracing-log",
 ] }
 tracing-opentelemetry-instrumentation-sdk = "0.32"
+
 opentelemetry = "0.31"
 opentelemetry-semantic-conventions = "0.31"
 opentelemetry_sdk = { version = "0.31", features = [
