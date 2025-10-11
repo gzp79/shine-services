@@ -44,7 +44,7 @@ jobs:
         run: |
           pnpm i
           pnpm run lint
-          pnpm run mkcert:local
+          pnpm run mkcert
           echo '{ "version": "${{env.VERSION}}" }' > ../services/server_version.json
         working-directory: ./tests
 
