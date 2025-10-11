@@ -70,7 +70,7 @@ jobs:
             rm ./dist/${{ github.sha }}/${example}_bg.wasm
             mv ./dist/${{ github.sha }}/${example}_opt.wasm ./dist/${{ github.sha }}/${example}_bg.wasm
             echo "Create ${example}.html"
-            sed 's/shine-client/${example}/g' client/index.html > ./dist/${{ github.sha }}/${example}.html
+            sed "s/shine-client/${example}/g" client/index.html > ./dist/${{ github.sha }}/${example}.html
           done
 
       - name: Upload artifacts
