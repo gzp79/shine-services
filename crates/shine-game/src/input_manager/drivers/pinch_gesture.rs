@@ -1,5 +1,6 @@
 use crate::bevy_ext::CameraExt;
 use bevy::{
+    camera::Camera,
     color::palettes::css,
     ecs::{
         component::Component,
@@ -9,7 +10,6 @@ use bevy::{
     gizmos::gizmos::Gizmos,
     input::{mouse::MouseButton, touch::Touches, ButtonInput},
     math::{ops::atan2, Isometry2d, Mat2, Quat, Vec2, Vec3},
-    render::camera::Camera,
     transform::components::{GlobalTransform, Transform},
     window::Window,
 };
@@ -102,7 +102,7 @@ impl PinchData {
     }
 }
 
-/// Resource that tracks the state of a two-finger touch gesture, including the IDs of the
+/// Component tracking the state of a two-finger touch gesture, including the IDs of the
 /// active touch points and their positions. This is used to calculate
 /// pan, zoom, and rotation deltas for multi-touch interactions.
 #[derive(Debug, Clone, Component)]

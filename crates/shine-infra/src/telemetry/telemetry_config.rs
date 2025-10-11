@@ -7,8 +7,9 @@ pub enum Metering {
     /// Disable metrics
     None,
 
-    /// Prometheus metrics
-    Prometheus,
+    /// Enable OpenTelemetry exporter
+    #[cfg(feature = "ot_otlp")]
+    OpenTelemetryProtocol { endpoint: String },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -20,7 +21,8 @@ pub enum Tracing {
 
     /// Enable OpenTelemetry tracing to the standard output
     StdOut,
-    /// Enable Jaeger tracing (https://www.jaegertracing.io)
+
+    /// Enable OpenTelemetry exporter (for example: https://www.jaegertracing.io)
     #[cfg(feature = "ot_otlp")]
     OpenTelemetryProtocol { endpoint: String },
 

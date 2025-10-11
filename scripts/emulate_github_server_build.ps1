@@ -18,7 +18,7 @@ docker compose -f services/docker-compose.yml -p shine --profile test up -d
 
 #Write-Host "Run tests"
 #cd tests
-#npm run test
+#pnpm run test
 
 
 

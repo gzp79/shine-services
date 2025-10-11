@@ -57,34 +57,30 @@ impl ConfigAsyncSource for AzureKeyvaultConfigSource {
             .list_secret_properties(None)
             .map_err(AzureKeyvaultConfigError)?
             .into_stream();
-        while let Some(response) = stream.try_next().await.map_err(AzureKeyvaultConfigError)? {
-            let secrets = response.into_body().await.map_err(AzureKeyvaultConfigError)?.value;
+        while let Some(secret) = stream.try_next().await.map_err(AzureKeyvaultConfigError)? {
+            if let Some(id) = secret.id {
+                let key = id.split('/').next_back();
+                if let Some(key) = key {
+                    let path = key.replace('-', ".");
+                    log::info!("Reading secret {key:?}");
+                    let secret = self
+                        .client
+                        .get_secret(key, None)
+                        .await
+                        .map_err(AzureKeyvaultConfigError)?
+                        .into_body()
+                        .await
+                        .map_err(AzureKeyvaultConfigError)?;
+                    if let (Some(attributes), Some(value)) = (secret.attributes, secret.value) {
+                        if attributes.enabled.unwrap_or(false) {
+                            // try to parse value, as conversion from string to a concrete type is not automatic.
+                            let value = if let Ok(parsed) = value.parse::<i64>() {
+                                ConfigValueKind::I64(parsed)
+                            } else {
+                                ConfigValueKind::String(value)
+                            };
 
-            for raw in secrets {
-                if let Some(id) = raw.id {
-                    let key = id.split('/').next_back();
-                    if let Some(key) = key {
-                        let path = key.replace('-', ".");
-                        log::info!("Reading secret {key:?}");
-                        let secret = self
-                            .client
-                            .get_secret(key, "", None)
-                            .await
-                            .map_err(AzureKeyvaultConfigError)?
-                            .into_body()
-                            .await
-                            .map_err(AzureKeyvaultConfigError)?;
-                        if let (Some(attributes), Some(value)) = (secret.attributes, secret.value) {
-                            if attributes.enabled.unwrap_or(false) {
-                                // try to parse value, as conversion from string to a concrete type is not automatic.
-                                let value = if let Ok(parsed) = value.parse::<i64>() {
-                                    ConfigValueKind::I64(parsed)
-                                } else {
-                                    ConfigValueKind::String(value)
-                                };
-
-                                config.insert(path, ConfigValue::new(Some(&origin), value));
-                            }
+                            config.insert(path, ConfigValue::new(Some(&origin), value));
                         }
                     }
                 }

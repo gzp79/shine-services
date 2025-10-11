@@ -1,5 +1,8 @@
 use crate::HUD_LAYER;
-use bevy::{core_pipeline::core_2d::Camera2d, ecs::system::Commands, render::camera::Camera};
+use bevy::{
+    camera::{Camera, Camera2d},
+    ecs::system::Commands,
+};
 
 pub fn spawn_hud_camera(mut commands: Commands) {
     let debug_2d_camera = (

@@ -1,4 +1,6 @@
-pub trait Tile: Default + Send + Sync + 'static {}
+use serde::{de::DeserializeOwned, Serialize};
+
+pub trait Tile: Default + Clone + Serialize + DeserializeOwned + Send + Sync + 'static {}
 
 impl Tile for u8 {}
 impl Tile for u16 {}

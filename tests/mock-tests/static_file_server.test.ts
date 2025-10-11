@@ -26,7 +26,7 @@ test.describe('Static File Server', () => {
     //todo: for some reason tls fails here (but works from the tools)
     test.skip('should serve static files with security headers', async () => {
         const mock = new StaticFileServer('static-server', {
-            url: new URL('https://local-scytta.com:9080'),
+            url: new URL('https://local.scytta.com:9080'),
             staticFilesPath: testDir
         });
 

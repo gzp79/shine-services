@@ -1,27 +1,42 @@
 mod map_chunk;
-pub use self::map_chunk::*;
-mod map_chunk_tracker;
-pub use self::map_chunk_tracker::*;
-mod map_event;
-pub use self::map_event::*;
+mod map_error;
+mod map_layer;
+mod map_layer_info;
+mod map_layer_io;
+mod map_layer_message;
+mod map_layer_operation;
+mod map_message;
+mod map_shard;
+mod tile;
+
+mod client;
+mod hex_layer;
+mod rect_layer;
+
 mod map_plugin;
 pub use self::map_plugin::*;
 
-mod chunk_hasher;
-pub use self::chunk_hasher::*;
-mod chunk_event;
-pub use self::chunk_event::*;
-mod chunk_command;
-pub use self::chunk_command::*;
-mod chunk_layer;
-pub use self::chunk_layer::*;
-
-mod tile;
-pub use self::tile::*;
-mod grid_chunk;
-pub use self::grid_chunk::*;
-mod hex_chunk;
-pub use self::hex_chunk::*;
-
-pub mod client;
-//pub mod server;
+pub use self::{
+    client::{layer_channels, shard_channels, MapLayerClientChannels, MapLayerServerChannels, ServerEmulation},
+    hex_layer::{
+        AxialCoord, HexBitsetLayer, HexDenseIndexer, HexDenseLayer, HexLayer, HexLayerConfig, HexShard, HexSparseLayer,
+        HexSparseShard, HexTileLayer,
+    },
+    map_chunk::{MapChunk, MapChunkId, MapChunkTracker, MapLayerOf, MapLayers},
+    map_error::MapError,
+    map_layer::{MapAuditedLayer, MapLayer, MapLayerConfig, MapLayerTracker},
+    map_layer_info::MapLayerInfo,
+    map_layer_io::{MapLayerIO, MapLayerIOExt, VoldemortIOToken},
+    map_layer_message::{MapLayerActionMessage, MapLayerNotificationMessage},
+    map_layer_operation::{
+        BoxedMapLayerOperation, MapChunkOperationExt, MapLayerChecksum, MapLayerOperation, MapLayerVersion,
+    },
+    map_message::MapMessage,
+    map_plugin::MapPreUpdateSystems,
+    map_shard::{MapShard, MapShardSystemConfig},
+    rect_layer::{
+        RectBitsetLayer, RectCoord, RectDenseIndexer, RectDenseLayer, RectLayer, RectLayerConfig, RectShard,
+        RectSparseLayer, RectSparseShard, RectTileLayer,
+    },
+    tile::Tile,
+};

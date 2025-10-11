@@ -17,8 +17,8 @@ url = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
 regex = { workspace = true }
-harsh = "0.2"
-primal-check = "0.3"
+harsh = { workspace = true }
+primal-check = { workspace = true }
 
 ############################# RUNTIME #############################
 pin-project = { workspace = true }

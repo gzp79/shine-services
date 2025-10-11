@@ -3,11 +3,12 @@ use crate::{
     math::value::IntoNamedVariable,
 };
 use bevy::{
+    camera::{visibility::RenderLayers, Camera, Projection},
     color::{palettes::css, Color},
     ecs::{
         component::Component,
         error::BevyError,
-        event::EventReader,
+        message::MessageReader,
         query::With,
         system::{Commands, Query, Res, ResMut},
     },
@@ -15,16 +16,12 @@ use bevy::{
     input::{keyboard::KeyCode, mouse::MouseMotion, ButtonInput},
     log,
     math::{EulerRot, Vec2, Vec3, Vec3A},
-    render::{
-        camera::{Camera, CameraProjection, Projection},
-        view::RenderLayers,
-    },
     state::state::{NextState, State, States},
     text::{TextColor, TextFont},
     time::Time,
     transform::components::Transform,
     ui::{widget::Text, AlignItems, BackgroundColor, BorderColor, JustifyContent, Node, PositionType, UiRect, Val},
-    window::{CursorGrabMode, PrimaryWindow, Window},
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
 
 /// Camera debug state to enable or disable debug camera functionality.
@@ -69,12 +66,12 @@ pub struct DebugCameraRestoreData {
 
 pub fn spawn_debug_camera(
     camera_q: Query<(&Transform, &DebugCameraTarget)>,
-    mut window_q: Query<&mut Window, With<PrimaryWindow>>,
+    mut cursor_option_q: Query<&mut CursorOptions, With<PrimaryWindow>>,
     mut commands: Commands,
 ) -> Result<(), BevyError> {
     log::debug!("Spawning debug camera");
 
-    let mut window = window_q.single_mut()?;
+    let mut cursor_options = cursor_option_q.single_mut()?;
     let (target_camera, debug_config) = camera_q.single()?;
 
     let (yaw, pitch, _) = target_camera.rotation.to_euler(EulerRot::YXZ);
@@ -90,8 +87,8 @@ pub fn spawn_debug_camera(
             DebugCameraComponents,
             DebugCameraRig,
             DebugCameraRestoreData {
-                saved_grab_state: window.cursor_options.grab_mode,
-                saved_cursor_visible: window.cursor_options.visible,
+                saved_grab_state: cursor_options.grab_mode,
+                saved_cursor_visible: cursor_options.visible,
             },
             rig.calculate_transform(0.0, None),
             rig,
@@ -132,28 +129,28 @@ pub fn spawn_debug_camera(
                 border: UiRect::all(Val::Px(2.0)),
                 ..Default::default()
             },
-            BorderColor(Color::srgba(1.0, 0.0, 0.0, 1.0)),
+            BorderColor::all(Color::srgba(1.0, 0.0, 0.0, 1.0)),
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
             layer.clone(),
         );
         commands.spawn(border_quad);
     }
 
-    window.cursor_options.grab_mode = CursorGrabMode::Locked;
-    window.cursor_options.visible = false;
+    cursor_options.grab_mode = CursorGrabMode::Locked;
+    cursor_options.visible = false;
 
     Ok(())
 }
 
 pub fn restore_debug_states(
     debug_q: Query<&DebugCameraRestoreData>,
-    mut window_q: Query<&mut Window, With<PrimaryWindow>>,
+    mut cursor_option_q: Query<&mut CursorOptions, With<PrimaryWindow>>,
 ) -> Result<(), BevyError> {
-    let mut window = window_q.single_mut()?;
+    let mut cursor_options = cursor_option_q.single_mut()?;
     let restore_point = debug_q.single()?;
 
-    window.cursor_options.grab_mode = restore_point.saved_grab_state;
-    window.cursor_options.visible = restore_point.saved_cursor_visible;
+    cursor_options.grab_mode = restore_point.saved_grab_state;
+    cursor_options.visible = restore_point.saved_cursor_visible;
 
     Ok(())
 }
@@ -185,7 +182,7 @@ pub fn handle_debug_inputs(
     camera_q: Query<&Transform, With<DebugCameraTarget>>,
     mut rig_q: Query<&mut CameraRig, With<DebugCameraRig>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut mouse_motion_events: EventReader<MouseMotion>,
+    mut mouse_motion_events: MessageReader<MouseMotion>,
     time: Res<Time>,
 ) -> Result<(), BevyError> {
     if let (Ok(transform), Ok(mut rig)) = (camera_q.single(), rig_q.single_mut()) {

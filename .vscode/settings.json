@@ -2,12 +2,14 @@
   "terminal.integrated.env.windows": {
     "_RUST_BACKTRACE": "full",
     "MIRIFLAGS": "-Zmiri-backtrace=full",
-    "_RUST_LOG": "INFO,shine_infra=TRACE,shine_infra=TRACE,shine_identity=TRACE,shine_builder=TRACE,shine_game=TRACE",
+    "RUST_LOG": "info,shine_game=trace,shine_forge=trace,shine_infra=trace,test_map=trace",
 
     "SHINE_TEST_REDIS_CNS": "redis://redis.mockbox.com:6379",
     "SHINE_TEST_PG_CNS": "postgres://username:password@postgres.mockbox.com:5432/database-test?sslmode=disable"
   },
   "rust-analyzer.cargo.features": [],
+  "rust-analyzer.cargo.target": "wasm32-unknown-unknown",
+  "rust-analyzer.cargo.buildScripts.enable": true,
   "cSpell.words": [
     "actionlike",
     "Animatable",
@@ -76,16 +78,19 @@
     "pgweb",
     "pkce",
     "pkey",
+    "prost",
     "reqwest",
     "rkey",
     "rsplit",
     "rsplitn",
     "rustls",
     "samesite",
+    "Schedulable",
     "scytta",
     "serde",
     "slerp",
     "smallbox",
+    "spawnable",
     "splitn",
     "srgb",
     "srgba",
@@ -97,6 +102,7 @@
     "unistroke",
     "unlisten",
     "unorm",
+    "ureq",
     "utoipa",
     "wasd",
     "zipkin"

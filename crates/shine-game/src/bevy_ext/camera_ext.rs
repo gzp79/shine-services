@@ -1,6 +1,6 @@
 use bevy::{
+    camera::{Camera, ViewportConversionError},
     math::Vec2,
-    render::camera::{Camera, ViewportConversionError},
 };
 
 pub trait CameraExt {

@@ -9,7 +9,7 @@
     "enableConsoleLog": true,
     "defaultLevel": "INFO,shine_builder=TRACE",
     "metrics": {
-      "type": "prometheus"
+      "type": "none"
     },
     "tracing": {
       "type": "none"

@@ -33,13 +33,15 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
             name: 'local',
             testMatch: '{mock-tests,api-tests}/**/*.ts',
             use: {
-                appDomain: 'local-scytta.com',
-                serviceDomain: 'cloud.local-scytta.com',
+                appDomain: 'local.scytta.com',
+                serviceDomain: 'cloud.local.scytta.com',
 
-                homeUrl: 'https://local-scytta.com:4443',
-                linkUrl: 'https://local-scytta.com:4443/link',
-                identityUrl: 'https://cloud.local-scytta.com:8443/identity',
-                builderUrl: 'https://cloud.local-scytta.com:8444/identity',
+                homeUrl: 'https://local.scytta.com:4443',
+                linkUrl: 'https://local.scytta.com:4443/link',
+                identityUrl: 'https://cloud.local.scytta.com:8443/identity',
+                builderUrl: 'https://cloud.local.scytta.com:8444/builder',
+
+                // skipMockService: true, // to run mock services manually
 
                 defaultRedirects: {
                     redirectUrl: 'https://redirect.com/',

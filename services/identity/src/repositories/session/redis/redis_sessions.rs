@@ -107,8 +107,13 @@ impl RedisSessionDbContext<'_> {
         //log::debug!("pattern: {pattern}");
 
         let mut keys = vec![];
-        let mut iter: redis::AsyncIter<String> = self.client.scan_match(pattern).await.map_err(DBError::RedisError)?;
+        let mut iter = self
+            .client
+            .scan_match::<String, _>(pattern)
+            .await
+            .map_err(DBError::RedisError)?;
         while let Some(key) = iter.next_item().await {
+            let key = key.map_err(DBError::RedisError)?;
             keys.push(key);
         }
         Ok(keys)

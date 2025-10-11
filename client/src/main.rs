@@ -1,37 +1,61 @@
-use bevy::{prelude::*, render::view::RenderLayers};
-use shine_game::app::init_application;
+use bevy::{
+    app::{App, Update},
+    camera::visibility::RenderLayers,
+    ecs::schedule::IntoScheduleConfigs,
+    tasks::BoxedFuture,
+};
+use shine_game::{
+    app::{init_application, platform, GameSetup, GameSystems, PlatformInit},
+    tokio::TokioPlugin,
+};
 
 mod avatar;
 mod camera;
 mod hud;
 mod world;
 
+mod debug_functions;
+
 pub const HUD_LAYER: RenderLayers = RenderLayers::layer(31);
 
-/// Add all the game plugins to the app.
-fn setup_game(app: &mut App) {
-    use bevy_inspector_egui::bevy_egui::EguiPlugin;
-    use bevy_inspector_egui::quick::WorldInspectorPlugin;
+struct TheGame;
 
-    app.add_plugins(EguiPlugin::default())
-        .add_plugins(WorldInspectorPlugin::new());
+impl GameSetup for TheGame {
+    type GameConfig = ();
 
-    app.add_plugins(hud::HUDPlugin);
-    app.add_plugins(world::WorldPlugin);
-    app.add_plugins(avatar::AvatarPlugin);
-    app.add_plugins(camera::CameraPlugin);
+    fn create_setup(&self, _config: &platform::Config) -> BoxedFuture<'static, Self::GameConfig> {
+        Box::pin(async move {})
+    }
+
+    fn setup_application(&self, app: &mut App, config: &platform::Config, _game_config: ()) {
+        /*use bevy_inspector_egui::bevy_egui::EguiPlugin;
+        use bevy_inspector_egui::quick::WorldInspectorPlugin;
+
+         panics, need some investigation
+        app.add_plugins(EguiPlugin::default())
+           .add_plugins(WorldInspectorPlugin::new());*/
+
+        app.platform_init(config);
+        app.add_plugins(TokioPlugin);
+
+        app.add_plugins(hud::HUDPlugin)
+            .add_plugins(world::WorldPlugin)
+            .add_plugins(avatar::AvatarPlugin)
+            .add_plugins(camera::CameraPlugin);
+
+        app.add_systems(Update, debug_functions::debug_load_chunk.in_set(GameSystems::Action));
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::app::{create_application, platform};
+    use shine_game::app::platform::{start_game, Config};
 
-    init_application(setup_game);
-    let mut app = create_application(platform::Config::default());
-    app.run();
+    init_application(TheGame);
+    start_game(Config::default());
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    init_application(setup_game);
+    init_application(TheGame);
 }

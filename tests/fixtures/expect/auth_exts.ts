@@ -23,7 +23,7 @@ export const expect = baseExpect.extend({
         expect(received.httpOnly).toBeTruthy();
         expect(received.sameSite).toEqual('Lax');
         expect(received.path).toEndWith('/auth/');
-        expect(received.domain).toEqual('cloud.local-scytta.com');
+        expect(received.domain).toEqual('cloud.local.scytta.com');
         expect(received.expires!).toBeAfter(new Date());
 
         return {
@@ -38,7 +38,7 @@ export const expect = baseExpect.extend({
         expect(received.httpOnly).toBeTruthy();
         expect(received.sameSite).toEqual('Lax');
         expect(received.path).toEqual('/');
-        expect(received.domain).toEqual('local-scytta.com');
+        expect(received.domain).toEqual('scytta.com');
         expect(received.expires).toBeUndefined(); // session scoped
 
         return {
@@ -53,7 +53,7 @@ export const expect = baseExpect.extend({
         expect(received.httpOnly).toBeTruthy();
         expect(received.sameSite).toEqual('Lax');
         expect(received.path).toEndWith('/auth/');
-        expect(received.domain).toEqual('cloud.local-scytta.com');
+        expect(received.domain).toEqual('cloud.local.scytta.com');
         expect(received.expires).toBeUndefined();
 
         return {

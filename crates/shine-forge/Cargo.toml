@@ -4,22 +4,26 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-log = { workspace = true }
 thiserror = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
 itertools = { workspace = true }
+smallbox = { workspace = true }
+fixedbitset = { workspace = true }
+rmp-serde = { workspace = true }
+lz4_flex = { workspace = true }
 
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt"] }
 bevy = { workspace = true, features = [
     "std",
     "async_executor",
     "track_location",
     "bevy_log",
     "bevy_state",
-]  }
+] }
 
+shine-core = { workspace = true }
 shine-infra = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -27,8 +31,6 @@ shine-test = { workspace = true }
 
 ################# native dependencies #################
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 ################## wasm dependencies ##################

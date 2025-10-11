@@ -1,4 +1,5 @@
 use opentelemetry::{
+    global,
     metrics::{Meter, MeterProvider},
     trace::TracerProvider,
     InstrumentationScope,
@@ -9,7 +10,6 @@ use opentelemetry_sdk::{
     trace::{Sampler, SdkTracerProvider},
     Resource,
 };
-use prometheus::{Encoder, Registry as PromRegistry, TextEncoder};
 use std::sync::{Arc, RwLock};
 use tracing::{Dispatch, Subscriber};
 use tracing_opentelemetry::OpenTelemetryLayer;
@@ -54,28 +54,9 @@ where
     }
 }
 
-trait MetricsExport: Send + Sync {
-    fn export(&self) -> String;
-}
-
-struct PromMeterExporter {
-    registry: PromRegistry,
-}
-
-impl MetricsExport for PromMeterExporter {
-    fn export(&self) -> String {
-        let mut buffer = vec![];
-        let encoder = TextEncoder::new();
-        let metric_families = self.registry.gather();
-        encoder.encode(&metric_families, &mut buffer).unwrap();
-        String::from_utf8(buffer).unwrap()
-    }
-}
-
 #[derive(Clone)]
 struct Metrics {
     provider: SdkMeterProvider,
-    collect: Arc<dyn MetricsExport>,
     meter: Meter,
 }
 
@@ -284,30 +265,28 @@ impl TelemetryService {
         scope: &InstrumentationScope,
     ) -> Result<(), TelemetryBuildError> {
         // Install meter provider for opentelemetry
-        let (provider, collect) = match config.metrics {
+        let provider = match &config.metrics {
             Metering::None => {
                 log::warn!("Metrics are disabled");
                 return Ok(());
             }
-            Metering::Prometheus => {
-                log::info!("Registering metrics...");
-                let registry = prometheus::Registry::new();
-                let exporter = opentelemetry_prometheus::exporter()
-                    .with_registry(registry.clone())
+            #[cfg(feature = "ot_otlp")]
+            Metering::OpenTelemetryProtocol { endpoint } => {
+                log::info!("Registering OpenTelemetryProtocol metric exporter...");
+                let exporter = opentelemetry_otlp::MetricExporter::builder()
+                    .with_tonic()
+                    .with_endpoint(endpoint)
                     .build()?;
-
-                let collect = Arc::new(PromMeterExporter { registry });
-                let provider = SdkMeterProvider::builder()
+                SdkMeterProvider::builder()
                     .with_resource(resource.clone())
-                    .with_reader(exporter)
-                    .build();
-
-                (provider, collect)
+                    .with_periodic_exporter(exporter)
+                    .build()
             }
         };
 
+        global::set_meter_provider(provider.clone());
         let meter = provider.meter_with_scope(scope.clone());
-        self.metrics = Some(Metrics { provider, collect, meter });
+        self.metrics = Some(Metrics { provider, meter });
         Ok(())
     }
 
@@ -354,14 +333,6 @@ impl TelemetryService {
 
     pub fn service_meter(&self) -> Option<&Meter> {
         self.metrics.as_ref().map(|m| &m.meter)
-    }
-
-    pub fn metrics(&self) -> String {
-        if let Some(metrics) = &self.metrics {
-            metrics.collect.export()
-        } else {
-            String::new()
-        }
     }
 
     pub fn create_layer(&self) -> OtelLayer {

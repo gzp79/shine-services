@@ -6,7 +6,7 @@ edition.workspace = true
 [features]
 default = ["dev_tools"]
 
-dev_tools = ["bevy_mod_debugdump"]
+dev_tools = ["bevy_mod_debugdump", "bevy_dev_tools"]
 
 [dependencies]
 thiserror = { workspace = true }
@@ -18,7 +18,8 @@ noise = { workspace = true }
 itertools = { workspace = true }
 smallbox = { workspace = true }
 
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync"] }
+
 bevy = { workspace = true, features = [
     "bevy_log",
     "bevy_state",
@@ -26,9 +27,15 @@ bevy = { workspace = true, features = [
     "bevy_core_pipeline",
     "bevy_ui",
     "bevy_gizmos",
-] }
 
-bevy_mod_debugdump = { version = "0.13", optional = true }
+    "ktx2",
+    "jpeg",
+    "png",
+    "webp",
+    "exr",
+] }
+bevy_dev_tools = { workspace = true, optional = true }
+bevy_mod_debugdump = { workspace = true, optional = true }
 
 shine-core = { workspace = true }
 shine-infra = { workspace = true, optional = true }
@@ -38,15 +45,24 @@ shine-test = { workspace = true }
 
 ################# native dependencies #################
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+ureq = { workspace = true, features = ["rustls"] }
+blocking = { workspace = true }
 
 ################## wasm dependencies ##################
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-bevy = { workspace = true, features = ["webgl2"] }
-wasm-bindgen = { workspace = true }
 getrandom = { workspace = true, features = ["wasm_js"] }
+
+js-sys = { workspace = true }
+web-sys = { workspace = true, features = [
+    "Window",
+    "Response",
+    "WorkerGlobalScope",
+] }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+
+bevy = { workspace = true, features = ["webgl2"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { workspace = true }

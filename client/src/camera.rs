@@ -1,7 +1,7 @@
 use crate::{avatar::Avatar, HUD_LAYER};
 use bevy::{
     app::{App, Plugin, PreUpdate, Startup},
-    core_pipeline::core_3d::Camera3d,
+    camera::{Camera, Camera3d},
     ecs::{
         entity::Entity,
         error::BevyError,
@@ -11,7 +11,7 @@ use bevy::{
     },
     input::keyboard::KeyCode,
     math::{Quat, Vec3},
-    render::{camera::Camera, view::NoIndirectDrawing},
+    render::view::NoIndirectDrawing,
     transform::components::Transform,
 };
 use shine_game::{

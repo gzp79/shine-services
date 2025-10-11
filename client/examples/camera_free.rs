@@ -1,45 +1,80 @@
 use bevy::{
-    input::mouse::MouseMotion,
-    prelude::*,
-    window::CursorGrabMode,
-    {color::palettes::css, render::view::NoIndirectDrawing},
+    app::{App, Startup},
+    asset::Assets,
+    camera::{Camera, Camera3d},
+    color::{palettes::css, Color},
+    ecs::{
+        entity::Entity,
+        error::BevyError,
+        message::MessageReader,
+        query::With,
+        system::{Commands, Query, Res, ResMut},
+    },
+    input::{keyboard::KeyCode, mouse::MouseMotion, ButtonInput},
+    light::PointLight,
+    math::{
+        primitives::{Cuboid, Plane3d},
+        Vec2, Vec3,
+    },
+    mesh::{Mesh, Mesh3d, Meshable},
+    pbr::{MeshMaterial3d, StandardMaterial},
+    render::view::NoIndirectDrawing,
+    tasks::BoxedFuture,
+    time::Time,
+    transform::components::Transform,
+    utils::default,
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
 use shine_game::{
-    app::{init_application, AppGameSchedule, GameSystem},
+    app::{init_application, platform, AppGameSchedule, GameSetup, GameSystems, PlatformInit},
     camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
     math::value::IntoNamedVariable,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::app::{create_application, platform::Config};
+    use shine_game::app::platform::{start_game, Config};
 
-    init_application(setup_game);
-    let mut app = create_application(Config::default());
-    app.run();
+    init_application(GameExample);
+    start_game(Config::default());
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    init_application(setup_game);
+    init_application(GameExample);
 }
 
-fn setup_game(app: &mut App) {
-    app.add_plugins(CameraRigPlugin { enable_debug: true });
+struct GameExample;
 
-    app.add_systems(Startup, spawn_world);
-    app.add_update_systems(GameSystem::Action, (handle_input, toggle_camera_debug));
+impl GameSetup for GameExample {
+    type GameConfig = ();
+
+    fn create_setup(&self, _config: &platform::Config) -> BoxedFuture<'static, Self::GameConfig> {
+        Box::pin(async move {})
+    }
+
+    fn setup_application(&self, app: &mut App, config: &platform::Config, _game_config: ()) {
+        app.platform_init(config);
+
+        app.add_plugins(CameraRigPlugin { enable_debug: true });
+
+        app.add_systems(Startup, spawn_world);
+        app.add_update_systems(GameSystems::Action, (handle_input, toggle_camera_debug));
+    }
 }
 
 fn spawn_world(
-    mut windows: Query<&mut Window>,
+    mut window_q: Query<&mut Window, With<PrimaryWindow>>,
+    mut cursor_options_q: Query<&mut CursorOptions, With<PrimaryWindow>>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) -> Result<(), BevyError> {
-    let mut window = windows.single_mut().unwrap();
-    window.cursor_options.grab_mode = CursorGrabMode::Locked;
+    let mut window = window_q.single_mut()?;
     window.title = "Camera Free (Mouse, WASD)".to_string();
+
+    let mut cursor_options = cursor_options_q.single_mut()?;
+    cursor_options.grab_mode = CursorGrabMode::Locked;
 
     let player = (
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
@@ -106,7 +141,7 @@ fn toggle_camera_debug(
 fn handle_input(
     mut query: Query<(&Transform, &mut CameraRig), With<Camera3d>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut mouse_motion_events: EventReader<MouseMotion>,
+    mut mouse_motion_messages: MessageReader<MouseMotion>,
     time: Res<Time>,
 ) -> Result<(), BevyError> {
     for (transform, mut rig) in query.iter_mut() {
@@ -130,7 +165,7 @@ fn handle_input(
         let move_vec = transform.rotation * move_vec;
 
         let mut delta = Vec2::ZERO;
-        for event in mouse_motion_events.read() {
+        for event in mouse_motion_messages.read() {
             delta += event.delta;
         }
 

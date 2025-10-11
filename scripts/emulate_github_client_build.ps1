@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $profile="release"
 #$exampleWasmFiles = "camera_follow camera_free camera_look_at camera_orbit input_drivers input_process input_multiplayer input_gesture pinch_zoom curve" -split ' '
-$exampleWasmFiles = "curve" -split ' '
+$exampleWasmFiles = "asset" -split ' '
 $bindgen=$true
 $opt=$false
 
@@ -12,8 +12,9 @@ cargo build --target=wasm32-unknown-unknown -p shine-client --profile ${profile}
 Write-Host "Build examples"
 cargo build --target=wasm32-unknown-unknown -p shine-client --profile ${profile} --examples
 
-Write-Host "Latest.json"
+Write-Host "Creating latest.json"
 echo "{ ""version"": ""custom"" }" > ./dist/latest.json
+New-Item -ItemType Directory -Force -Path ./dist/custom | Out-Null
 
 $wasmFiles = @("shine-client") + $exampleWasmFiles
 foreach ($wasmFile in $wasmFiles) {

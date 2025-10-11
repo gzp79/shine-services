@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  #EXAMPLES: camera_follow camera_free camera_look_at camera_orbit input_drivers input_process input_multiplayer input_gesture pinch_zoom
-  EXAMPLES: curve input_gesture pinch_zoom
+  #EXAMPLES: camera_follow camera_free camera_look_at camera_orbit input_drivers input_process input_multiplayer input_gesture pinch_zoom asset
+  EXAMPLES: asset input_gesture pinch_zoom
   PROFILE: release
   S3_BUCKET_LINK: https://ce847ac4c44fb11af63e62ba34ec40db.r2.cloudflarestorage.com
   S3_BUCKET_NAME: shine-games
@@ -41,8 +41,9 @@ jobs:
       - name: Install Wasm tools
         run: |
           curl https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh -sSf | sh
-          cargo binstall wasm-bindgen-cli
-          cargo binstall wasm-opt
+          WASM_BINDGEN_VERSION=$(grep 'wasm-bindgen = ' Cargo.toml | sed 's/.*= "//' | sed 's/".*//')
+          cargo binstall wasm-bindgen-cli@$WASM_BINDGEN_VERSION --no-confirm
+          cargo binstall wasm-opt --no-confirm
 
       - name: Compile to WASM
         run: |

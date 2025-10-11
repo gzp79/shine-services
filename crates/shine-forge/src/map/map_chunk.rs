@@ -1,100 +1,103 @@
-use bevy::ecs::{
-    component::{Component, Mutable},
-    resource::Resource,
+use crate::map::{AxialCoord, MapMessage};
+use bevy::{
+    ecs::{
+        component::Component,
+        entity::Entity,
+        message::MessageReader,
+        name::Name,
+        resource::Resource,
+        system::{Commands, ResMut},
+    },
+    log,
 };
-use serde::{de::DeserializeOwned, Serialize};
-use std::{
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-};
+use std::collections::{hash_map::Entry, HashMap};
 
-/// Unique identifier for a chunk in the world
+/// Unique identifier of a chunk of the map.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct ChunkId(pub usize, pub usize);
+pub struct MapChunkId(pub usize, pub usize);
 
-/// Mark the root of a chunk in the ECS
-/// Layers of a chunk are either stored as a component or as a child of the root entity.
-#[derive(Component)]
-pub struct ChunkRoot {
-    pub id: ChunkId,
+impl MapChunkId {
+    /// Return the relative axial coordinate of a chunk id relative to this chunk id.
+    /// This function interprets the chunk coordinates as the q,r components of the axial coordinates.
+    pub fn relative_axial_coord(&self, id: MapChunkId) -> AxialCoord {
+        let dx = id.0 as isize - self.0 as isize;
+        let dy = id.1 as isize - self.1 as isize;
+        AxialCoord::new(dx.try_into().unwrap(), dy.try_into().unwrap())
+    }
 }
 
-/// Store the version of a layer of the chunk.
+/// Relationship component to attach multiple layers of a chunk to the root.
+#[derive(Component, Default)]
+#[relationship_target(relationship = MapLayerOf, linked_spawn)]
+pub struct MapLayers(Vec<Entity>);
+
+/// Relationship component to link a map layer back to its parent chunk.
 #[derive(Component)]
-pub struct ChunkVersion<C>
-where
-    C: MapChunk,
-{
-    pub version: usize,
-    ph: PhantomData<C>,
+#[relationship(relationship_target = MapLayers)]
+pub struct MapLayerOf(pub Entity);
+
+/// A chunk of the map coupling the layers of a specific chunk id.
+#[derive(Component)]
+#[require(MapLayers)]
+pub struct MapChunk {
+    pub id: MapChunkId,
 }
 
-impl<C> Default for ChunkVersion<C>
-where
-    C: MapChunk,
-{
+impl MapChunk {
+    pub fn new(id: MapChunkId) -> Self {
+        Self { id }
+    }
+}
+
+/// Tracks the loaded chunks.
+#[derive(Resource)]
+pub struct MapChunkTracker {
+    pub chunks: HashMap<MapChunkId, Entity>,
+}
+
+impl Default for MapChunkTracker {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<C> ChunkVersion<C>
-where
-    C: MapChunk,
-{
+impl MapChunkTracker {
     pub fn new() -> Self {
-        Self { version: 0, ph: PhantomData }
+        Self { chunks: HashMap::new() }
     }
 
-    pub fn with_version(version: usize) -> Self {
-        Self { version, ph: PhantomData }
-    }
-}
-
-impl<C> Deref for ChunkVersion<C>
-where
-    C: MapChunk,
-{
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.version
+    pub fn get_entity(&self, chunk_id: MapChunkId) -> Option<Entity> {
+        self.chunks.get(&chunk_id).cloned()
     }
 }
 
-impl<C> DerefMut for ChunkVersion<C>
-where
-    C: MapChunk,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.version
+/// Process 'MapMessage' messages.
+pub fn process_map_messages(
+    mut chunk_tracker: ResMut<MapChunkTracker>,
+    mut map_messages: MessageReader<MapMessage>,
+    mut commands: Commands,
+) {
+    for message in map_messages.read() {
+        log::debug!("Processing MapMessage: {message:?}");
+        match message {
+            MapMessage::Load(chunk_id) => {
+                if let Entry::Vacant(entry) = chunk_tracker.chunks.entry(*chunk_id) {
+                    let entity = commands
+                        .spawn((
+                            Name::new(format!("MapChunk({},{})", chunk_id.0, chunk_id.1)),
+                            MapChunk::new(*chunk_id),
+                        ))
+                        .id();
+                    entry.insert(entity);
+                    log::debug!("Chunk [{chunk_id:?}]: Spawned chunk: {entity:?}");
+                }
+            }
+            MapMessage::Unload(chunk_id) => {
+                if let Some(entity) = chunk_tracker.chunks.remove(chunk_id) {
+                    log::debug!("Chunk [{chunk_id:?}]: Despawn chunk: {entity:?}");
+                    commands.entity(entity).despawn();
+                }
+            }
+        }
     }
-}
-
-/// Update operation for a chunk stored in the event-stream.
-pub trait ChunkOperation<C>: Serialize + DeserializeOwned + Send + Sync + 'static {
-    fn check_precondition(&self, chunk: &C) -> bool;
-    fn apply(self, chunk: &mut C);
-}
-
-/// Configuration for the map that applies to all chunks
-pub trait MapConfig: Resource + Clone {}
-
-/// Trait to define a layer of a chunk in the map.
-pub trait MapChunk: Component<Mutability = Mutable> {
-    /// Name of the layer.
-    fn name() -> &'static str;
-
-    /// Create an empty chunk component indicating that the chunk is not loaded yet.
-    fn new_empty() -> Self
-    where
-        Self: Sized;
-
-    /*/// Create a new chunk default component with the given configuration.
-    fn new(config: &CFG) -> Self
-    where
-        Self: Sized;*/
-
-    /// Return if the chunk is empty (on-loaded) or not.
-    fn is_empty(&self) -> bool;
 }

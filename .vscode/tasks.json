@@ -104,8 +104,8 @@
         "cwd": "services/identity",
         "env": {
           "RUST_BACKTRACE": "full",
-          "SHINE--SERVICE--TLS--CERT": "../../certs/test.crt2",
-          "SHINE--SERVICE--TLS--KEY": "../../certs/test.key",
+          "SHINE--SERVICE--TLS--CERT": "../../certs/scytta.crt2",
+          "SHINE--SERVICE--TLS--KEY": "../../certs/scytta.key",
           "SHINE--SERVICE--PORT": "8443",
           "SHINE--SERVICE--SESSION_REDIS_CNS": "${env:SHINE_REDIS_CNS}",
           "SHINE--IDENTITY--AUTH--AUTH_BASE_URL": "https://local-cloud.scytta.com:8443/identity/auth/",
@@ -123,8 +123,8 @@
         "cwd": "services/identity",
         "env": {
           "RUST_BACKTRACE": "full",
-          "SHINE--SERVICE--TLS--CERT": "../../certs/test.crt",
-          "SHINE--SERVICE--TLS--KEY": "../../certs/test.key",
+          "SHINE--SERVICE--TLS--CERT": "../../certs/scytta.crt",
+          "SHINE--SERVICE--TLS--KEY": "../../certs/scytta.key",
           "SHINE--SERVICE--PORT": "8443"
         }
       },
@@ -138,8 +138,8 @@
       "options": {
         "cwd": "services/builder",
         "env": {
-          "SHINE--SERVICE--TLS--CERT": "../../certs/test.crt",
-          "SHINE--SERVICE--TLS--KEY": "../../certs/test.key",
+          "SHINE--SERVICE--TLS--CERT": "../../certs/scytta.crt",
+          "SHINE--SERVICE--TLS--KEY": "../../certs/scytta.key",
           "SHINE--SERVICE--POSRT": "8443"
         }
       },
@@ -154,8 +154,8 @@
         "cwd": "services/builder",
         "env": {
           "RUST_BACKTRACE": "full",
-          "SHINE--SERVICE--TLS--CERT": "../../certs/test.crt",
-          "SHINE--SERVICE--TLS--KEY": "../../certs/test.key",
+          "SHINE--SERVICE--TLS--CERT": "../../certs/scytta.crt",
+          "SHINE--SERVICE--TLS--KEY": "../../certs/scytta.key",
           "SHINE--SERVICE--PORT": "8444"
         }
       },
@@ -169,7 +169,7 @@
       "options": {
         "cwd": "client",
         "env": {
-          "RUST_LOG": "info,shine_game=debug,shine_factory=debug,shine_client=debug",
+          "RUST_LOG": "info,shine_game=debug,shine_forge=debug,shine_client=debug",
           "RUST_BACKTRACE": "full"
         }
       },
@@ -244,7 +244,8 @@
           "label": "input_multiplayer",
           "value": "--example input_multiplayer"
         },
-        { "label": "pinch_zoom", "value": "--example pinch_zoom" }
+        { "label": "pinch_zoom", "value": "--example pinch_zoom" },
+        { "label": "asset", "value": "--example asset" }
       ],
       "default": "asset-service"
     },

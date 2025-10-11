@@ -1,6 +1,20 @@
-use bevy::{prelude::*, window::CursorGrabMode};
+use bevy::{
+    app::{App, Startup, Update},
+    camera::{Camera, Camera2d},
+    ecs::{
+        component::Component,
+        error::BevyError,
+        query::With,
+        system::{Commands, Query},
+    },
+    input::{keyboard::KeyCode, mouse::MouseButton},
+    tasks::BoxedFuture,
+    ui::{widget::Text, Node, PositionType, Val},
+    utils::default,
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
+};
 use shine_game::{
-    app::init_application,
+    app::{init_application, platform, GameSetup, PlatformInit},
     input_manager::{
         ActionState, ButtonChord, DualAxisChord, InputManagerPlugin, InputMap, InputPipelineExt, KeyboardInput,
         MouseButtonInput, MouseMotion, MousePosition, VirtualDPad, VirtualPad,
@@ -27,22 +41,33 @@ struct StatusText;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::app::{create_application, platform::Config};
+    use shine_game::app::platform::{start_game, Config};
 
-    init_application(setup_game);
-    let mut app = create_application(Config::default());
-    app.run();
+    init_application(GameExample);
+    start_game(Config::default());
 }
 
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    init_application(setup_game);
+    init_application(GameExample);
 }
 
-fn setup_game(app: &mut App) {
-    app.add_plugins(InputManagerPlugin::<Action>::default())
-        .add_systems(Startup, setup)
-        .add_systems(Update, (grab_mouse, show_status));
+struct GameExample;
+
+impl GameSetup for GameExample {
+    type GameConfig = ();
+
+    fn create_setup(&self, _config: &platform::Config) -> BoxedFuture<'static, Self::GameConfig> {
+        Box::pin(async move {})
+    }
+
+    fn setup_application(&self, app: &mut App, config: &platform::Config, _game_config: ()) {
+        app.platform_init(config);
+
+        app.add_plugins(InputManagerPlugin::<Action>::default())
+            .add_systems(Startup, setup)
+            .add_systems(Update, (grab_mouse, show_status));
+    }
 }
 
 fn setup(mut commands: Commands, mut windows: Query<&mut Window>) -> Result<(), BevyError> {
@@ -112,26 +137,33 @@ fn setup(mut commands: Commands, mut windows: Query<&mut Window>) -> Result<(), 
     Ok(())
 }
 
-fn grab_mouse(players: Query<&ActionState<Action>, Without<Window>>, mut window: Query<&mut Window>) {
-    let action_state = players.single().unwrap();
-    let mut window = window.single_mut().unwrap();
+fn grab_mouse(
+    players: Query<&ActionState<Action>>,
+    mut window: Query<&mut Window, With<PrimaryWindow>>,
+    mut cursor_options: Query<&mut CursorOptions, With<PrimaryWindow>>,
+) -> Result<(), BevyError> {
+    let action_state = players.single()?;
+    let mut cursor_options = cursor_options.single_mut()?;
+    let mut window = window.single_mut()?;
 
     if action_state.just_pressed(&Action::Grab) {
-        match window.cursor_options.grab_mode {
+        match cursor_options.grab_mode {
             CursorGrabMode::None => {
-                window.cursor_options.grab_mode = CursorGrabMode::Locked;
+                cursor_options.grab_mode = CursorGrabMode::Locked;
                 window.title = "Locked".to_string();
             }
             CursorGrabMode::Locked => {
-                window.cursor_options.grab_mode = CursorGrabMode::Confined;
+                cursor_options.grab_mode = CursorGrabMode::Confined;
                 window.title = "Confined".to_string();
             }
             CursorGrabMode::Confined => {
-                window.cursor_options.grab_mode = CursorGrabMode::None;
+                cursor_options.grab_mode = CursorGrabMode::None;
                 window.title = "None".to_string();
             }
         };
     }
+
+    Ok(())
 }
 
 fn show_status(mut players: Query<(&ActionState<Action>, &mut Text)>) {

@@ -1,29 +1,63 @@
-use bevy::{color::palettes::css, prelude::*, render::view::NoIndirectDrawing};
+use bevy::{
+    app::{App, Startup},
+    asset::Assets,
+    camera::{Camera, Camera3d},
+    color::{palettes::css, Color},
+    ecs::{
+        entity::Entity,
+        error::BevyError,
+        query::With,
+        system::{Commands, Query, Res, ResMut},
+    },
+    input::{keyboard::KeyCode, ButtonInput},
+    light::PointLight,
+    math::{
+        primitives::{Cuboid, Plane3d},
+        Vec3,
+    },
+    mesh::{Mesh, Mesh3d, Meshable},
+    pbr::{MeshMaterial3d, StandardMaterial},
+    render::view::NoIndirectDrawing,
+    tasks::BoxedFuture,
+    transform::components::Transform,
+    utils::default,
+    window::Window,
+};
 use shine_game::{
-    app::{init_application, AppGameSchedule, GameSystem},
+    app::{init_application, platform, AppGameSchedule, GameSetup, GameSystems, PlatformInit},
     camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
     math::value::IntoNamedVariable,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn main() {
-    use shine_game::app::{create_application, platform::Config};
+    use shine_game::app::platform::{start_game, Config};
 
-    init_application(setup_game);
-    let mut app = create_application(Config::default());
-    app.run();
+    init_application(GameExample);
+    start_game(Config::default());
 }
-
 #[cfg(target_arch = "wasm32")]
 pub fn main() {
-    init_application(setup_game);
+    init_application(GameExample);
 }
 
-fn setup_game(app: &mut App) {
-    app.add_plugins(CameraRigPlugin { enable_debug: true });
+struct GameExample;
 
-    app.add_systems(Startup, spawn_world);
-    app.add_update_systems(GameSystem::Action, (handle_input, toggle_camera_debug));
+impl GameSetup for GameExample {
+    type GameConfig = ();
+
+    fn create_setup(&self, _config: &platform::Config) -> BoxedFuture<'static, Self::GameConfig> {
+        Box::pin(async move {})
+    }
+
+    fn setup_application(&self, app: &mut App, config: &platform::Config, _game_config: ()) {
+        app.platform_init(config);
+
+        app.add_plugins(CameraRigPlugin { enable_debug: true });
+
+        app.add_systems(Startup, spawn_world);
+        app.add_update_systems(GameSystems::Action, (handle_input, toggle_camera_debug));
+    }
 }
 
 fn spawn_world(

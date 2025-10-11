@@ -9,11 +9,17 @@ import path from 'path';
 async function main() {
     debug.enable('test:mock:*');
 
-    const mock_static = new StaticFileServer('game', {
-        url: new URL('https://game.local-scytta.com:8092'),
+    const mock_game = new StaticFileServer('game', {
+        url: new URL('https://game.local.scytta.com:8092'),
         staticFilesPath: path.join(__dirname, '../..', 'dist')
     });
-    await mock_static.start();
+    await mock_game.start();
+
+    const mock_assets = new StaticFileServer('assets', {
+        url: new URL('https://assets.local.scytta.com:8093'),
+        staticFilesPath: path.join(__dirname, '../../..', 'shine-assets/generated/assets')
+    });
+    await mock_assets.start();
 
     const mock_smtp = new MockSmtp();
     await mock_smtp.start();

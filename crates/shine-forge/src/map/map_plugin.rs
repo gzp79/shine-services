@@ -1,138 +1,90 @@
-use crate::map::{process_map_event_system, MapChunkTracker, MapConfig, MapEvent};
-use bevy::app::{App, Plugin, PreUpdate};
-use std::marker::PhantomData;
+use crate::map::{
+    client::{forward_action_events_to_channel, receive_notification_events_from_channel},
+    map_chunk::process_map_messages,
+    map_shard::{create_shard, process_shard_notification_messages, remove_shard},
+    MapChunkTracker, MapLayerActionMessage, MapLayerNotificationMessage, MapLayerTracker, MapMessage, MapShard,
+    MapShardSystemConfig,
+};
+use bevy::{
+    app::{App, Plugin, PreUpdate},
+    ecs::schedule::{IntoScheduleConfigs, SystemSet},
+};
 
-/// Trait to setup a single layer of the map
-pub trait LayerSetup<CFG>: Send + Sync + 'static
-where
-    CFG: MapConfig,
-{
-    fn build(&self, app: &mut App);
+#[derive(SystemSet, Clone, Hash, Debug, PartialEq, Eq)]
+pub enum MapPreUpdateSystems {
+    ProcessMapEvents,
+    CreateLayers,
+    InjectNotifications,
+    ProcessNotifications,
+    ExtractActions,
 }
 
-impl<CFG> LayerSetup<CFG> for ()
-where
-    CFG: MapConfig,
-{
-    fn build(&self, _app: &mut App) {}
-}
+#[derive(Default)]
+pub struct MapPlugin {}
 
-/// Trait to setup a chain of layers of the map
-#[doc(hidden)]
-pub trait LayerSetupChain<CFG>: LayerSetup<CFG>
-where
-    CFG: MapConfig,
-{
-    fn add_layer<L>(self, layer: L) -> impl LayerSetupChain<CFG>
-    where
-        L: LayerSetup<CFG>;
-}
-
-/// The setup chain for the map layers
-pub struct MapLayersPlugin<CFG, B = (), N = ()>
-where
-    CFG: MapConfig,
-    B: LayerSetup<CFG>,
-    N: LayerSetup<CFG>,
-{
-    builder: B,
-    next: N,
-    ph: PhantomData<CFG>,
-}
-
-impl<CFG, B> MapLayersPlugin<CFG, B, ()>
-where
-    CFG: MapConfig,
-    B: LayerSetup<CFG>,
-{
-    pub fn new(builder: B) -> Self {
-        Self {
-            builder,
-            next: (),
-            ph: PhantomData,
-        }
-    }
-}
-
-impl<CFG, B, N> LayerSetup<CFG> for MapLayersPlugin<CFG, B, N>
-where
-    CFG: MapConfig,
-    B: LayerSetup<CFG>,
-    N: LayerSetup<CFG>,
-{
+impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
-        self.builder.build(app);
-        self.next.build(app);
+        app.init_resource::<MapChunkTracker>();
+        app.add_message::<MapMessage>();
+
+        app.configure_sets(
+            PreUpdate,
+            (
+                MapPreUpdateSystems::ProcessMapEvents,
+                MapPreUpdateSystems::CreateLayers,
+                MapPreUpdateSystems::InjectNotifications,
+                MapPreUpdateSystems::ProcessNotifications,
+                MapPreUpdateSystems::ExtractActions,
+            )
+                .chain(),
+        );
+
+        app.add_systems(
+            PreUpdate,
+            process_map_messages.in_set(MapPreUpdateSystems::ProcessMapEvents),
+        );
     }
 }
 
-impl<CFG, B, N> LayerSetupChain<CFG> for MapLayersPlugin<CFG, B, N>
-where
-    CFG: MapConfig,
-    B: LayerSetup<CFG>,
-    N: LayerSetup<CFG>,
-{
-    fn add_layer<C>(self, layer: C) -> impl LayerSetupChain<CFG>
+pub trait MapAppExt {
+    fn add_map_shard<S>(&mut self, system_config: MapShardSystemConfig<S>, layer_config: S::Config)
     where
-        C: LayerSetup<CFG>,
-    {
-        MapLayersPlugin {
-            builder: self.builder,
-            next: MapLayersPlugin::new(layer),
-            ph: PhantomData,
-        }
-    }
+        S: MapShard;
 }
 
-pub struct MapPlugin<CFG, L = MapLayersPlugin<CFG>>
-where
-    CFG: MapConfig,
-    L: LayerSetupChain<CFG>,
-{
-    config: CFG,
-    layers: L,
-}
-
-impl<CFG> MapPlugin<CFG, MapLayersPlugin<CFG>>
-where
-    CFG: MapConfig,
-{
-    pub fn new(config: CFG) -> Self {
-        Self {
-            config,
-            layers: MapLayersPlugin::<CFG>::new(()),
-        }
-    }
-}
-
-impl<CFG, L> MapPlugin<CFG, L>
-where
-    CFG: MapConfig,
-    L: LayerSetupChain<CFG>,
-{
-    pub fn with_layer<S>(self, layer: S) -> MapPlugin<CFG, impl LayerSetupChain<CFG>>
+impl MapAppExt for App {
+    fn add_map_shard<S>(&mut self, system_config: MapShardSystemConfig<S>, layer_config: S::Config)
     where
-        S: LayerSetup<CFG>,
+        S: MapShard,
     {
-        MapPlugin {
-            config: self.config,
-            layers: self.layers.add_layer(layer),
+        if !self.is_plugin_added::<MapPlugin>() {
+            self.add_plugins(MapPlugin::default());
         }
-    }
-}
 
-impl<CFG, L> Plugin for MapPlugin<CFG, L>
-where
-    CFG: MapConfig,
-    L: LayerSetupChain<CFG>,
-{
-    fn build(&self, app: &mut App) {
-        app.insert_resource(self.config.clone());
-        app.insert_resource(MapChunkTracker::new());
-        app.add_event::<MapEvent>();
+        self.insert_resource(layer_config);
+        self.insert_resource(system_config.clone());
+        self.insert_resource(MapLayerTracker::<S::Primary>::default());
+        self.add_message::<MapLayerActionMessage<S::Primary>>();
+        self.add_message::<MapLayerNotificationMessage<S::Primary>>();
 
-        self.layers.build(app);
+        self.add_observer(create_shard::<S>);
+        self.add_observer(remove_shard::<S>);
 
-        app.add_systems(PreUpdate, process_map_event_system);
+        self.add_systems(
+            PreUpdate,
+            process_shard_notification_messages::<S>.in_set(MapPreUpdateSystems::ProcessNotifications),
+        );
+
+        if let Some(channels) = system_config.client_channels {
+            self.insert_resource(channels);
+
+            self.add_systems(
+                PreUpdate,
+                (
+                    forward_action_events_to_channel::<S::Primary>.in_set(MapPreUpdateSystems::InjectNotifications),
+                    receive_notification_events_from_channel::<S::Primary>.in_set(MapPreUpdateSystems::ExtractActions),
+                ),
+            );
+        }
     }
 }

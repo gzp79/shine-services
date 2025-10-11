@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::any::{type_name, Any};
 
 /// Helper to erase type information
 pub trait TypeErase: Any + Send + Sync {
@@ -28,11 +28,15 @@ pub trait TypeEraseExt: TypeErase {
     /// Returns the simplified, human readable type name. It is usually the last segment of the full type
     /// name without the generic type parameters.
     fn simple_type_name(&self) -> &'static str {
-        let raw = self.type_name();
-        let strip_generic = raw.split_once("<").map(|(first, _)| first).unwrap_or(raw);
-        let base = strip_generic.split("::").last().unwrap_or(strip_generic);
-        base
+        simple_type_name::<Self>()
     }
 }
 
 impl<T> TypeEraseExt for T where T: ?Sized + TypeErase {}
+
+pub fn simple_type_name<T: ?Sized>() -> &'static str {
+    let raw = type_name::<T>();
+    let strip_generic = raw.split_once("<").map(|(first, _)| first).unwrap_or(raw);
+    let base = strip_generic.split("::").last().unwrap_or(strip_generic);
+    base
+}
