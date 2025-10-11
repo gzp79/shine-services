@@ -38,6 +38,7 @@ jobs:
         with:
           node-version: 18.x
           cache: "pnpm"
+          node-version-file: ./tests/pnpm-lock.yaml
 
       - name: Prepare tests
         run: |
