@@ -41,6 +41,8 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
                 identityUrl: 'https://cloud.local.scytta.com:8443/identity',
                 builderUrl: 'https://cloud.local.scytta.com:8444/builder',
 
+                // skipMockService: true, // to run mock services manually
+
                 defaultRedirects: {
                     redirectUrl: 'https://redirect.com/',
                     errorUrl: 'https://error.com/'

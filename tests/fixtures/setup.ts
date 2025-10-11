@@ -20,6 +20,8 @@ export type ServiceOptions = {
     identityUrl: string;
     builderUrl: string;
 
+    skipMockService?: boolean;
+
     defaultRedirects: DefaultRedirects;
 
     masterAdminKey: string;
@@ -46,6 +48,7 @@ export const test = base.extend<ServiceTestFixture, ServiceOptions>({
     builderUrl: [undefined!, { scope: 'worker', option: true }],
     masterAdminKey: [undefined!, { scope: 'worker', option: true }],
     defaultRedirects: [undefined!, { scope: 'worker', option: true }],
+    skipMockService: [false, { scope: 'worker', option: true }],
 
     api: [
         async ({ identityUrl, defaultRedirects, masterAdminKey }, use) => {

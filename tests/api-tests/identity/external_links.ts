@@ -11,12 +11,16 @@ test.describe('External links', () => {
     let mockOAuth2: OAuth2MockServer;
     let mockOpenId: OpenIdMockServer;
 
-    test.beforeEach(async () => {
+    test.beforeEach(async ({ skipMockService }) => {
         mockOAuth2 = new OAuth2MockServer();
-        await mockOAuth2.start();
+        if (!skipMockService) {
+            await mockOAuth2.start();
+        }
 
         mockOpenId = new OpenIdMockServer();
-        await mockOpenId.start();
+        if (!skipMockService) {
+            await mockOpenId.start();
+        }
     });
 
     test.afterEach(async () => {
