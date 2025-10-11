@@ -37,8 +37,8 @@ services:
       - redis:redis.mockbox.com
     extra_hosts:
       - mockbox.com:host-gateway
-      - local-scytta.com:127.0.0.1
-      - cloud.local-scytta.com:127.0.0.1
+      - local.scytta.com:127.0.0.1
+      - cloud.local.scytta.com:127.0.0.1
     networks:
       - shine
 

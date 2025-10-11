@@ -25,7 +25,7 @@ export class StaticFileServer extends MockServer {
 
         // Set security headers
         app.use(((_req: Request, res: Response, next: NextFunction) => {
-            /* eslint-disable @stylistic/ts/quotes */
+            /* eslint-disable @stylistic/quotes */
             /* spell-checker:disable */
             res.setHeader('X-Frame-Options', 'DENY');
             res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -36,7 +36,7 @@ export class StaticFileServer extends MockServer {
                 "worker-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' challenges.cloudflare.com static.cloudflareinsights.com; frame-ancestors 'none';"
             );
             /* spell-checker:enable */
-            /* eslint-enable @stylistic/ts/quotes */
+            /* eslint-enable @stylistic/quotes */
             next();
         }) as any);
 

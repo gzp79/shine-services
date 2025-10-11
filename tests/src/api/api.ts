@@ -149,10 +149,10 @@ export class ApiResponse {
         return await this._response.json();
     }
 
-    public async parse<T extends z.AnyZodObject>(schema: T): Promise<z.infer<T>> {
+    public async parse<T extends z.ZodObject>(schema: T): Promise<z.infer<T>> {
         const data = await this._response.json();
         try {
-            return schema.strict().parse(data);
+            return schema.strict().parse(data) as z.infer<T>;
         } catch (err) {
             console.error('Failed to parse response', data, 'with error', err);
             const error = err as z.ZodError;

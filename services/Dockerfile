@@ -93,8 +93,8 @@ CMD ["/usr/bin/supervisord"]
 FROM base AS test
 
 WORKDIR /app
-COPY ./certs/test.crt ./certs/test.crt
-COPY ./certs/test.key ./certs/test.key
+COPY ./certs/scytta.crt ./certs/scytta.crt
+COPY ./certs/scytta.key ./certs/scytta.key
 COPY ./services/docker/nginx.test.conf /etc/nginx/nginx-shine-server.conf
 
 WORKDIR /app/services

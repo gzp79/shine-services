@@ -16,8 +16,8 @@
       "cwd": "${workspaceFolder}/services/identity",
       "env": {
         "RUST_BACKTRACE": "full",
-        "SERVICE--TLS--CERT": "../../certs/test.crt",
-        "SERVICE--TLS--KEY": "../../certs/test.key",
+        "SERVICE--TLS--CERT": "../../certs/scytta.crt",
+        "SERVICE--TLS--KEY": "../../certs/scytta.key",
         "SERVICE--port": "8443"
       }
     }

@@ -4,10 +4,10 @@ import { JWKObject } from 'ts-jose';
 export const DEFAULT_URL = 'https://mockbox.com';
 
 function findCertLocation(): string {
-    const certPath = ['./certs/test.crt', '../certs/test.crt'];
+    const certPath = ['./certs/scytta.crt', '../certs/scytta.crt'];
     for (const path of certPath) {
         if (fs.existsSync(path)) {
-            return path.replace('test.crt', '');
+            return path.replace('scytta.crt', '');
         }
     }
 
@@ -17,8 +17,8 @@ function findCertLocation(): string {
 const CERT_LOCATION = findCertLocation();
 
 export const CERTIFICATES = {
-    cert: fs.readFileSync(`${CERT_LOCATION}/test.crt`, 'utf8'),
-    key: fs.readFileSync(`${CERT_LOCATION}/test.key`, 'utf8')
+    cert: fs.readFileSync(`${CERT_LOCATION}/scytta.crt`, 'utf8'),
+    key: fs.readFileSync(`${CERT_LOCATION}/scytta.key`, 'utf8')
 };
 
 // new key set can be generated at https://mkjwk.org/ quite easily

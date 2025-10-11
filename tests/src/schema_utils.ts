@@ -14,7 +14,7 @@ export const OptionalSchema = <T extends z.ZodTypeAny>(schema: T) =>
         .nullable()
         .transform((value) => (value === null ? undefined : value));
 
-export async function parseResponse<T extends z.AnyZodObject>(schema: T, response: ApiResponse): Promise<z.infer<T>> {
+export async function parseResponse<T extends z.ZodObject>(schema: T, response: ApiResponse): Promise<z.infer<T>> {
     const data = await response.json();
     try {
         return schema.parse(data);

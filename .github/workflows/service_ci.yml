@@ -28,16 +28,22 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 18.x
+          cache: "pnpm"
 
       - name: Prepare tests
         run: |
-          npm ci
-          npm run lint
-          npm run mkcert:local
+          pnpm i
+          pnpm run lint
+          pnpm run mkcert:local
           echo '{ "version": "${{env.VERSION}}" }' > ../services/server_version.json
         working-directory: ./tests
 
@@ -82,8 +88,8 @@ jobs:
 
       - name: Add hosts to /etc/hosts
         run: |
-          sudo echo "127.0.0.1 local-scytta.com" | sudo tee -a /etc/hosts
-          sudo echo "127.0.0.1 cloud.local-scytta.com" | sudo tee -a /etc/hosts
+          sudo echo "127.0.0.1 local.scytta.com" | sudo tee -a /etc/hosts
+          sudo echo "127.0.0.1 cloud.local.scytta.com" | sudo tee -a /etc/hosts
           sudo echo "127.0.0.1 mockbox.com" | sudo tee -a /etc/hosts
           sudo echo "127.0.0.1 postgres.mockbox.com" | sudo tee -a /etc/hosts
           sudo echo "127.0.0.1 redis.mockbox.com" | sudo tee -a /etc/hosts
@@ -93,8 +99,9 @@ jobs:
           echo "::group::Starting service in the test environment"
           docker compose -f ../services/docker-compose.yml -p shine --profile test up -d
           echo "::endgroup::"
+
           echo "::group::Running test"
-          npm run test:local
+          pnpm run test:local
           echo "::endgroup::"
         working-directory: ./tests
 
