@@ -4,16 +4,16 @@
   "description": "MCP servers for Cursor IDE",
   "main": "rust_docs.js",
   "scripts": {
-    "prestart": "npm install",
+    "prestart": "pnpm install",
     "start": "node rust_docs.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.13.0",
-    "axios": "^1.6.0",
-    "html-to-text": "^9.0.0",
-    "zod": "^3.22.0"
+    "@modelcontextprotocol/sdk": "^1.13.0",
+    "axios": "^1.12.2",
+    "html-to-text": "^9.0.5",
+    "zod": "^4.1.12"
   },
   "engines": {
     "node": ">=18.0.0"
   }
-} 
+}

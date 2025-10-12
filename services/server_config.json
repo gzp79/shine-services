@@ -7,7 +7,7 @@
   "telemetry": {
     "allowReconfigure": true,
     "enableConsoleLog": true,
-    "defaultLevel": "INFO,shine_builder=TRACE",
+    "defaultLevel": "INFO",
     "metrics": {
       "type": "otlp",
       "endpoint": "grpc://localhost:4317"
