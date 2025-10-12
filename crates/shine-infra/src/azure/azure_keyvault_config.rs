@@ -62,7 +62,7 @@ impl ConfigAsyncSource for AzureKeyvaultConfigSource {
                 let key = id.split('/').next_back();
                 if let Some(key) = key {
                     let path = key.replace('-', ".");
-                    log::info!("Reading secret {key:?}");
+                    log::debug!("Reading secret {key:?}");
                     let secret = self
                         .client
                         .get_secret(key, None)
