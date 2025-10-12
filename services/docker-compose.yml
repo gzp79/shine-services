@@ -1,4 +1,4 @@
-services:      
+services:
   postgres:
     image: postgres:alpine
     environment:
@@ -11,7 +11,7 @@ services:
       - 5432:5432
     restart: on-failure:3
     volumes:
-       - ./docker/utils/create-multiple-databases.sh:/docker-entrypoint-initdb.d/create-multiple-databases.sh
+      - ./docker/utils/create-multiple-databases.sh:/docker-entrypoint-initdb.d/create-multiple-databases.sh
     networks:
       - shine
 
@@ -22,7 +22,7 @@ services:
       - 6379:6379
     networks:
       - shine
-      
+
   shine:
     image: gzp79/shine-services:test
     profiles:
@@ -32,6 +32,7 @@ services:
     ports:
       - "8080:80"
       - "8443:443"
+      - "9464:9464"
     links:
       - postgres:postgres.mockbox.com
       - redis:redis.mockbox.com

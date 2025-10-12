@@ -42,12 +42,8 @@
 
   "metrics": [
     {
-      "port": 80,
-      "path": "identity/api/telemetry/metrics"
-    },
-    {
-      "port": 80,
-      "path": "builder/api/telemetry/metrics"
+      "port": 9464,
+      "path": "/metrics"
     }
   ]
 }

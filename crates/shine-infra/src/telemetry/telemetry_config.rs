@@ -9,6 +9,7 @@ pub enum Metering {
 
     /// Enable OpenTelemetry exporter
     #[cfg(feature = "ot_otlp")]
+    #[serde(rename = "otlp")]
     OpenTelemetryProtocol { endpoint: String },
 }
 
@@ -24,6 +25,7 @@ pub enum Tracing {
 
     /// Enable OpenTelemetry exporter (for example: https://www.jaegertracing.io)
     #[cfg(feature = "ot_otlp")]
+    #[serde(rename = "otlp")]
     OpenTelemetryProtocol { endpoint: String },
 
     /// Enable Zipkin tracing (https://zipkin.io/)

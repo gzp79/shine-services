@@ -67,6 +67,12 @@ RUN apt update \
     && apt install -y --no-install-recommends ca-certificates supervisor \
     && mkdir -p /var/log/supervisor
 
+# --- install otelcol ---
+RUN curl -L https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.108.0/otelcol_0.108.0_linux_amd64.tar.gz \
+    | tar -xz -C /usr/local/bin
+COPY ./services/docker/otel-collector-config.yaml /etc/otelcol/config.yaml
+
+
 COPY ./services/docker/supervisord.conf /etc/supervisor/conf.d/supervisor.conf
 COPY ./services/docker/nginx.conf /etc/nginx/nginx.conf
 
