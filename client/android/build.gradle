@@ -1,0 +1,199 @@
+plugins {
+    alias(libs.plugins.android.application)
+    id "com.github.ben-manes.versions" version "0.53.0"
+}
+
+android {
+    namespace = 'org.gzp.shine'
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "org.gzp.shine"
+        minSdk = 30
+        targetSdk = 33
+        versionCode = 1
+        versionName = "1.0"
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    externalNativeBuild {
+        cmake {
+            path = "CMakeLists.txt"
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled = false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            // You can override jniLibs location for debug builds if needed
+        }
+    }
+    
+    // Define flavors from array
+    def exampleFlavors = [
+        "curve",
+        "camera_orbit",
+        "camera_follow",
+        "camera_free",
+        "camera_look_at",
+        "input_drivers",
+        "input_process",
+        "input_gesture",
+        "input_multiplayer",
+        "pinch_zoom",
+        "asset"
+]
+    
+    flavorDimensions += "example"
+    productFlavors {
+        exampleFlavors.each { flavorName ->
+            "$flavorName" {
+                dimension "example"
+                applicationIdSuffix ".${flavorName}"
+            }
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+    buildFeatures {
+        viewBinding = true
+    }
+    packagingOptions {
+        // exclude the dummy cpp project, it was required only to include libc++_shared.so
+        exclude 'lib/*/libdummy.so'
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs += files('../../assets')
+            res.srcDirs += files('../../assets/android-res')
+            jniLibs.srcDirs = ['src/main/jniLibs']  // Direct: src/main/jniLibs/arm64-v8a/
+        }
+        
+        exampleFlavors.each { flavorName ->
+            "$flavorName" {
+                jniLibs.srcDirs = ["src/main/jniLibs/${flavorName}"]
+            }
+        }
+    }
+}
+
+// Task to validate that libshine.so exists in jniLibs directories for current flavor
+task validateJniLibs {
+    doLast {
+        def missingLibs = []
+        def checkedSourceSets = []
+        
+        // Determine current flavor from project property or task name
+        def currentFlavor = null
+        
+        // First check if flavor is specified as project property (-Pflavor=curve)
+        if (project.hasProperty('flavor')) {
+            currentFlavor = project.flavor
+        } else {
+            // Fall back to detecting from task name (e.g., assembleCurveDebug -> curve)
+            def taskName = gradle.startParameter.taskNames.find { it.contains('assemble') || it.contains('bundle') }
+            
+            if (taskName) {
+                android.productFlavors.each { flavor ->
+                    if (taskName.toLowerCase().contains(flavor.name.toLowerCase())) {
+                        currentFlavor = flavor.name
+                    }
+                }
+            }
+        }
+        
+        // Check current flavor (if any), and main only if no flavor is being built
+        def sourceSetsToCheck = []
+        if (currentFlavor) {
+            sourceSetsToCheck.add(currentFlavor)
+        } else {
+            sourceSetsToCheck.add('main')
+        }
+        
+        android.sourceSets.each { sourceSet ->
+            if (sourceSetsToCheck.contains(sourceSet.name)) {
+                checkedSourceSets.add(sourceSet.name)
+                
+                sourceSet.jniLibs.srcDirs.each { jniLibDir ->
+                    if (jniLibDir.exists()) {
+                        // Check for the specific NDK ABI filters configured
+                        def abiFilters = android.defaultConfig.ndk.abiFilters
+                        def foundValidArch = false
+                        
+                        abiFilters.each { abi ->
+                            def archDir = new File(jniLibDir, abi)
+                            if (archDir.exists()) {
+                                foundValidArch = true
+                                def libshineFile = new File(archDir, 'libshine.so')
+                                if (!libshineFile.exists()) {
+                                    missingLibs.add("${sourceSet.name}: ${libshineFile.absolutePath}")
+                                } else {
+                                    println "✓ Found libshine.so in ${archDir.absolutePath}"
+                                }
+                            } else {
+                                missingLibs.add("${sourceSet.name}: Missing architecture directory: ${archDir.absolutePath}")
+                            }
+                        }
+                        
+                        if (!foundValidArch) {
+                            println "Warning: No valid architecture directories found in ${jniLibDir.absolutePath}"
+                            println "Expected directories: ${abiFilters.join(', ')}"
+                        }
+                    } else {
+                        missingLibs.add("${sourceSet.name}: jniLibs directory does not exist: ${jniLibDir.absolutePath}")
+                    }
+                }
+            }
+        }
+        
+        println "Building flavor: ${currentFlavor ?: 'default'}"
+        println "Checked source sets: ${checkedSourceSets.join(', ')}"
+        
+        if (!missingLibs.isEmpty()) {
+            throw new RuntimeException("Missing libshine.so in the following locations:\n${missingLibs.join('\n')}")
+        } else {
+            println "✓ libshine.so found in all required jniLibs directories for current build"
+        }
+    }
+}
+
+dependencies {
+    implementation libs.appcompat
+    implementation libs.material
+    implementation libs.constraintlayout
+    testImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.espresso.core
+}
+
+def isNonStable = { String version ->
+    def nonStableKeywords = ['ALPHA', 'BETA', 'RC', 'SNAPSHOT', 'M1', 'M2', 'M3', 'M4', 'M5']
+    return nonStableKeywords.any { keyword -> version.toUpperCase().contains(keyword) }
+}
+
+tasks.matching { task -> 
+    task.name.startsWith('assemble') 
+}.configureEach { task ->
+    task.dependsOn validateJniLibs
+}
+
+tasks.named("dependencyUpdates").configure {
+    checkForGradleUpdate = true
+    checkConstraints = true
+    
+    rejectVersionIf { candidate ->
+        isNonStable(candidate.candidate.version)
+    }
+}

@@ -46,7 +46,7 @@ struct PlayerB {
     gamepad: Option<Entity>,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 pub fn main() {
     use shine_game::app::platform::{start_game, Config};
 
@@ -54,7 +54,7 @@ pub fn main() {
     start_game(Config::default());
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 pub fn main() {
     init_application(GameExample);
 }

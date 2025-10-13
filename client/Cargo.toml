@@ -3,6 +3,21 @@ name = "shine-client"
 version.workspace = true
 edition.workspace = true
 
+[features]
+
+# features to add examples as exported library functions instead of standalone binaries for mobile platforms
+example = []
+examples_curve = ["example"]
+
+[[bin]]
+name = "shine_client"
+path = "src/main.rs"
+
+[lib]
+name = "shine"
+path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 log = { workspace = true }
 thiserror = { workspace = true }

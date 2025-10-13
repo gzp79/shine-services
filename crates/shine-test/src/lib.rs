@@ -25,13 +25,13 @@ pub fn setup_test() {
         });
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(target_family = "wasm")]
     {
         // logger it should be initialized only once otherwise some warning it thrown
         INIT.call_once(|| wasm_logger::init(::wasm_logger::Config::new(log::Level::Trace)));
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
     {
         let orig_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |panic_info| {

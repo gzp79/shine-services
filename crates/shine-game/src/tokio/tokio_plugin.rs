@@ -7,9 +7,14 @@ pub struct TokioPlugin;
 impl Plugin for TokioPlugin {
     fn build(&self, app: &mut App) {
         let runtime = {
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(any(
+                target_os = "windows",
+                target_os = "linux",
+                target_os = "macos",
+                target_os = "android"
+            ))]
             let mut runtime = Builder::new_multi_thread();
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(target_family = "wasm")]
             let mut runtime = Builder::new_current_thread();
 
             runtime.enable_all();
