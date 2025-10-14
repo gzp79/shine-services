@@ -177,13 +177,22 @@
       "group": "build"
     },
     {
-      "label": "[CLIENT] main: android",
+      "label": "[CLIENT] main: android-lib",
       "type": "shell",
-      "command": "cargo ndk -t arm64-v8a -o android/src/main/jniLibs build -p shine-client --release --lib",
+      "command": "cargo ndk -t arm64-v8a -o android/src/main/featureLibs/game build -p shine-client --release --lib",
       "options": {
         "cwd": "client"
       },
       "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "[CLIENT] main: android-apk",
+      "type": "shell",
+      "command": "./gradlew assembleRelease -Pflavor=game",
+      "options": {
+        "cwd": "client/android"
+      },
       "group": "build"
     },
     {
@@ -201,13 +210,22 @@
       "group": "build"
     },
     {
-      "label": "[CLIENT] example: android",
+      "label": "[CLIENT] example: android-lib",
       "type": "shell",
-      "command": "cargo ndk -t arm64-v8a -o android/src/main/jniLibs/${input:examples} build -p shine-client --release --lib --features examples_${input:examples}",
+      "command": "cargo ndk -t arm64-v8a -o android/src/main/featureLibs/${input:examples} build -p shine-client --release --lib --features example_${input:examples}",
       "options": {
-        "cwd": "client"
+        "cwd": "client/android"
       },
       "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "[CLIENT] example: android-apk",
+      "type": "shell",
+      "command": "./gradlew assembleRelease -Pflavor=${input:examples}",
+      "options": {
+        "cwd": "client/android"
+      },
       "group": "build"
     }
   ],

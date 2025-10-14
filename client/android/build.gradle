@@ -30,16 +30,22 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled = false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+
+            minifyEnabled = true            
+            zipAlignEnabled = true
+            shrinkResources = true
         }
+
         debug {
-            // You can override jniLibs location for debug builds if needed
+            minifyEnabled = false
+            shrinkResources = false            
         }
     }
     
-    // Define flavors from array
-    def exampleFlavors = [
+    // Define a flavors for each rust build targets in the client
+    def projectFlavors = [
+        "game", // the main client - non-example project
         "curve",
         "camera_orbit",
         "camera_follow",
@@ -51,13 +57,13 @@ android {
         "input_multiplayer",
         "pinch_zoom",
         "asset"
-]
+    ]
     
-    flavorDimensions += "example"
+    flavorDimensions += "project"
     productFlavors {
-        exampleFlavors.each { flavorName ->
+        projectFlavors.each { flavorName ->
             "$flavorName" {
-                dimension "example"
+                dimension "project"
                 applicationIdSuffix ".${flavorName}"
             }
         }
@@ -72,100 +78,101 @@ android {
     packagingOptions {
         // exclude the dummy cpp project, it was required only to include libc++_shared.so
         exclude 'lib/*/libdummy.so'
+        
+        jniLibs {
+            useLegacyPackaging = false
+        }       
     }
 
     sourceSets {
         main {
             assets.srcDirs += files('../../assets')
             res.srcDirs += files('../../assets/android-res')
-            jniLibs.srcDirs = ['src/main/jniLibs']  // Direct: src/main/jniLibs/arm64-v8a/
+            jniLibs.srcDirs = ["src/main/jniLibs"]
         }
         
-        exampleFlavors.each { flavorName ->
+        projectFlavors.each { flavorName ->
             "$flavorName" {
-                jniLibs.srcDirs = ["src/main/jniLibs/${flavorName}"]
+                jniLibs.srcDirs += ["src/main/featureLibs/${flavorName}"]
+            }
+        }
+    }
+    
+    // Create individual rust build tasks for each flavor
+    afterEvaluate {
+        projectFlavors.each { flavor ->
+            tasks.register("buildRustLib_${flavor}", Exec) {
+                group = 'rust'
+                description = "Build Rust library for ${flavor} flavor"
+                workingDir project.projectDir.parent
+                
+                def outputDir = "android/src/main/featureLibs/${flavor}"
+                def cargoCommand = [
+                    'cargo', 'ndk',
+                    '-t', 'arm64-v8a',
+                    '-o', outputDir,
+                    'build',
+                    '-p', 'shine-client',
+                    '--release',
+                    '--lib'
+                ]
+                
+                if (flavor != 'game') {
+                    cargoCommand += ['--features', "example_${flavor}"]
+                }
+                
+                commandLine cargoCommand
+                
+                doFirst {
+                    println "Building Rust library for flavor: ${flavor}"
+                    println "Running: ${cargoCommand.join(' ')}"
+                }
             }
         }
     }
 }
 
-// Task to validate that libshine.so exists in jniLibs directories for current flavor
-task validateJniLibs {
-    doLast {
-        def missingLibs = []
-        def checkedSourceSets = []
-        
-        // Determine current flavor from project property or task name
-        def currentFlavor = null
-        
-        // First check if flavor is specified as project property (-Pflavor=curve)
-        if (project.hasProperty('flavor')) {
-            currentFlavor = project.flavor
+// Helper function to determine current flavors from project property or task name
+def getCurrentFlavors() {
+    def currentFlavors = []
+    
+    // First check if flavor is specified as project property (-Pflavor=curve or -Pflavor=curve,asset)
+    if (project.hasProperty('flavor')) {
+        def flavorProperty = project.flavor
+        if (flavorProperty.contains(',')) {
+            currentFlavors = flavorProperty.split(',').collect { it.trim() }
         } else {
-            // Fall back to detecting from task name (e.g., assembleCurveDebug -> curve)
-            def taskName = gradle.startParameter.taskNames.find { it.contains('assemble') || it.contains('bundle') }
-            
-            if (taskName) {
-                android.productFlavors.each { flavor ->
-                    if (taskName.toLowerCase().contains(flavor.name.toLowerCase())) {
-                        currentFlavor = flavor.name
-                    }
+            currentFlavors = [flavorProperty.trim()]
+        }
+    } else {
+        // Fall back to detecting from task name (e.g., assembleCurveDebug -> curve)
+        def taskName = gradle.startParameter.taskNames.find { it.contains('assemble') || it.contains('bundle') }
+        
+        if (taskName) {
+            android.productFlavors.each { flavor ->
+                if (taskName.toLowerCase().contains(flavor.name.toLowerCase())) {
+                    currentFlavors = [flavor.name]
                 }
             }
         }
-        
-        // Check current flavor (if any), and main only if no flavor is being built
-        def sourceSetsToCheck = []
-        if (currentFlavor) {
-            sourceSetsToCheck.add(currentFlavor)
-        } else {
-            sourceSetsToCheck.add('main')
-        }
-        
-        android.sourceSets.each { sourceSet ->
-            if (sourceSetsToCheck.contains(sourceSet.name)) {
-                checkedSourceSets.add(sourceSet.name)
-                
-                sourceSet.jniLibs.srcDirs.each { jniLibDir ->
-                    if (jniLibDir.exists()) {
-                        // Check for the specific NDK ABI filters configured
-                        def abiFilters = android.defaultConfig.ndk.abiFilters
-                        def foundValidArch = false
-                        
-                        abiFilters.each { abi ->
-                            def archDir = new File(jniLibDir, abi)
-                            if (archDir.exists()) {
-                                foundValidArch = true
-                                def libshineFile = new File(archDir, 'libshine.so')
-                                if (!libshineFile.exists()) {
-                                    missingLibs.add("${sourceSet.name}: ${libshineFile.absolutePath}")
-                                } else {
-                                    println "✓ Found libshine.so in ${archDir.absolutePath}"
-                                }
-                            } else {
-                                missingLibs.add("${sourceSet.name}: Missing architecture directory: ${archDir.absolutePath}")
-                            }
-                        }
-                        
-                        if (!foundValidArch) {
-                            println "Warning: No valid architecture directories found in ${jniLibDir.absolutePath}"
-                            println "Expected directories: ${abiFilters.join(', ')}"
-                        }
-                    } else {
-                        missingLibs.add("${sourceSet.name}: jniLibs directory does not exist: ${jniLibDir.absolutePath}")
-                    }
-                }
-            }
-        }
-        
-        println "Building flavor: ${currentFlavor ?: 'default'}"
-        println "Checked source sets: ${checkedSourceSets.join(', ')}"
-        
-        if (!missingLibs.isEmpty()) {
-            throw new RuntimeException("Missing libshine.so in the following locations:\n${missingLibs.join('\n')}")
-        } else {
-            println "✓ libshine.so found in all required jniLibs directories for current build"
-        }
+    }
+
+    if (currentFlavors.isEmpty()) {
+        currentFlavors = android.productFlavors.collect { it.name }
+    }
+    
+    return currentFlavors
+}
+
+// Main task that depends on the relevant flavor subtasks
+task buildRustLib {
+    group = 'build'
+    description = 'Build Rust library for the current flavors'
+    
+    // Set up dependencies directly based on current flavors
+    def currentFlavors = getCurrentFlavors()
+    currentFlavors.each { flavor ->
+        dependsOn "buildRustLib_${flavor}"
     }
 }
 
@@ -183,10 +190,39 @@ def isNonStable = { String version ->
     return nonStableKeywords.any { keyword -> version.toUpperCase().contains(keyword) }
 }
 
+// Configure tasks based on flavor property
+if (project.hasProperty('flavor')) {
+    def flavorProperty = project.flavor
+    
+    // Parse multiple flavors (comma-separated or single flavor)
+    def selectedFlavors = []
+    if (flavorProperty.contains(',')) {
+        selectedFlavors = flavorProperty.split(',').collect { it.trim() }
+    } else {
+        selectedFlavors = [flavorProperty.trim()]
+    }
+    
+    println "Building only flavors: ${selectedFlavors.join(', ')}"
+    
+    // Filter variants at the Android level to only include the selected flavors
+    android.variantFilter { variant ->
+        if (variant.buildType.name == 'release') {
+            def flavorName = variant.flavors.first().name
+            if (!selectedFlavors.contains(flavorName)) {
+                variant.ignore = true
+            }
+        }
+    }
+} 
+
+def currentFlavors = getCurrentFlavors()
+println "Current flavors: ${currentFlavors.join(', ')}"
+
+// Configure all assemble/bundle tasks to depend on buildRustLib
 tasks.matching { task -> 
-    task.name.startsWith('assemble') 
+    task.name.startsWith('assemble') || task.name.startsWith('bundle')
 }.configureEach { task ->
-    task.dependsOn validateJniLibs
+    task.dependsOn buildRustLib
 }
 
 tasks.named("dependencyUpdates").configure {

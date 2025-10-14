@@ -7,6 +7,7 @@
         android:label="Shine"
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/Theme.AppCompat.NoActionBar"
+        android:extractNativeLibs="true"
         tools:targetApi="33">
         <activity
             android:name=".MainActivity"

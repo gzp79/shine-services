@@ -60,6 +60,14 @@ pub fn main() {
     init_application(GameExample);
 }
 
+#[cfg(target_os = "android")]
+pub fn android_main() {
+    use shine_game::app::platform::{start_game, Config};
+
+    init_application(GameExample);
+    start_game(Config::default());
+}
+
 const GESTURES: &[(&str, &[Vec2], GestureId)] = &[
     ("Line 0", unistroke_templates::LINE_0, GestureId(0)),
     ("Line 45", unistroke_templates::LINE_45, GestureId(1)),

@@ -2,8 +2,48 @@
 
 use bevy::prelude::bevy_main;
 
-#[cfg(all(feature = "example", feature = "examples_curve"))]
+#[cfg(all(feature = "example", feature = "example_curve"))]
 #[path = "../examples/curve.rs"]
+mod app;
+
+#[cfg(all(feature = "example", feature = "example_camera_orbit"))]
+#[path = "../examples/camera_orbit.rs"]
+mod app;
+
+#[cfg(all(feature = "example", feature = "example_camera_follow"))]
+#[path = "../examples/camera_follow.rs"]
+mod app;
+
+#[cfg(all(feature = "example", feature = "example_camera_free"))]
+#[path = "../examples/camera_free.rs"]
+mod app;
+
+#[cfg(all(feature = "example", feature = "example_camera_look_at"))]
+#[path = "../examples/camera_look_at.rs"]
+mod app;
+
+#[cfg(all(feature = "example", feature = "example_input_drivers"))]
+#[path = "../examples/input_drivers.rs"]
+mod app;
+
+#[cfg(all(feature = "example", feature = "example_input_process"))]
+#[path = "../examples/input_process.rs"]
+mod app;
+
+#[cfg(all(feature = "example", feature = "example_input_gesture"))]
+#[path = "../examples/input_gesture.rs"]
+mod app;
+
+#[cfg(all(feature = "example", feature = "example_input_multiplayer"))]
+#[path = "../examples/input_multiplayer.rs"]
+mod app;
+
+#[cfg(all(feature = "example", feature = "example_pinch_zoom"))]
+#[path = "../examples/pinch_zoom.rs"]
+mod app;
+
+#[cfg(all(feature = "example", feature = "example_asset"))]
+#[path = "../examples/asset.rs"]
 mod app;
 
 macro_rules! non_example_mods {

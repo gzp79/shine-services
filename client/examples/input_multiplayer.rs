@@ -59,6 +59,14 @@ pub fn main() {
     init_application(GameExample);
 }
 
+#[cfg(target_os = "android")]
+pub fn android_main() {
+    use shine_game::app::platform::{start_game, Config};
+
+    init_application(GameExample);
+    start_game(Config::default());
+}
+
 struct GameExample;
 
 impl GameSetup for GameExample {

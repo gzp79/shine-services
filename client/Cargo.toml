@@ -7,7 +7,17 @@ edition.workspace = true
 
 # features to add examples as exported library functions instead of standalone binaries for mobile platforms
 example = []
-examples_curve = ["example"]
+example_curve = ["example"]
+example_camera_orbit = ["example"]
+example_camera_follow = ["example"]
+example_camera_free = ["example"]
+example_camera_look_at = ["example"]
+example_input_drivers = ["example"]
+example_input_process = ["example"]
+example_input_gesture = ["example"]
+example_input_multiplayer = ["example"]
+example_pinch_zoom = ["example"]
+example_asset = ["example"]
 
 [[bin]]
 name = "shine_client"
