@@ -9,7 +9,7 @@
   },
   "rust-analyzer.cargo.features": [],
   //"rust-analyzer.cargo.target": "wasm32-unknown-unknown",
-  "rust-analyzer.cargo.target": "armv7-linux-androideabi",  
+  "rust-analyzer.cargo.target": "armv7-linux-androideabi",
   "rust-analyzer.cargo.buildScripts.enable": true,
   "cSpell.words": [
     "actionlike",
@@ -108,5 +108,6 @@
     "wasd",
     "zipkin"
   ],
-  "java.configuration.updateBuildConfiguration": "automatic"
+  "java.format.settings.url": ".vscode/java-formatter.xml",
+  "java.configuration.updateBuildConfiguration": "interactive"
 }

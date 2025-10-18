@@ -1,70 +1,63 @@
 plugins {
     alias(libs.plugins.android.application)
-    id "com.github.ben-manes.versions" version "0.53.0"
+    alias(libs.plugins.kotlin.android)
 }
+
+import groovy.json.JsonSlurper
+
+def examplesJsonFile = file("../examples.json")
+def examplesJson = new JsonSlurper().parse(examplesJsonFile)
+def projects = ["game"] + (examplesJson.examples ?: [])
 
 android {
     namespace = 'org.gzp.shine'
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "org.gzp.shine"
         minSdk = 30
-        targetSdk = 33
+        targetSdk = 36
         versionCode = 1
-        versionName = "1.0"
+        versionName = '1.0'
         externalNativeBuild {
             cmake {
-                arguments "-DANDROID_STL=c++_shared"
+                arguments = ['-DANDROID_STL=c++_shared']
             }
         }
         ndk {
-            abiFilters 'arm64-v8a'
+            //noinspection ChromeOsAbiSupport
+            abiFilters = ['arm64-v8a']
         }
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     externalNativeBuild {
         cmake {
-            path = "CMakeLists.txt"
+            path = 'CMakeLists.txt'
         }
     }
     buildTypes {
         release {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
 
-            minifyEnabled = true            
-            zipAlignEnabled = true
-            shrinkResources = true
+            minifyEnabled = true
+            signingConfig signingConfigs.debug
+            //minifyEnabled = false
+            //zipAlignEnabled = true
+            //shrinkResources = true
         }
 
         debug {
-            minifyEnabled = false
-            shrinkResources = false            
+            //minifyEnabled = false
+            //shrinkResources = false
         }
     }
-    
-    // Define a flavors for each rust build targets in the client
-    def projectFlavors = [
-        "game", // the main client - non-example project
-        "curve",
-        "camera_orbit",
-        "camera_follow",
-        "camera_free",
-        "camera_look_at",
-        "input_drivers",
-        "input_process",
-        "input_gesture",
-        "input_multiplayer",
-        "pinch_zoom",
-        "asset"
-    ]
-    
-    flavorDimensions += "project"
+    flavorDimensions += 'project'
     productFlavors {
-        projectFlavors.each { flavorName ->
+        projects.each { flavorName ->
             "$flavorName" {
-                dimension "project"
-                applicationIdSuffix ".${flavorName}"
+                dimension = 'project'
+                applicationIdSuffix = ".${flavorName}"
+                buildConfigField "boolean", "REQUIRES_AUTHENTICATION", "${flavorName == 'game' ? 'true' : 'false'}"
             }
         }
     }
@@ -72,61 +65,29 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+    kotlinOptions {
+        jvmTarget = '11'
+    }
     buildFeatures {
-        viewBinding = true
+        prefab = true
+        buildConfig = true
     }
     packagingOptions {
-        // exclude the dummy cpp project, it was required only to include libc++_shared.so
-        exclude 'lib/*/libdummy.so'
-        
         jniLibs {
-            useLegacyPackaging = false
-        }       
+            // This is a dummy library to get gradle to include libc++_shared.so
+            excludes += ['lib/*/libgameActivity.so']
+        }
     }
-
     sourceSets {
-        main {
+        main {            
             assets.srcDirs += files('../../assets')
             res.srcDirs += files('../../assets/android-res')
             jniLibs.srcDirs = ["src/main/jniLibs"]
         }
-        
-        projectFlavors.each { flavorName ->
+
+        projects.each { flavorName ->
             "$flavorName" {
                 jniLibs.srcDirs += ["src/main/featureLibs/${flavorName}"]
-            }
-        }
-    }
-    
-    // Create individual rust build tasks for each flavor
-    afterEvaluate {
-        projectFlavors.each { flavor ->
-            tasks.register("buildRustLib_${flavor}", Exec) {
-                group = 'rust'
-                description = "Build Rust library for ${flavor} flavor"
-                workingDir project.projectDir.parent
-                
-                def outputDir = "android/src/main/featureLibs/${flavor}"
-                def cargoCommand = [
-                    'cargo', 'ndk',
-                    '-t', 'arm64-v8a',
-                    '-o', outputDir,
-                    'build',
-                    '-p', 'shine-client',
-                    '--release',
-                    '--lib'
-                ]
-                
-                if (flavor != 'game') {
-                    cargoCommand += ['--features', "example_${flavor}"]
-                }
-                
-                commandLine cargoCommand
-                
-                doFirst {
-                    println "Building Rust library for flavor: ${flavor}"
-                    println "Running: ${cargoCommand.join(' ')}"
-                }
             }
         }
     }
@@ -135,101 +96,95 @@ android {
 // Helper function to determine current flavors from project property or task name
 def getCurrentFlavors() {
     def currentFlavors = []
-    
-    // First check if flavor is specified as project property (-Pflavor=curve or -Pflavor=curve,asset)
+
+    // First check if flavor is specified as project property (`-Pflavor=curve` or `-Pflavor=curve,asset`)
     if (project.hasProperty('flavor')) {
         def flavorProperty = project.flavor
         if (flavorProperty.contains(',')) {
-            currentFlavors = flavorProperty.split(',').collect { it.trim() }
+            currentFlavors += flavorProperty.split(',').collect { it.trim() }
         } else {
-            currentFlavors = [flavorProperty.trim()]
+            currentFlavors += [flavorProperty.trim()]
         }
     } else {
         // Fall back to detecting from task name (e.g., assembleCurveDebug -> curve)
         def taskName = gradle.startParameter.taskNames.find { it.contains('assemble') || it.contains('bundle') }
-        
+
         if (taskName) {
             android.productFlavors.each { flavor ->
                 if (taskName.toLowerCase().contains(flavor.name.toLowerCase())) {
-                    currentFlavors = [flavor.name]
+                    currentFlavors += [flavor.name]
                 }
             }
         }
     }
 
     if (currentFlavors.isEmpty()) {
-        currentFlavors = android.productFlavors.collect { it.name }
+        currentFlavors += android.productFlavors.collect { it.name }
     }
-    
+
     return currentFlavors
 }
 
-// Main task that depends on the relevant flavor subtasks
-task buildRustLib {
-    group = 'build'
-    description = 'Build Rust library for the current flavors'
-    
-    // Set up dependencies directly based on current flavors
-    def currentFlavors = getCurrentFlavors()
-    currentFlavors.each { flavor ->
-        dependsOn "buildRustLib_${flavor}"
-    }
-}
+// Register rust build tasks for all the selected flavors
+getCurrentFlavors().each { flavorName ->
+    android.defaultConfig.ndk.abiFilters.each { abi ->
+        tasks.register("buildRustLib_${flavorName}[${abi}]", Exec) {
+            group = 'rust'
+            description = "Build Rust library for ${flavorName} flavor for ${abi} ABI"
+            workingDir = project.projectDir.parent
+          
+            def outputDir = "android/src/main/featureLibs/${flavorName}"
+            def cargoCommand = [
+                'cargo', 'ndk',
+                '-t', abi,
+                '-o', outputDir,
+                'build',
+                '-p', 'shine-client',
+                '--release',
+                '--lib'
+            ]
 
-dependencies {
-    implementation libs.appcompat
-    implementation libs.material
-    implementation libs.constraintlayout
-    testImplementation libs.junit
-    androidTestImplementation libs.ext.junit
-    androidTestImplementation libs.espresso.core
-}
+            if (flavorName != 'game') {
+                cargoCommand += ['--features', "example_${flavorName}"]
+            }
 
-def isNonStable = { String version ->
-    def nonStableKeywords = ['ALPHA', 'BETA', 'RC', 'SNAPSHOT', 'M1', 'M2', 'M3', 'M4', 'M5']
-    return nonStableKeywords.any { keyword -> version.toUpperCase().contains(keyword) }
-}
+            commandLine cargoCommand
 
-// Configure tasks based on flavor property
-if (project.hasProperty('flavor')) {
-    def flavorProperty = project.flavor
-    
-    // Parse multiple flavors (comma-separated or single flavor)
-    def selectedFlavors = []
-    if (flavorProperty.contains(',')) {
-        selectedFlavors = flavorProperty.split(',').collect { it.trim() }
-    } else {
-        selectedFlavors = [flavorProperty.trim()]
-    }
-    
-    println "Building only flavors: ${selectedFlavors.join(', ')}"
-    
-    // Filter variants at the Android level to only include the selected flavors
-    android.variantFilter { variant ->
-        if (variant.buildType.name == 'release') {
-            def flavorName = variant.flavors.first().name
-            if (!selectedFlavors.contains(flavorName)) {
-                variant.ignore = true
+            doFirst {
+                println "Building Rust library for flavor: ${flavorName}"
+                println "Running: ${cargoCommand.join(' ')}"
             }
         }
     }
-} 
+}
+
+
+// Main task that depends on the relevant flavor subtasks
+tasks.register("buildRustLib") {
+    group = 'build'
+    description = 'Build Rust library for the current flavors'
+    dependsOn getCurrentFlavors().collect { flavor -> android.defaultConfig.ndk.abiFilters.collect { abi -> tasks.named("buildRustLib_${flavor}[${abi}]")  } }    
+}
+
+dependencies {
+    implementation libs.androidx.appcompat
+    implementation libs.androidx.games.activity
+    implementation libs.androidx.browser
+    implementation libs.androidx.security
+    implementation libs.material
+    implementation libs.okhttp
+    implementation libs.androidx.core.ktx
+    testImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.androidx.espresso.core
+}
+
 
 def currentFlavors = getCurrentFlavors()
 println "Current flavors: ${currentFlavors.join(', ')}"
 
-// Configure all assemble/bundle tasks to depend on buildRustLib
-tasks.matching { task -> 
+tasks.matching { task ->
     task.name.startsWith('assemble') || task.name.startsWith('bundle')
 }.configureEach { task ->
     task.dependsOn buildRustLib
-}
-
-tasks.named("dependencyUpdates").configure {
-    checkForGradleUpdate = true
-    checkConstraints = true
-    
-    rejectVersionIf { candidate ->
-        isNonStable(candidate.candidate.version)
-    }
 }

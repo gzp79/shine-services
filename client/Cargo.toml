@@ -26,7 +26,7 @@ path = "src/main.rs"
 [lib]
 name = "shine"
 path = "src/lib.rs"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["staticlib", "rlib", "cdylib"]
 
 [dependencies]
 log = { workspace = true }
@@ -44,7 +44,6 @@ bevy = { workspace = true, default-features = true, features = [
 ] }
 bevy-inspector-egui = { workspace = true }
 
-
 shine-forge = { workspace = true }
 shine-game = { workspace = true }
 shine-core = { workspace = true }
@@ -52,7 +51,15 @@ shine-core = { workspace = true }
 [dev-dependencies]
 shine-test = { workspace = true }
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
+################## wasm dependencies ##################
+[target.'cfg(target_family = "wasm")'.dependencies]
 bevy = { workspace = true, features = ["webgl2"] }
 wasm-bindgen = { workspace = true }
 getrandom = { workspace = true, features = ["wasm_js"] }
+
+################## android dependencies ##################
+[target.'cfg(target_os = "android")'.dependencies]
+bevy = { workspace = true, features = [
+    "android-game-activity",
+    "android_shared_stdcxx",
+] }
