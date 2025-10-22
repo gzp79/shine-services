@@ -77,7 +77,7 @@ impl AppState {
         let captcha_validator = CaptchaValidator::new(&config.service.captcha_secret);
 
         let identity_service = {
-            let identity_db = PgIdentityDb::new(&db_pool.postgres).await?;
+            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
             let user_name_generator: Box<dyn IdEncoder> = match &config_user_name.id_encoder {
                 IdEncoderConfig::Optimus { prime, random } => Box::new(PrefixedIdEncoder::new(
                     &config_user_name.base_name,
