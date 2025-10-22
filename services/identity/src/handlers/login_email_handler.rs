@@ -160,7 +160,13 @@ where
                 query.append_pair("rememberMe", &remember_me.to_string());
             }
             if let Some(redirect_url) = redirect_url {
-                query.append_pair("redirectUrl", redirect_url.as_str());
+                if let Some(home_domain) = self.settings_service.home_url.domain() {
+                    if let Some(redirect_domain) = redirect_url.domain() {
+                        if redirect_domain == home_domain || redirect_domain.ends_with(&format!(".{}", home_domain)) {
+                            query.append_pair("redirectUrl", redirect_url.as_str());
+                        }
+                    }
+                }
             }
         }
 
