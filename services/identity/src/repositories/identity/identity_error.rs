@@ -1,4 +1,5 @@
-use shine_infra::{crypto::IdEncoderError, db::DBError, web::responses::Problem};
+use base64::DecodeError;
+use shine_infra::{crypto::IdEncoderError, data_protection::DataProtectionError, db::DBError, web::responses::Problem};
 use thiserror::Error as ThisError;
 
 mod pr {
@@ -16,6 +17,10 @@ pub enum IdentityBuildError {
     IdEncoder(#[from] IdEncoderError),
     #[error(transparent)]
     DBError(#[from] DBError),
+    #[error(transparent)]
+    DataProtectionError(#[from] DataProtectionError),
+    #[error(transparent)]
+    DecodeError(#[from] DecodeError),
 }
 
 #[derive(Debug, ThisError)]
@@ -43,6 +48,8 @@ pub enum IdentityError {
     IdEncoder(#[from] IdEncoderError),
     #[error(transparent)]
     DBError(#[from] DBError),
+    #[error(transparent)]
+    DataProtectionError(#[from] DataProtectionError),
 }
 
 impl From<IdentityError> for Problem {

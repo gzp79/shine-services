@@ -57,21 +57,21 @@ struct InsertTokenRow {
 
 pg_query!( InsertToken =>
     in = user_id: Uuid, token: &str,
-        kind: TokenKind, fingerprint: Option<&str>, email: Option<&str>,
+        kind: TokenKind, fingerprint: Option<&str>, encrypted_email: Option<&str>, email_hash: Option<&str>,
         expire_s: i32,
         agent: &str, country: Option<&str>, region: Option<&str>, city: Option<&str>;
     out = InsertTokenRow;
     sql =  r#"
         INSERT INTO login_tokens (
                 user_id, token, created,
-                kind, fingerprint, email,
+                kind, fingerprint, encrypted_email, email_hash,
                 expire,
                 agent, country, region, city)
             VALUES (
                 $1, $2, now(),
-                $3, $4, $5,
-                now() + $6 * interval '1 seconds',
-                $7, $8, $9, $10)
+                $3, $4, $5, $6,
+                now() + $7 * interval '1 seconds',
+                $8, $9, $10, $11)
         RETURNING created, expire
     "#
 );
@@ -83,7 +83,7 @@ struct TokenRow {
     created: DateTime<Utc>,
     expire: DateTime<Utc>,
     fingerprint: Option<String>,
-    email: Option<String>,
+    encrypted_email: Option<String>,
     kind: TokenKind,
     is_expired: bool,
     agent: String,
@@ -96,7 +96,7 @@ pg_query!( FindByHashToken =>
     in = token: &str;
     out = TokenRow;
     sql = r#"
-        SELECT t.user_id, t.token, t.created, t.expire, t.fingerprint, t.email, t.kind, t.expire < now() is_expired,
+        SELECT t.user_id, t.token, t.created, t.expire, t.fingerprint, t.encrypted_email, t.kind, t.expire < now() is_expired,
                 t.agent, t.country, t.region, t.city
             FROM login_tokens t
             WHERE t.token = $1
@@ -107,7 +107,7 @@ pg_query!( ListByUser =>
     in = user_id: Uuid;
     out = TokenRow;
     sql = r#"
-        SELECT t.user_id, t.token, t.created, t.expire, t.fingerprint, t.email, t.kind, t.expire < now() is_expired,
+        SELECT t.user_id, t.token, t.created, t.expire, t.fingerprint, t.encrypted_email, t.kind, t.expire < now() is_expired,
                 t.agent, t.country, t.region, t.city
             FROM login_tokens t
             WHERE t.user_id = $1
@@ -141,14 +141,14 @@ struct IdentityTokenRow {
     user_id: Uuid,
     kind: IdentityKind,
     name: String,
-    email: Option<String>,
+    encrypted_email: Option<String>,
     email_confirmed: bool,
     created: DateTime<Utc>,
     token_hash: String,
     token_created: DateTime<Utc>,
     token_expire: DateTime<Utc>,
     token_fingerprint: Option<String>,
-    token_email: Option<String>,
+    token_encrypted_email: Option<String>,
     token_kind: TokenKind,
     token_is_expired: bool,
     token_agent: String,
@@ -162,12 +162,12 @@ pg_query!( TestToken =>
     in = token: &str, allowed_kind: &[TokenKind];
     out = IdentityTokenRow;
     sql = r#"
-        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created,
+        SELECT i.user_id, i.kind, i.name, i.encrypted_email, i.email_confirmed, i.created,
                 t.token token_hash,
                 t.created token_created,
                 t.expire token_expire,
                 t.fingerprint token_fingerprint,
-                t.email token_email,
+                t.encrypted_email token_encrypted_email,
                 t.kind token_kind,
                 t.expire < now() token_is_expired,
                 t.agent token_agent,
@@ -191,12 +191,12 @@ pg_query!( TakeToken =>
         WHERE lt.token = $1 AND lt.kind = any($2)
         RETURNING *        
     )
-    SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created,
+    SELECT i.user_id, i.kind, i.name, i.encrypted_email, i.email_confirmed, i.created,
         t.token token_hash,
         t.created token_created,
         t.expire token_expire,
         t.fingerprint token_fingerprint,
-        t.email token_email,
+        t.encrypted_email token_encrypted_email,
         t.kind token_kind,
         t.expire < now() token_is_expired,
         t.agent token_agent,
@@ -247,6 +247,14 @@ impl Tokens for PgIdentityDbContext<'_> {
         email_to_bind_to: Option<&str>,
         site_info: &SiteInfo,
     ) -> Result<TokenInfo, IdentityError> {
+        let (encrypted_email, email_hash) = if let Some(email) = email_to_bind_to {
+            let encrypted_email = self.email_protection.encrypt(email)?;
+            let email_hash = self.email_protection.hash(email);
+            (Some(encrypted_email), Some(email_hash))
+        } else {
+            (None, None)
+        };
+
         let time_to_live = time_to_live.num_seconds() as i32;
         assert!(time_to_live > 2);
         let row = match self
@@ -258,7 +266,8 @@ impl Tokens for PgIdentityDbContext<'_> {
                 &token_hash,
                 &kind,
                 &fingerprint_to_bind_to.map(|f| f.as_str()),
-                &email_to_bind_to,
+                &encrypted_email.as_deref(),
+                &email_hash.as_deref(),
                 &time_to_live,
                 &site_info.agent.as_str(),
                 &site_info.country.as_deref(),
@@ -300,13 +309,21 @@ impl Tokens for PgIdentityDbContext<'_> {
 
     #[instrument(skip(self))]
     async fn find_by_hash(&mut self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError> {
-        Ok(self
+        let row = self
             .stmts_tokens
             .find_by_hash
             .query_opt(&self.client, &token_hash)
             .await
-            .map_err(DBError::from)?
-            .map(|row| TokenInfo {
+            .map_err(DBError::from)?;
+
+        if let Some(row) = row {
+            let email = if let Some(encrypted_email) = &row.encrypted_email {
+                Some(self.email_protection.decrypt(encrypted_email)?)
+            } else {
+                None
+            };
+
+            Ok(Some(TokenInfo {
                 user_id: row.user_id,
                 kind: row.kind,
                 token_hash: row.token,
@@ -314,24 +331,34 @@ impl Tokens for PgIdentityDbContext<'_> {
                 expire_at: row.expire,
                 is_expired: row.is_expired,
                 bound_fingerprint: row.fingerprint,
-                bound_email: row.email,
+                bound_email: email,
                 agent: row.agent,
                 country: row.country,
                 region: row.region,
                 city: row.city,
             }))
+        } else {
+            Ok(None)
+        }
     }
 
     #[instrument(skip(self))]
     async fn find_by_user(&mut self, user_id: &Uuid) -> Result<Vec<TokenInfo>, IdentityError> {
-        Ok(self
+        let rows = self
             .stmts_tokens
             .list_by_user
             .query(&self.client, user_id)
             .await
-            .map_err(DBError::from)?
-            .into_iter()
-            .map(|row| TokenInfo {
+            .map_err(DBError::from)?;
+
+        let mut tokens = Vec::new();
+        for row in rows {
+            let email = if let Some(encrypted_email) = &row.encrypted_email {
+                Some(self.email_protection.decrypt(encrypted_email)?)
+            } else {
+                None
+            };
+            tokens.push(TokenInfo {
                 user_id: row.user_id,
                 kind: row.kind,
                 token_hash: row.token,
@@ -339,13 +366,14 @@ impl Tokens for PgIdentityDbContext<'_> {
                 expire_at: row.expire,
                 is_expired: row.is_expired,
                 bound_fingerprint: row.fingerprint,
-                bound_email: row.email,
+                bound_email: email,
                 agent: row.agent,
                 country: row.country,
                 region: row.region,
                 city: row.city,
-            })
-            .collect())
+            });
+        }
+        Ok(tokens)
     }
 
     #[instrument(skip(self))]
@@ -403,7 +431,19 @@ impl Tokens for PgIdentityDbContext<'_> {
             .query_opt(&self.client, &token_hash, &allowed_kind)
             .await
             .map_err(DBError::from)?;
-        Ok(row.map(|row| {
+
+        if let Some(row) = row {
+            let token_email = if let Some(encrypted_email) = &row.token_encrypted_email {
+                Some(self.email_protection.decrypt(encrypted_email)?)
+            } else {
+                None
+            };
+            let identity_email = if let Some(encrypted_email) = &row.encrypted_email {
+                Some(self.email_protection.decrypt(encrypted_email)?)
+            } else {
+                None
+            };
+
             let token = TokenInfo {
                 user_id: row.user_id,
                 kind: row.token_kind,
@@ -412,7 +452,7 @@ impl Tokens for PgIdentityDbContext<'_> {
                 expire_at: row.token_expire,
                 is_expired: row.token_is_expired,
                 bound_fingerprint: row.token_fingerprint,
-                bound_email: row.token_email,
+                bound_email: token_email,
                 agent: row.token_agent,
                 country: row.token_country,
                 region: row.token_region,
@@ -422,12 +462,14 @@ impl Tokens for PgIdentityDbContext<'_> {
                 id: row.user_id,
                 kind: row.kind,
                 name: row.name,
-                email: row.email,
+                email: identity_email,
                 is_email_confirmed: row.email_confirmed,
                 created: row.created,
             };
-            (identity, token)
-        }))
+            Ok(Some((identity, token)))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Take a token and return the identity if found.
@@ -444,7 +486,19 @@ impl Tokens for PgIdentityDbContext<'_> {
             .query_opt(&self.client, &token_hash, &allowed_kind)
             .await
             .map_err(DBError::from)?;
-        Ok(row.map(|row| {
+
+        if let Some(row) = row {
+            let token_email = if let Some(encrypted_email) = &row.token_encrypted_email {
+                Some(self.email_protection.decrypt(encrypted_email)?)
+            } else {
+                None
+            };
+            let identity_email = if let Some(encrypted_email) = &row.encrypted_email {
+                Some(self.email_protection.decrypt(encrypted_email)?)
+            } else {
+                None
+            };
+
             let token = TokenInfo {
                 user_id: row.user_id,
                 kind: row.token_kind,
@@ -453,7 +507,7 @@ impl Tokens for PgIdentityDbContext<'_> {
                 expire_at: row.token_expire,
                 is_expired: row.token_is_expired,
                 bound_fingerprint: row.token_fingerprint,
-                bound_email: row.token_email,
+                bound_email: token_email,
                 agent: row.token_agent,
                 country: row.token_country,
                 region: row.token_region,
@@ -463,11 +517,13 @@ impl Tokens for PgIdentityDbContext<'_> {
                 id: row.user_id,
                 kind: row.kind,
                 name: row.name,
-                email: row.email,
+                email: identity_email,
                 is_email_confirmed: row.email_confirmed,
                 created: row.created,
             };
-            (identity, token)
-        }))
+            Ok(Some((identity, token)))
+        } else {
+            Ok(None)
+        }
     }
 }

@@ -3,9 +3,17 @@ use shine_infra::db::{self, DBError, PGConnectionPool, RedisConnectionPool};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EmailProtectionConfig {
+    pub encryption_key: String,
+    pub hash_key: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DBConfig {
     pub sql_cns: String,
     pub redis_cns: String,
+    pub email_protection: EmailProtectionConfig,
 }
 
 mod embedded {
