@@ -4,7 +4,8 @@ CREATE TABLE external_logins (
     provider_id TEXT NOT NULL,
     linked TIMESTAMPTZ NULL,
     name VARCHAR(64),
-    email VARCHAR(256),
+    encrypted_email VARCHAR(512),
+    email_hash VARCHAR(64),
     CONSTRAINT fkey_user_id FOREIGN KEY (user_id) REFERENCES identities (user_id) ON DELETE CASCADE
 );
 
