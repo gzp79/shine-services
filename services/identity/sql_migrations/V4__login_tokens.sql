@@ -1,7 +1,7 @@
 CREATE TABLE login_tokens (
     user_id UUID NOT NULL,
     kind SMALLINT NOT NULL,
-    email VARCHAR(255) NULL,
+    encrypted_email VARCHAR(512) NULL,
     token TEXT NOT NULL,
     created TIMESTAMPTZ NULL,
     expire TIMESTAMPTZ NULL,
@@ -23,8 +23,8 @@ CREATE TABLE login_tokens (
     CONSTRAINT chk_required_email CHECK (
         kind not in (4)
         OR NOT (
-            email IS NULL
-            OR email = ''
+            encrypted_email IS NULL
+            OR encrypted_email = ''
         )
     )
 );
