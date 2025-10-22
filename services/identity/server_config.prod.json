@@ -6,10 +6,7 @@
   "afterLayers": ["environment"],
 
   "db": {
-    "email_protection": {
-      "encryption_key": "",
-      "hash_key": ""
-    }
+    "emailProtection": {}
   },
 
   "service": {

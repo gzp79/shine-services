@@ -1,7 +1,10 @@
-use ring::{aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM}, hmac::{self, Key}};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use rand::{rngs::OsRng, TryRngCore};
+use ring::{
+    aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM},
+    hmac::{self, Key},
+};
 use thiserror::Error as ThisError;
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 
 const NONCE_LEN: usize = 12;
 
@@ -22,8 +25,8 @@ pub struct DataProtectionUtils {
 
 impl DataProtectionUtils {
     pub fn new(encryption_key: &[u8], hmac_key: &[u8]) -> Result<Self, DataProtectionError> {
-        let encryption_key = UnboundKey::new(&AES_256_GCM, encryption_key)
-            .map_err(|_| DataProtectionError::InvalidKeyLength)?;
+        let encryption_key =
+            UnboundKey::new(&AES_256_GCM, encryption_key).map_err(|_| DataProtectionError::InvalidKeyLength)?;
         let encryption_key = LessSafeKey::new(encryption_key);
         let hmac_key = Key::new(hmac::HMAC_SHA256, hmac_key);
         Ok(Self { encryption_key, hmac_key })
@@ -31,7 +34,9 @@ impl DataProtectionUtils {
 
     pub fn encrypt(&self, data: &str) -> Result<String, DataProtectionError> {
         let mut nonce_bytes = [0u8; NONCE_LEN];
-        OsRng.try_fill_bytes(&mut nonce_bytes).map_err(|_| DataProtectionError::EncryptionError)?;
+        OsRng
+            .try_fill_bytes(&mut nonce_bytes)
+            .map_err(|_| DataProtectionError::EncryptionError)?;
         let nonce = Nonce::assume_unique_for_key(nonce_bytes);
 
         let mut in_out = data.as_bytes().to_vec();
@@ -43,20 +48,21 @@ impl DataProtectionUtils {
         result.extend_from_slice(&nonce_bytes);
         result.extend_from_slice(&in_out);
 
-        Ok(URL_SAFE_NO_PAD.encode(result))
+        Ok(B64.encode(result))
     }
 
     pub fn decrypt(&self, data: &str) -> Result<String, DataProtectionError> {
-        let decoded = URL_SAFE_NO_PAD.decode(data).map_err(|_| DataProtectionError::DecryptionError)?;
+        let decoded = B64.decode(data).map_err(|_| DataProtectionError::DecryptionError)?;
         if decoded.len() < NONCE_LEN {
             return Err(DataProtectionError::DecryptionError);
         }
 
-        let (nonce_bytes, ciphertext) = decoded.split_at(NONCE_LEN);
+        let (nonce_bytes, cipher_text) = decoded.split_at(NONCE_LEN);
         let nonce = Nonce::assume_unique_for_key(nonce_bytes.try_into().unwrap());
 
-        let mut in_out = ciphertext.to_vec();
-        let decrypted_data = self.encryption_key
+        let mut in_out = cipher_text.to_vec();
+        let decrypted_data = self
+            .encryption_key
             .open_in_place(nonce, Aad::empty(), &mut in_out)
             .map_err(|_| DataProtectionError::DecryptionError)?;
         String::from_utf8(decrypted_data.to_vec()).map_err(|_| DataProtectionError::DecryptionError)
@@ -64,7 +70,7 @@ impl DataProtectionUtils {
 
     pub fn hash(&self, data: &str) -> String {
         let signature = hmac::sign(&self.hmac_key, data.as_bytes());
-        URL_SAFE_NO_PAD.encode(signature.as_ref())
+        B64.encode(signature.as_ref())
     }
 }
 
@@ -74,13 +80,15 @@ mod tests {
 
     pub fn generate_key() -> Result<String, DataProtectionError> {
         let mut key = [0u8; 32];
-        OsRng.try_fill_bytes(&mut key).map_err(|_| DataProtectionError::EncryptionError)?;
-        let encoded_key = URL_SAFE_NO_PAD.encode(&key);
+        OsRng
+            .try_fill_bytes(&mut key)
+            .map_err(|_| DataProtectionError::EncryptionError)?;
+        let encoded_key = B64.encode(&key);
         Ok(encoded_key)
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "This is not a test but a helper to generate keys"]
     fn generate_new_keys() {
         let encryption_key = generate_key().unwrap();
         let hmac_key = generate_key().unwrap();
@@ -92,7 +100,8 @@ mod tests {
     fn test_encrypt_decrypt() {
         let encryption_key = generate_key().unwrap();
         let hmac_key = generate_key().unwrap();
-        let crypto = DataProtectionUtils::new(&URL_SAFE_NO_PAD.decode(encryption_key).unwrap(), &URL_SAFE_NO_PAD.decode(hmac_key).unwrap()).unwrap();
+        let crypto =
+            DataProtectionUtils::new(&B64.decode(encryption_key).unwrap(), &B64.decode(hmac_key).unwrap()).unwrap();
         let data = "hello world";
         let encrypted = crypto.encrypt(data).unwrap();
         let decrypted = crypto.decrypt(&encrypted).unwrap();

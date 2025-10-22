@@ -1,6 +1,12 @@
-use crate::repositories::{identity::{IdentityBuildError, IdentityDb, IdentityDbContext, IdentityError}, EmailProtectionConfig};
-use shine_infra::{data_protection::DataProtectionUtils, db::{DBError, PGConnectionPool, PGPooledConnection}};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use crate::repositories::{
+    identity::{IdentityBuildError, IdentityDb, IdentityDbContext, IdentityError},
+    EmailProtectionConfig,
+};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
+use shine_infra::{
+    crypto::DataProtectionUtils,
+    db::{DBError, PGConnectionPool, PGPooledConnection},
+};
 
 use super::{
     PgExternalLinksStatements, PgIdSequencesStatements, PgIdentitiesStatements, PgRolesStatements, PgTokensStatements,
@@ -32,10 +38,9 @@ impl PgIdentityDb {
     pub async fn new(postgres: &PGConnectionPool, config: &EmailProtectionConfig) -> Result<Self, IdentityBuildError> {
         let client = postgres.get().await.map_err(DBError::PGPoolError)?;
 
-        let encryption_key = URL_SAFE_NO_PAD.decode(config.encryption_key.as_bytes())?;
-        let hash_key = URL_SAFE_NO_PAD.decode(config.hash_key.as_bytes())?;
+        let encryption_key = B64.decode(config.encryption_key.as_bytes())?;
+        let hash_key = B64.decode(config.hash_key.as_bytes())?;
         let email_protection = DataProtectionUtils::new(&encryption_key, &hash_key)?;
-
 
         Ok(Self {
             client: postgres.clone(),

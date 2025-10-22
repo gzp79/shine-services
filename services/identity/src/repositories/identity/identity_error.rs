@@ -1,7 +1,10 @@
-use shine_infra::{crypto::IdEncoderError, data_protection::DataProtectionError, db::DBError, web::responses::Problem};
-use thiserror::Error as ThisError;
 use base64::DecodeError;
-
+use shine_infra::{
+    crypto::{DataProtectionError, IdEncoderError},
+    db::DBError,
+    web::responses::Problem,
+};
+use thiserror::Error as ThisError;
 
 mod pr {
     pub const ID_CONFLICT: &str = "identity-id-conflict";

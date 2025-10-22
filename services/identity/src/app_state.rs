@@ -9,7 +9,7 @@ use crate::{
     services::{IdentityService, MailerService, SessionService, SettingsService, TokenSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
-use base64::{prelude::BASE64_URL_SAFE_NO_PAD as B64, Engine};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::Duration;
 use ring::{aead, rand::SystemRandom};
 use shine_infra::{
