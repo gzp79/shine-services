@@ -1,5 +1,6 @@
-use crate::repositories::identity::{IdentityBuildError, IdentityDb, IdentityDbContext, IdentityError};
-use shine_infra::db::{DBError, PGConnectionPool, PGPooledConnection};
+use crate::repositories::{identity::{IdentityBuildError, IdentityDb, IdentityDbContext, IdentityError}, DBConfig};
+use shine_infra::{crypto_utils::CryptoUtils, db::{DBError, PGConnectionPool, PGPooledConnection}};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 
 use super::{
     PgExternalLinksStatements, PgIdSequencesStatements, PgIdentitiesStatements, PgRolesStatements, PgTokensStatements,
@@ -7,6 +8,7 @@ use super::{
 
 pub struct PgIdentityDbContext<'c> {
     pub(in crate::repositories::identity::pg) client: PGPooledConnection<'c>,
+    pub(in crate::repositories::identity::pg) crypto: &'c CryptoUtils,
     pub(in crate::repositories::identity::pg) stmts_identities: PgIdentitiesStatements,
     pub(in crate::repositories::identity::pg) stmts_external_links: PgExternalLinksStatements,
     pub(in crate::repositories::identity::pg) stmts_tokens: PgTokensStatements,
@@ -18,6 +20,7 @@ impl<'c> IdentityDbContext<'c> for PgIdentityDbContext<'c> {}
 
 pub struct PgIdentityDb {
     client: PGConnectionPool,
+    crypto: CryptoUtils,
     stmts_identities: PgIdentitiesStatements,
     stmts_external_links: PgExternalLinksStatements,
     stmts_tokens: PgTokensStatements,
@@ -26,11 +29,18 @@ pub struct PgIdentityDb {
 }
 
 impl PgIdentityDb {
-    pub async fn new(postgres: &PGConnectionPool) -> Result<Self, IdentityBuildError> {
+    pub async fn new(postgres: &PGConnectionPool, config: &DBConfig) -> Result<Self, IdentityBuildError> {
         let client = postgres.get().await.map_err(DBError::PGPoolError)?;
+
+        let email_config = &config.email_protection;
+        let encryption_key = URL_SAFE_NO_PAD.decode(email_config.encryption_key.as_bytes())?;
+        let hash_key = URL_SAFE_NO_PAD.decode(email_config.hash_key.as_bytes())?;
+        let crypto = CryptoUtils::new(&encryption_key, &hash_key)?;
+
 
         Ok(Self {
             client: postgres.clone(),
+            crypto,
             stmts_identities: PgIdentitiesStatements::new(&client).await?,
             stmts_external_links: PgExternalLinksStatements::new(&client).await?,
             stmts_tokens: PgTokensStatements::new(&client).await?,
@@ -45,6 +55,7 @@ impl IdentityDb for PgIdentityDb {
         let client = self.client.get().await.map_err(DBError::PGPoolError)?;
         Ok(PgIdentityDbContext {
             client,
+            crypto: &self.crypto,
             stmts_identities: self.stmts_identities.clone(),
             stmts_external_links: self.stmts_external_links.clone(),
             stmts_tokens: self.stmts_tokens.clone(),

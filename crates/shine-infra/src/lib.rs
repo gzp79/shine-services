@@ -1,5 +1,6 @@
 pub mod azure;
 pub mod crypto;
+pub mod crypto_utils;
 pub mod db;
 pub mod language;
 pub mod serde;

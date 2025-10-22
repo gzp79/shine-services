@@ -9,7 +9,11 @@
   "identity": {
     "db": {
       "redisCns": "redis://redis.mockbox.com:6379",
-      "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-identity?sslmode=disable"
+      "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-identity?sslmode=disable",
+      "email_protection": {
+        "encryption_key": "enc-key-placeholder",
+        "hash_key": "hash-key-placeholder"
+      }
     },
 
     "name": {

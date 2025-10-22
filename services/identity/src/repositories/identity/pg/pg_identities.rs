@@ -43,11 +43,11 @@ impl ToPGType for IdentityKind {
 }
 
 pg_query!( InsertIdentity =>
-    in = user_id: Uuid, kind: IdentityKind, name: &str, email: Option<&str>;
+    in = user_id: Uuid, kind: IdentityKind, name: &str, encrypted_email: Option<&str>, email_hash: Option<&str>;
     out = created: DateTime<Utc>;
     sql = r#"
-        INSERT INTO identities (user_id, kind, created, name, email) 
-            VALUES ($1, $2, now(), $3, $4)
+        INSERT INTO identities (user_id, kind, created, name, encrypted_email, email_hash)
+            VALUES ($1, $2, now(), $3, $4, $5)
         RETURNING created
     "#
 );
@@ -65,7 +65,7 @@ struct IdentityRow {
     user_id: Uuid,
     kind: IdentityKind,
     name: String,
-    email: Option<String>,
+    encrypted_email: Option<String>,
     email_confirmed: bool,
     created: DateTime<Utc>,
 }
@@ -74,32 +74,33 @@ pg_query!( FindById =>
     in = user_id: Uuid;
     out = IdentityRow;
     sql = r#"
-        SELECT user_id, kind, name, email, email_confirmed, created
+        SELECT user_id, kind, name, encrypted_email, email_confirmed, created
             FROM identities
             WHERE user_id = $1
     "#
 );
 
-pg_query!( FindByEmail =>
-    in = email: &str;
+pg_query!( FindByEmailHash =>
+    in = email_hash: &str;
     out = IdentityRow;
     sql = r#"
-        SELECT user_id, kind, name, email, email_confirmed, created
+        SELECT user_id, kind, name, encrypted_email, email_confirmed, created
             FROM identities
-            WHERE email = $1
+            WHERE email_hash = $1
     "#
 );
 
 pg_query!( UpdateIdentity =>
-    in = user_id: Uuid, user_name: Option<&str>, email: Option<&str>, email_confirmed: Option<bool>;
+    in = user_id: Uuid, user_name: Option<&str>, encrypted_email: Option<&str>, email_hash: Option<&str>, email_confirmed: Option<bool>;
     out = IdentityRow;
     sql = r#"
         UPDATE identities
             SET name = COALESCE($2, name),
-                email = COALESCE($3, email),
-                email_confirmed = COALESCE($4, email_confirmed)
+                encrypted_email = COALESCE($3, encrypted_email),
+                email_hash = COALESCE($4, email_hash),
+                email_confirmed = COALESCE($5, email_confirmed)
             WHERE user_id = $1
-        RETURNING user_id, kind, name, email, email_confirmed, created
+        RETURNING user_id, kind, name, encrypted_email, email_confirmed, created
     "#
 );
 
@@ -108,7 +109,7 @@ pub struct PgIdentitiesStatements {
     insert_identity: InsertIdentity,
     cascaded_delete: CascadedDelete,
     find_by_id: FindById,
-    find_by_email: FindByEmail,
+    find_by_email_hash: FindByEmailHash,
     update: UpdateIdentity,
 }
 
@@ -118,7 +119,7 @@ impl PgIdentitiesStatements {
             insert_identity: InsertIdentity::new(client).await.map_err(DBError::from)?,
             cascaded_delete: CascadedDelete::new(client).await.map_err(DBError::from)?,
             find_by_id: FindById::new(client).await.map_err(DBError::from)?,
-            find_by_email: FindByEmail::new(client).await.map_err(DBError::from)?,
+            find_by_email_hash: FindByEmailHash::new(client).await.map_err(DBError::from)?,
             update: UpdateIdentity::new(client).await.map_err(DBError::from)?,
         })
     }
@@ -132,7 +133,13 @@ impl Identities for PgIdentityDbContext<'_> {
         user_name: &str,
         email: Option<(&str, bool)>,
     ) -> Result<Identity, IdentityError> {
-        //let email = email.map(|e| e.normalize_email());
+        let (encrypted_email, email_hash) = if let Some((email, _)) = email {
+            let encrypted_email = self.crypto.encrypt(email)?;
+            let email_hash = self.crypto.hash(email);
+            (Some(encrypted_email), Some(email_hash))
+        } else {
+            (None, None)
+        };
 
         let created = match self
             .stmts_identities
@@ -142,7 +149,8 @@ impl Identities for PgIdentityDbContext<'_> {
                 &user_id,
                 &IdentityKind::User,
                 &user_name,
-                &email.map(|x| x.0),
+                &encrypted_email.as_deref(),
+                &email_hash.as_deref(),
             )
             .await
         {
@@ -155,7 +163,7 @@ impl Identities for PgIdentityDbContext<'_> {
                 log::info!("Conflicting name: {user_name}, rolling back user creation");
                 return Err(IdentityError::NameConflict);
             }
-            Err(err) if err.is_constraint("identities", "idx_email") => {
+            Err(err) if err.is_constraint("identities", "idx_email_hash") => {
                 log::info!("Conflicting email: {user_id}, rolling back user creation");
                 return Err(IdentityError::EmailConflict);
             }
@@ -176,37 +184,59 @@ impl Identities for PgIdentityDbContext<'_> {
 
     #[instrument(skip(self))]
     async fn find_by_id(&mut self, id: Uuid) -> Result<Option<Identity>, IdentityError> {
-        Ok(self
+        let row = self
             .stmts_identities
             .find_by_id
             .query_opt(&self.client, &id)
             .await
-            .map_err(DBError::from)?
-            .map(|row| Identity {
+            .map_err(DBError::from)?;
+
+        if let Some(row) = row {
+            let email = if let Some(encrypted_email) = &row.encrypted_email {
+                Some(self.crypto.decrypt(encrypted_email)?)
+            } else {
+                None
+            };
+            Ok(Some(Identity {
                 id: row.user_id,
                 kind: row.kind,
                 name: row.name,
-                email: row.email,
+                email,
                 is_email_confirmed: row.email_confirmed,
                 created: row.created,
             }))
+        } else {
+            Ok(None)
+        }
     }
+
     #[instrument(skip(self))]
     async fn find_by_email(&mut self, email: &str) -> Result<Option<Identity>, IdentityError> {
-        Ok(self
+        let email_hash = self.crypto.hash(email);
+        let row = self
             .stmts_identities
-            .find_by_email
-            .query_opt(&self.client, &email)
+            .find_by_email_hash
+            .query_opt(&self.client, &email_hash.as_str())
             .await
-            .map_err(DBError::from)?
-            .map(|row| Identity {
+            .map_err(DBError::from)?;
+
+        if let Some(row) = row {
+            let email = if let Some(encrypted_email) = &row.encrypted_email {
+                Some(self.crypto.decrypt(encrypted_email)?)
+            } else {
+                None
+            };
+            Ok(Some(Identity {
                 id: row.user_id,
                 kind: row.kind,
                 name: row.name,
-                email: row.email,
+                email,
                 is_email_confirmed: row.email_confirmed,
                 created: row.created,
             }))
+        } else {
+            Ok(None)
+        }
     }
 
     #[instrument(skip(self))]
@@ -216,11 +246,25 @@ impl Identities for PgIdentityDbContext<'_> {
         name: Option<&str>,
         email: Option<(&str, bool)>,
     ) -> Result<Option<Identity>, IdentityError> {
-        //todo: use PgVersionedUpdate to trigger a session update for name and similar things
+        let (encrypted_email, email_hash) = if let Some((email, _)) = email {
+            let encrypted_email = self.crypto.encrypt(email)?;
+            let email_hash = self.crypto.hash(email);
+            (Some(encrypted_email), Some(email_hash))
+        } else {
+            (None, None)
+        };
+
         let identity_row = match self
             .stmts_identities
             .update
-            .query_opt(&self.client, &id, &name, &email.map(|x| x.0), &email.map(|x| x.1))
+            .query_opt(
+                &self.client,
+                &id,
+                &name,
+                &encrypted_email.as_deref(),
+                &email_hash.as_deref(),
+                &email.map(|x| x.1),
+            )
             .await
         {
             Ok(Some(row)) => row,
@@ -229,18 +273,24 @@ impl Identities for PgIdentityDbContext<'_> {
                 log::info!("Conflicting name: {name:?}, rolling back user update");
                 return Err(IdentityError::NameConflict);
             }
-            Err(err) if err.is_constraint("identities", "idx_email") => {
+            Err(err) if err.is_constraint("identities", "idx_email_hash") => {
                 log::info!("Conflicting email: {email:?}, rolling back user update");
                 return Err(IdentityError::EmailConflict);
             }
             Err(err) => return Err(DBError::from(err).into()),
         };
 
+        let email = if let Some(encrypted_email) = &identity_row.encrypted_email {
+            Some(self.crypto.decrypt(encrypted_email)?)
+        } else {
+            None
+        };
+
         Ok(Some(Identity {
             id: identity_row.user_id,
             kind: identity_row.kind,
             name: identity_row.name,
-            email: identity_row.email,
+            email,
             is_email_confirmed: identity_row.email_confirmed,
             created: identity_row.created,
         }))

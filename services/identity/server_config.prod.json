@@ -5,6 +5,13 @@
   ],
   "afterLayers": ["environment"],
 
+  "db": {
+    "email_protection": {
+      "encryption_key": "enc-key-placeholder",
+      "hash_key": "hash-key-placeholder"
+    }
+  },
+
   "service": {
     "port": 7000
   },

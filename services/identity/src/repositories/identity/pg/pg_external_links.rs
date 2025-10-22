@@ -13,11 +13,11 @@ use uuid::Uuid;
 use super::PgIdentityDbContext;
 
 pg_query!( InsertExternalLogin =>
-    in = user_id: Uuid, provider: &str, provider_id: &str, name: Option<&str>, email: Option<&str>;
+    in = user_id: Uuid, provider: &str, provider_id: &str, name: Option<&str>, encrypted_email: Option<&str>, email_hash: Option<&str>;
     out = linked: DateTime<Utc>;
     sql = r#"
-        INSERT INTO external_logins (user_id, provider, provider_id, name, email, linked) 
-            VALUES ($1, $2, $3, $4, $5, now())
+        INSERT INTO external_logins (user_id, provider, provider_id, name, encrypted_email, email_hash, linked)
+            VALUES ($1, $2, $3, $4, $5, $6, now())
         RETURNING linked
     "#
 );
@@ -27,7 +27,7 @@ struct FindByProviderIdRow {
     user_id: Uuid,
     kind: IdentityKind,
     name: String,
-    email: Option<String>,
+    encrypted_email: Option<String>,
     email_confirmed: bool,
     created: DateTime<Utc>,
 }
@@ -36,7 +36,7 @@ pg_query!( FindByProviderId =>
     in = provider: &str, provider_id: &str;
     out = FindByProviderIdRow;
     sql = r#"
-        SELECT i.user_id, i.kind, i.name, i.email, i.email_confirmed, i.created
+        SELECT i.user_id, i.kind, i.name, i.encrypted_email, i.email_confirmed, i.created
             FROM external_logins e, identities i
             WHERE e.user_id = i.user_id
                 AND e.provider = $1
@@ -50,7 +50,7 @@ struct ListByUserIdRow {
     provider: String,
     provider_id: String,
     name: Option<String>,
-    email: Option<String>,
+    encrypted_email: Option<String>,
     linked: DateTime<Utc>,
 }
 
@@ -58,7 +58,7 @@ pg_query!( ListByUserId =>
     in = user_id: Uuid;
     out = ListByUserIdRow;
     sql = r#"
-        SELECT e.user_id, e.provider, e.provider_id, e.name, e.email, e.linked
+        SELECT e.user_id, e.provider, e.provider_id, e.name, e.encrypted_email, e.linked
             FROM external_logins e
             WHERE e.user_id = $1
     "#
@@ -109,6 +109,14 @@ impl PgExternalLinksStatements {
 impl ExternalLinks for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
     async fn link_user(&mut self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError> {
+        let (encrypted_email, email_hash) = if let Some(email) = &external_user.email {
+            let encrypted_email = self.crypto.encrypt(email)?;
+            let email_hash = self.crypto.hash(email);
+            (Some(encrypted_email), Some(email_hash))
+        } else {
+            (None, None)
+        };
+
         match self
             .stmts_external_links
             .insert
@@ -118,7 +126,8 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
                 &external_user.provider.as_str(),
                 &external_user.provider_id.as_str(),
                 &external_user.name.as_deref(),
-                &external_user.email.as_deref(),
+                &encrypted_email.as_deref(),
+                &email_hash.as_deref(),
             )
             .await
         {
@@ -142,13 +151,21 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
             .await
             .map_err(DBError::from)?
             .into_iter()
-            .map(|row| ExternalLink {
-                user_id: row.user_id,
-                provider: row.provider,
-                provider_id: row.provider_id,
-                name: row.name,
-                email: row.email,
-                linked_at: row.linked,
+            .map(|row| {
+                let email = if let Some(encrypted_email) = &row.encrypted_email {
+                    self.crypto.decrypt(encrypted_email).ok()
+                } else {
+                    None
+                };
+
+                ExternalLink {
+                    user_id: row.user_id,
+                    provider: row.provider,
+                    provider_id: row.provider_id,
+                    name: row.name,
+                    email,
+                    linked_at: row.linked,
+                }
             })
             .collect();
 
@@ -173,20 +190,30 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
         provider: &str,
         provider_id: &str,
     ) -> Result<Option<Identity>, IdentityError> {
-        Ok(self
+        let row = self
             .stmts_external_links
             .find_by_provider_id
             .query_opt(&self.client, &provider, &provider_id)
             .await
-            .map_err(DBError::from)?
-            .map(|row| Identity {
+            .map_err(DBError::from)?;
+
+        if let Some(row) = row {
+            let email = if let Some(encrypted_email) = &row.encrypted_email {
+                Some(self.crypto.decrypt(encrypted_email)?)
+            } else {
+                None
+            };
+            Ok(Some(Identity {
                 id: row.user_id,
                 kind: row.kind,
                 name: row.name,
-                email: row.email,
+                email,
                 is_email_confirmed: row.email_confirmed,
                 created: row.created,
             }))
+        } else {
+            Ok(None)
+        }
     }
 
     #[instrument(skip(self))]
