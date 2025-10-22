@@ -447,11 +447,17 @@ impl Tokens for PgIdentityDbContext<'_> {
                 region: row.token_region,
                 city: row.token_city,
             };
+            let identity_email = row
+                .email
+                .as_deref()
+                .map(|email| self.email_protection.decrypt(email))
+                .transpose()?;
+
             let identity = Identity {
                 id: row.user_id,
                 kind: row.kind,
                 name: row.name,
-                email: row.email,
+                email: identity_email,
                 is_email_confirmed: row.email_confirmed,
                 created: row.created,
             };
@@ -495,11 +501,17 @@ impl Tokens for PgIdentityDbContext<'_> {
                 region: row.token_region,
                 city: row.token_city,
             };
+            let identity_email = row
+                .email
+                .as_deref()
+                .map(|email| self.email_protection.decrypt(email))
+                .transpose()?;
+
             let identity = Identity {
                 id: row.user_id,
                 kind: row.kind,
                 name: row.name,
-                email: row.email,
+                email: identity_email,
                 is_email_confirmed: row.email_confirmed,
                 created: row.created,
             };
