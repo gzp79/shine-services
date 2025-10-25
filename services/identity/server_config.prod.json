@@ -5,6 +5,10 @@
   ],
   "afterLayers": ["environment"],
 
+  "db": {
+    "emailProtection": {}
+  },
+
   "service": {
     "port": 7000
   },
