@@ -10,10 +10,10 @@ mod rig_plugin;
 pub mod rigs;
 
 pub use self::{
-    camera_pose::{CameraPose, CameraPoseDebug},
-    debug_camera_plugin::DebugCameraTarget,
+    camera_pose::{CameraPose, CameraPoseTrace},
+    debug_camera_plugin::{DebugCameraTarget, ScheduleDebugCameraExt},
     rig::CameraRig,
-    rig_driver::{RigDriver, RigUpdateParams},
+    rig_driver::RigDriver,
     rig_error::RigError,
     rig_plugin::CameraRigPlugin,
 };

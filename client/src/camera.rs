@@ -42,13 +42,15 @@ pub enum CameraAction {
 
 fn spawn_camera(mut commands: Commands) -> Result<(), BevyError> {
     let camera = {
-        let mut rig = CameraRig::new()
-            .with(rigs::Position::new(Vec3::ZERO.with_name("position")))?
-            .with(rigs::Rotation::new(Quat::default().with_name("rotation")))?
+        let rig = CameraRig::new()
+            .with(rigs::AlignPosition::new(Vec3::ZERO.with_name("position")))?
+            .with(rigs::AlignRotation::new(Quat::IDENTITY.with_name("rotation")))?
             .with(rigs::Predict::position(1.25))?
-            .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))?
+            .with(rigs::Arm::new(Vec3::new(0.0, -5.5, 3.5)))?
             .with(rigs::Predict::position(2.5))?
-            .with(rigs::LookAt::new(Vec3::Y.animated().predict(1.25).with_name("lookAt")))?;
+            .with(rigs::LookAt::new(
+                (Vec3::Y * 5.0).animated().predict(1.25).with_name("lookAt"),
+            ))?;
 
         let input_map = InputMap::new().with_binding(CameraAction::Debug, KeyboardInput::new(KeyCode::F12))?;
 
@@ -56,8 +58,7 @@ fn spawn_camera(mut commands: Commands) -> Result<(), BevyError> {
             Name::new("Main camera"),
             Camera3d::default(),
             NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-            rig.calculate_transform(0.0, None),
-            rig,
+            rig.into_bundle(),
             input_map,
         )
     };
@@ -90,9 +91,11 @@ fn follow_avatar(
     let avatar = avatar_q.single()?;
     let mut rig = camera_q.single_mut()?;
 
+    let offset = avatar.rotation * Vec3::new(0.0, 5.0, 0.0);
+
     rig.set_parameter("position", avatar.translation)?;
     rig.set_parameter("rotation", avatar.rotation)?;
-    rig.set_parameter("lookAt", avatar.translation + Vec3::Y)?;
+    rig.set_parameter("lookAt", avatar.translation + offset)?;
 
     Ok(())
 }

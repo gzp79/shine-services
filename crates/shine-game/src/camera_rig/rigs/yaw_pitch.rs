@@ -1,14 +1,13 @@
 use crate::{
-    camera_rig::{RigDriver, RigUpdateParams},
+    camera_rig::{CameraPose, RigDriver},
     math::value::{AnimatedVariable, Variable},
 };
 use bevy::{
     log,
     math::{EulerRot, Quat},
-    transform::components::Transform,
 };
 
-/// Calculate camera rotation based on yaw and pitch angles.
+/// Set the camera rotation based on yaw and pitch angles relative to the current pose. Keeps the position unchanged.
 pub struct YawPitch<Y, P>
 where
     Y: AnimatedVariable<Value = f32>,
@@ -61,8 +60,8 @@ where
         }
     }
 
-    fn update(&mut self, params: RigUpdateParams) -> Transform {
-        let yaw = self.yaw.animate(params.delta_time_s);
+    fn update(&mut self, pose: &mut CameraPose, delta_time_s: f32) {
+        let yaw = self.yaw.animate(delta_time_s);
 
         const YAW_PRECISION_THRESHOLD: f32 = 1440.0; // ~4 full rotations
         if yaw.abs() > YAW_PRECISION_THRESHOLD {
@@ -70,7 +69,7 @@ where
         }
         let yaw = yaw % 720_f32;
 
-        let pitch = self.pitch.animate(params.delta_time_s);
+        let pitch = self.pitch.animate(delta_time_s);
 
         const PITCH_PRECISION_THRESHOLD: f32 = 270.0; // ~3 full rotations worth
         if pitch.abs() > PITCH_PRECISION_THRESHOLD {
@@ -78,8 +77,7 @@ where
         }
         let pitch = pitch.clamp(-90.0, 90.0);
 
-        let rotation = Quat::from_euler(EulerRot::YXZ, yaw.to_radians(), pitch.to_radians(), 0.0);
-
-        Transform::from_translation(params.parent.translation).with_rotation(rotation)
+        let rotation = Quat::from_euler(EulerRot::ZXY, yaw.to_radians(), pitch.to_radians(), 0.0);
+        pose.transform.rotation = rotation * pose.transform.rotation;
     }
 }

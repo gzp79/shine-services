@@ -64,7 +64,7 @@ fn spawn_avatar(
                 Vec3::new(-1.0, -1.0, 0.0),
                 Vec3::new(1.0, -1.0, 0.0),
                 Vec3::new(0.0, 1.0, 0.0),
-                Vec3::new(0.0, -1.0, 0.5),
+                Vec3::new(0.0, -0.5, 0.5),
             ))),
             MeshMaterial3d(materials.add(Color::Srgba(css::DARK_BLUE))),
             Transform::IDENTITY,
@@ -87,10 +87,9 @@ pub fn handle_avatar_input(
     let mut rot = actions.axis_value(&AvatarAction::Rotate);
 
     rot *= time.delta_secs() * 2.0;
-    avatar.rotation = Quat::from_rotation_y(rot) * avatar.rotation;
+    avatar.rotation = Quat::from_rotation_z(rot) * avatar.rotation;
 
-    let mut move_vec = avatar.rotation * Vec3::Z * mov;
-    move_vec.y = 0.0;
+    let mut move_vec = avatar.rotation * Vec3::Y * mov;
     if move_vec.length_squared() > 0.0 {
         move_vec = move_vec.normalize();
     }
