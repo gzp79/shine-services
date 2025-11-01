@@ -13,9 +13,9 @@ use bevy::{
     light::PointLight,
     math::{
         primitives::{Cuboid, Plane3d},
-        Vec3,
+        Dir3, Vec2, Vec3,
     },
-    mesh::{Mesh, Mesh3d, Meshable},
+    mesh::{Mesh, Mesh3d},
     pbr::{MeshMaterial3d, StandardMaterial},
     render::view::NoIndirectDrawing,
     tasks::BoxedFuture,
@@ -25,7 +25,7 @@ use bevy::{
 };
 use shine_game::{
     app::{init_application, platform, AppGameSchedule, GameSetup, GameSystems, PlatformInit},
-    camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
+    camera_rig::{rigs, CameraRig, CameraRigPlugin, DebugCameraTarget},
     math::value::IntoNamedVariable,
 };
 
@@ -69,16 +69,34 @@ fn spawn_world(
     let mut window = windows.single_mut().unwrap();
     window.title = "Camera Orbit (QE)".to_string();
 
-    let player = (
+    commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(Color::Srgba(css::DARK_BLUE))),
-        Transform::from_xyz(0.0, 0.5, 0.0),
-    );
-    commands.spawn(player);
-
-    let floor = (
-        Mesh3d(meshes.add(Mesh::from(Plane3d::default().mesh().size(15.0, 15.0)))),
+        MeshMaterial3d(materials.add(Color::Srgba(css::YELLOW))),
+        Transform::from_xyz(0.0, 0.0, 0.5),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.2, 0.2, 0.2))),
+        MeshMaterial3d(materials.add(Color::Srgba(css::DARK_RED))),
+        Transform::from_xyz(1.0, 0.0, 0.0),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.2, 0.2, 0.2))),
         MeshMaterial3d(materials.add(Color::Srgba(css::DARK_GREEN))),
+        Transform::from_xyz(0.0, 1.0, 0.0),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.2, 0.2, 0.2))),
+        MeshMaterial3d(materials.add(Color::Srgba(css::DARK_BLUE))),
+        Transform::from_xyz(0.0, 0.0, 1.0),
+    ));
+
+    let floor_plane = Plane3d {
+        normal: Dir3::Z,
+        half_size: Vec2::new(15.0, 15.0),
+    };
+    let floor = (
+        Mesh3d(meshes.add(Mesh::from(floor_plane))),
+        MeshMaterial3d(materials.add(Color::Srgba(css::DARK_GRAY))),
     );
     commands.spawn(floor);
 
@@ -89,24 +107,20 @@ fn spawn_world(
             intensity: 2000.0 * 1000.0,
             ..default()
         },
-        Transform::from_xyz(0.0, 5.0, 3.0),
+        Transform::from_xyz(3.0, 0.0, 5.0),
     );
     commands.spawn(light);
 
     let camera = {
-        let mut rig: CameraRig = CameraRig::new()
+        let rig: CameraRig = CameraRig::new()
             .with(rigs::YawPitch::new((45.0).with_name("yaw"), (-30.0).with_name("pitch")))?
             .with(rigs::Smooth::rotation(1.5))?
             .with(rigs::Arm::new(Vec3::Z * 8.0))?;
-        let mut rig_debug = CameraPoseDebug::default();
-        let transform = rig.calculate_transform(0.0, Some(&mut rig_debug.update_steps));
 
         (
             Camera3d::default(),
             NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-            rig,
-            rig_debug,
-            transform,
+            rig.into_bundle_with_trace(),
         )
     };
     commands.spawn(camera);
@@ -135,11 +149,18 @@ fn handle_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
 ) -> Result<(), BevyError> {
     for mut rig in query.iter_mut() {
-        if keyboard_input.just_pressed(KeyCode::KeyQ) {
-            rig.set_parameter_with("yaw", |x: f32| x + -90.0)?;
+        if keyboard_input.just_pressed(KeyCode::KeyA) {
+            rig.set_parameter_with("yaw", |x: f32| (x - 45.0) % 360.0)?;
         }
-        if keyboard_input.just_pressed(KeyCode::KeyE) {
-            rig.set_parameter_with("yaw", |x: f32| x + 90.0)?;
+        if keyboard_input.just_pressed(KeyCode::KeyD) {
+            rig.set_parameter_with("yaw", |x: f32| (x + 45.0) % 360.0)?;
+        }
+
+        if keyboard_input.just_pressed(KeyCode::KeyW) {
+            rig.set_parameter_with("pitch", |x: f32| (x - 15.0).clamp(-90.0, 90.0))?;
+        }
+        if keyboard_input.just_pressed(KeyCode::KeyS) {
+            rig.set_parameter_with("pitch", |x: f32| (x + 15.0).clamp(-90.0, 90.0))?;
         }
     }
 

@@ -1,14 +1,8 @@
 use crate::{
-    camera_rig::RigError,
+    camera_rig::{CameraPose, RigError},
     math::value::{ValueError, ValueKind, ValueLike, ValueType, Variable},
 };
-use bevy::transform::components::Transform;
 use shine_core::utils::TypeErase;
-
-pub struct RigUpdateParams<'a> {
-    pub parent: &'a Transform,
-    pub delta_time_s: f32,
-}
 
 /// A building block of a camera rig, to calculate the transform of the camera.
 pub trait RigDriver: TypeErase {
@@ -18,9 +12,8 @@ pub trait RigDriver: TypeErase {
     /// Find a parameter by name
     fn variable_mut(&mut self, name: &str) -> Option<&mut dyn Variable>;
 
-    /// Calculates the transform of this driver component based on the parent
-    /// provided in `params`.
-    fn update(&mut self, params: RigUpdateParams) -> Transform;
+    /// Update the camera pose based on the elapsed time.
+    fn update(&mut self, pose: &mut CameraPose, delta_time_s: f32);
 }
 
 pub trait RigDriverExt: RigDriver {

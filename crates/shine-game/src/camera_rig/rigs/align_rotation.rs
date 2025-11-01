@@ -4,21 +4,21 @@ use crate::{
 };
 use bevy::math::Quat;
 
-/// Sets the rotation of the camera relative to the current pose. Keeps the position unchanged.
-pub struct Rotation<Q>
+/// Align the rotation of the camera in world space to the target rotation.
+pub struct AlignRotation<Q>
 where
     Q: AnimatedVariable<Value = Quat>,
 {
     pub rotation: Q,
 }
 
-impl Default for Rotation<Quat> {
+impl Default for AlignRotation<Quat> {
     fn default() -> Self {
         Self::new(Quat::default())
     }
 }
 
-impl<Q> Rotation<Q>
+impl<Q> AlignRotation<Q>
 where
     Q: AnimatedVariable<Value = Quat>,
 {
@@ -27,7 +27,7 @@ where
     }
 }
 
-impl<Q> RigDriver for Rotation<Q>
+impl<Q> RigDriver for AlignRotation<Q>
 where
     Q: AnimatedVariable<Value = Quat>,
 {
@@ -44,7 +44,7 @@ where
     }
 
     fn update(&mut self, pose: &mut CameraPose, delta_time_s: f32) {
-        let rotation = self.rotation.animate(delta_time_s);
-        pose.transform.rotation = rotation * pose.transform.rotation;
+        let rot = self.rotation.animate(delta_time_s);
+        pose.transform.rotation = rot;
     }
 }

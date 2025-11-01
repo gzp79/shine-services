@@ -1,8 +1,8 @@
 use crate::{
     camera_rig::{
-        camera_pose::{CameraPose, CameraPoseDebug},
+        camera_pose::{CameraPose, CameraPoseTrace},
         debug_camera_plugin::{DebugCameraRig, DebugCameraTarget},
-        rig_driver::{RigDriver, RigDriverExt, RigUpdateParams},
+        rig_driver::{RigDriver, RigDriverExt},
         RigError,
     },
     math::value::{ValueError, ValueLike, ValueType},
@@ -117,13 +117,11 @@ impl CameraRig {
         driver.set_parameter_value_with(name, f)
     }
 
-    /// Runs all the drivers in sequence, animating the rig, and producing a final transform of the camera.
-    pub fn calculate_transform(
-        &mut self,
-        delta_time_s: f32,
-        mut update_steps: Option<&mut Vec<Transform>>,
-    ) -> Transform {
-        let mut transform = Transform::IDENTITY;
+    /// Runs all the drivers in sequence on the given pose.
+    /// Compared to a Transform chain, it works in the opposite order: a driver list of R1,R2,R3 would
+    /// be equivalent to transform hierarchy of R3*R2*R1(*point).
+    pub fn calculate_pose(&mut self, delta_time_s: f32, mut update_steps: Option<&mut Vec<Transform>>) -> CameraPose {
+        let mut pose = CameraPose::default_z_up();
 
         if let Some(steps) = &mut update_steps {
             steps.clear();
@@ -131,26 +129,33 @@ impl CameraRig {
 
         for driver in self.drivers.iter_mut() {
             if let Some(steps) = &mut update_steps {
-                steps.push(transform);
+                steps.push(pose.transform);
             }
 
-            transform = driver.update(RigUpdateParams {
-                parent: &transform,
-                delta_time_s,
-            });
+            driver.update(&mut pose, delta_time_s);
         }
+        pose
+    }
 
-        transform
+    /// Convert the rig into a bundle
+    pub fn into_bundle(mut self) -> (Self, Transform, CameraPose) {
+        let pose = self.calculate_pose(0.0, None);
+        (self, pose.transform, pose)
+    }
+
+    pub fn into_bundle_with_trace(mut self) -> (Self, Transform, CameraPose, CameraPoseTrace) {
+        let pose = self.calculate_pose(0.0, None);
+        (self, pose.transform, pose, CameraPoseTrace::default())
     }
 }
 
 pub fn update_camera_pose(
-    camera_q: Query<(&mut CameraRig, &mut CameraPose, Option<&mut CameraPoseDebug>)>,
+    camera_q: Query<(&mut CameraRig, &mut CameraPose, Option<&mut CameraPoseTrace>)>,
     time: Res<Time>,
 ) {
     for (mut rig, mut pose, mut debug) in camera_q {
         let update_steps = debug.as_mut().map(|d| &mut d.update_steps);
-        pose.transform = rig.calculate_transform(time.delta_secs(), update_steps);
+        *pose = rig.calculate_pose(time.delta_secs(), update_steps);
     }
 }
 

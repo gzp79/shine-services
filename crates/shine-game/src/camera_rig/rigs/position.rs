@@ -1,10 +1,10 @@
 use crate::{
-    camera_rig::{RigDriver, RigUpdateParams},
+    camera_rig::{CameraPose, RigDriver},
     math::value::{AnimatedVariable, Variable},
 };
-use bevy::{math::Vec3, transform::components::Transform};
+use bevy::math::Vec3;
 
-/// Directly sets the position of the camera
+/// Sets the position of the camera relative to the current pose.
 pub struct Position<P>
 where
     P: AnimatedVariable<Value = Vec3>,
@@ -43,8 +43,8 @@ where
         }
     }
 
-    fn update(&mut self, params: RigUpdateParams) -> Transform {
-        let pos = self.position.animate(params.delta_time_s);
-        Transform::from_translation(pos).with_rotation(params.parent.rotation)
+    fn update(&mut self, pose: &mut CameraPose, delta_time_s: f32) {
+        let pos = self.position.animate(delta_time_s);
+        pose.transform.translation += pos;
     }
 }
