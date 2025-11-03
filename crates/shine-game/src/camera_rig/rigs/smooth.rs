@@ -1,11 +1,8 @@
 use crate::{
-    camera_rig::{RigDriver, RigUpdateParams},
+    camera_rig::{CameraPose, RigDriver},
     math::value::{ExpSmoothed, Variable},
 };
-use bevy::{
-    math::{Quat, Vec3},
-    transform::components::Transform,
-};
+use bevy::math::{Quat, Vec3};
 
 /// Smooths the parent transformation.
 pub struct Smooth {
@@ -48,13 +45,11 @@ impl RigDriver for Smooth {
         None
     }
 
-    fn update(&mut self, params: RigUpdateParams) -> Transform {
-        let target_position = params.parent.translation;
-        let position = self.position.smooth_towards(&target_position, params.delta_time_s);
+    fn update(&mut self, pose: &mut CameraPose, delta_time_s: f32) {
+        let target_position = pose.transform.translation;
+        pose.transform.translation = self.position.smooth_towards(&target_position, delta_time_s);
 
-        let target_rotation = params.parent.rotation;
-        let rotation = self.rotation.smooth_towards(&target_rotation, params.delta_time_s);
-
-        Transform::from_translation(position).with_rotation(rotation)
+        let target_rotation = pose.transform.rotation;
+        pose.transform.rotation = self.rotation.smooth_towards(&target_rotation, delta_time_s);
     }
 }

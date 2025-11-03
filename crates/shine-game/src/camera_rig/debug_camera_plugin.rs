@@ -1,5 +1,5 @@
 use crate::{
-    camera_rig::{rigs, CameraPose, CameraPoseDebug, CameraRig},
+    camera_rig::{rigs, CameraPose, CameraPoseTrace, CameraRig},
     math::value::IntoNamedVariable,
 };
 use bevy::{
@@ -10,13 +10,17 @@ use bevy::{
         error::BevyError,
         message::MessageReader,
         query::With,
+        schedule::{Chain, GraphInfo, IntoScheduleConfigs, Schedulable, ScheduleConfigs},
         system::{Commands, Query, Res, ResMut},
     },
     gizmos::gizmos::Gizmos,
     input::{keyboard::KeyCode, mouse::MouseMotion, ButtonInput},
     log,
-    math::{EulerRot, Vec2, Vec3, Vec3A},
-    state::state::{NextState, State, States},
+    math::{EulerRot, Quat, Vec2, Vec3, Vec3A},
+    state::{
+        condition::in_state,
+        state::{NextState, State, States},
+    },
     text::{TextColor, TextFont},
     time::Time,
     transform::components::Transform,
@@ -74,12 +78,13 @@ pub fn spawn_debug_camera(
     let mut cursor_options = cursor_option_q.single_mut()?;
     let (target_camera, debug_config) = camera_q.single()?;
 
-    let (yaw, pitch, _) = target_camera.rotation.to_euler(EulerRot::YXZ);
+    let rotation = Quat::from_rotation_arc(Vec3::NEG_Z, Vec3::Y).inverse();
+    let (yaw, pitch, _) = (rotation * target_camera.rotation).to_euler(EulerRot::YXZ);
     let yaw = yaw.to_degrees();
     let pitch = pitch.to_degrees();
 
     let camera = {
-        let mut rig = CameraRig::new()
+        let rig = CameraRig::new()
             .with(rigs::Position::new(target_camera.translation.with_name("position")))?
             .with(rigs::YawPitch::new(yaw.with_name("yaw"), pitch.with_name("pitch")))?
             .with(rigs::Smooth::position_rotation(1.0, 1.0))?;
@@ -90,8 +95,7 @@ pub fn spawn_debug_camera(
                 saved_grab_state: cursor_options.grab_mode,
                 saved_cursor_visible: cursor_options.visible,
             },
-            rig.calculate_transform(0.0, None),
-            rig,
+            rig.into_bundle(),
         )
     };
     commands.spawn(camera);
@@ -186,39 +190,46 @@ pub fn handle_debug_inputs(
     time: Res<Time>,
 ) -> Result<(), BevyError> {
     if let (Ok(transform), Ok(mut rig)) = (camera_q.single(), rig_q.single_mut()) {
-        let mut move_vec = Vec3::ZERO;
-        if keyboard_input.pressed(KeyCode::Numpad4) {
-            move_vec.x -= 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::Numpad6) {
-            move_vec.x += 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::Numpad8) {
-            move_vec.z -= 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::Numpad5) {
-            move_vec.z += 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::Numpad9) {
-            move_vec.y += 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::Numpad7) {
-            move_vec.y -= 1.0;
-        }
-        if keyboard_input.pressed(KeyCode::ShiftLeft) {
-            log::debug!("Shift pressed, moving faster");
-            move_vec *= 10.0f32
-        }
-        let move_vec = transform.rotation * move_vec;
+        // movement happens in camera space, that has an Y up, -Z forward convention
+        let move_vec = {
+            let mut move_vec = Vec3::ZERO;
+            if keyboard_input.pressed(KeyCode::Numpad4) {
+                move_vec.x -= 1.0;
+            }
+            if keyboard_input.pressed(KeyCode::Numpad6) {
+                move_vec.x += 1.0;
+            }
+            if keyboard_input.pressed(KeyCode::Numpad8) {
+                move_vec.z -= 1.0;
+            }
+            if keyboard_input.pressed(KeyCode::Numpad5) {
+                move_vec.z += 1.0;
+            }
+            if keyboard_input.pressed(KeyCode::Numpad9) {
+                move_vec.y += 1.0;
+            }
+            if keyboard_input.pressed(KeyCode::Numpad7) {
+                move_vec.y -= 1.0;
+            }
+
+            if keyboard_input.pressed(KeyCode::ShiftLeft) {
+                move_vec *= 10.0f32
+            } else {
+                move_vec *= 2.0f32;
+            }
+
+            move_vec *= time.delta_secs();
+            transform.rotation * move_vec
+        };
 
         let mut delta = Vec2::ZERO;
         for event in mouse_motion_events.read() {
             delta += event.delta;
         }
 
-        rig.set_parameter_with("yaw", |yaw: f32| yaw - 0.1 * delta.x)?;
-        rig.set_parameter_with("pitch", |pitch: f32| pitch - 0.1 * delta.y)?;
-        rig.set_parameter_with("position", |pos: Vec3| pos + move_vec * time.delta_secs() * 10.0)?;
+        rig.set_parameter_with("yaw", |yaw: f32| (yaw - 0.1 * delta.x) % 360.0)?;
+        rig.set_parameter_with("pitch", |pitch: f32| (pitch - 0.1 * delta.y).clamp(-90.0, 90.0))?;
+        rig.set_parameter_with("position", |pos: Vec3| pos + move_vec)?;
     }
 
     Ok(())
@@ -244,7 +255,7 @@ fn render_frustum(gizmos: &mut Gizmos, transform: &Transform, corners: &[Vec3A; 
 }
 
 pub fn render_camera_gizmos(
-    camera_q: Query<(&CameraPose, &Projection, Option<&CameraPoseDebug>), With<Camera>>,
+    camera_q: Query<(&CameraPose, &Projection, Option<&CameraPoseTrace>), With<Camera>>,
     mut gizmos: Gizmos,
 ) {
     for (pose, projection, pose_debug) in camera_q.iter() {
@@ -274,4 +285,25 @@ pub fn render_camera_gizmos(
             }
         }
     }
+}
+
+/// Extension trait to conditionally run schedules based on the Enabled/Disabled debug camera.
+pub trait ScheduleDebugCameraExt<T, Marker>: IntoScheduleConfigs<T, Marker>
+where
+    T: Schedulable<Metadata = GraphInfo, GroupMetadata = Chain>,
+{
+    fn when_debug_camera(self) -> ScheduleConfigs<T> {
+        self.into_configs().run_if(in_state(CameraDebugState::Enabled))
+    }
+
+    fn when_no_debug_camera(self) -> ScheduleConfigs<T> {
+        self.into_configs().run_if(in_state(CameraDebugState::Disabled))
+    }
+}
+
+impl<S, T, M> ScheduleDebugCameraExt<T, M> for S
+where
+    S: IntoScheduleConfigs<T, M>,
+    T: Schedulable<Metadata = GraphInfo, GroupMetadata = Chain>,
+{
 }

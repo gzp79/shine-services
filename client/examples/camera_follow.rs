@@ -7,16 +7,17 @@ use bevy::{
         component::Component,
         entity::Entity,
         error::BevyError,
+        hierarchy::ChildOf,
         query::With,
         system::{Commands, Query, Res, ResMut},
     },
     input::{keyboard::KeyCode, ButtonInput},
     light::PointLight,
     math::{
-        primitives::{Plane3d, Tetrahedron},
-        Quat, Vec3,
+        primitives::{Cuboid, Plane3d, Tetrahedron},
+        Dir3, Quat, Vec2, Vec3,
     },
-    mesh::{Mesh, Mesh3d, Meshable},
+    mesh::{Mesh, Mesh3d},
     pbr::{MeshMaterial3d, StandardMaterial},
     render::view::NoIndirectDrawing,
     tasks::BoxedFuture,
@@ -27,7 +28,7 @@ use bevy::{
 };
 use shine_game::{
     app::{init_application, platform, AppGameSchedule, GameSetup, GameSystems, PlatformInit},
-    camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
+    camera_rig::{rigs, CameraRig, CameraRigPlugin, DebugCameraTarget},
     math::value::{IntoAnimatedVariable, IntoNamedVariable},
 };
 
@@ -84,22 +85,46 @@ fn spawn_world(
     window.title = "Camera Follow (WASD, QE)".to_string();
 
     let start_position = Vec3::new(0.0, 0.0, 0.0);
+    let start_rotation = Quat::IDENTITY;
 
+    let player_shape = Tetrahedron::new(
+        Vec3::new(-1.0, -1.0, 0.0),
+        Vec3::new(1.0, -1.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::new(0.0, -0.5, 0.5),
+    );
     let player = (
-        Mesh3d(meshes.add(Tetrahedron::new(
-            Vec3::new(-1.0, 0.0, -1.0),
-            Vec3::new(1.0, 0.0, -1.0),
-            Vec3::new(0.0, 0.0, 1.0),
-            Vec3::new(0.0, 0.5, -1.0),
-        ))),
+        Mesh3d(meshes.add(player_shape)),
         MeshMaterial3d(materials.add(Color::Srgba(css::DARK_BLUE))),
-        Transform::from_translation(start_position),
+        Transform::from_translation(start_position).with_rotation(start_rotation),
         Player,
     );
-    commands.spawn(player);
+    let player = commands.spawn(player).id();
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.2, 0.2, 0.2))),
+        MeshMaterial3d(materials.add(Color::Srgba(css::DARK_RED))),
+        Transform::from_xyz(1.0, 0.0, 0.0),
+        ChildOf(player),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.2, 0.2, 0.2))),
+        MeshMaterial3d(materials.add(Color::Srgba(css::DARK_GREEN))),
+        Transform::from_xyz(0.0, 1.0, 0.0),
+        ChildOf(player),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.2, 0.2, 0.2))),
+        MeshMaterial3d(materials.add(Color::Srgba(css::DARK_BLUE))),
+        Transform::from_xyz(0.0, 0.0, 1.0),
+        ChildOf(player),
+    ));
 
+    let floor_plane = Plane3d {
+        normal: Dir3::Z,
+        half_size: Vec2::new(15.0, 15.0),
+    };
     let floor = (
-        Mesh3d(meshes.add(Mesh::from(Plane3d::default().mesh().subdivisions(10).size(15.0, 15.0)))),
+        Mesh3d(meshes.add(Mesh::from(floor_plane))),
         MeshMaterial3d(materials.add(Color::Srgba(css::DARK_GREEN))),
     );
     commands.spawn(floor);
@@ -111,29 +136,24 @@ fn spawn_world(
             intensity: 2000.0 * 1000.0,
             ..default()
         },
-        Transform::from_xyz(0.0, 5.0, 0.0),
+        Transform::from_xyz(0.0, -3.0, 5.0),
     );
     commands.spawn(light);
 
     let camera = {
-        let mut rig = CameraRig::new()
-            .with(rigs::Position::new(start_position.with_name("position")))?
-            .with(rigs::Rotation::new(Quat::default().with_name("rotation")))?
+        let rig = CameraRig::new()
+            .with(rigs::AlignPosition::new(start_position.with_name("position")))?
+            .with(rigs::AlignRotation::new(start_rotation.with_name("rotation")))?
             .with(rigs::Predict::position(1.25))?
-            .with(rigs::Arm::new(Vec3::new(0.0, 3.5, -5.5)))?
+            .with(rigs::Arm::new(Vec3::new(0.0, -5.5, 3.5)))?
             .with(rigs::Predict::position(2.5))?
             .with(rigs::LookAt::new(
                 (start_position + Vec3::Y).animated().predict(1.25).with_name("lookAt"),
             ))?;
-        let mut rig_debug = CameraPoseDebug::default();
-        let transform = rig.calculate_transform(0.0, Some(&mut rig_debug.update_steps));
-
         (
             Camera3d::default(),
             NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-            rig,
-            rig_debug,
-            transform,
+            rig.into_bundle_with_trace(),
         )
     };
     commands.spawn(camera);
@@ -168,16 +188,16 @@ fn handle_input(
 
     let mut move_vec = Vec3::ZERO;
     if keyboard_input.pressed(KeyCode::KeyA) {
-        move_vec.x += 1.0;
-    }
-    if keyboard_input.pressed(KeyCode::KeyD) {
         move_vec.x -= 1.0;
     }
+    if keyboard_input.pressed(KeyCode::KeyD) {
+        move_vec.x += 1.0;
+    }
     if keyboard_input.pressed(KeyCode::KeyW) {
-        move_vec.z += 1.0;
+        move_vec.y += 1.0;
     }
     if keyboard_input.pressed(KeyCode::KeyS) {
-        move_vec.z -= 1.0;
+        move_vec.y -= 1.0;
     }
     if keyboard_input.pressed(KeyCode::ShiftLeft) {
         log::debug!("Shift pressed, moving faster");
@@ -193,10 +213,9 @@ fn handle_input(
     }
 
     rot *= time.delta_secs() * 2.0;
-    player.rotation = Quat::from_rotation_y(rot) * player.rotation;
+    player.rotation = Quat::from_rotation_z(rot) * player.rotation;
 
     move_vec = player.rotation * move_vec;
-    move_vec.y = 0.0;
     if move_vec.length_squared() > 0.0 {
         move_vec = move_vec.normalize();
     }
@@ -206,7 +225,7 @@ fn handle_input(
 
     rig.set_parameter("position", player.translation)?;
     rig.set_parameter("rotation", player.rotation)?;
-    rig.set_parameter("lookAt", player.translation + Vec3::Y)?;
+    rig.set_parameter("lookAt", player.translation + Vec3::Z)?;
 
     Ok(())
 }

@@ -7,6 +7,7 @@ use bevy::{
         component::Component,
         entity::Entity,
         error::BevyError,
+        hierarchy::ChildOf,
         query::With,
         system::{Commands, Query, Res, ResMut},
     },
@@ -14,9 +15,9 @@ use bevy::{
     light::PointLight,
     math::{
         primitives::{Cuboid, Plane3d},
-        Vec3,
+        Dir3, Vec2, Vec3,
     },
-    mesh::{Mesh, Mesh3d, Meshable},
+    mesh::{Mesh, Mesh3d},
     pbr::{MeshMaterial3d, StandardMaterial},
     render::view::NoIndirectDrawing,
     tasks::BoxedFuture,
@@ -27,7 +28,7 @@ use bevy::{
 };
 use shine_game::{
     app::{init_application, platform, AppGameSchedule, GameSetup, GameSystems, PlatformInit},
-    camera_rig::{rigs, CameraPoseDebug, CameraRig, CameraRigPlugin, DebugCameraTarget},
+    camera_rig::{rigs, CameraRig, CameraRigPlugin, DebugCameraTarget},
     math::value::IntoNamedVariable,
 };
 
@@ -85,14 +86,36 @@ fn spawn_world(
 
     let player = (
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(Color::Srgba(css::DARK_BLUE))),
-        Transform::from_xyz(0.0, 0.5, 0.0),
+        MeshMaterial3d(materials.add(Color::Srgba(css::YELLOW))),
+        Transform::from_xyz(0.0, 0.0, 0.5),
         Player,
     );
-    commands.spawn(player);
+    let player = commands.spawn(player).id();
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.2, 0.2, 0.2))),
+        MeshMaterial3d(materials.add(Color::Srgba(css::DARK_RED))),
+        Transform::from_xyz(1.0, 0.0, 0.0),
+        ChildOf(player),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.2, 0.2, 0.2))),
+        MeshMaterial3d(materials.add(Color::Srgba(css::DARK_GREEN))),
+        Transform::from_xyz(0.0, 1.0, 0.0),
+        ChildOf(player),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(0.2, 0.2, 0.2))),
+        MeshMaterial3d(materials.add(Color::Srgba(css::DARK_BLUE))),
+        Transform::from_xyz(0.0, 0.0, 1.0),
+        ChildOf(player),
+    ));
 
+    let floor_plane = Plane3d {
+        normal: Dir3::Z,
+        half_size: Vec2::new(15.0, 15.0),
+    };
     let floor = (
-        Mesh3d(meshes.add(Mesh::from(Plane3d::default().mesh().subdivisions(10).size(15.0, 15.0)))),
+        Mesh3d(meshes.add(Mesh::from(floor_plane))),
         MeshMaterial3d(materials.add(Color::Srgba(css::DARK_GREEN))),
     );
     commands.spawn(floor);
@@ -104,23 +127,19 @@ fn spawn_world(
             intensity: 2000.0 * 1000.0,
             ..default()
         },
-        Transform::from_xyz(0.0, 5.0, 0.0),
+        Transform::from_xyz(0.0, -3.0, 5.0),
     );
     commands.spawn(light);
 
     let camera = {
-        let mut rig = CameraRig::new()
+        let rig = CameraRig::new()
             .with(rigs::Position::new(Vec3::new(-2.0, 2.5, 5.0)))?
             .with(rigs::LookAt::new(Vec3::new(0.0, 0.5, 0.0).with_name("target")))?;
-        let mut rig_debug = CameraPoseDebug::default();
-        let transform = rig.calculate_transform(0.0, Some(&mut rig_debug.update_steps));
 
         (
             Camera3d::default(),
             NoIndirectDrawing, //todo: https://github.com/bevyengine/bevy/issues/19209
-            rig,
-            rig_debug,
-            transform,
+            rig.into_bundle_with_trace(),
         )
     };
     commands.spawn(camera);
@@ -161,13 +180,18 @@ fn handle_input(
         move_vec.x += 1.0;
     }
     if keyboard_input.pressed(KeyCode::KeyW) {
-        move_vec.z -= 1.0;
+        move_vec.y += 1.0;
     }
     if keyboard_input.pressed(KeyCode::KeyS) {
+        move_vec.y -= 1.0;
+    }
+    if keyboard_input.pressed(KeyCode::KeyR) {
         move_vec.z += 1.0;
     }
+    if keyboard_input.pressed(KeyCode::KeyF) {
+        move_vec.z -= 1.0;
+    }
     if keyboard_input.pressed(KeyCode::ShiftLeft) {
-        log::debug!("Shift pressed, moving faster");
         move_vec *= 10.0f32
     }
     player.translation += move_vec * 5.0 * time.delta_secs();

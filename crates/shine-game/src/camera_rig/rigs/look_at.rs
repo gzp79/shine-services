@@ -1,12 +1,10 @@
 use crate::{
-    camera_rig::{RigDriver, RigUpdateParams},
+    camera_rig::{CameraPose, RigDriver},
     math::value::{AnimatedVariable, Variable},
 };
-use bevy::{math::Vec3, transform::components::Transform};
+use bevy::math::Vec3;
 
-/// Rotates the camera to point at a world-space position.
-///
-/// The target tracking can be additionally smoothed, and made to look ahead of it.
+/// Rotates the camera to point at a world-space position with z as up direction.
 pub struct LookAt<T>
 where
     T: AnimatedVariable<Value = Vec3>,
@@ -39,10 +37,9 @@ where
         }
     }
 
-    fn update(&mut self, params: RigUpdateParams) -> Transform {
-        let target = self.target.animate(params.delta_time_s);
+    fn update(&mut self, pose: &mut CameraPose, delta_time_s: f32) {
+        let target = self.target.animate(delta_time_s);
 
-        let parent_position = params.parent.translation;
-        Transform::from_translation(parent_position).looking_at(target, Vec3::Y)
+        pose.transform = pose.transform.looking_at(target, Vec3::Z);
     }
 }

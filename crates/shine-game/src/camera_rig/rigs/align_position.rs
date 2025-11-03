@@ -4,21 +4,21 @@ use crate::{
 };
 use bevy::math::Vec3;
 
-/// Offset the camera considering its current rotation (i.e., in local space).
-pub struct Arm<P>
+/// Align the position of the camera in world space to the target position.
+pub struct AlignPosition<P>
 where
     P: AnimatedVariable<Value = Vec3>,
 {
     position: P,
 }
 
-impl Default for Arm<Vec3> {
+impl Default for AlignPosition<Vec3> {
     fn default() -> Self {
         Self::new(Vec3::ZERO)
     }
 }
 
-impl<P> Arm<P>
+impl<P> AlignPosition<P>
 where
     P: AnimatedVariable<Value = Vec3>,
 {
@@ -27,7 +27,7 @@ where
     }
 }
 
-impl<P> RigDriver for Arm<P>
+impl<P> RigDriver for AlignPosition<P>
 where
     P: AnimatedVariable<Value = Vec3>,
 {
@@ -45,6 +45,6 @@ where
 
     fn update(&mut self, pose: &mut CameraPose, delta_time_s: f32) {
         let pos = self.position.animate(delta_time_s);
-        pose.transform.translation += pose.transform.rotation * pos;
+        pose.transform.translation = pos;
     }
 }
