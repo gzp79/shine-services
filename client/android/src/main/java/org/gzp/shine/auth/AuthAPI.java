@@ -15,6 +15,7 @@ public interface AuthAPI {
 
     ///  Try to authenticate using the single access token
     boolean authenticateWithToken(String token) throws IOException;
+
+    /// Logs out the user by clearing all cookies
+    void logout();
 }
-
-

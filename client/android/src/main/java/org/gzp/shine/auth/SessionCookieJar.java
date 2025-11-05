@@ -56,6 +56,11 @@ public class SessionCookieJar implements CookieJar {
         secretKey = getOrCreateSecretKey();
     }
 
+    public void clear() {
+        sessionCookie = null;
+        prefs.edit().remove(REFRESH_TOKEN_KEY).apply();
+    }
+
     public void setSessionCookie(String value) {
         sessionCookie = value;
     }
@@ -71,6 +76,10 @@ public class SessionCookieJar implements CookieJar {
 
     public boolean hasSession() {
         return sessionCookie != null;
+    }
+
+    public boolean hasRefreshToken() {
+        return prefs.contains(REFRESH_TOKEN_KEY);
     }
 
     @Override
@@ -102,7 +111,7 @@ public class SessionCookieJar implements CookieJar {
             var decrypted = decrypt(refreshToken);
             Cookie rememberCookie = new Cookie.Builder()
                     .name(AuthConstants.REFRESH_COOKIE_NAME)
-                    .value(refreshToken)
+                    .value(decrypted)
                     .build();
             result.add(rememberCookie);
         }

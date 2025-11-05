@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 
     <application
+        android:name=".MyApp"
         android:icon="@mipmap/ic_launcher"
         android:label="Shine"
         android:roundIcon="@mipmap/ic_launcher"
@@ -20,12 +21,20 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" android:host="www.scytta.com" android:path="/game/mobile" />
+                <data android:scheme="https" android:host="www.scytta.com" android:path="/game/mobile" />
+                <data android:scheme="http" android:host="scytta.com" android:path="/game/mobile" />
+                <data android:scheme="https" android:host="scytta.com" android:path="/game/mobile" />
+            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="shine" android:host="www.scytta.com" android:path="/game/mobile" />
-                <data android:scheme="shine" android:host="scytta.com" android:path="/game/mobile" />
+                <data android:scheme="shine" android:host="open" android:path="/" />
             </intent-filter>
         </activity>
         <activity

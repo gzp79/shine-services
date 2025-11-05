@@ -81,7 +81,7 @@ android {
     sourceSets {
         main {            
             assets.srcDirs += files('../../assets')
-            res.srcDirs += files('../../assets/android-res')
+            //res.srcDirs += files('../../assets/android-res')
             jniLibs.srcDirs = ["src/main/jniLibs"]
         }
 
@@ -173,6 +173,7 @@ dependencies {
     implementation libs.androidx.security
     implementation libs.material
     implementation libs.okhttp
+    implementation libs.gson
     implementation libs.androidx.core.ktx
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
