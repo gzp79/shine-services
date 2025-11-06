@@ -30,12 +30,6 @@
                 <data android:scheme="http" android:host="scytta.com" android:path="/game/mobile" />
                 <data android:scheme="https" android:host="scytta.com" android:path="/game/mobile" />
             </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="shine" android:host="open" android:path="/" />
-            </intent-filter>
         </activity>
         <activity
             android:name=".MainActivity"
@@ -46,5 +40,10 @@
                 android:name="android.app.lib_name"
                 android:value="shine" />
         </activity>
+        <activity
+            android:name=".WebViewActivity"
+            android:exported="false"
+            android:configChanges="layoutDirection|locale|orientation|keyboardHidden|screenSize|smallestScreenSize|density|keyboard|navigation|screenLayout|uiMode"
+            android:theme="@style/Theme.AppCompat.NoActionBar" />
     </application>
 </manifest>

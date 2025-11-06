@@ -1,14 +1,8 @@
 package org.gzp.shine;
 
-import android.content.Intent;
-import android.os.Bundle;
 import android.view.View;
 
-import androidx.annotation.NonNull;
-
 import com.google.androidgamesdk.GameActivity;
-
-import org.gzp.shine.auth.SessionCookieJar;
 
 public class MainActivity extends GameActivity {
     static {

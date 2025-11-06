@@ -2,16 +2,11 @@ package org.gzp.shine.auth;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.security.keystore.KeyGenParameterSpec;
-import android.security.keystore.KeyProperties;
 
 import androidx.annotation.NonNull;
-import androidx.security.crypto.EncryptedSharedPreferences;
-import androidx.security.crypto.MasterKey;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.KeyStore;
@@ -142,8 +137,10 @@ public class SessionCookieJar implements CookieJar {
                 KeyStore.SecretKeyEntry entry = (KeyStore.SecretKeyEntry) keyStore.getEntry(alias, null);
                 return entry.getSecretKey();
             }
-        } catch (InvalidAlgorithmParameterException | UnrecoverableEntryException | CertificateException
-                | KeyStoreException | IOException | NoSuchAlgorithmException | NoSuchProviderException e) {
+        } catch (InvalidAlgorithmParameterException | UnrecoverableEntryException |
+                 CertificateException
+                 | KeyStoreException | IOException | NoSuchAlgorithmException |
+                 NoSuchProviderException e) {
             throw new RuntimeException(e);
         }
     }
@@ -161,8 +158,9 @@ public class SessionCookieJar implements CookieJar {
             System.arraycopy(ciphertext, 0, combined, iv.length, ciphertext.length);
 
             return Base64.getEncoder().encodeToString(combined);
-        } catch (NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException | BadPaddingException
-                | InvalidKeyException e) {
+        } catch (NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
+                 BadPaddingException
+                 | InvalidKeyException e) {
             throw new RuntimeException(e);
         }
     }
@@ -180,7 +178,8 @@ public class SessionCookieJar implements CookieJar {
             byte[] plainBytes = cipher.doFinal(ciphertext);
             return new String(plainBytes, StandardCharsets.UTF_8);
         } catch (NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException
-                | InvalidAlgorithmParameterException | BadPaddingException | InvalidKeyException e) {
+                 | InvalidAlgorithmParameterException | BadPaddingException |
+                 InvalidKeyException e) {
             throw new RuntimeException(e);
         }
     }

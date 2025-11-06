@@ -1,5 +1,6 @@
 package org.gzp.shine
 
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
@@ -7,9 +8,9 @@ import android.view.View
 import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
-import androidx.browser.customtabs.CustomTabsIntent
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
@@ -23,7 +24,6 @@ import org.gzp.shine.auth.CurrentUser
 class LoginActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "Login"
-        private const val KEY_BROWSER_FLOW_STARTED = "isBrowserFlowStarted"
     }
 
     private lateinit var progressBar: ProgressBar
@@ -34,7 +34,6 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var errorText: TextView
 
     private var isFlowRunning: Boolean = false
-    private var isBrowserFlowStarted: Boolean = false
     private var singleAccessToken: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,20 +47,11 @@ class LoginActivity : AppCompatActivity() {
         errorLayout = findViewById(R.id.error_layout)
         errorText = findViewById(R.id.error_text)
 
-        if (savedInstanceState != null) {
-            isBrowserFlowStarted = savedInstanceState.getBoolean(KEY_BROWSER_FLOW_STARTED, false)
-        }
-
         retryButton.setOnClickListener {
             startLoginFlow()
         }
 
         handleIntent(intent)
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putBoolean(KEY_BROWSER_FLOW_STARTED, isBrowserFlowStarted)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -70,22 +60,8 @@ class LoginActivity : AppCompatActivity() {
         handleIntent(intent)
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (isBrowserFlowStarted && intent?.action != Intent.ACTION_VIEW) {
-            setErrorProgress(R.string.login_cancelled)
-            isBrowserFlowStarted = false
-        }
-    }
-
     private fun handleIntent(intent: Intent?) {
-        //if (!BuildConfig.REQUIRES_AUTHENTICATION) {
-        //  goToGame()
-        //  return
-        //}
-
         if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
-            isBrowserFlowStarted = false
             singleAccessToken = intent.data?.getQueryParameter("token")
         }
 
@@ -132,7 +108,7 @@ class LoginActivity : AppCompatActivity() {
                     } else if (newUserResult.isError) {
                         setErrorProgress(R.string.failed_to_fetch_user)
                     } else {
-                        launchBrowserForLogin()
+                        launchWebViewForLogin()
                     }
                 }
             } finally {
@@ -141,63 +117,71 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun getCurrentUser(): ResultWrapper<CurrentUser?> = withContext(Dispatchers.IO) {
-        val startTime = System.currentTimeMillis()
-        try {
-            val user = (application as MyApp).refreshCurrentUser()
-            ResultWrapper.success(user)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to fetch current user", e)
-            ResultWrapper.error(e)
-        } finally {
-            val elapsedTime = System.currentTimeMillis() - startTime
-            if (elapsedTime < 500) {
-                delay(500 - elapsedTime)
+    private suspend fun getCurrentUser(): ResultWrapper<CurrentUser?> =
+        withContext(Dispatchers.IO) {
+            val startTime = System.currentTimeMillis()
+            try {
+                val user = (application as MyApp).refreshCurrentUser()
+                ResultWrapper.success(user)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch current user", e)
+                ResultWrapper.error(e)
+            } finally {
+                val elapsedTime = System.currentTimeMillis() - startTime
+                if (elapsedTime < 500) {
+                    delay(500 - elapsedTime)
+                }
             }
         }
-    }
 
-    private suspend fun authenticateWithRefresh(): ResultWrapper<Boolean> = withContext(Dispatchers.IO) {
-        try {
-            val result = (application as MyApp).authAPI.authenticate()
-            ResultWrapper.success(result)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to authenticate with cookies", e)
-            ResultWrapper.error(e)
+    private suspend fun authenticateWithRefresh(): ResultWrapper<Boolean> =
+        withContext(Dispatchers.IO) {
+            try {
+                val result = (application as MyApp).authAPI.authenticate()
+                ResultWrapper.success(result)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to authenticate with cookies", e)
+                ResultWrapper.error(e)
+            }
         }
-    }
 
-    private suspend fun authenticateWithToken(token: String?): ResultWrapper<Boolean?> = withContext(Dispatchers.IO) {
-        try {
-            val result = (application as MyApp).authAPI.authenticateWithToken(token)
-            ResultWrapper.success(result)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to authenticate with token", e)
-            ResultWrapper.error(e)
+    private suspend fun authenticateWithToken(token: String?): ResultWrapper<Boolean?> =
+        withContext(Dispatchers.IO) {
+            try {
+                val result = (application as MyApp).authAPI.authenticateWithToken(token)
+                ResultWrapper.success(result)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to authenticate with token", e)
+                ResultWrapper.error(e)
+            }
         }
-    }
 
-    private fun launchBrowserForLogin() {
+    private val webViewLoginLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                singleAccessToken = result.data?.getStringExtra("token")
+                startLoginFlow() // Restart the flow with the new token
+            } else {
+                setErrorProgress(R.string.login_cancelled)
+            }
+        }
+
+    private fun launchWebViewForLogin() {
         setProgress(R.string.redirecting_to_login, 100)
-        isBrowserFlowStarted = true
         val loginUri = AuthConstants.LOGIN_URL.toUri().buildUpon()
-            .appendQueryParameter("redirectUrl", AuthConstants.DEEP_LINK_REDIRECT_URL)
+            .appendQueryParameter("redirectUrl", AuthConstants.LOGIN_URL)
             .appendQueryParameter("prompt", "true")
             .build()
         Log.i(TAG, "No login information, starting web login: $loginUri")
-        val customTabsIntent = CustomTabsIntent.Builder()
-            .setShowTitle(false)
-            .setUrlBarHidingEnabled(true)
-            .setShareState(CustomTabsIntent.SHARE_STATE_OFF)
-            .build()
 
-        customTabsIntent.intent.setPackage("com.android.chrome")
-        customTabsIntent.launchUrl(this, loginUri)
+        val intent = Intent(this, WebViewActivity::class.java).apply {
+            putExtra("w_url", loginUri.toString())
+        }
+        webViewLoginLauncher.launch(intent)
     }
 
     private fun goToGame() {
         setProgress(R.string.login_successful, 100)
-        isBrowserFlowStarted = false
         val intent = Intent(this, MainActivity::class.java)
         startActivity(intent)
         finish()
@@ -233,6 +217,7 @@ class LoginActivity : AppCompatActivity() {
 class ResultWrapper<T>(val value: T?, val error: Exception?) {
     val isSuccess get() = error == null && value != null
     val isError get() = error != null
+
     companion object {
         fun <T> success(value: T?): ResultWrapper<T> = ResultWrapper(value, null)
         fun <T> error(e: Exception): ResultWrapper<T> = ResultWrapper(null, e)

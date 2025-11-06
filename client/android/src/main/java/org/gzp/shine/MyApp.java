@@ -8,7 +8,6 @@ import org.gzp.shine.auth.OkHttpAuthAPI;
 import org.gzp.shine.auth.SessionCookieJar;
 
 import java.io.IOException;
-import java.security.GeneralSecurityException;
 
 import okhttp3.OkHttpClient;
 
@@ -28,7 +27,7 @@ public class MyApp extends Application {
         authAPI = new OkHttpAuthAPI(client);
     }
 
-    public AuthAPI getAuthAPI()  {
+    public AuthAPI getAuthAPI() {
         return authAPI;
     }
 

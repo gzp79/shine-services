@@ -1,5 +1,7 @@
 package org.gzp.shine.auth;
 
+import android.net.Uri;
+import android.text.TextUtils;
 import android.util.Log;
 
 import com.google.gson.Gson;
@@ -100,7 +102,7 @@ public class OkHttpAuthAPI implements AuthAPI {
         if (token != null) {
             loginUrlBuilder.addQueryParameter("token", token);
         }
-        loginUrlBuilder.addQueryParameter("redirectUrl", AuthConstants.DEEP_LINK_REDIRECT_URL);
+        loginUrlBuilder.addQueryParameter("redirectUrl", AuthConstants.RELATIVE_LOGIN_URL);
 
         final HttpUrl url = loginUrlBuilder.build();
         final Request.Builder requestBuilder = new Request.Builder().url(url);
@@ -110,10 +112,8 @@ public class OkHttpAuthAPI implements AuthAPI {
         try (final Response response = client.newCall(request).execute()) {
             final String locationHeader = response.header("Location", "");
             Log.d(TAG, "Token login response code: " + response.code() + ", location: " + locationHeader);
-            // A successful login is a redirect to the game URL
-            final boolean success = response.code() == 302 && AuthConstants.DEEP_LINK_REDIRECT_URL.equals(locationHeader);
-            Log.d(TAG, "Token login success: " + success);
-            return success;
+            final Uri locationUri = TextUtils.isEmpty(locationHeader) ? null : Uri.parse(locationHeader);
+            return response.code() == 302 && AuthConstants.LOGIN_URI.equals(locationUri);
         }
     }
 }
