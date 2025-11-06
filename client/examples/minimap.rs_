@@ -5,7 +5,7 @@ use shine_game::{
     input_manager::{ActionState, InputManagerPlugin, InputMap, KeyboardInput, VirtualDPad, VirtualPad},
 };
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 pub fn main() {
     use shine_game::app::{create_application, platform::Config};
 
@@ -14,7 +14,7 @@ pub fn main() {
     app.run();
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 pub fn main() {
     init_application(setup_game);
 }

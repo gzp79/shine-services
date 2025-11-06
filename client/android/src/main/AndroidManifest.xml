@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <application
+        android:name=".MyApp"
+        android:icon="@mipmap/ic_launcher"
+        android:label="Shine"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:theme="@style/Theme.AppCompat.NoActionBar"
+        tools:targetApi="33">
+        <activity
+            android:name=".LoginActivity"
+            android:exported="true"
+            android:configChanges="layoutDirection|locale|orientation|keyboardHidden|screenSize|smallestScreenSize|density|keyboard|navigation|screenLayout|uiMode"
+            android:theme="@style/Theme.AppCompat.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" android:host="www.scytta.com" android:path="/game/mobile" />
+                <data android:scheme="https" android:host="www.scytta.com" android:path="/game/mobile" />
+                <data android:scheme="http" android:host="scytta.com" android:path="/game/mobile" />
+                <data android:scheme="https" android:host="scytta.com" android:path="/game/mobile" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:configChanges="layoutDirection|locale|orientation|keyboardHidden|screenSize|smallestScreenSize|density|keyboard|navigation|screenLayout|uiMode"
+            android:theme="@style/Theme.AppCompat.NoActionBar">
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="shine" />
+        </activity>
+        <activity
+            android:name=".WebViewActivity"
+            android:exported="false"
+            android:configChanges="layoutDirection|locale|orientation|keyboardHidden|screenSize|smallestScreenSize|density|keyboard|navigation|screenLayout|uiMode"
+            android:theme="@style/Theme.AppCompat.NoActionBar" />
+    </application>
+</manifest>

@@ -12,8 +12,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  #EXAMPLES: camera_follow camera_free camera_look_at camera_orbit input_drivers input_process input_multiplayer input_gesture pinch_zoom asset
-  EXAMPLES: asset input_gesture pinch_zoom
   PROFILE: release
   S3_BUCKET_LINK: https://ce847ac4c44fb11af63e62ba34ec40db.r2.cloudflarestorage.com
   S3_BUCKET_NAME: shine-games
@@ -60,7 +58,8 @@ jobs:
           echo "Copy index.html"
           cp client/index.html ./dist/${{ github.sha }}/index.html
 
-          for example in ${{ env.EXAMPLES }}; do
+          EXAMPLES=$(jq -r '.examples[]' client/examples.json | tr '\n' ' ')
+          for example in $EXAMPLES; do
             echo "Run bindgen for ${example}"
             wasm-bindgen --no-typescript --target web \
               --out-dir ./dist/${{ github.sha }} \
@@ -72,6 +71,9 @@ jobs:
             echo "Create ${example}.html"
             sed "s/shine-client/${example}/g" client/index.html > ./dist/${{ github.sha }}/${example}.html
           done
+
+          jq -n --arg version '${{ github.sha }}' --argjson examples "$(jq '.examples' client/examples.json)" \
+            '{version: $version, examples: $examples}' > ./latest.json
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -105,17 +107,13 @@ jobs:
           aws configure set default.s3.max_concurrent_requests 2
           aws configure set default.s3.multipart_threshold "50MB"
 
-      - name: Upload game
+      - name: Upload to R2
         run: |
           aws s3 sync ./dist s3://${S3_BUCKET_NAME}/ \
               --endpoint-url=${S3_BUCKET_LINK} \
               --cache-control "public, max-age=31536000, immutable" \
+              --exclude "latest.json" \
               --checksum-algorithm CRC32
-
-      - name: Upload latest.json
-        run: |
-          jq -n --arg version '${{ github.sha }}' --arg examples '${{ env.EXAMPLES }}' \
-            '{version: $version, examples: ($examples | split(" "))}' > ./latest.json
-          aws s3 cp ./latest.json s3://${S3_BUCKET_NAME}/latest.json \
+          aws s3 cp ./dist/latest.json s3://${S3_BUCKET_NAME}/latest.json \
               --endpoint-url=${S3_BUCKET_LINK} \
               --cache-control "no-cache, no-store, must-revalidate"

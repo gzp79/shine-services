@@ -1,12 +1,14 @@
 {
-    "recommendations": [
-        "humao.rest-client",
-        "rust-lang.rust-analyzer",
-        "vadimcn.vscode-lldb",
-        "shd101wyy.markdown-preview-enhanced",
-        "streetsidesoftware.code-spell-checker",
-        "fill-labs.dependi",
-        "lokalise.i18n-ally",
-        "zxh404.vscode-proto3",
-    ]
+  "recommendations": [
+    "humao.rest-client",
+    "rust-lang.rust-analyzer",
+    "vadimcn.vscode-lldb",
+    "shd101wyy.markdown-preview-enhanced",
+    "streetsidesoftware.code-spell-checker",
+    "fill-labs.dependi",
+    "lokalise.i18n-ally",
+    "zxh404.vscode-proto3",
+    "vscjava.vscode-java-pack",
+    "vscjava.vscode-gradle"
+  ]
 }

@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">Shine</string>
+    <string name="authenticating_with_token">Authenticating with token...</string>
+    <string name="authentication_failed">Authentication failed</string>
+    <string name="fetching_user">Fetching user...</string>
+    <string name="failed_to_fetch_user">Failed to fetch user</string>
+    <string name="checking_for_existing_login">Checking for existing login...</string>
+    <string name="failed_to_check_for_existing_login">Failed to check for existing login</string>
+    <string name="refreshing_token">Refreshing token...</string>
+    <string name="failed_to_refresh_token">Failed to refresh token</string>
+    <string name="redirecting_to_login">Redirecting to login...</string>
+    <string name="login_successful">Login successful</string>
+    <string name="retry">Retry</string>
+    <string name="login_cancelled">Login cancelled.</string>
+</resources>

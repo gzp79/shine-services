@@ -4,11 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-default = [
-    "ot_otlp",
-    "ot_zipkin",
-    #"ot_app_insight"  disabled as it is not updated for opentelemetry 0.31
-]
+default = ["ot_otlp", "ot_zipkin", "ot_app_insight"]
 
 ot_otlp = ["opentelemetry-otlp"]
 ot_zipkin = ["opentelemetry-zipkin"]
@@ -68,7 +64,7 @@ opentelemetry-otlp = { version = "0.31", features = [
 opentelemetry-zipkin = { version = "0.31", features = [
     "reqwest-client",
 ], default-features = false, optional = true }
-opentelemetry-application-insights = { version = "0.43", features = [
+opentelemetry-application-insights = { version = "0.44", features = [
     "reqwest-client-rustls",
 ], optional = true }
 

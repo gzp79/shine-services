@@ -32,7 +32,7 @@ use shine_game::{
     math::value::{IntoAnimatedVariable, IntoNamedVariable},
 };
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 pub fn main() {
     use shine_game::app::platform::{start_game, Config};
 
@@ -40,9 +40,17 @@ pub fn main() {
     start_game(Config::default());
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 pub fn main() {
     init_application(GameExample);
+}
+
+#[cfg(target_os = "android")]
+pub fn android_main() {
+    use shine_game::app::platform::{start_game, Config};
+
+    init_application(GameExample);
+    start_game(Config::default());
 }
 
 struct GameExample;

@@ -13,10 +13,12 @@ tracing-subscriber = { workspace = true, features = [
 
 shine-test-macros = { workspace = true }
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+################# native dependencies #################
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos", target_os = "android"))'.dependencies]
 tokio = { workspace = true, features = ["macros"] }
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
+################## wasm dependencies ##################
+[target.'cfg(target_family = "wasm")'.dependencies]
 wasm-logger = { workspace = true }
 wasm-bindgen-test = { workspace = true }
 

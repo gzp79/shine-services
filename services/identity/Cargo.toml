@@ -29,7 +29,6 @@ serde_urlencoded = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
 async-trait = { workspace = true }
-#async-once-cell = "0.5"
 
 ############################# TRACING #############################
 tracing = { workspace = true }
@@ -63,9 +62,6 @@ tokio-rustls = { workspace = true }
 rustls = { workspace = true }
 reqwest = { workspace = true }
 
-oauth2 = "5.0"
-openidconnect = "4.0"
-
 ############################# WEB #############################
 tera = { workspace = true }
 tower-http = { workspace = true, features = ["cors", "trace"] }
@@ -80,6 +76,8 @@ utoipa-swagger-ui = { workspace = true }
 ############################# SELF #############################
 
 lettre = "0.11"
+oauth2 = "5.0"
+openidconnect = "4.0"
 
 shine-core = { workspace = true }
 shine-infra = { workspace = true }

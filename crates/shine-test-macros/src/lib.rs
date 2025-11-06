@@ -64,7 +64,7 @@ pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// Expand the wasm bindgen configuration, By default all tests are running in (headless) browser.
 fn expand_wasm_bindgen_test_configure(test_name: &Ident) -> Tokens {
     quote! {
-      #[cfg(target_arch = "wasm32")]
+      #[cfg(target_family = "wasm")]
       mod #test_name {
         ::wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
       }

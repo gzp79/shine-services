@@ -1,4 +1,4 @@
-use crate::HUD_LAYER;
+use crate::hud::HUD_LAYER;
 use bevy::{
     camera::{Camera, Camera2d},
     ecs::system::Commands,

@@ -8,7 +8,8 @@
     "SHINE_TEST_PG_CNS": "postgres://username:password@postgres.mockbox.com:5432/database-test?sslmode=disable"
   },
   "rust-analyzer.cargo.features": [],
-  "rust-analyzer.cargo.target": "wasm32-unknown-unknown",
+  //"rust-analyzer.cargo.target": "wasm32-unknown-unknown",
+  "rust-analyzer.cargo.target": "armv7-linux-androideabi",
   "rust-analyzer.cargo.buildScripts.enable": true,
   "cSpell.words": [
     "actionlike",
@@ -106,5 +107,7 @@
     "utoipa",
     "wasd",
     "zipkin"
-  ]
+  ],
+  "java.format.settings.url": ".vscode/java-formatter.xml",
+  "java.configuration.updateBuildConfiguration": "interactive"
 }

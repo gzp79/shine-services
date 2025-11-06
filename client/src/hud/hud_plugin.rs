@@ -1,11 +1,11 @@
-use crate::{
-    hud::{hud_camera::spawn_hud_camera, hud_gizmo::HUDGizmosConfig},
-    HUD_LAYER,
-};
+use crate::hud::{hud_camera::spawn_hud_camera, hud_gizmo::HUDGizmosConfig};
 use bevy::{
     app::{App, Plugin, Startup},
+    camera::visibility::RenderLayers,
     gizmos::{config::GizmoConfig, AppGizmoBuilder},
 };
+
+pub const HUD_LAYER: RenderLayers = RenderLayers::layer(31);
 
 pub struct HUDPlugin;
 

@@ -44,13 +44,13 @@ shine-infra = { workspace = true, optional = true }
 shine-test = { workspace = true }
 
 ################# native dependencies #################
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos", target_os = "android"))'.dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 ureq = { workspace = true, features = ["rustls"] }
 blocking = { workspace = true }
 
 ################## wasm dependencies ##################
-[target.'cfg(target_arch = "wasm32")'.dependencies]
+[target.'cfg(target_family = "wasm")'.dependencies]
 getrandom = { workspace = true, features = ["wasm_js"] }
 
 js-sys = { workspace = true }
@@ -64,5 +64,5 @@ wasm-bindgen-futures = { workspace = true }
 
 bevy = { workspace = true, features = ["webgl2"] }
 
-[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+[target.'cfg(target_family = "wasm")'.dev-dependencies]
 wasm-bindgen-test = { workspace = true }
