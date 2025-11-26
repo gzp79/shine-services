@@ -165,7 +165,7 @@ pub async fn oidc_auth(
         let name = claims
             .nickname()
             .and_then(|n| n.get(None))
-            .map(|n| n.as_str().to_owned());
+            .map(|n| n.as_str().chars().take(20).collect());
         let email = claims.email().map(|n| n.as_str().to_owned());
 
         ExternalUserInfo {

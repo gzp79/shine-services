@@ -9,6 +9,7 @@ use thiserror::Error as ThisError;
 mod pr {
     pub const ID_CONFLICT: &str = "identity-id-conflict";
     pub const NAME_CONFLICT: &str = "identity-name-conflict";
+    pub const NAME_TOO_LONG: &str = "identity-name-too-long";
     pub const EMAIL_CONFLICT: &str = "identity-email-conflict";
     pub const EXTERNAL_ID_CONFLICT: &str = "identity-external-id-conflict";
     pub const DELETE_CONFLICT: &str = "identity-deleted-conflict";
@@ -33,6 +34,8 @@ pub enum IdentityError {
     UserIdConflict,
     #[error("Name already taken")]
     NameConflict,
+    #[error("Name is too long")]
+    NameTooLong,
     #[error("Email already used by a user")]
     EmailConflict,
     #[error("External id already linked to a user")]
@@ -61,6 +64,7 @@ impl From<IdentityError> for Problem {
         match err {
             IdentityError::UserIdConflict => Problem::conflict(pr::ID_CONFLICT).with_detail(err.to_string()),
             IdentityError::NameConflict => Problem::conflict(pr::NAME_CONFLICT).with_detail(err.to_string()),
+            IdentityError::NameTooLong => Problem::bad_request(pr::NAME_TOO_LONG).with_detail(err.to_string()),
             IdentityError::EmailConflict => Problem::conflict(pr::EMAIL_CONFLICT).with_detail(err.to_string()),
             IdentityError::LinkProviderConflict => {
                 Problem::conflict(pr::EXTERNAL_ID_CONFLICT).with_detail(err.to_string())
