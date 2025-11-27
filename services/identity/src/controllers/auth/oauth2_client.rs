@@ -144,6 +144,9 @@ impl OAuth2Client {
             };
         }
 
+        external_user_info = external_user_info.normalized();
+        log::info!("Extracted external user info: {external_user_info:#?}");
+
         Ok(external_user_info)
     }
 

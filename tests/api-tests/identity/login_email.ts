@@ -33,7 +33,6 @@ test.describe('Login with email for guest', () => {
     test.beforeAll(async () => {
         mock = new MockSmtp();
         await mock.start();
-        console.log('Mock started');
     });
 
     test.afterAll(async () => {
@@ -333,7 +332,6 @@ test.describe('Login with email for returning user', () => {
         await mockSmtp.start();
         mockOIDC = new OpenIDMockServer();
         await mockOIDC.start();
-        console.log('Mock started');
     });
 
     test.afterAll(async () => {

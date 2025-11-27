@@ -515,13 +515,13 @@ test.describe('Login with OpenId', () => {
         const user = new ExternalUser(
             'openid_flow',
             randomUUID(),
-            '1234567890123456789012345',
+            randomUUID() + 'make_sure_this_is_long_enough_to_be_truncated',
             generateRandomString(5) + '@example.com'
         );
 
         const cookies = await api.auth.loginWithOpenId(mock, user, false);
-        expect((await api.user.getUserInfo(cookies.sid, 'fast')).name).toEqual('12345678901234567890');
-        expect((await api.user.getUserInfo(cookies.sid, 'full')).name).toEqual('12345678901234567890');
+        expect((await api.user.getUserInfo(cookies.sid, 'fast')).name).toEqual(user.name.substring(0, 20));
+        expect((await api.user.getUserInfo(cookies.sid, 'full')).name).toEqual(user.name.substring(0, 20));
     });
 });
 
