@@ -512,7 +512,12 @@ test.describe('Login with OpenId', () => {
     });
 
     test('Login with long name shall be truncated', async ({ api }) => {
-        const user = new ExternalUser('openid_flow', randomUUID(), '1234567890123456789012345', undefined);
+        const user = new ExternalUser(
+            'openid_flow',
+            randomUUID(),
+            '1234567890123456789012345',
+            generateRandomString(5) + '@example.com'
+        );
 
         const cookies = await api.auth.loginWithOpenId(mock, user, false);
         expect((await api.user.getUserInfo(cookies.sid, 'fast')).name).toEqual('12345678901234567890');
