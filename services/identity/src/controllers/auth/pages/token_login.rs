@@ -547,6 +547,14 @@ pub async fn token_login(
         }
     };
 
+    let page_utils = PageUtils::new(&state);
+    let redirect_url = match page_utils.validate_redirect_url(query.redirect_url.as_ref()) {
+        Ok(redirect_url) => redirect_url,
+        Err(err) => {
+            return page_utils.error(auth_session, err, query.error_url.as_ref(), query.redirect_url.as_ref());
+        }
+    };
+
     assert!(auth_session.user_session().is_none(), "Session shall have been cleared");
     assert!(
         auth_session.external_login().is_none(),
@@ -622,5 +630,5 @@ pub async fn token_login(
     };
 
     log::info!("Token login completed for: {}", identity.id);
-    PageUtils::new(&state).redirect(auth_session, query.redirect_url.as_ref(), None)
+    page_utils.redirect(auth_session, redirect_url.as_ref(), None)
 }

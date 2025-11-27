@@ -69,6 +69,9 @@ pub struct AuthConfig {
     /// - The base URL for managing the redirection of external login authentication flows.
     pub auth_base_url: Url,
 
+    /// A list of regex patterns for allowed redirect URLs.
+    pub allowed_redirect_urls: Vec<String>,
+
     /// Hash of the master key to manage user roles. In production once a user is created it's highly
     /// recommended to disable this feature.
     pub super_user_api_key_hash: Option<String>,

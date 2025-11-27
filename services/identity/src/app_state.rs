@@ -41,6 +41,15 @@ impl AppState {
         let config_user_name = &config.feature.name;
 
         let settings = {
+            let allowed_redirect_urls = config_auth
+                .allowed_redirect_urls
+                .iter()
+                .map(|r| regex::Regex::new(r).map_err(|e| anyhow!(e)))
+                .collect::<Result<Vec<_>, _>>()?;
+            if allowed_redirect_urls.is_empty() {
+                return Err(anyhow!("allowed_redirect_urls is empty"));
+            }
+
             let email_key = &B64
                 .decode(config_auth.auth_session.email_token_secret.as_bytes())
                 .map_err(|e| anyhow!(e))?;
@@ -59,6 +68,7 @@ impl AppState {
                     ttl_email_login_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_email_token)?),
                     email_key: aead::LessSafeKey::new(email_key),
                 },
+                allowed_redirect_urls,
                 external_providers: config_auth.collect_providers(),
                 page_redirect_time: config_auth.page_redirect_time,
                 super_user_api_key_hash: config_auth.super_user_api_key_hash.clone(),

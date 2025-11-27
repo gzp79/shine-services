@@ -291,3 +291,45 @@ test.describe('Login edge cases', () => {
         expect(userLoggedIn.userId).toEqual(userHeader.userId);
     });
 });
+
+test.describe('Login with invalid redirect url', () => {
+    test('Login with invalid redirect url shall fail', async ({ api }) => {
+        const testUser = await api.testUsers.createGuest();
+        const redirectUrl = 'https://danger.com';
+        const response = await api.auth.loginWithTokenRequest(
+            testUser.tid!,
+            null,
+            null,
+            null,
+            true,
+            redirectUrl
+        );
+        expect(response).toHaveStatus(200);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'input-constraint',
+                status: 400,
+                redirectUrl: redirectUrl
+            })
+        );
+    });
+
+    test('Login with valid redirect url shall succeed', async ({ api }) => {
+        const testUser = await api.testUsers.createGuest();
+        const redirectUrl = api.auth.defaultRedirects.redirectUrl;
+        const response = await api.auth.loginWithTokenRequest(
+            testUser.tid!,
+            null,
+            null,
+            null,
+            true,
+            redirectUrl
+        );
+        expect(response).toHaveStatus(200);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(redirectUrl);
+    });
+});

@@ -609,3 +609,55 @@ test.describe('Link to OpenId account', () => {
         );
     });
 });
+
+test.describe('Login with invalid redirect url', () => {
+    let mock!: OpenIdMockServer;
+
+    test.beforeEach(async () => {
+        mock = new OpenIdMockServer();
+        await mock.start();
+    });
+
+    test.afterEach(async () => {
+        await mock.stop();
+        mock = undefined!;
+    });
+
+    test('Login with invalid redirect url shall fail', async ({ api }) => {
+        const user = ExternalUser.newRandomUser('openid_flow');
+        const redirectUrl = 'https://danger.com';
+        const start = await api.auth.startLoginWithOpenId(mock, false, redirectUrl);
+        const response = await api.auth.authorizeWithOpenIdRequest(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            user.toCode({ nonce: start.authParams.nonce })
+        );
+        expect(response).toHaveStatus(200);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'input-constraint',
+                status: 400,
+                redirectUrl: redirectUrl
+            })
+        );
+    });
+
+    test('Login with valid redirect url shall succeed', async ({ api }) => {
+        const user = ExternalUser.newRandomUser('openid_flow');
+        const redirectUrl = api.auth.defaultRedirects.redirectUrl;
+        const start = await api.auth.startLoginWithOpenId(mock, false, redirectUrl);
+        const response = await api.auth.authorizeWithOpenIdRequest(
+            start.sid,
+            start.eid,
+            start.authParams.state,
+            user.toCode({ nonce: start.authParams.nonce })
+        );
+        expect(response).toHaveStatus(200);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(redirectUrl);
+    });
+});
