@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthError, AuthPage, AuthSession, PageUtils, TokenCookie},
+    controllers::auth::{AuthError, AuthPage, AuthSession, AuthUtils, PageUtils, TokenCookie},
     repositories::identity::{Identity, IdentityError, TokenInfo, TokenKind},
     services::hash_email,
 };
@@ -547,13 +547,17 @@ pub async fn token_login(
         }
     };
 
-    let page_utils = PageUtils::new(&state);
-    let redirect_url = match page_utils.validate_redirect_url(query.redirect_url.as_ref()) {
-        Ok(redirect_url) => redirect_url,
-        Err(err) => {
-            return page_utils.error(auth_session, err, query.error_url.as_ref(), query.redirect_url.as_ref());
+    if let Some(redirect_url) = &query.redirect_url {
+        let auth_utils = AuthUtils::new(&state);
+        if let Err(err) = auth_utils.validate_redirect_url(redirect_url) {
+            return PageUtils::new(&state).error(
+                auth_session,
+                err,
+                query.error_url.as_ref(),
+                query.redirect_url.as_ref(),
+            );
         }
-    };
+    }
 
     assert!(auth_session.user_session().is_none(), "Session shall have been cleared");
     assert!(
@@ -630,5 +634,5 @@ pub async fn token_login(
     };
 
     log::info!("Token login completed for: {}", identity.id);
-    page_utils.redirect(auth_session, redirect_url.as_ref(), None)
+    PageUtils::new(&state).redirect(auth_session, query.redirect_url.as_ref(), None)
 }

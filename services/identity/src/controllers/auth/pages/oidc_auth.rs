@@ -1,6 +1,8 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient, PageUtils},
+    controllers::auth::{
+        AuthPage, AuthSession, AuthUtils, ExternalLoginCookie, ExternalLoginError, OIDCClient, PageUtils,
+    },
     repositories::identity::ExternalUserInfo,
 };
 use axum::{extract::State, Extension};
@@ -71,13 +73,17 @@ pub async fn oidc_auth(
         }
     };
 
-    let page_utils = PageUtils::new(&state);
-    let redirect_url = match page_utils.validate_redirect_url(redirect_url.as_ref()) {
-        Ok(redirect_url) => redirect_url,
-        Err(err) => {
-            return page_utils.error(auth_session, err, error_url.as_ref(), redirect_url.as_ref());
+    if let Some(redirect_url) = &redirect_url {
+        let auth_utils = AuthUtils::new(&state);
+        if let Err(err) = auth_utils.validate_redirect_url(redirect_url) {
+            return PageUtils::new(&state).error(
+                auth_session,
+                err,
+                error_url.as_ref(),
+                Some(redirect_url),
+            );
         }
-    };
+    }
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
 
@@ -184,11 +190,11 @@ pub async fn oidc_auth(
     log::info!("{external_user:?}");
 
     if linked_user.is_some() {
-        page_utils
+        AuthUtils::new(&state)
             .complete_external_link(auth_session, &external_user, redirect_url.as_ref(), error_url.as_ref())
             .await
     } else {
-        page_utils
+        AuthUtils::new(&state)
             .complete_external_login(
                 auth_session,
                 fingerprint,
