@@ -510,6 +510,19 @@ test.describe('Login with OpenId', () => {
         expect((await api.user.getUserInfo(newUserCookies.sid, 'fast')).userId).toEqual(user.userId);
         expect((await api.user.getUserInfo(newUserCookies.sid, 'full')).userId).toEqual(user.userId);
     });
+
+    test('Login with long name shall be truncated', async ({ api }) => {
+        const user = new ExternalUser(
+            'openid_flow',
+            randomUUID(),
+            randomUUID() + 'make_sure_this_is_long_enough_to_be_truncated',
+            generateRandomString(5) + '@example.com'
+        );
+
+        const cookies = await api.auth.loginWithOpenId(mock, user, false);
+        expect((await api.user.getUserInfo(cookies.sid, 'fast')).name).toEqual(user.name.substring(0, 20));
+        expect((await api.user.getUserInfo(cookies.sid, 'full')).name).toEqual(user.name.substring(0, 20));
+    });
 });
 
 test.describe('Link to OpenId account', () => {

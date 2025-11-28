@@ -1,13 +1,12 @@
 use crate::{
     app_state::AppState,
     controllers::auth::{
-        AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, LinkUtils, OIDCClient, PageUtils,
+        AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, LinkUtils, OIDCClient, OIDCUserInfoExtractor,
+        PageUtils,
     },
-    repositories::identity::ExternalUserInfo,
 };
 use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier};
-use openidconnect::{Nonce, TokenResponse};
 use serde::Deserialize;
 use shine_infra::web::{
     extracts::{ClientFingerprint, InputError, SiteInfo, ValidatedQuery},
@@ -139,43 +138,13 @@ pub async fn oidc_auth(
         }
     };
 
-    let claims = match token
-        .id_token()
-        .ok_or("Missing id_token".to_string())
-        .and_then(|id_token| {
-            id_token
-                .claims(&core_client.id_token_verifier(), &Nonce::new(nonce))
-                .map_err(|err| format!("{err:?}"))
-        }) {
-        Ok(claims) => claims,
+    let external_user = match core_client.get_external_user_info(client.provider.clone(), &token, nonce) {
+        Ok(external_user) => external_user,
         Err(err) => {
             log::error!("{err:?}");
-            return PageUtils::new(&state).error(
-                auth_session,
-                ExternalLoginError::FailedExternalUserInfo(format!("{err:#?}")),
-                error_url.as_ref(),
-                redirect_url.as_ref(),
-            );
+            return PageUtils::new(&state).error(auth_session, err, error_url.as_ref(), redirect_url.as_ref());
         }
     };
-    log::debug!("Code exchange completed, claims: {claims:#?}");
-
-    let external_user = {
-        let external_id = claims.subject().to_string();
-        let name = claims
-            .nickname()
-            .and_then(|n| n.get(None))
-            .map(|n| n.as_str().to_owned());
-        let email = claims.email().map(|n| n.as_str().to_owned());
-
-        ExternalUserInfo {
-            provider: client.provider.clone(),
-            provider_id: external_id,
-            name,
-            email,
-        }
-    };
-    log::info!("{external_user:?}");
 
     if linked_user.is_some() {
         LinkUtils::new(&state)

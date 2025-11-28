@@ -184,7 +184,6 @@ test.describe('Access token (TID)', () => {
         await api.auth.loginWithOAuth2(mock, externalUser, true, { 'cf-ipcity': 'r3' });
 
         let tokens = await api.token.getTokens(user.sid);
-        console.log(tokens);
         expect(tokens.map((t) => t.city).sort()).toEqual(['r1', 'r2', 'r3']);
 
         // find the 2nd token and revoke it

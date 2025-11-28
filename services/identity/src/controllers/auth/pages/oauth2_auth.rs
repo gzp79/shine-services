@@ -124,7 +124,6 @@ pub async fn oauth2_auth(
             )
         }
     };
-    log::info!("{external_user:?}");
 
     if linked_user.is_some() {
         LinkUtils::new(&state)

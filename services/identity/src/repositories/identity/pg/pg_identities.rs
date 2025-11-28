@@ -133,6 +133,9 @@ impl Identities for PgIdentityDbContext<'_> {
         user_name: &str,
         email: Option<(&str, bool)>,
     ) -> Result<Identity, IdentityError> {
+        if user_name.chars().count() > 20 {
+            return Err(IdentityError::NameTooLong);
+        }
         //let email = email.map(|e| e.normalize_email());
         let (encrypted_email, email_hash) = if let Some((email, _)) = email {
             let encrypted_email = self.email_protection.encrypt(email)?;
