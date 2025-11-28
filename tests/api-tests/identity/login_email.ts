@@ -3,7 +3,7 @@ import { ApiRequest, ApiResponse, ProblemSchema } from '$lib/api/api';
 import { getEmailLink, getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import OpenIDMockServer from '$lib/mocks/openid';
-import { createUrl } from '$lib/utils';
+import { createUrl, delay } from '$lib/utils';
 import assert from 'assert';
 import { randomUUID } from 'crypto';
 
@@ -320,6 +320,100 @@ test.describe('Login with email for guest', () => {
                 })
             );
         });
+    });
+});
+
+test.describe('Login failures without email', () => {
+    let mockSmtp: MockSmtp;
+
+    test.beforeAll(async () => {
+        mockSmtp = new MockSmtp();
+        mockSmtp.onMail((mail) => {
+            throw new Error('Unexpected mail: ' + JSON.stringify(mail));
+        });
+        await mockSmtp.start();
+    });
+
+    test.afterEach(async () => {
+        // just to be sure no email is sent
+        await delay(500);
+    });
+
+    test.afterAll(async () => {
+        await mockSmtp.stop();
+        mockSmtp = undefined!;
+    });
+
+    test('Login with invalid redirect url shall fail', async ({ api }) => {
+        const targetEmailAddress = `${randomUUID()}@example.com`;
+        const response = await api.auth
+            .loginWithEmailRequest(targetEmailAddress, false, null)
+            .withParams({ redirectUrl: 'https://danger.com' });
+        expect(response).toHaveStatus(200);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-input-error',
+                status: 400,
+                redirectUrl: null
+            })
+        );
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-input-error',
+                status: 400,
+                extension: null,
+                sensitive: expect.objectContaining({
+                    type: 'input-validation',
+                    detail: 'Input validation failed',
+                    extension: expect.objectContaining({
+                        redirectUrl: [
+                            expect.objectContaining({
+                                code: 'invalid-redirect-url',
+                                message: 'Redirect URL is not allowed'
+                            })
+                        ]
+                    })
+                })
+            })
+        );
+    });
+
+    test('Login with invalid error url shall fail', async ({ api, homeUrl }) => {
+        const targetEmailAddress = `${randomUUID()}@example.com`;
+        const response = await api.auth
+            .loginWithEmailRequest(targetEmailAddress, false, null)
+            .withParams({ errorUrl: 'https://danger.com' });
+        expect(response).toHaveStatus(200);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(`${homeUrl}/error`, {
+                type: 'auth-input-error',
+                status: 400,
+                redirectUrl: null
+            })
+        );
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-input-error',
+                status: 400,
+                extension: null,
+                sensitive: expect.objectContaining({
+                    type: 'input-validation',
+                    detail: 'Input validation failed',
+                    extension: expect.objectContaining({
+                        errorUrl: [
+                            expect.objectContaining({
+                                code: 'invalid-redirect-url',
+                                message: 'Redirect URL is not allowed'
+                            })
+                        ]
+                    })
+                })
+            })
+        );
     });
 });
 

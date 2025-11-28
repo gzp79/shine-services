@@ -1,7 +1,7 @@
 use crate::{
     app_state::AppState,
     controllers::auth::{
-        AuthError, AuthPage, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient, PageUtils,
+        AuthError, AuthPage, AuthSession, AuthUtils, ExternalLoginCookie, ExternalLoginError, OIDCClient, PageUtils,
     },
 };
 use axum::{extract::State, Extension};
@@ -24,7 +24,7 @@ use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
 
-#[derive(Deserialize, Validate, IntoParams)]
+#[derive(Deserialize, Validate, IntoParams, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryParams {
     redirect_url: Option<Url>,
@@ -53,6 +53,18 @@ pub async fn oidc_link(
         Ok(ValidatedQuery(query)) => query,
         Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
+    if let Some(error_url) = &query.error_url {
+        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
+            return PageUtils::new(&state).error(auth_session, err, None, None);
+        }
+    }
+    if let Some(redirect_url) = &query.redirect_url {
+        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
+            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), None);
+        }
+    }
+
+    log::debug!("Query: {query:#?}");
 
     if auth_session.user_session().is_none() {
         return PageUtils::new(&state).error(

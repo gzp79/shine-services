@@ -31,6 +31,9 @@
       "linkUrl": "https://scytta.com/link/",
       "errorUrl": "https://scytta.com/error",
       "authBaseUrl": "https://cloud.scytta.com/identity/auth/",
+      "allowedRedirectUrls": [
+        "^https:\\/\\/([a-zA-Z0-9-]+\\.)+scytta\\.com(:\\d+)?(\\/.*)?$"
+      ],
       "pageRedirectTime": 0,
       "ttlAccessToken": 1209600,
       "ttlSingleAccess": 600,

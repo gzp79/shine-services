@@ -203,6 +203,76 @@ test.describe('Login with access cookie', () => {
         expect(await api.user.getUserInfoRequest(testUser.sid, 'full')).toHaveStatus(401);
         expect(await api.user.getUserInfo(newCookies.sid.value, 'full')).toEqual(expect.objectContaining(userInfo));
     });
+
+    test('Login with invalid redirect url shall fail', async ({ api }) => {
+        const response = await api.auth
+            .loginWithTokenRequest(testUser.tid!, null, null, null, false, undefined)
+            .withParams({ redirectUrl: 'https://danger.com' });
+        expect(response).toHaveStatus(200);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-input-error',
+                status: 400,
+                redirectUrl: null
+            })
+        );
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-input-error',
+                status: 400,
+                extension: null,
+                sensitive: expect.objectContaining({
+                    type: 'input-validation',
+                    detail: 'Input validation failed',
+                    extension: expect.objectContaining({
+                        redirectUrl: [
+                            expect.objectContaining({
+                                code: 'invalid-redirect-url',
+                                message: 'Redirect URL is not allowed'
+                            })
+                        ]
+                    })
+                })
+            })
+        );
+    });
+
+    test('Login with invalid error url shall fail', async ({ api, homeUrl }) => {
+        const response = await api.auth
+            .loginWithTokenRequest(testUser.tid!, null, null, null, false, undefined)
+            .withParams({ errorUrl: 'https://danger.com' });
+        expect(response).toHaveStatus(200);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(`${homeUrl}/error`, {
+                type: 'auth-input-error',
+                status: 400,
+                redirectUrl: null
+            })
+        );
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-input-error',
+                status: 400,
+                extension: null,
+                sensitive: expect.objectContaining({
+                    type: 'input-validation',
+                    detail: 'Input validation failed',
+                    extension: expect.objectContaining({
+                        errorUrl: [
+                            expect.objectContaining({
+                                code: 'invalid-redirect-url',
+                                message: 'Redirect URL is not allowed'
+                            })
+                        ]
+                    })
+                })
+            })
+        );
+    });
 });
 
 test.describe('Login edge cases', () => {

@@ -1,4 +1,5 @@
 use chrono::Duration;
+use regex::Regex;
 use ring::aead;
 use url::Url;
 
@@ -17,6 +18,7 @@ pub struct SettingsService {
     pub link_url: Url,
     pub error_url: Url,
     pub token: TokenSettings,
+    pub allowed_redirect_urls: Vec<Regex>,
     pub external_providers: Vec<String>,
     pub page_redirect_time: Option<u32>,
     pub super_user_api_key_hash: Option<String>,

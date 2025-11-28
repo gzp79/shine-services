@@ -4,16 +4,33 @@ use crate::{
     handlers::CreateUserError,
     repositories::identity::{ExternalUserInfo, IdentityError, TokenKind},
 };
-use shine_infra::web::extracts::{ClientFingerprint, SiteInfo};
+use shine_infra::web::extracts::{ClientFingerprint, InputError, SiteInfo, ValidationErrorEx};
 use url::Url;
+use validator::ValidationError;
 
-pub struct LinkUtils<'a> {
+pub struct AuthUtils<'a> {
     state: &'a AppState,
 }
 
-impl<'a> LinkUtils<'a> {
+impl<'a> AuthUtils<'a> {
     pub fn new(app_state: &'a AppState) -> Self {
         Self { state: app_state }
+    }
+
+    pub fn validate_redirect_url(&self, property: &'static str, redirect_url: &Url) -> Result<(), InputError> {
+        if self
+            .state
+            .settings()
+            .allowed_redirect_urls
+            .iter()
+            .any(|r| r.is_match(redirect_url.as_str()))
+        {
+            Ok(())
+        } else {
+            Err(ValidationError::new("invalid-redirect-url")
+                .with_message("Redirect URL is not allowed".into())
+                .into_constraint_error(property))
+        }
     }
 
     pub async fn complete_external_link(

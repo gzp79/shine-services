@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthPage, AuthSession, PageUtils},
+    controllers::auth::{AuthPage, AuthSession, AuthUtils, PageUtils},
     repositories::identity::TokenKind,
 };
 use axum::extract::State;
@@ -13,7 +13,7 @@ use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
 
-#[derive(Deserialize, Validate, IntoParams)]
+#[derive(Deserialize, Validate, IntoParams, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryParams {
     terminate_all: Option<bool>,
@@ -43,6 +43,18 @@ pub async fn logout(
         Ok(ValidatedQuery(query)) => query,
         Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
+    if let Some(error_url) = &query.error_url {
+        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
+            return PageUtils::new(&state).error(auth_session, err, None, None);
+        }
+    }
+    if let Some(redirect_url) = &query.redirect_url {
+        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
+            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), None);
+        }
+    }
+
+    log::debug!("Query: {query:#?}");
 
     if let Some((user_id, session_key)) = auth_session.user_session().map(|u| (u.user_id, u.key)) {
         match query.terminate_all.unwrap_or(false) {

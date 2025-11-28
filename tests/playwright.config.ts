@@ -11,7 +11,7 @@ if (isBuildRun) {
     console.log('Running in CI mode');
 } else {
     console.log('Running in DEV mode');
-    //process.env.DEBUG = 'test:*';
+    process.env.DEBUG = 'test:*';
 }
 
 const config: PlaywrightTestConfig<ServiceOptions> = {
@@ -45,8 +45,8 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
                 // skipMockService: true, // to run mock services manually
 
                 defaultRedirects: {
-                    redirectUrl: 'https://redirect.com/',
-                    errorUrl: 'https://error.com/'
+                    redirectUrl: 'https://redirect.local.scytta.com/',
+                    errorUrl: 'https://error.local.scytta.com/'
                 },
 
                 /* spell-checker: disable */

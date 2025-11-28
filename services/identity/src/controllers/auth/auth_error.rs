@@ -3,6 +3,7 @@ use crate::{
     repositories::{identity::IdentityError, session::SessionError, CaptchaError},
 };
 use reqwest::StatusCode;
+use serde_json::json;
 use shine_infra::web::{extracts::InputError, responses::Problem};
 use thiserror::Error as ThisError;
 
@@ -119,7 +120,13 @@ impl From<AuthError> for Problem {
             AuthError::EmailLogin => Problem::new(StatusCode::ACCEPTED, EMAIL_LOGIN),
 
             AuthError::InputError(input_error) => {
-                Problem::bad_request(INPUT_ERROR).with_sensitive(Problem::from(input_error))
+                let input_problem: Problem = input_error.into();
+                Problem::bad_request(INPUT_ERROR).with_sensitive(json!({
+                    "type": input_problem.ty,
+                    "detail": input_problem.detail,
+                    "extension": input_problem.extension,
+                    "internal": input_problem.sensitive,
+                }))
             }
             AuthError::CaptchaError(error @ CaptchaError::MissingCaptcha) => {
                 Problem::bad_request(AUTH_ERROR).with_sensitive(Problem::from(error))

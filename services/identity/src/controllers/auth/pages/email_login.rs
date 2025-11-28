@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthError, AuthPage, AuthSession, PageUtils},
+    controllers::auth::{AuthError, AuthPage, AuthSession, AuthUtils, PageUtils},
 };
 use axum::extract::State;
 use serde::Deserialize;
@@ -49,6 +49,16 @@ pub async fn email_login(
         Ok(ValidatedQuery(query)) => query,
         Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
+    if let Some(error_url) = &query.error_url {
+        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
+            return PageUtils::new(&state).error(auth_session, err, None, None);
+        }
+    }
+    if let Some(redirect_url) = &query.redirect_url {
+        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
+            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), None);
+        }
+    }
 
     log::debug!("Query: {query:#?}");
 
