@@ -6,6 +6,7 @@ import express from 'express';
 import { Request, RequestHandler, Response } from 'express-serve-static-core';
 import { body, validationResult } from 'express-validator';
 import { JWK, JWKObject, JWSAlgorithms, JWT } from 'ts-jose';
+import { ExternalUser } from '$lib/api/external_user';
 import { CERTIFICATES, DEFAULT_URL, JWKS } from './mock_constants';
 import { getAuthorizeHtml } from './utils';
 
@@ -25,6 +26,16 @@ export default class Server extends MockServer {
 
         this.log(`url: ${url}`);
         this._jwks = config?.jwks ?? JWKS;
+    }
+
+    async getIdToken(user: ExternalUser): Promise<string> {
+        const response = await this.get('id_token', {
+            id: user.id,
+            name: user.name,
+            email: user.email
+        });
+        expect(response).toHaveStatus(200);
+        return await response.text();
     }
 
     protected init() {
@@ -112,6 +123,40 @@ export default class Server extends MockServer {
             const authParams = req.query as Record<string, string>;
             const htmlContent = getAuthorizeHtml(authParams);
             res.status(200).send(htmlContent);
+        });
+
+        app.get('/openid/id_token', async (req: Request, res: Response) => {
+            const user = req.query as Record<string, string>;
+
+            if (!user || !user.id) {
+                res.status(400).end();
+                return;
+            }
+
+            const issuer = this.baseUrl.toString();
+            const audience = 'someClientId';
+
+            const payload = {
+                sub: user.id,
+                iss: issuer,
+                aud: audience,
+                exp: Math.floor(Date.now() / 1000) + 3600, // Set expiration to 1 hour from now
+                iat: Math.floor(Date.now() / 1000), // Issued at time
+                nonce: user.nonce,
+                nickname: user.name,
+                email: user.email,
+                ...user
+            };
+
+            const key = await JWK.fromObject(this._jwks);
+            const idToken = await JWT.sign(payload, key, {
+                alg: this._jwks.alg as JWSAlgorithms,
+                issuer: issuer,
+                audience: audience,
+                kid: this._jwks.kid
+            });
+
+            res.status(200).send(idToken);
         });
     }
 }

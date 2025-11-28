@@ -20,6 +20,7 @@ use std::sync::Arc;
 use tera::Tera;
 
 struct Inner {
+    config: WebAppConfig<AppConfig>,
     settings: SettingsService,
     problem_config: ProblemConfig,
     random: SystemRandom,
@@ -117,6 +118,7 @@ impl AppState {
         };
 
         Ok(Self(Arc::new(Inner {
+            config: config.clone(),
             settings,
             problem_config,
             random: SystemRandom::new(),
@@ -127,6 +129,10 @@ impl AppState {
             session_service,
             email_sender,
         })))
+    }
+
+    pub fn app_config(&self) -> &AppConfig {
+        &self.0.config.feature
     }
 
     pub fn settings(&self) -> &SettingsService {

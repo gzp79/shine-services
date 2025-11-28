@@ -40,11 +40,13 @@
       "openid": {
         "google": {
           "discoveryUrl": "https://accounts.google.com",
-          "scopes": ["openid", "email", "profile"]
+          "scopes": ["openid", "email", "profile"],
+          "enableIdTokenLogin": false
         },
         "gitlab": {
           "discoveryUrl": "https://gitlab.com",
-          "scopes": ["openid", "email", "profile"]
+          "scopes": ["openid", "email", "profile"],
+          "enableIdTokenLogin": false
         }
       },
       "oauth2": {

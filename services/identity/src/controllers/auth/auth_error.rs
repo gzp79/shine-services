@@ -22,6 +22,7 @@ const EXTERNAL_INVALID_CSRF: &str = "external-invalid-csrf";
 const EXTERNAL_EXCHANGE_FAILED: &str = "external-exchange-failed";
 const EXTERNAL_INFO_FAILED: &str = "external-info-failed";
 const EXTERNAL_DISCOVERY_FAILED: &str = "external-discovery-failed";
+const EXTERNAL_PROVIDER_NOT_ALLOWED: &str = "external-provider-not-allowed";
 
 #[derive(Debug, ThisError)]
 pub enum ExternalLoginError {
@@ -37,6 +38,8 @@ pub enum ExternalLoginError {
     FailedExternalUserInfo(String),
     #[error("OpenId discovery failed")]
     OIDCDiscovery(String),
+    #[error("Provider not allowed")]
+    ProviderNotAllowed(String),
 }
 
 impl From<ExternalLoginError> for Problem {
@@ -53,6 +56,9 @@ impl From<ExternalLoginError> for Problem {
             }
             ExternalLoginError::OIDCDiscovery(error) => {
                 Problem::internal_error_ty(EXTERNAL_DISCOVERY_FAILED).with_sensitive(error)
+            }
+            ExternalLoginError::ProviderNotAllowed(provider) => {
+                Problem::bad_request(EXTERNAL_PROVIDER_NOT_ALLOWED).with_sensitive(provider)
             }
         }
     }

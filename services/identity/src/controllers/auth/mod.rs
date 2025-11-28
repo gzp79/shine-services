@@ -112,6 +112,10 @@ impl AuthController {
                     &format!("/auth/{}", client.provider),
                     OpenApiRouter::new().routes(routes!(pages::oidc_auth)),
                 )
+                .nest(
+                    &format!("/auth/{}/id_token", client.provider),
+                    OpenApiRouter::new().routes(routes!(pages::oidc_id_token_login)),
+                )
                 .layer(Extension(Arc::new(client)));
 
             auth_routes = auth_routes.merge(provider_route);

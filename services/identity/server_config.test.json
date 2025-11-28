@@ -69,7 +69,8 @@
           "scopes": ["openid", "email", "profile"],
           "ignoreCertificates": true,
           "clientId": "someClientId",
-          "clientSecret": "someClientSecret"
+          "clientSecret": "someClientSecret",
+          "enableIdTokenLogin": true
         }
       }
     }
