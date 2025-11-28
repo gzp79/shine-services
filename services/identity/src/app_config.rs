@@ -51,6 +51,9 @@ pub struct OIDCConfig {
     pub ignore_certificates: Option<bool>,
     /// Maximum time to store the discovered OIDC client information, like JWKS.
     pub ttl_client: Option<usize>,
+    /// Enable the id_token login flow. This is not a standard OIDC flow and should be used with care.
+    #[serde(default)]
+    pub enable_id_token_login: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -132,7 +135,7 @@ pub enum MailerConfig {
 }
 
 /// The application configuration
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub db: DBConfig,

@@ -367,6 +367,10 @@ export class AuthAPI {
             .withCookies({ ...cs, ...ce });
     }
 
+    loginWithOpenIdIdToken(provider: string, idToken: string): ApiRequest {
+        return ApiRequest.get(this.urlFor(`auth/${provider}/id_token`)).withAuth(idToken);
+    }
+
     async startLoginWithOpenId(
         mock: OpenIdMockServer,
         rememberMe: boolean | null,

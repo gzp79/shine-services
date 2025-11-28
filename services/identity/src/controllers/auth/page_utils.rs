@@ -66,6 +66,34 @@ impl<'a> PageUtils<'a> {
         self.redirect(auth_session, Some(&target_url), Some(&problem))
     }
 
+    pub fn problem(
+        &self,
+        auth_session: AuthSession,
+        problem: Problem,
+        error_url: Option<&Url>,
+        redirect_url: Option<&Url>,
+    ) -> AuthPage {
+        log::error!("Page Error: {problem:#?}");
+        let problem: Problem = self.problem_config.transform(problem);
+
+        let mut target_url = error_url.unwrap_or(&self.settings.error_url).to_owned();
+
+        {
+            let mut query = target_url.query_pairs_mut();
+
+            query
+                .clear()
+                .append_pair("type", problem.ty)
+                .append_pair("status", &problem.status.as_u16().to_string());
+
+            if let Some(redirect_url) = redirect_url {
+                query.append_pair("redirectUrl", redirect_url.as_str());
+            }
+        }
+
+        self.redirect(auth_session, Some(&target_url), Some(&problem))
+    }
+
     pub fn redirect(&self, auth_session: AuthSession, target_url: Option<&Url>, problem: Option<&Problem>) -> AuthPage {
         let mut context = tera::Context::new();
 

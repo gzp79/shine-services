@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::{
     app_state::AppState,
     controllers::auth::{
@@ -5,17 +7,68 @@ use crate::{
     },
     repositories::identity::ExternalUserInfo,
 };
-use axum::{extract::State, Extension};
+use axum::{
+    extract::{Path, State},
+    Extension,
+};
+use axum_extra::headers::{authorization::Bearer, Authorization};
+use axum_extra::TypedHeader;
 use oauth2::{AuthorizationCode, PkceCodeVerifier};
 use openidconnect::{Nonce, TokenResponse};
 use serde::Deserialize;
 use shine_infra::web::{
     extracts::{ClientFingerprint, InputError, SiteInfo, ValidatedQuery},
-    responses::ErrorResponse,
+    responses::{ErrorResponse, Problem},
+};
+use openidconnect::{
+    core::{CoreGenderClaim, CoreIdToken},
+    EmptyAdditionalClaims, IdTokenClaims,
 };
 use std::sync::Arc;
+use url::Url;
 use utoipa::IntoParams;
 use validator::Validate;
+
+async fn complete_oidc_login(
+    state: &AppState,
+    auth_session: AuthSession,
+    fingerprint: ClientFingerprint,
+    site_info: SiteInfo,
+    client: &OIDCClient,
+    claims: &IdTokenClaims<EmptyAdditionalClaims, CoreGenderClaim>,
+    redirect_url: Option<Url>,
+    error_url: Option<Url>,
+    remember_me: bool,
+) -> AuthPage {
+    let external_user = {
+        let external_id = claims.subject().to_string();
+        let name = claims
+            .nickname()
+            .and_then(|n| n.get(None))
+            .map(|n| n.as_str().to_owned());
+        let email = claims.email().map(|n| n.as_str().to_owned());
+
+        ExternalUserInfo {
+            provider: client.provider.clone(),
+            provider_id: external_id,
+            name,
+            email,
+        }
+    };
+    log::info!("{external_user:?}");
+
+    LinkUtils::new(state)
+        .complete_external_login(
+            auth_session,
+            fingerprint,
+            &site_info,
+            &external_user,
+                redirect_url.as_ref(),
+                error_url.as_ref(),
+            remember_me,
+        )
+        .await
+}
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
@@ -160,38 +213,117 @@ pub async fn oidc_auth(
     };
     log::debug!("Code exchange completed, claims: {claims:#?}");
 
-    let external_user = {
-        let external_id = claims.subject().to_string();
-        let name = claims
-            .nickname()
-            .and_then(|n| n.get(None))
-            .map(|n| n.as_str().to_owned());
-        let email = claims.email().map(|n| n.as_str().to_owned());
-
-        ExternalUserInfo {
-            provider: client.provider.clone(),
-            provider_id: external_id,
-            name,
-            email,
-        }
-    };
-    log::info!("{external_user:?}");
-
     if linked_user.is_some() {
+        let external_user = {
+            let external_id = claims.subject().to_string();
+            let name = claims
+                .nickname()
+                .and_then(|n| n.get(None))
+                .map(|n| n.as_str().to_owned());
+            let email = claims.email().map(|n| n.as_str().to_owned());
+            ExternalUserInfo {
+                provider: client.provider.clone(),
+                provider_id: external_id,
+                name,
+                email,
+            }
+        };
+
         LinkUtils::new(&state)
             .complete_external_link(auth_session, &external_user, redirect_url.as_ref(), error_url.as_ref())
             .await
     } else {
-        LinkUtils::new(&state)
-            .complete_external_login(
-                auth_session,
-                fingerprint,
-                &site_info,
-                &external_user,
-                redirect_url.as_ref(),
-                error_url.as_ref(),
-                remember_me,
-            )
-            .await
+        complete_oidc_login(
+            &state,
+            auth_session,
+            fingerprint,
+            site_info,
+            &client,
+            &claims,
+            redirect_url,
+            error_url,
+            remember_me,
+        )
+        .await
     }
+}
+
+/// Perform OpenID Connect login through a provided id_token. This is not a standard OIDC flow.
+#[utoipa::path(
+    get,
+    path = "/auth/oidc/{provider}/id_token",
+    tag = "page",
+    params(
+        ("provider" = String, Path, description = "The OpenID Connect provider to be used for login"),
+    ),
+    responses(
+        (status = OK, description="Complete the OpenID Connect login flow")
+    )
+)]
+pub async fn oidc_id_token_login(
+    State(state): State<AppState>,
+    Extension(client): Extension<Arc<OIDCClient>>,
+    auth_session: AuthSession,
+    fingerprint: ClientFingerprint,
+    site_info: SiteInfo,
+    Path(provider): Path<String>,
+    TypedHeader(authorization): TypedHeader<Authorization<Bearer>>,
+) -> AuthPage {
+    let config = state.app_config().auth.openid.get(&provider);
+    if config.is_none() || !config.unwrap().enable_id_token_login {
+        let problem = Problem::bad_request("provider-not-allowed").with_sensitive(provider);
+        return PageUtils::new(&state).problem(auth_session, problem, None, None);
+    }
+
+    let core_client = match client.client().await {
+        Ok(client) => client,
+        Err(err) => {
+            return PageUtils::new(&state).error(
+                auth_session,
+                ExternalLoginError::OIDCDiscovery(format!("{err}")),
+                None,
+                None,
+            )
+        }
+    };
+
+    let id_token: CoreIdToken =
+        match openidconnect::IdToken::from_str(authorization.token()) {
+            Ok(id_token) => id_token,
+            Err(err) => {
+                return PageUtils::new(&state).error(
+                    auth_session,
+                    ExternalLoginError::FailedExternalUserInfo(format!("{err:#?}")),
+                    None,
+                    None,
+                );
+            }
+        };
+
+    let claims = match id_token.claims(&core_client.id_token_verifier(), &Nonce::new("dummy".to_string())) {
+        Ok(claims) => claims,
+        Err(err) => {
+            return PageUtils::new(&state).error(
+                auth_session,
+                ExternalLoginError::FailedExternalUserInfo(format!("{err:#?}")),
+                None,
+                None,
+            );
+        }
+    };
+
+    log::debug!("Code exchange completed, claims: {claims:#?}");
+
+    complete_oidc_login(
+        &state,
+        auth_session,
+        fingerprint,
+        site_info,
+        &client,
+        &claims,
+        None,
+        None,
+        true,
+    )
+    .await
 }
