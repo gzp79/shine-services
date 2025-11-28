@@ -15,7 +15,7 @@ use std::sync::Arc;
 use utoipa::IntoParams;
 use validator::Validate;
 
-#[derive(Deserialize, Validate, IntoParams)]
+#[derive(Deserialize, Validate, IntoParams, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryParams {
     code: String,
@@ -65,22 +65,21 @@ pub async fn oauth2_auth(
 
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => {
-            return PageUtils::new(&state).error(auth_session, error.problem, error_url.as_ref(), redirect_url.as_ref())
-        }
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
-
-    if let Some(redirect_url) = &redirect_url {
-        let auth_utils = AuthUtils::new(&state);
-        if let Err(err) = auth_utils.validate_redirect_url(redirect_url) {
-            return PageUtils::new(&state).error(
-                auth_session,
-                err,
-                error_url.as_ref(),
-                Some(redirect_url),
-            );
+    if let Some(error_url) = &error_url {
+        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
+            return PageUtils::new(&state).error(auth_session, err, None, None);
         }
     }
+    if let Some(redirect_url) = &redirect_url {
+        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
+            return PageUtils::new(&state).error(auth_session, err, error_url.as_ref(), None);
+        }
+    }
+
+    log::debug!("Query: {query:#?}");
+
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
 
@@ -136,7 +135,6 @@ pub async fn oauth2_auth(
             )
         }
     };
-    log::info!("{external_user:?}");
 
     if linked_user.is_some() {
         AuthUtils::new(&state)

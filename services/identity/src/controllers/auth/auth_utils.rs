@@ -4,8 +4,9 @@ use crate::{
     handlers::CreateUserError,
     repositories::identity::{ExternalUserInfo, IdentityError, TokenKind},
 };
-use shine_infra::web::extracts::{ClientFingerprint, InputError, SiteInfo, ValidationError};
+use shine_infra::web::extracts::{ClientFingerprint, InputError, SiteInfo, ValidationErrorEx};
 use url::Url;
+use validator::ValidationError;
 
 pub struct AuthUtils<'a> {
     state: &'a AppState,
@@ -16,7 +17,7 @@ impl<'a> AuthUtils<'a> {
         Self { state: app_state }
     }
 
-    pub fn validate_redirect_url(&self, redirect_url: &Url) -> Result<(), InputError> {
+    pub fn validate_redirect_url(&self, property: &'static str, redirect_url: &Url) -> Result<(), InputError> {
         if self
             .state
             .settings()
@@ -26,9 +27,9 @@ impl<'a> AuthUtils<'a> {
         {
             Ok(())
         } else {
-            let mut error = ValidationError::new_field("redirectUrl", "constraint");
-            error.add_param("message", "Invalid redirect url");
-            Err(InputError::Constraint(error))
+            Err(ValidationError::new("invalid-redirect-url")
+                .with_message("Redirect URL is not allowed".into())
+                .into_constraint_error(property))
         }
     }
 

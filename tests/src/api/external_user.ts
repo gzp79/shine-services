@@ -7,9 +7,9 @@ export class ExternalUser {
     public readonly provider: ExternalUserProvider;
     public readonly id: string;
     public readonly name: string;
-    public readonly email: string;
+    public readonly email: string | undefined;
 
-    constructor(provider: ExternalUserProvider, id: string, name: string, email: string) {
+    constructor(provider: ExternalUserProvider, id: string, name: string, email: string | undefined) {
         this.provider = provider;
         this.id = id;
         this.name = name;
@@ -25,7 +25,7 @@ export class ExternalUser {
         return createUrlQueryString({
             id: this.id,
             name: this.name,
-            email: this.email,
+            ...(this.email ? { email: this.email } : {}),
             ...params
         });
     }

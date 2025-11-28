@@ -1,8 +1,15 @@
+use crate::{app_config::OIDCConfig, controllers::auth::ExternalLoginError, repositories::identity::ExternalUserInfo};
 use anyhow::Error as AnyError;
-use oauth2::{ClientId, ClientSecret, EndpointMaybeSet, EndpointNotSet, EndpointSet, RedirectUrl, Scope};
+use oauth2::{
+    basic::BasicTokenType, ClientId, ClientSecret, EmptyExtraTokenFields, EndpointMaybeSet, EndpointNotSet,
+    EndpointSet, RedirectUrl, Scope, StandardTokenResponse,
+};
 use openidconnect::{
-    core::{CoreClient as OIDCCoreClient, CoreProviderMetadata},
-    IssuerUrl,
+    core::{
+        CoreClient as OIDCCoreClient, CoreGenderClaim, CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm,
+        CoreProviderMetadata,
+    },
+    EmptyAdditionalClaims, IdTokenFields, IssuerUrl, Nonce, TokenResponse,
 };
 use reqwest::Client as HttpClient;
 use serde::Serialize;
@@ -11,8 +18,6 @@ use std::{sync::Arc, time::Instant};
 use thiserror::Error as ThisError;
 use tokio::sync::Mutex;
 use url::Url;
-
-use crate::app_config::OIDCConfig;
 
 pub struct ClientInfo {
     client_id: ClientId,
@@ -35,6 +40,67 @@ type CoreClient<
     HasTokenUrl = EndpointMaybeSet,
     HasUserInfoUrl = EndpointMaybeSet,
 > = OIDCCoreClient<HasAuthUrl, HasDeviceAuthUrl, HasIntrospectionUrl, HasRevocationUrl, HasTokenUrl, HasUserInfoUrl>;
+
+type OIDCTokenResponse = StandardTokenResponse<
+    IdTokenFields<
+        EmptyAdditionalClaims,
+        EmptyExtraTokenFields,
+        CoreGenderClaim,
+        CoreJweContentEncryptionAlgorithm,
+        CoreJwsSigningAlgorithm,
+    >,
+    BasicTokenType,
+>;
+
+pub trait OIDCUserInfoExtractor {
+    fn get_external_user_info(
+        &self,
+        provider: String,
+        token: &OIDCTokenResponse,
+        nonce: String,
+    ) -> Result<ExternalUserInfo, ExternalLoginError>;
+}
+
+impl OIDCUserInfoExtractor for CoreClient {
+    /// Extract external user info from OIDC token response with token verification
+    fn get_external_user_info(
+        &self,
+        provider: String,
+        token: &OIDCTokenResponse,
+        nonce: String,
+    ) -> Result<ExternalUserInfo, ExternalLoginError> {
+        let claims = match token
+            .id_token()
+            .ok_or("Missing id_token".to_string())
+            .and_then(|id_token| {
+                id_token
+                    .claims(&self.id_token_verifier(), &Nonce::new(nonce))
+                    .map_err(|err| format!("{err:?}"))
+            }) {
+            Ok(claims) => claims,
+            Err(err) => return Err(ExternalLoginError::FailedExternalUserInfo(format!("{err:#?}"))),
+        };
+
+        let external_id = claims.subject().to_string();
+        let name = claims
+            .nickname()
+            .and_then(|n| n.get(None))
+            .map(|n| n.as_str().to_owned());
+        let email = claims.email().map(|n| n.as_str().to_owned());
+
+        let external_user_info = ExternalUserInfo {
+            provider,
+            provider_id: external_id,
+            name,
+            email,
+        }
+        .normalized();
+
+        log::info!("Extracted external user info: {external_user_info:#?}");
+
+        Ok(external_user_info)
+    }
+}
 
 #[derive(Clone)]
 struct CachedClient {

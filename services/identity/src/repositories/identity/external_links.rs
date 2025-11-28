@@ -12,6 +12,22 @@ pub struct ExternalUserInfo {
     pub email: Option<String>,
 }
 
+impl ExternalUserInfo {
+    /// Normalize external user info (e.g., truncate long names)
+    #[must_use]
+    pub fn normalized(mut self) -> Self {
+        if let Some(name) = &self.name {
+            if name.chars().count() > 20 {
+                let truncated_name: String = name.chars().take(20).collect();
+                log::info!("Truncating name from '{name}' to '{truncated_name}'");
+                self.name = Some(truncated_name);
+            }
+        }
+
+        self
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ExternalLink {
     pub user_id: Uuid,

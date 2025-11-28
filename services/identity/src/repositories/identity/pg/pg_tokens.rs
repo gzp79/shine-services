@@ -252,8 +252,7 @@ impl Tokens for PgIdentityDbContext<'_> {
 
         let encrypted_email = email_to_bind_to
             .map(|email| self.email_protection.encrypt(email))
-            .transpose()?
-            .map(|email| email);
+            .transpose()?;
 
         let row = match self
             .stmts_tokens
@@ -438,7 +437,7 @@ impl Tokens for PgIdentityDbContext<'_> {
                 expire_at: row.token_expire,
                 is_expired: row.token_is_expired,
                 bound_fingerprint: row.token_fingerprint,
-                bound_email: bound_email,
+                bound_email,
                 agent: row.token_agent,
                 country: row.token_country,
                 region: row.token_region,
@@ -492,7 +491,7 @@ impl Tokens for PgIdentityDbContext<'_> {
                 expire_at: row.token_expire,
                 is_expired: row.token_is_expired,
                 bound_fingerprint: row.token_fingerprint,
-                bound_email: bound_email,
+                bound_email,
                 agent: row.token_agent,
                 country: row.token_country,
                 region: row.token_region,

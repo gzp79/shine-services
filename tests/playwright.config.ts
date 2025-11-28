@@ -3,14 +3,15 @@ import { ServiceOptions } from '$fixtures/setup';
 import { suppress_tls_certificate_warning } from '$lib/suppress_tls_certificate_warning';
 
 // Allow self-signed certificates
-
 suppress_tls_certificate_warning();
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-process.env.DEBUG = 'test:*';
 
 const isBuildRun: boolean = !!process.env.CI;
 if (isBuildRun) {
     console.log('Running in CI mode');
+} else {
+    console.log('Running in DEV mode');
+    process.env.DEBUG = 'test:*';
 }
 
 const config: PlaywrightTestConfig<ServiceOptions> = {
@@ -44,8 +45,8 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
                 // skipMockService: true, // to run mock services manually
 
                 defaultRedirects: {
-                    redirectUrl: 'https://redirect.com/',
-                    errorUrl: 'https://error.com/'
+                    redirectUrl: 'https://redirect.local.scytta.com/',
+                    errorUrl: 'https://error.local.scytta.com/'
                 },
 
                 /* spell-checker: disable */

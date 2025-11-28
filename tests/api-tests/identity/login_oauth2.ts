@@ -81,7 +81,7 @@ test.describe('Check OAuth2 auth', () => {
         expect(cookies.eid).toBeClearCookie();
     });
 
-    test('Auth with (parameters: NULL, session: NULL, external: VALID) shall fail', async ({ api }) => {
+    test('Auth with (parameters: NULL, session: NULL, external: VALID) shall fail', async ({ api, homeUrl }) => {
         const mock = await startMock();
         const { eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
@@ -90,10 +90,9 @@ test.describe('Check OAuth2 auth', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
+            createUrl(`${homeUrl}/error`, {
                 type: 'auth-input-error',
-                status: 400,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
+                status: 400
             })
         );
         expect(getPageProblem(text)).toEqual(
@@ -467,6 +466,89 @@ test.describe('Login with OAuth2', () => {
         expect((await api.user.getUserInfo(newUserCookies.sid, 'fast')).userId).toEqual(user.userId);
         expect((await api.user.getUserInfo(newUserCookies.sid, 'full')).userId).toEqual(user.userId);
     });
+
+    test('Login with long name shall be truncated', async ({ api }) => {
+        const user = new ExternalUser(
+            'oauth2_flow',
+            randomUUID(),
+            randomUUID() + 'make_sure_this_is_long_enough_to_be_truncated',
+            generateRandomString(5) + '@example.com'
+        );
+
+        const cookies = await api.auth.loginWithOAuth2(mock, user, false);
+        expect((await api.user.getUserInfo(cookies.sid, 'fast')).name).toEqual(user.name.substring(0, 20));
+        expect((await api.user.getUserInfo(cookies.sid, 'full')).name).toEqual(user.name.substring(0, 20));
+    });
+
+    test('Login with invalid redirect url shall fail', async ({ api }) => {
+        const response = await api.auth
+            .loginWithOAuth2Request(null, null, false, null)
+            .withParams({ redirectUrl: 'https://danger.com' });
+        expect(response).toHaveStatus(200);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                type: 'auth-input-error',
+                status: 400,
+                redirectUrl: null
+            })
+        );
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-input-error',
+                status: 400,
+                extension: null,
+                sensitive: expect.objectContaining({
+                    type: 'input-validation',
+                    detail: 'Input validation failed',
+                    extension: expect.objectContaining({
+                        redirectUrl: [
+                            expect.objectContaining({
+                                code: 'invalid-redirect-url',
+                                message: 'Redirect URL is not allowed'
+                            })
+                        ]
+                    })
+                })
+            })
+        );
+    });
+
+    test('Login with invalid error url shall fail', async ({ api, homeUrl }) => {
+        const response = await api.auth
+            .loginWithOAuth2Request(null, null, false, null)
+            .withParams({ errorUrl: 'https://danger.com' });
+        expect(response).toHaveStatus(200);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(`${homeUrl}/error`, {
+                type: 'auth-input-error',
+                status: 400,
+                redirectUrl: null
+            })
+        );
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-input-error',
+                status: 400,
+                extension: null,
+                sensitive: expect.objectContaining({
+                    type: 'input-validation',
+                    detail: 'Input validation failed',
+                    extension: expect.objectContaining({
+                        errorUrl: [
+                            expect.objectContaining({
+                                code: 'invalid-redirect-url',
+                                message: 'Redirect URL is not allowed'
+                            })
+                        ]
+                    })
+                })
+            })
+        );
+    });
 });
 
 test.describe('Link to OAuth2 account', () => {
@@ -564,57 +646,5 @@ test.describe('Link to OAuth2 account', () => {
                 sensitive: null
             })
         );
-    });
-});
-
-test.describe('Login with invalid redirect url', () => {
-    let mock!: OAuth2MockServer;
-
-    test.beforeEach(async () => {
-        mock = new OAuth2MockServer();
-        await mock.start();
-    });
-
-    test.afterEach(async () => {
-        await mock.stop();
-        mock = undefined!;
-    });
-
-    test('Login with invalid redirect url shall fail', async ({ api }) => {
-        const user = ExternalUser.newRandomUser('oauth2_flow');
-        const redirectUrl = 'https://danger.com';
-        const start = await api.auth.startLoginWithOAuth2(mock, false, redirectUrl);
-        const response = await api.auth.authorizeWithOAuth2Request(
-            start.sid,
-            start.eid,
-            start.authParams.state,
-            user.toCode()
-        );
-        expect(response).toHaveStatus(200);
-
-        const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'input-constraint',
-                status: 400,
-                redirectUrl: redirectUrl
-            })
-        );
-    });
-
-    test('Login with valid redirect url shall succeed', async ({ api }) => {
-        const user = ExternalUser.newRandomUser('oauth2_flow');
-        const redirectUrl = api.auth.defaultRedirects.redirectUrl;
-        const start = await api.auth.startLoginWithOAuth2(mock, false, redirectUrl);
-        const response = await api.auth.authorizeWithOAuth2Request(
-            start.sid,
-            start.eid,
-            start.authParams.state,
-            user.toCode()
-        );
-        expect(response).toHaveStatus(200);
-
-        const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(redirectUrl);
     });
 });

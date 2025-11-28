@@ -522,11 +522,20 @@ pub async fn token_login(
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => {
-            let (error_url, redirect_url) = error.get_redirects();
-            return PageUtils::new(&state).error(auth_session, error.problem, error_url, redirect_url);
-        }
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
     };
+    if let Some(error_url) = &query.error_url {
+        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
+            return PageUtils::new(&state).error(auth_session, err, None, None);
+        }
+    }
+    if let Some(redirect_url) = &query.redirect_url {
+        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
+            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), None);
+        }
+    }
+
+    log::debug!("Query: {query:#?}");
 
     log::debug!("Query: {query:#?}");
 
@@ -549,18 +558,6 @@ pub async fn token_login(
             );
         }
     };
-
-    if let Some(redirect_url) = &query.redirect_url {
-        let auth_utils = AuthUtils::new(&state);
-        if let Err(err) = auth_utils.validate_redirect_url(redirect_url) {
-            return PageUtils::new(&state).error(
-                auth_session,
-                err,
-                query.error_url.as_ref(),
-                query.redirect_url.as_ref(),
-            );
-        }
-    }
 
     assert!(auth_session.user_session().is_none(), "Session shall have been cleared");
     assert!(
