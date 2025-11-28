@@ -63,7 +63,7 @@ pub async fn logout(
                 //remove all non-api-key tokens
                 if let Err(err) = state
                     .identity_service()
-                    .delete_all_tokens_by_user(user_id, &[TokenKind::Access, TokenKind::SingleAccess])
+                    .delete_terminable_tokens_by_user(user_id)
                     .await
                 {
                     return PageUtils::new(&state).error(

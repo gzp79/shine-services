@@ -100,6 +100,11 @@ pub trait Tokens {
         kinds: &[TokenKind],
     ) -> impl Future<Output = Result<(), IdentityError>> + Send;
 
+    fn delete_terminable_tokens_by_user(
+        &mut self,
+        user_id: Uuid,
+    ) -> impl Future<Output = Result<(), IdentityError>> + Send;
+
     /// Test if the token is valid and return the identity if found.
     /// It can be used only for tokens that can be used multiple times. (is_single_access() == false)
     fn test_token(
