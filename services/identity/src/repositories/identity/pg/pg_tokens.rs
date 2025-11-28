@@ -136,6 +136,17 @@ pg_query!( DeleteAllByUser =>
     "#
 );
 
+pg_query!( DeleteTerminableByUser =>
+    in = user_id: Uuid;
+    sql = r#"
+        DELETE FROM login_tokens
+        WHERE user_id = $1 AND (
+            kind IN (1, 2, 4) OR -- single_access, persistent, email_access
+            (kind = 3 AND fingerprint IS NOT NULL) -- access token with fingerprint
+        )
+    "#
+);
+
 #[derive(FromRow)]
 struct IdentityTokenRow {
     user_id: Uuid,
@@ -216,6 +227,7 @@ pub struct PgTokensStatements {
     delete: DeleteToken,
     delete_by_user: DeleteByUser,
     delete_all_by_user: DeleteAllByUser,
+    delete_terminable_by_user: DeleteTerminableByUser,
     test: TestToken,
     take: TakeToken,
 }
@@ -229,6 +241,7 @@ impl PgTokensStatements {
             delete: DeleteToken::new(client).await.map_err(DBError::from)?,
             delete_by_user: DeleteByUser::new(client).await.map_err(DBError::from)?,
             delete_all_by_user: DeleteAllByUser::new(client).await.map_err(DBError::from)?,
+            delete_terminable_by_user: DeleteTerminableByUser::new(client).await.map_err(DBError::from)?,
             test: TestToken::new(client).await.map_err(DBError::from)?,
             take: TakeToken::new(client).await.map_err(DBError::from)?,
         })
@@ -407,6 +420,16 @@ impl Tokens for PgIdentityDbContext<'_> {
                 .await
                 .map_err(DBError::from)?;
         }
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
+    async fn delete_terminable_tokens_by_user(&mut self, user_id: Uuid) -> Result<(), IdentityError> {
+        self.stmts_tokens
+            .delete_terminable_by_user
+            .execute(&self.client, &user_id)
+            .await
+            .map_err(DBError::from)?;
         Ok(())
     }
 

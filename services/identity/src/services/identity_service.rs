@@ -229,6 +229,11 @@ where
         db.delete_all_token_by_user(user_id, kinds).await
     }
 
+    pub async fn delete_terminable_tokens_by_user(&self, user_id: Uuid) -> Result<(), IdentityError> {
+        let mut db = self.db.create_context().await?;
+        db.delete_terminable_tokens_by_user(user_id).await
+    }
+
     pub async fn add_role(&self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         let mut db = self.db.create_context().await?;
         if let Some(roles) = db.add_role(user_id, role).await? {
