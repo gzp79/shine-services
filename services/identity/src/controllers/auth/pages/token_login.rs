@@ -522,7 +522,10 @@ pub async fn token_login(
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
+        Err(error) => {
+            let (error_url, redirect_url) = error.get_redirects();
+            return PageUtils::new(&state).error(auth_session, error.problem, error_url, redirect_url);
+        }
     };
 
     log::debug!("Query: {query:#?}");
