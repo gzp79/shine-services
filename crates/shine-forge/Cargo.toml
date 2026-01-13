@@ -30,11 +30,11 @@ shine-infra = { workspace = true, optional = true }
 shine-test = { workspace = true }
 
 ################# native dependencies #################
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+[target.'cfg(any(target_os = "windows", target_os = "linux", target_os = "macos", target_os = "android"))'.dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 
 ################## wasm dependencies ##################
-[target.'cfg(target_arch = "wasm32")'.dependencies]
+[target.'cfg(target_family = "wasm")'.dependencies]
 
-[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+[target.'cfg(target_family = "wasm")'.dev-dependencies]
 wasm-bindgen-test = { workspace = true }

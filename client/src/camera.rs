@@ -1,4 +1,4 @@
-use crate::{avatar::Avatar, HUD_LAYER};
+use crate::{avatar::Avatar, hud::HUD_LAYER};
 use bevy::{
     app::{App, Plugin, PreUpdate, Startup},
     camera::{Camera, Camera3d},

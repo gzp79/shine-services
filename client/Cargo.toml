@@ -3,6 +3,31 @@ name = "shine-client"
 version.workspace = true
 edition.workspace = true
 
+[features]
+
+# features to add examples as exported library functions instead of standalone binaries for mobile platforms
+example = []
+example_curve = ["example"]
+example_camera_orbit = ["example"]
+example_camera_follow = ["example"]
+example_camera_free = ["example"]
+example_camera_look_at = ["example"]
+example_input_drivers = ["example"]
+example_input_process = ["example"]
+example_input_gesture = ["example"]
+example_input_multiplayer = ["example"]
+example_pinch_zoom = ["example"]
+example_asset = ["example"]
+
+[[bin]]
+name = "shine_client"
+path = "src/main.rs"
+
+[lib]
+name = "shine"
+path = "src/lib.rs"
+crate-type = ["staticlib", "rlib", "cdylib"]
+
 [dependencies]
 log = { workspace = true }
 thiserror = { workspace = true }
@@ -19,7 +44,6 @@ bevy = { workspace = true, default-features = true, features = [
 ] }
 bevy-inspector-egui = { workspace = true }
 
-
 shine-forge = { workspace = true }
 shine-game = { workspace = true }
 shine-core = { workspace = true }
@@ -27,7 +51,15 @@ shine-core = { workspace = true }
 [dev-dependencies]
 shine-test = { workspace = true }
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
+################## wasm dependencies ##################
+[target.'cfg(target_family = "wasm")'.dependencies]
 bevy = { workspace = true, features = ["webgl2"] }
 wasm-bindgen = { workspace = true }
 getrandom = { workspace = true, features = ["wasm_js"] }
+
+################## android dependencies ##################
+[target.'cfg(target_os = "android")'.dependencies]
+bevy = { workspace = true, features = [
+    "android-game-activity",
+    "android_shared_stdcxx",
+] }

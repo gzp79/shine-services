@@ -6,11 +6,16 @@ use bevy::{
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "android"
+))]
 use ureq::{config::Config as UReqConfig, tls::TlsConfig, Agent};
 
 // A convenience alias to simplify conditional compilation.
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 type Agent = ();
 
 #[derive(Clone)]
@@ -48,7 +53,12 @@ impl WebAssetConfig {
     }
 
     fn create_agent(&self) -> Agent {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(any(
+            target_os = "windows",
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "android"
+        ))]
         {
             UReqConfig::builder()
                 .tls_config(TlsConfig::builder().disable_verification(self.allow_insecure).build())
@@ -57,7 +67,7 @@ impl WebAssetConfig {
                 .new_agent()
         }
 
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(target_family = "wasm")]
         {
             ()
         }
@@ -96,7 +106,7 @@ impl WebAssetReader {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 async fn get<'a>(_agent: (), base_path: &Path, path: &Path) -> Result<Vec<u8>, AssetReaderError> {
     // based on https://github.com/bevyengine/bevy/blob/main/crates/bevy_asset/src/io/wasm.rs
 
@@ -137,7 +147,12 @@ async fn get<'a>(_agent: (), base_path: &Path, path: &Path) -> Result<Vec<u8>, A
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "android"
+))]
 async fn get(agent: Agent, base_path: &Path, path: &Path) -> Result<Vec<u8>, AssetReaderError> {
     use blocking::unblock;
     use std::io::{BufReader, Read};

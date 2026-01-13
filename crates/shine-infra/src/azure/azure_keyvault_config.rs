@@ -69,7 +69,6 @@ impl ConfigAsyncSource for AzureKeyvaultConfigSource {
                         .await
                         .map_err(AzureKeyvaultConfigError)?
                         .into_body()
-                        .await
                         .map_err(AzureKeyvaultConfigError)?;
                     if let (Some(attributes), Some(value)) = (secret.attributes, secret.value) {
                         if attributes.enabled.unwrap_or(false) {

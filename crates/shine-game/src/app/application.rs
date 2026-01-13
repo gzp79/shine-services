@@ -72,7 +72,7 @@ pub trait PlatformInit {
 }
 
 /// Platform-specific initialization.
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 pub mod platform {
     use super::{customized_asset_plugin, setup_application_common, PlatformInit, GAME_SETUP};
     use bevy::{
@@ -228,7 +228,12 @@ pub mod platform {
 }
 
 /// Platform-specific initialization.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "android"
+))]
 pub mod platform {
     use super::{customized_asset_plugin, setup_application_common, PlatformInit, GAME_SETUP};
     use bevy::{

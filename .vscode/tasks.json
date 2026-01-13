@@ -13,35 +13,35 @@
     {
       "label": "clippy",
       "type": "shell",
-      "command": "cargo clippy ${input:projects} --all-targets",
+      "command": "cargo clippy ${input:all-projects} --all-targets",
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
     {
       "label": "clippy wasm",
       "type": "shell",
-      "command": "cargo clippy --target wasm32-unknown-unknown ${input:wasm-projects} --all-targets",
+      "command": "cargo clippy --target wasm32-unknown-unknown ${input:client-projects} --all-targets",
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
     {
       "label": "build",
       "type": "shell",
-      "command": "cargo build --release ${input:projects} --all-targets",
+      "command": "cargo build --release ${input:all-projects} --all-targets",
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
     {
       "label": "build wasm",
       "type": "shell",
-      "command": "cargo build --target wasm32-unknown-unknown --release ${input:wasm-projects} --all-targets",
+      "command": "cargo build --target wasm32-unknown-unknown --release ${input:client-projects} --all-targets",
       "problemMatcher": ["$rustc"],
       "group": "build"
     },
     {
-      "label": "test native",
+      "label": "test",
       "type": "shell",
-      "command": "cargo test ${input:projects}",
+      "command": "cargo test ${input:all-projects}",
       "options": {
         "env": {
           "_RUST_LOG": "debug",
@@ -54,7 +54,7 @@
     {
       "label": "test wasm",
       "type": "shell",
-      "command": "cargo test --config .cargo/wasm-test-config.toml --target wasm32-unknown-unknown ${input:wasm-projects}",
+      "command": "cargo test --config .cargo/wasm-test-config.toml --target wasm32-unknown-unknown ${input:client-projects}",
       "options": {
         "env": {
           "_RUST_LOG": "debug",
@@ -69,7 +69,7 @@
     {
       "label": "test miri",
       "type": "shell",
-      "command": "cargo miri test ${input:projects}",
+      "command": "cargo miri test ${input:all-projects}",
       "options": {
         "env": {
           "_RUST_LOG": "debug",
@@ -97,7 +97,7 @@
       "isBackground": true
     },
     {
-      "label": "identity: cloud",
+      "label": "[SERVICE] identity: cloud",
       "type": "shell",
       "command": "cargo run -p shine-identity --release -- prod",
       "options": {
@@ -108,7 +108,7 @@
           "SHINE--SERVICE--TLS--KEY": "../../certs/scytta.key",
           "SHINE--SERVICE--PORT": "8443",
           "SHINE--SERVICE--SESSION_REDIS_CNS": "${env:SHINE_REDIS_CNS}",
-          "SHINE--IDENTITY--AUTH--AUTH_BASE_URL": "https://local-cloud.scytta.com:8443/identity/auth/",
+          "SHINE--IDENTITY--AUTH--AUTH_BASE_URL": "https://cloud.local.scytta.com:8443/identity/auth/",
           "SHINE--IDENTITY--DB--REDIS_CNS": "${env:SHINE_REDIS_CNS}"
         }
       },
@@ -116,7 +116,7 @@
       "group": "build"
     },
     {
-      "label": "identity: local",
+      "label": "[SERVICE] identity: local",
       "type": "shell",
       "command": "cargo run -p shine-identity --release -- test",
       "options": {
@@ -132,7 +132,7 @@
       "group": "build"
     },
     {
-      "label": "builder: cloud",
+      "label": "[SERVICE]builder: cloud",
       "type": "shell",
       "command": "cargo run -p shine-builder --release -- prod",
       "options": {
@@ -147,7 +147,7 @@
       "group": "build"
     },
     {
-      "label": "builder: local",
+      "label": "[SERVICE] builder: local",
       "type": "shell",
       "command": "cargo run -p shine-builder --release -- test",
       "options": {
@@ -163,9 +163,9 @@
       "group": "build"
     },
     {
-      "label": "client: local",
+      "label": "[CLIENT] main: native",
       "type": "shell",
-      "command": "cargo run -p shine-client --release ${input:client}",
+      "command": "cargo run -p shine-client --release",
       "options": {
         "cwd": "client",
         "env": {
@@ -177,22 +177,62 @@
       "group": "build"
     },
     {
-      "label": "client: local-wasm",
+      "label": "[CLIENT] main: android-lib",
       "type": "shell",
-      "command": "${workspaceFolder}/scripts/emulate_github_client_build.ps1",
+      "command": "cargo ndk -t arm64-v8a -o android/src/main/featureLibs/game build -p shine-client --release --lib",
       "options": {
+        "cwd": "client"
+      },
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "[CLIENT] main: android-apk",
+      "type": "shell",
+      "command": "./gradlew assembleRelease -Pflavor=game",
+      "options": {
+        "cwd": "client/android"
+      },
+      "group": "build"
+    },
+    {
+      "label": "[CLIENT] example: native",
+      "type": "shell",
+      "command": "cargo run -p shine-client --release --example ${input:examples}",
+      "options": {
+        "cwd": "client",
         "env": {
+          "RUST_LOG": "info,shine_game=debug,shine_forge=debug,shine_client=debug",
           "RUST_BACKTRACE": "full"
         }
       },
       "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "[CLIENT] example: android-lib",
+      "type": "shell",
+      "command": "cargo ndk -t arm64-v8a -o android/src/main/featureLibs/${input:examples} build -p shine-client --release --lib --features example_${input:examples}",
+      "options": {
+        "cwd": "client/android"
+      },
+      "problemMatcher": ["$rustc"],
+      "group": "build"
+    },
+    {
+      "label": "[CLIENT] example: android-apk",
+      "type": "shell",
+      "command": "./gradlew assembleRelease -Pflavor=${input:examples}",
+      "options": {
+        "cwd": "client/android"
+      },
       "group": "build"
     }
   ],
   "inputs": [
     {
       "type": "pickString",
-      "id": "projects",
+      "id": "all-projects",
       "description": "Select project",
       "options": [
         { "label": "all", "value": "" },
@@ -211,7 +251,7 @@
     },
     {
       "type": "pickString",
-      "id": "wasm-projects",
+      "id": "client-projects",
       "description": "Select project",
       "options": [
         {
@@ -228,26 +268,22 @@
     },
     {
       "type": "pickString",
-      "id": "client",
-      "description": "Select client example",
+      "id": "examples",
+      "description": "Select example",
       "options": [
-        { "label": "main", "value": "" },
-        { "label": "curve", "value": "--example curve" },
-        { "label": "camera_orbit", "value": "--example camera_orbit" },
-        { "label": "camera_follow", "value": "--example camera_follow" },
-        { "label": "camera_free", "value": "--example camera_free" },
-        { "label": "camera_look_at", "value": "--example camera_look_at" },
-        { "label": "input_drivers", "value": "--example input_drivers" },
-        { "label": "input_process", "value": "--example input_process" },
-        { "label": "input_gesture", "value": "--example input_gesture" },
-        {
-          "label": "input_multiplayer",
-          "value": "--example input_multiplayer"
-        },
-        { "label": "pinch_zoom", "value": "--example pinch_zoom" },
-        { "label": "asset", "value": "--example asset" }
+        "curve",
+        "camera_orbit",
+        "camera_follow",
+        "camera_free",
+        "camera_look_at",
+        "input_drivers",
+        "input_process",
+        "input_gesture",
+        "input_multiplayer",
+        "pinch_zoom",
+        "asset"
       ],
-      "default": "asset-service"
+      "default": ""
     },
     {
       "type": "pickString",
