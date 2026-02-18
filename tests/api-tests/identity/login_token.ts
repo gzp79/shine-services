@@ -17,7 +17,7 @@ test.describe('Login with access cookie', () => {
         userInfo = partialUserInfo;
     });
 
-    test('Login with (token: NULL, session: NULL, rememberMe: true) shall redirect to the login page', async ({
+    test('Login with (token: NULL, session: NULL, rememberMe: true) shall redirect to the error page', async ({
         api
     }) => {
         const response = await api.auth.loginWithTokenRequest(null, null, null, null, true, 'invalid');
@@ -25,11 +25,7 @@ test.describe('Login with access cookie', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-login-required',
-                status: 401,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-login-required' })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -213,8 +209,7 @@ test.describe('Login with access cookie', () => {
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
             createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-input-error',
-                status: 400,
+                errorType: 'auth-input-error',
                 redirectUrl: null
             })
         );
@@ -248,8 +243,7 @@ test.describe('Login with access cookie', () => {
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
             createUrl(`${homeUrl}/error`, {
-                type: 'auth-input-error',
-                status: 400,
+                errorType: 'auth-input-error',
                 redirectUrl: null
             })
         );

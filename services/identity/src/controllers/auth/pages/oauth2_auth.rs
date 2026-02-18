@@ -53,28 +53,23 @@ pub async fn oauth2_auth(
     } = match auth_session.external_login() {
         Some(external_login) => external_login.clone(),
         None => {
-            return PageUtils::new(&state).error(
-                auth_session,
-                ExternalLoginError::MissingExternalLoginCookie,
-                None,
-                None,
-            )
+            return PageUtils::new(&state).error(auth_session, ExternalLoginError::MissingExternalLoginCookie, None)
         }
     };
     let auth_session = auth_session.with_external_login(None);
 
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
     };
     if let Some(error_url) = &error_url {
         if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None, None);
+            return PageUtils::new(&state).error(auth_session, err, None);
         }
     }
     if let Some(redirect_url) = &redirect_url {
         if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, error_url.as_ref(), None);
+            return PageUtils::new(&state).error(auth_session, err, error_url.as_ref());
         }
     }
 
@@ -86,12 +81,7 @@ pub async fn oauth2_auth(
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
         log::debug!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
-        return PageUtils::new(&state).error(
-            auth_session,
-            ExternalLoginError::InvalidCSRF,
-            error_url.as_ref(),
-            redirect_url.as_ref(),
-        );
+        return PageUtils::new(&state).error(auth_session, ExternalLoginError::InvalidCSRF, error_url.as_ref());
     }
 
     // Exchange the code with a token.
@@ -109,7 +99,6 @@ pub async fn oauth2_auth(
                 auth_session,
                 ExternalLoginError::TokenExchangeFailed(format!("{err:#?}")),
                 error_url.as_ref(),
-                redirect_url.as_ref(),
             );
         }
     };
@@ -131,7 +120,6 @@ pub async fn oauth2_auth(
                 auth_session,
                 ExternalLoginError::FailedExternalUserInfo(format!("{err:?}")),
                 error_url.as_ref(),
-                redirect_url.as_ref(),
             )
         }
     };

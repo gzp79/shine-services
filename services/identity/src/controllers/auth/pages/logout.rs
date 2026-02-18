@@ -41,16 +41,16 @@ pub async fn logout(
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
     };
     if let Some(error_url) = &query.error_url {
         if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None, None);
+            return PageUtils::new(&state).error(auth_session, err, None);
         }
     }
     if let Some(redirect_url) = &query.redirect_url {
         if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), None);
+            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
         }
     }
 
@@ -66,12 +66,7 @@ pub async fn logout(
                     .delete_all_tokens_by_user(user_id, &[TokenKind::Access, TokenKind::SingleAccess])
                     .await
                 {
-                    return PageUtils::new(&state).error(
-                        auth_session,
-                        err,
-                        query.error_url.as_ref(),
-                        query.redirect_url.as_ref(),
-                    );
+                    return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
                 }
 
                 log::debug!("Removing all the session for user {user_id}");
@@ -84,12 +79,7 @@ pub async fn logout(
                 if let Some(token) = auth_session.access().map(|t| t.key.clone()) {
                     log::debug!("Removing token {token} for user {user_id}");
                     if let Err(err) = state.identity_service().delete_token(TokenKind::Access, &token).await {
-                        return PageUtils::new(&state).error(
-                            auth_session,
-                            err,
-                            query.error_url.as_ref(),
-                            query.redirect_url.as_ref(),
-                        );
+                        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
                     }
                 }
 

@@ -55,28 +55,23 @@ pub async fn oidc_auth(
     } = match auth_session.external_login() {
         Some(external_login_cookie) => external_login_cookie.clone(),
         None => {
-            return PageUtils::new(&state).error(
-                auth_session,
-                ExternalLoginError::MissingExternalLoginCookie,
-                None,
-                None,
-            )
+            return PageUtils::new(&state).error(auth_session, ExternalLoginError::MissingExternalLoginCookie, None)
         }
     };
     let auth_session = auth_session.with_external_login(None);
 
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
     };
     if let Some(error_url) = &error_url {
         if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None, None);
+            return PageUtils::new(&state).error(auth_session, err, None);
         }
     }
     if let Some(redirect_url) = &redirect_url {
         if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, error_url.as_ref(), None);
+            return PageUtils::new(&state).error(auth_session, err, error_url.as_ref());
         }
     }
 
@@ -92,7 +87,6 @@ pub async fn oidc_auth(
                 auth_session,
                 ExternalLoginError::OIDCDiscovery(format!("{err}")),
                 error_url.as_ref(),
-                redirect_url.as_ref(),
             )
         }
     };
@@ -100,24 +94,14 @@ pub async fn oidc_auth(
     let nonce = match nonce {
         Some(nonce) => nonce,
         None => {
-            return PageUtils::new(&state).error(
-                auth_session,
-                ExternalLoginError::MissingNonce,
-                error_url.as_ref(),
-                redirect_url.as_ref(),
-            )
+            return PageUtils::new(&state).error(auth_session, ExternalLoginError::MissingNonce, error_url.as_ref())
         }
     };
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
         log::debug!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
-        return PageUtils::new(&state).error(
-            auth_session,
-            ExternalLoginError::InvalidCSRF,
-            error_url.as_ref(),
-            redirect_url.as_ref(),
-        );
+        return PageUtils::new(&state).error(auth_session, ExternalLoginError::InvalidCSRF, error_url.as_ref());
     }
 
     // Exchange the code with a token.
@@ -128,7 +112,6 @@ pub async fn oidc_auth(
                 auth_session,
                 ExternalLoginError::TokenExchangeFailed(format!("{err:#?}")),
                 error_url.as_ref(),
-                redirect_url.as_ref(),
             )
         }
     };
@@ -144,7 +127,6 @@ pub async fn oidc_auth(
                 auth_session,
                 ExternalLoginError::TokenExchangeFailed(format!("{err:#?}")),
                 error_url.as_ref(),
-                redirect_url.as_ref(),
             );
         }
     };
@@ -153,7 +135,7 @@ pub async fn oidc_auth(
         Ok(external_user) => external_user,
         Err(err) => {
             log::error!("{err:?}");
-            return PageUtils::new(&state).error(auth_session, err, error_url.as_ref(), redirect_url.as_ref());
+            return PageUtils::new(&state).error(auth_session, err, error_url.as_ref());
         }
     };
 
