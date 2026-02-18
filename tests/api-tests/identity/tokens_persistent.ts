@@ -63,11 +63,7 @@ test.describe('Persistent token', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-token-expired',
-                status: 401,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -92,11 +88,7 @@ test.describe('Persistent token', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-token-expired',
-                status: 401,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -127,11 +119,7 @@ test.describe('Persistent token', () => {
             .withHeaders({ 'user-agent': 'agent2' });
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-token-expired',
-                status: 401,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -184,11 +172,7 @@ test.describe('Persistent token', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-token-expired',
-                status: 401,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
         );
     });
 });

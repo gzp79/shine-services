@@ -34,13 +34,7 @@ impl<'a> PageUtils<'a> {
         }
     }
 
-    pub fn error<E>(
-        &self,
-        auth_session: AuthSession,
-        error: E,
-        error_url: Option<&Url>,
-        redirect_url: Option<&Url>,
-    ) -> AuthPage
+    pub fn error<E>(&self, auth_session: AuthSession, error: E, error_url: Option<&Url>) -> AuthPage
     where
         E: Into<AuthError>,
     {
@@ -53,15 +47,7 @@ impl<'a> PageUtils<'a> {
 
         {
             let mut query = target_url.query_pairs_mut();
-
-            query
-                .remove("error")
-                .remove("status")
-                .append_pair("errorType", problem.ty);
-
-            if let Some(redirect_url) = redirect_url {
-                query.append_pair("redirectUrl", redirect_url.as_str());
-            }
+            query.append_pair("errorType", problem.ty);
         }
 
         self.redirect(auth_session, Some(&target_url), Some(&problem))

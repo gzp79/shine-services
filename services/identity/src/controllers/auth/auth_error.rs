@@ -9,6 +9,7 @@ use thiserror::Error as ThisError;
 
 const INPUT_ERROR: &str = "auth-input-error";
 const AUTH_ERROR: &str = "auth-error";
+const AUTH_INTERNAL_ERROR: &str = "auth-internal-error";
 const LOGIN_REQUIRED: &str = "auth-login-required";
 const TOKEN_EXPIRED: &str = "auth-token-expired";
 const SESSION_EXPIRED: &str = "auth-session-expired";
@@ -135,32 +136,36 @@ impl From<AuthError> for Problem {
                 Problem::bad_request(AUTH_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::CaptchaError(error) => {
-                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+                Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::SessionError(error) => {
-                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+                Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::IdentityError(IdentityError::UserDeleted) => {
                 Problem::unauthorized_ty(SESSION_EXPIRED).with_sensitive("userDeleted")
             }
             AuthError::IdentityError(error) => {
-                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+                Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::ExternalLoginError(error) => {
                 let problem: Problem = error.into();
-                Problem::new(problem.status, AUTH_ERROR).with_sensitive(problem)
+                if problem.status == StatusCode::INTERNAL_SERVER_ERROR {
+                    Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(problem)
+                } else {
+                    Problem::new(problem.status, AUTH_ERROR).with_sensitive(problem)
+                }
             }
             AuthError::CreateUserError(error) => {
-                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+                Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::LoginTokenError(error) => {
-                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+                Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::LoginEmailError(error) => {
-                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+                Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::UserInfoError(error) => {
-                Problem::internal_error_ty(AUTH_ERROR).with_sensitive(Problem::from(error))
+                Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::InternalServerError(error) => Problem::internal_error_ty(AUTH_ERROR).with_sensitive(error),
         }

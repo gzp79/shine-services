@@ -63,11 +63,7 @@ test.describe('Single access token', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-token-expired',
-                status: 401,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -92,11 +88,7 @@ test.describe('Single access token', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-token-expired',
-                status: 401,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -129,11 +121,7 @@ test.describe('Single access token', () => {
             .withHeaders({ 'user-agent': 'agent2' });
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-token-expired',
-                status: 401,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -164,11 +152,7 @@ test.describe('Single access token', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-token-expired',
-                status: 401,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -201,11 +185,7 @@ test.describe('Single access token', () => {
         const response2 = await api.auth.loginWithTokenRequest(null, null, token.token, null, false, null);
         expect(response2).toHaveStatus(200);
         expect(getPageRedirectUrl(await response2.text())).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-token-expired',
-                status: 401,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
         );
     });
 
@@ -227,11 +207,7 @@ test.describe('Single access token', () => {
         response = await api.auth.loginWithTokenRequest(null, null, token.token, null, false, null);
         expect(response).toHaveStatus(200);
         expect(getPageRedirectUrl(await response.text())).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-token-expired',
-                status: 401,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
         );
     });
 });

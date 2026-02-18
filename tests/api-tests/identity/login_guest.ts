@@ -9,11 +9,7 @@ test.describe('Login and register guest', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-error',
-                status: 400,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-error' })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -39,11 +35,7 @@ test.describe('Login and register guest', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-error',
-                status: 400,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-error' })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({
@@ -70,11 +62,7 @@ test.describe('Login and register guest', () => {
 
         const text = await response.text();
         expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                type: 'auth-error',
-                status: 400,
-                redirectUrl: api.auth.defaultRedirects.redirectUrl
-            })
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-error' })
         );
         expect(getPageProblem(text)).toEqual(
             expect.objectContaining({

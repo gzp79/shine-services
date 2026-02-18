@@ -52,14 +52,9 @@ impl<'a> AuthUtils<'a> {
         {
             Ok(()) => {}
             Err(IdentityError::LinkProviderConflict) => {
-                return PageUtils::new(self.state).error(
-                    auth_session,
-                    AuthError::ProviderAlreadyUsed,
-                    error_url,
-                    redirect_url,
-                )
+                return PageUtils::new(self.state).error(auth_session, AuthError::ProviderAlreadyUsed, error_url)
             }
-            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
+            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
         };
 
         log::debug!(
@@ -110,16 +105,11 @@ impl<'a> AuthUtils<'a> {
             {
                 Ok(identity) => identity,
                 Err(CreateUserError::IdentityError(IdentityError::EmailConflict)) => {
-                    return PageUtils::new(self.state).error(
-                        auth_session,
-                        AuthError::EmailAlreadyUsed,
-                        error_url,
-                        redirect_url,
-                    )
+                    return PageUtils::new(self.state).error(auth_session, AuthError::EmailAlreadyUsed, error_url)
                 }
-                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
+                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
             },
-            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
+            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
         };
 
         // create a new remember me token
@@ -137,7 +127,7 @@ impl<'a> AuthUtils<'a> {
                 .await
             {
                 Ok(token_cookie) => Some(token_cookie),
-                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
+                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
             }
         } else {
             None
@@ -156,10 +146,9 @@ impl<'a> AuthUtils<'a> {
                     auth_session.with_access(None),
                     IdentityError::UserDeleted,
                     error_url,
-                    redirect_url,
                 );
             }
-            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url, redirect_url),
+            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
         };
 
         let response_session = auth_session

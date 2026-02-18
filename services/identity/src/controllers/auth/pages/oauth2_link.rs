@@ -44,28 +44,23 @@ pub async fn oauth2_link(
 ) -> AuthPage {
     let query = match query {
         Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None, None),
+        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
     };
     if let Some(error_url) = &query.error_url {
         if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None, None);
+            return PageUtils::new(&state).error(auth_session, err, None);
         }
     }
     if let Some(redirect_url) = &query.redirect_url {
         if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref(), None);
+            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
         }
     }
 
     log::debug!("Query: {query:#?}");
 
     if auth_session.user_session().is_none() {
-        return PageUtils::new(&state).error(
-            auth_session,
-            AuthError::LoginRequired,
-            query.error_url.as_ref(),
-            query.redirect_url.as_ref(),
-        );
+        return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
     }
 
     let key = random::hex_16(state.random());
