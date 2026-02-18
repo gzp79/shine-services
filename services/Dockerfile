@@ -6,6 +6,9 @@ RUN USER=root
 
 RUN rustup component add rustfmt
 
+RUN rustc --version \
+    && cargo --version
+
 # Create a dummy project to cache dependencies as a separate layer
 WORKDIR /shine
 
