@@ -55,11 +55,7 @@ pub async fn oidc_auth(
     } = match auth_session.external_login() {
         Some(external_login_cookie) => external_login_cookie.clone(),
         None => {
-            return PageUtils::new(&state).error(
-                auth_session,
-                ExternalLoginError::MissingExternalLoginCookie,
-                None,
-            )
+            return PageUtils::new(&state).error(auth_session, ExternalLoginError::MissingExternalLoginCookie, None)
         }
     };
     let auth_session = auth_session.with_external_login(None);
@@ -90,7 +86,7 @@ pub async fn oidc_auth(
             return PageUtils::new(&state).error(
                 auth_session,
                 ExternalLoginError::OIDCDiscovery(format!("{err}")),
-                error_url.as_ref()
+                error_url.as_ref(),
             )
         }
     };
@@ -98,22 +94,14 @@ pub async fn oidc_auth(
     let nonce = match nonce {
         Some(nonce) => nonce,
         None => {
-            return PageUtils::new(&state).error(
-                auth_session,
-                ExternalLoginError::MissingNonce,
-                error_url.as_ref()
-            )
+            return PageUtils::new(&state).error(auth_session, ExternalLoginError::MissingNonce, error_url.as_ref())
         }
     };
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
         log::debug!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
-        return PageUtils::new(&state).error(
-            auth_session,
-            ExternalLoginError::InvalidCSRF,
-            error_url.as_ref()
-        );
+        return PageUtils::new(&state).error(auth_session, ExternalLoginError::InvalidCSRF, error_url.as_ref());
     }
 
     // Exchange the code with a token.
@@ -123,7 +111,7 @@ pub async fn oidc_auth(
             return PageUtils::new(&state).error(
                 auth_session,
                 ExternalLoginError::TokenExchangeFailed(format!("{err:#?}")),
-                error_url.as_ref()
+                error_url.as_ref(),
             )
         }
     };
@@ -138,7 +126,7 @@ pub async fn oidc_auth(
             return PageUtils::new(&state).error(
                 auth_session,
                 ExternalLoginError::TokenExchangeFailed(format!("{err:#?}")),
-                error_url.as_ref()
+                error_url.as_ref(),
             );
         }
     };
