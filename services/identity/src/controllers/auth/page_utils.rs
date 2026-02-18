@@ -55,9 +55,9 @@ impl<'a> PageUtils<'a> {
             let mut query = target_url.query_pairs_mut();
 
             query
-                .clear()
-                .append_pair("type", problem.ty)
-                .append_pair("status", &problem.status.as_u16().to_string());
+                .remove("error")
+                .remove("status")
+                .append_pair("errorType", problem.ty);
 
             if let Some(redirect_url) = redirect_url {
                 query.append_pair("redirectUrl", redirect_url.as_str());

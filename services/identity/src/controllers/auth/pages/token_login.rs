@@ -537,8 +537,6 @@ pub async fn token_login(
 
     log::debug!("Query: {query:#?}");
 
-    log::debug!("Query: {query:#?}");
-
     // clear external login cookie, it shall be only for the authorize callback from the external provider
     let auth_session = auth_session.with_external_login(None);
 
