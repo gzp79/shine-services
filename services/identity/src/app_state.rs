@@ -6,7 +6,10 @@ use crate::{
         session::{redis::RedisSessionDb, SessionDb},
         CaptchaValidator, DBPool,
     },
-    services::{IdentityService, MailerService, SessionService, SettingsService, TokenSettings},
+    services::{
+        IdentityService, IdentityTopic, LinkService, MailerService, RoleService, SessionService, SettingsService,
+        TokenService, TokenSettings, UserService,
+    },
 };
 use anyhow::{anyhow, Error as AnyError};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
@@ -14,6 +17,7 @@ use chrono::Duration;
 use ring::{aead, rand::SystemRandom};
 use shine_infra::{
     crypto::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
+    sync::TopicBus,
     web::{responses::ProblemConfig, WebAppConfig},
 };
 use std::sync::Arc;
@@ -29,6 +33,12 @@ struct Inner {
     identity_service: IdentityService<PgIdentityDb>,
     session_service: SessionService<RedisSessionDb>,
     email_sender: SmtpEmailSender,
+    // Phase 2 services
+    events: Arc<TopicBus<IdentityTopic>>,
+    user_service: UserService<PgIdentityDb>,
+    token_service: TokenService<PgIdentityDb>,
+    role_service: RoleService<PgIdentityDb>,
+    link_service: LinkService<PgIdentityDb>,
 }
 
 #[derive(Clone)]
@@ -126,6 +136,39 @@ impl AppState {
             }
         };
 
+        // Phase 2 services
+        let events = Arc::new(TopicBus::<IdentityTopic>::new());
+
+        let user_service = {
+            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
+            let user_name_generator: Box<dyn IdEncoder> = match &config_user_name.id_encoder {
+                IdEncoderConfig::Optimus { prime, random } => Box::new(PrefixedIdEncoder::new(
+                    &config_user_name.base_name,
+                    OptimusIdEncoder::new(*prime, *random),
+                )),
+                IdEncoderConfig::Harsh { salt } => Box::new(PrefixedIdEncoder::new(
+                    &config_user_name.base_name,
+                    HarshIdEncoder::new(salt)?,
+                )),
+            };
+            UserService::new(identity_db, user_name_generator, Arc::clone(&events))
+        };
+
+        let token_service = {
+            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
+            TokenService::new(identity_db)
+        };
+
+        let role_service = {
+            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
+            RoleService::new(identity_db, Arc::clone(&events))
+        };
+
+        let link_service = {
+            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
+            LinkService::new(identity_db, Arc::clone(&events))
+        };
+
         Ok(Self(Arc::new(Inner {
             settings,
             problem_config,
@@ -136,6 +179,11 @@ impl AppState {
             identity_service,
             session_service,
             email_sender,
+            events,
+            user_service,
+            token_service,
+            role_service,
+            link_service,
         })))
     }
 
@@ -173,5 +221,26 @@ impl AppState {
 
     pub fn mailer_service(&self) -> MailerService<impl EmailSender> {
         MailerService::new(&self.0.settings, &self.0.email_sender, &self.0.tera)
+    }
+
+    // Phase 2 service getters
+    pub fn events(&self) -> &Arc<TopicBus<IdentityTopic>> {
+        &self.0.events
+    }
+
+    pub fn user_service(&self) -> &UserService<impl IdentityDb> {
+        &self.0.user_service
+    }
+
+    pub fn token_service(&self) -> &TokenService<impl IdentityDb> {
+        &self.0.token_service
+    }
+
+    pub fn role_service(&self) -> &RoleService<impl IdentityDb> {
+        &self.0.role_service
+    }
+
+    pub fn link_service(&self) -> &LinkService<impl IdentityDb> {
+        &self.0.link_service
     }
 }
