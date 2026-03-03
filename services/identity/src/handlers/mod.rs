@@ -8,3 +8,6 @@ mod login_email_handler;
 pub use self::login_email_handler::*;
 mod email_token_handler;
 //pub use self::email_token_handler::*;
+
+// Phase 3 handler - currently placeholder
+mod auth_handler;

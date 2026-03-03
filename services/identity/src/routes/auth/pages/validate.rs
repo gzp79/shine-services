@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthPage, AuthSession, AuthUtils, PageUtils},
+    routes::auth::{AuthPage, AuthSession, AuthUtils, PageUtils},
 };
 use axum::extract::State;
 use serde::Deserialize;

@@ -1,7 +1,7 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthPage, AuthSession, AuthUtils, PageUtils, TokenCookie},
     repositories::identity::{IdentityError, TokenKind},
+    routes::auth::{AuthPage, AuthSession, AuthUtils, PageUtils, TokenCookie},
 };
 use axum::extract::State;
 use serde::Deserialize;

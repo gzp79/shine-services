@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthError, AuthPage, AuthSession},
+    routes::auth::{AuthError, AuthPage, AuthSession},
     services::SettingsService,
 };
 use shine_infra::web::responses::{Problem, ProblemConfig};

@@ -1,8 +1,8 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthError, AuthPage, AuthSession, PageUtils, TokenCookie},
     handlers::CreateUserError,
     repositories::identity::{ExternalUserInfo, IdentityError, TokenKind},
+    routes::auth::{AuthError, AuthPage, AuthSession, PageUtils, TokenCookie},
 };
 use shine_infra::web::extracts::{ClientFingerprint, InputError, SiteInfo, ValidationErrorEx};
 use url::Url;

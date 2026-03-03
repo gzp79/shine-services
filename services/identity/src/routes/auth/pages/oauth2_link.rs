@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    controllers::auth::{AuthPage, AuthSession, AuthUtils, ExternalLoginCookie, OAuth2Client, PageUtils},
+    routes::auth::{AuthError, AuthPage, AuthSession, AuthUtils, ExternalLoginCookie, OAuth2Client, PageUtils},
 };
 use axum::{extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};
@@ -22,23 +22,21 @@ use validator::Validate;
 pub struct QueryParams {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
-    remember_me: Option<bool>,
-    captcha: Option<String>,
 }
 
-/// Login or register a new user with the interactive flow using an OAuth2 provider.
+/// Link the current user to an OAuth2 provider.
 #[utoipa::path(
     get,
-    path = "/login",
+    path = "/link",
     tag = "page",
     params(
         QueryParams
     ),
     responses(
-        (status = OK, description="Start the OAuth2 interactive login flow")
+        (status = OK, description="Start the OAuth2 interactive login flow for linking an account")
     )
 )]
-pub async fn oauth2_login(
+pub async fn oauth2_link(
     State(state): State<AppState>,
     Extension(client): Extension<Arc<OAuth2Client>>,
     auth_session: AuthSession,
@@ -61,8 +59,8 @@ pub async fn oauth2_login(
 
     log::debug!("Query: {query:#?}");
 
-    if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
-        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
+    if auth_session.user_session().is_none() {
+        return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
     }
 
     let key = random::hex_16(state.random());
@@ -74,21 +72,17 @@ pub async fn oauth2_login(
         .set_pkce_challenge(pkce_code_challenge)
         .url();
 
-    let response_session = auth_session
-        .revoke_session(&state)
-        .await
-        .revoke_access(&state)
-        .await
-        .with_external_login(Some(ExternalLoginCookie {
-            key,
-            pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
-            csrf_state: csrf_state.secret().to_owned(),
-            nonce: None,
-            target_url: query.redirect_url,
-            error_url: query.error_url,
-            remember_me: query.remember_me.unwrap_or(false),
-            linked_user: None,
-        }));
-    assert!(response_session.user_session().is_none());
+    let linked_user = auth_session.user_session().cloned();
+    let response_session = auth_session.with_external_login(Some(ExternalLoginCookie {
+        key,
+        pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
+        csrf_state: csrf_state.secret().to_owned(),
+        nonce: None,
+        target_url: query.redirect_url,
+        error_url: query.error_url,
+        remember_me: false,
+        linked_user,
+    }));
+    assert!(response_session.user_session().is_some());
     PageUtils::new(&state).redirect(response_session, Some(&authorize_url), None)
 }

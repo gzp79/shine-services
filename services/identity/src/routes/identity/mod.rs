@@ -3,9 +3,9 @@ mod api;
 use crate::app_state::AppState;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub struct IdentityController();
+pub struct IdentityRouter();
 
-impl IdentityController {
+impl IdentityRouter {
     pub fn new() -> Self {
         Self()
     }

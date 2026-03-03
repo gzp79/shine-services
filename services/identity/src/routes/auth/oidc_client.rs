@@ -1,4 +1,4 @@
-use crate::{app_config::OIDCConfig, controllers::auth::ExternalLoginError, repositories::identity::ExternalUserInfo};
+use crate::{app_config::OIDCConfig, repositories::identity::ExternalUserInfo, routes::auth::ExternalLoginError};
 use anyhow::Error as AnyError;
 use oauth2::{
     basic::BasicTokenType, ClientId, ClientSecret, EmptyExtraTokenFields, EndpointMaybeSet, EndpointNotSet,

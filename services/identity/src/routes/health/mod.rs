@@ -3,9 +3,9 @@ mod api;
 use crate::app_state::AppState;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub struct HealthController();
+pub struct HealthRouter();
 
-impl HealthController {
+impl HealthRouter {
     pub fn new() -> Self {
         Self()
     }

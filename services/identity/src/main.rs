@@ -1,14 +1,14 @@
 mod app_config;
 mod app_state;
-mod controllers;
 mod handlers;
 mod repositories;
+mod routes;
 mod services;
 
 use self::{
     app_config::AppConfig,
     app_state::AppState,
-    controllers::{auth, health::HealthController, identity},
+    routes::{auth, health::HealthRouter, identity},
 };
 use anyhow::Error as AnyError;
 use shine_infra::web::{WebAppConfig, WebApplication};
@@ -32,9 +32,9 @@ impl WebApplication for Application {
         &self,
         config: &WebAppConfig<Self::AppConfig>,
     ) -> Result<OpenApiRouter<Self::AppState>, AnyError> {
-        let health_controller = HealthController::new().into_router();
-        let identity_controller = identity::IdentityController::new().into_router();
-        let auth_controller = auth::AuthController::new(config).await?.into_router();
+        let health_controller = HealthRouter::new().into_router();
+        let identity_controller = identity::IdentityRouter::new().into_router();
+        let auth_controller = auth::AuthRouter::new(config).await?.into_router();
 
         Ok(health_controller.merge(identity_controller).merge(auth_controller))
     }

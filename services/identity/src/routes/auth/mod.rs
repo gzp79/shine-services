@@ -12,6 +12,9 @@ pub use self::oauth2_client::*;
 mod oidc_client;
 pub use self::oidc_client::*;
 
+// Phase 4 helper - currently placeholder
+mod auth_page_request;
+
 mod api;
 mod pages;
 
@@ -24,13 +27,13 @@ use utoipa_axum::routes;
 mod auth_error;
 use std::sync::Arc;
 
-pub struct AuthController {
+pub struct AuthRouter {
     auth_session_meta: AuthSessionMeta,
     oauth2_clients: Vec<OAuth2Client>,
     openid_clients: Vec<OIDCClient>,
 }
 
-impl AuthController {
+impl AuthRouter {
     pub async fn new(config: &WebAppConfig<AppConfig>) -> Result<Self, AnyError> {
         let config_auth = &config.feature.auth;
 
