@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "rust-docs": {
-      "command": "node",
-      "args": [".cursor/mcp_servers/rust_docs/rust_docs.js"]
-    }
-  }
-} 

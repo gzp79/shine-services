@@ -209,7 +209,7 @@ pub async fn delete_user_role(
 
 #[cfg(test)]
 mod test {
-    use rand::{distr::Alphanumeric, rng, Rng};
+    use rand::{distr::Alphanumeric, rng, RngExt};
 
     #[test]
     #[ignore = "This is not a test but a helper to generate master key"]

@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
-use rand::{rngs::OsRng, TryRngCore};
+use rand::{rngs::SysRng, TryRng};
 use ring::{
     aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM},
     hmac::{self, Key},
@@ -34,7 +34,7 @@ impl DataProtectionUtils {
 
     pub fn encrypt(&self, data: &str) -> Result<String, DataProtectionError> {
         let mut nonce_bytes = [0u8; NONCE_LEN];
-        OsRng
+        SysRng
             .try_fill_bytes(&mut nonce_bytes)
             .map_err(|_| DataProtectionError::EncryptionError)?;
         let nonce = Nonce::assume_unique_for_key(nonce_bytes);
@@ -80,7 +80,7 @@ mod tests {
 
     pub fn generate_key() -> Result<String, DataProtectionError> {
         let mut key = [0u8; 32];
-        OsRng
+        SysRng
             .try_fill_bytes(&mut key)
             .map_err(|_| DataProtectionError::EncryptionError)?;
         let encoded_key = B64.encode(&key);

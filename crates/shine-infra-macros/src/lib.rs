@@ -13,30 +13,20 @@ pub fn redis_json_value(input: TokenStream) -> TokenStream {
           where
             W: ?Sized + redis::RedisWrite,
           {
-            out.write_arg(&serde_json::to_vec(self).expect("JSON encoding failed"));
+            out.write_arg(&serde_json::to_vec(self).expect("JSON encoding failed for RedisJsonValue"));
           }
         }
 
         impl redis::FromRedisValue for #struct_type {
-          fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
-            match *v {
-              redis::Value::BulkString(ref bytes) => Ok(serde_json::from_slice(bytes).map_err(|err| {
-                (
-                  redis::ErrorKind::TypeError,
-                  "JSON deserialize failed",
-                  err.to_string(),
-                )
-              })?),
-              _ => Err(
-                (
-                  redis::ErrorKind::TypeError,
-                  "invalid response type for JSON",
-                )
-                  .into(),
-              ),
+          fn from_redis_value(v: redis::Value) -> Result<Self, redis::ParsingError> {
+            match v {
+              redis::Value::BulkString(ref bytes) => Ok(serde_json::from_slice(bytes).map_err(|err| err.to_string())?),
+              _ => Err("Invalid redis type for RedisJsonValue".into()),
             }
           }
         }
+
+        impl redis::ToSingleRedisArg for #struct_type {}
     };
 
     TokenStream::from(expanded)

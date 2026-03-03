@@ -161,32 +161,6 @@
       },
       "problemMatcher": ["$rustc"],
       "group": "build"
-    },
-    {
-      "label": "client: local",
-      "type": "shell",
-      "command": "cargo run -p shine-client --release ${input:client}",
-      "options": {
-        "cwd": "client",
-        "env": {
-          "RUST_LOG": "info,shine_game=debug,shine_forge=debug,shine_client=debug",
-          "RUST_BACKTRACE": "full"
-        }
-      },
-      "problemMatcher": ["$rustc"],
-      "group": "build"
-    },
-    {
-      "label": "client: local-wasm",
-      "type": "shell",
-      "command": "${workspaceFolder}/scripts/emulate_github_client_build.ps1",
-      "options": {
-        "env": {
-          "RUST_BACKTRACE": "full"
-        }
-      },
-      "problemMatcher": ["$rustc"],
-      "group": "build"
     }
   ],
   "inputs": [
@@ -196,13 +170,10 @@
       "description": "Select project",
       "options": [
         { "label": "all", "value": "" },
-        { "label": "shine-client", "value": "-p shine-client" },
         { "label": "shine-builder", "value": "-p shine-builder" },
         { "label": "shine-identity", "value": "-p shine-identity" },
         { "label": "shine-infra", "value": "-p shine-infra" },
         { "label": "shine-infra-macros", "value": "-p shine-infra-macros" },
-        { "label": "shine-game", "value": "-p shine-game" },
-        { "label": "shine-forge", "value": "-p shine-forge" },
         { "label": "shine-core", "value": "-p shine-core" },
         { "label": "shine-test", "value": "-p shine-test" },
         { "label": "shine-test-macros", "value": "-p shine-test-macros" }
@@ -216,36 +187,10 @@
       "options": [
         {
           "label": "all",
-          "value": "-p shine-client -p shine-game -p shine-forge -p shine-core -p shine-test"
+          "value": "-p shine-core -p shine-test"
         },
-        { "label": "shine-client", "value": "-p shine-client" },
-        { "label": "shine-game", "value": "-p shine-game" },
-        { "label": "shine-forge", "value": "-p shine-forge" },
         { "label": "shine-core", "value": "-p shine-core" },
         { "label": "shine-test", "value": "-p shine-test" }
-      ],
-      "default": "asset-service"
-    },
-    {
-      "type": "pickString",
-      "id": "client",
-      "description": "Select client example",
-      "options": [
-        { "label": "main", "value": "" },
-        { "label": "curve", "value": "--example curve" },
-        { "label": "camera_orbit", "value": "--example camera_orbit" },
-        { "label": "camera_follow", "value": "--example camera_follow" },
-        { "label": "camera_free", "value": "--example camera_free" },
-        { "label": "camera_look_at", "value": "--example camera_look_at" },
-        { "label": "input_drivers", "value": "--example input_drivers" },
-        { "label": "input_process", "value": "--example input_process" },
-        { "label": "input_gesture", "value": "--example input_gesture" },
-        {
-          "label": "input_multiplayer",
-          "value": "--example input_multiplayer"
-        },
-        { "label": "pinch_zoom", "value": "--example pinch_zoom" },
-        { "label": "asset", "value": "--example asset" }
       ],
       "default": "asset-service"
     },

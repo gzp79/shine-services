@@ -18,7 +18,7 @@ use axum_server::Handle;
 use regex::bytes::Regex;
 use serde::de::DeserializeOwned;
 use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, time::Duration as StdDuration};
-use tokio::{net::TcpListener, runtime::Runtime, signal};
+use tokio::{net::TcpListener, runtime::Runtime, signal, time::sleep};
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
@@ -84,9 +84,14 @@ async fn shutdown_signal() {
     }
 }
 
-async fn graceful_shutdown(handle: Handle) {
+async fn graceful_shutdown(handle: Handle<SocketAddr>) {
     shutdown_signal().await;
     handle.graceful_shutdown(Some(StdDuration::from_secs(10)));
+
+    loop {
+        sleep(StdDuration::from_secs(1)).await;
+        log::info!("alive connections: {}", handle.connection_count());
+    }
 }
 
 pub trait WebApplication {

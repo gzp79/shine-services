@@ -1,5 +1,5 @@
 use itertools::{assert_equal, Itertools};
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use shine_infra::db::{
     self,

@@ -11,7 +11,7 @@ use axum_extra::extract::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Utc};
-use rand::{rng, Rng};
+use rand::{rng, RngExt};
 use serde::{Deserialize, Serialize};
 use shine_infra::web::{
     session::{CheckedCurrentUser, CurrentUser, SessionCookie},

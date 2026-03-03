@@ -52,12 +52,11 @@ impl ConfigAsyncSource for AzureKeyvaultConfigSource {
 
         log::info!("Loading secrets from {} ...", self.keyvault_url);
         let origin = self.keyvault_url.to_string();
-        let mut stream = self
+        let mut pager = self
             .client
             .list_secret_properties(None)
-            .map_err(AzureKeyvaultConfigError)?
-            .into_stream();
-        while let Some(secret) = stream.try_next().await.map_err(AzureKeyvaultConfigError)? {
+            .map_err(AzureKeyvaultConfigError)?;
+        while let Some(secret) = pager.try_next().await.map_err(AzureKeyvaultConfigError)? {
             if let Some(id) = secret.id {
                 let key = id.split('/').next_back();
                 if let Some(key) = key {
@@ -68,8 +67,7 @@ impl ConfigAsyncSource for AzureKeyvaultConfigSource {
                         .get_secret(key, None)
                         .await
                         .map_err(AzureKeyvaultConfigError)?
-                        .into_body()
-                        .await
+                        .into_model()
                         .map_err(AzureKeyvaultConfigError)?;
                     if let (Some(attributes), Some(value)) = (secret.attributes, secret.value) {
                         if attributes.enabled.unwrap_or(false) {
