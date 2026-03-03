@@ -13,8 +13,8 @@ RUN rustc --version \
 WORKDIR /shine
 
 ENV ALL_BINS="services/identity services/builder"
-ENV ALL_LIBS="crates/shine-test-macros crates/shine-test crates/shine-core crates/shine-forge crates/shine-game crates/shine-infra-macros crates/shine-infra"
-ENV SERVICE_PROJECTS="shine-test-macros shine-test shine-core shine-forge shine-infra-macros shine-infra shine-identity shine-builder"
+ENV ALL_LIBS="crates/shine-test-macros crates/shine-test crates/shine-core crates/shine-infra-macros crates/shine-infra"
+ENV SERVICE_PROJECTS="shine-test-macros shine-test shine-core shine-infra-macros shine-infra shine-identity shine-builder"
 
 # copy all cargo.toml files
 COPY --parents ./**/Cargo.toml ./
