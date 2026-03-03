@@ -12,9 +12,9 @@ RUN rustc --version \
 # Create a dummy project to cache dependencies as a separate layer
 WORKDIR /shine
 
-ENV ALL_BINS="services/identity services/builder client"
-ENV ALL_LIBS="crates/shine-test-macros crates/shine-test crates/shine-core crates/shine-forge crates/shine-game crates/shine-infra-macros crates/shine-infra"
-ENV SERVICE_PROJECTS="shine-test-macros shine-test shine-core shine-forge shine-infra-macros shine-infra shine-identity shine-builder"
+ENV ALL_BINS="services/identity services/builder"
+ENV ALL_LIBS="crates/shine-test-macros crates/shine-test crates/shine-core crates/shine-infra-macros crates/shine-infra"
+ENV SERVICE_PROJECTS="shine-test-macros shine-test shine-core shine-infra-macros shine-infra shine-identity shine-builder"
 
 # copy all cargo.toml files
 COPY --parents ./**/Cargo.toml ./
@@ -39,14 +39,12 @@ RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \
 
 RUN rm -rf ./crates \
     && rm -rf ./services \
-    && rm -rf ./client \
     && rm -rf ./target/release/deps/libshine* \
     && rm -rf ./target/release/deps/shine*
 
 # Copy the actual source code
 COPY ./crates ./crates
 COPY ./services ./services
-COPY ./client ./client
 
 RUN cargo fmt --check
 
