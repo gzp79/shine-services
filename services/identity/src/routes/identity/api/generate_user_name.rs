@@ -26,8 +26,8 @@ pub async fn generate_user_name(
     Extension(problem_config): Extension<ProblemConfig>,
 ) -> Result<Json<GeneratedUserName>, ProblemResponse> {
     let name = state
-        .identity_service()
-        .generate_user_name()
+        .user_service()
+        .generate_name()
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 

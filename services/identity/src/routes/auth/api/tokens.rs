@@ -175,8 +175,8 @@ pub async fn get_token(
     ValidatedPath(params): ValidatedPath<TokenHash>,
 ) -> Result<Json<ActiveToken>, ProblemResponse> {
     let token = state
-        .identity_service()
-        .find_token_by_hash(&params.hash)
+        .token_service()
+        .find_by_hash(&params.hash)
         .await
         .map_err(|err| err.into_response(&problem_config))?
         .and_then(|t| {
@@ -218,8 +218,8 @@ pub async fn delete_token(
     ValidatedPath(params): ValidatedPath<TokenHash>,
 ) -> Result<(), ProblemResponse> {
     let token = state
-        .identity_service()
-        .delete_hashed_token_by_user(user.user_id, &params.hash)
+        .token_service()
+        .delete_by_user(user.user_id, &params.hash)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 
@@ -246,8 +246,8 @@ pub async fn list_tokens(
     user: CheckedCurrentUser,
 ) -> Result<Json<ActiveTokens>, ProblemResponse> {
     let tokens = state
-        .identity_service()
-        .list_all_tokens_by_user(&user.user_id)
+        .token_service()
+        .list_by_user(&user.user_id)
         .await
         .map_err(|err| err.into_response(&problem_config))?
         .into_iter()

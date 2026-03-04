@@ -62,8 +62,8 @@ pub async fn logout(
                 log::debug!("Removing all the (non-api-key) tokens for user {user_id}");
                 //remove all non-api-key tokens
                 if let Err(err) = state
-                    .identity_service()
-                    .delete_all_tokens_by_user(user_id, &[TokenKind::Access, TokenKind::SingleAccess])
+                    .token_service()
+                    .delete_all_by_user(user_id, &[TokenKind::Access, TokenKind::SingleAccess])
                     .await
                 {
                     return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
@@ -78,7 +78,7 @@ pub async fn logout(
                 log::debug!("Removing remember me token for user, if cookie is present {user_id}");
                 if let Some(token) = auth_session.access().map(|t| t.key.clone()) {
                     log::debug!("Removing token {token} for user {user_id}");
-                    if let Err(err) = state.identity_service().delete_token(TokenKind::Access, &token).await {
+                    if let Err(err) = state.token_service().delete(TokenKind::Access, &token).await {
                         return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
                     }
                 }

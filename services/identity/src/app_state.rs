@@ -7,8 +7,8 @@ use crate::{
         CaptchaValidator, DBPool,
     },
     services::{
-        IdentityService, IdentityTopic, LinkService, MailerService, RoleService, SessionService, SettingsService,
-        TokenService, TokenSettings, UserService,
+        IdentityTopic, LinkService, MailerService, RoleService, SessionService, SettingsService, TokenService,
+        TokenSettings, UserService,
     },
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -30,7 +30,6 @@ struct Inner {
     tera: Tera,
     db: DBPool,
     captcha_validator: CaptchaValidator,
-    identity_service: IdentityService<PgIdentityDb>,
     session_service: SessionService<RedisSessionDb>,
     email_sender: SmtpEmailSender,
     // Phase 2 services
@@ -95,21 +94,6 @@ impl AppState {
 
         let db_pool = DBPool::new(config_db).await?;
         let captcha_validator = CaptchaValidator::new(&config.service.captcha_secret);
-
-        let identity_service = {
-            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
-            let user_name_generator: Box<dyn IdEncoder> = match &config_user_name.id_encoder {
-                IdEncoderConfig::Optimus { prime, random } => Box::new(PrefixedIdEncoder::new(
-                    &config_user_name.base_name,
-                    OptimusIdEncoder::new(*prime, *random),
-                )),
-                IdEncoderConfig::Harsh { salt } => Box::new(PrefixedIdEncoder::new(
-                    &config_user_name.base_name,
-                    HarshIdEncoder::new(salt)?,
-                )),
-            };
-            IdentityService::new(identity_db, user_name_generator)
-        };
 
         let session_service = {
             let ttl_session = Duration::seconds(i64::try_from(config.service.session_ttl)?);
@@ -176,7 +160,6 @@ impl AppState {
             tera,
             db: db_pool,
             captcha_validator,
-            identity_service,
             session_service,
             email_sender,
             events,
@@ -207,10 +190,6 @@ impl AppState {
         &self.0.captcha_validator
     }
 
-    pub fn identity_service(&self) -> &IdentityService<impl IdentityDb> {
-        &self.0.identity_service
-    }
-
     pub fn session_service(&self) -> &SessionService<impl SessionDb> {
         &self.0.session_service
     }
@@ -228,19 +207,19 @@ impl AppState {
         &self.0.events
     }
 
-    pub fn user_service(&self) -> &UserService<impl IdentityDb> {
+    pub fn user_service(&self) -> &UserService<PgIdentityDb> {
         &self.0.user_service
     }
 
-    pub fn token_service(&self) -> &TokenService<impl IdentityDb> {
+    pub fn token_service(&self) -> &TokenService<PgIdentityDb> {
         &self.0.token_service
     }
 
-    pub fn role_service(&self) -> &RoleService<impl IdentityDb> {
+    pub fn role_service(&self) -> &RoleService<PgIdentityDb> {
         &self.0.role_service
     }
 
-    pub fn link_service(&self) -> &LinkService<impl IdentityDb> {
+    pub fn link_service(&self) -> &LinkService<PgIdentityDb> {
         &self.0.link_service
     }
 }

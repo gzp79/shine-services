@@ -62,7 +62,7 @@ pub async fn search_identity(
         .map_err(|err| err.into_response(&problem_config))?;
 
     let identities = state
-        .identity_service()
+        .user_service()
         .search(SearchIdentity {
             order: SearchIdentityOrder::UserId(None),
             count: query.count,

@@ -82,7 +82,7 @@ pub async fn add_user_role(
     }
 
     let roles = state
-        .identity_service()
+        .role_service()
         .add_role(path.user_id, &params.role)
         .await
         .map_err(|err| err.into_response(&problem_config))?
@@ -132,7 +132,7 @@ pub async fn get_user_roles(
     }
 
     let roles = state
-        .identity_service()
+        .role_service()
         .get_roles(path.user_id)
         .await
         .map_err(|err| err.into_response(&problem_config))?
@@ -194,7 +194,7 @@ pub async fn delete_user_role(
     }
 
     let roles = state
-        .identity_service()
+        .role_service()
         .delete_role(path.user_id, &params.role)
         .await
         .map_err(|err| err.into_response(&problem_config))?

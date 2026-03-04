@@ -1,7 +1,7 @@
 use crate::{
     app_state::AppState,
     repositories::identity::{ExternalUserInfo, Identity, IdentityDb, IdentityError},
-    services::IdentityService,
+    services::{LinkService, UserService},
 };
 use shine_infra::web::responses::Problem;
 use thiserror::Error as ThisError;
@@ -30,15 +30,16 @@ pub struct CreateUserHandler<'a, IDB>
 where
     IDB: IdentityDb,
 {
-    identity_service: &'a IdentityService<IDB>,
+    user_service: &'a UserService<IDB>,
+    link_service: &'a LinkService<IDB>,
 }
 
 impl<'a, IDB> CreateUserHandler<'a, IDB>
 where
     IDB: IdentityDb,
 {
-    pub fn new(identity_service: &'a IdentityService<IDB>) -> Self {
-        Self { identity_service }
+    pub fn new(user_service: &'a UserService<IDB>, link_service: &'a LinkService<IDB>) -> Self {
+        Self { user_service, link_service }
     }
 
     pub async fn create_user(
@@ -65,14 +66,19 @@ where
             let user_id = Uuid::new_v4();
             let user_name = match name.take() {
                 Some(name) => name,
-                None => self.identity_service.generate_user_name().await?,
+                None => self.user_service.generate_name().await?,
             };
 
-            match self
-                .identity_service
-                .create_user(user_id, &user_name, email, external_user)
-                .await
-            {
+            // Create user with or without external link
+            let result = if let Some(ext_user) = external_user {
+                self.user_service
+                    .create_linked_user(user_id, &user_name, ext_user)
+                    .await
+            } else {
+                self.user_service.create(user_id, &user_name, email).await
+            };
+
+            match result {
                 Ok(identity) => return Ok(identity),
                 Err(IdentityError::NameConflict) => continue,
                 Err(IdentityError::UserIdConflict) => continue,
@@ -84,6 +90,6 @@ where
 
 impl AppState {
     pub fn create_user_service(&self) -> CreateUserHandler<impl IdentityDb> {
-        CreateUserHandler::new(self.identity_service())
+        CreateUserHandler::new(self.user_service(), self.link_service())
     }
 }

@@ -1,15 +1,12 @@
 use crate::{
     app_state::AppState,
-    handlers::{CreateUserError, CreateUserHandler},
     repositories::{
         identity::{Identity, IdentityDb, IdentityError, TokenKind},
         mailer::{EmailSender, EmailSenderError},
     },
-    services::{hash_email, IdentityService, MailerService, SettingsService},
+    services::{hash_email, CreateUserError, MailerService, SettingsService, TokenError, TokenService, UserService},
 };
-use ring::rand::SystemRandom;
 use shine_infra::{
-    crypto::random,
     language::Language,
     web::{extracts::SiteInfo, responses::Problem},
 };
@@ -18,8 +15,8 @@ use url::Url;
 
 #[derive(Debug, ThisError)]
 pub enum LoginEmailError {
-    #[error("Retry limit reached")]
-    RetryLimitReached,
+    #[error(transparent)]
+    TokenError(#[from] TokenError),
 
     #[error(transparent)]
     IdentityError(#[from] IdentityError),
@@ -32,6 +29,7 @@ pub enum LoginEmailError {
 impl From<LoginEmailError> for Problem {
     fn from(err: LoginEmailError) -> Self {
         match err {
+            LoginEmailError::TokenError(TokenError::IdentityError(err)) => err.into(),
             LoginEmailError::IdentityError(err) => err.into(),
 
             err => Problem::internal_error()
@@ -46,9 +44,9 @@ where
     IDB: IdentityDb,
     EMS: EmailSender,
 {
-    random: &'a SystemRandom,
     settings_service: &'a SettingsService,
-    identity_service: &'a IdentityService<IDB>,
+    user_service: &'a UserService<IDB>,
+    token_service: &'a TokenService<IDB>,
     mailer_service: MailerService<'a, EMS>,
 }
 
@@ -58,14 +56,14 @@ where
     EMS: EmailSender,
 {
     pub fn new(
-        random: &'a SystemRandom,
-        identity_service: &'a IdentityService<IDB>,
+        user_service: &'a UserService<IDB>,
+        token_service: &'a TokenService<IDB>,
         settings_service: &'a SettingsService,
         mailer_service: MailerService<'a, EMS>,
     ) -> Self {
         Self {
-            random,
-            identity_service,
+            user_service,
+            token_service,
             settings_service,
             mailer_service,
         }
@@ -79,19 +77,14 @@ where
         site_info: &SiteInfo,
         lang: Option<Language>,
     ) -> Result<Identity, LoginEmailError> {
-        const MAX_RETRY_COUNT: usize = 10;
-
         let (is_registration, identity) = {
-            match CreateUserHandler::new(self.identity_service)
-                .create_user(None, None, Some(email))
-                .await
-            {
+            match self.user_service.create_with_retry(None, Some(email)).await {
                 Ok(identity) => {
                     log::debug!("New user created through email flow: {identity:#?}");
                     (true, identity)
                 }
                 Err(CreateUserError::IdentityError(IdentityError::EmailConflict)) => {
-                    match self.identity_service.find_by_email(email).await? {
+                    match self.user_service.find_by_email(email).await? {
                         Some(identity) => {
                             log::debug!("User found by email: {identity:#?}");
                             (false, identity)
@@ -110,36 +103,17 @@ where
             self.settings_service.token.ttl_access_token
         };
 
-        let mut retry_count = 0;
-        let token = loop {
-            log::debug!(
-                "Creating new EmailAccess token for user {}, retry: {retry_count:#?}",
-                identity.id
-            );
-            if retry_count > MAX_RETRY_COUNT {
-                return Err(LoginEmailError::RetryLimitReached);
-            }
-            retry_count += 1;
-
-            let token = random::hex_16(self.random);
-            match self
-                .identity_service
-                .add_token(
-                    identity.id,
-                    TokenKind::EmailAccess,
-                    &token,
-                    &time_to_live,
-                    None,
-                    Some(email),
-                    site_info,
-                )
-                .await
-            {
-                Ok(_) => break token,
-                Err(IdentityError::TokenConflict) => continue,
-                Err(err) => return Err(LoginEmailError::IdentityError(err)),
-            }
-        };
+        let (token, _token_info) = self
+            .token_service
+            .create_with_retry(
+                identity.id,
+                TokenKind::EmailAccess,
+                &time_to_live,
+                None,
+                Some(email),
+                site_info,
+            )
+            .await?;
 
         let mut link_url = self
             .settings_service
@@ -181,8 +155,8 @@ where
 impl AppState {
     pub fn login_email_handler(&self) -> LoginEmailHandler<impl IdentityDb, impl EmailSender> {
         LoginEmailHandler::new(
-            self.random(),
-            self.identity_service(),
+            self.user_service(),
+            self.token_service(),
             self.settings(),
             self.mailer_service(),
         )

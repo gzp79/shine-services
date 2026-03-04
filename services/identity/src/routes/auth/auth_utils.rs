@@ -46,7 +46,7 @@ impl<'a> AuthUtils<'a> {
         let user = auth_session.user_session().unwrap();
         match self
             .state
-            .identity_service()
+            .link_service()
             .add_external_link(user.user_id, external_user)
             .await
         {
@@ -86,7 +86,7 @@ impl<'a> AuthUtils<'a> {
         log::debug!("{external_user:#?}");
         let identity = match self
             .state
-            .identity_service()
+            .link_service()
             .find_by_external_link(external_user.provider.as_str(), external_user.provider_id.as_str())
             .await
         {

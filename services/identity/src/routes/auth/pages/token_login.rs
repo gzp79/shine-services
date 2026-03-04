@@ -76,7 +76,7 @@ async fn complete_email_login(
 
     log::info!("Updating email verification for identity {}.", identity.id);
     let identity = match state
-        .identity_service()
+        .user_service()
         .update(identity.id, None, Some((confirmed_email, true)))
         .await
     {
@@ -117,7 +117,7 @@ async fn authenticate_with_query_token(
             .expect("It shall be called only if there is a token in the query");
 
         // Any token provided as a query token is removed from the DB as it's been used in a non-secure way.
-        match state.identity_service().take_token(TokenKind::all(), token).await {
+        match state.token_service().take(TokenKind::all(), token).await {
             Ok(Some(info)) => info,
             Ok(None) => {
                 log::debug!("Expired single access token ...");
@@ -197,11 +197,7 @@ async fn authenticate_with_header_token(
 
     // trying as a single access token
     //  when found revoke even if the login input location is not valid as it is a single use token
-    match state
-        .identity_service()
-        .take_token(TokenKind::all_single_access(), token)
-        .await
-    {
+    match state.token_service().take(TokenKind::all_single_access(), token).await {
         Ok(Some(_)) => {
             log::debug!("Single access token used in the Persistent token flow, revoking it ...");
             return Err(AuthenticationFailure {
@@ -220,11 +216,7 @@ async fn authenticate_with_header_token(
 
     // now trying it as a multi-use token
     let (identity, token_info) = {
-        match state
-            .identity_service()
-            .test_token(TokenKind::all_multi_access(), token)
-            .await
-        {
+        match state.token_service().test(TokenKind::all_multi_access(), token).await {
             Ok(Some(info)) => info,
             Ok(None) => {
                 log::debug!("Invalid or expired Persistent token ...");
@@ -307,7 +299,7 @@ async fn authenticate_with_cookie_token(
     // cookies are sent securely and any non-access token wil be revoked later in the flow
 
     let (identity, token_info) = {
-        match state.identity_service().test_token(TokenKind::all(), &token).await {
+        match state.token_service().test(TokenKind::all(), &token).await {
             Ok(Some(info)) => info,
             Ok(None) => {
                 log::debug!("Invalid or expired Access token ...");
@@ -414,7 +406,7 @@ async fn authenticate_with_refresh_session(
     assert!(auth_session.user_session().is_some());
 
     let user_id = auth_session.user_session().as_ref().unwrap().user_id;
-    let identity = match state.identity_service().find_by_id(user_id).await {
+    let identity = match state.user_service().find_by_id(user_id).await {
         Ok(Some(info)) => info,
         Ok(None) => {
             return Err(AuthenticationFailure {

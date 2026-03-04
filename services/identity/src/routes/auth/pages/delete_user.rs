@@ -80,7 +80,7 @@ pub async fn delete_user(
         Ok(Some(_)) => {}
     };
 
-    if let Err(err) = state.identity_service().cascaded_delete(user_id).await {
+    if let Err(err) = state.user_service().delete(user_id).await {
         return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
     }
 

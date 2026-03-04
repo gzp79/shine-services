@@ -56,7 +56,7 @@ pub async fn list_external_links(
     user: CheckedCurrentUser,
 ) -> Result<Json<LinkedExternalProviders>, ProblemResponse> {
     let links = state
-        .identity_service()
+        .link_service()
         .list_external_links_by_user(user.user_id)
         .await
         .map_err(|err| err.into_response(&problem_config))?
@@ -91,7 +91,7 @@ pub async fn delete_external_link(
     ValidatedPath(params): ValidatedPath<ProviderSelectPathParam>,
 ) -> Result<(), ProblemResponse> {
     let link = state
-        .identity_service()
+        .link_service()
         .delete_extern_link(user.user_id, &params.provider, &params.provider_id)
         .await
         .map_err(|err| err.into_response(&problem_config))?;

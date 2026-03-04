@@ -4,16 +4,19 @@ use crate::{
         identity::{Identity, IdentityDb, IdentityError, TokenKind},
         session::{SessionDb, SessionError},
     },
-    services::{IdentityService, SessionService, UserEvent, UserLinkEvent},
+    services::{
+        IdentityTopic, LinkService, RoleService, SessionService, TokenService, UserEvent, UserLinkEvent, UserService,
+    },
 };
 use shine_infra::{
-    sync::EventHandler,
+    sync::{EventHandler, TopicBus},
     web::{
         extracts::{ClientFingerprint, SiteInfo},
         responses::Problem,
         session::{CurrentUser, SessionKey},
     },
 };
+use std::sync::Arc;
 use thiserror::Error as ThisError;
 use uuid::Uuid;
 
@@ -45,7 +48,10 @@ where
     IDB: IdentityDb,
     SDB: SessionDb,
 {
-    identity_service: &'a IdentityService<IDB>,
+    user_service: &'a UserService<IDB>,
+    role_service: &'a RoleService<IDB>,
+    link_service: &'a LinkService<IDB>,
+    token_service: &'a TokenService<IDB>,
     session_service: &'a SessionService<SDB>,
 }
 
@@ -58,14 +64,14 @@ where
         // get the version first as newer role is fine, but a deprecated role set is not ok
         // this order ensures the role and other data are at least as fresh as the version
 
-        let identity = match self.identity_service.find_by_id(user_id).await? {
+        let identity = match self.user_service.find_by_id(user_id).await? {
             Some(identity) => identity,
             None => return Ok(None),
         };
 
-        let is_linked = self.identity_service.is_linked(user_id).await?;
+        let is_linked = self.link_service.is_linked(user_id).await?;
 
-        let roles = match self.identity_service.get_roles(user_id).await? {
+        let roles = match self.role_service.get_roles(user_id).await? {
             Some(roles) => roles,
             None => return Ok(None),
         };
@@ -79,8 +85,8 @@ where
         fingerprint: &ClientFingerprint,
         site_info: &SiteInfo,
     ) -> Result<Option<CurrentUser>, UserInfoError> {
-        let is_linked = self.identity_service.is_linked(identity.id).await?;
-        let roles = match self.identity_service.get_roles(identity.id).await? {
+        let is_linked = self.link_service.is_linked(identity.id).await?;
+        let roles = match self.role_service.get_roles(identity.id).await? {
             Some(roles) => roles,
             None => return Ok(None),
         };
@@ -137,7 +143,7 @@ where
     }
 
     pub async fn revoke_access(&self, kind: TokenKind, token: &str) {
-        if let Err(err) = self.identity_service.delete_token(kind, token).await {
+        if let Err(err) = self.token_service.delete(kind, token).await {
             log::error!("Failed to revoke ({kind:?}) token ({token}): {err}");
         }
     }
@@ -146,7 +152,10 @@ where
 impl AppState {
     pub fn user_info_handler(&self) -> UserInfoHandler<impl IdentityDb, impl SessionDb> {
         UserInfoHandler {
-            identity_service: self.identity_service(),
+            user_service: self.user_service(),
+            role_service: self.role_service(),
+            link_service: self.link_service(),
+            token_service: self.token_service(),
             session_service: self.session_service(),
         }
     }
@@ -169,7 +178,7 @@ impl AppState {
                 }
             }
         }
-        self.identity_service().subscribe(OnUserEvent(self.clone())).await;
+        self.events().subscribe::<UserEvent, _>(OnUserEvent(self.clone())).await;
 
         #[derive(Clone)]
         pub struct OnUserLinkEvent(AppState);
@@ -186,6 +195,8 @@ impl AppState {
                 }
             }
         }
-        self.identity_service().subscribe(OnUserLinkEvent(self.clone())).await;
+        self.events()
+            .subscribe::<UserLinkEvent, _>(OnUserLinkEvent(self.clone()))
+            .await;
     }
 }
