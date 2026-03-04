@@ -8,3 +8,6 @@ mod email_token_handler;
 // Phase 3 handler - authentication orchestration
 mod auth_handler;
 pub use self::auth_handler::*;
+
+mod external_login_handler;
+pub use external_login_handler::*;
