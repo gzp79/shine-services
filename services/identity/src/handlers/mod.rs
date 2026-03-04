@@ -5,5 +5,6 @@ pub use self::login_email_handler::*;
 mod email_token_handler;
 //pub use self::email_token_handler::*;
 
-// Phase 3 handler - currently placeholder
+// Phase 3 handler - authentication orchestration
 mod auth_handler;
+pub use self::auth_handler::*;
