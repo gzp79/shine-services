@@ -476,4 +476,72 @@ impl<'a> AuthHandler<'a> {
             rotated_token: None,
         })
     }
+
+    /// Authenticate user using multiple methods
+    ///
+    /// Tries authentication methods in priority order:
+    /// 1. Query token (single-use)
+    /// 2. Authorization header (persistent token)
+    /// 3. Cookie token (access token with rotation)
+    /// 4. Session refresh (existing session, no token)
+    pub async fn authenticate_user(
+        &self,
+        state: &AppState,
+        token: Option<&str>,
+        remember_me: bool,
+        captcha: Option<&str>,
+        auth_header: Result<
+            axum_extra::TypedHeader<axum_extra::headers::Authorization<axum_extra::headers::authorization::Bearer>>,
+            axum_extra::typed_header::TypedHeaderRejection,
+        >,
+        auth_session: AuthSession,
+        fingerprint: &ClientFingerprint,
+    ) -> Result<AuthenticationSuccess, AuthenticationFailure> {
+        use crate::routes::auth::AuthError;
+        use axum_extra::typed_header::TypedHeaderRejectionReason;
+
+        // Priority 1: Query token
+        if let Some(token) = token {
+            return self
+                .authenticate_with_query_token(state, token, remember_me, captcha, fingerprint, auth_session)
+                .await;
+        }
+
+        // Priority 2: Authorization header
+        let auth_header = match auth_header {
+            Ok(auth_header) => Some(auth_header),
+            Err(err) if matches!(err.reason(), TypedHeaderRejectionReason::Missing) => None,
+            Err(_) => {
+                return Err(AuthenticationFailure {
+                    error: AuthError::InvalidHeader,
+                    auth_session,
+                });
+            }
+        };
+        if let Some(auth_header) = auth_header {
+            return self
+                .authenticate_with_header_token(state, auth_header, remember_me, fingerprint, auth_session)
+                .await;
+        }
+
+        // Priority 3: Cookie token
+        if auth_session.access().is_some() {
+            return self
+                .authenticate_with_cookie_token(state, fingerprint, auth_session)
+                .await;
+        }
+
+        // Priority 4: Session refresh
+        if auth_session.user_session().is_some() {
+            return self
+                .authenticate_with_refresh_session(state, remember_me, auth_session)
+                .await;
+        }
+
+        // No authentication method available
+        Err(AuthenticationFailure {
+            error: AuthError::LoginRequired,
+            auth_session,
+        })
+    }
 }
