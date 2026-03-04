@@ -1,13 +1,13 @@
 use crate::{
     app_state::AppState,
-    handlers::{AuthHandler, AuthenticationFailure, AuthenticationSuccess},
+    handlers::{AuthHandler, AuthenticationSuccess, LoginTokenError},
     repositories::identity::{IdentityError, TokenKind},
-    routes::auth::{AuthError, AuthPage, AuthPageRequest, AuthSession, PageUtils, TokenCookie},
+    routes::auth::{AuthPage, AuthPageRequest, AuthSession, PageUtils, TokenCookie},
 };
 use axum::extract::State;
 use axum_extra::{
     headers::{authorization::Bearer, Authorization},
-    typed_header::{TypedHeaderRejection, TypedHeaderRejectionReason},
+    typed_header::TypedHeaderRejection,
     TypedHeader,
 };
 use serde::Deserialize;
@@ -27,82 +27,6 @@ pub struct QueryParams {
     redirect_url: Option<Url>,
     error_url: Option<Url>,
     captcha: Option<String>,
-}
-
-/// Login flow in priority:
-/// - Check token in the query
-///   - Headers, cookies and captcha are ignored
-///   - Only tokens with single use (SingleAccess, EmailVerify, EmailChange) are allowed
-///   - Any other token are rejected and revoked as query parameters are not secure and can be easily copied.
-/// - Check authorization header
-///   - Query is empty, cookies and captcha are ignored
-///   - Only the Persistent token are allowed
-///   - Any single access tokens are rejected and revoked
-///   - Access token are rejected and revoked as they are exposed only as cookies thus it is a sign of a security issue.
-/// - Check the token cookie
-///   - Query and headers are empty, captcha is used for email access
-///   - Only the Access token is allowed
-///   - Any other token are rejected and revoked as cookie should store only Access token, thus it is a sign of a security issue.
-async fn authenticate(
-    state: &AppState,
-    query: &QueryParams,
-    auth_header: Result<TypedHeader<Authorization<Bearer>>, TypedHeaderRejection>,
-    auth_session: AuthSession,
-    fingerprint: &ClientFingerprint,
-) -> Result<AuthenticationSuccess, AuthenticationFailure> {
-    let handler = AuthHandler::new(state);
-
-    if let Some(ref token) = query.token {
-        return handler
-            .authenticate_with_query_token(
-                state,
-                token,
-                query.remember_me.unwrap_or(false),
-                query.captcha.as_deref(),
-                fingerprint,
-                auth_session,
-            )
-            .await;
-    }
-
-    let auth_header = match auth_header {
-        Ok(auth_header) => Some(auth_header),
-        Err(err) if matches!(err.reason(), TypedHeaderRejectionReason::Missing) => None,
-        Err(_) => {
-            return Err(AuthenticationFailure {
-                error: AuthError::InvalidHeader,
-                auth_session,
-            });
-        }
-    };
-    if let Some(auth_header) = auth_header {
-        return handler
-            .authenticate_with_header_token(
-                state,
-                auth_header,
-                query.remember_me.unwrap_or(false),
-                fingerprint,
-                auth_session,
-            )
-            .await;
-    }
-
-    if auth_session.access().is_some() {
-        return handler
-            .authenticate_with_cookie_token(state, fingerprint, auth_session)
-            .await;
-    }
-
-    if auth_session.user_session().is_some() {
-        return handler
-            .authenticate_with_refresh_session(state, query.remember_me.unwrap_or(false), auth_session)
-            .await;
-    }
-
-    Err(AuthenticationFailure {
-        error: AuthError::LoginRequired,
-        auth_session,
-    })
 }
 
 /// Login with token using query, auth and cookie as sources.
@@ -149,7 +73,18 @@ pub async fn token_login(
         create_access_token,
         auth_session,
         rotated_token,
-    } = match authenticate(&state, &query, auth_header, auth_session, &fingerprint).await {
+    } = match AuthHandler::new(&state)
+        .authenticate_user(
+            &state,
+            query.token.as_deref(),
+            query.remember_me.unwrap_or(false),
+            query.captcha.as_deref(),
+            auth_header,
+            auth_session,
+            &fingerprint,
+        )
+        .await
+    {
         Ok(success) => success,
         Err(failure) => {
             return PageUtils::new(&state).error(failure.auth_session, failure.error, query.error_url.as_ref());
@@ -166,27 +101,30 @@ pub async fn token_login(
     let auth_session = if create_access_token {
         log::debug!("Creating access token for identity: {identity:#?}");
         // create a new access token
-        let user_token = match state
-            .login_token_handler()
-            .create_user_token(
+        let (token, token_info) = match state
+            .token_service()
+            .create_with_retry(
                 identity.id,
                 TokenKind::Access,
                 &state.settings().token.ttl_access_token,
                 Some(&fingerprint),
+                None,
                 &site_info,
             )
             .await
         {
-            Ok(user_token) => user_token,
-            Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
+            Ok(result) => result,
+            Err(err) => {
+                return PageUtils::new(&state).error(auth_session, LoginTokenError::from(err), query.error_url.as_ref())
+            }
         };
 
         // preserve the old token in case client does not acknowledge the new one
         auth_session
             .with_access(Some(TokenCookie {
-                user_id: user_token.user_id,
-                key: user_token.token,
-                expire_at: user_token.expire_at,
+                user_id: identity.id,
+                key: token,
+                expire_at: token_info.expire_at,
                 revoked_token: rotated_token,
             }))
             .with_session(None)
