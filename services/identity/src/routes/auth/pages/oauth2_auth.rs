@@ -1,8 +1,8 @@
 use crate::{
     app_state::AppState,
+    handlers::ExternalLoginHandler,
     routes::auth::{
-        AuthPage, AuthPageRequest, AuthSession, AuthUtils, ExternalLoginCookie, ExternalLoginError, OAuth2Client,
-        PageUtils,
+        AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OAuth2Client, PageUtils,
     },
 };
 use axum::{extract::State, Extension};
@@ -126,7 +126,8 @@ pub async fn oauth2_auth(
 
     // 6. Return response
     if linked_user.is_some() {
-        AuthUtils::new(&state)
+        state
+            .external_login_handler()
             .complete_external_link(
                 req.into_auth_session(),
                 &external_user,
@@ -135,7 +136,8 @@ pub async fn oauth2_auth(
             )
             .await
     } else {
-        AuthUtils::new(&state)
+        state
+            .external_login_handler()
             .complete_external_login(
                 req.into_auth_session(),
                 fingerprint,
