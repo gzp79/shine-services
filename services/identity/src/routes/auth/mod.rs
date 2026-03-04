@@ -5,8 +5,6 @@ mod auth_page;
 pub use self::auth_page::*;
 mod page_utils;
 pub use self::page_utils::*;
-mod auth_utils;
-pub use self::auth_utils::*;
 mod oauth2_client;
 pub use self::oauth2_client::*;
 mod oidc_client;
