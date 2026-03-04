@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{AuthPage, AuthSession, AuthUtils, PageUtils},
+    routes::auth::{AuthPage, AuthSession, PageUtils},
 };
 use shine_infra::web::{
     extracts::{InputError, ValidatedQuery},
@@ -32,20 +32,54 @@ impl<'a> AuthPageRequest<'a> {
         }
     }
 
+    /// Validate a single redirect URL against allowed patterns
+    /// Returns None on success, Some(AuthPage) for early return on error
+    pub fn validate_redirect_url(&self, property: &'static str, redirect_url: &Url) -> Option<AuthPage> {
+        use shine_infra::web::extracts::ValidationErrorEx;
+        use validator::ValidationError;
+
+        if self
+            .state
+            .settings()
+            .allowed_redirect_urls
+            .iter()
+            .any(|r| r.is_match(redirect_url.as_str()))
+        {
+            None
+        } else {
+            let err = ValidationError::new("invalid-redirect-url")
+                .with_message("Redirect URL is not allowed".into())
+                .into_constraint_error(property);
+            Some(PageUtils::new(self.state).error(self.auth_session.clone(), err, None))
+        }
+    }
+
     /// Validate redirect URLs (both error_url and redirect_url)
     /// Returns None on success, Some(AuthPage) for early return on error
     pub fn validate_redirect_urls(&self, redirect_url: Option<&Url>, error_url: Option<&Url>) -> Option<AuthPage> {
+        use shine_infra::web::extracts::ValidationErrorEx;
+        use validator::ValidationError;
+
         // Validate error_url first (no error_url to report errors to)
         if let Some(error_url) = error_url {
-            if let Err(err) = AuthUtils::new(self.state).validate_redirect_url("errorUrl", error_url) {
-                return Some(PageUtils::new(self.state).error(self.auth_session.clone(), err, None));
+            if let Some(err_page) = self.validate_redirect_url("errorUrl", error_url) {
+                return Some(err_page);
             }
         }
 
         // Validate redirect_url (can report errors to error_url)
         if let Some(redirect_url) = redirect_url {
-            if let Err(err) = AuthUtils::new(self.state).validate_redirect_url("redirectUrl", redirect_url) {
-                return Some(PageUtils::new(self.state).error(self.auth_session.clone(), err, error_url));
+            if let Some(_err_page) = self.validate_redirect_url("redirectUrl", redirect_url) {
+                // Modify error page to include error_url for reporting
+                return Some(
+                    PageUtils::new(self.state).error(
+                        self.auth_session.clone(),
+                        ValidationError::new("invalid-redirect-url")
+                            .with_message("Redirect URL is not allowed".into())
+                            .into_constraint_error("redirectUrl"),
+                        error_url,
+                    ),
+                );
             }
         }
 
