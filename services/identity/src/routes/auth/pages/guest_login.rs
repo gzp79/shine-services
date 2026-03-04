@@ -77,26 +77,30 @@ pub async fn guest_login(
 
     // Create access token
     let user_access = {
-        let user_token = match req
+        let (token, token_info) = match req
             .state()
-            .login_token_handler()
-            .create_user_token(
+            .token_service()
+            .create_with_retry(
                 identity.id,
                 TokenKind::Access,
                 &req.state().settings().token.ttl_access_token,
                 Some(&fingerprint),
+                None,
                 &site_info,
             )
             .await
         {
-            Ok(user_token) => user_token,
-            Err(err) => return req.error_page(err, query.error_url.as_ref()),
+            Ok(result) => result,
+            Err(err) => {
+                use crate::handlers::LoginTokenError;
+                return req.error_page(LoginTokenError::from(err), query.error_url.as_ref());
+            }
         };
 
         TokenCookie {
-            user_id: user_token.user_id,
-            key: user_token.token,
-            expire_at: user_token.expire_at,
+            user_id: token_info.user_id,
+            key: token,
+            expire_at: token_info.expire_at,
             revoked_token: None,
         }
     };
