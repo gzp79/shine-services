@@ -1,7 +1,8 @@
 use crate::{
     app_state::AppState,
+    handlers::ExternalLoginHandler,
     routes::auth::{
-        AuthPage, AuthPageRequest, AuthSession, AuthUtils, ExternalLoginCookie, ExternalLoginError, OIDCClient,
+        AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient,
         OIDCUserInfoExtractor, PageUtils,
     },
 };
@@ -132,7 +133,8 @@ pub async fn oidc_auth(
 
     // 6. Return response
     if linked_user.is_some() {
-        AuthUtils::new(&state)
+        state
+            .external_login_handler()
             .complete_external_link(
                 req.into_auth_session(),
                 &external_user,
@@ -141,7 +143,8 @@ pub async fn oidc_auth(
             )
             .await
     } else {
-        AuthUtils::new(&state)
+        state
+            .external_login_handler()
             .complete_external_login(
                 req.into_auth_session(),
                 fingerprint,
