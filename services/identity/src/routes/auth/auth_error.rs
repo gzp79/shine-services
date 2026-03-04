@@ -1,6 +1,8 @@
 use crate::{
-    handlers::{CreateUserError, LoginEmailError, LoginTokenError, UserInfoError},
+    app_state::UserInfoError,
+    handlers::{LoginEmailError, LoginTokenError},
     repositories::{identity::IdentityError, session::SessionError, CaptchaError},
+    services::CreateUserError,
 };
 use reqwest::StatusCode;
 use serde_json::json;

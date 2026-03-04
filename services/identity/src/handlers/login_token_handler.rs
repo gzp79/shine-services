@@ -79,7 +79,7 @@ where
 }
 
 impl AppState {
-    pub fn login_token_handler(&self) -> LoginTokenHandler<impl IdentityDb> {
+    pub fn login_token_handler(&self) -> LoginTokenHandler<'_, impl IdentityDb> {
         LoginTokenHandler::new(self.token_service())
     }
 }

@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{AuthError, AuthPage, AuthSession, AuthUtils, ExternalLoginCookie, OAuth2Client, PageUtils},
+    routes::auth::{AuthError, AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, OAuth2Client, PageUtils},
 };
 use axum::{extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};
@@ -42,27 +42,28 @@ pub async fn oauth2_link(
     auth_session: AuthSession,
     query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
 ) -> AuthPage {
-    let query = match query {
-        Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+    // 1. Create request helper
+    let req = AuthPageRequest::new(&state, auth_session);
+
+    // 2. Validate query
+    let query = match req.validate_query(query) {
+        Ok(q) => q,
+        Err(page) => return page,
     };
-    if let Some(error_url) = &query.error_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None);
-        }
-    }
-    if let Some(redirect_url) = &query.redirect_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-        }
+
+    // 3. Validate redirect URLs
+    if let Some(page) = req.validate_redirect_urls(query.redirect_url.as_ref(), query.error_url.as_ref()) {
+        return page;
     }
 
     log::debug!("Query: {query:#?}");
 
-    if auth_session.user_session().is_none() {
-        return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
+    // 4. Verify user is logged in
+    if req.auth_session().user_session().is_none() {
+        return req.error_page(AuthError::LoginRequired, query.error_url.as_ref());
     }
 
+    // 5. Business logic - setup OAuth2 link flow
     let key = random::hex_16(state.random());
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
     let (authorize_url, csrf_state) = client
@@ -72,8 +73,8 @@ pub async fn oauth2_link(
         .set_pkce_challenge(pkce_code_challenge)
         .url();
 
-    let linked_user = auth_session.user_session().cloned();
-    let response_session = auth_session.with_external_login(Some(ExternalLoginCookie {
+    let linked_user = req.auth_session().user_session().cloned();
+    let response_session = req.into_auth_session().with_external_login(Some(ExternalLoginCookie {
         key,
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
@@ -83,6 +84,8 @@ pub async fn oauth2_link(
         remember_me: false,
         linked_user,
     }));
+
+    // 6. Return response
     assert!(response_session.user_session().is_some());
     PageUtils::new(&state).redirect(response_session, Some(&authorize_url), None)
 }

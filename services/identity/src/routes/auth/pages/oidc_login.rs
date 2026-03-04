@@ -1,6 +1,8 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{AuthPage, AuthSession, AuthUtils, ExternalLoginCookie, ExternalLoginError, OIDCClient, PageUtils},
+    routes::auth::{
+        AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient, PageUtils,
+    },
 };
 use axum::{extract::State, Extension};
 use chrono::Duration;
@@ -49,32 +51,35 @@ pub async fn oidc_login(
     auth_session: AuthSession,
     query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
 ) -> AuthPage {
-    let query = match query {
-        Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+    // 1. Create request helper
+    let req = AuthPageRequest::new(&state, auth_session);
+
+    // 2. Validate query
+    let query = match req.validate_query(query) {
+        Ok(q) => q,
+        Err(page) => return page,
     };
-    if let Some(error_url) = &query.error_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None);
-        }
-    }
-    if let Some(redirect_url) = &query.redirect_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-        }
+
+    // 3. Validate redirect URLs
+    if let Some(page) = req.validate_redirect_urls(query.redirect_url.as_ref(), query.error_url.as_ref()) {
+        return page;
     }
 
     log::debug!("Query: {query:#?}");
 
-    if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
-        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
+    // 4. Validate captcha
+    if let Some(page) = req
+        .validate_captcha(query.captcha.as_deref(), query.error_url.as_ref())
+        .await
+    {
+        return page;
     }
 
+    // 5. Business logic - setup OIDC flow
     let core_client = match client.client().await {
         Ok(client) => client,
         Err(err) => {
-            return PageUtils::new(&state).error(
-                auth_session,
+            return req.error_page(
                 ExternalLoginError::OIDCDiscovery(format!("{err:#?}")),
                 query.error_url.as_ref(),
             )
@@ -95,7 +100,8 @@ pub async fn oidc_login(
         .add_prompt(CoreAuthPrompt::Login)
         .url();
 
-    let response_session = auth_session
+    let response_session = req
+        .into_auth_session()
         .revoke_session(&state)
         .await
         .revoke_access(&state)
@@ -110,6 +116,8 @@ pub async fn oidc_login(
             remember_me: query.remember_me.unwrap_or(false),
             linked_user: None,
         }));
+
+    // 6. Return response
     assert!(response_session.user_session().is_none());
     PageUtils::new(&state).redirect(response_session, Some(&authorize_url), None)
 }

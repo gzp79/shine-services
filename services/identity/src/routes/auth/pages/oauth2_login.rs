@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{AuthPage, AuthSession, AuthUtils, ExternalLoginCookie, OAuth2Client, PageUtils},
+    routes::auth::{AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, OAuth2Client, PageUtils},
 };
 use axum::{extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};
@@ -44,27 +44,31 @@ pub async fn oauth2_login(
     auth_session: AuthSession,
     query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
 ) -> AuthPage {
-    let query = match query {
-        Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+    // 1. Create request helper
+    let req = AuthPageRequest::new(&state, auth_session);
+
+    // 2. Validate query
+    let query = match req.validate_query(query) {
+        Ok(q) => q,
+        Err(page) => return page,
     };
-    if let Some(error_url) = &query.error_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None);
-        }
-    }
-    if let Some(redirect_url) = &query.redirect_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-        }
+
+    // 3. Validate redirect URLs
+    if let Some(page) = req.validate_redirect_urls(query.redirect_url.as_ref(), query.error_url.as_ref()) {
+        return page;
     }
 
     log::debug!("Query: {query:#?}");
 
-    if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
-        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
+    // 4. Validate captcha
+    if let Some(page) = req
+        .validate_captcha(query.captcha.as_deref(), query.error_url.as_ref())
+        .await
+    {
+        return page;
     }
 
+    // 5. Business logic - setup OAuth2 flow
     let key = random::hex_16(state.random());
     let (pkce_code_challenge, pkce_code_verifier) = PkceCodeChallenge::new_random_sha256();
     let (authorize_url, csrf_state) = client
@@ -74,7 +78,8 @@ pub async fn oauth2_login(
         .set_pkce_challenge(pkce_code_challenge)
         .url();
 
-    let response_session = auth_session
+    let response_session = req
+        .into_auth_session()
         .revoke_session(&state)
         .await
         .revoke_access(&state)
@@ -89,6 +94,8 @@ pub async fn oauth2_login(
             remember_me: query.remember_me.unwrap_or(false),
             linked_user: None,
         }));
+
+    // 6. Return response
     assert!(response_session.user_session().is_none());
     PageUtils::new(&state).redirect(response_session, Some(&authorize_url), None)
 }

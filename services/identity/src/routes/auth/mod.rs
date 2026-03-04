@@ -12,8 +12,9 @@ pub use self::oauth2_client::*;
 mod oidc_client;
 pub use self::oidc_client::*;
 
-// Phase 4 helper - currently placeholder
+// Phase 4 helper
 mod auth_page_request;
+pub use self::auth_page_request::*;
 
 mod api;
 mod pages;

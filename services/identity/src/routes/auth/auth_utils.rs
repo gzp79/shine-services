@@ -1,8 +1,8 @@
 use crate::{
     app_state::AppState,
-    handlers::CreateUserError,
     repositories::identity::{ExternalUserInfo, IdentityError, TokenKind},
     routes::auth::{AuthError, AuthPage, AuthSession, PageUtils, TokenCookie},
+    services::CreateUserError,
 };
 use shine_infra::web::extracts::{ClientFingerprint, InputError, SiteInfo, ValidationErrorEx};
 use url::Url;
@@ -95,12 +95,8 @@ impl<'a> AuthUtils<'a> {
             // Create a new (linked) user
             Ok(None) => match self
                 .state
-                .create_user_service()
-                .create_user(
-                    Some(external_user),
-                    external_user.name.as_deref(),
-                    external_user.email.as_deref(),
-                )
+                .user_service()
+                .create_linked_user(external_user.name.as_deref(), external_user)
                 .await
             {
                 Ok(identity) => identity,
@@ -133,12 +129,7 @@ impl<'a> AuthUtils<'a> {
             None
         };
 
-        let user_session = match self
-            .state
-            .user_info_handler()
-            .create_user_session(&identity, &fingerprint, site_info)
-            .await
-        {
+        let user_session = match self.state.create_user_session(&identity, &fingerprint, site_info).await {
             Ok(Some(session)) => session,
             Ok(None) => {
                 log::warn!("User {} has been deleted during link", identity.id);

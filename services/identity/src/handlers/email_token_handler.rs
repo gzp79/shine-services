@@ -230,7 +230,7 @@ where
 }
 
 impl AppState {
-    pub fn email_token_handler(&self) -> EmailTokenHandler<impl IdentityDb, impl EmailSender> {
+    pub fn email_token_handler(&self) -> EmailTokenHandler<'_, impl IdentityDb, impl EmailSender> {
         EmailTokenHandler::new(
             self.random(),
             self.settings(),

@@ -5,7 +5,7 @@ use crate::{
     },
     services::{IdentityTopic, UserEvent, UserLinkEvent},
 };
-use shine_infra::{crypto::IdEncoder, sync::TopicBus};
+use shine_infra::{crypto::IdEncoder, sync::TopicBus, web::responses::Problem};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 use uuid::Uuid;
@@ -17,6 +17,17 @@ pub enum CreateUserError {
     RetryLimitReached,
     #[error(transparent)]
     IdentityError(#[from] IdentityError),
+}
+
+impl From<CreateUserError> for Problem {
+    fn from(err: CreateUserError) -> Self {
+        match err {
+            CreateUserError::IdentityError(err) => err.into(),
+            CreateUserError::RetryLimitReached => Problem::internal_error()
+                .with_detail(err.to_string())
+                .with_sensitive_dbg(err),
+        }
+    }
 }
 
 pub struct UserService<DB: IdentityDb> {
@@ -126,27 +137,57 @@ impl<DB: IdentityDb> UserService<DB> {
 
     pub async fn create_linked_user(
         &self,
-        user_id: Uuid,
-        name: &str,
+        name: Option<&str>,
         external_user: &ExternalUserInfo,
-    ) -> Result<Identity, IdentityError> {
-        let mut ctx = self.db.create_context().await?;
+    ) -> Result<Identity, CreateUserError> {
+        const MAX_RETRY_COUNT: usize = 10;
 
-        let identity = ctx.create_user(user_id, name, None).await?;
+        let mut name = name.map(|n| n.to_owned());
+        let mut retry_count = 0;
 
-        // Rollback on link failure
-        if let Err(err) = ctx.link_user(user_id, external_user).await {
-            if let Err(del_err) = ctx.cascaded_delete(user_id).await {
-                log::error!("Failed to delete user ({user_id}) after failed link: {del_err}");
+        loop {
+            log::debug!("Creating new linked user; retry: {retry_count:#?}");
+            if retry_count > MAX_RETRY_COUNT {
+                return Err(CreateUserError::RetryLimitReached);
             }
-            return Err(err);
+            retry_count += 1;
+
+            let user_id = Uuid::new_v4();
+            let user_name = match name.take() {
+                Some(name) => name,
+                None => self.generate_name().await?,
+            };
+
+            let mut ctx = self.db.create_context().await?;
+
+            // Store email from external provider if available and valid
+            let email = external_user
+                .email
+                .as_ref()
+                .filter(|email| email.validate_email())
+                .map(|e| (e.as_str(), false));
+
+            let identity = match ctx.create_user(user_id, &user_name, email).await {
+                Ok(identity) => identity,
+                Err(IdentityError::NameConflict) => continue,
+                Err(IdentityError::UserIdConflict) => continue,
+                Err(err) => return Err(CreateUserError::IdentityError(err)),
+            };
+
+            // Rollback on link failure
+            if let Err(err) = ctx.link_user(user_id, external_user).await {
+                if let Err(del_err) = ctx.cascaded_delete(user_id).await {
+                    log::error!("Failed to delete user ({user_id}) after failed link: {del_err}");
+                }
+                return Err(CreateUserError::IdentityError(err));
+            }
+
+            drop(ctx);
+
+            self.events.publish(&UserEvent::Created(user_id)).await;
+            self.events.publish(&UserLinkEvent::Linked(user_id)).await;
+
+            return Ok(identity);
         }
-
-        drop(ctx);
-
-        self.events.publish(&UserEvent::Created(user_id)).await;
-        self.events.publish(&UserLinkEvent::Linked(user_id)).await;
-
-        Ok(identity)
     }
 }

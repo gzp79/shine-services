@@ -1,7 +1,8 @@
 use crate::{
     app_state::AppState,
     routes::auth::{
-        AuthError, AuthPage, AuthSession, AuthUtils, ExternalLoginCookie, ExternalLoginError, OIDCClient, PageUtils,
+        AuthError, AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient,
+        PageUtils,
     },
 };
 use axum::{extract::State, Extension};
@@ -49,32 +50,32 @@ pub async fn oidc_link(
     auth_session: AuthSession,
     query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
 ) -> AuthPage {
-    let query = match query {
-        Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+    // 1. Create request helper
+    let req = AuthPageRequest::new(&state, auth_session);
+
+    // 2. Validate query
+    let query = match req.validate_query(query) {
+        Ok(q) => q,
+        Err(page) => return page,
     };
-    if let Some(error_url) = &query.error_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None);
-        }
-    }
-    if let Some(redirect_url) = &query.redirect_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-        }
+
+    // 3. Validate redirect URLs
+    if let Some(page) = req.validate_redirect_urls(query.redirect_url.as_ref(), query.error_url.as_ref()) {
+        return page;
     }
 
     log::debug!("Query: {query:#?}");
 
-    if auth_session.user_session().is_none() {
-        return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_ref());
+    // 4. Verify user is logged in
+    if req.auth_session().user_session().is_none() {
+        return req.error_page(AuthError::LoginRequired, query.error_url.as_ref());
     }
 
+    // 5. Business logic - setup OIDC link flow
     let core_client = match client.client().await {
         Ok(client) => client,
         Err(err) => {
-            return PageUtils::new(&state).error(
-                auth_session,
+            return req.error_page(
                 ExternalLoginError::OIDCDiscovery(format!("{err:#?}")),
                 query.error_url.as_ref(),
             )
@@ -95,8 +96,8 @@ pub async fn oidc_link(
         .add_prompt(CoreAuthPrompt::Login)
         .url();
 
-    let linked_user = auth_session.user_session().cloned();
-    let response_session = auth_session.with_external_login(Some(ExternalLoginCookie {
+    let linked_user = req.auth_session().user_session().cloned();
+    let response_session = req.into_auth_session().with_external_login(Some(ExternalLoginCookie {
         key,
         pkce_code_verifier: pkce_code_verifier.secret().to_owned(),
         csrf_state: csrf_state.secret().to_owned(),
@@ -106,6 +107,8 @@ pub async fn oidc_link(
         remember_me: false,
         linked_user,
     }));
+
+    // 6. Return response
     assert!(response_session.user_session().is_some());
     PageUtils::new(&state).redirect(response_session, Some(&authorize_url), None)
 }

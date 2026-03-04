@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{AuthError, AuthPage, AuthSession, AuthUtils, PageUtils},
+    routes::auth::{AuthError, AuthPage, AuthPageRequest, AuthSession},
 };
 use axum::extract::State;
 use serde::Deserialize;
@@ -45,35 +45,35 @@ pub async fn email_login(
     auth_session: AuthSession,
     site_info: SiteInfo,
 ) -> AuthPage {
-    let query = match query {
-        Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+    // 1. Create request helper
+    let req = AuthPageRequest::new(&state, auth_session);
+
+    // 2. Validate query
+    let query = match req.validate_query(query) {
+        Ok(q) => q,
+        Err(page) => return page,
     };
-    if let Some(error_url) = &query.error_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None);
-        }
-    }
-    if let Some(redirect_url) = &query.redirect_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-        }
+
+    // 3. Validate redirect URLs
+    if let Some(page) = req.validate_redirect_urls(query.redirect_url.as_ref(), query.error_url.as_ref()) {
+        return page;
     }
 
     log::debug!("Query: {query:#?}");
 
-    if let Err(err) = state.captcha_validator().validate(query.captcha.as_deref()).await {
-        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-    };
-
-    log::debug!("Email registration flow triggered...");
-    let auth_session = auth_session
-        .with_external_login(None)
-        .revoke_access(&state)
+    // 4. Validate captcha
+    if let Some(page) = req
+        .validate_captcha(query.captcha.as_deref(), query.error_url.as_ref())
         .await
-        .revoke_session(&state)
-        .await;
+    {
+        return page;
+    }
 
+    // 5. Clear auth state
+    log::debug!("Email login flow triggered...");
+    let req = req.clear_auth_state().await;
+
+    // 6. Business logic
     let identity = match state
         .login_email_handler()
         .send_login_email(
@@ -86,9 +86,10 @@ pub async fn email_login(
         .await
     {
         Ok(identity) => identity,
-        Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
+        Err(err) => return req.error_page(err, query.error_url.as_ref()),
     };
 
+    // 7. Return response
     log::info!("Email flow completed for: {}", identity.id);
-    PageUtils::new(&state).error(auth_session, AuthError::EmailLogin, query.error_url.as_ref())
+    req.error_page(AuthError::EmailLogin, query.error_url.as_ref())
 }

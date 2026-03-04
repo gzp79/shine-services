@@ -1,10 +1,18 @@
 {
   "permissions": {
-    "allow": []
+    "allow": [
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fix:*)",
+      "Bash(cargo run:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo check:*)",
+      "Bash(pnpm test:local:*)"
+    ]
   },
   "enableAllProjectMcpServers": true,
   "enabledPlugins": {
     "superpowers@claude-plugins-official": true,
-    "rust-analyzer-lsp@claude-plugins-official": true
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true
   }
 }

@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{AuthPage, AuthSession, AuthUtils, PageUtils},
+    routes::auth::{AuthPage, AuthPageRequest, AuthSession, PageUtils},
 };
 use axum::extract::State;
 use serde::Deserialize;
@@ -37,22 +37,22 @@ pub async fn validate(
     auth_session: AuthSession,
     query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
 ) -> AuthPage {
-    let query = match query {
-        Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+    // 1. Create request helper
+    let req = AuthPageRequest::new(&state, auth_session);
+
+    // 2. Validate query
+    let query = match req.validate_query(query) {
+        Ok(q) => q,
+        Err(page) => return page,
     };
-    if let Some(error_url) = &query.error_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None);
-        }
-    }
-    if let Some(redirect_url) = &query.redirect_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-        }
+
+    // 3. Validate redirect URLs
+    if let Some(page) = req.validate_redirect_urls(query.redirect_url.as_ref(), query.error_url.as_ref()) {
+        return page;
     }
 
     log::debug!("Query: {query:#?}");
 
-    PageUtils::new(&state).redirect(auth_session, query.redirect_url.as_ref(), None)
+    // 4. Return response
+    PageUtils::new(&state).redirect(req.into_auth_session(), query.redirect_url.as_ref(), None)
 }

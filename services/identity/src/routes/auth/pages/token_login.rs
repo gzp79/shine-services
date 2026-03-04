@@ -1,7 +1,7 @@
 use crate::{
     app_state::AppState,
     repositories::identity::{Identity, IdentityError, TokenInfo, TokenKind},
-    routes::auth::{AuthError, AuthPage, AuthSession, AuthUtils, PageUtils, TokenCookie},
+    routes::auth::{AuthError, AuthPage, AuthPageRequest, AuthSession, PageUtils, TokenCookie},
     services::hash_email,
 };
 use axum::extract::State;
@@ -249,14 +249,18 @@ async fn authenticate_with_header_token(
             "Non-persistent token ({:?}) used in the header, revoking compromised token ...",
             token_info.kind
         );
-        state.user_info_handler().revoke_access(token_info.kind, token).await;
+        if let Err(err) = state.token_service().delete(token_info.kind, token).await {
+            log::error!("Failed to revoke token: {err}");
+        }
         Err(AuthenticationFailure {
             error: AuthError::InvalidToken,
             auth_session: response_session,
         })
     } else if token_info.is_expired {
         log::debug!("Token expired, removing from DB ...");
-        state.user_info_handler().revoke_access(token_info.kind, token).await;
+        if let Err(err) = state.token_service().delete(token_info.kind, token).await {
+            log::error!("Failed to revoke token: {err}");
+        }
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -267,7 +271,9 @@ async fn authenticate_with_header_token(
             token_info.bound_fingerprint,
             fingerprint
         );
-        state.user_info_handler().revoke_access(token_info.kind, token).await;
+        if let Err(err) = state.token_service().delete(token_info.kind, token).await {
+            log::error!("Failed to revoke token: {err}");
+        }
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -338,10 +344,9 @@ async fn authenticate_with_cookie_token(
 
     if let Some(revoked_token) = revoked_token {
         log::debug!("Rotating out the access token ...");
-        state
-            .user_info_handler()
-            .revoke_access(token_info.kind, &revoked_token)
-            .await;
+        if let Err(err) = state.token_service().delete(token_info.kind, &revoked_token).await {
+            log::error!("Failed to revoke rotated token: {err}");
+        }
     }
 
     if token_info.kind != TokenKind::Access {
@@ -350,14 +355,18 @@ async fn authenticate_with_cookie_token(
             "Non-access token ({:?}) used in the cookie, revoking compromised token ...",
             token_info.kind
         );
-        state.user_info_handler().revoke_access(token_info.kind, &token).await;
+        if let Err(err) = state.token_service().delete(token_info.kind, &token).await {
+            log::error!("Failed to revoke token: {err}");
+        }
         Err(AuthenticationFailure {
             error: AuthError::InvalidToken,
             auth_session: response_session,
         })
     } else if token_info.is_expired {
         log::debug!("Token expired, removing from DB ...");
-        state.user_info_handler().revoke_access(token_info.kind, &token).await;
+        if let Err(err) = state.token_service().delete(token_info.kind, &token).await {
+            log::error!("Failed to revoke token: {err}");
+        }
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -370,7 +379,9 @@ async fn authenticate_with_cookie_token(
             token_user_id,
             token
         );
-        state.user_info_handler().revoke_access(token_info.kind, &token).await;
+        if let Err(err) = state.token_service().delete(token_info.kind, &token).await {
+            log::error!("Failed to revoke token: {err}");
+        }
         Err(AuthenticationFailure {
             error: AuthError::InvalidToken,
             auth_session: response_session,
@@ -381,7 +392,9 @@ async fn authenticate_with_cookie_token(
             token_info.bound_fingerprint,
             fingerprint
         );
-        state.user_info_handler().revoke_access(token_info.kind, &token).await;
+        if let Err(err) = state.token_service().delete(token_info.kind, &token).await {
+            log::error!("Failed to revoke token: {err}");
+        }
         Err(AuthenticationFailure {
             error: AuthError::TokenExpired,
             auth_session: response_session,
@@ -512,25 +525,24 @@ pub async fn token_login(
     fingerprint: ClientFingerprint,
     site_info: SiteInfo,
 ) -> AuthPage {
-    let query = match query {
-        Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+    // 1. Create request helper
+    let req = AuthPageRequest::new(&state, auth_session);
+
+    // 2. Validate query
+    let query = match req.validate_query(query) {
+        Ok(q) => q,
+        Err(page) => return page,
     };
-    if let Some(error_url) = &query.error_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None);
-        }
-    }
-    if let Some(redirect_url) = &query.redirect_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-        }
+
+    // 3. Validate redirect URLs
+    if let Some(page) = req.validate_redirect_urls(query.redirect_url.as_ref(), query.error_url.as_ref()) {
+        return page;
     }
 
     log::debug!("Query: {query:#?}");
 
-    // clear external login cookie, it shall be only for the authorize callback from the external provider
-    let auth_session = auth_session.with_external_login(None);
+    // 4. Clear external login cookie (shall be only for authorize callback from external provider)
+    let auth_session = req.into_auth_session().with_external_login(None);
 
     let AuthenticationSuccess {
         identity,
@@ -584,11 +596,7 @@ pub async fn token_login(
 
     // Create a new user session.
     let auth_session = {
-        let user_session = match state
-            .user_info_handler()
-            .create_user_session(&identity, &fingerprint, &site_info)
-            .await
-        {
+        let user_session = match state.create_user_session(&identity, &fingerprint, &site_info).await {
             Ok(Some(session)) => session,
             Ok(None) => {
                 log::warn!("User {} has been deleted during login", identity.id);

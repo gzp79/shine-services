@@ -1,7 +1,8 @@
 use crate::{
     app_state::AppState,
     routes::auth::{
-        AuthPage, AuthSession, AuthUtils, ExternalLoginCookie, ExternalLoginError, OAuth2Client, PageUtils,
+        AuthPage, AuthPageRequest, AuthSession, AuthUtils, ExternalLoginCookie, ExternalLoginError, OAuth2Client,
+        PageUtils,
     },
 };
 use axum::{extract::State, Extension};
@@ -42,6 +43,7 @@ pub async fn oauth2_auth(
     site_info: SiteInfo,
     query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
 ) -> AuthPage {
+    // 1. Extract external login cookie
     let ExternalLoginCookie {
         pkce_code_verifier,
         csrf_state,
@@ -58,30 +60,30 @@ pub async fn oauth2_auth(
     };
     let auth_session = auth_session.with_external_login(None);
 
-    let query = match query {
-        Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+    // 2. Create request helper
+    let req = AuthPageRequest::new(&state, auth_session);
+
+    // 3. Validate query
+    let query = match req.validate_query(query) {
+        Ok(q) => q,
+        Err(page) => return page,
     };
-    if let Some(error_url) = &error_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None);
-        }
-    }
-    if let Some(redirect_url) = &redirect_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, error_url.as_ref());
-        }
+
+    // 4. Validate redirect URLs
+    if let Some(page) = req.validate_redirect_urls(redirect_url.as_ref(), error_url.as_ref()) {
+        return page;
     }
 
     log::debug!("Query: {query:#?}");
 
+    // 5. Business logic - OAuth2 authentication
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;
 
     // Check for Cross Site Request Forgery
     if csrf_state != auth_csrf_state {
         log::debug!("CSRF test failed: [{csrf_state}], [{auth_csrf_state}]");
-        return PageUtils::new(&state).error(auth_session, ExternalLoginError::InvalidCSRF, error_url.as_ref());
+        return req.error_page(ExternalLoginError::InvalidCSRF, error_url.as_ref());
     }
 
     // Exchange the code with a token.
@@ -95,8 +97,7 @@ pub async fn oauth2_auth(
         Ok(token) => token,
         Err(err) => {
             log::warn!("Token exchange error: {err:?}");
-            return PageUtils::new(&state).error(
-                auth_session,
+            return req.error_page(
                 ExternalLoginError::TokenExchangeFailed(format!("{err:#?}")),
                 error_url.as_ref(),
             );
@@ -105,7 +106,7 @@ pub async fn oauth2_auth(
 
     let external_user = match client
         .get_external_user_info(
-            &state.settings().app_name,
+            &req.state().settings().app_name,
             client.user_info_url.url().clone(),
             &client.provider,
             token.access_token().secret(),
@@ -116,22 +117,27 @@ pub async fn oauth2_auth(
     {
         Ok(external_user_info) => external_user_info,
         Err(err) => {
-            return PageUtils::new(&state).error(
-                auth_session,
+            return req.error_page(
                 ExternalLoginError::FailedExternalUserInfo(format!("{err:?}")),
                 error_url.as_ref(),
             )
         }
     };
 
+    // 6. Return response
     if linked_user.is_some() {
         AuthUtils::new(&state)
-            .complete_external_link(auth_session, &external_user, redirect_url.as_ref(), error_url.as_ref())
+            .complete_external_link(
+                req.into_auth_session(),
+                &external_user,
+                redirect_url.as_ref(),
+                error_url.as_ref(),
+            )
             .await
     } else {
         AuthUtils::new(&state)
             .complete_external_login(
-                auth_session,
+                req.into_auth_session(),
                 fingerprint,
                 &site_info,
                 &external_user,

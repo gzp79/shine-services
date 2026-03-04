@@ -1,7 +1,7 @@
 use crate::{
     app_state::AppState,
     repositories::identity::TokenKind,
-    routes::auth::{AuthPage, AuthSession, AuthUtils, PageUtils},
+    routes::auth::{AuthPage, AuthPageRequest, AuthSession, PageUtils},
 };
 use axum::extract::State;
 use serde::Deserialize;
@@ -39,58 +39,60 @@ pub async fn logout(
     auth_session: AuthSession,
     query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
 ) -> AuthPage {
-    let query = match query {
-        Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+    // 1. Create request helper
+    let req = AuthPageRequest::new(&state, auth_session);
+
+    // 2. Validate query
+    let query = match req.validate_query(query) {
+        Ok(q) => q,
+        Err(page) => return page,
     };
-    if let Some(error_url) = &query.error_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None);
-        }
-    }
-    if let Some(redirect_url) = &query.redirect_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-        }
+
+    // 3. Validate redirect URLs
+    if let Some(page) = req.validate_redirect_urls(query.redirect_url.as_ref(), query.error_url.as_ref()) {
+        return page;
     }
 
     log::debug!("Query: {query:#?}");
 
-    if let Some((user_id, session_key)) = auth_session.user_session().map(|u| (u.user_id, u.key)) {
+    // 4. Business logic - logout
+    if let Some((user_id, session_key)) = req.auth_session().user_session().map(|u| (u.user_id, u.key)) {
         match query.terminate_all.unwrap_or(false) {
             true => {
                 log::debug!("Removing all the (non-api-key) tokens for user {user_id}");
                 //remove all non-api-key tokens
-                if let Err(err) = state
+                if let Err(err) = req
+                    .state()
                     .token_service()
                     .delete_all_by_user(user_id, &[TokenKind::Access, TokenKind::SingleAccess])
                     .await
                 {
-                    return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
+                    return req.error_page(err, query.error_url.as_ref());
                 }
 
                 log::debug!("Removing all the session for user {user_id}");
-                if let Err(err) = state.session_service().remove_all(user_id).await {
+                if let Err(err) = req.state().session_service().remove_all(user_id).await {
                     log::warn!("Failed to clear all sessions for user {user_id}: {err:?}");
                 }
             }
             false => {
                 log::debug!("Removing remember me token for user, if cookie is present {user_id}");
-                if let Some(token) = auth_session.access().map(|t| t.key.clone()) {
+                if let Some(token) = req.auth_session().access().map(|t| t.key.clone()) {
                     log::debug!("Removing token {token} for user {user_id}");
-                    if let Err(err) = state.token_service().delete(TokenKind::Access, &token).await {
-                        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
+                    if let Err(err) = req.state().token_service().delete(TokenKind::Access, &token).await {
+                        return req.error_page(err, query.error_url.as_ref());
                     }
                 }
 
                 log::debug!("Removing session for user {user_id}");
-                if let Err(err) = state.session_service().remove(user_id, &session_key).await {
+                if let Err(err) = req.state().session_service().remove(user_id, &session_key).await {
                     log::warn!("Failed to clear session for user {user_id}: {err:?}");
                 }
             }
         };
     }
 
-    let response_session = auth_session.cleared();
+    // 5. Return response
+    let response_session = req.into_auth_session().cleared();
     PageUtils::new(&state).redirect(response_session, query.redirect_url.as_ref(), None)
 }

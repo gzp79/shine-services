@@ -153,7 +153,7 @@ where
 }
 
 impl AppState {
-    pub fn login_email_handler(&self) -> LoginEmailHandler<impl IdentityDb, impl EmailSender> {
+    pub fn login_email_handler(&self) -> LoginEmailHandler<'_, impl IdentityDb, impl EmailSender> {
         LoginEmailHandler::new(
             self.user_service(),
             self.token_service(),

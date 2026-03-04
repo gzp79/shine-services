@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{AuthError, AuthPage, AuthSession, AuthUtils, PageUtils},
+    routes::auth::{AuthError, AuthPage, AuthPageRequest, AuthSession, PageUtils},
 };
 use axum::extract::State;
 use serde::Deserialize;
@@ -41,57 +41,57 @@ pub async fn delete_user(
     auth_session: AuthSession,
     query: Result<ValidatedQuery<QueryParams>, ErrorResponse<InputError>>,
 ) -> AuthPage {
-    let query = match query {
-        Ok(ValidatedQuery(query)) => query,
-        Err(error) => return PageUtils::new(&state).error(auth_session, error.problem, None),
+    // 1. Create request helper
+    let req = AuthPageRequest::new(&state, auth_session);
+
+    // 2. Validate query
+    let query = match req.validate_query(query) {
+        Ok(q) => q,
+        Err(page) => return page,
     };
-    if let Some(error_url) = &query.error_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("errorUrl", error_url) {
-            return PageUtils::new(&state).error(auth_session, err, None);
-        }
-    }
-    if let Some(redirect_url) = &query.redirect_url {
-        if let Err(err) = AuthUtils::new(&state).validate_redirect_url("redirectUrl", redirect_url) {
-            return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
-        }
+
+    // 3. Validate redirect URLs
+    if let Some(page) = req.validate_redirect_urls(query.redirect_url.as_ref(), query.error_url.as_ref()) {
+        return page;
     }
 
     log::debug!("Query: {query:#?}");
 
-    let (user_id, user_name, session_key) = match auth_session
+    // 4. Business logic - delete user
+    let (user_id, user_name, session_key) = match req
+        .auth_session()
         .user_session()
         .map(|u| (u.user_id, u.name.clone(), u.key))
     {
         Some(user) => user,
-        None => return PageUtils::new(&state).error(auth_session, AuthError::LoginRequired, query.error_url.as_ref()),
+        None => return req.error_page(AuthError::LoginRequired, query.error_url.as_ref()),
     };
 
     // check for user confirmation
     if query.confirmation != Some(user_name) {
-        return PageUtils::new(&state).error(auth_session, AuthError::MissingConfirmation, query.error_url.as_ref());
+        return req.error_page(AuthError::MissingConfirmation, query.error_url.as_ref());
     }
 
     // validate session as this is a very risky operation
-    match state.session_service().find(user_id, &session_key).await {
-        Ok(None) => {
-            return PageUtils::new(&state).error(auth_session, AuthError::SessionExpired, query.error_url.as_ref())
-        }
-        Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
+    match req.state().session_service().find(user_id, &session_key).await {
+        Ok(None) => return req.error_page(AuthError::SessionExpired, query.error_url.as_ref()),
+        Err(err) => return req.error_page(err, query.error_url.as_ref()),
         Ok(Some(_)) => {}
     };
 
-    if let Err(err) = state.user_service().delete(user_id).await {
-        return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref());
+    if let Err(err) = req.state().user_service().delete(user_id).await {
+        return req.error_page(err, query.error_url.as_ref());
     }
 
     // End of validations, from this point
     //  - there is no reason to keep session
     //  - errors are irrelevant for the users and mostly just warnings.
-    let response_session = auth_session.cleared();
+    let response_session = req.into_auth_session().cleared();
 
     if let Err(err) = state.session_service().remove_all(user_id).await {
         log::warn!("Failed to clear all sessions for user {user_id}: {err:?}");
     }
 
+    // 5. Return response
     PageUtils::new(&state).redirect(response_session, query.redirect_url.as_ref(), None)
 }

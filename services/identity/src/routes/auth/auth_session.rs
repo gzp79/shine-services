@@ -202,10 +202,9 @@ impl AuthSession {
     #[must_use]
     pub async fn revoke_session(mut self, state: &AppState) -> Self {
         if let Some(session) = self.session.take() {
-            state
-                .user_info_handler()
-                .revoke_session(session.user_id, &session.key)
-                .await;
+            if let Err(err) = state.session_service().remove(session.user_id, &session.key).await {
+                log::error!("Failed to revoke session for user {}: {err}", session.user_id);
+            }
         }
         self
     }
@@ -229,15 +228,13 @@ impl AuthSession {
     pub async fn revoke_access(mut self, state: &AppState) -> Self {
         if let Some(token_cookie) = self.access.take() {
             if let Some(revoked_token) = &token_cookie.revoked_token {
-                state
-                    .user_info_handler()
-                    .revoke_access(TokenKind::Access, revoked_token)
-                    .await;
+                if let Err(err) = state.token_service().delete(TokenKind::Access, revoked_token).await {
+                    log::error!("Failed to revoke access token: {err}");
+                }
             }
-            state
-                .user_info_handler()
-                .revoke_access(TokenKind::Access, &token_cookie.key)
-                .await;
+            if let Err(err) = state.token_service().delete(TokenKind::Access, &token_cookie.key).await {
+                log::error!("Failed to revoke access token: {err}");
+            }
         }
         self
     }
