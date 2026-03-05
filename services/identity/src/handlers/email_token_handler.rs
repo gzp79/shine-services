@@ -4,7 +4,7 @@ use crate::{
         identity::{IdentityDb, IdentityError},
         mailer::{EmailSender, EmailSenderError},
     },
-    services::{IdentityService, MailerService, SettingsService},
+    services::{MailerService, SettingsService, UserService},
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Utc};
@@ -69,7 +69,7 @@ where
 {
     random: &'a SystemRandom,
     settings: &'a SettingsService,
-    identity_service: &'a IdentityService<IDB>,
+    user_service: &'a UserService<IDB>,
     mailer_service: MailerService<'a, EMS>,
 }
 
@@ -81,13 +81,13 @@ where
     pub fn new(
         random: &'a SystemRandom,
         settings: &'a SettingsService,
-        identity_service: &'a IdentityService<IDB>,
+        user_service: &'a UserService<IDB>,
         mailer_service: MailerService<'a, EMS>,
     ) -> Self {
         Self {
             random,
             settings,
-            identity_service,
+            user_service,
             mailer_service,
         }
     }
@@ -157,7 +157,7 @@ where
 
     pub async fn start_email_confirm_flow(&self, user_id: Uuid, lang: Option<Language>) -> Result<(), EmailTokenError> {
         let user = self
-            .identity_service
+            .user_service
             .find_by_id(user_id)
             .await?
             .ok_or(IdentityError::UserDeleted)?;
@@ -181,7 +181,7 @@ where
         lang: Option<Language>,
     ) -> Result<(), EmailTokenError> {
         let user = self
-            .identity_service
+            .user_service
             .find_by_id(user_id)
             .await?
             .ok_or(IdentityError::UserDeleted)?;
@@ -205,7 +205,7 @@ where
         }
 
         let user = self
-            .identity_service
+            .user_service
             .find_by_id(user_id)
             .await?
             .ok_or(IdentityError::UserDeleted)?;
@@ -216,7 +216,7 @@ where
         }
 
         match self
-            .identity_service
+            .user_service
             .update(user_id, None, Some((&token_new_email, true)))
             .await
         {
@@ -230,11 +230,11 @@ where
 }
 
 impl AppState {
-    pub fn email_token_handler(&self) -> EmailTokenHandler<impl IdentityDb, impl EmailSender> {
+    pub fn email_token_handler(&self) -> EmailTokenHandler<'_, impl IdentityDb, impl EmailSender> {
         EmailTokenHandler::new(
             self.random(),
             self.settings(),
-            self.identity_service(),
+            self.user_service(),
             self.mailer_service(),
         )
     }
