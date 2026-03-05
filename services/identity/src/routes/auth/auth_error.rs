@@ -1,8 +1,8 @@
 use crate::{
     app_state::UserInfoError,
-    handlers::{LoginEmailError, LoginTokenError},
+    handlers::LoginEmailError,
     repositories::{identity::IdentityError, session::SessionError, CaptchaError},
-    services::CreateUserError,
+    services::{CreateUserError, TokenError},
 };
 use reqwest::StatusCode;
 use serde_json::json;
@@ -98,7 +98,7 @@ pub enum AuthError {
     #[error(transparent)]
     CreateUserError(#[from] CreateUserError),
     #[error(transparent)]
-    LoginTokenError(#[from] LoginTokenError),
+    TokenError(#[from] TokenError),
     #[error(transparent)]
     LoginEmailError(#[from] LoginEmailError),
     #[error(transparent)]
@@ -160,9 +160,14 @@ impl From<AuthError> for Problem {
             AuthError::CreateUserError(error) => {
                 Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
             }
-            AuthError::LoginTokenError(error) => {
-                Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
-            }
+            AuthError::TokenError(error) => match error {
+                TokenError::IdentityError(identity_err) => {
+                    Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(identity_err))
+                }
+                err => Problem::internal_error()
+                    .with_detail(err.to_string())
+                    .with_sensitive_dbg(err),
+            },
             AuthError::LoginEmailError(error) => {
                 Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
             }

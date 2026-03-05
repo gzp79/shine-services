@@ -92,8 +92,7 @@ pub async fn guest_login(
         {
             Ok(result) => result,
             Err(err) => {
-                use crate::handlers::LoginTokenError;
-                return req.error_page(LoginTokenError::from(err), query.error_url.as_ref());
+                return req.error_page(err, query.error_url.as_ref());
             }
         };
 

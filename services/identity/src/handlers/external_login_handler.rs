@@ -120,17 +120,18 @@ where
         let user_token = if create_token {
             match self
                 .state
-                .login_token_handler()
-                .create_user_token(
+                .token_service()
+                .create_with_retry(
                     identity.id,
                     TokenKind::Access,
                     &self.state.settings().token.ttl_access_token,
                     Some(&fingerprint),
+                    None,
                     site_info,
                 )
                 .await
             {
-                Ok(token_cookie) => Some(token_cookie),
+                Ok((token, info)) => Some((identity.id, token, info.expire_at)),
                 Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
             }
         } else {
@@ -152,10 +153,10 @@ where
 
         let response_session = auth_session
             .with_external_login(None)
-            .with_access(user_token.map(|user_token| TokenCookie {
-                user_id: user_token.user_id,
-                key: user_token.token,
-                expire_at: user_token.expire_at,
+            .with_access(user_token.map(|(user_id, token, expire_at)| TokenCookie {
+                user_id,
+                key: token,
+                expire_at,
                 revoked_token: None,
             }))
             .with_session(Some(user_session));

@@ -135,24 +135,31 @@ pub async fn create_token(
     }
 
     let site_fingerprint = if params.bind_to_site { Some(&fingerprint) } else { None };
-    let user_token = state
-        .login_token_handler()
-        .create_user_token(
+    let (token, info) = state
+        .token_service()
+        .create_with_retry(
             user.user_id,
             params.kind.into(),
             &time_to_live,
             site_fingerprint,
+            None,
             &site_info,
         )
         .await
-        .map_err(|err| err.into_response(&problem_config))?;
+        .map_err(|err| match err {
+            crate::services::TokenError::IdentityError(identity_err) => identity_err.into_response(&problem_config),
+            err => Problem::internal_error()
+                .with_detail(err.to_string())
+                .with_sensitive_dbg(err)
+                .into_response(&problem_config),
+        })?;
 
     Ok(Json(CreatedToken {
         kind: params.kind.into(),
-        token: user_token.token,
-        token_hash: user_token.token_hash,
+        token,
+        token_hash: info.token_hash,
         token_type: "Bearer".into(),
-        expire_at: user_token.expire_at,
+        expire_at: info.expire_at,
     }))
 }
 

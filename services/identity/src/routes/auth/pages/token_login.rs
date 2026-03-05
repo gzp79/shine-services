@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    handlers::{AuthHandler, AuthenticationSuccess, LoginTokenError},
+    handlers::{AuthHandler, AuthenticationSuccess},
     repositories::identity::{IdentityError, TokenKind},
     routes::auth::{AuthPage, AuthPageRequest, AuthSession, PageUtils, TokenCookie},
 };
@@ -114,9 +114,7 @@ pub async fn token_login(
             .await
         {
             Ok(result) => result,
-            Err(err) => {
-                return PageUtils::new(&state).error(auth_session, LoginTokenError::from(err), query.error_url.as_ref())
-            }
+            Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
         };
 
         // preserve the old token in case client does not acknowledge the new one
