@@ -15,12 +15,13 @@ Rust workspace with identity/builder services. Stack: Axum, PostgreSQL, Redis, T
 | Layer | Responsibilities | Does NOT |
 |-------|------------------|----------|
 | **Routes** | HTTP extraction, validation (AuthPageRequest), response formatting | Business logic, DB access |
-| **Handlers** | Orchestrate services, cross-cutting concerns | Direct DB/HTTP concerns |
+| **Handlers** | Orchestrate services (AuthHandler, ExternalLoginHandler, LoginEmailHandler), cross-cutting concerns | Direct DB/HTTP concerns |
 | **Services** | Business logic (User, Token, Link, Role, Session, Mailer) | HTTP concerns, orchestration |
 | **Repositories** | Data access (PgIdentityDb, RedisSessionDb) | Business logic, validation |
 
 **Key Concepts:**
 - **Handler Composition**: Handlers encapsulate complex cross-service workflows (e.g., AuthHandler coordinates token validation, session management, and email completion)
+- **ExternalLoginHandler**: Orchestrates OAuth2/OIDC flows (login, registration, linking)
 - **Dependency Injection**: AppState provides centralized access to services and handler factories, enabling testability and loose coupling
 - **Service Granularity**: Each service has single responsibility (User, Token, Link, Role, Session, Mailer) to maximize reuse and minimize coupling
 
