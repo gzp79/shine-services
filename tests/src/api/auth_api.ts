@@ -4,7 +4,7 @@ import OpenIdMockServer from '$lib/mocks/openid';
 import { OptionalSchema } from '$lib/schema_utils';
 import { joinURL } from '$lib/utils';
 import { z } from 'zod';
-import { ApiRequest } from './api';
+import { ApiClient, ApiRequest } from './api';
 import { ExternalUser } from './external_user';
 import { getPageRedirectUrl } from './utils';
 
@@ -55,10 +55,15 @@ function getCaptchaQuery(captcha: string | null | undefined): Record<string, str
 }
 
 export class AuthAPI {
+    private readonly client: ApiClient;
+
     constructor(
         public readonly serviceUrl: string,
-        public readonly defaultRedirects: DefaultRedirects
-    ) {}
+        public readonly defaultRedirects: DefaultRedirects,
+        public readonly enableRequestLogging: boolean
+    ) {
+        this.client = new ApiClient(enableRequestLogging);
+    }
 
     urlFor(path: string) {
         return joinURL(new URL(this.serviceUrl), path);
@@ -68,7 +73,7 @@ export class AuthAPI {
         const ct = tid && { tid };
         const cs = sid && { sid };
         const ce = eid && { eid };
-        return ApiRequest.get(this.urlFor('auth/validate')).withCookies({ ...ct, ...cs, ...ce });
+        return this.client.get(this.urlFor('auth/validate')).withCookies({ ...ct, ...cs, ...ce });
     }
 
     loginWithGuestRequest(tid: string | null, sid: string | null, captcha: string | null | undefined): ApiRequest {
@@ -76,7 +81,8 @@ export class AuthAPI {
         const cs = sid && { sid };
         const qc = getCaptchaQuery(captcha);
 
-        return ApiRequest.get(this.urlFor('auth/guest/login'))
+        return this.client
+            .get(this.urlFor('auth/guest/login'))
             .withParams({ ...qc, ...this.defaultRedirects })
             .withCookies({ ...ct, ...cs });
     }
@@ -114,7 +120,8 @@ export class AuthAPI {
         const cs = sid && { sid };
         const qc = getCaptchaQuery(captcha);
 
-        return ApiRequest.get(this.urlFor('auth/token/login'))
+        return this.client
+            .get(this.urlFor('auth/token/login'))
             .withParams({ ...qs, ...qt, ...qc, ...this.defaultRedirects })
             .withAuthIf(apiKey)
             .withCookies({ ...ct, ...cs });
@@ -154,7 +161,7 @@ export class AuthAPI {
         const qs = rememberMe && { rememberMe };
         const qc = getCaptchaQuery(captcha);
 
-        return ApiRequest.get(this.urlFor('auth/email/login')).withParams({
+        return this.client.get(this.urlFor('auth/email/login')).withParams({
             ...qe,
             ...qs,
             ...qc,
@@ -163,7 +170,7 @@ export class AuthAPI {
     }
 
     getProvidersRequest(): ApiRequest {
-        return ApiRequest.get(this.urlFor('/api/auth/providers'));
+        return this.client.get(this.urlFor('/api/auth/providers'));
     }
 
     async getProviders(): Promise<string[]> {
@@ -183,7 +190,8 @@ export class AuthAPI {
         const cs = sid && { sid };
         const qc = getCaptchaQuery(captcha);
 
-        return ApiRequest.get(this.urlFor('auth/oauth2_flow/login'))
+        return this.client
+            .get(this.urlFor('auth/oauth2_flow/login'))
             .withParams({ ...qs, ...qc, ...this.defaultRedirects })
             .withCookies({ ...ct, ...cs });
     }
@@ -191,7 +199,8 @@ export class AuthAPI {
     linkWithOAuth2Request(sid: string | null): ApiRequest {
         const cs = sid && { sid };
 
-        return ApiRequest.get(this.urlFor('auth/oauth2_flow/link'))
+        return this.client
+            .get(this.urlFor('auth/oauth2_flow/link'))
             .withParams({ ...this.defaultRedirects })
             .withCookies({ ...cs });
     }
@@ -207,7 +216,8 @@ export class AuthAPI {
         const cs = sid && { sid };
         const ce = eid && { eid };
 
-        return ApiRequest.get(this.urlFor('auth/oauth2_flow/auth'))
+        return this.client
+            .get(this.urlFor('auth/oauth2_flow/auth'))
             .withParams({ ...qs, ...qc })
             .withCookies({ ...cs, ...ce });
     }
@@ -338,7 +348,8 @@ export class AuthAPI {
         const cs = sid && { sid };
         const qc = getCaptchaQuery(captcha);
 
-        return ApiRequest.get(this.urlFor('auth/openid_flow/login'))
+        return this.client
+            .get(this.urlFor('auth/openid_flow/login'))
             .withParams({ ...qs, ...qc, ...this.defaultRedirects })
             .withCookies({ ...ct, ...cs });
     }
@@ -346,7 +357,8 @@ export class AuthAPI {
     linkWithOpenIdRequest(sid: string | null): ApiRequest {
         const cs = sid && { sid };
 
-        return ApiRequest.get(this.urlFor('auth/openid_flow/link'))
+        return this.client
+            .get(this.urlFor('auth/openid_flow/link'))
             .withParams({ ...this.defaultRedirects })
             .withCookies({ ...cs });
     }
@@ -362,7 +374,8 @@ export class AuthAPI {
         const cs = sid && { sid };
         const ce = eid && { eid };
 
-        return ApiRequest.get(this.urlFor('auth/openid_flow/auth'))
+        return this.client
+            .get(this.urlFor('auth/openid_flow/auth'))
             .withParams({ ...qs, ...qc })
             .withCookies({ ...cs, ...ce });
     }
@@ -485,7 +498,7 @@ export class AuthAPI {
     getExternalLinksRequest(sid: string | null): ApiRequest {
         const cs = sid && { sid };
 
-        return ApiRequest.get(this.urlFor('api/auth/user/links')).withCookies({ ...cs });
+        return this.client.get(this.urlFor('api/auth/user/links')).withCookies({ ...cs });
     }
 
     async getExternalLinks(sid: string, extraHeaders?: Record<string, string>): Promise<LinkedIdentity[]> {
@@ -504,7 +517,7 @@ export class AuthAPI {
         const url = `api/auth/user/links/${provider}/${providerUserId}`;
         const cs = sid && { sid };
 
-        return ApiRequest.delete(this.urlFor(url)).withCookies({ ...cs });
+        return this.client.delete(this.urlFor(url)).withCookies({ ...cs });
     }
 
     async tryUnlink(
@@ -527,8 +540,9 @@ export class AuthAPI {
         const cs = sid && { sid };
         const ct = tid && { tid };
 
-        return ApiRequest.get(this.urlFor('/auth/logout'))
-            .withParams({ ...qt })
+        return this.client
+            .get(this.urlFor('/auth/logout'))
+            .withParams({ ...qt, ...this.defaultRedirects })
             .withCookies({ ...cs, ...ct });
     }
 

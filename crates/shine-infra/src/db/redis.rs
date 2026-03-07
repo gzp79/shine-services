@@ -8,9 +8,18 @@ pub type RedisConnectionPool = BB8Pool<RedisConnectionManager>;
 pub type RedisPooledConnection<'a> = PooledConnection<'a, RedisConnectionManager>;
 
 pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisConnectionError> {
-    let redis_manager = RedisConnectionManager::new(cns)?;
+    // Parse connection string
+    // Format: redis://host:port?timeout=3000&pool_timeout=5000
+    // - timeout: Redis native parameter in MILLISECONDS (TCP connection and command timeout)
+    // - pool_timeout: custom parameter in MILLISECONDS for bb8 pool (acquiring connection from pool, including waiting for connection to be established if pool is exhausted)
+
+    let (pool_timeout_opt, cns_clean) = crate::db::extract_and_strip_param(cns, "pool_timeout");
+    let pool_timeout_ms = pool_timeout_opt.unwrap_or(30000); // Default: 30s
+
+    let redis_manager = RedisConnectionManager::new(cns_clean)?;
     let redis = bb8::Pool::builder()
         .max_size(10) // Set the maximum number of connections in the pool
+        .connection_timeout(std::time::Duration::from_millis(pool_timeout_ms))
         .build(redis_manager)
         .await?;
 

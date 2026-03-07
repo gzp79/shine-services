@@ -1,5 +1,4 @@
 import { expect, test } from '$fixtures/setup';
-import { ApiRequest } from '$lib/api/api';
 import { StaticFileServer } from '$lib/mocks/static_file_server';
 import fs from 'fs';
 import path from 'path';
@@ -24,7 +23,7 @@ test.describe('Static File Server', () => {
     // });
 
     //todo: for some reason tls fails here (but works from the tools)
-    test.skip('should serve static files with security headers', async () => {
+    test.skip('should serve static files with security headers', async ({ api }) => {
         const mock = new StaticFileServer('static-server', {
             url: new URL('https://local.scytta.com:9080'),
             staticFilesPath: testDir
@@ -34,7 +33,7 @@ test.describe('Static File Server', () => {
         expect(mock.isRunning).toBeTruthy();
 
         // Test file serving
-        const response = await ApiRequest.get(mock.getUrlFor('/test.txt'));
+        const response = await api.client.get(mock.getUrlFor('/test.txt'));
         expect(response).toHaveStatus(200);
         expect(await response.text()).toBe(testContent);
 

@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    repositories::identity::{Identity, IdentityDb, IdentityError, TokenInfo, TokenKind},
+    repositories::identity::{Identity, IdentityError, TokenInfo, TokenKind},
     routes::auth::{AuthError, AuthSession},
     services::{hash_email, TokenService, UserService},
 };

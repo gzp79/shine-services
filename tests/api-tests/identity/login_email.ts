@@ -1,5 +1,5 @@
 import { Api, expect, test } from '$fixtures/setup';
-import { ApiRequest, ApiResponse, ProblemSchema } from '$lib/api/api';
+import { ApiResponse, ProblemSchema } from '$lib/api/api';
 import { getEmailLink, getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import OpenIDMockServer from '$lib/mocks/openid';
@@ -116,7 +116,7 @@ test.describe('Login with email for guest', () => {
                 const url = getEmailLink(mail);
                 expect(url).toStartWith(`${identityUrl}/auth/token/login?`);
 
-                const loginResponse = await ApiRequest.get(url);
+                const loginResponse = await api.client.get(url);
                 expect(loginResponse).toHaveStatus(200);
 
                 const loginText = await loginResponse.text();
@@ -167,7 +167,7 @@ test.describe('Login with email for guest', () => {
         const linkUrl = new URL(link);
         linkUrl.searchParams.set('captcha', 'invalid');
 
-        const loginResponse = await ApiRequest.get(linkUrl.toString());
+        const loginResponse = await api.client.get(linkUrl.toString());
         expect(loginResponse).toHaveStatus(200);
         const loginText = await loginResponse.text();
         expect(getPageRedirectUrl(loginText)).toEqual(
@@ -195,7 +195,7 @@ test.describe('Login with email for guest', () => {
         const linkUrl = new URL(link);
         linkUrl.searchParams.set('token', 'invalid');
 
-        const loginResponse = await ApiRequest.get(linkUrl.toString());
+        const loginResponse = await api.client.get(linkUrl.toString());
         expect(loginResponse).toHaveStatus(200);
         const loginText = await loginResponse.text();
         expect(getPageRedirectUrl(loginText)).toEqual(
@@ -223,14 +223,14 @@ test.describe('Login with email for guest', () => {
         const linkUrl = new URL(link);
 
         await test.step('Login with token 1st time', async () => {
-            const loginResponse = await ApiRequest.get(linkUrl.toString());
+            const loginResponse = await api.client.get(linkUrl.toString());
             expect(loginResponse).toHaveStatus(200);
             const loginText = await loginResponse.text();
             expect(getPageProblem(loginText)).toBeNull();
         });
 
         await test.step('Login with token 2nd time', async () => {
-            const loginResponse = await ApiRequest.get(linkUrl.toString());
+            const loginResponse = await api.client.get(linkUrl.toString());
             expect(loginResponse).toHaveStatus(200);
             const loginText = await loginResponse.text();
             expect(getPageRedirectUrl(loginText)).toEqual(
@@ -277,7 +277,7 @@ test.describe('Login with email for guest', () => {
         });
 
         await test.step('Login with token 2nd time', async () => {
-            const loginResponse = await ApiRequest.get(linkUrl.toString());
+            const loginResponse = await api.client.get(linkUrl.toString());
             expect(loginResponse).toHaveStatus(200);
             const loginText = await loginResponse.text();
             expect(getPageRedirectUrl(loginText)).toEqual(
@@ -443,7 +443,7 @@ test.describe('Login with email for returning user', () => {
                 const url = getEmailLink(mail);
                 expect(url).toStartWith(`${identityUrl}/auth/token/login?`);
 
-                const loginResponse = await ApiRequest.get(url);
+                const loginResponse = await api.client.get(url);
                 expect(loginResponse).toHaveStatus(200);
 
                 const loginText = await loginResponse.text();
@@ -480,7 +480,7 @@ test.describe('Login with email for returning user', () => {
         await checkLoginResponse(response, api);
 
         const url = getEmailLink(mail);
-        const loginResponse = await ApiRequest.get(url);
+        const loginResponse = await api.client.get(url);
         expect(loginResponse).toHaveStatus(200);
 
         for (const infoMethod of ['fast', 'full'] as const) {
@@ -506,14 +506,14 @@ test.describe('Login with email for returning user', () => {
         const linkUrl = new URL(link);
 
         await test.step('Login with token 1st time', async () => {
-            const loginResponse = await ApiRequest.get(linkUrl.toString());
+            const loginResponse = await api.client.get(linkUrl.toString());
             expect(loginResponse).toHaveStatus(200);
             const loginText = await loginResponse.text();
             expect(getPageProblem(loginText)).toBeNull();
         });
 
         await test.step('Login with token 2nd time', async () => {
-            const loginResponse = await ApiRequest.get(linkUrl.toString());
+            const loginResponse = await api.client.get(linkUrl.toString());
             expect(loginResponse).toHaveStatus(200);
             const loginText = await loginResponse.text();
             expect(getPageRedirectUrl(loginText)).toEqual(
@@ -565,7 +565,7 @@ test.describe('Login with email for returning user', () => {
         }
 
         await test.step('Login with old link shall fail', async () => {
-            const loginResponse = await ApiRequest.get(linkOld.toString());
+            const loginResponse = await api.client.get(linkOld.toString());
             expect(loginResponse).toHaveStatus(200);
             const loginText = await loginResponse.text();
             expect(getPageRedirectUrl(loginText)).toEqual(
@@ -582,7 +582,7 @@ test.describe('Login with email for returning user', () => {
         });
 
         await test.step('Login with old link shall succeed', async () => {
-            const loginResponse = await ApiRequest.get(linkNew.toString());
+            const loginResponse = await api.client.get(linkNew.toString());
             expect(loginResponse).toHaveStatus(200);
             const loginText = await loginResponse.text();
             expect(getPageProblem(loginText)).toBeNull();

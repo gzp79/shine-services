@@ -31,7 +31,7 @@ impl From<SessionError> for Problem {
     fn from(err: SessionError) -> Self {
         match err {
             SessionError::KeyConflict => Problem::conflict(pr::KEY_CONFLICT).with_detail(err.to_string()),
-
+            SessionError::DBError(err) => err.into(),
             err => Problem::internal_error()
                 .with_detail(err.to_string())
                 .with_sensitive_dbg(err),

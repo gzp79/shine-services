@@ -1,4 +1,5 @@
 import { expect, test } from '$fixtures/setup';
+import { getPageRedirectUrl } from '$lib/api/utils';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 
 test.describe('Session concurrency tests', { tag: '@concurrency' }, () => {
@@ -44,6 +45,8 @@ test.describe('Session concurrency tests', { tag: '@concurrency' }, () => {
 
         // Logout should succeed
         expect(logoutResponse).toHaveStatus(200);
+        const logoutText = await logoutResponse.text();
+        expect(getPageRedirectUrl(logoutText)).toEqual(api.auth.defaultRedirects.redirectUrl);
 
         // Info request may succeed or fail depending on timing
         // Either outcome is acceptable, as long as it doesn't crash
@@ -61,6 +64,8 @@ test.describe('Session concurrency tests', { tag: '@concurrency' }, () => {
 
         // Logout should always succeed
         expect(logoutResponse).toHaveStatus(200);
+        const logoutText = await logoutResponse.text();
+        expect(getPageRedirectUrl(logoutText)).toEqual(api.auth.defaultRedirects.redirectUrl);
 
         // Refresh may succeed or fail
         expect([200, 401]).toContain(refreshResponse.status());

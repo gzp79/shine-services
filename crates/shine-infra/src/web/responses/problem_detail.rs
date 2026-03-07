@@ -69,6 +69,10 @@ impl Problem {
         Self::new(StatusCode::FORBIDDEN, "forbidden")
     }
 
+    pub fn service_unavailable() -> Self {
+        Self::new(StatusCode::SERVICE_UNAVAILABLE, "service-unavailable")
+    }
+
     pub fn internal_error() -> Self {
         Problem::new(StatusCode::INTERNAL_SERVER_ERROR, "server-error")
     }

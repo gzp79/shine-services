@@ -1,6 +1,5 @@
 use crate::{
     app_state::AppState,
-    handlers::ExternalLoginHandler,
     routes::auth::{
         AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OAuth2Client, PageUtils,
     },

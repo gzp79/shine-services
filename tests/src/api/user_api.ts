@@ -2,7 +2,7 @@ import { expect } from '$fixtures/setup';
 import { DateStringSchema, OptionalSchema } from '$lib/schema_utils';
 import { joinURL } from '$lib/utils';
 import { z } from 'zod';
-import { ApiRequest } from './api';
+import { ApiClient, ApiRequest } from './api';
 
 export type GetUserInfoMethod = 'fast' | 'full' | 'fillWithRefresh';
 
@@ -47,10 +47,15 @@ const EmailChangeSchema = z.object({
 export type EmailChange = z.infer<typeof EmailChangeSchema>;
 
 export class UserAPI {
+    private readonly client: ApiClient;
+
     constructor(
         public readonly serviceUrl: string,
-        public readonly masterAdminKey: string
-    ) {}
+        public readonly masterAdminKey: string,
+        public readonly enableRequestLogging: boolean
+    ) {
+        this.client = new ApiClient(enableRequestLogging);
+    }
 
     urlFor(path: string) {
         return joinURL(new URL(this.serviceUrl), path);
@@ -59,7 +64,8 @@ export class UserAPI {
     getUserInfoRequest(sid: string | null, method: GetUserInfoMethod | null): ApiRequest {
         const cs = sid && { sid };
 
-        return ApiRequest.get(this.urlFor('api/auth/user/info'))
+        return this.client
+            .get(this.urlFor('api/auth/user/info'))
             .withParams(method ? { method } : {})
             .withCookies({ ...cs });
     }
@@ -79,7 +85,8 @@ export class UserAPI {
         const cs = sid && { sid };
         const av = masterKey ? `${this.masterAdminKey}` : null;
 
-        return ApiRequest.get(this.urlFor(`/api/identities/${userId}/roles`))
+        return this.client
+            .get(this.urlFor(`/api/identities/${userId}/roles`))
             .withCookies({ ...cs })
             .withAuthIf(av);
     }
@@ -100,7 +107,8 @@ export class UserAPI {
         const cs = sid && { sid };
         const av = masterKey ? `${this.masterAdminKey}` : null;
 
-        return ApiRequest.put<AddUserRole>(this.urlFor(`/api/identities/${userId}/roles`), { role })
+        return this.client
+            .put<AddUserRole>(this.urlFor(`/api/identities/${userId}/roles`), { role })
             .withCookies({ ...cs })
             .withAuthIf(av);
     }
@@ -134,7 +142,8 @@ export class UserAPI {
         const cs = sid && { sid };
         const av = masterKey ? `${this.masterAdminKey}` : null;
 
-        return ApiRequest.delete<DeleteUserRole>(this.urlFor(`/api/identities/${userId}/roles`))
+        return this.client
+            .delete<DeleteUserRole>(this.urlFor(`/api/identities/${userId}/roles`))
             .withCookies({ ...cs })
             .withAuthIf(av)
             .withBody({ role });
@@ -164,7 +173,8 @@ export class UserAPI {
         const cs = sid && { sid };
         const pl = lang && { lang };
 
-        return ApiRequest.post(this.urlFor('/api/auth/user/email/confirm'))
+        return this.client
+            .post(this.urlFor('/api/auth/user/email/confirm'))
             .withCookies({ ...cs })
             .withParams({ ...pl });
     }
@@ -178,7 +188,8 @@ export class UserAPI {
         const cs = sid && { sid };
         const pl = lang && { lang };
 
-        return ApiRequest.post<EmailChange>(this.urlFor('/api/auth/user/email/change'))
+        return this.client
+            .post<EmailChange>(this.urlFor('/api/auth/user/email/change'))
             .withCookies({ ...cs })
             .withParams({ ...pl })
             .withBody({ email });
@@ -192,7 +203,7 @@ export class UserAPI {
     completeConfirmEmailRequest(sid: string | null, token: string): ApiRequest {
         const cs = sid && { sid };
 
-        return ApiRequest.post(this.urlFor(`/api/auth/user/email/complete?token=${token}`)).withCookies({
+        return this.client.post(this.urlFor(`/api/auth/user/email/complete?token=${token}`)).withCookies({
             ...cs
         });
     }

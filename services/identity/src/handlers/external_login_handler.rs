@@ -2,15 +2,14 @@ use crate::{
     app_state::AppState,
     repositories::identity::{ExternalUserInfo, IdentityDb, IdentityError, TokenKind},
     routes::auth::{AuthError, AuthPage, AuthSession, PageUtils, TokenCookie},
-    services::{CreateUserError, LinkService, TokenService, UserService},
+    services::{CreateUserError, LinkService, UserService},
 };
 use shine_infra::web::extracts::{ClientFingerprint, SiteInfo};
 use url::Url;
 
 /// Handler for external authentication operations (OAuth2/OIDC)
 ///
-/// Orchestrates external login and link flows across user_service, link_service,
-/// token_service, and session management.
+/// Orchestrates external login and link flows
 pub struct ExternalLoginHandler<'a, IDB>
 where
     IDB: IdentityDb,
@@ -18,7 +17,6 @@ where
     state: &'a AppState,
     user_service: &'a UserService<IDB>,
     link_service: &'a LinkService<IDB>,
-    token_service: &'a TokenService<IDB>,
 }
 
 impl<'a, IDB> ExternalLoginHandler<'a, IDB>
@@ -26,17 +24,11 @@ where
     IDB: IdentityDb,
 {
     /// Create a new external login handler
-    pub fn new(
-        state: &'a AppState,
-        user_service: &'a UserService<IDB>,
-        link_service: &'a LinkService<IDB>,
-        token_service: &'a TokenService<IDB>,
-    ) -> Self {
+    pub fn new(state: &'a AppState, user_service: &'a UserService<IDB>, link_service: &'a LinkService<IDB>) -> Self {
         Self {
             state,
             user_service,
             link_service,
-            token_service,
         }
     }
 
@@ -166,6 +158,6 @@ where
 
 impl AppState {
     pub fn external_login_handler(&self) -> ExternalLoginHandler<'_, impl IdentityDb> {
-        ExternalLoginHandler::new(self, self.user_service(), self.link_service(), self.token_service())
+        ExternalLoginHandler::new(self, self.user_service(), self.link_service())
     }
 }

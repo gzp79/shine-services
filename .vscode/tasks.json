@@ -199,9 +199,10 @@
       "id": "env-task",
       "description": "Select env task",
       "options": [
-        { "label": "up", "value": "up" },
-        { "label": "restart", "value": "up --build" },
-        { "label": "down", "value": "down" }
+        { "label": "start (rebuild)", "value": "up --build" },
+        { "label": "start", "value": "up" },
+        { "label": "stop", "value": "down" },
+        { "label": "status", "value": "ps" }
       ],
       "default": "asset-service"
     }

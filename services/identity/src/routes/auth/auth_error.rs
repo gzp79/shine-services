@@ -141,13 +141,25 @@ impl From<AuthError> for Problem {
                 Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::SessionError(error) => {
-                Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
+                let problem: Problem = error.into();
+                // Preserve infrastructure failure status codes (503)
+                if problem.status == StatusCode::SERVICE_UNAVAILABLE {
+                    problem
+                } else {
+                    Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(problem)
+                }
             }
             AuthError::IdentityError(IdentityError::UserDeleted) => {
                 Problem::unauthorized_ty(SESSION_EXPIRED).with_sensitive("userDeleted")
             }
             AuthError::IdentityError(error) => {
-                Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
+                let problem: Problem = error.into();
+                // Preserve infrastructure failure status codes (503)
+                if problem.status == StatusCode::SERVICE_UNAVAILABLE {
+                    problem
+                } else {
+                    Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(problem)
+                }
             }
             AuthError::ExternalLoginError(error) => {
                 let problem: Problem = error.into();
