@@ -71,7 +71,7 @@ impl From<IdentityError> for Problem {
             }
             IdentityError::MissingEmail => Problem::precondition_failed(pr::MISSING_EMAIL).with_detail(err.to_string()),
             IdentityError::UserDeleted => Problem::conflict(pr::DELETE_CONFLICT).with_detail(err.to_string()),
-
+            IdentityError::DBError(err) => err.into(),
             err => Problem::internal_error()
                 .with_detail(err.to_string())
                 .with_sensitive_dbg(err),

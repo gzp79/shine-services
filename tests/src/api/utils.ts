@@ -43,3 +43,12 @@ export function getEmailLinkToken(mail: ParsedMail): string | null {
     const token = new URL(confirmUrl).searchParams.get('token');
     return token;
 }
+
+export function getEmailRecipientsText(mail: ParsedMail): string {
+    const to = mail.to;
+    if (!to) {
+        return '';
+    }
+
+    return Array.isArray(to) ? to.map((recipient) => recipient.text).join(', ') : to.text;
+}

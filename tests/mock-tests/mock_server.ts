@@ -1,13 +1,12 @@
 import { expect, test } from '$fixtures/setup';
-import { ApiRequest } from '$lib/api/api';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import OpenIdMockServer from '$lib/mocks/openid';
 
 test.describe('OpenId mock server', () => {
-    test('Test mock server', async () => {
+    test('Test mock server', async ({ api }) => {
         const mock = new OpenIdMockServer();
         await mock.start();
-        const response = await ApiRequest.get(mock!.getUrlFor('/.well-known/openid-configuration'));
+        const response = await api.client.get(mock!.getUrlFor('/.well-known/openid-configuration'));
         expect(response).toHaveStatus(200);
         await mock?.stop();
         expect(mock.isRunning).toBeFalsy();

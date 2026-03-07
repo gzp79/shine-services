@@ -46,8 +46,10 @@ impl From<UserSessionError> for Problem {
             UserSessionError::SessionCompromised => Problem::unauthorized()
                 .with_detail(value.to_string())
                 .with_sensitive("sessionCompromised"),
-
-            _ => Problem::internal_error()
+            UserSessionError::RedisPoolError(_) => Problem::service_unavailable()
+                .with_detail(value.to_string())
+                .with_sensitive_dbg(value),
+            UserSessionError::RedisError(_) => Problem::service_unavailable()
                 .with_detail(value.to_string())
                 .with_sensitive_dbg(value),
         }

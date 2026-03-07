@@ -98,6 +98,7 @@
     "thiserror",
     "timestamptz",
     "timestampz",
+    "toxiproxy",
     "tsflow",
     "unistroke",
     "unlisten",

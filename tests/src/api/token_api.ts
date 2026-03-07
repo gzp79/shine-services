@@ -2,7 +2,7 @@ import { expect } from '$fixtures/setup';
 import { DateStringSchema, OptionalSchema } from '$lib/schema_utils';
 import { joinURL } from '$lib/utils';
 import { z } from 'zod';
-import { ApiRequest } from './api';
+import { ApiClient, ApiRequest } from './api';
 
 const TokenKindSchema = z.enum(['singleAccess', 'persistent', 'access', 'emailAccess']);
 export type TokenKind = z.infer<typeof TokenKindSchema>;
@@ -43,7 +43,14 @@ export const CreateTokenRequestSchema = z.object({
 export type CreateTokenRequest = z.infer<typeof CreateTokenRequestSchema>;
 
 export class TokenAPI {
-    constructor(public readonly serviceUrl: string) {}
+    private readonly client: ApiClient;
+
+    constructor(
+        public readonly serviceUrl: string,
+        public readonly enableRequestLogging: boolean
+    ) {
+        this.client = new ApiClient(enableRequestLogging);
+    }
 
     urlFor(path: string) {
         return joinURL(new URL(this.serviceUrl), path);
@@ -52,7 +59,7 @@ export class TokenAPI {
     getTokensRequest(sid: string | null): ApiRequest {
         const cs = sid && { sid };
 
-        return ApiRequest.get(this.urlFor('api/auth/user/tokens')).withCookies({ ...cs });
+        return this.client.get(this.urlFor('api/auth/user/tokens')).withCookies({ ...cs });
     }
 
     async getTokens(sid: string, extraHeaders?: Record<string, string>): Promise<ActiveToken[]> {
@@ -65,7 +72,7 @@ export class TokenAPI {
     getTokenRequest(sid: string | null, tokenId: string): ApiRequest {
         const cs = sid && { sid };
 
-        return ApiRequest.get(this.urlFor(`api/auth/user/tokens/${tokenId}`)).withCookies({ ...cs });
+        return this.client.get(this.urlFor(`api/auth/user/tokens/${tokenId}`)).withCookies({ ...cs });
     }
 
     async getToken(sid: string | null, tokenId: string): Promise<ActiveToken | undefined> {
@@ -80,7 +87,7 @@ export class TokenAPI {
     revokeTokenRequest(sid: string | null, tokenId: string): ApiRequest {
         const cs = sid && { sid };
 
-        return ApiRequest.delete(this.urlFor(`api/auth/user/tokens/${tokenId}`)).withCookies({ ...cs });
+        return this.client.delete(this.urlFor(`api/auth/user/tokens/${tokenId}`)).withCookies({ ...cs });
     }
 
     async revokeToken(sid: string | null, tokenId: string): Promise<void> {
@@ -96,11 +103,13 @@ export class TokenAPI {
     ): ApiRequest<CreateTokenRequest> {
         const cs = sid && { sid };
 
-        return ApiRequest.post<CreateTokenRequest>(this.urlFor('api/auth/user/tokens'), {
-            kind,
-            timeToLive: duration,
-            bindToSite: bindToSite
-        }).withCookies({ ...cs });
+        return this.client
+            .post<CreateTokenRequest>(this.urlFor('api/auth/user/tokens'), {
+                kind,
+                timeToLive: duration,
+                bindToSite: bindToSite
+            })
+            .withCookies({ ...cs });
     }
 
     async createSAToken(

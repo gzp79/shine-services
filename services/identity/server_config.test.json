@@ -8,8 +8,8 @@
 
   "identity": {
     "db": {
-      "redisCns": "redis://redis.mockbox.com:6379",
-      "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-identity?sslmode=disable",
+      "redisCns": "redis://redis.mockbox.com:6379?timeout=3000&pool_timeout=5000",
+      "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-identity?sslmode=disable&connect_timeout=3&pool_timeout=5",
       "emailProtection": {
         "encryptionKey": "r8BZ2woALT0mI_WdOluZqD9-N3WCW7j7r6w-1LfVYf8",
         "hashKey": "Pl7rHydaV8WLqFRMVGXEAw_UwXueD46cpfrMx2EqmYE"

@@ -166,44 +166,21 @@ export class ApiResponse {
 }
 
 export class ApiRequest<Q = void> {
-    public method: ApiMethod;
-    public url: string;
     public headers: Record<string, string | undefined>;
     public params: ApiParams;
     public body?: Payload<Q>;
 
     constructor(
-        method: ApiMethod,
-        url: string,
+        public readonly method: ApiMethod,
+        public readonly url: string,
+        public readonly enableLogging: boolean,
         headers: Record<string, string> = {},
         params: ApiParams = {},
         body: Payload<Q> | undefined = undefined
     ) {
-        this.method = method;
-        this.url = url;
         this.headers = headers;
         this.params = params;
         this.body = body;
-    }
-
-    public static get<Q = void>(url: string): ApiRequest<Q> {
-        return new ApiRequest<Q>('get', url);
-    }
-
-    public static post<Q = void>(url: string, body?: Payload<Q>): ApiRequest<Q> {
-        return new ApiRequest<Q>('post', url).withBody(body);
-    }
-
-    public static put<Q = void>(url: string, body?: Payload<Q>): ApiRequest<Q> {
-        return new ApiRequest<Q>('put', url).withBody(body);
-    }
-
-    public static patch<Q = void>(url: string, body?: Payload<Q>): ApiRequest<Q> {
-        return new ApiRequest<Q>('patch', url).withBody(body);
-    }
-
-    public static delete<Q = void>(url: string): ApiRequest<Q> {
-        return new ApiRequest<Q>('delete', url);
     }
 
     withHeaders(headers: Record<string, string | undefined>): ApiRequest<Q> {
@@ -252,7 +229,6 @@ export class ApiRequest<Q = void> {
     private async send(): Promise<ApiResponse> {
         const context = await request.newContext();
 
-        const log_id = randomUUID();
         const headers = removeUndefinedValues(this.headers);
 
         const data = this.bodyJson();
@@ -260,11 +236,14 @@ export class ApiRequest<Q = void> {
             headers['content-type'] = 'application/json';
         }
 
-        log(
-            `Request [${log_id}] ${this.method} ${this.url}\nparams: ${JSON.stringify(this.params, null, 2)}\nheaders: ${JSON.stringify(headers, null, 2)}`
-        );
-        if (data !== undefined) {
-            log(`Request body [${log_id}]: ${data}`);
+        const log_id = randomUUID();
+        if (this.enableLogging) {
+            log(
+                `Request [${log_id}] ${this.method} ${this.url}\nparams: ${JSON.stringify(this.params, null, 2)}\nheaders: ${JSON.stringify(headers, null, 2)}`
+            );
+            if (data !== undefined) {
+                log(`Request body [${log_id}]: ${data}`);
+            }
         }
 
         let response;
@@ -294,14 +273,16 @@ export class ApiRequest<Q = void> {
         const api_response = new ApiResponse(context, response);
 
         // todo: it may effect the test as we pre-await properties before the actual test
-        const response_headers = api_response.headers();
-        const response_cookies = api_response.cookies();
-        const response_text = await api_response.text();
-        log(
-            `Response [${log_id}] ${api_response.status()}\nheaders: ${JSON.stringify(response_headers, null, 2)}\ncookies: ${JSON.stringify(response_cookies, null, 2)}`
-        );
-        if (response_text) {
-            log(`Response body [${log_id}]:\n${response_text}`);
+        if (this.enableLogging) {
+            const response_headers = api_response.headers();
+            const response_cookies = api_response.cookies();
+            const response_text = await api_response.text();
+            log(
+                `Response [${log_id}] ${api_response.status()}\nheaders: ${JSON.stringify(response_headers, null, 2)}\ncookies: ${JSON.stringify(response_cookies, null, 2)}`
+            );
+            if (response_text) {
+                log(`Response body [${log_id}]:\n${response_text}`);
+            }
         }
 
         return api_response;
@@ -312,5 +293,29 @@ export class ApiRequest<Q = void> {
         onrejected?: ((reason: void) => TResult2 | PromiseLike<TResult2>) | null
     ): Promise<TResult1 | TResult2> {
         return this.send().then(onfulfilled, onrejected);
+    }
+}
+
+export class ApiClient {
+    public constructor(public readonly enableLogging: boolean) {}
+
+    public get<Q = void>(url: string): ApiRequest<Q> {
+        return new ApiRequest<Q>('get', url, this.enableLogging);
+    }
+
+    public post<Q = void>(url: string, body?: Payload<Q>): ApiRequest<Q> {
+        return new ApiRequest<Q>('post', url, this.enableLogging).withBody(body);
+    }
+
+    public put<Q = void>(url: string, body?: Payload<Q>): ApiRequest<Q> {
+        return new ApiRequest<Q>('put', url, this.enableLogging).withBody(body);
+    }
+
+    public patch<Q = void>(url: string, body?: Payload<Q>): ApiRequest<Q> {
+        return new ApiRequest<Q>('patch', url, this.enableLogging).withBody(body);
+    }
+
+    public delete<Q = void>(url: string): ApiRequest<Q> {
+        return new ApiRequest<Q>('delete', url, this.enableLogging);
     }
 }

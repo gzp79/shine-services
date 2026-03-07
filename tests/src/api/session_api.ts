@@ -2,7 +2,7 @@ import { expect } from '$fixtures/setup';
 import { DateStringSchema, OptionalSchema } from '$lib/schema_utils';
 import { joinURL } from '$lib/utils';
 import { z } from 'zod';
-import { ApiRequest } from './api';
+import { ApiClient, ApiRequest } from './api';
 
 const ActiveSessionSchema = z.object({
     userId: z.string(),
@@ -21,7 +21,14 @@ const ActiveSessionsSchema = z.object({
 export type ActiveSessions = z.infer<typeof ActiveSessionsSchema>;
 
 export class SessionAPI {
-    constructor(public readonly serviceUrl: string) {}
+    private readonly client: ApiClient;
+
+    constructor(
+        public readonly serviceUrl: string,
+        public readonly enableRequestLogging: boolean
+    ) {
+        this.client = new ApiClient(enableRequestLogging);
+    }
 
     urlFor(path: string) {
         return joinURL(new URL(this.serviceUrl), path);
@@ -30,7 +37,7 @@ export class SessionAPI {
     getSessionsRequest(sid: string | null): ApiRequest {
         const cs = sid && { sid };
 
-        return ApiRequest.get(this.urlFor('api/auth/user/sessions')).withCookies({ ...cs });
+        return this.client.get(this.urlFor('api/auth/user/sessions')).withCookies({ ...cs });
     }
 
     async getSessions(sid: string, extraHeaders?: Record<string, string>): Promise<ActiveSession[]> {

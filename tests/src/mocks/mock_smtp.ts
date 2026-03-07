@@ -39,12 +39,19 @@ class MockSmtp {
                     if (err) {
                         log('Error parsing email:', err);
                         this.rejectWaitMail?.(err);
-                    } else {
+                        return callback(err);
+                    }
+
+                    try {
                         this.onMailReceived?.(parsed);
                         this.resolveWaitMail?.(parsed);
+                        return callback(null);
+                    } catch (error: any) {
+                        log('Error in onMail callback:', error);
+                        this.rejectWaitMail?.(error);
+                        return callback(new Error(error.message || 'SMTP rejection'));
                     }
                 });
-                return callback(null);
             },
 
             authOptional: true,

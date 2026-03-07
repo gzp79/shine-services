@@ -241,11 +241,19 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PGConnectionPool, PGCreat
 
     let tls = MakeRustlsConnect::new(tls_config);
 
-    let pg_config = PGConfig::from_str(cns)?;
-    //log::debug!("Postgresql config: {pg_config:#?}");
+    // Parse connection string
+    // Format: postgres://...?connect_timeout=3&pool_timeout=5
+    // - connect_timeout: PostgreSQL native parameter in SECONDS (TCP connection establishment)
+    // - pool_timeout: custom parameter in SECONDS for bb8 pool (acquiring connection from pool, including waiting for connection to be established if pool is exhausted)
+
+    let (pool_timeout_opt, cns_clean) = crate::db::extract_and_strip_param(cns, "pool_timeout");
+    let pool_timeout_secs = pool_timeout_opt.unwrap_or(30); // Default: 30s
+
+    let pg_config = PGConfig::from_str(&cns_clean)?;
     let postgres_manager = PGConnectionManager::new(pg_config, tls);
     let postgres = bb8::Pool::builder()
         .max_size(10) // Set the maximum number of connections in the pool
+        .connection_timeout(std::time::Duration::from_secs(pool_timeout_secs))
         .build(postgres_manager)
         .await?;
 
