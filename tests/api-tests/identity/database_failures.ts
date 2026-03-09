@@ -1,4 +1,5 @@
 import { expect, test } from '$fixtures/setup';
+import { waitForCondition } from '$lib/utils';
 import { Toxiproxy } from 'toxiproxy-node-client';
 
 test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
@@ -27,7 +28,10 @@ test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
         await postgresProxy.update({ enabled: true, listen: postgresProxy.listen, upstream: postgresProxy.upstream });
 
         // Should recover
-        const recovery = await api.token.getTokensRequest(user.sid);
+        const recovery = await waitForCondition(async () => await api.token.getTokensRequest(user.sid), {
+            timeout: 5000,
+            errorMessage: 'Service did not recover from database failure'
+        });
         expect(recovery).toHaveStatus(200);
     });
 
@@ -50,7 +54,7 @@ test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
         const duration = Date.now() - start;
 
         expect(duration).toBeLessThan(10000);
-        expect(response.status()).toBe(503);
+        expect(response).toHaveStatus(503);
     });
 
     test('Connection pool exhaustion shall queue gracefully', async ({ api }) => {
@@ -64,6 +68,9 @@ test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
         results.forEach((r) => {
             expect([200, 503]).toContain(r.status());
         });
-        //console.log('Failed requests due to pool exhaustion:', results.filter((r) => r.status() === 503).length);
+
+        // At least 80% should succeed with reasonable pool size
+        const successCount = results.filter((r) => r.status() === 200).length;
+        expect(successCount).toBeGreaterThan(40); // 80% success rate minimum
     });
 });

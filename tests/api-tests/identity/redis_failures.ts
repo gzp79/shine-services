@@ -1,5 +1,6 @@
 import { expect, test } from '$fixtures/setup';
 import { Toxiproxy } from 'toxiproxy-node-client';
+import { waitForCondition } from '$lib/utils';
 
 test.describe('Redis failure tests', { tag: '@infrastructure' }, () => {
     let toxiproxy: Toxiproxy;
@@ -21,13 +22,24 @@ test.describe('Redis failure tests', { tag: '@infrastructure' }, () => {
 
         // Should fail with 503
         const failResponse = await api.user.getUserInfoRequest(user.sid, 'fast');
-        expect(failResponse.status()).toBe(503);
+        expect(failResponse).toHaveStatus(503);
 
         // Restore
         await redisProxy.update({ enabled: true, listen: redisProxy.listen, upstream: redisProxy.upstream });
-        await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // Should recover
+        await waitForCondition(
+            async () => {
+                const recovery = await api.user.getUserInfoRequest(user.sid, 'fast');
+                if (recovery.status() !== 200) throw new Error('Not recovered yet');
+                return recovery;
+            },
+            {
+                timeout: 5000,
+                errorMessage: 'Service did not recover from Redis failure'
+            }
+        );
+
         const recovery = await api.user.getUserInfo(user.sid, 'fast');
         expect(recovery.userId).toEqual(user.userId);
     });
@@ -51,6 +63,6 @@ test.describe('Redis failure tests', { tag: '@infrastructure' }, () => {
         const duration = Date.now() - start;
 
         expect(duration).toBeLessThan(10000);
-        expect(response.status()).toBe(503);
+        expect(response).toHaveStatus(503);
     });
 });
