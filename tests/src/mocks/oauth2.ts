@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Certificates, MockServer } from '$lib/mocks/mock_server';
-import '$lib/utils';
 import bodyParser from 'body-parser';
 import express from 'express';
 import { Request, RequestHandler, Response } from 'express-serve-static-core';
