@@ -15,7 +15,7 @@ test.describe('Cookie security attributes', { tag: '@security' }, () => {
         }
     });
 
-    test('Session cookies shall have Secure flag in production', async ({ api }) => {
+    test('Session cookies shall have Secure flag on HTTPS', async ({ api }) => {
         const response = await api.auth.loginWithGuestRequest(null, null, null);
         expect(response).toHaveStatus(200);
         const text = await response.text();
@@ -23,14 +23,11 @@ test.describe('Cookie security attributes', { tag: '@security' }, () => {
 
         const cookies = response.cookies();
 
-        // In test environment, Secure might not be set
-        // In production (HTTPS), should be true
-        const isTestEnv = process.env.ENVIRONMENT === 'test';
-        if (!isTestEnv) {
-            expect(cookies.sid.secure).toBe(true);
-            if (cookies.tid.value) {
-                expect(cookies.tid.secure).toBe(true);
-            }
+        // Test environment uses HTTPS (https://cloud.local.scytta.com:8443)
+        // Service running on HTTPS should always set Secure flag
+        expect(cookies.sid.secure).toBe(true);
+        if (cookies.tid.value) {
+            expect(cookies.tid.secure).toBe(true);
         }
     });
 

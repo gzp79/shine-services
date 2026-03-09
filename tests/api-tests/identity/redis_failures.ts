@@ -1,6 +1,6 @@
 import { expect, test } from '$fixtures/setup';
-import { Toxiproxy } from 'toxiproxy-node-client';
 import { waitForCondition } from '$lib/utils';
+import { Toxiproxy } from 'toxiproxy-node-client';
 
 test.describe('Redis failure tests', { tag: '@infrastructure' }, () => {
     let toxiproxy: Toxiproxy;
@@ -62,7 +62,9 @@ test.describe('Redis failure tests', { tag: '@infrastructure' }, () => {
         const response = await api.user.getUserInfoRequest(user.sid, 'fast');
         const duration = Date.now() - start;
 
-        expect(duration).toBeLessThan(10000);
-        expect(response).toHaveStatus(503);
+        // Should timeout (not instant) but before the 10s latency
+        expect(duration).toBeGreaterThan(2000); // Should take time (not instant fail)
+        expect(duration).toBeLessThan(8000); // Should timeout before 10s latency
+        expect(response).toHaveStatus(503); // Should fail gracefully
     });
 });

@@ -53,8 +53,10 @@ test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
         const response = await api.token.getTokensRequest(user.sid);
         const duration = Date.now() - start;
 
-        expect(duration).toBeLessThan(10000);
-        expect(response).toHaveStatus(503);
+        // Should timeout (not instant) but before the 10s latency
+        expect(duration).toBeGreaterThan(3000); // Should take time (not instant fail)
+        expect(duration).toBeLessThan(8000); // Should timeout before 10s latency
+        expect(response).toHaveStatus(503); // Should fail gracefully
     });
 
     test('Connection pool exhaustion shall queue gracefully', async ({ api }) => {

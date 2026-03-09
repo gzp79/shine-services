@@ -47,12 +47,15 @@ test.describe('Token concurrency tests', { tag: '@concurrency' }, () => {
         // Revoke should succeed
         expect(revokeResponse).toHaveStatus(200);
 
-        // Login may succeed or fail depending on timing
-        // If it fails, should be token-expired
-        if (loginResponse.status() !== 200) {
-            const text = await loginResponse.text();
-            const problem2 = getPageProblem(text);
-            expect(problem2?.type).toBe('auth-token-expired');
+        // Race between login and revoke:
+        // - If login completes before revoke: successful session (no problem in HTML)
+        // - If revoke completes first: auth-token-expired problem in HTML
+        // Both outcomes are correct depending on timing
+        expect(loginResponse).toHaveStatus(200);
+        const loginText = await loginResponse.text();
+        const loginProblem = getPageProblem(loginText);
+        if (loginProblem) {
+            expect(loginProblem.type).toBe('auth-token-expired');
         }
 
         // After both complete, token should be invalid

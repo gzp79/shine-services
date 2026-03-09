@@ -50,13 +50,17 @@ test.describe('Roles concurrency tests', { tag: '@concurrency' }, () => {
         ]);
 
         // Both should complete
+        // 200 = operation completed, 204 = no-op (already in desired state)
         expect([200, 204]).toContain(addResponse.status());
         expect([200, 204]).toContain(deleteResponse.status());
 
-        // Final state should be deterministic
+        // Race between add and delete:
+        // - If add wins: role exists
+        // - If delete wins: role doesn't exist
+        // Both outcomes are correct depending on timing
+        // What matters is the final state is consistent (not corrupted)
         const roles = await api.user.getRoles(admin1.sid, false, targetUser.userId);
         const hasRole = roles.includes(role);
-        // Either has it or doesn't, but consistent
         expect([true, false]).toContain(hasRole);
     });
 

@@ -48,8 +48,10 @@ test.describe('Session concurrency tests', { tag: '@concurrency' }, () => {
         const logoutText = await logoutResponse.text();
         expect(getPageRedirectUrl(logoutText)).toEqual(api.auth.defaultRedirects.redirectUrl);
 
-        // Info request may succeed or fail depending on timing
-        // Either outcome is acceptable, as long as it doesn't crash
+        // Race between logout and getUserInfo:
+        // - If getUserInfo reads session before logout deletes: 200
+        // - If logout completes first: 401
+        // Both outcomes are correct depending on timing
         expect([200, 401]).toContain(infoResponse.status());
     });
 
@@ -67,7 +69,10 @@ test.describe('Session concurrency tests', { tag: '@concurrency' }, () => {
         const logoutText = await logoutResponse.text();
         expect(getPageRedirectUrl(logoutText)).toEqual(api.auth.defaultRedirects.redirectUrl);
 
-        // Refresh may succeed or fail
+        // Race between refresh and logout:
+        // - If refresh reads session before logout: 200
+        // - If logout completes first: 401
+        // Both outcomes are correct depending on timing
         expect([200, 401]).toContain(refreshResponse.status());
 
         // After both complete, session should be invalid
