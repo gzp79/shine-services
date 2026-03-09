@@ -3,7 +3,7 @@ import { ExternalUser } from '$lib/api/external_user';
 import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 import { MockServer } from '$lib/mocks/mock_server';
 import OAuth2MockServer from '$lib/mocks/oauth2';
-import { generateRandomString } from '$lib/string_utils';
+import { generateRandomString } from '$lib/utils';
 import { createUrl, parseSignedCookie } from '$lib/utils';
 import { randomUUID } from 'crypto';
 import os from 'os';

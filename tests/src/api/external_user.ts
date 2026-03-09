@@ -1,4 +1,4 @@
-import { createUrlQueryString, generateRandomString } from '$lib/string_utils';
+import { createUrlQueryString, generateRandomString } from '$lib/utils';
 import { randomUUID } from 'crypto';
 
 export type ExternalUserProvider = 'oauth2_flow' | 'openid_flow';

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ApiResponse } from './api/api';
+import { ApiResponse } from '../api/api';
 
 export const DateStringSchema = z
     .string()

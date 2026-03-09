@@ -1,8 +1,7 @@
 import { expect } from '$fixtures/setup';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIdMockServer from '$lib/mocks/openid';
-import { OptionalSchema } from '$lib/schema_utils';
-import { joinURL } from '$lib/utils';
+import { OptionalSchema, joinURL } from '$lib/utils';
 import { z } from 'zod';
 import { ApiClient, ApiRequest } from './api';
 import { ExternalUser } from './external_user';
