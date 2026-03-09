@@ -1,6 +1,6 @@
 import { expect, test } from '$fixtures/setup';
-import { getEmailLinkToken, getPageProblem } from '$lib/api/utils';
 import { UserInfoSchema } from '$lib/api/user_api';
+import { getEmailLinkToken, getPageProblem } from '$lib/api/utils';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import { randomUUID } from 'crypto';
