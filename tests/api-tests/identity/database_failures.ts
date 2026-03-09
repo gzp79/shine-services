@@ -75,4 +75,26 @@ test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
         const successCount = results.filter((r) => r.status() === 200).length;
         expect(successCount).toBeGreaterThan(40); // 80% success rate minimum
     });
+
+    test('Deadlock during concurrent role updates shall retry', async ({ api }) => {
+        const admin1 = await api.testUsers.createGuest({ roles: ['SuperAdmin'] });
+        const admin2 = await api.testUsers.createGuest({ roles: ['SuperAdmin'] });
+        const user1 = await api.testUsers.createGuest();
+        const user2 = await api.testUsers.createGuest();
+
+        // Create high contention scenario
+        const operations = [
+            api.user.addRole(admin1.sid, false, user1.userId, 'Role1'),
+            api.user.addRole(admin2.sid, false, user2.userId, 'Role2'),
+            api.user.addRole(admin1.sid, false, user2.userId, 'Role1'),
+            api.user.addRole(admin2.sid, false, user1.userId, 'Role2')
+        ];
+
+        // All operations should eventually succeed (with retries)
+        const results = await Promise.allSettled(operations);
+        const failures = results.filter((r) => r.status === 'rejected');
+
+        // Service should handle deadlocks gracefully (may have temp failures but retry)
+        expect(failures.length).toBeLessThan(operations.length / 2); // At least 50% success rate
+    });
 });
