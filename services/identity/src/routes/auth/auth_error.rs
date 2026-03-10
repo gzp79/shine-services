@@ -1,7 +1,8 @@
 use crate::{
     app_state::UserInfoError,
-    handlers::LoginEmailError,
-    repositories::{identity::IdentityError, session::SessionError, CaptchaError},
+    handlers::EmailAuthError,
+    models::{IdentityError, SessionError},
+    repositories::CaptchaError,
     services::{CreateUserError, TokenError},
 };
 use reqwest::StatusCode;
@@ -100,7 +101,7 @@ pub enum AuthError {
     #[error(transparent)]
     TokenError(#[from] TokenError),
     #[error(transparent)]
-    LoginEmailError(#[from] LoginEmailError),
+    EmailAuthError(#[from] EmailAuthError),
     #[error(transparent)]
     UserInfoError(#[from] UserInfoError),
 
@@ -180,7 +181,7 @@ impl From<AuthError> for Problem {
                     .with_detail(err.to_string())
                     .with_sensitive_dbg(err),
             },
-            AuthError::LoginEmailError(error) => {
+            AuthError::EmailAuthError(error) => {
                 Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::UserInfoError(error) => {

@@ -1,6 +1,5 @@
 use chrono::Duration;
 use regex::Regex;
-use ring::aead;
 use url::Url;
 
 pub struct TokenSettings {
@@ -8,7 +7,6 @@ pub struct TokenSettings {
     pub ttl_single_access: Duration,
     pub ttl_api_key: Duration,
     pub ttl_email_login_token: Duration,
-    pub email_key: aead::LessSafeKey,
 }
 
 pub struct SettingsService {

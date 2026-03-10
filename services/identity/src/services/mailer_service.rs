@@ -2,7 +2,6 @@ use crate::{
     repositories::mailer::{Email, EmailContent, EmailSender, EmailSenderError},
     services::SettingsService,
 };
-use ring::digest;
 use shine_infra::language::Language;
 use tera::Tera;
 use url::Url;
@@ -119,12 +118,4 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
         self.send_email(to, redirect_url, user_name, lang, "register.html")
             .await
     }
-}
-
-/// Generate a (crypto) hashed version of an email.
-pub fn hash_email(email_address: &str) -> String {
-    let hash = digest::digest(&digest::SHA256, email_address.as_bytes());
-    let hash = hex::encode(hash);
-    log::debug!("Hashing email: {email_address:?} -> [{hash}]");
-    hash
 }

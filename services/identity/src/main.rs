@@ -1,6 +1,7 @@
 mod app_config;
 mod app_state;
 mod handlers;
+mod models;
 mod repositories;
 mod routes;
 mod services;

@@ -9,12 +9,6 @@ mod pr {
 }
 
 #[derive(Debug, ThisError)]
-pub enum SessionBuildError {
-    #[error(transparent)]
-    DBError(#[from] DBError),
-}
-
-#[derive(Debug, ThisError)]
 pub enum SessionError {
     #[error("Failed to create session, conflicting keys")]
     KeyConflict,

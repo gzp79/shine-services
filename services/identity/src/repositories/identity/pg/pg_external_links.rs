@@ -1,16 +1,19 @@
-use crate::repositories::identity::{
-    ExternalLink, ExternalLinks, ExternalUserInfo, Identity, IdentityBuildError, IdentityError, IdentityKind,
+use crate::{
+    models::{ExternalLink, ExternalUserInfo, Identity, IdentityError, IdentityKind},
+    repositories::identity::{
+        pg::{PgIdentityBuildError, PgIdentityDbContext},
+        ExternalLinks,
+    },
 };
 use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
 use shine_infra::{
     db::{DBError, PGClient, PGErrorChecks},
+    models::Email,
     pg_query,
 };
 use tracing::instrument;
 use uuid::Uuid;
-
-use super::PgIdentityDbContext;
 
 pg_query!( InsertExternalLogin =>
     in = user_id: Uuid, provider: &str, provider_id: &str, name: Option<&str>, encrypted_email: Option<&str>, email_hash: Option<&str>;
@@ -95,7 +98,7 @@ pub struct PgExternalLinksStatements {
 }
 
 impl PgExternalLinksStatements {
-    pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
+    pub async fn new(client: &PGClient) -> Result<Self, PgIdentityBuildError> {
         Ok(Self {
             insert: InsertExternalLogin::new(client).await.map_err(DBError::from)?,
             find_by_provider_id: FindByProviderId::new(client).await.map_err(DBError::from)?,
@@ -134,7 +137,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
             Ok(_) => Ok(()),
             Err(err) => {
                 if err.is_constraint("external_logins", "idx_provider_provider_id") {
-                    Err(IdentityError::LinkProviderConflict)
+                    Err(IdentityError::ExternalIdConflict)
                 } else {
                     Err(IdentityError::DBError(err.into()))
                 }
@@ -199,7 +202,8 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
 
         if let Some(row) = row {
             let email = if let Some(encrypted_email) = &row.encrypted_email {
-                Some(self.email_protection.decrypt(encrypted_email)?)
+                let decrypted = self.email_protection.decrypt(encrypted_email)?;
+                Some(Email::new(decrypted).expect("Email from database should be valid"))
             } else {
                 None
             };

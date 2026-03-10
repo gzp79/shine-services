@@ -1,28 +1,6 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use crate::models::{Identity, IdentityError};
 use std::future::Future;
-use utoipa::ToSchema;
 use uuid::Uuid;
-
-use super::IdentityError;
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum IdentityKind {
-    User,
-    Studio,
-}
-
-#[derive(Clone, Debug)]
-
-pub struct Identity {
-    pub id: Uuid,
-    pub kind: IdentityKind,
-    pub name: String,
-    pub email: Option<String>,
-    pub is_email_confirmed: bool,
-    pub created: DateTime<Utc>,
-}
 
 /// Handle identities.
 pub trait Identities {

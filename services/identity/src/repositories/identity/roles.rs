@@ -1,7 +1,6 @@
+use crate::models::IdentityError;
 use std::future::Future;
 use uuid::Uuid;
-
-use super::IdentityError;
 
 /// Handle user roles.
 pub trait Roles {

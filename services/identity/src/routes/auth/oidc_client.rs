@@ -1,4 +1,10 @@
-use crate::{app_config::OIDCConfig, repositories::identity::ExternalUserInfo, routes::auth::ExternalLoginError};
+use std::{
+    num::TryFromIntError,
+    sync::Arc,
+    time::{Duration as StdDuration, Instant},
+};
+
+use crate::{app_config::OIDCConfig, models::ExternalUserInfo, routes::auth::ExternalLoginError};
 use anyhow::Error as AnyError;
 use oauth2::{
     basic::BasicTokenType, ClientId, ClientSecret, EmptyExtraTokenFields, EndpointMaybeSet, EndpointNotSet,
@@ -13,8 +19,7 @@ use openidconnect::{
 };
 use reqwest::Client as HttpClient;
 use serde::Serialize;
-use std::{num::TryFromIntError, time::Duration as StdDuration};
-use std::{sync::Arc, time::Instant};
+use shine_infra::models::Email;
 use thiserror::Error as ThisError;
 use tokio::sync::Mutex;
 use url::Url;
@@ -86,7 +91,7 @@ impl OIDCUserInfoExtractor for CoreClient {
             .nickname()
             .and_then(|n| n.get(None))
             .map(|n| n.as_str().to_owned());
-        let email = claims.email().map(|n| n.as_str().to_owned());
+        let email = claims.email().map(|e| e.as_str().to_owned());
 
         let external_user_info = ExternalUserInfo {
             provider,

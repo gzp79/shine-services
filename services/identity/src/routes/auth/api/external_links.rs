@@ -1,4 +1,4 @@
-use crate::{app_state::AppState, repositories::identity::ExternalLink};
+use crate::{app_state::AppState, models::ExternalLink};
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

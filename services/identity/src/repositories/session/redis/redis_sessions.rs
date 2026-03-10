@@ -1,6 +1,6 @@
-use crate::repositories::{
-    identity::Identity,
-    session::{Session, SessionError, SessionInfo, SessionUser, Sessions},
+use crate::{
+    models::{Identity, Session, SessionError, SessionInfo, SessionUser},
+    repositories::session::{redis::RedisSessionDbContext, Sessions},
 };
 use chrono::{DateTime, Duration, Utc};
 use redis::AsyncCommands;
@@ -10,8 +10,6 @@ use shine_infra::{
     web::extracts::SiteInfo,
 };
 use uuid::Uuid;
-
-use super::RedisSessionDbContext;
 
 #[derive(Serialize, Deserialize, Debug, RedisJsonValue)]
 #[serde(rename_all = "camelCase")]

@@ -1,11 +1,15 @@
-use crate::repositories::identity::{
-    Identity, IdentityError, IdentitySearch, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_RESULT_COUNT,
+use crate::{
+    models::{Identity, IdentityError},
+    repositories::identity::{
+        pg::PgIdentityDbContext, IdentitySearch, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_RESULT_COUNT,
+    },
 };
-use shine_infra::db::{DBError, QueryBuilder};
+use shine_infra::{
+    db::{DBError, QueryBuilder},
+    models::Email,
+};
 use tokio_postgres::Row;
 use tracing::instrument;
-
-use super::PgIdentityDbContext;
 
 impl IdentitySearch for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
@@ -19,7 +23,10 @@ impl IdentitySearch for PgIdentityDbContext<'_> {
                 id: r.try_get(0).map_err(DBError::from)?,
                 kind: r.try_get(1).map_err(DBError::from)?,
                 name: r.try_get(2).map_err(DBError::from)?,
-                email: r.try_get(3).map_err(DBError::from)?,
+                email: r
+                    .try_get::<_, Option<String>>(3)
+                    .map_err(DBError::from)?
+                    .and_then(|s| Email::new(s).ok()),
                 is_email_confirmed: r.try_get(4).map_err(DBError::from)?,
                 created: r.try_get(5).map_err(DBError::from)?,
             })

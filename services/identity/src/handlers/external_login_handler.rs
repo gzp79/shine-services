@@ -1,6 +1,7 @@
 use crate::{
     app_state::AppState,
-    repositories::identity::{ExternalUserInfo, IdentityDb, IdentityError, TokenKind},
+    models::{ExternalUserInfo, IdentityError, TokenKind},
+    repositories::identity::IdentityDb,
     routes::auth::{AuthError, AuthPage, AuthSession, PageUtils, TokenCookie},
     services::{CreateUserError, LinkService, UserService},
 };
@@ -49,7 +50,7 @@ where
         let user = auth_session.user_session().unwrap();
         match self.link_service.add_external_link(user.user_id, external_user).await {
             Ok(()) => {}
-            Err(IdentityError::LinkProviderConflict) => {
+            Err(IdentityError::ExternalIdConflict) => {
                 return PageUtils::new(self.state).error(auth_session, AuthError::ProviderAlreadyUsed, error_url)
             }
             Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),

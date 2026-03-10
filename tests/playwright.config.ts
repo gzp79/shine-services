@@ -2,15 +2,20 @@ import { PlaywrightTestConfig } from '@playwright/test';
 import { ServiceOptions } from '$fixtures/setup';
 import { suppress_tls_certificate_warning } from '$lib/suppress_tls_certificate_warning';
 
+const isBuildRun: boolean = !!process.env.CI;
+const enableLogging: boolean = true;
+
 // Allow self-signed certificates
 suppress_tls_certificate_warning();
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
-const isBuildRun: boolean = !!process.env.CI;
 if (isBuildRun) {
     console.log('Running in CI mode');
 } else {
     console.log('Running in DEV mode');
+}
+
+if (enableLogging) {
     process.env.DEBUG = 'test:*';
 }
 
@@ -34,7 +39,7 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
             name: 'local',
             testMatch: '{mock-tests,api-tests}/**/*.ts',
             use: {
-                enableRequestLogging: false,
+                enableRequestLogging: enableLogging,
 
                 appDomain: 'local.scytta.com',
                 serviceDomain: 'cloud.local.scytta.com',

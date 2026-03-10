@@ -12,9 +12,8 @@ use crate::{
     },
 };
 use anyhow::{anyhow, Error as AnyError};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::Duration;
-use ring::{aead, rand::SystemRandom};
+use ring::rand::SystemRandom;
 use shine_infra::{
     crypto::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
     sync::TopicBus,
@@ -59,11 +58,6 @@ impl AppState {
                 return Err(anyhow!("allowed_redirect_urls is empty"));
             }
 
-            let email_key = &B64
-                .decode(config_auth.auth_session.email_token_secret.as_bytes())
-                .map_err(|e| anyhow!(e))?;
-            let email_key = aead::UnboundKey::new(&aead::AES_256_GCM, email_key).map_err(|e| anyhow!(e))?;
-
             SettingsService {
                 app_name: config_auth.app_name.clone(),
                 home_url: config_auth.home_url.clone(),
@@ -75,7 +69,6 @@ impl AppState {
                     ttl_single_access: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_single_access)?),
                     ttl_api_key: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_api_key)?),
                     ttl_email_login_token: Duration::seconds(i64::try_from(config_auth.auth_session.ttl_email_token)?),
-                    email_key: aead::LessSafeKey::new(email_key),
                 },
                 allowed_redirect_urls,
                 external_providers: config_auth.collect_providers(),
@@ -302,9 +295,9 @@ impl AppState {
     }
 }
 
+// FIXME: model or where ???
 // Types moved from UserInfoHandler
-use crate::repositories::identity::{Identity, IdentityError};
-use crate::repositories::session::SessionError;
+use crate::models::{Identity, IdentityError, SessionError};
 use shine_infra::web::{
     extracts::{ClientFingerprint, SiteInfo},
     session::CurrentUser,

@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    repositories::identity::TokenKind,
+    models::TokenKind,
     routes::auth::{AuthPage, AuthPageRequest, AuthSession, PageUtils},
 };
 use axum::extract::State;

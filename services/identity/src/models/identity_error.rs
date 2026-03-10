@@ -1,4 +1,3 @@
-use base64::DecodeError;
 use shine_infra::{
     crypto::{DataProtectionError, IdEncoderError},
     db::DBError,
@@ -17,18 +16,6 @@ mod pr {
 }
 
 #[derive(Debug, ThisError)]
-pub enum IdentityBuildError {
-    #[error(transparent)]
-    IdEncoder(#[from] IdEncoderError),
-    #[error(transparent)]
-    DBError(#[from] DBError),
-    #[error(transparent)]
-    DataProtectionError(#[from] DataProtectionError),
-    #[error(transparent)]
-    DecodeError(#[from] DecodeError),
-}
-
-#[derive(Debug, ThisError)]
 pub enum IdentityError {
     #[error("User id already taken")]
     UserIdConflict,
@@ -39,7 +26,7 @@ pub enum IdentityError {
     #[error("Email already used by a user")]
     EmailConflict,
     #[error("External id already linked to a user")]
-    LinkProviderConflict,
+    ExternalIdConflict,
     #[error("User has no valid email address")]
     MissingEmail,
     #[error("Failed to generate token")]
@@ -62,19 +49,15 @@ pub enum IdentityError {
 impl From<IdentityError> for Problem {
     fn from(err: IdentityError) -> Self {
         match err {
-            IdentityError::UserIdConflict => Problem::conflict(pr::ID_CONFLICT).with_detail(err.to_string()),
-            IdentityError::NameConflict => Problem::conflict(pr::NAME_CONFLICT).with_detail(err.to_string()),
-            IdentityError::NameTooLong => Problem::bad_request(pr::NAME_TOO_LONG).with_detail(err.to_string()),
-            IdentityError::EmailConflict => Problem::conflict(pr::EMAIL_CONFLICT).with_detail(err.to_string()),
-            IdentityError::LinkProviderConflict => {
-                Problem::conflict(pr::EXTERNAL_ID_CONFLICT).with_detail(err.to_string())
-            }
-            IdentityError::MissingEmail => Problem::precondition_failed(pr::MISSING_EMAIL).with_detail(err.to_string()),
-            IdentityError::UserDeleted => Problem::conflict(pr::DELETE_CONFLICT).with_detail(err.to_string()),
+            IdentityError::UserIdConflict => Problem::conflict(pr::ID_CONFLICT).with_detail(err),
+            IdentityError::NameConflict => Problem::conflict(pr::NAME_CONFLICT).with_detail(err),
+            IdentityError::NameTooLong => Problem::bad_request(pr::NAME_TOO_LONG).with_detail(err),
+            IdentityError::EmailConflict => Problem::conflict(pr::EMAIL_CONFLICT).with_detail(err),
+            IdentityError::ExternalIdConflict => Problem::conflict(pr::EXTERNAL_ID_CONFLICT).with_detail(err),
+            IdentityError::MissingEmail => Problem::precondition_failed(pr::MISSING_EMAIL).with_detail(err),
+            IdentityError::UserDeleted => Problem::conflict(pr::DELETE_CONFLICT).with_detail(err),
             IdentityError::DBError(err) => err.into(),
-            err => Problem::internal_error()
-                .with_detail(err.to_string())
-                .with_sensitive_dbg(err),
+            err => Problem::internal_error().with_detail(&err).with_sensitive_dbg(err),
         }
     }
 }

@@ -1,8 +1,6 @@
 use crate::{
-    repositories::identity::{
-        ExternalLinks, ExternalUserInfo, IdSequences, Identities, Identity, IdentityDb, IdentityError, IdentitySearch,
-        SearchIdentity,
-    },
+    models::{ExternalUserInfo, Identity, IdentityError},
+    repositories::identity::{ExternalLinks, IdSequences, Identities, IdentityDb, IdentitySearch, SearchIdentity},
     services::{IdentityTopic, UserEvent, UserLinkEvent},
 };
 use shine_infra::{crypto::IdEncoder, sync::TopicBus, web::responses::Problem};
@@ -161,11 +159,7 @@ impl<DB: IdentityDb> UserService<DB> {
             let mut ctx = self.db.create_context().await?;
 
             // Store email from external provider if available and valid
-            let email = external_user
-                .email
-                .as_ref()
-                .filter(|email| email.validate_email())
-                .map(|e| (e.as_str(), false));
+            let email = external_user.email.as_ref().map(|e| (e.as_str(), false));
 
             let identity = match ctx.create_user(user_id, &user_name, email).await {
                 Ok(identity) => identity,

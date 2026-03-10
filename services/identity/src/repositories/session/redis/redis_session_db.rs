@@ -1,7 +1,9 @@
+use crate::{
+    models::SessionError,
+    repositories::session::{redis::RedisSessionBuildError, SessionDb, SessionDbContext},
+};
 use chrono::Duration;
 use shine_infra::db::{DBError, RedisConnectionPool, RedisPooledConnection};
-
-use crate::repositories::session::{SessionBuildError, SessionDb, SessionDbContext, SessionError};
 
 pub struct RedisSessionDbContext<'c> {
     pub(in crate::repositories::session::redis) client: RedisPooledConnection<'c>,
@@ -23,7 +25,7 @@ impl RedisSessionDb {
         redis: &RedisConnectionPool,
         key_prefix: String,
         ttl_session: Duration,
-    ) -> Result<Self, SessionBuildError> {
+    ) -> Result<Self, RedisSessionBuildError> {
         let _client = redis.get().await.map_err(DBError::RedisPoolError)?;
         //todo: check/update permissions to allow update only from identity service
 

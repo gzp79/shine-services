@@ -1,12 +1,11 @@
 use crate::{
     app_state::AppState,
-    repositories::identity::{Identity, IdentityError, TokenInfo, TokenKind},
+    models::{Identity, IdentityError, TokenInfo, TokenKind},
     routes::auth::{AuthError, AuthSession},
-    services::{hash_email, TokenService, UserService},
 };
 use axum_extra::headers::{authorization::Bearer, Authorization};
 use axum_extra::typed_header::TypedHeader;
-use shine_infra::web::extracts::ClientFingerprint;
+use shine_infra::{models::hash_email, web::extracts::ClientFingerprint};
 
 /// Result of a successful authentication attempt
 pub struct AuthenticationSuccess {
@@ -42,7 +41,7 @@ impl<'a> AuthHandler<'a> {
     ///
     /// Validates that the email in the token matches the user's email and the captcha,
     /// then updates the user's email verification status.
-    pub async fn complete_email_login(
+    pub async fn authenticate_with_email_token(
         &self,
         remember_me: bool,
         captcha: Option<&str>,
@@ -58,7 +57,7 @@ impl<'a> AuthHandler<'a> {
             .expect("Email shall be bound to the token");
 
         let confirmed_email_hash = Some(hash_email(confirmed_email));
-        let identity_email_hash = identity.email.map(|email| hash_email(&email));
+        let identity_email_hash = identity.email.as_ref().map(|email| email.hash());
         // during email verification the captcha is used to check the link is from the email
         let query_email_hash = captcha.map(|s| s.to_string());
 
@@ -184,7 +183,7 @@ impl<'a> AuthHandler<'a> {
                     rotated_token: None,
                 }),
                 TokenKind::EmailAccess => {
-                    self.complete_email_login(remember_me, captcha, token_info, identity, response_session)
+                    self.authenticate_with_email_token(remember_me, captcha, token_info, identity, response_session)
                         .await
                 }
                 TokenKind::Persistent => unreachable!(),

@@ -1,6 +1,6 @@
 use crate::{
     app_config::{ExternalUserInfoExtensions, OAuth2Config},
-    repositories::identity::ExternalUserInfo,
+    models::ExternalUserInfo,
 };
 use anyhow::Error as AnyError;
 use oauth2::{
@@ -10,6 +10,7 @@ use openidconnect::UserInfoUrl;
 use reqwest::{header, Client as HttpClient};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
+use shine_infra::models::Email;
 use std::collections::HashMap;
 use thiserror::Error as ThisError;
 use url::Url;
@@ -169,14 +170,14 @@ impl OAuth2Client {
                 .map_err(|err| OAuth2Error::RequestError(format!("{err}")))?;
 
             #[derive(Deserialize, Debug)]
-            struct Email {
+            struct GithubEmail {
                 email: String,
                 primary: bool,
             }
 
             let email_info = if response.status().is_success() {
                 response
-                    .json::<Vec<Email>>()
+                    .json::<Vec<GithubEmail>>()
                     .await
                     .map_err(|err| OAuth2Error::ResponseContentError(format!("{err}")))?
             } else {
@@ -188,11 +189,7 @@ impl OAuth2Client {
             };
             log::info!("{email_info:?}");
 
-            external_user_info.email = email_info
-                .into_iter()
-                .find(|email| email.primary)
-                .map(|email| email.email)
-                .filter(|email| email.validate_email());
+            external_user_info.email = email_info.into_iter().find(|e| e.primary).map(|e| e.email);
         }
 
         Ok(external_user_info)

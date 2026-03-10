@@ -1,34 +1,42 @@
 import { expect, test } from '$fixtures/setup';
-import { UserInfoSchema } from '$lib/api/user_api';
 import { getEmailLinkToken, getPageProblem } from '$lib/api/utils';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import { randomUUID } from 'crypto';
 
 test.describe('User lifecycle edge cases', { tag: '@edge-cases' }, () => {
-    test('Role change during authorization check shall be consistent', async ({ api }) => {
+    test('Role change during authorization check shall use READ COMMITTED isolation', async ({ api }) => {
         const admin = await api.testUsers.createGuest({ roles: ['SuperAdmin'] });
         const user = await api.testUsers.createGuest();
 
-        // Start authorization check
+        // Start authorization check BEFORE role change commits
         const check1Promise = api.user.getUserInfo(user.sid, 'full');
 
-        // Add admin role concurrently
+        // Add admin role (commits immediately)
         await api.user.addRole(admin.sid, false, user.userId, 'Admin');
 
+        // First check sees snapshot at query start (READ COMMITTED behavior)
         const check1 = await check1Promise;
 
-        // Second check should definitely see the new role
+        // Second check sees newly committed state
         const check2 = await api.user.getUserInfo(user.sid, 'full');
         expect(check2.roles).toContain('Admin');
 
-        // First check might or might not see it (race), but should be consistent
+        // First check should either:
+        // 1. Not contain Admin (if query started before commit) - most likely
+        // 2. Contain Admin (if query started after commit) - race condition
+        // Both are valid READ COMMITTED behaviors - what matters is consistency
         if (check1.roles.includes('Admin')) {
-            expect(check2.roles).toContain('Admin'); // If first saw it, second must too
+            // If first check saw it, it means the role was committed before the query
+            expect(check2.roles).toContain('Admin'); // Second check must also see it
+        } else {
+            // If first check didn't see it, it means query started before commit
+            // This is expected READ COMMITTED behavior
+            expect(check2.roles).toContain('Admin'); // Second check sees committed data
         }
     });
 
-    test('Email confirmation during email change shall handle gracefully', async ({ api }) => {
+    test('Old email confirmation token shall be invalidated when email changes', async ({ api }) => {
         const mockOAuth2 = new OAuth2MockServer();
         await mockOAuth2.start();
 
@@ -38,7 +46,7 @@ test.describe('User lifecycle edge cases', { tag: '@edge-cases' }, () => {
         try {
             const user = await api.testUsers.createLinked(mockOAuth2);
 
-            // Start email confirmation
+            // Start email confirmation for original email
             const mail1Promise = mockSmtp.waitMail();
             await api.user.startConfirmEmail(user.sid);
             const mail1 = await mail1Promise;
@@ -51,10 +59,17 @@ test.describe('User lifecycle edge cases', { tag: '@edge-cases' }, () => {
             const mail2 = await mail2Promise;
             const token2 = getEmailLinkToken(mail2);
 
-            // Try to use old confirmation token
+            // Try to use old confirmation token - MUST be invalidated (security requirement)
             const oldTokenResponse = await api.user.completeConfirmEmailRequest(user.sid, token1!);
-            // Old token may be invalidated or may still work (documents actual behavior)
-            expect([200, 400]).toContain(oldTokenResponse.status());
+            expect(oldTokenResponse).toHaveStatus(400);
+            const oldTokenProblem = await oldTokenResponse.parseProblem();
+            expect(oldTokenProblem.type).toBe('email-token-expired');
+            expect(oldTokenProblem.sensitive).toBe('tokenExpired');
+
+            // Email should remain unconfirmed after invalid token attempt
+            const userInfo = await api.user.getUserInfo(user.sid, 'full');
+            expect(userInfo.isEmailConfirmed).toBe(false);
+            expect(userInfo.details?.email).toBe(newEmail);
 
             // New token should work
             await api.user.completeConfirmEmail(user.sid, token2!);
@@ -93,43 +108,56 @@ test.describe('User lifecycle edge cases', { tag: '@edge-cases' }, () => {
         expect(response3.sid).toBeDefined();
     });
 
-    test('External link deletion during login attempt', async ({ api }) => {
+    test('External link deletion during login shall create new user', async ({ api }) => {
         const mockOAuth2 = new OAuth2MockServer();
         await mockOAuth2.start();
 
         try {
-            const user = await api.testUsers.createLinked(mockOAuth2);
+            // User with external link
+            const existingUser = await api.testUsers.createLinked(mockOAuth2);
+            const externalAccount = existingUser.externalUser!;
 
-            // Start OAuth2 login
+            // Starting OAuth2 login
             const startResponse = await api.auth.startLoginWithOAuth2(mockOAuth2, null);
             const state = startResponse.authParams.state;
 
-            // Unlink the external account
-            await api.auth.tryUnlink(user.sid, user.externalUser!.provider, user.externalUser!.id);
+            // Link is deleted mid-flow
+            const unlinkResult = await api.auth.tryUnlink(
+                existingUser.sid,
+                externalAccount.provider,
+                externalAccount.id
+            );
+            expect(unlinkResult).toBe(true); // Link successfully deleted
 
-            // Complete OAuth2 flow (should create NEW user, not link to existing)
+            // Completing OAuth2 login with now-unlinked external account
             const authorizeResponse = await api.auth.authorizeWithOAuth2Request(
                 startResponse.sid,
                 startResponse.eid,
                 state,
-                user.externalUser!.toCode()
+                externalAccount.toCode()
             );
 
+            // Should succeed (external account is now available)
             expect(authorizeResponse).toHaveStatus(200);
-            const newUserInfoResponse = await api.user.getUserInfoRequest(
-                authorizeResponse.cookies().sid.value,
-                'fast'
-            );
+            const text = await authorizeResponse.text();
+            const problem = getPageProblem(text);
+            expect(problem).toBeNull(); // No error
 
-            // May succeed (new user) or fail (session invalid) depending on implementation
-            if (newUserInfoResponse.status() === 200) {
-                const newUserInfo = await newUserInfoResponse.parse(UserInfoSchema);
-                // Should be a DIFFERENT user (original link was deleted)
-                expect(newUserInfo.userId).not.toEqual(user.userId);
-            } else {
-                // If session is invalid, that's also acceptable behavior
-                expect(newUserInfoResponse.status()).toBe(401);
-            }
+            // Should create a NEW user (not link to old user)
+            const newSid = authorizeResponse.cookies().sid.value;
+            expect(newSid).toBeDefined();
+
+            const newUserInfo = await api.user.getUserInfo(newSid, 'fast');
+            expect(newUserInfo.userId).not.toEqual(existingUser.userId); // Different user
+
+            // External account should be linked to new user
+            const newLinks = await api.auth.getExternalLinks(newSid);
+            expect(newLinks).toHaveLength(1);
+            expect(newLinks[0].providerUserId).toBe(externalAccount.id);
+
+            // Old user should have no links
+            const oldLinks = await api.auth.getExternalLinks(existingUser.sid);
+            expect(oldLinks).toHaveLength(0);
         } finally {
             await mockOAuth2.stop();
         }

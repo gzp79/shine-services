@@ -1,4 +1,4 @@
-use crate::{app_state::AppState, repositories::identity::IdentityKind};
+use crate::{app_state::AppState, models::IdentityKind};
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -117,7 +117,7 @@ pub async fn get_user_info(
                 details: Some(CurrentUserInfoDetails {
                     kind: user_info.identity.kind,
                     created_at: user_info.identity.created,
-                    email: user_info.identity.email,
+                    email: user_info.identity.email.map(|e| e.into_inner()),
                 }),
             }
         }

@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    repositories::identity::{TokenInfo, TokenKind},
+    models::{TokenInfo, TokenKind},
 };
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Duration, Utc};
