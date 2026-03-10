@@ -3,7 +3,7 @@ import { ServiceOptions } from '$fixtures/setup';
 import { suppress_tls_certificate_warning } from '$lib/suppress_tls_certificate_warning';
 
 const isBuildRun: boolean = !!process.env.CI;
-const enableLogging: boolean = true;
+const enableLogging: boolean = false;
 
 // Allow self-signed certificates
 suppress_tls_certificate_warning();

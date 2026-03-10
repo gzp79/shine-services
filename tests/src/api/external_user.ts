@@ -18,7 +18,7 @@ export class ExternalUser {
 
     static newRandomUser(provider: ExternalUserProvider): ExternalUser {
         const name = 'Random_' + generateRandomString(5);
-        return new ExternalUser(provider, randomUUID(), name, name + '@example.com');
+        return new ExternalUser(provider, randomUUID(), name, name.toLowerCase() + '@example.com');
     }
 
     toCode(params?: Record<string, string>): string {

@@ -455,6 +455,20 @@ test.describe('Login with OAuth2', () => {
         expect((await api.user.getUserInfo(cookies.sid, 'full')).name).toEqual(user.name.substring(0, 20));
     });
 
+    test('Login with mixed-case email from external user shall store normalized email', async ({ api }) => {
+        const randomPart = generateRandomString(8);
+        const mixedCaseEmail = `${randomPart}.Mixed.Case@EXAMPLE.COM`;
+        const normalizedEmail = mixedCaseEmail.toLowerCase();
+
+        const user = await api.testUsers.createLinked(mock, { email: mixedCaseEmail });
+        expect(user.userInfo!.details?.email).toEqual(normalizedEmail);
+    });
+
+    test('Login with invalid email shall succeed and the external email shall be ignored', async ({ api }) => {
+        const user = await api.testUsers.createLinked(mock, { email: 'not-a-valid-email' });
+        expect(user.userInfo!.details?.email).toBeUndefined();
+    });
+
     test('Login with invalid redirect url shall fail', async ({ api }) => {
         const response = await api.auth
             .loginWithOAuth2Request(null, null, false, null)

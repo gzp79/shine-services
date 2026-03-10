@@ -117,7 +117,7 @@ export class TestUserHelper {
     ): Promise<TestUser> {
         const id = randomUUID().toString();
         const name = props?.name ?? 'Random_' + generateRandomString(5);
-        const email = props?.email ?? name + '@example.com';
+        const email = props?.email ?? name.toLowerCase() + '@example.com';
 
         let user;
         let cookies;

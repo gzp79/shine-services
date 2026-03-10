@@ -128,7 +128,9 @@ class MockSmtp {
      * @throws on timeout or if predicate never matches
      */
     async waitMail(opts?: WaitMailOptions): Promise<ParsedMail> {
-        if (!this.isStarted) throw new Error('SMTP Mock Server is not running.');
+        if (!this.isStarted) {
+            throw new Error('SMTP Mock Server is not running.');
+        }
 
         const timeout = opts?.timeout ?? MockSmtp.DEFAULT_TIMEOUT;
         const predicate = opts?.predicate;

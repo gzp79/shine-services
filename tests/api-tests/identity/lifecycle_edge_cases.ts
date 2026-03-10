@@ -67,9 +67,10 @@ test.describe('User lifecycle edge cases', { tag: '@edge-cases' }, () => {
             expect(oldTokenProblem.sensitive).toBe('tokenExpired');
 
             // Email should remain unconfirmed after invalid token attempt
+            // Email is still the original - it only changes after the new token is confirmed
             const userInfo = await api.user.getUserInfo(user.sid, 'full');
             expect(userInfo.isEmailConfirmed).toBe(false);
-            expect(userInfo.details?.email).toBe(newEmail);
+            expect(userInfo.details?.email).toBe(user.email);
 
             // New token should work
             await api.user.completeConfirmEmail(user.sid, token2!);

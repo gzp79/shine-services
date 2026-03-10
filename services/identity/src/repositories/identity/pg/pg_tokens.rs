@@ -279,6 +279,9 @@ impl Tokens for PgIdentityDbContext<'_> {
             Err(err) if err.is_constraint("login_tokens", "idx_token") => {
                 return Err(IdentityError::TokenConflict);
             }
+            Err(err) if err.is_constraint("login_tokens", "idx_one_email_token_per_user") => {
+                return Err(IdentityError::TokenConflict);
+            }
             Err(err) if err.is_constraint("login_tokens", "chk_required_fingerprint") => {
                 return Err(IdentityError::TokenMissingFingerprint);
             }

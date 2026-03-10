@@ -54,23 +54,25 @@ test.describe('Login with email for guest', () => {
         );
     });
 
-    test('Login with invalid email format shall be rejected', async ({ api }) => {
-        const invalidEmails = ['invalid', 'no-at-sign', '@example.com', 'user@', 'user @example.com', ''];
-
-        for (const invalidEmail of invalidEmails) {
+    const invalidEmails = ['invalid', 'no-at-sign', '@example.com', 'user@', 'user @example.com', ''];
+    for (const invalidEmail of invalidEmails) {
+        test(`Login with invalid email format shall be rejected (${invalidEmail || '<empty>'})`, async ({ api }) => {
             const response = await api.auth.loginWithEmailRequest(invalidEmail, false, null);
-            expect(response, `Email "${invalidEmail}" should be rejected`).toHaveStatus(400);
+            expect(response).toHaveStatus(200);
 
-            const problem = await response.parseProblem();
-            expect(problem).toEqual(
+            const text = await response.text();
+            expect(getPageProblem(text)).toEqual(
                 expect.objectContaining({
-                    type: 'input-query-format',
+                    type: 'auth-input-error',
                     status: 400,
-                    detail: expect.stringContaining('email')
+                    sensitive: expect.objectContaining({
+                        type: 'input-query-format',
+                        detail: expect.stringContaining('email')
+                    })
                 })
             );
-        }
-    });
+        });
+    }
 
     test('Login with invalid captcha shall be rejected', async ({ api }) => {
         const targetEmailAddress = `${randomUUID()}@example.com`;

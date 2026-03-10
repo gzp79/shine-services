@@ -458,9 +458,18 @@ test.describe('Login with OpenId', () => {
         );
     });
 
-    test('Login with invalid email from external user shall have no email', async ({ api }) => {
-        const user = await api.testUsers.createLinked(mock, { email: 'invalid' });
-        expect(user.userInfo!.details!.email).toBeUndefined();
+    test('Login with mixed-case email from external user shall store normalized email', async ({ api }) => {
+        const randomPart = generateRandomString(8);
+        const mixedCaseEmail = `${randomPart}.Mixed.Case@EXAMPLE.COM`;
+        const normalizedEmail = mixedCaseEmail.toLowerCase();
+
+        const user = await api.testUsers.createLinked(mock, { email: mixedCaseEmail });
+        expect(user.userInfo!.details?.email).toEqual(normalizedEmail);
+    });
+
+    test('Login with invalid email shall succeed and the external email shall be ignored', async ({ api }) => {
+        const user = await api.testUsers.createLinked(mock, { email: 'not-a-valid-email' });
+        expect(user.userInfo!.details?.email).toBeUndefined();
     });
 
     test('Login with the same external user shall succeed', async ({ api }) => {

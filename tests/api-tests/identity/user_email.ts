@@ -195,10 +195,9 @@ test.describe('Email confirmation', () => {
         const user = await api.testUsers.createLinked(mockAuth);
 
         const smtp = await startMockEmail();
+        const mailsPromise = smtp.waitEmails(3);
 
         // Request email confirmation multiple times concurrently
-        const mailPromises = [smtp.waitMail(), smtp.waitMail(), smtp.waitMail()];
-
         const requests = await Promise.all([
             api.user.startConfirmEmailRequest(user.sid),
             api.user.startConfirmEmailRequest(user.sid),
@@ -209,7 +208,7 @@ test.describe('Email confirmation', () => {
         requests.forEach((r) => expect(r).toHaveStatus(200));
 
         // Wait for all emails
-        const mails = await Promise.all(mailPromises);
+        const mails = await mailsPromise;
         expect(mails).toHaveLength(3);
 
         // Extract tokens
