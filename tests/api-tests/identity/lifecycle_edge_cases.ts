@@ -1,7 +1,8 @@
 import { expect, test } from '$fixtures/setup';
-import { getEmailLinkToken, getPageProblem } from '$lib/api/utils';
+import { getEmailLinkToken, getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
+import { createUrl } from '$lib/utils';
 import { randomUUID } from 'crypto';
 
 test.describe('User lifecycle edge cases', { tag: '@edge-cases' }, () => {
@@ -109,13 +110,73 @@ test.describe('User lifecycle edge cases', { tag: '@edge-cases' }, () => {
         expect(response3.sid).toBeDefined();
     });
 
-    test('External link deletion during login shall create new user', async ({ api }) => {
+    test('External link deletion during login shall fail with email conflict when provider has email', async ({
+        api
+    }) => {
         const mockOAuth2 = new OAuth2MockServer();
         await mockOAuth2.start();
 
         try {
-            // User with external link
+            // User with external link (provider supplies a valid email)
             const existingUser = await api.testUsers.createLinked(mockOAuth2);
+            const externalAccount = existingUser.externalUser!;
+
+            // Starting OAuth2 login
+            const startResponse = await api.auth.startLoginWithOAuth2(mockOAuth2, null);
+            const state = startResponse.authParams.state;
+
+            // Link is deleted mid-flow; existing user keeps its email
+            const unlinkResult = await api.auth.tryUnlink(
+                existingUser.sid,
+                externalAccount.provider,
+                externalAccount.id
+            );
+            expect(unlinkResult).toBe(true);
+
+            // Completing OAuth2 login with the now-unlinked external account
+            const authorizeResponse = await api.auth.authorizeWithOAuth2Request(
+                startResponse.sid,
+                startResponse.eid,
+                state,
+                externalAccount.toCode()
+            );
+
+            // Should fail: the provider email is still owned by the old user
+            expect(authorizeResponse).toHaveStatus(200);
+            const text = await authorizeResponse.text();
+            expect(getPageRedirectUrl(text)).toEqual(
+                createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-register-email-conflict' })
+            );
+            expect(getPageProblem(text)).toEqual(
+                expect.objectContaining({
+                    type: 'auth-register-email-conflict',
+                    status: 409,
+                    extension: null,
+                    sensitive: null
+                })
+            );
+
+            // No new session created
+            expect(authorizeResponse.cookies().sid).toBeClearCookie();
+
+            // Old user kept its email after unlink, and still has no links
+            const oldUserInfo = await api.user.getUserInfo(existingUser.sid, 'full');
+            expect(oldUserInfo.details?.email).toEqual(externalAccount.email);
+            const oldLinks = await api.auth.getExternalLinks(existingUser.sid);
+            expect(oldLinks).toHaveLength(0);
+        } finally {
+            await mockOAuth2.stop();
+        }
+    });
+
+    test('External link deletion during login shall create new user when provider has no email', async ({ api }) => {
+        const mockOAuth2 = new OAuth2MockServer();
+        await mockOAuth2.start();
+
+        try {
+            // User with external link; provider supplies an invalid email so the server
+            // normalises it to null — the existing user ends up with no email either
+            const existingUser = await api.testUsers.createLinked(mockOAuth2, { email: 'not-an-email' });
             const externalAccount = existingUser.externalUser!;
 
             // Starting OAuth2 login
@@ -128,9 +189,9 @@ test.describe('User lifecycle edge cases', { tag: '@edge-cases' }, () => {
                 externalAccount.provider,
                 externalAccount.id
             );
-            expect(unlinkResult).toBe(true); // Link successfully deleted
+            expect(unlinkResult).toBe(true);
 
-            // Completing OAuth2 login with now-unlinked external account
+            // Completing OAuth2 login with the now-unlinked external account
             const authorizeResponse = await api.auth.authorizeWithOAuth2Request(
                 startResponse.sid,
                 startResponse.eid,
@@ -138,21 +199,20 @@ test.describe('User lifecycle edge cases', { tag: '@edge-cases' }, () => {
                 externalAccount.toCode()
             );
 
-            // Should succeed (external account is now available)
+            // Should succeed: no email to conflict on, a new user is created
             expect(authorizeResponse).toHaveStatus(200);
             const text = await authorizeResponse.text();
-            const problem = getPageProblem(text);
-            expect(problem).toBeNull(); // No error
+            expect(getPageProblem(text)).toBeNull();
 
-            // Should create a NEW user (not link to old user)
-            const newSid = authorizeResponse.cookies().sid.value;
+            // A NEW user is created (not the old one)
+            const newSid = authorizeResponse.cookies().sid?.value;
             expect(newSid).toBeDefined();
 
-            const newUserInfo = await api.user.getUserInfo(newSid, 'fast');
-            expect(newUserInfo.userId).not.toEqual(existingUser.userId); // Different user
+            const newUserInfo = await api.user.getUserInfo(newSid!, 'fast');
+            expect(newUserInfo.userId).not.toEqual(existingUser.userId);
 
-            // External account should be linked to new user
-            const newLinks = await api.auth.getExternalLinks(newSid);
+            // External account should be linked to the new user
+            const newLinks = await api.auth.getExternalLinks(newSid!);
             expect(newLinks).toHaveLength(1);
             expect(newLinks[0].providerUserId).toBe(externalAccount.id);
 
