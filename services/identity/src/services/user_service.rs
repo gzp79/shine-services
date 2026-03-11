@@ -1,6 +1,6 @@
 use crate::{
-    models::{ExternalUserInfo, Identity, IdentityError},
-    repositories::identity::{ExternalLinks, IdSequences, Identities, IdentityDb, IdentitySearch, SearchIdentity},
+    models::{ExternalUserInfo, Identity, IdentityError, SearchIdentity},
+    repositories::identity::{ExternalLinks, IdSequences, Identities, IdentityDb, IdentitySearch},
     services::{IdentityTopic, UserEvent, UserLinkEvent},
 };
 use shine_infra::{crypto::IdEncoder, sync::TopicBus, web::responses::Problem};

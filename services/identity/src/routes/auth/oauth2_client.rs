@@ -10,11 +10,9 @@ use openidconnect::UserInfoUrl;
 use reqwest::{header, Client as HttpClient};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
-use shine_infra::models::Email;
 use std::collections::HashMap;
 use thiserror::Error as ThisError;
 use url::Url;
-use validator::ValidateEmail;
 
 #[derive(Debug, ThisError)]
 pub enum OAuth2Error {

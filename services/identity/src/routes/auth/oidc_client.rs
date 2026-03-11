@@ -19,7 +19,6 @@ use openidconnect::{
 };
 use reqwest::Client as HttpClient;
 use serde::Serialize;
-use shine_infra::models::Email;
 use thiserror::Error as ThisError;
 use tokio::sync::Mutex;
 use url::Url;

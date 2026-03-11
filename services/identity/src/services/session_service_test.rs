@@ -1,8 +1,6 @@
 use crate::{
-    repositories::{
-        identity::{Identity, IdentityKind},
-        session::{redis::RedisSessionDb, SessionDb},
-    },
+    models::{Identity, IdentityKind, Session},
+    repositories::session::{redis::RedisSessionDb, SessionDb},
     services::SessionService,
 };
 use chrono::{Duration, Utc};
@@ -122,7 +120,7 @@ async fn update_invalid_key() {
     };
     let roles = vec!["R1".into(), "R2".into()];
 
-    let session: Option<crate::repositories::session::Session> = session_manager
+    let session: Option<Session> = session_manager
         .update_user_info(&SessionKey::new_random(&random).unwrap(), &identity, &roles, false)
         .await
         .unwrap();

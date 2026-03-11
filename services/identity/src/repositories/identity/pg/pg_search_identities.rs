@@ -1,8 +1,6 @@
 use crate::{
-    models::{Identity, IdentityError},
-    repositories::identity::{
-        pg::PgIdentityDbContext, IdentitySearch, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_RESULT_COUNT,
-    },
+    models::{Identity, IdentityError, SearchIdentity, SearchIdentityOrder, MAX_SEARCH_RESULT_COUNT},
+    repositories::identity::{pg::PgIdentityDbContext, IdentitySearch},
 };
 use shine_infra::{
     db::{DBError, QueryBuilder},

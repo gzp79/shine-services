@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    repositories::identity::{SearchIdentity, SearchIdentityOrder, MAX_SEARCH_RESULT_COUNT},
+    models::{SearchIdentity, SearchIdentityOrder, MAX_SEARCH_RESULT_COUNT},
     services::{permissions, IdentityPermissions},
 };
 use axum::{extract::State, Extension, Json};

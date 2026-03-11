@@ -151,10 +151,6 @@ impl FeatureConfig for AppConfig {
 mod test {
     use axum_extra::extract::cookie;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
-    use ring::{
-        aead,
-        rand::{SecureRandom, SystemRandom},
-    };
     use shine_test::test;
 
     #[test(skip = "This is not a test but a helper to generate cookie secret")]
