@@ -5,11 +5,11 @@ use anyhow::Error as AnyError;
 use axum::Extension;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub struct HealthController {
+pub struct HealthRouter {
     version: api::ServiceVersion,
 }
 
-impl HealthController {
+impl HealthRouter {
     pub fn new<F>(feature_name: &'static str, config: &WebAppConfig<F>) -> Result<Self, AnyError>
     where
         F: FeatureConfig,
@@ -25,10 +25,7 @@ impl HealthController {
     where
         S: Clone + Send + Sync + 'static,
     {
-        let api = OpenApiRouter::new()
-            .routes(routes!(api::get_ready))
-            .routes(routes!(api::get_telemetry_config))
-            .routes(routes!(api::put_telemetry_config));
+        let api = OpenApiRouter::new().routes(routes!(api::get_ready));
 
         let version_api = {
             OpenApiRouter::new()

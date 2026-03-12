@@ -8,6 +8,7 @@ use crate::{
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct TraceConfig {
@@ -16,7 +17,7 @@ pub struct TraceConfig {
 
 #[utoipa::path(
     put,
-    path = "/api/telemetry/config", 
+    path = "/api/telemetry/config",
     tag = "health",
     description = "Update telemetry configuration.",
     request_body = TraceConfig,
@@ -44,14 +45,13 @@ pub async fn put_telemetry_config(
 
 #[utoipa::path(
     get,
-    path = "/api/telemetry/config", 
+    path = "/api/telemetry/config",
     tag = "health",
     description = "Get the current telemetry configuration.",
     responses(
         (status = OK, body = TraceConfig)
     )
 )]
-
 pub async fn get_telemetry_config(
     Extension(telemetry): Extension<TelemetryService>,
     Extension(problem_config): Extension<ProblemConfig>,
@@ -66,4 +66,14 @@ pub async fn get_telemetry_config(
         .map_err(|err| err.into_response(&problem_config))?;
 
     Ok(Json(TraceConfig { filter: config.filter }))
+}
+
+pub(super) fn build_router<S>(service: TelemetryService) -> OpenApiRouter<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    OpenApiRouter::new()
+        .routes(routes!(get_telemetry_config))
+        .routes(routes!(put_telemetry_config))
+        .layer(Extension(service))
 }

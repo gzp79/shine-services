@@ -12,7 +12,6 @@ use anyhow::{anyhow, Error as AnyError};
 use axum::{
     http::{header, Method},
     routing::Router,
-    Extension,
 };
 use axum_server::Handle;
 use regex::bytes::Regex;
@@ -113,9 +112,31 @@ pub trait WebApplication {
     ) -> impl Future<Output = Result<OpenApiRouter<Self::AppState>, AnyError>> + Send;
 }
 
-async fn prepare_web_app<A: WebApplication>(
-    app: &A,
-) -> Result<(WebAppConfig<A::AppConfig>, TelemetryService), AnyError> {
+fn create_cors_layer(allowed_origins: &[String]) -> Result<CorsLayer, AnyError> {
+    let allowed_origins = allowed_origins
+        .iter()
+        .map(|r| Regex::new(r))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| anyhow!("Cors config error: {err}"))?;
+    let cors = CorsLayer::default()
+        .allow_origin(AllowOrigin::predicate(move |origin, _| {
+            let origin = origin.as_bytes();
+            allowed_origins.iter().any(|r| r.is_match(origin))
+        }))
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::PATCH,
+            Method::OPTIONS,
+        ])
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
+        .allow_credentials(true);
+    Ok(cors)
+}
+
+async fn load_app_config<A: WebApplication>() -> Result<WebAppConfig<A::AppConfig>, AnyError> {
     let args: Vec<String> = env::args().collect();
     let stage = args.get(1).ok_or(anyhow!("Missing config stage parameter"))?.clone();
 
@@ -129,11 +150,11 @@ async fn prepare_web_app<A: WebApplication>(
         tracing::dispatcher::set_default(&pre_init_log.into())
     };
 
-    log::trace!("init-trace - ok");
-    log::debug!("init-debug - ok");
-    log::info!("init-info  - ok");
-    log::warn!("init-warn  - ok");
-    log::error!("init-error - ok");
+    log::trace!("init-trace - log:ok");
+    log::debug!("init-debug - log:ok");
+    log::info!("init-info  - log:ok");
+    log::warn!("init-warn  - log:ok");
+    log::error!("init-error - log:ok");
     tracing::trace!("init-trace - tracing:ok");
     tracing::debug!("init-debug - tracing:ok");
     tracing::info!("init-info  - tracing:ok");
@@ -141,58 +162,19 @@ async fn prepare_web_app<A: WebApplication>(
     tracing::error!("init-error - tracing:ok");
 
     let config = WebAppConfig::<A::AppConfig>::load(&stage, None).await?;
-    let telemetry_service = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
     log::info!("pre-init completed");
 
-    Ok((config, telemetry_service))
+    Ok(config)
 }
 
-#[instrument(skip(config, telemetry_service, app))]
+#[instrument(skip(config, app))]
 async fn create_web_app<A: WebApplication>(
     config: &WebAppConfig<A::AppConfig>,
-    telemetry_service: TelemetryService,
     app: &A,
 ) -> Result<Router<()>, AnyError> {
-    log::trace!("trace - ok:log");
-    log::debug!("debug - ok:log");
-    log::info!("info  - ok:log");
-    log::warn!("warn  - ok:log");
-    log::error!("error - ok:log");
-    tracing::trace!("trace - tracing:ok");
-    tracing::debug!("debug - tracing:ok");
-    tracing::info!("info  - tracing:ok");
-    tracing::warn!("warn  - tracing:ok");
-    tracing::error!("error - tracing:ok");
+    let telemetry_service = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
 
-    log::trace!("Creating services...");
-
-    let cors_layer = {
-        let allowed_origins = {
-            let allowed_origins = config
-                .service
-                .allowed_origins
-                .iter()
-                .map(|r| Regex::new(r))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|err| anyhow!("Cords config error: {err}"))?;
-            AllowOrigin::predicate(move |origin, _| {
-                let origin = origin.as_bytes();
-                allowed_origins.iter().any(|r| r.is_match(origin))
-            })
-        };
-        CorsLayer::default()
-            .allow_origin(allowed_origins)
-            .allow_methods([
-                Method::GET,
-                Method::POST,
-                Method::PUT,
-                Method::DELETE,
-                Method::PATCH,
-                Method::OPTIONS,
-            ])
-            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
-            .allow_credentials(true)
-    };
+    let cors_layer = create_cors_layer(&config.service.allowed_origins)?;
     let powered_by_layer = PoweredBy::from_service_info(app.feature_name(), &config.core.version)?;
 
     let mut doc = ApiDoc::with_default_components();
@@ -227,8 +209,10 @@ async fn create_web_app<A: WebApplication>(
     let app_state = app.create_state(config).await?;
 
     log::info!("Creating common routes...");
-    let health_controller = controllers::HealthController::new(app.feature_name(), config)?.into_routes();
-    router = router.nest(&format!("/{}", app.feature_name()), health_controller);
+    let health_routes = controllers::HealthRouter::new(app.feature_name(), config)?.into_routes();
+    let telemetry_routes = telemetry_service.create_router();
+    router = router.nest(&format!("/{}", app.feature_name()), health_routes);
+    router = router.nest(&format!("/{}", app.feature_name()), telemetry_routes);
 
     log::info!("Creating application routes...");
     let app_controller = app.create_routes(config).await?;
@@ -253,14 +237,13 @@ async fn create_web_app<A: WebApplication>(
         .layer(powered_by_layer)
         .layer(cors_layer)
         .layer(telemetry_layer)
-        .layer(Extension(telemetry_service))
         .layer(log_layer)
         .with_state(app_state))
 }
 
 async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
-    let (config, telemetry_service) = prepare_web_app(&app).await?;
-    let router = create_web_app(&config, telemetry_service, &app).await?;
+    let config = load_app_config::<A>().await?;
+    let router = create_web_app(&config, &app).await?;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
 

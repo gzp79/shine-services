@@ -8,3 +8,5 @@ mod telemetry_config;
 pub use self::telemetry_config::*;
 mod telemetry_service;
 pub use self::telemetry_service::*;
+mod telemetry_router;
+pub use self::telemetry_router::*;
