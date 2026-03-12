@@ -1,6 +1,7 @@
 use crate::{
     db::RedisConnectionPool,
-    web::{session::CurrentUser, session::SessionKey},
+    session::{CurrentUser, SessionKey, UserSessionError},
+    web::ServiceConfig,
 };
 use axum::Extension;
 use axum_extra::extract::cookie::Key;
@@ -13,10 +14,8 @@ use shine_infra_macros::RedisJsonValue;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use super::UserSessionError;
-
 /// Handle the user data query in the redis cache.
-pub struct UserSessionCacheReader {
+pub struct CurrentUserService {
     cookie_name: String,
     cookie_secret: Key,
     key_prefix: String,
@@ -24,7 +23,7 @@ pub struct UserSessionCacheReader {
     redis: RedisConnectionPool,
 }
 
-impl UserSessionCacheReader {
+impl CurrentUserService {
     pub fn new(
         name_suffix: Option<&str>,
         cookie_secret: &str,
@@ -60,7 +59,15 @@ impl UserSessionCacheReader {
         &self.cookie_secret
     }
 
-    pub fn into_layer(self) -> Extension<Arc<Self>> {
+    // todo: make it a read only access to the redis
+    pub async fn from_config(config: &ServiceConfig) -> Result<Self, UserSessionError> {
+        let redis = crate::db::create_redis_pool(config.session_redis_cns.as_str())
+            .await
+            .map_err(|err| UserSessionError::RedisPoolError(err))?;
+        Self::new(None, &config.session_secret, "", config.session_ttl, redis)
+    }
+
+    pub fn create_layer(self) -> Extension<Arc<Self>> {
         Extension(Arc::new(self))
     }
 

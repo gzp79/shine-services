@@ -298,9 +298,9 @@ impl AppState {
 // FIXME: model or where ???
 // Types moved from UserInfoHandler
 use crate::models::{Identity, IdentityError, SessionError};
-use shine_infra::web::{
-    extracts::{ClientFingerprint, SiteInfo},
+use shine_infra::{
     session::CurrentUser,
+    web::extracts::{ClientFingerprint, SiteInfo},
 };
 use thiserror::Error as ThisError;
 use uuid::Uuid;

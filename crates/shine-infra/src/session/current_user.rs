@@ -1,7 +1,9 @@
-use crate::web::{
-    extracts::ClientFingerprint,
-    responses::{ErrorResponse, ProblemConfig},
-    session::{serde_session_key, SessionKey, UserSessionCacheReader, UserSessionError},
+use crate::{
+    session::{serde_session_key, CurrentUserService, SessionKey, UserSessionError},
+    web::{
+        extracts::ClientFingerprint,
+        responses::{ErrorResponse, ProblemConfig},
+    },
 };
 use axum::{extract::FromRequestParts, http::request::Parts, Extension, RequestPartsExt};
 use axum_extra::extract::SignedCookieJar;
@@ -79,18 +81,18 @@ where
             .extract::<Extension<ProblemConfig>>()
             .await
             .expect("Missing ProblemConfig extension");
-        let Extension(session_cache) = parts
-            .extract::<Extension<Arc<UserSessionCacheReader>>>()
+        let Extension(session_service) = parts
+            .extract::<Extension<Arc<CurrentUserService>>>()
             .await
-            .expect("Missing UserSessionCacheReader extension");
+            .expect("Missing CurrentUserService extension");
         let fingerprint = parts
             .extract::<ClientFingerprint>()
             .await
             .map_err(|err| ErrorResponse::new(&problem_config, UserSessionError::from(err.problem)))?;
 
-        let jar = SignedCookieJar::from_headers(&parts.headers, session_cache.cookie_secret().clone());
+        let jar = SignedCookieJar::from_headers(&parts.headers, session_service.cookie_secret().clone());
         let session_cookie = jar
-            .get(session_cache.cookie_name())
+            .get(session_service.cookie_name())
             .and_then(|cookie| serde_json::from_str::<SessionCookie>(cookie.value()).ok())
             .ok_or_else(|| ErrorResponse::new(&problem_config, UserSessionError::Unauthenticated))?;
 
@@ -103,7 +105,7 @@ where
         }
 
         log::debug!("Finding user session: {:?}", session_cookie.user_id);
-        let current_user = session_cache
+        let current_user = session_service
             .get_current_user(session_cookie.user_id, session_cookie.key)
             .await
             .map_err(|err| ErrorResponse::new(&problem_config, err))?;

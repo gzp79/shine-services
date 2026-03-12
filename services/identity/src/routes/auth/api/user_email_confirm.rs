@@ -4,10 +4,10 @@ use serde::Deserialize;
 use shine_infra::{
     language::Language,
     models::Email,
+    session::CheckedCurrentUser,
     web::{
         extracts::{SiteInfo, ValidatedJson, ValidatedQuery},
         responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
-        session::CheckedCurrentUser,
     },
 };
 use utoipa::{IntoParams, ToSchema};

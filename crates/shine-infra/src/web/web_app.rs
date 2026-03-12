@@ -1,10 +1,10 @@
 use crate::{
+    session::CurrentUserService,
     telemetry::TelemetryService,
     web::{
         controllers::{self, ApiUrl},
         middlewares::PoweredBy,
         responses::ProblemConfig,
-        session::UserSessionCacheReader,
         FeatureConfig, WebAppConfig,
     },
 };
@@ -173,6 +173,7 @@ async fn create_web_app<A: WebApplication>(
     app: &A,
 ) -> Result<Router<()>, AnyError> {
     let telemetry_service = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
+    let current_user_service = CurrentUserService::from_config(&config.service).await?;
 
     let cors_layer = create_cors_layer(&config.service.allowed_origins)?;
     let powered_by_layer = PoweredBy::from_service_info(app.feature_name(), &config.core.version)?;
@@ -187,41 +188,23 @@ async fn create_web_app<A: WebApplication>(
         problem_config.into_layer()
     };
     let telemetry_layer = telemetry_service.create_layer();
-    let user_session_layer = {
-        // todo: make it a read only access to the redis
-        log::info!(
-            "Creating user session cache reader... [{}]",
-            config.service.session_redis_cns
-        );
-        let redis = crate::db::create_redis_pool(config.service.session_redis_cns.as_str()).await?;
-        UserSessionCacheReader::new(
-            None,
-            &config.service.session_secret,
-            "",
-            config.service.session_ttl,
-            redis,
-        )?
-        .into_layer()
-    };
+    let user_session_layer = current_user_service.create_layer();
 
-    log::info!("Creating application state...");
     let mut router = OpenApiRouter::new();
     let app_state = app.create_state(config).await?;
 
-    log::info!("Creating common routes...");
     let health_routes = controllers::HealthRouter::new(app.feature_name(), config)?.into_routes();
-    let telemetry_routes = telemetry_service.create_router();
     router = router.nest(&format!("/{}", app.feature_name()), health_routes);
+
+    let telemetry_routes = telemetry_service.create_router();
     router = router.nest(&format!("/{}", app.feature_name()), telemetry_routes);
 
-    log::info!("Creating application routes...");
     let app_controller = app.create_routes(config).await?;
     router = router.nest(&format!("/{}", app.feature_name()), app_controller);
 
     let (router, router_api) = router.split_for_parts();
     doc.merge(router_api);
 
-    log::info!("Creating swagger-ui...");
     let swagger = SwaggerUi::new(format!("/{}/doc/swagger-ui", app.feature_name()))
         .url(format!("/{}/doc/openapi.json", app.feature_name()), doc)
         .config(

@@ -6,10 +6,12 @@ use crate::{
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_infra::web::{
-    extracts::ValidatedQuery,
-    responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
+use shine_infra::{
     session::CheckedCurrentUser,
+    web::{
+        extracts::ValidatedQuery,
+        responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
+    },
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;

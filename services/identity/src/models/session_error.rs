@@ -1,7 +1,4 @@
-use shine_infra::{
-    db::DBError,
-    web::{responses::Problem, session::SessionKeyError},
-};
+use shine_infra::{db::DBError, session::SessionKeyError, web::responses::Problem};
 use thiserror::Error as ThisError;
 
 mod pr {

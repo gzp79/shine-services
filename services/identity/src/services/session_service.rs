@@ -4,9 +4,9 @@ use crate::{
 };
 use chrono::Utc;
 use ring::{digest, rand::SystemRandom};
-use shine_infra::web::{
-    extracts::{ClientFingerprint, SiteInfo},
+use shine_infra::{
     session::SessionKey,
+    web::extracts::{ClientFingerprint, SiteInfo},
 };
 use uuid::Uuid;
 

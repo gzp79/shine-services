@@ -5,10 +5,12 @@ use crate::{
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use shine_infra::web::{
-    extracts::{ClientFingerprint, SiteInfo, ValidatedJson, ValidatedPath, ValidationErrorEx},
-    responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
+use shine_infra::{
     session::CheckedCurrentUser,
+    web::{
+        extracts::{ClientFingerprint, SiteInfo, ValidatedJson, ValidatedPath, ValidationErrorEx},
+        responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
+    },
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;

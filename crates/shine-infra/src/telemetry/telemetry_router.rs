@@ -1,9 +1,7 @@
 use crate::{
+    session::{permissions, CheckedCurrentUser, CorePermissions},
     telemetry::{DynConfig, TelemetryService},
-    web::{
-        responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
-        session::{permissions, CheckedCurrentUser, CorePermissions},
-    },
+    web::responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
 };
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};

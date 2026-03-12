@@ -12,10 +12,12 @@ use axum::{
 };
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
-use shine_infra::web::{
-    extracts::ValidatedPath,
-    responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
+use shine_infra::{
     session::{CheckedCurrentUser, CurrentUser},
+    web::{
+        extracts::ValidatedPath,
+        responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
+    },
 };
 use std::sync::Arc;
 use utoipa::IntoParams;

@@ -12,4 +12,3 @@ pub mod middlewares;
 pub mod responses;
 
 pub mod controllers;
-pub mod session;

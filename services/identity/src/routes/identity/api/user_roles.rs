@@ -8,10 +8,12 @@ use axum_extra::{
     TypedHeader,
 };
 use serde::{Deserialize, Serialize};
-use shine_infra::web::{
-    extracts::{ValidatedJson, ValidatedPath},
-    responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
+use shine_infra::{
     session::{CheckedCurrentUser, PermissionError},
+    web::{
+        extracts::{ValidatedJson, ValidatedPath},
+        responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
+    },
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
