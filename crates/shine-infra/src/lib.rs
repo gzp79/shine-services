@@ -7,5 +7,6 @@ pub mod serde;
 pub mod sync;
 pub mod web;
 
+pub mod health;
 pub mod session;
 pub mod telemetry;

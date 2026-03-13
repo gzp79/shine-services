@@ -1,12 +1,8 @@
 use crate::{
+    health::HealthService,
     session::CurrentUserService,
     telemetry::TelemetryService,
-    web::{
-        controllers::{self, ApiUrl},
-        middlewares::PoweredBy,
-        responses::ProblemConfig,
-        FeatureConfig, WebAppConfig,
-    },
+    web::{middlewares::PoweredBy, responses::ProblemConfig, ApiUrl, FeatureConfig, WebAppConfig},
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
@@ -173,6 +169,7 @@ async fn create_web_app<A: WebApplication>(
     app: &A,
 ) -> Result<Router<()>, AnyError> {
     let telemetry_service = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
+    let health_service = HealthService::new(app.feature_name(), config)?;
     let current_user_service = CurrentUserService::from_config(&config.service).await?;
 
     let cors_layer = create_cors_layer(&config.service.allowed_origins)?;
@@ -193,14 +190,10 @@ async fn create_web_app<A: WebApplication>(
     let mut router = OpenApiRouter::new();
     let app_state = app.create_state(config).await?;
 
-    let health_routes = controllers::HealthRouter::new(app.feature_name(), config)?.into_routes();
-    router = router.nest(&format!("/{}", app.feature_name()), health_routes);
+    router = router.nest(&format!("/{}", app.feature_name()), health_service.create_router());
+    router = router.nest(&format!("/{}", app.feature_name()), telemetry_service.create_router());
 
-    let telemetry_routes = telemetry_service.create_router();
-    router = router.nest(&format!("/{}", app.feature_name()), telemetry_routes);
-
-    let app_controller = app.create_routes(config).await?;
-    router = router.nest(&format!("/{}", app.feature_name()), app_controller);
+    router = router.nest(&format!("/{}", app.feature_name()), app.create_routes(config).await?);
 
     let (router, router_api) = router.split_for_parts();
     doc.merge(router_api);
