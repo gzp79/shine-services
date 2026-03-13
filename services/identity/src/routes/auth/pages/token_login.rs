@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    handlers::{AuthHandler, AuthenticationSuccess},
+    handlers::AuthenticationSuccess,
     models::{IdentityError, TokenKind},
     routes::auth::{AuthPage, AuthPageRequest, AuthSession, TokenCookie},
 };
@@ -73,7 +73,8 @@ pub async fn token_login(
         create_access_token,
         auth_session,
         rotated_token,
-    } = match AuthHandler::new(&state)
+    } = match state
+        .auth_handler()
         .authenticate_user(
             &state,
             query.token.as_deref(),

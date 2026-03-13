@@ -1,7 +1,10 @@
 use crate::{
     app_state::AppState,
     models::{Identity, IdentityError, SessionError},
-    repositories::{identity::IdentityDb, session::SessionDb},
+    repositories::{
+        identity::{pg::PgIdentityDb, IdentityDb},
+        session::{redis::RedisSessionDb, SessionDb},
+    },
     services::{LinkService, RoleService, SessionService, UserService},
 };
 use shine_infra::{
@@ -145,7 +148,7 @@ where
 }
 
 impl AppState {
-    pub fn user_session_handler(&self) -> UserSessionHandler<'_, impl IdentityDb, impl SessionDb> {
+    pub fn user_session_handler(&self) -> UserSessionHandler<'_, PgIdentityDb, RedisSessionDb> {
         UserSessionHandler::new(
             self.user_service(),
             self.link_service(),

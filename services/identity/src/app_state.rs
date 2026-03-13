@@ -3,7 +3,7 @@ use crate::{
     repositories::{
         identity::pg::PgIdentityDb,
         mailer::{smtp::SmtpEmailSender, EmailSender},
-        session::{redis::RedisSessionDb, SessionDb},
+        session::redis::RedisSessionDb,
         CaptchaValidator, DBPool,
     },
     services::{
@@ -31,7 +31,6 @@ struct Inner {
     captcha_validator: CaptchaValidator,
     session_service: SessionService<RedisSessionDb>,
     email_sender: SmtpEmailSender,
-    // Phase 2 services
     events: Arc<TopicBus<IdentityTopic>>,
     user_service: UserService<PgIdentityDb>,
     token_service: TokenService<PgIdentityDb>,
@@ -183,7 +182,7 @@ impl AppState {
         &self.0.captcha_validator
     }
 
-    pub fn session_service(&self) -> &SessionService<impl SessionDb> {
+    pub fn session_service(&self) -> &SessionService<RedisSessionDb> {
         &self.0.session_service
     }
 
