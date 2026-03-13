@@ -87,5 +87,7 @@ pub async fn oauth2_link(
 
     // 6. Return response
     assert!(response_session.user_session().is_some());
-    state.auth_page_handler().redirect(response_session, Some(&authorize_url), None)
+    state
+        .auth_page_handler()
+        .redirect(response_session, Some(&authorize_url), None)
 }

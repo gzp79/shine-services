@@ -93,5 +93,7 @@ pub async fn delete_user(
     }
 
     // 5. Return response
-    state.auth_page_handler().redirect(response_session, query.redirect_url.as_ref(), None)
+    state
+        .auth_page_handler()
+        .redirect(response_session, query.redirect_url.as_ref(), None)
 }

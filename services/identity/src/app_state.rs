@@ -215,5 +215,4 @@ impl AppState {
     pub fn link_service(&self) -> &LinkService<PgIdentityDb> {
         &self.0.link_service
     }
-
 }

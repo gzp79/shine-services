@@ -28,7 +28,10 @@ impl<'a> AuthPageRequest<'a> {
     {
         match query {
             Ok(ValidatedQuery(query)) => Ok(query),
-            Err(error) => Err(self.state.auth_page_handler().error(self.auth_session.clone(), error.problem, None)),
+            Err(error) => Err(self
+                .state
+                .auth_page_handler()
+                .error(self.auth_session.clone(), error.problem, None)),
         }
     }
 
@@ -50,7 +53,11 @@ impl<'a> AuthPageRequest<'a> {
             let err = ValidationError::new("invalid-redirect-url")
                 .with_message("Redirect URL is not allowed".into())
                 .into_constraint_error(property);
-            Some(self.state.auth_page_handler().error(self.auth_session.clone(), err, None))
+            Some(
+                self.state
+                    .auth_page_handler()
+                    .error(self.auth_session.clone(), err, None),
+            )
         }
     }
 
@@ -90,7 +97,11 @@ impl<'a> AuthPageRequest<'a> {
     /// Returns None on success, Some(AuthPage) for early return on error
     pub async fn validate_captcha(&self, captcha: Option<&str>, error_url: Option<&Url>) -> Option<AuthPage> {
         if let Err(err) = self.state.captcha_validator().validate(captcha).await {
-            return Some(self.state.auth_page_handler().error(self.auth_session.clone(), err, error_url));
+            return Some(
+                self.state
+                    .auth_page_handler()
+                    .error(self.auth_session.clone(), err, error_url),
+            );
         }
         None
     }
@@ -127,6 +138,8 @@ impl<'a> AuthPageRequest<'a> {
     where
         E: Into<crate::routes::auth::AuthError>,
     {
-        self.state.auth_page_handler().error(self.auth_session, error, error_url)
+        self.state
+            .auth_page_handler()
+            .error(self.auth_session, error, error_url)
     }
 }

@@ -56,7 +56,9 @@ pub async fn oidc_auth(
     } = match auth_session.external_login() {
         Some(external_login_cookie) => external_login_cookie.clone(),
         None => {
-            return state.auth_page_handler().error(auth_session, ExternalLoginError::MissingExternalLoginCookie, None)
+            return state
+                .auth_page_handler()
+                .error(auth_session, ExternalLoginError::MissingExternalLoginCookie, None)
         }
     };
     let auth_session = auth_session.with_external_login(None);

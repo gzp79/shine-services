@@ -94,5 +94,7 @@ pub async fn logout(
 
     // 5. Return response
     let response_session = req.into_auth_session().cleared();
-    state.auth_page_handler().redirect(response_session, query.redirect_url.as_ref(), None)
+    state
+        .auth_page_handler()
+        .redirect(response_session, query.redirect_url.as_ref(), None)
 }

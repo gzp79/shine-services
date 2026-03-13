@@ -129,5 +129,7 @@ pub async fn guest_login(
         .into_auth_session()
         .with_access(Some(user_access))
         .with_session(Some(user_session));
-    state.auth_page_handler().redirect(final_session, query.redirect_url.as_ref(), None)
+    state
+        .auth_page_handler()
+        .redirect(final_session, query.redirect_url.as_ref(), None)
 }

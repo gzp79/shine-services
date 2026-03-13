@@ -97,5 +97,7 @@ pub async fn oauth2_login(
 
     // 6. Return response
     assert!(response_session.user_session().is_none());
-    state.auth_page_handler().redirect(response_session, Some(&authorize_url), None)
+    state
+        .auth_page_handler()
+        .redirect(response_session, Some(&authorize_url), None)
 }

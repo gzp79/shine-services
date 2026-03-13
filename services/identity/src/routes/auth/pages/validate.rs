@@ -54,5 +54,7 @@ pub async fn validate(
     log::debug!("Query: {query:#?}");
 
     // 4. Return response
-    state.auth_page_handler().redirect(req.into_auth_session(), query.redirect_url.as_ref(), None)
+    state
+        .auth_page_handler()
+        .redirect(req.into_auth_session(), query.redirect_url.as_ref(), None)
 }

@@ -15,11 +15,7 @@ pub struct AuthPageHandler<'a> {
 
 impl<'a> AuthPageHandler<'a> {
     pub fn new(settings: &'a SettingsService, problem_config: &'a ProblemConfig, tera: &'a Tera) -> Self {
-        Self {
-            settings,
-            problem_config,
-            tera,
-        }
+        Self { settings, problem_config, tera }
     }
 
     fn bind_app_nme(&self, context: &mut tera::Context) {
