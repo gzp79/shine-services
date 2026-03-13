@@ -1,6 +1,5 @@
 use crate::{
-    app_state::UserInfoError,
-    handlers::EmailAuthError,
+    handlers::{EmailAuthError, UserInfoError},
     models::{IdentityError, SessionError},
     repositories::CaptchaError,
     services::{CreateUserError, TokenError},

@@ -1,9 +1,10 @@
 use crate::{
     app_state::AppState,
+    handlers::{AuthPageHandler, UserSessionHandler},
     models::{ExternalUserInfo, IdentityError, TokenKind},
-    repositories::identity::IdentityDb,
-    routes::auth::{AuthError, AuthPage, AuthSession, PageUtils, TokenCookie},
-    services::{CreateUserError, LinkService, UserService},
+    repositories::{identity::IdentityDb, session::SessionDb},
+    routes::auth::{AuthError, AuthPage, AuthSession, TokenCookie},
+    services::{CreateUserError, LinkService, SettingsService, TokenService, UserService},
 };
 use shine_infra::web::extracts::{ClientFingerprint, SiteInfo};
 use url::Url;
@@ -11,25 +12,40 @@ use url::Url;
 /// Handler for external authentication operations (OAuth2/OIDC)
 ///
 /// Orchestrates external login and link flows
-pub struct ExternalLoginHandler<'a, IDB>
+pub struct ExternalLoginHandler<'a, IDB, SDB>
 where
     IDB: IdentityDb,
+    SDB: SessionDb,
 {
-    state: &'a AppState,
+    page_handler: AuthPageHandler<'a>,
+    user_session_handler: UserSessionHandler<'a, IDB, SDB>,
+    settings: &'a SettingsService,
+    token_service: &'a TokenService<IDB>,
     user_service: &'a UserService<IDB>,
     link_service: &'a LinkService<IDB>,
 }
 
-impl<'a, IDB> ExternalLoginHandler<'a, IDB>
+impl<'a, IDB, SDB> ExternalLoginHandler<'a, IDB, SDB>
 where
     IDB: IdentityDb,
+    SDB: SessionDb,
 {
     /// Create a new external login handler
-    pub fn new(state: &'a AppState, user_service: &'a UserService<IDB>, link_service: &'a LinkService<IDB>) -> Self {
+    pub fn new(
+        page_handler: AuthPageHandler<'a>,
+        settings: &'a SettingsService,
+        token_service: &'a TokenService<IDB>,
+        user_service: &'a UserService<IDB>,
+        link_service: &'a LinkService<IDB>,
+        user_session_handler: UserSessionHandler<'a, IDB, SDB>,
+    ) -> Self {
         Self {
-            state,
+            page_handler,
+            settings,
+            token_service,
             user_service,
             link_service,
+            user_session_handler,
         }
     }
 
@@ -51,9 +67,11 @@ where
         match self.link_service.add_external_link(user.user_id, external_user).await {
             Ok(()) => {}
             Err(IdentityError::ExternalIdConflict) => {
-                return PageUtils::new(self.state).error(auth_session, AuthError::ProviderAlreadyUsed, error_url)
+                return self
+                    .page_handler
+                    .error(auth_session, AuthError::ProviderAlreadyUsed, error_url)
             }
-            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
+            Err(err) => return self.page_handler.error(auth_session, err, error_url),
         };
 
         log::debug!(
@@ -64,7 +82,7 @@ where
         );
         let response_session = auth_session.with_external_login(None);
         assert!(response_session.user_session().is_some());
-        PageUtils::new(self.state).redirect(response_session, redirect_url, None)
+        self.page_handler.redirect(response_session, redirect_url, None)
     }
 
     /// Complete external login flow
@@ -102,22 +120,23 @@ where
             {
                 Ok(identity) => identity,
                 Err(CreateUserError::IdentityError(IdentityError::EmailConflict)) => {
-                    return PageUtils::new(self.state).error(auth_session, AuthError::EmailAlreadyUsed, error_url)
+                    return self
+                        .page_handler
+                        .error(auth_session, AuthError::EmailAlreadyUsed, error_url)
                 }
-                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
+                Err(err) => return self.page_handler.error(auth_session, err, error_url),
             },
-            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
+            Err(err) => return self.page_handler.error(auth_session, err, error_url),
         };
 
         // create a new remember me token
         let user_token = if create_token {
             match self
-                .state
-                .token_service()
+                .token_service
                 .create_with_retry(
                     identity.id,
                     TokenKind::Access,
-                    &self.state.settings().token.ttl_access_token,
+                    &self.settings.token.ttl_access_token,
                     Some(&fingerprint),
                     None,
                     site_info,
@@ -125,23 +144,25 @@ where
                 .await
             {
                 Ok((token, info)) => Some((identity.id, token, info.expire_at)),
-                Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
+                Err(err) => return self.page_handler.error(auth_session, err, error_url),
             }
         } else {
             None
         };
 
-        let user_session = match self.state.create_user_session(&identity, &fingerprint, site_info).await {
+        let user_session = match self
+            .user_session_handler
+            .create_user_session(&identity, &fingerprint, site_info)
+            .await
+        {
             Ok(Some(session)) => session,
             Ok(None) => {
                 log::warn!("User {} has been deleted during link", identity.id);
-                return PageUtils::new(self.state).error(
-                    auth_session.with_access(None),
-                    IdentityError::UserDeleted,
-                    error_url,
-                );
+                return self
+                    .page_handler
+                    .error(auth_session.with_access(None), IdentityError::UserDeleted, error_url);
             }
-            Err(err) => return PageUtils::new(self.state).error(auth_session, err, error_url),
+            Err(err) => return self.page_handler.error(auth_session, err, error_url),
         };
 
         let response_session = auth_session
@@ -153,12 +174,19 @@ where
                 revoked_token: None,
             }))
             .with_session(Some(user_session));
-        PageUtils::new(self.state).redirect(response_session, redirect_url, None)
+        self.page_handler.redirect(response_session, redirect_url, None)
     }
 }
 
 impl AppState {
-    pub fn external_login_handler(&self) -> ExternalLoginHandler<'_, impl IdentityDb> {
-        ExternalLoginHandler::new(self, self.user_service(), self.link_service())
+    pub fn external_login_handler(&self) -> ExternalLoginHandler<'_, impl IdentityDb, impl SessionDb> {
+        ExternalLoginHandler::new(
+            self.auth_page_handler(),
+            self.user_session_handler(),
+            self.settings(),
+            self.token_service(),
+            self.user_service(),
+            self.link_service(),
+        )
     }
 }

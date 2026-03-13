@@ -40,7 +40,7 @@ impl WebApplication for Application {
                         UserEvent::RoleChange(user_id) => *user_id,
                     };
 
-                    if let Err(err) = self.0.refresh_user_session(user_id).await {
+                    if let Err(err) = self.0.user_session_handler().refresh_user_session(user_id).await {
                         log::error!(
                             "Failed to refresh session for user ({user_id}) after UserEvent {event:?}: {err:?}"
                         );
@@ -64,7 +64,7 @@ impl WebApplication for Application {
                         UserLinkEvent::Unlinked(user_id) => *user_id,
                     };
 
-                    if let Err(err) = self.0.refresh_user_session(user_id).await {
+                    if let Err(err) = self.0.user_session_handler().refresh_user_session(user_id).await {
                         log::error!(
                             "Failed to refresh session for user ({user_id}) after UserLinkEvent {event:?}: {err:?}"
                         );

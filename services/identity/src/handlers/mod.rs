@@ -1,6 +1,10 @@
+mod auth_page_handler;
+pub use self::auth_page_handler::*;
 mod email_token_handler;
 pub use self::email_token_handler::*;
 mod auth_handler;
 pub use self::auth_handler::*;
 mod external_login_handler;
 //pub use external_login_handler::*;
+mod user_session_handler;
+pub use self::user_session_handler::*;

@@ -2,7 +2,7 @@ use crate::{
     app_state::AppState,
     handlers::{AuthHandler, AuthenticationSuccess},
     models::{IdentityError, TokenKind},
-    routes::auth::{AuthPage, AuthPageRequest, AuthSession, PageUtils, TokenCookie},
+    routes::auth::{AuthPage, AuthPageRequest, AuthSession, TokenCookie},
 };
 use axum::extract::State;
 use axum_extra::{
@@ -87,7 +87,7 @@ pub async fn token_login(
     {
         Ok(success) => success,
         Err(failure) => {
-            return PageUtils::new(&state).error(failure.auth_session, failure.error, query.error_url.as_ref());
+            return state.auth_page_handler().error(failure.auth_session, failure.error, query.error_url.as_ref());
         }
     };
 
@@ -114,7 +114,7 @@ pub async fn token_login(
             .await
         {
             Ok(result) => result,
-            Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
+            Err(err) => return state.auth_page_handler().error(auth_session, err, query.error_url.as_ref()),
         };
 
         // preserve the old token in case client does not acknowledge the new one
@@ -132,21 +132,21 @@ pub async fn token_login(
 
     // Create a new user session.
     let auth_session = {
-        let user_session = match state.create_user_session(&identity, &fingerprint, &site_info).await {
+        let user_session = match state.user_session_handler().create_user_session(&identity, &fingerprint, &site_info).await {
             Ok(Some(session)) => session,
             Ok(None) => {
                 log::warn!("User {} has been deleted during login", identity.id);
-                return PageUtils::new(&state).error(
+                return state.auth_page_handler().error(
                     auth_session.with_access(None),
                     IdentityError::UserDeleted,
                     query.error_url.as_ref(),
                 );
             }
-            Err(err) => return PageUtils::new(&state).error(auth_session, err, query.error_url.as_ref()),
+            Err(err) => return state.auth_page_handler().error(auth_session, err, query.error_url.as_ref()),
         };
         auth_session.with_session(Some(user_session))
     };
 
     log::info!("Token login completed for: {}", identity.id);
-    PageUtils::new(&state).redirect(auth_session, query.redirect_url.as_ref(), None)
+    state.auth_page_handler().redirect(auth_session, query.redirect_url.as_ref(), None)
 }

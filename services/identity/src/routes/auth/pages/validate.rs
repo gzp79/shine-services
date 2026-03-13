@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{AuthPage, AuthPageRequest, AuthSession, PageUtils},
+    routes::auth::{AuthPage, AuthPageRequest, AuthSession},
 };
 use axum::extract::State;
 use serde::Deserialize;
@@ -54,5 +54,5 @@ pub async fn validate(
     log::debug!("Query: {query:#?}");
 
     // 4. Return response
-    PageUtils::new(&state).redirect(req.into_auth_session(), query.redirect_url.as_ref(), None)
+    state.auth_page_handler().redirect(req.into_auth_session(), query.redirect_url.as_ref(), None)
 }

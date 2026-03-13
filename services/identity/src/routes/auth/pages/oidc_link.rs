@@ -2,7 +2,6 @@ use crate::{
     app_state::AppState,
     routes::auth::{
         AuthError, AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient,
-        PageUtils,
     },
 };
 use axum::{extract::State, Extension};
@@ -110,5 +109,5 @@ pub async fn oidc_link(
 
     // 6. Return response
     assert!(response_session.user_session().is_some());
-    PageUtils::new(&state).redirect(response_session, Some(&authorize_url), None)
+    state.auth_page_handler().redirect(response_session, Some(&authorize_url), None)
 }

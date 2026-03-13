@@ -107,14 +107,14 @@ pub async fn guest_login(
     // Create user session.
     let user_session = match req
         .state()
+        .user_session_handler()
         .create_user_session(&identity, &fingerprint, &site_info)
         .await
     {
         Ok(Some(session)) => session,
         Ok(None) => {
             log::warn!("User {} has been deleted during login", identity.id);
-            use crate::routes::auth::PageUtils;
-            return PageUtils::new(req.state()).error(
+            return req.state().auth_page_handler().error(
                 req.auth_session().clone().with_access(None),
                 IdentityError::UserDeleted,
                 query.error_url.as_ref(),
@@ -129,6 +129,5 @@ pub async fn guest_login(
         .into_auth_session()
         .with_access(Some(user_access))
         .with_session(Some(user_session));
-    use crate::routes::auth::PageUtils;
-    PageUtils::new(&state).redirect(final_session, query.redirect_url.as_ref(), None)
+    state.auth_page_handler().redirect(final_session, query.redirect_url.as_ref(), None)
 }

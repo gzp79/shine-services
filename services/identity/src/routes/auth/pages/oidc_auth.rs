@@ -2,7 +2,7 @@ use crate::{
     app_state::AppState,
     routes::auth::{
         AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient,
-        OIDCUserInfoExtractor, PageUtils,
+        OIDCUserInfoExtractor,
     },
 };
 use axum::{extract::State, Extension};
@@ -56,7 +56,7 @@ pub async fn oidc_auth(
     } = match auth_session.external_login() {
         Some(external_login_cookie) => external_login_cookie.clone(),
         None => {
-            return PageUtils::new(&state).error(auth_session, ExternalLoginError::MissingExternalLoginCookie, None)
+            return state.auth_page_handler().error(auth_session, ExternalLoginError::MissingExternalLoginCookie, None)
         }
     };
     let auth_session = auth_session.with_external_login(None);

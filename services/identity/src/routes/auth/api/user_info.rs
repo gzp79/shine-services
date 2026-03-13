@@ -92,6 +92,7 @@ pub async fn get_user_info(
         // read the user info from the database
         GetUserInfoMode::Full | GetUserInfoMode::FullWithRefresh => {
             let user_info = state
+                .user_session_handler()
                 .get_user_info(user.user_id)
                 .await
                 .map_err(|err| err.into_response(&problem_config))?
@@ -103,6 +104,7 @@ pub async fn get_user_info(
 
             if method == GetUserInfoMode::FullWithRefresh {
                 state
+                    .user_session_handler()
                     .refresh_user_session(user.user_id)
                     .await
                     .map_err(|err| err.into_response(&problem_config))?;
