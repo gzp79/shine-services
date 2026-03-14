@@ -1,14 +1,12 @@
 pub use self::auth_error::*;
 mod auth_session;
 pub use self::auth_session::*;
-mod auth_page;
-pub use self::auth_page::*;
+pub use crate::handlers::AuthPage;
 mod oauth2_client;
 pub use self::oauth2_client::*;
 mod oidc_client;
 pub use self::oidc_client::*;
 
-// Phase 4 helper
 mod auth_page_request;
 pub use self::auth_page_request::*;
 

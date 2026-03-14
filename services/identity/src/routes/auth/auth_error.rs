@@ -1,5 +1,5 @@
 use crate::{
-    handlers::{EmailAuthError, UserInfoError},
+    handlers::EmailAuthError,
     models::{IdentityError, SessionError},
     repositories::CaptchaError,
     services::{CreateUserError, TokenError},
@@ -101,11 +101,14 @@ pub enum AuthError {
     TokenError(#[from] TokenError),
     #[error(transparent)]
     EmailAuthError(#[from] EmailAuthError),
-    #[error(transparent)]
-    UserInfoError(#[from] UserInfoError),
-
     #[error("Internal server error")]
     InternalServerError(Problem),
+}
+
+impl From<Problem> for AuthError {
+    fn from(value: Problem) -> Self {
+        AuthError::InternalServerError(value)
+    }
 }
 
 impl From<AuthError> for Problem {
@@ -181,9 +184,6 @@ impl From<AuthError> for Problem {
                     .with_sensitive_dbg(err),
             },
             AuthError::EmailAuthError(error) => {
-                Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
-            }
-            AuthError::UserInfoError(error) => {
                 Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::InternalServerError(error) => Problem::internal_error_ty(AUTH_ERROR).with_sensitive(error),

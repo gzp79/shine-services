@@ -1,9 +1,9 @@
 use crate::{
     app_state::AppState,
-    handlers::{AuthPageHandler, UserSessionHandler},
+    handlers::{AuthPage, AuthPageHandler, UserSessionHandler},
     models::{ExternalUserInfo, IdentityError, TokenKind},
     repositories::{identity::IdentityDb, session::SessionDb},
-    routes::auth::{AuthError, AuthPage, AuthSession, TokenCookie},
+    routes::auth::{AuthError, AuthSession, TokenCookie},
     services::{CreateUserError, LinkService, SettingsService, TokenService, UserService},
 };
 use shine_infra::web::extracts::{ClientFingerprint, SiteInfo};

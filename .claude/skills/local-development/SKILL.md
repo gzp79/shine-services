@@ -15,9 +15,16 @@ cd services/identity && powershell.exe -ExecutionPolicy Bypass -File run_identit
 # Alternative: VSCode task "identity: local" (auto-configures env vars)
 ```
 
+**Start Docker dev environment** (databases — required before service):
+```bash
+docker compose -f services/docker-compose.yml -p shine up -d
+# Stop: docker compose -f services/docker-compose.yml -p shine down
+```
+
 **Run tests:**
 ```bash
 cd tests && pnpm test:local
+# Single file: pnpm exec playwright test src/identity/guest_login.spec.ts
 ```
 
 **Verify service is ready:**

@@ -1,5 +1,7 @@
 mod auth_page_handler;
 pub use self::auth_page_handler::*;
+mod guest_login_handler;
+//pub use self::guest_login_handler::*;
 mod email_token_handler;
 pub use self::email_token_handler::*;
 mod auth_handler;

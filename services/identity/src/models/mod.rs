@@ -5,6 +5,8 @@ pub use self::token_info::*;
 
 mod identity;
 pub use self::identity::*;
+mod user_info;
+pub use self::user_info::*;
 mod identity_error;
 pub use self::identity_error::*;
 mod search_identity;

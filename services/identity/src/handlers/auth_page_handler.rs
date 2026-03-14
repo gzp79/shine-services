@@ -1,11 +1,23 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{AuthError, AuthPage, AuthSession},
+    routes::auth::{AuthError, AuthSession},
     services::SettingsService,
 };
+use axum::response::{Html, IntoResponse, Response};
 use shine_infra::web::responses::{Problem, ProblemConfig};
 use tera::Tera;
 use url::Url;
+
+pub struct AuthPage {
+    pub auth_session: Option<AuthSession>,
+    pub html: String,
+}
+
+impl IntoResponse for AuthPage {
+    fn into_response(self) -> Response {
+        (self.auth_session, Html(self.html)).into_response()
+    }
+}
 
 pub struct AuthPageHandler<'a> {
     settings: &'a SettingsService,

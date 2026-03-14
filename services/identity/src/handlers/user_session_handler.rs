@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    models::{Identity, IdentityError, SessionError},
+    models::{Identity, UserInfo},
     repositories::{
         identity::{pg::PgIdentityDb, IdentityDb},
         session::{redis::RedisSessionDb, SessionDb},
@@ -14,31 +14,7 @@ use shine_infra::{
         responses::Problem,
     },
 };
-use thiserror::Error as ThisError;
 use uuid::Uuid;
-
-#[derive(ThisError, Debug)]
-pub enum UserInfoError {
-    #[error(transparent)]
-    IdentityError(#[from] IdentityError),
-    #[error(transparent)]
-    SessionError(#[from] SessionError),
-}
-
-impl From<UserInfoError> for Problem {
-    fn from(value: UserInfoError) -> Self {
-        match value {
-            UserInfoError::IdentityError(err) => err.into(),
-            UserInfoError::SessionError(err) => err.into(),
-        }
-    }
-}
-
-pub struct UserInfo {
-    pub identity: Identity,
-    pub roles: Vec<String>,
-    pub is_linked: bool,
-}
 
 pub struct UserSessionHandler<'a, IDB, SDB>
 where
@@ -70,7 +46,7 @@ where
         }
     }
 
-    pub async fn get_user_info(&self, user_id: Uuid) -> Result<Option<UserInfo>, UserInfoError> {
+    pub async fn get_user_info(&self, user_id: Uuid) -> Result<Option<UserInfo>, Problem> {
         // get the version first as newer role is fine, but a deprecated role set is not ok
         // this order ensures the role and other data are at least as fresh as the version
 
@@ -94,7 +70,7 @@ where
         identity: &Identity,
         fingerprint: &ClientFingerprint,
         site_info: &SiteInfo,
-    ) -> Result<Option<CurrentUser>, UserInfoError> {
+    ) -> Result<Option<CurrentUser>, Problem> {
         let is_linked = self.link_service.is_linked(identity.id).await?;
         let roles = match self.role_service.get_roles(identity.id).await? {
             Some(roles) => roles,
@@ -121,7 +97,7 @@ where
         }))
     }
 
-    pub async fn refresh_user_session(&self, user_id: Uuid) -> Result<(), UserInfoError> {
+    pub async fn refresh_user_session(&self, user_id: Uuid) -> Result<(), Problem> {
         match self.get_user_info(user_id).await {
             Ok(Some(user_info)) => {
                 // at this point the identity DB has been updated, thus any new session will contain the information
@@ -139,7 +115,7 @@ where
                 Ok(())
             }
             Err(err) => {
-                log::warn!("Failed to refresh session for user ({err}):");
+                log::warn!("Failed to refresh session for user ({err:?}):");
                 //self.session_service.remove_all(user_id).await?; - keep sessions, it could be a temporary issue
                 Err(err)
             }

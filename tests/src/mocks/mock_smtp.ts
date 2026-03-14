@@ -110,7 +110,14 @@ class MockSmtp {
             log('SMTP Mock stopping...');
 
             this.server.close(() => {
-                this.clearPendingWaits();
+                const waits = [...this.pendingWaits];
+                this.pendingWaits = [];
+                waits.forEach((wait) => {
+                    if (wait.timeoutId) {
+                        clearTimeout(wait.timeoutId);
+                    }
+                    wait.reject(new Error('Mail server stopped.'));
+                });
                 this.isStarted = false;
                 resolve();
             });
