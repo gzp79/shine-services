@@ -1,10 +1,14 @@
+use super::credential_handler::{CredentialHandler, TokenIssuance};
 use crate::{
     app_state::AppState,
-    handlers::{AuthPage, AuthPageHandler, UserSessionHandler},
-    models::{ExternalUserInfo, IdentityError, TokenKind},
-    repositories::{identity::IdentityDb, session::SessionDb},
-    routes::auth::{AuthError, AuthSession, TokenCookie},
-    services::{CreateUserError, LinkService, SettingsService, TokenService, UserService},
+    handlers::{AuthPage, AuthPageHandler},
+    models::{ExternalUserInfo, IdentityError},
+    repositories::{
+        identity::{pg::PgIdentityDb, IdentityDb},
+        session::{redis::RedisSessionDb, SessionDb},
+    },
+    routes::auth::{AuthError, AuthSession},
+    services::{CreateUserError, LinkService, UserService},
 };
 use shine_infra::web::extracts::{ClientFingerprint, SiteInfo};
 use url::Url;
@@ -18,9 +22,7 @@ where
     SDB: SessionDb,
 {
     page_handler: AuthPageHandler<'a>,
-    user_session_handler: UserSessionHandler<'a, IDB, SDB>,
-    settings: &'a SettingsService,
-    token_service: &'a TokenService<IDB>,
+    credential_handler: CredentialHandler<'a, IDB, SDB>,
     user_service: &'a UserService<IDB>,
     link_service: &'a LinkService<IDB>,
 }
@@ -33,17 +35,13 @@ where
     /// Create a new external login handler
     pub fn new(
         page_handler: AuthPageHandler<'a>,
-        user_session_handler: UserSessionHandler<'a, IDB, SDB>,
-        settings: &'a SettingsService,
-        token_service: &'a TokenService<IDB>,
+        credential_handler: CredentialHandler<'a, IDB, SDB>,
         user_service: &'a UserService<IDB>,
         link_service: &'a LinkService<IDB>,
     ) -> Self {
         Self {
             page_handler,
-            user_session_handler,
-            settings,
-            token_service,
+            credential_handler,
             user_service,
             link_service,
         }
@@ -129,62 +127,30 @@ where
             Err(err) => return self.page_handler.error(auth_session, err, error_url),
         };
 
-        // create a new remember me token
-        let user_token = if create_token {
-            match self
-                .token_service
-                .create_with_retry(
-                    identity.id,
-                    TokenKind::Access,
-                    &self.settings.token.ttl_access_token,
-                    Some(&fingerprint),
-                    None,
-                    site_info,
-                )
-                .await
-            {
-                Ok((token, info)) => Some((identity.id, token, info.expire_at)),
-                Err(err) => return self.page_handler.error(auth_session, err, error_url),
-            }
+        let issuance = if create_token {
+            TokenIssuance::Create
         } else {
-            None
+            TokenIssuance::Skip
         };
-
-        let user_session = match self
-            .user_session_handler
-            .create_user_session(&identity, &fingerprint, site_info)
+        self.credential_handler
+            .establish(
+                identity,
+                issuance,
+                auth_session.with_external_login(None),
+                &fingerprint,
+                site_info,
+                redirect_url,
+                error_url,
+            )
             .await
-        {
-            Ok(Some(session)) => session,
-            Ok(None) => {
-                log::warn!("User {} has been deleted during link", identity.id);
-                return self
-                    .page_handler
-                    .error(auth_session.with_access(None), IdentityError::UserDeleted, error_url);
-            }
-            Err(err) => return self.page_handler.error(auth_session, err, error_url),
-        };
-
-        let response_session = auth_session
-            .with_external_login(None)
-            .with_access(user_token.map(|(user_id, token, expire_at)| TokenCookie {
-                user_id,
-                key: token,
-                expire_at,
-                revoked_token: None,
-            }))
-            .with_session(Some(user_session));
-        self.page_handler.redirect(response_session, redirect_url, None)
     }
 }
 
 impl AppState {
-    pub fn external_login_handler(&self) -> ExternalLoginHandler<'_, impl IdentityDb, impl SessionDb> {
+    pub fn external_login_handler(&self) -> ExternalLoginHandler<'_, PgIdentityDb, RedisSessionDb> {
         ExternalLoginHandler::new(
             self.auth_page_handler(),
-            self.user_session_handler(),
-            self.settings(),
-            self.token_service(),
+            self.credential_handler(),
             self.user_service(),
             self.link_service(),
         )
