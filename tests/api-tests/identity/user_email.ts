@@ -333,7 +333,7 @@ test.describe('Email change', () => {
         }
     });
 
-    test('Changing email with unconfirmed email shall succeed', async ({ api }) => {
+    test('Changing email with unconfirmed email shall succeed', async ({ api, adminUser }) => {
         // Note: Language support tested in confirmation tests above
         const email = randomUUID() + '@example.com';
         const user = await api.testUsers.createLinked(mockAuth, { email });
@@ -364,6 +364,14 @@ test.describe('Email change', () => {
                 details: { ...userInfo?.details, email: newEmail }
             })
         );
+
+        // After email change: old email not searchable, new email finds the user
+        const searchOld = await api.user.searchIdentities(adminUser.sid, { email });
+        expect(searchOld.identities.some((i) => i.id === user.userId)).toBe(false);
+
+        const searchNew = await api.user.searchIdentities(adminUser.sid, { email: newEmail });
+        expect(searchNew.identities).toHaveLength(1);
+        expect(searchNew.identities[0].id).toBe(user.userId);
     });
 
     test('Changing email without email shall succeed', async ({ api }) => {
@@ -397,7 +405,7 @@ test.describe('Email change', () => {
         );
     });
 
-    test('Changing email with confirmed email shall succeed', async ({ api }) => {
+    test('Changing email with confirmed email shall succeed', async ({ api, adminUser }) => {
         const smtp = await startMockEmail();
 
         const email = randomUUID() + '@example.com';
@@ -427,6 +435,14 @@ test.describe('Email change', () => {
                 details: { ...userInfo?.details, email: newEmail }
             })
         );
+
+        // After email change: old email not searchable, new email finds the user
+        const searchOld = await api.user.searchIdentities(adminUser.sid, { email });
+        expect(searchOld.identities.some((i) => i.id === user.userId)).toBe(false);
+
+        const searchNew = await api.user.searchIdentities(adminUser.sid, { email: newEmail });
+        expect(searchNew.identities).toHaveLength(1);
+        expect(searchNew.identities[0].id).toBe(user.userId);
     });
 
     test('Sequential email changes shall invalidate previous tokens (unique constraint)', async ({ api }) => {

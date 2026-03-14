@@ -6,6 +6,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
 use shine_infra::{
+    crypto::DataProtectionUtils,
     db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
     models::{normalize_email, Email},
     pg_query,
@@ -65,13 +66,35 @@ pg_query!( CascadedDelete =>
 );
 
 #[derive(FromRow)]
-struct IdentityRow {
+pub(in crate::repositories::identity::pg) struct IdentityRow {
     user_id: Uuid,
     kind: IdentityKind,
     name: String,
     encrypted_email: Option<String>,
     email_confirmed: bool,
     created: DateTime<Utc>,
+}
+
+impl IdentityRow {
+    pub(in crate::repositories::identity::pg) fn into_identity(
+        self,
+        email_protection: &DataProtectionUtils,
+    ) -> Result<Identity, IdentityError> {
+        let email = if let Some(enc) = self.encrypted_email {
+            let decrypted = email_protection.decrypt(&enc)?;
+            Some(Email::new(decrypted).expect("Email from database should be valid"))
+        } else {
+            None
+        };
+        Ok(Identity {
+            id: self.user_id,
+            kind: self.kind,
+            name: self.name,
+            email,
+            is_email_confirmed: self.email_confirmed,
+            created: self.created,
+        })
+    }
 }
 
 pg_query!( FindById =>
@@ -203,24 +226,7 @@ impl Identities for PgIdentityDbContext<'_> {
             .await
             .map_err(DBError::from)?;
 
-        if let Some(row) = row {
-            let email = if let Some(encrypted_email) = &row.encrypted_email {
-                let decrypted = self.email_protection.decrypt(encrypted_email)?;
-                Some(Email::new(decrypted).expect("Email from database should be valid"))
-            } else {
-                None
-            };
-            Ok(Some(Identity {
-                id: row.user_id,
-                kind: row.kind,
-                name: row.name,
-                email,
-                is_email_confirmed: row.email_confirmed,
-                created: row.created,
-            }))
-        } else {
-            Ok(None)
-        }
+        row.map(|r| r.into_identity(self.email_protection)).transpose()
     }
 
     #[instrument(skip(self))]
@@ -235,24 +241,7 @@ impl Identities for PgIdentityDbContext<'_> {
             .await
             .map_err(DBError::from)?;
 
-        if let Some(row) = row {
-            let email = if let Some(encrypted_email) = &row.encrypted_email {
-                let decrypted = self.email_protection.decrypt(encrypted_email)?;
-                Some(Email::new(decrypted).expect("Email from database should be valid"))
-            } else {
-                None
-            };
-            Ok(Some(Identity {
-                id: row.user_id,
-                kind: row.kind,
-                name: row.name,
-                email,
-                is_email_confirmed: row.email_confirmed,
-                created: row.created,
-            }))
-        } else {
-            Ok(None)
-        }
+        row.map(|r| r.into_identity(self.email_protection)).transpose()
     }
 
     #[instrument(skip(self))]
@@ -300,21 +289,7 @@ impl Identities for PgIdentityDbContext<'_> {
             Err(err) => return Err(DBError::from(err).into()),
         };
 
-        let email = if let Some(encrypted_email) = &identity_row.encrypted_email {
-            let decrypted = self.email_protection.decrypt(encrypted_email)?;
-            Some(Email::new(decrypted).expect("Email from database should be valid"))
-        } else {
-            None
-        };
-
-        Ok(Some(Identity {
-            id: identity_row.user_id,
-            kind: identity_row.kind,
-            name: identity_row.name,
-            email,
-            is_email_confirmed: identity_row.email_confirmed,
-            created: identity_row.created,
-        }))
+        Ok(Some(identity_row.into_identity(self.email_protection)?))
     }
 
     #[instrument(skip(self))]

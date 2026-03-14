@@ -2,7 +2,7 @@ import { test as base, mergeExpects } from '@playwright/test';
 import { ApiClient } from '$lib/api/api';
 import { AuthAPI, DefaultRedirects } from '$lib/api/auth_api';
 import { SessionAPI } from '$lib/api/session_api';
-import { TestUserHelper } from '$lib/api/test_user';
+import { TestUser, TestUserHelper } from '$lib/api/test_user';
 import { TokenAPI } from '$lib/api/token_api';
 import { UserAPI } from '$lib/api/user_api';
 import { expect as authExpect } from './expect/auth_exts';
@@ -27,6 +27,7 @@ export type ServiceOptions = {
     defaultRedirects: DefaultRedirects;
 
     masterAdminKey: string;
+    adminUser: TestUser;
 };
 
 export type Api = {
@@ -53,6 +54,19 @@ export const test = base.extend<ServiceTestFixture, ServiceOptions>({
     defaultRedirects: [undefined!, { scope: 'worker', option: true }],
     skipMockService: [false, { scope: 'worker', option: true }],
     enableRequestLogging: [false, { scope: 'worker', option: true }],
+
+    adminUser: [
+        async ({ identityUrl, defaultRedirects, masterAdminKey, enableRequestLogging }, use) => {
+            const auth = new AuthAPI(identityUrl, defaultRedirects, enableRequestLogging);
+            const user = new UserAPI(identityUrl, masterAdminKey, enableRequestLogging);
+            const testUsers = new TestUserHelper(auth, user);
+
+            const admin = await testUsers.createGuest({ roles: ['SuperAdmin'] });
+
+            await use(admin);
+        },
+        { scope: 'worker' }
+    ],
 
     api: [
         async ({ identityUrl, defaultRedirects, masterAdminKey, enableRequestLogging }, use) => {

@@ -1,7 +1,8 @@
 import { expect, test } from '$fixtures/setup';
 import { ProblemSchema } from '$lib/api/api';
 import { TestUser } from '$lib/api/test_user';
-import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
+import { getEmailLinkToken, getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
+import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import { createUrl } from '$lib/utils';
 
@@ -174,5 +175,61 @@ test.describe('Persistent token', () => {
         expect(getPageRedirectUrl(text)).toEqual(
             createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
         );
+    });
+
+    test('EmailAccess token is revoked on sign-out-all', async ({ api }) => {
+        // EmailAccess tokens are created by the email-confirmation flow.
+        // After sign-out-all they must not be usable.
+        const smtp = new MockSmtp();
+        await smtp.start();
+
+        try {
+            // Trigger email confirmation — this creates an EmailAccess token in the DB
+            const mailPromise = smtp.waitMail();
+            await api.user.startConfirmEmail(user.sid);
+            const mail = await mailPromise;
+
+            const token = getEmailLinkToken(mail);
+            expect(token).toBeTruthy();
+
+            // Sign out from all sites (terminate_all = true)
+            await api.auth.logout(user.sid, null, true);
+
+            // Log back in via OAuth2 to get a fresh session we can query with
+            const newCookies = await api.auth.loginWithOAuth2(mock, user.externalUser!, false);
+
+            // No EmailAccess tokens should remain after sign-out-all
+            const tokens = await api.token.getTokens(newCookies.sid);
+            const emailAccessTokens = tokens.filter((t) => t.kind === 'emailAccess');
+            expect(emailAccessTokens).toHaveLength(0);
+        } finally {
+            await smtp.stop();
+        }
+    });
+
+    test('Persistent token survives sign-out-all', async ({ api }) => {
+        // Persistent tokens are API keys — they must NOT be revoked on sign-out-all.
+        const persistentToken = await api.token.createPersistentToken(user.sid, 120, false);
+        expect(persistentToken.token).toBeTruthy();
+
+        // Sign out from all sites
+        await api.auth.logout(user.sid, null, true);
+
+        // Log back in using the persistent token (proves it still works)
+        const loginResponse = await api.auth.loginWithTokenRequest(
+            null,
+            null,
+            null,
+            persistentToken.token,
+            false,
+            null
+        );
+        expect(loginResponse).toHaveStatus(200);
+        const newSid = loginResponse.cookies().sid.value;
+        expect(newSid).toBeTruthy();
+
+        // Persistent token must still be listed
+        const tokens = await api.token.getTokens(newSid);
+        expect(tokens.map((t) => t.tokenHash)).toContain(persistentToken.tokenHash);
     });
 });

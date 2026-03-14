@@ -682,7 +682,16 @@ test.describe('Link to OpenId account', () => {
         expect(authorizeResponse).toHaveStatus(200);
 
         const text = await authorizeResponse.text();
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-error',
+                status: 400,
+                sensitive: expect.objectContaining({
+                    type: 'external-missing-cookie',
+                    status: 400
+                })
+            })
+        );
         expect(authorizeResponse.cookies().sid).toBeClearCookie();
-        expect(getPageProblem(text)).not.toBeNull();
     });
 });

@@ -55,7 +55,10 @@ where
                     //remove all non-api-key tokens
                     if let Err(err) = self
                         .token_service
-                        .delete_all_by_user(user_id, &[TokenKind::Access, TokenKind::SingleAccess])
+                        .delete_all_by_user(
+                            user_id,
+                            &[TokenKind::Access, TokenKind::SingleAccess, TokenKind::EmailAccess],
+                        )
                         .await
                     {
                         return self.page_handler.error(auth_session, err, error_url);

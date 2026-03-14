@@ -25,7 +25,7 @@ test.describe('Delete user', () => {
             expect(cookies.sid).toBeClearCookie();
         });
 
-        test('Delete with missing confirmation shall fail with not-confirmed', async ({ api }) => {
+        test('Delete with missing confirmation shall fail with not-confirmed', async ({ api, adminUser }) => {
             const user = await api.testUsers.createGuest();
 
             const response = await api.auth.deleteUserRequest(user.sid, null);
@@ -43,9 +43,13 @@ test.describe('Delete user', () => {
                     sensitive: null
                 })
             );
+
+            // Failed deletion shall not remove the user
+            const searchResult = await api.user.searchIdentities(adminUser.sid, { userId: user.userId });
+            expect(searchResult.identities).toHaveLength(1);
         });
 
-        test('Delete with wrong confirmation shall fail with not-confirmed', async ({ api }) => {
+        test('Delete with wrong confirmation shall fail with not-confirmed', async ({ api, adminUser }) => {
             const user = await api.testUsers.createGuest();
 
             const response = await api.auth.deleteUserRequest(user.sid, 'definitely-not-my-name');
@@ -63,12 +67,21 @@ test.describe('Delete user', () => {
                     sensitive: null
                 })
             );
+
+            // Failed deletion shall not remove the user
+            const searchResult = await api.user.searchIdentities(adminUser.sid, { userId: user.userId });
+            expect(searchResult.identities).toHaveLength(1);
         });
     });
 
     test.describe('successful deletion', () => {
-        test('Delete with correct confirmation shall redirect and clear session cookie', async ({ api }) => {
+        test('Delete with correct confirmation shall redirect, clear session, invalidate token, and remove user', async ({
+            api,
+            adminUser
+        }) => {
             const user = await api.testUsers.createGuest();
+            const oldSid = user.sid;
+            const oldTid = user.tid!;
 
             const response = await api.auth.deleteUserRequest(user.sid, user.name);
             expect(response).toHaveStatus(200);
@@ -76,43 +89,30 @@ test.describe('Delete user', () => {
             const text = await response.text();
             expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
             expect(getPageProblem(text)).toBeNull();
+            expect(response.cookies().sid).toBeClearCookie();
 
-            const cookies = response.cookies();
-            expect(cookies.sid).toBeClearCookie();
-        });
-
-        test('After deletion, existing session shall be invalidated', async ({ api }) => {
-            const user = await api.testUsers.createGuest();
-            const oldSid = user.sid;
-
-            await api.auth.deleteUserRequest(user.sid, user.name);
-
+            // Existing session is invalidated
             const infoResponse = await api.user.getUserInfoRequest(oldSid, null);
             expect(infoResponse).toHaveStatus(401);
-        });
 
-        test('After deletion, token login shall fail with session expired', async ({ api }) => {
-            const user = await api.testUsers.createGuest();
-            const oldTid = user.tid!;
-
-            await api.auth.deleteUserRequest(user.sid, user.name);
-
-            const response = await api.auth.loginWithTokenRequest(oldTid, null, null, null, null, null);
-            expect(response).toHaveStatus(200);
-
-            const text = await response.text();
-            expect(getPageRedirectUrl(text)).toEqual(
+            // Token login fails with session expired
+            const tokenResponse = await api.auth.loginWithTokenRequest(oldTid, null, null, null, null, null);
+            expect(tokenResponse).toHaveStatus(200);
+            const tokenText = await tokenResponse.text();
+            expect(getPageRedirectUrl(tokenText)).toEqual(
                 createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
             );
-            expect(getPageProblem(text)).toEqual(
+            expect(getPageProblem(tokenText)).toEqual(
                 expect.objectContaining({
                     type: 'auth-token-expired',
                     status: 401
                 })
             );
+            expect(tokenResponse.cookies().sid).toBeClearCookie();
 
-            const cookies = response.cookies();
-            expect(cookies.sid).toBeClearCookie();
+            // User no longer found by search
+            const searchResult = await api.user.searchIdentities(adminUser.sid, { userId: user.userId });
+            expect(searchResult.identities).toHaveLength(0);
         });
     });
 });
