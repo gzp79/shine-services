@@ -119,4 +119,72 @@ test.describe('Login and register guest', () => {
             }
         });
     }
+
+    test('Login with invalid redirect url shall fail', async ({ api }) => {
+        const response = await api.auth
+            .loginWithGuestRequest(null, null, null)
+            .withParams({ redirectUrl: 'https://danger.com' });
+        expect(response).toHaveStatus(200);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, {
+                errorType: 'auth-input-error',
+                redirectUrl: null
+            })
+        );
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-input-error',
+                status: 400,
+                extension: null,
+                sensitive: expect.objectContaining({
+                    type: 'input-validation',
+                    detail: 'Input validation failed',
+                    extension: expect.objectContaining({
+                        redirectUrl: [
+                            expect.objectContaining({
+                                code: 'invalid-redirect-url',
+                                message: 'Redirect URL is not allowed'
+                            })
+                        ]
+                    })
+                })
+            })
+        );
+    });
+
+    test('Login with invalid error url shall fail', async ({ api, homeUrl }) => {
+        const response = await api.auth
+            .loginWithGuestRequest(null, null, null)
+            .withParams({ errorUrl: 'https://danger.com' });
+        expect(response).toHaveStatus(200);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(`${homeUrl}/error`, {
+                errorType: 'auth-input-error',
+                redirectUrl: null
+            })
+        );
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-input-error',
+                status: 400,
+                extension: null,
+                sensitive: expect.objectContaining({
+                    type: 'input-validation',
+                    detail: 'Input validation failed',
+                    extension: expect.objectContaining({
+                        errorUrl: [
+                            expect.objectContaining({
+                                code: 'invalid-redirect-url',
+                                message: 'Redirect URL is not allowed'
+                            })
+                        ]
+                    })
+                })
+            })
+        );
+    });
 });
