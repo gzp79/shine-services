@@ -645,4 +645,33 @@ test.describe('Login with email for returning user', () => {
             expect(getPageProblem(loginText)).toBeNull();
         });
     });
+
+    test('Delete user during pending email login shall invalidate the login link', async ({ api, homeUrl }) => {
+        const targetEmailAddress = `${randomUUID()}@example.com`;
+        const testUser = await api.testUsers.createLinked(mockOIDC, { email: targetEmailAddress });
+        assert(testUser.email);
+
+        const mailPromise = mockSmtp.waitMail();
+        const response = await api.auth.loginWithEmailRequest(testUser.email, false, null);
+        await checkLoginResponse(response, api);
+        const mail = await mailPromise;
+
+        const link = getEmailLink(mail);
+
+        await api.auth.deleteUserRequest(testUser.sid, testUser.name);
+
+        // Login link must no longer be usable after user deletion
+        const loginResponse = await api.client.get(link);
+        expect(loginResponse).toHaveStatus(200);
+        const loginText = await loginResponse.text();
+        expect(getPageRedirectUrl(loginText)).toEqual(
+            createUrl(`${homeUrl}/error`, { errorType: 'auth-token-expired' })
+        );
+        expect(getPageProblem(loginText)).toEqual(
+            expect.objectContaining({
+                type: 'auth-token-expired',
+                status: 401
+            })
+        );
+    });
 });

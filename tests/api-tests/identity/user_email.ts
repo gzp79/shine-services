@@ -237,8 +237,22 @@ test.describe('Email confirmation', () => {
         expect(user.userInfo?.isEmailConfirmed).toBe(true);
     });
 
-    // Note: Token invalidation when email changes is tested in lifecycle_edge_cases.ts
-    // This ensures the unique constraint on email tokens works correctly
+    test('Delete user with pending email confirmation shall prevent completing confirmation', async ({ api }) => {
+        const smtp = await startMockEmail();
+        const user = await api.testUsers.createLinked(mockAuth);
+
+        const mailPromise = smtp.waitMail();
+        await api.user.startConfirmEmail(user.sid);
+        const mail = await mailPromise;
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+
+        await api.auth.deleteUserRequest(user.sid, user.name);
+
+        // After deletion the session is revoked — completing confirmation is no longer possible
+        const response = await api.user.completeConfirmEmailRequest(user.sid, token!);
+        expect(response).toHaveStatus(401);
+    });
 });
 
 test.describe('Email change', () => {
@@ -502,4 +516,22 @@ test.describe('Email change', () => {
             );
         });
     }
+
+    test('Delete user with pending email change shall prevent completing email change', async ({ api }) => {
+        const smtp = await startMockEmail();
+        const user = await api.testUsers.createLinked(mockAuth);
+
+        const newEmail = `changed-${randomUUID()}@example.com`;
+        const mailPromise = smtp.waitMail();
+        await api.user.startChangeEmail(user.sid, newEmail);
+        const mail = await mailPromise;
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+
+        await api.auth.deleteUserRequest(user.sid, user.name);
+
+        // After deletion the session is revoked — completing the change is no longer possible
+        const response = await api.user.completeConfirmEmailRequest(user.sid, token!);
+        expect(response).toHaveStatus(401);
+    });
 });

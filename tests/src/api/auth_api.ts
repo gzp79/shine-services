@@ -534,6 +534,16 @@ export class AuthAPI {
         return true;
     }
 
+    deleteUserRequest(sid: string | null, confirmation: string | null): ApiRequest {
+        const cs = sid && { sid };
+        const qc = confirmation !== null && { confirmation };
+
+        return this.client
+            .get(this.urlFor('auth/delete'))
+            .withParams({ ...qc, ...this.defaultRedirects })
+            .withCookies({ ...cs });
+    }
+
     logoutRequest(sid: string | null, tid: string | null, terminateAll: boolean | null): ApiRequest {
         const qt = terminateAll && { terminateAll };
         const cs = sid && { sid };

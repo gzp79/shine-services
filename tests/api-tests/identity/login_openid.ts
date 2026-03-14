@@ -660,4 +660,29 @@ test.describe('Link to OpenId account', () => {
             })
         );
     });
+
+    test('Delete during pending link shall fail at authorize callback', async ({ api }) => {
+        const user = await api.testUsers.createLinked(mock);
+
+        // Start a link flow — captures eid cookie and authParams
+        const startResult = await api.auth.startLinkWithOpenId(mock, user.sid);
+
+        // Delete the user before completing the link
+        await api.auth.deleteUserRequest(user.sid, user.name);
+
+        // Complete the callback — user is now gone
+        const authorizeResponse = await api.auth.authorizeWithOpenIdRequest(
+            startResult.sid,
+            startResult.eid,
+            startResult.authParams.state,
+            new ExternalUser('openid_flow', 'new-id-after-delete', 'NewUser', 'newuser-oid@example.com').toCode({
+                nonce: startResult.authParams.nonce
+            })
+        );
+        expect(authorizeResponse).toHaveStatus(200);
+
+        const text = await authorizeResponse.text();
+        expect(authorizeResponse.cookies().sid).toBeClearCookie();
+        expect(getPageProblem(text)).not.toBeNull();
+    });
 });
