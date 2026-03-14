@@ -26,12 +26,12 @@ pub(crate) fn extract_and_strip_param(cns: &str, param_name: &str) -> (Option<u6
     let mut value = None;
     let filtered_params: Vec<&str> = query
         .split('&')
-        .filter_map(|param| {
+        .filter(|param| {
             if let Some(val_str) = param.strip_prefix(&prefix) {
                 value = val_str.parse::<u64>().ok();
-                None // Filter out this parameter
+                false
             } else {
-                Some(param) // Keep this parameter
+                true
             }
         })
         .collect();

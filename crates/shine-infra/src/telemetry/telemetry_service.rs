@@ -1,3 +1,4 @@
+use crate::telemetry::{Metering, OtelLayer, TelemetryBuildError, TelemetryConfig, TelemetryError, Tracing};
 use opentelemetry::{
     global,
     metrics::{Meter, MeterProvider},
@@ -14,8 +15,6 @@ use std::sync::{Arc, RwLock};
 use tracing::{Dispatch, Subscriber};
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{filter::EnvFilter, layer::SubscriberExt, registry::LookupSpan, reload, Layer};
-
-use super::{Metering, OtelLayer, TelemetryBuildError, TelemetryConfig, TelemetryError, Tracing};
 
 #[derive(Debug, Clone)]
 pub struct DynConfig {
@@ -86,6 +85,18 @@ impl TelemetryService {
             reconfigure: None,
         };
         service.install_telemetry(service_name, config)?;
+
+        log::trace!("trace - log:ok");
+        log::debug!("debug - log:ok");
+        log::info!("info  - log:ok");
+        log::warn!("warn  - log:ok");
+        log::error!("error - log:ok");
+        tracing::trace!("trace - tracing:ok");
+        tracing::debug!("debug - tracing:ok");
+        tracing::info!("info  - tracing:ok");
+        tracing::warn!("warn  - tracing:ok");
+        tracing::error!("error - tracing:ok");
+
         Ok(service)
     }
 
@@ -333,6 +344,13 @@ impl TelemetryService {
 
     pub fn service_meter(&self) -> Option<&Meter> {
         self.metrics.as_ref().map(|m| &m.meter)
+    }
+
+    pub fn create_router<S>(&self) -> utoipa_axum::router::OpenApiRouter<S>
+    where
+        S: Clone + Send + Sync + 'static,
+    {
+        super::telemetry_router::build_router(self.clone())
     }
 
     pub fn create_layer(&self) -> OtelLayer {

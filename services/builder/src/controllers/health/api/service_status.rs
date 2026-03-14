@@ -1,8 +1,8 @@
 use axum::{Extension, Json};
 use serde::Serialize;
-use shine_infra::web::{
-    responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
+use shine_infra::{
     session::{permissions, CheckedCurrentUser, CorePermissions},
+    web::responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
 };
 use utoipa::ToSchema;
 

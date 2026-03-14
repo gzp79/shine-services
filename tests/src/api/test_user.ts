@@ -2,7 +2,7 @@ import { expect } from '$fixtures/setup';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIdMockServer from '$lib/mocks/openid';
-import { generateRandomString } from '$lib/string_utils';
+import { generateRandomString } from '$lib/utils';
 import { randomUUID } from 'crypto';
 import { MockServer } from '../mocks/mock_server';
 import { AuthAPI } from './auth_api';
@@ -117,7 +117,7 @@ export class TestUserHelper {
     ): Promise<TestUser> {
         const id = randomUUID().toString();
         const name = props?.name ?? 'Random_' + generateRandomString(5);
-        const email = props?.email ?? name + '@example.com';
+        const email = props?.email ?? name.toLowerCase() + '@example.com';
 
         let user;
         let cookies;

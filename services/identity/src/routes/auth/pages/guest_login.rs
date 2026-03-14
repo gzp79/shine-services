@@ -1,7 +1,6 @@
 use crate::{
     app_state::AppState,
-    repositories::identity::{IdentityError, TokenKind},
-    routes::auth::{AuthPage, AuthPageRequest, AuthSession, TokenCookie},
+    routes::auth::{AuthPage, AuthPageRequest, AuthSession},
 };
 use axum::extract::State;
 use serde::Deserialize;
@@ -64,71 +63,18 @@ pub async fn guest_login(
         return page;
     }
 
-    // 5. Clear auth state
+    // 5. Clear auth state and register guest
     log::debug!("New user registration flow triggered...");
-    let req = req.clear_auth_state().await;
+    let auth_session = req.clear_auth_state().await.into_auth_session();
 
-    // 6. Business logic - create a new user
-    let identity = match req.state().user_service().create_with_retry(None, None).await {
-        Ok(identity) => identity,
-        Err(err) => return req.error_page(err, query.error_url.as_ref()),
-    };
-    log::debug!("New user created: {identity:#?}");
-
-    // Create access token
-    let user_access = {
-        let (token, token_info) = match req
-            .state()
-            .token_service()
-            .create_with_retry(
-                identity.id,
-                TokenKind::Access,
-                &req.state().settings().token.ttl_access_token,
-                Some(&fingerprint),
-                None,
-                &site_info,
-            )
-            .await
-        {
-            Ok(result) => result,
-            Err(err) => {
-                return req.error_page(err, query.error_url.as_ref());
-            }
-        };
-
-        TokenCookie {
-            user_id: token_info.user_id,
-            key: token,
-            expire_at: token_info.expire_at,
-            revoked_token: None,
-        }
-    };
-
-    // Create user session.
-    let user_session = match req
-        .state()
-        .create_user_session(&identity, &fingerprint, &site_info)
+    state
+        .guest_login_handler()
+        .register_guest(
+            auth_session,
+            fingerprint,
+            &site_info,
+            query.redirect_url.as_ref(),
+            query.error_url.as_ref(),
+        )
         .await
-    {
-        Ok(Some(session)) => session,
-        Ok(None) => {
-            log::warn!("User {} has been deleted during login", identity.id);
-            use crate::routes::auth::PageUtils;
-            return PageUtils::new(req.state()).error(
-                req.auth_session().clone().with_access(None),
-                IdentityError::UserDeleted,
-                query.error_url.as_ref(),
-            );
-        }
-        Err(err) => return req.error_page(err, query.error_url.as_ref()),
-    };
-
-    // 7. Return response
-    log::info!("Guest user registration completed for: {}", identity.id);
-    let final_session = req
-        .into_auth_session()
-        .with_access(Some(user_access))
-        .with_session(Some(user_session));
-    use crate::routes::auth::PageUtils;
-    PageUtils::new(&state).redirect(final_session, query.redirect_url.as_ref(), None)
 }

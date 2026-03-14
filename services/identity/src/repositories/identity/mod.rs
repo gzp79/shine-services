@@ -6,8 +6,6 @@ mod identities;
 pub use self::identities::*;
 mod identity_db;
 pub use self::identity_db::*;
-mod identity_error;
-pub use self::identity_error::*;
 mod roles;
 pub use self::roles::*;
 mod search_identities;

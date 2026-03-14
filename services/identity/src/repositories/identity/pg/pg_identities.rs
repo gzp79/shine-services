@@ -1,9 +1,14 @@
-use crate::repositories::identity::{Identities, Identity, IdentityBuildError, IdentityError, IdentityKind};
+use crate::{
+    models::{Identity, IdentityError, IdentityKind},
+    repositories::identity::{pg::PgIdentityBuildError, Identities},
+};
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
 use shine_infra::{
+    crypto::DataProtectionUtils,
     db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
+    models::{normalize_email, Email},
     pg_query,
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type};
@@ -61,13 +66,35 @@ pg_query!( CascadedDelete =>
 );
 
 #[derive(FromRow)]
-struct IdentityRow {
+pub(in crate::repositories::identity::pg) struct IdentityRow {
     user_id: Uuid,
     kind: IdentityKind,
     name: String,
     encrypted_email: Option<String>,
     email_confirmed: bool,
     created: DateTime<Utc>,
+}
+
+impl IdentityRow {
+    pub(in crate::repositories::identity::pg) fn into_identity(
+        self,
+        email_protection: &DataProtectionUtils,
+    ) -> Result<Identity, IdentityError> {
+        let email = if let Some(enc) = self.encrypted_email {
+            let decrypted = email_protection.decrypt(&enc)?;
+            Some(Email::new(decrypted).expect("Email from database should be valid"))
+        } else {
+            None
+        };
+        Ok(Identity {
+            id: self.user_id,
+            kind: self.kind,
+            name: self.name,
+            email,
+            is_email_confirmed: self.email_confirmed,
+            created: self.created,
+        })
+    }
 }
 
 pg_query!( FindById =>
@@ -114,7 +141,7 @@ pub struct PgIdentitiesStatements {
 }
 
 impl PgIdentitiesStatements {
-    pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
+    pub async fn new(client: &PGClient) -> Result<Self, PgIdentityBuildError> {
         Ok(Self {
             insert_identity: InsertIdentity::new(client).await.map_err(DBError::from)?,
             cascaded_delete: CascadedDelete::new(client).await.map_err(DBError::from)?,
@@ -136,7 +163,11 @@ impl Identities for PgIdentityDbContext<'_> {
         if user_name.chars().count() > 20 {
             return Err(IdentityError::NameTooLong);
         }
-        //let email = email.map(|e| e.normalize_email());
+
+        if let Some((email, _)) = email {
+            assert_eq!(email, normalize_email(email));
+        }
+
         let (encrypted_email, email_hash) = if let Some((email, _)) = email {
             let encrypted_email = self.email_protection.encrypt(email)?;
             let email_hash = self.email_protection.hash(email);
@@ -179,7 +210,7 @@ impl Identities for PgIdentityDbContext<'_> {
         Ok(Identity {
             id: user_id,
             name: user_name.to_owned(),
-            email: email.map(|x| x.0.to_owned()),
+            email: email.map(|x| Email::new(x.0).expect("Email from database should be valid")),
             is_email_confirmed: email.map(|x| x.1).unwrap_or(false),
             kind: IdentityKind::User,
             created,
@@ -195,27 +226,13 @@ impl Identities for PgIdentityDbContext<'_> {
             .await
             .map_err(DBError::from)?;
 
-        if let Some(row) = row {
-            let email = if let Some(encrypted_email) = &row.encrypted_email {
-                Some(self.email_protection.decrypt(encrypted_email)?)
-            } else {
-                None
-            };
-            Ok(Some(Identity {
-                id: row.user_id,
-                kind: row.kind,
-                name: row.name,
-                email,
-                is_email_confirmed: row.email_confirmed,
-                created: row.created,
-            }))
-        } else {
-            Ok(None)
-        }
+        row.map(|r| r.into_identity(self.email_protection)).transpose()
     }
 
     #[instrument(skip(self))]
     async fn find_by_email(&mut self, email: &str) -> Result<Option<Identity>, IdentityError> {
+        assert_eq!(email, normalize_email(email));
+
         let email_hash = self.email_protection.hash(email);
         let row = self
             .stmts_identities
@@ -224,23 +241,7 @@ impl Identities for PgIdentityDbContext<'_> {
             .await
             .map_err(DBError::from)?;
 
-        if let Some(row) = row {
-            let email = if let Some(encrypted_email) = &row.encrypted_email {
-                Some(self.email_protection.decrypt(encrypted_email)?)
-            } else {
-                None
-            };
-            Ok(Some(Identity {
-                id: row.user_id,
-                kind: row.kind,
-                name: row.name,
-                email,
-                is_email_confirmed: row.email_confirmed,
-                created: row.created,
-            }))
-        } else {
-            Ok(None)
-        }
+        row.map(|r| r.into_identity(self.email_protection)).transpose()
     }
 
     #[instrument(skip(self))]
@@ -250,6 +251,10 @@ impl Identities for PgIdentityDbContext<'_> {
         name: Option<&str>,
         email: Option<(&str, bool)>,
     ) -> Result<Option<Identity>, IdentityError> {
+        if let Some((email, _)) = email {
+            assert_eq!(email, normalize_email(email));
+        }
+
         let (encrypted_email, email_hash) = if let Some((email, _)) = email {
             let encrypted_email = self.email_protection.encrypt(email)?;
             let email_hash = self.email_protection.hash(email);
@@ -284,20 +289,7 @@ impl Identities for PgIdentityDbContext<'_> {
             Err(err) => return Err(DBError::from(err).into()),
         };
 
-        let email = if let Some(encrypted_email) = &identity_row.encrypted_email {
-            Some(self.email_protection.decrypt(encrypted_email)?)
-        } else {
-            None
-        };
-
-        Ok(Some(Identity {
-            id: identity_row.user_id,
-            kind: identity_row.kind,
-            name: identity_row.name,
-            email,
-            is_email_confirmed: identity_row.email_confirmed,
-            created: identity_row.created,
-        }))
+        Ok(Some(identity_row.into_identity(self.email_protection)?))
     }
 
     #[instrument(skip(self))]

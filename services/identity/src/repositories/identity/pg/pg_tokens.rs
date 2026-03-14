@@ -1,19 +1,22 @@
-use crate::repositories::identity::{
-    Identity, IdentityBuildError, IdentityError, IdentityKind, TokenInfo, TokenKind, Tokens,
+use crate::{
+    models::{Identity, IdentityError, IdentityKind, TokenInfo, TokenKind},
+    repositories::identity::{
+        pg::{PgIdentityBuildError, PgIdentityDbContext},
+        Tokens,
+    },
 };
 use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use postgres_from_row::FromRow;
 use shine_infra::{
     db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
+    models::Email,
     pg_query,
     web::extracts::{ClientFingerprint, SiteInfo},
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type as PGType};
 use tracing::instrument;
 use uuid::Uuid;
-
-use super::PgIdentityDbContext;
 
 impl ToSql for TokenKind {
     fn to_sql(&self, ty: &PGType, out: &mut BytesMut) -> Result<IsNull, PGConvertError> {
@@ -221,7 +224,7 @@ pub struct PgTokensStatements {
 }
 
 impl PgTokensStatements {
-    pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
+    pub async fn new(client: &PGClient) -> Result<Self, PgIdentityBuildError> {
         Ok(Self {
             insert: InsertToken::new(client).await.map_err(DBError::from)?,
             find_by_hash: FindByHashToken::new(client).await.map_err(DBError::from)?,
@@ -276,6 +279,9 @@ impl Tokens for PgIdentityDbContext<'_> {
             Err(err) if err.is_constraint("login_tokens", "idx_token") => {
                 return Err(IdentityError::TokenConflict);
             }
+            Err(err) if err.is_constraint("login_tokens", "idx_one_email_token_per_user") => {
+                return Err(IdentityError::TokenConflict);
+            }
             Err(err) if err.is_constraint("login_tokens", "chk_required_fingerprint") => {
                 return Err(IdentityError::TokenMissingFingerprint);
             }
@@ -295,7 +301,7 @@ impl Tokens for PgIdentityDbContext<'_> {
             expire_at: row.expire,
             is_expired: false,
             bound_fingerprint: fingerprint_to_bind_to.map(|f| f.to_string()),
-            bound_email: email_to_bind_to.map(|e| e.to_string()),
+            bound_email: email_to_bind_to.and_then(|e| Email::new(e).ok()),
             agent: site_info.agent.clone(),
             country: site_info.country.clone(),
             region: site_info.region.clone(),
@@ -314,7 +320,14 @@ impl Tokens for PgIdentityDbContext<'_> {
                 let email = row
                     .encrypted_email
                     .as_deref()
-                    .map(|email| self.email_protection.decrypt(email))
+                    .map(|email| {
+                        let decrypted = self.email_protection.decrypt(email)?;
+                        Email::new(decrypted).map_err(|_| {
+                            IdentityError::DataProtectionError(
+                                shine_infra::crypto::DataProtectionError::DecryptionError,
+                            )
+                        })
+                    })
                     .transpose()?;
 
                 Ok(TokenInfo {
@@ -347,7 +360,14 @@ impl Tokens for PgIdentityDbContext<'_> {
                 let email = row
                     .encrypted_email
                     .as_deref()
-                    .map(|email| self.email_protection.decrypt(email))
+                    .map(|email| {
+                        let decrypted = self.email_protection.decrypt(email)?;
+                        Email::new(decrypted).map_err(|_| {
+                            IdentityError::DataProtectionError(
+                                shine_infra::crypto::DataProtectionError::DecryptionError,
+                            )
+                        })
+                    })
                     .transpose()?;
 
                 Ok(TokenInfo {
@@ -427,7 +447,12 @@ impl Tokens for PgIdentityDbContext<'_> {
             let bound_email = row
                 .token_encrypted_email
                 .as_deref()
-                .map(|email| self.email_protection.decrypt(email))
+                .map(|email| {
+                    let decrypted = self.email_protection.decrypt(email)?;
+                    Email::new(decrypted).map_err(|_| {
+                        IdentityError::DataProtectionError(shine_infra::crypto::DataProtectionError::DecryptionError)
+                    })
+                })
                 .transpose()?;
             let token = TokenInfo {
                 user_id: row.user_id,
@@ -447,7 +472,12 @@ impl Tokens for PgIdentityDbContext<'_> {
             let identity_email = row
                 .encrypted_email
                 .as_deref()
-                .map(|email| self.email_protection.decrypt(email))
+                .map(|email| {
+                    let decrypted = self.email_protection.decrypt(email)?;
+                    Email::new(decrypted).map_err(|_| {
+                        IdentityError::DataProtectionError(shine_infra::crypto::DataProtectionError::DecryptionError)
+                    })
+                })
                 .transpose()?;
             let identity = Identity {
                 id: row.user_id,
@@ -481,7 +511,12 @@ impl Tokens for PgIdentityDbContext<'_> {
             let bound_email = row
                 .token_encrypted_email
                 .as_deref()
-                .map(|email| self.email_protection.decrypt(email))
+                .map(|email| {
+                    let decrypted = self.email_protection.decrypt(email)?;
+                    Email::new(decrypted).map_err(|_| {
+                        IdentityError::DataProtectionError(shine_infra::crypto::DataProtectionError::DecryptionError)
+                    })
+                })
                 .transpose()?;
             let token = TokenInfo {
                 user_id: row.user_id,
@@ -501,7 +536,12 @@ impl Tokens for PgIdentityDbContext<'_> {
             let identity_email = row
                 .encrypted_email
                 .as_deref()
-                .map(|email| self.email_protection.decrypt(email))
+                .map(|email| {
+                    let decrypted = self.email_protection.decrypt(email)?;
+                    Email::new(decrypted).map_err(|_| {
+                        IdentityError::DataProtectionError(shine_infra::crypto::DataProtectionError::DecryptionError)
+                    })
+                })
                 .transpose()?;
             let identity = Identity {
                 id: row.user_id,

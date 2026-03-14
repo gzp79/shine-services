@@ -1,7 +1,7 @@
 use crate::{
-    app_state::UserInfoError,
-    handlers::LoginEmailError,
-    repositories::{identity::IdentityError, session::SessionError, CaptchaError},
+    handlers::EmailAuthError,
+    models::{IdentityError, SessionError},
+    repositories::CaptchaError,
     services::{CreateUserError, TokenError},
 };
 use reqwest::StatusCode;
@@ -100,12 +100,15 @@ pub enum AuthError {
     #[error(transparent)]
     TokenError(#[from] TokenError),
     #[error(transparent)]
-    LoginEmailError(#[from] LoginEmailError),
-    #[error(transparent)]
-    UserInfoError(#[from] UserInfoError),
-
+    EmailAuthError(#[from] EmailAuthError),
     #[error("Internal server error")]
     InternalServerError(Problem),
+}
+
+impl From<Problem> for AuthError {
+    fn from(value: Problem) -> Self {
+        AuthError::InternalServerError(value)
+    }
 }
 
 impl From<AuthError> for Problem {
@@ -180,10 +183,7 @@ impl From<AuthError> for Problem {
                     .with_detail(err.to_string())
                     .with_sensitive_dbg(err),
             },
-            AuthError::LoginEmailError(error) => {
-                Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
-            }
-            AuthError::UserInfoError(error) => {
+            AuthError::EmailAuthError(error) => {
                 Problem::internal_error_ty(AUTH_INTERNAL_ERROR).with_sensitive(Problem::from(error))
             }
             AuthError::InternalServerError(error) => Problem::internal_error_ty(AUTH_ERROR).with_sensitive(error),

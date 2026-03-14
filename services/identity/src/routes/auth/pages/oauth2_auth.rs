@@ -1,8 +1,6 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{
-        AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OAuth2Client, PageUtils,
-    },
+    routes::auth::{AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OAuth2Client},
 };
 use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};
@@ -54,7 +52,9 @@ pub async fn oauth2_auth(
     } = match auth_session.external_login() {
         Some(external_login) => external_login.clone(),
         None => {
-            return PageUtils::new(&state).error(auth_session, ExternalLoginError::MissingExternalLoginCookie, None)
+            return state
+                .auth_page_handler()
+                .error(auth_session, ExternalLoginError::MissingExternalLoginCookie, None)
         }
     };
     let auth_session = auth_session.with_external_login(None);

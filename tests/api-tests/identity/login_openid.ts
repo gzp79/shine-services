@@ -3,7 +3,7 @@ import { ExternalUser } from '$lib/api/external_user';
 import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 import { MockServer } from '$lib/mocks/mock_server';
 import OpenIdMockServer from '$lib/mocks/openid';
-import { generateRandomString } from '$lib/string_utils';
+import { generateRandomString } from '$lib/utils';
 import { createUrl, parseSignedCookie } from '$lib/utils';
 import { randomUUID } from 'crypto';
 import os from 'os';
@@ -458,9 +458,18 @@ test.describe('Login with OpenId', () => {
         );
     });
 
-    test('Login with invalid email from external user shall have no email', async ({ api }) => {
-        const user = await api.testUsers.createLinked(mock, { email: 'invalid' });
-        expect(user.userInfo!.details!.email).toBeUndefined();
+    test('Login with mixed-case email from external user shall store normalized email', async ({ api }) => {
+        const randomPart = generateRandomString(8);
+        const mixedCaseEmail = `${randomPart}.Mixed.Case@EXAMPLE.COM`;
+        const normalizedEmail = mixedCaseEmail.toLowerCase();
+
+        const user = await api.testUsers.createLinked(mock, { email: mixedCaseEmail });
+        expect(user.userInfo!.details?.email).toEqual(normalizedEmail);
+    });
+
+    test('Login with invalid email shall succeed and the external email shall be ignored', async ({ api }) => {
+        const user = await api.testUsers.createLinked(mock, { email: 'not-a-valid-email' });
+        expect(user.userInfo!.details?.email).toBeUndefined();
     });
 
     test('Login with the same external user shall succeed', async ({ api }) => {
@@ -650,5 +659,39 @@ test.describe('Link to OpenId account', () => {
                 sensitive: null
             })
         );
+    });
+
+    test('Delete during pending link shall fail at authorize callback', async ({ api }) => {
+        const user = await api.testUsers.createLinked(mock);
+
+        // Start a link flow — captures eid cookie and authParams
+        const startResult = await api.auth.startLinkWithOpenId(mock, user.sid);
+
+        // Delete the user before completing the link
+        await api.auth.deleteUserRequest(user.sid, user.name);
+
+        // Complete the callback — user is now gone
+        const authorizeResponse = await api.auth.authorizeWithOpenIdRequest(
+            startResult.sid,
+            startResult.eid,
+            startResult.authParams.state,
+            new ExternalUser('openid_flow', 'new-id-after-delete', 'NewUser', 'newuser-oid@example.com').toCode({
+                nonce: startResult.authParams.nonce
+            })
+        );
+        expect(authorizeResponse).toHaveStatus(200);
+
+        const text = await authorizeResponse.text();
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-error',
+                status: 400,
+                sensitive: expect.objectContaining({
+                    type: 'external-missing-cookie',
+                    status: 400
+                })
+            })
+        );
+        expect(authorizeResponse.cookies().sid).toBeClearCookie();
     });
 });

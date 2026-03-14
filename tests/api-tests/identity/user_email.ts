@@ -107,7 +107,7 @@ test.describe('Email confirmation', () => {
         const error = await response.parse(ProblemSchema);
         expect(error).toEqual(
             expect.objectContaining({
-                type: 'email-invalid-token',
+                type: 'email-token-expired',
                 status: 400
             })
         );
@@ -144,87 +144,102 @@ test.describe('Email confirmation', () => {
         });
     }
 
-    test('Confirming email with another guest user shall fail', async ({ api }) => {
+    for (const userType of ['guest', 'linked']) {
+        test(`Confirming email with another ${userType} user shall fail (security: token bound to user)`, async ({
+            api
+        }) => {
+            const user = await api.testUsers.createLinked(mockAuth);
+
+            const smtp = await startMockEmail();
+            const mailPromise = smtp.waitMail();
+            await api.user.startConfirmEmail(user.sid);
+            const mail = await mailPromise;
+
+            const token = getEmailLinkToken(mail);
+
+            // Create different user type to attempt token theft
+            const user2 =
+                userType === 'guest' ? await api.testUsers.createGuest() : await api.testUsers.createLinked(mockAuth);
+            const response = await api.user.completeConfirmEmailRequest(user2.sid, token!);
+            expect(response).toHaveStatus(400);
+
+            const error = await response.parse(ProblemSchema);
+            expect(error).toEqual(
+                expect.objectContaining({
+                    type: 'email-token-expired',
+                    status: 400,
+                    sensitive: 'wrongUser'
+                })
+            );
+
+            // Neither user's email should be confirmed
+            expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
+                expect.objectContaining({ isEmailConfirmed: false, details: null })
+            );
+            expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
+                expect.objectContaining({ isEmailConfirmed: false, details: user.userInfo?.details })
+            );
+
+            expect(await api.user.getUserInfo(user2.sid, 'fast')).toEqual(
+                expect.objectContaining({ isEmailConfirmed: false, details: null })
+            );
+            expect(await api.user.getUserInfo(user2.sid, 'full')).toEqual(
+                expect.objectContaining({ isEmailConfirmed: false, details: user2.userInfo?.details })
+            );
+        });
+    }
+
+    test('Concurrent confirmation requests shall enforce unique token constraint', async ({ api }) => {
+        // Security: Database unique constraint prevents multiple email tokens per user
+        // This protects against race conditions and ensures only one valid token exists
         const user = await api.testUsers.createLinked(mockAuth);
 
         const smtp = await startMockEmail();
-        const mailPromise = smtp.waitMail();
-        await api.user.startConfirmEmail(user.sid);
-        const mail = await mailPromise;
+        const mailsPromise = smtp.waitEmails(3);
 
-        const token = getEmailLinkToken(mail);
+        // Request email confirmation multiple times concurrently
+        const requests = await Promise.all([
+            api.user.startConfirmEmailRequest(user.sid),
+            api.user.startConfirmEmailRequest(user.sid),
+            api.user.startConfirmEmailRequest(user.sid)
+        ]);
 
-        const user2 = await api.testUsers.createGuest();
-        const response = await api.user.completeConfirmEmailRequest(user2.sid, token!);
-        expect(response).toHaveStatus(400);
+        // All API requests succeed (endpoint doesn't fail)
+        requests.forEach((r) => expect(r).toHaveStatus(200));
 
-        const error = await response.parse(ProblemSchema);
-        expect(error).toEqual(
-            expect.objectContaining({
-                type: 'email-token-expired',
-                status: 400,
-                sensitive: 'wrongUser'
-            })
-        );
+        // Wait for all emails
+        const mails = await mailsPromise;
+        expect(mails).toHaveLength(3);
 
-        expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
-            expect.objectContaining({ isEmailConfirmed: false, details: null })
-        );
-        expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
-            expect.objectContaining({ isEmailConfirmed: false, details: user.userInfo?.details })
-        );
+        // Extract tokens
+        const tokens = mails.map((m) => getEmailLinkToken(m)!);
+        expect(tokens.every((t) => t !== null)).toBe(true);
 
-        expect(await api.user.getUserInfo(user2.sid, 'fast')).toEqual(
-            expect.objectContaining({ isEmailConfirmed: false, details: null })
-        );
-        expect(await api.user.getUserInfo(user2.sid, 'full')).toEqual(
-            expect.objectContaining({ isEmailConfirmed: false, details: user2.userInfo?.details })
-        );
+        // Due to unique constraint, only the LAST token should work
+        // Earlier tokens were deleted from database when newer ones were created
+        const lastToken = tokens[tokens.length - 1];
+
+        // Try first token - should be invalidated
+        const response1 = await api.user.completeConfirmEmailRequest(user.sid, tokens[0]);
+        expect(response1).toHaveStatus(400);
+        const problem1 = await response1.parseProblem();
+        expect(problem1.type).toBe('email-token-expired');
+
+        // Try second token - should also be invalidated
+        const response2 = await api.user.completeConfirmEmailRequest(user.sid, tokens[1]);
+        expect(response2).toHaveStatus(400);
+        const problem2 = await response2.parseProblem();
+        expect(problem2.type).toBe('email-token-expired');
+
+        // Last token should work
+        await api.user.completeConfirmEmail(user.sid, lastToken);
+        await user.refreshUserInfo();
+        expect(user.userInfo?.isEmailConfirmed).toBe(true);
     });
 
-    test('Confirming email with another linked user shall fail', async ({ api }) => {
+    test('Delete user with pending email confirmation shall prevent completing confirmation', async ({ api }) => {
+        const smtp = await startMockEmail();
         const user = await api.testUsers.createLinked(mockAuth);
-
-        const smtp = await startMockEmail();
-        const mailPromise = smtp.waitMail();
-        await api.user.startConfirmEmail(user.sid);
-        const mail = await mailPromise;
-
-        const token = getEmailLinkToken(mail);
-
-        const user2 = await api.testUsers.createLinked(mockAuth);
-        const response = await api.user.completeConfirmEmailRequest(user2.sid, token!);
-        expect(response).toHaveStatus(400);
-
-        const error = await response.parse(ProblemSchema);
-        expect(error).toEqual(
-            expect.objectContaining({
-                type: 'email-token-expired',
-                status: 400,
-                sensitive: 'wrongUser'
-            })
-        );
-
-        expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
-            expect.objectContaining({ isEmailConfirmed: false, details: null })
-        );
-        expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
-            expect.objectContaining({ isEmailConfirmed: false, details: user.userInfo!.details })
-        );
-
-        expect(await api.user.getUserInfo(user2.sid, 'fast')).toEqual(
-            expect.objectContaining({ isEmailConfirmed: false, details: null })
-        );
-        expect(await api.user.getUserInfo(user2.sid, 'full')).toEqual(
-            expect.objectContaining({ isEmailConfirmed: false, details: user2.userInfo!.details })
-        );
-    });
-
-    test('Confirming a changed email shall fail', async ({ api }) => {
-        const smtp = await startMockEmail();
-
-        const email = randomUUID() + '@example.com';
-        const user = await api.testUsers.createLinked(mockAuth, { email });
 
         const mailPromise = smtp.waitMail();
         await api.user.startConfirmEmail(user.sid);
@@ -232,31 +247,11 @@ test.describe('Email confirmation', () => {
         const token = getEmailLinkToken(mail);
         expect(token).toBeString();
 
-        const newEmail = `updated-${randomUUID()}@example.com`;
-        await user.changeEmail(smtp, newEmail);
-        const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
+        await api.auth.deleteUserRequest(user.sid, user.name);
 
+        // After deletion the session is revoked — completing confirmation is no longer possible
         const response = await api.user.completeConfirmEmailRequest(user.sid, token!);
-        expect(response).toHaveStatus(400);
-        expect(await response.parseProblem()).toEqual(
-            expect.objectContaining({
-                type: 'email-token-expired',
-                status: 400,
-                sensitive: 'wrongEmail'
-            })
-        );
-
-        expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
-            expect.objectContaining({
-                ...userInfo,
-                details: null
-            })
-        );
-        expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
-            expect.objectContaining({
-                ...userInfo
-            })
-        );
+        expect(response).toHaveStatus(401);
     });
 });
 
@@ -317,39 +312,67 @@ test.describe('Email change', () => {
         );
     });
 
-    for (const lang of ['en', 'hu', undefined]) {
-        test(`Changing email with unconfirmed email in lang ${lang} shall succeed`, async ({ api }) => {
-            const email = randomUUID() + '@example.com';
-            const user = await api.testUsers.createLinked(mockAuth, { email });
-            const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
+    test('Requesting email change with invalid email format shall fail', async ({ api }) => {
+        const email = randomUUID() + '@example.com';
+        const user = await api.testUsers.createLinked(mockAuth, { email });
 
-            const smtp = await startMockEmail();
-            const mailPromise = smtp.waitMail();
-            const newEmail = `updated-${randomUUID()}@example.com`;
-            expect(user.email).not.toEqual(newEmail);
-            await api.user.startChangeEmail(user.sid, newEmail, lang);
-            const mail = await mailPromise;
+        const invalidEmails = ['invalid', 'no-at-sign', '@example.com', 'user@', 'user @example.com', ''];
 
-            const token = getEmailLinkToken(mail);
-            expect(token).toBeString();
-            await api.user.completeConfirmEmail(user.sid, token!);
+        for (const invalidEmail of invalidEmails) {
+            const response = await api.user.startChangeEmailRequest(user.sid, invalidEmail);
+            expect(response, `Email "${invalidEmail}" should be rejected`).toHaveStatus(400);
 
-            expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
+            const problem = await response.parseProblem();
+            expect(problem).toEqual(
                 expect.objectContaining({
-                    ...userInfo,
-                    isEmailConfirmed: true,
-                    details: null
+                    type: 'input-body-format',
+                    status: 400,
+                    detail: expect.stringContaining('email')
                 })
             );
-            expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
-                expect.objectContaining({
-                    ...userInfo,
-                    isEmailConfirmed: true,
-                    details: { ...userInfo?.details, email: newEmail }
-                })
-            );
-        });
-    }
+        }
+    });
+
+    test('Changing email with unconfirmed email shall succeed', async ({ api, adminUser }) => {
+        // Note: Language support tested in confirmation tests above
+        const email = randomUUID() + '@example.com';
+        const user = await api.testUsers.createLinked(mockAuth, { email });
+        const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
+
+        const smtp = await startMockEmail();
+        const mailPromise = smtp.waitMail();
+        const newEmail = `updated-${randomUUID()}@example.com`;
+        expect(user.email).not.toEqual(newEmail);
+        await api.user.startChangeEmail(user.sid, newEmail);
+        const mail = await mailPromise;
+
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+        await api.user.completeConfirmEmail(user.sid, token!);
+
+        expect(await api.user.getUserInfo(user.sid, 'fast')).toEqual(
+            expect.objectContaining({
+                ...userInfo,
+                isEmailConfirmed: true,
+                details: null
+            })
+        );
+        expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
+            expect.objectContaining({
+                ...userInfo,
+                isEmailConfirmed: true,
+                details: { ...userInfo?.details, email: newEmail }
+            })
+        );
+
+        // After email change: old email not searchable, new email finds the user
+        const searchOld = await api.user.searchIdentities(adminUser.sid, { email });
+        expect(searchOld.identities.some((i) => i.id === user.userId)).toBe(false);
+
+        const searchNew = await api.user.searchIdentities(adminUser.sid, { email: newEmail });
+        expect(searchNew.identities).toHaveLength(1);
+        expect(searchNew.identities[0].id).toBe(user.userId);
+    });
 
     test('Changing email without email shall succeed', async ({ api }) => {
         const user = await api.testUsers.createGuest();
@@ -382,7 +405,7 @@ test.describe('Email change', () => {
         );
     });
 
-    test('Changing email with confirmed email shall succeed', async ({ api }) => {
+    test('Changing email with confirmed email shall succeed', async ({ api, adminUser }) => {
         const smtp = await startMockEmail();
 
         const email = randomUUID() + '@example.com';
@@ -412,9 +435,18 @@ test.describe('Email change', () => {
                 details: { ...userInfo?.details, email: newEmail }
             })
         );
+
+        // After email change: old email not searchable, new email finds the user
+        const searchOld = await api.user.searchIdentities(adminUser.sid, { email });
+        expect(searchOld.identities.some((i) => i.id === user.userId)).toBe(false);
+
+        const searchNew = await api.user.searchIdentities(adminUser.sid, { email: newEmail });
+        expect(searchNew.identities).toHaveLength(1);
+        expect(searchNew.identities[0].id).toBe(user.userId);
     });
 
-    test('Changing email with and already changed email shall fail', async ({ api }) => {
+    test('Sequential email changes shall invalidate previous tokens (unique constraint)', async ({ api }) => {
+        // Tests: change A→B, then B→C; token for B must be invalid
         const smtp = await startMockEmail();
 
         const email = randomUUID() + '@example.com';
@@ -432,13 +464,14 @@ test.describe('Email change', () => {
         await user.changeEmail(smtp, newEmail2);
         const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
 
+        // Old token is automatically deleted when second email change creates new token (unique constraint)
         const response = await api.user.completeConfirmEmailRequest(user.sid, token!);
         expect(response).toHaveStatus(400);
         expect(await response.parseProblem()).toEqual(
             expect.objectContaining({
                 type: 'email-token-expired',
                 status: 400,
-                sensitive: 'wrongEmail'
+                sensitive: 'tokenExpired'
             })
         );
 
@@ -499,4 +532,22 @@ test.describe('Email change', () => {
             );
         });
     }
+
+    test('Delete user with pending email change shall prevent completing email change', async ({ api }) => {
+        const smtp = await startMockEmail();
+        const user = await api.testUsers.createLinked(mockAuth);
+
+        const newEmail = `changed-${randomUUID()}@example.com`;
+        const mailPromise = smtp.waitMail();
+        await api.user.startChangeEmail(user.sid, newEmail);
+        const mail = await mailPromise;
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+
+        await api.auth.deleteUserRequest(user.sid, user.name);
+
+        // After deletion the session is revoked — completing the change is no longer possible
+        const response = await api.user.completeConfirmEmailRequest(user.sid, token!);
+        expect(response).toHaveStatus(401);
+    });
 });

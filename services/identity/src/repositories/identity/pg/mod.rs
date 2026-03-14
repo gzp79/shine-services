@@ -1,3 +1,5 @@
+mod pg_build_error;
+pub use self::pg_build_error::*;
 mod pg_identity_db;
 pub use self::pg_identity_db::*;
 mod pg_identities;

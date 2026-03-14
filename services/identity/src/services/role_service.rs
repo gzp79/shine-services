@@ -1,5 +1,8 @@
-use crate::repositories::identity::{IdentityDb, IdentityError, Roles};
-use crate::services::{IdentityTopic, UserEvent};
+use crate::{
+    models::IdentityError,
+    repositories::identity::{IdentityDb, Roles},
+    services::{IdentityTopic, UserEvent},
+};
 use shine_infra::sync::TopicBus;
 use std::sync::Arc;
 use uuid::Uuid;

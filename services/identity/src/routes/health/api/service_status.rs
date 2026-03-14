@@ -2,9 +2,9 @@ use crate::{app_state::AppState, services::permissions};
 use axum::{extract::State, Extension, Json};
 use bb8::State as BB8PoolState;
 use serde::Serialize;
-use shine_infra::web::{
-    responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
+use shine_infra::{
     session::{CheckedCurrentUser, CorePermissions},
+    web::responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
 };
 use utoipa::ToSchema;
 

@@ -1,12 +1,13 @@
 use crate::{
     app_state::AppState,
-    repositories::identity::{Identity, IdentityError, TokenInfo, TokenKind},
+    models::{Identity, IdentityError, TokenInfo, TokenKind},
+    repositories::identity::{pg::PgIdentityDb, IdentityDb},
     routes::auth::{AuthError, AuthSession},
-    services::{hash_email, TokenService, UserService},
+    services::{TokenService, UserService},
 };
 use axum_extra::headers::{authorization::Bearer, Authorization};
 use axum_extra::typed_header::TypedHeader;
-use shine_infra::web::extracts::ClientFingerprint;
+use shine_infra::{models::hash_email, web::extracts::ClientFingerprint};
 
 /// Result of a successful authentication attempt
 pub struct AuthenticationSuccess {
@@ -26,23 +27,27 @@ pub struct AuthenticationFailure {
 ///
 /// Orchestrates authentication logic across user_service, token_service, and session management.
 /// Extracted from token_login.rs to make authentication logic reusable across routes.
-pub struct AuthHandler<'a> {
-    state: &'a AppState,
+pub struct AuthHandler<'a, IDB>
+where
+    IDB: IdentityDb,
+{
+    token_service: &'a TokenService<IDB>,
+    user_service: &'a UserService<IDB>,
 }
 
-impl<'a> AuthHandler<'a> {
-    /// Create a new authentication handler
-    ///
-    /// Stores a reference to AppState to access services
-    pub fn new(state: &'a AppState) -> Self {
-        AuthHandler { state }
+impl<'a, IDB> AuthHandler<'a, IDB>
+where
+    IDB: IdentityDb,
+{
+    pub fn new(token_service: &'a TokenService<IDB>, user_service: &'a UserService<IDB>) -> Self {
+        AuthHandler { token_service, user_service }
     }
 
     /// Complete email verification login flow
     ///
     /// Validates that the email in the token matches the user's email and the captcha,
     /// then updates the user's email verification status.
-    pub async fn complete_email_login(
+    pub async fn authenticate_with_email_token(
         &self,
         remember_me: bool,
         captcha: Option<&str>,
@@ -58,7 +63,7 @@ impl<'a> AuthHandler<'a> {
             .expect("Email shall be bound to the token");
 
         let confirmed_email_hash = Some(hash_email(confirmed_email));
-        let identity_email_hash = identity.email.map(|email| hash_email(&email));
+        let identity_email_hash = identity.email.as_ref().map(|email| email.hash());
         // during email verification the captcha is used to check the link is from the email
         let query_email_hash = captcha.map(|s| s.to_string());
 
@@ -78,8 +83,7 @@ impl<'a> AuthHandler<'a> {
 
         log::info!("Updating email verification for identity {}.", identity.id);
         let identity = match self
-            .state
-            .user_service()
+            .user_service
             .update(identity.id, None, Some((confirmed_email, true)))
             .await
         {
@@ -122,7 +126,7 @@ impl<'a> AuthHandler<'a> {
         log::debug!("Checking the token from the query ...");
         let (identity, token_info) = {
             // Any token provided as a query token is removed from the DB as it's been used in a non-secure way.
-            match self.state.token_service().take(TokenKind::all(), token).await {
+            match self.token_service.take(TokenKind::all(), token).await {
                 Ok(Some(info)) => info,
                 Ok(None) => {
                     log::debug!("Expired single access token ...");
@@ -184,7 +188,7 @@ impl<'a> AuthHandler<'a> {
                     rotated_token: None,
                 }),
                 TokenKind::EmailAccess => {
-                    self.complete_email_login(remember_me, captcha, token_info, identity, response_session)
+                    self.authenticate_with_email_token(remember_me, captcha, token_info, identity, response_session)
                         .await
                 }
                 TokenKind::Persistent => unreachable!(),
@@ -210,7 +214,7 @@ impl<'a> AuthHandler<'a> {
 
         // trying as a single access token
         //  when found revoke even if the login input location is not valid as it is a single use token
-        match state.token_service().take(TokenKind::all_single_access(), token).await {
+        match self.token_service.take(TokenKind::all_single_access(), token).await {
             Ok(Some(_)) => {
                 log::debug!("Single access token used in the Persistent token flow, revoking it ...");
                 return Err(AuthenticationFailure {
@@ -229,12 +233,7 @@ impl<'a> AuthHandler<'a> {
 
         // now trying it as a multi-use token
         let (identity, token_info) = {
-            match self
-                .state
-                .token_service()
-                .test(TokenKind::all_multi_access(), token)
-                .await
-            {
+            match self.token_service.test(TokenKind::all_multi_access(), token).await {
                 Ok(Some(info)) => info,
                 Ok(None) => {
                     log::debug!("Invalid or expired Persistent token ...");
@@ -267,7 +266,7 @@ impl<'a> AuthHandler<'a> {
                 "Non-persistent token ({:?}) used in the header, revoking compromised token ...",
                 token_info.kind
             );
-            if let Err(err) = self.state.token_service().delete(token_info.kind, token).await {
+            if let Err(err) = self.token_service.delete(token_info.kind, token).await {
                 log::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
@@ -276,7 +275,7 @@ impl<'a> AuthHandler<'a> {
             })
         } else if token_info.is_expired {
             log::debug!("Token expired, removing from DB ...");
-            if let Err(err) = self.state.token_service().delete(token_info.kind, token).await {
+            if let Err(err) = self.token_service.delete(token_info.kind, token).await {
                 log::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
@@ -289,7 +288,7 @@ impl<'a> AuthHandler<'a> {
                 token_info.bound_fingerprint,
                 fingerprint
             );
-            if let Err(err) = self.state.token_service().delete(token_info.kind, token).await {
+            if let Err(err) = self.token_service.delete(token_info.kind, token).await {
                 log::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
@@ -328,7 +327,7 @@ impl<'a> AuthHandler<'a> {
         // cookies are sent securely and any non-access token wil be revoked later in the flow
 
         let (identity, token_info) = {
-            match self.state.token_service().test(TokenKind::all(), &token).await {
+            match self.token_service.test(TokenKind::all(), &token).await {
                 Ok(Some(info)) => info,
                 Ok(None) => {
                     log::debug!("Invalid or expired Access token ...");
@@ -364,7 +363,7 @@ impl<'a> AuthHandler<'a> {
 
         if let Some(revoked_token) = revoked_token {
             log::debug!("Rotating out the access token ...");
-            if let Err(err) = self.state.token_service().delete(token_info.kind, &revoked_token).await {
+            if let Err(err) = self.token_service.delete(token_info.kind, &revoked_token).await {
                 log::error!("Failed to revoke rotated token: {err}");
             }
         }
@@ -375,7 +374,7 @@ impl<'a> AuthHandler<'a> {
                 "Non-access token ({:?}) used in the cookie, revoking compromised token ...",
                 token_info.kind
             );
-            if let Err(err) = self.state.token_service().delete(token_info.kind, &token).await {
+            if let Err(err) = self.token_service.delete(token_info.kind, &token).await {
                 log::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
@@ -384,7 +383,7 @@ impl<'a> AuthHandler<'a> {
             })
         } else if token_info.is_expired {
             log::debug!("Token expired, removing from DB ...");
-            if let Err(err) = self.state.token_service().delete(token_info.kind, &token).await {
+            if let Err(err) = self.token_service.delete(token_info.kind, &token).await {
                 log::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
@@ -399,7 +398,7 @@ impl<'a> AuthHandler<'a> {
                 token_user_id,
                 token
             );
-            if let Err(err) = self.state.token_service().delete(token_info.kind, &token).await {
+            if let Err(err) = self.token_service.delete(token_info.kind, &token).await {
                 log::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
@@ -412,7 +411,7 @@ impl<'a> AuthHandler<'a> {
                 token_info.bound_fingerprint,
                 fingerprint
             );
-            if let Err(err) = self.state.token_service().delete(token_info.kind, &token).await {
+            if let Err(err) = self.token_service.delete(token_info.kind, &token).await {
                 log::error!("Failed to revoke token: {err}");
             }
             Err(AuthenticationFailure {
@@ -444,7 +443,7 @@ impl<'a> AuthHandler<'a> {
         assert!(auth_session.user_session().is_some());
 
         let user_id = auth_session.user_session().as_ref().unwrap().user_id;
-        let identity = match self.state.user_service().find_by_id(user_id).await {
+        let identity = match self.user_service.find_by_id(user_id).await {
             Ok(Some(info)) => info,
             Ok(None) => {
                 return Err(AuthenticationFailure {
@@ -543,5 +542,11 @@ impl<'a> AuthHandler<'a> {
             error: AuthError::LoginRequired,
             auth_session,
         })
+    }
+}
+
+impl AppState {
+    pub fn auth_handler(&self) -> AuthHandler<'_, PgIdentityDb> {
+        AuthHandler::new(self.token_service(), self.user_service())
     }
 }

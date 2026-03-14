@@ -1,6 +1,5 @@
+use crate::{models::SessionError, repositories::session::Sessions};
 use std::future::Future;
-
-use super::{SessionError, Sessions};
 
 pub trait SessionDbContext<'c>: Sessions + Send {}
 

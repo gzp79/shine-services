@@ -1,3 +1,5 @@
+mod apiurl;
+pub use self::apiurl::*;
 mod config;
 pub use self::config::*;
 mod service_config;
@@ -10,6 +12,3 @@ pub use self::web_app::*;
 pub mod extracts;
 pub mod middlewares;
 pub mod responses;
-
-pub mod controllers;
-pub mod session;

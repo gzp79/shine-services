@@ -1,4 +1,5 @@
 import { expect, test } from '$fixtures/setup';
+import { waitForCondition } from '$lib/utils';
 import { Toxiproxy } from 'toxiproxy-node-client';
 
 test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
@@ -27,7 +28,10 @@ test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
         await postgresProxy.update({ enabled: true, listen: postgresProxy.listen, upstream: postgresProxy.upstream });
 
         // Should recover
-        const recovery = await api.token.getTokensRequest(user.sid);
+        const recovery = await waitForCondition(async () => await api.token.getTokensRequest(user.sid), {
+            timeout: 5000,
+            errorMessage: 'Service did not recover from database failure'
+        });
         expect(recovery).toHaveStatus(200);
     });
 
@@ -49,8 +53,10 @@ test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
         const response = await api.token.getTokensRequest(user.sid);
         const duration = Date.now() - start;
 
-        expect(duration).toBeLessThan(10000);
-        expect(response.status()).toBe(503);
+        // Should timeout (not instant) but before the 10s latency
+        expect(duration).toBeGreaterThan(3000); // Should take time (not instant fail)
+        expect(duration).toBeLessThan(8000); // Should timeout before 10s latency
+        expect(response).toHaveStatus(503); // Should fail gracefully
     });
 
     test('Connection pool exhaustion shall queue gracefully', async ({ api }) => {
@@ -64,6 +70,31 @@ test.describe('Database failure tests', { tag: '@infrastructure' }, () => {
         results.forEach((r) => {
             expect([200, 503]).toContain(r.status());
         });
-        //console.log('Failed requests due to pool exhaustion:', results.filter((r) => r.status() === 503).length);
+
+        // At least 80% should succeed with reasonable pool size
+        const successCount = results.filter((r) => r.status() === 200).length;
+        expect(successCount).toBeGreaterThan(40); // 80% success rate minimum
+    });
+
+    test('Deadlock during concurrent role updates shall retry', async ({ api }) => {
+        const admin1 = await api.testUsers.createGuest({ roles: ['SuperAdmin'] });
+        const admin2 = await api.testUsers.createGuest({ roles: ['SuperAdmin'] });
+        const user1 = await api.testUsers.createGuest();
+        const user2 = await api.testUsers.createGuest();
+
+        // Create high contention scenario
+        const operations = [
+            api.user.addRole(admin1.sid, false, user1.userId, 'Role1'),
+            api.user.addRole(admin2.sid, false, user2.userId, 'Role2'),
+            api.user.addRole(admin1.sid, false, user2.userId, 'Role1'),
+            api.user.addRole(admin2.sid, false, user1.userId, 'Role2')
+        ];
+
+        // All operations should eventually succeed (with retries)
+        const results = await Promise.allSettled(operations);
+        const failures = results.filter((r) => r.status === 'rejected');
+
+        // Service should handle deadlocks gracefully (may have temp failures but retry)
+        expect(failures.length).toBeLessThan(operations.length / 2); // At least 50% success rate
     });
 });

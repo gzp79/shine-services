@@ -1,4 +1,10 @@
-use crate::repositories::identity::{IdentityBuildError, IdentityError, Roles};
+use crate::{
+    models::IdentityError,
+    repositories::identity::{
+        pg::{PgIdentityBuildError, PgIdentityDbContext},
+        Roles,
+    },
+};
 use postgres_from_row::FromRow;
 use shine_infra::{
     db::{DBError, PGClient, PGErrorChecks},
@@ -6,8 +12,6 @@ use shine_infra::{
 };
 use tracing::instrument;
 use uuid::Uuid;
-
-use super::PgIdentityDbContext;
 
 pg_query!( AddUserRole =>
     in = user_id: Uuid, role: &str;
@@ -55,7 +59,7 @@ pub struct PgRolesStatements {
 }
 
 impl PgRolesStatements {
-    pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
+    pub async fn new(client: &PGClient) -> Result<Self, PgIdentityBuildError> {
         Ok(Self {
             add: AddUserRole::new(client).await.map_err(DBError::from)?,
             get: GetUserRoles::new(client).await.map_err(DBError::from)?,

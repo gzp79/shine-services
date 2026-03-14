@@ -1,10 +1,13 @@
-use crate::repositories::identity::{
-    ExternalLink, ExternalLinks, ExternalUserInfo, Identity, IdentityDb, IdentityError,
-};
-use crate::services::{IdentityTopic, UserLinkEvent};
-use shine_infra::sync::TopicBus;
 use std::sync::Arc;
+
+use shine_infra::sync::TopicBus;
 use uuid::Uuid;
+
+use crate::{
+    models::{ExternalLink, ExternalUserInfo, Identity, IdentityError},
+    repositories::identity::{ExternalLinks, IdentityDb},
+    services::{IdentityTopic, UserLinkEvent},
+};
 
 pub struct LinkService<DB: IdentityDb> {
     db: DB,

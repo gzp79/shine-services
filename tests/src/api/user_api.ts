@@ -1,8 +1,7 @@
 import { expect } from '$fixtures/setup';
-import { DateStringSchema, OptionalSchema } from '$lib/schema_utils';
-import { joinURL } from '$lib/utils';
+import { DateStringSchema, OptionalSchema, joinURL } from '$lib/utils';
 import { z } from 'zod';
-import { ApiClient, ApiRequest } from './api';
+import { ApiClient, ApiParams, ApiRequest } from './api';
 
 export type GetUserInfoMethod = 'fast' | 'full' | 'fillWithRefresh';
 
@@ -45,6 +44,29 @@ const EmailChangeSchema = z.object({
     email: z.string()
 });
 export type EmailChange = z.infer<typeof EmailChangeSchema>;
+
+export const IdentityInfoSchema = z.object({
+    id: z.string(),
+    kind: z.string(),
+    name: z.string(),
+    email: OptionalSchema(z.string()),
+    isEmailConfirmed: z.boolean(),
+    creation: DateStringSchema
+});
+export type IdentityInfo = z.infer<typeof IdentityInfoSchema>;
+
+export const IdentitySearchPageSchema = z.object({
+    identities: z.array(IdentityInfoSchema),
+    isPartial: z.boolean()
+});
+export type IdentitySearchPage = z.infer<typeof IdentitySearchPageSchema>;
+
+export type SearchIdentityParams = {
+    count?: number;
+    userId?: string | string[];
+    email?: string | string[];
+    name?: string | string[];
+};
 
 export class UserAPI {
     private readonly client: ApiClient;
@@ -167,6 +189,30 @@ export class UserAPI {
             expect(response).toHaveStatus(200);
             return (await response.parse(UsersRoleSchema)).roles;
         }
+    }
+
+    searchIdentitiesRequest(sid: string | null, params: SearchIdentityParams): ApiRequest {
+        const cs = sid && { sid };
+
+        const queryParams: ApiParams = {};
+        if (params.count !== undefined) queryParams['count'] = params.count;
+        if (params.userId !== undefined)
+            queryParams['userId'] = Array.isArray(params.userId) ? params.userId.join(',') : params.userId;
+        if (params.email !== undefined)
+            queryParams['email'] = Array.isArray(params.email) ? params.email.join(',') : params.email;
+        if (params.name !== undefined)
+            queryParams['name'] = Array.isArray(params.name) ? params.name.join(',') : params.name;
+
+        return this.client
+            .get(this.urlFor('/api/identities'))
+            .withCookies({ ...cs })
+            .withParams(queryParams);
+    }
+
+    async searchIdentities(sid: string | null, params: SearchIdentityParams): Promise<IdentitySearchPage> {
+        const response = await this.searchIdentitiesRequest(sid, params);
+        expect(response).toHaveStatus(200);
+        return await response.parse(IdentitySearchPageSchema);
     }
 
     startConfirmEmailRequest(sid: string | null, lang?: string): ApiRequest {

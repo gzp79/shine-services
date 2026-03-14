@@ -9,7 +9,6 @@ use url::Url;
 pub struct AuthSessionConfig {
     pub external_login_cookie_secret: String,
     pub token_cookie_secret: String,
-    pub email_token_secret: String,
 
     /// The maximum time to live for an access (remember me) token in seconds
     pub ttl_access_token: usize,
@@ -152,23 +151,11 @@ impl FeatureConfig for AppConfig {
 mod test {
     use axum_extra::extract::cookie;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
-    use ring::{
-        aead,
-        rand::{SecureRandom, SystemRandom},
-    };
     use shine_test::test;
 
     #[test(skip = "This is not a test but a helper to generate cookie secret")]
     fn generate_cookie_secret() {
         let key = cookie::Key::generate();
         println!("{}", B64.encode(key.master()));
-    }
-
-    #[test(skip = "This is not a test but a helper to generate an email secret")]
-    fn generate_email_token_secret() {
-        let rng = SystemRandom::new();
-        let mut key = vec![0u8; aead::AES_256_GCM.key_len()];
-        rng.fill(&mut key).unwrap();
-        println!("{}", B64.encode(key));
     }
 }

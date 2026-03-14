@@ -1,10 +1,14 @@
-use crate::repositories::identity::{IdSequences, IdentityBuildError, IdentityError};
+use crate::{
+    models::IdentityError,
+    repositories::identity::{
+        pg::{PgIdentityBuildError, PgIdentityDbContext},
+        IdSequences,
+    },
+};
 use shine_infra::{
     db::{DBError, PGClient},
     pg_query,
 };
-
-use super::PgIdentityDbContext;
 
 pg_query!( GetNextId =>
     in = ;
@@ -20,7 +24,7 @@ pub struct PgIdSequencesStatements {
 }
 
 impl PgIdSequencesStatements {
-    pub async fn new(client: &PGClient) -> Result<Self, IdentityBuildError> {
+    pub async fn new(client: &PGClient) -> Result<Self, PgIdentityBuildError> {
         Ok(Self {
             stmt_next_id: GetNextId::new(client).await.map_err(DBError::from)?,
         })

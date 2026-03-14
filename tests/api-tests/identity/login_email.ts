@@ -54,6 +54,26 @@ test.describe('Login with email for guest', () => {
         );
     });
 
+    const invalidEmails = ['invalid', 'no-at-sign', '@example.com', 'user@', 'user @example.com', ''];
+    for (const invalidEmail of invalidEmails) {
+        test(`Login with invalid email format shall be rejected (${invalidEmail || '<empty>'})`, async ({ api }) => {
+            const response = await api.auth.loginWithEmailRequest(invalidEmail, false, null);
+            expect(response).toHaveStatus(200);
+
+            const text = await response.text();
+            expect(getPageProblem(text)).toEqual(
+                expect.objectContaining({
+                    type: 'auth-input-error',
+                    status: 400,
+                    sensitive: expect.objectContaining({
+                        type: 'input-query-format',
+                        detail: expect.stringContaining('email')
+                    })
+                })
+            );
+        });
+    }
+
     test('Login with invalid captcha shall be rejected', async ({ api }) => {
         const targetEmailAddress = `${randomUUID()}@example.com`;
 
@@ -292,6 +312,43 @@ test.describe('Login with email for guest', () => {
                 })
             );
         });
+    });
+
+    test('Email addresses shall be case-insensitive for login', async ({ api }) => {
+        // Security & UX: User@Example.COM and user@example.com should be treated as same user
+        const baseEmail = `${randomUUID()}@example.com`;
+        const mixedCaseEmail = baseEmail.replace(
+            /^(.)(.*?)@(.*)$/,
+            (_, first, rest, domain) => first.toUpperCase() + rest + '@' + domain.toUpperCase()
+        );
+
+        // First login with mixed case
+        const mail1Promise = mock.waitMail();
+        await api.auth.loginWithEmailRequest(mixedCaseEmail, true, null);
+        const mail1 = await mail1Promise;
+        const loginLink1 = getEmailLink(mail1);
+
+        const response1 = await api.client.get(loginLink1);
+        expect(response1).toHaveStatus(200);
+        const sid1 = response1.cookies().sid.value;
+        const userInfo1 = await api.user.getUserInfo(sid1, 'full');
+        const userId1 = userInfo1.userId;
+
+        // Second login with lowercase - should return SAME user
+        const mail2Promise = mock.waitMail();
+        await api.auth.loginWithEmailRequest(baseEmail.toLowerCase(), true, null);
+        const mail2 = await mail2Promise;
+        const loginLink2 = getEmailLink(mail2);
+
+        const response2 = await api.client.get(loginLink2);
+        expect(response2).toHaveStatus(200);
+        const sid2 = response2.cookies().sid.value;
+        const userInfo2 = await api.user.getUserInfo(sid2, 'full');
+        const userId2 = userInfo2.userId;
+
+        // Should be the same user (case-insensitive email matching)
+        expect(userId1).toBe(userId2);
+        expect(userInfo2.details?.email).toBe(userInfo1.details?.email); // Email stored normalized
     });
 });
 
@@ -576,16 +633,45 @@ test.describe('Login with email for returning user', () => {
                     type: 'auth-token-expired',
                     status: 401,
                     extension: null,
-                    sensitive: 'emailConflict'
+                    sensitive: 'expiredToken'
                 })
             );
         });
 
-        await test.step('Login with old link shall succeed', async () => {
+        await test.step('Login with new link shall succeed', async () => {
             const loginResponse = await api.client.get(linkNew.toString());
             expect(loginResponse).toHaveStatus(200);
             const loginText = await loginResponse.text();
             expect(getPageProblem(loginText)).toBeNull();
         });
+    });
+
+    test('Delete user during pending email login shall invalidate the login link', async ({ api, homeUrl }) => {
+        const targetEmailAddress = `${randomUUID()}@example.com`;
+        const testUser = await api.testUsers.createLinked(mockOIDC, { email: targetEmailAddress });
+        assert(testUser.email);
+
+        const mailPromise = mockSmtp.waitMail();
+        const response = await api.auth.loginWithEmailRequest(testUser.email, false, null);
+        await checkLoginResponse(response, api);
+        const mail = await mailPromise;
+
+        const link = getEmailLink(mail);
+
+        await api.auth.deleteUserRequest(testUser.sid, testUser.name);
+
+        // Login link must no longer be usable after user deletion
+        const loginResponse = await api.client.get(link);
+        expect(loginResponse).toHaveStatus(200);
+        const loginText = await loginResponse.text();
+        expect(getPageRedirectUrl(loginText)).toEqual(
+            createUrl(`${homeUrl}/error`, { errorType: 'auth-token-expired' })
+        );
+        expect(getPageProblem(loginText)).toEqual(
+            expect.objectContaining({
+                type: 'auth-token-expired',
+                status: 401
+            })
+        );
     });
 });

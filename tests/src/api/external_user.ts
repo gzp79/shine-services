@@ -1,4 +1,4 @@
-import { createUrlQueryString, generateRandomString } from '$lib/string_utils';
+import { createUrlQueryString, generateRandomString } from '$lib/utils';
 import { randomUUID } from 'crypto';
 
 export type ExternalUserProvider = 'oauth2_flow' | 'openid_flow';
@@ -18,7 +18,7 @@ export class ExternalUser {
 
     static newRandomUser(provider: ExternalUserProvider): ExternalUser {
         const name = 'Random_' + generateRandomString(5);
-        return new ExternalUser(provider, randomUUID(), name, name + '@example.com');
+        return new ExternalUser(provider, randomUUID(), name, name.toLowerCase() + '@example.com');
     }
 
     toCode(params?: Record<string, string>): string {

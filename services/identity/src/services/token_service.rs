@@ -1,4 +1,7 @@
-use crate::repositories::identity::{Identity, IdentityDb, IdentityError, TokenInfo, TokenKind, Tokens};
+use crate::{
+    models::{Identity, IdentityError, TokenInfo, TokenKind},
+    repositories::identity::{IdentityDb, Tokens},
+};
 use chrono::Duration;
 use ring::digest;
 use shine_infra::web::extracts::{ClientFingerprint, SiteInfo};
@@ -89,6 +92,11 @@ impl<DB: IdentityDb> TokenService<DB> {
 
             let token = Uuid::new_v4().to_string();
             let token_hash = hash_token(&token);
+
+            // Business rule: If token kind must be unique per user, delete old tokens first
+            if kind.is_unique() {
+                self.delete_all_by_user(user_id, &[kind]).await?;
+            }
 
             let mut ctx = self.db.create_context().await?;
             match ctx

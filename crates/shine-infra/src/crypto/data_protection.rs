@@ -83,7 +83,7 @@ mod tests {
         SysRng
             .try_fill_bytes(&mut key)
             .map_err(|_| DataProtectionError::EncryptionError)?;
-        let encoded_key = B64.encode(&key);
+        let encoded_key = B64.encode(key);
         Ok(encoded_key)
     }
 

@@ -3,7 +3,7 @@ import { ExternalUser } from '$lib/api/external_user';
 import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 import { MockServer } from '$lib/mocks/mock_server';
 import OAuth2MockServer from '$lib/mocks/oauth2';
-import { generateRandomString } from '$lib/string_utils';
+import { generateRandomString } from '$lib/utils';
 import { createUrl, parseSignedCookie } from '$lib/utils';
 import { randomUUID } from 'crypto';
 import os from 'os';
@@ -455,6 +455,20 @@ test.describe('Login with OAuth2', () => {
         expect((await api.user.getUserInfo(cookies.sid, 'full')).name).toEqual(user.name.substring(0, 20));
     });
 
+    test('Login with mixed-case email from external user shall store normalized email', async ({ api }) => {
+        const randomPart = generateRandomString(8);
+        const mixedCaseEmail = `${randomPart}.Mixed.Case@EXAMPLE.COM`;
+        const normalizedEmail = mixedCaseEmail.toLowerCase();
+
+        const user = await api.testUsers.createLinked(mock, { email: mixedCaseEmail });
+        expect(user.userInfo!.details?.email).toEqual(normalizedEmail);
+    });
+
+    test('Login with invalid email shall succeed and the external email shall be ignored', async ({ api }) => {
+        const user = await api.testUsers.createLinked(mock, { email: 'not-a-valid-email' });
+        expect(user.userInfo!.details?.email).toBeUndefined();
+    });
+
     test('Login with invalid redirect url shall fail', async ({ api }) => {
         const response = await api.auth
             .loginWithOAuth2Request(null, null, false, null)
@@ -611,5 +625,37 @@ test.describe('Link to OAuth2 account', () => {
                 sensitive: null
             })
         );
+    });
+
+    test('Delete during pending link shall fail at authorize callback', async ({ api }) => {
+        const user = await api.testUsers.createLinked(mock);
+
+        // Start a link flow — captures eid cookie and authParams
+        const startResult = await api.auth.startLinkWithOAuth2(mock, user.sid);
+
+        // Delete the user before completing the link
+        await api.auth.deleteUserRequest(user.sid, user.name);
+
+        // Complete the callback — user is now gone
+        const authorizeResponse = await api.auth.authorizeWithOAuth2Request(
+            startResult.sid,
+            startResult.eid,
+            startResult.authParams.state,
+            new ExternalUser('oauth2_flow', 'new-id-after-delete', 'NewUser', 'newuser@example.com').toCode()
+        );
+        expect(authorizeResponse).toHaveStatus(200);
+
+        const text = await authorizeResponse.text();
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-error',
+                status: 400,
+                sensitive: expect.objectContaining({
+                    type: 'external-missing-cookie',
+                    status: 400
+                })
+            })
+        );
+        expect(authorizeResponse.cookies().sid).toBeClearCookie();
     });
 });

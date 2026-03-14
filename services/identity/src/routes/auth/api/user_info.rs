@@ -1,11 +1,13 @@
-use crate::{app_state::AppState, repositories::identity::IdentityKind};
+use crate::{app_state::AppState, models::IdentityKind};
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_infra::web::{
-    extracts::ValidatedQuery,
-    responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
+use shine_infra::{
     session::CheckedCurrentUser,
+    web::{
+        extracts::ValidatedQuery,
+        responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
+    },
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -90,6 +92,7 @@ pub async fn get_user_info(
         // read the user info from the database
         GetUserInfoMode::Full | GetUserInfoMode::FullWithRefresh => {
             let user_info = state
+                .user_session_handler()
                 .get_user_info(user.user_id)
                 .await
                 .map_err(|err| err.into_response(&problem_config))?
@@ -101,6 +104,7 @@ pub async fn get_user_info(
 
             if method == GetUserInfoMode::FullWithRefresh {
                 state
+                    .user_session_handler()
                     .refresh_user_session(user.user_id)
                     .await
                     .map_err(|err| err.into_response(&problem_config))?;
@@ -117,7 +121,7 @@ pub async fn get_user_info(
                 details: Some(CurrentUserInfoDetails {
                     kind: user_info.identity.kind,
                     created_at: user_info.identity.created,
-                    email: user_info.identity.email,
+                    email: user_info.identity.email.map(|e| e.into_inner()),
                 }),
             }
         }

@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, OAuth2Client, PageUtils},
+    routes::auth::{AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, OAuth2Client},
 };
 use axum::{extract::State, Extension};
 use oauth2::{CsrfToken, PkceCodeChallenge};
@@ -97,5 +97,7 @@ pub async fn oauth2_login(
 
     // 6. Return response
     assert!(response_session.user_session().is_none());
-    PageUtils::new(&state).redirect(response_session, Some(&authorize_url), None)
+    state
+        .auth_page_handler()
+        .redirect(response_session, Some(&authorize_url), None)
 }

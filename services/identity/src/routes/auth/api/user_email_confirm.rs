@@ -3,10 +3,11 @@ use axum::{extract::State, Extension};
 use serde::Deserialize;
 use shine_infra::{
     language::Language,
+    models::Email,
+    session::CheckedCurrentUser,
     web::{
-        extracts::{ValidatedJson, ValidatedQuery},
+        extracts::{SiteInfo, ValidatedJson, ValidatedQuery},
         responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
-        session::CheckedCurrentUser,
     },
 };
 use utoipa::{IntoParams, ToSchema};
@@ -35,10 +36,11 @@ pub async fn start_user_email_validation(
     Extension(problem_config): Extension<ProblemConfig>,
     ValidatedQuery(query): ValidatedQuery<ConfirmQueryParams>,
     user: CheckedCurrentUser,
+    site_info: SiteInfo,
 ) -> Result<(), ProblemResponse> {
     state
-        .email_token_handler()
-        .start_email_confirm_flow(user.user_id, query.lang)
+        .email_auth_handler()
+        .start_email_confirm_flow(user.user_id, &site_info, query.lang)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 
@@ -54,8 +56,7 @@ pub struct ChangeQueryParams {
 #[derive(Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangeEmailRequest {
-    #[validate(email)]
-    email: String,
+    email: Email,
 }
 
 /// Start email address change flow.
@@ -76,11 +77,13 @@ pub async fn start_user_email_change(
     Extension(problem_config): Extension<ProblemConfig>,
     ValidatedQuery(query): ValidatedQuery<ChangeQueryParams>,
     user: CheckedCurrentUser,
+    site_info: SiteInfo,
     ValidatedJson(body): ValidatedJson<ChangeEmailRequest>,
 ) -> Result<(), ProblemResponse> {
+    // Email is already validated and normalized by the Email type
     state
-        .email_token_handler()
-        .start_email_change_flow(user.user_id, &body.email, query.lang)
+        .email_auth_handler()
+        .start_email_change_flow(user.user_id, body.email.as_str(), &site_info, query.lang)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 
@@ -112,7 +115,7 @@ pub async fn complete_user_email_operation(
     user: CheckedCurrentUser,
 ) -> Result<(), ProblemResponse> {
     state
-        .email_token_handler()
+        .email_auth_handler()
         .complete_email_flow(user.user_id, &query.token)
         .await
         .map_err(|err| err.into_response(&problem_config))?;

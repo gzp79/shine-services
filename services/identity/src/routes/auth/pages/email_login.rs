@@ -6,6 +6,7 @@ use axum::extract::State;
 use serde::Deserialize;
 use shine_infra::{
     language::Language,
+    models::Email,
     web::{
         extracts::{InputError, SiteInfo, ValidatedQuery},
         responses::ErrorResponse,
@@ -18,8 +19,7 @@ use validator::Validate;
 #[derive(Debug, Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryParams {
-    #[validate(email)]
-    email: String,
+    email: Email,
     redirect_url: Option<Url>,
     error_url: Option<Url>,
     remember_me: Option<bool>,
@@ -75,9 +75,9 @@ pub async fn email_login(
 
     // 6. Business logic
     let identity = match state
-        .login_email_handler()
+        .email_auth_handler()
         .send_login_email(
-            &query.email,
+            query.email.as_str(),
             query.remember_me,
             query.redirect_url.as_ref(),
             &site_info,

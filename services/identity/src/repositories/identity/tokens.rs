@@ -1,66 +1,8 @@
-use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Serialize};
+use crate::models::{Identity, IdentityError, TokenInfo, TokenKind};
+use chrono::Duration;
 use shine_infra::web::extracts::{ClientFingerprint, SiteInfo};
 use std::future::Future;
-use utoipa::ToSchema;
 use uuid::Uuid;
-
-use super::{Identity, IdentityError};
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum TokenKind {
-    Access,
-    Persistent,
-    SingleAccess,
-    EmailAccess,
-}
-
-impl TokenKind {
-    // return if token can be used only once
-    pub fn is_single_access(&self) -> bool {
-        matches!(self, Self::SingleAccess) || matches!(self, Self::EmailAccess)
-    }
-
-    pub fn all() -> &'static [TokenKind] {
-        &[
-            TokenKind::Access,
-            TokenKind::Persistent,
-            TokenKind::SingleAccess,
-            TokenKind::EmailAccess,
-        ]
-    }
-
-    pub fn all_single_access() -> &'static [TokenKind] {
-        &[TokenKind::SingleAccess, TokenKind::EmailAccess]
-    }
-
-    pub fn all_multi_access() -> &'static [TokenKind] {
-        &[TokenKind::Access, TokenKind::Persistent]
-    }
-}
-
-#[derive(Debug)]
-pub struct TokenInfo {
-    pub user_id: Uuid,
-    pub kind: TokenKind,
-    pub token_hash: String,
-    pub created_at: DateTime<Utc>,
-    pub expire_at: DateTime<Utc>,
-    pub is_expired: bool,
-    pub bound_fingerprint: Option<String>,
-    pub bound_email: Option<String>,
-    pub agent: String,
-    pub country: Option<String>,
-    pub region: Option<String>,
-    pub city: Option<String>,
-}
-
-impl TokenInfo {
-    pub fn check_fingerprint(&self, fingerprint: &ClientFingerprint) -> bool {
-        self.bound_fingerprint.is_none() || Some(fingerprint.as_str()) == self.bound_fingerprint.as_deref()
-    }
-}
 
 /// Handle tokens
 pub trait Tokens {

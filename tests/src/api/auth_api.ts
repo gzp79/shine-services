@@ -1,8 +1,7 @@
 import { expect } from '$fixtures/setup';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIdMockServer from '$lib/mocks/openid';
-import { OptionalSchema } from '$lib/schema_utils';
-import { joinURL } from '$lib/utils';
+import { OptionalSchema, joinURL } from '$lib/utils';
 import { z } from 'zod';
 import { ApiClient, ApiRequest } from './api';
 import { ExternalUser } from './external_user';
@@ -533,6 +532,16 @@ export class AuthAPI {
 
         expect(response).toHaveStatus(200);
         return true;
+    }
+
+    deleteUserRequest(sid: string | null, confirmation: string | null): ApiRequest {
+        const cs = sid && { sid };
+        const qc = confirmation !== null && { confirmation };
+
+        return this.client
+            .get(this.urlFor('auth/delete'))
+            .withParams({ ...qc, ...this.defaultRedirects })
+            .withCookies({ ...cs });
     }
 
     logoutRequest(sid: string | null, tid: string | null, terminateAll: boolean | null): ApiRequest {

@@ -1,6 +1,9 @@
-use crate::repositories::{
-    identity::{IdentityBuildError, IdentityDb, IdentityDbContext, IdentityError},
-    EmailProtectionConfig,
+use crate::{
+    models::IdentityError,
+    repositories::{
+        identity::{pg::PgIdentityBuildError, IdentityDb, IdentityDbContext},
+        EmailProtectionConfig,
+    },
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use shine_infra::{
@@ -35,7 +38,10 @@ pub struct PgIdentityDb {
 }
 
 impl PgIdentityDb {
-    pub async fn new(postgres: &PGConnectionPool, config: &EmailProtectionConfig) -> Result<Self, IdentityBuildError> {
+    pub async fn new(
+        postgres: &PGConnectionPool,
+        config: &EmailProtectionConfig,
+    ) -> Result<Self, PgIdentityBuildError> {
         let client = postgres.get().await.map_err(DBError::PGPoolError)?;
 
         let encryption_key = B64.decode(config.encryption_key.as_bytes())?;

@@ -1,4 +1,4 @@
-use crate::{app_config::AppConfig, app_state::AppState, repositories::identity::TokenKind};
+use crate::{app_config::AppConfig, app_state::AppState, models::TokenKind};
 use axum::{
     extract::FromRequestParts,
     http::request::Parts,
@@ -13,9 +13,9 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Utc};
 use rand::{rng, RngExt};
 use serde::{Deserialize, Serialize};
-use shine_infra::web::{
+use shine_infra::{
     session::{CheckedCurrentUser, CurrentUser, SessionCookie},
-    WebAppConfig,
+    web::WebAppConfig,
 };
 use std::{convert::Infallible, sync::Arc};
 use thiserror::Error as ThisError;

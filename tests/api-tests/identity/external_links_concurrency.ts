@@ -41,14 +41,17 @@ test.describe('External links concurrency tests', { tag: '@concurrency' }, () =>
             })()
         ]);
 
-        // One should succeed, one should fail with conflict
+        // Race between two users trying to link same external account:
+        // - First to complete: succeeds (200)
+        // - Second to complete: conflicts (error embedded in 200 response page)
+        // Note: Auth pages return 200 with error details in HTML
         const statuses = [link1.status(), link2.status()].sort();
         expect(statuses).toEqual([200, 200]); // Both requests complete
 
         const text1 = await link1.text();
         const text2 = await link2.text();
         const problems = [text1, text2].filter((t) => t.includes('auth-register-external-id-conflict'));
-        expect(problems.length).toBeGreaterThanOrEqual(1); // At least one conflicts
+        expect(problems.length).toBeGreaterThanOrEqual(1); // At least one should conflict
     });
 
     test('Link and unlink same account concurrently shall be deterministic', async ({ api }) => {
@@ -69,13 +72,17 @@ test.describe('External links concurrency tests', { tag: '@concurrency' }, () =>
             })()
         ]);
 
-        // Both complete
+        // Race between unlink and link:
+        // - Unlink: 200 or 204 depending on whether link existed
+        // - Link: 200 (creates or recreates link)
         expect([200, 204]).toContain(unlinkResponse.status());
         expect([200]).toContain(linkResponse.status());
 
-        // Final state should be consistent
+        // Final state depends on operation order:
+        // - If unlink then link: 1 link exists
+        // - If link then unlink: 0 links exist
+        // Both outcomes are correct depending on timing
         const links = await api.auth.getExternalLinks(user.sid);
-        // Either linked or not, but deterministic
         expect([0, 1]).toContain(links.length);
     });
 
