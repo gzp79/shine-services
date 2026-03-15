@@ -2,7 +2,11 @@ use crate::{
     health::HealthService,
     session::CurrentUserService,
     telemetry::TelemetryService,
-    web::{middlewares::PoweredBy, responses::ProblemConfig, ApiUrl, FeatureConfig, WebAppConfig},
+    web::{
+        middlewares::{PoweredBy, SecurityHeaders},
+        responses::ProblemConfig,
+        ApiUrl, FeatureConfig, WebAppConfig,
+    },
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
@@ -173,7 +177,12 @@ async fn create_web_app<A: WebApplication>(
     let current_user_service = CurrentUserService::from_config(&config.service).await?;
 
     let cors_layer = create_cors_layer(&config.service.allowed_origins)?;
-    let powered_by_layer = PoweredBy::from_service_info(app.feature_name(), &config.core.version)?;
+    let powered_by_layer = if config.service.expose_powered_by {
+        Some(PoweredBy::from_service_info(app.feature_name(), &config.core.version)?)
+    } else {
+        None
+    };
+    let security_headers_layer = SecurityHeaders;
 
     let mut doc = ApiDoc::with_default_components();
 
@@ -197,20 +206,24 @@ async fn create_web_app<A: WebApplication>(
 
     let (router, router_api) = router.split_for_parts();
     doc.merge(router_api);
-
-    let swagger = SwaggerUi::new(format!("/{}/doc/swagger-ui", app.feature_name()))
-        .url(format!("/{}/doc/openapi.json", app.feature_name()), doc)
-        .config(
-            SwaggerConfig::default()
-                .with_credentials(true)
-                .show_common_extensions(true),
-        );
+    let router = if config.service.expose_api_docs {
+        let swagger = SwaggerUi::new(format!("/{}/doc/swagger-ui", app.feature_name()))
+            .url(format!("/{}/doc/openapi.json", app.feature_name()), doc)
+            .config(
+                SwaggerConfig::default()
+                    .with_credentials(true)
+                    .show_common_extensions(true),
+            );
+        router.merge(swagger)
+    } else {
+        router
+    };
 
     Ok(router
-        .merge(swagger)
         .layer(user_session_layer)
         .layer(problem_detail_layer)
-        .layer(powered_by_layer)
+        .layer(tower::util::option_layer(powered_by_layer))
+        .layer(security_headers_layer)
         .layer(cors_layer)
         .layer(telemetry_layer)
         .layer(log_layer)

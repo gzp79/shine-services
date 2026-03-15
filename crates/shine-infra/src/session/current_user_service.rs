@@ -59,7 +59,6 @@ impl CurrentUserService {
         &self.cookie_secret
     }
 
-    // todo: make it a read only access to the redis
     pub async fn from_config(config: &ServiceConfig) -> Result<Self, UserSessionError> {
         let redis = crate::db::create_redis_pool(config.session_redis_cns.as_str())
             .await

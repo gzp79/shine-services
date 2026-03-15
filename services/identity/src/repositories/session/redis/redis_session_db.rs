@@ -27,8 +27,6 @@ impl RedisSessionDb {
         ttl_session: Duration,
     ) -> Result<Self, RedisSessionBuildError> {
         let _client = redis.get().await.map_err(DBError::RedisPoolError)?;
-        //todo: check/update permissions to allow update only from identity service
-
         Ok(Self {
             client: redis.clone(),
             key_prefix,

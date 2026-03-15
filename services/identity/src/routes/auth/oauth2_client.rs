@@ -60,6 +60,11 @@ impl OAuth2Client {
             .set_client_secret(client_secret);
 
         let ignore_certificates = config.ignore_certificates.unwrap_or(false);
+        if ignore_certificates {
+            log::warn!(
+                "Certificate validation is disabled for OAuth2 provider '{provider}' — do NOT use in production"
+            );
+        }
         let http_client = HttpClient::builder()
             .redirect(reqwest::redirect::Policy::none())
             .danger_accept_invalid_certs(ignore_certificates)

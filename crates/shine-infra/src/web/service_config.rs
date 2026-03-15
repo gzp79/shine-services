@@ -26,4 +26,10 @@ pub struct ServiceConfig {
     pub session_ttl: u64,
     /// The get up-to-date session information of the current user
     pub session_redis_cns: String,
+    /// Expose x-powered-by response header with service name and version. Default: false.
+    #[serde(default)]
+    pub expose_powered_by: bool,
+    /// Expose Swagger UI and OpenAPI documentation endpoints. Default: false.
+    #[serde(default)]
+    pub expose_api_docs: bool,
 }
