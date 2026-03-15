@@ -8,6 +8,7 @@ description: Starting development sessions, running tests after code changes, de
 ## Quick Start
 
 **Start service** (choose one):
+
 ```bash
 # Recommended: Use startup script (from repo root)
 cd services/identity && powershell.exe -ExecutionPolicy Bypass -File run_identity_local.ps1
@@ -16,12 +17,14 @@ cd services/identity && powershell.exe -ExecutionPolicy Bypass -File run_identit
 ```
 
 **Start Docker dev environment** (databases — required before service):
+
 ```bash
 docker compose -f services/docker-compose.yml -p shine up -d
 # Stop: docker compose -f services/docker-compose.yml -p shine down
 ```
 
 **Run tests:**
+
 ```bash
 # Full suite
 cd tests && pnpm test:local
@@ -34,17 +37,20 @@ cd tests && pnpm exec playwright test api-tests/identity/purge_guests.ts
 ```
 
 **Enable request logging** (for debugging / agent analysis):
+
 ```bash
 cd tests && ENABLE_REQUEST_LOGGING=1 pnpm test:local --grep "test name"
 ```
 
 **Agent test guidelines:**
+
 - NEVER pipe test output through `tail`, `head`, or other truncation — full output is needed for analysis
 - Use `--grep` to scope runs to relevant tests when possible
 - Set `ENABLE_REQUEST_LOGGING=1` when debugging failures to see HTTP request/response details
 - Read full output directly; the `list` reporter shows pass/fail per test
 
 **Verify service is ready:**
+
 ```bash
 curl -k https://localhost:8443/identity/info/ready  # Should return "Ok"
 ```
@@ -52,14 +58,17 @@ curl -k https://localhost:8443/identity/info/ready  # Should return "Ok"
 ## Configuration
 
 **Service requirements:**
+
 - Port 8443 (HTTPS), config `server_config.test.json`, certs at `../../certs/scytta.{crt,key}`
 - URL: `https://cloud.local.scytta.com:8443/identity`
 
 **Test requirements:**
+
 - Service running at above URL
 - Mock services (SMTP:2525, OAuth2:8090, OIDC:8091) auto-start with tests
 
 **Test outputs:**
+
 - Report: `tests/reports/index.html`
 - Status: `tests/test-results/.last-run.json` (compare for regressions)
 
@@ -75,25 +84,31 @@ curl -k https://localhost:8443/identity/info/ready  # Should return "Ok"
 ## Troubleshooting
 
 **Service won't start:**
+
 - Wrong directory? `pwd` must show `services/identity` (config file location)
 - Missing certs? Check `ls ../../certs/scytta.{crt,key}` from services/identity
 - Port conflict? `netstat -ano | findstr :8443` (Windows) or `lsof -ti:8443` (Linux/Mac)
 
 **Tests failing:**
+
 1. Service running? `curl -k https://localhost:8443/identity/info/ready`
 2. Correct port? Logs should show "Starting service on https://0.0.0.0:8443"
 3. New failures? Compare `tests/test-results/.last-run.json` vs current run
 
 **Windows env var errors:**
 Bash doesn't support `--` in variable names. Use PowerShell:
+
 ```powershell
 ${env:SHINE--SERVICE--PORT} = "8443"
 ```
+
 Or use VSCode task (handles env vars automatically).
 
 **Manual service start** (if scripts fail):
+
 ```bash
 cd services/identity
 cargo run -p shine-identity --release -- test
 ```
+
 Requires env vars set in shell (use PowerShell on Windows).

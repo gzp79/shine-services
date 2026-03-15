@@ -393,6 +393,7 @@ test.describe('Email change', () => {
             expect.objectContaining({
                 ...userInfo,
                 isEmailConfirmed: true,
+                isGuest: false,
                 details: null
             })
         );
@@ -400,6 +401,7 @@ test.describe('Email change', () => {
             expect.objectContaining({
                 ...userInfo,
                 isEmailConfirmed: true,
+                isGuest: false,
                 details: { ...userInfo?.details, email: newEmail }
             })
         );
