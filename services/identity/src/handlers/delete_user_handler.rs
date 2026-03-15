@@ -1,6 +1,7 @@
 use crate::{
     app_state::AppState,
     handlers::{AuthPage, AuthPageHandler},
+    models::{IdentityError, PurgeGuestsResult},
     repositories::{
         identity::{pg::PgIdentityDb, IdentityDb},
         session::{redis::RedisSessionDb, SessionDb},
@@ -8,6 +9,7 @@ use crate::{
     routes::auth::{AuthError, AuthSession},
     services::{SessionService, UserService},
 };
+use chrono::{DateTime, Utc};
 use url::Url;
 
 /// Handler for user account deletion
@@ -89,6 +91,22 @@ where
         }
 
         self.page_handler.redirect(response_session, redirect_url, None)
+    }
+
+    pub async fn purge_guests(&self, cutoff: DateTime<Utc>, limit: usize) -> Result<PurgeGuestsResult, IdentityError> {
+        let deleted_ids = self.user_service.delete_guests(cutoff, limit).await?;
+        let deleted = deleted_ids.len();
+
+        for user_id in &deleted_ids {
+            if let Err(err) = self.session_service.remove_all(*user_id).await {
+                log::warn!("Failed to clear sessions for purged guest {user_id}: {err:?}");
+            }
+        }
+
+        Ok(PurgeGuestsResult {
+            deleted,
+            has_more: deleted == limit,
+        })
     }
 }
 

@@ -17,7 +17,16 @@ use shine_infra::{
 };
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
-use validator::Validate;
+use validator::{Validate, ValidationError};
+
+fn validate_role_name(role: &str) -> Result<(), ValidationError> {
+    if role.contains(char::is_whitespace) {
+        let mut err = ValidationError::new("role_name_whitespace");
+        err.message = Some("Role name must not contain whitespace".into());
+        return Err(err);
+    }
+    Ok(())
+}
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
@@ -41,7 +50,7 @@ pub struct UserRoles {
     "role": "Role"
 }))]
 pub struct AddUserRole {
-    #[validate(length(min = 1, max = 63))]
+    #[validate(length(min = 1, max = 63), custom(function = "validate_role_name"))]
     role: String,
 }
 
@@ -153,7 +162,7 @@ pub async fn get_user_roles(
     "role": "Role"
 }))]
 pub struct DeleteUserRole {
-    #[validate(length(min = 1, max = 32))]
+    #[validate(length(min = 1, max = 63), custom(function = "validate_role_name"))]
     role: String,
 }
 

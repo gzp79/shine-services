@@ -5,28 +5,31 @@ import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import { randomUUID } from 'crypto';
 
+async function ensureSmtpStarted(mock: MockSmtp | undefined): Promise<MockSmtp> {
+    if (mock) return mock;
+    const m = new MockSmtp();
+    await m.start();
+    return m;
+}
+
 test.describe('Email confirmation', () => {
     let mockAuth: OAuth2MockServer = undefined!;
     let mockEmail: MockSmtp = undefined!;
 
-    const startMockEmail = async (): Promise<MockSmtp> => {
-        if (!mockEmail) {
-            mockEmail = new MockSmtp();
-            await mockEmail.start();
-        }
-        return mockEmail as MockSmtp;
-    };
+    const startMockEmail = async () => (mockEmail = await ensureSmtpStarted(mockEmail));
 
-    test.beforeEach(async () => {
+    test.beforeAll(async () => {
         mockAuth = new OAuth2MockServer();
         await mockAuth.start();
     });
 
     test.afterEach(async () => {
-        await mockAuth?.stop();
-        mockAuth = undefined!;
         await mockEmail?.stop();
         mockEmail = undefined!;
+    });
+
+    test.afterAll(async () => {
+        await mockAuth?.stop();
     });
 
     test('Requesting email confirmation without session shall fail', async ({ api }) => {
@@ -259,24 +262,20 @@ test.describe('Email change', () => {
     let mockAuth: OAuth2MockServer = undefined!;
     let mockEmail: MockSmtp = undefined!;
 
-    const startMockEmail = async (): Promise<MockSmtp> => {
-        if (!mockEmail) {
-            mockEmail = new MockSmtp();
-            await mockEmail.start();
-        }
-        return mockEmail as MockSmtp;
-    };
+    const startMockEmail = async () => (mockEmail = await ensureSmtpStarted(mockEmail));
 
-    test.beforeEach(async () => {
+    test.beforeAll(async () => {
         mockAuth = new OAuth2MockServer();
         await mockAuth.start();
     });
 
     test.afterEach(async () => {
-        await mockAuth?.stop();
-        mockAuth = undefined!;
         await mockEmail?.stop();
         mockEmail = undefined!;
+    });
+
+    test.afterAll(async () => {
+        await mockAuth?.stop();
     });
 
     test('Requesting email change without session shall fail', async ({ api }) => {
@@ -393,6 +392,7 @@ test.describe('Email change', () => {
             expect.objectContaining({
                 ...userInfo,
                 isEmailConfirmed: true,
+                isGuest: false,
                 details: null
             })
         );
@@ -400,6 +400,7 @@ test.describe('Email change', () => {
             expect.objectContaining({
                 ...userInfo,
                 isEmailConfirmed: true,
+                isGuest: false,
                 details: { ...userInfo?.details, email: newEmail }
             })
         );

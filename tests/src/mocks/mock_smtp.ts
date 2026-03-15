@@ -45,7 +45,7 @@ interface PendingWait {
 }
 
 class MockSmtp {
-    private server: SMTPServer;
+    private server: SMTPServer = undefined!;
     private isStarted = false;
 
     // Queue-based promise handling (FIFO)
@@ -57,8 +57,10 @@ class MockSmtp {
     private static readonly DEFAULT_TIMEOUT = 5000;
     private static readonly DEFAULT_NO_MAIL_TIMEOUT = 500;
 
-    constructor(public readonly port: number = 2525) {
-        this.server = new SMTPServer({
+    constructor(public readonly port: number = 2525) {}
+
+    private createServer(): SMTPServer {
+        return new SMTPServer({
             logger: new MockSmtpLogger(),
 
             onData: (stream, _session, callback) => {
@@ -95,6 +97,7 @@ class MockSmtp {
             return;
         }
 
+        this.server = this.createServer();
         await new Promise<void>((resolve) => {
             this.server.listen(this.port, () => {
                 this.isStarted = true;

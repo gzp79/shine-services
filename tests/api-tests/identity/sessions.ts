@@ -1,23 +1,10 @@
 import { expect, test } from '$fixtures/setup';
-import { MockServer } from '$lib/mocks/mock_server';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 
 test.describe('Sessions', () => {
     // assume server is not off more than a few seconds and the test is fast enough
     const now = new Date().getTime();
     const createdRange = [new Date(now - 60 * 1000), new Date(now + 60 * 1000)];
-
-    let mock!: MockServer;
-    const startMock = async (): Promise<OAuth2MockServer> => {
-        mock = new OAuth2MockServer();
-        await mock.start();
-        return mock as OAuth2MockServer;
-    };
-
-    test.afterEach(async () => {
-        await mock?.stop();
-        mock = undefined!;
-    });
 
     test('Get token without a session shall fail', async ({ api }) => {
         const response = await api.session.getSessionsRequest(null);
@@ -89,27 +76,39 @@ test.describe('Sessions', () => {
         expect(sessions.map((s) => s.region).sort()).toEqual(['r1']);
     });
 
-    test('Create multiple session and logout from all sites shall invalidate all the sessions', async ({ api }) => {
-        const mock = await startMock();
-        const user = await api.testUsers.createLinked(mock, { rememberMe: true }, { 'cf-region': 'r1' });
+    test.describe('Logout from all sites', () => {
+        let mock: OAuth2MockServer;
 
-        // login a few more times
-        await api.auth.loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r2' });
-        await api.auth.loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r3' });
-
-        let sessions = await api.session.getSessions(user.sid);
-        expect(sessions).toHaveLength(3);
-        expect(sessions.map((s) => s.region).sort()).toEqual(['r1', 'r2', 'r3']);
-
-        //logout from all the session
-        await api.auth.logout(user.sid, null, true);
-
-        //login again and check sessions
-        const newUserCookies = await api.auth.loginWithOAuth2(mock, user.externalUser!, false, {
-            'cf-region': 'r4'
+        test.beforeAll(async () => {
+            mock = new OAuth2MockServer();
+            await mock.start();
         });
-        sessions = await api.session.getSessions(newUserCookies.sid);
-        expect(sessions).toHaveLength(1);
-        expect(sessions.map((s) => s.region).sort()).toEqual(['r4']);
+
+        test.afterAll(async () => {
+            await mock?.stop();
+        });
+
+        test('Create multiple session and logout from all sites shall invalidate all the sessions', async ({ api }) => {
+            const user = await api.testUsers.createLinked(mock, { rememberMe: true }, { 'cf-region': 'r1' });
+
+            // login a few more times
+            await api.auth.loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r2' });
+            await api.auth.loginWithOAuth2(mock, user.externalUser!, false, { 'cf-region': 'r3' });
+
+            let sessions = await api.session.getSessions(user.sid);
+            expect(sessions).toHaveLength(3);
+            expect(sessions.map((s) => s.region).sort()).toEqual(['r1', 'r2', 'r3']);
+
+            //logout from all the session
+            await api.auth.logout(user.sid, null, true);
+
+            //login again and check sessions
+            const newUserCookies = await api.auth.loginWithOAuth2(mock, user.externalUser!, false, {
+                'cf-region': 'r4'
+            });
+            sessions = await api.session.getSessions(newUserCookies.sid);
+            expect(sessions).toHaveLength(1);
+            expect(sessions.map((s) => s.region).sort()).toEqual(['r4']);
+        });
     });
 });

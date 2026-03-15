@@ -13,7 +13,7 @@
         "lint:format": "prettier --check .",
         "lint:eslint": "eslint .",
         "lint:build": "tsc -b --noEmit",
-        "test:local": "playwright test --project=local",
+        "test:local": "playwright test",
         "mock:services": "tsx ./tools/mock_services"
     },
     "author": "",

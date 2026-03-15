@@ -70,6 +70,7 @@ export const expect = baseExpect.extend({
         expect(received.roles).toEqual([]);
         expect(received.isEmailConfirmed).toBeFalsy();
         expect(received.isLinked).toBeFalsy();
+        expect(received.isGuest).toBe(true);
 
         return {
             message: () => 'User is a guest user',

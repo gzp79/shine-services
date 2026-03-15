@@ -2,7 +2,8 @@ import { expect, test } from '$fixtures/setup';
 import { TestUser } from '$lib/api/test_user';
 import { randomUUID } from 'crypto';
 
-// It checks only for the access of the feature, but not if it does what it have to.
+// Tests authorization rules only (who can call the API), not the actual role operations.
+// Actual role CRUD behavior is tested in 'User roles' below.
 test.describe('Access to user role management', () => {
     const users: Record<string, TestUser> = {};
 
@@ -87,6 +88,48 @@ test.describe('User roles', () => {
         const response = await api.user.deleteRoleRequest(admin.sid, false, randomUUID(), 'Role1');
         expect(response).toHaveStatus(404);
         expect(await response.json()).toEqual(expect.objectContaining({ type: 'not-found' }));
+    });
+
+    test.describe('Role name validation', () => {
+        const invalidRoles = [
+            { role: '   ', label: 'whitespace-only' },
+            { role: ' Admin', label: 'leading space' },
+            { role: 'Admin ', label: 'trailing space' },
+            { role: ' Admin ', label: 'leading and trailing spaces' },
+            { role: 'Super Admin', label: 'embedded space' },
+            { role: '\tAdmin', label: 'leading tab' },
+            { role: 'Admin\nRole', label: 'embedded newline' }
+        ];
+
+        for (const { role, label } of invalidRoles) {
+            test(`Adding role with ${label} shall be rejected`, async ({ api }) => {
+                const user = await api.testUsers.createGuest();
+                const response = await api.user.addRoleRequest(admin.sid, false, user.userId, role);
+                expect(response).toHaveStatus(400);
+                expect(await response.json()).toEqual(
+                    expect.objectContaining({
+                        type: 'input-validation',
+                        extension: expect.objectContaining({
+                            role: expect.arrayContaining([expect.objectContaining({ code: 'role_name_whitespace' })])
+                        })
+                    })
+                );
+            });
+
+            test(`Deleting role with ${label} shall be rejected`, async ({ api }) => {
+                const user = await api.testUsers.createGuest();
+                const response = await api.user.deleteRoleRequest(admin.sid, false, user.userId, role);
+                expect(response).toHaveStatus(400);
+                expect(await response.json()).toEqual(
+                    expect.objectContaining({
+                        type: 'input-validation',
+                        extension: expect.objectContaining({
+                            role: expect.arrayContaining([expect.objectContaining({ code: 'role_name_whitespace' })])
+                        })
+                    })
+                );
+            });
+        }
     });
 
     test('A complex flow with add, get, delete shall work', async ({ api }) => {

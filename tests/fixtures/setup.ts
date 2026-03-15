@@ -5,6 +5,7 @@ import { SessionAPI } from '$lib/api/session_api';
 import { TestUser, TestUserHelper } from '$lib/api/test_user';
 import { TokenAPI } from '$lib/api/token_api';
 import { UserAPI } from '$lib/api/user_api';
+import OAuth2MockServer from '$lib/mocks/oauth2';
 import { expect as authExpect } from './expect/auth_exts';
 import { expect as commonExpect } from './expect/common';
 import { expect as mailExpect } from './expect/mail';
@@ -61,11 +62,18 @@ export const test = base.extend<ServiceTestFixture, ServiceOptions>({
             const user = new UserAPI(identityUrl, masterAdminKey, enableRequestLogging);
             const testUsers = new TestUserHelper(auth, user);
 
-            const admin = await testUsers.createGuest({ roles: ['SuperAdmin'] });
+            const mock = new OAuth2MockServer();
+            await mock.start();
+            let admin: TestUser;
+            try {
+                admin = await testUsers.createLinked(mock, { roles: ['SuperAdmin'] });
+            } finally {
+                await mock.stop();
+            }
 
-            await use(admin);
+            await use(admin!);
         },
-        { scope: 'worker' }
+        { scope: 'worker', auto: true }
     ],
 
     api: [

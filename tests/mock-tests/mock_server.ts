@@ -1,30 +1,52 @@
 import { expect, test } from '$fixtures/setup';
 import MockSmtp from '$lib/mocks/mock_smtp';
+import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIdMockServer from '$lib/mocks/openid';
 
-test.describe('OpenId mock server', () => {
-    test('Test mock server', async ({ api }) => {
+test.describe('Mock server lifecycle', () => {
+    test('OpenId start/stop/start shall reuse the port', async ({ api }) => {
         const mock = new OpenIdMockServer();
+
         await mock.start();
-        const response = await api.client.get(mock!.getUrlFor('/.well-known/openid-configuration'));
-        expect(response).toHaveStatus(200);
-        await mock?.stop();
+        expect(mock.isRunning).toBeTruthy();
+        expect(await api.client.get(mock.readyUrl)).toHaveStatus(200);
+        await mock.stop();
+        expect(mock.isRunning).toBeFalsy();
+
+        await mock.start();
+        expect(mock.isRunning).toBeTruthy();
+        expect(await api.client.get(mock.readyUrl)).toHaveStatus(200);
+        await mock.stop();
         expect(mock.isRunning).toBeFalsy();
     });
 
-    test('Test SMTP server', async () => {
-        const mock = new MockSmtp();
+    test('OAuth2 start/stop/start shall reuse the port', async ({ api }) => {
+        const mock = new OAuth2MockServer();
+
         await mock.start();
-        const mWaiter = mock.waitMail();
+        expect(mock.isRunning).toBeTruthy();
+        expect(await api.client.get(mock.readyUrl)).toHaveStatus(200);
         await mock.stop();
         expect(mock.isRunning).toBeFalsy();
-        try {
-            await mWaiter;
-            // should have been rejected
-            expect(true).toBeFalsy();
-        } catch (e) {
-            expect(e).toBeInstanceOf(Error);
-            expect((e as Error).message).toEqual('Mail server stopped.');
-        }
+
+        await mock.start();
+        expect(mock.isRunning).toBeTruthy();
+        expect(await api.client.get(mock.readyUrl)).toHaveStatus(200);
+        await mock.stop();
+        expect(mock.isRunning).toBeFalsy();
+    });
+
+    test('SMTP start/stop/start shall reuse the port', async () => {
+        const mock = new MockSmtp();
+
+        await mock.start();
+        expect(mock.isRunning).toBeTruthy();
+        await mock.stop();
+        expect(mock.isRunning).toBeFalsy();
+
+        await mock.start();
+        expect(mock.isRunning).toBeTruthy();
+        await mock.stop();
+        expect(mock.isRunning).toBeFalsy();
     });
 });

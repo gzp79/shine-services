@@ -23,26 +23,28 @@ test.describe('Access token (TID)', () => {
         mock = undefined!;
     });
 
-    test('Get token without a session shall fail', async ({ api }) => {
-        // initial session for a new user
-        const response = await api.token.getTokensRequest(null);
-        expect(response).toHaveStatus(401);
-    });
+    test.describe('validation errors', () => {
+        test('Get token without a session shall fail', async ({ api }) => {
+            // initial session for a new user
+            const response = await api.token.getTokensRequest(null);
+            expect(response).toHaveStatus(401);
+        });
 
-    test('Token creation with api shall be rejected', async ({ api }) => {
-        const user = await api.testUsers.createGuest();
+        test('Token creation with api shall be rejected', async ({ api }) => {
+            const user = await api.testUsers.createGuest();
 
-        const response = await api.token.createTokenRequest(user.sid, 'access', 20, false);
-        expect(response).toHaveStatus(400);
+            const response = await api.token.createTokenRequest(user.sid, 'access', 20, false);
+            expect(response).toHaveStatus(400);
 
-        const error = await response.parse(ProblemSchema);
-        expect(error).toEqual(
-            expect.objectContaining({
-                type: 'input-body-format',
-                status: 400,
-                detail: expect.stringContaining('kind: unknown variant `access`')
-            })
-        );
+            const error = await response.parse(ProblemSchema);
+            expect(error).toEqual(
+                expect.objectContaining({
+                    type: 'input-body-format',
+                    status: 400,
+                    detail: expect.stringContaining('kind: unknown variant `access`')
+                })
+            );
+        });
     });
 
     test('Token shall keep the site info', async ({ api }) => {
@@ -295,59 +297,40 @@ test.describe('Access token (TID)', () => {
         );
     });
 
-    test('Using token in query shall fail and revoke the token', async ({ api }) => {
-        const user = await api.testUsers.createGuest();
-        const c0 = parseSignedCookie(user.tid!);
-        const t0 = c0.key;
-        expect(c0.rky).toBeNull();
+    for (const position of ['query', 'header'] as const) {
+        test(`Using token in ${position} shall fail and revoke the token`, async ({ api }) => {
+            const user = await api.testUsers.createGuest();
+            const c0 = parseSignedCookie(user.tid!);
+            const t0 = c0.key;
+            expect(c0.rky).toBeNull();
 
-        let tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
-        expect(tokens).toEqual([getSHA256Hash(t0)]);
+            let tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
+            expect(tokens).toEqual([getSHA256Hash(t0)]);
 
-        const response = await api.auth.loginWithTokenRequest(null, null, t0, null, null, null);
+            const response = await api.auth.loginWithTokenRequest(
+                null,
+                null,
+                position === 'query' ? t0 : null,
+                position === 'header' ? t0 : null,
+                null,
+                null
+            );
 
-        const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
-        );
-        expect(getPageProblem(text)).toEqual(
-            expect.objectContaining({
-                type: 'auth-token-expired',
-                status: 401,
-                extension: null,
-                sensitive: 'invalidToken'
-            })
-        );
+            const text = await response.text();
+            expect(getPageRedirectUrl(text)).toEqual(
+                createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
+            );
+            expect(getPageProblem(text)).toEqual(
+                expect.objectContaining({
+                    type: 'auth-token-expired',
+                    status: 401,
+                    extension: null,
+                    sensitive: 'invalidToken'
+                })
+            );
 
-        tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
-        expect(tokens).toBeEmptyValue();
-    });
-
-    test('Using token in header shall fail and revoke the token', async ({ api }) => {
-        const user = await api.testUsers.createGuest();
-        const c0 = parseSignedCookie(user.tid!);
-        const t0 = c0.key;
-        expect(c0.rky).toBeNull();
-
-        let tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
-        expect(tokens).toEqual([getSHA256Hash(t0)]);
-
-        const response = await api.auth.loginWithTokenRequest(null, null, null, t0, null, null);
-
-        const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-token-expired' })
-        );
-        expect(getPageProblem(text)).toEqual(
-            expect.objectContaining({
-                type: 'auth-token-expired',
-                status: 401,
-                extension: null,
-                sensitive: 'invalidToken'
-            })
-        );
-
-        tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
-        expect(tokens).toBeEmptyValue();
-    });
+            tokens = (await api.token.getTokens(user.sid)).map((x) => x.tokenHash).sort();
+            expect(tokens).toBeEmptyValue();
+        });
+    }
 });

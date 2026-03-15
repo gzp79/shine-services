@@ -3,7 +3,7 @@ import { ServiceOptions } from '$fixtures/setup';
 import { suppress_tls_certificate_warning } from '$lib/suppress_tls_certificate_warning';
 
 const isBuildRun: boolean = !!process.env.CI;
-const enableLogging: boolean = false;
+const enableLogging: boolean = !!process.env.ENABLE_REQUEST_LOGGING;
 
 // Allow self-signed certificates
 suppress_tls_certificate_warning();
@@ -28,7 +28,7 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
     // due to the mock-server's port usage we can't run more than one worker
     workers: 1,
 
-    reporter: [['list'], ['html', { outputFolder: 'reports/' }]],
+    reporter: isBuildRun ? [['github']] : [['list']],
 
     use: {
         trace: 'on-first-retry'

@@ -14,6 +14,7 @@ export type UserInfoDetail = z.infer<typeof UserInfoDetailSchema>;
 
 export const UserInfoSchema = z.object({
     isLinked: z.boolean(),
+    isGuest: z.boolean(),
     userId: z.string(),
     name: z.string(),
     isEmailConfirmed: z.boolean(),
@@ -23,6 +24,12 @@ export const UserInfoSchema = z.object({
     details: UserInfoDetailSchema.nullable()
 });
 export type UserInfo = z.infer<typeof UserInfoSchema>;
+
+export const PurgeGuestsResultSchema = z.object({
+    deleted: z.number(),
+    hasMore: z.boolean()
+});
+export type PurgeGuestsResult = z.infer<typeof PurgeGuestsResultSchema>;
 
 export const AddUserRoleSchema = z.object({
     role: z.string()
@@ -244,6 +251,22 @@ export class UserAPI {
     async startChangeEmail(sid: string | null, email: string, lang?: string): Promise<void> {
         const response = await this.startChangeEmailRequest(sid, email, lang);
         expect(response).toHaveStatus(200);
+    }
+
+    purgeGuestsRequest(sid: string | null, olderThan: string, limit?: number): ApiRequest {
+        const cs = sid && { sid };
+        const params: Record<string, string | number> = { olderThan };
+        if (limit !== undefined) params.limit = limit;
+        return this.client
+            .delete(this.urlFor('/api/identities/guests'))
+            .withCookies({ ...cs })
+            .withParams(params);
+    }
+
+    async purgeGuests(sid: string, olderThan: string, limit?: number): Promise<PurgeGuestsResult> {
+        const response = await this.purgeGuestsRequest(sid, olderThan, limit);
+        expect(response).toHaveStatus(200);
+        return await response.parse(PurgeGuestsResultSchema);
     }
 
     completeConfirmEmailRequest(sid: string | null, token: string): ApiRequest {

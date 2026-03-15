@@ -152,6 +152,7 @@ test.describe('Login with email for guest', () => {
                     const userInfo = await api.user.getUserInfo(loginCookies.sid.value, infoMethod);
                     expect(userInfo.isEmailConfirmed).toBeTruthy();
                     expect(userInfo.isLinked).toBeFalsy();
+                    expect(userInfo.isGuest).toBe(false);
                 }
             });
         }
@@ -464,7 +465,7 @@ test.describe('Login with email for returning user', () => {
 
     for (const lang of ['en', 'hu', undefined]) {
         for (const rememberMe of [true, false, null]) {
-            test(`Login (lang: ${lang}, rememberMe: ${rememberMe}) shall create a new user `, async ({
+            test(`Login (lang: ${lang}, rememberMe: ${rememberMe}) shall login the returning user`, async ({
                 api,
                 appDomain,
                 identityUrl

@@ -131,6 +131,29 @@ pg_query!( UpdateIdentity =>
     "#
 );
 
+#[derive(FromRow)]
+struct DeleteGuestsRow {
+    user_id: Uuid,
+}
+
+pg_query!( DeleteGuests =>
+    in = cutoff: DateTime<Utc>, limit: i64;
+    out = DeleteGuestsRow;
+    sql = r#"
+        DELETE FROM identities
+        WHERE user_id IN (
+            SELECT user_id FROM identities
+            WHERE email_confirmed = FALSE
+              AND created < $1
+              AND NOT EXISTS (
+                  SELECT 1 FROM external_logins WHERE user_id = identities.user_id
+              )
+            LIMIT $2
+        )
+        RETURNING user_id
+    "#
+);
+
 #[derive(Clone)]
 pub struct PgIdentitiesStatements {
     insert_identity: InsertIdentity,
@@ -138,6 +161,7 @@ pub struct PgIdentitiesStatements {
     find_by_id: FindById,
     find_by_email_hash: FindByEmailHash,
     update: UpdateIdentity,
+    delete_guests: DeleteGuests,
 }
 
 impl PgIdentitiesStatements {
@@ -148,6 +172,7 @@ impl PgIdentitiesStatements {
             find_by_id: FindById::new(client).await.map_err(DBError::from)?,
             find_by_email_hash: FindByEmailHash::new(client).await.map_err(DBError::from)?,
             update: UpdateIdentity::new(client).await.map_err(DBError::from)?,
+            delete_guests: DeleteGuests::new(client).await.map_err(DBError::from)?,
         })
     }
 }
@@ -300,5 +325,16 @@ impl Identities for PgIdentityDbContext<'_> {
             .await
             .map_err(DBError::from)?;
         Ok(())
+    }
+
+    #[instrument(skip(self))]
+    async fn delete_guests(&mut self, cutoff: DateTime<Utc>, limit: i64) -> Result<Vec<Uuid>, IdentityError> {
+        let rows = self
+            .stmts_identities
+            .delete_guests
+            .query(&self.client, &cutoff, &limit)
+            .await
+            .map_err(DBError::from)?;
+        Ok(rows.into_iter().map(|r| r.user_id).collect())
     }
 }
