@@ -11,7 +11,7 @@ test.describe('External links', () => {
     let mockOAuth2: OAuth2MockServer;
     let mockOpenId: OpenIdMockServer;
 
-    test.beforeEach(async ({ skipMockService }) => {
+    test.beforeAll(async ({ skipMockService }) => {
         mockOAuth2 = new OAuth2MockServer();
         if (!skipMockService) {
             await mockOAuth2.start();
@@ -23,11 +23,9 @@ test.describe('External links', () => {
         }
     });
 
-    test.afterEach(async () => {
-        await mockOAuth2.stop();
-        mockOAuth2 = undefined!;
-        await mockOpenId.stop();
-        mockOpenId = undefined!;
+    test.afterAll(async () => {
+        await mockOAuth2?.stop();
+        await mockOpenId?.stop();
     });
 
     test('Sign up as guest shall not be linked', async ({ api }) => {

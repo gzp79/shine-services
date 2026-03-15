@@ -32,7 +32,7 @@ test.describe('Token concurrency tests', { tag: '@concurrency' }, () => {
         expect(test2.sid).toBeDefined();
     });
 
-    test('Token revocation during login attempt shall fail login', async ({ api }) => {
+    test('Token revocation during login attempt shall handle race gracefully', async ({ api }) => {
         const user = await api.testUsers.createGuest();
         const tid = user.tid!;
         const parsed = parseSignedCookie(tid);
@@ -90,7 +90,7 @@ test.describe('Token concurrency tests', { tag: '@concurrency' }, () => {
         expect(problem2?.type).toBe('auth-token-expired');
     });
 
-    test('Token rotation and logout race shall be deterministic', async ({ api }) => {
+    test('Token rotation and logout race shall resolve without errors', async ({ api }) => {
         const user = await api.testUsers.createGuest();
         const tid = user.tid!;
 

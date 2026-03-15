@@ -17,16 +17,18 @@ test.describe('Email confirmation', () => {
         return mockEmail as MockSmtp;
     };
 
-    test.beforeEach(async () => {
+    test.beforeAll(async () => {
         mockAuth = new OAuth2MockServer();
         await mockAuth.start();
     });
 
     test.afterEach(async () => {
-        await mockAuth?.stop();
-        mockAuth = undefined!;
         await mockEmail?.stop();
         mockEmail = undefined!;
+    });
+
+    test.afterAll(async () => {
+        await mockAuth?.stop();
     });
 
     test('Requesting email confirmation without session shall fail', async ({ api }) => {
@@ -267,16 +269,18 @@ test.describe('Email change', () => {
         return mockEmail as MockSmtp;
     };
 
-    test.beforeEach(async () => {
+    test.beforeAll(async () => {
         mockAuth = new OAuth2MockServer();
         await mockAuth.start();
     });
 
     test.afterEach(async () => {
-        await mockAuth?.stop();
-        mockAuth = undefined!;
         await mockEmail?.stop();
         mockEmail = undefined!;
+    });
+
+    test.afterAll(async () => {
+        await mockAuth?.stop();
     });
 
     test('Requesting email change without session shall fail', async ({ api }) => {

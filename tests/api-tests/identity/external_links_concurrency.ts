@@ -1,17 +1,18 @@
 import { expect, test } from '$fixtures/setup';
 import { ExternalUser } from '$lib/api/external_user';
+import { getPageProblem } from '$lib/api/utils';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 
 test.describe('External links concurrency tests', { tag: '@concurrency' }, () => {
     let mockOAuth2: OAuth2MockServer;
 
-    test.beforeEach(async () => {
+    test.beforeAll(async () => {
         mockOAuth2 = new OAuth2MockServer();
         await mockOAuth2.start();
     });
 
-    test.afterEach(async () => {
-        await mockOAuth2.stop();
+    test.afterAll(async () => {
+        await mockOAuth2?.stop();
     });
 
     test('Concurrent linking of same external account shall fail second attempt', async ({ api }) => {
@@ -50,7 +51,9 @@ test.describe('External links concurrency tests', { tag: '@concurrency' }, () =>
 
         const text1 = await link1.text();
         const text2 = await link2.text();
-        const problems = [text1, text2].filter((t) => t.includes('auth-register-external-id-conflict'));
+        const problems = [getPageProblem(text1), getPageProblem(text2)].filter(
+            (p) => p?.type === 'auth-register-external-id-conflict'
+        );
         expect(problems.length).toBeGreaterThanOrEqual(1); // At least one should conflict
     });
 

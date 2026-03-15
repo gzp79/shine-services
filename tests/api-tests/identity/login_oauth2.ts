@@ -1,7 +1,6 @@
 import { expect, test } from '$fixtures/setup';
 import { ExternalUser } from '$lib/api/external_user';
 import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
-import { MockServer } from '$lib/mocks/mock_server';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import { generateRandomString } from '$lib/utils';
 import { createUrl, parseSignedCookie } from '$lib/utils';
@@ -9,25 +8,18 @@ import { randomUUID } from 'crypto';
 import os from 'os';
 
 test.describe('Check OAuth2 auth', () => {
-    let mock: MockServer | undefined;
+    let mock!: OAuth2MockServer;
 
-    const startMock = async (start = true): Promise<OAuth2MockServer> => {
-        if (!mock) {
-            mock = new OAuth2MockServer();
-            if (start) {
-                await mock.start();
-            }
-        }
-        return mock as OAuth2MockServer;
-    };
+    test.beforeAll(async () => {
+        mock = new OAuth2MockServer();
+        await mock.start();
+    });
 
-    test.afterEach(async () => {
+    test.afterAll(async () => {
         await mock?.stop();
-        mock = undefined;
     });
 
     test('Auth with (parameters: NULL, session: NULL, external: NULL) shall fail', async ({ homeUrl, api }) => {
-        await startMock();
         const response = await api.auth.authorizeWithOAuth2Request(null, null, null, null);
         expect(response).toHaveStatus(200);
 
@@ -51,7 +43,6 @@ test.describe('Check OAuth2 auth', () => {
     });
 
     test('Auth with (parameters: VALID, session: NULL, external: NULL) shall fail', async ({ homeUrl, api }) => {
-        const mock = await startMock();
         const { authParams } = await api.auth.startLoginWithOAuth2(mock, null);
 
         const response = await api.auth.authorizeWithOAuth2Request(
@@ -82,7 +73,6 @@ test.describe('Check OAuth2 auth', () => {
     });
 
     test('Auth with (parameters: NULL, session: NULL, external: VALID) shall fail', async ({ api, homeUrl }) => {
-        const mock = await startMock();
         const { eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
         const response = await api.auth.authorizeWithOAuth2Request(null, eid, null, null);
@@ -113,7 +103,6 @@ test.describe('Check OAuth2 auth', () => {
     });
 
     test('Auth with (parameters: INVALID state, session: NULL, external: VALID) shall fail', async ({ api }) => {
-        const mock = await startMock();
         const { eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
         const response = await api.auth.authorizeWithOAuth2Request(
@@ -146,7 +135,6 @@ test.describe('Check OAuth2 auth', () => {
     });
 
     test('Auth with (parameters: INVALID code, session: NULL, external: VALID) shall fail', async ({ api }) => {
-        const mock = await startMock();
         const { authParams, eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
         const response = await api.auth.authorizeWithOAuth2Request(null, eid, authParams.state, 'invalid');
@@ -173,10 +161,12 @@ test.describe('Check OAuth2 auth', () => {
         expect(cookies.sid).toBeClearCookie();
         expect(cookies.eid).toBeClearCookie();
     });
+});
 
+test.describe('OAuth2 3rd party failure', () => {
     test('Auth with failing 3rd party token service shall fail', async ({ api }) => {
         // mock is intentionally not started
-        const mock = await startMock(false);
+        const mock = new OAuth2MockServer();
         const { authParams, eid } = await api.auth.startLoginWithOAuth2(mock, null);
 
         const response = await api.auth.authorizeWithOAuth2Request(
@@ -218,14 +208,13 @@ test.describe('Check OAuth2 auth', () => {
 test.describe('Login with OAuth2', () => {
     let mock!: OAuth2MockServer;
 
-    test.beforeEach(async () => {
+    test.beforeAll(async () => {
         mock = new OAuth2MockServer();
         await mock.start();
     });
 
-    test.afterEach(async () => {
+    test.afterAll(async () => {
         await mock?.stop();
-        mock = undefined!;
     });
 
     test('Login without captcha shall fail and redirect to the default error page', async ({ api }) => {
@@ -549,14 +538,13 @@ test.describe('Login with OAuth2', () => {
 test.describe('Link to OAuth2 account', () => {
     let mock!: OAuth2MockServer;
 
-    test.beforeEach(async () => {
+    test.beforeAll(async () => {
         mock = new OAuth2MockServer();
         await mock.start();
     });
 
-    test.afterEach(async () => {
-        await mock.stop();
-        mock = undefined!;
+    test.afterAll(async () => {
+        await mock?.stop();
     });
 
     test('Linking without a session shall fail', async ({ api }) => {

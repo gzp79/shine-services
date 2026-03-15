@@ -7,13 +7,13 @@ import { randomUUID } from 'crypto';
 test.describe('Session security', { tag: '@security' }, () => {
     let mockOAuth2: OAuth2MockServer;
 
-    test.beforeEach(async () => {
+    test.beforeAll(async () => {
         mockOAuth2 = new OAuth2MockServer();
         await mockOAuth2.start();
     });
 
-    test.afterEach(async () => {
-        await mockOAuth2.stop();
+    test.afterAll(async () => {
+        await mockOAuth2?.stop();
     });
 
     test('Session fixation attack shall be prevented', async ({ api }) => {

@@ -10,16 +10,17 @@ test.describe('Persistent token', () => {
     let mock: OAuth2MockServer = undefined!;
     let user: TestUser = undefined!;
 
-    test.beforeEach(async ({ api }) => {
+    test.beforeAll(async () => {
         mock = new OAuth2MockServer();
         await mock.start();
+    });
+
+    test.beforeEach(async ({ api }) => {
         user = await api.testUsers.createLinked(mock);
     });
 
-    test.afterEach(async () => {
+    test.afterAll(async () => {
         await mock?.stop();
-        mock = undefined!;
-        user = undefined!;
     });
 
     test('Creating a persistent token without session shall fail', async ({ api }) => {

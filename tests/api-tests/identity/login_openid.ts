@@ -1,7 +1,6 @@
 import { expect, test } from '$fixtures/setup';
 import { ExternalUser } from '$lib/api/external_user';
 import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
-import { MockServer } from '$lib/mocks/mock_server';
 import OpenIdMockServer from '$lib/mocks/openid';
 import { generateRandomString } from '$lib/utils';
 import { createUrl, parseSignedCookie } from '$lib/utils';
@@ -9,25 +8,18 @@ import { randomUUID } from 'crypto';
 import os from 'os';
 
 test.describe('Check OpenId auth', () => {
-    let mock: MockServer | undefined;
+    let mock!: OpenIdMockServer;
 
-    const startMock = async (start = true): Promise<OpenIdMockServer> => {
-        if (!mock) {
-            mock = new OpenIdMockServer();
-            if (start) {
-                await mock.start();
-            }
-        }
-        return mock as OpenIdMockServer;
-    };
+    test.beforeAll(async () => {
+        mock = new OpenIdMockServer();
+        await mock.start();
+    });
 
-    test.afterEach(async () => {
+    test.afterAll(async () => {
         await mock?.stop();
-        mock = undefined;
     });
 
     test('Auth with (parameters: NULL, session: NULL, external: NULL) shall fail', async ({ homeUrl, api }) => {
-        await startMock();
         const response = await api.auth.authorizeWithOpenIdRequest(null, null, null, null);
         expect(response).toHaveStatus(200);
 
@@ -51,7 +43,6 @@ test.describe('Check OpenId auth', () => {
     });
 
     test('Auth with (parameters: VALID, session: NULL, external: NULL) shall fail', async ({ homeUrl, api }) => {
-        const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
         const response = await api.auth.authorizeWithOpenIdRequest(
@@ -82,7 +73,6 @@ test.describe('Check OpenId auth', () => {
     });
 
     test('Auth with (parameters: NULL, session: NULL, external: VALID) shall fail', async ({ api, homeUrl }) => {
-        const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
         const response = await api.auth.authorizeWithOpenIdRequest(null, start.eid, null, null);
@@ -113,7 +103,6 @@ test.describe('Check OpenId auth', () => {
     });
 
     test('Auth with (parameters: INVALID state, session: NULL, external: VALID) shall fail', async ({ api }) => {
-        const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
         const response = await api.auth.authorizeWithOpenIdRequest(
@@ -146,7 +135,6 @@ test.describe('Check OpenId auth', () => {
     });
 
     test('Auth with (parameters: INVALID code, session: NULL, external: VALID) shall fail', async ({ api }) => {
-        const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
         const response = await api.auth.authorizeWithOpenIdRequest(null, start.eid, start.authParams.state, 'invalid');
@@ -175,7 +163,6 @@ test.describe('Check OpenId auth', () => {
     });
 
     test('Auth with (parameters: INVALID nonce, session: NULL, external: VALID) shall fail', async ({ api }) => {
-        const mock = await startMock();
         const start = await api.auth.startLoginWithOpenId(mock, null);
 
         const response = await api.auth.authorizeWithOpenIdRequest(
@@ -207,59 +194,18 @@ test.describe('Check OpenId auth', () => {
         expect(cookies.sid).toBeClearCookie();
         expect(cookies.eid).toBeClearCookie();
     });
-
-    test('Auth with failing 3rd party token service shall fail', async ({ api }) => {
-        // mock is intentionally not started
-        const mock = await startMock(false);
-        const start = await api.auth.startLoginWithOpenId(mock, null);
-
-        const response = await api.auth.authorizeWithOpenIdRequest(
-            null,
-            start.eid,
-            start.authParams.state,
-            ExternalUser.newRandomUser('openid_flow').toCode({ nonce: start.authParams.nonce })
-        );
-        expect(response).toHaveStatus(200);
-
-        const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-internal-error' })
-        );
-        expect(getPageProblem(text)).toEqual(
-            expect.objectContaining({
-                type: 'auth-internal-error',
-                status: 500,
-                extension: null,
-                sensitive: expect.objectContaining({
-                    type: 'external-exchange-failed',
-                    sensitive:
-                        os.platform() === 'win32'
-                            ? expect.stringContaining(
-                                  'No connection could be made because the target machine actively refused it.'
-                              )
-                            : expect.stringContaining('Connection refused')
-                })
-            })
-        );
-
-        const cookies = response.cookies();
-        expect(cookies.tid).toBeClearCookie();
-        expect(cookies.sid).toBeClearCookie();
-        expect(cookies.eid).toBeClearCookie();
-    });
 });
 
 test.describe('Login with OpenId', () => {
     let mock!: OpenIdMockServer;
 
-    test.beforeEach(async () => {
+    test.beforeAll(async () => {
         mock = new OpenIdMockServer();
         await mock.start();
     });
 
-    test.afterEach(async () => {
+    test.afterAll(async () => {
         await mock?.stop();
-        mock = undefined!;
     });
 
     test('Login without captcha shall fail and redirect to the default error page', async ({ api }) => {
@@ -583,14 +529,13 @@ test.describe('Login with OpenId', () => {
 test.describe('Link to OpenId account', () => {
     let mock!: OpenIdMockServer;
 
-    test.beforeEach(async () => {
+    test.beforeAll(async () => {
         mock = new OpenIdMockServer();
         await mock.start();
     });
 
-    test.afterEach(async () => {
+    test.afterAll(async () => {
         await mock?.stop();
-        mock = undefined!;
     });
 
     test('Linking without a session shall fail', async ({ api }) => {
@@ -701,5 +646,47 @@ test.describe('Link to OpenId account', () => {
             })
         );
         expect(authorizeResponse.cookies().sid).toBeClearCookie();
+    });
+});
+
+test.describe('OpenId 3rd party failure', () => {
+    test('Auth with failing 3rd party token service shall fail', async ({ api }) => {
+        // mock is intentionally not started
+        const mock = new OpenIdMockServer();
+        const start = await api.auth.startLoginWithOpenId(mock, null);
+
+        const response = await api.auth.authorizeWithOpenIdRequest(
+            null,
+            start.eid,
+            start.authParams.state,
+            ExternalUser.newRandomUser('openid_flow').toCode({ nonce: start.authParams.nonce })
+        );
+        expect(response).toHaveStatus(200);
+
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(
+            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-internal-error' })
+        );
+        expect(getPageProblem(text)).toEqual(
+            expect.objectContaining({
+                type: 'auth-internal-error',
+                status: 500,
+                extension: null,
+                sensitive: expect.objectContaining({
+                    type: 'external-exchange-failed',
+                    sensitive:
+                        os.platform() === 'win32'
+                            ? expect.stringContaining(
+                                  'No connection could be made because the target machine actively refused it.'
+                              )
+                            : expect.stringContaining('Connection refused')
+                })
+            })
+        );
+
+        const cookies = response.cookies();
+        expect(cookies.tid).toBeClearCookie();
+        expect(cookies.sid).toBeClearCookie();
+        expect(cookies.eid).toBeClearCookie();
     });
 });
