@@ -135,9 +135,7 @@ test.describe('Login with access cookie', () => {
             expect(newCookies.eid).toBeClearCookie();
 
             expect(await api.user.getUserInfoRequest(testUser.sid, 'full')).toHaveStatus(401);
-            expect(await api.user.getUserInfo(newCookies.sid.value, 'full')).toEqual(
-                expect.objectContaining(userInfo)
-            );
+            expect(await api.user.getUserInfo(newCookies.sid.value, 'full')).toEqual(expect.objectContaining(userInfo));
         });
     }
 
@@ -169,9 +167,7 @@ test.describe('Login with access cookie', () => {
             expect(await api.user.getUserInfo(newCookies.sid.value, 'fast')).toEqual(
                 expect.objectContaining({ ...userInfo, details: null })
             );
-            expect(await api.user.getUserInfo(newCookies.sid.value, 'full')).toEqual(
-                expect.objectContaining(userInfo)
-            );
+            expect(await api.user.getUserInfo(newCookies.sid.value, 'full')).toEqual(expect.objectContaining(userInfo));
         });
     }
 
@@ -195,7 +191,6 @@ test.describe('Login with access cookie', () => {
         expect(await api.user.getUserInfoRequest(testUser.sid, 'full')).toHaveStatus(401);
         expect(await api.user.getUserInfo(newCookies.sid.value, 'full')).toEqual(expect.objectContaining(userInfo));
     });
-
 });
 
 test.describe('Login edge cases', () => {

@@ -88,9 +88,7 @@ test.describe('Sessions', () => {
             await mock?.stop();
         });
 
-        test('Create multiple session and logout from all sites shall invalidate all the sessions', async ({
-            api
-        }) => {
+        test('Create multiple session and logout from all sites shall invalidate all the sessions', async ({ api }) => {
             const user = await api.testUsers.createLinked(mock, { rememberMe: true }, { 'cf-region': 'r1' });
 
             // login a few more times

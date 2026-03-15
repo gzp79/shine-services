@@ -57,9 +57,7 @@ test.describe('Login and register guest', () => {
             expect(cookies.eid).toBeClearCookie();
         });
 
-        test('Login with (tid: VALID, sid: VALID, captcha: NULL) shall fail with missing captcha', async ({
-            api
-        }) => {
+        test('Login with (tid: VALID, sid: VALID, captcha: NULL) shall fail with missing captcha', async ({ api }) => {
             const testUser = await api.testUsers.createGuest();
 
             const response = await api.auth.loginWithGuestRequest(testUser.tid!, testUser.sid, undefined);
@@ -193,5 +191,4 @@ test.describe('Login and register guest', () => {
             }
         });
     }
-
 });
