@@ -7,7 +7,7 @@ import http from 'http';
 import { Server } from 'http';
 import https from 'https';
 import { Socket } from 'net';
-import { delay, joinURL } from '../utils';
+import { joinURL } from '../utils';
 
 export interface Certificates {
     cert: string;
@@ -35,6 +35,10 @@ export class MockServer {
 
     public get isRunning(): boolean {
         return this.app !== undefined;
+    }
+
+    public get readyUrl(): string {
+        return `${this.baseUrl.protocol}//${this.baseUrl.host}/ready`;
     }
 
     public getUrlFor(path: string): string {
@@ -76,21 +80,36 @@ export class MockServer {
     }
 
     public async stop() {
-        this.log('Stopping server ...');
-        await this.server?.close();
-        await delay(100);
-        this.log(`Closing open(${this.connections.length}) connections ...`);
-        for (const connection of this.connections) {
-            await connection.end();
+        if (!this.isRunning) {
+            return;
         }
+
+        this.log('Stopping server ...');
+
+        this.log(`Destroying open(${this.connections.length}) connections ...`);
+        for (const connection of this.connections) {
+            connection.destroy();
+        }
+        this.connections = [];
+
+        await new Promise<void>((resolve, reject) => {
+            this.server.close((err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+
         this.server = undefined!;
         this.app = undefined!;
-        await delay(100);
         this.log('Server stopped.');
     }
 
     private initCommon() {
         this.app.use(cors() as any as RequestHandler);
+
+        this.app.get('/ready', (_req: Request, res: Response) => {
+            res.status(200).send('Ok');
+        });
 
         this.app.use((err: any, _req: any, _res: any, _next: any) => {
             this.log(err.stack);
