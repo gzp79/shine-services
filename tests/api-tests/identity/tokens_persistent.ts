@@ -23,25 +23,27 @@ test.describe('Persistent token', () => {
         await mock?.stop();
     });
 
-    test('Creating a persistent token without session shall fail', async ({ api }) => {
-        const response = await api.token.createTokenRequest(null, 'persistent', 20, false);
-        expect(response).toHaveStatus(401);
-    });
+    test.describe('validation errors', () => {
+        test('Creating a persistent token without session shall fail', async ({ api }) => {
+            const response = await api.token.createTokenRequest(null, 'persistent', 20, false);
+            expect(response).toHaveStatus(401);
+        });
 
-    test('Token creation with a too long duration shall be rejected', async ({ api }) => {
-        const response = await api.token.createTokenRequest(user.sid, 'persistent', 31536001, false);
-        expect(response).toHaveStatus(400);
+        test('Token creation with a too long duration shall be rejected', async ({ api }) => {
+            const response = await api.token.createTokenRequest(user.sid, 'persistent', 31536001, false);
+            expect(response).toHaveStatus(400);
 
-        const error = await response.parse(ProblemSchema);
-        expect(error).toEqual(
-            expect.objectContaining({
-                type: 'input-validation',
-                status: 400,
-                extension: expect.objectContaining({
-                    time_to_live: [expect.objectContaining({ code: 'range' })]
+            const error = await response.parse(ProblemSchema);
+            expect(error).toEqual(
+                expect.objectContaining({
+                    type: 'input-validation',
+                    status: 400,
+                    extension: expect.objectContaining({
+                        time_to_live: [expect.objectContaining({ code: 'range' })]
+                    })
                 })
-            })
-        );
+            );
+        });
     });
 
     test('A successful login with a persistent token shall change the current user', async ({ api }) => {

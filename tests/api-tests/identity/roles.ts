@@ -2,7 +2,8 @@ import { expect, test } from '$fixtures/setup';
 import { TestUser } from '$lib/api/test_user';
 import { randomUUID } from 'crypto';
 
-// It checks only for the access of the feature, but not if it does what it have to.
+// Tests authorization rules only (who can call the API), not the actual role operations.
+// Actual role CRUD behavior is tested in 'User roles' below.
 test.describe('Access to user role management', () => {
     const users: Record<string, TestUser> = {};
 

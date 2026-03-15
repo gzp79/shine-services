@@ -29,20 +29,22 @@ test.describe('Email (SMTP) failure tests', { tag: '@infrastructure' }, () => {
         });
         await mockSmtp.start();
 
-        const email = `${randomUUID()}@example.com`;
+        try {
+            const email = `${randomUUID()}@example.com`;
 
-        const response = await api.auth.loginWithEmailRequest(email, false, null);
+            const response = await api.auth.loginWithEmailRequest(email, false, null);
 
-        // Page route always returns 200, check content for error
-        expect(response).toHaveStatus(200);
-        const text = await response.text();
-        const problem = getPageProblem(text);
+            // Page route always returns 200, check content for error
+            expect(response).toHaveStatus(200);
+            const text = await response.text();
+            const problem = getPageProblem(text);
 
-        // SMTP rejection should result in an error page
-        expect(problem).toBeTruthy();
-        expect(['auth-internal-error', 'email-send-failed']).toContain(problem?.type);
-
-        await mockSmtp.stop();
+            // SMTP rejection should result in an error page
+            expect(problem).toBeTruthy();
+            expect(['auth-internal-error', 'email-send-failed']).toContain(problem?.type);
+        } finally {
+            await mockSmtp.stop();
+        }
     });
 
     test('Partial SMTP failure shall allow retry', async ({ api }) => {
@@ -59,26 +61,28 @@ test.describe('Email (SMTP) failure tests', { tag: '@infrastructure' }, () => {
         });
         await mockSmtp.start();
 
-        const email = `${randomUUID()}@example.com`;
+        try {
+            const email = `${randomUUID()}@example.com`;
 
-        // First attempt - should fail
-        const response1 = await api.auth.loginWithEmailRequest(email, false, null);
-        expect(response1).toHaveStatus(200);
-        const text1 = await response1.text();
-        const problem1 = getPageProblem(text1);
-        expect(problem1).toBeTruthy(); // First attempt should error
+            // First attempt - should fail
+            const response1 = await api.auth.loginWithEmailRequest(email, false, null);
+            expect(response1).toHaveStatus(200);
+            const text1 = await response1.text();
+            const problem1 = getPageProblem(text1);
+            expect(problem1).toBeTruthy(); // First attempt should error
 
-        // Retry - should succeed
-        const mailPromise = mockSmtp.waitMail();
-        const response2 = await api.auth.loginWithEmailRequest(email, false, null);
-        expect(response2).toHaveStatus(200);
+            // Retry - should succeed
+            const mailPromise = mockSmtp.waitMail();
+            const response2 = await api.auth.loginWithEmailRequest(email, false, null);
+            expect(response2).toHaveStatus(200);
 
-        // Wait for email to be received
-        const mail = await mailPromise;
-        expect(mail).toBeDefined();
-        expect(getEmailRecipientsText(mail)).toContain(email);
-
-        await mockSmtp.stop();
+            // Wait for email to be received
+            const mail = await mailPromise;
+            expect(mail).toBeDefined();
+            expect(getEmailRecipientsText(mail)).toContain(email);
+        } finally {
+            await mockSmtp.stop();
+        }
     });
 
     test('SMTP connection during high load shall not block service', async ({ api }) => {
@@ -90,63 +94,65 @@ test.describe('Email (SMTP) failure tests', { tag: '@infrastructure' }, () => {
         });
         await mockSmtp.start();
 
-        // Send multiple emails concurrently
-        const emails = Array.from({ length: 5 }, () => `${randomUUID()}@example.com`);
-        const start = Date.now();
+        try {
+            // Send multiple emails concurrently
+            const emails = Array.from({ length: 5 }, () => `${randomUUID()}@example.com`);
+            const start = Date.now();
 
-        const responses = await Promise.all(emails.map((email) => api.auth.loginWithEmailRequest(email, false, null)));
+            const responses = await Promise.all(
+                emails.map((email) => api.auth.loginWithEmailRequest(email, false, null))
+            );
 
-        const duration = Date.now() - start;
+            const duration = Date.now() - start;
 
-        // Should complete in reasonable time (not sequentially)
-        // With async processing, should be < 5 seconds even with 2s email delay
-        expect(duration).toBeLessThan(10000);
+            // 5 requests with 2s email delay each: if sequential would take ~10s
+            // Async processing should complete well under that
+            expect(duration).toBeLessThan(6000);
 
-        // All should get responses
-        responses.forEach((r) => {
-            expect([200, 202, 500]).toContain(r.status());
-        });
-
-        await mockSmtp.stop();
+            // All should get responses (200 = success page, 500 = internal error)
+            responses.forEach((r) => {
+                expect([200, 500]).toContain(r.status());
+            });
+        } finally {
+            await mockSmtp.stop();
+        }
     });
 
     test('Email queue resilience during failures', async ({ api }) => {
-        const mockSmtp = new MockSmtp();
         let emailsReceived = 0;
 
+        const mockSmtp = new MockSmtp();
         mockSmtp.onMail(() => {
             emailsReceived++;
         });
         await mockSmtp.start();
 
-        // Send multiple emails
+        // Send email while SMTP is up
         const email1 = `${randomUUID()}@example.com`;
-        const email2 = `${randomUUID()}@example.com`;
-
         await api.auth.loginWithEmailRequest(email1, false, null);
+        const receivedBeforeStop = emailsReceived;
 
-        // Stop SMTP temporarily
+        // Stop SMTP temporarily — next request should fail
         await mockSmtp.stop();
+        await api.auth.loginWithEmailRequest(`${randomUUID()}@example.com`, false, null);
 
-        // This might fail
-        await api.auth.loginWithEmailRequest(email2, false, null);
-
-        // Restart SMTP
+        // Restart SMTP — new requests should work again
         const mockSmtp2 = new MockSmtp();
         mockSmtp2.onMail(() => {
             emailsReceived++;
         });
         await mockSmtp2.start();
 
-        // New emails should work
-        const email3 = `${randomUUID()}@example.com`;
-        const mailPromise = mockSmtp2.waitMail();
-        await api.auth.loginWithEmailRequest(email3, false, null);
-        await mailPromise;
+        try {
+            const mailPromise = mockSmtp2.waitMail();
+            await api.auth.loginWithEmailRequest(`${randomUUID()}@example.com`, false, null);
+            await mailPromise;
 
-        // At least some emails should have been sent
-        expect(emailsReceived).toBeGreaterThan(0);
-
-        await mockSmtp2.stop();
+            // First email was received, and recovery email was received
+            expect(receivedBeforeStop).toBeGreaterThanOrEqual(1);
+            expect(emailsReceived).toBeGreaterThanOrEqual(2);
+        } finally {
+            await mockSmtp2.stop();
+        }
     });
 });

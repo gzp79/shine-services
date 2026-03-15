@@ -22,25 +22,27 @@ test.describe('Single access token', () => {
         await mock?.stop();
     });
 
-    test('Creating singleAccess token without session shall fail', async ({ api }) => {
-        const response = await api.token.createTokenRequest(null, 'singleAccess', 20, false);
-        expect(response).toHaveStatus(401);
-    });
+    test.describe('validation errors', () => {
+        test('Creating singleAccess token without session shall fail', async ({ api }) => {
+            const response = await api.token.createTokenRequest(null, 'singleAccess', 20, false);
+            expect(response).toHaveStatus(401);
+        });
 
-    test('Token creation with a too long duration shall be rejected', async ({ api }) => {
-        const response = await api.token.createTokenRequest(user.sid, 'singleAccess', 2000, false);
-        expect(response).toHaveStatus(400);
+        test('Token creation with a too long duration shall be rejected', async ({ api }) => {
+            const response = await api.token.createTokenRequest(user.sid, 'singleAccess', 2000, false);
+            expect(response).toHaveStatus(400);
 
-        const error = await response.parse(ProblemSchema);
-        expect(error).toEqual(
-            expect.objectContaining({
-                type: 'input-validation',
-                status: 400,
-                extension: expect.objectContaining({
-                    time_to_live: [expect.objectContaining({ code: 'range' })]
+            const error = await response.parse(ProblemSchema);
+            expect(error).toEqual(
+                expect.objectContaining({
+                    type: 'input-validation',
+                    status: 400,
+                    extension: expect.objectContaining({
+                        time_to_live: [expect.objectContaining({ code: 'range' })]
+                    })
                 })
-            })
-        );
+            );
+        });
     });
 
     test('A successful login with a single access token shall change the current user', async ({ api }) => {
@@ -146,7 +148,6 @@ test.describe('Single access token', () => {
         expect(token.expireAt).toBeAfter(new Date(now + ttl * 1000));
         expect(token.expireAt).toBeBefore(new Date(now + (ttl + 5) * 1000));
 
-        console.log(`Waiting for the token to expire (${ttl} second)...`);
         await delay(ttl * 1000);
         const response = await api.auth.loginWithTokenRequest(null, null, token.token, null, false, null);
         expect(response).toHaveStatus(200);

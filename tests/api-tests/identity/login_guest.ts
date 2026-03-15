@@ -3,87 +3,161 @@ import { getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 import { createUrl } from '$lib/utils';
 
 test.describe('Login and register guest', () => {
-    test('Login with (tid: NULL, sid: NULL, captcha: NULL) shall fail with missing captcha', async ({ api }) => {
-        const response = await api.auth.loginWithGuestRequest(null, null, undefined);
-        expect(response).toHaveStatus(200);
+    test.describe('validation errors', () => {
+        test('Login with (tid: NULL, sid: NULL, captcha: NULL) shall fail with missing captcha', async ({ api }) => {
+            const response = await api.auth.loginWithGuestRequest(null, null, undefined);
+            expect(response).toHaveStatus(200);
 
-        const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-error' })
-        );
-        expect(getPageProblem(text)).toEqual(
-            expect.objectContaining({
-                type: 'auth-error',
-                status: 400,
-                extension: null,
-                sensitive: expect.objectContaining({
-                    type: 'captcha-not-provided',
-                    detail: expect.stringContaining('Missing captcha token')
+            const text = await response.text();
+            expect(getPageRedirectUrl(text)).toEqual(
+                createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-error' })
+            );
+            expect(getPageProblem(text)).toEqual(
+                expect.objectContaining({
+                    type: 'auth-error',
+                    status: 400,
+                    extension: null,
+                    sensitive: expect.objectContaining({
+                        type: 'captcha-not-provided',
+                        detail: expect.stringContaining('Missing captcha token')
+                    })
                 })
-            })
-        );
+            );
 
-        const cookies = response.cookies();
-        expect(cookies.tid).toBeClearCookie();
-        expect(cookies.sid).toBeClearCookie();
-        expect(cookies.eid).toBeClearCookie();
-    });
+            const cookies = response.cookies();
+            expect(cookies.tid).toBeClearCookie();
+            expect(cookies.sid).toBeClearCookie();
+            expect(cookies.eid).toBeClearCookie();
+        });
 
-    test('Login with (tid: NULL, sid: NULL, captcha: INVALID) shall fail with captcha validation', async ({ api }) => {
-        const response = await api.auth.loginWithGuestRequest(null, null, 'invalid');
-        expect(response).toHaveStatus(200);
+        test('Login with (tid: NULL, sid: NULL, captcha: INVALID) shall fail with captcha validation', async ({
+            api
+        }) => {
+            const response = await api.auth.loginWithGuestRequest(null, null, 'invalid');
+            expect(response).toHaveStatus(200);
 
-        const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-error' })
-        );
-        expect(getPageProblem(text)).toEqual(
-            expect.objectContaining({
-                type: 'auth-error',
-                status: 400,
-                extension: null,
-                sensitive: expect.objectContaining({
-                    type: 'captcha-failed-validation'
+            const text = await response.text();
+            expect(getPageRedirectUrl(text)).toEqual(
+                createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-error' })
+            );
+            expect(getPageProblem(text)).toEqual(
+                expect.objectContaining({
+                    type: 'auth-error',
+                    status: 400,
+                    extension: null,
+                    sensitive: expect.objectContaining({
+                        type: 'captcha-failed-validation'
+                    })
                 })
-            })
-        );
+            );
 
-        const cookies = response.cookies();
-        expect(cookies.tid).toBeClearCookie();
-        expect(cookies.sid).toBeClearCookie();
-        expect(cookies.eid).toBeClearCookie();
-    });
+            const cookies = response.cookies();
+            expect(cookies.tid).toBeClearCookie();
+            expect(cookies.sid).toBeClearCookie();
+            expect(cookies.eid).toBeClearCookie();
+        });
 
-    test('Login with (tid: VALID, sid: VALID, captcha: NULL) shall fail with missing captcha', async ({ api }) => {
-        const testUser = await api.testUsers.createGuest();
+        test('Login with (tid: VALID, sid: VALID, captcha: NULL) shall fail with missing captcha', async ({
+            api
+        }) => {
+            const testUser = await api.testUsers.createGuest();
 
-        const response = await api.auth.loginWithGuestRequest(testUser.tid!, testUser.sid, undefined);
-        expect(response).toHaveStatus(200);
+            const response = await api.auth.loginWithGuestRequest(testUser.tid!, testUser.sid, undefined);
+            expect(response).toHaveStatus(200);
 
-        const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-error' })
-        );
-        expect(getPageProblem(text)).toEqual(
-            expect.objectContaining({
-                type: 'auth-error',
-                status: 400,
-                extension: null,
-                sensitive: expect.objectContaining({
-                    type: 'captcha-not-provided'
+            const text = await response.text();
+            expect(getPageRedirectUrl(text)).toEqual(
+                createUrl(api.auth.defaultRedirects.errorUrl, { errorType: 'auth-error' })
+            );
+            expect(getPageProblem(text)).toEqual(
+                expect.objectContaining({
+                    type: 'auth-error',
+                    status: 400,
+                    extension: null,
+                    sensitive: expect.objectContaining({
+                        type: 'captcha-not-provided'
+                    })
                 })
-            })
-        );
+            );
 
-        const cookies = response.cookies();
-        expect(cookies.tid).toBeValidTID();
-        expect(cookies.tid.value).toEqual(testUser.tid);
-        expect(cookies.sid).toBeValidSID();
-        expect(cookies.sid.value).toEqual(testUser.sid);
-        expect(cookies.eid).toBeClearCookie();
+            const cookies = response.cookies();
+            expect(cookies.tid).toBeValidTID();
+            expect(cookies.tid.value).toEqual(testUser.tid);
+            expect(cookies.sid).toBeValidSID();
+            expect(cookies.sid.value).toEqual(testUser.sid);
+            expect(cookies.eid).toBeClearCookie();
 
-        expect(await api.user.getUserInfo(testUser.sid, 'fast')).toBeGuestUser();
-        expect(await api.user.getUserInfo(testUser.sid, 'full')).toBeGuestUser();
+            expect(await api.user.getUserInfo(testUser.sid, 'fast')).toBeGuestUser();
+            expect(await api.user.getUserInfo(testUser.sid, 'full')).toBeGuestUser();
+        });
+
+        test('Login with invalid redirect url shall fail', async ({ api }) => {
+            const response = await api.auth
+                .loginWithGuestRequest(null, null, null)
+                .withParams({ redirectUrl: 'https://danger.com' });
+            expect(response).toHaveStatus(200);
+
+            const text = await response.text();
+            expect(getPageRedirectUrl(text)).toEqual(
+                createUrl(api.auth.defaultRedirects.errorUrl, {
+                    errorType: 'auth-input-error',
+                    redirectUrl: null
+                })
+            );
+            expect(getPageProblem(text)).toEqual(
+                expect.objectContaining({
+                    type: 'auth-input-error',
+                    status: 400,
+                    extension: null,
+                    sensitive: expect.objectContaining({
+                        type: 'input-validation',
+                        detail: 'Input validation failed',
+                        extension: expect.objectContaining({
+                            redirectUrl: [
+                                expect.objectContaining({
+                                    code: 'invalid-redirect-url',
+                                    message: 'Redirect URL is not allowed'
+                                })
+                            ]
+                        })
+                    })
+                })
+            );
+        });
+
+        test('Login with invalid error url shall fail', async ({ api, homeUrl }) => {
+            const response = await api.auth
+                .loginWithGuestRequest(null, null, null)
+                .withParams({ errorUrl: 'https://danger.com' });
+            expect(response).toHaveStatus(200);
+
+            const text = await response.text();
+            expect(getPageRedirectUrl(text)).toEqual(
+                createUrl(`${homeUrl}/error`, {
+                    errorType: 'auth-input-error',
+                    redirectUrl: null
+                })
+            );
+            expect(getPageProblem(text)).toEqual(
+                expect.objectContaining({
+                    type: 'auth-input-error',
+                    status: 400,
+                    extension: null,
+                    sensitive: expect.objectContaining({
+                        type: 'input-validation',
+                        detail: 'Input validation failed',
+                        extension: expect.objectContaining({
+                            errorUrl: [
+                                expect.objectContaining({
+                                    code: 'invalid-redirect-url',
+                                    message: 'Redirect URL is not allowed'
+                                })
+                            ]
+                        })
+                    })
+                })
+            );
+        });
     });
 
     for (const [tid, sid] of [
@@ -120,71 +194,4 @@ test.describe('Login and register guest', () => {
         });
     }
 
-    test('Login with invalid redirect url shall fail', async ({ api }) => {
-        const response = await api.auth
-            .loginWithGuestRequest(null, null, null)
-            .withParams({ redirectUrl: 'https://danger.com' });
-        expect(response).toHaveStatus(200);
-
-        const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(api.auth.defaultRedirects.errorUrl, {
-                errorType: 'auth-input-error',
-                redirectUrl: null
-            })
-        );
-        expect(getPageProblem(text)).toEqual(
-            expect.objectContaining({
-                type: 'auth-input-error',
-                status: 400,
-                extension: null,
-                sensitive: expect.objectContaining({
-                    type: 'input-validation',
-                    detail: 'Input validation failed',
-                    extension: expect.objectContaining({
-                        redirectUrl: [
-                            expect.objectContaining({
-                                code: 'invalid-redirect-url',
-                                message: 'Redirect URL is not allowed'
-                            })
-                        ]
-                    })
-                })
-            })
-        );
-    });
-
-    test('Login with invalid error url shall fail', async ({ api, homeUrl }) => {
-        const response = await api.auth
-            .loginWithGuestRequest(null, null, null)
-            .withParams({ errorUrl: 'https://danger.com' });
-        expect(response).toHaveStatus(200);
-
-        const text = await response.text();
-        expect(getPageRedirectUrl(text)).toEqual(
-            createUrl(`${homeUrl}/error`, {
-                errorType: 'auth-input-error',
-                redirectUrl: null
-            })
-        );
-        expect(getPageProblem(text)).toEqual(
-            expect.objectContaining({
-                type: 'auth-input-error',
-                status: 400,
-                extension: null,
-                sensitive: expect.objectContaining({
-                    type: 'input-validation',
-                    detail: 'Input validation failed',
-                    extension: expect.objectContaining({
-                        errorUrl: [
-                            expect.objectContaining({
-                                code: 'invalid-redirect-url',
-                                message: 'Redirect URL is not allowed'
-                            })
-                        ]
-                    })
-                })
-            })
-        );
-    });
 });

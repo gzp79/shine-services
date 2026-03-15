@@ -2,12 +2,19 @@ import { expect, test } from '$fixtures/setup';
 import { Cookie } from '$lib/api/api';
 
 test.describe('Auth cookie consistency matrix', () => {
+    // Legend (input columns: tid, sid, eid):
+    //   -  cookie not sent
+    //   +  valid cookie belonging to the test user
+    //   !  valid cookie belonging to a DIFFERENT user (mismatch)
+    //   s  cookie with tampered signature (invalid)
+    //
+    // Legend (expected column — which cookies the server echoes back as valid):
+    //   lowercase (t, s, e)  the ORIGINAL test-user cookie is returned
+    //   UPPERCASE (T, S, E)  the MISMATCHED user's cookie is returned
+    //   empty                no valid cookies returned (all cleared)
+    //
+    // tid | sid | eid | expected | note
     const testCases = [
-        //-: missing
-        //!: not matching (ex different user id). When multiple ! are present in a row it's assumed all of them are different
-        //+: ok, valid cookie
-        //s: signature mismatch
-        // tid | sid | eid | expected | note
         '  s   | -   | -   |          |                                                ',
         '  -   | s   | -   |          |                                                ',
         '  -   | -   | s   |          |                                                ',
@@ -125,8 +132,6 @@ test.describe('Auth cookie consistency matrix', () => {
                         throw new Error(`Unhandled cookie mod for ${c}`);
                 }
             }
-            //console.log(requestCookies);
-
             const response = await api.auth.validateRequest(requestCookies.tid, requestCookies.sid, requestCookies.eid);
             expect(response).toHaveStatus(200);
 
