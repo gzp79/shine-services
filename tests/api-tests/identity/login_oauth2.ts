@@ -379,8 +379,12 @@ test.describe('Login with OAuth2', () => {
         expect(parseSignedCookie(cookies.sid).key).toBeDefined();
         expect(parseSignedCookie(cookies.eid).key).toBeUndefined();
 
-        expect((await api.user.getUserInfo(cookies.sid, 'fast')).name).toEqual(user.name);
-        expect((await api.user.getUserInfo(cookies.sid, 'full')).name).toEqual(user.name);
+        const fastInfo = await api.user.getUserInfo(cookies.sid, 'fast');
+        expect(fastInfo.name).toEqual(user.name);
+        expect(fastInfo.isGuest).toBe(false);
+        const fullInfo = await api.user.getUserInfo(cookies.sid, 'full');
+        expect(fullInfo.name).toEqual(user.name);
+        expect(fullInfo.isGuest).toBe(false);
     });
 
     test('Login with (token cookie: NULL, session: NULL, rememberMe: true) shall succeed and register a new user', async ({
@@ -393,8 +397,12 @@ test.describe('Login with OAuth2', () => {
         expect(parseSignedCookie(cookies.sid).key).toBeDefined();
         expect(parseSignedCookie(cookies.eid).key).toBeUndefined();
 
-        expect((await api.user.getUserInfo(cookies.sid, 'fast')).name).toEqual(user.name);
-        expect((await api.user.getUserInfo(cookies.sid, 'full')).name).toEqual(user.name);
+        const fastInfo = await api.user.getUserInfo(cookies.sid, 'fast');
+        expect(fastInfo.name).toEqual(user.name);
+        expect(fastInfo.isGuest).toBe(false);
+        const fullInfo = await api.user.getUserInfo(cookies.sid, 'full');
+        expect(fullInfo.name).toEqual(user.name);
+        expect(fullInfo.isGuest).toBe(false);
     });
 
     test('Login with occupied email shall fail', async ({ api }) => {

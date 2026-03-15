@@ -23,9 +23,26 @@ docker compose -f services/docker-compose.yml -p shine up -d
 
 **Run tests:**
 ```bash
+# Full suite
 cd tests && pnpm test:local
-# Single file: pnpm exec playwright test src/identity/guest_login.spec.ts
+
+# Filtered by test name
+cd tests && pnpm test:local --grep "Purge guests"
+
+# Single file
+cd tests && pnpm exec playwright test api-tests/identity/purge_guests.ts
 ```
+
+**Enable request logging** (for debugging / agent analysis):
+```bash
+cd tests && ENABLE_REQUEST_LOGGING=1 pnpm test:local --grep "test name"
+```
+
+**Agent test guidelines:**
+- NEVER pipe test output through `tail`, `head`, or other truncation — full output is needed for analysis
+- Use `--grep` to scope runs to relevant tests when possible
+- Set `ENABLE_REQUEST_LOGGING=1` when debugging failures to see HTTP request/response details
+- Read full output directly; the `list` reporter shows pass/fail per test
 
 **Verify service is ready:**
 ```bash

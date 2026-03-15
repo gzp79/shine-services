@@ -3,6 +3,7 @@ use crate::{
     repositories::identity::{ExternalLinks, IdSequences, Identities, IdentityDb, IdentitySearch},
     services::{IdentityTopic, UserEvent, UserLinkEvent},
 };
+use chrono::{DateTime, Utc};
 use shine_infra::{crypto::IdEncoder, sync::TopicBus, web::responses::Problem};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -76,6 +77,11 @@ impl<DB: IdentityDb> UserService<DB> {
             }
             None => Ok(None),
         }
+    }
+
+    pub async fn delete_guests(&self, cutoff: DateTime<Utc>, limit: usize) -> Result<Vec<Uuid>, IdentityError> {
+        let mut ctx = self.db.create_context().await?;
+        ctx.delete_guests(cutoff, limit as i64).await
     }
 
     pub async fn delete(&self, id: Uuid) -> Result<(), IdentityError> {

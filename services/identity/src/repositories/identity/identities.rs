@@ -1,4 +1,5 @@
 use crate::models::{Identity, IdentityError};
+use chrono::{DateTime, Utc};
 use std::future::Future;
 use uuid::Uuid;
 
@@ -26,4 +27,12 @@ pub trait Identities {
     ) -> impl Future<Output = Result<Option<Identity>, IdentityError>> + Send;
 
     fn cascaded_delete(&mut self, id: Uuid) -> impl Future<Output = Result<(), IdentityError>> + Send;
+
+    /// Delete guest users (no confirmed email, no external links) created before `cutoff`.
+    /// Returns the UUIDs of deleted users. At most `limit` users are deleted per call.
+    fn delete_guests(
+        &mut self,
+        cutoff: DateTime<Utc>,
+        limit: i64,
+    ) -> impl Future<Output = Result<Vec<Uuid>, IdentityError>> + Send;
 }

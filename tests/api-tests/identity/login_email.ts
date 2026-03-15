@@ -152,6 +152,7 @@ test.describe('Login with email for guest', () => {
                     const userInfo = await api.user.getUserInfo(loginCookies.sid.value, infoMethod);
                     expect(userInfo.isEmailConfirmed).toBeTruthy();
                     expect(userInfo.isLinked).toBeFalsy();
+                    expect(userInfo.isGuest).toBe(false);
                 }
             });
         }

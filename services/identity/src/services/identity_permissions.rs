@@ -9,6 +9,8 @@ pub mod permissions {
     pub const READ_ANY_USER_ROLE: &str = "ReadAnyUserRole";
     /// Allow to update the roles of any user
     pub const UPDATE_ANY_USER_ROLE: &str = "UpdateAnyUserRole";
+    /// Allow purging old guest users
+    pub const PURGE_GUEST_USERS: &str = "PurgeGuestUsers";
 }
 
 pub trait IdentityPermissions {
@@ -25,6 +27,7 @@ impl IdentityPermissions for CurrentUser {
                     permission.add(permissions::READ_ANY_IDENTITY);
                     permission.add(permissions::READ_ANY_USER_ROLE);
                     permission.add(permissions::UPDATE_ANY_USER_ROLE);
+                    permission.add(permissions::PURGE_GUEST_USERS);
                 }
                 roles::USER_ADMIN => {
                     permission.add(permissions::READ_ANY_IDENTITY);

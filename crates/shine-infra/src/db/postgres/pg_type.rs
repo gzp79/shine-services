@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use tokio_postgres::types::Type as PGType;
 use uuid::Uuid;
 
@@ -21,6 +22,18 @@ impl PGValue for PGValueTypeINT2 {
 pub struct PGValueTypeINT4;
 impl PGValue for PGValueTypeINT4 {
     const PG_TYPE: PGType = PGType::INT4;
+}
+
+#[derive(Debug)]
+pub struct PGValueTypeINT8;
+impl PGValue for PGValueTypeINT8 {
+    const PG_TYPE: PGType = PGType::INT8;
+}
+
+#[derive(Debug)]
+pub struct PGValueTypeTIMESTAMPTZ;
+impl PGValue for PGValueTypeTIMESTAMPTZ {
+    const PG_TYPE: PGType = PGType::TIMESTAMPTZ;
 }
 
 #[derive(Debug)]
@@ -76,6 +89,14 @@ impl ToPGType for i16 {
 
 impl ToPGType for i32 {
     type PGValueType = PGValueTypeINT4;
+}
+
+impl ToPGType for i64 {
+    type PGValueType = PGValueTypeINT8;
+}
+
+impl ToPGType for DateTime<Utc> {
+    type PGValueType = PGValueTypeTIMESTAMPTZ;
 }
 
 impl ToPGType for Uuid {

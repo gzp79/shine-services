@@ -17,5 +17,6 @@ impl IdentityRouter {
             .routes(routes!(api::add_user_role))
             .routes(routes!(api::get_user_roles))
             .routes(routes!(api::delete_user_role))
+            .routes(routes!(api::purge_guests))
     }
 }
