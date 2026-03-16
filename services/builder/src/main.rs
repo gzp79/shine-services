@@ -6,8 +6,11 @@ mod services;
 
 use self::{app_config::AppConfig, app_state::AppState};
 use anyhow::Error as AnyError;
-use controllers::{builder::BuilderController, health::HealthController};
-use shine_infra::web::{WebAppConfig, WebApplication};
+use controllers::builder::BuilderController;
+use shine_infra::{
+    health::HealthService,
+    web::{FeatureConfig, WebAppConfig, WebApplication},
+};
 use utoipa_axum::router::OpenApiRouter;
 
 struct Application;
@@ -16,18 +19,19 @@ impl WebApplication for Application {
     type AppConfig = AppConfig;
     type AppState = AppState;
 
-    async fn create_state(&self, config: &WebAppConfig<Self::AppConfig>) -> Result<Self::AppState, AnyError> {
-        AppState::new(config).await
-    }
-
-    async fn create_routes(
+    async fn create(
         &self,
-        _config: &WebAppConfig<Self::AppConfig>,
-    ) -> Result<OpenApiRouter<Self::AppState>, AnyError> {
-        let health_controller = HealthController::new().into_router();
-        let builder_controller = BuilderController::new().into_router();
+        config: &WebAppConfig<Self::AppConfig>,
+        _health_service: &mut HealthService,
+        router: &mut OpenApiRouter<Self::AppState>,
+    ) -> Result<Self::AppState, AnyError> {
+        let state = AppState::new(config).await?;
 
-        Ok(health_controller.merge(builder_controller))
+        let builder_controller = BuilderController::new().into_router();
+        let app_router = OpenApiRouter::new().merge(builder_controller);
+        *router = router.clone().nest(&format!("/{}", Self::AppConfig::NAME), app_router);
+
+        Ok(state)
     }
 }
 

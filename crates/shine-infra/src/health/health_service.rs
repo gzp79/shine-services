@@ -1,12 +1,24 @@
-use crate::web::{FeatureConfig, WebAppConfig};
+use crate::{
+    health::{health_router::build_router, ServiceVersion},
+    web::{FeatureConfig, WebAppConfig},
+};
 use anyhow::Error as AnyError;
+use async_trait::async_trait;
 use axum::Extension;
+use std::sync::{Arc, RwLock};
 use utoipa_axum::router::OpenApiRouter;
 
-use super::health_router::ServiceVersion;
+#[async_trait]
+pub trait StatusProvider: Send + Sync + 'static {
+    fn name(&self) -> &'static str;
+    async fn status(&self) -> serde_json::Value;
+}
+
+pub type StatusProviders = Arc<RwLock<Vec<Arc<dyn StatusProvider>>>>;
 
 pub struct HealthService {
     version: ServiceVersion,
+    providers: StatusProviders,
 }
 
 impl HealthService {
@@ -19,7 +31,12 @@ impl HealthService {
                 app_name: feature_name.to_string(),
                 version: config.core.version.clone(),
             },
+            providers: Arc::new(RwLock::new(Vec::new())),
         })
+    }
+
+    pub fn add_provider<P: StatusProvider>(&mut self, provider: P) {
+        self.providers.write().unwrap().push(Arc::new(provider));
     }
 
     pub fn create_layer(&self) -> Extension<ServiceVersion> {
@@ -30,6 +47,6 @@ impl HealthService {
     where
         S: Clone + Send + Sync + 'static,
     {
-        super::health_router::build_router(self.version.clone())
+        build_router(self.version.clone(), self.providers.clone())
     }
 }

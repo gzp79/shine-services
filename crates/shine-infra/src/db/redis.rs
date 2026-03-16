@@ -1,4 +1,6 @@
+use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
+use crate::health::StatusProvider;
 
 pub use bb8_redis::RedisConnectionManager;
 pub use shine_infra_macros::RedisJsonValue;
@@ -6,6 +8,31 @@ pub use shine_infra_macros::RedisJsonValue;
 pub type RedisConnectionError = RunError<<RedisConnectionManager as ManageConnection>::Error>;
 pub type RedisConnectionPool = BB8Pool<RedisConnectionManager>;
 pub type RedisPooledConnection<'a> = PooledConnection<'a, RedisConnectionManager>;
+
+pub struct RedisPoolStatus {
+    pool: RedisConnectionPool,
+}
+
+impl RedisPoolStatus {
+    pub fn new(pool: RedisConnectionPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl StatusProvider for RedisPoolStatus {
+    fn name(&self) -> &'static str {
+        "redis"
+    }
+
+    async fn status(&self) -> serde_json::Value {
+        let state = self.pool.state();
+        serde_json::json!({
+            "connections": state.connections,
+            "idleConnections": state.idle_connections
+        })
+    }
+}
 
 pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisConnectionError> {
     // Parse connection string

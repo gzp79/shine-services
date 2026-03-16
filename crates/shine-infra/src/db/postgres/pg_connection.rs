@@ -1,5 +1,7 @@
+use async_trait::async_trait;
 use crate::db::cacerts::{get_root_cert_store, CertError};
 use crate::db::DBError;
+use crate::health::StatusProvider;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use bb8_postgres::PostgresConnectionManager;
 use refinery::{Migration, Runner};
@@ -231,6 +233,31 @@ pub enum PGCreatePoolError {
     PgError(#[from] PGError),
     #[error("Certificate load error")]
     CertError(#[source] CertError),
+}
+
+pub struct PostgresPoolStatus {
+    pool: PGConnectionPool,
+}
+
+impl PostgresPoolStatus {
+    pub fn new(pool: PGConnectionPool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl StatusProvider for PostgresPoolStatus {
+    fn name(&self) -> &'static str {
+        "postgres"
+    }
+
+    async fn status(&self) -> serde_json::Value {
+        let state = self.pool.state();
+        serde_json::json!({
+            "connections": state.connections,
+            "idleConnections": state.idle_connections
+        })
+    }
 }
 
 pub async fn create_postgres_pool(cns: &str) -> Result<PGConnectionPool, PGCreatePoolError> {

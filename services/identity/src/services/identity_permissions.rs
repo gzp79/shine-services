@@ -1,8 +1,6 @@
 use shine_infra::session::{roles, CorePermissions, CurrentUser, PermissionSet};
 
 pub mod permissions {
-    pub use shine_infra::session::permissions::*;
-
     /// Allow to query the general information of an identity
     pub const READ_ANY_IDENTITY: &str = "ReadAnyIdentity";
     /// Allow to get the roles of any user

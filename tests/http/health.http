@@ -11,6 +11,9 @@ GET {{url}}/../ping
 GET {{url}}/info/ready
 ###
 
+GET {{url}}/info/status
+###
+
 GET {{url}}/doc/openapi.json
 ###
 
