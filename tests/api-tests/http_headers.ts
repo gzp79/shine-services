@@ -1,6 +1,26 @@
 import { expect, test } from '$fixtures/setup';
 import { joinURL } from '$lib/utils';
 
+test.describe('Security headers', { tag: ['@regression'] }, () => {
+    test('Response shall include security headers', async ({ identityUrl, api: { client } }) => {
+        const url = joinURL(identityUrl, '/info/ready');
+        const response = await client.get(url);
+        expect(response).toHaveStatus(200);
+        expect(response).toHaveHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
+        expect(response).toHaveHeader('x-content-type-options', 'nosniff');
+        expect(response).toHaveHeader('x-frame-options', 'DENY');
+    });
+
+    test('Security headers shall be present on error responses', async ({ identityUrl, api: { client } }) => {
+        const url = joinURL(identityUrl, '/info/404');
+        const response = await client.get(url);
+        expect(response).toHaveStatus(404);
+        expect(response).toHaveHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
+        expect(response).toHaveHeader('x-content-type-options', 'nosniff');
+        expect(response).toHaveHeader('x-frame-options', 'DENY');
+    });
+});
+
 test.describe('CORS check', { tag: ['@regression'] }, () => {
     test('Allow origin shall not be present without origin', async ({ identityUrl, api: { client } }) => {
         const url = joinURL(identityUrl, '/info/ready');

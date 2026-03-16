@@ -1,3 +1,8 @@
+use crate::{
+    health::StatusProviders,
+    session::{permissions, CheckedCurrentUser, CorePermissions},
+    web::responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
+};
 use axum::{Extension, Json};
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -35,12 +40,41 @@ pub async fn get_version(Extension(version): Extension<ServiceVersion>) -> Json<
     Json(version)
 }
 
-pub(super) fn build_router<S>(version: ServiceVersion) -> OpenApiRouter<S>
+#[utoipa::path(
+    get,
+    path = "/info/status",
+    tag = "health",
+    description = "Get the operational status of the service.",
+    responses(
+        (status = OK, description = "Service status")
+    )
+)]
+pub async fn get_status(
+    Extension(problem_config): Extension<ProblemConfig>,
+    Extension(providers): Extension<StatusProviders>,
+    user: CheckedCurrentUser,
+) -> Result<Json<serde_json::Value>, ProblemResponse> {
+    user.core_permissions()
+        .check(permissions::READ_TRACE)
+        .map_err(|err| err.into_response(&problem_config))?;
+
+    let providers = providers.read().unwrap().clone();
+    let mut status = serde_json::Map::new();
+    for provider in providers.iter() {
+        status.insert(provider.name().to_string(), provider.status().await);
+    }
+
+    Ok(Json(serde_json::Value::Object(status)))
+}
+
+pub(super) fn build_router<S>(version: ServiceVersion, providers: StatusProviders) -> OpenApiRouter<S>
 where
     S: Clone + Send + Sync + 'static,
 {
     OpenApiRouter::new()
         .routes(routes!(get_ready))
         .routes(routes!(get_version))
+        .routes(routes!(get_status))
         .layer(Extension(version))
+        .layer(Extension(providers))
 }

@@ -2,7 +2,11 @@ use crate::{
     health::HealthService,
     session::CurrentUserService,
     telemetry::TelemetryService,
-    web::{middlewares::PoweredBy, responses::ProblemConfig, ApiUrl, FeatureConfig, WebAppConfig},
+    web::{
+        middlewares::{PoweredBy, SecurityHeaders},
+        responses::ProblemConfig,
+        ApiUrl, FeatureConfig, WebAppConfig,
+    },
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
@@ -97,15 +101,12 @@ pub trait WebApplication {
         Self::AppConfig::NAME
     }
 
-    fn create_state(
+    fn create(
         &self,
         config: &WebAppConfig<Self::AppConfig>,
+        health_service: &mut HealthService,
+        router: &mut OpenApiRouter<Self::AppState>,
     ) -> impl Future<Output = Result<Self::AppState, AnyError>> + Send;
-
-    fn create_routes(
-        &self,
-        config: &WebAppConfig<Self::AppConfig>,
-    ) -> impl Future<Output = Result<OpenApiRouter<Self::AppState>, AnyError>> + Send;
 }
 
 fn create_cors_layer(allowed_origins: &[String]) -> Result<CorsLayer, AnyError> {
@@ -169,50 +170,56 @@ async fn create_web_app<A: WebApplication>(
     app: &A,
 ) -> Result<Router<()>, AnyError> {
     let telemetry_service = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
-    let health_service = HealthService::new(app.feature_name(), config)?;
+    let mut health_service = HealthService::new(app.feature_name(), config)?;
+    let problem_service = ProblemConfig::new(config.service.full_problem_response);
+    let in_flight_service = crate::health::InFlightService::new();
     let current_user_service = CurrentUserService::from_config(&config.service).await?;
 
     let cors_layer = create_cors_layer(&config.service.allowed_origins)?;
-    let powered_by_layer = PoweredBy::from_service_info(app.feature_name(), &config.core.version)?;
-
-    let mut doc = ApiDoc::with_default_components();
-
+    let powered_by_layer = if config.service.expose_powered_by {
+        Some(PoweredBy::from_service_info(app.feature_name(), &config.core.version)?)
+    } else {
+        None
+    };
     let log_layer = TraceLayer::new_for_http()
         .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
         .on_response(DefaultOnResponse::new().level(Level::INFO));
-    let problem_detail_layer = {
-        let problem_config = ProblemConfig::new(config.service.full_problem_response);
-        problem_config.into_layer()
-    };
-    let telemetry_layer = telemetry_service.create_layer();
-    let user_session_layer = current_user_service.create_layer();
+
+    // Register built-in status providers
+    health_service.add_provider(crate::health::UptimeStatus::new());
+    health_service.add_provider(in_flight_service.clone());
 
     let mut router = OpenApiRouter::new();
-    let app_state = app.create_state(config).await?;
-
     router = router.nest(&format!("/{}", app.feature_name()), health_service.create_router());
     router = router.nest(&format!("/{}", app.feature_name()), telemetry_service.create_router());
 
-    router = router.nest(&format!("/{}", app.feature_name()), app.create_routes(config).await?);
+    let app_state = app.create(config, &mut health_service, &mut router).await?;
 
-    let (router, router_api) = router.split_for_parts();
-    doc.merge(router_api);
+    let (router, open_api) = router.split_for_parts();
+    let router = if config.service.expose_api_docs {
+        let mut doc = ApiDoc::with_default_components();
+        doc.merge(open_api);
 
-    let swagger = SwaggerUi::new(format!("/{}/doc/swagger-ui", app.feature_name()))
-        .url(format!("/{}/doc/openapi.json", app.feature_name()), doc)
-        .config(
-            SwaggerConfig::default()
-                .with_credentials(true)
-                .show_common_extensions(true),
-        );
+        let swagger = SwaggerUi::new(format!("/{}/doc/swagger-ui", app.feature_name()))
+            .url(format!("/{}/doc/openapi.json", app.feature_name()), doc)
+            .config(
+                SwaggerConfig::default()
+                    .with_credentials(true)
+                    .show_common_extensions(true),
+            );
+        router.merge(swagger)
+    } else {
+        router
+    };
 
     Ok(router
-        .merge(swagger)
-        .layer(user_session_layer)
-        .layer(problem_detail_layer)
-        .layer(powered_by_layer)
+        .layer(current_user_service.create_layer())
+        .layer(problem_service.into_layer())
+        .layer(in_flight_service.create_layer())
+        .layer(tower::util::option_layer(powered_by_layer))
+        .layer(SecurityHeaders)
         .layer(cors_layer)
-        .layer(telemetry_layer)
+        .layer(telemetry_service.create_layer())
         .layer(log_layer)
         .with_state(app_state))
 }

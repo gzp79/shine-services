@@ -9,10 +9,14 @@ mod services;
 use self::{
     app_config::AppConfig,
     app_state::AppState,
-    routes::{auth, health::HealthRouter, identity},
+    routes::{auth, identity},
 };
 use anyhow::Error as AnyError;
-use shine_infra::web::{WebAppConfig, WebApplication};
+use shine_infra::{
+    db::{PostgresPoolStatus, RedisPoolStatus},
+    health::HealthService,
+    web::{WebAppConfig, WebApplication},
+};
 use utoipa_axum::router::OpenApiRouter;
 
 struct Application {}
@@ -21,7 +25,12 @@ impl WebApplication for Application {
     type AppConfig = AppConfig;
     type AppState = AppState;
 
-    async fn create_state(&self, config: &WebAppConfig<Self::AppConfig>) -> Result<Self::AppState, AnyError> {
+    async fn create(
+        &self,
+        config: &WebAppConfig<Self::AppConfig>,
+        health_service: &mut HealthService,
+        router: &mut OpenApiRouter<Self::AppState>,
+    ) -> Result<Self::AppState, AnyError> {
         use crate::services::{UserEvent, UserLinkEvent};
         use shine_infra::sync::EventHandler;
 
@@ -77,18 +86,17 @@ impl WebApplication for Application {
                 .await;
         }
 
-        Ok(state)
-    }
+        // Register status providers
+        health_service.add_provider(PostgresPoolStatus::new(state.db().postgres.clone()));
+        health_service.add_provider(RedisPoolStatus::new(state.db().redis.clone()));
 
-    async fn create_routes(
-        &self,
-        config: &WebAppConfig<Self::AppConfig>,
-    ) -> Result<OpenApiRouter<Self::AppState>, AnyError> {
-        let health_controller = HealthRouter::new().into_router();
+        // Register routes
         let identity_controller = identity::IdentityRouter::new().into_router();
         let auth_controller = auth::AuthRouter::new(config).await?.into_router();
+        let app_router = OpenApiRouter::new().merge(identity_controller).merge(auth_controller);
+        *router = router.clone().nest(&format!("/{}", self.feature_name()), app_router);
 
-        Ok(health_controller.merge(identity_controller).merge(auth_controller))
+        Ok(state)
     }
 }
 
