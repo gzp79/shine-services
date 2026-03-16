@@ -1,6 +1,6 @@
+use crate::health::StatusProvider;
 use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
-use crate::health::StatusProvider;
 
 pub use bb8_redis::RedisConnectionManager;
 pub use shine_infra_macros::RedisJsonValue;

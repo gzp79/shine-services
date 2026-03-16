@@ -28,9 +28,7 @@ impl InFlightService {
     }
 
     pub fn create_layer(&self) -> InFlightRequestLayer {
-        InFlightRequestLayer {
-            service: self.clone(),
-        }
+        InFlightRequestLayer { service: self.clone() }
     }
 }
 

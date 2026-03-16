@@ -1,7 +1,7 @@
-use async_trait::async_trait;
 use crate::db::cacerts::{get_root_cert_store, CertError};
 use crate::db::DBError;
 use crate::health::StatusProvider;
+use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use bb8_postgres::PostgresConnectionManager;
 use refinery::{Migration, Runner};
