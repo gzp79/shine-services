@@ -22,6 +22,7 @@ impl<'a> AuthPageRequest<'a> {
 
     /// Validate query result (handles query parsing errors)
     /// Returns Ok(query) on success, Err(AuthPage) for early return on error
+    #[allow(clippy::result_large_err)]
     pub fn validate_query<T>(&self, query: Result<ValidatedQuery<T>, ErrorResponse<InputError>>) -> Result<T, AuthPage>
     where
         T: serde::de::DeserializeOwned + validator::Validate,

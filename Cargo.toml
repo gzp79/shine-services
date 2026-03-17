@@ -26,12 +26,12 @@ config = "0.15"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rmp-serde = "1.3"
-lz4_flex = "0.12"
+lz4_flex = "0.13"
 
 time = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 iso8601-duration = "0.2"
-uuid = { version = "1.21", features = ["v4", "serde"] }
+uuid = { version = "1.22", features = ["v4", "serde"] }
 url = { version = "2.5", features = ["serde"] }
 base64 = "0.22"
 hex = "0.4"
@@ -79,9 +79,9 @@ postgres-from-row = "0.5"
 refinery = { version = "0.9", features = ["tokio-postgres"] }
 
 ############################# AZURE #############################
-azure_core = { version = "0.32" }
-azure_identity = { version = "0.32" }
-azure_security_keyvault_secrets = { version = "0.11" }
+azure_core = { version = "0.33" }
+azure_identity = { version = "0.33" }
+azure_security_keyvault_secrets = { version = "0.12" }
 
 ############################# NET #############################
 rustls = "0.23"
@@ -89,7 +89,7 @@ tokio-rustls = "0.26"
 # TODO: reqwest = "0.13" is not yet compatible to oauth2, so we use 0.12 for now. See https://github.com/ramosbugs/oauth2-rs/issues/333
 # reqwest = { version = "0.13", features = ["form", "json"] }
 reqwest = { version = "0.12", features = ["json"] }
-ureq = { version = "3.1", default-features = false }
+ureq = { version = "3.2", default-features = false }
 
 ############################# WEB #############################
 tower = "0.5"
@@ -99,7 +99,7 @@ axum-extra = { version = "0.12" }
 axum-server = { version = "0.8", features = ["tls-rustls"] }
 tera = "1.20"
 validator = { version = "0.20", features = ["derive"] }
-utoipa = { version = "5.3", features = [
+utoipa = { version = "5.4", features = [
 	"axum_extras",
 	"uuid",
 	"chrono",
