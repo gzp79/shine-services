@@ -18,6 +18,14 @@ Two deliverables:
 1. **Wasm bindings** — new `wasm_api.rs` in `shine-game` exposing mesh generation to JS
 2. **Client app** — `client/` at repo root, TypeScript + pnpm + Vite + three.js
 
+### Coordinate System
+
+`AxialCoord::world_coordinate` uses a **flat-top hex layout** with `hex_size = 1.0`:
+- `x = 1.5 * q`
+- `y = sqrt(3) * (r + q/2)`
+
+The client maps 2D output `(x, y)` to Three.js `(x, 0, y)` on the XZ ground plane. Camera should frame based on world-space extent, which varies by subdivision (e.g., radius 8 at subdivision 3).
+
 ## 1. Wasm Bindings (`shine-game/src/wasm_api.rs`)
 
 A `#[cfg(target_arch = "wasm32")]` module with a minimal wasm-bindgen API.
@@ -34,11 +42,18 @@ impl WasmPatchMesh {
     pub fn vertices(&self) -> Vec<f32>;
     /// Flat quad indices [a, b, c, d, a, b, c, d, ...] (4 indices per quad)
     pub fn indices(&self) -> Vec<u32>;
+    /// Patch index per quad [0, 0, ..., 1, 1, ..., 2, 2, ...] for coloring
+    pub fn patch_indices(&self) -> Vec<u8>;
+    /// Number of vertices
+    pub fn vertex_count(&self) -> usize;
+    /// Number of quads
+    pub fn quad_count(&self) -> usize;
 }
 
 /// Generate a hex quad mesh from a JSON config string.
+/// Returns Err(JsValue) on invalid config (malformed JSON, out-of-range values).
 #[wasm_bindgen]
-pub fn generate_mesh(config_json: &str) -> WasmPatchMesh;
+pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue>;
 ```
 
 ### Config JSON Schema
@@ -63,25 +78,41 @@ pub fn generate_mesh(config_json: &str) -> WasmPatchMesh;
 }
 ```
 
-Smoothing method variants and their parameters:
+Smoothing method variants and their Rust method mapping:
 
-| Method | Parameters |
-|--------|-----------|
-| None | (none) |
-| Lloyd | iterations, strength, weight_min, weight_max |
-| Noise | amplitude, frequency |
-| Cotangent | iterations, strength |
-| Spring | iterations, dt, spring_strength, shape_strength |
-| Jitter | amplitude |
+| Config Method | Rust Method | Parameters |
+|---------------|-------------|-----------|
+| None | (none) | (none) |
+| Lloyd | `smooth_weighted_lloyd` | iterations, strength, weight_min, weight_max |
+| Noise | `smooth_noise` | amplitude, frequency |
+| Cotangent | `smooth_cotangent` | iterations, strength |
+| Spring | `smooth_spring` | iterations, dt, spring_strength, shape_strength |
+| Jitter | `smooth_jitter` | amplitude |
+
+Note: Lloyd's `weight_min`/`weight_max` map to the `weight_range: (f32, f32)` tuple parameter.
+
+### Execution Pipeline
+
+`generate_mesh` executes these steps in order:
+1. Parse JSON config, validate parameters (subdivision 0–5, etc.)
+2. Create xorshift32 RNG from seed, create `PatchMesher`
+3. Allocate vertex buffer via `mesher.create_vertex_buffer()`
+4. Generate base vertices via `mesher.generate_uniform()`
+5. Apply smoothing method (if not None) — dispatch to the corresponding `smooth_*` method
+6. Apply `fix_quads` (if enabled in config)
+7. Build index array by iterating `p in 0..3, u in 0..grid, v in 0..grid`, calling `PatchCoord::new(p, u, v).quad_vertices(orientation, subdivision)`, mapping each `AxialCoord` through `AxialDenseIndexer::get_dense_index`
+8. Build `patch_indices` — one `u8` per quad: value is `p` (0, 1, or 2)
+9. Return `WasmPatchMesh`
 
 ### RNG
 
-A simple seeded xorshift32 implementing `StableRng`, built into `wasm_api.rs`. No external RNG dependency needed for the wasm target.
+A simple seeded xorshift32 implementing `StableRng` (the `next_u32` method only — `StableRngExt` is auto-derived via blanket impl). Built into `wasm_api.rs`, no external RNG dependency needed.
 
 ### Mesh Output
 
 - `vertices()`: flat `Vec<f32>` of 2D positions `[x0, y0, x1, y1, ...]`
-- `indices()`: flat `Vec<u32>` of quad corner indices `[a0, b0, c0, d0, a1, ...]` — 4 indices per quad, derived from `PatchDenseIndexer` iteration + `PatchCoord::quad_vertices` + `AxialDenseIndexer`
+- `indices()`: flat `Vec<u32>` of quad corner indices `[a0, b0, c0, d0, a1, ...]` — 4 indices per quad
+- `patch_indices()`: `Vec<u8>` with one entry per quad (0, 1, or 2) for patch coloring
 
 ### Crate Changes
 
@@ -92,7 +123,11 @@ Add to `shine-game/Cargo.toml`:
 crate-type = ["cdylib", "rlib"]
 ```
 
+Both crate types are needed: `cdylib` for wasm-pack to produce the wasm module, `rlib` to keep `shine-game` usable as a normal Rust library dependency. Native `cargo build` and `cargo test` continue to work — `cdylib` is simply ignored when building for non-wasm targets as a dependency.
+
 Add `wasm_api` module to `lib.rs` (or equivalent entry point) behind `#[cfg(target_arch = "wasm32")]`.
+
+Reference: `patch_mesh_svg.rs` shows the existing pattern for iterating quads and producing output from vertex/index data.
 
 ## 2. Client Project (`client/`)
 

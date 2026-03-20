@@ -128,7 +128,13 @@ impl PatchMesher {
     /// moves each interior vertex toward the weighted centroid of its neighboring quads.
     /// Boundary vertices stay fixed. Does not enforce convexity —
     /// call `fix_quads` afterwards if needed.
-    pub fn smooth_weighted_lloyd(&mut self, iterations: u32, strength: f32, weight_range: (f32, f32), vertices: &mut [Vec2]) {
+    pub fn smooth_weighted_lloyd(
+        &mut self,
+        iterations: u32,
+        strength: f32,
+        weight_range: (f32, f32),
+        vertices: &mut [Vec2],
+    ) {
         let radius = self.radius();
         let indexer = AxialDenseIndexer::new(radius);
         let grid = 2i32.pow(self.subdivision);

@@ -52,19 +52,11 @@ impl PatchCoord {
         let hb = corners[b_idx];
 
         let corner = |cu: i32, cv: i32| -> AxialCoord {
-            AxialCoord::new(
-                (cu * ha.q + cv * hb.q) / grid,
-                (cu * ha.r + cv * hb.r) / grid,
-            )
+            AxialCoord::new((cu * ha.q + cv * hb.q) / grid, (cu * ha.r + cv * hb.r) / grid)
         };
 
         let (u, v) = (self.u, self.v);
-        [
-            corner(u, v),
-            corner(u + 1, v),
-            corner(u + 1, v + 1),
-            corner(u, v + 1),
-        ]
+        [corner(u, v), corner(u + 1, v), corner(u + 1, v + 1), corner(u, v + 1)]
     }
 }
 
