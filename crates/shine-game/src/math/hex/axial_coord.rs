@@ -88,6 +88,26 @@ impl AxialCoord {
             .map(move |(dq, dr)| AxialCoord::new(coord.q + dq, coord.r + dr))
     }
 
+    /// Returns the 6 corner coordinates of a flat-top hexagon at the given radius.
+    /// v0=(R,0), v1=(0,R), v2=(-R,R), v3=(-R,0), v4=(0,-R), v5=(R,-R)
+    pub fn hex_corners(radius: u32) -> [AxialCoord; 6] {
+        let r = radius as i32;
+        [
+            AxialCoord::new(r, 0),
+            AxialCoord::new(0, r),
+            AxialCoord::new(-r, r),
+            AxialCoord::new(-r, 0),
+            AxialCoord::new(0, -r),
+            AxialCoord::new(r, -r),
+        ]
+    }
+
+    /// Returns true if this coordinate lies on the boundary of a hex grid of given radius.
+    /// Operates on the integer coordinate address, not the jittered vertex position.
+    pub fn is_boundary(&self, radius: u32) -> bool {
+        self.distance(&AxialCoord::origin()) == radius as i32
+    }
+
     pub fn world_coordinate(&self, hex_size: f32) -> Vec2 {
         const SQRT_3: f32 = 1.732050807568877293527446341505872367_f32;
         let x = hex_size * 1.5 * (self.q as f32);
@@ -312,6 +332,41 @@ mod tests {
             spiral.iter().cloned(),
             (RING0.iter().chain(RING1.iter()).chain(RING2.iter())).map(|(q, r)| AxialCoord::new(*q, *r)),
         );
+    }
+
+    #[test]
+    fn test_is_boundary_radius_0() {
+        assert!(AxialCoord::new(0, 0).is_boundary(0));
+    }
+
+    #[test]
+    fn test_is_boundary_radius_1() {
+        assert!(!AxialCoord::new(0, 0).is_boundary(1));
+        for coord in AxialCoord::origin().ring(1) {
+            assert!(coord.is_boundary(1), "expected boundary: {:?}", coord);
+        }
+    }
+
+    #[test]
+    fn test_is_boundary_radius_2() {
+        assert!(!AxialCoord::new(0, 0).is_boundary(2));
+        for coord in AxialCoord::origin().ring(1) {
+            assert!(!coord.is_boundary(2), "expected interior: {:?}", coord);
+        }
+        for coord in AxialCoord::origin().ring(2) {
+            assert!(coord.is_boundary(2), "expected boundary: {:?}", coord);
+        }
+    }
+
+    #[test]
+    fn test_is_boundary_radius_4() {
+        assert!(!AxialCoord::new(0, 0).is_boundary(4));
+        assert!(!AxialCoord::new(1, 1).is_boundary(4));
+        assert!(AxialCoord::new(4, 0).is_boundary(4));
+        assert!(AxialCoord::new(0, 4).is_boundary(4));
+        assert!(AxialCoord::new(-4, 4).is_boundary(4));
+        assert!(AxialCoord::new(2, -4).is_boundary(4));
+        assert!(!AxialCoord::new(3, 0).is_boundary(4));
     }
 
     #[test]
