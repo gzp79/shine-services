@@ -1,8 +1,17 @@
 {
-    "name": "hex-mesh-viewer",
+    "name": "shine-web",
     "private": true,
     "version": "0.0.0",
     "type": "module",
+    "main": "./dist/shine-web.js",
+    "module": "./dist/shine-web.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/shine-web.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
     "scripts": {
         "dev": "vite",
         "build": "tsc && vite build",
@@ -15,6 +24,10 @@
         "lint:build": "tsc -b --noEmit"
     },
     "dependencies": {
+        "lil-gui": "^0.20",
+        "three": "^0.172"
+    },
+    "peerDependencies": {
         "lil-gui": "^0.20",
         "three": "^0.172"
     },

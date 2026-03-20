@@ -3,7 +3,7 @@ import stylistic from '@stylistic/eslint-plugin';
 import prettier from 'eslint-config-prettier';
 import ts from 'typescript-eslint';
 
-export default [
+const config: ReturnType<typeof ts.config> = [
     js.configs.recommended,
     ...ts.configs.recommended,
     prettier,
@@ -43,3 +43,4 @@ export default [
         ignores: ['node_modules/', 'dist/', 'pkg/']
     }
 ];
+export default config;

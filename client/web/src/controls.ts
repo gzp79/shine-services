@@ -96,8 +96,12 @@ export function paramsToConfigJson(p: MeshParams): string {
     });
 }
 
-export function createControls(params: MeshParams, onChange: () => void): GUI {
-    const gui = new GUI({ title: 'Hex Mesh' });
+export function createControls(container: HTMLElement, params: MeshParams, onChange: () => void): GUI {
+    const gui = new GUI({ title: 'Hex Mesh', container });
+    gui.domElement.style.position = 'absolute';
+    gui.domElement.style.top = '0';
+    gui.domElement.style.right = '0';
+    gui.domElement.style.zIndex = '10';
 
     gui.add(params, 'subdivision', 0, 5, 1).onChange(onChange);
     const orientObj = { odd: params.orientation === 'Odd' };

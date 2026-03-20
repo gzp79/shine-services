@@ -8,10 +8,11 @@
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
         "outDir": "dist",
+        "declaration": true,
         "sourceMap": true,
         "paths": {
             "#wasm": ["./pkg/shine_game.js", "./src/wasm.d.ts"]
         }
     },
-    "include": ["src", "eslint.config.ts", "vite.config.ts"]
+    "include": ["src", "eslint.config.ts", "vite.config.ts", "vite-plugin-wasm-pack.ts"]
 }
