@@ -40,16 +40,36 @@ struct SmoothingConfig {
     shape_strength: f32,
 }
 
-fn default_method() -> String { "None".to_string() }
-fn default_iterations() -> u32 { 20 }
-fn default_strength() -> f32 { 0.4 }
-fn default_weight_min() -> f32 { 2.5 }
-fn default_weight_max() -> f32 { 15.5 }
-fn default_amplitude() -> f32 { 0.5 }
-fn default_frequency() -> f32 { 5.0 }
-fn default_dt() -> f32 { 0.1 }
-fn default_spring_strength() -> f32 { 0.3 }
-fn default_shape_strength() -> f32 { 0.5 }
+fn default_method() -> String {
+    "None".to_string()
+}
+fn default_iterations() -> u32 {
+    20
+}
+fn default_strength() -> f32 {
+    0.4
+}
+fn default_weight_min() -> f32 {
+    2.5
+}
+fn default_weight_max() -> f32 {
+    15.5
+}
+fn default_amplitude() -> f32 {
+    0.5
+}
+fn default_frequency() -> f32 {
+    5.0
+}
+fn default_dt() -> f32 {
+    0.1
+}
+fn default_spring_strength() -> f32 {
+    0.3
+}
+fn default_shape_strength() -> f32 {
+    0.5
+}
 
 #[derive(Deserialize)]
 struct FixQuadsConfig {
@@ -61,9 +81,15 @@ struct FixQuadsConfig {
     max_iterations: u32,
 }
 
-fn default_fix_enabled() -> bool { true }
-fn default_min_quality() -> f32 { 0.15 }
-fn default_fix_max_iterations() -> u32 { 50 }
+fn default_fix_enabled() -> bool {
+    true
+}
+fn default_min_quality() -> f32 {
+    0.15
+}
+fn default_fix_max_iterations() -> u32 {
+    50
+}
 
 impl Default for FixQuadsConfig {
     fn default() -> Self {
@@ -113,8 +139,7 @@ impl WasmPatchMesh {
 /// Generate a hex quad mesh from a JSON config string.
 #[wasm_bindgen]
 pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
-    let config: MeshConfig =
-        serde_json::from_str(config_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let config: MeshConfig = serde_json::from_str(config_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     if config.subdivision > 5 {
         return Err(JsValue::from_str("subdivision must be 0-5"));
@@ -145,18 +170,10 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
             );
         }
         "Noise" => {
-            mesher.smooth_noise(
-                config.smoothing.amplitude,
-                config.smoothing.frequency,
-                &mut vertices,
-            );
+            mesher.smooth_noise(config.smoothing.amplitude, config.smoothing.frequency, &mut vertices);
         }
         "Cotangent" => {
-            mesher.smooth_cotangent(
-                config.smoothing.iterations,
-                config.smoothing.strength,
-                &mut vertices,
-            );
+            mesher.smooth_cotangent(config.smoothing.iterations, config.smoothing.strength, &mut vertices);
         }
         "Spring" => {
             mesher.smooth_spring(
