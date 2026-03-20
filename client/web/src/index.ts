@@ -1,4 +1,5 @@
 import init, { generate_mesh } from '#wasm';
+import wasmUrl from '#wasm-bin';
 import { MeshParams, createControls, defaultParams, paramsToConfigJson } from './controls';
 import { HexMeshGroup, buildHexMesh } from './mesh-builder';
 import { SceneContext, animate, createScene } from './scene';
@@ -10,7 +11,7 @@ export interface HexMeshViewer {
 }
 
 export async function createHexMeshViewer(container: HTMLElement): Promise<HexMeshViewer> {
-    await init();
+    await init(wasmUrl);
 
     const ctx: SceneContext = createScene(container);
     const params = defaultParams();
