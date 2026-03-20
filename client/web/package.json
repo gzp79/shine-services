@@ -16,6 +16,7 @@
         "dev": "vite",
         "build": "tsc && vite build",
         "wasm": "wasm-pack build ../../crates/shine-game --target web --out-dir ../../client/web/pkg",
+        "postwasm": "cp pkg/shine_game.d.ts src/wasm-types/",
         "wasm:dev": "pnpm wasm && pnpm dev",
         "format": "prettier --write .",
         "lint": "pnpm run lint:format && pnpm run lint:eslint && pnpm run lint:build",

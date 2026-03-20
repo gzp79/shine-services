@@ -1,19 +1,29 @@
 import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { copyFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
 
 const crateDir = fileURLToPath(new URL('../../crates/shine-game', import.meta.url));
 const wasmOut = fileURLToPath(new URL('./pkg/shine_game.js', import.meta.url));
+const wasmTypes = fileURLToPath(new URL('./pkg/shine_game.d.ts', import.meta.url));
+const typesDir = fileURLToPath(new URL('./src/wasm-types/shine_game.d.ts', import.meta.url));
 
 export function wasmPackPlugin(): Plugin {
     return {
-        name: 'wasm-pack-watch',
-        buildStart() {
+        name: 'wasm-pack',
+        enforce: 'pre',
+        config() {
             if (!existsSync(wasmOut)) {
                 console.log('\n[wasm-pack] pkg/ not found, building...');
                 buildWasm();
             }
+            return {
+                resolve: {
+                    alias: {
+                        '#wasm': wasmOut
+                    }
+                }
+            };
         },
         configureServer(server) {
             const srcDir = `${crateDir}/src`;
@@ -37,6 +47,7 @@ function buildWasm(): boolean {
             cwd: crateDir,
             stdio: 'inherit'
         });
+        copyFileSync(wasmTypes, typesDir);
         console.log('[wasm-pack] Done.');
         return true;
     } catch {

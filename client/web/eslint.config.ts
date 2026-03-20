@@ -40,7 +40,7 @@ const config: ReturnType<typeof ts.config> = [
         }
     },
     {
-        ignores: ['node_modules/', 'dist/', 'pkg/']
+        ignores: ['node_modules/', 'dist/', 'pkg/', 'src/wasm-types/']
     }
 ];
 export default config;
