@@ -2,15 +2,20 @@ import * as THREE from 'three';
 
 const FILL_COLOR = new THREE.Color(0.82, 0.85, 0.88); // light grey
 const EDGE_COLOR = 0x333333;
+const DUAL_EDGE_COLOR = 0x2288aa;
 
 export interface MeshData {
     vertices: Float32Array;
     indices: Uint32Array;
     patchIndices: Uint8Array;
+    dualVertices: Float32Array;
+    dualIndices: Uint32Array;
 }
 
 export interface HexMeshGroup {
     group: THREE.Group;
+    setPrimalVisible: (visible: boolean) => void;
+    setDualVisible: (visible: boolean) => void;
     dispose: () => void;
 }
 
@@ -65,7 +70,7 @@ export function buildHexMesh(data: MeshData): HexMeshGroup {
     const fillMesh = new THREE.Mesh(fillGeom, fillMat);
     group.add(fillMesh);
 
-    // Edge lines — explicitly from quad topology
+    // Primal edge lines — explicitly from quad topology
     const edgePositions: number[] = [];
     for (let q = 0; q < quadCount; q++) {
         const qi = q * 4;
@@ -89,12 +94,54 @@ export function buildHexMesh(data: MeshData): HexMeshGroup {
     const edgeLines = new THREE.LineSegments(edgeGeom, edgeMat);
     group.add(edgeLines);
 
+    // Dual edge lines — connect centroids of adjacent quads
+    const dualVertCount = data.dualVertices.length / 2;
+    const dualPositions3D = new Float32Array(dualVertCount * 3);
+    for (let i = 0; i < dualVertCount; i++) {
+        dualPositions3D[i * 3] = data.dualVertices[i * 2];
+        dualPositions3D[i * 3 + 1] = 0;
+        dualPositions3D[i * 3 + 2] = data.dualVertices[i * 2 + 1];
+    }
+
+    const dualEdgeCount = data.dualIndices.length / 2;
+    const dualEdgePositions: number[] = [];
+    for (let e = 0; e < dualEdgeCount; e++) {
+        const i0 = data.dualIndices[e * 2];
+        const i1 = data.dualIndices[e * 2 + 1];
+        dualEdgePositions.push(
+            dualPositions3D[i0 * 3],
+            dualPositions3D[i0 * 3 + 1] + 0.02,
+            dualPositions3D[i0 * 3 + 2],
+            dualPositions3D[i1 * 3],
+            dualPositions3D[i1 * 3 + 1] + 0.02,
+            dualPositions3D[i1 * 3 + 2]
+        );
+    }
+
+    const dualEdgeGeom = new THREE.BufferGeometry();
+    dualEdgeGeom.setAttribute('position', new THREE.Float32BufferAttribute(dualEdgePositions, 3));
+    const dualEdgeMat = new THREE.LineBasicMaterial({ color: DUAL_EDGE_COLOR });
+    const dualEdgeLines = new THREE.LineSegments(dualEdgeGeom, dualEdgeMat);
+    dualEdgeLines.visible = false;
+    group.add(dualEdgeLines);
+
     const dispose = () => {
         fillGeom.dispose();
         fillMat.dispose();
         edgeGeom.dispose();
         edgeMat.dispose();
+        dualEdgeGeom.dispose();
+        dualEdgeMat.dispose();
     };
 
-    return { group, dispose };
+    return {
+        group,
+        setPrimalVisible: (visible: boolean) => {
+            edgeLines.visible = visible;
+        },
+        setDualVisible: (visible: boolean) => {
+            dualEdgeLines.visible = visible;
+        },
+        dispose
+    };
 }

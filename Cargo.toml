@@ -12,6 +12,10 @@ members = [
 	"services/builder",
 ]
 
+exclude = [
+	"crates/shine-game/fuzz",
+]
+
 [workspace.package]
 edition = "2021"
 version = "0.1.0"

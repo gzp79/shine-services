@@ -1,8 +1,11 @@
 use crate::math::{
+    cdt::Triangulation,
     hex::{AxialDenseIndexer, PatchCoord, PatchDenseIndexer, PatchMesher, PatchOrientation},
-    rand::Xorshift32,
+    rand::{StableRng, Xorshift32},
 };
+use glam::IVec2;
 use serde::Deserialize;
+use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 #[derive(Deserialize)]
@@ -106,6 +109,8 @@ pub struct WasmPatchMesh {
     vertices: Vec<f32>,
     indices: Vec<u32>,
     patch_indices: Vec<u8>,
+    dual_vertices: Vec<f32>,
+    dual_indices: Vec<u32>,
 }
 
 #[wasm_bindgen]
@@ -133,6 +138,26 @@ impl WasmPatchMesh {
     /// Number of quads
     pub fn quad_count(&self) -> usize {
         self.indices.len() / 4
+    }
+
+    /// Flat dual vertex positions [x, y, x, y, ...] (2 floats per vertex, one per primal quad centroid)
+    pub fn dual_vertices(&self) -> Vec<f32> {
+        self.dual_vertices.clone()
+    }
+
+    /// Flat dual edge indices [a, b, ...] (2 indices per dual edge)
+    pub fn dual_indices(&self) -> Vec<u32> {
+        self.dual_indices.clone()
+    }
+
+    /// Number of dual vertices
+    pub fn dual_vertex_count(&self) -> usize {
+        self.dual_vertices.len() / 2
+    }
+
+    /// Number of dual edges
+    pub fn dual_edge_count(&self) -> usize {
+        self.dual_indices.len() / 2
     }
 }
 
@@ -226,9 +251,171 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
     // Flatten Vec2 positions to [x, y, x, y, ...]
     let flat_vertices: Vec<f32> = vertices.iter().flat_map(|v| [v.x, v.y]).collect();
 
+    // Compute dual mesh: vertices are quad centroids, edges connect adjacent quads
+    let quad_count = patch_indexer.get_total_size();
+    let mut dual_vertices = Vec::with_capacity(quad_count * 2);
+    for qi in 0..quad_count {
+        let base = qi * 4;
+        let mut cx = 0.0f32;
+        let mut cy = 0.0f32;
+        for k in 0..4 {
+            let vi = indices[base + k] as usize;
+            cx += flat_vertices[vi * 2];
+            cy += flat_vertices[vi * 2 + 1];
+        }
+        dual_vertices.push(cx / 4.0);
+        dual_vertices.push(cy / 4.0);
+    }
+
+    // Build edge-to-quad map: (min_vi, max_vi) -> first quad index
+    let mut edge_map: HashMap<(u32, u32), u32> = HashMap::new();
+    let mut dual_indices = Vec::new();
+    for qi in 0..quad_count {
+        let base = qi * 4;
+        for k in 0..4 {
+            let a = indices[base + k];
+            let b = indices[base + (k + 1) % 4];
+            let edge_key = if a < b { (a, b) } else { (b, a) };
+            if let Some(&other_qi) = edge_map.get(&edge_key) {
+                dual_indices.push(other_qi);
+                dual_indices.push(qi as u32);
+            } else {
+                edge_map.insert(edge_key, qi as u32);
+            }
+        }
+    }
+
     Ok(WasmPatchMesh {
         vertices: flat_vertices,
         indices,
         patch_indices: patch_indices_out,
+        dual_vertices,
+        dual_indices,
     })
+}
+
+// --- CDT visualization ---
+
+#[wasm_bindgen]
+pub struct WasmCdt {
+    /// Flat vertex positions [x, y, ...] (2 floats per vertex, in input order)
+    vertices: Vec<f32>,
+    /// Flat triangle indices [a, b, c, ...] (3 indices per triangle)
+    triangles: Vec<u32>,
+    /// Flat edge indices for fixed/constraint edges [a, b, ...]
+    fixed_edges: Vec<u32>,
+    /// Error message if triangulation failed
+    error: Option<String>,
+}
+
+#[wasm_bindgen]
+impl WasmCdt {
+    pub fn vertices(&self) -> Vec<f32> {
+        self.vertices.clone()
+    }
+    pub fn triangles(&self) -> Vec<u32> {
+        self.triangles.clone()
+    }
+    pub fn fixed_edges(&self) -> Vec<u32> {
+        self.fixed_edges.clone()
+    }
+    pub fn vertex_count(&self) -> usize {
+        self.vertices.len() / 2
+    }
+    pub fn triangle_count(&self) -> usize {
+        self.triangles.len() / 3
+    }
+    pub fn has_error(&self) -> bool {
+        self.error.is_some()
+    }
+    pub fn error_message(&self) -> Option<String> {
+        self.error.clone()
+    }
+}
+
+/// Generate a CDT from random points and constraint edges.
+/// `config_json`: { "n_points": u32, "n_edges": u32, "seed": u32, "bound": i32 }
+#[wasm_bindgen]
+pub fn generate_cdt(config_json: &str) -> WasmCdt {
+    #[derive(Deserialize)]
+    struct CdtConfig {
+        n_points: u32,
+        n_edges: u32,
+        seed: u32,
+        #[serde(default = "default_bound")]
+        bound: i32,
+    }
+    fn default_bound() -> i32 {
+        4096
+    }
+
+    let config: CdtConfig = match serde_json::from_str(config_json) {
+        Ok(c) => c,
+        Err(e) => {
+            return WasmCdt {
+                vertices: vec![],
+                triangles: vec![],
+                fixed_edges: vec![],
+                error: Some(e.to_string()),
+            };
+        }
+    };
+
+    let mut rng = Xorshift32::new(config.seed);
+    let bound = config.bound;
+    let n = config.n_points.max(3) as usize;
+
+    // Generate random points in [-bound, bound]
+    let range = (bound * 2) as u32;
+    let mut points: Vec<IVec2> = Vec::with_capacity(n);
+    for _ in 0..n {
+        let x = (rng.next_u32() % range) as i32 - bound;
+        let y = (rng.next_u32() % range) as i32 - bound;
+        points.push(IVec2::new(x, y));
+    }
+
+    // Generate random constraint edges
+    let m = config.n_edges as usize;
+    let mut edges: Vec<(usize, usize)> = Vec::with_capacity(m);
+    for _ in 0..m {
+        let a = (rng.next_u32() as usize) % n;
+        let mut b = (rng.next_u32() as usize) % n;
+        if b == a {
+            b = (a + 1) % n;
+        }
+        edges.push((a, b));
+    }
+
+    // Flatten vertex positions
+    let vertices: Vec<f32> = points.iter().flat_map(|p| [p.x as f32, p.y as f32]).collect();
+
+    // Skip crossing constraints and keep all triangles (no flood fill)
+    let result = if edges.is_empty() {
+        Triangulation::build(&points)
+    } else {
+        Triangulation::build_with_edges_skip_crossing(&points, &edges)
+    };
+
+    match result {
+        Ok(t) => {
+            let triangles: Vec<u32> = t
+                .triangles()
+                .flat_map(|(a, b, c)| [a as u32, b as u32, c as u32])
+                .collect();
+            let fixed_edges: Vec<u32> = edges.iter().flat_map(|&(a, b)| [a as u32, b as u32]).collect();
+
+            WasmCdt {
+                vertices,
+                triangles,
+                fixed_edges,
+                error: None,
+            }
+        }
+        Err(e) => WasmCdt {
+            vertices,
+            triangles: vec![],
+            fixed_edges: vec![],
+            error: Some(e.to_string()),
+        },
+    }
 }

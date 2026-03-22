@@ -48,8 +48,8 @@ export function wasmPackPlugin(): Plugin {
                     });
                     return `export default import.meta.ROLLUP_FILE_URL_${refId};`;
                 }
-                // Dev mode: serve wasm directly
-                return `export default ${JSON.stringify(wasmBin)};`;
+                // Dev mode: serve wasm relative to project root
+                return 'export default "/pkg/shine_game_bg.wasm";';
             }
         },
         configureServer(server) {

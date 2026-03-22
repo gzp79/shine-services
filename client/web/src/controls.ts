@@ -1,5 +1,10 @@
 import GUI from 'lil-gui';
 
+export interface DisplayParams {
+    showPrimal: boolean;
+    showDual: boolean;
+}
+
 export interface MeshParams {
     subdivision: number;
     orientation: string;
@@ -27,6 +32,13 @@ export interface MeshParams {
     fix_enabled: boolean;
     fix_min_quality: number;
     fix_max_iterations: number;
+}
+
+export function defaultDisplayParams(): DisplayParams {
+    return {
+        showPrimal: true,
+        showDual: false
+    };
 }
 
 export function defaultParams(): MeshParams {
@@ -96,12 +108,22 @@ export function paramsToConfigJson(p: MeshParams): string {
     });
 }
 
-export function createControls(container: HTMLElement, params: MeshParams, onChange: () => void): GUI {
+export function createControls(
+    container: HTMLElement,
+    params: MeshParams,
+    displayParams: DisplayParams,
+    onChange: () => void,
+    onDisplayChange: () => void
+): GUI {
     const gui = new GUI({ title: 'Hex Mesh', container });
     gui.domElement.style.position = 'absolute';
     gui.domElement.style.top = '0';
     gui.domElement.style.right = '0';
     gui.domElement.style.zIndex = '10';
+
+    const displayFolder = gui.addFolder('Display');
+    displayFolder.add(displayParams, 'showPrimal').name('primal wireframe').onChange(onDisplayChange);
+    displayFolder.add(displayParams, 'showDual').name('dual wireframe').onChange(onDisplayChange);
 
     gui.add(params, 'subdivision', 0, 5, 1).onChange(onChange);
     const orientObj = { odd: params.orientation === 'Odd' };

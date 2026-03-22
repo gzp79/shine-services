@@ -480,10 +480,20 @@ impl PatchMesher {
                 }
             }
 
-            // Apply forces (skip boundary)
+            // Apply forces (skip boundary), clamp magnitude to prevent divergence
+            let max_force = ref_area.sqrt();
             for i in 0..n {
                 if !is_boundary[i] {
-                    vertices[i] += forces[i] * dt;
+                    let mut f = forces[i];
+                    let mag = f.length();
+                    if mag > max_force {
+                        f = f * (max_force / mag);
+                    }
+                    let new_pos = vertices[i] + f * dt;
+                    // Clamp interior vertices to stay inside the hex
+                    if is_inside_hex(new_pos.x, new_pos.y, radius) {
+                        vertices[i] = new_pos;
+                    }
                 }
             }
         }

@@ -1,0 +1,29 @@
+[package]
+name = "shine-game-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+glam = { version = "0.32" }
+
+[dependencies.shine-game]
+path = ".."
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_cdt_constrained"
+path = "fuzz_targets/fuzz_cdt_constrained.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_cdt_points"
+path = "fuzz_targets/fuzz_cdt_points.rs"
+doc = false

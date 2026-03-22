@@ -6,7 +6,7 @@
 
 **Architecture:** Extract the core Three.js rendering into a container-aware `createHexMeshViewer(container, options)` API exported from `src/lib.ts`. The existing `main.ts` becomes a thin standalone demo that uses this API. Vite library mode produces an ES module bundle with `three` as a peer dependency. WASM is side-loaded (not inlined) so consumers control asset serving.
 
-**Tech Stack:** TypeScript, Vite (library mode), three.js (peer dep), wasm-bindgen, lil-gui (optional/demo-only)
+**Tech Stack:** TypeScript, Vite (library mode), three.js (peer dep), wasm-bindgen, lil-gui (demo-only)
 
 ---
 
@@ -15,14 +15,16 @@
 | File | Action | Responsibility |
 |------|--------|---------------|
 | `client/web/package.json` | Modify | Rename to `shine-web`, add `main`/`module`/`types`/`exports` fields, move `three` to peerDeps |
-| `client/web/tsconfig.json` | Modify | Add `declaration: true` for type output |
-| `client/web/vite.config.ts` | Modify | Add `build.lib` config for library mode |
+| `client/web/tsconfig.json` | Modify | Add `declaration: true`, remove `#wasm` path alias |
+| `client/web/vite.config.ts` | Modify | Add `build.lib` config, remove `#wasm` resolve alias |
 | `client/web/src/lib.ts` | Create | Public API: `createHexMeshViewer()`, `HexMeshViewerHandle`, re-exports |
+| `client/web/src/params.ts` | Create | `MeshParams` type, `defaultParams()`, `paramsToConfigJson()` — pure data, no GUI dependency |
 | `client/web/src/scene.ts` | Modify | Accept `container: HTMLElement`, use `ResizeObserver`, return `dispose()` |
 | `client/web/src/mesh-builder.ts` | No change | Already pure (no DOM coupling) |
-| `client/web/src/controls.ts` | Modify | Make `createControls` accept optional container for lil-gui placement |
+| `client/web/src/controls.ts` | Modify | Import params from `params.ts`, make `createControls` accept optional container |
 | `client/web/src/main.ts` | Modify | Thin demo that imports from `./lib` |
-| `client/web/index.html` | Modify | Update title to "Shine Web Demo" |
+| `client/web/src/wasm.d.ts` | Delete | Replaced by wasm-pack generated types in `pkg/shine_game.d.ts` |
+| `client/web/index.html` | Modify | Update title to "Shine Web Demo", add `#viewer` div |
 
 ---
 
@@ -128,12 +130,7 @@ export function animate(ctx: SceneContext): () => void {
 }
 ```
 
-- [ ] **Step 3: Verify the file compiles**
-
-Run: `cd client/web && npx tsc --noEmit`
-Expected: No errors (main.ts will have errors since it hasn't been updated yet — that's fine, focus on scene.ts)
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```
 refactor: decouple scene.ts from global DOM, accept container element
@@ -141,49 +138,244 @@ refactor: decouple scene.ts from global DOM, accept container element
 
 ---
 
-## Task 2: Make controls container-aware
+## Task 2: Extract params from controls.ts and make controls container-aware
 
 **Files:**
+- Create: `client/web/src/params.ts`
 - Modify: `client/web/src/controls.ts`
 
 ### Context
 
-`lil-gui` by default appends to `document.body`. For library use, the consumer may want the GUI in a specific container — or may not want lil-gui at all (they provide their own UI). Add an optional `container` parameter. This keeps the demo working and lets library consumers control placement.
+`controls.ts` currently contains both pure data (`MeshParams`, `defaultParams`, `paramsToConfigJson`) and the lil-gui UI (`createControls`). For the library bundle, consumers who don't use lil-gui should not pull it in. Split the pure params into `params.ts` so `lib.ts` can import them without a lil-gui dependency.
 
-- [ ] **Step 1: Add optional container parameter to `createControls`**
+Also, `lil-gui` by default appends to `document.body`. Add an optional `container` parameter for library use.
 
-Update the function signature in `client/web/src/controls.ts`:
+- [ ] **Step 1: Create `params.ts`**
+
+Create `client/web/src/params.ts` with the `MeshParams` interface, `defaultParams()`, and `paramsToConfigJson()` — everything currently in `controls.ts` except `createControls` and the `import GUI` line:
 
 ```typescript
+export interface MeshParams {
+    subdivision: number;
+    orientation: string;
+    smoothing: string;
+    seed: number;
+    // Lloyd
+    lloyd_iterations: number;
+    lloyd_strength: number;
+    lloyd_weight_min: number;
+    lloyd_weight_max: number;
+    // Noise
+    noise_amplitude: number;
+    noise_frequency: number;
+    // Cotangent
+    cotangent_iterations: number;
+    cotangent_strength: number;
+    // Spring
+    spring_iterations: number;
+    spring_dt: number;
+    spring_spring_strength: number;
+    spring_shape_strength: number;
+    // Jitter
+    jitter_amplitude: number;
+    // Fix quads
+    fix_enabled: boolean;
+    fix_min_quality: number;
+    fix_max_iterations: number;
+}
+
+export function defaultParams(): MeshParams {
+    return {
+        subdivision: 3,
+        orientation: 'Even',
+        smoothing: 'None',
+        seed: 42,
+        lloyd_iterations: 20,
+        lloyd_strength: 0.4,
+        lloyd_weight_min: 2.5,
+        lloyd_weight_max: 15.5,
+        noise_amplitude: 0.5,
+        noise_frequency: 5.0,
+        cotangent_iterations: 10,
+        cotangent_strength: 0.5,
+        spring_iterations: 50,
+        spring_dt: 0.1,
+        spring_spring_strength: 0.3,
+        spring_shape_strength: 0.5,
+        jitter_amplitude: 2.0,
+        fix_enabled: true,
+        fix_min_quality: 0.15,
+        fix_max_iterations: 50
+    };
+}
+
+export function paramsToConfigJson(p: MeshParams): string {
+    const smoothing: Record<string, unknown> = { method: p.smoothing };
+
+    switch (p.smoothing) {
+        case 'Lloyd':
+            smoothing.iterations = p.lloyd_iterations;
+            smoothing.strength = p.lloyd_strength;
+            smoothing.weight_min = p.lloyd_weight_min;
+            smoothing.weight_max = p.lloyd_weight_max;
+            break;
+        case 'Noise':
+            smoothing.amplitude = p.noise_amplitude;
+            smoothing.frequency = p.noise_frequency;
+            break;
+        case 'Cotangent':
+            smoothing.iterations = p.cotangent_iterations;
+            smoothing.strength = p.cotangent_strength;
+            break;
+        case 'Spring':
+            smoothing.iterations = p.spring_iterations;
+            smoothing.dt = p.spring_dt;
+            smoothing.spring_strength = p.spring_spring_strength;
+            smoothing.shape_strength = p.spring_shape_strength;
+            break;
+        case 'Jitter':
+            smoothing.amplitude = p.jitter_amplitude;
+            break;
+    }
+
+    return JSON.stringify({
+        subdivision: p.subdivision,
+        orientation: p.orientation,
+        seed: p.seed,
+        smoothing,
+        fix_quads: {
+            enabled: p.fix_enabled,
+            min_quality: p.fix_min_quality,
+            max_iterations: p.fix_max_iterations
+        }
+    });
+}
+```
+
+- [ ] **Step 2: Update `controls.ts` to import from `params.ts`**
+
+Replace the top of `client/web/src/controls.ts`. Remove the `MeshParams` interface, `defaultParams`, and `paramsToConfigJson` definitions. Replace with imports:
+
+```typescript
+import GUI from 'lil-gui';
+
+import { MeshParams } from './params';
+
+export type { MeshParams };
+
 export function createControls(
     params: MeshParams,
     onChange: () => void,
     container?: HTMLElement
 ): GUI {
     const gui = new GUI({ title: 'Hex Mesh', container });
-    // ... rest unchanged
+    // ... rest of createControls unchanged from current code
 ```
 
-Only the first line of the function body changes — `new GUI({ title: 'Hex Mesh', container })`. Everything else stays the same.
+The function body stays the same — only the imports, removed definitions, and `new GUI({ title: 'Hex Mesh', container })` change.
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 3: Commit**
 
 ```
-refactor: make lil-gui controls accept optional container
+refactor: extract params.ts from controls.ts, add optional GUI container
 ```
 
 ---
 
-## Task 3: Create the library entry point
+## Task 3: Remove `#wasm` alias and `wasm.d.ts`
+
+**Files:**
+- Delete: `client/web/src/wasm.d.ts`
+- Modify: `client/web/vite.config.ts`
+- Modify: `client/web/tsconfig.json`
+
+### Context
+
+The current code uses a `#wasm` import alias defined in `vite.config.ts` (resolve.alias) and `tsconfig.json` (paths), with manual type declarations in `wasm.d.ts`. Since wasm-pack generates its own `.d.ts` in `pkg/`, we can import directly from `../pkg/shine_game.js` and let TypeScript resolve the types from `pkg/shine_game.d.ts`. This must happen before creating `lib.ts` so the import path works.
+
+Note: The current `vite.config.ts` has a `resolve.alias` mapping `#wasm` → `./pkg/shine_game.js` and the current `tsconfig.json` has `paths: { "#wasm": ["./pkg/shine_game.js"] }`. Both need to be removed.
+
+- [ ] **Step 1: Delete `wasm.d.ts`**
+
+Delete: `client/web/src/wasm.d.ts`
+
+- [ ] **Step 2: Remove `#wasm` alias from `vite.config.ts`**
+
+Replace `client/web/vite.config.ts` with (removing the `resolve.alias` block):
+
+```typescript
+import { defineConfig } from 'vite';
+import topLevelAwait from 'vite-plugin-top-level-await';
+import wasm from 'vite-plugin-wasm';
+
+export default defineConfig({
+    plugins: [wasm(), topLevelAwait()]
+});
+```
+
+- [ ] **Step 3: Remove `#wasm` paths from `tsconfig.json`**
+
+Remove the `paths` and `baseUrl` entries from `client/web/tsconfig.json` (if present). The result should be:
+
+```json
+{
+    "compilerOptions": {
+        "target": "ES2020",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "outDir": "dist",
+        "sourceMap": true
+    },
+    "include": ["src", "eslint.config.ts", "vite.config.ts"]
+}
+```
+
+- [ ] **Step 4: Update `main.ts` import**
+
+In `client/web/src/main.ts`, change the wasm import from:
+
+```typescript
+import init, { generate_mesh } from '#wasm';
+```
+
+to:
+
+```typescript
+import init, { generate_mesh } from '../pkg/shine_game.js';
+```
+
+- [ ] **Step 5: Verify everything still works**
+
+Run: `cd client/web && pnpm dev`
+Expected: Demo works as before. No import errors in browser console.
+
+Run: `cd client/web && npx tsc --noEmit`
+Expected: Compiles without errors (wasm-pack generated `pkg/shine_game.d.ts` provides the types).
+
+- [ ] **Step 6: Commit**
+
+```
+refactor: remove #wasm alias, use direct pkg import path
+```
+
+---
+
+## Task 4: Create the library entry point
 
 **Files:**
 - Create: `client/web/src/lib.ts`
 
 ### Context
 
-This is the main public API. It wraps scene creation, WASM init, mesh generation, and lifecycle into a single `createHexMeshViewer()` function. Returns a handle with `update()`, `resize()`, and `dispose()` methods. Consumers pass a container element and optional initial params.
+This is the main public API. It wraps scene creation, WASM init, mesh generation, and lifecycle into a single `createHexMeshViewer()` function. Returns a handle with `update()` and `dispose()` methods. Consumers pass a container element and optional initial params.
 
 The WASM module exports `init(wasmUrl?)` and `generate_mesh(configJson)`. The `init()` function accepts an optional URL/Response for the `.wasm` file, which lets consumers control where it's served from.
+
+Note: `lib.ts` imports params from `params.ts` (no lil-gui dependency), not from `controls.ts`. This ensures consumers who don't use the built-in controls don't pull in lil-gui.
 
 - [ ] **Step 1: Create `lib.ts`**
 
@@ -192,11 +384,11 @@ Create `client/web/src/lib.ts`:
 ```typescript
 import init, { generate_mesh } from '../pkg/shine_game.js';
 
+import { MeshData, HexMeshGroup, buildHexMesh } from './mesh-builder';
+import { MeshParams, defaultParams, paramsToConfigJson } from './params';
 import { SceneContext, animate, createScene } from './scene';
-import { HexMeshGroup, MeshData, buildHexMesh } from './mesh-builder';
-import { MeshParams, defaultParams, paramsToConfigJson } from './controls';
 
-export type { MeshData, MeshParams, HexMeshGroup };
+export type { MeshData, MeshParams, HexMeshGroup, SceneContext };
 export { defaultParams, paramsToConfigJson, buildHexMesh };
 
 export interface HexMeshViewerOptions {
@@ -217,6 +409,12 @@ export interface HexMeshViewerHandle {
     dispose(): void;
 }
 
+/**
+ * Create a hex mesh viewer inside the given container element.
+ * The container must have a non-zero size (set width/height via CSS).
+ *
+ * @throws If WASM initialization fails or mesh generation fails with invalid params.
+ */
 export async function createHexMeshViewer(
     container: HTMLElement,
     options?: HexMeshViewerOptions
@@ -276,10 +474,12 @@ export async function createHexMeshViewer(
 }
 ```
 
-- [ ] **Step 2: Verify the file compiles**
+Note: `regenerate()` intentionally lets errors propagate (no try/catch). The JSDoc on `createHexMeshViewer` documents this. `update()` can also throw if params produce invalid config — consumers should catch if needed.
+
+- [ ] **Step 2: Verify it compiles**
 
 Run: `cd client/web && npx tsc --noEmit`
-Expected: No errors on `lib.ts` (main.ts may still have issues, that's next task)
+Expected: No errors.
 
 - [ ] **Step 3: Commit**
 
@@ -289,7 +489,7 @@ feat: add library entry point with createHexMeshViewer API
 
 ---
 
-## Task 4: Update main.ts to use lib.ts
+## Task 5: Update main.ts to use lib.ts
 
 **Files:**
 - Modify: `client/web/src/main.ts`
@@ -304,8 +504,8 @@ The standalone demo should now use the library API, proving it works end-to-end.
 Replace `client/web/src/main.ts` with:
 
 ```typescript
-import { createHexMeshViewer, defaultParams } from './lib';
 import { createControls } from './controls';
+import { createHexMeshViewer, defaultParams } from './lib';
 
 async function main() {
     const container = document.getElementById('viewer')!;
@@ -367,7 +567,7 @@ refactor: update demo to use library API
 
 ---
 
-## Task 5: Configure Vite library mode and package metadata
+## Task 6: Configure Vite library mode and package metadata
 
 **Files:**
 - Modify: `client/web/package.json`
@@ -397,6 +597,10 @@ Replace `client/web/package.json`:
             "import": "./dist/shine-web.js",
             "types": "./dist/lib.d.ts"
         },
+        "./controls": {
+            "import": "./dist/shine-web.js",
+            "types": "./dist/controls.d.ts"
+        },
         "./wasm": "./pkg/shine_game_bg.wasm"
     },
     "files": [
@@ -420,9 +624,6 @@ Replace `client/web/package.json`:
     "peerDependencies": {
         "three": ">=0.160"
     },
-    "dependencies": {
-        "lil-gui": "^0.20"
-    },
     "devDependencies": {
         "@eslint/js": "^9.37.0",
         "@stylistic/eslint-plugin": "^5.4.0",
@@ -431,6 +632,7 @@ Replace `client/web/package.json`:
         "eslint": "^9.24.0",
         "eslint-config-prettier": "^10.1.2",
         "jiti": "^2.6.1",
+        "lil-gui": "^0.20",
         "prettier": "^3.5.3",
         "three": "^0.172",
         "typescript": "^5.8.3",
@@ -444,10 +646,10 @@ Replace `client/web/package.json`:
 
 Key changes:
 - `name` → `shine-web`, removed `"private": true`
-- `three` moved to `peerDependencies` (with `>=0.160` for broad compat) and kept in `devDependencies` for the demo
+- `three` moved to `peerDependencies` (with `>=0.160` for broad compat), kept in `devDependencies` for the demo
+- `lil-gui` moved to `devDependencies` — it's only used by `controls.ts` which is demo/optional code; `lib.ts` imports from `params.ts` instead
 - Added `main`, `module`, `types`, `exports`, `files` fields
 - Added `build:lib` script that emits declarations + builds library
-- `lil-gui` stays in `dependencies` since `controls.ts` imports it (consumers who skip controls won't import it and tree-shaking handles it)
 
 - [ ] **Step 2: Update vite.config.ts**
 
@@ -467,14 +669,14 @@ export default defineConfig({
             fileName: 'shine-web'
         },
         rollupOptions: {
-            external: ['three', /^three\//]
+            external: ['three', /^three\//, 'lil-gui']
         }
     }
 });
 ```
 
 Notes:
-- `external: ['three', /^three\//]` externalizes both `three` and `three/addons/...` imports
+- `external: ['three', /^three\//, 'lil-gui']` externalizes three.js and lil-gui
 - Only `es` format (no UMD) — modern bundlers all support ESM
 
 - [ ] **Step 3: Update tsconfig.json**
@@ -500,7 +702,7 @@ Replace `client/web/tsconfig.json`:
 }
 ```
 
-Changes: Added `declaration: true` and `declarationMap: true` for `.d.ts` output.
+Changes from Task 3: Added `declaration: true` and `declarationMap: true` for `.d.ts` output.
 
 - [ ] **Step 4: Verify library build**
 
@@ -509,13 +711,13 @@ Expected: Produces `dist/shine-web.js` (ES module), `dist/lib.d.ts`, and related
 
 - [ ] **Step 5: Verify the bundle doesn't include three.js**
 
-Run: `grep -c "THREE" client/web/dist/shine-web.js`
-Expected: 0 (or very few — only import statements, no three.js library code)
+Run: `head -20 client/web/dist/shine-web.js`
+Expected: Top of file shows `import ... from 'three'` statements (externalized), not inlined three.js code.
 
 - [ ] **Step 6: Verify demo still works**
 
 Run: `cd client/web && pnpm dev`
-Expected: Demo works as before (Vite dev mode ignores library config)
+Expected: Demo works as before (Vite dev mode ignores library config).
 
 - [ ] **Step 7: Commit**
 
@@ -525,7 +727,7 @@ feat: configure shine-web as library bundle with Vite library mode
 
 ---
 
-## Task 6: Verify end-to-end and clean build
+## Task 7: Verify end-to-end and clean build
 
 **Files:**
 - No new files
@@ -538,18 +740,15 @@ cd client/web && rm -rf node_modules dist pkg && pnpm install && pnpm wasm && pn
 ```
 Expected: All steps succeed. `dist/shine-web.js` produced.
 
-- [ ] **Step 2: Verify bundle exports**
+- [ ] **Step 2: Inspect bundle exports**
 
-Run:
-```bash
-node -e "import('./client/web/dist/shine-web.js').then(m => console.log(Object.keys(m)))"
-```
-Expected: Lists exports including `createHexMeshViewer`, `defaultParams`, `paramsToConfigJson`, `buildHexMesh`
+Run: `head -30 client/web/dist/shine-web.js`
+Expected: File starts with ESM imports from `three` and exports `createHexMeshViewer`, `defaultParams`, `paramsToConfigJson`, `buildHexMesh`.
 
 - [ ] **Step 3: Verify native Rust workspace unaffected**
 
 Run: `cargo check && cargo test -p shine-game`
-Expected: All pass
+Expected: All pass.
 
 - [ ] **Step 4: Commit**
 
@@ -569,31 +768,39 @@ After completing all tasks, the `client/web/` package will be:
 | **Bundle format** | Single ES module at `dist/shine-web.js` |
 | **Three.js** | Peer dependency, not bundled |
 | **WASM** | Side-loaded from `pkg/`, consumer passes URL via `wasmUrl` option if needed |
-| **Controls (lil-gui)** | Optional — library works without them; importable separately for quick demos |
+| **Controls (lil-gui)** | Not in the library bundle — demo-only. Consumers build their own UI using `MeshParams` + `update()` |
+| **Params** | Pure `params.ts` — `MeshParams`, `defaultParams()`, `paramsToConfigJson()` — no GUI dependency |
 | **Lifecycle** | Full cleanup via `dispose()` — stops animation, removes canvas, frees GPU resources, disconnects ResizeObserver |
 | **Framework integration** | Container-based mounting works with any framework's ref/bind pattern |
+| **Error handling** | `createHexMeshViewer()` and `update()` throw on invalid params — consumers should catch if needed |
 
-### Svelte usage example:
+### Svelte 5 usage example:
 
 ```svelte
 <script>
-    import { onMount, onDestroy } from 'svelte';
+    import { onMount } from 'svelte';
     import { createHexMeshViewer } from 'shine-web';
+    import type { HexMeshViewerHandle } from 'shine-web';
 
-    let container;
-    let viewer;
-    export let params = {};
+    let { params = {} } = $props();
+    let container = $state<HTMLElement>();
+    let viewer = $state<HexMeshViewerHandle>();
 
-    onMount(async () => {
-        viewer = await createHexMeshViewer(container, {
+    onMount(() => {
+        let disposed = false;
+        createHexMeshViewer(container!, {
             params,
             wasmUrl: '/wasm/shine_game_bg.wasm'
+        }).then(v => {
+            if (disposed) { v.dispose(); return; }
+            viewer = v;
         });
+        return () => { disposed = true; viewer?.dispose(); };
     });
 
-    onDestroy(() => viewer?.dispose());
-
-    $: if (viewer) viewer.update(params);
+    $effect(() => {
+        if (viewer && params) viewer.update(params);
+    });
 </script>
 
 <div bind:this={container} style="width:100%;height:100%" />
@@ -603,17 +810,20 @@ After completing all tasks, the `client/web/` package will be:
 
 ```tsx
 import { useEffect, useRef } from 'react';
-import { createHexMeshViewer, HexMeshViewerHandle, MeshParams } from 'shine-web';
+import { createHexMeshViewer, type HexMeshViewerHandle, type MeshParams } from 'shine-web';
 
 function HexMesh({ params }: { params?: Partial<MeshParams> }) {
     const ref = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<HexMeshViewerHandle | null>(null);
 
     useEffect(() => {
+        let disposed = false;
         createHexMeshViewer(ref.current!, { params }).then(v => {
+            if (disposed) { v.dispose(); return; }
             viewerRef.current = v;
         });
         return () => {
+            disposed = true;
             viewerRef.current?.dispose();
             viewerRef.current = null;
         };
