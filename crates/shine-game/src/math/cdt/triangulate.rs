@@ -1,7 +1,7 @@
 use crate::math::cdt::{
     contour::{Contour, ContourData},
     half::Half,
-    hull::{angle_cmp, Hull},
+    hull::{angle_cmp, angle_less, Hull},
     indexes::{EdgeIndex, HullIndex, PointIndex, PointVec, EMPTY_EDGE},
     predicates::{acute, centroid_sum, distance2, in_circle, orient2d, point_dir},
     CdtError,
@@ -430,7 +430,10 @@ impl Triangulation {
 
             self.hull.update(h_ab, self.half.prev(f));
 
-            let h_p = if self.dirs[a] != self.dirs[p] {
+            let da = self.dirs[a];
+            let dp = self.dirs[p];
+            let same = !angle_less(da, dp) && !angle_less(dp, da);
+            let h_p = if !same {
                 let h_ap = self.hull.insert(h_ab, self.dirs[p], p, self.half.next(f));
                 self.legalize(f);
                 h_ap

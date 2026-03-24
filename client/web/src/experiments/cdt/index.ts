@@ -1,8 +1,8 @@
 import init, { generate_cdt } from '#wasm';
 import wasmUrl from '#wasm-bin';
-import { cdtParamsToJson, createCdtControls, defaultCdtParams } from './cdt-controls';
-import { CdtMeshGroup, buildCdtMesh } from './cdt-mesh-builder';
-import { SceneContext, animate, createScene } from './scene';
+import { cdtParamsToJson, createCdtControls, defaultCdtParams } from './controls';
+import { CdtMeshGroup, buildCdtMesh } from './mesh-builder';
+import { SceneContext, animate, createScene } from '../../scene';
 
 export interface CdtViewer {
     destroy(): void;

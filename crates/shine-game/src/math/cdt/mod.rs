@@ -12,9 +12,9 @@ mod indexes;
 mod predicates;
 mod triangulate;
 
-pub use error::CdtError;
+pub use self::{error::CdtError, triangulate::Triangulation};
+
 use glam::IVec2;
-pub use triangulate::Triangulation;
 
 /// Triangulates a set of integer points, returning triangles as triples of
 /// indexes into the original points list.

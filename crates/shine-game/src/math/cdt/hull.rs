@@ -9,7 +9,7 @@ const N: usize = 1 << 10;
 /// (0,-1) ≈ 768, back to (-1, -ε) ≈ 1023.
 ///
 /// Uses a single integer division: `256 * dx / (|dx| + |dy|)`.
-pub(crate) fn angle_bucket(dir: I64Vec2) -> usize {
+pub fn angle_bucket(dir: I64Vec2) -> usize {
     if dir == I64Vec2::ZERO {
         return 0;
     }
@@ -25,7 +25,7 @@ pub(crate) fn angle_bucket(dir: I64Vec2) -> usize {
 
 /// Comparison: does direction `a` come before `b` in the angular ordering?
 /// Uses half-plane classification + cross product. No division.
-pub(crate) fn angle_less(a: I64Vec2, b: I64Vec2) -> bool {
+pub fn angle_less(a: I64Vec2, b: I64Vec2) -> bool {
     let ha = if a.y > 0 || (a.y == 0 && a.x > 0) { 0u8 } else { 1u8 };
     let hb = if b.y > 0 || (b.y == 0 && b.x > 0) { 0u8 } else { 1u8 };
     if ha != hb {
@@ -37,7 +37,7 @@ pub(crate) fn angle_less(a: I64Vec2, b: I64Vec2) -> bool {
 }
 
 /// Ordering for sort tiebreaker.
-pub(crate) fn angle_cmp(a: I64Vec2, b: I64Vec2) -> std::cmp::Ordering {
+pub fn angle_cmp(a: I64Vec2, b: I64Vec2) -> std::cmp::Ordering {
     if angle_less(a, b) {
         std::cmp::Ordering::Less
     } else if angle_less(b, a) {
@@ -263,12 +263,5 @@ impl Hull {
 
     pub fn bucket(&self, dir: I64Vec2) -> usize {
         angle_bucket(dir)
-    }
-
-    /// Returns whether two points have the same direction (same bucket angle).
-    pub fn same_dir(&self, a: HullIndex, b: HullIndex) -> bool {
-        let da = self.data[a].dir;
-        let db = self.data[b].dir;
-        !angle_less(da, db) && !angle_less(db, da)
     }
 }

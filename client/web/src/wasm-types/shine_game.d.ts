@@ -39,7 +39,7 @@ export class WasmPatchMesh {
      */
     indices(): Uint32Array;
     /**
-     * Patch index per quad (0, 1, or 2)
+     * Patch index per quad (0 for all currently)
      */
     patch_indices(): Uint8Array;
     /**
@@ -64,6 +64,20 @@ export function generate_cdt(config_json: string): WasmCdt;
 
 /**
  * Generate a hex quad mesh from a JSON config string.
+ *
+ * Config shape:
+ * ```json
+ * {
+ *   "mesher": { "type": "Patch", "subdivision": 3, "orientation": "Even" }
+ *           | { "type": "Cdt", "edge_subdivisions": 4, "interior_points": 20 },
+ *   "seed": 42,
+ *   "filters": [
+ *     { "type": "Jitter", "amplitude": 0.3 },
+ *     { "type": "Laplacian", "iterations": 20, "strength": 0.5 },
+ *     { "type": "QuadRelax", "min_quality": 0.15, "strength": 0.5, "max_iterations": 50 }
+ *   ]
+ * }
+ * ```
  */
 export function generate_mesh(config_json: string): WasmPatchMesh;
 

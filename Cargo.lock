@@ -3940,25 +3940,8 @@ dependencies = [
 name = "shine-core"
 version = "0.1.0"
 dependencies = [
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "futures",
- "futures-channel",
- "harsh",
- "hex",
- "log",
- "pin-project",
- "primal-check",
- "regex",
  "serde",
- "serde_json",
  "shine-test",
- "thiserror 2.0.18",
- "time",
- "tokio",
- "url",
- "uuid",
  "wasm-bindgen-test",
 ]
 
