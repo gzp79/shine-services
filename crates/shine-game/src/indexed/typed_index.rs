@@ -71,10 +71,7 @@ macro_rules! define_typed_index {
             fn into_index(self) -> usize {
                 debug_assert!(
                     self.0 >= 0 && self.0 != i32::MAX,
-                    concat!(
-                        "called into_index() on non-real ",
-                        stringify!($name)
-                    )
+                    concat!("called into_index() on non-real ", stringify!($name))
                 );
                 self.0 as usize
             }
@@ -83,10 +80,7 @@ macro_rules! define_typed_index {
             fn into_ghost_index(self) -> usize {
                 debug_assert!(
                     self.0 < 0,
-                    concat!(
-                        "called into_ghost_index() on non-ghost ",
-                        stringify!($name)
-                    )
+                    concat!("called into_ghost_index() on non-ghost ", stringify!($name))
                 );
                 (-self.0 - 1) as usize
             }

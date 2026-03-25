@@ -1,8 +1,5 @@
-use crate::{
-    indexed::TypedIndex,
-    math::mesh::QuadMesh,
-};
 use super::quad_filter::QuadFilter;
+use crate::{indexed::TypedIndex, math::mesh::QuadMesh};
 use glam::Vec2;
 
 /// Laplacian smoothing for [`QuadMesh`].
@@ -55,7 +52,10 @@ impl QuadFilter for LaplacianSmoother {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::{geometry::is_quad_well_shaped, mesh::{QuadRelax, VertIdx}};
+    use crate::math::{
+        geometry::quad_jacobian,
+        mesh::{QuadRelax, VertIdx},
+    };
     use shine_test::test;
 
     /// Build a 2×2 grid of 4 quads:
@@ -133,7 +133,7 @@ mod tests {
         for qi in mesh.quad_indices() {
             let verts = mesh.quad_vertices(qi);
             let pts: [Vec2; 4] = std::array::from_fn(|i| mesh.position(verts[i]));
-            assert!(is_quad_well_shaped(&pts, 0.15), "quad {:?} still invalid after fix", qi);
+            assert!(quad_jacobian(&pts) >= 0.15, "quad {:?} still invalid after fix", qi);
         }
     }
 

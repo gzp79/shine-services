@@ -5,7 +5,7 @@ use crate::{
         mesh::{QuadTopology, VertIdx},
         rand::Xorshift32,
     },
-    world::SUBDIVISION_BASE,
+    world::{CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
 use glam::Vec2;
 
@@ -44,7 +44,8 @@ impl Chunk {
     pub fn new(id: ChunkId) -> Self {
         let rng = Xorshift32::new(id.hash32());
         let mesh = LatticeMesher::new(SUBDIVISION_BASE, rng)
-            .with_world_size(CHUNK_WORLD_SIZE).generate();
+            .with_world_size(CHUNK_WORLD_SIZE)
+            .generate();
         let (topology, vertices) = mesh.into_parts();
         Self { topology, vertices }
     }

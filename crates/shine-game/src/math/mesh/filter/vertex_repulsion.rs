@@ -1,22 +1,8 @@
-use crate::{indexed::TypedIndex, math::mesh::QuadMesh};
 use super::quad_filter::QuadFilter;
+use crate::{indexed::TypedIndex, math::mesh::QuadMesh};
 use glam::Vec2;
 
-/// Edge-length equalization relaxation for [`QuadMesh`].
-///
-/// Each iteration, every interior vertex moves toward the position where all its
-/// incident edge lengths would be equal (their local average). Boundary vertices
-/// are never moved.
-///
-/// The update for vertex v with edge-neighbors u₁…uₖ is:
-/// ```text
-///   L       = avg(|v − uᵢ|)
-///   ideal   = avg(uᵢ + L · normalize(v − uᵢ))
-///   v_new   = v + strength · (ideal − v)
-/// ```
-/// `ideal` is the centroid of the points at distance L from each neighbor in
-/// the current direction. Moving toward it equalizes edge lengths from v without
-/// requiring a global rest length or spring forces. `strength ≤ 0.5` is stable.
+/// Edge-length and diagonal-length equalization relaxation for [`QuadMesh`].
 pub struct VertexRepulsion {
     strength: f32,
     iterations: u32,
@@ -25,7 +11,11 @@ pub struct VertexRepulsion {
 
 impl VertexRepulsion {
     pub fn new(strength: f32, iterations: u32) -> Self {
-        Self { strength, iterations, buf: Vec::new() }
+        Self {
+            strength,
+            iterations,
+            buf: Vec::new(),
+        }
     }
 }
 
@@ -49,40 +39,62 @@ impl QuadFilter for VertexRepulsion {
                 }
                 let i = vi.into_index();
 
-                // Pass 1: compute local average edge length.
-                let mut sum_len = 0.0f32;
-                let mut count = 0u32;
+                // Pass 1: compute separate average lengths for edges (+1) and diagonals (+2).
+                // The separate averages are kept so their natural length ratio is preserved rather than mixed.
+                let mut sum_edge = 0.0f32;
+                let mut count_edge = 0u32;
+                let mut sum_diag = 0.0f32;
+                let mut count_diag = 0u32;
                 for r in mesh.vertex_ring(vi) {
                     let verts = mesh.quad_vertices(r.quad);
-                    let vj = verts[(r.local as usize + 1) % 4];
-                    let Some(j) = vj.try_into_index() else { continue };
-                    let dist = (self.buf[i] - self.buf[j]).length();
-                    if dist < 1e-6 {
-                        continue;
+                    for (offset, sum, count) in [
+                        (1usize, &mut sum_edge, &mut count_edge),
+                        (2usize, &mut sum_diag, &mut count_diag),
+                    ] {
+                        let vj = verts[(r.local as usize + offset) % 4];
+                        let Some(j) = vj.try_into_index() else { continue };
+                        let dist = (self.buf[i] - self.buf[j]).length();
+                        if dist < 1e-6 {
+                            continue;
+                        }
+                        *sum += dist;
+                        *count += 1;
                     }
-                    sum_len += dist;
-                    count += 1;
                 }
-                if count == 0 {
+                if count_edge == 0 && count_diag == 0 {
                     continue;
                 }
-                let avg_len = sum_len / count as f32;
+                let avg_edge = if count_edge > 0 {
+                    sum_edge / count_edge as f32
+                } else {
+                    0.0
+                };
+                let avg_diag = if count_diag > 0 {
+                    sum_diag / count_diag as f32
+                } else {
+                    0.0
+                };
 
-                // Pass 2: compute ideal position — centroid of points at avg_len
-                // from each neighbor along the current direction.
+                // Pass 2: compute ideal position — centroid of points at the respective
+                // average distance from each edge and diagonal neighbor.
                 let mut ideal_sum = Vec2::ZERO;
                 let mut ideal_count = 0u32;
                 for r in mesh.vertex_ring(vi) {
                     let verts = mesh.quad_vertices(r.quad);
-                    let vj = verts[(r.local as usize + 1) % 4];
-                    let Some(j) = vj.try_into_index() else { continue };
-                    let delta = self.buf[i] - self.buf[j]; // direction: j → i
-                    let dist = delta.length();
-                    if dist < 1e-6 {
-                        continue;
+                    for (offset, avg_len) in [(1usize, avg_edge), (2usize, avg_diag)] {
+                        if avg_len == 0.0 {
+                            continue;
+                        }
+                        let vj = verts[(r.local as usize + offset) % 4];
+                        let Some(j) = vj.try_into_index() else { continue };
+                        let delta = self.buf[i] - self.buf[j]; // direction: j → i
+                        let dist = delta.length();
+                        if dist < 1e-6 {
+                            continue;
+                        }
+                        ideal_sum += self.buf[j] + avg_len * (delta / dist);
+                        ideal_count += 1;
                     }
-                    ideal_sum += self.buf[j] + avg_len * (delta / dist);
-                    ideal_count += 1;
                 }
                 if ideal_count == 0 {
                     continue;
@@ -110,8 +122,8 @@ mod tests {
     fn two_interior_mesh(pos1: Vec2, pos2: Vec2) -> QuadMesh {
         let positions = vec![
             Vec2::new(0.0, 0.0), // 0 boundary
-            pos1,                 // 1 interior
-            pos2,                 // 2 interior
+            pos1,                // 1 interior
+            pos2,                // 2 interior
             Vec2::new(0.0, 1.0), // 3 boundary
             Vec2::new(2.0, 0.0), // 4 boundary
             Vec2::new(2.0, 1.0), // 5 boundary
@@ -157,7 +169,10 @@ mod tests {
         filter.apply(&mut mesh);
 
         let after = (mesh.position(VertIdx::new(1)) - mesh.position(VertIdx::new(2))).length();
-        assert!(after > before, "distance should increase: before={before}, after={after}");
+        assert!(
+            after > before,
+            "distance should increase: before={before}, after={after}"
+        );
     }
 
     #[test]
@@ -205,11 +220,15 @@ mod tests {
         let pos2_after = mesh.position(VertIdx::new(2));
         assert!(
             (pos1_after - pos1_before).length() < 1e-4,
-            "vertex 1 should barely move: {:?} → {:?}", pos1_before, pos1_after
+            "vertex 1 should barely move: {:?} → {:?}",
+            pos1_before,
+            pos1_after
         );
         assert!(
             (pos2_after - pos2_before).length() < 1e-4,
-            "vertex 2 should barely move: {:?} → {:?}", pos2_before, pos2_after
+            "vertex 2 should barely move: {:?} → {:?}",
+            pos2_before,
+            pos2_after
         );
     }
 }

@@ -2,7 +2,6 @@ use crate::{
     indexed::TypedIndex,
     math::{
         cdt::Triangulation,
-        geometry::is_inside_hex,
         hex::AxialCoord,
         mesh::{QuadMesh, VertIdx},
         rand::StableRng,
@@ -11,8 +10,12 @@ use crate::{
 use glam::{IVec2, Vec2};
 use std::collections::HashMap;
 
-/// Scale factor for converting world-space hex coordinates to integer CDT coordinates.
-const GRID_SCALE: f32 = 1000.0;
+/// CDT grid scale to convet word to integer grid
+const GRID_SCALE: i64 = 1000;
+/// CDT integer x-scale: `x_cdt = X_SCALE * q`  (exact: 1.5 * 1000)
+const X_SCALE: i64 = 1500;
+/// CDT integer y-scale: `y_cdt = Y_SCALE * (2r + q)`  (rounded: √3/2 * 1000 ≈ 866.025)
+const Y_SCALE: i64 = 866;
 
 /// Generates a quad mesh inside a hexagon using CDT triangulation.
 ///
@@ -25,7 +28,7 @@ const GRID_SCALE: f32 = 1000.0;
 /// Returns a [`QuadMesh`] with topology and positions. No smoothing or
 /// filtering is applied — use filters on the returned mesh.
 pub struct CdtMesher {
-    edge_subdivisions: u32,
+    subdivision: u32,
     interior_points: u32,
     hex_size: f32,
     rng: Box<dyn StableRng>,
@@ -34,11 +37,11 @@ pub struct CdtMesher {
 impl CdtMesher {
     /// Create a new CDT mesher.
     ///
-    /// - `edge_subdivisions`: number of segments per hex edge (e.g. 4 → 4 segments, 24 boundary points)
+    /// - `subdivision`: number of segments per hex edge (e.g. 4 → 4 segments, 24 boundary points)
     /// - `interior_points`: target number of random interior points
-    pub fn new(edge_subdivisions: u32, interior_points: u32, rng: impl StableRng + 'static) -> Self {
+    pub fn new(subdivision: u32, interior_points: u32, rng: impl StableRng + 'static) -> Self {
         Self {
-            edge_subdivisions: edge_subdivisions.max(1),
+            subdivision,
             interior_points,
             hex_size: 1.0,
             rng: Box::new(rng),
@@ -52,123 +55,113 @@ impl CdtMesher {
     }
 
     /// Set the world-space size of the hex, compensating for the axial radius
-    /// so the hex extent stays constant regardless of edge subdivision count.
+    /// so the hex extent stays constant regardless of subdivision count.
     /// `size = 1.0` matches a single-cell hex with `hex_size = 1.0`.
     #[must_use]
     pub fn with_world_size(self, size: f32) -> Self {
-        let edge_subdivisions = self.edge_subdivisions;
-        self.with_hex_size(size / edge_subdivisions as f32)
+        let radius = 2u32.pow(self.subdivision - 1);
+        self.with_hex_size(size / radius as f32)
     }
 
     /// Generate the CDT-based quad mesh.
     pub fn generate(&mut self) -> QuadMesh {
-        // Step 1: Compute boundary points on integer grid
+        // Step 1: Compute boundary points and internal points on integer grid
+        // CDT coords:
+        //   `x = x_world * GRId_SCALE = X_SCALE * q`,
+        //   `y = y_world * GRID_SCALE = Y_SCALE * (2r + q)`,
+        //  where q,r are the axial coordinates. Scales are express as const integers including
+        //  the rounded irracional parts. so this allows to perform cdt using only stable integer math.
+
         let (boundary_points, boundary_edges) = self.hex_boundary_points();
         let boundary_count = boundary_points.len();
-
-        // Step 2: Generate random interior points
         let interior_points = self.random_interior_points();
-
-        // Step 3: Combine all points
-        let mut all_points: Vec<IVec2> = Vec::with_capacity(boundary_points.len() + interior_points.len());
+        let mut all_points: Vec<IVec2> = Vec::with_capacity(boundary_count + interior_points.len());
         all_points.extend_from_slice(&boundary_points);
         all_points.extend_from_slice(&interior_points);
 
-        // Step 4: CDT triangulation with boundary constraint edges
+        // Step 2: CDT triangulation with boundary constraint edges
         let triangulation =
             Triangulation::build_with_edges(&all_points, &boundary_edges).expect("CDT triangulation failed");
         let triangles: Vec<(usize, usize, usize)> = triangulation.triangles().collect();
 
-        // Step 5: Convert integer points to world-space f32
+        // Step 3: Convert CDT integer points to world-space f32.
+        let scale = self.hex_size / GRID_SCALE as f32;
         let base_vertices: Vec<Vec2> = all_points
             .iter()
-            .map(|p| Vec2::new(p.x as f32 / GRID_SCALE, p.y as f32 / GRID_SCALE))
+            .map(|p| Vec2::new(p.x as f32, p.y as f32) * scale)
             .collect();
 
-        // Step 6: Split each triangle into 3 quads and build QuadMesh
+        // Step 4: Split each triangle into 3 quads and build QuadMesh
         self.split_triangles_to_quad_mesh(&base_vertices, &triangles, boundary_count)
     }
 
-    /// Hex world-space radius (distance from center to corner).
-    fn hex_world_radius(&self) -> f32 {
-        // The hex is sized so that boundary points span edge_subdivisions segments.
-        // Use edge_subdivisions as the axial radius for world_coordinate.
-        AxialCoord::new(self.edge_subdivisions as i32, 0)
-            .world_coordinate(self.hex_size)
-            .length()
-    }
-
-    /// Compute hex corner and subdivided edge points on the integer grid.
-    /// Returns (points, constraint_edges) where edges form the closed hex boundary.
     fn hex_boundary_points(&self) -> (Vec<IVec2>, Vec<(usize, usize)>) {
-        let corners = AxialCoord::hex_corners(self.edge_subdivisions);
-        let corner_world: Vec<Vec2> = corners.iter().map(|c| c.world_coordinate(self.hex_size)).collect();
+        let corners = AxialCoord::hex_corners(1);
+        let n = 2u32.pow(self.subdivision - 1) as i32;
 
-        let mut points = Vec::new();
+        let total = (6 * n) as usize;
+        let mut points = Vec::with_capacity(total);
 
-        // For each hex edge, add the start corner + intermediate subdivision points.
-        // The end corner is the start of the next edge, so we don't duplicate it.
         for edge_idx in 0..6 {
-            let a = corner_world[edge_idx];
-            let b = corner_world[(edge_idx + 1) % 6];
-
-            for seg in 0..self.edge_subdivisions {
-                let t = seg as f32 / self.edge_subdivisions as f32;
-                let p = a + (b - a) * t;
+            let a = corners[edge_idx];
+            let b = corners[(edge_idx + 1) % 6];
+            for k in 0..n {
+                let q = n * a.q + k * (b.q - a.q);
+                let r = n * a.r + k * (b.r - a.r);
                 points.push(IVec2::new(
-                    (p.x * GRID_SCALE).round() as i32,
-                    (p.y * GRID_SCALE).round() as i32,
+                    (X_SCALE * q as i64) as i32,
+                    (Y_SCALE * (2 * r + q) as i64) as i32,
                 ));
             }
         }
+        debug_assert_eq!(points.len(), total);
 
-        // Constraint edges: consecutive boundary points forming a closed loop
-        let n = points.len();
-        let edges: Vec<(usize, usize)> = (0..n).map(|i| (i, (i + 1) % n)).collect();
-
+        let edges: Vec<(usize, usize)> = (0..total).map(|i| (i, (i + 1) % total)).collect();
         (points, edges)
     }
 
-    /// Generate random interior points with minimum distance enforcement.
-    ///
-    /// Two coordinate spaces are used:
-    /// - **World space** (`f32`): hex geometry, `is_inside_hex` test.
-    /// - **Integer grid** (`i32`/`i64`): world × `GRID_SCALE`, used by CDT and distance checks.
     fn random_interior_points(&mut self) -> Vec<IVec2> {
         let target_count = self.interior_points as usize;
         if target_count == 0 {
             return Vec::new();
         }
 
-        let world_circumradius = self.hex_world_radius();
-        let world_segment = world_circumradius / self.edge_subdivisions as f32;
+        let n = 2u32.pow(self.subdivision - 1) as i64;
+        let x_bound = X_SCALE * n;
+        let y_bound = 2 * Y_SCALE * n;
+        let hp_bound = 2 * X_SCALE * Y_SCALE * n;
 
-        let int_radius = (world_circumradius * GRID_SCALE) as i64;
-        let int_min_dist = (world_segment * 0.5 * GRID_SCALE) as i64;
-        let int_min_dist_sq = int_min_dist * int_min_dist;
+        const INT_MIN_DIST_SQ: i64 = GRID_SCALE * GRID_SCALE / 4;
 
-        let mut interior = Vec::with_capacity(target_count);
+        let mut interior = Vec::<IVec2>::with_capacity(target_count);
         let max_attempts = target_count * 20;
         let mut attempts = 0;
 
         while interior.len() < target_count && attempts < max_attempts {
             attempts += 1;
 
-            let ix = (self.rng.next_u32() as i64 % (2 * int_radius) - int_radius) as i32;
-            let iy = (self.rng.next_u32() as i64 % (2 * int_radius) - int_radius) as i32;
+            // Sample uniformly in the CDT bounding rectangle of the hex
+            let ix = (self.rng.next_u32() as i64 % (2 * x_bound) - x_bound) as i32;
+            let iy = (self.rng.next_u32() as i64 % (2 * y_bound) - y_bound) as i32;
 
-            let wx = ix as f32 / GRID_SCALE;
-            let wy = iy as f32 / GRID_SCALE;
-            if !is_inside_hex(Vec2::new(wx, wy), world_circumradius, world_segment * 0.5) {
+            // Strictly inside the hex — 3 half-plane conditions derived from the hex edge cross-products:
+            //   1. `|ix| < X_SCALE·n`
+            //   2. `|iy·X_SCALE − ix·Y_SCALE| < 2·n·X_SCALE·Y_SCALE`   (maps to |r| < n)
+            //   3. `|ix·Y_SCALE + iy·X_SCALE| < 2·n·X_SCALE·Y_SCALE`   (maps to |q+r| < n)
+            let ix64 = ix as i64;
+            let iy64 = iy as i64;
+            if ix64.abs() >= x_bound
+                || (iy64 * X_SCALE - ix64 * Y_SCALE).abs() >= hp_bound
+                || (ix64 * Y_SCALE + iy64 * X_SCALE).abs() >= hp_bound
+            {
                 continue;
             }
 
-            // Minimum distance check in integer grid (avoids f32 precision loss)
             let candidate = IVec2::new(ix, iy);
             let too_close = interior.iter().any(|p: &IVec2| {
                 let dx = (candidate.x - p.x) as i64;
                 let dy = (candidate.y - p.y) as i64;
-                dx * dx + dy * dy < int_min_dist_sq
+                dx * dx + dy * dy < INT_MIN_DIST_SQ
             });
             if too_close {
                 continue;

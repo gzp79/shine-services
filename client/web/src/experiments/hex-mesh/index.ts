@@ -1,10 +1,8 @@
 import init, { generate_mesh } from '#wasm';
 import wasmUrl from '#wasm-bin';
-import { MeshParams, createControls, defaultGlobalParams, defaultParams, paramsToConfigJson } from './controls';
-import { HexMeshGroup, buildHexMesh } from './mesh-builder';
 import { SceneContext, animate, createScene } from '../../scene';
-
-export type { MeshParams };
+import { createControls, defaultParams, paramsToConfigJson } from './controls';
+import { HexMeshGroup, buildHexMesh } from './mesh-builder';
 
 export interface HexMeshViewer {
     destroy(): void;
@@ -15,14 +13,13 @@ export async function createHexMeshViewer(container: HTMLElement): Promise<HexMe
 
     const ctx: SceneContext = createScene(container);
     const params = defaultParams();
-    const globalParams = defaultGlobalParams();
     let currentMesh: HexMeshGroup | null = null;
     let animationId = 0;
 
     function applyDisplay() {
         if (currentMesh) {
-            currentMesh.setPrimalVisible(globalParams.showPrimal);
-            currentMesh.setDualVisible(globalParams.showDual);
+            currentMesh.setPrimalVisible(params.showPrimal);
+            currentMesh.setDualVisible(params.showDual);
         }
     }
 
@@ -34,12 +31,12 @@ export async function createHexMeshViewer(container: HTMLElement): Promise<HexMe
         }
 
         try {
-            const configJson = paramsToConfigJson(params, globalParams);
+            const configJson = paramsToConfigJson(params);
             const wasmMesh = generate_mesh(configJson);
 
             const data = {
                 vertices: wasmMesh.vertices(),
-                indices: wasmMesh.indices(),
+                indices: wasmMesh.quad_indices(),
                 patchIndices: wasmMesh.patch_indices(),
                 dualVertices: wasmMesh.dual_vertices(),
                 dualIndices: wasmMesh.dual_indices()
@@ -58,7 +55,7 @@ export async function createHexMeshViewer(container: HTMLElement): Promise<HexMe
         }
     }
 
-    const gui = createControls(container, params, globalParams, regenerate, applyDisplay);
+    const gui = createControls(container, params, regenerate, applyDisplay);
     regenerate();
     animationId = animate(ctx);
 

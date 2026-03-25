@@ -52,83 +52,32 @@ pub fn quad_signed_area(pts: &[Vec2; 4]) -> f32 {
     a2 * 0.5
 }
 
-/// Check if a quad is convex and not degenerate.
-/// `min_quality` is the minimum allowed `area / max_edge²` (e.g. 0.15).
-pub fn is_quad_well_shaped(pts: &[Vec2; 4], min_quality: f32) -> bool {
-    // Convexity: all cross products at corners must have the same sign
-    let mut sign = None;
-    for i in 0..4 {
-        let a = pts[i];
-        let b = pts[(i + 1) % 4];
-        let c = pts[(i + 2) % 4];
-        let cross = (b - a).perp_dot(c - b);
-        if cross.abs() < 1e-10 {
-            continue;
-        }
-        match sign {
-            None => sign = Some(cross > 0.0),
-            Some(s) => {
-                if s != (cross > 0.0) {
-                    return false;
-                }
-            }
-        }
-    }
-
-    // Quality: area / max_edge^2
-    let mut area = 0.0f32;
-    for i in 0..4 {
-        let j = (i + 1) % 4;
-        area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
-    }
-    area = area.abs() / 2.0;
-
-    let mut max_edge_sq = 0.0f32;
-    for i in 0..4 {
-        let j = (i + 1) % 4;
-        max_edge_sq = max_edge_sq.max((pts[j] - pts[i]).length_squared());
-    }
-
-    if max_edge_sq < 1e-20 {
-        return false;
-    }
-
-    area / max_edge_sq >= min_quality
-}
-
-/// Check if a point is strictly inside a flat-top regular hexagon centered at the origin.
+/// Minimum scaled Jacobian of a quad — the standard quad quality metric.
 ///
-/// `circumradius` is the distance from center to any corner.
-/// `margin` shrinks the hex inward by this amount on each edge (use 0.0 for exact test).
+/// At each corner computes `(e1 × e2) / (|e1| · |e2|) = sin(θ)` where `e1`, `e2`
+/// are the two adjacent edge vectors and `θ` is the interior angle. Returns the
+/// minimum over all 4 corners.
 ///
-/// Uses the half-plane method with 3 symmetry axes. For a flat-top hex the
-/// edge outward normals are at 0°, 60°, 120° (and their negatives).
-pub fn is_inside_hex(point: Vec2, circumradius: f32, margin: f32) -> bool {
-    // Apothem = center-to-edge distance = circumradius * cos(30°)
-    let apothem = circumradius * (3.0f32.sqrt() / 2.0);
-    let limit = apothem - margin;
-    if limit <= 0.0 {
-        return false;
+/// | Value | Meaning |
+/// |-------|---------|
+/// | `1.0` | perfect square |
+/// | `> 0` | valid convex quad; quality ∝ min corner angle |
+/// | `0.0` | degenerate (collapsed corner) |
+/// | `< 0` | invalid: concave or self-intersecting |
+pub fn quad_jacobian(pts: &[Vec2; 4]) -> f32 {
+    let mut min_sj = f32::MAX;
+    for i in 0..4 {
+        let p = pts[i];
+        let e1 = pts[(i + 1) % 4] - p;
+        let e2 = pts[(i + 3) % 4] - p;
+        let cross = e1.x * e2.y - e1.y * e2.x;
+        let len = e1.length() * e2.length();
+        if len < 1e-10 {
+            return 0.0;
+        }
+        min_sj = min_sj.min(cross / len);
     }
-
-    let half_sqrt3 = 3.0f32.sqrt() * 0.5;
-
-    // n0 = (1, 0): right/left edges
-    if point.x.abs() >= limit {
-        return false;
-    }
-    // n1 = (1/2, √3/2): upper-right / lower-left edges
-    let d1 = point.x * 0.5 + point.y * half_sqrt3;
-    if d1.abs() >= limit {
-        return false;
-    }
-    // n2 = (-1/2, √3/2): upper-left / lower-right edges
-    let d2 = -point.x * 0.5 + point.y * half_sqrt3;
-    if d2.abs() >= limit {
-        return false;
-    }
-
-    true
+    min_sj
 }
 
 #[cfg(test)]
@@ -163,10 +112,10 @@ mod tests {
     #[test]
     fn full_ring_sort() {
         let dirs = vec![
-            Vec2::new(0.0, -1.0),            // down
-            Vec2::new(-1.0, 0.0),             // left
-            Vec2::new(1.0, 0.0),              // right
-            Vec2::new(0.0, 1.0),              // up
+            Vec2::new(0.0, -1.0),                      // down
+            Vec2::new(-1.0, 0.0),                      // left
+            Vec2::new(1.0, 0.0),                       // right
+            Vec2::new(0.0, 1.0),                       // up
             Vec2::new(FRAC_1_SQRT_2, FRAC_1_SQRT_2),   // 45°
             Vec2::new(-FRAC_1_SQRT_2, -FRAC_1_SQRT_2), // 225°
         ];

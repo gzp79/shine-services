@@ -35,10 +35,6 @@ export class WasmPatchMesh {
      */
     dual_vertices(): Float32Array;
     /**
-     * Flat quad indices [a, b, c, d, ...] (4 indices per quad)
-     */
-    indices(): Uint32Array;
-    /**
      * Patch index per quad (0 for all currently)
      */
     patch_indices(): Uint8Array;
@@ -46,6 +42,10 @@ export class WasmPatchMesh {
      * Number of quads
      */
     quad_count(): number;
+    /**
+     * Flat quad indices [a, b, c, d, ...] (4 indices per quad)
+     */
+    quad_indices(): Uint32Array;
     /**
      * Number of vertices
      */
@@ -64,20 +64,6 @@ export function generate_cdt(config_json: string): WasmCdt;
 
 /**
  * Generate a hex quad mesh from a JSON config string.
- *
- * Config shape:
- * ```json
- * {
- *   "mesher": { "type": "Patch", "subdivision": 3, "orientation": "Even" }
- *           | { "type": "Cdt", "edge_subdivisions": 4, "interior_points": 20 },
- *   "seed": 42,
- *   "filters": [
- *     { "type": "Jitter", "amplitude": 0.3 },
- *     { "type": "Laplacian", "iterations": 20, "strength": 0.5 },
- *     { "type": "QuadRelax", "min_quality": 0.15, "strength": 0.5, "max_iterations": 50 }
- *   ]
- * }
- * ```
  */
 export function generate_mesh(config_json: string): WasmPatchMesh;
 
@@ -100,9 +86,9 @@ export interface InitOutput {
     readonly wasmpatchmesh_dual_indices: (a: number) => [number, number];
     readonly wasmpatchmesh_dual_vertex_count: (a: number) => number;
     readonly wasmpatchmesh_dual_vertices: (a: number) => [number, number];
-    readonly wasmpatchmesh_indices: (a: number) => [number, number];
     readonly wasmpatchmesh_patch_indices: (a: number) => [number, number];
     readonly wasmpatchmesh_quad_count: (a: number) => number;
+    readonly wasmpatchmesh_quad_indices: (a: number) => [number, number];
     readonly wasmpatchmesh_vertices: (a: number) => [number, number];
     readonly wasmpatchmesh_vertex_count: (a: number) => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;

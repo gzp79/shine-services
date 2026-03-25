@@ -27,10 +27,6 @@ impl LatticeMesher {
         }
     }
 
-    fn radius(&self) -> u32 {
-        2u32.pow(self.subdivision)
-    }
-
     #[must_use]
     pub fn with_hex_size(mut self, hex_size: f32) -> Self {
         self.hex_size = hex_size;
@@ -39,12 +35,12 @@ impl LatticeMesher {
 
     #[must_use]
     pub fn with_world_size(self, size: f32) -> Self {
-        let radius = self.radius();
+        let radius = 2u32.pow(self.subdivision - 1);
         self.with_hex_size(size / radius as f32)
     }
 
     pub fn generate(&mut self) -> QuadMesh {
-        let radius = self.radius();
+        let radius = 2u32.pow(self.subdivision - 1);
         let indexer = AxialDenseIndexer::new(radius);
 
         // Step 1: Vertex positions
@@ -149,12 +145,7 @@ impl LatticeMesher {
         self.subdivide_faces(&positions, &is_boundary, &faces)
     }
 
-    fn subdivide_faces(
-        &self,
-        base_positions: &[Vec2],
-        base_is_boundary: &[bool],
-        faces: &[Face],
-    ) -> QuadMesh {
+    fn subdivide_faces(&self, base_positions: &[Vec2], base_is_boundary: &[bool], faces: &[Face]) -> QuadMesh {
         let base_count = base_positions.len();
         let mut positions: Vec<Vec2> = base_positions.to_vec();
         let mut is_boundary: Vec<bool> = base_is_boundary.to_vec();
@@ -163,21 +154,15 @@ impl LatticeMesher {
         // Cache edge midpoints: (min_idx, max_idx) → vertex index
         let mut midpoint_cache: HashMap<(usize, usize), usize> = HashMap::new();
 
-        let mut get_midpoint =
-            |positions: &mut Vec<Vec2>, is_boundary: &mut Vec<bool>, a: usize, b: usize| -> usize {
-                let key = if a < b { (a, b) } else { (b, a) };
-                *midpoint_cache.entry(key).or_insert_with(|| {
-                    let idx = positions.len();
-                    positions.push((positions[a] + positions[b]) / 2.0);
-                    is_boundary.push(
-                        a < base_count
-                            && b < base_count
-                            && is_boundary[a]
-                            && is_boundary[b],
-                    );
-                    idx
-                })
-            };
+        let mut get_midpoint = |positions: &mut Vec<Vec2>, is_boundary: &mut Vec<bool>, a: usize, b: usize| -> usize {
+            let key = if a < b { (a, b) } else { (b, a) };
+            *midpoint_cache.entry(key).or_insert_with(|| {
+                let idx = positions.len();
+                positions.push((positions[a] + positions[b]) / 2.0);
+                is_boundary.push(a < base_count && b < base_count && is_boundary[a] && is_boundary[b]);
+                idx
+            })
+        };
 
         for face in faces {
             match *face {
@@ -196,9 +181,7 @@ impl LatticeMesher {
                 }
                 Face::Quad([a, b, c, d]) => {
                     let centroid_idx = positions.len();
-                    positions.push(
-                        (positions[a] + positions[b] + positions[c] + positions[d]) / 4.0,
-                    );
+                    positions.push((positions[a] + positions[b] + positions[c] + positions[d]) / 4.0);
                     is_boundary.push(false);
 
                     let m_ab = get_midpoint(&mut positions, &mut is_boundary, a, b);
@@ -227,12 +210,7 @@ enum Face {
 
 /// Merge two triangles sharing edge (ea, eb) into a quad.
 /// Returns the 4 vertices in winding order, or None if degenerate.
-fn merge_triangles(
-    tri0: &[usize; 3],
-    tri1: &[usize; 3],
-    ea: usize,
-    eb: usize,
-) -> Option<[usize; 4]> {
+fn merge_triangles(tri0: &[usize; 3], tri1: &[usize; 3], ea: usize, eb: usize) -> Option<[usize; 4]> {
     // Find the vertex in each triangle that is NOT on the shared edge
     let opposite0 = tri0.iter().copied().find(|&v| v != ea && v != eb)?;
     let opposite1 = tri1.iter().copied().find(|&v| v != ea && v != eb)?;

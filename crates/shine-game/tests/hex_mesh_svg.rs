@@ -83,14 +83,22 @@ fn generate_with_filter_pipeline() {
 fn generate_cdt_mesh() {
     let mut mesher = CdtMesher::new(4, 20, SysRng::new());
     let mesh = mesher.generate();
-    println!("CDT mesh: {} vertices, {} quads", mesh.vertex_count(), mesh.quad_count());
+    println!(
+        "CDT mesh: {} vertices, {} quads",
+        mesh.vertex_count(),
+        mesh.quad_count()
+    );
 }
 
 #[test]
 fn generate_lattice_mesh() {
     let mut mesher = LatticeMesher::new(2, SysRng::new());
     let mesh = mesher.generate();
-    println!("Lattice mesh: {} vertices, {} quads", mesh.vertex_count(), mesh.quad_count());
+    println!(
+        "Lattice mesh: {} vertices, {} quads",
+        mesh.vertex_count(),
+        mesh.quad_count()
+    );
     assert!(mesh.quad_count() > 0);
 }
 

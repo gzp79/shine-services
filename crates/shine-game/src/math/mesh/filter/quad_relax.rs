@@ -1,46 +1,41 @@
+use super::quad_filter::QuadFilter;
 use crate::{
     indexed::TypedIndex,
-    math::{
-        geometry::is_quad_well_shaped,
-        mesh::QuadMesh,
-    },
+    math::{geometry::quad_jacobian, mesh::QuadMesh},
 };
-use super::quad_filter::QuadFilter;
 use glam::Vec2;
 
 /// Targeted Laplacian relaxation that only moves vertices of badly-shaped quads.
-///
-/// [`apply`](QuadFilter::apply) identifies quads below `min_quality`
-/// and relaxes their interior vertices toward the neighbor average.
-/// Iterates until all quads pass or `max_iterations` is reached.
 pub struct QuadRelax {
-    min_quality: f32,
+    quality: f32,
     strength: f32,
-    max_iterations: u32,
+    iterations: u32,
     buf: Vec<Vec2>,
 }
 
 impl QuadRelax {
-    pub fn new(min_quality: f32, strength: f32, max_iterations: u32) -> Self {
+    pub fn new(quality: f32, strength: f32, iterations: u32) -> Self {
         Self {
-            min_quality,
+            quality,
             strength,
-            max_iterations,
+            iterations,
             buf: Vec::new(),
         }
     }
 }
 
 impl QuadFilter for QuadRelax {
+    /// Identifies quads below `quality` and relaxes their interior vertices toward
+    /// the neighbor average. Iterates until all quads pass or `iterations` is reached.
     fn apply(&mut self, mesh: &mut QuadMesh) {
-        for _ in 0..self.max_iterations {
+        for _ in 0..self.iterations {
             let mut is_bad = vec![false; mesh.vertex_count()];
             let mut any_bad = false;
 
             for qi in mesh.quad_indices() {
                 let verts = mesh.quad_vertices(qi);
                 let pts: [Vec2; 4] = std::array::from_fn(|i| mesh.position(verts[i]));
-                if !is_quad_well_shaped(&pts, self.min_quality) {
+                if quad_jacobian(&pts) < self.quality {
                     any_bad = true;
                     for &v in &verts {
                         if !mesh.is_boundary_vertex(v) {

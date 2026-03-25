@@ -1,15 +1,13 @@
 use crate::math::{
     cdt::Triangulation,
     hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
-    mesh::{EnergyRelax, Jitter, LaplacianSmoother, QuadFilter, QuadMesh, QuadRelax, VertexRepulsion},
+    mesh::{Jitter, LaplacianSmoother, QuadFilter, QuadMesh, QuadRelax, VertexRepulsion},
     rand::{StableRng, Xorshift32},
 };
 use glam::IVec2;
 use serde::Deserialize;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
-
-// ── Config types ──────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 struct MeshConfig {
@@ -22,38 +20,24 @@ struct MeshConfig {
 #[derive(Deserialize)]
 #[serde(tag = "type")]
 enum MesherConfig {
-    Patch {
-        subdivision: u32,
-        orientation: String,
-    },
-    Cdt {
-        edge_subdivisions: u32,
-        interior_points: u32,
-    },
-    Lattice {
-        subdivision: u32,
-    },
+    Patch { subdivision: u32, orientation: String },
+    Cdt { subdivision: u32, interior_points: u32 },
+    Lattice { subdivision: u32 },
 }
 
 #[derive(Deserialize)]
 #[serde(tag = "type")]
 enum FilterConfig {
     Laplacian {
-        iterations: u32,
         strength: f32,
+        iterations: u32,
     },
     Jitter {
         amplitude: f32,
     },
     QuadRelax {
-        min_quality: f32,
+        quality: f32,
         strength: f32,
-        max_iterations: u32,
-    },
-    EnergyRelax {
-        area_weight: f32,
-        shape_weight: f32,
-        step_size: f32,
         iterations: u32,
     },
     VertexRepulsion {
@@ -61,8 +45,6 @@ enum FilterConfig {
         iterations: u32,
     },
 }
-
-// ── WASM output ───────────────────────────────────────────────────────
 
 #[wasm_bindgen]
 pub struct WasmPatchMesh {
@@ -80,19 +62,14 @@ impl WasmPatchMesh {
         self.vertices.clone()
     }
 
-    /// Flat quad indices [a, b, c, d, ...] (4 indices per quad)
-    pub fn indices(&self) -> Vec<u32> {
-        self.indices.clone()
-    }
-
-    /// Patch index per quad (0 for all currently)
-    pub fn patch_indices(&self) -> Vec<u8> {
-        self.patch_indices.clone()
-    }
-
     /// Number of vertices
     pub fn vertex_count(&self) -> usize {
         self.vertices.len() / 2
+    }
+
+    /// Flat quad indices [a, b, c, d, ...] (4 indices per quad)
+    pub fn quad_indices(&self) -> Vec<u32> {
+        self.indices.clone()
     }
 
     /// Number of quads
@@ -100,19 +77,24 @@ impl WasmPatchMesh {
         self.indices.len() / 4
     }
 
+    /// Patch index per quad (0 for all currently)
+    pub fn patch_indices(&self) -> Vec<u8> {
+        self.patch_indices.clone()
+    }
+
     /// Flat dual vertex positions [x, y, x, y, ...] (2 floats per vertex, one per primal quad centroid)
     pub fn dual_vertices(&self) -> Vec<f32> {
         self.dual_vertices.clone()
     }
 
-    /// Flat dual edge indices [a, b, ...] (2 indices per dual edge)
-    pub fn dual_indices(&self) -> Vec<u32> {
-        self.dual_indices.clone()
-    }
-
     /// Number of dual vertices
     pub fn dual_vertex_count(&self) -> usize {
         self.dual_vertices.len() / 2
+    }
+
+    /// Flat dual edge indices [a, b, ...] (2 indices per dual edge)
+    pub fn dual_indices(&self) -> Vec<u32> {
+        self.dual_indices.clone()
     }
 
     /// Number of dual edges
@@ -122,45 +104,9 @@ impl WasmPatchMesh {
 }
 
 /// Generate a hex quad mesh from a JSON config string.
-///
-/// Config shape:
-/// ```json
-/// {
-///   "mesher": { "type": "Patch", "subdivision": 3, "orientation": "Even" }
-///           | { "type": "Cdt", "edge_subdivisions": 4, "interior_points": 20 },
-///   "seed": 42,
-///   "filters": [
-///     { "type": "Jitter", "amplitude": 0.3 },
-///     { "type": "Laplacian", "iterations": 20, "strength": 0.5 },
-///     { "type": "QuadRelax", "min_quality": 0.15, "strength": 0.5, "max_iterations": 50 }
-///   ]
-/// }
-/// ```
 #[wasm_bindgen]
 pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
     let config: MeshConfig = serde_json::from_str(config_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
-
-    // Validate
-    match &config.mesher {
-        MesherConfig::Patch { subdivision, .. } => {
-            if *subdivision > 5 {
-                return Err(JsValue::from_str("subdivision must be 0-5"));
-            }
-        }
-        MesherConfig::Cdt { edge_subdivisions, interior_points } => {
-            if *edge_subdivisions > 5 {
-                return Err(JsValue::from_str("edge_subdivisions must be 1-5"));
-            }
-            if *interior_points > 500 {
-                return Err(JsValue::from_str("interior_points must be 0-500"));
-            }
-        }
-        MesherConfig::Lattice { subdivision } => {
-            if *subdivision > 5 {
-                return Err(JsValue::from_str("subdivision must be 0-5"));
-            }
-        }
-    }
 
     // Step 1: Generate base mesh from selected mesher
     let mut mesh = match config.mesher {
@@ -173,12 +119,9 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
             let mut mesher = PatchMesher::new(subdivision, orient).with_world_size(1.0);
             mesher.generate_uniform()
         }
-        MesherConfig::Cdt {
-            edge_subdivisions,
-            interior_points,
-        } => {
+        MesherConfig::Cdt { subdivision, interior_points } => {
             let rng = Xorshift32::new(config.seed);
-            let mut mesher = CdtMesher::new(edge_subdivisions, interior_points, rng).with_world_size(1.0);
+            let mut mesher = CdtMesher::new(subdivision, interior_points, rng).with_world_size(1.0);
             mesher.generate()
         }
         MesherConfig::Lattice { subdivision } => {
@@ -189,32 +132,19 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
     };
 
     // Step 2: Apply filter pipeline
-    let mut rng_counter = 0u32;
     for filter_cfg in config.filters {
         let mut filter: Box<dyn QuadFilter> = match filter_cfg {
-            FilterConfig::Laplacian { iterations, strength } => {
-                Box::new(LaplacianSmoother::new(strength, iterations))
-            }
+            FilterConfig::Laplacian { iterations, strength } => Box::new(LaplacianSmoother::new(strength, iterations)),
             FilterConfig::Jitter { amplitude } => {
-                let rng = Xorshift32::new(config.seed.wrapping_add(rng_counter));
-                rng_counter = rng_counter.wrapping_add(1);
+                let rng = Xorshift32::new(config.seed);
                 Box::new(Jitter::new(amplitude, rng))
             }
-            FilterConfig::QuadRelax {
-                min_quality,
-                strength,
-                max_iterations,
-            } => Box::new(QuadRelax::new(min_quality, strength, max_iterations)),
-            FilterConfig::EnergyRelax {
-                area_weight,
-                shape_weight,
-                step_size,
-                iterations,
-            } => Box::new(EnergyRelax::new(area_weight, shape_weight, step_size, iterations)),
-            FilterConfig::VertexRepulsion {
-                strength,
-                iterations,
-            } => Box::new(VertexRepulsion::new(strength, iterations)),
+            FilterConfig::QuadRelax { quality, strength, iterations } => {
+                Box::new(QuadRelax::new(quality, strength, iterations))
+            }
+            FilterConfig::VertexRepulsion { strength, iterations } => {
+                Box::new(VertexRepulsion::new(strength, iterations))
+            }
         };
         filter.apply(&mut mesh);
     }
@@ -289,8 +219,6 @@ fn quad_mesh_to_wasm(mesh: &QuadMesh) -> WasmPatchMesh {
         dual_indices,
     }
 }
-
-// ── CDT visualization (unchanged) ────────────────────────────────────
 
 #[wasm_bindgen]
 pub struct WasmCdt {

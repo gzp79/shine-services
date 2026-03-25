@@ -1,8 +1,8 @@
+use super::quad_filter::QuadFilter;
 use crate::math::{
     mesh::QuadMesh,
     rand::{StableRng, StableRngExt},
 };
-use super::quad_filter::QuadFilter;
 use glam::Vec2;
 
 /// Random jitter displacement for [`QuadMesh`] positions.

@@ -1,128 +1,125 @@
 import GUI from 'lil-gui';
 
-export interface GlobalParams {
+const filtersList = ['None', 'Laplacian', 'Jitter', 'QuadRelax', 'VertexRepulsion'] as const;
+type FilterType = (typeof filtersList)[number];
+
+export type FilterEntryBase = {
+    type: FilterType;
+    enabled: boolean;
+};
+export type FilterEntry = FilterEntryBase &
+    (
+        | {
+              type: 'None';
+          }
+        | {
+              type: 'Laplacian';
+              strength: number;
+              iterations: number;
+          }
+        | {
+              type: 'Jitter';
+              amplitude: number;
+          }
+        | {
+              type: 'QuadRelax';
+              quality: number;
+              strength: number;
+              iterations: number;
+          }
+        | {
+              type: 'VertexRepulsion';
+              strength: number;
+              iterations: number;
+          }
+    );
+
+function defaultFilter(type: FilterType): FilterEntry {
+    switch (type) {
+        case 'None':
+            return { type, enabled: false };
+        case 'Laplacian':
+            return { type, enabled: true, strength: 0.5, iterations: 50 };
+        case 'Jitter':
+            return { type, enabled: true, amplitude: 1 };
+        case 'QuadRelax':
+            return { type, enabled: true, quality: 0.25, strength: 0.5, iterations: 50 };
+        case 'VertexRepulsion':
+            return { type, enabled: true, strength: 1.0, iterations: 100 };
+        default:
+            return { type: 'None', enabled: false };
+    }
+}
+
+const meshersList = ['Patch', 'Cdt', 'Lattice'] as const;
+type MesherType = (typeof meshersList)[number];
+
+export type MesherEntryBase = {
+    type: MesherType;
+    subdivision: number;
+};
+
+export type PatchOrientation = 'Odd' | 'Even';
+
+export type MesherEntry = MesherEntryBase &
+    (
+        | {
+              type: 'Patch';
+              orientation: PatchOrientation;
+          }
+        | {
+              type: 'Cdt';
+              interior_points: number;
+          }
+        | {
+              type: 'Lattice';
+          }
+    );
+
+function defaultMesher(type: MesherType, prev?: MesherEntry): MesherEntry {
+    const subdivision = prev?.subdivision ?? 3;
+    switch (type) {
+        case 'Lattice':
+            return { type, subdivision };
+        case 'Cdt':
+            return { type, subdivision, interior_points: 50 };
+        case 'Patch':
+            return { type, subdivision, orientation: 'Odd' };
+        default:
+            return { type, subdivision };
+    }
+}
+
+export type Params = {
     showPrimal: boolean;
     showDual: boolean;
     seed: number;
-}
-
-export interface FilterEntry {
-    type: string;
-    enabled: boolean;
-    // Laplacian
-    iterations: number;
-    strength: number;
-    // Jitter
-    amplitude: number;
-    // QuadRelax
-    min_quality: number;
-    relax_strength: number;
-    max_iterations: number;
-    // EnergyRelax
-    area_weight: number;
-    shape_weight: number;
-    step_size: number;
-    energy_iterations: number;
-    // VertexRepulsion
-    repulsion_strength: number;
-    repulsion_iterations: number;
-}
-
-export interface MeshParams {
-    mesher: string;
-    // Patch
-    subdivision: number;
-    orientation: string;
-    // Cdt
-    edge_subdivisions: number;
-    interior_points: number;
-    // Lattice
-    lattice_subdivision: number;
-    // Filters
+    mesher: MesherEntry;
     filters: FilterEntry[];
-}
+};
 
-function defaultFilter(type: string): FilterEntry {
+export function defaultParams(): Params {
     return {
-        type,
-        enabled: true,
-        iterations: 20,
-        strength: 0.5,
-        amplitude: 0.3,
-        min_quality: 0.15,
-        relax_strength: 0.5,
-        max_iterations: 50,
-        area_weight: 1.0,
-        shape_weight: 1.0,
-        step_size: 0.01,
-        energy_iterations: 50,
-        repulsion_strength: 0.2,
-        repulsion_iterations: 10,
-    };
-}
-
-export function defaultGlobalParams(): GlobalParams {
-    return {
-        showPrimal: true,
         showDual: false,
-        seed: 42
-    };
-}
-
-export function defaultParams(): MeshParams {
-    return {
-        mesher: 'Patch',
-        subdivision: 3,
-        orientation: 'Even',
-        edge_subdivisions: 4,
-        interior_points: 20,
-        lattice_subdivision: 3,
+        showPrimal: true,
+        seed: 42,
+        mesher: defaultMesher('Lattice'),
         filters: []
     };
 }
 
-export function paramsToConfigJson(p: MeshParams, g: GlobalParams): string {
-    let mesher: Record<string, unknown>;
-    if (p.mesher === 'Cdt') {
-        mesher = { type: 'Cdt', edge_subdivisions: p.edge_subdivisions, interior_points: p.interior_points };
-    } else if (p.mesher === 'Lattice') {
-        mesher = { type: 'Lattice', subdivision: p.lattice_subdivision };
-    } else {
-        mesher = { type: 'Patch', subdivision: p.subdivision, orientation: p.orientation };
-    }
-
-    const filters = p.filters
-        .filter((f) => f.type !== 'None' && f.enabled)
-        .map((f) => {
-            switch (f.type) {
-                case 'Laplacian':
-                    return { type: 'Laplacian', iterations: f.iterations, strength: f.strength };
-                case 'Jitter':
-                    return { type: 'Jitter', amplitude: f.amplitude };
-                case 'QuadRelax':
-                    return { type: 'QuadRelax', min_quality: f.min_quality, strength: f.relax_strength, max_iterations: f.max_iterations };
-                case 'EnergyRelax':
-                    return { type: 'EnergyRelax', area_weight: f.area_weight, shape_weight: f.shape_weight, step_size: f.step_size, iterations: f.energy_iterations };
-                case 'VertexRepulsion':
-                    return { type: 'VertexRepulsion', strength: f.repulsion_strength, iterations: f.repulsion_iterations };
-                default:
-                    return { type: f.type };
-            }
-        });
+export function paramsToConfigJson(params: Params): string {
+    const filters = params.filters.filter((f) => f.type !== 'None' && f.enabled);
 
     return JSON.stringify({
-        mesher,
-        seed: g.seed,
+        ...params,
         filters
     });
 }
 
-const FILTER_TYPES = ['None', 'Laplacian', 'Jitter', 'QuadRelax', 'EnergyRelax', 'VertexRepulsion'];
-
 export function createControls(
     container: HTMLElement,
-    params: MeshParams,
-    globalParams: GlobalParams,
+    params: Params,
     onChange: () => void,
     onDisplayChange: () => void
 ): GUI {
@@ -134,10 +131,10 @@ export function createControls(
 
     // ── Global ────────────────────────────────────────────────────────
     const globalFolder = gui.addFolder('Global');
-    globalFolder.add(globalParams, 'showPrimal').name('primal wireframe').onChange(onDisplayChange);
-    globalFolder.add(globalParams, 'showDual').name('dual wireframe').onChange(onDisplayChange);
+    globalFolder.add(params, 'showPrimal').name('primal wireframe').onChange(onDisplayChange);
+    globalFolder.add(params, 'showDual').name('dual wireframe').onChange(onDisplayChange);
 
-    const seedCtrl = globalFolder.add(globalParams, 'seed').name('seed').onChange(onChange);
+    const seedCtrl = globalFolder.add(params, 'seed').name('seed').onChange(onChange);
     const seedRow = document.createElement('li');
     seedRow.style.cssText = 'display:flex;align-items:center;padding:0 var(--padding);height:var(--widget-height);';
     const label = document.createElement('span');
@@ -150,7 +147,7 @@ export function createControls(
     btn.addEventListener('mouseenter', () => (btn.style.background = 'var(--hover-color)'));
     btn.addEventListener('mouseleave', () => (btn.style.background = 'var(--widget-color)'));
     btn.addEventListener('click', () => {
-        globalParams.seed = Math.floor(Math.random() * 999999);
+        params.seed = Math.floor(Math.random() * 999999);
         seedCtrl.updateDisplay();
         onChange();
     });
@@ -158,12 +155,16 @@ export function createControls(
     seedRow.appendChild(btn);
     seedCtrl.domElement.parentElement?.insertBefore(seedRow, seedCtrl.domElement.nextSibling);
 
-    // ── Mesher ────────────────────────────────────────────────────────
+    // Mesher
     const mesherFolder = gui.addFolder('Mesher');
-    mesherFolder.add(params, 'mesher', ['Patch', 'Cdt', 'Lattice']).name('type').onChange(() => {
-        rebuildMesherParams();
-        onChange();
-    });
+    mesherFolder
+        .add(params.mesher, 'type', meshersList)
+        .name('type')
+        .onChange((v: string) => {
+            params.mesher = defaultMesher(v as MesherType, params.mesher);
+            rebuildMesherParams();
+            onChange();
+        });
 
     let mesherCtrls: GUI['controllers'][number][] = [];
 
@@ -171,30 +172,29 @@ export function createControls(
         for (const c of mesherCtrls) c.destroy();
         mesherCtrls = [];
 
-        if (params.mesher === 'Patch') {
-            mesherCtrls.push(mesherFolder.add(params, 'subdivision', 0, 5, 1).onChange(onChange));
-            const orientObj = { odd: params.orientation === 'Odd' };
+        const mesher = params.mesher;
+        mesherCtrls.push(mesherFolder.add(mesher, 'subdivision', 1, 5, 1).name('subdivision').onChange(onChange));
+        if (mesher.type === 'Patch') {
+            const orientObj = { odd: mesher.orientation === 'Odd' };
             mesherCtrls.push(
                 mesherFolder
                     .add(orientObj, 'odd')
                     .name('odd orientation')
                     .onChange((v: boolean) => {
-                        params.orientation = v ? 'Odd' : 'Even';
+                        mesher.orientation = v ? 'Odd' : 'Even';
                         onChange();
                     })
             );
-        } else if (params.mesher === 'Cdt') {
-            mesherCtrls.push(mesherFolder.add(params, 'edge_subdivisions', 1, 5, 1).name('edge subdivisions').onChange(onChange));
-            mesherCtrls.push(mesherFolder.add(params, 'interior_points', 0, 500, 1).name('interior points').onChange(onChange));
-        } else if (params.mesher === 'Lattice') {
-            mesherCtrls.push(mesherFolder.add(params, 'lattice_subdivision', 0, 5, 1).name('subdivision').onChange(onChange));
+        } else if (mesher.type === 'Cdt') {
+            mesherCtrls.push(
+                mesherFolder.add(mesher, 'interior_points', 0, 2000, 1).name('interior points').onChange(onChange)
+            );
+        } else if (mesher.type === 'Lattice') {
+            // nop
         }
     }
 
-    // ── Filters ──────────────────────────────────────────────────────
-    // Each filter is a top-level folder. A trailing "None" dropdown lets users
-    // append new filters; switching an existing filter to "None" removes it.
-
+    // Filters
     let filterFolders: GUI[] = [];
 
     function rebuildFilters() {
@@ -205,15 +205,18 @@ export function createControls(
             const folder = gui.addFolder(entry.type);
             filterFolders.push(folder);
 
-            const typeCtrl = folder.add(entry, 'type', FILTER_TYPES).name('type').onChange((v: string) => {
-                if (v === 'None') {
-                    params.filters.splice(idx, 1);
-                } else {
-                    params.filters[idx] = defaultFilter(v);
-                }
-                rebuildFilters();
-                onChange();
-            });
+            const typeCtrl = folder
+                .add(entry, 'type', filtersList)
+                .name('type')
+                .onChange((v: string) => {
+                    if (v === 'None') {
+                        params.filters.splice(idx, 1);
+                    } else {
+                        params.filters[idx] = defaultFilter(v as FilterType);
+                    }
+                    rebuildFilters();
+                    onChange();
+                });
 
             // Inline enabled checkbox next to the type dropdown
             const cb = document.createElement('input');
@@ -233,26 +236,20 @@ export function createControls(
 
             switch (entry.type) {
                 case 'Laplacian':
-                    folder.add(entry, 'iterations', 1, 50, 1).name('iterations').onChange(onChange);
                     folder.add(entry, 'strength', 0, 1, 0.01).name('strength').onChange(onChange);
+                    folder.add(entry, 'iterations', 1, 200, 1).name('iterations').onChange(onChange);
                     break;
                 case 'Jitter':
                     folder.add(entry, 'amplitude', 0, 5, 0.01).name('amplitude').onChange(onChange);
                     break;
                 case 'QuadRelax':
-                    folder.add(entry, 'min_quality', 0, 1, 0.01).name('min quality').onChange(onChange);
-                    folder.add(entry, 'relax_strength', 0, 1, 0.01).name('strength').onChange(onChange);
-                    folder.add(entry, 'max_iterations', 1, 200, 1).name('max iterations').onChange(onChange);
-                    break;
-                case 'EnergyRelax':
-                    folder.add(entry, 'area_weight', 0, 5, 0.01).name('area weight').onChange(onChange);
-                    folder.add(entry, 'shape_weight', 0, 5, 0.01).name('shape weight').onChange(onChange);
-                    folder.add(entry, 'step_size', 0.001, 0.1, 0.001).name('step size').onChange(onChange);
-                    folder.add(entry, 'energy_iterations', 1, 200, 1).name('iterations').onChange(onChange);
+                    folder.add(entry, 'quality', 0, 1, 0.01).name('min quality').onChange(onChange);
+                    folder.add(entry, 'strength', 0, 1, 0.01).name('strength').onChange(onChange);
+                    folder.add(entry, 'iterations', 1, 200, 1).name('max iterations').onChange(onChange);
                     break;
                 case 'VertexRepulsion':
-                    folder.add(entry, 'repulsion_strength', 0.01, 0.5, 0.01).name('strength').onChange(onChange);
-                    folder.add(entry, 'repulsion_iterations', 1, 100, 1).name('iterations').onChange(onChange);
+                    folder.add(entry, 'strength', 0, 1, 0.01).name('strength').onChange(onChange);
+                    folder.add(entry, 'iterations', 1, 200, 1).name('iterations').onChange(onChange);
                     break;
             }
         });
@@ -261,13 +258,16 @@ export function createControls(
         const addObj = { type: 'None' };
         const addFolder = gui.addFolder('Add');
         filterFolders.push(addFolder);
-        addFolder.add(addObj, 'type', FILTER_TYPES).name('type').onChange((v: string) => {
-            if (v !== 'None') {
-                params.filters.push(defaultFilter(v));
-                rebuildFilters();
-                onChange();
-            }
-        });
+        addFolder
+            .add(addObj, 'type', filtersList)
+            .name('type')
+            .onChange((v: string) => {
+                if (v !== 'None') {
+                    params.filters.push(defaultFilter(v as FilterType));
+                    rebuildFilters();
+                    onChange();
+                }
+            });
     }
 
     // Build initial dynamic sections

@@ -38,17 +38,13 @@ impl PatchMesher {
     /// `size = 1.0` matches a single-cell hex with `hex_size = 1.0`.
     #[must_use]
     pub fn with_world_size(self, size: f32) -> Self {
-        let radius = self.radius();
+        let radius = 2u32.pow(self.subdivision);
         self.with_hex_size(size / radius as f32)
-    }
-
-    fn radius(&self) -> u32 {
-        2u32.pow(self.subdivision)
     }
 
     /// Generate the mesh with uniform vertex placement.
     pub fn generate_uniform(&mut self) -> QuadMesh {
-        let radius = self.radius();
+        let radius = 2u32.pow(self.subdivision);
         let indexer = AxialDenseIndexer::new(radius);
 
         let mut positions = vec![Vec2::ZERO; indexer.get_total_size()];
@@ -62,7 +58,7 @@ impl PatchMesher {
 
     /// Generate the mesh with recursive subdivision placement.
     pub fn generate_subdivision(&mut self) -> QuadMesh {
-        let radius = self.radius();
+        let radius = 2u32.pow(self.subdivision);
         let indexer = AxialDenseIndexer::new(radius);
         let orientation = self.orientation;
 
@@ -127,8 +123,7 @@ impl PatchMesher {
                         }
 
                         // Face point: intersection of lines connecting opposite edge midpoints
-                        let e: [Vec2; 4] =
-                            std::array::from_fn(|i| positions[indexer.get_dense_index(&edge_coords[i])]);
+                        let e: [Vec2; 4] = std::array::from_fn(|i| positions[indexer.get_dense_index(&edge_coords[i])]);
                         let face_pos = line_intersection(e[0], e[2], e[1], e[3]);
                         let face_coord = AxialCoord::new(
                             (corners[0].q + corners[1].q + corners[2].q + corners[3].q) / 4,
@@ -147,7 +142,7 @@ impl PatchMesher {
 
     /// Build a QuadMesh from vertex positions using the patch topology.
     fn build_quad_mesh(&self, positions: Vec<Vec2>) -> QuadMesh {
-        let radius = self.radius();
+        let radius = 2u32.pow(self.subdivision);
         let indexer = AxialDenseIndexer::new(radius);
         let grid = 2i32.pow(self.subdivision);
 

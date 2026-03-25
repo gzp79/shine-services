@@ -3,5 +3,5 @@ mod world;
 
 pub use self::{
     chunk::{Chunk, ChunkId},
-    world::{World, SUBDIVISION_BASE},
+    world::{World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE, SUBDIVISION_BASE, SUBDIVISION_COUNT},
 };
