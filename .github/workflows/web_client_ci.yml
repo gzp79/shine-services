@@ -17,7 +17,7 @@ env:
   S3_BUCKET_NAME: shine-games
 
 jobs:
-  build:
+  web-client-build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
