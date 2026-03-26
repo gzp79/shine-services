@@ -33,10 +33,11 @@ impl LatticeMesher {
         self
     }
 
+    /// Set the world-space circumradius (center to corner) of the hex.
     #[must_use]
     pub fn with_world_size(self, size: f32) -> Self {
         let radius = 2u32.pow(self.subdivision - 1);
-        self.with_hex_size(size / radius as f32)
+        self.with_hex_size(AxialCoord::hex_size_from_world_size(size, radius))
     }
 
     pub fn generate(&mut self) -> QuadMesh {
@@ -48,7 +49,7 @@ impl LatticeMesher {
         let mut is_boundary = vec![false; indexer.get_total_size()];
         for coord in AxialCoord::origin().spiral(radius) {
             let idx = indexer.get_dense_index(&coord);
-            positions[idx] = coord.world_coordinate(self.hex_size);
+            positions[idx] = coord.vertex_position(self.hex_size);
             is_boundary[idx] = coord.is_boundary(radius);
         }
 

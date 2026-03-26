@@ -94,6 +94,7 @@ export type Params = {
     showPrimal: boolean;
     showDual: boolean;
     seed: number;
+    world_size: number;
     mesher: MesherEntry;
     filters: FilterEntry[];
 };
@@ -103,6 +104,7 @@ export function defaultParams(): Params {
         showDual: false,
         showPrimal: true,
         seed: 42,
+        world_size: 1.0,
         mesher: defaultMesher('Lattice'),
         filters: []
     };
@@ -134,6 +136,7 @@ export function createControls(
     globalFolder.add(params, 'showPrimal').name('primal wireframe').onChange(onDisplayChange);
     globalFolder.add(params, 'showDual').name('dual wireframe').onChange(onDisplayChange);
 
+    globalFolder.add(params, 'world_size', 0.1, 10, 0.1).name('world size').onChange(onChange);
     const seedCtrl = globalFolder.add(params, 'seed').name('seed').onChange(onChange);
     const seedRow = document.createElement('li');
     seedRow.style.cssText = 'display:flex;align-items:center;padding:0 var(--padding);height:var(--widget-height);';

@@ -1,62 +1,93 @@
-import init, { WasmWorld } from '#wasm';
+import init from '#wasm';
 import wasmUrl from '#wasm-bin';
 import * as THREE from 'three';
-import { SceneContext, animate, createScene } from './scene';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ChunkId } from './world/types';
-
-interface ChunkObject {
-    group: THREE.Group;
-    dispose(): void;
-}
+import { World } from './world/world';
 
 class Game {
-    private readonly world: WasmWorld;
-    private readonly ctx: SceneContext;
-    private readonly chunks = new Map<string, ChunkObject>();
+    private readonly scene: THREE.Scene;
+    private readonly camera: THREE.PerspectiveCamera;
+    private readonly renderer: THREE.WebGLRenderer;
+    private readonly controls: OrbitControls;
+    private readonly resizeObserver: ResizeObserver;
+    private readonly world: World;
     private animationId = 0;
 
-    constructor(container: HTMLElement) {
-        this.ctx = createScene(container);
-        this.world = new WasmWorld();
+    constructor(private readonly container: HTMLElement) {
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x1a1a2e);
+
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        this.camera = new THREE.PerspectiveCamera(50, width / height, 1, 50000);
+        this.camera.up.set(0, 0, 1);
+        this.camera.position.set(0, -1200, 2000);
+        this.camera.lookAt(0, 0, 0);
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(width, height);
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(this.renderer.domElement);
+
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.target.set(0, 0, 0);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.1;
+        this.controls.update();
+
+        // Lighting
+        const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+        this.scene.add(ambient);
+
+        const directional = new THREE.DirectionalLight(0xffffff, 0.8);
+        directional.position.set(1000, -500, 3000);
+        this.scene.add(directional);
+
+        // Resize handling
+        this.resizeObserver = new ResizeObserver(() => {
+            const w = container.clientWidth;
+            const h = container.clientHeight;
+            this.camera.aspect = w / h;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(w, h);
+        });
+        this.resizeObserver.observe(container);
+
+        // World
+        this.world = new World();
+        this.scene.add(this.world.group);
     }
 
     init(): void {
-        this.loadChunk(new ChunkId(0, 0));
-        this.animationId = animate(this.ctx);
+        this.world.loadChunk(ChunkId.ORIGIN);
+        for (const neighbor of ChunkId.ORIGIN.neighbors()) {
+            this.world.loadChunk(neighbor);
+        }
+
+        // Debug: circle with radius 1000 at origin (XY plane)
+        const circleGeom = new THREE.RingGeometry(998, 1000, 64);
+        const circleMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide });
+        const circle = new THREE.Mesh(circleGeom, circleMat);
+        circle.position.z = 0.1;
+        this.scene.add(circle);
+
+        this.animationId = requestAnimationFrame(() => this.animate());
     }
 
-    loadChunk(id: ChunkId): void {
-        const key = id.key();
-        if (this.chunks.has(key)) return;
-
-        this.world.init_chunk(id.q, id.r);
-
-        const group = new THREE.Group();
-        this.ctx.scene.add(group);
-        this.chunks.set(key, {
-            group,
-            dispose: () => this.ctx.scene.remove(group)
-        });
-    }
-
-    unloadChunk(id: ChunkId): void {
-        const key = id.key();
-        const obj = this.chunks.get(key);
-        if (!obj) return;
-        obj.dispose();
-        this.chunks.delete(key);
+    private animate(): void {
+        this.animationId = requestAnimationFrame(() => this.animate());
+        this.controls.update();
+        this.renderer.render(this.scene, this.camera);
     }
 
     destroy(): void {
         cancelAnimationFrame(this.animationId);
-        for (const obj of this.chunks.values()) {
-            obj.dispose();
-        }
-        this.chunks.clear();
-        this.world.free();
-        this.ctx.resizeObserver.disconnect();
-        this.ctx.renderer.dispose();
-        this.ctx.renderer.domElement.remove();
+        this.world.dispose();
+        this.resizeObserver.disconnect();
+        this.renderer.dispose();
+        this.renderer.domElement.remove();
     }
 }
 

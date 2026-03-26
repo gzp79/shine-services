@@ -54,13 +54,22 @@ export class WasmPatchMesh {
      * Flat vertex positions [x, y, x, y, ...] (2 floats per vertex)
      */
     vertices(): Float32Array;
+    /**
+     * The world size used to generate this mesh
+     */
+    world_size(): number;
 }
 
 export class WasmWorld {
     free(): void;
     [Symbol.dispose](): void;
+    chunk_border_indices(q: number, r: number): Uint32Array;
+    chunk_quad_indices(q: number, r: number): Uint32Array;
+    chunk_vertices(q: number, r: number): Float32Array;
+    chunk_world_offset(ref_q: number, ref_r: number, q: number, r: number): Float32Array;
     init_chunk(q: number, r: number): void;
     constructor();
+    remove_chunk(q: number, r: number): void;
 }
 
 /**
@@ -91,9 +100,15 @@ export interface InitOutput {
     readonly wasmpatchmesh_quad_indices: (a: number) => [number, number];
     readonly wasmpatchmesh_vertex_count: (a: number) => number;
     readonly wasmpatchmesh_vertices: (a: number) => [number, number];
+    readonly wasmpatchmesh_world_size: (a: number) => number;
     readonly __wbg_wasmworld_free: (a: number, b: number) => void;
+    readonly wasmworld_chunk_border_indices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_quad_indices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_vertices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
     readonly wasmworld_new: () => number;
+    readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
     readonly start: () => void;
     readonly __wbg_wasmcdt_free: (a: number, b: number) => void;
     readonly generate_cdt: (a: number, b: number) => number;
