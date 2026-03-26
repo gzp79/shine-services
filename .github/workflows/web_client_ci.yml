@@ -101,7 +101,7 @@ jobs:
             --checksum-algorithm CRC32
 
       - name: Viewer URL
-        run: echo "[viewer.html](https://game.scylla.com/${{ github.sha }}/viewer.html)" >> $GITHUB_STEP_SUMMARY
+        run: echo "[viewer.html](https://game.scytta.com/${{ github.sha }}/viewer.html)" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload latest.json
         env:
