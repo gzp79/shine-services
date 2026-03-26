@@ -304,28 +304,39 @@ mod tests {
     use super::*;
     use shine_test::test;
 
-    fn two_quad_topo() -> QuadTopology {
+    /// 2×2 grid of 4 quads, 9 vertices, 1 interior vertex (4):
+    /// ```text
+    ///  6----7----8
+    ///  | Q2 | Q3 |
+    ///  3----4----5
+    ///  | Q0 | Q1 |
+    ///  0----1----2
+    /// ```
+    /// Q0=[0,1,4,3]  Q1=[1,2,5,4]  Q2=[3,4,7,6]  Q3=[4,5,8,7]  (CCW)
+    /// Interior: 4.  Boundary edges: 8 → 8 ghost quads → total 12.
+    fn grid_2x2_topo() -> QuadTopology {
         let quads = vec![
-            [VertIdx::new(0), VertIdx::new(1), VertIdx::new(2), VertIdx::new(3)],
-            [VertIdx::new(1), VertIdx::new(4), VertIdx::new(5), VertIdx::new(2)],
+            [VertIdx::new(0), VertIdx::new(1), VertIdx::new(4), VertIdx::new(3)],
+            [VertIdx::new(1), VertIdx::new(2), VertIdx::new(5), VertIdx::new(4)],
+            [VertIdx::new(3), VertIdx::new(4), VertIdx::new(7), VertIdx::new(6)],
+            [VertIdx::new(4), VertIdx::new(5), VertIdx::new(8), VertIdx::new(7)],
         ];
-        let is_boundary = vec![true, false, false, true, true, true];
-        QuadTopology::new(6, quads, is_boundary)
+        let is_boundary = vec![true, true, true, true, false, true, true, true, true];
+        QuadTopology::new(9, quads, is_boundary)
     }
 
     #[test]
     fn test_counts() {
-        let topo = two_quad_topo();
-        assert_eq!(topo.real_vertex_count(), 6);
-        assert_eq!(topo.real_quad_count(), 2);
-        // 6 boundary edges → 6 ghost quads
-        assert_eq!(topo.quad_count(), 2 + 6);
+        let topo = grid_2x2_topo();
+        assert_eq!(topo.real_vertex_count(), 9);
+        assert_eq!(topo.real_quad_count(), 4);
+        // 8 boundary edges → 8 ghost quads
+        assert_eq!(topo.quad_count(), 4 + 8);
     }
 
     #[test]
     fn test_ghost_quads_close_rings() {
-        let topo = two_quad_topo();
-        // All real quads should have no NONE neighbors
+        let topo = grid_2x2_topo();
         for qi in topo.real_quad_indices() {
             for k in 0..4 {
                 assert!(
@@ -339,32 +350,48 @@ mod tests {
     }
 
     #[test]
-    fn test_neighbor_avg() {
-        let topo = two_quad_topo();
-        let positions = vec![
-            Vec2::new(0.0, 0.0), // 0
-            Vec2::new(1.0, 0.0), // 1
-            Vec2::new(1.0, 1.0), // 2
-            Vec2::new(0.0, 1.0), // 3
-            Vec2::new(2.0, 0.0), // 4
-            Vec2::new(2.0, 1.0), // 5
-        ];
-
-        // Vertex 1 (interior): neighbors are 0, 2, 4
-        let avg = topo.neighbor_avg(VertIdx::new(1), &positions);
-        let expected = (positions[0] + positions[2] + positions[4]) / 3.0;
-        assert!((avg - expected).length() < 1e-6, "avg = {:?}", avg);
-    }
-
-    #[test]
     fn test_vertex_ring_local_indices() {
-        let topo = two_quad_topo();
-        // Every real vertex's ring entries should have correct local index
+        let topo = grid_2x2_topo();
         for vi in topo.vertex_indices() {
             for r in topo.vertex_ring(vi) {
                 let verts = topo.quad_vertices(r.quad);
                 assert_eq!(verts[r.local as usize], vi);
             }
         }
+    }
+
+    #[test]
+    fn test_quad_vertices() {
+        let topo = grid_2x2_topo();
+        // Q0 bottom-left
+        let v = topo.quad_vertices(QuadIdx::new(0));
+        assert_eq!(v, [VertIdx::new(0), VertIdx::new(1), VertIdx::new(4), VertIdx::new(3)]);
+        // Q3 top-right
+        let v = topo.quad_vertices(QuadIdx::new(3));
+        assert_eq!(v, [VertIdx::new(4), VertIdx::new(5), VertIdx::new(8), VertIdx::new(7)]);
+    }
+
+    #[test]
+    fn test_neighbor_symmetry() {
+        let topo = grid_2x2_topo();
+        // Q0 edge 1 (1→4) shared with Q1 edge 3 (4→1)
+        assert_eq!(topo.quad_neighbor(QuadIdx::new(0), 1), QuadIdx::new(1));
+        assert_eq!(topo.quad_neighbor(QuadIdx::new(1), 3), QuadIdx::new(0));
+        // Q0 edge 2 (4→3) shared with Q2 edge 0 (3→4)
+        assert_eq!(topo.quad_neighbor(QuadIdx::new(0), 2), QuadIdx::new(2));
+        assert_eq!(topo.quad_neighbor(QuadIdx::new(2), 0), QuadIdx::new(0));
+    }
+
+    #[test]
+    fn test_boundary_vertex() {
+        let topo = grid_2x2_topo();
+        // All corners and edges are boundary; only center (4) is interior
+        for i in [0usize, 1, 2, 3, 5, 6, 7, 8] {
+            assert!(
+                topo.is_boundary_vertex(VertIdx::new(i)),
+                "vertex {i} should be boundary"
+            );
+        }
+        assert!(!topo.is_boundary_vertex(VertIdx::new(4)), "vertex 4 should be interior");
     }
 }

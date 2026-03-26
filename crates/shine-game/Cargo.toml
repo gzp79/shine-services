@@ -7,6 +7,7 @@ edition.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 glam = { workspace = true }
@@ -17,6 +18,8 @@ shine-core = { workspace = true }
 
 ################## wasm dependencies ##################
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-logger = { workspace = true }
+console_error_panic_hook = { workspace = true }
 getrandom = { workspace = true, features = ["wasm_js"] }
 
 js-sys = { workspace = true }

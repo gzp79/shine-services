@@ -41,12 +41,13 @@
     </head>
     <body>
         <div id="nav">
+            <a href="#">Game</a>
             <a href="#hex-mesh">Hex Mesh</a>
             <a href="#cdt">CDT</a>
         </div>
         <div id="app"></div>
         <script type="module">
-            import { createCdtViewer, createHexMeshViewer } from './shine-web.js';
+            import { createCdtViewer, createGame, createHexMeshViewer } from './shine-web.js';
 
             const container = document.getElementById('app');
             let current = null;
@@ -54,7 +55,9 @@
             function updateActiveLink() {
                 const hash = window.location.hash;
                 document.querySelectorAll('#nav a').forEach((a) => {
-                    a.classList.toggle('active', a.getAttribute('href') === hash);
+                    const href = a.getAttribute('href');
+                    const isActive = href === hash || (href === '#' && (hash === '' || hash === '#'));
+                    a.classList.toggle('active', isActive);
                 });
             }
 
@@ -70,9 +73,9 @@
                         current = await createHexMeshViewer(container);
                     } else if (hash === '#cdt') {
                         current = await createCdtViewer(container);
+                    } else {
+                        current = await createGame(container);
                     }
-                    // default: no hash — leave container blank (dark background from CSS).
-                    // createScene/animate are internal to the lib and not exported.
                 } catch (e) {
                     console.error('Viewer failed to load:', e);
                 }

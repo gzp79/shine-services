@@ -23,4 +23,8 @@ impl World {
     pub fn init_chunk(&mut self, id: ChunkId) {
         self.chunks.insert(id, Chunk::new(id));
     }
+
+    pub fn chunk(&self, id: ChunkId) -> Option<&Chunk> {
+        self.chunks.get(&id)
+    }
 }

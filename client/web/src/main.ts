@@ -1,23 +1,7 @@
-import { SceneContext, animate, createScene } from './scene';
-
 const container = document.getElementById('app')!;
 
 type Viewer = { destroy(): void };
 let current: Viewer | null = null;
-
-function defaultViewer(): Viewer {
-    const ctx: SceneContext = createScene(container);
-    const animationId = animate(ctx);
-
-    return {
-        destroy() {
-            cancelAnimationFrame(animationId);
-            ctx.resizeObserver.disconnect();
-            ctx.renderer.dispose();
-            ctx.renderer.domElement.remove();
-        }
-    };
-}
 
 async function route() {
     if (current) {
@@ -33,7 +17,8 @@ async function route() {
         const { createCdtViewer } = await import('./experiments/cdt/index');
         current = await createCdtViewer(container);
     } else {
-        current = defaultViewer();
+        const { createGame } = await import('./game');
+        current = await createGame(container);
     }
 }
 

@@ -56,6 +56,13 @@ export class WasmPatchMesh {
     vertices(): Float32Array;
 }
 
+export class WasmWorld {
+    free(): void;
+    [Symbol.dispose](): void;
+    init_chunk(q: number, r: number): void;
+    constructor();
+}
+
 /**
  * Generate a CDT from random points and constraint edges.
  * `config_json`: { "n_points": u32, "n_edges": u32, "seed": u32, "bound": i32 }
@@ -67,21 +74,14 @@ export function generate_cdt(config_json: string): WasmCdt;
  */
 export function generate_mesh(config_json: string): WasmPatchMesh;
 
+export function start(): void;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_wasmcdt_free: (a: number, b: number) => void;
     readonly __wbg_wasmpatchmesh_free: (a: number, b: number) => void;
-    readonly generate_cdt: (a: number, b: number) => number;
     readonly generate_mesh: (a: number, b: number) => [number, number, number];
-    readonly wasmcdt_error_message: (a: number) => [number, number];
-    readonly wasmcdt_fixed_edges: (a: number) => [number, number];
-    readonly wasmcdt_has_error: (a: number) => number;
-    readonly wasmcdt_triangle_count: (a: number) => number;
-    readonly wasmcdt_triangles: (a: number) => [number, number];
-    readonly wasmcdt_vertex_count: (a: number) => number;
-    readonly wasmcdt_vertices: (a: number) => [number, number];
     readonly wasmpatchmesh_dual_edge_count: (a: number) => number;
     readonly wasmpatchmesh_dual_indices: (a: number) => [number, number];
     readonly wasmpatchmesh_dual_vertex_count: (a: number) => number;
@@ -89,13 +89,26 @@ export interface InitOutput {
     readonly wasmpatchmesh_patch_indices: (a: number) => [number, number];
     readonly wasmpatchmesh_quad_count: (a: number) => number;
     readonly wasmpatchmesh_quad_indices: (a: number) => [number, number];
-    readonly wasmpatchmesh_vertices: (a: number) => [number, number];
     readonly wasmpatchmesh_vertex_count: (a: number) => number;
-    readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly wasmpatchmesh_vertices: (a: number) => [number, number];
+    readonly __wbg_wasmworld_free: (a: number, b: number) => void;
+    readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
+    readonly wasmworld_new: () => number;
+    readonly start: () => void;
+    readonly __wbg_wasmcdt_free: (a: number, b: number) => void;
+    readonly generate_cdt: (a: number, b: number) => number;
+    readonly wasmcdt_error_message: (a: number) => [number, number];
+    readonly wasmcdt_fixed_edges: (a: number) => [number, number];
+    readonly wasmcdt_has_error: (a: number) => number;
+    readonly wasmcdt_triangle_count: (a: number) => number;
+    readonly wasmcdt_triangles: (a: number) => [number, number];
+    readonly wasmcdt_vertex_count: (a: number) => number;
+    readonly wasmcdt_vertices: (a: number) => [number, number];
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __externref_table_dealloc: (a: number) => void;
-    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

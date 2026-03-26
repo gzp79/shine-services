@@ -88,7 +88,7 @@ mod tests {
     use std::f32::consts::FRAC_1_SQRT_2;
 
     #[test]
-    fn cardinal_directions() {
+    fn angular_cmp_cardinal_directions() {
         let right = Vec2::new(1.0, 0.0);
         let up = Vec2::new(0.0, 1.0);
         let left = Vec2::new(-1.0, 0.0);
@@ -101,7 +101,7 @@ mod tests {
     }
 
     #[test]
-    fn same_direction() {
+    fn angular_cmp_collinear_by_length() {
         let a = Vec2::new(1.0, 1.0);
         let b = Vec2::new(2.0, 2.0);
         // Collinear, b is further — a < b
@@ -110,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn full_ring_sort() {
+    fn angular_cmp_full_ring_sort() {
         let dirs = vec![
             Vec2::new(0.0, -1.0),                      // down
             Vec2::new(-1.0, 0.0),                      // left

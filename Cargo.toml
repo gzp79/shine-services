@@ -116,6 +116,7 @@ utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
 
 ############################# WASM #############################
 wasm-logger = "0.2"
+console_error_panic_hook = "0.1"
 js-sys = "0.3"
 web-sys = "0.3"
 # fixed version to be consistent with the installed wasm-bindgen-cli version
