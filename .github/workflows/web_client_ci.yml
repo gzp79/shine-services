@@ -76,7 +76,7 @@ jobs:
           retention-days: 1
 
   deploy:
-    needs: build
+    needs: web-client-build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
