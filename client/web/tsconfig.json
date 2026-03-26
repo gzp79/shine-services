@@ -1,0 +1,18 @@
+{
+    "compilerOptions": {
+        "target": "ES2020",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "outDir": "dist",
+        "declaration": true,
+        "sourceMap": true,
+        "paths": {
+            "#wasm": ["./src/wasm-types/shine_game.d.ts"]
+        }
+    },
+    "include": ["src", "eslint.config.ts", "vite.config.ts", "vite-plugin-wasm-pack.ts"]
+}

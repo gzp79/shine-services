@@ -7,8 +7,13 @@ members = [
 	"crates/shine-core",
 	"crates/shine-infra-macros",
 	"crates/shine-infra",
+	"crates/shine-game",
 	"services/identity",
 	"services/builder",
+]
+
+exclude = [
+	"crates/shine-game/fuzz",
 ]
 
 [workspace.package]
@@ -47,6 +52,7 @@ fixedbitset = "0.5"
 harsh = "0.2"
 primal-check = "0.3"
 
+glam = { version = "0.32", features = ["serde"] }
 itertools = "0.14"
 smallbox = "0.8"
 
@@ -110,10 +116,11 @@ utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
 
 ############################# WASM #############################
 wasm-logger = "0.2"
+console_error_panic_hook = "0.1"
 js-sys = "0.3"
 web-sys = "0.3"
 # fixed version to be consistent with the installed wasm-bindgen-cli version
-wasm-bindgen = "=0.2.104"
+wasm-bindgen = "=0.2.114"
 wasm-bindgen-futures = "0.4"
 wasm-bindgen-test = "0.3"
 
@@ -124,6 +131,7 @@ shine-test = { path = "./crates/shine-test" }
 shine-core = { path = "./crates/shine-core" }
 shine-infra-macros = { path = "./crates/shine-infra-macros" }
 shine-infra = { path = "./crates/shine-infra" }
+shine-game = { path = "./crates/shine-game" }
 
 [profile.release-lto]
 inherits = "release"

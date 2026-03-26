@@ -1,0 +1,45 @@
+{
+    "name": "shine-web",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "main": "./dist/shine-web.js",
+    "module": "./dist/shine-web.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/shine-web.js",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "scripts": {
+        "dev": "vite",
+        "build": "tsc && vite build",
+        "wasm": "wasm-pack build ../../crates/shine-game --target web --out-dir ../../client/web/pkg",
+        "postwasm": "cp pkg/shine_game.d.ts src/wasm-types/",
+        "wasm:dev": "pnpm wasm && pnpm dev",
+        "format": "prettier --write .",
+        "lint": "pnpm run lint:format && pnpm run lint:eslint && pnpm run lint:build",
+        "lint:format": "prettier --check .",
+        "lint:eslint": "eslint .",
+        "lint:build": "tsc -b --noEmit"
+    },
+    "dependencies": {
+        "lil-gui": "^0.20.0",
+        "three": "^0.172.0"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.39.4",
+        "@stylistic/eslint-plugin": "^5.10.0",
+        "@trivago/prettier-plugin-sort-imports": "5.2.2",
+        "@types/node": "^25.5.0",
+        "@types/three": "^0.172.0",
+        "eslint": "^9.39.4",
+        "eslint-config-prettier": "^10.1.8",
+        "jiti": "^2.6.1",
+        "prettier": "^3.8.1",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.57.2",
+        "vite": "^6.4.1"
+    }
+}

@@ -5,3 +5,6 @@ cargo fmt --check
 
 cd tests
 npm run lint
+
+cd ../client/web
+pnpm run lint

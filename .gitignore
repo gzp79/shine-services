@@ -1,5 +1,6 @@
 /target
 /temp
 **/node_modules
+**/.vite
 server_config_local.json
 dist

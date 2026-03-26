@@ -1,0 +1,187 @@
+use crate::{
+    indexed::TypedIndex,
+    math::{
+        hex::{AxialCoord, AxialDenseIndexer, PatchCoord, PatchDenseIndexer, PatchOrientation},
+        mesh::{QuadMesh, VertIdx},
+    },
+};
+use glam::Vec2;
+use std::collections::HashSet;
+
+/// Generates a quad mesh inside a hexagon using 3-patch subdivision.
+///
+/// Returns a [`QuadMesh`] with topology and positions. No smoothing or
+/// filtering is applied — use filters on the returned mesh.
+pub struct PatchMesher {
+    subdivision: u32,
+    orientation: PatchOrientation,
+    hex_size: f32,
+}
+
+impl PatchMesher {
+    pub fn new(subdivision: u32, orientation: PatchOrientation) -> Self {
+        Self {
+            subdivision,
+            orientation,
+            hex_size: 1.0,
+        }
+    }
+
+    #[must_use]
+    pub fn with_hex_size(mut self, hex_size: f32) -> Self {
+        self.hex_size = hex_size;
+        self
+    }
+
+    /// Set the world-space size of the hex, compensating for the axial radius
+    /// so the hex extent stays constant regardless of subdivision level.
+    /// `size = 1.0` matches a single-cell hex with `hex_size = 1.0`.
+    #[must_use]
+    pub fn with_world_size(self, size: f32) -> Self {
+        let radius = 2u32.pow(self.subdivision);
+        self.with_hex_size(size / radius as f32)
+    }
+
+    /// Generate the mesh with uniform vertex placement.
+    pub fn generate_uniform(&mut self) -> QuadMesh {
+        let radius = 2u32.pow(self.subdivision);
+        let indexer = AxialDenseIndexer::new(radius);
+
+        let mut positions = vec![Vec2::ZERO; indexer.get_total_size()];
+        for coord in AxialCoord::origin().spiral(radius) {
+            let idx = indexer.get_dense_index(&coord);
+            positions[idx] = coord.world_coordinate(self.hex_size);
+        }
+
+        self.build_quad_mesh(positions)
+    }
+
+    /// Generate the mesh with recursive subdivision placement.
+    pub fn generate_subdivision(&mut self) -> QuadMesh {
+        let radius = 2u32.pow(self.subdivision);
+        let indexer = AxialDenseIndexer::new(radius);
+        let orientation = self.orientation;
+
+        let mut positions = vec![Vec2::ZERO; indexer.get_total_size()];
+
+        // Place 6 hex corner vertices
+        let hex_corners = AxialCoord::hex_corners(radius);
+        for coord in &hex_corners {
+            let idx = indexer.get_dense_index(coord);
+            positions[idx] = coord.world_coordinate(self.hex_size);
+        }
+
+        // Place center at origin
+        let center_idx = indexer.get_dense_index(&AxialCoord::origin());
+        positions[center_idx] = Vec2::ZERO;
+
+        // Track which vertices have been placed
+        let mut placed: HashSet<usize> = HashSet::new();
+        for coord in &hex_corners {
+            placed.insert(indexer.get_dense_index(coord));
+        }
+        placed.insert(center_idx);
+
+        for depth in 0..self.subdivision {
+            let parent_grid = 2i32.pow(depth);
+
+            for p in 0..3 {
+                let (a_idx, b_idx) = PatchCoord::new(p, 0, 0).hex_corner_indices(orientation);
+                let ha = hex_corners[a_idx];
+                let hb = hex_corners[b_idx];
+
+                let parent_corner = |cu: i32, cv: i32| -> AxialCoord {
+                    AxialCoord::new(
+                        (cu * ha.q + cv * hb.q) / parent_grid,
+                        (cu * ha.r + cv * hb.r) / parent_grid,
+                    )
+                };
+
+                for pu in 0..parent_grid {
+                    for pv in 0..parent_grid {
+                        let corners = [
+                            parent_corner(pu, pv),
+                            parent_corner(pu + 1, pv),
+                            parent_corner(pu + 1, pv + 1),
+                            parent_corner(pu, pv + 1),
+                        ];
+
+                        // Edge midpoints
+                        let edge_coords: [AxialCoord; 4] = std::array::from_fn(|i| {
+                            let a = corners[i];
+                            let b = corners[(i + 1) % 4];
+                            AxialCoord::new((a.q + b.q) / 2, (a.r + b.r) / 2)
+                        });
+                        for edge_idx in 0..4 {
+                            let mid_dense = indexer.get_dense_index(&edge_coords[edge_idx]);
+                            if !placed.contains(&mid_dense) {
+                                let a_pos = positions[indexer.get_dense_index(&corners[edge_idx])];
+                                let b_pos = positions[indexer.get_dense_index(&corners[(edge_idx + 1) % 4])];
+                                positions[mid_dense] = (a_pos + b_pos) / 2.0;
+                                placed.insert(mid_dense);
+                            }
+                        }
+
+                        // Face point: intersection of lines connecting opposite edge midpoints
+                        let e: [Vec2; 4] = std::array::from_fn(|i| positions[indexer.get_dense_index(&edge_coords[i])]);
+                        let face_pos = line_intersection(e[0], e[2], e[1], e[3]);
+                        let face_coord = AxialCoord::new(
+                            (corners[0].q + corners[1].q + corners[2].q + corners[3].q) / 4,
+                            (corners[0].r + corners[1].r + corners[2].r + corners[3].r) / 4,
+                        );
+                        let face_dense = indexer.get_dense_index(&face_coord);
+                        positions[face_dense] = face_pos;
+                        placed.insert(face_dense);
+                    }
+                }
+            }
+        }
+
+        self.build_quad_mesh(positions)
+    }
+
+    /// Build a QuadMesh from vertex positions using the patch topology.
+    fn build_quad_mesh(&self, positions: Vec<Vec2>) -> QuadMesh {
+        let radius = 2u32.pow(self.subdivision);
+        let indexer = AxialDenseIndexer::new(radius);
+        let grid = 2i32.pow(self.subdivision);
+
+        // Build boundary flags
+        let mut is_boundary = vec![false; indexer.get_total_size()];
+        for coord in AxialCoord::origin().spiral(radius) {
+            if coord.is_boundary(radius) {
+                is_boundary[indexer.get_dense_index(&coord)] = true;
+            }
+        }
+
+        // Build quad indices
+        let patch_indexer = PatchDenseIndexer::new(self.subdivision);
+        let mut quads = Vec::with_capacity(patch_indexer.get_total_size());
+
+        for p in 0..3i32 {
+            for u in 0..grid {
+                for v in 0..grid {
+                    let patch = PatchCoord::new(p, u, v);
+                    let quad = patch.quad_vertices(self.orientation, self.subdivision);
+                    quads.push(std::array::from_fn(|i| VertIdx::new(indexer.get_dense_index(&quad[i]))));
+                }
+            }
+        }
+
+        let mut mesh = QuadMesh::new(positions, quads, is_boundary);
+        mesh.sort_vertex_rings();
+        mesh
+    }
+}
+
+fn line_intersection(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2) -> Vec2 {
+    let d1 = p2 - p1;
+    let d2 = p4 - p3;
+    let cross = d1.perp_dot(d2);
+    if cross.abs() < 1e-10 {
+        (p1 + p2 + p3 + p4) / 4.0
+    } else {
+        let t = (p3 - p1).perp_dot(d2) / cross;
+        p1 + t * d1
+    }
+}

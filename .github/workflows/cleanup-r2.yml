@@ -3,7 +3,7 @@ name: Cleanup R2
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Web Client Build"]
+    workflows: ["Web Client CI"]
     types: [completed]
     branches: [main]
 

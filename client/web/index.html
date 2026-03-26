@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Shine Viewer</title>
+        <style>
+            body {
+                margin: 0;
+                overflow: hidden;
+                background: #1a1a2e;
+            }
+            #app {
+                width: 100vw;
+                height: 100vh;
+                position: relative;
+            }
+            #nav {
+                position: absolute;
+                top: 8px;
+                left: 8px;
+                z-index: 20;
+                display: flex;
+                gap: 8px;
+            }
+            #nav a {
+                color: #aaa;
+                text-decoration: none;
+                font-family: monospace;
+                font-size: 14px;
+                padding: 4px 10px;
+                background: rgba(255, 255, 255, 0.08);
+                border-radius: 4px;
+            }
+            #nav a:hover,
+            #nav a.active {
+                color: #fff;
+                background: rgba(255, 255, 255, 0.18);
+            }
+        </style>
+    </head>
+    <body>
+        <div id="nav">
+            <a href="#hex-mesh">Hex Mesh</a>
+            <a href="#cdt">CDT</a>
+        </div>
+        <div id="app"></div>
+        <script type="module" src="/src/main.ts"></script>
+    </body>
+</html>

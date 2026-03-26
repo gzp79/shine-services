@@ -175,6 +175,7 @@
         { "label": "shine-infra", "value": "-p shine-infra" },
         { "label": "shine-infra-macros", "value": "-p shine-infra-macros" },
         { "label": "shine-core", "value": "-p shine-core" },
+        { "label": "shine-game", "value": "-p shine-game" },
         { "label": "shine-test", "value": "-p shine-test" },
         { "label": "shine-test-macros", "value": "-p shine-test-macros" }
       ],
@@ -187,9 +188,10 @@
       "options": [
         {
           "label": "all",
-          "value": "-p shine-core -p shine-test"
+          "value": "-p shine-core -p shine-game -p shine-test"
         },
         { "label": "shine-core", "value": "-p shine-core" },
+        { "label": "shine-game", "value": "-p shine-game" },
         { "label": "shine-test", "value": "-p shine-test" }
       ],
       "default": "asset-service"
