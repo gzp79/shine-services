@@ -17,7 +17,7 @@ async function route() {
         const { createCdtViewer } = await import('./experiments/cdt/index');
         current = await createCdtViewer(container);
     } else {
-        const { createGame } = await import('./game');
+        const { createGame } = await import('./engine/game');
         current = await createGame(container);
     }
 }
