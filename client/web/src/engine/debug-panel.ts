@@ -51,6 +51,7 @@ export class DebugPanel {
     /**
      * Add a boolean toggle control within a scope.
      */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     addToggle(scope: string, name: string, object: any, property: string): void {
         const folder = this.getScope(scope);
         folder.add(object, property).name(name);
