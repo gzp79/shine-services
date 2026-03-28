@@ -123,6 +123,24 @@ impl QuadTopology {
         self.quad_neighbor(qi, edge).is_none()
     }
 
+    /// Returns boundary edges as pairs of real vertex indices `[a, b]`.
+    /// A boundary edge is a real quad edge whose neighbor is a ghost quad.
+    pub fn border_edges(&self) -> Vec<[u32; 2]> {
+        let mut edges = Vec::new();
+        for qi in self.real_quad_indices() {
+            let verts = self.quads[qi];
+            for k in 0..4 {
+                let neighbor = self.quad_neighbors[qi][k];
+                if self.is_ghost_quad(neighbor) {
+                    let a = verts[k].into_index() as u32;
+                    let b = verts[(k + 1) % 4].into_index() as u32;
+                    edges.push([a, b]);
+                }
+            }
+        }
+        edges
+    }
+
     pub fn real_quad_indices(&self) -> impl Iterator<Item = QuadIdx> {
         (0..self.real_quad_count).map(QuadIdx::new)
     }
@@ -393,5 +411,37 @@ mod tests {
             );
         }
         assert!(!topo.is_boundary_vertex(VertIdx::new(4)), "vertex 4 should be interior");
+    }
+
+    #[test]
+    fn test_border_edges() {
+        let topo = grid_2x2_topo();
+        let border = topo.border_edges();
+        // 2x2 grid has 8 boundary edges (4 sides of perimeter)
+        // Each edge is a pair of vertex indices [a, b]
+        assert_eq!(border.len(), 8);
+
+        // All border edge vertices should be boundary vertices
+        for &[a, b] in &border {
+            assert!(
+                topo.is_boundary_vertex(VertIdx::new(a as usize)),
+                "border edge vertex {a} should be boundary"
+            );
+            assert!(
+                topo.is_boundary_vertex(VertIdx::new(b as usize)),
+                "border edge vertex {b} should be boundary"
+            );
+        }
+
+        // Check that the expected perimeter edges are present (unordered)
+        // Bottom: 0-1, 1-2  Right: 2-5, 5-8  Top: 8-7, 7-6  Left: 6-3, 3-0
+        let mut edge_set: std::collections::HashSet<(u32, u32)> = border
+            .iter()
+            .map(|&[a, b]| if a < b { (a, b) } else { (b, a) })
+            .collect();
+        for (a, b) in [(0, 1), (1, 2), (2, 5), (5, 8), (7, 8), (6, 7), (3, 6), (0, 3)] {
+            assert!(edge_set.remove(&(a, b)), "expected border edge ({a}, {b}) not found");
+        }
+        assert!(edge_set.is_empty(), "unexpected extra border edges: {:?}", edge_set);
     }
 }

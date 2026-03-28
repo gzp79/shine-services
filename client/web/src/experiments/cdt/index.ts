@@ -1,6 +1,6 @@
 import init, { generate_cdt } from '#wasm';
 import wasmUrl from '#wasm-bin';
-import { SceneContext, animate, createScene } from '../../scene';
+import { ExperimentContext, animate, createExperiment } from '../experiment';
 import { cdtParamsToJson, createCdtControls, defaultCdtParams } from './controls';
 import { CdtMeshGroup, buildCdtMesh } from './mesh-builder';
 
@@ -11,11 +11,11 @@ export interface CdtViewer {
 export async function createCdtViewer(container: HTMLElement): Promise<CdtViewer> {
     await init(wasmUrl);
 
-    const ctx: SceneContext = createScene(container);
-    // Adjust camera for the +-4096 coordinate range (default far=1000 is too small)
+    const ctx: ExperimentContext = createExperiment(container);
+    // Adjust camera for the +-4096 coordinate range
     ctx.camera.near = 1;
     ctx.camera.far = 50000;
-    ctx.camera.position.set(0, 12000, 7000);
+    ctx.camera.position.set(0, -7000, 12000);
     ctx.camera.lookAt(0, 0, 0);
     ctx.camera.updateProjectionMatrix();
     ctx.controls.update();

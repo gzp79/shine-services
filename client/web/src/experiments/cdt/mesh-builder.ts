@@ -21,12 +21,12 @@ export function buildCdtMesh(data: CdtData): CdtMeshGroup {
     const vertCount = data.vertices.length / 2;
     const triCount = data.triangles.length / 3;
 
-    // Build 3D positions: (x, 0, y)
+    // Build 3D positions: (x, y, 0) — XY is the ground plane, Z is up
     const positions = new Float32Array(vertCount * 3);
     for (let i = 0; i < vertCount; i++) {
         positions[i * 3] = data.vertices[i * 2];
-        positions[i * 3 + 1] = 0;
-        positions[i * 3 + 2] = data.vertices[i * 2 + 1];
+        positions[i * 3 + 1] = data.vertices[i * 2 + 1];
+        positions[i * 3 + 2] = 0;
     }
 
     // Filled triangles
@@ -61,11 +61,11 @@ export function buildCdtMesh(data: CdtData): CdtMeshGroup {
             const i1 = data.triangles[base + ((e + 1) % 3)];
             edgePositions.push(
                 positions[i0 * 3],
+                positions[i0 * 3 + 1],
                 5,
-                positions[i0 * 3 + 2],
                 positions[i1 * 3],
-                5,
-                positions[i1 * 3 + 2]
+                positions[i1 * 3 + 1],
+                5
             );
         }
     }
@@ -84,11 +84,11 @@ export function buildCdtMesh(data: CdtData): CdtMeshGroup {
             const i1 = data.fixedEdges[e * 2 + 1];
             fixedPositions.push(
                 positions[i0 * 3],
+                positions[i0 * 3 + 1],
                 10,
-                positions[i0 * 3 + 2],
                 positions[i1 * 3],
-                10,
-                positions[i1 * 3 + 2]
+                positions[i1 * 3 + 1],
+                10
             );
         }
         const fixedGeom = new THREE.BufferGeometry();
@@ -103,7 +103,7 @@ export function buildCdtMesh(data: CdtData): CdtMeshGroup {
     pointGeom.setAttribute(
         'position',
         new THREE.Float32BufferAttribute(
-            Array.from({ length: vertCount }, (_, i) => [positions[i * 3], 15, positions[i * 3 + 2]]).flat(),
+            Array.from({ length: vertCount }, (_, i) => [positions[i * 3], positions[i * 3 + 1], 15]).flat(),
             3
         )
     );

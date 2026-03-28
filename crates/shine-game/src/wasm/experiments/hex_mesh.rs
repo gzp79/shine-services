@@ -14,8 +14,14 @@ use wasm_bindgen::prelude::*;
 struct MeshConfig {
     mesher: MesherConfig,
     seed: u32,
+    #[serde(default = "default_world_size")]
+    world_size: f32,
     #[serde(default)]
     filters: Vec<FilterConfig>,
+}
+
+fn default_world_size() -> f32 {
+    1.0
 }
 
 #[derive(Deserialize)]
@@ -49,6 +55,7 @@ enum FilterConfig {
 
 #[wasm_bindgen]
 pub struct WasmPatchMesh {
+    world_size: f32,
     vertices: Vec<f32>,
     indices: Vec<u32>,
     patch_indices: Vec<u8>,
@@ -58,6 +65,11 @@ pub struct WasmPatchMesh {
 
 #[wasm_bindgen]
 impl WasmPatchMesh {
+    /// The world size used to generate this mesh
+    pub fn world_size(&self) -> f32 {
+        self.world_size
+    }
+
     /// Flat vertex positions [x, y, x, y, ...] (2 floats per vertex)
     pub fn vertices(&self) -> Vec<f32> {
         self.vertices.clone()
@@ -109,6 +121,8 @@ impl WasmPatchMesh {
 pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
     let config: MeshConfig = serde_json::from_str(config_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
+    let world_size = config.world_size;
+
     // Step 1: Generate base mesh from selected mesher
     let mut mesh = match config.mesher {
         MesherConfig::Patch { subdivision, orientation } => {
@@ -117,17 +131,17 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
                 "Odd" => PatchOrientation::Odd,
                 _ => return Err(JsValue::from_str("orientation must be 'Even' or 'Odd'")),
             };
-            let mut mesher = PatchMesher::new(subdivision, orient).with_world_size(1.0);
+            let mut mesher = PatchMesher::new(subdivision, orient).with_world_size(world_size);
             mesher.generate_uniform()
         }
         MesherConfig::Cdt { subdivision, interior_points } => {
             let rng = Xorshift32::new(config.seed);
-            let mut mesher = CdtMesher::new(subdivision, interior_points, rng).with_world_size(1.0);
+            let mut mesher = CdtMesher::new(subdivision, interior_points, rng).with_world_size(world_size);
             mesher.generate()
         }
         MesherConfig::Lattice { subdivision } => {
             let rng = Xorshift32::new(config.seed);
-            let mut mesher = LatticeMesher::new(subdivision, rng).with_world_size(1.0);
+            let mut mesher = LatticeMesher::new(subdivision, rng).with_world_size(world_size);
             mesher.generate()
         }
     };
@@ -151,10 +165,10 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
     }
 
     // Step 3: Convert QuadMesh to flat buffers
-    Ok(quad_mesh_to_wasm(&mesh))
+    Ok(quad_mesh_to_wasm(&mesh, world_size))
 }
 
-fn quad_mesh_to_wasm(mesh: &QuadMesh) -> WasmPatchMesh {
+fn quad_mesh_to_wasm(mesh: &QuadMesh, world_size: f32) -> WasmPatchMesh {
     let vertex_count = mesh.vertex_count();
     let quad_count = mesh.quad_count();
 
@@ -207,6 +221,7 @@ fn quad_mesh_to_wasm(mesh: &QuadMesh) -> WasmPatchMesh {
     }
 
     WasmPatchMesh {
+        world_size,
         vertices: flat_vertices,
         indices,
         patch_indices,

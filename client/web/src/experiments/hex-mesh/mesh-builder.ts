@@ -24,12 +24,12 @@ export function buildHexMesh(data: MeshData): HexMeshGroup {
     const vertCount = data.vertices.length / 2;
     const quadCount = data.indices.length / 4;
 
-    // Build 3D position array: (x, 0, y)
+    // Build 3D position array: (x, y, 0) — XY is the ground plane, Z is up
     const positions = new Float32Array(vertCount * 3);
     for (let i = 0; i < vertCount; i++) {
         positions[i * 3] = data.vertices[i * 2]; // x
-        positions[i * 3 + 1] = 0; // y (up)
-        positions[i * 3 + 2] = data.vertices[i * 2 + 1]; // z (from 2D y)
+        positions[i * 3 + 1] = data.vertices[i * 2 + 1]; // y
+        positions[i * 3 + 2] = 0; // z
     }
 
     // Build non-indexed geometry with per-face vertex colors
@@ -79,11 +79,11 @@ export function buildHexMesh(data: MeshData): HexMeshGroup {
             const i1 = data.indices[qi + ((e + 1) % 4)];
             edgePositions.push(
                 positions[i0 * 3],
-                positions[i0 * 3 + 1] + 0.01,
-                positions[i0 * 3 + 2],
+                positions[i0 * 3 + 1],
+                positions[i0 * 3 + 2] + 0.01,
                 positions[i1 * 3],
-                positions[i1 * 3 + 1] + 0.01,
-                positions[i1 * 3 + 2]
+                positions[i1 * 3 + 1],
+                positions[i1 * 3 + 2] + 0.01
             );
         }
     }
@@ -99,8 +99,8 @@ export function buildHexMesh(data: MeshData): HexMeshGroup {
     const dualPositions3D = new Float32Array(dualVertCount * 3);
     for (let i = 0; i < dualVertCount; i++) {
         dualPositions3D[i * 3] = data.dualVertices[i * 2];
-        dualPositions3D[i * 3 + 1] = 0;
-        dualPositions3D[i * 3 + 2] = data.dualVertices[i * 2 + 1];
+        dualPositions3D[i * 3 + 1] = data.dualVertices[i * 2 + 1];
+        dualPositions3D[i * 3 + 2] = 0;
     }
 
     const dualEdgeCount = data.dualIndices.length / 2;
@@ -110,11 +110,11 @@ export function buildHexMesh(data: MeshData): HexMeshGroup {
         const i1 = data.dualIndices[e * 2 + 1];
         dualEdgePositions.push(
             dualPositions3D[i0 * 3],
-            dualPositions3D[i0 * 3 + 1] + 0.02,
-            dualPositions3D[i0 * 3 + 2],
+            dualPositions3D[i0 * 3 + 1],
+            dualPositions3D[i0 * 3 + 2] + 0.02,
             dualPositions3D[i1 * 3],
-            dualPositions3D[i1 * 3 + 1] + 0.02,
-            dualPositions3D[i1 * 3 + 2]
+            dualPositions3D[i1 * 3 + 1],
+            dualPositions3D[i1 * 3 + 2] + 0.02
         );
     }
 

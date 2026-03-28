@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-export interface SceneContext {
+export interface ExperimentContext {
     scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
     renderer: THREE.WebGLRenderer;
@@ -9,15 +9,16 @@ export interface SceneContext {
     resizeObserver: ResizeObserver;
 }
 
-export function createScene(container: HTMLElement): SceneContext {
+export function createExperiment(container: HTMLElement): ExperimentContext {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1a2e);
 
     const width = container.clientWidth;
     const height = container.clientHeight;
 
-    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
-    camera.position.set(0, 4, 2.5);
+    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
+    camera.up.set(0, 0, 1);
+    camera.position.set(0, -2.5, 4);
     camera.lookAt(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -36,7 +37,7 @@ export function createScene(container: HTMLElement): SceneContext {
     scene.add(ambient);
 
     const directional = new THREE.DirectionalLight(0xffffff, 0.8);
-    directional.position.set(10, 20, 5);
+    directional.position.set(10, -5, 20);
     scene.add(directional);
 
     // Resize handling via ResizeObserver on container
@@ -52,7 +53,7 @@ export function createScene(container: HTMLElement): SceneContext {
     return { scene, camera, renderer, controls, resizeObserver };
 }
 
-export function animate(ctx: SceneContext): number {
+export function animate(ctx: ExperimentContext): number {
     let id = 0;
     function loop() {
         id = requestAnimationFrame(loop);

@@ -11,15 +11,15 @@ use glam::Vec2;
 
 /// Unique identifier of a chunk of the map.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct ChunkId(pub usize, pub usize);
+pub struct ChunkId(pub i32, pub i32);
 
 impl ChunkId {
-    /// Return the relative axial coordinate of a chunk id.
-    /// This function interprets the chunk coordinates as the q,r components of the axial coordinates.
-    pub fn relative_axial_coord(&self, id: ChunkId) -> AxialCoord {
-        let dx = id.0 as isize - self.0 as isize;
-        let dy = id.1 as isize - self.1 as isize;
-        AxialCoord::new(dx.try_into().unwrap(), dy.try_into().unwrap())
+    pub const ORIGIN: ChunkId = ChunkId(0, 0);
+
+    /// World-space offset from `self` to `other`.
+    pub fn relative_world_position(&self, other: ChunkId) -> Vec2 {
+        let rel = AxialCoord::new(other.0 - self.0, other.1 - self.1);
+        rel.center_position(CHUNK_WORLD_SIZE)
     }
 
     /// Deterministic 32-bit hash from chunk coordinates.
@@ -32,6 +32,18 @@ impl ChunkId {
         h = h.wrapping_mul(0x45d9f3b);
         h ^= h >> 16;
         h
+    }
+}
+
+impl From<ChunkId> for AxialCoord {
+    fn from(id: ChunkId) -> Self {
+        AxialCoord::new(id.0, id.1)
+    }
+}
+
+impl From<AxialCoord> for ChunkId {
+    fn from(c: AxialCoord) -> Self {
+        ChunkId(c.q, c.r)
     }
 }
 

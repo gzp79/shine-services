@@ -108,7 +108,25 @@ impl AxialCoord {
         self.distance(&AxialCoord::origin()) == radius as i32
     }
 
-    pub fn world_coordinate(&self, hex_size: f32) -> Vec2 {
+    /// Derive per-cell hex_size from a world-space circumradius and axial grid radius.
+    /// circumradius = sqrt(3) * hex_size * radius → hex_size = circumradius / (sqrt(3) * radius).
+    pub fn hex_size_from_world_size(world_size: f32, radius: u32) -> f32 {
+        const SQRT_3: f32 = 1.732050807568877293527446341505872367_f32;
+        world_size / (SQRT_3 * radius as f32)
+    }
+
+    /// World position for placing vertices in a flat-top hex grid.
+    /// Produces a flat-top overall hex shape.
+    pub fn vertex_position(&self, hex_size: f32) -> Vec2 {
+        const SQRT_3: f32 = 1.732050807568877293527446341505872367_f32;
+        let x = hex_size * SQRT_3 * (self.q as f32 + self.r as f32 / 2.0);
+        let y = hex_size * 1.5 * (self.r as f32);
+        Vec2::new(x, y)
+    }
+
+    /// World position for placing hex centers (chunk tiling).
+    /// Correct spacing to tile flat-top hexes without overlap.
+    pub fn center_position(&self, hex_size: f32) -> Vec2 {
         const SQRT_3: f32 = 1.732050807568877293527446341505872367_f32;
         let x = hex_size * 1.5 * (self.q as f32);
         let y = hex_size * SQRT_3 * (self.r as f32 + self.q as f32 / 2.0);

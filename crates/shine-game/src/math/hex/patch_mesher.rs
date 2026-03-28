@@ -33,13 +33,11 @@ impl PatchMesher {
         self
     }
 
-    /// Set the world-space size of the hex, compensating for the axial radius
-    /// so the hex extent stays constant regardless of subdivision level.
-    /// `size = 1.0` matches a single-cell hex with `hex_size = 1.0`.
+    /// Set the world-space circumradius (center to corner) of the hex.
     #[must_use]
     pub fn with_world_size(self, size: f32) -> Self {
         let radius = 2u32.pow(self.subdivision);
-        self.with_hex_size(size / radius as f32)
+        self.with_hex_size(AxialCoord::hex_size_from_world_size(size, radius))
     }
 
     /// Generate the mesh with uniform vertex placement.
@@ -50,7 +48,7 @@ impl PatchMesher {
         let mut positions = vec![Vec2::ZERO; indexer.get_total_size()];
         for coord in AxialCoord::origin().spiral(radius) {
             let idx = indexer.get_dense_index(&coord);
-            positions[idx] = coord.world_coordinate(self.hex_size);
+            positions[idx] = coord.vertex_position(self.hex_size);
         }
 
         self.build_quad_mesh(positions)
@@ -68,7 +66,7 @@ impl PatchMesher {
         let hex_corners = AxialCoord::hex_corners(radius);
         for coord in &hex_corners {
             let idx = indexer.get_dense_index(coord);
-            positions[idx] = coord.world_coordinate(self.hex_size);
+            positions[idx] = coord.vertex_position(self.hex_size);
         }
 
         // Place center at origin
