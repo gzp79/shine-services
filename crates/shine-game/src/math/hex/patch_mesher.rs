@@ -144,11 +144,11 @@ impl PatchMesher {
         let indexer = AxialDenseIndexer::new(radius);
         let grid = 2i32.pow(self.subdivision);
 
-        // Build boundary flags
-        let mut is_boundary = vec![false; indexer.get_total_size()];
+        // Build boundary polygon (in spiral order)
+        let mut polygon = Vec::new();
         for coord in AxialCoord::origin().spiral(radius) {
             if coord.is_boundary(radius) {
-                is_boundary[indexer.get_dense_index(&coord)] = true;
+                polygon.push(VertIdx::new(indexer.get_dense_index(&coord)));
             }
         }
 
@@ -166,9 +166,7 @@ impl PatchMesher {
             }
         }
 
-        let mut mesh = QuadMesh::new(positions, quads, is_boundary);
-        mesh.sort_vertex_rings();
-        mesh
+        QuadMesh::new(positions, polygon, quads).expect("valid patch mesh topology")
     }
 }
 

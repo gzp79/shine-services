@@ -1,5 +1,5 @@
 use crate::{
-    indexed::IdxVec,
+    indexed::{IdxVec, TypedIndex},
     math::{
         hex::{AxialCoord, LatticeMesher},
         mesh::{QuadTopology, VertIdx},
@@ -60,5 +60,98 @@ impl Chunk {
             .generate();
         let (topology, vertices) = mesh.into_parts();
         Self { topology, vertices }
+    }
+
+    /// Flat (real) quad vertex positions [x, y, x, y, ...]
+    pub fn quad_vertices(&self) -> Vec<f32> {
+        debug_assert_eq!(self.vertices.len(), self.topology.vertex_count());
+        let mut flat = Vec::with_capacity(self.topology.vertex_count() * 2);
+        for vi in self.topology.vertex_indices() {
+            let p = self.vertices[vi];
+            flat.push(p.x);
+            flat.push(p.y);
+        }
+        flat
+    }
+
+    /// Flat (real) quad indices [a, b, c, d, ...].
+    pub fn quad_indices(&self) -> Vec<u32> {
+        let mut indices = Vec::with_capacity(self.topology.quad_count() * 4);
+        for qi in self.topology.quad_indices() {
+            let verts = self.topology.quad_vertices(qi);
+            for &v in &verts {
+                indices.push(v.into_index() as u32);
+            }
+        }
+        indices
+    }
+
+    /// Flat boundary edge indices [a, b, ...].
+    pub fn boundary_indices(&self) -> Vec<u32> {
+        let edges = self.topology.boundary_edges();
+        let mut flat = Vec::with_capacity(edges.len() * 2);
+        for [a, b] in edges {
+            flat.push(a);
+            flat.push(b);
+        }
+        flat
+    }
+
+    /// Dual mesh vertices (quad centroids) [x, y, x, y, ...]
+    pub fn dual_vertices(&self) -> Vec<f32> {
+        let quad_count = self.topology.quad_count();
+        let mut flat = Vec::with_capacity(quad_count * 2);
+
+        for qi in self.topology.quad_indices() {
+            let verts = self.topology.quad_vertices(qi);
+            let mut cx = 0.0f32;
+            let mut cy = 0.0f32;
+            for &v in &verts {
+                let p = self.vertices[v];
+                cx += p.x;
+                cy += p.y;
+            }
+            flat.push(cx / 4.0);
+            flat.push(cy / 4.0);
+        }
+
+        flat
+    }
+
+    /// Dual mesh edge indices [a, b, ...] connecting adjacent quad centroids
+    pub fn dual_indices(&self) -> Vec<u32> {
+        let mut edges = Vec::new();
+        let mut quad_to_dual: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
+
+        // Map quad indices to dual vertex indices
+        for (dual_idx, qi) in self.topology.quad_indices().enumerate() {
+            quad_to_dual.insert(qi.into_index(), dual_idx as u32);
+        }
+
+        // Find edges between adjacent quads
+        for qi in self.topology.quad_indices() {
+            let Some(&dual_idx) = quad_to_dual.get(&qi.into_index()) else {
+                continue;
+            };
+
+            for edge_idx in 0..4 {
+                let neighbor = self.topology.quad_neighbor(qi, edge_idx);
+                if self.topology.is_ghost_quad(neighbor.quad) {
+                    continue; // Skip ghost neighbors
+                }
+
+                let Some(&neighbor_dual_idx) = quad_to_dual.get(&neighbor.quad.into_index()) else {
+                    continue;
+                };
+
+                // Only add each edge once (avoid duplicates)
+                if dual_idx < neighbor_dual_idx {
+                    edges.push(dual_idx);
+                    edges.push(neighbor_dual_idx);
+                }
+            }
+        }
+
+        edges
     }
 }

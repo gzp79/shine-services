@@ -24,14 +24,22 @@ const ORIENTATION: PatchOrientation = PatchOrientation::Even;
 fn generate_uniform() {
     let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
     let mesh = mesher.generate_uniform();
-    println!("Uniform: {} vertices, {} quads", mesh.vertex_count(), mesh.quad_count());
+    println!(
+        "Uniform: {} vertices, {} quads",
+        mesh.topology.vertex_count(),
+        mesh.topology.quad_count()
+    );
 }
 
 #[test]
 fn generate_subdiv_uniform() {
     let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
     let mesh = mesher.generate_subdivision();
-    println!("Subdiv: {} vertices, {} quads", mesh.vertex_count(), mesh.quad_count());
+    println!(
+        "Subdiv: {} vertices, {} quads",
+        mesh.topology.vertex_count(),
+        mesh.topology.quad_count()
+    );
 }
 
 #[test]
@@ -42,8 +50,8 @@ fn generate_with_laplacian() {
     smoother.apply(&mut mesh);
     println!(
         "Laplacian: {} vertices, {} quads",
-        mesh.vertex_count(),
-        mesh.quad_count()
+        mesh.topology.vertex_count(),
+        mesh.topology.quad_count()
     );
 }
 
@@ -53,7 +61,11 @@ fn generate_with_jitter() {
     let mut mesh = mesher.generate_uniform();
     let mut jitter = Jitter::new(0.3, SysRng::new());
     jitter.apply(&mut mesh);
-    println!("Jitter: {} vertices, {} quads", mesh.vertex_count(), mesh.quad_count());
+    println!(
+        "Jitter: {} vertices, {} quads",
+        mesh.topology.vertex_count(),
+        mesh.topology.quad_count()
+    );
 }
 
 /// Composable pipeline: jitter, then laplacian, then quad relax.
@@ -74,8 +86,8 @@ fn generate_with_filter_pipeline() {
 
     println!(
         "Pipeline: {} vertices, {} quads",
-        mesh.vertex_count(),
-        mesh.quad_count()
+        mesh.topology.vertex_count(),
+        mesh.topology.quad_count()
     );
 }
 
@@ -85,8 +97,8 @@ fn generate_cdt_mesh() {
     let mesh = mesher.generate();
     println!(
         "CDT mesh: {} vertices, {} quads",
-        mesh.vertex_count(),
-        mesh.quad_count()
+        mesh.topology.vertex_count(),
+        mesh.topology.quad_count()
     );
 }
 
@@ -96,10 +108,10 @@ fn generate_lattice_mesh() {
     let mesh = mesher.generate();
     println!(
         "Lattice mesh: {} vertices, {} quads",
-        mesh.vertex_count(),
-        mesh.quad_count()
+        mesh.topology.vertex_count(),
+        mesh.topology.quad_count()
     );
-    assert!(mesh.quad_count() > 0);
+    assert!(mesh.topology.quad_count() > 0);
 }
 
 #[test]
@@ -110,8 +122,8 @@ fn generate_with_vertex_repulsion() {
     repulsion.apply(&mut mesh);
     println!(
         "VertexRepulsion: {} vertices, {} quads",
-        mesh.vertex_count(),
-        mesh.quad_count()
+        mesh.topology.vertex_count(),
+        mesh.topology.quad_count()
     );
 }
 
@@ -123,7 +135,7 @@ fn generate_cdt_with_laplacian() {
     smoother.apply(&mut mesh);
     println!(
         "CDT + Laplacian: {} vertices, {} quads",
-        mesh.vertex_count(),
-        mesh.quad_count()
+        mesh.topology.vertex_count(),
+        mesh.topology.quad_count()
     );
 }

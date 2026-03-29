@@ -1,7 +1,7 @@
 import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
-import { MeshBuilder, buildMesh } from './mesh-builder';
-import { ChunkId } from './types';
+import { ChunkId } from './chunk-id';
+import { MeshBuilder, MeshData, buildBaseMesh } from './mesh-builder';
 
 export class Chunk {
     readonly group = new THREE.Group();
@@ -31,23 +31,39 @@ export class Chunk {
         this.disposeMesh();
 
         const color = new THREE.Color().setHSL(this.chunkHash() / 0xffffffff, 0.5, 0.6);
-        this.mesh = buildMesh(this, color);
+
+        const meshData: MeshData = {
+            quadVertices: this.quadvertices(),
+            quadIndices: this.quadIndices(),
+            boundaryIndices: this.boundaryIndices(),
+            dualVertices: this.dualVertices(),
+            dualIndices: this.dualIndices()
+        };
+        this.mesh = buildBaseMesh(this, color);
         this.group.add(this.mesh.group);
 
         const offset = this.worldOffset(reference);
         this.group.position.set(offset[0], offset[1], 0);
     }
 
-    vertices(): Float32Array {
-        return this.world.chunk_vertices(this.id.q, this.id.r);
+    quadVertices(): Float32Array {
+        return this.world.chunk_quad_vertices(this.id.q, this.id.r);
     }
 
     quadIndices(): Uint32Array {
         return this.world.chunk_quad_indices(this.id.q, this.id.r);
     }
 
-    borderIndices(): Uint32Array {
+    boundaryIndices(): Uint32Array {
         return this.world.chunk_border_indices(this.id.q, this.id.r);
+    }
+
+    dualVertices(): Float32Array {
+        return this.world.chunk_dual_vertices(this.id.q, this.id.r);
+    }
+
+    dualIndices(): Uint32Array {
+        return this.world.chunk_dual_indices(this.id.q, this.id.r);
     }
 
     worldOffset(ref: ChunkId): Float32Array {

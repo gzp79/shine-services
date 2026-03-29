@@ -1,3 +1,6 @@
+import { MAX_ACTIVE_CHUNK_DISTANCE, MAX_TRACKED_CHUNK_DISTANCE } from '../engine/config';
+import { range } from '../engine/utils';
+
 /** Hex direction offsets in axial coordinates (q, r). */
 const HEX_DIRECTIONS: ReadonlyArray<[number, number]> = [
     [0, -1], // North
@@ -21,17 +24,25 @@ export class ChunkId {
         return `${this.q},${this.r}`;
     }
 
-    /** Return the 6 immediate hex neighbors. */
-    neighbors(): ChunkId[] {
-        return HEX_DIRECTIONS.map(([dq, dr]) => new ChunkId(this.q + dq, this.r + dr));
-    }
-
     /** Calculate hex distance to another chunk using cube coordinates. */
     distanceTo(other: ChunkId): number {
         const dq = this.q - other.q;
         const dr = this.r - other.r;
         const ds = -this.q - this.r - (-other.q - other.r);
         return (Math.abs(dq) + Math.abs(dr) + Math.abs(ds)) / 2;
+    }
+
+    isTracked(reference: ChunkId): boolean {
+        return this.distanceTo(reference) <= MAX_TRACKED_CHUNK_DISTANCE;
+    }
+
+    isActive(reference: ChunkId): boolean {
+        return this.distanceTo(reference) <= MAX_ACTIVE_CHUNK_DISTANCE;
+    }
+
+    /** Return the 6 immediate hex neighbors. */
+    neighbors(): ChunkId[] {
+        return HEX_DIRECTIONS.map(([dq, dr]) => new ChunkId(this.q + dq, this.r + dr));
     }
 
     /** Return all coordinates on the hex ring at the given radius. */
@@ -63,6 +74,14 @@ export class ChunkId {
         }
 
         return results;
+    }
+
+    /** Return all coordinates within the given radius. */
+    spiral(radius: number): ChunkId[] {
+        return range(0, radius)
+            .map((r) => this.ring(r))
+            .flatten()
+            .toArray();
     }
 }
 

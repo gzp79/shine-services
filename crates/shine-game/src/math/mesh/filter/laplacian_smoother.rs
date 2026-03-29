@@ -1,5 +1,7 @@
-use super::quad_filter::QuadFilter;
-use crate::{indexed::TypedIndex, math::mesh::QuadMesh};
+use crate::{
+    indexed::TypedIndex,
+    math::mesh::{QuadFilter, QuadMesh},
+};
 use glam::Vec2;
 
 /// Laplacian smoothing for [`QuadMesh`].
@@ -24,19 +26,21 @@ impl LaplacianSmoother {
     }
 
     fn step(&mut self, mesh: &mut QuadMesh) {
-        self.buf.resize(mesh.vertex_count(), Vec2::ZERO);
+        let QuadMesh { topology, positions } = mesh;
 
-        for vi in mesh.vertex_indices() {
-            self.buf[vi.into_index()] = mesh.position(vi);
+        self.buf.resize(topology.vertex_count(), Vec2::ZERO);
+
+        for vi in topology.vertex_indices() {
+            self.buf[vi.into_index()] = positions[vi];
         }
 
-        for vi in mesh.vertex_indices() {
-            if mesh.is_boundary_vertex(vi) {
+        for vi in topology.vertex_indices() {
+            if topology.is_boundary_vertex(vi) {
                 continue;
             }
-            let avg = mesh.topology().neighbor_avg(vi, &self.buf);
+            let avg = topology.neighbor_avg(vi, &self.buf);
             let old = self.buf[vi.into_index()];
-            mesh.positions_mut()[vi] = old + self.strength * (avg - old);
+            positions[vi] = old + self.strength * (avg - old);
         }
     }
 }

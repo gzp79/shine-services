@@ -1,5 +1,6 @@
 import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
+import { MAX_LOADED_CHUNK_DISTANCE, MAX_TRACKED_CHUNK_COUNT, MAX_TRACKED_CHUNK_DISTANCE } from '../engine/config';
 import type { DebugPanel } from '../engine/debug-panel';
 import { EventSubscriptions } from '../engine/events';
 import {
@@ -11,9 +12,6 @@ import {
 import { Chunk } from './chunk';
 import { chunkIdToWorldPosition } from './hex-utils';
 import { ChunkId } from './types';
-
-const MAX_TRACKED_CHUNK_COUNT = 10;
-const MAX_TRACKED_CHUNK_DISTANCE = 10;
 
 export class World {
     private readonly SCOPE = 'World';
@@ -73,11 +71,13 @@ export class World {
         this.wasm.init_chunk(id.q, id.r);
 
         const chunk = new Chunk(this.wasm, id);
-        chunk.buildMesh(this._referenceChunkId);
-        chunk.showLabel = this._showChunkLabels;
         this.group.add(chunk.group);
         this.chunks.set(key, chunk);
         this.updateDebugPanel();
+
+        chunk.buildMesh(this._referenceChunkId);
+        chunk.showLabel = this._showChunkLabels;
+
         return chunk;
     }
 
@@ -137,8 +137,7 @@ export class World {
 
     private updateChunksAroundFocus(): void {
         // Load focused chunk and all neighbors
-        this.loadChunk(this._focusedChunkId);
-        for (const neighbor of this._focusedChunkId.neighbors()) {
+        for (const neighbor of this._focusedChunkId.spirak(MAX_LOADED_CHUNK_DISTANCE)) {
             this.loadChunk(neighbor);
         }
 

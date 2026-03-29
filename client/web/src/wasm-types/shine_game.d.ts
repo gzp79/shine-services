@@ -63,9 +63,11 @@ export class WasmPatchMesh {
 export class WasmWorld {
     free(): void;
     [Symbol.dispose](): void;
-    chunk_border_indices(q: number, r: number): Uint32Array;
+    chunk_boundary_indices(q: number, r: number): Uint32Array;
+    chunk_dual_indices(q: number, r: number): Uint32Array;
+    chunk_dual_vertices(q: number, r: number): Float32Array;
     chunk_quad_indices(q: number, r: number): Uint32Array;
-    chunk_vertices(q: number, r: number): Float32Array;
+    chunk_quad_vertices(q: number, r: number): Float32Array;
     chunk_world_offset(ref_q: number, ref_r: number, q: number, r: number): Float32Array;
     init_chunk(q: number, r: number): void;
     constructor();
@@ -101,16 +103,8 @@ export interface InitOutput {
     readonly wasmpatchmesh_vertex_count: (a: number) => number;
     readonly wasmpatchmesh_vertices: (a: number) => [number, number];
     readonly wasmpatchmesh_world_size: (a: number) => number;
-    readonly __wbg_wasmworld_free: (a: number, b: number) => void;
-    readonly wasmworld_chunk_border_indices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_quad_indices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_vertices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
-    readonly wasmworld_new: () => number;
-    readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
-    readonly start: () => void;
     readonly __wbg_wasmcdt_free: (a: number, b: number) => void;
+    readonly __wbg_wasmworld_free: (a: number, b: number) => void;
     readonly generate_cdt: (a: number, b: number) => number;
     readonly wasmcdt_error_message: (a: number) => [number, number];
     readonly wasmcdt_fixed_edges: (a: number) => [number, number];
@@ -119,6 +113,16 @@ export interface InitOutput {
     readonly wasmcdt_triangles: (a: number) => [number, number];
     readonly wasmcdt_vertex_count: (a: number) => number;
     readonly wasmcdt_vertices: (a: number) => [number, number];
+    readonly wasmworld_chunk_boundary_indices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_dual_indices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_dual_vertices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_quad_indices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_quad_vertices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
+    readonly wasmworld_new: () => number;
+    readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
+    readonly start: () => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
