@@ -88,9 +88,10 @@ impl Chunk {
 
     /// Flat boundary edge indices [a, b, ...].
     pub fn boundary_indices(&self) -> Vec<u32> {
-        let edges = self.topology.boundary_edges();
-        let mut flat = Vec::with_capacity(edges.len() * 2);
-        for [a, b] in edges {
+        // Each boundary vertex corresponds to one edge, so N vertices = N edges
+        let edge_count = self.topology.boundary_vertex_count();
+        let mut flat = Vec::with_capacity(edge_count * 2);
+        for [a, b] in self.topology.boundary_edges() {
             flat.push(a);
             flat.push(b);
         }
@@ -135,7 +136,8 @@ impl Chunk {
             };
 
             for edge_idx in 0..4 {
-                let neighbor = self.topology.quad_neighbor(qi, edge_idx);
+                let qe = crate::math::mesh::QuadEdge { quad: qi, edge: edge_idx as u8 };
+                let neighbor = self.topology.edge_twin(qe);
                 if self.topology.is_ghost_quad(neighbor.quad) {
                     continue; // Skip ghost neighbors
                 }

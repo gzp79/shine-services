@@ -14,22 +14,6 @@ pub struct QuadMesh {
 }
 
 impl QuadMesh {
-    /// Create a new quad mesh from vertex positions and quad connectivity.
-    ///
-    /// # Arguments
-    ///
-    /// * `positions` - 2D positions for each real vertex (ghost vertex has no position)
-    /// * `polygon` - Boundary vertices in CCW order (must have even length)
-    /// * `quads` - Quad vertex indices in CCW winding order `[v0, v1, v2, v3]`
-    ///
-    /// # Returns
-    ///
-    /// Returns `Err` if:
-    /// - Boundary polygon has odd length
-    /// - Boundary or quad vertices are out of range
-    /// - Boundary vertices are not unique
-    /// - Quads reference the ghost vertex
-    /// - Topology is incomplete (edges without neighbors)
     pub fn new(
         positions: Vec<Vec2>,
         polygon: Vec<VertIdx>,
@@ -37,7 +21,7 @@ impl QuadMesh {
     ) -> Result<Self, QuadTopologyError> {
         let vertex_count = positions.len();
         let positions = IdxVec::from_vec(positions);
-        let topology = QuadTopology::new(vertex_count, polygon, quads)?;
+        let topology = QuadTopology::from_polygon(vertex_count, polygon, quads)?;
 
         Ok(Self { topology, positions })
     }

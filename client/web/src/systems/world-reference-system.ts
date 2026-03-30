@@ -3,8 +3,8 @@ import type { Camera } from '../camera/camera';
 import type { DebugPanel } from '../engine/debug-panel';
 import { EventDispatcher } from '../engine/events';
 import type { GameSystem } from '../engine/game-system';
+import { ChunkId } from '../world/chunk-id';
 import { chunkIdToWorldPosition, worldPositionToChunkId } from '../world/hex-utils';
-import { ChunkId } from '../world/types';
 import type { World } from '../world/world';
 
 const CHUNK_WORLD_SIZE = 1000;

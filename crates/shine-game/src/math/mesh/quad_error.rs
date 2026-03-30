@@ -1,8 +1,5 @@
-//! Error types for quad mesh topology construction and validation.
-
 use thiserror::Error as ThisError;
 
-/// Errors that can occur during quad topology construction.
 #[derive(Debug, ThisError)]
 pub enum QuadTopologyError {
     #[error("Boundary must have even length, got {0}")]
@@ -26,4 +23,16 @@ pub enum QuadTopologyError {
         edge: usize,
         vertices: (usize, usize),
     },
+
+    #[error("Vertex {0} has no associated quad")]
+    VertexHasNoQuad(usize),
+
+    #[error("Quad {quad} edge {edge} has invalid twin: twin edge does not point back")]
+    InvalidEdgeTwin { quad: usize, edge: usize },
+
+    #[error("Ghost quad {quad} has {count} ghost vertices (expected 1)")]
+    InvalidGhostQuadStructure { quad: usize, count: usize },
+
+    #[error("Vertex {vertex} ring traversal does not form a closed loop")]
+    VertexRingNotClosed { vertex: usize },
 }

@@ -10,8 +10,8 @@ import {
     type WorldReferenceChangedEvent
 } from '../systems/world-reference-system';
 import { Chunk } from './chunk';
+import { ChunkId } from './chunk-id';
 import { chunkIdToWorldPosition } from './hex-utils';
-import { ChunkId } from './types';
 
 export class World {
     private readonly SCOPE = 'World';
@@ -61,6 +61,8 @@ export class World {
         const chunk00Pos = chunkIdToWorldPosition(this._referenceChunkId, ChunkId.ORIGIN);
         this.chunk00Circle = this.createDebugCircle(0x0000ff, chunk00Pos.x, chunk00Pos.y); // Blue at chunk(0,0)
         this.group.add(this.chunk00Circle);
+
+        this.updateChunksAroundFocus();
     }
 
     loadChunk(id: ChunkId): Chunk {
@@ -137,7 +139,7 @@ export class World {
 
     private updateChunksAroundFocus(): void {
         // Load focused chunk and all neighbors
-        for (const neighbor of this._focusedChunkId.spirak(MAX_LOADED_CHUNK_DISTANCE)) {
+        for (const neighbor of this._focusedChunkId.spiral(MAX_LOADED_CHUNK_DISTANCE)) {
             this.loadChunk(neighbor);
         }
 

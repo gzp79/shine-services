@@ -3,8 +3,8 @@ import wasmUrl from '#wasm-bin';
 import * as THREE from 'three';
 import { Camera } from '../camera/camera';
 import { WorldReferenceSystem } from '../systems/world-reference-system';
+import { ChunkId } from '../world/chunk-id';
 import { chunkIdToWorldPosition } from '../world/hex-utils';
-import { ChunkId } from '../world/types';
 import { World } from '../world/world';
 import { DebugPanel } from './debug-panel';
 import type { GameSystem } from './game-system';
@@ -40,11 +40,6 @@ class Game {
     }
 
     init(): void {
-        this.world.loadChunk(ChunkId.ORIGIN);
-        for (const neighbor of ChunkId.ORIGIN.neighbors()) {
-            this.world.loadChunk(neighbor);
-        }
-
         // Debug: circle with radius 1000 at origin (XY plane)
         const circleGeom = new THREE.RingGeometry(998, 1000, 64);
         const circleMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide });

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ChunkId } from './types';
+import { ChunkId } from './chunk-id';
 
 const CHUNK_WORLD_SIZE = 1000;
 

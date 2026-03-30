@@ -3,7 +3,6 @@ use crate::{
     math::mesh::QuadTopologyError,
 };
 use glam::Vec2;
-use std::collections::{HashMap, HashSet};
 
 crate::define_typed_index!(VertIdx, "Typed index into a vertex array.");
 crate::define_typed_index!(QuadIdx, "Typed index into a quad array.");
@@ -112,155 +111,14 @@ pub enum EdgeType {
 /// - Ghost quads are detectable via `is_ghost_quad()` and should typically be excluded
 ///   from geometric operations
 pub struct QuadTopology {
-    vertex_count: usize,
-    ghost_quad_count: usize,
-    quads: IdxVec<QuadIdx, [VertIdx; 4]>,
-    quad_neighbors: IdxVec<QuadIdx, [QuadEdge; 4]>,
-    vertex_quad: Vec<QuadVertex>,
+    pub(crate) vertex_count: usize,
+    pub(crate) ghost_quad_count: usize,
+    pub(crate) quads: IdxVec<QuadIdx, [VertIdx; 4]>,
+    pub(crate) edge_twins: IdxVec<QuadIdx, [QuadEdge; 4]>,
+    pub(crate) vertex_quad: Vec<QuadVertex>,
 }
 
 impl QuadTopology {
-    /// Build topology from the quad subdivision of a polygon.
-    pub fn new(
-        vertex_count: usize,
-        polygon: Vec<VertIdx>,
-        quads: Vec<[VertIdx; 4]>,
-    ) -> Result<Self, QuadTopologyError> {
-        // Validate boundary length is even
-        if !polygon.len().is_multiple_of(2) {
-            return Err(QuadTopologyError::OddBoundary(polygon.len()));
-        }
-
-        // Validate boundary vertices in range
-        for &vi in &polygon {
-            let idx = vi.into_index();
-            if idx >= vertex_count {
-                return Err(QuadTopologyError::BoundaryVertexOutOfRange { vertex: idx, vertex_count });
-            }
-        }
-
-        // Validate boundary vertices unique
-        let mut seen = HashSet::new();
-        for &vi in &polygon {
-            let idx = vi.into_index();
-            if !seen.insert(idx) {
-                return Err(QuadTopologyError::DuplicateBoundaryVertex(idx));
-            }
-        }
-
-        let ghost_vertex = VertIdx::new(vertex_count);
-
-        // Validate quad vertices in range and don't reference ghost
-        for quad in &quads {
-            for &vi in quad {
-                let idx = vi.into_index();
-                if idx >= vertex_count {
-                    return Err(QuadTopologyError::QuadVertexOutOfRange { vertex: idx, vertex_count });
-                }
-                if vi == ghost_vertex {
-                    return Err(QuadTopologyError::QuadReferencesGhost(idx));
-                }
-            }
-        }
-
-        // Generate ghost quads
-        let ghost_quad_count = polygon.len() / 2;
-        let mut all_quads = quads;
-        let ghost_vertex = VertIdx::new(vertex_count);
-
-        for j in 0..ghost_quad_count {
-            let i = j * 2;
-            let v0 = polygon[i];
-            let v1 = polygon[(i + 1) % polygon.len()];
-            let v2 = polygon[(i + 2) % polygon.len()];
-
-            // Ghost quad: [ghost, v2, v1, v0]
-            all_quads.push([ghost_vertex, v2, v1, v0]);
-        }
-
-        let quads = IdxVec::from_vec(all_quads);
-
-        // Build edge map: (v0, v1) -> (quad, edge_idx)
-        let mut edge_map: HashMap<(VertIdx, VertIdx), (QuadIdx, u8)> = HashMap::new();
-
-        for (qi, quad) in quads.iter().enumerate() {
-            for edge_idx in 0..4 {
-                let v0 = quad[edge_idx];
-                let v1 = quad[(edge_idx + 1) % 4];
-                edge_map.insert((v0, v1), (QuadIdx::new(qi), edge_idx as u8));
-            }
-        }
-
-        // Build quad neighbors
-        let mut quad_neighbors = IdxVec::new();
-
-        for (qi, quad) in quads.iter().enumerate() {
-            let mut neighbors = [QuadEdge { quad: QuadIdx::NONE, edge: 0 }; 4];
-
-            for edge_idx in 0..4 {
-                let v0 = quad[edge_idx];
-                let v1 = quad[(edge_idx + 1) % 4];
-
-                if let Some(&(neighbor_quad, neighbor_edge)) = edge_map.get(&(v1, v0)) {
-                    neighbors[edge_idx] = QuadEdge {
-                        quad: neighbor_quad,
-                        edge: neighbor_edge,
-                    };
-                } else {
-                    return Err(QuadTopologyError::IncompleteTopology {
-                        quad: qi,
-                        edge: edge_idx,
-                        vertices: (v0.into_index(), v1.into_index()),
-                    });
-                }
-            }
-
-            quad_neighbors.push(neighbors);
-        }
-
-        // Build vertex → quad map (includes ghost vertex)
-        // For boundary vertices, prefer ghost quads so is_boundary_vertex() works correctly
-        let mut vertex_quad = vec![QuadVertex { quad: QuadIdx::NONE, local: 0 }; vertex_count + 1];
-
-        let ghost_start = quads.len() - ghost_quad_count;
-
-        // First pass: assign any quad to each vertex
-        for (qi, quad) in quads.iter().enumerate() {
-            for (local, &vi) in quad.iter().enumerate() {
-                let idx = vi.into_index();
-
-                if vertex_quad[idx].quad.is_none() {
-                    vertex_quad[idx] = QuadVertex {
-                        quad: QuadIdx::new(qi),
-                        local: local as u8,
-                    };
-                }
-            }
-        }
-
-        // Second pass: override with ghost quads for boundary vertices
-        for qi in ghost_start..quads.len() {
-            let quad = &quads[QuadIdx::new(qi)];
-            for (local, &vi) in quad.iter().enumerate() {
-                if vi != ghost_vertex {
-                    // This is a boundary vertex, update to point to ghost quad
-                    vertex_quad[vi.into_index()] = QuadVertex {
-                        quad: QuadIdx::new(qi),
-                        local: local as u8,
-                    };
-                }
-            }
-        }
-
-        Ok(Self {
-            vertex_count,
-            ghost_quad_count,
-            quads,
-            quad_neighbors,
-            vertex_quad,
-        })
-    }
-
     /// Number of (real) vertices
     pub fn vertex_count(&self) -> usize {
         self.vertex_count
@@ -281,59 +139,69 @@ impl QuadTopology {
     }
 
     pub fn is_boundary_vertex(&self, vi: VertIdx) -> bool {
-        let qv = self.vertex_quad[vi.into_index()];
-        self.is_ghost_quad(qv.quad)
+        self.vertex_ring(vi).any(|qv| self.is_ghost_quad(qv.quad))
     }
 
     pub fn boundary_vertex_count(&self) -> usize {
         self.ghost_quad_count * 2
     }
 
-    pub fn boundary_vertices(&self) -> impl Iterator<Item = VertIdx> + '_ {
-        // Walk the boundary by traversing the ghost vertex's ring
-        // Each ghost quad has structure [ghost, v2, v1, v0]
-        // We extract vertices by following next pointers: v2, v1, then skip v0 (handled by next quad)
+    /// Returns an iterator over boundary edges as vertex index pairs.
+    ///
+    /// Each ghost quad contributes two edges (edges 1 and 2), which are the
+    /// boundary edges not involving the ghost vertex.
+    pub fn boundary_edges(&self) -> impl Iterator<Item = [u32; 2]> + '_ {
         self.vertex_ring(self.ghost_vertex()).flat_map(move |qv| {
-            // From ghost vertex (local 0), next() gives us v2 (local 1)
-            // Then next() again gives us v1 (local 2)
-            // We return both to get all boundary vertices
+            // Extract edges 1 and 2 from each ghost quad (the real boundary edges)
+            (1..3).filter_map(move |edge_idx| {
+                let qe = QuadEdge { quad: qv.quad, edge: edge_idx };
+                let (v0, v1) = self.edge_vertices(qe);
+                if let (Some(i0), Some(i1)) = (v0.try_into_index(), v1.try_into_index()) {
+                    Some([i0 as u32, i1 as u32])
+                } else {
+                    None
+                }
+            })
+        })
+    }
+
+    pub fn boundary_vertices(&self) -> impl Iterator<Item = VertIdx> + '_ {
+        // Walk the boundary by traversing the ghost vertex's ring and extract vertices
+        // at positions 1 and 2 of each ghost quad (the boundary vertices)
+        self.vertex_ring(self.ghost_vertex()).flat_map(move |qv| {
             let v1 = self.vertex_index(qv.next());
             let v2 = self.vertex_index(qv.next().next());
             [v1, v2]
         })
     }
 
-    pub fn boundary_edges(&self) -> Vec<[u32; 2]> {
-        let mut edges = Vec::new();
-        for qi in self.ghost_quad_indices() {
-            let verts = self.quads[qi];
-            // Ghost quads have structure [ghost, v2, v1, v0]
-            // Boundary edges are the ones not involving the ghost vertex
-            // That's edges 1, 2 (connecting v2-v1, v1-v0). Edge 3 wraps to ghost.
-            for edge_idx in 1..3 {
-                let v0 = verts[edge_idx];
-                let v1 = verts[(edge_idx + 1) % 4];
-                if let (Some(i0), Some(i1)) = (v0.try_into_index(), v1.try_into_index()) {
-                    edges.push([i0 as u32, i1 as u32]);
+    pub fn edge_type(&self, a: VertIdx, b: VertIdx) -> EdgeType {
+        // Find the quad containing edge a→b
+        for qv in self.vertex_ring(a) {
+            if self.vertex_index(qv.next()) == b {
+                // Found the edge, check if its neighbor is a ghost quad
+                let edge = qv.outgoing_edge();
+                let neighbor = self.edge_twin(edge);
+
+                if self.is_ghost_quad(neighbor.quad) {
+                    return EdgeType::Boundary;
+                } else {
+                    return EdgeType::Interior;
                 }
             }
         }
-        edges
+
+        EdgeType::NotAnEdge
     }
 
     pub fn quad_count(&self) -> usize {
         self.quads.len() - self.ghost_quad_count
     }
 
-    /// Iterator over the (real) vertex indices
     pub fn quad_indices(&self) -> impl Iterator<Item = QuadIdx> + '_ {
         (0..self.quads.len())
             .map(QuadIdx::new)
             .filter(|&qi| !self.is_ghost_quad(qi))
-    }
-
-    pub fn quad_vertices(&self, qi: QuadIdx) -> [VertIdx; 4] {
-        self.quads[qi]
     }
 
     pub fn ghost_quad_count(&self) -> usize {
@@ -352,35 +220,26 @@ impl QuadTopology {
         verts.contains(&ghost)
     }
 
-    pub fn edge_type(&self, a: VertIdx, b: VertIdx) -> EdgeType {
-        // Find the quad containing edge a→b
-        for qv in self.vertex_ring(a) {
-            if self.vertex_index(qv.next()) == b {
-                // Found the edge, check if its neighbor is a ghost quad
-                let edge = qv.outgoing_edge();
-                let neighbor = self.quad_neighbor(qv.quad, edge.edge as usize);
-
-                if self.is_ghost_quad(neighbor.quad) {
-                    return EdgeType::Boundary;
-                } else {
-                    return EdgeType::Interior;
-                }
-            }
-        }
-
-        EdgeType::NotAnEdge
+    pub fn edge_twin(&self, qe: QuadEdge) -> QuadEdge {
+        self.edge_twins[qe.quad][qe.edge as usize]
     }
 
-    /// Neighbor across edge `k` (0..4) of quad `qi`.
-    pub fn quad_neighbor(&self, qi: QuadIdx, edge: usize) -> QuadEdge {
-        debug_assert!(edge < 4);
-        self.quad_neighbors[qi][edge]
+    pub fn vertex_index(&self, qv: QuadVertex) -> VertIdx {
+        self.quads[qv.quad][qv.local as usize]
+    }
+
+    pub fn edge_vertices(&self, qe: QuadEdge) -> (VertIdx, VertIdx) {
+        let quad = self.quads[qe.quad];
+        (quad[qe.edge as usize], quad[(qe.edge as usize + 1) % 4])
+    }
+
+    pub fn quad_vertices(&self, qi: QuadIdx) -> [VertIdx; 4] {
+        self.quads[qi]
     }
 
     /// The ring of quads around vertex `vi`, with the local vertex index of vi.
     pub fn vertex_ring(&self, vi: VertIdx) -> impl Iterator<Item = QuadVertex> + '_ {
         let start_qv = self.vertex_quad[vi.into_index()];
-        assert!(!start_qv.quad.is_none(), "Vertex {:?} has no associated quad", vi);
 
         VertexRingIter {
             topology: self,
@@ -388,17 +247,6 @@ impl QuadTopology {
             current: start_qv,
             done: false,
         }
-    }
-
-    /// Get actual vertex index from QuadVertex
-    pub fn vertex_index(&self, qv: QuadVertex) -> VertIdx {
-        self.quads[qv.quad][qv.local as usize]
-    }
-
-    /// Get both vertex indices of an edge
-    pub fn edge_vertices(&self, qe: QuadEdge) -> (VertIdx, VertIdx) {
-        let quad = self.quads[qe.quad];
-        (quad[qe.edge as usize], quad[(qe.edge as usize + 1) % 4])
     }
 
     /// Average position of real edge neighbors of `vi` (via "next" in each ring quad).
@@ -423,6 +271,74 @@ impl QuadTopology {
             positions[vi.into_index()]
         }
     }
+
+    /// Validates the topology for consistency.
+    pub fn validate(&self) -> Result<(), QuadTopologyError> {
+        use crate::math::mesh::QuadTopologyError;
+
+        let ghost_vertex = self.ghost_vertex();
+
+        // 1. Check all vertices have an associated quad
+        for vi_idx in 0..=self.vertex_count {
+            let qv = self.vertex_quad[vi_idx];
+            if qv.quad.is_none() {
+                return Err(QuadTopologyError::VertexHasNoQuad(vi_idx));
+            }
+        }
+
+        // 2. Check edge twin bidirectionality
+        for qi_idx in 0..self.quads.len() {
+            let qi = QuadIdx::new(qi_idx);
+            for edge_idx in 0..4 {
+                let qe = QuadEdge { quad: qi, edge: edge_idx as u8 };
+                let twin = self.edge_twin(qe);
+
+                // Check twin points back
+                let (v0, v1) = self.edge_vertices(qe);
+                let (twin_v0, twin_v1) = self.edge_vertices(twin);
+
+                if v0 != twin_v1 || v1 != twin_v0 {
+                    return Err(QuadTopologyError::InvalidEdgeTwin { quad: qi_idx, edge: edge_idx });
+                }
+            }
+        }
+
+        // 3. Check ghost quad structure
+        for qi in self.ghost_quad_indices() {
+            let verts = self.quad_vertices(qi);
+            let ghost_count = verts.iter().filter(|&&v| v == ghost_vertex).count();
+
+            if ghost_count != 1 {
+                return Err(QuadTopologyError::InvalidGhostQuadStructure {
+                    quad: qi.into_index(),
+                    count: ghost_count,
+                });
+            }
+        }
+
+        // 4. Check vertex rings form closed loops
+        for vi_idx in 0..self.vertex_count {
+            let vi = VertIdx::new(vi_idx);
+            let ring: Vec<_> = self.vertex_ring(vi).collect();
+
+            if ring.is_empty() {
+                return Err(QuadTopologyError::VertexRingNotClosed { vertex: vi_idx });
+            }
+
+            // Check ring closure by verifying last→first connection
+            if !ring.is_empty() {
+                let last = ring[ring.len() - 1];
+                let incoming = last.incoming_edge();
+                let neighbor = self.edge_twin(incoming);
+
+                if neighbor.start().quad != ring[0].quad {
+                    return Err(QuadTopologyError::VertexRingNotClosed { vertex: vi_idx });
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 struct VertexRingIter<'a> {
@@ -446,7 +362,7 @@ impl<'a> Iterator for VertexRingIter<'a> {
         // The incoming edge connects the previous vertex to this vertex
         // The neighbor across this edge has the reverse edge, where this vertex is the start
         let edge = self.current.incoming_edge();
-        let neighbor = self.topology.quad_neighbors[edge.quad][edge.edge as usize];
+        let neighbor = self.topology.edge_twins[edge.quad][edge.edge as usize];
         self.current = neighbor.start(); // Use start, not end, to stay at the same vertex
 
         // Check if we've completed the ring
@@ -462,6 +378,7 @@ impl<'a> Iterator for VertexRingIter<'a> {
 mod tests {
     use super::*;
     use shine_test::test;
+    use std::collections::HashSet;
 
     /// 2×2 grid of 4 quads, 9 vertices, 1 interior vertex (4):
     /// ```text
@@ -481,7 +398,7 @@ mod tests {
             [VertIdx::new(4), VertIdx::new(5), VertIdx::new(8), VertIdx::new(7)],
         ];
         let boundaries: Vec<_> = [0, 1, 2, 5, 8, 7, 6, 3].into_iter().map(VertIdx::new).collect();
-        QuadTopology::new(9, boundaries, quads).expect("valid topology")
+        QuadTopology::from_polygon(9, boundaries, quads).expect("valid topology")
     }
 
     #[test]
@@ -542,7 +459,7 @@ mod tests {
 
                 // Get the neighbor across the incoming edge
                 let incoming = current.incoming_edge();
-                let neighbor = topo.quad_neighbor(incoming.quad, incoming.edge as usize);
+                let neighbor = topo.edge_twin(incoming);
 
                 assert_eq!(
                     neighbor.start(),
@@ -619,10 +536,11 @@ mod tests {
         // 6. Verify quad neighbor consistency
         for qi in topo.quad_indices() {
             for edge in 0..4 {
-                let neighbor = topo.quad_neighbor(qi, edge);
+                let qe = QuadEdge { quad: qi, edge: edge as u8 };
+                let neighbor = topo.edge_twin(qe);
 
                 // Get the reverse edge
-                let (v0, v1) = topo.edge_vertices(QuadEdge { quad: qi, edge: edge as u8 });
+                let (v0, v1) = topo.edge_vertices(qe);
 
                 // Find the edge in the neighbor that connects back
                 let neighbor_verts = topo.quad_vertices(neighbor.quad);
@@ -651,5 +569,13 @@ mod tests {
         for v in &boundary {
             assert!(seen.insert(*v), "boundary vertex {:?} appears multiple times", v);
         }
+    }
+
+    #[test]
+    fn test_topology_validation() {
+        let topo = grid_2x2_topo();
+
+        // Valid topology should pass validation
+        topo.validate().expect("valid topology should pass validation");
     }
 }

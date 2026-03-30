@@ -33,13 +33,13 @@ export class Chunk {
         const color = new THREE.Color().setHSL(this.chunkHash() / 0xffffffff, 0.5, 0.6);
 
         const meshData: MeshData = {
-            quadVertices: this.quadvertices(),
+            quadVertices: this.quadVertices(),
             quadIndices: this.quadIndices(),
             boundaryIndices: this.boundaryIndices(),
             dualVertices: this.dualVertices(),
             dualIndices: this.dualIndices()
         };
-        this.mesh = buildBaseMesh(this, color);
+        this.mesh = buildBaseMesh(meshData, color);
         this.group.add(this.mesh.group);
 
         const offset = this.worldOffset(reference);
@@ -55,7 +55,7 @@ export class Chunk {
     }
 
     boundaryIndices(): Uint32Array {
-        return this.world.chunk_border_indices(this.id.q, this.id.r);
+        return this.world.chunk_boundary_indices(this.id.q, this.id.r);
     }
 
     dualVertices(): Float32Array {
