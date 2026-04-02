@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { EventSubscriptions } from '../engine/events';
-import type { RenderContext } from '../engine/render-context';
-import { VIEWPORT_RESIZE, type ViewportResizeEvent } from '../engine/render-context';
-import { WORLD_REFERENCE_CHANGED, type WorldReferenceChangedEvent } from '../systems/world-reference-system';
+import { WORLD_REFERENCE_CHANGED, type WorldReferenceChangedEvent } from '../../systems/world-reference-system';
+import { EventSubscriptions } from '../events';
+import type { RenderContext } from '../render-context';
+import { VIEWPORT_RESIZE, type ViewportResizeEvent } from '../render-context';
 
 export class Camera {
     readonly camera: THREE.PerspectiveCamera;
@@ -55,7 +55,7 @@ export class Camera {
         if (value) {
             this.createCenterDot();
         } else if (!value) {
-            this.destroyCenterDot();
+            this.disposeCenterDot();
         }
     }
 
@@ -85,10 +85,10 @@ export class Camera {
         this.updateWorldPosition();
     }
 
-    destroy(): void {
-        this.destroyCenterDot();
+    dispose(): void {
+        this.disposeCenterDot();
         this.controls.dispose();
-        this.subscriptions.destroy();
+        this.subscriptions.dispose();
     }
 
     private createCenterDot(): void {
@@ -143,7 +143,7 @@ export class Camera {
         }
     }
 
-    private destroyCenterDot(): void {
+    private disposeCenterDot(): void {
         if (!this.centerDot) return;
 
         this.centerDot.parent?.remove(this.centerDot);

@@ -66,7 +66,7 @@ export class DebugPanel {
     }
 
     /**
-     * Remove all debug entries for a scope and destroy the folder.
+     * Remove all debug entries for a scope and remove the folder.
      */
     removeScope(scope: string): void {
         const folder = this.scopes.get(scope);
@@ -91,10 +91,7 @@ export class DebugPanel {
         this.gui.hide();
     }
 
-    /**
-     * Destroy the debug panel and remove from DOM.
-     */
-    destroy(): void {
+    dispose(): void {
         this.gui.destroy();
         this.scopes.clear();
         this.scopeValues.clear();

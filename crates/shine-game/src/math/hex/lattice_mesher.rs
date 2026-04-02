@@ -245,7 +245,7 @@ impl LatticeMesher {
             boundary_polygon.push(VertIdx::new(mid_idx));
         }
 
-        QuadMesh::new(positions, boundary_polygon, quads).expect("valid lattice mesh topology")
+        QuadMesh::from_polygon(positions, boundary_polygon, quads).expect("valid lattice mesh topology")
     }
 }
 

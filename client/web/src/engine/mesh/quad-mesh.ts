@@ -1,28 +1,21 @@
 import * as THREE from 'three';
+import { QuadData } from './geometry-data';
 
 const DEFAULT_FILL_COLOR = new THREE.Color(0.82, 0.85, 0.88);
 const BORDER_COLOR = 0x333333;
-
-export interface MeshData {
-    quadVertices: Float32Array;
-    quadIndices: Uint32Array;
-    boundaryIndices: Uint32Array;
-    dualVertices: Float32Array;
-    dualIndices: Uint32Array;
-}
 
 export interface MeshBuilder {
     group: THREE.Group;
     dispose(): void;
 }
 
-export function buildBaseMesh(data: MeshData, fillColor?: THREE.Color): MeshBuilder {
+export function buildBaseMesh(quadData: QuadData, fillColor?: THREE.Color): MeshBuilder {
     const color = fillColor ?? DEFAULT_FILL_COLOR;
     const group = new THREE.Group();
 
-    const vertices2D = data.quadVertices;
-    const quadIndices = data.quadIndices;
-    const boundaryIndices = data.boundaryIndices;
+    const vertices2D = quadData.vertices;
+    const quadIndices = quadData.indices;
+    const boundaryIndices = quadData.boundaryIndices!;
 
     const vertCount = vertices2D.length / 2;
     const quadCount = quadIndices.length / 4;

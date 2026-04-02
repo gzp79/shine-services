@@ -6,7 +6,7 @@ import { createControls, defaultParams, paramsToConfigJson } from './controls';
 import { HexMeshGroup, buildHexMesh } from './mesh-builder';
 
 export interface HexMeshViewer {
-    destroy(): void;
+    dispose(): void;
 }
 
 export async function createHexMeshViewer(container: HTMLElement): Promise<HexMeshViewer> {
@@ -105,7 +105,7 @@ export async function createHexMeshViewer(container: HTMLElement): Promise<HexMe
     animationId = animate(ctx);
 
     return {
-        destroy() {
+        dispose() {
             cancelAnimationFrame(animationId);
             gui.destroy();
             if (currentMesh) {

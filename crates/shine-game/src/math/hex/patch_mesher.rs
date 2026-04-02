@@ -166,7 +166,7 @@ impl PatchMesher {
             }
         }
 
-        QuadMesh::new(positions, polygon, quads).expect("valid patch mesh topology")
+        QuadMesh::from_polygon(positions, polygon, quads).expect("valid patch mesh topology")
     }
 }
 

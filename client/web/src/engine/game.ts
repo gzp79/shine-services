@@ -8,14 +8,18 @@ import { chunkIdToWorldPosition } from '../world/hex-utils';
 import { World } from '../world/world';
 import { DebugPanel } from './debug-panel';
 import type { GameSystem } from './game-system';
+import { InputController } from './input';
+import { PerformanceMetrics } from './performance-metrics';
 import { RenderContext } from './render-context';
 
 class Game {
     private readonly events: EventTarget;
     private readonly renderContext: RenderContext;
+    private readonly inputController: InputController;
     private readonly camera: Camera;
     private readonly world: World;
     private readonly debugPanel: DebugPanel;
+    private readonly performanceMetrics: PerformanceMetrics;
     private readonly systems: GameSystem[] = [];
     private animationId = 0;
     private lastTime = 0;
@@ -24,6 +28,8 @@ class Game {
         this.events = new EventTarget();
         this.renderContext = new RenderContext(container, this.events);
         this.debugPanel = new DebugPanel();
+        this.performanceMetrics = new PerformanceMetrics(this.renderContext.renderer);
+        this.inputController = new InputController(container, this.events);
         this.camera = new Camera(this.renderContext, this.events);
         this.world = new World(this.events, this.debugPanel);
 
@@ -67,17 +73,22 @@ class Game {
 
         // Render
         this.renderContext.render(this.camera.camera);
+
+        // Update performance metrics
+        this.performanceMetrics.update(deltaTime);
     }
 
-    destroy(): void {
+    dispose(): void {
         cancelAnimationFrame(this.animationId);
-        this.camera.destroy();
+        this.inputController.dispose();
+        this.camera.dispose();
         for (const system of this.systems) {
-            system.destroy();
+            system.dispose();
         }
         this.world.dispose();
-        this.renderContext.destroy();
-        this.debugPanel.destroy();
+        this.renderContext.dispose();
+        this.debugPanel.dispose();
+        this.performanceMetrics.dispose();
     }
 
     private teleportToRandomChunk(): void {

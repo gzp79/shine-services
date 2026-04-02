@@ -2,7 +2,7 @@ use crate::{
     indexed::{IdxVec, TypedIndex},
     math::{
         hex::{AxialCoord, LatticeMesher},
-        mesh::{QuadTopology, VertIdx},
+        mesh::{QuadIdx, QuadTopology, VertIdx},
         rand::Xorshift32,
     },
     world::{CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
@@ -50,6 +50,7 @@ impl From<AxialCoord> for ChunkId {
 pub struct Chunk {
     pub topology: QuadTopology,
     pub vertices: IdxVec<VertIdx, Vec2>,
+    pub quad_centers: IdxVec<QuadIdx, Vec2>,
 }
 
 impl Chunk {
@@ -58,8 +59,12 @@ impl Chunk {
         let mesh = LatticeMesher::new(SUBDIVISION_BASE, rng)
             .with_world_size(CHUNK_WORLD_SIZE)
             .generate();
-        let (topology, vertices) = mesh.into_parts();
-        Self { topology, vertices }
+        let (topology, vertices, quad_centers) = mesh.into_parts();
+        Self {
+            topology,
+            vertices,
+            quad_centers,
+        }
     }
 
     /// Flat (real) quad vertex positions [x, y, x, y, ...]
@@ -104,56 +109,105 @@ impl Chunk {
         let mut flat = Vec::with_capacity(quad_count * 2);
 
         for qi in self.topology.quad_indices() {
-            let verts = self.topology.quad_vertices(qi);
-            let mut cx = 0.0f32;
-            let mut cy = 0.0f32;
-            for &v in &verts {
-                let p = self.vertices[v];
-                cx += p.x;
-                cy += p.y;
-            }
-            flat.push(cx / 4.0);
-            flat.push(cy / 4.0);
+            let center = self.quad_centers[qi];
+            flat.push(center.x);
+            flat.push(center.y);
         }
 
         flat
     }
 
-    /// Dual mesh edge indices [a, b, ...] connecting adjacent quad centroids
-    pub fn dual_indices(&self) -> Vec<u32> {
-        let mut edges = Vec::new();
-        let mut quad_to_dual: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
+    /// Flat dual polygon indices referencing quad_centers.
+    /// Each vertex's surrounding quads form a dual polygon.
+    /// Returns (indices, starts) where starts[vi] marks the beginning of vertex vi's polygon.
+    ///
+    /// Example: For a vertex surrounded by 4 quads (indices 0,1,2,3 in dual_vertices):
+    /// - indices: [0, 1, 2, 3]
+    /// - starts: [0, 4] (polygon starts at 0, next would start at 4)
+    pub fn dual_polygons(&self) -> (Vec<u32>, Vec<u32>) {
+        let mut indices = Vec::new();
+        let mut starts = Vec::new();
+        starts.push(0);
 
-        // Map quad indices to dual vertex indices
-        for (dual_idx, qi) in self.topology.quad_indices().enumerate() {
-            quad_to_dual.insert(qi.into_index(), dual_idx as u32);
-        }
+        for vi in self.topology.vertex_indices() {
+            let start_len = indices.len();
 
-        // Find edges between adjacent quads
-        for qi in self.topology.quad_indices() {
-            let Some(&dual_idx) = quad_to_dual.get(&qi.into_index()) else {
-                continue;
-            };
-
-            for edge_idx in 0..4 {
-                let qe = crate::math::mesh::QuadEdge { quad: qi, edge: edge_idx as u8 };
-                let neighbor = self.topology.edge_twin(qe);
-                if self.topology.is_ghost_quad(neighbor.quad) {
-                    continue; // Skip ghost neighbors
+            // Collect QuadIdx for all real quads around this vertex
+            for qv in self.topology.vertex_ring(vi) {
+                if !self.topology.is_ghost_quad(qv.quad) {
+                    // Map QuadIdx to its position in quad_indices() enumeration
+                    let mut dual_idx = 0;
+                    for (i, qi) in self.topology.quad_indices().enumerate() {
+                        if qi == qv.quad {
+                            dual_idx = i as u32;
+                            break;
+                        }
+                    }
+                    indices.push(dual_idx);
                 }
+            }
 
-                let Some(&neighbor_dual_idx) = quad_to_dual.get(&neighbor.quad.into_index()) else {
-                    continue;
-                };
-
-                // Only add each edge once (avoid duplicates)
-                if dual_idx < neighbor_dual_idx {
-                    edges.push(dual_idx);
-                    edges.push(neighbor_dual_idx);
-                }
+            // Only record if we found at least 3 quads (valid polygon)
+            if indices.len() - start_len >= 3 {
+                starts.push(indices.len() as u32);
+            } else {
+                // Degenerate polygon, remove indices and don't advance start
+                indices.truncate(start_len);
+                starts.push(start_len as u32);
             }
         }
 
-        edges
+        (indices, starts)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dual_polygons() {
+        let chunk = Chunk::new(ChunkId::ORIGIN);
+
+        let (indices, starts) = chunk.dual_polygons();
+
+        // Basic sanity checks
+        assert!(!indices.is_empty(), "Should have dual polygon indices");
+        assert!(!starts.is_empty(), "Should have dual polygon starts");
+        assert_eq!(starts[0], 0, "First start should be 0");
+
+        // Verify starts is monotonically increasing
+        for i in 1..starts.len() {
+            assert!(starts[i] >= starts[i - 1], "Starts should be monotonically increasing");
+        }
+
+        // Verify last start points to end of indices
+        assert_eq!(
+            *starts.last().unwrap() as usize,
+            indices.len(),
+            "Last start should point to end of indices"
+        );
+
+        // Verify all indices are valid (refer to actual quads)
+        let quad_count = chunk.topology.quad_count();
+        for &idx in &indices {
+            assert!(
+                (idx as usize) < quad_count,
+                "Index {} should be less than quad count {}",
+                idx,
+                quad_count
+            );
+        }
+
+        // Verify each polygon has at least 3 vertices (or is degenerate with 0)
+        for i in 0..starts.len() - 1 {
+            let polygon_size = (starts[i + 1] - starts[i]) as usize;
+            assert!(
+                polygon_size == 0 || polygon_size >= 3,
+                "Polygon {} has invalid size {} (should be 0 or >= 3)",
+                i,
+                polygon_size
+            );
+        }
     }
 }

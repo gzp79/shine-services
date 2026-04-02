@@ -5,9 +5,6 @@ use crate::math::{
 use glam::Vec2;
 
 /// Random jitter displacement for [`QuadMesh`] positions.
-///
-/// [`apply`](QuadFilter::apply) displaces every interior vertex by a
-/// random offset scaled by `amplitude`. Boundary vertices stay fixed.
 pub struct Jitter {
     amplitude: f32,
     rng: Box<dyn StableRng>,
@@ -20,8 +17,10 @@ impl Jitter {
 }
 
 impl QuadFilter for Jitter {
+    /// Displaces every interior vertex by a random offset scaled by `amplitude`.
+    /// Boundary vertices stay fixed.
     fn apply(&mut self, mesh: &mut QuadMesh) {
-        let QuadMesh { topology, positions } = mesh;
+        let QuadMesh { topology, positions, .. } = mesh;
 
         for vi in topology.vertex_indices() {
             if topology.is_boundary_vertex(vi) {

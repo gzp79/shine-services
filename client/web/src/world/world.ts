@@ -72,12 +72,12 @@ export class World {
 
         this.wasm.init_chunk(id.q, id.r);
 
-        const chunk = new Chunk(this.wasm, id);
+        const chunk = new Chunk(this.wasm, id, this.subscriptions.events);
         this.group.add(chunk.group);
         this.chunks.set(key, chunk);
         this.updateDebugPanel();
 
-        chunk.buildMesh(this._referenceChunkId);
+        chunk.init(this._referenceChunkId);
         chunk.showLabel = this._showChunkLabels;
 
         return chunk;
@@ -88,7 +88,7 @@ export class World {
         const chunk = this.chunks.get(key);
         if (!chunk) return;
         this.group.remove(chunk.group);
-        chunk.disposeMesh();
+        chunk.dispose();
         this.chunks.delete(key);
         this.wasm.remove_chunk(id.q, id.r);
         this.updateDebugPanel();
@@ -96,12 +96,12 @@ export class World {
 
     dispose(): void {
         // Cleanup event listeners
-        this.subscriptions.destroy();
+        this.subscriptions.dispose();
 
         // Dispose chunks
         for (const chunk of this.chunks.values()) {
             this.group.remove(chunk.group);
-            chunk.disposeMesh();
+            chunk.dispose();
         }
         this.chunks.clear();
 

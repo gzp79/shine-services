@@ -63,9 +63,9 @@ export class EventSubscriptions {
     }
 
     /**
-     * Remove all event subscriptions. Call in your destroy() method.
+     * Remove all event subscriptions. Call in your dispose() method.
      */
-    destroy(): void {
+    dispose(): void {
         for (const cleanup of this.named.values()) {
             cleanup();
         }

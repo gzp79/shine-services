@@ -49,10 +49,23 @@ impl WasmWorld {
             .unwrap_or_default()
     }
 
-    pub fn chunk_dual_indices(&self, q: i32, r: i32) -> Vec<u32> {
+    pub fn chunk_dual_polygon_vertices(&self, q: i32, r: i32) -> Vec<f32> {
+        // Same as chunk_dual_vertices - returns quad centers
+        self.chunk_dual_vertices(q, r)
+    }
+
+    pub fn chunk_dual_polygons(&self, q: i32, r: i32) -> Vec<u32> {
         self.world
             .chunk(ChunkId(q, r))
-            .map(|chunk| chunk.dual_indices())
+            .map(|chunk| {
+                let (indices, starts) = chunk.dual_polygons();
+                // Pack as: [starts_len, ...starts, ...indices]
+                let mut result = Vec::with_capacity(1 + starts.len() + indices.len());
+                result.push(starts.len() as u32);
+                result.extend(starts);
+                result.extend(indices);
+                result
+            })
             .unwrap_or_default()
     }
 

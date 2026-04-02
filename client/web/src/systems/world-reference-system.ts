@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Camera } from '../camera/camera';
+import type { Camera } from '../engine/camera/camera';
 import type { DebugPanel } from '../engine/debug-panel';
 import { EventDispatcher } from '../engine/events';
 import type { GameSystem } from '../engine/game-system';
@@ -74,7 +74,7 @@ export class WorldReferenceSystem implements GameSystem {
         }
     }
 
-    destroy(): void {
+    dispose(): void {
         this.debugPanel.removeScope(this.SCOPE);
     }
 }

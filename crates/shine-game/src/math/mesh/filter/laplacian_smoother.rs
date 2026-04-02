@@ -5,10 +5,6 @@ use crate::{
 use glam::Vec2;
 
 /// Laplacian smoothing for [`QuadMesh`].
-///
-/// [`apply`](QuadFilter::apply) runs `iterations` Jacobi-style relaxation
-/// steps, moving interior vertices toward the average of their edge-connected
-/// neighbors. Boundary vertices are never moved.
 pub struct LaplacianSmoother {
     strength: f32,
     iterations: u32,
@@ -26,7 +22,7 @@ impl LaplacianSmoother {
     }
 
     fn step(&mut self, mesh: &mut QuadMesh) {
-        let QuadMesh { topology, positions } = mesh;
+        let QuadMesh { topology, positions, .. } = mesh;
 
         self.buf.resize(topology.vertex_count(), Vec2::ZERO);
 
@@ -46,6 +42,8 @@ impl LaplacianSmoother {
 }
 
 impl QuadFilter for LaplacianSmoother {
+    /// Runs `iterations` Jacobi-style relaxation steps, moving interior vertices toward
+    /// the average of their edge-connected neighbors. Boundary vertices are never moved.
     fn apply(&mut self, mesh: &mut QuadMesh) {
         for _ in 0..self.iterations {
             self.step(mesh);

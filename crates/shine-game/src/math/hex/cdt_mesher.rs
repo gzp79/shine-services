@@ -234,6 +234,6 @@ impl CdtMesher {
             polygon.push(VertIdx::new(mid_idx));
         }
 
-        QuadMesh::new(positions, polygon, quads).expect("valid CDT mesh topology")
+        QuadMesh::from_polygon(positions, polygon, quads).expect("valid CDT mesh topology")
     }
 }

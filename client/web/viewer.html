@@ -63,7 +63,7 @@
 
             async function route() {
                 if (current) {
-                    current.destroy();
+                    current.dispose();
                     current = null;
                 }
                 updateActiveLink();

@@ -23,7 +23,7 @@ impl VertexRepulsion {
 
 impl QuadFilter for VertexRepulsion {
     fn apply(&mut self, mesh: &mut QuadMesh) {
-        let QuadMesh { topology, positions } = mesh;
+        let QuadMesh { topology, positions, .. } = mesh;
 
         let n = topology.vertex_count();
         if n == 0 {
