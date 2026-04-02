@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Camera } from '../engine/camera/camera';
+import type { WorldCursor } from '../avatar/world-cursor';
 import type { DebugPanel } from '../engine/debug-panel';
 import { EventDispatcher } from '../engine/events';
 import type { GameSystem } from '../engine/game-system';
@@ -31,7 +31,7 @@ export class WorldReferenceSystem implements GameSystem {
     private readonly dispatcher: EventDispatcher;
 
     constructor(
-        private readonly camera: Camera,
+        private readonly worldCursor: WorldCursor,
         private readonly world: World,
         events: EventTarget,
         private readonly debugPanel: DebugPanel
@@ -40,16 +40,16 @@ export class WorldReferenceSystem implements GameSystem {
     }
 
     update(_deltaTime: number): void {
-        const worldPos = this.camera.worldPosition;
+        const avatarPos = new THREE.Vector2(this.worldCursor.position.x, this.worldCursor.position.y);
         const referenceChunkId = this.world.referenceChunkId;
         const focusedChunkId = this.world.focusedChunkId;
 
-        const currentChunkId = worldPositionToChunkId(referenceChunkId, worldPos);
+        const currentChunkId = worldPositionToChunkId(referenceChunkId, avatarPos);
         const currentCenter = chunkIdToWorldPosition(referenceChunkId, currentChunkId);
         const distanceSq = currentCenter.lengthSq();
 
         // Update debug panel
-        this.debugPanel.set(this.SCOPE, 'Camera Pos', `(${worldPos.x.toFixed(0)}, ${worldPos.y.toFixed(0)})`);
+        this.debugPanel.set(this.SCOPE, 'Avatar Pos', `(${avatarPos.x.toFixed(0)}, ${avatarPos.y.toFixed(0)})`);
         this.debugPanel.set(this.SCOPE, 'Current Chunk', `(${currentChunkId.q}, ${currentChunkId.r})`);
         this.debugPanel.set(this.SCOPE, 'Reference Chunk', `(${referenceChunkId.q}, ${referenceChunkId.r})`);
         this.debugPanel.set(this.SCOPE, 'Focused Chunk', `(${focusedChunkId.q}, ${focusedChunkId.r})`);

@@ -1,11 +1,12 @@
 import init from '#wasm';
 import wasmUrl from '#wasm-bin';
 import * as THREE from 'three';
-import { Camera } from '../camera/camera';
+import { InputMapper } from '../avatar/input-mapper';
+import { WorldCursor } from '../avatar/world-cursor';
+import { CameraFollowCursorSystem } from '../systems/camera-follow-cursor-system';
 import { WorldReferenceSystem } from '../systems/world-reference-system';
-import { ChunkId } from '../world/chunk-id';
-import { chunkIdToWorldPosition } from '../world/hex-utils';
 import { World } from '../world/world';
+import { Camera } from './camera/camera';
 import { DebugPanel } from './debug-panel';
 import type { GameSystem } from './game-system';
 import { InputController } from './input';
@@ -16,7 +17,9 @@ class Game {
     private readonly events: EventTarget;
     private readonly renderContext: RenderContext;
     private readonly inputController: InputController;
+    private readonly inputMapper: InputMapper;
     private readonly camera: Camera;
+    private readonly worldCursor: WorldCursor;
     private readonly world: World;
     private readonly debugPanel: DebugPanel;
     private readonly performanceMetrics: PerformanceMetrics;
@@ -28,18 +31,34 @@ class Game {
         this.events = new EventTarget();
         this.renderContext = new RenderContext(container, this.events);
         this.debugPanel = new DebugPanel();
+        this.debugPanel.setGameContainer(container);
         this.performanceMetrics = new PerformanceMetrics(this.renderContext.renderer);
-        this.inputController = new InputController(container, this.events);
         this.camera = new Camera(this.renderContext, this.events);
+
+        // Make container focusable so keyboard events work
+        if (!container.hasAttribute('tabindex')) {
+            container.tabIndex = 0;
+        }
+        // Remove focus outline (keyboard events only, no visual indication needed)
+        container.style.outline = 'none';
+        container.focus();
+
+        // Create WorldCursor first (needed by InputMapper for orientation)
+        this.worldCursor = new WorldCursor(this.renderContext, this.events);
         this.world = new World(this.events, this.debugPanel);
 
+        // InputMapper transforms screen-space input to cursor-aware events
+        this.inputMapper = new InputMapper(this.camera, this.worldCursor, this.events);
+        this.inputController = new InputController(container, this.inputMapper);
+
         // Add debug toggles
-        this.debugPanel.addToggle('Controls', 'Show Center Dot', this.camera, 'showCenterDot');
+        this.worldCursor.showMesh = true;
+        this.debugPanel.addToggle('Controls', 'Show World Cursor', this.worldCursor, 'showMesh');
         this.debugPanel.addToggle('Controls', 'Show Chunk Labels', this.world, 'showChunkLabels');
-        this.debugPanel.addButton('Controls', 'Teleport Random', () => this.teleportToRandomChunk());
 
         // Register systems
-        this.systems.push(new WorldReferenceSystem(this.camera, this.world, this.events, this.debugPanel));
+        this.systems.push(new CameraFollowCursorSystem(this.camera, this.worldCursor, this.events));
+        this.systems.push(new WorldReferenceSystem(this.worldCursor, this.world, this.events, this.debugPanel));
 
         // Add world to scene
         this.renderContext.scene.add(this.world.group);
@@ -59,22 +78,17 @@ class Game {
 
     private animate(currentTime: number): void {
         this.animationId = requestAnimationFrame((t) => this.animate(t));
-
         const deltaTime = (currentTime - this.lastTime) / 1000;
         this.lastTime = currentTime;
 
-        // Update camera
         this.camera.update();
+        this.worldCursor.update(deltaTime);
 
-        // Update systems
         for (const system of this.systems) {
             system.update(deltaTime);
         }
 
-        // Render
         this.renderContext.render(this.camera.camera);
-
-        // Update performance metrics
         this.performanceMetrics.update(deltaTime);
     }
 
@@ -82,6 +96,7 @@ class Game {
         cancelAnimationFrame(this.animationId);
         this.inputController.dispose();
         this.camera.dispose();
+        this.worldCursor.dispose();
         for (const system of this.systems) {
             system.dispose();
         }
@@ -89,20 +104,6 @@ class Game {
         this.renderContext.dispose();
         this.debugPanel.dispose();
         this.performanceMetrics.dispose();
-    }
-
-    private teleportToRandomChunk(): void {
-        // Generate random chunk coordinates (full i32 range)
-        const randomI32 = () => Math.floor(Math.random() * 0xffffffff) - 0x7fffffff;
-        const q = randomI32();
-        const r = randomI32();
-        const targetChunk = new ChunkId(q, r);
-
-        // Get world position of target chunk (relative to current reference)
-        const targetPos = chunkIdToWorldPosition(this.world.referenceChunkId, targetChunk);
-
-        // Teleport camera - this updates position, controls, and worldPosition
-        this.camera.teleportTo(targetPos);
     }
 }
 

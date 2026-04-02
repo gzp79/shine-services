@@ -25,6 +25,7 @@ export class World {
     private _showChunkLabels = false;
     private originCircle: THREE.Line;
     private chunk00Circle: THREE.Line;
+    private pendingChunkUpdate: number | null = null;
 
     get referenceChunkId(): ChunkId {
         return this._referenceChunkId;
@@ -95,6 +96,12 @@ export class World {
     }
 
     dispose(): void {
+        // Cancel pending chunk update
+        if (this.pendingChunkUpdate !== null) {
+            cancelIdleCallback(this.pendingChunkUpdate);
+            this.pendingChunkUpdate = null;
+        }
+
         // Cleanup event listeners
         this.subscriptions.dispose();
 
@@ -134,7 +141,21 @@ export class World {
 
     private handleWorldCenterChanged = (event: WorldCenterChangedEvent): void => {
         this._focusedChunkId = event.newChunkId;
-        this.updateChunksAroundFocus();
+
+        // Cancel any pending chunk update
+        if (this.pendingChunkUpdate !== null) {
+            cancelIdleCallback(this.pendingChunkUpdate);
+        }
+
+        // Defer chunk loading to avoid blocking the current frame
+        // This prevents stuttering when crossing chunk boundaries
+        this.pendingChunkUpdate = requestIdleCallback(
+            () => {
+                this.pendingChunkUpdate = null;
+                this.updateChunksAroundFocus();
+            },
+            { timeout: 16 } // Force execution within 16ms (1 frame at 60fps) if idle time isn't available
+        );
     };
 
     private updateChunksAroundFocus(): void {

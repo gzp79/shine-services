@@ -1,5 +1,15 @@
 import * as THREE from 'three';
 
+interface PerformanceMemory {
+    usedJSHeapSize: number;
+    totalJSHeapSize: number;
+    jsHeapSizeLimit: number;
+}
+
+interface PerformanceWithMemory extends Performance {
+    memory?: PerformanceMemory;
+}
+
 /**
  * Performance metrics display in bottom-right corner.
  * Tracks FPS, frame time, renderer stats, and memory usage.
@@ -82,7 +92,7 @@ export class PerformanceMetrics {
         const triangles = info.render.triangles;
 
         // Get memory usage (if available)
-        const memory = (performance as any).memory;
+        const memory = (performance as PerformanceWithMemory).memory;
         const memoryMB = memory ? Math.round(memory.usedJSHeapSize / 1048576) : 0;
 
         // Update display

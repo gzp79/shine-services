@@ -1,22 +1,29 @@
-import { EventDispatcher } from '../events';
-import { MOVE_KEYS } from './constants';
-import { DesktopController } from './desktop-controller';
-import { INPUT_CONTROLLER_CHANGED, type InputControllerChangedEvent } from './events';
-import { TouchController } from './touch-controller';
+import { MOVE_KEYS } from '../../constants';
+import { DesktopController } from './_desktop-controller';
+import type { InputHandler, Point } from './_input-handler';
+import { TouchController } from './_touch-controller';
+
+export type PointerInfo = {
+    id: number;
+    startPos: Point;
+    currentPos: Point;
+    downTime: number;
+    button: number;
+};
 
 export class InputController {
     private el: HTMLElement;
-    private dispatcher: EventDispatcher;
+    private handler: InputHandler;
     private touchController: TouchController;
     private desktopController: DesktopController;
     private selected: 'touch' | 'desktop' = 'desktop';
     private active: 'touch' | 'desktop' | null = null;
 
-    constructor(el: HTMLElement, events: EventTarget) {
+    constructor(el: HTMLElement, handler: InputHandler) {
         this.el = el;
-        this.dispatcher = new EventDispatcher(events);
-        this.touchController = new TouchController(this.dispatcher);
-        this.desktopController = new DesktopController(this.dispatcher);
+        this.handler = handler;
+        this.touchController = new TouchController(handler);
+        this.desktopController = new DesktopController(handler);
         this.bind();
     }
 
@@ -25,7 +32,9 @@ export class InputController {
         this.el.addEventListener('pointermove', this.onPointerMove, { passive: false });
         this.el.addEventListener('pointerup', this.onPointerUp, { passive: false });
         this.el.addEventListener('pointercancel', this.onPointerCancel, { passive: false });
+        this.el.addEventListener('pointerleave', this.onPointerLeave, { passive: false });
         this.el.addEventListener('wheel', this.onWheel, { passive: false });
+        this.el.addEventListener('contextmenu', this.onContextMenu, { passive: false });
         window.addEventListener('keydown', this.onKeyDown, { passive: false });
         window.addEventListener('keyup', this.onKeyUp, { passive: false });
         window.addEventListener('blur', this.onBlur);
@@ -36,7 +45,9 @@ export class InputController {
         this.el.removeEventListener('pointermove', this.onPointerMove);
         this.el.removeEventListener('pointerup', this.onPointerUp);
         this.el.removeEventListener('pointercancel', this.onPointerCancel);
+        this.el.removeEventListener('pointerleave', this.onPointerLeave);
         this.el.removeEventListener('wheel', this.onWheel);
+        this.el.removeEventListener('contextmenu', this.onContextMenu);
         window.removeEventListener('keydown', this.onKeyDown);
         window.removeEventListener('keyup', this.onKeyUp);
         window.removeEventListener('blur', this.onBlur);
@@ -57,6 +68,12 @@ export class InputController {
     };
 
     private onPointerMove = (ev: PointerEvent): void => {
+        // Only handle if we have an active controller
+        // (moves are allowed even if target isn't canvas, as pointer may have moved outside)
+        if (!this.active) {
+            return;
+        }
+
         ev.preventDefault();
 
         if (this.active === 'touch') {
@@ -90,6 +107,18 @@ export class InputController {
         this.checkDeactivation();
     };
 
+    private onPointerLeave = (_ev: PointerEvent): void => {
+        // Pointer leaving the canvas - reset to stop all gestures and WASD movement
+        // This ensures we clean up when clicking outside (e.g., debug panel)
+        if (this.active === 'touch') {
+            this.touchController.reset();
+        } else if (this.active === 'desktop') {
+            this.desktopController.reset();
+        }
+
+        this.active = null;
+    };
+
     private onWheel = (ev: WheelEvent): void => {
         ev.preventDefault();
 
@@ -102,10 +131,27 @@ export class InputController {
         }
     };
 
+    private onContextMenu = (ev: MouseEvent): void => {
+        ev.preventDefault();
+    };
+
     private onKeyDown = (ev: KeyboardEvent): void => {
         const key = ev.key.toLowerCase();
+
+        // ESC resets all controllers
+        if (key === 'escape') {
+            ev.preventDefault();
+            if (this.active === 'touch') {
+                this.touchController.reset();
+            } else if (this.active === 'desktop') {
+                this.desktopController.reset();
+            }
+            this.active = null;
+            return;
+        }
+
         if (!MOVE_KEYS.includes(key)) {
-            return; // Ignore non-move keys
+            return;
         }
 
         if (!this.activateController('desktop')) {
@@ -153,9 +199,7 @@ export class InputController {
             this.active = type;
             if (this.selected !== type) {
                 this.selected = type;
-                this.dispatcher.dispatch<InputControllerChangedEvent>(INPUT_CONTROLLER_CHANGED, {
-                    controller: type
-                });
+                this.handler.onControllerChanged(type);
             }
         }
 

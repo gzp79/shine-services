@@ -1,41 +1,16 @@
-import { EventDispatcher } from '../events';
 import {
     LONG_PRESS_MS,
     MOVE_KEYS,
     MOVE_KEY_DOWN,
     MOVE_KEY_LEFT,
     MOVE_KEY_RIGHT,
+    MOVE_KEY_SPRINT,
     MOVE_KEY_UP,
     MOVE_THRESHOLD_PX,
     TAP_THRESHOLD_MS
-} from './constants';
-import {
-    INPUT_INTERACT_DRAG,
-    INPUT_INTERACT_END,
-    INPUT_INTERACT_START,
-    INPUT_MOVE,
-    INPUT_PAN,
-    INPUT_PAN_END,
-    INPUT_PAN_START,
-    INPUT_ROTATE,
-    INPUT_ROTATE_END,
-    INPUT_ROTATE_START,
-    INPUT_TAP,
-    INPUT_ZOOM,
-    type InputInteractDragEvent,
-    type InputInteractEndEvent,
-    type InputInteractStartEvent,
-    type InputMoveEvent,
-    type InputPanEndEvent,
-    type InputPanEvent,
-    type InputPanStartEvent,
-    type InputRotateEndEvent,
-    type InputRotateEvent,
-    type InputRotateStartEvent,
-    type InputTapEvent,
-    type InputZoomEvent
-} from './events';
-import type { Delta, Point, PointerInfo } from './types';
+} from '../../constants';
+import { PointerInfo } from './_input-controller';
+import type { Delta, InputHandler, Point } from './_input-handler';
 
 // Maps button index to buttons bitmask
 // button property: 0=left, 1=middle, 2=right
@@ -45,16 +20,17 @@ const BUTTON_TO_BITMASK = [1, 4, 2];
 export class DesktopController {
     private owningPointer: PointerInfo | null = null;
     private isOwningPointerDead = false;
-    private keys = { w: false, a: false, s: false, d: false };
+    private keys = { up: false, left: false, down: false, right: false, shift: false };
     private activePan = false;
     private activeRotate = false;
     private activeInteract = false;
     private longPressTimer: number | null = null;
     private prevDirection = { x: 0, y: 0 };
-    private dispatcher: EventDispatcher;
+    private prevShift = false;
+    private handler: InputHandler;
 
-    constructor(dispatcher: EventDispatcher) {
-        this.dispatcher = dispatcher;
+    constructor(handler: InputHandler) {
+        this.handler = handler;
     }
 
     handlePointerDown(ev: PointerEvent): void {
@@ -90,7 +66,7 @@ export class DesktopController {
             this.longPressTimer = window.setTimeout(() => {
                 if (this.owningPointer !== null && !this.activePan && !this.activeRotate) {
                     this.activeInteract = true;
-                    this.dispatcher.dispatch<InputInteractStartEvent>(INPUT_INTERACT_START, { pos: p });
+                    this.handler.onInteractStart(p);
                 }
             }, LONG_PRESS_MS);
         }
@@ -126,10 +102,7 @@ export class DesktopController {
 
         // Interact drag (after long press)
         if (this.activeInteract) {
-            this.dispatcher.dispatch<InputInteractDragEvent>(INPUT_INTERACT_DRAG, {
-                start: this.owningPointer.startPos,
-                current: newPos
-            });
+            this.handler.onInteractDrag(this.owningPointer.startPos, newPos);
             return;
         }
 
@@ -141,18 +114,15 @@ export class DesktopController {
             totalMoved > MOVE_THRESHOLD_PX
         ) {
             // Check if move is active - block pan
-            if (this.keys.w || this.keys.a || this.keys.s || this.keys.d) {
+            if (this.keys.up || this.keys.left || this.keys.down || this.keys.right) {
                 return;
             }
             this.activePan = true;
-            this.dispatcher.dispatch<InputPanStartEvent>(INPUT_PAN_START, { pos: this.owningPointer.startPos });
+            this.handler.onPanStart(this.owningPointer.startPos);
         }
 
         if (this.activePan) {
-            this.dispatcher.dispatch<InputPanEvent>(INPUT_PAN, {
-                start: this.owningPointer.startPos,
-                current: newPos
-            });
+            this.handler.onPan(this.owningPointer.startPos, newPos);
             return;
         }
 
@@ -164,16 +134,11 @@ export class DesktopController {
             totalMoved > MOVE_THRESHOLD_PX
         ) {
             this.activeRotate = true;
-            this.dispatcher.dispatch<InputRotateStartEvent>(INPUT_ROTATE_START, {
-                pos: this.owningPointer.startPos
-            });
+            this.handler.onRotateStart(this.owningPointer.startPos);
         }
 
         if (this.activeRotate) {
-            this.dispatcher.dispatch<InputRotateEvent>(INPUT_ROTATE, {
-                start: this.owningPointer.startPos,
-                current: newPos
-            });
+            this.handler.onRotate(this.owningPointer.startPos, newPos);
         }
     }
 
@@ -243,10 +208,11 @@ export class DesktopController {
         }
 
         // Update key state
-        if (key === MOVE_KEY_UP) this.keys.w = true;
-        if (key === MOVE_KEY_LEFT) this.keys.a = true;
-        if (key === MOVE_KEY_DOWN) this.keys.s = true;
-        if (key === MOVE_KEY_RIGHT) this.keys.d = true;
+        if (key === MOVE_KEY_SPRINT) this.keys.shift = true;
+        if (key === MOVE_KEY_UP) this.keys.up = true;
+        if (key === MOVE_KEY_LEFT) this.keys.left = true;
+        if (key === MOVE_KEY_DOWN) this.keys.down = true;
+        if (key === MOVE_KEY_RIGHT) this.keys.right = true;
 
         // Emit move event (only if direction changed)
         this.emitMove();
@@ -261,10 +227,11 @@ export class DesktopController {
         ev.preventDefault();
 
         // Update key state
-        if (key === MOVE_KEY_UP) this.keys.w = false;
-        if (key === MOVE_KEY_LEFT) this.keys.a = false;
-        if (key === MOVE_KEY_DOWN) this.keys.s = false;
-        if (key === MOVE_KEY_RIGHT) this.keys.d = false;
+        if (key === MOVE_KEY_SPRINT) this.keys.shift = false;
+        if (key === MOVE_KEY_UP) this.keys.up = false;
+        if (key === MOVE_KEY_LEFT) this.keys.left = false;
+        if (key === MOVE_KEY_DOWN) this.keys.down = false;
+        if (key === MOVE_KEY_RIGHT) this.keys.right = false;
 
         // Emit move event (may be zero vector)
         this.emitMove();
@@ -285,27 +252,22 @@ export class DesktopController {
         }
 
         const pos: Point = { x: ev.clientX, y: ev.clientY };
-        this.dispatcher.dispatch<InputZoomEvent>(INPUT_ZOOM, {
-            pos,
-            delta: ev.deltaY
-        });
+        this.handler.onZoom(pos, ev.deltaY);
     }
 
     reset(): void {
         // Emit END events for active gestures
         if (this.activeInteract && this.owningPointer) {
-            this.dispatcher.dispatch<InputInteractEndEvent>(INPUT_INTERACT_END, {
-                pos: this.owningPointer.currentPos
-            });
+            this.handler.onInteractEnd(this.owningPointer.currentPos);
         } else if (this.activePan && this.owningPointer) {
-            this.dispatcher.dispatch<InputPanEndEvent>(INPUT_PAN_END, { pos: this.owningPointer.currentPos });
+            this.handler.onPanEnd(this.owningPointer.currentPos);
         } else if (this.activeRotate && this.owningPointer) {
-            this.dispatcher.dispatch<InputRotateEndEvent>(INPUT_ROTATE_END, { pos: this.owningPointer.currentPos });
+            this.handler.onRotateEnd(this.owningPointer.currentPos);
         }
 
         // Emit move event with zero direction if keys were pressed
-        if (this.keys.w || this.keys.a || this.keys.s || this.keys.d) {
-            this.keys = { w: false, a: false, s: false, d: false };
+        if (this.keys.up || this.keys.left || this.keys.down || this.keys.right) {
+            this.keys = { up: false, left: false, down: false, right: false, shift: false };
             this.emitMove();
         }
 
@@ -316,6 +278,7 @@ export class DesktopController {
         this.activeRotate = false;
         this.activeInteract = false;
         this.prevDirection = { x: 0, y: 0 };
+        this.prevShift = false;
         this.cancelLongPressTimer();
     }
 
@@ -337,10 +300,10 @@ export class DesktopController {
     private calculateMoveDirection(): Delta {
         let x = 0,
             y = 0;
-        if (this.keys.a) x -= 1;
-        if (this.keys.d) x += 1;
-        if (this.keys.w) y -= 1;
-        if (this.keys.s) y += 1;
+        if (this.keys.left) x -= 1;
+        if (this.keys.right) x += 1;
+        if (this.keys.up) y -= 1;
+        if (this.keys.down) y += 1;
 
         if (x !== 0 || y !== 0) {
             const len = Math.hypot(x, y);
@@ -355,9 +318,14 @@ export class DesktopController {
         const direction = this.calculateMoveDirection();
 
         // Only emit if direction changed
-        if (direction.x !== this.prevDirection.x || direction.y !== this.prevDirection.y) {
+        if (
+            direction.x !== this.prevDirection.x ||
+            direction.y !== this.prevDirection.y ||
+            this.keys.shift !== this.prevShift
+        ) {
             this.prevDirection = direction;
-            this.dispatcher.dispatch<InputMoveEvent>(INPUT_MOVE, { direction });
+            this.prevShift = this.keys.shift;
+            this.handler.onMove(direction, this.keys.shift);
         }
     }
 
@@ -384,22 +352,22 @@ export class DesktopController {
         // End active gestures (defensive: clear even if owningPointer was somehow null)
         if (this.activeInteract) {
             this.activeInteract = false;
-            this.dispatcher.dispatch<InputInteractEndEvent>(INPUT_INTERACT_END, { pos: releasedPos });
+            this.handler.onInteractEnd(releasedPos);
         } else if (this.activePan) {
             this.activePan = false;
-            this.dispatcher.dispatch<InputPanEndEvent>(INPUT_PAN_END, { pos: releasedPos });
+            this.handler.onPanEnd(releasedPos);
         } else if (this.activeRotate) {
             this.activeRotate = false;
-            this.dispatcher.dispatch<InputRotateEndEvent>(INPUT_ROTATE_END, { pos: releasedPos });
+            this.handler.onRotateEnd(releasedPos);
         }
 
         // Emit tap if qualified
         if (isTap) {
-            this.dispatcher.dispatch<InputTapEvent>(INPUT_TAP, { pos: releasedPos });
+            this.handler.onTap(releasedPos);
         }
     }
 
     isActive(): boolean {
-        return this.owningPointer !== null || this.keys.w || this.keys.a || this.keys.s || this.keys.d;
+        return this.owningPointer !== null || this.keys.up || this.keys.left || this.keys.down || this.keys.right;
     }
 }

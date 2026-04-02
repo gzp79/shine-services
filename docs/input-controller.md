@@ -31,13 +31,13 @@ The `InputController` is a unified gesture recognition system that converts raw 
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│               InputController (Orchestrator)             │
+│               InputController (Orchestrator)            │
 ├─────────────────────────────────────────────────────────┤
-│  State:                                                  │
+│  State:                                                 │
 │  • selected: 'touch' | 'desktop' (never null)           │
 │  • active: 'touch' | 'desktop' | null                   │
-│                                                          │
-│  Responsibilities:                                       │
+│                                                         │
+│  Responsibilities:                                      │
 │  - Detect input type (touch vs mouse/keyboard)          │
 │  - Activate controller on first input                   │
 │  - Update selected = active, emit event if changed      │

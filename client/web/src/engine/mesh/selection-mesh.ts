@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PolygonData } from './geometry-data';
 import { buildPrismGeometry } from './prism-geometry';
-import { createWireframeMaterial, createWireframeGlowMaterial } from './wireframe-shader';
+import { createWireframeGlowMaterial, createWireframeMaterial } from './wireframe-shader';
 
 /**
  * Manages a single selection mesh for hover interaction.
@@ -47,14 +47,14 @@ export class SelectionMesh {
         }
 
         // Create glow halo (rendered first, behind sharp core)
-        const glowMaterial = createWireframeGlowMaterial(0xFFDD00, 0.5);
+        const glowMaterial = createWireframeGlowMaterial(0xffdd00, 0.5);
         this.meshGlow = new THREE.Mesh(geometry, glowMaterial);
         this.meshGlow.userData = { vertIdx };
         this.meshGlow.renderOrder = -1; // Render behind core
         this.parent.add(this.meshGlow);
 
         // Create sharp core (rendered second, in front)
-        const coreMaterial = createWireframeMaterial(0xFFDD00);
+        const coreMaterial = createWireframeMaterial(0xffdd00);
         this.meshCore = new THREE.Mesh(geometry, coreMaterial);
         this.meshCore.userData = { vertIdx };
         this.meshCore.renderOrder = 0; // Render in front of glow

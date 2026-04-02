@@ -1,28 +1,6 @@
-import { EventDispatcher } from '../events';
-import { LONG_PRESS_MS, MOVE_THRESHOLD_PX, PINCH_TIMING_MS, TAP_THRESHOLD_MS } from './constants';
-import {
-    INPUT_INTERACT_DRAG,
-    INPUT_INTERACT_END,
-    INPUT_INTERACT_START,
-    INPUT_PAN,
-    INPUT_PAN_END,
-    INPUT_PAN_START,
-    INPUT_PINCH,
-    INPUT_PINCH_END,
-    INPUT_PINCH_START,
-    INPUT_TAP,
-    type InputInteractDragEvent,
-    type InputInteractEndEvent,
-    type InputInteractStartEvent,
-    type InputPanEndEvent,
-    type InputPanEvent,
-    type InputPanStartEvent,
-    type InputPinchEndEvent,
-    type InputPinchEvent,
-    type InputPinchStartEvent,
-    type InputTapEvent
-} from './events';
-import type { Point, PointerInfo } from './types';
+import { LONG_PRESS_MS, MOVE_THRESHOLD_PX, PINCH_TIMING_MS, TAP_THRESHOLD_MS } from '../../constants';
+import { PointerInfo } from './_input-controller';
+import type { InputHandler, Point } from './_input-handler';
 
 export class TouchController {
     private pointers = new Map<number, PointerInfo>();
@@ -32,10 +10,10 @@ export class TouchController {
     private activeInteract = false;
     private longPressTimer: number | null = null;
     private pinchStart: [Point, Point] | null = null;
-    private dispatcher: EventDispatcher;
+    private handler: InputHandler;
 
-    constructor(dispatcher: EventDispatcher) {
-        this.dispatcher = dispatcher;
+    constructor(handler: InputHandler) {
+        this.handler = handler;
     }
 
     handlePointerDown(ev: PointerEvent): void {
@@ -58,7 +36,7 @@ export class TouchController {
             this.longPressTimer = window.setTimeout(() => {
                 if (this.pointers.size === 1 && !this.activePan) {
                     this.activeInteract = true;
-                    this.dispatcher.dispatch<InputInteractStartEvent>(INPUT_INTERACT_START, { pos: p });
+                    this.handler.onInteractStart(p);
                 }
             }, LONG_PRESS_MS);
         } else if (this.pointers.size === 2) {
@@ -80,10 +58,7 @@ export class TouchController {
                 this.activePinch = true;
                 this.activePan = false;
                 this.pinchStart = start;
-                this.dispatcher.dispatch<InputPinchStartEvent>(INPUT_PINCH_START, {
-                    start,
-                    current: start
-                });
+                this.handler.onPinchStart(start, start);
             } else {
                 // Pan already started or too slow - ignore second pointer
                 this.pointers.delete(ev.pointerId);
@@ -110,10 +85,7 @@ export class TouchController {
         if (this.activePinch && this.pointers.size === 2 && this.pinchStart) {
             const pts = [...this.pointers.values()];
             const current: [Point, Point] = [pts[0].currentPos, pts[1].currentPos];
-            this.dispatcher.dispatch<InputPinchEvent>(INPUT_PINCH, {
-                start: this.pinchStart,
-                current
-            });
+            this.handler.onPinch(this.pinchStart, current);
             return;
         }
 
@@ -128,24 +100,18 @@ export class TouchController {
 
             // Interact drag (after long press)
             if (this.activeInteract) {
-                this.dispatcher.dispatch<InputInteractDragEvent>(INPUT_INTERACT_DRAG, {
-                    start: pointer.startPos,
-                    current: newPos
-                });
+                this.handler.onInteractDrag(pointer.startPos, newPos);
                 return;
             }
 
             // Pan (normal drag)
             if (!this.activePan && totalMoved > MOVE_THRESHOLD_PX) {
                 this.activePan = true;
-                this.dispatcher.dispatch<InputPanStartEvent>(INPUT_PAN_START, { pos: pointer.startPos });
+                this.handler.onPanStart(pointer.startPos);
             }
 
             if (this.activePan) {
-                this.dispatcher.dispatch<InputPanEvent>(INPUT_PAN, {
-                    start: pointer.startPos,
-                    current: newPos
-                });
+                this.handler.onPan(pointer.startPos, newPos);
             }
         }
     }
@@ -165,12 +131,14 @@ export class TouchController {
 
         // Capture pinch end data before removing pointer
         let shouldEmitPinchEnd = false;
-        let pinchEndData: InputPinchEndEvent | null = null;
+        let pinchEndStart: [Point, Point] | null = null;
+        let pinchEndCurrent: [Point, Point] | null = null;
 
         if (this.activePinch && this.pointers.size === 2 && this.pinchStart) {
             const pts = [...this.pointers.values()];
             const current: [Point, Point] = [pts[0].currentPos, pts[1].currentPos];
-            pinchEndData = { start: this.pinchStart, current };
+            pinchEndStart = this.pinchStart;
+            pinchEndCurrent = current;
             shouldEmitPinchEnd = true;
         }
 
@@ -181,10 +149,10 @@ export class TouchController {
         this.cancelLongPressTimer();
 
         // Handle pinch end
-        if (shouldEmitPinchEnd && pinchEndData) {
+        if (shouldEmitPinchEnd && pinchEndStart && pinchEndCurrent) {
             this.activePinch = false;
             this.pinchStart = null;
-            this.dispatcher.dispatch<InputPinchEndEvent>(INPUT_PINCH_END, pinchEndData);
+            this.handler.onPinchEnd(pinchEndStart, pinchEndCurrent);
 
             // Remaining pointer becomes inactive (cannot start new gesture until lifted)
             if (this.pointers.size === 1) {
@@ -198,21 +166,21 @@ export class TouchController {
         // Handle interact end
         if (this.activeInteract && this.pointers.size === 0) {
             this.activeInteract = false;
-            this.dispatcher.dispatch<InputInteractEndEvent>(INPUT_INTERACT_END, { pos: pointer.currentPos });
+            this.handler.onInteractEnd(pointer.currentPos);
             return;
         }
 
         // Handle pan end
         if (this.activePan && this.pointers.size === 0) {
             this.activePan = false;
-            this.dispatcher.dispatch<InputPanEndEvent>(INPUT_PAN_END, { pos: pointer.currentPos });
+            this.handler.onPanEnd(pointer.currentPos);
             return;
         }
 
         // Tap (quick press, no movement)
         const totalMoved = this.dist(pointer.startPos, pointer.currentPos);
         if (!this.activePan && !this.activeInteract && duration < TAP_THRESHOLD_MS && totalMoved <= MOVE_THRESHOLD_PX) {
-            this.dispatcher.dispatch<InputTapEvent>(INPUT_TAP, { pos: pointer.currentPos });
+            this.handler.onTap(pointer.currentPos);
         }
 
         // Reset states
@@ -237,21 +205,16 @@ export class TouchController {
         // Emit END event for this pointer's gesture
         let justEndedPinch = false;
         if (this.activeInteract) {
-            this.dispatcher.dispatch<InputInteractEndEvent>(INPUT_INTERACT_END, {
-                pos: pointer.currentPos
-            });
+            this.handler.onInteractEnd(pointer.currentPos);
             this.activeInteract = false;
         } else if (this.activePan) {
-            this.dispatcher.dispatch<InputPanEndEvent>(INPUT_PAN_END, { pos: pointer.currentPos });
+            this.handler.onPanEnd(pointer.currentPos);
             this.activePan = false;
         } else if (this.activePinch && this.pinchStart) {
             const pts = [...this.pointers.values()];
             if (pts.length >= 2) {
                 const current: [Point, Point] = [pts[0].currentPos, pts[1].currentPos];
-                this.dispatcher.dispatch<InputPinchEndEvent>(INPUT_PINCH_END, {
-                    start: this.pinchStart,
-                    current
-                });
+                this.handler.onPinchEnd(this.pinchStart, current);
             }
             this.activePinch = false;
             this.pinchStart = null;
@@ -281,23 +244,18 @@ export class TouchController {
         if (this.activeInteract) {
             const pointer = [...this.pointers.values()][0];
             if (pointer) {
-                this.dispatcher.dispatch<InputInteractEndEvent>(INPUT_INTERACT_END, {
-                    pos: pointer.currentPos
-                });
+                this.handler.onInteractEnd(pointer.currentPos);
             }
         } else if (this.activePan) {
             const pointer = [...this.pointers.values()][0];
             if (pointer) {
-                this.dispatcher.dispatch<InputPanEndEvent>(INPUT_PAN_END, { pos: pointer.currentPos });
+                this.handler.onPanEnd(pointer.currentPos);
             }
         } else if (this.activePinch && this.pinchStart) {
             const pts = [...this.pointers.values()];
             if (pts.length >= 2) {
                 const current: [Point, Point] = [pts[0].currentPos, pts[1].currentPos];
-                this.dispatcher.dispatch<InputPinchEndEvent>(INPUT_PINCH_END, {
-                    start: this.pinchStart,
-                    current
-                });
+                this.handler.onPinchEnd(this.pinchStart, current);
             }
         }
 

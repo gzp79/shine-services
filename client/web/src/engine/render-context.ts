@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Chunk } from '../world/chunk';
 import { EventDispatcher } from './events';
 
 // ViewportResizeEvent - THe size of the render canvas has changed
@@ -19,7 +20,7 @@ export class RenderContext {
     private readonly canvas: HTMLCanvasElement;
     private raycaster = new THREE.Raycaster();
     private mousePosition = new THREE.Vector2(-1, -1);
-    private currentHoveredChunk: any = null; // Chunk type (avoid circular dependency)
+    private currentHoveredChunk: Chunk | null = null;
 
     get width(): number {
         return this._width;
@@ -107,7 +108,7 @@ export class RenderContext {
         for (const intersect of intersects) {
             const obj = intersect.object;
             // Check parent first, then grandparent (for MeshBuilder hierarchy)
-            const chunk = obj.parent?.userData.chunk || obj.parent?.parent?.userData.chunk;
+            const chunk = (obj.parent?.userData.chunk || obj.parent?.parent?.userData.chunk) as Chunk;
             if (chunk) {
                 hitChunk = chunk;
                 hitPoint = intersect.point;

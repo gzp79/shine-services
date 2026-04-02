@@ -37,16 +37,28 @@ export function buildPrismGeometry(polygonIndices: Uint32Array, vertices: Float3
     for (let i = 1; i < n - 1; i++) {
         // Triangle: v0, vi, vi+1
         positions.push(
-            polyVerts[0][0], polyVerts[0][1], 0,
-            polyVerts[i][0], polyVerts[i][1], 0,
-            polyVerts[i + 1][0], polyVerts[i + 1][1], 0
+            polyVerts[0][0],
+            polyVerts[0][1],
+            0,
+            polyVerts[i][0],
+            polyVerts[i][1],
+            0,
+            polyVerts[i + 1][0],
+            polyVerts[i + 1][1],
+            0
         );
 
         // Barycentric coords: each vertex gets one component = 1
         barycentrics.push(
-            1, 0, 0, // v0
-            0, 1, 0, // vi
-            0, 0, 1  // vi+1
+            1,
+            0,
+            0, // v0
+            0,
+            1,
+            0, // vi
+            0,
+            0,
+            1 // vi+1
         );
 
         // Edge flags for perimeter:
@@ -54,8 +66,8 @@ export function buildPrismGeometry(polygonIndices: Uint32Array, vertices: Float3
         // - barycentric.y=0 at edge vi+1-v0: show on LAST triangle (perimeter)
         // - barycentric.z=0 at edge v0-vi: show on FIRST triangle (perimeter)
         const edge0 = 1; // vi-vi+1: always perimeter
-        const edge1 = (i === n - 2) ? 1 : 0; // vi+1-v0: last triangle only
-        const edge2 = (i === 1) ? 1 : 0; // v0-vi: first triangle only
+        const edge1 = i === n - 2 ? 1 : 0; // vi+1-v0: last triangle only
+        const edge2 = i === 1 ? 1 : 0; // v0-vi: first triangle only
         const flags = [edge0, edge1, edge2];
         edgeFlags.push(...flags, ...flags, ...flags);
 
@@ -68,21 +80,33 @@ export function buildPrismGeometry(polygonIndices: Uint32Array, vertices: Float3
     for (let i = 1; i < n - 1; i++) {
         // Triangle: v0, vi, vi+1
         positions.push(
-            polyVerts[0][0], polyVerts[0][1], PRISM_HEIGHT,
-            polyVerts[i][0], polyVerts[i][1], PRISM_HEIGHT,
-            polyVerts[i + 1][0], polyVerts[i + 1][1], PRISM_HEIGHT
+            polyVerts[0][0],
+            polyVerts[0][1],
+            PRISM_HEIGHT,
+            polyVerts[i][0],
+            polyVerts[i][1],
+            PRISM_HEIGHT,
+            polyVerts[i + 1][0],
+            polyVerts[i + 1][1],
+            PRISM_HEIGHT
         );
 
         barycentrics.push(
-            1, 0, 0, // v0
-            0, 1, 0, // vi
-            0, 0, 1  // vi+1
+            1,
+            0,
+            0, // v0
+            0,
+            1,
+            0, // vi
+            0,
+            0,
+            1 // vi+1
         );
 
         // Edge flags for perimeter (same logic as bottom face)
         const edge0 = 1; // vi-vi+1: always perimeter
-        const edge1 = (i === n - 2) ? 1 : 0; // vi+1-v0: last triangle only
-        const edge2 = (i === 1) ? 1 : 0; // v0-vi: first triangle only
+        const edge1 = i === n - 2 ? 1 : 0; // vi+1-v0: last triangle only
+        const edge2 = i === 1 ? 1 : 0; // v0-vi: first triangle only
         const flags = [edge0, edge1, edge2];
         edgeFlags.push(...flags, ...flags, ...flags);
 
@@ -98,17 +122,9 @@ export function buildPrismGeometry(polygonIndices: Uint32Array, vertices: Float3
         const [x1, y1] = polyVerts[next];
 
         // Triangle 1: BL, BR, TR
-        positions.push(
-            x0, y0, 0,
-            x1, y1, 0,
-            x1, y1, PRISM_HEIGHT
-        );
+        positions.push(x0, y0, 0, x1, y1, 0, x1, y1, PRISM_HEIGHT);
 
-        barycentrics.push(
-            1, 0, 0,
-            0, 1, 0,
-            0, 0, 1
-        );
+        barycentrics.push(1, 0, 0, 0, 1, 0, 0, 0, 1);
 
         // Edge flags:
         // - barycentric.x checks BR-TR (right vertical): SHOW
@@ -121,17 +137,9 @@ export function buildPrismGeometry(polygonIndices: Uint32Array, vertices: Float3
         colors.push(0.2, 0.9, 1.0, 0.2, 0.9, 1.0, 1.0, 0.5, 0.0);
 
         // Triangle 2: BL, TR, TL
-        positions.push(
-            x0, y0, 0,
-            x1, y1, PRISM_HEIGHT,
-            x0, y0, PRISM_HEIGHT
-        );
+        positions.push(x0, y0, 0, x1, y1, PRISM_HEIGHT, x0, y0, PRISM_HEIGHT);
 
-        barycentrics.push(
-            1, 0, 0,
-            0, 1, 0,
-            0, 0, 1
-        );
+        barycentrics.push(1, 0, 0, 0, 1, 0, 0, 0, 1);
 
         // Edge flags:
         // - barycentric.x checks TR-TL (top horizontal): SHOW

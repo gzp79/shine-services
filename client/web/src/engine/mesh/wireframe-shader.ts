@@ -76,7 +76,7 @@ export const wireframeFragmentShader = `
 /**
  * Create wireframe shader material.
  */
-export function createWireframeMaterial(color: THREE.Color | number, opacity: number = 0.7): THREE.ShaderMaterial {
+export function createWireframeMaterial(color: THREE.Color | number): THREE.ShaderMaterial {
     const colorObj = color instanceof THREE.Color ? color : new THREE.Color(color);
 
     return new THREE.ShaderMaterial({
