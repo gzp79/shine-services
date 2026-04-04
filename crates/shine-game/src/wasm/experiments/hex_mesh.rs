@@ -169,8 +169,8 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
 }
 
 fn quad_mesh_to_wasm(mesh: &QuadMesh, world_size: f32) -> WasmPatchMesh {
-    let vertex_count = mesh.vertex_count();
-    let quad_count = mesh.quad_count();
+    let vertex_count = mesh.topology().vertex_count();
+    let quad_count = mesh.topology().quad_count();
 
     let mut flat_vertices = Vec::with_capacity(vertex_count * 2);
     for vi in mesh.vertex_indices() {
@@ -181,8 +181,8 @@ fn quad_mesh_to_wasm(mesh: &QuadMesh, world_size: f32) -> WasmPatchMesh {
 
     let mut indices = Vec::with_capacity(quad_count * 4);
     let mut patch_indices = Vec::with_capacity(quad_count);
-    for qi in mesh.quad_indices() {
-        let verts = mesh.quad_vertices(qi);
+    for qi in mesh.topology().quad_indices() {
+        let verts = mesh.topology().quad_vertices(qi);
         for &v in &verts {
             indices.push(v.into_index() as u32);
         }

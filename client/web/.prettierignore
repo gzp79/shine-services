@@ -7,3 +7,4 @@ node_modules
 dist
 pkg
 src/wasm-types
+src/wasm-build

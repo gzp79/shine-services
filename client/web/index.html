@@ -46,10 +46,25 @@
     </head>
     <body>
         <div id="nav">
+            <a href="#">Game</a>
             <a href="#hex-mesh">Hex Mesh</a>
             <a href="#cdt">CDT</a>
+            <a href="#input-events">Input Events</a>
         </div>
         <div id="app"></div>
+        <script type="module">
+            // Update active nav link
+            function updateActiveLink() {
+                const hash = window.location.hash;
+                document.querySelectorAll('#nav a').forEach((a) => {
+                    const href = a.getAttribute('href');
+                    const isActive = href === hash || (href === '#' && (hash === '' || hash === '#'));
+                    a.classList.toggle('active', isActive);
+                });
+            }
+            window.addEventListener('hashchange', updateActiveLink);
+            updateActiveLink();
+        </script>
         <script type="module" src="/src/main.ts"></script>
     </body>
 </html>

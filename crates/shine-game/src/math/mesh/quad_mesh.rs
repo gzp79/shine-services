@@ -1,91 +1,61 @@
 use crate::{
     indexed::IdxVec,
-    math::mesh::{QuadIdx, QuadTopology, QuadVertRef, VertIdx},
+    math::mesh::{QuadIdx, QuadTopology, QuadTopologyError, VertIdx},
 };
 use glam::Vec2;
 
 /// Quad mesh with positions and topology.
 ///
-/// Wraps [`QuadTopology`] (adjacency, ghost quads, vertex rings) together
-/// with vertex positions. Call [`sort_vertex_rings`] after positions are
-/// finalized to sort each ring rotationally (CCW by quad centroid angle).
+/// Combines geometric vertex positions with topological connectivity via ghost vertex
+/// and ghost quads for closed manifold traversal.
 pub struct QuadMesh {
-    positions: IdxVec<VertIdx, Vec2>,
-    topology: QuadTopology,
+    pub topology: QuadTopology,
+    pub positions: IdxVec<VertIdx, Vec2>,
+    pub quad_centers: IdxVec<QuadIdx, Vec2>,
 }
 
 impl QuadMesh {
-    /// Build a quad mesh from positions, quads, and boundary flags.
-    ///
-    /// Ghost quads are added for boundary edges. Vertex rings are unsorted —
-    /// call [`sort_vertex_rings`] once positions are finalized.
-    pub fn new(positions: Vec<Vec2>, quads: Vec<[VertIdx; 4]>, is_boundary: Vec<bool>) -> Self {
+    pub fn from_polygon(
+        positions: Vec<Vec2>,
+        polygon: Vec<VertIdx>,
+        quads: Vec<[VertIdx; 4]>,
+    ) -> Result<Self, QuadTopologyError> {
         let vertex_count = positions.len();
         let positions = IdxVec::from_vec(positions);
-        let topology = QuadTopology::new(vertex_count, quads, is_boundary);
+        let topology = QuadTopology::from_polygon(vertex_count, polygon, quads)?;
 
-        Self { positions, topology }
-    }
+        // Compute quad centers for all real quads
+        let mut quad_centers = IdxVec::with_capacity(topology.quad_count());
+        for qi in topology.quad_indices() {
+            let verts = topology.quad_vertices(qi);
+            let mut center = Vec2::ZERO;
+            for &v in &verts {
+                center += positions[v];
+            }
+            center /= 4.0;
+            quad_centers.push(center);
+        }
 
-    pub fn topology(&self) -> &QuadTopology {
-        &self.topology
+        Ok(Self {
+            topology,
+            positions,
+            quad_centers,
+        })
     }
 
     pub fn position(&self, vi: VertIdx) -> Vec2 {
         self.positions[vi]
     }
 
-    pub fn positions(&self) -> &IdxVec<VertIdx, Vec2> {
-        &self.positions
-    }
-
-    pub fn positions_mut(&mut self) -> &mut IdxVec<VertIdx, Vec2> {
-        &mut self.positions
-    }
-
-    pub fn vertex_count(&self) -> usize {
-        self.topology.real_vertex_count()
-    }
-
-    pub fn quad_count(&self) -> usize {
-        self.topology.real_quad_count()
-    }
-
-    pub fn quad_vertices(&self, qi: QuadIdx) -> [VertIdx; 4] {
-        self.topology.quad_vertices(qi)
-    }
-
-    pub fn quad_neighbor(&self, qi: QuadIdx, edge: usize) -> QuadIdx {
-        self.topology.quad_neighbor(qi, edge)
-    }
-
-    pub fn vertex_ring(&self, vi: VertIdx) -> &[QuadVertRef] {
-        self.topology.vertex_ring(vi)
-    }
-
-    pub fn is_boundary_vertex(&self, vi: VertIdx) -> bool {
-        self.topology.is_boundary_vertex(vi)
-    }
-
-    pub fn is_boundary_edge(&self, qi: QuadIdx, edge: usize) -> bool {
-        self.topology.is_boundary_edge(qi, edge)
-    }
-
-    pub fn quad_indices(&self) -> impl Iterator<Item = QuadIdx> {
-        self.topology.real_quad_indices()
+    pub fn topology(&self) -> &QuadTopology {
+        &self.topology
     }
 
     pub fn vertex_indices(&self) -> impl Iterator<Item = VertIdx> {
         self.topology.vertex_indices()
     }
 
-    /// Sort each vertex's quad ring rotationally (CCW by quad centroid angle).
-    pub fn sort_vertex_rings(&mut self) {
-        let positions = self.positions.as_slice();
-        self.topology.sort_vertex_rings(positions);
-    }
-
-    pub fn into_parts(self) -> (QuadTopology, IdxVec<VertIdx, Vec2>) {
-        (self.topology, self.positions)
+    pub fn into_parts(self) -> (QuadTopology, IdxVec<VertIdx, Vec2>, IdxVec<QuadIdx, Vec2>) {
+        (self.topology, self.positions, self.quad_centers)
     }
 }

@@ -71,8 +71,8 @@ export class World {
         );
     }
 
-    destroy() {
-        this.subscriptions.destroy();
+    dispose() {
+        this.subscriptions.dispose();
     }
 
     private handleWorldReferenceChanged = (event: WorldReferenceChangedEvent): void => {
@@ -87,7 +87,7 @@ export class World {
 - `on<T>(eventName, handler)` - Subscribe to custom events
 - `listenWindow<K>(eventName, handler)` - Subscribe to window events
 - `remove(eventName)` - Remove subscription
-- `destroy()` - Cleanup all
+- `dispose()` - Cleanup all
 
 **EventDispatcher** - Dispatches events:
 - `dispatch<T>(eventName, detail)` - Type-safe dispatch
@@ -132,7 +132,7 @@ export class Example {
 ## Module Types
 
 ### System (orchestrator)
-- Implements `GameSystem` interface (`update(deltaTime)`, `destroy()`)
+- Implements `GameSystem` interface (`update(deltaTime)`, `dispose()`)
 - Coordinates between resources (Camera, World)
 - Lives in `systems/`
 - Dispatches events when coordination triggers state changes
@@ -172,7 +172,7 @@ export class Example {
 1. Create `resource-name/resource-name.ts`
 2. Create `EventSubscriptions` instance for listening
 3. If dispatches events, define event type + constant + create `EventDispatcher`
-4. Cleanup in `destroy()` method
+4. Cleanup in `dispose()` method
 
 ---
 
@@ -190,7 +190,7 @@ export class MySystem implements GameSystem {
         debugPanel.addToggle('Controls', 'Toggle Name', object, 'property');
     }
 
-    destroy() {
+    dispose() {
         debugPanel.removeScope(this.SCOPE);
     }
 }
@@ -225,7 +225,7 @@ export class MySystem implements GameSystem {
         this.debugPanel.set(this.SCOPE, 'Key', 'value');
     }
 
-    destroy() {
+    dispose() {
         this.debugPanel.removeScope(this.SCOPE);
     }
 }
@@ -245,8 +245,8 @@ export class MyResource {
         this.dispatcher = new EventDispatcher(events);
     }
 
-    destroy() {
-        this.subscriptions.destroy();
+    dispose() {
+        this.subscriptions.dispose();
     }
 
     private handleSomeEvent = (event: SomeEvent): void => {
@@ -276,7 +276,7 @@ constructor(renderContext: RenderContext, events: EventTarget) {
 
 ❌ Centralized events file with all event types
 ❌ Game logic in `engine/`
-❌ Missing `destroy()` cleanup
+❌ Missing `dispose()` cleanup
 ❌ Direct method calls between resources (use events)
 ❌ Multiple EventTarget instances (use single bus from Game)
 

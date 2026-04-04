@@ -1,7 +1,4 @@
-use crate::{
-    indexed::TypedIndex,
-    world::{Chunk, ChunkId},
-};
+use crate::world::{Chunk, ChunkId};
 use std::collections::HashMap;
 
 /// The core subdivision depth to align chunks
@@ -35,62 +32,24 @@ impl World {
         self.chunks.remove(&id);
     }
 
-    /// Flat vertex positions [x, y, x, y, ...]. Empty if chunk not found.
     pub fn chunk_vertices(&self, id: ChunkId) -> Vec<f32> {
-        let Some(chunk) = self.chunks.get(&id) else {
-            return Vec::new();
-        };
-        // vertices IdxVec contains only real vertices (from LatticeMesher, before ghost quads)
-        debug_assert_eq!(chunk.vertices.len(), chunk.topology.real_vertex_count());
-        let mut flat = Vec::with_capacity(chunk.topology.real_vertex_count() * 2);
-        for vi in chunk.topology.vertex_indices() {
-            let p = chunk.vertices[vi];
-            flat.push(p.x);
-            flat.push(p.y);
-        }
-        flat
+        self.chunk(id).map(|c| c.quad_vertices()).unwrap_or_default()
     }
 
-    /// Flat quad indices [a, b, c, d, ...]. Empty if chunk not found.
-    /// Safety: real quads only reference real vertices (ghost vertices only appear in ghost quads).
     pub fn chunk_quad_indices(&self, id: ChunkId) -> Vec<u32> {
-        let Some(chunk) = self.chunks.get(&id) else {
-            return Vec::new();
-        };
-        let mut indices = Vec::with_capacity(chunk.topology.real_quad_count() * 4);
-        for qi in chunk.topology.real_quad_indices() {
-            let verts = chunk.topology.quad_vertices(qi);
-            for &v in &verts {
-                indices.push(v.into_index() as u32);
-            }
-        }
-        indices
+        self.chunk(id).map(|c| c.quad_indices()).unwrap_or_default()
     }
 
-    /// Flat border edge indices [a, b, ...]. Empty if chunk not found.
-    pub fn chunk_border_indices(&self, id: ChunkId) -> Vec<u32> {
-        let Some(chunk) = self.chunks.get(&id) else {
-            return Vec::new();
-        };
-        let edges = chunk.topology.border_edges();
-        let mut flat = Vec::with_capacity(edges.len() * 2);
-        for [a, b] in edges {
-            flat.push(a);
-            flat.push(b);
-        }
-        flat
+    pub fn chunk_boundary_indices(&self, id: ChunkId) -> Vec<u32> {
+        self.chunk(id).map(|c| c.boundary_indices()).unwrap_or_default()
     }
 
-    /// World offset [x, y] of `chunk` relative to `reference`. Empty if target chunk not found.
-    /// Note: only the target chunk needs to be initialized — the offset is computed from
-    /// ChunkId math alone, but we check existence to match the "empty for missing" contract.
-    /// The reference chunk does NOT need to be initialized.
-    pub fn chunk_world_offset(&self, reference: ChunkId, chunk: ChunkId) -> Vec<f32> {
-        if !self.chunks.contains_key(&chunk) {
-            return Vec::new();
+    pub fn chunk_world_offset(&self, reference: ChunkId, target: ChunkId) -> Vec<f32> {
+        if self.chunk(reference).is_none() {
+            return vec![];
         }
-        let pos = reference.relative_world_position(chunk);
-        vec![pos.x, pos.y]
+        let offset = reference.relative_world_position(target);
+        vec![offset.x, offset.y]
     }
 }
 
@@ -113,7 +72,7 @@ mod tests {
         assert!(!indices.is_empty(), "quad indices should not be empty");
         assert_eq!(indices.len() % 4, 0, "quad indices should be multiple of 4");
 
-        let border = world.chunk_border_indices(id);
+        let border = world.chunk_boundary_indices(id);
         assert!(!border.is_empty(), "border indices should not be empty");
         assert_eq!(border.len() % 2, 0, "border indices should be pairs");
     }
@@ -125,7 +84,7 @@ mod tests {
 
         assert!(world.chunk_vertices(id).is_empty());
         assert!(world.chunk_quad_indices(id).is_empty());
-        assert!(world.chunk_border_indices(id).is_empty());
+        assert!(world.chunk_boundary_indices(id).is_empty());
         assert!(world.chunk_world_offset(ChunkId::ORIGIN, id).is_empty());
     }
 

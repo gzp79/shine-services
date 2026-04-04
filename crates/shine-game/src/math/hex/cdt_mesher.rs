@@ -220,8 +220,20 @@ impl CdtMesher {
             quads.push([c, m_ca, centroid_idx, m_bc].map(VertIdx::new));
         }
 
-        let mut mesh = QuadMesh::new(positions, quads, is_boundary);
-        mesh.sort_vertex_rings();
-        mesh
+        // Build subdivided boundary polygon by inserting midpoints between base boundary vertices
+        let mut polygon = Vec::new();
+        for i in 0..boundary_count {
+            let v0 = i;
+            let v1 = (i + 1) % boundary_count;
+
+            // Add the base boundary vertex
+            polygon.push(VertIdx::new(v0));
+
+            // Add the midpoint between this vertex and the next
+            let mid_idx = get_midpoint(&mut positions, &mut is_boundary, v0, v1);
+            polygon.push(VertIdx::new(mid_idx));
+        }
+
+        QuadMesh::from_polygon(positions, polygon, quads).expect("valid CDT mesh topology")
     }
 }

@@ -1,5 +1,6 @@
 import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
+import { MAX_LOADED_CHUNK_DISTANCE, MAX_TRACKED_CHUNK_COUNT, MAX_TRACKED_CHUNK_DISTANCE } from '../engine/config';
 import type { DebugPanel } from '../engine/debug-panel';
 import { EventSubscriptions } from '../engine/events';
 import {
@@ -9,11 +10,8 @@ import {
     type WorldReferenceChangedEvent
 } from '../systems/world-reference-system';
 import { Chunk } from './chunk';
+import { ChunkId } from './chunk-id';
 import { chunkIdToWorldPosition } from './hex-utils';
-import { ChunkId } from './types';
-
-const MAX_TRACKED_CHUNK_COUNT = 10;
-const MAX_TRACKED_CHUNK_DISTANCE = 10;
 
 export class World {
     private readonly SCOPE = 'World';
@@ -27,6 +25,7 @@ export class World {
     private _showChunkLabels = false;
     private originCircle: THREE.Line;
     private chunk00Circle: THREE.Line;
+    private pendingChunkUpdate: number | null = null;
 
     get referenceChunkId(): ChunkId {
         return this._referenceChunkId;
@@ -63,6 +62,8 @@ export class World {
         const chunk00Pos = chunkIdToWorldPosition(this._referenceChunkId, ChunkId.ORIGIN);
         this.chunk00Circle = this.createDebugCircle(0x0000ff, chunk00Pos.x, chunk00Pos.y); // Blue at chunk(0,0)
         this.group.add(this.chunk00Circle);
+
+        this.updateChunksAroundFocus();
     }
 
     loadChunk(id: ChunkId): Chunk {
@@ -72,12 +73,14 @@ export class World {
 
         this.wasm.init_chunk(id.q, id.r);
 
-        const chunk = new Chunk(this.wasm, id);
-        chunk.buildMesh(this._referenceChunkId);
-        chunk.showLabel = this._showChunkLabels;
+        const chunk = new Chunk(this.wasm, id, this.subscriptions.events);
         this.group.add(chunk.group);
         this.chunks.set(key, chunk);
         this.updateDebugPanel();
+
+        chunk.init(this._referenceChunkId);
+        chunk.showLabel = this._showChunkLabels;
+
         return chunk;
     }
 
@@ -86,20 +89,26 @@ export class World {
         const chunk = this.chunks.get(key);
         if (!chunk) return;
         this.group.remove(chunk.group);
-        chunk.disposeMesh();
+        chunk.dispose();
         this.chunks.delete(key);
         this.wasm.remove_chunk(id.q, id.r);
         this.updateDebugPanel();
     }
 
     dispose(): void {
+        // Cancel pending chunk update
+        if (this.pendingChunkUpdate !== null) {
+            cancelIdleCallback(this.pendingChunkUpdate);
+            this.pendingChunkUpdate = null;
+        }
+
         // Cleanup event listeners
-        this.subscriptions.destroy();
+        this.subscriptions.dispose();
 
         // Dispose chunks
         for (const chunk of this.chunks.values()) {
             this.group.remove(chunk.group);
-            chunk.disposeMesh();
+            chunk.dispose();
         }
         this.chunks.clear();
 
@@ -132,13 +141,26 @@ export class World {
 
     private handleWorldCenterChanged = (event: WorldCenterChangedEvent): void => {
         this._focusedChunkId = event.newChunkId;
-        this.updateChunksAroundFocus();
+
+        // Cancel any pending chunk update
+        if (this.pendingChunkUpdate !== null) {
+            cancelIdleCallback(this.pendingChunkUpdate);
+        }
+
+        // Defer chunk loading to avoid blocking the current frame
+        // This prevents stuttering when crossing chunk boundaries
+        this.pendingChunkUpdate = requestIdleCallback(
+            () => {
+                this.pendingChunkUpdate = null;
+                this.updateChunksAroundFocus();
+            },
+            { timeout: 16 } // Force execution within 16ms (1 frame at 60fps) if idle time isn't available
+        );
     };
 
     private updateChunksAroundFocus(): void {
         // Load focused chunk and all neighbors
-        this.loadChunk(this._focusedChunkId);
-        for (const neighbor of this._focusedChunkId.neighbors()) {
+        for (const neighbor of this._focusedChunkId.spiral(MAX_LOADED_CHUNK_DISTANCE)) {
             this.loadChunk(neighbor);
         }
 

@@ -1,26 +1,21 @@
 import * as THREE from 'three';
+import { QuadData } from './geometry-data';
 
 const DEFAULT_FILL_COLOR = new THREE.Color(0.82, 0.85, 0.88);
 const BORDER_COLOR = 0x333333;
-
-export interface MeshData {
-    vertices(): Float32Array;
-    quadIndices(): Uint32Array;
-    borderIndices(): Uint32Array;
-}
 
 export interface MeshBuilder {
     group: THREE.Group;
     dispose(): void;
 }
 
-export function buildMesh(data: MeshData, fillColor?: THREE.Color): MeshBuilder {
+export function buildBaseMesh(quadData: QuadData, fillColor?: THREE.Color): MeshBuilder {
     const color = fillColor ?? DEFAULT_FILL_COLOR;
     const group = new THREE.Group();
 
-    const vertices2D = data.vertices();
-    const quadIndices = data.quadIndices();
-    const borderIndices = data.borderIndices();
+    const vertices2D = quadData.vertices;
+    const quadIndices = quadData.indices;
+    const boundaryIndices = quadData.boundaryIndices!;
 
     const vertCount = vertices2D.length / 2;
     const quadCount = quadIndices.length / 4;
@@ -64,11 +59,11 @@ export function buildMesh(data: MeshData, fillColor?: THREE.Color): MeshBuilder 
     group.add(fillMesh);
 
     // Build border outline from border edge indices
-    const borderEdgeCount = borderIndices.length / 2;
+    const borderEdgeCount = boundaryIndices.length / 2;
     const borderPositions: number[] = [];
     for (let e = 0; e < borderEdgeCount; e++) {
-        const i0 = borderIndices[e * 2];
-        const i1 = borderIndices[e * 2 + 1];
+        const i0 = boundaryIndices[e * 2];
+        const i1 = boundaryIndices[e * 2 + 1];
         borderPositions.push(
             positions[i0 * 3],
             positions[i0 * 3 + 1],

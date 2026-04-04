@@ -1,11 +1,11 @@
 const container = document.getElementById('app')!;
 
-type Viewer = { destroy(): void };
+type Viewer = { dispose(): void };
 let current: Viewer | null = null;
 
 async function route() {
     if (current) {
-        current.destroy();
+        current.dispose();
         current = null;
     }
 
@@ -16,6 +16,9 @@ async function route() {
     } else if (hash === '#cdt') {
         const { createCdtViewer } = await import('./experiments/cdt/index');
         current = await createCdtViewer(container);
+    } else if (hash === '#input-events') {
+        const { createInputEventsViewer } = await import('./experiments/input-events/index');
+        current = await createInputEventsViewer(container);
     } else {
         const { createGame } = await import('./engine/game');
         current = await createGame(container);

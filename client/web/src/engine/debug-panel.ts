@@ -8,12 +8,37 @@ export class DebugPanel {
     private readonly gui: GUI;
     private readonly scopes = new Map<string, GUI>();
     private readonly scopeValues = new Map<string, Map<string, { value: string }>>();
+    private gameContainer: HTMLElement | null = null;
 
     constructor() {
         this.gui = new GUI({ title: 'Debug' });
         this.gui.domElement.style.position = 'absolute';
         this.gui.domElement.style.top = '10px';
         this.gui.domElement.style.right = '10px';
+
+        this.gui.domElement.addEventListener('mousedown', this.handleMouseDown);
+        this.gui.domElement.addEventListener('click', this.handleClick);
+    }
+
+    setGameContainer(container: HTMLElement): void {
+        this.gameContainer = container;
+    }
+
+    private handleMouseDown = (_ev: MouseEvent): void => {
+        // Allow the click to proceed normally, but refocus after a brief delay
+        setTimeout(() => {
+            this.refocusGame();
+        }, 0);
+    };
+
+    private handleClick = (): void => {
+        this.refocusGame();
+    };
+
+    private refocusGame(): void {
+        if (this.gameContainer) {
+            this.gameContainer.focus();
+        }
     }
 
     /**
@@ -66,7 +91,7 @@ export class DebugPanel {
     }
 
     /**
-     * Remove all debug entries for a scope and destroy the folder.
+     * Remove all debug entries for a scope and remove the folder.
      */
     removeScope(scope: string): void {
         const folder = this.scopes.get(scope);
@@ -91,10 +116,9 @@ export class DebugPanel {
         this.gui.hide();
     }
 
-    /**
-     * Destroy the debug panel and remove from DOM.
-     */
-    destroy(): void {
+    dispose(): void {
+        this.gui.domElement.removeEventListener('mousedown', this.handleMouseDown);
+        this.gui.domElement.removeEventListener('click', this.handleClick);
         this.gui.destroy();
         this.scopes.clear();
         this.scopeValues.clear();

@@ -1,8 +1,8 @@
 use crate::{
-    indexed::IdxVec,
+    indexed::{IdxVec, TypedIndex},
     math::{
         hex::{AxialCoord, LatticeMesher},
-        mesh::{QuadTopology, VertIdx},
+        mesh::{QuadIdx, QuadTopology, VertIdx},
         rand::Xorshift32,
     },
     world::{CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
@@ -50,6 +50,7 @@ impl From<AxialCoord> for ChunkId {
 pub struct Chunk {
     pub topology: QuadTopology,
     pub vertices: IdxVec<VertIdx, Vec2>,
+    pub quad_centers: IdxVec<QuadIdx, Vec2>,
 }
 
 impl Chunk {
@@ -58,7 +59,155 @@ impl Chunk {
         let mesh = LatticeMesher::new(SUBDIVISION_BASE, rng)
             .with_world_size(CHUNK_WORLD_SIZE)
             .generate();
-        let (topology, vertices) = mesh.into_parts();
-        Self { topology, vertices }
+        let (topology, vertices, quad_centers) = mesh.into_parts();
+        Self {
+            topology,
+            vertices,
+            quad_centers,
+        }
+    }
+
+    /// Flat (real) quad vertex positions [x, y, x, y, ...]
+    pub fn quad_vertices(&self) -> Vec<f32> {
+        debug_assert_eq!(self.vertices.len(), self.topology.vertex_count());
+        let mut flat = Vec::with_capacity(self.topology.vertex_count() * 2);
+        for vi in self.topology.vertex_indices() {
+            let p = self.vertices[vi];
+            flat.push(p.x);
+            flat.push(p.y);
+        }
+        flat
+    }
+
+    /// Flat (real) quad indices [a, b, c, d, ...].
+    pub fn quad_indices(&self) -> Vec<u32> {
+        let mut indices = Vec::with_capacity(self.topology.quad_count() * 4);
+        for qi in self.topology.quad_indices() {
+            let verts = self.topology.quad_vertices(qi);
+            for &v in &verts {
+                indices.push(v.into_index() as u32);
+            }
+        }
+        indices
+    }
+
+    /// Flat boundary edge indices [a, b, ...].
+    pub fn boundary_indices(&self) -> Vec<u32> {
+        // Each boundary vertex corresponds to one edge, so N vertices = N edges
+        let edge_count = self.topology.boundary_vertex_count();
+        let mut flat = Vec::with_capacity(edge_count * 2);
+        for [a, b] in self.topology.boundary_edges() {
+            flat.push(a);
+            flat.push(b);
+        }
+        flat
+    }
+
+    /// Dual mesh vertices (quad centroids) [x, y, x, y, ...]
+    pub fn dual_vertices(&self) -> Vec<f32> {
+        let quad_count = self.topology.quad_count();
+        let mut flat = Vec::with_capacity(quad_count * 2);
+
+        for qi in self.topology.quad_indices() {
+            let center = self.quad_centers[qi];
+            flat.push(center.x);
+            flat.push(center.y);
+        }
+
+        flat
+    }
+
+    /// Flat dual polygon indices referencing quad_centers.
+    /// Each vertex's surrounding quads form a dual polygon.
+    /// Returns (indices, starts) where starts[vi] marks the beginning of vertex vi's polygon.
+    ///
+    /// Example: For a vertex surrounded by 4 quads (indices 0,1,2,3 in dual_vertices):
+    /// - indices: [0, 1, 2, 3]
+    /// - starts: [0, 4] (polygon starts at 0, next would start at 4)
+    pub fn dual_polygons(&self) -> (Vec<u32>, Vec<u32>) {
+        let mut indices = Vec::new();
+        let mut starts = Vec::new();
+        starts.push(0);
+
+        for vi in self.topology.vertex_indices() {
+            let start_len = indices.len();
+
+            // Collect QuadIdx for all real quads around this vertex
+            for qv in self.topology.vertex_ring(vi) {
+                if !self.topology.is_ghost_quad(qv.quad) {
+                    // Map QuadIdx to its position in quad_indices() enumeration
+                    let mut dual_idx = 0;
+                    for (i, qi) in self.topology.quad_indices().enumerate() {
+                        if qi == qv.quad {
+                            dual_idx = i as u32;
+                            break;
+                        }
+                    }
+                    indices.push(dual_idx);
+                }
+            }
+
+            // Only record if we found at least 3 quads (valid polygon)
+            if indices.len() - start_len >= 3 {
+                starts.push(indices.len() as u32);
+            } else {
+                // Degenerate polygon, remove indices and don't advance start
+                indices.truncate(start_len);
+                starts.push(start_len as u32);
+            }
+        }
+
+        (indices, starts)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dual_polygons() {
+        let chunk = Chunk::new(ChunkId::ORIGIN);
+
+        let (indices, starts) = chunk.dual_polygons();
+
+        // Basic sanity checks
+        assert!(!indices.is_empty(), "Should have dual polygon indices");
+        assert!(!starts.is_empty(), "Should have dual polygon starts");
+        assert_eq!(starts[0], 0, "First start should be 0");
+
+        // Verify starts is monotonically increasing
+        for i in 1..starts.len() {
+            assert!(starts[i] >= starts[i - 1], "Starts should be monotonically increasing");
+        }
+
+        // Verify last start points to end of indices
+        assert_eq!(
+            *starts.last().unwrap() as usize,
+            indices.len(),
+            "Last start should point to end of indices"
+        );
+
+        // Verify all indices are valid (refer to actual quads)
+        let quad_count = chunk.topology.quad_count();
+        for &idx in &indices {
+            assert!(
+                (idx as usize) < quad_count,
+                "Index {} should be less than quad count {}",
+                idx,
+                quad_count
+            );
+        }
+
+        // Verify each polygon has at least 3 vertices (or is degenerate with 0)
+        for i in 0..starts.len() - 1 {
+            let polygon_size = (starts[i + 1] - starts[i]) as usize;
+            assert!(
+                polygon_size == 0 || polygon_size >= 3,
+                "Polygon {} has invalid size {} (should be 0 or >= 3)",
+                i,
+                polygon_size
+            );
+        }
     }
 }

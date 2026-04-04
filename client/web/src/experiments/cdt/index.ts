@@ -5,7 +5,7 @@ import { cdtParamsToJson, createCdtControls, defaultCdtParams } from './controls
 import { CdtMeshGroup, buildCdtMesh } from './mesh-builder';
 
 export interface CdtViewer {
-    destroy(): void;
+    dispose(): void;
 }
 
 export async function createCdtViewer(container: HTMLElement): Promise<CdtViewer> {
@@ -62,7 +62,7 @@ export async function createCdtViewer(container: HTMLElement): Promise<CdtViewer
     animationId = animate(ctx);
 
     return {
-        destroy() {
+        dispose() {
             cancelAnimationFrame(animationId);
             gui.destroy();
             if (currentMesh) {
