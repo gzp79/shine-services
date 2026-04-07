@@ -1,9 +1,8 @@
-import * as THREE from 'three';
 import { InputController, type InputHandler } from '../../engine/input';
 import type { Delta, Point } from '../../engine/input';
 import { ExperimentContext, animate, createExperiment } from '../experiment';
 
-export interface InputEventsViewer {
+export interface InputControlExperiment {
     dispose(): void;
 }
 
@@ -13,14 +12,8 @@ interface EventLogEntry {
     data: string;
 }
 
-export async function createInputEventsViewer(container: HTMLElement): Promise<InputEventsViewer> {
-    const ctx: ExperimentContext = createExperiment(container);
-
-    // Add a simple plane to the scene
-    const planeGeometry = new THREE.PlaneGeometry(4, 4);
-    const planeMaterial = new THREE.MeshStandardMaterial({ color: 0x4a4a6a });
-    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-    ctx.scene.add(plane);
+export async function createInputControlExperiment(container: HTMLElement): Promise<InputControlExperiment> {
+    const ctx: ExperimentContext = await createExperiment(container, { addOrbitCamera: false });
 
     // Event log (max 12 entries, compact display)
     const eventLog: EventLogEntry[] = [];

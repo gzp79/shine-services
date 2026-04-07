@@ -5,14 +5,14 @@ import { ExperimentContext, animate, createExperiment } from '../experiment';
 import { createControls, defaultParams, paramsToConfigJson } from './controls';
 import { HexMeshGroup, buildHexMesh } from './mesh-builder';
 
-export interface HexMeshViewer {
+export interface HexMeshExperiment {
     dispose(): void;
 }
 
-export async function createHexMeshViewer(container: HTMLElement): Promise<HexMeshViewer> {
+export async function createHexMeshExperiment(container: HTMLElement): Promise<HexMeshExperiment> {
     await init(wasmUrl);
 
-    const ctx: ExperimentContext = createExperiment(container);
+    const ctx: ExperimentContext = await createExperiment(container);
     const params = defaultParams();
     let currentMesh: HexMeshGroup | null = null;
     let debugCircle: THREE.Mesh | null = null;
