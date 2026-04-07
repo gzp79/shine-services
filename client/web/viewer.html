@@ -44,13 +44,12 @@
             <a href="#">Game</a>
             <a href="#hex-mesh">Hex Mesh</a>
             <a href="#cdt">CDT</a>
+            <a href="#input-events">Input Events</a>
+            <a href="#trilinear">Trilinear</a>
         </div>
         <div id="app"></div>
         <script type="module">
-            import { createCdtViewer, createGame, createHexMeshViewer } from './shine-web.js';
-
-            const container = document.getElementById('app');
-            let current = null;
+            import { createRouter } from './shine-web.js';
 
             function updateActiveLink() {
                 const hash = window.location.hash;
@@ -61,28 +60,11 @@
                 });
             }
 
-            async function route() {
-                if (current) {
-                    current.dispose();
-                    current = null;
-                }
-                updateActiveLink();
-                const hash = window.location.hash;
-                try {
-                    if (hash === '#hex-mesh') {
-                        current = await createHexMeshViewer(container);
-                    } else if (hash === '#cdt') {
-                        current = await createCdtViewer(container);
-                    } else {
-                        current = await createGame(container);
-                    }
-                } catch (e) {
-                    console.error('Viewer failed to load:', e);
-                }
-            }
+            window.addEventListener('hashchange', updateActiveLink);
+            updateActiveLink();
 
-            window.addEventListener('hashchange', () => void route());
-            void route();
+            const container = document.getElementById('app');
+            createRouter(container);
         </script>
     </body>
 </html>

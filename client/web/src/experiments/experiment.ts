@@ -1,15 +1,22 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { WebGPURenderer } from 'three/webgpu';
+
+export type ExperimentOption = {
+    addOrbitCamera?: boolean;
+};
 
 export interface ExperimentContext {
     scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
-    renderer: THREE.WebGLRenderer;
-    controls: OrbitControls;
+    renderer: WebGPURenderer;
+    controls?: OrbitControls;
     resizeObserver: ResizeObserver;
 }
 
-export function createExperiment(container: HTMLElement): ExperimentContext {
+export async function createExperiment(container: HTMLElement, options?: ExperimentOption): Promise<ExperimentContext> {
+    const addOrbitCamera = options?.addOrbitCamera ?? true;
+
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1a2e);
 
@@ -21,16 +28,20 @@ export function createExperiment(container: HTMLElement): ExperimentContext {
     camera.position.set(0, -2.5, 4);
     camera.lookAt(0, 0, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new WebGPURenderer({ antialias: true, forceWebGL: true });
+    await renderer.init();
     renderer.setSize(width, height);
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 0, 0);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.1;
-    controls.update();
+    let controls: OrbitControls | undefined = undefined;
+    if (addOrbitCamera) {
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 0, 0);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.1;
+        controls.update();
+    }
 
     // Lighting
     const ambient = new THREE.AmbientLight(0xffffff, 0.6);
@@ -57,9 +68,35 @@ export function animate(ctx: ExperimentContext): number {
     let id = 0;
     function loop() {
         id = requestAnimationFrame(loop);
-        ctx.controls.update();
-        ctx.renderer.render(ctx.scene, ctx.camera);
+        ctx.controls?.update();
+        void ctx.renderer.renderAsync(ctx.scene, ctx.camera);
     }
     loop();
     return id;
+}
+
+export function disposeExperiment(ctx: ExperimentContext) {
+    ctx.controls?.dispose();
+    ctx.resizeObserver.disconnect();
+    disposeObject3D(ctx.scene);
+    ctx.scene.clear();
+    ctx.renderer.dispose();
+    ctx.renderer.domElement.remove();
+}
+
+export function disposeMesh(mesh: THREE.Mesh) {
+    mesh.geometry?.dispose();
+    if (Array.isArray(mesh.material)) {
+        mesh.material.forEach((mat) => mat.dispose());
+    } else {
+        mesh.material?.dispose();
+    }
+}
+
+export function disposeObject3D(obj: THREE.Object3D) {
+    obj.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+            disposeMesh(child);
+        }
+    });
 }

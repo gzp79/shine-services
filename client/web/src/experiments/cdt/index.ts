@@ -4,21 +4,21 @@ import { ExperimentContext, animate, createExperiment } from '../experiment';
 import { cdtParamsToJson, createCdtControls, defaultCdtParams } from './controls';
 import { CdtMeshGroup, buildCdtMesh } from './mesh-builder';
 
-export interface CdtViewer {
+export interface CdtExperiment {
     dispose(): void;
 }
 
-export async function createCdtViewer(container: HTMLElement): Promise<CdtViewer> {
+export async function createCdtExperiment(container: HTMLElement): Promise<CdtExperiment> {
     await init(wasmUrl);
+    const ctx: ExperimentContext = await createExperiment(container);
 
-    const ctx: ExperimentContext = createExperiment(container);
     // Adjust camera for the +-4096 coordinate range
     ctx.camera.near = 1;
     ctx.camera.far = 50000;
     ctx.camera.position.set(0, -7000, 12000);
     ctx.camera.lookAt(0, 0, 0);
     ctx.camera.updateProjectionMatrix();
-    ctx.controls.update();
+    ctx.controls?.update();
 
     const params = defaultCdtParams();
     let currentMesh: CdtMeshGroup | null = null;
