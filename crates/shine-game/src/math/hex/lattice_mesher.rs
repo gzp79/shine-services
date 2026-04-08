@@ -57,6 +57,21 @@ impl LatticeMesher {
             }
         }
 
+        // Identify 6 hex corners in CCW order (before subdivision)
+        let r = radius as i32;
+        let corner_coords = [
+            AxialCoord::new(r, 0),       // East
+            AxialCoord::new(0, r),       // Southeast
+            AxialCoord::new(-r, r),      // Southwest
+            AxialCoord::new(-r, 0),      // West
+            AxialCoord::new(0, -r),      // Northwest
+            AxialCoord::new(r, -r),      // Northeast
+        ];
+        let anchor_vertices: Vec<VertIdx> = corner_coords
+            .iter()
+            .map(|coord| VertIdx::new(indexer.get_dense_index(coord)))
+            .collect();
+
         // Step 2: Enumerate all triangles from the axial triangular lattice.
         // From each vertex, generate 6 triangles (one per pair of adjacent neighbors).
         // Each triangle will be generated 3 times, so deduplicate using unordered edge sets.
@@ -168,8 +183,8 @@ impl LatticeMesher {
         }
 
         // Step 5: Subdivide all faces into quads via centroid + edge midpoints
-        // Note: boundary_polygon is from BEFORE subdivision
-        self.subdivide_faces(&positions, &is_boundary, &faces, boundary_polygon)
+        // Pass anchor_vertices (6 corners) to create topology with hex edge markers
+        self.subdivide_faces(&positions, &is_boundary, &faces, boundary_polygon, anchor_vertices)
     }
 
     fn subdivide_faces(
@@ -178,6 +193,7 @@ impl LatticeMesher {
         base_is_boundary: &[bool],
         faces: &[Face],
         base_boundary_polygon: Vec<VertIdx>,
+        base_anchor_vertices: Vec<VertIdx>,
     ) -> QuadMesh {
         let base_count = base_positions.len();
         let mut positions: Vec<Vec2> = base_positions.to_vec();
@@ -245,7 +261,31 @@ impl LatticeMesher {
             boundary_polygon.push(VertIdx::new(mid_idx));
         }
 
-        QuadMesh::from_polygon(positions, boundary_polygon, quads).expect("valid lattice mesh topology")
+        // Create mesh with anchor vertices marking the 6 hex corners
+        let topology = crate::math::mesh::QuadTopology::from_polygon(
+            positions.len(),
+            boundary_polygon,
+            base_anchor_vertices,
+            quads.iter().map(|q| q.map(|v| v)).collect(),
+        )
+        .expect("valid lattice mesh topology");
+
+        let mut quad_centers = crate::indexed::IdxVec::with_capacity(topology.quad_count());
+        for qi in topology.quad_indices() {
+            let verts = topology.quad_vertices(qi);
+            let mut center = Vec2::ZERO;
+            for &v in &verts {
+                center += positions[v.into_index()];
+            }
+            center /= 4.0;
+            quad_centers.push(center);
+        }
+
+        QuadMesh {
+            topology,
+            vertices: crate::indexed::IdxVec::from_vec(positions),
+            quad_centers,
+        }
     }
 }
 

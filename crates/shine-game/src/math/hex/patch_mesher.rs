@@ -152,6 +152,13 @@ impl PatchMesher {
             }
         }
 
+        // Identify 6 hex corners as anchor vertices
+        let hex_corners = AxialCoord::hex_corners(radius);
+        let anchor_vertices: Vec<VertIdx> = hex_corners
+            .iter()
+            .map(|coord| VertIdx::new(indexer.get_dense_index(coord)))
+            .collect();
+
         // Build quad indices
         let patch_indexer = PatchDenseIndexer::new(self.subdivision);
         let mut quads = Vec::with_capacity(patch_indexer.get_total_size());
@@ -166,7 +173,8 @@ impl PatchMesher {
             }
         }
 
-        QuadMesh::from_polygon(positions, polygon, quads).expect("valid patch mesh topology")
+        QuadMesh::from_polygon_with_anchors(positions, polygon, anchor_vertices, quads)
+            .expect("valid patch mesh topology")
     }
 }
 

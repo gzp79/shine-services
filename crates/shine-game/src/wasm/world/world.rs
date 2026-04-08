@@ -1,4 +1,4 @@
-use crate::world::{ChunkId, World};
+use crate::world::{ChunkId, World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -19,6 +19,13 @@ impl WasmWorld {
 
     pub fn remove_chunk(&mut self, q: i32, r: i32) {
         self.world.remove_chunk(ChunkId(q, r));
+    }
+
+    pub fn const_chunk_world_size(&self) -> f32 {
+        CHUNK_WORLD_SIZE
+    }
+    pub fn const_cell_world_size(&self) -> f32 {
+        CELL_WORLD_SIZE
     }
 
     pub fn chunk_quad_vertices(&self, q: i32, r: i32) -> Vec<f32> {
@@ -74,5 +81,47 @@ impl WasmWorld {
         let chunk = ChunkId(q, r);
         let pos = reference.relative_world_position(chunk);
         vec![pos.x, pos.y]
+    }
+
+    pub fn boundary_edge_dual_vertices(&self, q: i32, r: i32, edge_idx: u8) -> Vec<f32> {
+        self.world
+            .boundary_edge_dual_polygons(ChunkId(q, r), edge_idx)
+            .map(|(vertices, _, _)| vertices)
+            .unwrap_or_default()
+    }
+
+    /// Returns packed dual polygons for boundary edge.
+    /// Format: [starts_len, ...starts, ...indices]
+    pub fn boundary_edge_dual_polygons(&self, q: i32, r: i32, edge_idx: u8) -> Vec<u32> {
+        self.world
+            .boundary_edge_dual_polygons(ChunkId(q, r), edge_idx)
+            .map(|(_, indices, starts)| {
+                let mut result = Vec::with_capacity(1 + starts.len() + indices.len());
+                result.push(starts.len() as u32);
+                result.extend(starts);
+                result.extend(indices);
+                result
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn boundary_vertex_dual_vertices(&self, q: i32, r: i32, vertex_idx: u8) -> Vec<f32> {
+        self.world
+            .boundary_vertex_dual_polygon(ChunkId(q, r), vertex_idx)
+            .map(|(vertices, _, _)| vertices)
+            .unwrap_or_default()
+    }
+
+    pub fn boundary_vertex_dual_polygons(&self, q: i32, r: i32, vertex_idx: u8) -> Vec<u32> {
+        self.world
+            .boundary_vertex_dual_polygon(ChunkId(q, r), vertex_idx)
+            .map(|(_, indices, starts)| {
+                let mut result = Vec::with_capacity(1 + starts.len() + indices.len());
+                result.push(starts.len() as u32);
+                result.extend(starts);
+                result.extend(indices);
+                result
+            })
+            .unwrap_or_default()
     }
 }

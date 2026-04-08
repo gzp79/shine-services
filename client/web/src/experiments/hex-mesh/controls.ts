@@ -93,6 +93,8 @@ function defaultMesher(type: MesherType, prev?: MesherEntry): MesherEntry {
 export type Params = {
     showPrimal: boolean;
     showDual: boolean;
+    showAnchor: boolean;
+    showAnchorVertices: boolean;
     seed: number;
     world_size: number;
     mesher: MesherEntry;
@@ -103,6 +105,8 @@ export function defaultParams(): Params {
     return {
         showDual: false,
         showPrimal: true,
+        showAnchor: false,
+        showAnchorVertices: false,
         seed: 42,
         world_size: 1.0,
         mesher: defaultMesher('Lattice'),
@@ -135,6 +139,8 @@ export function createControls(
     const globalFolder = gui.addFolder('Global');
     globalFolder.add(params, 'showPrimal').name('primal wireframe').onChange(onDisplayChange);
     globalFolder.add(params, 'showDual').name('dual wireframe').onChange(onDisplayChange);
+    globalFolder.add(params, 'showAnchor').name('anchor edges').onChange(onDisplayChange);
+    globalFolder.add(params, 'showAnchorVertices').name('anchor vertices').onChange(onDisplayChange);
 
     globalFolder.add(params, 'world_size', 0.1, 10, 0.1).name('world size').onChange(onChange);
     const seedCtrl = globalFolder.add(params, 'seed').name('seed').onChange(onChange);

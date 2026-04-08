@@ -163,19 +163,7 @@ export class InputMapper implements InputHandler {
     }
 
     private emitMoveTo(screenPos: Point): void {
-        // Convert screen position to normalized device coordinates (-1 to 1)
-        const ndcX = (screenPos.x / window.innerWidth) * 2 - 1;
-        const ndcY = -(screenPos.y / window.innerHeight) * 2 + 1; // Invert Y
-
-        // Create a ray from the camera through the screen point
-        const raycaster = new THREE.Raycaster();
-        raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera.camera);
-
-        // Intersect with a plane at y=0 (ground plane)
-        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-        const intersectionPoint = new THREE.Vector3();
-        raycaster.ray.intersectPlane(plane, intersectionPoint);
-
+        const intersectionPoint = this.camera.screenToWorldPlanePoint(screenPos.x, screenPos.y);
         if (intersectionPoint) {
             intersectionPoint.z = 0;
             this.dispatcher.dispatch<CursorMoveToEvent>(CURSOR_MOVE_TO, {

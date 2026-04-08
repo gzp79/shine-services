@@ -35,4 +35,7 @@ pub enum QuadTopologyError {
 
     #[error("Vertex {vertex} ring traversal does not form a closed loop")]
     VertexRingNotClosed { vertex: usize },
+
+    #[error("Anchor edge {edge} is not a subsequence of boundary vertices")]
+    InvalidAnchorEdge { edge: usize },
 }

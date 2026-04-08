@@ -23,7 +23,9 @@ impl VertexRepulsion {
 
 impl QuadFilter for VertexRepulsion {
     fn apply(&mut self, mesh: &mut QuadMesh) {
-        let QuadMesh { topology, positions, .. } = mesh;
+        let QuadMesh {
+            topology, vertices: positions, ..
+        } = mesh;
 
         let n = topology.vertex_count();
         if n == 0 {
@@ -51,7 +53,7 @@ impl QuadFilter for VertexRepulsion {
                 let mut count_edge = 0u32;
                 let mut sum_diag = 0.0f32;
                 let mut count_diag = 0u32;
-                for r in topology.vertex_ring(vi) {
+                for r in topology.vertex_ring_ccw(vi) {
                     let verts = topology.quad_vertices(r.quad);
                     for (offset, sum, count) in [
                         (1usize, &mut sum_edge, &mut count_edge),
@@ -85,7 +87,7 @@ impl QuadFilter for VertexRepulsion {
                 // average distance from each edge and diagonal neighbor.
                 let mut ideal_sum = Vec2::ZERO;
                 let mut ideal_count = 0u32;
-                for r in topology.vertex_ring(vi) {
+                for r in topology.vertex_ring_ccw(vi) {
                     let verts = topology.quad_vertices(r.quad);
                     for (offset, avg_len) in [(1usize, avg_edge), (2usize, avg_diag)] {
                         if avg_len == 0.0 {

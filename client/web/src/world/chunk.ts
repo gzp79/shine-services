@@ -2,6 +2,7 @@ import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { EventSubscriptions } from '../engine/events';
 import { PolygonData, QuadData } from '../engine/mesh/geometry-data';
+import { PolygonWireMesh } from '../engine/mesh/polygon-wire-mesh';
 import { MeshBuilder, buildBaseMesh } from '../engine/mesh/quad-mesh';
 import { SelectionMesh } from '../engine/mesh/selection-mesh';
 import { ChunkId } from './chunk-id';
@@ -12,6 +13,7 @@ export class Chunk {
     private mesh: MeshBuilder | null = null;
     private label: THREE.Sprite | null = null;
     private selection: SelectionMesh;
+    private wireframe: PolygonWireMesh;
     private subscription: EventSubscriptions;
 
     constructor(
@@ -20,7 +22,9 @@ export class Chunk {
         private readonly events: EventTarget
     ) {
         this.group.userData = { chunkId: { q: id.q, r: id.r }, chunk: this };
-        this.selection = new SelectionMesh(this.group, this.dualPolygons());
+        const dualPolygons = this.dualPolygons();
+        this.selection = new SelectionMesh(this.group, dualPolygons);
+        this.wireframe = new PolygonWireMesh(this.group, dualPolygons);
 
         // Subscribe to focus change events
         this.subscription = new EventSubscriptions(events);
@@ -37,6 +41,7 @@ export class Chunk {
         this.disposeMesh();
         this.desposeLabel();
         this.selection.dispose();
+        this.wireframe.dispose();
     }
 
     get showLabel(): boolean {
@@ -51,12 +56,28 @@ export class Chunk {
         }
     }
 
-    showSelectionAt(worldPoint: THREE.Vector3): void {
-        const localPoint = this.group.worldToLocal(worldPoint.clone());
-        const vertIdx = this.findClosestVertex(localPoint, this.selection.vertIdx);
-        if (vertIdx !== -1) {
-            this.selection.showAt(vertIdx);
+    get showPolygonWire(): boolean {
+        return this.wireframe.isVisible;
+    }
+
+    set showPolygonWire(value: boolean) {
+        if (value) {
+            this.wireframe.show();
+        } else {
+            this.wireframe.hide();
         }
+    }
+
+    showSelectionAt(worldPos: THREE.Vector3): { cellId: number; localPos: THREE.Vector3 } | null {
+        const localPos = this.group.worldToLocal(worldPos.clone());
+        const vertIdx = this.findClosestVertex(localPos, this.selection.vertIdx);
+        if (vertIdx === -1) {
+            this.hideSelection();
+            return null;
+        }
+
+        this.selection.showAt(vertIdx);
+        return { cellId: vertIdx, localPos };
     }
 
     hideSelection(): void {

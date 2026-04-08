@@ -104,9 +104,9 @@ export function createWireframeGlowMaterial(color: THREE.Color | number, opacity
     return new THREE.ShaderMaterial({
         uniforms: {
             color: { value: colorObj },
-            edgeWidth: { value: 8.0 }, // Wider for glow
+            edgeWidth: { value: 18.0 }, // Wider for glow
             opacity: { value: opacity },
-            glowPower: { value: 0.3 } // Strong glow falloff
+            glowPower: { value: 0.5 } // Strong glow falloff
         },
         vertexShader: wireframeVertexShader,
         fragmentShader: wireframeFragmentShader,

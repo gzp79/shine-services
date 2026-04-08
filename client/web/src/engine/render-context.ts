@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { Chunk } from '../world/chunk';
 import { EventDispatcher } from './events';
 
 // ViewportResizeEvent - THe size of the render canvas has changed
@@ -18,9 +17,7 @@ export class RenderContext {
     private _width: number;
     private _height: number;
     private readonly canvas: HTMLCanvasElement;
-    private raycaster = new THREE.Raycaster();
-    private mousePosition = new THREE.Vector2(-1, -1);
-    private currentHoveredChunk: Chunk | null = null;
+    private _mousePosition = new THREE.Vector2(-1, -1);
 
     get width(): number {
         return this._width;
@@ -28,6 +25,10 @@ export class RenderContext {
 
     get height(): number {
         return this._height;
+    }
+
+    get mousePosition(): THREE.Vector2 {
+        return this._mousePosition;
     }
 
     constructor(container: HTMLElement, events: EventTarget) {
@@ -85,54 +86,9 @@ export class RenderContext {
 
     private onMouseLeave = (): void => {
         this.mousePosition.set(-1, -1);
-        if (this.currentHoveredChunk) {
-            this.currentHoveredChunk.hideSelection();
-            this.currentHoveredChunk = null;
-        }
     };
 
-    private updateSelectionHover(camera: THREE.PerspectiveCamera): void {
-        // Skip if mouse is outside canvas
-        if (this.mousePosition.x === -1 && this.mousePosition.y === -1) {
-            return;
-        }
-
-        // Raycast against all visible objects
-        this.raycaster.setFromCamera(this.mousePosition, camera);
-        const intersects = this.raycaster.intersectObjects(this.scene.children, true);
-
-        // Find first chunk hit (chunk is on grandparent due to MeshBuilder.group wrapper)
-        let hitChunk = null;
-        let hitPoint = null;
-
-        for (const intersect of intersects) {
-            const obj = intersect.object;
-            // Check parent first, then grandparent (for MeshBuilder hierarchy)
-            const chunk = (obj.parent?.userData.chunk || obj.parent?.parent?.userData.chunk) as Chunk;
-            if (chunk) {
-                hitChunk = chunk;
-                hitPoint = intersect.point;
-                break;
-            }
-        }
-
-        // Update hover state - delegate to chunks
-        if (hitChunk !== this.currentHoveredChunk) {
-            // Hide selection on previous chunk
-            if (this.currentHoveredChunk) {
-                this.currentHoveredChunk.hideSelection();
-            }
-            this.currentHoveredChunk = hitChunk;
-        }
-
-        // Show selection at hit point
-        if (hitChunk && hitPoint) {
-            hitChunk.showSelectionAt(hitPoint);
-        }
-    }
-
     render(camera: THREE.PerspectiveCamera): void {
-        this.updateSelectionHover(camera);
         this.renderer.render(this.scene, camera);
     }
 

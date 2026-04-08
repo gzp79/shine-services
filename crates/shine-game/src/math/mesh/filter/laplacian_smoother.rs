@@ -22,7 +22,9 @@ impl LaplacianSmoother {
     }
 
     fn step(&mut self, mesh: &mut QuadMesh) {
-        let QuadMesh { topology, positions, .. } = mesh;
+        let QuadMesh {
+            topology, vertices: positions, ..
+        } = mesh;
 
         self.buf.resize(topology.vertex_count(), Vec2::ZERO);
 

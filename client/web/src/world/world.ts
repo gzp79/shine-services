@@ -10,22 +10,35 @@ import {
     type WorldReferenceChangedEvent
 } from '../systems/world-reference-system';
 import { Chunk } from './chunk';
+import { ChunkEdge, ChunkEdgeId } from './chunk-edge';
 import { ChunkId } from './chunk-id';
-import { chunkIdToWorldPosition } from './hex-utils';
+import { worldPositionToChunkId } from './hex-utils';
+
+type Selection =
+    | { type: 'cell'; chunk: Chunk; cellId: number; worldPoint: THREE.Vector3; localPoint: THREE.Vector3 }
+    | { type: 'edge-cell'; edge: ChunkEdge; cellId: number; worldPoint: THREE.Vector3; localPoint: THREE.Vector3 };
+
+type WorldConsts = {
+    chunkWorldSize: number;
+    cellWorldSize: number;
+};
 
 export class World {
     private readonly SCOPE = 'World';
     readonly group = new THREE.Group();
     private readonly wasm: WasmWorld;
     private readonly chunks = new Map<string, Chunk>();
+    private readonly chunkEdges = new Map<string, ChunkEdge>();
     private _referenceChunkId = ChunkId.ORIGIN;
     private _focusedChunkId = ChunkId.ORIGIN;
     private readonly subscriptions: EventSubscriptions;
     private readonly debugPanel: DebugPanel;
     private _showChunkLabels = false;
-    private originCircle: THREE.Line;
-    private chunk00Circle: THREE.Line;
+    private _showPolygonWire = false;
     private pendingChunkUpdate: number | null = null;
+    private _hover: Selection | null = null;
+
+    public readonly consts: WorldConsts;
 
     get referenceChunkId(): ChunkId {
         return this._referenceChunkId;
@@ -46,22 +59,32 @@ export class World {
         }
     }
 
+    get showPolygonWire(): boolean {
+        return this._showPolygonWire;
+    }
+
+    set showPolygonWire(value: boolean) {
+        this._showPolygonWire = value;
+        for (const chunk of this.chunks.values()) {
+            chunk.showPolygonWire = value;
+        }
+        for (const edge of this.chunkEdges.values()) {
+            edge.showPolygonWire = value;
+        }
+    }
+
     constructor(events: EventTarget, debugPanel: DebugPanel) {
         this.wasm = new WasmWorld();
+        this.consts = {
+            chunkWorldSize: this.wasm.const_chunk_world_size(),
+            cellWorldSize: this.wasm.const_cell_world_size()
+        };
         this.subscriptions = new EventSubscriptions(events);
         this.debugPanel = debugPanel;
 
         // Subscribe to world reference changed
         this.subscriptions.on<WorldReferenceChangedEvent>(WORLD_REFERENCE_CHANGED, this.handleWorldReferenceChanged);
         this.subscriptions.on<WorldCenterChangedEvent>(WORLD_CENTER_CHANGED, this.handleWorldCenterChanged);
-
-        // Create debug circles
-        this.originCircle = this.createDebugCircle(0xff0000, 0, 0); // Red at origin
-        this.group.add(this.originCircle);
-
-        const chunk00Pos = chunkIdToWorldPosition(this._referenceChunkId, ChunkId.ORIGIN);
-        this.chunk00Circle = this.createDebugCircle(0x0000ff, chunk00Pos.x, chunk00Pos.y); // Blue at chunk(0,0)
-        this.group.add(this.chunk00Circle);
 
         this.updateChunksAroundFocus();
     }
@@ -80,6 +103,9 @@ export class World {
 
         chunk.init(this._referenceChunkId);
         chunk.showLabel = this._showChunkLabels;
+        chunk.showPolygonWire = this._showPolygonWire;
+
+        this.updateChunkEdgesForChunk(id);
 
         return chunk;
     }
@@ -88,6 +114,13 @@ export class World {
         const key = id.key();
         const chunk = this.chunks.get(key);
         if (!chunk) return;
+
+        if (this._hover?.type === 'cell' && this._hover.chunk === chunk) {
+            this.clearHover();
+        }
+
+        this.removeChunkEdgesForChunk(id);
+
         this.group.remove(chunk.group);
         chunk.dispose();
         this.chunks.delete(key);
@@ -105,6 +138,13 @@ export class World {
         // Cleanup event listeners
         this.subscriptions.dispose();
 
+        // Dispose boundary entities
+        for (const edge of this.chunkEdges.values()) {
+            this.group.remove(edge.group);
+            edge.dispose();
+        }
+        this.chunkEdges.clear();
+
         // Dispose chunks
         for (const chunk of this.chunks.values()) {
             this.group.remove(chunk.group);
@@ -112,17 +152,100 @@ export class World {
         }
         this.chunks.clear();
 
-        // Dispose debug circles
-        this.group.remove(this.originCircle);
-        this.originCircle.geometry.dispose();
-        (this.originCircle.material as THREE.Material).dispose();
-
-        this.group.remove(this.chunk00Circle);
-        this.chunk00Circle.geometry.dispose();
-        (this.chunk00Circle.material as THREE.Material).dispose();
-
         this.debugPanel.removeScope(this.SCOPE);
         this.wasm.free();
+    }
+
+    private setHover(selection: Selection): void {
+        // Hide previous selection
+        if (this._hover) {
+            switch (this._hover.type) {
+                case 'cell':
+                    this._hover.chunk.hideSelection();
+                    break;
+                case 'edge-cell':
+                    this._hover.edge.hideSelection();
+                    break;
+            }
+        }
+
+        this._hover = selection;
+
+        // Update debug panel
+        switch (selection.type) {
+            case 'cell':
+                this.debugPanel.set(
+                    this.SCOPE,
+                    'Hover Cell',
+                    `Chunk (${selection.chunk.id.q}, ${selection.chunk.id.r}), Cell ${selection.cellId}`
+                );
+                break;
+            case 'edge-cell':
+                this.debugPanel.set(
+                    this.SCOPE,
+                    'Hover Cell',
+                    `Edge (${selection.edge.id.chunkId.q}, ${selection.edge.id.chunkId.r})-${selection.edge.id.edgeIdx}, Cell ${selection.cellId}`
+                );
+                break;
+        }
+    }
+
+    setHoverAt(worldPos: THREE.Vector3) {
+        if (this._hover) {
+            const dist = worldPos.distanceTo(this._hover.worldPoint);
+            if (dist < this.consts.cellWorldSize * 0.5) {
+                return;
+            }
+        }
+
+        const chunkId = worldPositionToChunkId(this._referenceChunkId, new THREE.Vector2(worldPos.x, worldPos.y));
+        const chunk = this.chunks.get(chunkId.key());
+        if (chunk) {
+            const selection = chunk.showSelectionAt(worldPos);
+            if (selection) {
+                this.setHover({
+                    type: 'cell',
+                    chunk,
+                    worldPoint: worldPos,
+                    localPoint: selection.localPos,
+                    cellId: selection.cellId
+                });
+                return;
+            }
+        }
+
+        /*        // Try boundary edge entities
+        for (const edge of this.chunkEdges.values()) {
+            const selection = edge.showSelectionAt(worldPos);
+            if (selection) {
+                this.setHover({
+                    type: 'edge-cell',
+                    edge,
+                    worldPoint: worldPos,
+                    localPoint: selection.localPos,
+                    cellId: selection.cellId
+                });
+                return;
+            }
+            }*/
+
+        this.clearHover();
+    }
+
+    clearHover() {
+        if (!this._hover) return;
+
+        switch (this._hover.type) {
+            case 'cell':
+                this._hover.chunk.hideSelection();
+                break;
+            case 'edge-cell':
+                this._hover.edge.hideSelection();
+                break;
+        }
+
+        this._hover = null;
+        this.debugPanel.set(this.SCOPE, 'Hover Cell', 'None');
     }
 
     private handleWorldReferenceChanged = (event: WorldReferenceChangedEvent): void => {
@@ -134,9 +257,11 @@ export class World {
             chunk.group.position.y += delta.y;
         }
 
-        // Move chunk(0,0) circle with chunks
-        this.chunk00Circle.position.x += delta.x;
-        this.chunk00Circle.position.y += delta.y;
+        // Reposition boundary entities
+        for (const edge of this.chunkEdges.values()) {
+            edge.group.position.x += delta.x;
+            edge.group.position.y += delta.y;
+        }
     };
 
     private handleWorldCenterChanged = (event: WorldCenterChangedEvent): void => {
@@ -157,6 +282,40 @@ export class World {
             { timeout: 16 } // Force execution within 16ms (1 frame at 60fps) if idle time isn't available
         );
     };
+
+    private updateChunkEdgesForChunk(chunkId: ChunkId): void {
+        for (const edgeIdx of [0, 1, 2] as const) {
+            const edgeId = new ChunkEdgeId(chunkId, edgeIdx);
+            const neighborId = edgeId.neighborChunkId();
+
+            if (this.chunks.has(neighborId.key()) && !this.chunkEdges.has(edgeId.key())) {
+                console.log(
+                    `Creating boundary edge entity for edge ${edgeId.key()} between chunks ${chunkId.key()} and ${neighborId.key()}`
+                );
+                const entity = new ChunkEdge(this.wasm, edgeId, this.subscriptions.events);
+                entity.init(this._referenceChunkId);
+                entity.showPolygonWire = this._showPolygonWire;
+                this.group.add(entity.group);
+                this.chunkEdges.set(edgeId.key(), entity);
+            }
+        }
+    }
+
+    private removeChunkEdgesForChunk(chunkId: ChunkId): void {
+        for (const [key, edge] of this.chunkEdges.entries()) {
+            const neighborId = edge.id.neighborChunkId();
+            if (edge.id.chunkId.equals(chunkId) || neighborId.equals(chunkId)) {
+                // Clear hover if it references this entity
+                if (this._hover?.type === 'edge-cell' && this._hover.edge === edge) {
+                    this.clearHover();
+                }
+
+                this.group.remove(edge.group);
+                edge.dispose();
+                this.chunkEdges.delete(key);
+            }
+        }
+    }
 
     private updateChunksAroundFocus(): void {
         // Load focused chunk and all neighbors
@@ -193,25 +352,5 @@ export class World {
 
     private updateDebugPanel(): void {
         this.debugPanel.set(this.SCOPE, 'Loaded Chunks', this.chunks.size.toString());
-    }
-
-    private createDebugCircle(color: number, x: number, y: number): THREE.Line {
-        const radius = 100;
-        const segments = 32;
-        const geometry = new THREE.BufferGeometry();
-        const positions = new Float32Array((segments + 1) * 3);
-
-        for (let i = 0; i <= segments; i++) {
-            const theta = (i / segments) * Math.PI * 2;
-            positions[i * 3] = Math.cos(theta) * radius;
-            positions[i * 3 + 1] = Math.sin(theta) * radius;
-            positions[i * 3 + 2] = 0.1; // Slightly above ground
-        }
-
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        const material = new THREE.LineBasicMaterial({ color });
-        const circle = new THREE.Line(geometry, material);
-        circle.position.set(x, y, 0);
-        return circle;
     }
 }

@@ -7,6 +7,7 @@ import { VIEWPORT_RESIZE, type ViewportResizeEvent } from '../render-context';
 export class Camera {
     readonly camera: THREE.PerspectiveCamera;
     private readonly subscriptions: EventSubscriptions;
+    private readonly raycaster = new THREE.Raycaster();
 
     constructor(renderContext: RenderContext, events: EventTarget) {
         this.subscriptions = new EventSubscriptions(events);
@@ -26,6 +27,23 @@ export class Camera {
 
     dispose(): void {
         this.subscriptions.dispose();
+    }
+
+    screenToWorldPlanePoint(screenX: number, screenY: number, planeZ = 0): THREE.Vector3 | null {
+        const ndcX = (screenX / window.innerWidth) * 2 - 1;
+        const ndcY = -(screenY / window.innerHeight) * 2 + 1;
+        return this.ndcToWorldPlanePoint(ndcX, ndcY, planeZ);
+    }
+
+    ndcToWorldPlanePoint(ndcX: number, ndcY: number, planeZ = 0): THREE.Vector3 | null {
+        this.raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
+
+        // Intersect with a plane at y=0 (ground plane)
+        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -planeZ);
+        const intersectionPoint = new THREE.Vector3();
+        this.raycaster.ray.intersectPlane(plane, intersectionPoint);
+
+        return intersectionPoint;
     }
 
     private handleViewportResize = (event: ViewportResizeEvent): void => {

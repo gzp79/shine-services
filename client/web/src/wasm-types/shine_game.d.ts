@@ -19,6 +19,19 @@ export class WasmPatchMesh {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * Number of anchor edges
+     */
+    anchor_edge_count(): number;
+    /**
+     * Start index in anchor_indices for each anchor edge
+     * Format: [start0, start1, ..., total_segments]
+     */
+    anchor_edge_starts(): Uint32Array;
+    /**
+     * Flat anchor edge indices [a, b, ...] (2 indices per segment)
+     */
+    anchor_indices(): Uint32Array;
+    /**
      * Number of dual edges
      */
     dual_edge_count(): number;
@@ -63,6 +76,14 @@ export class WasmPatchMesh {
 export class WasmWorld {
     free(): void;
     [Symbol.dispose](): void;
+    /**
+     * Returns packed dual polygons for boundary edge.
+     * Format: [starts_len, ...starts, ...indices]
+     */
+    boundary_edge_dual_polygons(q: number, r: number, edge_idx: number): Uint32Array;
+    boundary_edge_dual_vertices(q: number, r: number, edge_idx: number): Float32Array;
+    boundary_vertex_dual_polygons(q: number, r: number, vertex_idx: number): Uint32Array;
+    boundary_vertex_dual_vertices(q: number, r: number, vertex_idx: number): Float32Array;
     chunk_boundary_indices(q: number, r: number): Uint32Array;
     chunk_dual_polygon_vertices(q: number, r: number): Float32Array;
     chunk_dual_polygons(q: number, r: number): Uint32Array;
@@ -70,6 +91,8 @@ export class WasmWorld {
     chunk_quad_indices(q: number, r: number): Uint32Array;
     chunk_quad_vertices(q: number, r: number): Float32Array;
     chunk_world_offset(ref_q: number, ref_r: number, q: number, r: number): Float32Array;
+    const_cell_world_size(): number;
+    const_chunk_world_size(): number;
     init_chunk(q: number, r: number): void;
     constructor();
     remove_chunk(q: number, r: number): void;
@@ -94,6 +117,9 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_wasmpatchmesh_free: (a: number, b: number) => void;
     readonly generate_mesh: (a: number, b: number) => [number, number, number];
+    readonly wasmpatchmesh_anchor_edge_count: (a: number) => number;
+    readonly wasmpatchmesh_anchor_edge_starts: (a: number) => [number, number];
+    readonly wasmpatchmesh_anchor_indices: (a: number) => [number, number];
     readonly wasmpatchmesh_dual_edge_count: (a: number) => number;
     readonly wasmpatchmesh_dual_indices: (a: number) => [number, number];
     readonly wasmpatchmesh_dual_vertex_count: (a: number) => number;
@@ -104,17 +130,6 @@ export interface InitOutput {
     readonly wasmpatchmesh_vertex_count: (a: number) => number;
     readonly wasmpatchmesh_vertices: (a: number) => [number, number];
     readonly wasmpatchmesh_world_size: (a: number) => number;
-    readonly __wbg_wasmworld_free: (a: number, b: number) => void;
-    readonly wasmworld_chunk_boundary_indices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_dual_polygon_vertices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_dual_polygons: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_dual_vertices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_quad_indices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_quad_vertices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
-    readonly wasmworld_new: () => number;
-    readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
     readonly __wbg_wasmcdt_free: (a: number, b: number) => void;
     readonly generate_cdt: (a: number, b: number) => number;
     readonly wasmcdt_error_message: (a: number) => [number, number];
@@ -124,7 +139,24 @@ export interface InitOutput {
     readonly wasmcdt_triangles: (a: number) => [number, number];
     readonly wasmcdt_vertex_count: (a: number) => number;
     readonly wasmcdt_vertices: (a: number) => [number, number];
+    readonly __wbg_wasmworld_free: (a: number, b: number) => void;
     readonly start: () => void;
+    readonly wasmworld_boundary_edge_dual_polygons: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly wasmworld_boundary_edge_dual_vertices: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly wasmworld_boundary_vertex_dual_polygons: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly wasmworld_chunk_boundary_indices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_dual_polygon_vertices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_dual_polygons: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_dual_vertices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_quad_indices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_quad_vertices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly wasmworld_const_cell_world_size: (a: number) => number;
+    readonly wasmworld_const_chunk_world_size: (a: number) => number;
+    readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
+    readonly wasmworld_new: () => number;
+    readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
+    readonly wasmworld_boundary_vertex_dual_vertices: (a: number, b: number, c: number, d: number) => [number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

@@ -10,7 +10,7 @@ use glam::Vec2;
 /// and ghost quads for closed manifold traversal.
 pub struct QuadMesh {
     pub topology: QuadTopology,
-    pub positions: IdxVec<VertIdx, Vec2>,
+    pub vertices: IdxVec<VertIdx, Vec2>,
     pub quad_centers: IdxVec<QuadIdx, Vec2>,
 }
 
@@ -20,9 +20,18 @@ impl QuadMesh {
         polygon: Vec<VertIdx>,
         quads: Vec<[VertIdx; 4]>,
     ) -> Result<Self, QuadTopologyError> {
+        Self::from_polygon_with_anchors(positions, polygon, vec![], quads)
+    }
+
+    pub fn from_polygon_with_anchors(
+        positions: Vec<Vec2>,
+        polygon: Vec<VertIdx>,
+        anchor_vertices: Vec<VertIdx>,
+        quads: Vec<[VertIdx; 4]>,
+    ) -> Result<Self, QuadTopologyError> {
         let vertex_count = positions.len();
         let positions = IdxVec::from_vec(positions);
-        let topology = QuadTopology::from_polygon(vertex_count, polygon, quads)?;
+        let topology = QuadTopology::from_polygon(vertex_count, polygon, anchor_vertices, quads)?;
 
         // Compute quad centers for all real quads
         let mut quad_centers = IdxVec::with_capacity(topology.quad_count());
@@ -38,13 +47,13 @@ impl QuadMesh {
 
         Ok(Self {
             topology,
-            positions,
+            vertices: positions,
             quad_centers,
         })
     }
 
     pub fn position(&self, vi: VertIdx) -> Vec2 {
-        self.positions[vi]
+        self.vertices[vi]
     }
 
     pub fn topology(&self) -> &QuadTopology {
@@ -53,9 +62,5 @@ impl QuadMesh {
 
     pub fn vertex_indices(&self) -> impl Iterator<Item = VertIdx> {
         self.topology.vertex_indices()
-    }
-
-    pub fn into_parts(self) -> (QuadTopology, IdxVec<VertIdx, Vec2>, IdxVec<QuadIdx, Vec2>) {
-        (self.topology, self.positions, self.quad_centers)
     }
 }

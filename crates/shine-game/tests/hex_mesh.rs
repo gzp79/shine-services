@@ -105,7 +105,7 @@ fn generate_cdt_mesh() {
 #[test]
 fn generate_lattice_mesh() {
     let mut mesher = LatticeMesher::new(2, SysRng::new());
-    let mesh = mesher.generate();
+    let (mesh, _boundary_info) = mesher.generate();
     println!(
         "Lattice mesh: {} vertices, {} quads",
         mesh.topology.vertex_count(),

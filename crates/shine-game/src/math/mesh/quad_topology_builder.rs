@@ -8,6 +8,7 @@ impl QuadTopology {
     pub fn from_polygon(
         vertex_count: usize,
         polygon: Vec<VertIdx>,
+        anchors: Vec<VertIdx>,
         quads: Vec<[VertIdx; 4]>,
     ) -> Result<Self, QuadTopologyError> {
         // Validate boundary length is even
@@ -44,7 +45,8 @@ impl QuadTopology {
             }
         }
 
-        // Generate ghost quads
+        // Generate ghost quads: [ghost, v2, v1, v0]
+        // Boundary edges are reversed (v2->v1, v1->v0) to match twin edges from real quads
         let mut all_quads = quads;
         let ghost_vertex = VertIdx::new(vertex_count);
         let ghost_quad_count = polygon.len() / 2;
@@ -117,6 +119,7 @@ impl QuadTopology {
             quads,
             edge_twins,
             vertex_quad,
+            anchor_vertices: anchors,
         };
 
         topology.validate()?;

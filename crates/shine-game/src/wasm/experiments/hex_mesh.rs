@@ -61,6 +61,8 @@ pub struct WasmPatchMesh {
     patch_indices: Vec<u8>,
     dual_vertices: Vec<f32>,
     dual_indices: Vec<u32>,
+    anchor_indices: Vec<u32>,
+    anchor_edge_starts: Vec<u32>,
 }
 
 #[wasm_bindgen]
@@ -113,6 +115,26 @@ impl WasmPatchMesh {
     /// Number of dual edges
     pub fn dual_edge_count(&self) -> usize {
         self.dual_indices.len() / 2
+    }
+
+    /// Flat anchor edge indices [a, b, ...] (2 indices per segment)
+    pub fn anchor_indices(&self) -> Vec<u32> {
+        self.anchor_indices.clone()
+    }
+
+    /// Start index in anchor_indices for each anchor edge
+    /// Format: [start0, start1, ..., total_segments]
+    pub fn anchor_edge_starts(&self) -> Vec<u32> {
+        self.anchor_edge_starts.clone()
+    }
+
+    /// Number of anchor edges
+    pub fn anchor_edge_count(&self) -> usize {
+        if self.anchor_edge_starts.is_empty() {
+            0
+        } else {
+            self.anchor_edge_starts.len() - 1
+        }
     }
 }
 
@@ -220,6 +242,26 @@ fn quad_mesh_to_wasm(mesh: &QuadMesh, world_size: f32) -> WasmPatchMesh {
         }
     }
 
+    // Build anchor edges from anchor_vertices in topology
+    let mut anchor_indices = Vec::new();
+    let mut anchor_edge_starts = Vec::new();
+    let anchor_count = mesh.topology().anchor_vertices.len();
+
+    for edge_idx in 0..anchor_count {
+        // Record the start index for this anchor edge
+        anchor_edge_starts.push((anchor_indices.len() / 2) as u32);
+
+        let anchor_verts: Vec<_> = mesh.topology().anchor_edge(edge_idx).collect();
+        // Create line segments between consecutive vertices
+        for window in anchor_verts.windows(2) {
+            anchor_indices.push(window[0].into_index() as u32);
+            anchor_indices.push(window[1].into_index() as u32);
+        }
+    }
+
+    // Add final count for convenience
+    anchor_edge_starts.push((anchor_indices.len() / 2) as u32);
+
     WasmPatchMesh {
         world_size,
         vertices: flat_vertices,
@@ -227,5 +269,7 @@ fn quad_mesh_to_wasm(mesh: &QuadMesh, world_size: f32) -> WasmPatchMesh {
         patch_indices,
         dual_vertices,
         dual_indices,
+        anchor_indices,
+        anchor_edge_starts,
     }
 }

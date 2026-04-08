@@ -30,7 +30,9 @@ impl QuadFilter for QuadRelax {
     /// Identifies quads below `quality` and relaxes their interior vertices toward
     /// the neighbor average. Iterates until all quads pass or `iterations` is reached.
     fn apply(&mut self, mesh: &mut QuadMesh) {
-        let QuadMesh { topology, positions, .. } = mesh;
+        let QuadMesh {
+            topology, vertices: positions, ..
+        } = mesh;
 
         for _ in 0..self.iterations {
             let mut is_bad = vec![false; topology.vertex_count()];

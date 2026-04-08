@@ -23,6 +23,8 @@ export async function createHexMeshExperiment(container: HTMLElement): Promise<H
         if (currentMesh) {
             currentMesh.setPrimalVisible(params.showPrimal);
             currentMesh.setDualVisible(params.showDual);
+            currentMesh.setAnchorVisible(params.showAnchor);
+            currentMesh.setAnchorVerticesVisible(params.showAnchorVertices);
         }
     }
 
@@ -60,7 +62,9 @@ export async function createHexMeshExperiment(container: HTMLElement): Promise<H
                 indices: wasmMesh.quad_indices(),
                 patchIndices: wasmMesh.patch_indices(),
                 dualVertices: wasmMesh.dual_vertices(),
-                dualIndices: wasmMesh.dual_indices()
+                dualIndices: wasmMesh.dual_indices(),
+                anchorIndices: wasmMesh.anchor_indices(),
+                anchorEdgeStarts: wasmMesh.anchor_edge_starts()
             };
 
             console.log(

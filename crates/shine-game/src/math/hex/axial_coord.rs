@@ -72,8 +72,9 @@ impl AxialCoord {
         SpiralIterator::new(*self, radius)
     }
 
-    /// Get the coordinates of the hex neighbors
-    pub fn neighbors(&self) -> impl Iterator<Item = AxialCoord> + 'static {
+    /// Get neighbor chunk in direction 0..5
+    /// 0: North, 1: NorthEast, 2: SouthEast, 3: South, 4: SouthWest, 5: NorthWest
+    pub fn neighbor(&self, direction: u8) -> Self {
         const DIRECTIONS: [(i32, i32); 6] = [
             (0, -1), // North
             (1, -1), // NorthEast
@@ -82,10 +83,14 @@ impl AxialCoord {
             (-1, 1), // SouthWest
             (-1, 0), // NorthWest
         ];
+        let (dq, dr) = DIRECTIONS[direction as usize];
+        Self::new(self.q + dq, self.r + dr)
+    }
+
+    /// Get the coordinates of the hex neighbors
+    pub fn neighbors(&self) -> impl Iterator<Item = AxialCoord> + 'static {
         let coord = *self;
-        DIRECTIONS
-            .into_iter()
-            .map(move |(dq, dr)| AxialCoord::new(coord.q + dq, coord.r + dr))
+        (0u8..6).map(move |dir| coord.neighbor(dir))
     }
 
     /// Returns the 6 corner coordinates of a flat-top hexagon at the given radius.

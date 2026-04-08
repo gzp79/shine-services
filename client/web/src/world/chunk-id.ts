@@ -24,6 +24,11 @@ export class ChunkId {
         return `${this.q},${this.r}`;
     }
 
+    /** Check equality with another chunk coordinate. */
+    equals(other: ChunkId): boolean {
+        return this.q === other.q && this.r === other.r;
+    }
+
     /** Calculate hex distance to another chunk using cube coordinates. */
     distanceTo(other: ChunkId): number {
         const dq = this.q - other.q;
@@ -43,6 +48,12 @@ export class ChunkId {
     /** Return the 6 immediate hex neighbors. */
     neighbors(): ChunkId[] {
         return HEX_DIRECTIONS.map(([dq, dr]) => new ChunkId(this.q + dq, this.r + dr));
+    }
+
+    /** Get neighbor chunk in direction 0..5 */
+    neighbor(direction: 0 | 1 | 2 | 3 | 4 | 5): ChunkId {
+        const [dq, dr] = HEX_DIRECTIONS[direction];
+        return new ChunkId(this.q + dq, this.r + dr);
     }
 
     /** Return all coordinates on the hex ring at the given radius. */

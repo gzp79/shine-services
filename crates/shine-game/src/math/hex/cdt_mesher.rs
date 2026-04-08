@@ -189,6 +189,12 @@ impl CdtMesher {
         let mut quads: Vec<[VertIdx; 4]> = Vec::with_capacity(triangles.len() * 3);
         let mut is_boundary: Vec<bool> = (0..positions.len()).map(|i| i < boundary_count).collect();
 
+        // Identify the 6 hex corners in the base boundary
+        // Boundary points are laid out as: n points per edge, 6 edges total
+        // Corners are at indices: 0, n, 2n, 3n, 4n, 5n
+        let n = 2u32.pow(self.subdivision - 1) as usize;
+        let anchor_vertices: Vec<VertIdx> = (0..6).map(|i| VertIdx::new(i * n)).collect();
+
         // Cache edge midpoints: (min_idx, max_idx) -> vertex index
         let mut midpoint_cache: HashMap<(usize, usize), usize> = HashMap::new();
 
@@ -234,6 +240,7 @@ impl CdtMesher {
             polygon.push(VertIdx::new(mid_idx));
         }
 
-        QuadMesh::from_polygon(positions, polygon, quads).expect("valid CDT mesh topology")
+        QuadMesh::from_polygon_with_anchors(positions, polygon, anchor_vertices, quads)
+            .expect("valid CDT mesh topology")
     }
 }

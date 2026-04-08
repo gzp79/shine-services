@@ -2,7 +2,7 @@ use crate::{
     indexed::{IdxVec, TypedIndex},
     math::{
         hex::{AxialCoord, LatticeMesher},
-        mesh::{QuadIdx, QuadTopology, VertIdx},
+        mesh::{QuadIdx, QuadMesh, QuadTopology, VertIdx},
         rand::Xorshift32,
     },
     world::{CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
@@ -33,6 +33,10 @@ impl ChunkId {
         h ^= h >> 16;
         h
     }
+
+    pub fn neighbor(&self, direction: u8) -> ChunkId {
+        AxialCoord::from(*self).neighbor(direction).into()
+    }
 }
 
 impl From<ChunkId> for AxialCoord {
@@ -59,7 +63,12 @@ impl Chunk {
         let mesh = LatticeMesher::new(SUBDIVISION_BASE, rng)
             .with_world_size(CHUNK_WORLD_SIZE)
             .generate();
-        let (topology, vertices, quad_centers) = mesh.into_parts();
+        let QuadMesh {
+            topology,
+            vertices,
+            quad_centers,
+        } = mesh;
+
         Self {
             topology,
             vertices,
@@ -133,7 +142,7 @@ impl Chunk {
             let start_len = indices.len();
 
             // Collect QuadIdx for all real quads around this vertex
-            for qv in self.topology.vertex_ring(vi) {
+            for qv in self.topology.vertex_ring_ccw(vi) {
                 if !self.topology.is_ghost_quad(qv.quad) {
                     // Map QuadIdx to its position in quad_indices() enumeration
                     let mut dual_idx = 0;
@@ -158,6 +167,16 @@ impl Chunk {
         }
 
         (indices, starts)
+    }
+
+    /// Returns VertIdx values along specified hex edge (0..5)
+    pub fn boundary_edge_vertices(&self, edge_idx: u8) -> Vec<VertIdx> {
+        self.topology.anchor_edge(edge_idx as usize).collect()
+    }
+
+    /// Returns VertIdx at specified hex corner (0..5)
+    pub fn boundary_corner_vertex(&self, corner_idx: u8) -> VertIdx {
+        self.topology.anchor_vertices[corner_idx as usize]
     }
 }
 
@@ -208,6 +227,70 @@ mod tests {
                 i,
                 polygon_size
             );
+        }
+    }
+
+    #[test]
+    fn test_hex_boundary_info() {
+        let chunk = Chunk::new(ChunkId::ORIGIN);
+
+        // SUBDIVISION_BASE=4 means 16 subdivisions per edge
+        let subdivisions_per_edge = 1 << SUBDIVISION_BASE;
+
+        // Should have 6 anchor vertices (hex corners)
+        assert_eq!(chunk.topology.anchor_vertices.len(), 6);
+
+        // Each edge should have subdivisions_per_edge + 1 vertices (includes both endpoints)
+        for edge_idx in 0..6 {
+            let edge_verts = chunk.boundary_edge_vertices(edge_idx);
+            assert_eq!(
+                edge_verts.len(),
+                subdivisions_per_edge as usize + 1,
+                "Edge {} should have {} vertices (including both endpoints)",
+                edge_idx,
+                subdivisions_per_edge + 1
+            );
+        }
+
+        // Corners should match first vertex of each edge
+        for edge_idx in 0..6 {
+            let corner = chunk.boundary_corner_vertex(edge_idx);
+            let edge_verts = chunk.boundary_edge_vertices(edge_idx);
+            assert_eq!(
+                corner, edge_verts[0],
+                "Corner {} should match first vertex of edge {}",
+                edge_idx, edge_idx
+            );
+        }
+    }
+
+    #[test]
+    fn test_chunk_boundary_accessors() {
+        let chunk = Chunk::new(ChunkId::ORIGIN);
+
+        // Test edge vertices accessor (includes both endpoints)
+        let edge0_verts = chunk.boundary_edge_vertices(0);
+        assert_eq!(edge0_verts.len(), (1 << SUBDIVISION_BASE) + 1);
+
+        // Test corner vertex accessor
+        let corner0 = chunk.boundary_corner_vertex(0);
+        assert_eq!(corner0, edge0_verts[0]);
+
+        // Edge 1 should start where edge 0 ends
+        let edge1_verts = chunk.boundary_edge_vertices(1);
+        assert_eq!(edge1_verts[0], chunk.boundary_corner_vertex(1));
+
+        // Verify all edge vertices are actually boundary vertices in the topology
+        for edge_idx in 0..6 {
+            let edge_verts = chunk.boundary_edge_vertices(edge_idx);
+            for vi in edge_verts {
+                assert!(
+                    chunk.topology.is_boundary_vertex(vi),
+                    "Edge {} vertex {:?} should be a boundary vertex in topology",
+                    edge_idx,
+                    vi
+                );
+            }
         }
     }
 }

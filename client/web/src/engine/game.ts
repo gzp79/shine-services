@@ -1,9 +1,9 @@
 import init from '#wasm';
 import wasmUrl from '#wasm-bin';
-import * as THREE from 'three';
 import { InputMapper } from '../avatar/input-mapper';
 import { WorldCursor } from '../avatar/world-cursor';
 import { CameraFollowCursorSystem } from '../systems/camera-follow-cursor-system';
+import { ChunkHoverSystem } from '../systems/chunk-hover-system';
 import { WorldReferenceSystem } from '../systems/world-reference-system';
 import { World } from '../world/world';
 import { Camera } from './camera/camera';
@@ -55,23 +55,18 @@ class Game {
         this.worldCursor.showMesh = true;
         this.debugPanel.addToggle('Controls', 'Show World Cursor', this.worldCursor, 'showMesh');
         this.debugPanel.addToggle('Controls', 'Show Chunk Labels', this.world, 'showChunkLabels');
+        this.debugPanel.addToggle('Controls', 'Show Polygon Wire', this.world, 'showPolygonWire');
 
         // Register systems
         this.systems.push(new CameraFollowCursorSystem(this.camera, this.worldCursor, this.events));
         this.systems.push(new WorldReferenceSystem(this.worldCursor, this.world, this.events, this.debugPanel));
+        this.systems.push(new ChunkHoverSystem(this.world, this.renderContext, this.camera));
 
         // Add world to scene
         this.renderContext.scene.add(this.world.group);
     }
 
     init(): void {
-        // Debug: circle with radius 1000 at origin (XY plane)
-        const circleGeom = new THREE.RingGeometry(998, 1000, 64);
-        const circleMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide });
-        const circle = new THREE.Mesh(circleGeom, circleMat);
-        circle.position.z = 0.1;
-        this.renderContext.scene.add(circle);
-
         this.lastTime = performance.now();
         this.animationId = requestAnimationFrame((t) => this.animate(t));
     }

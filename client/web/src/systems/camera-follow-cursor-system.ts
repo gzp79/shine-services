@@ -14,6 +14,8 @@ import type { GameSystem } from '../engine/game-system';
 import { WORLD_REFERENCE_CHANGED, type WorldReferenceChangedEvent } from './world-reference-system';
 
 export class CameraFollowCursorSystem implements GameSystem {
+    readonly name: string = 'Camera Follow Cursor';
+
     private currentDistance: number;
     private currentYaw: number;
     private currentCursorPosition: THREE.Vector3;
