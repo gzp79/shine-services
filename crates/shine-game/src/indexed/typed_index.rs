@@ -39,6 +39,7 @@ macro_rules! define_typed_index {
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $name(u32);
 
+        #[allow(dead_code)]
         impl $name {
             pub fn range(start: Self, end: Self) -> impl Iterator<Item = Self> {
                 (start.0..end.0).map(Self)

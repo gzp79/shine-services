@@ -1,5 +1,5 @@
 use glam::IVec2;
-use shine_game::math::triangulation::{CrossingIterator, GeometryChecker, TopologyChecker, Triangulation};
+use shine_game::math::triangulation::{GeometryChecker, TopologyChecker, Triangulation};
 use shine_test::test;
 
 #[test]

@@ -24,7 +24,7 @@ export class BoundaryVertexId {
     neighborChunkIds(): [ChunkId, ChunkId] {
         // Vertex 0 (top-left): neighbors at NorthWest (5) and North (0)
         // Vertex 1 (top-right): neighbors at North (0) and NorthEast (1)
-        const [dir1, dir2] = this.vertexIdx === 0 ? [5, 0] as const : [0, 1] as const;
+        const [dir1, dir2] = this.vertexIdx === 0 ? ([5, 0] as const) : ([0, 1] as const);
         return [this.chunkId.neighbor(dir1), this.chunkId.neighbor(dir2)];
     }
 }

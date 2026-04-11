@@ -1,10 +1,10 @@
 use crate::{
     indexed::TypedIndex,
     math::{
-        cdt::Triangulation,
         hex::AxialCoord,
         mesh::{QuadMesh, VertIdx},
         rand::StableRng,
+        triangulation::{Rot3Idx, Triangulation, VertexIndex},
     },
 };
 use glam::{IVec2, Vec2};
@@ -72,16 +72,48 @@ impl CdtMesher {
 
         let boundary_points = self.hex_boundary_points();
         let boundary_count = boundary_points.len();
-        let boundary_edges: Vec<_> = (0..boundary_count).map(|i| (i, (i + 1) % boundary_count)).collect();
         let interior_points = self.random_interior_points();
         let mut all_points: Vec<IVec2> = Vec::with_capacity(boundary_count + interior_points.len());
         all_points.extend_from_slice(&boundary_points);
         all_points.extend_from_slice(&interior_points);
 
         // Step 2: CDT triangulation with boundary constraint edges
-        let triangulation =
-            Triangulation::build_with_edges(&all_points, &boundary_edges).expect("CDT triangulation failed");
-        let triangles: Vec<(usize, usize, usize)> = triangulation.triangles().collect();
+        let mut tri = Triangulation::new_cdt();
+        let mut builder = tri.builder();
+
+        // Add all vertices
+        let mut vertex_indices: Vec<VertexIndex> = Vec::with_capacity(all_points.len());
+        for &p in &all_points {
+            let vi = builder.add_vertex(p, None);
+            vertex_indices.push(vi);
+        }
+
+        // Add boundary constraint edges
+        for i in 0..boundary_count {
+            let v0 = vertex_indices[i];
+            let v1 = vertex_indices[(i + 1) % boundary_count];
+            builder.add_constraint_edge(v0, v1, 1);
+        }
+        drop(builder);
+
+        // Extract finite triangles
+        let mut triangles: Vec<(usize, usize, usize)> = Vec::new();
+        for f in tri.face_index_iter() {
+            if tri.is_infinite_face(f) {
+                continue;
+            }
+
+            let v0 = tri[f].vertices[Rot3Idx::new(0)];
+            let v1 = tri[f].vertices[Rot3Idx::new(1)];
+            let v2 = tri[f].vertices[Rot3Idx::new(2)];
+
+            // Find the original indices
+            let i0 = vertex_indices.iter().position(|&v| v == v0).unwrap();
+            let i1 = vertex_indices.iter().position(|&v| v == v1).unwrap();
+            let i2 = vertex_indices.iter().position(|&v| v == v2).unwrap();
+
+            triangles.push((i0, i1, i2));
+        }
 
         // Step 3: Convert CDT integer points to world-space f32.
         let scale = self.hex_size / GRID_SCALE as f32;

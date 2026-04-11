@@ -166,3 +166,124 @@ fn fuzz_constrained_issue3() {
         assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
     }
 }
+
+#[test]
+fn fuzz_constrained_issue4() {
+    // Fuzz case: ConstrainedInput with 36 points and 45 edges
+    let mut tri = Triangulation::new_cdt();
+
+    let points = vec![
+        (10117, 1157),
+        (9984, 10239),
+        (23551, -212),
+        (-249, -59),
+        (-103, 10238),
+        (-18, -1),
+        (11519, -249),
+        (-1, -103),
+        (-163, -1),
+        (1945, -31444),
+        (-217, -23867),
+        (31487, 1279),
+        (-1, -26169),
+        (-31444, 10225),
+        (-59, -1),
+        (-217, 1836),
+        (-59, 27136),
+        (10239, -1),
+        (-14849, -1),
+        (-1, 11007),
+        (-37, -1),
+        (-1, -20481),
+        (-9253, -9253),
+        (-9253, -9253),
+        (-37, 10239),
+        (2047, -14849),
+        (-26113, -1),
+        (-9459, -1),
+        (-1, -1),
+        (-9467, -9253),
+        (-9253, -9253),
+        (-9253, 8667),
+        (9215, 7459),
+        (12579, -8),
+        (-8739, -8739),
+        (9983, -1),
+    ];
+
+    // Add vertices with Delaunay enabled (matching fuzzer behavior)
+    let mut builder = tri.builder();
+    let mut vertices = Vec::new();
+    for &(x, y) in &points {
+        let vi = builder.add_vertex(IVec2::new(x, y), None);
+        vertices.push(vi);
+    }
+    drop(builder);
+
+    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
+    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+
+    let n = vertices.len();
+    let edges = [
+        (255u8, 240u8),
+        (91u8, 255u8),
+        (255u8, 50u8),
+        (255u8, 252u8),
+        (219u8, 33u8),
+        (255u8, 35u8),
+        (29u8, 35u8),
+        (49u8, 248u8),
+        (255u8, 221u8),
+        (221u8, 221u8),
+        (255u8, 38u8),
+        (255u8, 122u8),
+        (255u8, 240u8),
+        (91u8, 255u8),
+        (255u8, 50u8),
+        (255u8, 252u8),
+        (39u8, 81u8),
+        (255u8, 0u8),
+        (240u8, 91u8),
+        (255u8, 255u8),
+        (51u8, 255u8),
+        (252u8, 255u8),
+        (39u8, 99u8),
+        (99u8, 99u8),
+        (129u8, 225u8),
+        (253u8, 43u8),
+        (255u8, 254u8),
+        (239u8, 5u8),
+        (255u8, 39u8),
+        (44u8, 7u8),
+        (197u8, 255u8),
+        (153u8, 255u8),
+        (93u8, 255u8),
+        (255u8, 199u8),
+        (7u8, 44u8),
+        (241u8, 39u8),
+        (197u8, 162u8),
+        (255u8, 122u8),
+        (4u8, 255u8),
+        (255u8, 199u8),
+        (7u8, 44u8),
+        (241u8, 39u8),
+        (197u8, 162u8),
+        (255u8, 122u8),
+        (3u8, 255u8),
+    ];
+
+    for &(a, b) in &edges {
+        let a = a as usize % n;
+        let b = b as usize % n;
+        if a == b {
+            continue;
+        }
+
+        let mut builder = tri.builder();
+        builder.add_constraint_edge(vertices[a], vertices[b], 1);
+        drop(builder);
+
+        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
+        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+    }
+}

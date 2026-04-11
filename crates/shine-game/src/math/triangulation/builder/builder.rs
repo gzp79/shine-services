@@ -9,20 +9,51 @@ use glam::IVec2;
 
 pub struct TriangulationBuilder<'a, const DELAUNAY: bool> {
     pub tri: &'a mut Triangulation<DELAUNAY>,
+
+    // Reusable buffers
+    pub(super) delaunay_stack: Option<Vec<FaceEdge>>,
+    pub(super) edge_chain: Option<Vec<FaceEdge>>,
+    pub(super) top_chain: Option<Vec<FaceEdge>>,
+    pub(super) bottom_chain: Option<Vec<FaceEdge>>,
 }
 
 impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
     pub fn new(tri: &'a mut Triangulation<DELAUNAY>) -> Self {
-        Self { tri }
+        Self {
+            tri,
+            delaunay_stack: if DELAUNAY { Some(Vec::new()) } else { None },
+            edge_chain: Some(Vec::new()),
+            top_chain: Some(Vec::new()),
+            bottom_chain: Some(Vec::new()),
+        }
+    }
+
+    pub fn add_contour(&mut self, p: &[IVec2]) {
+        assert!(p.len() >= 2);
+
+        let location = self.locate_position(p[0], None).unwrap();
+        let vi0 = self.add_vertex_at(p[0], location);
+
+        let mut hint = self.tri[vi0].face;
+        let mut vi_prev = vi0;
+
+        for i in 1..p.len() {
+            let location = self.locate_position(p[i], Some(hint)).unwrap();
+            let vi_next = self.add_vertex_at(p[i], location);
+            self.add_constraint_edge(vi_prev, vi_next, 1);
+
+            hint = self.tri[vi_next].face;
+            vi_prev = vi_next;
+        }
+
+        self.add_constraint_edge(vi_prev, vi0, 1);
+        self.delaunay_run();
     }
 
     pub fn add_vertex(&mut self, p: IVec2, hint: Option<FaceIndex>) -> VertexIndex {
         let location = self.locate_position(p, hint).unwrap();
-        let is_existing = matches!(location, Location::Vertex(..));
         let vi = self.add_vertex_at(p, location);
-        if DELAUNAY && !is_existing {
-            self.delaunay_restore_vertex(vi);
-        }
+        self.delaunay_run();
         vi
     }
 
@@ -50,30 +81,35 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             2 => self.add_constraint_dim2(v0, v1, c),
             _ => unreachable!("Inconsistent triangulation"),
         }
+
+        self.delaunay_run();
     }
 
     fn add_vertex_at(&mut self, p: IVec2, loc: Location) -> VertexIndex {
         match loc {
             Location::Empty => {
-                let vert = self.create_vertex_with_position(p);
-                self.extend_dimension(vert);
-                vert
+                let vi = self.create_vertex_with_position(p);
+                self.extend_dimension(vi);
+                vi
             }
             Location::Vertex(f, v) => self.tri[f].vertices[v],
             Location::Edge(f, e) => {
-                let vert = self.create_vertex_with_position(p);
-                self.split_edge(f, e, vert);
-                vert
+                let vi = self.create_vertex_with_position(p);
+                self.split_edge(f, e, vi);
+                self.delaunay_push_vertex(vi);
+                vi
             }
             Location::OutsideConvexHull(f) | Location::Face(f) => {
-                let vert = self.create_vertex_with_position(p);
-                self.split_face(f, vert);
-                vert
+                let vi = self.create_vertex_with_position(p);
+                self.split_face(f, vi);
+                self.delaunay_push_vertex(vi);
+                vi
             }
             Location::OutsideAffineHull => {
-                let vert = self.create_vertex_with_position(p);
-                self.extend_dimension(vert);
-                vert
+                let vi = self.create_vertex_with_position(p);
+                self.extend_dimension(vi);
+                self.delaunay_push_vertex(vi);
+                vi
             }
         }
     }
@@ -139,9 +175,13 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
 
     /// Adds the constraining edge between the two vertex when dim=2
     fn add_constraint_dim2(&mut self, mut v0: VertexIndex, v1: VertexIndex, c: u32) {
-        let mut edge_chain = Vec::new();
-        let mut top_chain = Vec::new();
-        let mut bottom_chain = Vec::new();
+        let mut edge_chain = self.edge_chain.take().expect("edge_chain lock");
+        let mut top_chain = self.top_chain.take().expect("top_chain lock");
+        let mut bottom_chain = self.bottom_chain.take().expect("bottom_chain lock");
+
+        edge_chain.clear();
+        top_chain.clear();
+        bottom_chain.clear();
 
         while v0 != v1 {
             // collect intersecting faces and generate the two (top/bottom) chains
@@ -188,32 +228,10 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             }
 
             if !top_chain.is_empty() {
-                // Collect all vertices from the hole for potential Delaunay restoration
-                let affected_vertices: Vec<VertexIndex> = if DELAUNAY {
-                    let mut vertices = Vec::new();
-                    for e in &top_chain {
-                        vertices.push(self.tri.vi(VertexClue::start_of(*e)));
-                    }
-                    for e in &bottom_chain {
-                        vertices.push(self.tri.vi(VertexClue::start_of(*e)));
-                    }
-                    vertices.push(self.tri.vi(VertexClue::end_of(*top_chain.last().unwrap())));
-                    vertices
-                } else {
-                    Vec::new()
-                };
-
                 v0 = self.tri.vi(VertexClue::end_of(*bottom_chain.last().unwrap()));
                 top_chain.reverse();
                 let edge = self.triangulate_hole(&mut top_chain, &mut bottom_chain);
                 self.merge_constraint(edge, c);
-
-                // Restore Delaunay property for vertices around the constraint
-                if DELAUNAY {
-                    for v in affected_vertices {
-                        self.delaunay_restore_vertex(v);
-                    }
-                }
             }
 
             edge_chain.clear();
@@ -221,12 +239,9 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             bottom_chain.clear();
         }
 
-        // Restore Delaunay property globally
-        // Constraint edges can affect the entire triangulation, and flipping edges
-        // around one vertex can create new violations around others
-        if DELAUNAY {
-            self.delaunay_restore_global();
-        }
+        self.edge_chain = Some(edge_chain);
+        self.top_chain = Some(top_chain);
+        self.bottom_chain = Some(bottom_chain);
     }
 
     fn triangulate_half_hole(&mut self, chain: &mut Vec<FaceEdge>) -> FaceEdge {
