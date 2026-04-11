@@ -70,8 +70,9 @@ impl CdtMesher {
         // where q,r are the axial coordinates. Scales are expressed as const integers including
         // the rounded irrational parts, so this allows performing CDT using only stable integer math.
 
-        let (boundary_points, boundary_edges) = self.hex_boundary_points();
+        let boundary_points = self.hex_boundary_points();
         let boundary_count = boundary_points.len();
+        let boundary_edges: Vec<_> = (0..boundary_count).map(|i| (i, (i + 1) % boundary_count)).collect();
         let interior_points = self.random_interior_points();
         let mut all_points: Vec<IVec2> = Vec::with_capacity(boundary_count + interior_points.len());
         all_points.extend_from_slice(&boundary_points);
@@ -93,7 +94,7 @@ impl CdtMesher {
         self.split_triangles_to_quad_mesh(&base_vertices, &triangles, boundary_count)
     }
 
-    fn hex_boundary_points(&self) -> (Vec<IVec2>, Vec<(usize, usize)>) {
+    fn hex_boundary_points(&self) -> Vec<IVec2> {
         let corners = AxialCoord::hex_corners(1);
         let n = 2u32.pow(self.subdivision - 1) as i32;
 
@@ -114,8 +115,7 @@ impl CdtMesher {
         }
         debug_assert_eq!(points.len(), total);
 
-        let edges: Vec<(usize, usize)> = (0..total).map(|i| (i, (i + 1) % total)).collect();
-        (points, edges)
+        points
     }
 
     fn random_interior_points(&mut self) -> Vec<IVec2> {
@@ -187,38 +187,26 @@ impl CdtMesher {
     ) -> QuadMesh {
         let mut positions: Vec<Vec2> = base_vertices.to_vec();
         let mut quads: Vec<[VertIdx; 4]> = Vec::with_capacity(triangles.len() * 3);
-        let mut is_boundary: Vec<bool> = (0..positions.len()).map(|i| i < boundary_count).collect();
-
-        // Identify the 6 hex corners in the base boundary
-        // Boundary points are laid out as: n points per edge, 6 edges total
-        // Corners are at indices: 0, n, 2n, 3n, 4n, 5n
-        let n = 2u32.pow(self.subdivision - 1) as usize;
-        let anchor_vertices: Vec<VertIdx> = (0..6).map(|i| VertIdx::new(i * n)).collect();
 
         // Cache edge midpoints: (min_idx, max_idx) -> vertex index
         let mut midpoint_cache: HashMap<(usize, usize), usize> = HashMap::new();
 
-        let mut get_midpoint = |positions: &mut Vec<Vec2>, is_boundary: &mut Vec<bool>, a: usize, b: usize| -> usize {
+        let mut get_midpoint = |positions: &mut Vec<Vec2>, a: usize, b: usize| -> usize {
             let key = if a < b { (a, b) } else { (b, a) };
             *midpoint_cache.entry(key).or_insert_with(|| {
                 let idx = positions.len();
                 positions.push((positions[a] + positions[b]) / 2.0);
-                // Midpoint on a boundary edge (both endpoints are boundary) is also boundary
-                is_boundary.push(a < boundary_count && b < boundary_count);
                 idx
             })
         };
 
         for &(a, b, c) in triangles {
-            // Centroid (never boundary)
             let centroid_idx = positions.len();
             positions.push((positions[a] + positions[b] + positions[c]) / 3.0);
-            is_boundary.push(false);
 
-            // Edge midpoints
-            let m_ab = get_midpoint(&mut positions, &mut is_boundary, a, b);
-            let m_bc = get_midpoint(&mut positions, &mut is_boundary, b, c);
-            let m_ca = get_midpoint(&mut positions, &mut is_boundary, c, a);
+            let m_ab = get_midpoint(&mut positions, a, b);
+            let m_bc = get_midpoint(&mut positions, b, c);
+            let m_ca = get_midpoint(&mut positions, c, a);
 
             // 3 quads per triangle
             quads.push([a, m_ab, centroid_idx, m_ca].map(VertIdx::new));
@@ -227,20 +215,17 @@ impl CdtMesher {
         }
 
         // Build subdivided boundary polygon by inserting midpoints between base boundary vertices
-        let mut polygon = Vec::new();
+        let mut polygon = Vec::with_capacity(boundary_count * 2);
         for i in 0..boundary_count {
-            let v0 = i;
-            let v1 = (i + 1) % boundary_count;
-
-            // Add the base boundary vertex
-            polygon.push(VertIdx::new(v0));
-
-            // Add the midpoint between this vertex and the next
-            let mid_idx = get_midpoint(&mut positions, &mut is_boundary, v0, v1);
+            polygon.push(VertIdx::new(i));
+            let mid_idx = get_midpoint(&mut positions, i, (i + 1) % boundary_count);
             polygon.push(VertIdx::new(mid_idx));
         }
 
-        QuadMesh::from_polygon_with_anchors(positions, polygon, anchor_vertices, quads)
-            .expect("valid CDT mesh topology")
+        // The 6 hex corner vertices are still in the polygon at their original indices.
+        let n = 2u32.pow(self.subdivision - 1) as usize;
+        let anchors: Vec<VertIdx> = (0..6).map(|i| VertIdx::new(i * n)).collect();
+
+        QuadMesh::from_polygon(positions, polygon, anchors, quads).expect("valid CDT mesh topology")
     }
 }

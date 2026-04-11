@@ -168,6 +168,10 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
         }
     };
 
+    mesh.topology
+        .validate()
+        .map_err(|e| JsValue::from_str(&format!("Invalid mesh topology: {:?}", e)))?;
+
     // Step 2: Apply filter pipeline
     for filter_cfg in config.filters {
         let mut filter: Box<dyn QuadFilter> = match filter_cfg {
@@ -191,20 +195,21 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
 }
 
 fn quad_mesh_to_wasm(mesh: &QuadMesh, world_size: f32) -> WasmPatchMesh {
-    let vertex_count = mesh.topology().vertex_count();
-    let quad_count = mesh.topology().quad_count();
+    let topology = &mesh.topology;
+    let vertex_count = topology.vertex_count();
+    let quad_count = topology.quad_count();
 
     let mut flat_vertices = Vec::with_capacity(vertex_count * 2);
-    for vi in mesh.vertex_indices() {
-        let p = mesh.position(vi);
+    for vi in topology.vertex_indices() {
+        let p = mesh.vertices[vi];
         flat_vertices.push(p.x);
         flat_vertices.push(p.y);
     }
 
     let mut indices = Vec::with_capacity(quad_count * 4);
     let mut patch_indices = Vec::with_capacity(quad_count);
-    for qi in mesh.topology().quad_indices() {
-        let verts = mesh.topology().quad_vertices(qi);
+    for qi in topology.quad_indices() {
+        let verts = topology.quad_vertices(qi);
         for &v in &verts {
             indices.push(v.into_index() as u32);
         }
@@ -245,13 +250,13 @@ fn quad_mesh_to_wasm(mesh: &QuadMesh, world_size: f32) -> WasmPatchMesh {
     // Build anchor edges from anchor_vertices in topology
     let mut anchor_indices = Vec::new();
     let mut anchor_edge_starts = Vec::new();
-    let anchor_count = mesh.topology().anchor_vertices.len();
+    let anchor_count = topology.anchor_vertices.len();
 
     for edge_idx in 0..anchor_count {
         // Record the start index for this anchor edge
         anchor_edge_starts.push((anchor_indices.len() / 2) as u32);
 
-        let anchor_verts: Vec<_> = mesh.topology().anchor_edge(edge_idx).collect();
+        let anchor_verts: Vec<_> = topology.anchor_edge(edge_idx).collect();
         // Create line segments between consecutive vertices
         for window in anchor_verts.windows(2) {
             anchor_indices.push(window[0].into_index() as u32);

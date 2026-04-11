@@ -140,7 +140,6 @@ export interface InitOutput {
     readonly wasmcdt_vertex_count: (a: number) => number;
     readonly wasmcdt_vertices: (a: number) => [number, number];
     readonly __wbg_wasmworld_free: (a: number, b: number) => void;
-    readonly start: () => void;
     readonly wasmworld_boundary_edge_dual_polygons: (a: number, b: number, c: number, d: number) => [number, number];
     readonly wasmworld_boundary_edge_dual_vertices: (a: number, b: number, c: number, d: number) => [number, number];
     readonly wasmworld_boundary_vertex_dual_polygons: (a: number, b: number, c: number, d: number) => [number, number];
@@ -157,6 +156,7 @@ export interface InitOutput {
     readonly wasmworld_new: () => number;
     readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
     readonly wasmworld_boundary_vertex_dual_vertices: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly start: () => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

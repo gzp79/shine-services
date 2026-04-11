@@ -18,20 +18,12 @@ impl QuadMesh {
     pub fn from_polygon(
         positions: Vec<Vec2>,
         polygon: Vec<VertIdx>,
-        quads: Vec<[VertIdx; 4]>,
-    ) -> Result<Self, QuadTopologyError> {
-        Self::from_polygon_with_anchors(positions, polygon, vec![], quads)
-    }
-
-    pub fn from_polygon_with_anchors(
-        positions: Vec<Vec2>,
-        polygon: Vec<VertIdx>,
-        anchor_vertices: Vec<VertIdx>,
+        anchors: Vec<VertIdx>,
         quads: Vec<[VertIdx; 4]>,
     ) -> Result<Self, QuadTopologyError> {
         let vertex_count = positions.len();
-        let positions = IdxVec::from_vec(positions);
-        let topology = QuadTopology::from_polygon(vertex_count, polygon, anchor_vertices, quads)?;
+        let positions = IdxVec::from(positions);
+        let topology = QuadTopology::from_polygon(vertex_count, polygon, anchors, quads)?;
 
         // Compute quad centers for all real quads
         let mut quad_centers = IdxVec::with_capacity(topology.quad_count());
@@ -50,17 +42,5 @@ impl QuadMesh {
             vertices: positions,
             quad_centers,
         })
-    }
-
-    pub fn position(&self, vi: VertIdx) -> Vec2 {
-        self.vertices[vi]
-    }
-
-    pub fn topology(&self) -> &QuadTopology {
-        &self.topology
-    }
-
-    pub fn vertex_indices(&self) -> impl Iterator<Item = VertIdx> {
-        self.topology.vertex_indices()
     }
 }

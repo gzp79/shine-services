@@ -6,7 +6,6 @@ use crate::{
     },
 };
 use glam::Vec2;
-use std::collections::HashSet;
 
 /// Generates a quad mesh inside a hexagon using 3-patch subdivision.
 ///
@@ -60,25 +59,22 @@ impl PatchMesher {
         let indexer = AxialDenseIndexer::new(radius);
         let orientation = self.orientation;
 
-        let mut positions = vec![Vec2::ZERO; indexer.get_total_size()];
+        let total = indexer.get_total_size();
+        let mut positions = vec![Vec2::ZERO; total];
+        let mut placed = vec![false; total];
 
         // Place 6 hex corner vertices
         let hex_corners = AxialCoord::hex_corners(radius);
         for coord in &hex_corners {
             let idx = indexer.get_dense_index(coord);
             positions[idx] = coord.vertex_position(self.hex_size);
+            placed[idx] = true;
         }
 
         // Place center at origin
         let center_idx = indexer.get_dense_index(&AxialCoord::origin());
         positions[center_idx] = Vec2::ZERO;
-
-        // Track which vertices have been placed
-        let mut placed: HashSet<usize> = HashSet::new();
-        for coord in &hex_corners {
-            placed.insert(indexer.get_dense_index(coord));
-        }
-        placed.insert(center_idx);
+        placed[center_idx] = true;
 
         for depth in 0..self.subdivision {
             let parent_grid = 2i32.pow(depth);
@@ -112,11 +108,11 @@ impl PatchMesher {
                         });
                         for edge_idx in 0..4 {
                             let mid_dense = indexer.get_dense_index(&edge_coords[edge_idx]);
-                            if !placed.contains(&mid_dense) {
+                            if !placed[mid_dense] {
                                 let a_pos = positions[indexer.get_dense_index(&corners[edge_idx])];
                                 let b_pos = positions[indexer.get_dense_index(&corners[(edge_idx + 1) % 4])];
                                 positions[mid_dense] = (a_pos + b_pos) / 2.0;
-                                placed.insert(mid_dense);
+                                placed[mid_dense] = true;
                             }
                         }
 
@@ -129,11 +125,18 @@ impl PatchMesher {
                         );
                         let face_dense = indexer.get_dense_index(&face_coord);
                         positions[face_dense] = face_pos;
-                        placed.insert(face_dense);
+                        placed[face_dense] = true;
                     }
                 }
             }
         }
+
+        debug_assert!(
+            placed.iter().all(|&p| p),
+            "subdivision did not place all {} vertices ({} missing)",
+            total,
+            placed.iter().filter(|&&p| !p).count()
+        );
 
         self.build_quad_mesh(positions)
     }
@@ -152,13 +155,6 @@ impl PatchMesher {
             }
         }
 
-        // Identify 6 hex corners as anchor vertices
-        let hex_corners = AxialCoord::hex_corners(radius);
-        let anchor_vertices: Vec<VertIdx> = hex_corners
-            .iter()
-            .map(|coord| VertIdx::new(indexer.get_dense_index(coord)))
-            .collect();
-
         // Build quad indices
         let patch_indexer = PatchDenseIndexer::new(self.subdivision);
         let mut quads = Vec::with_capacity(patch_indexer.get_total_size());
@@ -173,8 +169,13 @@ impl PatchMesher {
             }
         }
 
-        QuadMesh::from_polygon_with_anchors(positions, polygon, anchor_vertices, quads)
-            .expect("valid patch mesh topology")
+        let hex_corners = AxialCoord::hex_corners(radius);
+        let anchors: Vec<VertIdx> = hex_corners
+            .iter()
+            .map(|c| VertIdx::new(indexer.get_dense_index(c)))
+            .collect();
+
+        QuadMesh::from_polygon(positions, polygon, anchors, quads).expect("valid patch mesh topology")
     }
 }
 

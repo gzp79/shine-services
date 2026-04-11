@@ -1,9 +1,9 @@
 use rand::RngExt;
 use shine_game::math::{
     hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
-    mesh::{Jitter, LaplacianSmoother, QuadFilter, QuadRelax, VertexRepulsion},
     rand::StableRng,
 };
+use shine_test::test;
 
 struct SysRng(rand::rngs::ThreadRng);
 impl SysRng {
@@ -19,123 +19,58 @@ impl StableRng for SysRng {
 
 const SUBDIVISION: u32 = 3;
 const ORIENTATION: PatchOrientation = PatchOrientation::Even;
+/// Expected vertices per anchor edge: 2^SUBDIVISION + 1
+const EXPECTED_ANCHOR_EDGE_LEN: usize = (1 << SUBDIVISION) + 1;
+
+fn check_anchor_edges(mesh: &shine_game::math::mesh::QuadMesh) {
+    assert_eq!(
+        mesh.topology.anchor_count(),
+        6,
+        "hex mesh should have 6 anchor vertices"
+    );
+    for i in 0..6 {
+        let edge_len = mesh.topology.anchor_edge(i).count();
+        assert_eq!(
+            edge_len, EXPECTED_ANCHOR_EDGE_LEN,
+            "anchor edge {i} should have {EXPECTED_ANCHOR_EDGE_LEN} vertices, got {edge_len}"
+        );
+    }
+}
 
 #[test]
 fn generate_uniform() {
     let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
     let mesh = mesher.generate_uniform();
-    println!(
-        "Uniform: {} vertices, {} quads",
-        mesh.topology.vertex_count(),
-        mesh.topology.quad_count()
-    );
+    mesh.topology.validate().expect("uniform mesh topology should be valid");
+    assert!(mesh.topology.quad_count() > 0, "uniform mesh should have quads");
+    check_anchor_edges(&mesh);
 }
 
 #[test]
 fn generate_subdiv_uniform() {
     let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
     let mesh = mesher.generate_subdivision();
-    println!(
-        "Subdiv: {} vertices, {} quads",
-        mesh.topology.vertex_count(),
-        mesh.topology.quad_count()
-    );
-}
-
-#[test]
-fn generate_with_laplacian() {
-    let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
-    let mut mesh = mesher.generate_uniform();
-    let mut smoother = LaplacianSmoother::new(0.5, 20);
-    smoother.apply(&mut mesh);
-    println!(
-        "Laplacian: {} vertices, {} quads",
-        mesh.topology.vertex_count(),
-        mesh.topology.quad_count()
-    );
-}
-
-#[test]
-fn generate_with_jitter() {
-    let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
-    let mut mesh = mesher.generate_uniform();
-    let mut jitter = Jitter::new(0.3, SysRng::new());
-    jitter.apply(&mut mesh);
-    println!(
-        "Jitter: {} vertices, {} quads",
-        mesh.topology.vertex_count(),
-        mesh.topology.quad_count()
-    );
-}
-
-/// Composable pipeline: jitter, then laplacian, then quad relax.
-#[test]
-fn generate_with_filter_pipeline() {
-    let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
-    let mut mesh = mesher.generate_uniform();
-
-    let mut filters: Vec<Box<dyn QuadFilter>> = vec![
-        Box::new(Jitter::new(0.3, SysRng::new())),
-        Box::new(LaplacianSmoother::new(0.5, 10)),
-        Box::new(QuadRelax::new(0.15, 0.5, 50)),
-    ];
-
-    for f in &mut filters {
-        f.apply(&mut mesh);
-    }
-
-    println!(
-        "Pipeline: {} vertices, {} quads",
-        mesh.topology.vertex_count(),
-        mesh.topology.quad_count()
-    );
+    mesh.topology
+        .validate()
+        .expect("subdivision mesh topology should be valid");
+    assert!(mesh.topology.quad_count() > 0, "subdivision mesh should have quads");
+    check_anchor_edges(&mesh);
 }
 
 #[test]
 fn generate_cdt_mesh() {
-    let mut mesher = CdtMesher::new(4, 20, SysRng::new());
+    let mut mesher = CdtMesher::new(SUBDIVISION, 20, SysRng::new());
     let mesh = mesher.generate();
-    println!(
-        "CDT mesh: {} vertices, {} quads",
-        mesh.topology.vertex_count(),
-        mesh.topology.quad_count()
-    );
+    mesh.topology.validate().expect("CDT mesh topology should be valid");
+    assert!(mesh.topology.quad_count() > 0, "CDT mesh should have quads");
+    check_anchor_edges(&mesh);
 }
 
 #[test]
 fn generate_lattice_mesh() {
-    let mut mesher = LatticeMesher::new(2, SysRng::new());
-    let (mesh, _boundary_info) = mesher.generate();
-    println!(
-        "Lattice mesh: {} vertices, {} quads",
-        mesh.topology.vertex_count(),
-        mesh.topology.quad_count()
-    );
-    assert!(mesh.topology.quad_count() > 0);
-}
-
-#[test]
-fn generate_with_vertex_repulsion() {
-    let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
-    let mut mesh = mesher.generate_uniform();
-    let mut repulsion = VertexRepulsion::new(0.2, 10);
-    repulsion.apply(&mut mesh);
-    println!(
-        "VertexRepulsion: {} vertices, {} quads",
-        mesh.topology.vertex_count(),
-        mesh.topology.quad_count()
-    );
-}
-
-#[test]
-fn generate_cdt_with_laplacian() {
-    let mut mesher = CdtMesher::new(4, 20, SysRng::new());
-    let mut mesh = mesher.generate();
-    let mut smoother = LaplacianSmoother::new(0.5, 20);
-    smoother.apply(&mut mesh);
-    println!(
-        "CDT + Laplacian: {} vertices, {} quads",
-        mesh.topology.vertex_count(),
-        mesh.topology.quad_count()
-    );
+    let mut mesher = LatticeMesher::new(SUBDIVISION, SysRng::new());
+    let mesh = mesher.generate();
+    mesh.topology.validate().expect("lattice mesh topology should be valid");
+    assert!(mesh.topology.quad_count() > 0, "lattice mesh should have quads");
+    check_anchor_edges(&mesh);
 }

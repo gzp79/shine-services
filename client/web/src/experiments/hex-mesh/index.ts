@@ -67,9 +67,6 @@ export async function createHexMeshExperiment(container: HTMLElement): Promise<H
                 anchorEdgeStarts: wasmMesh.anchor_edge_starts()
             };
 
-            console.log(
-                `Generated: ${wasmMesh.vertex_count()} vertices, ${wasmMesh.quad_count()} quads, ${wasmMesh.dual_edge_count()} dual edges, world_size: ${worldSize}`
-            );
             wasmMesh.free();
 
             currentMesh = buildHexMesh(data);

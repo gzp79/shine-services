@@ -1,5 +1,6 @@
 use glam::IVec2;
 use shine_game::math::cdt::{CdtError, Triangulation};
+use shine_test::test;
 
 fn iv(x: i32, y: i32) -> IVec2 {
     IVec2::new(x, y)
@@ -211,6 +212,26 @@ fn new_from_contours() {
     if let Err(e) = t {
         assert!(e == CdtError::OpenContour);
     }
+}
+
+/// Fuzz regression: constraint walk used to escape the wedge when the hull
+/// was non-convex during incremental construction.  With phase separation
+/// (all points first, then constraints), this now succeeds.
+#[test]
+fn fuzz_crash_walk_hits_hull() {
+    let points = vec![
+        iv(21845, 21845),
+        iv(-1, -17),
+        iv(-1, 3327),
+        iv(-1, -1),
+        iv(7679, -1),
+        iv(-4, -257),
+        iv(-1, -36),
+        iv(11992, -4306),
+    ];
+    let edges = vec![(3, 5)];
+    let t = Triangulation::build_with_edges(&points, &edges).unwrap();
+    t.check();
 }
 
 /// Fuzz test: random constraints that may cross without intersection points as vertices.

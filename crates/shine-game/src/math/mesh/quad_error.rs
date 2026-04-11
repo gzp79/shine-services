@@ -33,9 +33,27 @@ pub enum QuadTopologyError {
     #[error("Ghost quad {quad} has {count} ghost vertices (expected 1)")]
     InvalidGhostQuadStructure { quad: usize, count: usize },
 
+    #[error("ghost_quad_count mismatch: field says {expected}, actual {actual}")]
+    GhostQuadCountMismatch { expected: usize, actual: usize },
+
     #[error("Vertex {vertex} ring traversal does not form a closed loop")]
     VertexRingNotClosed { vertex: usize },
 
     #[error("Anchor edge {edge} is not a subsequence of boundary vertices")]
     InvalidAnchorEdge { edge: usize },
+
+    #[error("vertex_quad[{vertex}] references vertex {actual} instead of {vertex}")]
+    VertexQuadMismatch { vertex: usize, actual: usize },
+
+    #[error("Quad {quad} has duplicate vertex {vertex}")]
+    DegenerateQuad { quad: usize, vertex: usize },
+
+    #[error("Quad {quad} is not reachable from any vertex ring")]
+    UnreachableQuad { quad: usize },
+
+    #[error("Edge twin is not an involution: quad {quad} edge {edge}")]
+    EdgeTwinNotInvolution { quad: usize, edge: usize },
+
+    #[error("Ghost quads are not compact: ghost quad {ghost_quad} precedes real quad {real_quad}")]
+    GhostQuadsNotCompact { ghost_quad: usize, real_quad: usize },
 }

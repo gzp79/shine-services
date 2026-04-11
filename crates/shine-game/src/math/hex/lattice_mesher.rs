@@ -7,7 +7,7 @@ use crate::{
     },
 };
 use glam::Vec2;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Generates a quad mesh by triangulating axial hex coordinates, then randomly
 /// merging triangle pairs into quads, and finally subdividing all faces
@@ -46,64 +46,38 @@ impl LatticeMesher {
 
         // Step 1: Vertex positions
         let mut positions = vec![Vec2::ZERO; indexer.get_total_size()];
-        let mut is_boundary = vec![false; indexer.get_total_size()];
         let mut boundary_polygon = Vec::new();
         for coord in AxialCoord::origin().spiral(radius) {
             let idx = indexer.get_dense_index(&coord);
             positions[idx] = coord.vertex_position(self.hex_size);
-            is_boundary[idx] = coord.is_boundary(radius);
             if coord.is_boundary(radius) {
                 boundary_polygon.push(VertIdx::new(idx));
             }
         }
 
-        // Identify 6 hex corners in CCW order (before subdivision)
-        let r = radius as i32;
-        let corner_coords = [
-            AxialCoord::new(r, 0),       // East
-            AxialCoord::new(0, r),       // Southeast
-            AxialCoord::new(-r, r),      // Southwest
-            AxialCoord::new(-r, 0),      // West
-            AxialCoord::new(0, -r),      // Northwest
-            AxialCoord::new(r, -r),      // Northeast
-        ];
-        let anchor_vertices: Vec<VertIdx> = corner_coords
+        // 6 hex corner vertices as anchors
+        let hex_corners = AxialCoord::hex_corners(radius);
+        let anchors: Vec<VertIdx> = hex_corners
             .iter()
-            .map(|coord| VertIdx::new(indexer.get_dense_index(coord)))
+            .map(|c| VertIdx::new(indexer.get_dense_index(c)))
             .collect();
 
         // Step 2: Enumerate all triangles from the axial triangular lattice.
-        // From each vertex, generate 6 triangles (one per pair of adjacent neighbors).
-        // Each triangle will be generated 3 times, so deduplicate using unordered edge sets.
-        let mut triangle_set: std::collections::HashSet<[usize; 3]> = std::collections::HashSet::new();
+        // Each vertex generates 6 triangles (one per adjacent neighbor pair).
+        // Deduplicate via sorted canonical form.
+        let origin = AxialCoord::origin();
+        let mut triangle_set: HashSet<[usize; 3]> = HashSet::new();
 
-        for coord in AxialCoord::origin().spiral(radius) {
+        for coord in origin.spiral(radius) {
             let a_idx = indexer.get_dense_index(&coord);
+            let neighbors: Vec<_> = coord.neighbors().collect();
 
-            // 6 neighbors in CCW order
-            let neighbors = [
-                AxialCoord::new(coord.q + 1, coord.r),     // East
-                AxialCoord::new(coord.q, coord.r + 1),     // Southeast
-                AxialCoord::new(coord.q - 1, coord.r + 1), // Southwest
-                AxialCoord::new(coord.q - 1, coord.r),     // West
-                AxialCoord::new(coord.q, coord.r - 1),     // Northwest
-                AxialCoord::new(coord.q + 1, coord.r - 1), // Northeast
-            ];
-
-            // Generate 6 triangles around this vertex
             for i in 0..6 {
                 let b = neighbors[i];
                 let c = neighbors[(i + 1) % 6];
 
-                // Only include triangle if all vertices are within the hex
-                if b.distance(&AxialCoord::origin()) <= radius as i32
-                    && c.distance(&AxialCoord::origin()) <= radius as i32
-                {
-                    let b_idx = indexer.get_dense_index(&b);
-                    let c_idx = indexer.get_dense_index(&c);
-
-                    // Create canonical form (sorted) for deduplication
-                    let mut tri = [a_idx, b_idx, c_idx];
+                if b.distance(&origin) <= radius as i32 && c.distance(&origin) <= radius as i32 {
+                    let mut tri = [a_idx, indexer.get_dense_index(&b), indexer.get_dense_index(&c)];
                     tri.sort_unstable();
                     triangle_set.insert(tri);
                 }
@@ -111,21 +85,17 @@ impl LatticeMesher {
         }
 
         // Convert to vec with proper CCW winding
-        let mut triangles: Vec<[usize; 3]> = Vec::new();
-        for tri in triangle_set {
-            let [a, b, c] = tri;
-            // Ensure CCW winding using signed area
-            let pa = positions[a];
-            let pb = positions[b];
-            let pc = positions[c];
-            let signed_area = (pb.x - pa.x) * (pc.y - pa.y) - (pc.x - pa.x) * (pb.y - pa.y);
-
-            if signed_area > 0.0 {
-                triangles.push([a, b, c]);
-            } else {
-                triangles.push([a, c, b]); // Flip to CCW
-            }
-        }
+        let triangles: Vec<[usize; 3]> = triangle_set
+            .into_iter()
+            .map(|[a, b, c]| {
+                let signed_area = (positions[b] - positions[a]).perp_dot(positions[c] - positions[a]);
+                if signed_area > 0.0 {
+                    [a, b, c]
+                } else {
+                    [a, c, b]
+                }
+            })
+            .collect();
 
         // Step 3: Build edge→triangle adjacency
         // edge key: (min_idx, max_idx) → list of triangle indices sharing that edge
@@ -183,32 +153,26 @@ impl LatticeMesher {
         }
 
         // Step 5: Subdivide all faces into quads via centroid + edge midpoints
-        // Pass anchor_vertices (6 corners) to create topology with hex edge markers
-        self.subdivide_faces(&positions, &is_boundary, &faces, boundary_polygon, anchor_vertices)
+        self.subdivide_faces(positions, &faces, boundary_polygon, anchors)
     }
 
     fn subdivide_faces(
         &self,
-        base_positions: &[Vec2],
-        base_is_boundary: &[bool],
+        mut positions: Vec<Vec2>,
         faces: &[Face],
         base_boundary_polygon: Vec<VertIdx>,
-        base_anchor_vertices: Vec<VertIdx>,
+        anchors: Vec<VertIdx>,
     ) -> QuadMesh {
-        let base_count = base_positions.len();
-        let mut positions: Vec<Vec2> = base_positions.to_vec();
-        let mut is_boundary: Vec<bool> = base_is_boundary.to_vec();
         let mut quads: Vec<[VertIdx; 4]> = Vec::new();
 
         // Cache edge midpoints: (min_idx, max_idx) → vertex index
         let mut midpoint_cache: HashMap<(usize, usize), usize> = HashMap::new();
 
-        let mut get_midpoint = |positions: &mut Vec<Vec2>, is_boundary: &mut Vec<bool>, a: usize, b: usize| -> usize {
+        let mut get_midpoint = |positions: &mut Vec<Vec2>, a: usize, b: usize| -> usize {
             let key = if a < b { (a, b) } else { (b, a) };
             *midpoint_cache.entry(key).or_insert_with(|| {
                 let idx = positions.len();
                 positions.push((positions[a] + positions[b]) / 2.0);
-                is_boundary.push(a < base_count && b < base_count && is_boundary[a] && is_boundary[b]);
                 idx
             })
         };
@@ -218,11 +182,10 @@ impl LatticeMesher {
                 Face::Tri([a, b, c]) => {
                     let centroid_idx = positions.len();
                     positions.push((positions[a] + positions[b] + positions[c]) / 3.0);
-                    is_boundary.push(false);
 
-                    let m_ab = get_midpoint(&mut positions, &mut is_boundary, a, b);
-                    let m_bc = get_midpoint(&mut positions, &mut is_boundary, b, c);
-                    let m_ca = get_midpoint(&mut positions, &mut is_boundary, c, a);
+                    let m_ab = get_midpoint(&mut positions, a, b);
+                    let m_bc = get_midpoint(&mut positions, b, c);
+                    let m_ca = get_midpoint(&mut positions, c, a);
 
                     quads.push([a, m_ab, centroid_idx, m_ca].map(VertIdx::new));
                     quads.push([b, m_bc, centroid_idx, m_ab].map(VertIdx::new));
@@ -231,12 +194,11 @@ impl LatticeMesher {
                 Face::Quad([a, b, c, d]) => {
                     let centroid_idx = positions.len();
                     positions.push((positions[a] + positions[b] + positions[c] + positions[d]) / 4.0);
-                    is_boundary.push(false);
 
-                    let m_ab = get_midpoint(&mut positions, &mut is_boundary, a, b);
-                    let m_bc = get_midpoint(&mut positions, &mut is_boundary, b, c);
-                    let m_cd = get_midpoint(&mut positions, &mut is_boundary, c, d);
-                    let m_da = get_midpoint(&mut positions, &mut is_boundary, d, a);
+                    let m_ab = get_midpoint(&mut positions, a, b);
+                    let m_bc = get_midpoint(&mut positions, b, c);
+                    let m_cd = get_midpoint(&mut positions, c, d);
+                    let m_da = get_midpoint(&mut positions, d, a);
 
                     quads.push([a, m_ab, centroid_idx, m_da].map(VertIdx::new));
                     quads.push([b, m_bc, centroid_idx, m_ab].map(VertIdx::new));
@@ -247,45 +209,16 @@ impl LatticeMesher {
         }
 
         // Build subdivided boundary polygon by inserting midpoints between base boundary vertices
-        // For each edge (v_i, v_{i+1}) in base boundary, include: v_i, midpoint(v_i, v_{i+1})
         let mut boundary_polygon = Vec::new();
         for i in 0..base_boundary_polygon.len() {
             let v0 = base_boundary_polygon[i].into_index();
             let v1 = base_boundary_polygon[(i + 1) % base_boundary_polygon.len()].into_index();
-
-            // Add the base vertex
             boundary_polygon.push(VertIdx::new(v0));
-
-            // Ensure midpoint exists (create if not already cached)
-            let mid_idx = get_midpoint(&mut positions, &mut is_boundary, v0, v1);
+            let mid_idx = get_midpoint(&mut positions, v0, v1);
             boundary_polygon.push(VertIdx::new(mid_idx));
         }
 
-        // Create mesh with anchor vertices marking the 6 hex corners
-        let topology = crate::math::mesh::QuadTopology::from_polygon(
-            positions.len(),
-            boundary_polygon,
-            base_anchor_vertices,
-            quads.iter().map(|q| q.map(|v| v)).collect(),
-        )
-        .expect("valid lattice mesh topology");
-
-        let mut quad_centers = crate::indexed::IdxVec::with_capacity(topology.quad_count());
-        for qi in topology.quad_indices() {
-            let verts = topology.quad_vertices(qi);
-            let mut center = Vec2::ZERO;
-            for &v in &verts {
-                center += positions[v.into_index()];
-            }
-            center /= 4.0;
-            quad_centers.push(center);
-        }
-
-        QuadMesh {
-            topology,
-            vertices: crate::indexed::IdxVec::from_vec(positions),
-            quad_centers,
-        }
+        QuadMesh::from_polygon(positions, boundary_polygon, anchors, quads).expect("valid lattice mesh topology")
     }
 }
 

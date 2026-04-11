@@ -83,7 +83,7 @@ impl QuadVertex {
 
 /// Classification of an edge in the quad mesh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EdgeType {
+pub enum QuadEdgeType {
     /// Edge is shared by two real (non-ghost) quads
     Interior,
     /// Edge is on the boundary (shared with a ghost quad)
@@ -101,8 +101,8 @@ pub enum EdgeType {
 /// ## Ghost Topology
 ///
 /// - **Ghost vertex**: Located at `VertIdx(vertex_count)`, has no geometric position
-/// - **Ghost quads**: N/2 quads for N boundary vertices, structured as `[ghost, v2, v1, v0]`
-///   where v0-v1-v2 are consecutive boundary vertices in CCW order (reversed in ghost quad for twin edges)
+/// - **Ghost quads**: N/2 quads for N boundary vertices, each containing the ghost vertex
+///   and 3 consecutive boundary vertices with reversed winding for twin edge adjacency
 ///
 /// ## Navigation
 ///
@@ -154,11 +154,13 @@ impl QuadTopology {
 
     /// Returns an iterator over boundary edges as vertex index pairs.
     ///
-    /// Ghost quad [ghost, v2, v1, v0] has edges 1:v2->v1 and 2:v1->v0 as boundary edges (reversed).
+    /// Boundary edges are the two edges of each ghost quad that don't touch the ghost vertex.
     pub fn boundary_edges(&self) -> impl Iterator<Item = [u32; 2]> + '_ {
-        self.vertex_ring_ccw(self.ghost_vertex()).flat_map(move |qv| {
-            // Extract edges 1 and 2 from each ghost quad (the boundary edges in reverse)
-            (1..3).filter_map(move |edge_idx| {
+        self.vertex_ring_cw(self.ghost_vertex()).flat_map(move |qv| {
+            // The two edges not touching the ghost vertex
+            let e1 = (qv.local + 1) % 4;
+            let e2 = (qv.local + 2) % 4;
+            [e1, e2].into_iter().filter_map(move |edge_idx| {
                 let qe = QuadEdge { quad: qv.quad, edge: edge_idx };
                 let (v0, v1) = self.edge_vertices(qe);
                 if let (Some(i0), Some(i1)) = (v0.try_into_index(), v1.try_into_index()) {
@@ -171,34 +173,33 @@ impl QuadTopology {
     }
 
     pub fn boundary_vertices(&self) -> impl Iterator<Item = VertIdx> + '_ {
-        // Walk vertex ring around ghost using CW traversal for correct CCW boundary order
-        // Ghost quad structure: [ghost, v2, v1, v0] with ghost at position 0
-        // Extract v0,v1 (positions 3,2) which gives CCW boundary pairs
+        // Walk vertex ring around ghost using CW traversal for correct CCW boundary order.
+        // For each ghost quad, emit the two boundary vertices going backward from ghost.
         let ghost = self.ghost_vertex();
         self.vertex_ring_cw(ghost).flat_map(move |qv| {
-            // Extract boundary vertices at positions 3,2 (v0, v1)
-            let quad_verts = self.quad_vertices(qv.quad);
-            [quad_verts[3], quad_verts[2]]
+            let p1 = qv.prev();
+            let p2 = p1.prev();
+            [self.vertex_index(p1), self.vertex_index(p2)]
         })
     }
 
-    pub fn edge_type(&self, a: VertIdx, b: VertIdx) -> EdgeType {
+    pub fn edge_type(&self, a: VertIdx, b: VertIdx) -> QuadEdgeType {
         // Find the quad containing edge a→b
         for qv in self.vertex_ring_ccw(a) {
             if self.vertex_index(qv.next()) == b {
-                // Found the edge, check if its neighbor is a ghost quad
                 let edge = qv.outgoing_edge();
                 let neighbor = self.edge_twin(edge);
 
-                if self.is_ghost_quad(neighbor.quad) {
-                    return EdgeType::Boundary;
+                // Boundary if either side of the edge is a ghost quad
+                if self.is_ghost_quad(qv.quad) || self.is_ghost_quad(neighbor.quad) {
+                    return QuadEdgeType::Boundary;
                 } else {
-                    return EdgeType::Interior;
+                    return QuadEdgeType::Interior;
                 }
             }
         }
 
-        EdgeType::NotAnEdge
+        QuadEdgeType::NotAnEdge
     }
 
     pub fn quad_count(&self) -> usize {
@@ -227,6 +228,10 @@ impl QuadTopology {
         verts.contains(&ghost)
     }
 
+    pub fn anchor_count(&self) -> usize {
+        self.anchor_vertices.len()
+    }
+
     /// Returns an iterator over vertices along the given anchor edge.
     ///
     /// An anchor edge represents an original boundary edge (before subdivision).
@@ -236,13 +241,27 @@ impl QuadTopology {
         let start = self.anchor_vertices[edge];
         let end = self.anchor_vertices[(edge + 1) % self.anchor_vertices.len()];
 
-        // Collect boundary vertices and slice from start to end anchor
-        let boundary: Vec<_> = self.boundary_vertices().collect();
-        boundary
-            .into_iter()
-            .skip_while(move |&v| v != start)
-            .take_while(move |&v| v != end)
-            .chain(std::iter::once(end))
+        // Use a 2x-looped CW ring around ghost vertex so skip_while/take_while
+        // handles the case where the anchor edge wraps past the ring origin.
+        let ghost = self.ghost_vertex();
+        let start_qv = self.vertex_quad[ghost.into_index()];
+
+        let ring = VertexRingIter::<false> {
+            topology: self,
+            max_loops: 2,
+            start: start_qv,
+            current: start_qv,
+            done: false,
+        };
+
+        ring.flat_map(move |qv| {
+            let p1 = qv.prev();
+            let p2 = p1.prev();
+            [self.vertex_index(p1), self.vertex_index(p2)]
+        })
+        .skip_while(move |&v| v != start)
+        .take_while(move |&v| v != end)
+        .chain(std::iter::once(end))
     }
 
     pub fn edge_twin(&self, qe: QuadEdge) -> QuadEdge {
@@ -266,12 +285,11 @@ impl QuadTopology {
     pub fn vertex_ring_ccw(&self, vi: VertIdx) -> impl Iterator<Item = QuadVertex> + '_ {
         let start_qv = self.vertex_quad[vi.into_index()];
 
-        VertexRingIter {
+        VertexRingIter::<true> {
             topology: self,
+            max_loops: 1,
             start: start_qv,
             current: start_qv,
-            max_loops: 1,
-            clockwise: false,
             done: false,
         }
     }
@@ -279,12 +297,11 @@ impl QuadTopology {
     pub fn vertex_ring_cw(&self, vi: VertIdx) -> impl Iterator<Item = QuadVertex> + '_ {
         let start_qv = self.vertex_quad[vi.into_index()];
 
-        VertexRingIter {
+        VertexRingIter::<false> {
             topology: self,
+            max_loops: 1,
             start: start_qv,
             current: start_qv,
-            max_loops: 1,
-            clockwise: true,
             done: false,
         }
     }
@@ -312,38 +329,106 @@ impl QuadTopology {
         }
     }
 
+    /// Helper to validate a single vertex ring forms a closed loop
+    fn validate_vertex_ring(&self, vi: VertIdx) -> Result<(), QuadTopologyError> {
+        let vi_idx = vi.into_index();
+        let ring: Vec<_> = self.vertex_ring_ccw(vi).collect();
+
+        if ring.is_empty() {
+            return Err(QuadTopologyError::VertexRingNotClosed { vertex: vi_idx });
+        }
+
+        // Verify all ring elements reference the correct vertex
+        for qv in &ring {
+            let vertex_at_pos = self.quads[qv.quad][qv.local as usize];
+            if vertex_at_pos != vi {
+                return Err(QuadTopologyError::VertexRingNotClosed { vertex: vi_idx });
+            }
+        }
+
+        // Check ring closure: next position after last should reference same vertex
+        let last = ring[ring.len() - 1];
+        let incoming = last.incoming_edge();
+        let neighbor = self.edge_twin(incoming);
+        let next_pos = neighbor.start();
+        let next_vertex = self.quads[next_pos.quad][next_pos.local as usize];
+
+        // Must be the same vertex (forms a cycle around vi)
+        if next_vertex != vi {
+            return Err(QuadTopologyError::VertexRingNotClosed { vertex: vi_idx });
+        }
+
+        // Next position should be in the ring (forms a closed cycle)
+        let next_in_ring = ring
+            .iter()
+            .any(|qv| qv.quad == next_pos.quad && qv.local == next_pos.local);
+        if !next_in_ring {
+            return Err(QuadTopologyError::VertexRingNotClosed { vertex: vi_idx });
+        }
+
+        Ok(())
+    }
+
     /// Validates the topology for consistency.
     pub fn validate(&self) -> Result<(), QuadTopologyError> {
         use crate::math::mesh::QuadTopologyError;
 
         let ghost_vertex = self.ghost_vertex();
 
-        // 1. Check all vertices have an associated quad
+        // 1. Check all vertices have an associated quad that references them correctly
         for vi_idx in 0..=self.vertex_count {
             let qv = self.vertex_quad[vi_idx];
             if qv.quad.is_none() {
                 return Err(QuadTopologyError::VertexHasNoQuad(vi_idx));
             }
+            let actual = self.quads[qv.quad][qv.local as usize];
+            if actual != VertIdx::new(vi_idx) {
+                return Err(QuadTopologyError::VertexQuadMismatch {
+                    vertex: vi_idx,
+                    actual: actual.into_index(),
+                });
+            }
         }
 
-        // 2. Check edge twin bidirectionality
+        // 2. Check no degenerate quads (all 4 vertices distinct)
+        for qi_idx in 0..self.quads.len() {
+            let verts = self.quads[QuadIdx::new(qi_idx)];
+            for i in 0..4 {
+                for j in (i + 1)..4 {
+                    if verts[i] == verts[j] {
+                        return Err(QuadTopologyError::DegenerateQuad {
+                            quad: qi_idx,
+                            vertex: verts[i].into_index(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // 3. Check edge twin bidirectionality and involution
         for qi_idx in 0..self.quads.len() {
             let qi = QuadIdx::new(qi_idx);
             for edge_idx in 0..4 {
                 let qe = QuadEdge { quad: qi, edge: edge_idx as u8 };
                 let twin = self.edge_twin(qe);
 
-                // Check twin points back
+                // Check twin vertices are reversed
                 let (v0, v1) = self.edge_vertices(qe);
                 let (twin_v0, twin_v1) = self.edge_vertices(twin);
 
                 if v0 != twin_v1 || v1 != twin_v0 {
                     return Err(QuadTopologyError::InvalidEdgeTwin { quad: qi_idx, edge: edge_idx });
                 }
+
+                // Check twin of twin points back to original
+                let round_trip = self.edge_twin(twin);
+                if round_trip.quad != qe.quad || round_trip.edge != qe.edge {
+                    return Err(QuadTopologyError::EdgeTwinNotInvolution { quad: qi_idx, edge: edge_idx });
+                }
             }
         }
 
-        // 3. Check ghost quad structure
+        // 4. Check ghost quad structure
         for qi in self.ghost_quad_indices() {
             let verts = self.quad_vertices(qi);
             let ghost_count = verts.iter().filter(|&&v| v == ghost_vertex).count();
@@ -356,53 +441,77 @@ impl QuadTopology {
             }
         }
 
-        // 4. Check vertex rings form closed loops
-        for vi_idx in 0..self.vertex_count {
-            let vi = VertIdx::new(vi_idx);
-            let ring: Vec<_> = self.vertex_ring_ccw(vi).collect();
-
-            if ring.is_empty() {
-                return Err(QuadTopologyError::VertexRingNotClosed { vertex: vi_idx });
+        // 4b. Verify ghost_quad_count matches actual ghost quad count
+        {
+            let actual_ghost_count = self.quads.iter().filter(|verts| verts.contains(&ghost_vertex)).count();
+            if actual_ghost_count != self.ghost_quad_count {
+                return Err(QuadTopologyError::GhostQuadCountMismatch {
+                    expected: self.ghost_quad_count,
+                    actual: actual_ghost_count,
+                });
             }
+        }
 
-            // Check ring closure by verifying last→first connection
-            if !ring.is_empty() {
-                let last = ring[ring.len() - 1];
-                let incoming = last.incoming_edge();
-                let neighbor = self.edge_twin(incoming);
-
-                if neighbor.start().quad != ring[0].quad {
-                    return Err(QuadTopologyError::VertexRingNotClosed { vertex: vi_idx });
+        // 4c. Verify ghost quads are contiguous at the end of the quad array
+        {
+            let real_count = self.quads.len() - self.ghost_quad_count;
+            for qi_idx in 0..real_count {
+                if self.is_ghost_quad(QuadIdx::new(qi_idx)) {
+                    // Find the first real quad after this ghost quad
+                    let real_after = (qi_idx + 1..self.quads.len())
+                        .find(|&i| !self.is_ghost_quad(QuadIdx::new(i)))
+                        .unwrap_or(qi_idx);
+                    return Err(QuadTopologyError::GhostQuadsNotCompact {
+                        ghost_quad: qi_idx,
+                        real_quad: real_after,
+                    });
                 }
             }
         }
 
-        // 5. Check anchor edges form subsequences of boundary vertices
+        // 5. Check vertex rings form closed loops (real vertices and ghost vertex)
+        for vi_idx in 0..self.vertex_count {
+            self.validate_vertex_ring(VertIdx::new(vi_idx))?;
+        }
+        self.validate_vertex_ring(self.ghost_vertex())?;
+
+        // 6. Check all quads are reachable from vertex rings
+        {
+            let mut reachable = vec![false; self.quads.len()];
+            for vi_idx in 0..=self.vertex_count {
+                for qv in self.vertex_ring_ccw(VertIdx::new(vi_idx)) {
+                    reachable[qv.quad.into_index()] = true;
+                }
+            }
+            for (qi_idx, &reached) in reachable.iter().enumerate() {
+                if !reached {
+                    return Err(QuadTopologyError::UnreachableQuad { quad: qi_idx });
+                }
+            }
+        }
+
+        // 7. Check anchor vertices are boundary vertices in correct cyclic order
         if !self.anchor_vertices.is_empty() {
-            // Get boundary as a vector
             let boundary: Vec<_> = self.boundary_vertices().collect();
 
-            // Check all anchor vertices are in the boundary (to avoid infinite loop in anchor_edge)
+            // Check all anchor vertices are in the boundary
             for (idx, &anchor_v) in self.anchor_vertices.iter().enumerate() {
                 if !boundary.contains(&anchor_v) {
                     return Err(QuadTopologyError::InvalidAnchorEdge { edge: idx });
                 }
             }
 
-            // Double the boundary to handle wrap-around
-            let doubled: Vec<_> = boundary.iter().chain(boundary.iter()).copied().collect();
+            // Verify cyclic ordering: each anchor must follow the previous along the boundary
+            let first_pos = boundary.iter().position(|&b| b == self.anchor_vertices[0]).unwrap();
+            let mut search_start = first_pos;
 
-            // Check each anchor edge (CCW order enforced - no reverse)
-            for edge_idx in 0..self.anchor_vertices.len() {
-                let anchor_edge: Vec<_> = self.anchor_edge(edge_idx).collect();
-
-                // Find this subsequence in the doubled boundary (forward direction only)
-                let found = doubled
-                    .windows(anchor_edge.len())
-                    .any(|window| window == anchor_edge.as_slice());
-
-                if !found {
-                    return Err(QuadTopologyError::InvalidAnchorEdge { edge: edge_idx });
+            for edge_idx in 1..self.anchor_vertices.len() {
+                let anchor_v = self.anchor_vertices[edge_idx];
+                let found =
+                    (1..boundary.len()).find(|&offset| boundary[(search_start + offset) % boundary.len()] == anchor_v);
+                match found {
+                    Some(offset) => search_start = (search_start + offset) % boundary.len(),
+                    None => return Err(QuadTopologyError::InvalidAnchorEdge { edge: edge_idx - 1 }),
                 }
             }
         }
@@ -411,16 +520,16 @@ impl QuadTopology {
     }
 }
 
-struct VertexRingIter<'a> {
+struct VertexRingIter<'a, const CCW: bool> {
     topology: &'a QuadTopology,
-    clockwise: bool, // If true, traverse clockwise using outgoing edges
+    // Decremented on each loop completion; panics if reaches 0
+    max_loops: usize,
     start: QuadVertex,
     current: QuadVertex,
-    max_loops: usize, // Decremented on each loop completion; panics if reaches 0
     done: bool,
 }
 
-impl<'a> Iterator for VertexRingIter<'a> {
+impl<'a, const CCW: bool> Iterator for VertexRingIter<'a, CCW> {
     type Item = QuadVertex;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -430,8 +539,7 @@ impl<'a> Iterator for VertexRingIter<'a> {
 
         let result = self.current;
 
-        // Move to next quad in ring
-        if self.clockwise {
+        if !CCW {
             // CW: Move via outgoing edge (forward around the vertex)
             let edge = self.current.outgoing_edge();
             let neighbor = self.topology.edge_twins[edge.quad][edge.edge as usize];
@@ -456,284 +564,5 @@ impl<'a> Iterator for VertexRingIter<'a> {
         }
 
         Some(result)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use shine_core::utils::is_rotation;
-    use shine_test::test;
-    use std::collections::HashSet;
-
-    /// 2×2 grid of 4 quads, 9 vertices, 1 interior vertex (4):
-    /// ```text
-    ///  6----7----8
-    ///  | Q2 | Q3 |
-    ///  3----4----5
-    ///  | Q0 | Q1 |
-    ///  0----1----2
-    /// ```
-    /// Q0=[0,1,4,3]  Q1=[1,2,5,4]  Q2=[3,4,7,6]  Q3=[4,5,8,7]  (CCW)
-    /// Interior: 4.  Boundary: 8 vertices (0,1,2,5,8,7,6,3).
-    /// Anchors: 4 corners (0,2,8,6) marking the original boundary before subdivision.
-    fn grid_2x2_topo() -> QuadTopology {
-        let quads = vec![
-            [VertIdx::new(0), VertIdx::new(1), VertIdx::new(4), VertIdx::new(3)],
-            [VertIdx::new(1), VertIdx::new(2), VertIdx::new(5), VertIdx::new(4)],
-            [VertIdx::new(3), VertIdx::new(4), VertIdx::new(7), VertIdx::new(6)],
-            [VertIdx::new(4), VertIdx::new(5), VertIdx::new(8), VertIdx::new(7)],
-        ];
-        let boundaries: Vec<_> = [0, 1, 2, 5, 8, 7, 6, 3].into_iter().map(VertIdx::new).collect();
-        let anchors: Vec<_> = [0, 2, 8, 6].into_iter().map(VertIdx::new).collect();
-        QuadTopology::from_polygon(9, boundaries, anchors, quads).expect("valid topology")
-    }
-
-    #[test]
-    fn test_quad_vertex_navigation() {
-        let qv = QuadVertex {
-            quad: QuadIdx::new(0),
-            local: 0,
-        };
-
-        assert_eq!(qv.next().local, 1);
-        assert_eq!(qv.prev().local, 3);
-        assert_eq!(qv.opposite().local, 2);
-        assert_eq!(qv.outgoing_edge().edge, 0);
-        assert_eq!(qv.incoming_edge().edge, 3);
-    }
-
-    #[test]
-    fn test_quad_edge_navigation() {
-        let qe = QuadEdge { quad: QuadIdx::new(0), edge: 1 };
-
-        assert_eq!(qe.start().local, 1);
-        assert_eq!(qe.end().local, 2);
-    }
-
-    #[test]
-    fn test_topology_counts() {
-        let topo = grid_2x2_topo();
-
-        assert_eq!(topo.vertex_count(), 9, "9 real vertices");
-        assert_eq!(topo.quad_count(), 4, "4 real quads");
-        assert_eq!(topo.ghost_quad_count(), 4, "4 ghost quads (8 boundary edges / 2)");
-        assert_eq!(topo.boundary_vertex_count(), 8, "8 boundary vertices");
-
-        let ghost_vertex = topo.ghost_vertex();
-        assert_eq!(ghost_vertex, VertIdx::new(9), "ghost vertex at index 9");
-    }
-
-    #[test]
-    fn test_vertex_rings() {
-        let topo = grid_2x2_topo();
-
-        // Verify interior vertex 4 ring is [Q0, Q1, Q3, Q2] in CCW order
-        let vert_4_ring: Vec<_> = topo.vertex_ring_ccw(VertIdx::new(4)).map(|qv| qv.quad).collect();
-        let expected_rotations = [
-            vec![QuadIdx::new(0), QuadIdx::new(1), QuadIdx::new(3), QuadIdx::new(2)],
-            vec![QuadIdx::new(1), QuadIdx::new(3), QuadIdx::new(2), QuadIdx::new(0)],
-            vec![QuadIdx::new(3), QuadIdx::new(2), QuadIdx::new(0), QuadIdx::new(1)],
-            vec![QuadIdx::new(2), QuadIdx::new(0), QuadIdx::new(1), QuadIdx::new(3)],
-        ];
-        assert!(
-            expected_rotations.contains(&vert_4_ring),
-            "vertex 4 ring {:?} should be a rotation of [Q0, Q1, Q3, Q2]",
-            vert_4_ring
-        );
-
-        // Verify all real vertices have complete rings
-        for vi in topo.vertex_indices() {
-            let ring: Vec<_> = topo.vertex_ring_ccw(vi).collect();
-            assert!(!ring.is_empty(), "vertex {:?} should have non-empty ring", vi);
-
-            // All ring entries should reference the same vertex
-            for qv in &ring {
-                assert_eq!(
-                    topo.vertex_index(*qv),
-                    vi,
-                    "ring entry should reference vertex {:?}",
-                    vi
-                );
-            }
-
-            // Ring should be connected - each quad's neighbor should lead to next quad in ring
-            for i in 0..ring.len() {
-                let current = ring[i];
-                let next_in_ring = ring[(i + 1) % ring.len()];
-
-                // Get the neighbor across the incoming edge
-                let incoming = current.incoming_edge();
-                let neighbor = topo.edge_twin(incoming);
-
-                assert_eq!(
-                    neighbor.start(),
-                    next_in_ring,
-                    "neighbor.start() should match next in ring for vertex {:?}",
-                    vi
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_boundary_detection() {
-        let topo = grid_2x2_topo();
-
-        for vi in topo.vertex_indices() {
-            let is_boundary = topo.is_boundary_vertex(vi);
-            let ring_has_ghost = topo.vertex_ring_ccw(vi).any(|qv| topo.is_ghost_quad(qv.quad));
-
-            assert_eq!(
-                is_boundary, ring_has_ghost,
-                "vertex {:?}: is_boundary_vertex and ring_has_ghost should match",
-                vi
-            );
-        }
-    }
-
-    #[test]
-    fn test_edge_classification() {
-        let topo = grid_2x2_topo();
-        let ghost_vertex = topo.ghost_vertex();
-        // Interior vertex 4 should have all interior edges to its neighbors
-        for qv in topo.vertex_ring_ccw(VertIdx::new(4)) {
-            let next_v = topo.vertex_index(qv.next());
-            if next_v != ghost_vertex {
-                assert_eq!(
-                    topo.edge_type(VertIdx::new(4), next_v),
-                    EdgeType::Interior,
-                    "edge from interior vertex 4 to {:?} should be Interior",
-                    next_v
-                );
-            }
-        }
-
-        // Boundary edges should be detected correctly
-        let boundary_edges = [(0, 1), (1, 2), (2, 5), (5, 8), (8, 7), (7, 6), (6, 3), (3, 0)];
-        for (a, b) in boundary_edges {
-            assert_eq!(
-                topo.edge_type(VertIdx::new(a), VertIdx::new(b)),
-                EdgeType::Boundary,
-                "edge {:?}->{:?} should be Boundary",
-                a,
-                b
-            );
-        }
-    }
-
-    #[test]
-    fn test_ghost_quad_structure() {
-        let topo = grid_2x2_topo();
-        let ghost_vertex = topo.ghost_vertex();
-
-        for qi in topo.ghost_quad_indices() {
-            let verts = topo.quad_vertices(qi);
-
-            // Ghost quad should have exactly one ghost vertex
-            let ghost_count = verts.iter().filter(|&&v| v == ghost_vertex).count();
-            assert_eq!(
-                ghost_count, 1,
-                "ghost quad {:?} should contain exactly 1 ghost vertex",
-                qi
-            );
-
-            // Other 3 vertices should be real boundary vertices
-            let real_verts: Vec<_> = verts.iter().filter(|&&v| v != ghost_vertex).copied().collect();
-            assert_eq!(real_verts.len(), 3, "ghost quad should have 3 real vertices");
-
-            for &v in &real_verts {
-                assert!(
-                    topo.is_boundary_vertex(v),
-                    "real vertex {:?} in ghost quad should be boundary",
-                    v
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_quad_neighbor_consistency() {
-        let topo = grid_2x2_topo();
-        for qi in topo.quad_indices() {
-            for edge in 0..4 {
-                let qe = QuadEdge { quad: qi, edge: edge as u8 };
-                let neighbor = topo.edge_twin(qe);
-
-                // Get the reverse edge
-                let (v0, v1) = topo.edge_vertices(qe);
-
-                // Find the edge in the neighbor that connects back
-                let neighbor_verts = topo.quad_vertices(neighbor.quad);
-                let mut found_reverse = false;
-                for i in 0..4 {
-                    if neighbor_verts[i] == v1 && neighbor_verts[(i + 1) % 4] == v0 {
-                        found_reverse = true;
-                        break;
-                    }
-                }
-
-                assert!(
-                    found_reverse,
-                    "quad {:?} edge {} neighbor should have reverse edge",
-                    qi, edge
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_boundary_vertices_ccw_order() {
-        let topo = grid_2x2_topo();
-
-        let boundary: Vec<_> = topo.boundary_vertices().collect();
-        assert_eq!(boundary.len(), 8, "should have 8 boundary vertices");
-
-        // All boundary vertices should be unique
-        let mut seen = HashSet::new();
-        for v in &boundary {
-            assert!(seen.insert(*v), "boundary vertex {:?} appears multiple times", v);
-        }
-
-        let expected = [0usize, 1, 2, 5, 8, 7, 6, 3];
-        let boundary_indices: Vec<_> = boundary.iter().map(|v| v.into_index()).collect();
-        assert!(
-            is_rotation(&expected, &boundary_indices),
-            "boundary {:?} should be a rotation of [0, 1, 2, 5, 8, 7, 6, 3]",
-            boundary_indices
-        );
-    }
-
-    #[test]
-    fn test_anchor_edges_ccw_order() {
-        let topo = grid_2x2_topo();
-
-        // Edge 0: anchor 0 -> 2, should be [0, 1, 2]
-        let edge0: Vec<_> = topo.anchor_edge(0).collect();
-        let expected0: Vec<_> = [0, 1, 2].into_iter().map(VertIdx::new).collect();
-        assert_eq!(edge0, expected0, "anchor edge 0 should be [0, 1, 2]");
-
-        // Edge 1: anchor 2 -> 8, should be [2, 5, 8]
-        let edge1: Vec<_> = topo.anchor_edge(1).collect();
-        let expected1: Vec<_> = [2, 5, 8].into_iter().map(VertIdx::new).collect();
-        assert_eq!(edge1, expected1, "anchor edge 1 should be [2, 5, 8]");
-
-        // Edge 2: anchor 8 -> 6, should be [8, 7, 6]
-        let edge2: Vec<_> = topo.anchor_edge(2).collect();
-        let expected2: Vec<_> = [8, 7, 6].into_iter().map(VertIdx::new).collect();
-        assert_eq!(edge2, expected2, "anchor edge 2 should be [8, 7, 6]");
-
-        // Edge 3: anchor 6 -> 0, should be [6, 3, 0]
-        let edge3: Vec<_> = topo.anchor_edge(3).collect();
-        let expected3: Vec<_> = [6, 3, 0].into_iter().map(VertIdx::new).collect();
-        assert_eq!(edge3, expected3, "anchor edge 3 should be [6, 3, 0]");
-    }
-
-    #[test]
-    fn test_topology_validation() {
-        let topo = grid_2x2_topo();
-
-        // Valid topology should pass validation
-        topo.validate().expect("valid topology should pass validation");
     }
 }

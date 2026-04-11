@@ -27,3 +27,33 @@ doc = false
 name = "fuzz_cdt_points"
 path = "fuzz_targets/fuzz_cdt_points.rs"
 doc = false
+
+[[bin]]
+name = "fuzz_tri_points"
+path = "fuzz_targets/fuzz_tri_points.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_tri_delaunay_points"
+path = "fuzz_targets/fuzz_tri_delaunay_points.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_tri_constrained"
+path = "fuzz_targets/fuzz_tri_constrained.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_tri_delaunay_constrained"
+path = "fuzz_targets/fuzz_tri_delaunay_constrained.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_hex_mesh_lattice"
+path = "fuzz_targets/fuzz_hex_mesh_lattice.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_hex_mesh_cdt"
+path = "fuzz_targets/fuzz_hex_mesh_cdt.rs"
+doc = false

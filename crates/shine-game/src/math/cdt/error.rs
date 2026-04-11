@@ -25,7 +25,7 @@ impl std::fmt::Display for CdtError {
             CdtError::OpenContour => write!(f, "open contour"),
             CdtError::TooFewPoints => write!(f, "too few points"),
             CdtError::CannotInitialize => write!(f, "cannot initialize"),
-            CdtError::WedgeEscape => write!(f, "escaped wedge"),
+            CdtError::WedgeEscape => write!(f, "wedge escape"),
         }
     }
 }

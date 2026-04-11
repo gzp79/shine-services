@@ -27,10 +27,6 @@ impl<I: TypedIndex, T> IdxVec<I, T> {
         }
     }
 
-    pub fn from_vec(data: Vec<T>) -> Self {
-        Self { data, _phantom: PhantomData }
-    }
-
     pub fn len(&self) -> usize {
         self.data.len()
     }
@@ -43,6 +39,10 @@ impl<I: TypedIndex, T> IdxVec<I, T> {
         let idx = I::new(self.data.len());
         self.data.push(value);
         idx
+    }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
@@ -69,6 +69,10 @@ impl<I: TypedIndex, T> IdxVec<I, T> {
     pub fn into_inner(self) -> Vec<T> {
         self.data
     }
+
+    pub fn swap(&mut self, a: I, b: I) {
+        self.data.swap(a.into_index(), b.into_index());
+    }
 }
 
 impl<I: TypedIndex, T: Clone> IdxVec<I, T> {
@@ -77,6 +81,12 @@ impl<I: TypedIndex, T: Clone> IdxVec<I, T> {
             data: vec![value; count],
             _phantom: PhantomData,
         }
+    }
+}
+
+impl<I: TypedIndex, T> From<Vec<T>> for IdxVec<I, T> {
+    fn from(data: Vec<T>) -> Self {
+        Self { data, _phantom: PhantomData }
     }
 }
 
@@ -129,7 +139,7 @@ impl<I: TypedIndex, T: Serialize> Serialize for IdxVec<I, T> {
 impl<'de, I: TypedIndex, T: Deserialize<'de>> Deserialize<'de> for IdxVec<I, T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let data = Vec::<T>::deserialize(deserializer)?;
-        Ok(Self::from_vec(data))
+        Ok(Self::from(data))
     }
 }
 
@@ -166,7 +176,7 @@ mod tests {
 
     #[test]
     fn iter_indexed() {
-        let v: IdxVec<TestIdx, &str> = IdxVec::from_vec(vec!["a", "b", "c"]);
+        let v: IdxVec<TestIdx, &str> = IdxVec::from(vec!["a", "b", "c"]);
         let collected: Vec<_> = v.iter_indexed().collect();
         assert_eq!(collected[0], (TestIdx::new(0), &"a"));
         assert_eq!(collected[1], (TestIdx::new(1), &"b"));
@@ -175,7 +185,7 @@ mod tests {
 
     #[test]
     fn serde_round_trip() {
-        let v: IdxVec<TestIdx, u32> = IdxVec::from_vec(vec![10, 20, 30]);
+        let v: IdxVec<TestIdx, u32> = IdxVec::from(vec![10, 20, 30]);
         let json = serde_json::to_string(&v).unwrap();
         assert_eq!(json, "[10,20,30]");
         let v2: IdxVec<TestIdx, u32> = serde_json::from_str(&json).unwrap();

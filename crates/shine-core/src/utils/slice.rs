@@ -30,8 +30,7 @@ pub fn is_rotation<T: PartialEq>(reference: &[T], pattern: &[T]) -> bool {
     for start_idx in 0..reference.len() {
         if reference[start_idx] == pattern[0] {
             // Check if pattern matches starting from this position using modulo
-            let matches = (0..pattern.len())
-                .all(|i| reference[(start_idx + i) % reference.len()] == pattern[i]);
+            let matches = (0..pattern.len()).all(|i| reference[(start_idx + i) % reference.len()] == pattern[i]);
 
             if matches {
                 return true;

@@ -12,6 +12,11 @@ pub trait TypedIndex: Copy + Eq + std::fmt::Debug {
 
     fn is_none(self) -> bool;
 
+    #[inline]
+    fn is_valid(self) -> bool {
+        !self.is_none()
+    }
+
     /// Convert to `usize` if real, `None` otherwise.
     fn try_into_index(self) -> Option<usize> {
         if self.is_none() {
@@ -33,6 +38,12 @@ macro_rules! define_typed_index {
         #[doc = $doc]
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $name(u32);
+
+        impl $name {
+            pub fn range(start: Self, end: Self) -> impl Iterator<Item = Self> {
+                (start.0..end.0).map(Self)
+            }
+        }
 
         impl $crate::indexed::TypedIndex for $name {
             const NONE: Self = Self(u32::MAX);
@@ -111,5 +122,13 @@ mod tests {
     fn debug_format() {
         assert_eq!(format!("{:?}", TestIdx::new(42)), "TestIdx(42)");
         assert_eq!(format!("{:?}", TestIdx::NONE), "TestIdx(NONE)");
+    }
+
+    #[test]
+    fn range() {
+        let range = TestIdx::range(TestIdx::new(5), TestIdx::new(10));
+        let collected: Vec<_> = range.collect();
+        let expected: Vec<_> = (5..10).map(|i| TestIdx::new(i)).collect();
+        assert_eq!(collected, expected);
     }
 }

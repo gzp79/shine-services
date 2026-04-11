@@ -8,5 +8,5 @@ pub use self::{
     filter::{Jitter, LaplacianSmoother, QuadFilter, QuadRelax, VertexRepulsion},
     quad_error::QuadTopologyError,
     quad_mesh::QuadMesh,
-    quad_topology::{EdgeType, QuadEdge, QuadIdx, QuadTopology, QuadVertex, VertIdx},
+    quad_topology::{QuadEdge, QuadEdgeType, QuadIdx, QuadTopology, QuadVertex, VertIdx},
 };

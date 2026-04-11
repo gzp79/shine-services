@@ -1,7 +1,6 @@
 use super::{quad_error::QuadTopologyError, quad_topology::*, QuadEdge, QuadIdx, QuadTopology, VertIdx};
 use crate::indexed::{IdxVec, TypedIndex};
 use std::collections::HashMap;
-use std::collections::HashSet;
 
 impl QuadTopology {
     /// Build topology from a boundary polygon and interior quads.
@@ -11,31 +10,14 @@ impl QuadTopology {
         anchors: Vec<VertIdx>,
         quads: Vec<[VertIdx; 4]>,
     ) -> Result<Self, QuadTopologyError> {
-        // Validate boundary length is even
-        if !polygon.len().is_multiple_of(2) {
-            return Err(QuadTopologyError::OddBoundary(polygon.len()));
-        }
-
-        // Validate boundary vertices in range
+        // Minimal bounds checks to prevent index-out-of-bounds panics during construction.
+        // All other invariants (odd boundary, duplicates, degenerates, etc.) are caught by validate().
         for &vi in &polygon {
             let idx = vi.into_index();
             if idx >= vertex_count {
                 return Err(QuadTopologyError::BoundaryVertexOutOfRange { vertex: idx, vertex_count });
             }
         }
-
-        // Validate boundary vertices unique
-        {
-            let mut seen = HashSet::new();
-            for &vi in &polygon {
-                let idx = vi.into_index();
-                if !seen.insert(idx) {
-                    return Err(QuadTopologyError::DuplicateBoundaryVertex(idx));
-                }
-            }
-        }
-
-        // Validate quad vertices in range and don't reference ghost
         for quad in &quads {
             for &vi in quad {
                 let idx = vi.into_index();
@@ -57,7 +39,7 @@ impl QuadTopology {
             let v2 = polygon[(i + 2) % polygon.len()];
             all_quads.push([ghost_vertex, v2, v1, v0]);
         }
-        let quads = IdxVec::from_vec(all_quads);
+        let quads = IdxVec::from(all_quads);
         let ghost_quad_start = quads.len() - ghost_quad_count;
 
         // Build edge map: (v0, v1) -> (quad, edge_idx)
@@ -70,7 +52,8 @@ impl QuadTopology {
             }
         }
 
-        // Build edge twin structure (neighbor across each edge)
+        // Build edge twin structure (neighbor across each edge).
+        // Must check here — leaving NONE twins would panic in validate().
         let mut edge_twins = IdxVec::new();
         for (qi, quad) in quads.iter().enumerate() {
             let mut twins = [QuadEdge { quad: QuadIdx::NONE, edge: 0 }; 4];
@@ -108,8 +91,10 @@ impl QuadTopology {
                 }
             }
         }
+
+        // Ghost vertex: use first ghost quad (ring traversal visits all regardless of start)
         vertex_quad[ghost_vertex.into_index()] = QuadVertex {
-            quad: QuadIdx::new(ghost_quad_start), // the first ghost-quad
+            quad: QuadIdx::new(ghost_quad_start),
             local: 0,
         };
 
