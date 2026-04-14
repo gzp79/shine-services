@@ -1,7 +1,7 @@
 use crate::indexed::TypedIndex;
 
 /// Integer type with module 3 arithmetic
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rot3Idx(u8);
 
 impl Default for Rot3Idx {
@@ -68,6 +68,15 @@ impl TypedIndex for Rot3Idx {
     fn into_index(self) -> usize {
         debug_assert!(self.0 != u8::MAX, "called into_index() on non-real Rot3");
         self.0 as usize
+    }
+
+    #[inline]
+    fn try_into_index(self) -> Option<usize> {
+        if self.is_none() {
+            None
+        } else {
+            Some(self.0 as usize)
+        }
     }
 
     #[inline]

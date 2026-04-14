@@ -1,5 +1,8 @@
 use super::TriangulationBuilder;
-use crate::math::triangulation::{predicates::in_circle, FaceEdge, VertexIndex};
+use crate::{
+    indexed::TypedIndex,
+    math::triangulation::{predicates::in_circle, FaceEdge, FaceIndex, Rot3Idx, VertexIndex},
+};
 
 impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
     pub fn delaunay_push_vertex(&mut self, vertex: VertexIndex) {
@@ -7,11 +10,9 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             return;
         }
 
-        let stack = self.delaunay_stack.as_mut().expect("delaunay_stack lock");
-
         let start_face = self.tri[vertex].face;
         let start_vi = self.tri[start_face].find_vertex(vertex).unwrap();
-        stack.push(FaceEdge::new(start_face, start_vi));
+        self.delaunay_push_edge(FaceEdge::new(start_face, start_vi));
 
         let mut cur_face = start_face;
         let mut cur_vi = start_vi;
@@ -22,7 +23,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 break;
             }
             let next_vi = self.tri[next_face].find_vertex(vertex).unwrap();
-            stack.push(FaceEdge::new(next_face, next_vi));
+            self.delaunay_push_edge(FaceEdge::new(next_face, next_vi));
             cur_face = next_face;
             cur_vi = next_vi;
         }
@@ -34,7 +35,23 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
         }
 
         let stack = self.delaunay_stack.as_mut().expect("delaunay_stack lock");
-        stack.push(edge);
+        let twin = self.tri.twin_edge(edge);
+
+        if !stack.contains(&edge) && !stack.contains(&twin) {
+            stack.push(edge);
+        }
+    }
+
+    pub fn delaunay_push_face(&mut self, face: FaceIndex) {
+        if !DELAUNAY || self.tri.dimension() != 2 || !face.is_valid() || self.tri.is_infinite_face(face) {
+            return;
+        }
+
+        for i in 0..3 {
+            let edge = Rot3Idx::new(i);
+            let fe = FaceEdge::new(face, edge);
+            self.delaunay_push_edge(fe);
+        }
     }
 
     // Lawson flip: process edges until the stack is empty.
@@ -77,21 +94,45 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             // If vd is strictly inside the circumcircle of CCW triangle (va, vb, vc),
             // the edge is not locally Delaunay → flip.
             // Exact == 0 (co-circular) is left as-is to avoid infinite flip loops.
-            if in_circle(pa, pb, pc, pd) > 0 {
+            let ic = in_circle(pa, pb, pc, pd);
+            if ic > 0 {
                 self.flip(face, edge);
 
                 // After flip_face(face=f0, edge=i00):
                 //   f0 vertices: [va, vb, vd] at [i00, i01, i02]
                 //   f1 vertices: [vd, vc, va] at [ni, ni+1, ni-1]
                 //
-                // The two newly exposed edges opposite `va`:
-                //   - (f0, i00): connects vb to vd  (was an edge of the old neighbor)
-                //   - (f1, ni-1): connects vd to vc (was an edge of the old neighbor)
-                stack.push(FaceEdge::new(face, edge));
-                stack.push(FaceEdge::new(neighbor, ni.decrement()));
+                // The four newly exposed external edges that might now be non-Delaunay:
+                //   - (f0, i01): connects vb to vd
+                //   - (f1, ni-1): connects vc to vd
+                //   - (f0, i00): connects va to vb (newly oriented)
+                //   - (f1, ni): connects va to vc (newly oriented)
+                let e1 = FaceEdge::new(face, edge.increment());
+                let e2 = FaceEdge::new(neighbor, ni.decrement());
+                let e3 = FaceEdge::new(face, edge);
+                let e4 = FaceEdge::new(neighbor, ni);
+
+                let edges = [e1, e2, e3, e4];
+                for e in edges {
+                    let n = self.tri[e.face].neighbors[e.edge];
+                    let twin = self.tri[n].find_neighbor(e.face).map(|ni| FaceEdge::new(n, ni));
+
+                    if !stack.contains(&e) && twin.map_or(true, |t| !stack.contains(&t)) {
+                        stack.push(e);
+                    }
+                }
+
+                /*if self.verbosity > 0 {
+                    self.delaunay_stack = Some(stack);
+                    //self.debug_dump(2, "delaunay_flip");
+                    stack = self.delaunay_stack.take().expect("delaunay_stack lock");
+                }*/
             }
         }
 
         self.delaunay_stack = Some(stack);
+        if let Some(mut dump) = self.svg_dump.scope(1, "after_delaunay") {
+            dump.add_default_styles().add_tri(&self.tri, []);
+        }
     }
 }

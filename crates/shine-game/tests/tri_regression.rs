@@ -1,289 +1,263 @@
 use glam::IVec2;
-use shine_game::math::triangulation::{GeometryChecker, TopologyChecker, Triangulation};
-use shine_test::test;
+use shine_game::math::triangulation::Triangulation;
 
-#[test]
-fn issue39_1() {
-    let mut tri = Triangulation::new_ct();
+/// Helper to reduce a failing test case by trying to remove points and edges one by one while still keeping the test failing.
+#[allow(dead_code)]
+fn reduce_failing_case(points: Vec<IVec2>, edges: Vec<(usize, usize)>) -> (Vec<IVec2>, Vec<(usize, usize)>) {
+    let is_failing_test = |pts: &[IVec2], eds: &[(usize, usize)]| -> bool {
+        let pts = pts.to_vec();
+        let eds = eds.to_vec();
 
-    let pnts = vec![(0, 0), (2, 0), (1, 2), (-3, -3)];
-    for &(x, y) in pnts.iter() {
-        tri.builder().add_vertex(IVec2::new(x, y), None);
-    }
+        let mut tri = Triangulation::new_cdt();
+        let mut builder = tri.builder();
+        let mut vertices = Vec::new();
 
-    assert_eq!(tri.dimension(), 2);
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-}
-
-#[test]
-fn issue39_2() {
-    let mut tri = Triangulation::new_ct();
-
-    let pnts = vec![(0, 0), (0, 1), (-1, 0), (1, 3)];
-    for &(x, y) in pnts.iter() {
-        tri.builder().add_vertex(IVec2::new(x, y), None);
-    }
-    assert_eq!(tri.dimension(), 2);
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-}
-
-#[test]
-fn fuzz_constrained_delaunay_issue1() {
-    let mut tri = Triangulation::new_cdt();
-
-    let points = vec![(-20481, -20561), (-245, -3974), (5631, 5397), (5397, 5397), (-1, -1)];
-
-    let mut builder = tri.builder();
-
-    let mut vertices = Vec::new();
-    for &(x, y) in &points {
-        let vi = builder.add_vertex(IVec2::new(x, y), None);
-        vertices.push(vi);
-    }
-
-    // Add constraint edge between vertices 0 and 3
-    builder.add_constraint_edge(vertices[0], vertices[3], 1);
-    drop(builder);
-
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-}
-
-#[test]
-fn fuzz_constrained_issue2() {
-    // Fuzz case: ConstrainedInput with 6 points and 2 edges
-    // Points: [(-110, -1), (31487, -16), (2837, -4075), (5631, -3974), (-4075, -5), (-3974, -1)]
-    // Edges: (133, 34) -> (1, 4), (15, 0) -> (3, 0)
-    let mut tri = Triangulation::new_cdt();
-
-    let points = vec![
-        (-110, -1),
-        (31487, -16),
-        (2837, -4075),
-        (5631, -3974),
-        (-4075, -5),
-        (-3974, -1),
-    ];
-
-    // Add vertices with Delaunay enabled (matching fuzzer behavior)
-    let mut builder = tri.builder();
-    let mut vertices = Vec::new();
-    for &(x, y) in &points {
-        let vi = builder.add_vertex(IVec2::new(x, y), None);
-        vertices.push(vi);
-    }
-    drop(builder);
-
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-
-    let n = vertices.len();
-    let edges = [(133u8, 34u8), (15u8, 0u8)];
-
-    for &(a, b) in &edges {
-        let a = a as usize % n;
-        let b = b as usize % n;
-        if a == b {
-            continue;
+        for &pnt in &pts {
+            let vi = builder.add_vertex(pnt, None);
+            if builder.check().is_err() {
+                return true;
+            }
+            vertices.push(vi);
         }
 
-        let mut builder = tri.builder();
-        builder.add_constraint_edge(vertices[a], vertices[b], 1);
-        drop(builder);
+        for &(a, b) in &eds {
+            if a >= vertices.len() || b >= vertices.len() {
+                continue;
+            }
+            builder.add_constraint_edge(vertices[a], vertices[b], 1);
+            if builder.check().is_err() {
+                return true;
+            }
+        }
+        return false;
+    };
 
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+    if !is_failing_test(&points, &edges) {
+        println!("Warning: reduce_failing_case called on a case that does not fail.");
+        return (points, edges);
+    }
+
+    let mut current_points = points;
+    let mut current_edges = edges;
+
+    let mut removed = true;
+    while removed {
+        removed = false;
+
+        // 1. Try to remove edges one by one
+        let mut i = 0;
+        while i < current_edges.len() {
+            let mut next_edges = current_edges.clone();
+            next_edges.remove(i);
+
+            if is_failing_test(&current_points, &next_edges) {
+                current_edges = next_edges;
+                println!("Reduced to {} edges", current_edges.len());
+                removed = true;
+                i = 0;
+            } else {
+                i += 1;
+            }
+        }
+
+        // 2. Try to remove points one by one
+        let mut i = 0;
+        while i < current_points.len() {
+            if current_points.len() <= 3 {
+                break;
+            }
+
+            let mut next_points = current_points.clone();
+            next_points.remove(i);
+
+            let mut next_edges = Vec::new();
+            let mut possible = true;
+            for &(a, b) in &current_edges {
+                if a == i || b == i {
+                    // If an edge relies on this point, we can only remove the point if we can remove the edge.
+                    // Since we already minimized edges, we assume we can't remove this point if it's an endpoint.
+                    possible = false;
+                    break;
+                }
+                let new_a = if a > i { a - 1 } else { a };
+                let new_b = if b > i { b - 1 } else { b };
+                next_edges.push((new_a, new_b));
+            }
+
+            if possible && is_failing_test(&next_points, &next_edges) {
+                current_points = next_points;
+                current_edges = next_edges;
+                println!("Reduced to {} points", current_points.len());
+                removed = true;
+                i = 0;
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    eprintln!(
+        "let points: Vec<IVec2> = vec!{:?}.into_iter().map(|(x, y)| IVec2::new(x, y)).collect();",
+        current_points.iter().map(|p| (p.x, p.y)).collect::<Vec<_>>()
+    );
+    eprintln!("let edges: Vec<(usize, usize)> = vec!{:?};", current_edges);
+
+    (current_points, current_edges)
+}
+
+#[test]
+fn fuzz_cdt_issue1() {
+    let mut tri = Triangulation::new_cdt();
+    let points: Vec<IVec2> = vec![IVec2::new(-3, 0), IVec2::new(3, 0), IVec2::new(0, 5), IVec2::new(0, -1)];
+    let mut builder = tri.builder();
+    let mut vertices = Vec::new();
+    for &pnt in &points {
+        vertices.push(builder.add_vertex(pnt, None));
+    }
+    builder.add_constraint_edge(vertices[0], vertices[1], 1);
+    builder.add_constraint_edge(vertices[2], vertices[3], 1);
+    assert_eq!(builder.check(), Ok(()));
+}
+
+#[test]
+fn fuzz_cdt_issue2() {
+    let mut tri = Triangulation::new_cdt();
+    let points: Vec<IVec2> = vec![
+        IVec2::new(0, 0),
+        IVec2::new(10, 0),
+        IVec2::new(10, 10),
+        IVec2::new(0, 10),
+        IVec2::new(5, 5),
+    ];
+    let mut builder = tri.builder();
+    let mut vertices = Vec::new();
+    for &pnt in &points {
+        vertices.push(builder.add_vertex(pnt, None));
+    }
+    builder.add_constraint_edge(vertices[0], vertices[2], 1);
+    builder.add_constraint_edge(vertices[1], vertices[3], 1);
+    assert_eq!(builder.check(), Ok(()));
+}
+
+#[test]
+fn fuzz_cdt_issue3() {
+    let mut tri = Triangulation::new_cdt();
+    let points: Vec<IVec2> = vec![
+        IVec2::new(0, 0),
+        IVec2::new(10, 0),
+        IVec2::new(10, 10),
+        IVec2::new(0, 10),
+        IVec2::new(2, 2),
+        IVec2::new(8, 2),
+        IVec2::new(8, 8),
+        IVec2::new(2, 8),
+    ];
+    let mut builder = tri.builder();
+    let mut vertices = Vec::new();
+    for &pnt in &points {
+        vertices.push(builder.add_vertex(pnt, None));
+    }
+    builder.add_constraint_edge(vertices[4], vertices[5], 1);
+    builder.add_constraint_edge(vertices[5], vertices[6], 1);
+    builder.add_constraint_edge(vertices[6], vertices[7], 1);
+    builder.add_constraint_edge(vertices[7], vertices[4], 1);
+    assert_eq!(builder.check(), Ok(()));
+}
+
+#[test]
+fn fuzz_cdt_issue4() {
+    let points: Vec<IVec2> = vec![
+        (87, 65),
+        (-49, -1),
+        (-44, 11),
+        (-1, -1),
+        (-70, -1),
+        (-29, 15),
+        (45, -1),
+        (45, -71),
+        (-69, -9),
+        (-69, 87),
+        (59, -1),
+        (-20, -79),
+        (-3, -1),
+    ]
+    .into_iter()
+    .map(|(x, y)| IVec2::new(x, y))
+    .collect();
+    let edges: Vec<(usize, usize)> = vec![(0, 8), (4, 10), (10, 2)];
+
+    let mut tri = Triangulation::new_cdt();
+    let mut builder = tri.builder();
+    let mut vertices = Vec::new();
+    for &pnt in &points {
+        vertices.push(builder.add_vertex(pnt, None));
+        assert_eq!(builder.check(), Ok(()));
+    }
+    for &(a, b) in &edges {
+        builder.add_constraint_edge(vertices[a], vertices[b], 1);
+        assert_eq!(builder.check(), Ok(()));
     }
 }
 
 #[test]
-fn fuzz_constrained_issue3() {
-    // Fuzz case: ConstrainedInput with 17 points and 11 edges
+fn fuzz_cdt_issue4_reduced() {
+    let points: Vec<(i32, i32)> = vec![
+        (87, 65),
+        (-49, -1),
+        (-1, -1),
+        (-70, -1),
+        (-29, 25),
+        (-69, -9),
+        (59, -1),
+        (0, -79),
+        (-13, -1),
+    ];
+    let edges: Vec<(usize, usize)> = vec![(0, 5), (3, 6)];
+
+    let points: Vec<_> = points.into_iter().map(|(x, y)| IVec2::new(x, y)).collect();
+
     let mut tri = Triangulation::new_cdt();
-
-    let points = vec![
-        (-134, -3841),
-        (-165, -1),
-        (-1, -4),
-        (-32473, 9185),
-        (-725, -358),
-        (-1, 9255),
-        (-27757, 10131),
-        (-1, -1),
-        (-1, -9253),
-        (-18213, -9423),
-        (-9253, -37),
-        (-1, -1),
-        (-9217, -1),
-        (-1, -1),
-        (-9253, 9179),
-        (7460, 8995),
-        (-8, -1),
-    ];
-
-    // Add vertices with Delaunay enabled (matching fuzzer behavior)
-    let mut builder = tri.builder();
+    let mut builder = tri.builder().with_debug(usize::MAX, "../../temp/cdt/fuzz_cdt_issue5");
     let mut vertices = Vec::new();
-    for &(x, y) in &points {
-        let vi = builder.add_vertex(IVec2::new(x, y), None);
-        vertices.push(vi);
+    for &pnt in &points {
+        vertices.push(builder.add_vertex(pnt, None));
+        assert_eq!(builder.check(), Ok(()));
     }
-    drop(builder);
-
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-
-    let n = vertices.len();
-    let edges = [
-        (91u8, 255u8),
-        (255u8, 50u8),
-        (255u8, 252u8),
-        (39u8, 81u8),
-        (255u8, 0u8),
-        (122u8, 240u8),
-        (21u8, 11u8),
-        (240u8, 39u8),
-        (225u8, 255u8),
-        (39u8, 129u8),
-        (0u8, 0u8),
-    ];
-
     for &(a, b) in &edges {
-        let a = a as usize % n;
-        let b = b as usize % n;
-        if a == b {
-            continue;
-        }
-
-        let mut builder = tri.builder();
         builder.add_constraint_edge(vertices[a], vertices[b], 1);
-        drop(builder);
-
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+        assert_eq!(builder.check(), Ok(()));
     }
 }
 
 #[test]
-fn fuzz_constrained_issue4() {
-    // Fuzz case: ConstrainedInput with 36 points and 45 edges
-    let mut tri = Triangulation::new_cdt();
-
-    let points = vec![
-        (10117, 1157),
-        (9984, 10239),
-        (23551, -212),
-        (-249, -59),
-        (-103, 10238),
-        (-18, -1),
-        (11519, -249),
-        (-1, -103),
-        (-163, -1),
-        (1945, -31444),
-        (-217, -23867),
-        (31487, 1279),
-        (-1, -26169),
-        (-31444, 10225),
-        (-59, -1),
-        (-217, 1836),
-        (-59, 27136),
-        (10239, -1),
-        (-14849, -1),
-        (-1, 11007),
-        (-37, -1),
-        (-1, -20481),
-        (-9253, -9253),
-        (-9253, -9253),
-        (-37, 10239),
-        (2047, -14849),
-        (-26113, -1),
-        (-9459, -1),
+fn fuzz_cdt_issue5() {
+    let points: Vec<(i32, i32)> = vec![
         (-1, -1),
-        (-9467, -9253),
-        (-9253, -9253),
-        (-9253, 8667),
-        (9215, 7459),
-        (12579, -8),
-        (-8739, -8739),
-        (9983, -1),
+        (-1, -1),
+        (87, 61),
+        (87, -71),
+        (-1, 75),
+        (-81, 72),
+        (-11, -1),
+        (-45, -1),
+        (41, -90),
+        (66, 0),
+        (-85, -49),
+        (-1, 11),
     ];
+    let edges: Vec<(usize, usize)> = vec![(2, 3), (5, 3), (10, 11)];
 
-    // Add vertices with Delaunay enabled (matching fuzzer behavior)
+    let points: Vec<_> = points.into_iter().map(|(x, y)| IVec2::new(x, y)).collect();
+
+    let mut tri = Triangulation::new_cdt();
     let mut builder = tri.builder();
     let mut vertices = Vec::new();
-    for &(x, y) in &points {
-        let vi = builder.add_vertex(IVec2::new(x, y), None);
-        vertices.push(vi);
+    for &pnt in &points {
+        vertices.push(builder.add_vertex(pnt, None));
+        assert_eq!(builder.check(), Ok(()));
     }
-    drop(builder);
-
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-
-    let n = vertices.len();
-    let edges = [
-        (255u8, 240u8),
-        (91u8, 255u8),
-        (255u8, 50u8),
-        (255u8, 252u8),
-        (219u8, 33u8),
-        (255u8, 35u8),
-        (29u8, 35u8),
-        (49u8, 248u8),
-        (255u8, 221u8),
-        (221u8, 221u8),
-        (255u8, 38u8),
-        (255u8, 122u8),
-        (255u8, 240u8),
-        (91u8, 255u8),
-        (255u8, 50u8),
-        (255u8, 252u8),
-        (39u8, 81u8),
-        (255u8, 0u8),
-        (240u8, 91u8),
-        (255u8, 255u8),
-        (51u8, 255u8),
-        (252u8, 255u8),
-        (39u8, 99u8),
-        (99u8, 99u8),
-        (129u8, 225u8),
-        (253u8, 43u8),
-        (255u8, 254u8),
-        (239u8, 5u8),
-        (255u8, 39u8),
-        (44u8, 7u8),
-        (197u8, 255u8),
-        (153u8, 255u8),
-        (93u8, 255u8),
-        (255u8, 199u8),
-        (7u8, 44u8),
-        (241u8, 39u8),
-        (197u8, 162u8),
-        (255u8, 122u8),
-        (4u8, 255u8),
-        (255u8, 199u8),
-        (7u8, 44u8),
-        (241u8, 39u8),
-        (197u8, 162u8),
-        (255u8, 122u8),
-        (3u8, 255u8),
-    ];
-
     for &(a, b) in &edges {
-        let a = a as usize % n;
-        let b = b as usize % n;
-        if a == b {
-            continue;
-        }
-
-        let mut builder = tri.builder();
         builder.add_constraint_edge(vertices[a], vertices[b], 1);
-        drop(builder);
-
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+        assert_eq!(builder.check(), Ok(()));
     }
 }

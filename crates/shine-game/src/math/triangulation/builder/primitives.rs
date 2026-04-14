@@ -53,13 +53,6 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
         self.tri[f_to].constraints[i_to] = c;
     }
 
-    pub fn opposite_edge<E: Into<FaceEdge>>(&self, edge: E) -> FaceEdge {
-        let edge: FaceEdge = edge.into();
-        let nf = self.tri[edge.face].neighbors[edge.edge];
-        let i = self.tri[nf].find_neighbor(edge.face).unwrap();
-        FaceEdge::new(nf, i)
-    }
-
     pub fn set_adjacent<A: Into<FaceEdge>, B: Into<FaceEdge>>(&mut self, a: A, b: B) {
         let FaceEdge { face: f0, edge: i0 } = a.into();
         let FaceEdge { face: f1, edge: i1 } = b.into();

@@ -29,13 +29,13 @@ path = "fuzz_targets/fuzz_cdt_points.rs"
 doc = false
 
 [[bin]]
-name = "fuzz_tri_points"
-path = "fuzz_targets/fuzz_tri_points.rs"
+name = "fuzz_ct_constrained"
+path = "fuzz_targets/fuzz_ct_constrained.rs"
 doc = false
 
 [[bin]]
-name = "fuzz_tri_delaunay_points"
-path = "fuzz_targets/fuzz_tri_delaunay_points.rs"
+name = "fuzz_ct_points"
+path = "fuzz_targets/fuzz_ct_points.rs"
 doc = false
 
 [[bin]]

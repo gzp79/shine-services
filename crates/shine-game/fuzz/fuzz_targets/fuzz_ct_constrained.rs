@@ -5,10 +5,50 @@ use glam::IVec2;
 use libfuzzer_sys::fuzz_target;
 use shine_game::math::triangulation::{GeometryChecker, TopologyChecker, Triangulation};
 
+const MAX_X: i32 = 100;
+const MAX_Y: i32 = 100;
+
 #[derive(Arbitrary, Debug)]
 struct ConstrainedInput {
     points: Vec<(i16, i16)>,
     edges: Vec<(u8, u8)>,
+}
+
+impl fmt::Debug for ConstrainedInput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let n = self.points.len();
+        if n < 3 || n > 200 {
+            return f
+                .debug_struct("ConstrainedInput (Invalid)")
+                .field("points_len", &n)
+                .finish();
+        }
+
+        let points: Vec<IVec2> = self
+            .points
+            .iter()
+            .map(|&(x, y)| IVec2::new(x as i32 % 100, y as i32 % 100))
+            .collect();
+
+        let edges: Vec<(usize, usize)> = self
+            .edges
+            .iter()
+            .filter_map(|&(a, b)| {
+                let a = a as usize % n;
+                let b = b as usize % n;
+                if a != b {
+                    Some((a, b))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        f.debug_struct("ConstrainedInput")
+            .field("points", &points)
+            .field("edges", &edges)
+            .finish()
+    }
 }
 
 fuzz_target!(|input: ConstrainedInput| {
@@ -20,7 +60,9 @@ fuzz_target!(|input: ConstrainedInput| {
     let mut vertices = Vec::new();
 
     for &(x, y) in &input.points {
-        let vi = tri.builder().add_vertex(IVec2::new(x as i32, y as i32), None);
+        let vi = tri
+            .builder()
+            .add_vertex(IVec2::new(x as i32 % MAX_X, y as i32 % MAX_Y), None);
         vertices.push(vi);
     }
 

@@ -9,21 +9,13 @@ pub trait TypedIndex: Copy + Eq + std::fmt::Debug {
 
     fn new(index: usize) -> Self;
     fn into_index(self) -> usize;
+    fn try_into_index(self) -> Option<usize>;
 
     fn is_none(self) -> bool;
 
     #[inline]
     fn is_valid(self) -> bool {
         !self.is_none()
-    }
-
-    /// Convert to `usize` if real, `None` otherwise.
-    fn try_into_index(self) -> Option<usize> {
-        if self.is_none() {
-            None
-        } else {
-            Some(self.into_index())
-        }
     }
 }
 
@@ -65,6 +57,15 @@ macro_rules! define_typed_index {
                     concat!("called into_index() on non-real ", stringify!($name))
                 );
                 self.0 as usize
+            }
+
+            #[inline]
+            fn try_into_index(self) -> Option<usize> {
+                if $crate::indexed::TypedIndex::is_none(self) {
+                    None
+                } else {
+                    Some(self.0 as usize)
+                }
             }
 
             #[inline]
