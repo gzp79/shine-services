@@ -135,11 +135,6 @@ impl BuilderState {
         self.constraint_chains = Some(chains);
     }
 
-    /// Get references to the constraint chains if they're not locked.
-    /// Returns (edge_chain, top_chain, bottom_chain).
-    pub fn constraint_chains(&self) -> Option<(&Vec<FaceEdge>, &Vec<FaceEdge>, &Vec<FaceEdge>)> {
-        self.constraint_chains.as_ref().map(|(e, t, b)| (e, t, b))
-    }
 }
 
 impl Default for BuilderState {

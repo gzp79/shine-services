@@ -27,7 +27,7 @@ fn cdt_test() {
 #[test]
 fn cdt_constraint_concave() {
     let transforms: Vec<(&str, Box<dyn Fn(i32, i32) -> IVec2>)> = vec![
-        //("(x, y)", Box::new(|x, y| IVec2::new(x, y))),
+        ("(x, y)", Box::new(|x, y| IVec2::new(x, y))),
         ("(-x, y)", Box::new(|x, y| IVec2::new(-x, y))),
         ("(-x, -y)", Box::new(|x, y| IVec2::new(-x, -y))),
         ("(x, -y)", Box::new(|x, y| IVec2::new(x, -y))),
@@ -38,12 +38,10 @@ fn cdt_constraint_concave() {
     ];
 
     for (info, map) in transforms.iter() {
-        log::info!("transformation: {}", info);
+        log::debug!("transformation: {}", info);
 
         let mut tri = Triangulation::new_cdt();
-        let mut builder = tri
-            .builder()
-            .with_debug(usize::MAX, format!("../../temp/cdt/cdt_constraint_concave_{}", info));
+        let mut builder = tri.builder();
 
         let _e = builder.add_vertex(map(20, 25), None);
         let _d = builder.add_vertex(map(35, 25), None);
@@ -58,6 +56,5 @@ fn cdt_constraint_concave() {
         builder.add_constraint_edge(p0, p1, 1);
         assert_eq!(builder.check(), Ok(()));
         assert_eq!(tri.c(tri.find_edge_by_vertex(p0, p1).unwrap()), 1);
-        break;
     }
 }
