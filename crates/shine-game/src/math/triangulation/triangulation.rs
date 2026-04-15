@@ -92,6 +92,14 @@ impl FaceEdge {
     pub fn new(f: FaceIndex, e: Rot3Idx) -> FaceEdge {
         FaceEdge { face: f, edge: e }
     }
+
+    pub fn next(&self) -> FaceEdge {
+        FaceEdge::new(self.face, self.edge.increment())
+    }
+
+    pub fn prev(&self) -> FaceEdge {
+        FaceEdge::new(self.face, self.edge.decrement())
+    }
 }
 
 impl From<(FaceIndex, Rot3Idx)> for FaceEdge {
@@ -155,11 +163,11 @@ impl From<FaceIndex> for FaceClue {
     }
 }
 
-// Store the topology graph of the triangualtion
+/// Store the topology graph of the triangualation
 pub struct Triangulation<const DELAUNAY: bool = true> {
     pub(super) dimension: u8,
-    vertices: IdxVec<VertexIndex, Vertex>,
-    faces: IdxVec<FaceIndex, Face>,
+    pub(super) vertices: IdxVec<VertexIndex, Vertex>,
+    pub(super) faces: IdxVec<FaceIndex, Face>,
     pub(super) infinite_vertex: VertexIndex,
 
     tag: Rc<RefCell<usize>>,

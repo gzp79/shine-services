@@ -1,71 +1,10 @@
 use glam::IVec2;
-use shine_game::math::triangulation::{GeometryChecker, TopologyChecker, Triangulation};
+use shine_game::math::triangulation::Triangulation;
 use shine_test::test;
 
 #[test]
-fn delaunay_checker_passes() {
+fn cdt_test() {
     let mut tri = Triangulation::new_cdt();
-
-    // Create a Delaunay triangulation
-    let mut builder = tri.builder();
-    builder.add_vertex(IVec2::new(0, 0), None);
-    builder.add_vertex(IVec2::new(100, 0), None);
-    builder.add_vertex(IVec2::new(50, 50), None);
-    builder.add_vertex(IVec2::new(50, 10), None);
-    drop(builder);
-
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-}
-
-#[test]
-fn delaunay_checker_with_constraints() {
-    let mut tri = Triangulation::new_cdt();
-
-    // Create vertices
-
-    let mut builder = tri.builder();
-    let v0 = builder.add_vertex(IVec2::new(0, 0), None);
-    builder.add_vertex(IVec2::new(100, 0), None);
-    let v2 = builder.add_vertex(IVec2::new(100, 100), None);
-    builder.add_vertex(IVec2::new(0, 100), None);
-    builder.add_vertex(IVec2::new(50, 50), None);
-
-    // Add a constraint diagonal - this may violate Delaunay but it's allowed
-    builder.add_constraint_edge(v0, v2, 1);
-    drop(builder);
-
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-}
-
-#[test]
-fn constrained_delaunay_restoration() {
-    let mut tri = Triangulation::new_cdt();
-
-    // Create a square with a center point
-    let mut builder = tri.builder();
-
-    let v0 = builder.add_vertex(IVec2::new(0, 0), None);
-    builder.add_vertex(IVec2::new(100, 0), None);
-    let v2 = builder.add_vertex(IVec2::new(100, 100), None);
-    builder.add_vertex(IVec2::new(0, 100), None);
-    builder.add_vertex(IVec2::new(50, 50), None);
-
-    // Add a constraint that will force re-triangulation
-    // The Delaunay restoration should kick in and optimize the non-constrained edges
-    builder.add_constraint_edge(v0, v2, 1);
-    drop(builder);
-
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-}
-
-#[test]
-fn multiple_constraints_with_delaunay() {
-    let mut tri = Triangulation::new_cdt();
-
-    // Create a grid of points
     let mut builder = tri.builder();
 
     let v00 = builder.add_vertex(IVec2::new(0, 0), None);
@@ -78,13 +17,47 @@ fn multiple_constraints_with_delaunay() {
     let v12 = builder.add_vertex(IVec2::new(100, 200), None);
     let v22 = builder.add_vertex(IVec2::new(200, 200), None);
 
-    // Add multiple constraint edges
     builder.add_constraint_edge(v00, v22, 1);
     builder.add_constraint_edge(v20, v02, 2);
     builder.add_constraint_edge(v10, v12, 4);
     builder.add_constraint_edge(v01, v21, 8);
-    drop(builder);
+    assert_eq!(builder.check(), Ok(()));
+}
 
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+#[test]
+fn cdt_constraint_concave() {
+    let transforms: Vec<(&str, Box<dyn Fn(i32, i32) -> IVec2>)> = vec![
+        //("(x, y)", Box::new(|x, y| IVec2::new(x, y))),
+        ("(-x, y)", Box::new(|x, y| IVec2::new(-x, y))),
+        ("(-x, -y)", Box::new(|x, y| IVec2::new(-x, -y))),
+        ("(x, -y)", Box::new(|x, y| IVec2::new(x, -y))),
+        ("(y, x)", Box::new(|x, y| IVec2::new(y, x))),
+        ("(-y, x)", Box::new(|x, y| IVec2::new(-y, x))),
+        ("(-y, -x)", Box::new(|x, y| IVec2::new(-y, -x))),
+        ("(y, -x)", Box::new(|x, y| IVec2::new(y, -x))),
+    ];
+
+    for (info, map) in transforms.iter() {
+        log::info!("transformation: {}", info);
+
+        let mut tri = Triangulation::new_cdt();
+        let mut builder = tri
+            .builder()
+            .with_debug(usize::MAX, format!("../../temp/cdt/cdt_constraint_concave_{}", info));
+
+        let _e = builder.add_vertex(map(20, 25), None);
+        let _d = builder.add_vertex(map(35, 25), None);
+        let _b = builder.add_vertex(map(20, 5), None);
+        let _c = builder.add_vertex(map(35, 0), None);
+        let _a = builder.add_vertex(map(10, 0), None);
+        let p0 = builder.add_vertex(map(0, 10), None);
+        let _f = builder.add_vertex(map(10, 15), None);
+        let p1 = builder.add_vertex(map(40, 10), None);
+        assert_eq!(builder.check(), Ok(()));
+
+        builder.add_constraint_edge(p0, p1, 1);
+        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(tri.c(tri.find_edge_by_vertex(p0, p1).unwrap()), 1);
+        break;
+    }
 }

@@ -76,7 +76,7 @@ pub struct SvgDumpFileScope<'a> {
 impl<'a> Drop for SvgDumpFileScope<'a> {
     fn drop(&mut self) {
         if let Err(err) = self.dump_file.write_current(self.prefix) {
-            eprintln!(
+            log::error!(
                 "Error writing SVG dump file [{}]: {}",
                 self.dump_file.filename(&self.prefix).to_string_lossy(),
                 err

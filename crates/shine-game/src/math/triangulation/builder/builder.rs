@@ -2,38 +2,29 @@ use std::path::PathBuf;
 
 use crate::{
     indexed::TypedIndex,
-    math::{
-        debug::SvgDumpFile,
-        triangulation::{
-            predicates::{test_collinear_points, CollinearTestType},
-            Crossing, FaceEdge, FaceIndex, GeometryChecker, Location, Rot3Idx, TopologyChecker, Triangulation,
-            VertexClue, VertexIndex,
-        },
+    math::triangulation::{
+        builder::state::BuilderState,
+        predicates::{test_collinear_points, CollinearTestType},
+        Crossing, FaceEdge, FaceIndex, GeometryChecker, Location, Rot3Idx, TopologyChecker, Triangulation, VertexClue,
+        VertexIndex,
     },
 };
 use glam::IVec2;
 
+/// High-level builder for constructing triangulations.
+///
+/// TriangulationBuilder coordinates between the triangulation data structure
+/// and the builder state, providing a clean public API for construction operations.
 pub struct TriangulationBuilder<'a, const DELAUNAY: bool> {
     pub(super) tri: &'a mut Triangulation<DELAUNAY>,
-
-    // Reusable buffers
-    pub(super) delaunay_stack: Option<Vec<FaceEdge>>,
-    pub(super) edge_chain: Option<Vec<FaceEdge>>,
-    pub(super) top_chain: Option<Vec<FaceEdge>>,
-    pub(super) bottom_chain: Option<Vec<FaceEdge>>,
-
-    pub(super) svg_dump: SvgDumpFile,
+    pub(super) state: BuilderState,
 }
 
 impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
     pub fn new(tri: &'a mut Triangulation<DELAUNAY>) -> Self {
         Self {
             tri,
-            delaunay_stack: if DELAUNAY { Some(Vec::new()) } else { None },
-            edge_chain: Some(Vec::new()),
-            top_chain: Some(Vec::new()),
-            bottom_chain: Some(Vec::new()),
-            svg_dump: SvgDumpFile::new(0, ""),
+            state: BuilderState::new(),
         }
     }
 
@@ -44,26 +35,25 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
     }
 
     pub fn with_debug<P: Into<PathBuf>>(mut self, verbosity: usize, path: P) -> Self {
-        self.svg_dump = SvgDumpFile::new(verbosity, path);
+        self.state = self.state.with_debug(verbosity, path);
         self
     }
 
     pub fn add_contour(&mut self, p: &[IVec2]) {
         assert!(p.len() >= 2);
 
-        if let Some(mut dump) = self.svg_dump.scope(0, "input_contour") {
-            dump.add_default_styles()
-                .add_contour(p.iter().cloned(), "edge-constraint");
-        }
+        self.state.dump(0, "input_contour", |dump| {
+            dump.add_contour(p.iter().cloned(), "edge-constraint");
+        });
 
-        let location = self.locate_position(p[0], None).unwrap();
+        let location = self.tri.locate_position(p[0], None).unwrap();
         let vi0 = self.add_vertex_at(p[0], location);
 
         let mut hint = self.tri[vi0].face;
         let mut vi_prev = vi0;
 
         for i in 1..p.len() {
-            let location = self.locate_position(p[i], Some(hint)).unwrap();
+            let location = self.tri.locate_position(p[i], Some(hint)).unwrap();
             let vi_next = self.add_vertex_at(p[i], location);
             self.add_constraint_edge(vi_prev, vi_next, 1);
 
@@ -77,7 +67,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
     }
 
     pub fn add_vertex(&mut self, p: IVec2, hint: Option<FaceIndex>) -> VertexIndex {
-        let location = self.locate_position(p, hint).unwrap();
+        let location = self.tri.locate_position(p, hint).unwrap();
         let vi = self.add_vertex_at(p, location);
 
         self.delaunay_run();
@@ -109,45 +99,44 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             _ => unreachable!("Inconsistent triangulation"),
         }
 
-        if let Some(mut dump) = self.svg_dump.scope(1, "after_add_constraint") {
-            dump.add_default_styles()
-                .add_tri(&self.tri, self.delaunay_stack.as_ref().map(|e| (e, "edge-delaunay")));
-        }
+        self.state.dump(1, "after_add_constraint", |dump| {
+            dump.add_tri(&self.tri, []);
+        });
         self.delaunay_run();
     }
 
     fn add_vertex_at(&mut self, p: IVec2, loc: Location) -> VertexIndex {
         let vi = match loc {
             Location::Empty => {
-                let vi = self.create_vertex_with_position(p);
-                self.extend_dimension(vi);
+                let vi = self.tri.create_vertex_with_position(p);
+                self.tri.extend_dimension(vi);
                 vi
             }
             Location::Vertex(f, v) => self.tri[f].vertices[v],
             Location::Edge(f, e) => {
-                let vi = self.create_vertex_with_position(p);
-                self.split_edge(f, e, vi);
+                let vi = self.tri.create_vertex_with_position(p);
+                self.tri.split_edge(f, e, vi);
                 self.delaunay_push_vertex(vi);
                 vi
             }
             Location::OutsideConvexHull(f) | Location::Face(f) => {
-                let vi = self.create_vertex_with_position(p);
-                self.split_face(f, vi);
+                let vi = self.tri.create_vertex_with_position(p);
+                self.tri.split_face(f, vi);
                 self.delaunay_push_vertex(vi);
                 vi
             }
             Location::OutsideAffineHull => {
-                let vi = self.create_vertex_with_position(p);
-                self.extend_dimension(vi);
+                let vi = self.tri.create_vertex_with_position(p);
+                self.tri.extend_dimension(vi);
                 self.delaunay_push_vertex(vi);
                 vi
             }
         };
 
-        if let Some(mut dump) = self.svg_dump.scope(1, "after_add_vertex") {
-            dump.add_default_styles()
-                .add_tri(&self.tri, self.delaunay_stack.as_ref().map(|e| (e, "edge-delaunay")));
-        }
+        self.state
+            .dump(1, &format!("after_add_vertex_{}", vi.into_index()), |dump| {
+                dump.add_tri(&self.tri, []);
+            });
         vi
     }
 
@@ -214,13 +203,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
 
     /// Adds the constraining edge between the two vertex when dim=2
     fn add_constraint_dim2(&mut self, mut v0: VertexIndex, v1: VertexIndex, c: u32) {
-        self.delaunay_push_vertex(v0);
-        self.delaunay_push_vertex(v1);
-
-        let mut edge_chain = self.edge_chain.take().expect("edge_chain lock");
-        let mut top_chain = self.top_chain.take().expect("top_chain lock");
-        let mut bottom_chain = self.bottom_chain.take().expect("bottom_chain lock");
-
+        let (mut edge_chain, mut top_chain, mut bottom_chain) = self.state.lock_constraint_chains();
         edge_chain.clear();
         top_chain.clear();
         bottom_chain.clear();
@@ -260,60 +243,82 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 }
             }
 
-            if let Some(mut dump) = self.svg_dump.scope(2, "before_triangulate_hole") {
-                dump.add_default_styles().add_tri(
-                    &self.tri,
-                    [
-                        (&top_chain, "edge-top"),
-                        (&bottom_chain, "edge-bottom"),
-                        (&edge_chain, "edge-chain"),
-                    ],
-                );
-            }
+            self.state.dump(
+                2,
+                &format!("before_triangulate_hole_{}_{}", v0.into_index(), v1.into_index()),
+                |dump| {
+                    dump.add_tri(
+                        &self.tri,
+                        [
+                            (&top_chain, "edge-0"),
+                            (&bottom_chain, "edge-1"),
+                            (&edge_chain, "edge-2"),
+                        ],
+                    );
+                },
+            );
 
+            let mut next_v0 = v0;
             if !edge_chain.is_empty() {
-                v0 = self.tri.vi(VertexClue::end_of(*edge_chain.last().unwrap()));
-                for edge in edge_chain.iter() {
-                    self.merge_constraint(*edge, c);
+                next_v0 = self.tri.vi(VertexClue::end_of(*edge_chain.last().unwrap()));
+                // Collect edges to avoid borrow conflict
+                let edges: Vec<_> = edge_chain.iter().copied().collect();
+                for edge in edges {
+                    self.tri.merge_constraint(edge, c);
                 }
             }
 
             if !top_chain.is_empty() {
-                v0 = self.tri.vi(VertexClue::end_of(*bottom_chain.last().unwrap()));
+                next_v0 = self.tri.vi(VertexClue::end_of(*bottom_chain.last().unwrap()));
                 top_chain.reverse();
-                let edge = self.triangulate_hole(&mut top_chain, &mut bottom_chain);
-                self.merge_constraint(edge, c);
+                let [edge1, edge2] = self.triangulate_hole(&mut top_chain, &mut bottom_chain);
+                //self.tri.merge_constraint(edge1, c);
+                self.tri[edge1.face].constraints[edge1.edge] |= c;
+                self.tri[edge2.face].constraints[edge2.edge] |= c;
+
+                self.delaunay_push_edge(edge1.next());
+                self.delaunay_push_edge(edge1.prev());
+                self.delaunay_push_edge(edge2.next());
+                self.delaunay_push_edge(edge2.prev());
             }
 
-            for fe in top_chain.iter() {
-                self.delaunay_push_face(fe.face);
-            }
-            for fe in bottom_chain.iter() {
-                self.delaunay_push_face(fe.face);
-            }
-            self.delaunay_push_vertex(v0);
-            if let Some(mut dump) = self.svg_dump.scope(2, "after_triangulate_hole") {
-                dump.add_default_styles().add_tri(
-                    &self.tri,
-                    [
-                        (&top_chain, "edge-top"),
-                        (&bottom_chain, "edge-bottom"),
-                        (&edge_chain, "edge-chain"),
-                    ],
+            self.state.dump(
+                2,
+                &format!("after_triangulate_hole_{}_{}", v0.into_index(), v1.into_index()),
+                |dump| {
+                    dump.add_tri(
+                        &self.tri,
+                        [
+                            (&top_chain, "edge-0"),
+                            (&bottom_chain, "edge-1"),
+                            (&edge_chain, "edge-2"),
+                        ],
+                    );
+                },
+            );
+
+            if let Some(stack) = self.state.delaunay_stack() {
+                self.state.dump(
+                    2,
+                    &format!(
+                        "after_triangulate_hole_delaunay_{}_{}",
+                        v0.into_index(),
+                        v1.into_index()
+                    ),
+                    |dump| {
+                        dump.add_tri(&self.tri, [(stack, "edge-delaunay")]);
+                    },
                 );
             }
 
+            v0 = next_v0;
             edge_chain.clear();
             top_chain.clear();
             bottom_chain.clear();
         }
 
-        self.delaunay_push_vertex(v1);
-        //self.debug_dump(2, "dim2_hole_constraint");
-
-        self.edge_chain = Some(edge_chain);
-        self.top_chain = Some(top_chain);
-        self.bottom_chain = Some(bottom_chain);
+        self.state
+            .unlock_constraint_chains((edge_chain, top_chain, bottom_chain));
     }
 
     fn triangulate_half_hole(&mut self, chain: &mut Vec<FaceEdge>) -> FaceEdge {
@@ -329,11 +334,11 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             assert_eq!(
                 p1,
                 self.tri.vi(VertexClue::start_of(next_edge)),
-                "Edges are not continouous"
+                "Edges are not continuous"
             );
             let p2 = self.tri.vi(VertexClue::end_of(next_edge));
 
-            if self.get_vertices_orientation(p0, p1, p2) <= 0 {
+            if self.tri.get_vertices_orientation(p0, p1, p2) <= 0 {
                 // cannot clip, not an ear
                 cur += 1;
                 continue;
@@ -347,12 +352,15 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 // remove next from the list and make it the clipped ear
                 chain.remove(next);
 
+                log::trace!("Clipping next ear with edges ({cur_edge:?}, {next_edge:?})");
+
                 self.tri[cur_edge.face].vertices[cur_edge.edge.decrement()] = p2;
                 self.tri[next_edge.face].vertices[next_edge.edge] = p0;
 
                 let ne = self.tri.twin_edge(cur_edge);
-                self.set_adjacent((ne.face, ne.edge), (next_edge.face, next_edge.edge.decrement()));
-                self.set_adjacent(
+                self.tri
+                    .set_adjacent((ne.face, ne.edge), (next_edge.face, next_edge.edge.decrement()));
+                self.tri.set_adjacent(
                     (cur_edge.face, cur_edge.edge),
                     (next_edge.face, next_edge.edge.increment()),
                 );
@@ -364,6 +372,9 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 self.tri[next_edge.face].constraints[next_edge.edge.decrement()] = c;
                 self.tri[cur_edge.face].constraints[cur_edge.edge] = 0;
                 self.tri[next_edge.face].constraints[next_edge.edge.increment()] = 0;
+
+                self.delaunay_push_edge(next_edge.prev());
+                self.delaunay_push_edge(next_edge);
 
                 if cur > 0 {
                     // step back
@@ -377,9 +388,12 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 self.tri[cur_edge.face].vertices[cur_edge.edge] = p2;
                 self.tri[next_edge.face].vertices[next_edge.edge.increment()] = p0;
 
+                log::trace!("Clipping current ear with edges ({cur_edge:?}, {next_edge:?})");
+
                 let ne = self.tri.twin_edge(next_edge);
-                self.set_adjacent((ne.face, ne.edge), (cur_edge.face, cur_edge.edge.increment()));
-                self.set_adjacent(
+                self.tri
+                    .set_adjacent((ne.face, ne.edge), (cur_edge.face, cur_edge.edge.increment()));
+                self.tri.set_adjacent(
                     (next_edge.face, next_edge.edge),
                     (cur_edge.face, cur_edge.edge.decrement()),
                 );
@@ -392,8 +406,26 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 self.tri[cur_edge.face].constraints[cur_edge.edge.decrement()] = 0;
                 self.tri[next_edge.face].constraints[next_edge.edge] = 0;
 
+                self.delaunay_push_edge(cur_edge);
+                self.delaunay_push_edge(cur_edge.next());
+
                 // step back
                 cur -= 1;
+            }
+
+            self.state
+                .dump(3, &format!("ear_clipped_{}", cur_edge.face.into_index()), |dump| {
+                    dump.add_tri(&self.tri, [(chain as &Vec<FaceEdge>, "edge-0")]);
+                });
+
+            if let Some(stack) = self.state.delaunay_stack() {
+                self.state.dump(
+                    3,
+                    &format!("ear_clipped_delaunay_{}", cur_edge.face.into_index()),
+                    |dump| {
+                        dump.add_tri(&self.tri, [(stack, "edge-delaunay")]);
+                    },
+                );
             }
         }
 
@@ -402,15 +434,13 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
 
     /// Triangulates an edge-visible hole given by the edge chain of the upper(lower) polygon.
     /// On completion it returns the edge that separates the upper and lower half of the polygon.
-    fn triangulate_hole(&mut self, top: &mut Vec<FaceEdge>, bottom: &mut Vec<FaceEdge>) -> FaceEdge {
+    fn triangulate_hole(&mut self, top: &mut Vec<FaceEdge>, bottom: &mut Vec<FaceEdge>) -> [FaceEdge; 2] {
         assert!(top.len() >= 2 && bottom.len() >= 2);
         let top = self.triangulate_half_hole(top);
         let bottom = self.triangulate_half_hole(bottom);
         let top = FaceEdge::new(top.face, top.edge.decrement());
         let bottom = FaceEdge::new(bottom.face, bottom.edge.decrement());
-        self.set_adjacent(top, bottom);
-        self.flip(top.face, top.edge);
-
-        FaceEdge::new(top.face, top.edge.increment())
+        self.tri.set_adjacent(top, bottom);
+        self.tri.flip(top.face, top.edge)
     }
 }

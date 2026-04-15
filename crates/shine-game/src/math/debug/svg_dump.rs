@@ -1,6 +1,6 @@
 use crate::{
     indexed::TypedIndex,
-    math::triangulation::{FaceEdge, FaceIndex, Rot3Idx, Triangulation},
+    math::triangulation::{FaceEdge, Rot3Idx, Triangulation},
 };
 use glam::{IVec2, Vec2};
 use std::{collections::HashMap, io};
@@ -94,17 +94,16 @@ impl SvgDump {
 
     #[rustfmt::skip]
     pub fn add_default_styles(&mut self) -> &mut Self {
-        self.add_style("vert", "fill: #2c3e50;");
-        self.add_style("vert-inf", "fill: #e67e22;");
-        self.add_style("vert-text", "font: bold 14px sans-serif; fill: #333; pointer-events: none;");
-        self.add_style("edge", "stroke: #bbb; stroke-width: 1.0; stroke-linecap: round;");
-        self.add_style("edge-neighbor", "stroke: #666; stroke-width: 0.5; stroke-dasharray: 2,2; opacity: 0.3;");
-        self.add_style("edge-constraint", "stroke: #004c3c; stroke-width: 2.5; stroke-linecap: round;");
-        self.add_style("edge-list", "stroke: #e7003c; stroke-width: 2.5; stroke-linecap: round;");
-        self.add_style("edge-delaunay", "stroke: #e74c00; stroke-width: 2.5; stroke-linecap: round;");
-        self.add_style("edge-delaunay-first", "stroke: #e70000; stroke-width: 2.5; stroke-linecap: round; opacity: 0.5;");
-        self.add_style("edge-text", "font: 10px sans-serif; fill: #666; pointer-events: none; text-anchor: middle; dominant-baseline: middle;");
-        self.add_style("face-text", "font: italic 12px sans-serif; fill: #999; pointer-events: none; text-anchor: middle; dominant-baseline: middle;");
+        self.add_style("vert", "stroke: #2c3e50; stroke-width: 4px; stroke-linecap: round; vector-effect: non-scaling-stroke;");
+        self.add_style("vert-inf", "stroke: #e67e22; stroke-width: 4px; stroke-linecap: round; vector-effect: non-scaling-stroke;");
+        self.add_style("vert-text", "font: bold 4px monospace; fill: #2c3e50; pointer-events: none;");
+
+        self.add_style("edge", "stroke: #34495e; stroke-width: 1.5px; stroke-linecap: round; vector-effect: non-scaling-stroke;");
+        self.add_style("edge-constraint", "stroke: #27ae60; stroke-width: 3px; stroke-linecap: round; vector-effect: non-scaling-stroke;");
+        self.add_style("edge-neighbor", "stroke: #95a5a6; stroke-width: 1px; stroke-dasharray: 4,2; opacity: 0.5; vector-effect: non-scaling-stroke;");
+        self.add_style("edge-text", "font: 10px monospace; fill: #7f8c8d; pointer-events: none; text-anchor: middle; dominant-baseline: middle;");
+
+        self.add_style("face-text", "font: italic 10px monospace; fill: #95a5a6; pointer-events: none; text-anchor: middle; dominant-baseline: middle;");
         self
     }
 
@@ -129,13 +128,14 @@ impl SvgDump {
 
         for (i, &p) in points.iter().enumerate() {
             self.enlarge_bounds(p);
+            // Use zero-length line with round linecap for zoom-independent point
             self.add_content(format!(
-                r#"  <circle cx="{:.2}" cy="{:.2}" r="%u1%" class="{point_class}" />"#,
-                p.x, p.y
+                r#"  <line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" class="{point_class}" />"#,
+                p.x, p.y, p.x, p.y
             ));
             if text_class != "" {
                 self.add_content(format!(
-                    r#"  <text x="{:.2}" y="{:.2}" dx="%u1%" dy="-%u1%" class="{text_class}">{}</text>"#,
+                    r#"  <text x="{:.2}" y="{:.2}" dx="%u1%" dy="-%u1%" class="{text_class}" style="font-size: %u2%;">{}</text>"#,
                     p.x, p.y, i
                 ));
             }
@@ -171,7 +171,7 @@ impl SvgDump {
             return self;
         }
 
-        // colect edge classifications for quick lookup
+        // collect edge classifications for quick lookup
         let edge_class_map = {
             let mut edge_class_map = HashMap::new();
             for (edge_list, class) in edges {
@@ -182,13 +182,28 @@ impl SvgDump {
             edge_class_map
         };
 
+        // Calculate local bounding-box for the triangulation to determine scale
+        let mut local_min = Vec2::MAX;
+        let mut local_max = Vec2::MIN;
+        for vi in tri.vertex_index_iter() {
+            if vi.is_none() || !tri.is_finite_vertex(vi) {
+                continue;
+            }
+            let p = tri[vi].position.to_vec2();
+            local_min = local_min.min(p);
+            local_max = local_max.max(p);
+        }
+        // Use a small fraction of the local diagonal for offsets
+        let local_size = (local_max - local_min).length();
+        let edge_offset = local_size * 0.0075; // 0.75% of diagonal
+
         for fi in tri.face_index_iter() {
             if fi.is_none() {
                 continue;
             }
             let face = &tri[fi];
 
-            // acumulate face center for labeling
+            // accumulate face center for labeling
             let mut face_center = Vec2::ZERO;
             let mut face_points = 0.;
 
@@ -212,34 +227,55 @@ impl SvgDump {
                     self.enlarge_bounds(p0);
                     self.enlarge_bounds(p1);
 
-                    let class = if face.constraints[e] != 0 {
-                        "edge-constraint"
+                    // Check if this edge is in the edge_class_map (delaunay stack)
+                    let edge_highlight = edge_class_map.get(&(fi, e));
+
+                    // Draw main edge - use edge highlight class if delaunay, otherwise plain
+                    let main_edge_class = if let Some(&class) = edge_highlight {
+                        if class == "edge-delaunay" {
+                            "edge-delaunay"
+                        } else {
+                            "edge"
+                        }
                     } else {
                         "edge"
                     };
+
                     self.add_content(format!(
                         r#"  <line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" class="{}" />"#,
-                        p0.x, p0.y, p1.x, p1.y, class
+                        p0.x, p0.y, p1.x, p1.y, main_edge_class
                     ));
 
                     let nfi = face.neighbors[e];
-                    if nfi.is_valid() || edge_class_map.contains_key(&(fi, e)) {
+                    if nfi.is_valid() || edge_highlight.is_some() {
                         let ed = (p1 - p0).normalize().perp();
 
-                        let class = edge_class_map.get(&(fi, e)).unwrap_or(&"edge-neighbor");
+                        // Show constraints and chain highlights on the neighbor edge
+                        let class = if face.constraints[e] != 0 {
+                            "edge-constraint"
+                        } else if let Some(&class) = edge_highlight {
+                            // Skip delaunay on neighbor edge since it's on main edge
+                            if class == "edge-delaunay" {
+                                "edge-neighbor"
+                            } else {
+                                class
+                            }
+                        } else {
+                            "edge-neighbor"
+                        };
 
                         self.add_content(format!(
                             r#"  <line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" class="{}" />"#,
-                            p0.x + ed.x * 1.,
-                            p0.y + ed.y * 1.,
-                            p1.x + ed.x * 1.,
-                            p1.y + ed.y * 1.,
+                            p0.x + ed.x * edge_offset,
+                            p0.y + ed.y * edge_offset,
+                            p1.x + ed.x * edge_offset,
+                            p1.y + ed.y * edge_offset,
                             class
                         ));
                         self.add_content(format!(
                             r#"  <text x="{:.2}" y="{:.2}" class="edge-text" style="font-size: %u1%;">{}</text>"#,
-                            pc.x + ed.x * 0.05,
-                            pc.y + ed.y * 0.05,
+                            pc.x + ed.x * edge_offset,
+                            pc.y + ed.y * edge_offset,
                             i
                         ));
                     }
@@ -290,7 +326,7 @@ impl SvgDump {
                     .map(|id| id.to_string())
                     .unwrap_or_else(|| "None".to_string());
                 self.add_content(format!(
-                    r#"  <text x="{:.2}" y="{:.2}" class="face-text">{}</text>"#,
+                    r#"  <text x="{:.2}" y="{:.2}" class="face-text" style="font-size: %u2%;">{}</text>"#,
                     face_center.x, face_center.y, id_str
                 ));
             }
@@ -306,12 +342,13 @@ impl SvgDump {
                 .try_into_index()
                 .map(|id| id.to_string())
                 .unwrap_or_else(|| "None".to_string());
+            // Use zero-length line with round linecap for zoom-independent point
             self.add_content(format!(
-                r#"  <circle cx="{:.2}" cy="{:.2}" r="%u1%" class="vert" />"#,
-                p.x, p.y
+                r#"  <line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" class="vert" />"#,
+                p.x, p.y, p.x, p.y
             ));
             self.add_content(format!(
-                r#"  <text x="{:.2}" y="{:.2}" class="vert-text">{}</text>"#,
+                r#"  <text x="{:.2}" y="{:.2}" dx="%u1%" dy="-%u1%" class="vert-text" style="font-size: %u2%;">{}</text>"#,
                 p.x, p.y, id_str
             ));
         }

@@ -1,7 +1,5 @@
 mod builder;
 mod delaunay;
-mod euler_ops;
-mod locator;
-mod primitives;
+mod state;
 
-pub use self::{builder::TriangulationBuilder, locator::Location};
+pub use self::builder::TriangulationBuilder;
