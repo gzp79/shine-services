@@ -1,5 +1,5 @@
 use glam::IVec2;
-use shine_game::math::triangulation::{debug, Triangulation};
+use shine_game::math::triangulation::Triangulation;
 use shine_test::test;
 
 #[test]
@@ -205,7 +205,7 @@ fn cdt_issue5() {
     let points: Vec<_> = points.into_iter().map(|(x, y)| IVec2::new(x, y)).collect();
 
     let mut tri = Triangulation::new_cdt();
-    let mut builder = tri.builder().with_debug(0, "../../temp/cdt/cdt_issue5");
+    let mut builder = tri.builder().with_debug(usize::MAX, "../../temp/cdt/cdt_issue5");
 
     let mut vertices = Vec::new();
     for &pnt in &points {
@@ -237,15 +237,15 @@ fn cdt_issue6() {
 
     let points: Vec<_> = points.into_iter().map(|(x, y)| IVec2::new(x, y)).collect();
 
-    let (points, _) = debug::reduce_test_case(points, vec![], |pnts, _| {
+    /*let (points, _) = debug::reduce_test_case(points, vec![], |pnts, _| {
         let mut tri = Triangulation::new_cdt();
-        let mut builder = tri.builder().with_debug(usize::MAX, "../../temp/cdt/cdt_issue6");
+        let mut builder = tri.builder();
         builder.add_points(pnts.iter().cloned());
         builder.check().is_err()
-    });
+    });*/
 
     let mut tri = Triangulation::new_cdt();
-    let mut builder = tri.builder().with_debug(usize::MAX, "../../temp/cdt/cdt_issue6");
+    let mut builder = tri.builder().with_debug(0, "../../temp/cdt/cdt_issue6");
     builder.add_points(points);
     assert_eq!(builder.check(), Ok(()));
 }

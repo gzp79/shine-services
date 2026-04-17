@@ -3,10 +3,10 @@
 # List of fuzz targets.
 # You can comment out individual lines to skip specific targets.
 targets=""
-targets="$targets fuzz_cdt_constrained"
-targets="$targets fuzz_cdt_points"
-targets="$targets fuzz_ct_constrained"
 targets="$targets fuzz_ct_points"
+targets="$targets fuzz_ct_constrained"
+targets="$targets fuzz_cdt_points"
+targets="$targets fuzz_cdt_constrained"
 targets="$targets fuzz_hex_mesh_cdt"
 targets="$targets fuzz_hex_mesh_lattice"
 

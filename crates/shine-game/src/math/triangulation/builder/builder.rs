@@ -42,7 +42,6 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
     pub fn add_vertex(&mut self, p: IVec2, hint: Option<FaceIndex>) -> VertexIndex {
         let location = self.tri.locate_position(p, hint).unwrap();
         let vi = self.add_vertex_at(p, location);
-
         self.delaunay_run();
         vi
     }
@@ -63,27 +62,23 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
 
     pub fn add_points<I: IntoIterator<Item = IVec2>>(&mut self, points: I) {
         let mut hint = None;
-
         for p in points {
-            let location = self.tri.locate_position(p, hint).unwrap();
-            let vi = self.add_vertex_at(p, location);
+            let vi = self.add_vertex(p, hint);
             hint = Some(self.tri[vi].face);
         }
-
-        self.delaunay_run();
     }
 
-    pub fn add_polygon<I: IntoIterator<Item = IVec2>>(&mut self, points: I) {
+    pub fn add_polygon<I: IntoIterator<Item = IVec2>>(&mut self, points: I, c: u32) {
+        // Note: Insertion happens incrementally and delaunay property is maintained at each step.
+        // It is required as delaunay edge stack assumes a proper delaunay preoprty before each vertex,edge insertion.
+
         let mut hint = None;
         let mut vi0 = None;
         let mut vi_prev = None;
-
         for p in points {
-            let location = self.tri.locate_position(p, hint).unwrap();
-            let vi = self.add_vertex_at(p, location);
-
+            let vi = self.add_vertex(p, hint);
             if let Some(vi_prev) = vi_prev {
-                self.add_constraint_between(vi_prev, vi, 1);
+                self.add_constraint_edge(vi_prev, vi, c);
             } else {
                 vi0 = Some(vi);
             }
@@ -93,9 +88,8 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
         }
 
         if let (Some(vi_prev), Some(vi0)) = (vi_prev, vi0) {
-            self.add_constraint_between(vi_prev, vi0, 1);
+            self.add_constraint_edge(vi_prev, vi0, c);
         }
-        self.delaunay_run();
     }
 
     fn add_vertex_at(&mut self, p: IVec2, loc: Location) -> VertexIndex {
