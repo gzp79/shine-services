@@ -19,13 +19,13 @@ path = ".."
 members = ["."]
 
 [[bin]]
-name = "fuzz_cdt_constrained"
-path = "fuzz_targets/fuzz_cdt_constrained.rs"
+name = "fuzz_ct_points"
+path = "fuzz_targets/fuzz_ct_points.rs"
 doc = false
 
 [[bin]]
-name = "fuzz_cdt_points"
-path = "fuzz_targets/fuzz_cdt_points.rs"
+name = "fuzz_ct_points_delaunay"
+path = "fuzz_targets/fuzz_ct_points_delaunay.rs"
 doc = false
 
 [[bin]]
@@ -34,18 +34,18 @@ path = "fuzz_targets/fuzz_ct_constrained.rs"
 doc = false
 
 [[bin]]
-name = "fuzz_ct_points"
-path = "fuzz_targets/fuzz_ct_points.rs"
+name = "fuzz_ct_constrained_delaunay"
+path = "fuzz_targets/fuzz_ct_constrained_delaunay.rs"
 doc = false
 
 [[bin]]
-name = "fuzz_tri_constrained"
-path = "fuzz_targets/fuzz_tri_constrained.rs"
+name = "fuzz_cdt_points"
+path = "fuzz_targets/fuzz_cdt_points.rs"
 doc = false
 
 [[bin]]
-name = "fuzz_tri_delaunay_constrained"
-path = "fuzz_targets/fuzz_tri_delaunay_constrained.rs"
+name = "fuzz_cdt_constrained"
+path = "fuzz_targets/fuzz_cdt_constrained.rs"
 doc = false
 
 [[bin]]

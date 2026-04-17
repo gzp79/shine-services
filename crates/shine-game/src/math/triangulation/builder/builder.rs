@@ -28,6 +28,10 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
         }
     }
 
+    pub fn tri(&self) -> &Triangulation<DELAUNAY> {
+        self.tri
+    }
+
     pub fn check(&self) -> Result<(), String> {
         TopologyChecker::new(&self.tri).check()?;
         GeometryChecker::new(&self.tri).check()?;
@@ -103,19 +107,25 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             Location::Edge(f, e) => {
                 let vi = self.tri.create_vertex_with_position(p);
                 self.tri.split_edge(f, e, vi);
-                self.delaunay_push_vertex(vi);
+                if DELAUNAY && self.tri.dimension() == 2 {
+                    self.delaunay_push_vertex(vi);
+                }
                 vi
             }
             Location::OutsideConvexHull(f) | Location::Face(f) => {
                 let vi = self.tri.create_vertex_with_position(p);
                 self.tri.split_face(f, vi);
-                self.delaunay_push_vertex(vi);
+                if DELAUNAY && self.tri.dimension() == 2 {
+                    self.delaunay_push_vertex(vi);
+                }
                 vi
             }
             Location::OutsideAffineHull => {
                 let vi = self.tri.create_vertex_with_position(p);
                 self.tri.extend_dimension(vi);
-                self.delaunay_push_vertex(vi);
+                if DELAUNAY && self.tri.dimension() == 2 {
+                    self.delaunay_push_vertex(vi);
+                }
                 vi
             }
         };
@@ -291,10 +301,12 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 self.tri[edge1.face].constraints[edge1.edge] |= c;
                 self.tri[edge2.face].constraints[edge2.edge] |= c;
 
-                self.delaunay_push_edge(edge1.next());
-                self.delaunay_push_edge(edge1.prev());
-                self.delaunay_push_edge(edge2.next());
-                self.delaunay_push_edge(edge2.prev());
+                if DELAUNAY {
+                    self.delaunay_push_edge(edge1.next());
+                    self.delaunay_push_edge(edge1.prev());
+                    self.delaunay_push_edge(edge2.next());
+                    self.delaunay_push_edge(edge2.prev());
+                }
             }
 
             self.state.dump(
@@ -377,8 +389,10 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 self.tri[cur_edge.face].constraints[cur_edge.edge] = 0;
                 self.tri[next_edge.face].constraints[next_edge.edge.increment()] = 0;
 
-                self.delaunay_push_edge(next_edge.prev());
-                self.delaunay_push_edge(next_edge);
+                if DELAUNAY {
+                    self.delaunay_push_edge(next_edge.prev());
+                    self.delaunay_push_edge(next_edge);
+                }
 
                 if cur > 0 {
                     // step back
@@ -410,8 +424,10 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 self.tri[cur_edge.face].constraints[cur_edge.edge.decrement()] = 0;
                 self.tri[next_edge.face].constraints[next_edge.edge] = 0;
 
-                self.delaunay_push_edge(cur_edge);
-                self.delaunay_push_edge(cur_edge.next());
+                if DELAUNAY {
+                    self.delaunay_push_edge(cur_edge);
+                    self.delaunay_push_edge(cur_edge.next());
+                }
 
                 // step back
                 cur -= 1;

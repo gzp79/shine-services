@@ -73,7 +73,7 @@ impl BuilderState {
         tri: &Triangulation<DELAUNAY>,
         edge: FaceEdge,
     ) {
-        debug_assert!(DELAUNAY && tri.dimension() == 2);
+        debug_assert!(tri.dimension() == 2);
 
         let twin = tri.twin_edge(edge);
         if !stack.contains(&edge) && !stack.contains(&twin) {
@@ -86,9 +86,7 @@ impl BuilderState {
     /// Used to enqueue edges for delaunay triangulation checking.
     #[inline]
     pub fn delaunay_push_edge<const DELAUNAY: bool>(&mut self, tri: &Triangulation<DELAUNAY>, edge: FaceEdge) {
-        if !DELAUNAY || tri.dimension() != 2 {
-            return;
-        }
+        debug_assert!(tri.dimension() == 2);
 
         let stack = self
             .delaunay_stack
@@ -112,13 +110,6 @@ impl BuilderState {
     /// Get a reference to the delaunay stack if it's not locked.
     pub fn delaunay_stack(&self) -> Option<&Vec<FaceEdge>> {
         self.delaunay_stack.as_ref()
-    }
-
-    /// Clear the delaunay stack if it's not locked.
-    pub fn clear_delaunay_stack(&mut self) {
-        if let Some(stack) = &mut self.delaunay_stack {
-            stack.clear();
-        }
     }
 
     /// Lock the constraint chains for processing, returning (edge_chain, top_chain, bottom_chain).

@@ -205,7 +205,7 @@ fn cdt_issue5() {
     let points: Vec<_> = points.into_iter().map(|(x, y)| IVec2::new(x, y)).collect();
 
     let mut tri = Triangulation::new_cdt();
-    let mut builder = tri.builder().with_debug(usize::MAX, "../../temp/cdt/cdt_issue5");
+    let mut builder = tri.builder().with_debug(0, "../../temp/cdt/cdt_issue5");
 
     let mut vertices = Vec::new();
     for &pnt in &points {

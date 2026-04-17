@@ -485,3 +485,30 @@ fn ct_constraint() {
         }
     }
 }
+
+#[test]
+fn ct_point_delaunay() {
+    let mut tri = Triangulation::new_ct();
+
+    let points: Vec<IVec2> = [
+        (20, 25),
+        (35, 25),
+        (20, 5),
+        (35, 0),
+        (10, 0),
+        (0, 10),
+        (10, 15),
+        (40, 10),
+    ]
+    .into_iter()
+    .map(|(x, y)| IVec2::new(x, y))
+    .collect();
+
+    let mut builder = tri.builder();
+    builder.add_points(points);
+    assert_eq!(builder.check(), Ok(()));
+
+    builder.delaunay_refine_all();
+    assert_eq!(builder.check(), Ok(()));
+    assert_eq!(GeometryChecker::new(builder.tri()).check_delaunay(), Ok(()));
+}
