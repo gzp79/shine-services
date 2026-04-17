@@ -39,33 +39,6 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
         self
     }
 
-    pub fn add_contour(&mut self, p: &[IVec2]) {
-        assert!(p.len() >= 2);
-
-        self.state.dump(0, "input_contour", |dump| {
-            dump.add_contour(p.iter().cloned(), "edge-constraint");
-        });
-
-        let location = self.tri.locate_position(p[0], None).unwrap();
-        let vi0 = self.add_vertex_at(p[0], location);
-
-        let mut hint = self.tri[vi0].face;
-        let mut vi_prev = vi0;
-
-        for i in 1..p.len() {
-            let location = self.tri.locate_position(p[i], Some(hint)).unwrap();
-            let vi_next = self.add_vertex_at(p[i], location);
-            self.add_constraint_edge(vi_prev, vi_next, 1);
-
-            hint = self.tri[vi_next].face;
-            vi_prev = vi_next;
-        }
-
-        self.add_constraint_edge(vi_prev, vi0, 1);
-        //self.debug_dump(1, "contour_close");
-        self.delaunay_run();
-    }
-
     pub fn add_vertex(&mut self, p: IVec2, hint: Option<FaceIndex>) -> VertexIndex {
         let location = self.tri.locate_position(p, hint).unwrap();
         let vi = self.add_vertex_at(p, location);
@@ -84,24 +57,44 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
     }
 
     pub fn add_constraint_edge(&mut self, v0: VertexIndex, v1: VertexIndex, c: u32) {
-        assert!(c != 0);
-        assert!(v0.is_valid());
-        assert!(v1.is_valid());
-        assert!(self.tri.is_finite_vertex(v0));
-        assert!(self.tri.is_finite_vertex(v1));
-        if v0 == v1 {
-            return;
+        self.add_constraint_between(v0, v1, c);
+        self.delaunay_run();
+    }
+
+    pub fn add_points<I: IntoIterator<Item = IVec2>>(&mut self, points: I) {
+        let mut hint = None;
+
+        for p in points {
+            let location = self.tri.locate_position(p, hint).unwrap();
+            let vi = self.add_vertex_at(p, location);
+            hint = Some(self.tri[vi].face);
         }
 
-        match self.tri.dimension() {
-            1 => self.add_constraint_dim1(v0, v1, c),
-            2 => self.add_constraint_dim2(v0, v1, c),
-            _ => unreachable!("Inconsistent triangulation"),
+        self.delaunay_run();
+    }
+
+    pub fn add_polygon<I: IntoIterator<Item = IVec2>>(&mut self, points: I) {
+        let mut hint = None;
+        let mut vi0 = None;
+        let mut vi_prev = None;
+
+        for p in points {
+            let location = self.tri.locate_position(p, hint).unwrap();
+            let vi = self.add_vertex_at(p, location);
+
+            if let Some(vi_prev) = vi_prev {
+                self.add_constraint_between(vi_prev, vi, 1);
+            } else {
+                vi0 = Some(vi);
+            }
+
+            vi_prev = Some(vi);
+            hint = Some(self.tri[vi].face);
         }
 
-        self.state.dump(1, "after_add_constraint", |dump| {
-            dump.add_tri(&self.tri, []);
-        });
+        if let (Some(vi_prev), Some(vi0)) = (vi_prev, vi0) {
+            self.add_constraint_between(vi_prev, vi0, 1);
+        }
         self.delaunay_run();
     }
 
@@ -135,9 +128,34 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
 
         self.state
             .dump(1, &format!("after_add_vertex_{}", vi.into_index()), |dump| {
-                dump.add_tri(&self.tri, []);
+                let delaunay_stack = self.state.delaunay_stack();
+                let delaunay_edges = delaunay_stack.map(|stack| stack.as_slice()).unwrap_or(&[]);
+                dump.add_tri(&self.tri, [(delaunay_edges, "edge-delaunay", false)]);
             });
         vi
+    }
+
+    fn add_constraint_between(&mut self, v0: VertexIndex, v1: VertexIndex, c: u32) {
+        assert!(c != 0);
+        assert!(v0.is_valid());
+        assert!(v1.is_valid());
+        assert!(self.tri.is_finite_vertex(v0));
+        assert!(self.tri.is_finite_vertex(v1));
+        if v0 == v1 {
+            return;
+        }
+
+        match self.tri.dimension() {
+            1 => self.add_constraint_dim1(v0, v1, c),
+            2 => self.add_constraint_dim2(v0, v1, c),
+            _ => unreachable!("Inconsistent triangulation"),
+        }
+
+        self.state.dump(1, "after_add_constraint", |dump| {
+            let delaunay_stack = self.state.delaunay_stack();
+            let delaunay_edges = delaunay_stack.map(|stack| stack.as_slice()).unwrap_or(&[]);
+            dump.add_tri(&self.tri, [(delaunay_edges, "edge-delaunay", false)]);
+        });
     }
 
     /// Adds the constraining edge between the two vertex when dim=1 (all faces are segments)
@@ -247,12 +265,15 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 2,
                 &format!("before_triangulate_hole_{}_{}", v0.into_index(), v1.into_index()),
                 |dump| {
+                    let delaunay_stack = self.state.delaunay_stack();
+                    let delaunay_edges = delaunay_stack.map(|stack| stack.as_slice()).unwrap_or(&[]);
                     dump.add_tri(
                         &self.tri,
                         [
-                            (&top_chain, "edge-0"),
-                            (&bottom_chain, "edge-1"),
-                            (&edge_chain, "edge-2"),
+                            (top_chain.as_slice(), "edge-0", true),
+                            (bottom_chain.as_slice(), "edge-1", true),
+                            (edge_chain.as_slice(), "edge-2", true),
+                            (delaunay_edges, "edge-delaunay", false),
                         ],
                     );
                 },
@@ -286,30 +307,19 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 2,
                 &format!("after_triangulate_hole_{}_{}", v0.into_index(), v1.into_index()),
                 |dump| {
+                    let delaunay_stack = self.state.delaunay_stack();
+                    let delaunay_edges = delaunay_stack.map(|stack| stack.as_slice()).unwrap_or(&[]);
                     dump.add_tri(
                         &self.tri,
                         [
-                            (&top_chain, "edge-0"),
-                            (&bottom_chain, "edge-1"),
-                            (&edge_chain, "edge-2"),
+                            (top_chain.as_slice(), "edge-0", true),
+                            (bottom_chain.as_slice(), "edge-1", true),
+                            (edge_chain.as_slice(), "edge-2", true),
+                            (delaunay_edges, "edge-delaunay", false),
                         ],
                     );
                 },
             );
-
-            if let Some(stack) = self.state.delaunay_stack() {
-                self.state.dump(
-                    2,
-                    &format!(
-                        "after_triangulate_hole_delaunay_{}_{}",
-                        v0.into_index(),
-                        v1.into_index()
-                    ),
-                    |dump| {
-                        dump.add_tri(&self.tri, [(stack, "edge-delaunay")]);
-                    },
-                );
-            }
 
             v0 = next_v0;
             edge_chain.clear();
@@ -415,18 +425,16 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
 
             self.state
                 .dump(3, &format!("ear_clipped_{}", cur_edge.face.into_index()), |dump| {
-                    dump.add_tri(&self.tri, [(chain as &Vec<FaceEdge>, "edge-0")]);
+                    let delaunay_stack = self.state.delaunay_stack();
+                    let delaunay_edges = delaunay_stack.map(|stack| stack.as_slice()).unwrap_or(&[]);
+                    dump.add_tri(
+                        &self.tri,
+                        [
+                            (chain.as_slice(), "edge-0", true),
+                            (delaunay_edges, "edge-delaunay", false),
+                        ],
+                    );
                 });
-
-            if let Some(stack) = self.state.delaunay_stack() {
-                self.state.dump(
-                    3,
-                    &format!("ear_clipped_delaunay_{}", cur_edge.face.into_index()),
-                    |dump| {
-                        dump.add_tri(&self.tri, [(stack, "edge-delaunay")]);
-                    },
-                );
-            }
         }
 
         chain.pop().unwrap()

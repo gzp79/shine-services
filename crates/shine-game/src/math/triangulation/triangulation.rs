@@ -173,8 +173,8 @@ pub struct Triangulation<const DELAUNAY: bool = true> {
     tag: Rc<RefCell<usize>>,
 }
 
-impl Triangulation<false> {
-    pub fn new_ct() -> Self {
+impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
+    pub fn new() -> Self {
         Triangulation {
             dimension: u8::MAX,
             vertices: Default::default(),
@@ -185,15 +185,15 @@ impl Triangulation<false> {
     }
 }
 
+impl Triangulation<false> {
+    pub fn new_ct() -> Self {
+        Self::new()
+    }
+}
+
 impl Triangulation<true> {
     pub fn new_cdt() -> Self {
-        Triangulation {
-            dimension: u8::MAX,
-            vertices: Default::default(),
-            faces: Default::default(),
-            infinite_vertex: VertexIndex::NONE,
-            tag: Rc::new(RefCell::new(0)),
-        }
+        Self::new()
     }
 }
 

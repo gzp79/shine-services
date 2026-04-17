@@ -1,21 +1,8 @@
-use rand::RngExt;
 use shine_game::math::{
     hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
-    rand::StableRng,
+    prng::{StableRng, SysRng},
 };
 use shine_test::test;
-
-struct SysRng(rand::rngs::ThreadRng);
-impl SysRng {
-    fn new() -> Self {
-        Self(rand::rng())
-    }
-}
-impl StableRng for SysRng {
-    fn next_u32(&mut self) -> u32 {
-        self.0.random()
-    }
-}
 
 const SUBDIVISION: u32 = 3;
 const ORIENTATION: PatchOrientation = PatchOrientation::Even;
@@ -59,7 +46,7 @@ fn generate_subdiv_uniform() {
 
 #[test]
 fn generate_cdt_mesh() {
-    let mut mesher = CdtMesher::new(SUBDIVISION, 20, SysRng::new());
+    let mut mesher = CdtMesher::new(SUBDIVISION, 20, SysRng::new().into_rc());
     let mesh = mesher.generate();
     mesh.topology.validate().expect("CDT mesh topology should be valid");
     assert!(mesh.topology.quad_count() > 0, "CDT mesh should have quads");
@@ -68,7 +55,7 @@ fn generate_cdt_mesh() {
 
 #[test]
 fn generate_lattice_mesh() {
-    let mut mesher = LatticeMesher::new(SUBDIVISION, SysRng::new());
+    let mut mesher = LatticeMesher::new(SUBDIVISION, SysRng::new().into_rc());
     let mesh = mesher.generate();
     mesh.topology.validate().expect("lattice mesh topology should be valid");
     assert!(mesh.topology.quad_count() > 0, "lattice mesh should have quads");

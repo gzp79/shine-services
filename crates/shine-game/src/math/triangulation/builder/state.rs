@@ -134,7 +134,6 @@ impl BuilderState {
     pub fn unlock_constraint_chains(&mut self, chains: (Vec<FaceEdge>, Vec<FaceEdge>, Vec<FaceEdge>)) {
         self.constraint_chains = Some(chains);
     }
-
 }
 
 impl Default for BuilderState {

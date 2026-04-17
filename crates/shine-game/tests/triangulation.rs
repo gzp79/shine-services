@@ -3,6 +3,136 @@ use shine_game::math::triangulation::{GeometryChecker, TopologyChecker, Triangul
 use shine_test::test;
 
 #[test]
+fn ct_empty() {
+    let tri = Triangulation::new_ct();
+    assert!(tri.is_empty());
+    assert_eq!(tri.dimension(), u8::MAX);
+    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
+    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+}
+
+#[test]
+fn ct_point() {
+    let mut tri = Triangulation::new_ct();
+
+    log::trace!("add a point");
+    let vi = tri.builder().add_vertex(IVec2::new(10, 20), None);
+    assert!(!tri.is_empty());
+    assert_eq!(tri.dimension(), 0);
+    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
+    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+
+    log::trace!("add same point twice");
+    let vi2 = tri.builder().add_vertex(IVec2::new(10, 20), None);
+    assert_eq!(tri.dimension(), 0);
+    assert_eq!(vi, vi2);
+    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
+    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+
+    tri.clear();
+    assert!(tri.is_empty());
+    assert_eq!(tri.dimension(), u8::MAX);
+    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
+    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+}
+
+#[test]
+fn ct_collinear() {
+    let transforms: Vec<(&str, Box<dyn Fn(i32) -> IVec2>)> = vec![
+        ("(x, 0)", Box::new(|x| IVec2::new(x, 0))),
+        ("(0, x)", Box::new(|x| IVec2::new(0, x))),
+        ("(-x, 0)", Box::new(|x| IVec2::new(-x, 0))),
+        ("(0, -x)", Box::new(|x| IVec2::new(0, -x))),
+        ("(x, x)", Box::new(|x| IVec2::new(x, x))),
+        ("(x, -x)", Box::new(|x| IVec2::new(x, -x))),
+        ("(-x, -x)", Box::new(|x| IVec2::new(-x, -x))),
+        ("(-x, x)", Box::new(|x| IVec2::new(-x, x))),
+    ];
+
+    for (info, map) in transforms.iter() {
+        log::debug!("transformation: {}", info);
+
+        let mut tri = Triangulation::new_ct();
+
+        let positions = vec![0, 4, 2, 1, 3, 7];
+        for (i, &p) in positions.iter().enumerate() {
+            let expected_dim = match i {
+                0 => 0,
+                _ => 1,
+            };
+
+            let pos = map(p);
+            log::trace!("add {:?}", pos);
+            let vi = tri.builder().add_vertex(pos, None);
+            assert_eq!(tri.dimension(), expected_dim);
+            assert_eq!(tri.builder().check(), Ok(()));
+
+            let pos = map(p);
+            log::trace!("add duplicate {:?}", pos);
+            let vi_dup = tri.builder().add_vertex(pos, None);
+            assert_eq!(tri.dimension(), expected_dim);
+            assert_eq!(vi, vi_dup);
+            assert_eq!(tri.builder().check(), Ok(()));
+        }
+    }
+}
+
+#[test]
+fn ct_coplanar() {
+    let transforms: Vec<(&str, Box<dyn Fn(i32, i32) -> IVec2>)> = vec![
+        ("(x, y)", Box::new(|x, y| IVec2::new(x, y))),
+        ("(-x, y)", Box::new(|x, y| IVec2::new(-x, y))),
+        ("(-x, -y)", Box::new(|x, y| IVec2::new(-x, -y))),
+        ("(x, -y)", Box::new(|x, y| IVec2::new(x, -y))),
+        ("(y, x)", Box::new(|x, y| IVec2::new(y, x))),
+        ("(-y, x)", Box::new(|x, y| IVec2::new(-y, x))),
+        ("(-y, -x)", Box::new(|x, y| IVec2::new(-y, -x))),
+        ("(y, -x)", Box::new(|x, y| IVec2::new(y, -x))),
+    ];
+
+    #[rustfmt::skip]
+    let test_cases = vec![
+        vec![(0, 0), (20, 0), (10, 20)],
+        vec![(0, 0), (10, 0), (20, 0), (10, 20)],
+        vec![(0, 0), (5, 0), (10, 0), (15, 0), (20, 0), (10, 20)],
+        vec![(0, 0), (20, 0), (10, 20), (0, 0), (5, 0), (10, 0), (15, 0), (20, 0), (10, 20)],
+        vec![(0, 0), (20, 0), (15, 0), (10, 0), (5, 0), (10, 20)],
+        vec![(0, 0), (15, 0), (10, 0), (5, 0), (20, 0), (10, 20)],
+        vec![(0, 0), (20, 0), (10, 20), (10, 10)],
+        vec![(0, 0), (20, 0), (10, 20), (30, 30)],
+        vec![(0, 0), (20, 0), (10, 20), (30, -30)],
+        vec![(0, 0), (20, 0), (10, 20), (-30, -30)],
+        vec![(0, 0), (20, 0), (10, 20), (-30, 30)],
+    ];
+
+    for (info, map) in transforms.iter() {
+        log::debug!("transformation: {}", info);
+
+        for (i, pnts) in test_cases.iter().enumerate() {
+            log::trace!("testcase: {}", i);
+
+            let mut tri = Triangulation::new_ct();
+
+            for &(x, y) in pnts.iter() {
+                let pos = map(x, y);
+                log::trace!("add {:?}", pos);
+                let vi = tri.builder().add_vertex(pos, None);
+                log::trace!("{:?} = {:?}", vi, tri[vi].position);
+                assert_eq!(tri.builder().check(), Ok(()));
+
+                let pos = map(x, y);
+                log::trace!("add duplicate {:?}", pos);
+                let vi_dup = tri.builder().add_vertex(pos, None);
+                assert_eq!(vi, vi_dup);
+                assert_eq!(tri.builder().check(), Ok(()));
+            }
+
+            assert_eq!(tri.dimension(), 2);
+        }
+    }
+}
+
+#[test]
 fn ct_constraint_segment() {
     let transforms: Vec<(&str, Box<dyn Fn(i32) -> IVec2>)> = vec![
         ("(x, 0)", Box::new(|x| IVec2::new(x, 0))),
@@ -15,27 +145,26 @@ fn ct_constraint_segment() {
         ("(-x, x)", Box::new(|x| IVec2::new(-x, x))),
     ];
 
-    let mut tri = Triangulation::new_ct();
-
     for (info, map) in transforms.iter() {
         log::debug!("transformation: {}", info);
 
-        tri.builder().add_vertex(map(0), None);
-        tri.builder().add_vertex(map(10), None);
+        let mut tri = Triangulation::new_ct();
 
-        tri.builder().add_constraint_segment(map(2), map(5), 1);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        tri.builder().add_constraint_segment(map(3), map(7), 1);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        tri.builder().add_constraint_segment(map(8), map(1), 1);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+        let mut builder = tri.builder();
+        builder.add_vertex(map(0), None);
+        builder.add_vertex(map(10), None);
 
-        log::trace!("clear");
+        builder.add_constraint_segment(map(2), map(5), 1);
+        assert_eq!(builder.check(), Ok(()));
+        builder.add_constraint_segment(map(3), map(7), 1);
+        assert_eq!(builder.check(), Ok(()));
+        builder.add_constraint_segment(map(8), map(1), 1);
+        assert_eq!(builder.check(), Ok(()));
+        drop(builder);
+
         tri.clear();
         assert!(tri.is_empty());
+        assert_eq!(tri.dimension(), u8::MAX);
         assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
         assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
     }
@@ -54,40 +183,29 @@ fn ct_constraint_no_fill1() {
         ("(y, -x)", Box::new(|x, y| IVec2::new(y, -x))),
     ];
 
-    let mut tri = Triangulation::new_ct();
-
     for (info, map) in transforms.iter() {
         log::debug!("transformation: {}", info);
 
-        tri.builder().add_vertex(map(0, 0), None);
-        tri.builder().add_vertex(map(10, 0), None);
-        tri.builder().add_vertex(map(10, 10), None);
+        let mut tri = Triangulation::new_ct();
 
-        tri.builder().add_constraint_segment(map(0, 0), map(10, 0), 1);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        tri.builder().add_constraint_segment(map(0, 0), map(10, 10), 2);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        tri.builder().add_constraint_segment(map(10, 0), map(10, 10), 4);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+        let mut builder = tri.builder();
+        builder.add_vertex(map(0, 0), None);
+        builder.add_vertex(map(10, 0), None);
+        builder.add_vertex(map(10, 10), None);
 
-        tri.builder().add_vertex(map(2, 0), None);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        tri.builder().add_vertex(map(5, 0), None);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        tri.builder().add_vertex(map(3, 0), None);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+        builder.add_constraint_segment(map(0, 0), map(10, 0), 1);
+        assert_eq!(builder.check(), Ok(()));
+        builder.add_constraint_segment(map(0, 0), map(10, 10), 2);
+        assert_eq!(builder.check(), Ok(()));
+        builder.add_constraint_segment(map(10, 0), map(10, 10), 4);
+        assert_eq!(builder.check(), Ok(()));
 
-        log::trace!("clear");
-        tri.clear();
-        assert!(tri.is_empty());
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+        builder.add_vertex(map(2, 0), None);
+        assert_eq!(builder.check(), Ok(()));
+        builder.add_vertex(map(5, 0), None);
+        assert_eq!(builder.check(), Ok(()));
+        builder.add_vertex(map(3, 0), None);
+        assert_eq!(builder.check(), Ok(()));
     }
 }
 
@@ -104,52 +222,43 @@ fn ct_constraint_no_fill2() {
         ("(y, -x)", Box::new(|x, y| IVec2::new(y, -x))),
     ];
 
-    let mut tri = Triangulation::new_ct();
-
     for (info, map) in transforms.iter() {
         log::debug!("transformation: {}", info);
 
-        tri.builder().add_vertex(map(0, 0), None);
-        tri.builder().add_vertex(map(100, 0), None);
-        tri.builder().add_vertex(map(100, 100), None);
+        let mut tri = Triangulation::new_ct();
 
-        let c0 = tri.builder().add_constraint_segment(map(100, 0), map(100, 100), 1);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        let c1 = tri.builder().add_constraint_segment(map(20, 0), map(50, 0), 2);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        let c2 = tri.builder().add_constraint_segment(map(30, 0), map(70, 0), 4);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        let c3 = tri.builder().add_constraint_segment(map(0, 0), map(100, 0), 8);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        let c4 = tri.builder().add_constraint_segment(map(100, 0), map(0, 0), 16);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        let c5 = tri.builder().add_constraint_segment(map(100, 100), map(0, 0), 32);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        let c6 = tri.builder().add_constraint_segment(map(10, 10), map(90, 90), 64);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        let c7 = tri.builder().add_constraint_segment(map(90, 90), map(10, 10), 128);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        let c8 = tri.builder().add_constraint_segment(map(80, 80), map(20, 20), 256);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+        let mut builder = tri.builder();
 
-        let _v0 = tri.builder().add_vertex(map(2, 5), None);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        let _v1 = tri.builder().add_vertex(map(5, 2), None);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
-        let v2 = tri.builder().add_vertex(map(50, 50), None);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+        builder.add_vertex(map(0, 0), None);
+        builder.add_vertex(map(100, 0), None);
+        builder.add_vertex(map(100, 100), None);
+
+        let c0 = builder.add_constraint_segment(map(100, 0), map(100, 100), 1);
+        assert_eq!(builder.check(), Ok(()));
+        let c1 = builder.add_constraint_segment(map(20, 0), map(50, 0), 2);
+        assert_eq!(builder.check(), Ok(()));
+        let c2 = builder.add_constraint_segment(map(30, 0), map(70, 0), 4);
+        assert_eq!(builder.check(), Ok(()));
+        let c3 = builder.add_constraint_segment(map(0, 0), map(100, 0), 8);
+        assert_eq!(builder.check(), Ok(()));
+        let c4 = builder.add_constraint_segment(map(100, 0), map(0, 0), 16);
+        assert_eq!(builder.check(), Ok(()));
+        let c5 = builder.add_constraint_segment(map(100, 100), map(0, 0), 32);
+        assert_eq!(builder.check(), Ok(()));
+        let c6 = builder.add_constraint_segment(map(10, 10), map(90, 90), 64);
+        assert_eq!(builder.check(), Ok(()));
+        let c7 = builder.add_constraint_segment(map(90, 90), map(10, 10), 128);
+        assert_eq!(builder.check(), Ok(()));
+        let c8 = builder.add_constraint_segment(map(80, 80), map(20, 20), 256);
+        assert_eq!(builder.check(), Ok(()));
+
+        let _v0 = builder.add_vertex(map(2, 5), None);
+        assert_eq!(builder.check(), Ok(()));
+        let _v1 = builder.add_vertex(map(5, 2), None);
+        assert_eq!(builder.check(), Ok(()));
+        let v2 = builder.add_vertex(map(50, 50), None);
+        assert_eq!(builder.check(), Ok(()));
+        drop(builder);
 
         assert_eq!(c0.1, c5.0);
         assert_eq!(c6.1, c7.0);
@@ -170,12 +279,6 @@ fn ct_constraint_no_fill2() {
         assert_eq!(tri.c(tri.find_edge_by_vertex(v2, c8.0).unwrap()), 480);
         assert_eq!(tri.c(tri.find_edge_by_vertex(c8.0, c7.0).unwrap()), 224);
         assert_eq!(tri.c(tri.find_edge_by_vertex(c7.0, c0.1).unwrap()), 32);
-
-        log::trace!("clear");
-        tri.clear();
-        assert!(tri.is_empty());
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
     }
 }
 
@@ -192,25 +295,26 @@ fn ct_crossing_iterator() {
         ("(y, -x)", Box::new(|x, y| IVec2::new(y, -x))),
     ];
 
-    let mut tri = Triangulation::new_ct();
-
     for (info, map) in transforms.iter() {
         log::debug!("transformation: {}", info);
 
-        let v1 = tri.builder().add_vertex(map(20, 10), None);
-        let v2 = tri.builder().add_vertex(map(40, 10), None);
-        let _3 = tri.builder().add_vertex(map(10, 20), None);
-        let _4 = tri.builder().add_vertex(map(10, 0), None);
-        let v5 = tri.builder().add_vertex(map(0, 10), None);
-        let _6 = tri.builder().add_vertex(map(50, 20), None);
-        let _7 = tri.builder().add_vertex(map(50, 0), None);
-        let v8 = tri.builder().add_vertex(map(60, 10), None);
-        let _ = tri.builder().add_vertex(map(5, 12), None);
-        let _ = tri.builder().add_vertex(map(5, 8), None);
-        let _ = tri.builder().add_vertex(map(8, 10), None);
-        let _ = tri.builder().add_vertex(map(30, 10), None);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+        let mut tri = Triangulation::new_ct();
+
+        let mut builder = tri.builder();
+        let v1 = builder.add_vertex(map(20, 10), None);
+        let v2 = builder.add_vertex(map(40, 10), None);
+        let _3 = builder.add_vertex(map(10, 20), None);
+        let _4 = builder.add_vertex(map(10, 0), None);
+        let v5 = builder.add_vertex(map(0, 10), None);
+        let _6 = builder.add_vertex(map(50, 20), None);
+        let _7 = builder.add_vertex(map(50, 0), None);
+        let v8 = builder.add_vertex(map(60, 10), None);
+        let _ = builder.add_vertex(map(5, 12), None);
+        let _ = builder.add_vertex(map(5, 8), None);
+        let _ = builder.add_vertex(map(8, 10), None);
+        let _ = builder.add_vertex(map(30, 10), None);
+        assert_eq!(builder.check(), Ok(()));
+        drop(builder);
 
         let crossing: Vec<_> = tri.crossing_iterator(v1, v2).take(10).collect();
         assert_eq!(crossing.len(), 2, "{:?}", crossing);
@@ -229,12 +333,6 @@ fn ct_crossing_iterator() {
 
         let crossing: Vec<_> = tri.crossing_iterator(v8, v5).take(20).collect();
         assert_eq!(crossing.len(), 9, "{:?}", crossing);
-
-        log::trace!("clear");
-        tri.clear();
-        assert!(tri.is_empty());
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
     }
 }
 
@@ -255,8 +353,8 @@ fn ct_constraint_concave() {
         log::debug!("transformation: {}", info);
 
         let mut tri = Triangulation::new_ct();
-        let mut builder = tri.builder();
 
+        let mut builder = tri.builder();
         let _e = builder.add_vertex(map(20, 25), None);
         let _d = builder.add_vertex(map(35, 25), None);
         let _b = builder.add_vertex(map(20, 5), None);
@@ -269,6 +367,8 @@ fn ct_constraint_concave() {
 
         builder.add_constraint_edge(p0, p1, 1);
         assert_eq!(builder.check(), Ok(()));
+        drop(builder);
+
         assert_eq!(tri.c(tri.find_edge_by_vertex(p0, p1).unwrap()), 1);
     }
 }

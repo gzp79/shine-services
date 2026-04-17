@@ -1,112 +1,66 @@
 use glam::IVec2;
-use shine_game::math::triangulation::Triangulation;
+use shine_game::math::triangulation::{debug, Triangulation};
+use shine_test::test;
 
-/// Helper to reduce a failing test case by trying to remove points and edges one by one while still keeping the test failing.
-#[allow(dead_code)]
-fn reduce_failing_case(points: Vec<IVec2>, edges: Vec<(usize, usize)>) -> (Vec<IVec2>, Vec<(usize, usize)>) {
-    let is_failing_test = |pts: &[IVec2], eds: &[(usize, usize)]| -> bool {
-        let pts = pts.to_vec();
-        let eds = eds.to_vec();
+#[test]
+fn cdt_simple() {
+    let mut tri = Triangulation::new_cdt();
+    let mut builder = tri.builder();
 
-        let mut tri = Triangulation::new_cdt();
-        let mut builder = tri.builder();
-        let mut vertices = Vec::new();
+    let v00 = builder.add_vertex(IVec2::new(0, 0), None);
+    let v10 = builder.add_vertex(IVec2::new(100, 0), None);
+    let v20 = builder.add_vertex(IVec2::new(200, 0), None);
+    let v01 = builder.add_vertex(IVec2::new(0, 100), None);
+    builder.add_vertex(IVec2::new(100, 100), None);
+    let v21 = builder.add_vertex(IVec2::new(200, 100), None);
+    let v02 = builder.add_vertex(IVec2::new(0, 200), None);
+    let v12 = builder.add_vertex(IVec2::new(100, 200), None);
+    let v22 = builder.add_vertex(IVec2::new(200, 200), None);
 
-        for &pnt in &pts {
-            let vi = builder.add_vertex(pnt, None);
-            if builder.check().is_err() {
-                return true;
-            }
-            vertices.push(vi);
-        }
-
-        for &(a, b) in &eds {
-            if a >= vertices.len() || b >= vertices.len() {
-                continue;
-            }
-            builder.add_constraint_edge(vertices[a], vertices[b], 1);
-            if builder.check().is_err() {
-                return true;
-            }
-        }
-        return false;
-    };
-
-    if !is_failing_test(&points, &edges) {
-        println!("Warning: reduce_failing_case called on a case that does not fail.");
-        return (points, edges);
-    }
-
-    let mut current_points = points;
-    let mut current_edges = edges;
-
-    let mut removed = true;
-    while removed {
-        removed = false;
-
-        // 1. Try to remove edges one by one
-        let mut i = 0;
-        while i < current_edges.len() {
-            let mut next_edges = current_edges.clone();
-            next_edges.remove(i);
-
-            if is_failing_test(&current_points, &next_edges) {
-                current_edges = next_edges;
-                println!("Reduced to {} edges", current_edges.len());
-                removed = true;
-                i = 0;
-            } else {
-                i += 1;
-            }
-        }
-
-        // 2. Try to remove points one by one
-        let mut i = 0;
-        while i < current_points.len() {
-            if current_points.len() <= 3 {
-                break;
-            }
-
-            let mut next_points = current_points.clone();
-            next_points.remove(i);
-
-            let mut next_edges = Vec::new();
-            let mut possible = true;
-            for &(a, b) in &current_edges {
-                if a == i || b == i {
-                    // If an edge relies on this point, we can only remove the point if we can remove the edge.
-                    // Since we already minimized edges, we assume we can't remove this point if it's an endpoint.
-                    possible = false;
-                    break;
-                }
-                let new_a = if a > i { a - 1 } else { a };
-                let new_b = if b > i { b - 1 } else { b };
-                next_edges.push((new_a, new_b));
-            }
-
-            if possible && is_failing_test(&next_points, &next_edges) {
-                current_points = next_points;
-                current_edges = next_edges;
-                println!("Reduced to {} points", current_points.len());
-                removed = true;
-                i = 0;
-            } else {
-                i += 1;
-            }
-        }
-    }
-
-    eprintln!(
-        "let points: Vec<IVec2> = vec!{:?}.into_iter().map(|(x, y)| IVec2::new(x, y)).collect();",
-        current_points.iter().map(|p| (p.x, p.y)).collect::<Vec<_>>()
-    );
-    eprintln!("let edges: Vec<(usize, usize)> = vec!{:?};", current_edges);
-
-    (current_points, current_edges)
+    builder.add_constraint_edge(v00, v22, 1);
+    builder.add_constraint_edge(v20, v02, 2);
+    builder.add_constraint_edge(v10, v12, 4);
+    builder.add_constraint_edge(v01, v21, 8);
+    assert_eq!(builder.check(), Ok(()));
 }
 
 #[test]
-fn fuzz_cdt_issue1() {
+fn cdt_concave() {
+    let transforms: Vec<(&str, Box<dyn Fn(i32, i32) -> IVec2>)> = vec![
+        ("(x, y)", Box::new(|x, y| IVec2::new(x, y))),
+        ("(-x, y)", Box::new(|x, y| IVec2::new(-x, y))),
+        ("(-x, -y)", Box::new(|x, y| IVec2::new(-x, -y))),
+        ("(x, -y)", Box::new(|x, y| IVec2::new(x, -y))),
+        ("(y, x)", Box::new(|x, y| IVec2::new(y, x))),
+        ("(-y, x)", Box::new(|x, y| IVec2::new(-y, x))),
+        ("(-y, -x)", Box::new(|x, y| IVec2::new(-y, -x))),
+        ("(y, -x)", Box::new(|x, y| IVec2::new(y, -x))),
+    ];
+
+    for (info, map) in transforms.iter() {
+        log::debug!("transformation: {}", info);
+
+        let mut tri = Triangulation::new_cdt();
+        let mut builder = tri.builder();
+
+        let _e = builder.add_vertex(map(20, 25), None);
+        let _d = builder.add_vertex(map(35, 25), None);
+        let _b = builder.add_vertex(map(20, 5), None);
+        let _c = builder.add_vertex(map(35, 0), None);
+        let _a = builder.add_vertex(map(10, 0), None);
+        let p0 = builder.add_vertex(map(0, 10), None);
+        let _f = builder.add_vertex(map(10, 15), None);
+        let p1 = builder.add_vertex(map(40, 10), None);
+        assert_eq!(builder.check(), Ok(()));
+
+        builder.add_constraint_edge(p0, p1, 1);
+        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(tri.c(tri.find_edge_by_vertex(p0, p1).unwrap()), 1);
+    }
+}
+
+#[test]
+fn cdt_issue1() {
     let mut tri = Triangulation::new_cdt();
     let points: Vec<IVec2> = vec![IVec2::new(-3, 0), IVec2::new(3, 0), IVec2::new(0, 5), IVec2::new(0, -1)];
     let mut builder = tri.builder();
@@ -120,7 +74,7 @@ fn fuzz_cdt_issue1() {
 }
 
 #[test]
-fn fuzz_cdt_issue2() {
+fn cdt_issue2() {
     let mut tri = Triangulation::new_cdt();
     let points: Vec<IVec2> = vec![
         IVec2::new(0, 0),
@@ -140,7 +94,7 @@ fn fuzz_cdt_issue2() {
 }
 
 #[test]
-fn fuzz_cdt_issue3() {
+fn cdt_issue3() {
     let mut tri = Triangulation::new_cdt();
     let points: Vec<IVec2> = vec![
         IVec2::new(0, 0),
@@ -165,7 +119,7 @@ fn fuzz_cdt_issue3() {
 }
 
 #[test]
-fn fuzz_cdt_issue4() {
+fn cdt_issue4() {
     let points: Vec<IVec2> = vec![
         (87, 65),
         (-49, -1),
@@ -200,7 +154,7 @@ fn fuzz_cdt_issue4() {
 }
 
 #[test]
-fn fuzz_cdt_issue4_reduced() {
+fn cdt_issue4_reduced() {
     let points: Vec<(i32, i32)> = vec![
         (87, 65),
         (-49, -1),
@@ -217,7 +171,7 @@ fn fuzz_cdt_issue4_reduced() {
     let points: Vec<_> = points.into_iter().map(|(x, y)| IVec2::new(x, y)).collect();
 
     let mut tri = Triangulation::new_cdt();
-    let mut builder = tri.builder().with_debug(0, "../../temp/cdt/fuzz_cdt_issue4_reduced");
+    let mut builder = tri.builder().with_debug(0, "../../temp/cdt/cdt_issue4_reduced");
 
     let mut vertices = Vec::new();
     for &pnt in &points {
@@ -231,7 +185,7 @@ fn fuzz_cdt_issue4_reduced() {
 }
 
 #[test]
-fn fuzz_cdt_issue5() {
+fn cdt_issue5() {
     let points: Vec<(i32, i32)> = vec![
         (-1, -1),
         (-1, -1),
@@ -251,7 +205,7 @@ fn fuzz_cdt_issue5() {
     let points: Vec<_> = points.into_iter().map(|(x, y)| IVec2::new(x, y)).collect();
 
     let mut tri = Triangulation::new_cdt();
-    let mut builder = tri.builder().with_debug(0, "../../temp/cdt/fuzz_cdt_issue5");
+    let mut builder = tri.builder().with_debug(0, "../../temp/cdt/cdt_issue5");
 
     let mut vertices = Vec::new();
     for &pnt in &points {
@@ -262,4 +216,51 @@ fn fuzz_cdt_issue5() {
         builder.add_constraint_edge(vertices[a], vertices[b], 1);
         assert_eq!(builder.check(), Ok(()));
     }
+}
+
+#[test]
+fn cdt_issue6() {
+    let points: Vec<(i32, i32)> = vec![
+        (20397, -21061),
+        (20411, 9659),
+        (21845, 21845),
+        (1365, -1),
+        (-1, -17542),
+        (-1, 20303),
+        (-177, -1),
+        (20479, 20303),
+        (20303, 20303),
+        (20303, 20303),
+        (23551, -1),
+        (-1, 255),
+    ];
+
+    let points: Vec<_> = points.into_iter().map(|(x, y)| IVec2::new(x, y)).collect();
+
+    let (points, _) = debug::reduce_test_case(points, vec![], |pnts, _| {
+        let mut tri = Triangulation::new_cdt();
+        let mut builder = tri.builder().with_debug(usize::MAX, "../../temp/cdt/cdt_issue6");
+        builder.add_points(pnts.iter().cloned());
+        builder.check().is_err()
+    });
+
+    let mut tri = Triangulation::new_cdt();
+    let mut builder = tri.builder().with_debug(usize::MAX, "../../temp/cdt/cdt_issue6");
+    builder.add_points(points);
+    assert_eq!(builder.check(), Ok(()));
+}
+
+#[test]
+fn cdt_issue6_reduced() {
+    let points: Vec<IVec2> = vec![(-1, -175), (-1, 203), (-17, -1), (235, -1), (-1, 25)]
+        .into_iter()
+        .map(|(x, y)| IVec2::new(x, y))
+        .collect();
+
+    let mut tri = Triangulation::new_cdt();
+    let mut builder = tri
+        .builder()
+        .with_debug(usize::MAX, "../../temp/cdt/cdt_issue6_reduced");
+    builder.add_points(points);
+    assert_eq!(builder.check(), Ok(()));
 }

@@ -1,6 +1,9 @@
 use crate::{
     indexed::IdxVec,
-    math::mesh::{QuadIdx, QuadTopology, VertIdx},
+    math::{
+        mesh::{QuadIdx, QuadTopology, VertIdx},
+        prng::SplitMix64,
+    },
     world::{Chunk, ChunkId},
 };
 use glam::Vec2;
@@ -87,16 +90,20 @@ pub(crate) fn merge_vertex_ring_dual(
 }
 
 pub struct World {
+    rng_seed: SplitMix64,
     chunks: HashMap<ChunkId, Chunk>,
 }
 
 impl World {
     pub fn new() -> Self {
-        Self { chunks: HashMap::new() }
+        Self {
+            rng_seed: SplitMix64::new(),
+            chunks: HashMap::new(),
+        }
     }
 
     pub fn init_chunk(&mut self, id: ChunkId) {
-        self.chunks.insert(id, Chunk::new(id));
+        self.chunks.insert(id, Chunk::new(&self.rng_seed, id));
     }
 
     pub fn chunk(&self, id: ChunkId) -> Option<&Chunk> {

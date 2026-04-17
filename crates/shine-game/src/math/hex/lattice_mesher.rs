@@ -3,11 +3,15 @@ use crate::{
     math::{
         hex::{AxialCoord, AxialDenseIndexer},
         mesh::{QuadMesh, VertIdx},
-        rand::StableRng,
+        prng::StableRng,
     },
 };
 use glam::Vec2;
-use std::collections::{HashMap, HashSet};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 /// Generates a quad mesh by triangulating axial hex coordinates, then randomly
 /// merging triangle pairs into quads, and finally subdividing all faces
@@ -15,15 +19,15 @@ use std::collections::{HashMap, HashSet};
 pub struct LatticeMesher {
     subdivision: u32,
     hex_size: f32,
-    rng: Box<dyn StableRng>,
+    rng: Rc<RefCell<dyn StableRng>>,
 }
 
 impl LatticeMesher {
-    pub fn new(subdivision: u32, rng: impl StableRng + 'static) -> Self {
+    pub fn new(subdivision: u32, rng: Rc<RefCell<dyn StableRng>>) -> Self {
         Self {
             subdivision,
             hex_size: 1.0,
-            rng: Box::new(rng),
+            rng,
         }
     }
 

@@ -144,7 +144,7 @@ impl SvgDump {
         self
     }
 
-    pub fn add_contour<V: DebugVec2, IV: Iterator<Item = V>>(&mut self, points: IV, edge_class: &str) -> &mut Self {
+    pub fn add_polygon<V: DebugVec2, IV: Iterator<Item = V>>(&mut self, points: IV, edge_class: &str) -> &mut Self {
         let edge_class = if edge_class == "" { "edge" } else { edge_class };
 
         let mut prev: Option<Vec2> = None;
@@ -162,24 +162,35 @@ impl SvgDump {
         self
     }
 
-    pub fn add_tri<'a, I: IntoIterator<Item = (&'a Vec<FaceEdge>, &'a str)>, const D: bool>(
+    /// Add a triangulation to the SVG dump, with optional edge classifications for highlighting.
+    /// The `edges` parameter is an iterator of tuples containing:
+    /// - A list of `FaceEdge` references that identify edges in the triangulation.
+    /// - A CSS class name to apply for highlighting those edges.
+    /// - A boolean indicating whether to use the edge or the neightbor edge for highlighting (false = edge, true = neighbor).
+    pub fn add_tri<'a, ECI: IntoIterator<Item = (&'a [FaceEdge], &'a str, bool)>, const D: bool>(
         &mut self,
         tri: &Triangulation<D>,
-        edges: I,
+        edges: ECI,
     ) -> &mut Self {
         if tri.vertex_count() == 0 {
             return self;
         }
 
         // collect edge classifications for quick lookup
-        let edge_class_map = {
-            let mut edge_class_map = HashMap::new();
-            for (edge_list, class) in edges {
-                for &fe in edge_list {
-                    edge_class_map.insert((fe.face, fe.edge), class);
+        let (main_edge_class_map, sub_edge_class_map) = {
+            let mut main_edge_class_map = HashMap::new();
+            let mut sub_edge_class_map = HashMap::new();
+
+            for (edge_list, class, offset) in edges {
+                for fe in edge_list {
+                    if offset {
+                        sub_edge_class_map.insert((fe.face, fe.edge), class);
+                    } else {
+                        main_edge_class_map.insert((fe.face, fe.edge), class);
+                    }
                 }
             }
-            edge_class_map
+            (main_edge_class_map, sub_edge_class_map)
         };
 
         // Calculate local bounding-box for the triangulation to determine scale
@@ -221,62 +232,47 @@ impl SvgDump {
                     let p0 = tri[v0_idx].position.to_vec2();
                     let p1 = tri[v1_idx].position.to_vec2();
                     let pc = (p0 + p1) * 0.5;
+                    let ed = (p1 - p0).normalize().perp();
+                    let p0e = p0 + ed * edge_offset;
+                    let p1e = p1 + ed * edge_offset;
+                    let pce = pc + ed * edge_offset;
                     face_center += p0;
                     face_center += p1;
                     face_points += 2.0;
                     self.enlarge_bounds(p0);
                     self.enlarge_bounds(p1);
 
-                    // Check if this edge is in the edge_class_map (delaunay stack)
-                    let edge_highlight = edge_class_map.get(&(fi, e));
-
-                    // Draw main edge - use edge highlight class if delaunay, otherwise plain
-                    let main_edge_class = if let Some(&class) = edge_highlight {
-                        if class == "edge-delaunay" {
-                            "edge-delaunay"
+                    let main_edge_class = main_edge_class_map.get(&(fi, e)).unwrap_or_else(|| {
+                        if face.constraints[e] != 0 {
+                            &"edge-constraint"
                         } else {
-                            "edge"
+                            &"edge"
                         }
-                    } else {
-                        "edge"
-                    };
-
+                    });
                     self.add_content(format!(
                         r#"  <line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" class="{}" />"#,
                         p0.x, p0.y, p1.x, p1.y, main_edge_class
                     ));
 
                     let nfi = face.neighbors[e];
-                    if nfi.is_valid() || edge_highlight.is_some() {
-                        let ed = (p1 - p0).normalize().perp();
-
-                        // Show constraints and chain highlights on the neighbor edge
-                        let class = if face.constraints[e] != 0 {
-                            "edge-constraint"
-                        } else if let Some(&class) = edge_highlight {
-                            // Skip delaunay on neighbor edge since it's on main edge
-                            if class == "edge-delaunay" {
-                                "edge-neighbor"
-                            } else {
-                                class
-                            }
+                    let sub_edge_class = sub_edge_class_map.get(&(fi, e)).or_else(|| {
+                        if nfi.is_valid() {
+                            Some(&"edge-neighbor")
                         } else {
-                            "edge-neighbor"
-                        };
-
+                            None
+                        }
+                    });
+                    if let Some(sub_edge_class) = sub_edge_class {
                         self.add_content(format!(
                             r#"  <line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" class="{}" />"#,
-                            p0.x + ed.x * edge_offset,
-                            p0.y + ed.y * edge_offset,
-                            p1.x + ed.x * edge_offset,
-                            p1.y + ed.y * edge_offset,
-                            class
+                            p0e.x, p0e.y, p1e.x, p1e.y, sub_edge_class
                         ));
+                    }
+
+                    if nfi.is_valid() {
                         self.add_content(format!(
                             r#"  <text x="{:.2}" y="{:.2}" class="edge-text" style="font-size: %u1%;">{}</text>"#,
-                            pc.x + ed.x * edge_offset,
-                            pc.y + ed.y * edge_offset,
-                            i
+                            pce.x, pce.y, i
                         ));
                     }
                 }

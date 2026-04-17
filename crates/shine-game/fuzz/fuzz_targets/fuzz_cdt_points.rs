@@ -3,11 +3,55 @@
 use arbitrary::Arbitrary;
 use glam::IVec2;
 use libfuzzer_sys::fuzz_target;
-use shine_game::math::cdt::Triangulation;
+use shine_game::math::triangulation::Triangulation;
+use std::fmt;
 
-#[derive(Arbitrary, Debug)]
+const MAX1_X: i32 = 100;
+const MAX1_Y: i32 = 100;
+const MAX2_X: i32 = 65536;
+const MAX2_Y: i32 = 65536;
+
+#[derive(Arbitrary)]
 struct PointsInput {
+    variant: u8,
     points: Vec<(i16, i16)>,
+}
+
+impl PointsInput {
+    fn normalized_points(&self) -> Vec<IVec2> {
+        self.points
+            .iter()
+            .map(|&(x, y)| {
+                if self.variant % 2 == 0 {
+                    IVec2::new(x as i32 % MAX1_X, y as i32 % MAX1_Y)
+                } else {
+                    IVec2::new(x as i32 % MAX2_X, y as i32 % MAX2_Y)
+                }
+            })
+            .collect()
+    }
+}
+
+impl fmt::Debug for PointsInput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let n = self.points.len();
+        if n < 3 || n > 200 {
+            return f
+                .debug_struct("ConstrainedInput (Invalid)")
+                .field("points_len", &n)
+                .finish();
+        }
+
+        let points = self.normalized_points();
+
+        writeln!(
+            f,
+            "let points: Vec<(i32,i32)> = vec!{:?};",
+            points.iter().map(|p| (p.x, p.y)).collect::<Vec<_>>()
+        )?;
+
+        Ok(())
+    }
 }
 
 fuzz_target!(|input: PointsInput| {
@@ -15,11 +59,11 @@ fuzz_target!(|input: PointsInput| {
         return;
     }
 
-    let points: Vec<IVec2> = input.points.iter()
-        .map(|&(x, y)| IVec2::new(x as i32, y as i32))
-        .collect();
+    let points = input.normalized_points();
 
-    if let Ok(t) = Triangulation::build(&points) {
-        t.check();
-    }
+    let mut tri = Triangulation::new_cdt();
+
+    let mut builder = tri.builder();
+    builder.add_points(points);
+    builder.check().expect("Triangulation failed with valid points");
 });

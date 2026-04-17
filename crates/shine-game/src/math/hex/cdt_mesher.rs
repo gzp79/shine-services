@@ -3,12 +3,12 @@ use crate::{
     math::{
         hex::AxialCoord,
         mesh::{QuadMesh, VertIdx},
-        rand::StableRng,
+        prng::StableRng,
         triangulation::{Rot3Idx, Triangulation, VertexIndex},
     },
 };
 use glam::{IVec2, Vec2};
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 /// CDT grid scale to convert world to integer grid
 const GRID_SCALE: i64 = 1000;
@@ -31,7 +31,7 @@ pub struct CdtMesher {
     subdivision: u32,
     interior_points: u32,
     hex_size: f32,
-    rng: Box<dyn StableRng>,
+    rng: Rc<RefCell<dyn StableRng>>,
 }
 
 impl CdtMesher {
@@ -39,12 +39,12 @@ impl CdtMesher {
     ///
     /// - `subdivision`: number of segments per hex edge (e.g. 4 → 4 segments, 24 boundary points)
     /// - `interior_points`: target number of random interior points
-    pub fn new(subdivision: u32, interior_points: u32, rng: impl StableRng + 'static) -> Self {
+    pub fn new(subdivision: u32, interior_points: u32, rng: Rc<RefCell<dyn StableRng>>) -> Self {
         Self {
             subdivision,
             interior_points,
             hex_size: 1.0,
-            rng: Box::new(rng),
+            rng,
         }
     }
 

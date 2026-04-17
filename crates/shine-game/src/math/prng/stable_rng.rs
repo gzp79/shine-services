@@ -1,11 +1,18 @@
+use std::{cell::RefCell, rc::Rc};
+
 /// Minimal RNG trait for deterministic, cross-platform random generation.
-/// Uses only `next_u32` to produce random values, avoiding platform-specific
-/// float conversion or library API differences.
 pub trait StableRng {
     fn next_u32(&mut self) -> u32;
+
+    /// Wraps this RNG in a `Rc<RefCell<Self>>` for shared access.
+    fn into_rc(self) -> Rc<RefCell<Self>>
+    where
+        Self: Sized,
+    {
+        Rc::new(RefCell::new(self))
+    }
 }
 
-/// Extension methods for converting RNG output to floats.
 pub trait StableRngExt: StableRng {
     /// Returns a deterministic float in [0, 1) with uniform spacing.
     fn float_unit(&mut self) -> f32 {
@@ -25,24 +32,14 @@ pub trait StableRngExt: StableRng {
 
 impl<T: StableRng + ?Sized> StableRngExt for T {}
 
-/// Xorshift32 PRNG implementing StableRng.
-/// Simple, fast, deterministic — suitable for cross-platform reproducible generation.
-pub struct Xorshift32(u32);
-
-impl Xorshift32 {
-    pub fn new(seed: u32) -> Self {
-        // Avoid zero state which would produce all zeros
-        Self(if seed == 0 { 1 } else { seed })
+impl<T: StableRng + ?Sized> StableRng for Box<T> {
+    fn next_u32(&mut self) -> u32 {
+        (**self).next_u32()
     }
 }
 
-impl StableRng for Xorshift32 {
+impl<T: StableRng + ?Sized> StableRng for Rc<RefCell<T>> {
     fn next_u32(&mut self) -> u32 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 17;
-        x ^= x << 5;
-        self.0 = x;
-        x
+        self.borrow_mut().next_u32()
     }
 }

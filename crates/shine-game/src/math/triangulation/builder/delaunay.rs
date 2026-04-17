@@ -141,6 +141,9 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
         let mut stack = self.state.lock_delaunay_stack();
 
         log::trace!("Running delaunay with {} edges in stack", stack.len());
+        self.state.dump(1, "before_delaunay", |dump| {
+            dump.add_tri(&self.tri, [(stack.as_slice(), "edge-delaunay", false)]);
+        });
 
         while let Some(FaceEdge { face, edge }) = stack.pop() {
             // Never flip constrained edges
@@ -194,7 +197,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 4,
                 &format!("delaunay_check_{}_{}", face.into_index(), u8::from(edge)),
                 |dump| {
-                    dump.add_tri(&self.tri, [(&stack as &Vec<FaceEdge>, "edge-delaunay")]);
+                    dump.add_tri(&self.tri, [(stack.as_slice(), "edge-delaunay", false)]);
                 },
             );
         }

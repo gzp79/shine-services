@@ -1,9 +1,11 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
     indexed::{IdxVec, TypedIndex},
     math::{
         hex::{AxialCoord, LatticeMesher},
         mesh::{QuadIdx, QuadMesh, QuadTopology, VertIdx},
-        rand::Xorshift32,
+        prng::{hash_u32_2, Pcg32, SplitMix64},
     },
     world::{CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
@@ -25,13 +27,13 @@ impl ChunkId {
     /// Deterministic 32-bit hash from chunk coordinates.
     /// Uses golden-ratio mixing + murmur3 finalizer for good avalanche.
     pub fn hash32(&self) -> u32 {
-        let a = self.0 as u32;
-        let b = self.1 as u32;
-        let mut h = a.wrapping_mul(0x9e3779b9).wrapping_add(b);
-        h ^= h >> 16;
-        h = h.wrapping_mul(0x45d9f3b);
-        h ^= h >> 16;
-        h
+        hash_u32_2(self.0 as u32, self.1 as u32)
+    }
+
+    pub fn id_64(&self) -> u64 {
+        let high = self.0 as u64;
+        let low = self.1 as u64;
+        (high << 32) | low
     }
 
     pub fn neighbor(&self, direction: u8) -> ChunkId {
@@ -51,16 +53,30 @@ impl From<AxialCoord> for ChunkId {
     }
 }
 
+/// Stable random streams for different aspects of chunk generation.
+/// Streams are cheap, create a new one for each aspect to ensure deterministic independence.
+pub struct ChunkRngStreams {
+    pub mesh: Rc<RefCell<Pcg32>>,
+}
+
+impl ChunkRngStreams {
+    pub fn new(mut seed: SplitMix64) -> Self {
+        let mesh = Rc::new(RefCell::new(seed.next_stream()));
+        Self { mesh }
+    }
+}
+
 pub struct Chunk {
+    pub rng_streams: ChunkRngStreams,
     pub topology: QuadTopology,
     pub vertices: IdxVec<VertIdx, Vec2>,
     pub quad_centers: IdxVec<QuadIdx, Vec2>,
 }
 
 impl Chunk {
-    pub fn new(id: ChunkId) -> Self {
-        let rng = Xorshift32::new(id.hash32());
-        let mesh = LatticeMesher::new(SUBDIVISION_BASE, rng)
+    pub fn new(parent_seed: &SplitMix64, id: ChunkId) -> Self {
+        let rng_streams = ChunkRngStreams::new(parent_seed.create_seed(id.id_64()));
+        let mesh = LatticeMesher::new(SUBDIVISION_BASE, rng_streams.mesh.clone())
             .with_world_size(CHUNK_WORLD_SIZE)
             .generate();
         let QuadMesh {
@@ -70,6 +86,7 @@ impl Chunk {
         } = mesh;
 
         Self {
+            rng_streams,
             topology,
             vertices,
             quad_centers,
