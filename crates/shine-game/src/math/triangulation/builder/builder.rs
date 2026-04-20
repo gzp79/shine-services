@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use crate::{
     indexed::TypedIndex,
     math::triangulation::{
@@ -9,6 +7,7 @@ use crate::{
     },
 };
 use glam::IVec2;
+use std::path::PathBuf;
 
 /// High-level builder for constructing triangulations.
 ///

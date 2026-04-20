@@ -527,29 +527,29 @@ fn test_validation_rejects_quad_vertex_out_of_range() {
 }
 
 // =============================================================================
-// neighbor_avg
+// average_adjacent_positions
 // =============================================================================
 
 #[test]
-fn test_neighbor_avg_interior() {
+fn test_average_adjacent_positions_interior() {
     let positions = grid_2x2_positions();
     let topo = grid_2x2_topo();
 
     // Interior vertex 4 at (1,1) has neighbors 1,3,5,7
     // Avg = ((1,0) + (0,1) + (2,1) + (1,2)) / 4 = (4,4)/4 = (1,1)
-    let avg = topo.neighbor_avg(VertexIndex::new(4), &positions);
+    let avg = topo.average_adjacent_positions(VertexIndex::new(4));
     assert!((avg.x - 1.0).abs() < 0.001, "avg.x should be 1.0, got {}", avg.x);
     assert!((avg.y - 1.0).abs() < 0.001, "avg.y should be 1.0, got {}", avg.y);
 }
 
 #[test]
-fn test_neighbor_avg_boundary() {
+fn test_average_adjacent_positions_boundary() {
     let positions = grid_2x2_positions();
     let topo = grid_2x2_topo();
 
     // Boundary vertex 1 at (1,0) has real neighbors: 0, 2, 4 (ghost vertex is skipped)
     // Avg = ((0,0) + (2,0) + (1,1)) / 3 = (3,1)/3 = (1, 0.333...)
-    let avg = topo.neighbor_avg(VertexIndex::new(1), &positions);
+    let avg = topo.average_adjacent_positions(VertexIndex::new(1));
     assert!((avg.x - 1.0).abs() < 0.001, "avg.x should be 1.0, got {}", avg.x);
     assert!(
         (avg.y - 1.0 / 3.0).abs() < 0.001,

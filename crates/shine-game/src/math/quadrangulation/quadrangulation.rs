@@ -285,29 +285,6 @@ impl Quadrangulation {
             .chain(std::iter::once(end))
     }
 
-    /// Average position of real edge neighbors of `vi` (via "next" in each ring quad).
-    /// Ghost neighbors are skipped.
-    pub fn neighbor_avg(&self, vi: VertexIndex, positions: &[Vec2]) -> Vec2 {
-        assert_ne!(vi, self.infinite_vertex());
-
-        let mut sum = Vec2::ZERO;
-        let mut count = 0u32;
-
-        for qv in self.vertex_ring_ccw(vi) {
-            let next = self.vi(qv.next());
-            if let Some(idx) = next.try_into_index() {
-                sum += positions[idx];
-                count += 1;
-            }
-        }
-
-        if count > 0 {
-            sum / count as f32
-        } else {
-            positions[vi.into_index()]
-        }
-    }
-
     /// Get position for a vertex clue
     pub fn p<T: Into<VertexClue>>(&self, id: T) -> Vec2 {
         let vi = self.vi(id);

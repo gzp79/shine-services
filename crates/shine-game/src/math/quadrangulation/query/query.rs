@@ -1,4 +1,5 @@
 use crate::math::quadrangulation::{QuadEdge, QuadEdgeType, QuadIndex, QuadVertex, Quadrangulation, VertexIndex};
+use glam::Vec2;
 use std::iter;
 
 impl Quadrangulation {
@@ -37,6 +38,28 @@ impl Quadrangulation {
         }
 
         QuadEdgeType::NotAnEdge
+    }
+
+    pub fn adjacent_vertices(&self, vi: VertexIndex) -> impl Iterator<Item = VertexIndex> + '_ {
+        self.vertex_ring_ccw(vi).map(move |qv| self.vi(qv.next()))
+    }
+
+    /// Compute the average position of adjacent vertices.
+    /// Infinite vertices are excluded from the average.
+    /// Returns the vertex's own position if it has no finite neighbors.
+    pub fn average_adjacent_positions(&self, vi: VertexIndex) -> Vec2 {
+        assert_ne!(vi, self.infinite_vertex());
+
+        let (sum, count) = self
+            .adjacent_vertices(vi)
+            .filter(|&v| !self.is_infinite_vertex(v))
+            .fold((Vec2::ZERO, 0), |(sum, count), v| (sum + self.p(v), count + 1));
+
+        if count > 0 {
+            sum / count as f32
+        } else {
+            self.p(vi)
+        }
     }
 
     pub fn vertex_ring_ccw_repeated(&self, vi: VertexIndex, max_loops: usize) -> impl Iterator<Item = QuadVertex> + '_ {

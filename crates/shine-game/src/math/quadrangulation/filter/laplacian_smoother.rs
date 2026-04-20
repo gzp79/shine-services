@@ -22,20 +22,25 @@ impl LaplacianSmoother {
     }
 
     fn step(&mut self, mesh: &mut Quadrangulation) {
+        self.buf.clear();
         self.buf.resize(mesh.vertex_count(), Vec2::ZERO);
 
         let vertices: Vec<_> = mesh.finite_vertex_index_iter().collect();
-        for vi in &vertices {
-            self.buf[vi.into_index()] = mesh[*vi].position;
+
+        // Calculate new positions using current state
+        for &vi in &vertices {
+            if mesh.is_boundary_vertex(vi) {
+                self.buf[vi.into_index()] = mesh[vi].position;
+            } else {
+                let avg = mesh.average_adjacent_positions(vi);
+                let old = mesh[vi].position;
+                self.buf[vi.into_index()] = old + self.strength * (avg - old);
+            }
         }
 
+        // Apply all new positions
         for vi in vertices {
-            if mesh.is_boundary_vertex(vi) {
-                continue;
-            }
-            let avg = mesh.neighbor_avg(vi, &self.buf);
-            let old = self.buf[vi.into_index()];
-            mesh[vi].position = old + self.strength * (avg - old);
+            mesh[vi].position = self.buf[vi.into_index()];
         }
     }
 }
