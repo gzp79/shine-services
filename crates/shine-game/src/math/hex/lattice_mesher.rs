@@ -2,8 +2,8 @@ use crate::{
     indexed::TypedIndex,
     math::{
         hex::{AxialCoord, AxialDenseIndexer},
-        mesh::{QuadMesh, VertIdx},
         prng::StableRng,
+        quadrangulation::{QuadMesh, VertIdx},
     },
 };
 use glam::Vec2;

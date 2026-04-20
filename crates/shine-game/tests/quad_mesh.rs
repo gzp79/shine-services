@@ -2,7 +2,7 @@ use glam::Vec2;
 use shine_core::utils::is_rotation;
 use shine_game::{
     indexed::TypedIndex,
-    math::mesh::{QuadEdge, QuadEdgeType, QuadIdx, QuadMesh, QuadTopology, QuadTopologyError, QuadVertex, VertIdx},
+    math::quadrangulation::{QuadEdge, QuadEdgeType, QuadError, QuadIdx, QuadMesh, QuadTopology, QuadVertex, VertIdx},
 };
 use shine_test::test;
 use std::collections::HashSet;
@@ -435,7 +435,7 @@ fn test_validation_rejects_boundary_vertex_out_of_range() {
     let quads = vec![[VertIdx::new(0), VertIdx::new(1), VertIdx::new(2), VertIdx::new(3)]];
     let boundary: Vec<_> = [0, 1, 99, 3].into_iter().map(VertIdx::new).collect();
     match QuadTopology::from_polygon(4, boundary, vec![], quads) {
-        Err(QuadTopologyError::BoundaryVertexOutOfRange { vertex: 99, .. }) => {}
+        Err(QuadError::BoundaryVertexOutOfRange { vertex: 99, .. }) => {}
         Err(e) => panic!("expected BoundaryVertexOutOfRange, got: {}", e),
         Ok(_) => panic!("expected error, got Ok"),
     }
@@ -456,7 +456,7 @@ fn test_validation_rejects_quad_vertex_out_of_range() {
     let quads = vec![[VertIdx::new(0), VertIdx::new(1), VertIdx::new(99), VertIdx::new(3)]];
     let boundary: Vec<_> = [0, 1, 2, 3].into_iter().map(VertIdx::new).collect();
     match QuadTopology::from_polygon(4, boundary, vec![], quads) {
-        Err(QuadTopologyError::QuadVertexOutOfRange { vertex: 99, .. }) => {}
+        Err(QuadError::QuadVertexOutOfRange { vertex: 99, .. }) => {}
         Err(e) => panic!("expected QuadVertexOutOfRange, got: {}", e),
         Ok(_) => panic!("expected error, got Ok"),
     }

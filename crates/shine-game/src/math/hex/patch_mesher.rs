@@ -2,7 +2,7 @@ use crate::{
     indexed::TypedIndex,
     math::{
         hex::{AxialCoord, AxialDenseIndexer, PatchCoord, PatchDenseIndexer, PatchOrientation},
-        mesh::{QuadMesh, VertIdx},
+        quadrangulation::{QuadMesh, VertIdx},
     },
 };
 use glam::Vec2;

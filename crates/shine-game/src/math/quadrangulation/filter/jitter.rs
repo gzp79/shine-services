@@ -1,6 +1,6 @@
 use crate::math::{
-    mesh::{QuadFilter, QuadMesh},
     prng::{StableRng, StableRngExt},
+    quadrangulation::{QuadFilter, QuadMesh},
 };
 use glam::Vec2;
 

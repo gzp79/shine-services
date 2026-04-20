@@ -2,8 +2,8 @@ use crate::{
     indexed::TypedIndex,
     math::{
         hex::AxialCoord,
-        mesh::{QuadMesh, VertIdx},
         prng::StableRng,
+        quadrangulation::{QuadMesh, VertIdx},
         triangulation::{Rot3Idx, Triangulation, VertexIndex},
     },
 };

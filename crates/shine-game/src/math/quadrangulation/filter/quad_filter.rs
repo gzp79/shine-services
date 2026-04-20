@@ -1,4 +1,4 @@
-use crate::math::mesh::QuadMesh;
+use crate::math::quadrangulation::QuadMesh;
 
 /// Trait for filters that modify [`QuadMesh`] vertex positions.
 ///

@@ -4,8 +4,8 @@ use crate::{
     indexed::{IdxVec, TypedIndex},
     math::{
         hex::{AxialCoord, LatticeMesher},
-        mesh::{QuadIdx, QuadMesh, QuadTopology, VertIdx},
         prng::{hash_u32_2, Pcg32, SplitMix64},
+        quadrangulation::{QuadIdx, QuadMesh, QuadTopology, VertIdx},
     },
     world::{CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };

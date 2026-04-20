@@ -9,7 +9,7 @@ const ORIENTATION: PatchOrientation = PatchOrientation::Even;
 /// Expected vertices per anchor edge: 2^SUBDIVISION + 1
 const EXPECTED_ANCHOR_EDGE_LEN: usize = (1 << SUBDIVISION) + 1;
 
-fn check_anchor_edges(mesh: &shine_game::math::mesh::QuadMesh) {
+fn check_anchor_edges(mesh: &shine_game::math::quadrangulation::QuadMesh) {
     assert_eq!(
         mesh.topology.anchor_count(),
         6,

@@ -1,11 +1,25 @@
 use crate::{
     indexed::{IdxVec, TypedIndex},
-    math::mesh::QuadTopologyError,
+    math::quadrangulation::QuadError,
 };
 use glam::Vec2;
 
 crate::define_typed_index!(VertIdx, "Typed index into a vertex array.");
 crate::define_typed_index!(QuadIdx, "Typed index into a quad array.");
+
+pub struct Vertex {
+    pub position: Vec2,
+    pub quad: QuadIdx,
+}
+
+impl Vertex {
+    pub fn new() -> Self {
+        Self {
+            position: Vec2::ZERO,
+            quad: QuadIdx::NONE,
+        }
+    }
+}
 
 /// A quad with its local edge index (0..4)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,8 +132,8 @@ pub struct QuadTopology {
     pub(crate) quads: IdxVec<QuadIdx, [VertIdx; 4]>,
     // For each quad, the neighboring quads across each edge
     pub(crate) edge_twins: IdxVec<QuadIdx, [QuadEdge; 4]>,
-    // For each vertex, a reference to one of the quads in its ring (arbitrary choice).
-    pub(crate) vertex_quad: Vec<QuadVertex>,
+    // For each vertex, stores position and one adjacent quad reference
+    pub(crate) vertices: IdxVec<VertIdx, Vertex>,
     // Start vertex for each anchour (non-subdivided) edge.
     pub(crate) anchor_vertices: Vec<VertIdx>,
 }
@@ -244,7 +258,9 @@ impl QuadTopology {
         // Use a 2x-looped CW ring around ghost vertex so skip_while/take_while
         // handles the case where the anchor edge wraps past the ring origin.
         let ghost = self.ghost_vertex();
-        let start_qv = self.vertex_quad[ghost.into_index()];
+        let quad = self.vertices[ghost].quad;
+        let local = self.find_vertex(quad, ghost).unwrap();
+        let start_qv = QuadVertex { quad, local };
 
         let ring = VertexRingIter::<false> {
             topology: self,
@@ -281,9 +297,17 @@ impl QuadTopology {
         self.quads[qi]
     }
 
+    /// Find the local index (0..4) of vertex `v` in quad `qi`.
+    /// Returns None if the vertex is not part of the quad.
+    pub fn find_vertex(&self, qi: QuadIdx, v: VertIdx) -> Option<u8> {
+        self.quads[qi].iter().position(|&x| x == v).map(|i| i as u8)
+    }
+
     /// The ring of quads around vertex `vi`, with the local vertex index of vi.
     pub fn vertex_ring_ccw(&self, vi: VertIdx) -> impl Iterator<Item = QuadVertex> + '_ {
-        let start_qv = self.vertex_quad[vi.into_index()];
+        let quad = self.vertices[vi].quad;
+        let local = self.find_vertex(quad, vi).unwrap();
+        let start_qv = QuadVertex { quad, local };
 
         VertexRingIter::<true> {
             topology: self,
@@ -295,7 +319,9 @@ impl QuadTopology {
     }
 
     pub fn vertex_ring_cw(&self, vi: VertIdx) -> impl Iterator<Item = QuadVertex> + '_ {
-        let start_qv = self.vertex_quad[vi.into_index()];
+        let quad = self.vertices[vi].quad;
+        let local = self.find_vertex(quad, vi).unwrap();
+        let start_qv = QuadVertex { quad, local };
 
         VertexRingIter::<false> {
             topology: self,
@@ -329,194 +355,10 @@ impl QuadTopology {
         }
     }
 
-    /// Helper to validate a single vertex ring forms a closed loop
-    fn validate_vertex_ring(&self, vi: VertIdx) -> Result<(), QuadTopologyError> {
-        let vi_idx = vi.into_index();
-        let ring: Vec<_> = self.vertex_ring_ccw(vi).collect();
-
-        if ring.is_empty() {
-            return Err(QuadTopologyError::VertexRingNotClosed { vertex: vi_idx });
-        }
-
-        // Verify all ring elements reference the correct vertex
-        for qv in &ring {
-            let vertex_at_pos = self.quads[qv.quad][qv.local as usize];
-            if vertex_at_pos != vi {
-                return Err(QuadTopologyError::VertexRingNotClosed { vertex: vi_idx });
-            }
-        }
-
-        // Check ring closure: next position after last should reference same vertex
-        let last = ring[ring.len() - 1];
-        let incoming = last.incoming_edge();
-        let neighbor = self.edge_twin(incoming);
-        let next_pos = neighbor.start();
-        let next_vertex = self.quads[next_pos.quad][next_pos.local as usize];
-
-        // Must be the same vertex (forms a cycle around vi)
-        if next_vertex != vi {
-            return Err(QuadTopologyError::VertexRingNotClosed { vertex: vi_idx });
-        }
-
-        // Next position should be in the ring (forms a closed cycle)
-        let next_in_ring = ring
-            .iter()
-            .any(|qv| qv.quad == next_pos.quad && qv.local == next_pos.local);
-        if !next_in_ring {
-            return Err(QuadTopologyError::VertexRingNotClosed { vertex: vi_idx });
-        }
-
-        Ok(())
-    }
-
     /// Validates the topology for consistency.
-    pub fn validate(&self) -> Result<(), QuadTopologyError> {
-        use crate::math::mesh::QuadTopologyError;
-
-        let ghost_vertex = self.ghost_vertex();
-
-        // 1. Check all vertices have an associated quad that references them correctly
-        for vi_idx in 0..=self.vertex_count {
-            let qv = self.vertex_quad[vi_idx];
-            if qv.quad.is_none() {
-                return Err(QuadTopologyError::VertexHasNoQuad(vi_idx));
-            }
-            let actual = self.quads[qv.quad][qv.local as usize];
-            if actual != VertIdx::new(vi_idx) {
-                return Err(QuadTopologyError::VertexQuadMismatch {
-                    vertex: vi_idx,
-                    actual: actual.into_index(),
-                });
-            }
-        }
-
-        // 2. Check no degenerate quads (all 4 vertices distinct)
-        for qi_idx in 0..self.quads.len() {
-            let verts = self.quads[QuadIdx::new(qi_idx)];
-            for i in 0..4 {
-                for j in (i + 1)..4 {
-                    if verts[i] == verts[j] {
-                        return Err(QuadTopologyError::DegenerateQuad {
-                            quad: qi_idx,
-                            vertex: verts[i].into_index(),
-                        });
-                    }
-                }
-            }
-        }
-
-        // 3. Check edge twin bidirectionality and involution
-        for qi_idx in 0..self.quads.len() {
-            let qi = QuadIdx::new(qi_idx);
-            for edge_idx in 0..4 {
-                let qe = QuadEdge { quad: qi, edge: edge_idx as u8 };
-                let twin = self.edge_twin(qe);
-
-                // Check twin vertices are reversed
-                let (v0, v1) = self.edge_vertices(qe);
-                let (twin_v0, twin_v1) = self.edge_vertices(twin);
-
-                if v0 != twin_v1 || v1 != twin_v0 {
-                    return Err(QuadTopologyError::InvalidEdgeTwin { quad: qi_idx, edge: edge_idx });
-                }
-
-                // Check twin of twin points back to original
-                let round_trip = self.edge_twin(twin);
-                if round_trip.quad != qe.quad || round_trip.edge != qe.edge {
-                    return Err(QuadTopologyError::EdgeTwinNotInvolution { quad: qi_idx, edge: edge_idx });
-                }
-            }
-        }
-
-        // 4. Check ghost quad structure
-        for qi in self.ghost_quad_indices() {
-            let verts = self.quad_vertices(qi);
-            let ghost_count = verts.iter().filter(|&&v| v == ghost_vertex).count();
-
-            if ghost_count != 1 {
-                return Err(QuadTopologyError::InvalidGhostQuadStructure {
-                    quad: qi.into_index(),
-                    count: ghost_count,
-                });
-            }
-        }
-
-        // 4b. Verify ghost_quad_count matches actual ghost quad count
-        {
-            let actual_ghost_count = self.quads.iter().filter(|verts| verts.contains(&ghost_vertex)).count();
-            if actual_ghost_count != self.ghost_quad_count {
-                return Err(QuadTopologyError::GhostQuadCountMismatch {
-                    expected: self.ghost_quad_count,
-                    actual: actual_ghost_count,
-                });
-            }
-        }
-
-        // 4c. Verify ghost quads are contiguous at the end of the quad array
-        {
-            let real_count = self.quads.len() - self.ghost_quad_count;
-            for qi_idx in 0..real_count {
-                if self.is_ghost_quad(QuadIdx::new(qi_idx)) {
-                    // Find the first real quad after this ghost quad
-                    let real_after = (qi_idx + 1..self.quads.len())
-                        .find(|&i| !self.is_ghost_quad(QuadIdx::new(i)))
-                        .unwrap_or(qi_idx);
-                    return Err(QuadTopologyError::GhostQuadsNotCompact {
-                        ghost_quad: qi_idx,
-                        real_quad: real_after,
-                    });
-                }
-            }
-        }
-
-        // 5. Check vertex rings form closed loops (real vertices and ghost vertex)
-        for vi_idx in 0..self.vertex_count {
-            self.validate_vertex_ring(VertIdx::new(vi_idx))?;
-        }
-        self.validate_vertex_ring(self.ghost_vertex())?;
-
-        // 6. Check all quads are reachable from vertex rings
-        {
-            let mut reachable = vec![false; self.quads.len()];
-            for vi_idx in 0..=self.vertex_count {
-                for qv in self.vertex_ring_ccw(VertIdx::new(vi_idx)) {
-                    reachable[qv.quad.into_index()] = true;
-                }
-            }
-            for (qi_idx, &reached) in reachable.iter().enumerate() {
-                if !reached {
-                    return Err(QuadTopologyError::UnreachableQuad { quad: qi_idx });
-                }
-            }
-        }
-
-        // 7. Check anchor vertices are boundary vertices in correct cyclic order
-        if !self.anchor_vertices.is_empty() {
-            let boundary: Vec<_> = self.boundary_vertices().collect();
-
-            // Check all anchor vertices are in the boundary
-            for (idx, &anchor_v) in self.anchor_vertices.iter().enumerate() {
-                if !boundary.contains(&anchor_v) {
-                    return Err(QuadTopologyError::InvalidAnchorEdge { edge: idx });
-                }
-            }
-
-            // Verify cyclic ordering: each anchor must follow the previous along the boundary
-            let first_pos = boundary.iter().position(|&b| b == self.anchor_vertices[0]).unwrap();
-            let mut search_start = first_pos;
-
-            for edge_idx in 1..self.anchor_vertices.len() {
-                let anchor_v = self.anchor_vertices[edge_idx];
-                let found =
-                    (1..boundary.len()).find(|&offset| boundary[(search_start + offset) % boundary.len()] == anchor_v);
-                match found {
-                    Some(offset) => search_start = (search_start + offset) % boundary.len(),
-                    None => return Err(QuadTopologyError::InvalidAnchorEdge { edge: edge_idx - 1 }),
-                }
-            }
-        }
-
-        Ok(())
+    pub fn validate(&self) -> Result<(), QuadError> {
+        use crate::math::quadrangulation::Validator;
+        Validator::new(self).validate()
     }
 }
 

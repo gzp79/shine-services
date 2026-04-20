@@ -1,22 +1,8 @@
 use crate::{
     indexed::IdxVec,
-    math::mesh::{QuadIdx, QuadTopology, QuadTopologyError, VertIdx},
+    math::quadrangulation::{QuadError, QuadIdx, QuadTopology, VertIdx},
 };
 use glam::Vec2;
-
-pub struct Vertex {
-    pub position: Vec2,
-    pub quad: QuadIdx,
-}
-
-impl Vertex {
-    pub fn new() -> Self {
-        Self {
-            position: Vec2::ZERO,
-            quad: QuadIdx::NONE,
-        }
-    }
-}
 
 /// Quad mesh with positions and topology.
 ///
@@ -34,7 +20,7 @@ impl QuadMesh {
         polygon: Vec<VertIdx>,
         anchors: Vec<VertIdx>,
         quads: Vec<[VertIdx; 4]>,
-    ) -> Result<Self, QuadTopologyError> {
+    ) -> Result<Self, QuadError> {
         let vertex_count = positions.len();
         let positions = IdxVec::from(positions);
         let topology = QuadTopology::from_polygon(vertex_count, polygon, anchors, quads)?;

@@ -1,4 +1,4 @@
-use super::{quad_error::QuadTopologyError, quad_topology::*, QuadEdge, QuadIdx, QuadTopology, VertIdx};
+use super::{quad_error::QuadError, QuadEdge, QuadIdx, QuadTopology, VertIdx, Vertex};
 use crate::indexed::{IdxVec, TypedIndex};
 use std::collections::HashMap;
 
@@ -9,20 +9,20 @@ impl QuadTopology {
         polygon: Vec<VertIdx>,
         anchors: Vec<VertIdx>,
         quads: Vec<[VertIdx; 4]>,
-    ) -> Result<Self, QuadTopologyError> {
+    ) -> Result<Self, QuadError> {
         // Minimal bounds checks to prevent index-out-of-bounds panics during construction.
         // All other invariants (odd boundary, duplicates, degenerates, etc.) are caught by validate().
         for &vi in &polygon {
             let idx = vi.into_index();
             if idx >= vertex_count {
-                return Err(QuadTopologyError::BoundaryVertexOutOfRange { vertex: idx, vertex_count });
+                return Err(QuadError::BoundaryVertexOutOfRange { vertex: idx, vertex_count });
             }
         }
         for quad in &quads {
             for &vi in quad {
                 let idx = vi.into_index();
                 if idx >= vertex_count {
-                    return Err(QuadTopologyError::QuadVertexOutOfRange { vertex: idx, vertex_count });
+                    return Err(QuadError::QuadVertexOutOfRange { vertex: idx, vertex_count });
                 }
             }
         }
@@ -67,7 +67,7 @@ impl QuadTopology {
                         edge: twin_edge,
                     };
                 } else {
-                    return Err(QuadTopologyError::IncompleteTopology {
+                    return Err(QuadError::IncompleteTopology {
                         quad: qi,
                         edge: edge_idx,
                         vertices: (v0.into_index(), v1.into_index()),
@@ -79,31 +79,28 @@ impl QuadTopology {
         }
 
         // Build vertex → quad map (includes ghost vertex)
-        let mut vertex_quad = vec![QuadVertex { quad: QuadIdx::NONE, local: 0 }; vertex_count + 1];
+        let mut vertices = IdxVec::with_capacity(vertex_count + 1);
+        for _ in 0..=vertex_count {
+            vertices.push(Vertex::new());
+        }
         for (qi, quad) in quads.iter().enumerate() {
-            for (local, &vi) in quad.iter().enumerate() {
-                let idx = vi.into_index();
-                if vertex_quad[idx].quad.is_none() {
-                    vertex_quad[idx] = QuadVertex {
-                        quad: QuadIdx::new(qi),
-                        local: local as u8,
-                    };
+            for &vi in quad.iter() {
+                if vertices[vi].quad.is_none() {
+                    vertices[vi].quad = QuadIdx::new(qi);
                 }
             }
         }
 
         // Ghost vertex: use first ghost quad (ring traversal visits all regardless of start)
-        vertex_quad[ghost_vertex.into_index()] = QuadVertex {
-            quad: QuadIdx::new(ghost_quad_start),
-            local: 0,
-        };
+        let ghost_vertex = VertIdx::new(vertex_count);
+        vertices[ghost_vertex].quad = QuadIdx::new(ghost_quad_start);
 
         let topology = Self {
             vertex_count,
             ghost_quad_count,
             quads,
             edge_twins,
-            vertex_quad,
+            vertices,
             anchor_vertices: anchors,
         };
 

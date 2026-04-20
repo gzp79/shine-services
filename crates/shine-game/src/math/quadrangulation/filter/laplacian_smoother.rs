@@ -1,6 +1,6 @@
 use crate::{
     indexed::TypedIndex,
-    math::mesh::{QuadFilter, QuadMesh},
+    math::quadrangulation::{QuadFilter, QuadMesh},
 };
 use glam::Vec2;
 
