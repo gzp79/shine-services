@@ -1,6 +1,8 @@
 use crate::{
     indexed::{IdxArray, IdxVec, TypedIndex},
-    math::triangulation::{CrossingIterator, EdgeCirculator, FaceClue, FaceEdge, Rot3Idx, TriangulationBuilder, Validator, VertexClue},
+    math::triangulation::{
+        CrossingIterator, EdgeCirculator, FaceClue, FaceEdge, Rot3Idx, TriangulationBuilder, Validator, VertexClue,
+    },
 };
 use glam::IVec2;
 use std::{

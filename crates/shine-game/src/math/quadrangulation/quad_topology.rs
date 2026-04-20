@@ -1,6 +1,8 @@
+use std::ops;
+
 use crate::{
-    indexed::{IdxVec, TypedIndex},
-    math::quadrangulation::{QuadClue, QuadEdge, QuadEdgeType, QuadError, QuadVertex, VertexClue},
+    indexed::{IdxArray, IdxVec, TypedIndex},
+    math::quadrangulation::{QuadClue, QuadEdge, QuadEdgeType, QuadError, QuadVertex, Rot4Idx, VertexClue},
 };
 use glam::Vec2;
 
@@ -22,31 +24,31 @@ impl Vertex {
 }
 
 pub struct Quad {
-    pub vertices: [VertIdx; 4],
-    pub neighbors: [QuadIdx; 4],
+    pub vertices: IdxArray<Rot4Idx, VertIdx, 4>,
+    pub neighbors: IdxArray<Rot4Idx, QuadIdx, 4>,
 }
 
 impl Quad {
     pub fn new() -> Self {
         Self {
-            vertices: [VertIdx::NONE; 4],
-            neighbors: [QuadIdx::NONE; 4],
+            vertices: IdxArray::from_elem(VertIdx::NONE),
+            neighbors: IdxArray::from_elem(QuadIdx::NONE),
         }
     }
 
     pub fn with_vertices(a: VertIdx, b: VertIdx, c: VertIdx, d: VertIdx) -> Self {
         Self {
-            vertices: [a, b, c, d],
-            neighbors: [QuadIdx::NONE; 4],
+            vertices: IdxArray::from([a, b, c, d]),
+            neighbors: IdxArray::from_elem(QuadIdx::NONE),
         }
     }
 
-    pub fn find_vertex(&self, v: VertIdx) -> Option<u8> {
-        self.vertices.iter().position(|&x| x == v).map(|i| i as u8)
+    pub fn find_vertex(&self, v: VertIdx) -> Option<Rot4Idx> {
+        self.vertices.iter().position(|&x| x == v).map(Rot4Idx::new)
     }
 
-    pub fn find_neighbor(&self, q: QuadIdx) -> Option<u8> {
-        self.neighbors.iter().position(|&x| x == q).map(|i| i as u8)
+    pub fn find_neighbor(&self, q: QuadIdx) -> Option<Rot4Idx> {
+        self.neighbors.iter().position(|&x| x == q).map(Rot4Idx::new)
     }
 }
 
@@ -139,8 +141,8 @@ impl QuadTopology {
     pub fn boundary_edges(&self) -> impl Iterator<Item = [u32; 2]> + '_ {
         self.vertex_ring_cw(self.infinite_vertex()).flat_map(move |qv| {
             // The two edges not touching the ghost vertex
-            let e1 = (qv.local + 1) % 4;
-            let e2 = (qv.local + 2) % 4;
+            let e1 = qv.local.increment();
+            let e2 = qv.local.increment().increment();
             [e1, e2].into_iter().filter_map(move |edge_idx| {
                 let qe = QuadEdge { quad: qv.quad, edge: edge_idx };
                 let (v0, v1) = self.edge_vertices(qe);
@@ -197,7 +199,7 @@ impl QuadTopology {
 
     /// Iterator over all quad vertex arrays (real + ghost)
     #[inline]
-    pub fn quad_iter(&self) -> impl Iterator<Item = &[VertIdx; 4]> + '_ {
+    pub fn quad_iter(&self) -> impl Iterator<Item = &IdxArray<Rot4Idx, VertIdx, 4>> + '_ {
         self.quads.iter().map(|q| &q.vertices)
     }
 
@@ -277,7 +279,7 @@ impl QuadTopology {
     }
 
     pub fn edge_twin(&self, qe: QuadEdge) -> QuadEdge {
-        let neighbor_quad = self.quads[qe.quad].neighbors[qe.edge as usize];
+        let neighbor_quad = self.quads[qe.quad].neighbors[qe.edge];
         let neighbor_edge = self.quads[neighbor_quad].find_neighbor(qe.quad).unwrap();
         QuadEdge {
             quad: neighbor_quad,
@@ -286,21 +288,27 @@ impl QuadTopology {
     }
 
     pub fn vertex_index(&self, qv: QuadVertex) -> VertIdx {
-        self.quads[qv.quad].vertices[qv.local as usize]
+        self.quads[qv.quad].vertices[qv.local]
     }
 
     pub fn edge_vertices(&self, qe: QuadEdge) -> (VertIdx, VertIdx) {
         let quad = &self.quads[qe.quad].vertices;
-        (quad[qe.edge as usize], quad[(qe.edge as usize + 1) % 4])
+        (quad[qe.edge], quad[qe.edge.increment()])
     }
 
     pub fn quad_vertices(&self, qi: QuadIdx) -> [VertIdx; 4] {
-        self.quads[qi].vertices.into()
+        let v = &self.quads[qi].vertices;
+        [
+            v[Rot4Idx::new(0)],
+            v[Rot4Idx::new(1)],
+            v[Rot4Idx::new(2)],
+            v[Rot4Idx::new(3)],
+        ]
     }
 
     /// Find the local index (0..4) of vertex `v` in quad `qi`.
     /// Returns None if the vertex is not part of the quad.
-    pub fn find_vertex(&self, qi: QuadIdx, v: VertIdx) -> Option<u8> {
+    pub fn find_vertex(&self, qi: QuadIdx, v: VertIdx) -> Option<Rot4Idx> {
         self.quads[qi].find_vertex(v)
     }
 
@@ -367,9 +375,9 @@ impl QuadTopology {
         let clue: VertexClue = id.into();
         match clue {
             VertexClue::VertexIndex(vi) => vi,
-            VertexClue::QuadVertex(quad, local) => self.quads[quad].vertices[local as usize],
-            VertexClue::EdgeStart(quad, edge) => self.quads[quad].vertices[edge as usize],
-            VertexClue::EdgeEnd(quad, edge) => self.quads[quad].vertices[(edge as usize + 1) % 4],
+            VertexClue::QuadVertex(quad, local) => self.quads[quad].vertices[local],
+            VertexClue::EdgeStart(quad, edge) => self.quads[quad].vertices[edge],
+            VertexClue::EdgeEnd(quad, edge) => self.quads[quad].vertices[edge.increment()],
         }
     }
 
@@ -429,7 +437,7 @@ impl<'a, const CCW: bool> Iterator for VertexRingIter<'a, CCW> {
     }
 }
 
-impl std::ops::Index<VertIdx> for QuadTopology {
+impl ops::Index<VertIdx> for QuadTopology {
     type Output = Vertex;
 
     #[inline]
@@ -438,14 +446,14 @@ impl std::ops::Index<VertIdx> for QuadTopology {
     }
 }
 
-impl std::ops::IndexMut<VertIdx> for QuadTopology {
+impl ops::IndexMut<VertIdx> for QuadTopology {
     #[inline]
     fn index_mut(&mut self, v: VertIdx) -> &mut Self::Output {
         &mut self.vertices[v]
     }
 }
 
-impl std::ops::Index<VertexClue> for QuadTopology {
+impl ops::Index<VertexClue> for QuadTopology {
     type Output = Vertex;
 
     #[inline]
@@ -454,7 +462,7 @@ impl std::ops::Index<VertexClue> for QuadTopology {
     }
 }
 
-impl std::ops::IndexMut<VertexClue> for QuadTopology {
+impl ops::IndexMut<VertexClue> for QuadTopology {
     #[inline]
     fn index_mut(&mut self, v: VertexClue) -> &mut Self::Output {
         let vi = self.vi(v);
@@ -462,35 +470,35 @@ impl std::ops::IndexMut<VertexClue> for QuadTopology {
     }
 }
 
-impl std::ops::Index<QuadIdx> for QuadTopology {
-    type Output = [VertIdx; 4];
+impl ops::Index<QuadIdx> for QuadTopology {
+    type Output = Quad;
 
     #[inline]
     fn index(&self, q: QuadIdx) -> &Self::Output {
-        &self.quads[q].vertices
+        &self.quads[q]
     }
 }
 
-impl std::ops::IndexMut<QuadIdx> for QuadTopology {
+impl ops::IndexMut<QuadIdx> for QuadTopology {
     #[inline]
     fn index_mut(&mut self, q: QuadIdx) -> &mut Self::Output {
-        &mut self.quads[q].vertices
+        &mut self.quads[q]
     }
 }
 
-impl std::ops::Index<QuadClue> for QuadTopology {
-    type Output = [VertIdx; 4];
+impl ops::Index<QuadClue> for QuadTopology {
+    type Output = Quad;
 
     #[inline]
     fn index(&self, q: QuadClue) -> &Self::Output {
-        &self.quads[self.qi(q)].vertices
+        &self.quads[self.qi(q)]
     }
 }
 
-impl std::ops::IndexMut<QuadClue> for QuadTopology {
+impl ops::IndexMut<QuadClue> for QuadTopology {
     #[inline]
     fn index_mut(&mut self, q: QuadClue) -> &mut Self::Output {
         let qi = self.qi(q);
-        &mut self.quads[qi].vertices
+        &mut self.quads[qi]
     }
 }

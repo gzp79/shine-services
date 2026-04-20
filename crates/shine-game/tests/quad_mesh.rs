@@ -2,7 +2,9 @@ use glam::Vec2;
 use shine_core::utils::is_rotation;
 use shine_game::{
     indexed::TypedIndex,
-    math::quadrangulation::{QuadEdge, QuadEdgeType, QuadError, QuadIdx, QuadMesh, QuadTopology, QuadVertex, VertIdx},
+    math::quadrangulation::{
+        QuadEdge, QuadEdgeType, QuadError, QuadIdx, QuadMesh, QuadTopology, QuadVertex, Rot4Idx, VertIdx,
+    },
 };
 use shine_test::test;
 use std::collections::HashSet;
@@ -54,36 +56,42 @@ fn test_quad_vertex_navigation() {
     // From local 0
     let qv0 = QuadVertex {
         quad: QuadIdx::new(0),
-        local: 0,
+        local: Rot4Idx::new(0),
     };
-    assert_eq!(qv0.next().local, 1);
-    assert_eq!(qv0.prev().local, 3);
-    assert_eq!(qv0.opposite().local, 2);
-    assert_eq!(qv0.outgoing_edge().edge, 0);
-    assert_eq!(qv0.incoming_edge().edge, 3);
+    assert_eq!(qv0.next().local, Rot4Idx::new(1));
+    assert_eq!(qv0.prev().local, Rot4Idx::new(3));
+    assert_eq!(qv0.opposite().local, Rot4Idx::new(2));
+    assert_eq!(qv0.outgoing_edge().edge, Rot4Idx::new(0));
+    assert_eq!(qv0.incoming_edge().edge, Rot4Idx::new(3));
 
     // Wrapping: from local 3, next wraps to 0
     let qv3 = QuadVertex {
         quad: QuadIdx::new(0),
-        local: 3,
+        local: Rot4Idx::new(3),
     };
-    assert_eq!(qv3.next().local, 0);
-    assert_eq!(qv3.prev().local, 2);
-    assert_eq!(qv3.opposite().local, 1);
-    assert_eq!(qv3.outgoing_edge().edge, 3);
-    assert_eq!(qv3.incoming_edge().edge, 2);
+    assert_eq!(qv3.next().local, Rot4Idx::new(0));
+    assert_eq!(qv3.prev().local, Rot4Idx::new(2));
+    assert_eq!(qv3.opposite().local, Rot4Idx::new(1));
+    assert_eq!(qv3.outgoing_edge().edge, Rot4Idx::new(3));
+    assert_eq!(qv3.incoming_edge().edge, Rot4Idx::new(2));
 }
 
 #[test]
 fn test_quad_edge_navigation() {
-    let qe1 = QuadEdge { quad: QuadIdx::new(0), edge: 1 };
-    assert_eq!(qe1.start().local, 1);
-    assert_eq!(qe1.end().local, 2);
+    let qe1 = QuadEdge {
+        quad: QuadIdx::new(0),
+        edge: Rot4Idx::new(1),
+    };
+    assert_eq!(qe1.start().local, Rot4Idx::new(1));
+    assert_eq!(qe1.end().local, Rot4Idx::new(2));
 
     // Wrapping: edge 3 ends at local 0
-    let qe3 = QuadEdge { quad: QuadIdx::new(0), edge: 3 };
-    assert_eq!(qe3.start().local, 3);
-    assert_eq!(qe3.end().local, 0);
+    let qe3 = QuadEdge {
+        quad: QuadIdx::new(0),
+        edge: Rot4Idx::new(3),
+    };
+    assert_eq!(qe3.start().local, Rot4Idx::new(3));
+    assert_eq!(qe3.end().local, Rot4Idx::new(0));
 }
 
 // =============================================================================
@@ -355,8 +363,11 @@ fn test_quad_neighbor_consistency() {
     // Check ALL quads, including ghost quads
     for qi_idx in 0..topo.quad_count() {
         let qi = QuadIdx::new(qi_idx);
-        for edge in 0..4u8 {
-            let qe = QuadEdge { quad: qi, edge };
+        for edge in 0..4 {
+            let qe = QuadEdge {
+                quad: qi,
+                edge: Rot4Idx::new(edge),
+            };
             let twin = topo.edge_twin(qe);
             let (v0, v1) = topo.edge_vertices(qe);
             let (tv0, tv1) = topo.edge_vertices(twin);

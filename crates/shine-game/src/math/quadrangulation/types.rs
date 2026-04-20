@@ -1,10 +1,10 @@
-use crate::math::quadrangulation::{QuadIdx, VertIdx};
+use crate::math::quadrangulation::{QuadIdx, Rot4Idx, VertIdx};
 
 /// A quad with its local edge index (0..4)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuadEdge {
     pub quad: QuadIdx,
-    pub edge: u8,
+    pub edge: Rot4Idx,
 }
 
 impl QuadEdge {
@@ -20,7 +20,7 @@ impl QuadEdge {
     pub fn end(&self) -> QuadVertex {
         QuadVertex {
             quad: self.quad,
-            local: (self.edge + 1) % 4,
+            local: self.edge.increment(),
         }
     }
 }
@@ -29,7 +29,7 @@ impl QuadEdge {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuadVertex {
     pub quad: QuadIdx,
-    pub local: u8,
+    pub local: Rot4Idx,
 }
 
 impl QuadVertex {
@@ -37,7 +37,7 @@ impl QuadVertex {
     pub fn next(&self) -> QuadVertex {
         QuadVertex {
             quad: self.quad,
-            local: (self.local + 1) % 4,
+            local: self.local.increment(),
         }
     }
 
@@ -45,7 +45,7 @@ impl QuadVertex {
     pub fn prev(&self) -> QuadVertex {
         QuadVertex {
             quad: self.quad,
-            local: (self.local + 3) % 4,
+            local: self.local.decrement(),
         }
     }
 
@@ -53,7 +53,7 @@ impl QuadVertex {
     pub fn opposite(&self) -> QuadVertex {
         QuadVertex {
             quad: self.quad,
-            local: (self.local + 2) % 4,
+            local: self.local.increment().increment(),
         }
     }
 
@@ -69,7 +69,7 @@ impl QuadVertex {
     pub fn incoming_edge(&self) -> QuadEdge {
         QuadEdge {
             quad: self.quad,
-            edge: (self.local + 3) % 4,
+            edge: self.local.decrement(),
         }
     }
 }
@@ -78,21 +78,21 @@ impl QuadVertex {
 #[derive(Clone, Debug)]
 pub enum VertexClue {
     VertexIndex(VertIdx),
-    QuadVertex(QuadIdx, u8),
-    EdgeStart(QuadIdx, u8),
-    EdgeEnd(QuadIdx, u8),
+    QuadVertex(QuadIdx, Rot4Idx),
+    EdgeStart(QuadIdx, Rot4Idx),
+    EdgeEnd(QuadIdx, Rot4Idx),
 }
 
 impl VertexClue {
-    pub fn quad_vertex(q: QuadIdx, v: u8) -> VertexClue {
+    pub fn quad_vertex(q: QuadIdx, v: Rot4Idx) -> VertexClue {
         VertexClue::QuadVertex(q, v)
     }
 
-    pub fn edge_start(q: QuadIdx, e: u8) -> VertexClue {
+    pub fn edge_start(q: QuadIdx, e: Rot4Idx) -> VertexClue {
         VertexClue::EdgeStart(q, e)
     }
 
-    pub fn edge_end(q: QuadIdx, e: u8) -> VertexClue {
+    pub fn edge_end(q: QuadIdx, e: Rot4Idx) -> VertexClue {
         VertexClue::EdgeEnd(q, e)
     }
 

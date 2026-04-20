@@ -1,6 +1,6 @@
 use crate::{
     indexed::TypedIndex,
-    math::quadrangulation::{QuadEdge, QuadError, QuadIdx, Validator, VertIdx},
+    math::quadrangulation::{QuadEdge, QuadError, QuadIdx, Rot4Idx, Validator, VertIdx},
 };
 
 impl<'a> Validator<'a> {
@@ -24,7 +24,7 @@ impl<'a> Validator<'a> {
                 return Err(QuadError::VertexHasNoQuad(vi_idx));
             }
             let local = self.topology.find_vertex(vertex.quad, vi).unwrap();
-            let actual = self.topology.quads[vertex.quad].vertices[local as usize];
+            let actual = self.topology.quads[vertex.quad].vertices[local];
             if actual != vi {
                 return Err(QuadError::VertexQuadMismatch {
                     vertex: vi_idx,
@@ -40,11 +40,13 @@ impl<'a> Validator<'a> {
         for qi_idx in 0..self.topology.quads.len() {
             let verts = &self.topology.quads[QuadIdx::new(qi_idx)].vertices;
             for i in 0..4 {
+                let i_idx = Rot4Idx::new(i);
                 for j in (i + 1)..4 {
-                    if verts[i] == verts[j] {
+                    let j_idx = Rot4Idx::new(j);
+                    if verts[i_idx] == verts[j_idx] {
                         return Err(QuadError::DegenerateQuad {
                             quad: qi_idx,
-                            vertex: verts[i].into_index(),
+                            vertex: verts[i_idx].into_index(),
                         });
                     }
                 }
@@ -58,7 +60,10 @@ impl<'a> Validator<'a> {
         for qi_idx in 0..self.topology.quads.len() {
             let qi = QuadIdx::new(qi_idx);
             for edge_idx in 0..4 {
-                let qe = QuadEdge { quad: qi, edge: edge_idx as u8 };
+                let qe = QuadEdge {
+                    quad: qi,
+                    edge: Rot4Idx::new(edge_idx),
+                };
                 let twin = self.topology.edge_twin(qe);
 
                 // Check twin vertices are reversed
@@ -100,7 +105,7 @@ impl<'a> Validator<'a> {
             .topology
             .quads
             .iter()
-            .filter(|quad| quad.vertices.contains(&infinite_vertex))
+            .filter(|quad| quad.vertices.iter().any(|&v| v == infinite_vertex))
             .count();
         if actual_infinite_count != self.topology.infinite_quad_count {
             return Err(QuadError::InfiniteQuadCountMismatch {
@@ -147,7 +152,7 @@ impl<'a> Validator<'a> {
 
         // Verify all ring elements reference the correct vertex
         for qv in &ring {
-            let vertex_at_pos = self.topology.quads[qv.quad].vertices[qv.local as usize];
+            let vertex_at_pos = self.topology.quads[qv.quad].vertices[qv.local];
             if vertex_at_pos != vi {
                 return Err(QuadError::VertexRingNotClosed { vertex: vi_idx });
             }
@@ -158,7 +163,7 @@ impl<'a> Validator<'a> {
         let incoming = last.incoming_edge();
         let neighbor = self.topology.edge_twin(incoming);
         let next_pos = neighbor.start();
-        let next_vertex = self.topology.quads[next_pos.quad].vertices[next_pos.local as usize];
+        let next_vertex = self.topology.quads[next_pos.quad].vertices[next_pos.local];
 
         // Must be the same vertex (forms a cycle around vi)
         if next_vertex != vi {

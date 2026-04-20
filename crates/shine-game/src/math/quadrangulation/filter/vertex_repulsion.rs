@@ -1,6 +1,6 @@
 use crate::{
     indexed::TypedIndex,
-    math::quadrangulation::{QuadFilter, QuadMesh},
+    math::quadrangulation::{QuadFilter, QuadMesh, Rot4Idx},
 };
 use glam::Vec2;
 
@@ -59,7 +59,8 @@ impl QuadFilter for VertexRepulsion {
                         (1usize, &mut sum_edge, &mut count_edge),
                         (2usize, &mut sum_diag, &mut count_diag),
                     ] {
-                        let vj = verts[(r.local as usize + offset) % 4];
+                        let local_idx: usize = r.local.into();
+                        let vj = verts[(local_idx + offset) % 4];
                         let Some(j) = vj.try_into_index() else { continue };
                         let dist = (self.buf[i] - self.buf[j]).length();
                         if dist < 1e-6 {
@@ -93,7 +94,8 @@ impl QuadFilter for VertexRepulsion {
                         if avg_len == 0.0 {
                             continue;
                         }
-                        let vj = verts[(r.local as usize + offset) % 4];
+                        let local_idx: usize = r.local.into();
+                        let vj = verts[(local_idx + offset) % 4];
                         let Some(j) = vj.try_into_index() else { continue };
                         let delta = self.buf[i] - self.buf[j]; // direction: j → i
                         let dist = delta.length();

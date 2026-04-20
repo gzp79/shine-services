@@ -2,7 +2,7 @@ use crate::{
     indexed::TypedIndex,
     math::{
         geometry::quad_jacobian,
-        quadrangulation::{QuadFilter, QuadMesh},
+        quadrangulation::{QuadFilter, QuadMesh, Rot4Idx},
     },
 };
 use glam::Vec2;

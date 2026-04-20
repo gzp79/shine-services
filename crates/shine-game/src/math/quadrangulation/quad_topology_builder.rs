@@ -1,4 +1,4 @@
-use super::{quad_error::QuadError, Quad, QuadEdge, QuadIdx, QuadTopology, VertIdx, Vertex};
+use super::{quad_error::QuadError, Quad, QuadIdx, QuadTopology, Rot4Idx, VertIdx, Vertex};
 use crate::indexed::{IdxVec, TypedIndex};
 use std::collections::HashMap;
 
@@ -29,7 +29,10 @@ impl QuadTopology {
 
         // Generate ghost quads: [ghost, v2, v1, v0]
         // Boundary edges are reversed (v2->v1, v1->v0) to match twin edges from real quads
-        let mut all_quads: Vec<Quad> = quads.into_iter().map(|verts| Quad::with_vertices(verts[0], verts[1], verts[2], verts[3])).collect();
+        let mut all_quads: Vec<Quad> = quads
+            .into_iter()
+            .map(|verts| Quad::with_vertices(verts[0], verts[1], verts[2], verts[3]))
+            .collect();
         let infinite_vertex = VertIdx::new(vertex_count);
         let infinite_quad_count = polygon.len() / 2;
         for j in 0..infinite_quad_count {
@@ -43,14 +46,15 @@ impl QuadTopology {
         let infinite_quad_start = quads.len() - infinite_quad_count;
 
         // Build edge map: (v0, v1) -> (quad, edge_idx)
-        let mut edge_map: HashMap<(VertIdx, VertIdx), (QuadIdx, u8)> = HashMap::new();
+        let mut edge_map: HashMap<(VertIdx, VertIdx), (QuadIdx, Rot4Idx)> = HashMap::new();
         let quad_count = quads.len();
         for qi_idx in 0..quad_count {
             let qi = QuadIdx::new(qi_idx);
             for edge_idx in 0..4 {
-                let v0 = quads[qi].vertices[edge_idx];
-                let v1 = quads[qi].vertices[(edge_idx + 1) % 4];
-                edge_map.insert((v0, v1), (qi, edge_idx as u8));
+                let edge = Rot4Idx::new(edge_idx);
+                let v0 = quads[qi].vertices[edge];
+                let v1 = quads[qi].vertices[edge.increment()];
+                edge_map.insert((v0, v1), (qi, edge));
             }
         }
 
@@ -59,11 +63,12 @@ impl QuadTopology {
         for qi_idx in 0..quad_count {
             let qi = QuadIdx::new(qi_idx);
             for edge_idx in 0..4 {
-                let v0 = quads[qi].vertices[edge_idx];
-                let v1 = quads[qi].vertices[(edge_idx + 1) % 4];
+                let edge = Rot4Idx::new(edge_idx);
+                let v0 = quads[qi].vertices[edge];
+                let v1 = quads[qi].vertices[edge.increment()];
 
                 if let Some(&(twin_quad, _twin_edge)) = edge_map.get(&(v1, v0)) {
-                    quads[qi].neighbors[edge_idx] = twin_quad;
+                    quads[qi].neighbors[edge] = twin_quad;
                 } else {
                     return Err(QuadError::IncompleteTopology {
                         quad: qi_idx,
@@ -81,7 +86,7 @@ impl QuadTopology {
         }
         for qi_idx in 0..quad_count {
             let qi = QuadIdx::new(qi_idx);
-            for &vi in &quads[qi].vertices {
+            for &vi in quads[qi].vertices.iter() {
                 if vertices[vi].quad.is_none() {
                     vertices[vi].quad = qi;
                 }
