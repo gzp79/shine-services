@@ -21,7 +21,7 @@ fn cdt_simple() {
     builder.add_constraint_edge(v20, v02, 2);
     builder.add_constraint_edge(v10, v12, 4);
     builder.add_constraint_edge(v01, v21, 8);
-    assert_eq!(builder.check(), Ok(()));
+    assert_eq!(builder.validate(), Ok(()));
 }
 
 #[test]
@@ -51,10 +51,10 @@ fn cdt_concave() {
         let p0 = builder.add_vertex(map(0, 10), None);
         let _f = builder.add_vertex(map(10, 15), None);
         let p1 = builder.add_vertex(map(40, 10), None);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
 
         builder.add_constraint_edge(p0, p1, 1);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         assert_eq!(tri.c(tri.find_edge_by_vertex(p0, p1).unwrap()), 1);
     }
 }
@@ -70,7 +70,7 @@ fn cdt_issue1() {
     }
     builder.add_constraint_edge(vertices[0], vertices[1], 1);
     builder.add_constraint_edge(vertices[2], vertices[3], 1);
-    assert_eq!(builder.check(), Ok(()));
+    assert_eq!(builder.validate(), Ok(()));
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn cdt_issue2() {
     }
     builder.add_constraint_edge(vertices[0], vertices[2], 1);
     builder.add_constraint_edge(vertices[1], vertices[3], 1);
-    assert_eq!(builder.check(), Ok(()));
+    assert_eq!(builder.validate(), Ok(()));
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn cdt_issue3() {
     builder.add_constraint_edge(vertices[5], vertices[6], 1);
     builder.add_constraint_edge(vertices[6], vertices[7], 1);
     builder.add_constraint_edge(vertices[7], vertices[4], 1);
-    assert_eq!(builder.check(), Ok(()));
+    assert_eq!(builder.validate(), Ok(()));
 }
 
 #[test]
@@ -145,11 +145,11 @@ fn cdt_issue4() {
     let mut vertices = Vec::new();
     for &pnt in &points {
         vertices.push(builder.add_vertex(pnt, None));
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
     }
     for &(a, b) in &edges {
         builder.add_constraint_edge(vertices[a], vertices[b], 1);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
     }
 }
 
@@ -176,11 +176,11 @@ fn cdt_issue4_reduced() {
     let mut vertices = Vec::new();
     for &pnt in &points {
         vertices.push(builder.add_vertex(pnt, None));
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
     }
     for &(a, b) in &edges {
         builder.add_constraint_edge(vertices[a], vertices[b], 1);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
     }
 }
 
@@ -210,11 +210,11 @@ fn cdt_issue5() {
     let mut vertices = Vec::new();
     for &pnt in &points {
         vertices.push(builder.add_vertex(pnt, None));
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
     }
     for &(a, b) in &edges {
         builder.add_constraint_edge(vertices[a], vertices[b], 1);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
     }
 }
 
@@ -241,13 +241,13 @@ fn cdt_issue6() {
         let mut tri = Triangulation::new_cdt();
         let mut builder = tri.builder();
         builder.add_points(pnts.iter().cloned());
-        builder.check().is_err()
+        builder.validate().is_err()
     });*/
 
     let mut tri = Triangulation::new_cdt();
     let mut builder = tri.builder().with_debug(0, "../../temp/cdt/cdt_issue6");
     builder.add_points(points);
-    assert_eq!(builder.check(), Ok(()));
+    assert_eq!(builder.validate(), Ok(()));
 }
 
 #[test]
@@ -262,5 +262,5 @@ fn cdt_issue6_reduced() {
         .builder()
         .with_debug(usize::MAX, "../../temp/cdt/cdt_issue6_reduced");
     builder.add_points(points);
-    assert_eq!(builder.check(), Ok(()));
+    assert_eq!(builder.validate(), Ok(()));
 }

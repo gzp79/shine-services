@@ -1,24 +1,16 @@
 use crate::{
     indexed::TypedIndex,
-    math::triangulation::{Rot3Idx, Triangulation},
+    math::triangulation::{Rot3Idx, Validator},
 };
 
-pub struct TopologyChecker<'a, const DELAUNAY: bool> {
-    tri: &'a Triangulation<DELAUNAY>,
-}
-
-impl<'a, const DELAUNAY: bool> TopologyChecker<'a, DELAUNAY> {
-    pub fn new(tri: &'a Triangulation<DELAUNAY>) -> TopologyChecker<'a, DELAUNAY> {
-        TopologyChecker { tri }
-    }
-
-    pub fn check(&self) -> Result<(), String> {
-        self.check_dimension()?;
-        self.check_topology()?;
+impl<'a, const DELAUNAY: bool> Validator<'a, DELAUNAY> {
+    pub fn validate_topology(&self) -> Result<(), String> {
+        self.validate_dimension()?;
+        self.validate_links()?;
         Ok(())
     }
 
-    pub fn check_dimension(&self) -> Result<(), String> {
+    pub fn validate_dimension(&self) -> Result<(), String> {
         let tri = self.tri;
 
         if tri.dimension() == u8::MAX {
@@ -132,17 +124,18 @@ impl<'a, const DELAUNAY: bool> TopologyChecker<'a, DELAUNAY> {
         }
     }
 
-    pub fn check_topology(&self) -> Result<(), String> {
+    pub fn validate_links(&self) -> Result<(), String> {
         if self.tri.is_empty() {
             return Ok(());
         }
 
-        self.check_vertex_face_link()?;
-        self.check_face_face_link()?;
+        self.validate_vertex_face_link()?;
+        self.validate_face_face_link()?;
+
         Ok(())
     }
 
-    fn check_vertex_face_link(&self) -> Result<(), String> {
+    fn validate_vertex_face_link(&self) -> Result<(), String> {
         let tri = self.tri;
 
         for v in tri.vertex_index_iter() {
@@ -158,7 +151,7 @@ impl<'a, const DELAUNAY: bool> TopologyChecker<'a, DELAUNAY> {
         Ok(())
     }
 
-    fn check_face_face_link(&self) -> Result<(), String> {
+    fn validate_face_face_link(&self) -> Result<(), String> {
         let tri = self.tri;
 
         for f in tri.face_index_iter() {

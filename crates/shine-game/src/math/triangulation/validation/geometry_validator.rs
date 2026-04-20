@@ -1,35 +1,25 @@
-use log::trace;
-
 use crate::{
     indexed::TypedIndex,
     math::triangulation::{
         predicates::{in_circle, orient2d},
-        Rot3Idx, Triangulation, VertexClue,
+        Rot3Idx, Validator, VertexClue,
     },
 };
+use log::trace;
 
-pub struct GeometryChecker<'a, const DELAUNAY: bool> {
-    tri: &'a Triangulation<DELAUNAY>,
-}
-
-impl<'a, const DELAUNAY: bool> GeometryChecker<'a, DELAUNAY> {
-    pub fn new(tri: &'a Triangulation<DELAUNAY>) -> Self {
-        GeometryChecker { tri }
-    }
-
-    pub fn check(&self) -> Result<(), String> {
-        self.check_duplicate_positions()?;
-        self.check_orientation()?;
-        self.check_area()?;
+impl<'a, const DELAUNAY: bool> Validator<'a, DELAUNAY> {
+    pub fn validate_geometry(&self) -> Result<(), String> {
+        self.validate_duplicate_positions()?;
+        self.validate_orientation()?;
+        self.validate_area()?;
         if DELAUNAY {
-            self.check_delaunay()?;
+            self.validate_delaunay()?;
         }
         Ok(())
     }
 
-    pub fn check_duplicate_positions(&self) -> Result<(), String> {
+    pub fn validate_duplicate_positions(&self) -> Result<(), String> {
         let tri = self.tri;
-
         if tri.dimension() < 1 {
             return Ok(());
         }
@@ -52,9 +42,8 @@ impl<'a, const DELAUNAY: bool> GeometryChecker<'a, DELAUNAY> {
         Ok(())
     }
 
-    pub fn check_orientation(&self) -> Result<(), String> {
+    pub fn validate_orientation(&self) -> Result<(), String> {
         let tri = self.tri;
-
         if tri.dimension() < 2 {
             return Ok(());
         }
@@ -76,9 +65,8 @@ impl<'a, const DELAUNAY: bool> GeometryChecker<'a, DELAUNAY> {
         Ok(())
     }
 
-    pub fn check_area(&self) -> Result<(), String> {
+    pub fn validate_area(&self) -> Result<(), String> {
         let tri = self.tri;
-
         if tri.dimension() != 2 {
             return Ok(());
         }
@@ -148,9 +136,8 @@ impl<'a, const DELAUNAY: bool> GeometryChecker<'a, DELAUNAY> {
         }
     }
 
-    pub fn check_delaunay(&self) -> Result<(), String> {
+    pub fn validate_delaunay(&self) -> Result<(), String> {
         let tri = self.tri;
-
         if tri.dimension() != 2 {
             return Ok(());
         }

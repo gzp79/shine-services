@@ -1,6 +1,6 @@
 use crate::{
     indexed::{IdxArray, IdxVec, TypedIndex},
-    math::triangulation::{CrossingIterator, EdgeCirculator, Rot3Idx, TriangulationBuilder},
+    math::triangulation::{CrossingIterator, EdgeCirculator, Rot3Idx, TriangulationBuilder, Validator},
 };
 use glam::IVec2;
 use std::{
@@ -216,16 +216,20 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
         self.tag.replace(0);
     }
 
-    pub fn builder(&mut self) -> TriangulationBuilder<'_, DELAUNAY> {
-        TriangulationBuilder::new(self)
-    }
-
     pub fn edge_circulator(&self, vertex: VertexIndex) -> EdgeCirculator<'_, DELAUNAY> {
         EdgeCirculator::new(self, vertex)
     }
 
     pub fn crossing_iterator(&self, v0: VertexIndex, v1: VertexIndex) -> CrossingIterator<'_, DELAUNAY> {
         CrossingIterator::new(self, v0, v1)
+    }
+
+    pub fn validator(&self) -> Validator<'_, DELAUNAY> {
+        Validator::new(self)
+    }
+
+    pub fn builder(&mut self) -> TriangulationBuilder<'_, DELAUNAY> {
+        TriangulationBuilder::new(self)
     }
 
     pub fn scope_guard(&self) -> Rc<RefCell<usize>> {

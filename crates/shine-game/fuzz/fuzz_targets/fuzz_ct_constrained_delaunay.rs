@@ -90,7 +90,7 @@ fuzz_target!(|input: ConstrainedInput| {
         let vi = builder.add_vertex(p, None);
         vertices.push(vi);
     }
-    builder.check().expect("builder check failed after adding points");
+    builder.validate().expect("builder check failed after adding points");
 
     for &(a, b) in &edges {
         builder.add_constraint_edge(vertices[a], vertices[b], 1);
@@ -100,7 +100,9 @@ fuzz_target!(|input: ConstrainedInput| {
     }
 
     builder.delaunay_refine_all();
-    builder.check().expect("builder check failed after delaunay refinement");
+    builder
+        .validate()
+        .expect("builder check failed after delaunay refinement");
     GeometryChecker::new(builder.tri())
         .check_delaunay()
         .expect("Delaunay condition failed after refinement");

@@ -97,7 +97,7 @@ pub fn reduce_test_case_incremental<const DELAUNAY: bool>(
 
         for &pnt in &pts {
             let vi = builder.add_vertex(pnt, None);
-            if builder.check().is_err() {
+            if builder.validate().is_err() {
                 return true;
             }
             vertices.push(vi);
@@ -108,7 +108,7 @@ pub fn reduce_test_case_incremental<const DELAUNAY: bool>(
                 continue;
             }
             builder.add_constraint_edge(vertices[a], vertices[b], 1);
-            if builder.check().is_err() {
+            if builder.validate().is_err() {
                 return true;
             }
         }

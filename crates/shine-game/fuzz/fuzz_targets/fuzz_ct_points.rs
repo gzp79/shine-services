@@ -65,5 +65,5 @@ fuzz_target!(|input: PointsInput| {
 
     let mut builder = tri.builder();
     builder.add_points(points);
-    builder.check().expect("Triangulation failed with valid points");
+    builder.validate().expect("Triangulation failed with valid points");
 });

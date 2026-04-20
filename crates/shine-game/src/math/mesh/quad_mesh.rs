@@ -4,6 +4,20 @@ use crate::{
 };
 use glam::Vec2;
 
+pub struct Vertex {
+    pub position: Vec2,
+    pub quad: QuadIdx,
+}
+
+impl Vertex {
+    pub fn new() -> Self {
+        Self {
+            position: Vec2::ZERO,
+            quad: QuadIdx::NONE,
+        }
+    }
+}
+
 /// Quad mesh with positions and topology.
 ///
 /// Combines geometric vertex positions with topological connectivity via ghost vertex

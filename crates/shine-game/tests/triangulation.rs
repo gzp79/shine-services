@@ -1,5 +1,5 @@
 use glam::IVec2;
-use shine_game::math::triangulation::{GeometryChecker, TopologyChecker, Triangulation};
+use shine_game::math::triangulation::Triangulation;
 use shine_test::test;
 
 #[test]
@@ -7,8 +7,7 @@ fn ct_empty() {
     let tri = Triangulation::new_ct();
     assert!(tri.is_empty());
     assert_eq!(tri.dimension(), u8::MAX);
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+    assert_eq!(tri.validator().validate(), Ok(()));
 }
 
 #[test]
@@ -19,21 +18,18 @@ fn ct_point() {
     let vi = tri.builder().add_vertex(IVec2::new(10, 20), None);
     assert!(!tri.is_empty());
     assert_eq!(tri.dimension(), 0);
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+    assert_eq!(tri.validator().validate(), Ok(()));
 
     log::trace!("add same point twice");
     let vi2 = tri.builder().add_vertex(IVec2::new(10, 20), None);
     assert_eq!(tri.dimension(), 0);
     assert_eq!(vi, vi2);
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+    assert_eq!(tri.validator().validate(), Ok(()));
 
     tri.clear();
     assert!(tri.is_empty());
     assert_eq!(tri.dimension(), u8::MAX);
-    assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-    assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+    assert_eq!(tri.validator().validate(), Ok(()));
 }
 
 #[test]
@@ -65,14 +61,14 @@ fn ct_collinear() {
             log::trace!("add {:?}", pos);
             let vi = tri.builder().add_vertex(pos, None);
             assert_eq!(tri.dimension(), expected_dim);
-            assert_eq!(tri.builder().check(), Ok(()));
+            assert_eq!(tri.builder().validate(), Ok(()));
 
             let pos = map(p);
             log::trace!("add duplicate {:?}", pos);
             let vi_dup = tri.builder().add_vertex(pos, None);
             assert_eq!(tri.dimension(), expected_dim);
             assert_eq!(vi, vi_dup);
-            assert_eq!(tri.builder().check(), Ok(()));
+            assert_eq!(tri.builder().validate(), Ok(()));
         }
     }
 }
@@ -118,13 +114,13 @@ fn ct_coplanar() {
                 log::trace!("add {:?}", pos);
                 let vi = tri.builder().add_vertex(pos, None);
                 log::trace!("{:?} = {:?}", vi, tri[vi].position);
-                assert_eq!(tri.builder().check(), Ok(()));
+                assert_eq!(tri.builder().validate(), Ok(()));
 
                 let pos = map(x, y);
                 log::trace!("add duplicate {:?}", pos);
                 let vi_dup = tri.builder().add_vertex(pos, None);
                 assert_eq!(vi, vi_dup);
-                assert_eq!(tri.builder().check(), Ok(()));
+                assert_eq!(tri.builder().validate(), Ok(()));
             }
 
             assert_eq!(tri.dimension(), 2);
@@ -155,18 +151,17 @@ fn ct_constraint_segment() {
         builder.add_vertex(map(10), None);
 
         builder.add_constraint_segment(map(2), map(5), 1);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         builder.add_constraint_segment(map(3), map(7), 1);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         builder.add_constraint_segment(map(8), map(1), 1);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         drop(builder);
 
         tri.clear();
         assert!(tri.is_empty());
         assert_eq!(tri.dimension(), u8::MAX);
-        assert_eq!(TopologyChecker::new(&tri).check(), Ok(()));
-        assert_eq!(GeometryChecker::new(&tri).check(), Ok(()));
+        assert_eq!(tri.validator().validate(), Ok(()));
     }
 }
 
@@ -194,18 +189,18 @@ fn ct_constraint_no_fill1() {
         builder.add_vertex(map(10, 10), None);
 
         builder.add_constraint_segment(map(0, 0), map(10, 0), 1);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         builder.add_constraint_segment(map(0, 0), map(10, 10), 2);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         builder.add_constraint_segment(map(10, 0), map(10, 10), 4);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
 
         builder.add_vertex(map(2, 0), None);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         builder.add_vertex(map(5, 0), None);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         builder.add_vertex(map(3, 0), None);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
     }
 }
 
@@ -234,30 +229,30 @@ fn ct_constraint_no_fill2() {
         builder.add_vertex(map(100, 100), None);
 
         let c0 = builder.add_constraint_segment(map(100, 0), map(100, 100), 1);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         let c1 = builder.add_constraint_segment(map(20, 0), map(50, 0), 2);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         let c2 = builder.add_constraint_segment(map(30, 0), map(70, 0), 4);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         let c3 = builder.add_constraint_segment(map(0, 0), map(100, 0), 8);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         let c4 = builder.add_constraint_segment(map(100, 0), map(0, 0), 16);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         let c5 = builder.add_constraint_segment(map(100, 100), map(0, 0), 32);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         let c6 = builder.add_constraint_segment(map(10, 10), map(90, 90), 64);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         let c7 = builder.add_constraint_segment(map(90, 90), map(10, 10), 128);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         let c8 = builder.add_constraint_segment(map(80, 80), map(20, 20), 256);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
 
         let _v0 = builder.add_vertex(map(2, 5), None);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         let _v1 = builder.add_vertex(map(5, 2), None);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         let v2 = builder.add_vertex(map(50, 50), None);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         drop(builder);
 
         assert_eq!(c0.1, c5.0);
@@ -313,7 +308,7 @@ fn ct_crossing_iterator() {
         let _ = builder.add_vertex(map(5, 8), None);
         let _ = builder.add_vertex(map(8, 10), None);
         let _ = builder.add_vertex(map(30, 10), None);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         drop(builder);
 
         let crossing: Vec<_> = tri.crossing_iterator(v1, v2).take(10).collect();
@@ -363,10 +358,10 @@ fn ct_constraint_concave() {
         let p0 = builder.add_vertex(map(0, 10), None);
         let _f = builder.add_vertex(map(10, 15), None);
         let p1 = builder.add_vertex(map(40, 10), None);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
 
         builder.add_constraint_edge(p0, p1, 1);
-        assert_eq!(builder.check(), Ok(()));
+        assert_eq!(builder.validate(), Ok(()));
         drop(builder);
 
         assert_eq!(tri.c(tri.find_edge_by_vertex(p0, p1).unwrap()), 1);
@@ -465,12 +460,12 @@ fn ct_constraint() {
                 for v in points.iter() {
                     vertices.push(builder.add_vertex(map(v.0, v.1), None));
                 }
-                assert_eq!(builder.check(), Ok(()));
+                assert_eq!(builder.validate(), Ok(()));
 
                 for e in edges.iter() {
                     builder.add_constraint_edge(vertices[e.0], vertices[e.1], 1);
                 }
-                assert_eq!(builder.check(), Ok(()));
+                assert_eq!(builder.validate(), Ok(()));
                 drop(builder);
 
                 let edges_check = edges_check.as_ref().unwrap_or(edges);
@@ -506,9 +501,9 @@ fn ct_point_delaunay() {
 
     let mut builder = tri.builder();
     builder.add_points(points);
-    assert_eq!(builder.check(), Ok(()));
+    assert_eq!(builder.validate(), Ok(()));
 
     builder.delaunay_refine_all();
-    assert_eq!(builder.check(), Ok(()));
-    assert_eq!(GeometryChecker::new(builder.tri()).check_delaunay(), Ok(()));
+    assert_eq!(builder.validate(), Ok(()));
+    assert_eq!(tri.validator().validate_delaunay(), Ok(()));
 }

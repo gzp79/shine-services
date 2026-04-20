@@ -5,8 +5,7 @@ use crate::{
     math::triangulation::{
         builder::state::BuilderState,
         predicates::{test_collinear_points, CollinearTestType},
-        Crossing, FaceEdge, FaceIndex, GeometryChecker, Location, Rot3Idx, TopologyChecker, Triangulation, VertexClue,
-        VertexIndex,
+        Crossing, FaceEdge, FaceIndex, Location, Rot3Idx, Triangulation, VertexClue, VertexIndex,
     },
 };
 use glam::IVec2;
@@ -32,10 +31,8 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
         self.tri
     }
 
-    pub fn check(&self) -> Result<(), String> {
-        TopologyChecker::new(&self.tri).check()?;
-        GeometryChecker::new(&self.tri).check()?;
-        Ok(())
+    pub fn validate(&self) -> Result<(), String> {
+        self.tri.validator().validate()
     }
 
     pub fn with_debug<P: Into<PathBuf>>(mut self, verbosity: usize, path: P) -> Self {

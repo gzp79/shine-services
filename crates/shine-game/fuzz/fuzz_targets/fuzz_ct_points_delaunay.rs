@@ -67,7 +67,9 @@ fuzz_target!(|input: PointsInput| {
     builder.add_points(points);
 
     builder.delaunay_refine_all();
-    builder.check().expect("builder check failed after delaunay refinement");
+    builder
+        .validate()
+        .expect("builder check failed after delaunay refinement");
     GeometryChecker::new(builder.tri())
         .check_delaunay()
         .expect("Delaunay condition failed after refinement");
