@@ -2,7 +2,7 @@ use crate::{
     indexed::TypedIndex,
     math::{
         geometry::quad_jacobian,
-        quadrangulation::{QuadFilter, QuadMesh, Rot4Idx},
+        quadrangulation::{QuadFilter, Quadrangulation, Rot4Idx},
     },
 };
 use glam::Vec2;
@@ -29,22 +29,18 @@ impl QuadRelax {
 impl QuadFilter for QuadRelax {
     /// Identifies quads below `quality` and relaxes their interior vertices toward
     /// the neighbor average. Iterates until all quads pass or `iterations` is reached.
-    fn apply(&mut self, mesh: &mut QuadMesh) {
-        let QuadMesh {
-            topology, vertices: positions, ..
-        } = mesh;
-
+    fn apply(&mut self, mesh: &mut Quadrangulation) {
         for _ in 0..self.iterations {
-            let mut is_bad = vec![false; topology.vertex_count()];
+            let mut is_bad = vec![false; mesh.vertex_count()];
             let mut any_bad = false;
 
-            for qi in topology.quad_indices() {
-                let verts = topology.quad_vertices(qi);
-                let pts: [Vec2; 4] = std::array::from_fn(|i| positions[verts[i]]);
+            for qi in mesh.finite_quad_index_iter() {
+                let verts = mesh.quad_vertices(qi);
+                let pts: [Vec2; 4] = std::array::from_fn(|i| mesh[verts[i]].position);
                 if quad_jacobian(&pts) < self.quality {
                     any_bad = true;
                     for &v in &verts {
-                        if !topology.is_boundary_vertex(v) {
+                        if !mesh.is_boundary_vertex(v) {
                             is_bad[v.into_index()] = true;
                         }
                     }
@@ -55,18 +51,19 @@ impl QuadFilter for QuadRelax {
                 break;
             }
 
-            self.buf.resize(topology.vertex_count(), Vec2::ZERO);
-            for vi in topology.vertex_indices() {
-                self.buf[vi.into_index()] = positions[vi];
+            self.buf.resize(mesh.vertex_count(), Vec2::ZERO);
+            let vertices: Vec<_> = mesh.finite_vertex_index_iter().collect();
+            for vi in &vertices {
+                self.buf[vi.into_index()] = mesh[*vi].position;
             }
 
-            for vi in topology.vertex_indices() {
+            for vi in vertices {
                 if !is_bad[vi.into_index()] {
                     continue;
                 }
-                let avg = topology.neighbor_avg(vi, &self.buf);
+                let avg = mesh.neighbor_avg(vi, &self.buf);
                 let old = self.buf[vi.into_index()];
-                positions[vi] = old + self.strength * (avg - old);
+                mesh[vi].position = old + self.strength * (avg - old);
             }
         }
     }

@@ -1,10 +1,10 @@
 use crate::{
     indexed::TypedIndex,
-    math::quadrangulation::{QuadFilter, QuadMesh, Rot4Idx},
+    math::quadrangulation::{QuadFilter, Quadrangulation, Rot4Idx},
 };
 use glam::Vec2;
 
-/// Edge-length and diagonal-length equalization relaxation for [`QuadMesh`].
+/// Edge-length and diagonal-length equalization relaxation for [`Quadrangulation`].
 pub struct VertexRepulsion {
     strength: f32,
     iterations: u32,
@@ -22,27 +22,22 @@ impl VertexRepulsion {
 }
 
 impl QuadFilter for VertexRepulsion {
-    fn apply(&mut self, mesh: &mut QuadMesh) {
-        let QuadMesh {
-            topology, vertices: positions, ..
-        } = mesh;
-
-        let n = topology.vertex_count();
+    fn apply(&mut self, mesh: &mut Quadrangulation) {
+        let n = mesh.vertex_count();
         if n == 0 {
             return;
         }
 
-        debug_assert_eq!(n, positions.len());
-
         for _ in 0..self.iterations {
             // Snapshot positions so all updates read from the frozen state.
             self.buf.resize(n, Vec2::ZERO);
-            for vi in topology.vertex_indices() {
-                self.buf[vi.into_index()] = positions[vi];
+            let vertices: Vec<_> = mesh.finite_vertex_index_iter().collect();
+            for vi in &vertices {
+                self.buf[vi.into_index()] = mesh[*vi].position;
             }
 
-            for vi in topology.vertex_indices() {
-                if topology.is_boundary_vertex(vi) {
+            for vi in vertices {
+                if mesh.is_boundary_vertex(vi) {
                     continue;
                 }
                 let i = vi.into_index();
@@ -53,8 +48,8 @@ impl QuadFilter for VertexRepulsion {
                 let mut count_edge = 0u32;
                 let mut sum_diag = 0.0f32;
                 let mut count_diag = 0u32;
-                for r in topology.vertex_ring_ccw(vi) {
-                    let verts = topology.quad_vertices(r.quad);
+                for r in mesh.vertex_ring_ccw(vi) {
+                    let verts = mesh.quad_vertices(r.quad);
                     for (offset, sum, count) in [
                         (1usize, &mut sum_edge, &mut count_edge),
                         (2usize, &mut sum_diag, &mut count_diag),
@@ -88,8 +83,8 @@ impl QuadFilter for VertexRepulsion {
                 // average distance from each edge and diagonal neighbor.
                 let mut ideal_sum = Vec2::ZERO;
                 let mut ideal_count = 0u32;
-                for r in topology.vertex_ring_ccw(vi) {
-                    let verts = topology.quad_vertices(r.quad);
+                for r in mesh.vertex_ring_ccw(vi) {
+                    let verts = mesh.quad_vertices(r.quad);
                     for (offset, avg_len) in [(1usize, avg_edge), (2usize, avg_diag)] {
                         if avg_len == 0.0 {
                             continue;
@@ -110,7 +105,7 @@ impl QuadFilter for VertexRepulsion {
                     continue;
                 }
                 let ideal = ideal_sum / ideal_count as f32;
-                positions[vi] = self.buf[i] + self.strength * (ideal - self.buf[i]);
+                mesh[vi].position = self.buf[i] + self.strength * (ideal - self.buf[i]);
             }
         }
     }

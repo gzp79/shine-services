@@ -52,74 +52,27 @@ impl Quad {
     }
 }
 
-/// Quad mesh topology with adjacency — no positions.
+/// Quadrangulation with vertex positions and topological adjacency.
 ///
 /// The mesh is extended with an infinite vertex and infinite quads to form a topologically
 /// closed mesh. The infinite vertex acts as an apex connecting all boundary vertices,
 /// enabling consistent CCW navigation around every vertex including boundary vertices.
-///
-/// ## Infinite Topology
-///
-/// - **Infinite vertex**: Located at `VertIdx(vertex_count)`, has no geometric position
-/// - **Infinite quads**: N/2 quads for N boundary vertices, each containing the infinite vertex
-///   and 3 consecutive boundary vertices with reversed winding for twin edge adjacency
-///
-/// ## Navigation
-///
-/// - All vertices support full CCW ring traversal via `vertex_ring()`
-/// - Boundary edges can be identified via `edge_type()` returning `EdgeType::Boundary`
-/// - Infinite quads are detectable via `is_infinite_quad()` and should typically be excluded
-///   from geometric operations
-pub struct QuadTopology {
-    // Number of finite vertices (excluding infinite vertex)
-    pub(crate) vertex_count: usize,
-    // Number of infinite quads (half the number of boundary edges)
-    pub(crate) infinite_quad_count: usize,
-    pub(crate) quads: IdxVec<QuadIdx, Quad>,
-    // For each vertex, stores position and one adjacent quad reference
+pub struct Quadrangulation {
+    pub(crate) infinite_vertex: VertIdx,
     pub(crate) vertices: IdxVec<VertIdx, Vertex>,
-    // Start vertex for each anchour (non-subdivided) edge.
+    pub(crate) quads: IdxVec<QuadIdx, Quad>,
     pub(crate) anchor_vertices: Vec<VertIdx>,
 }
 
-impl QuadTopology {
-    /// Number of all vertices (finite + infinite)
-    #[inline]
-    pub fn vertex_count(&self) -> usize {
-        self.vertices.len()
-    }
-
-    /// Number of finite (non-infinite) vertices
-    #[inline]
-    pub fn finite_vertex_count(&self) -> usize {
-        self.vertex_count
-    }
-
-    /// Iterator over all vertices (finite + infinite)
-    #[inline]
-    pub fn vertex_iter(&self) -> impl Iterator<Item = &Vertex> + '_ {
-        self.vertices.iter()
-    }
-
-    /// Iterator over all vertex indices (finite + infinite)
-    pub fn vertex_index_iter(&self) -> impl Iterator<Item = VertIdx> {
-        VertIdx::range(VertIdx::new(0), VertIdx::new(self.vertices.len()))
-    }
-
-    /// Iterator over the finite (non-infinite) vertex indices
-    pub fn vertex_indices(&self) -> impl Iterator<Item = VertIdx> {
-        (0..self.vertex_count).map(VertIdx::new)
-    }
-
-    /// Infinite vertex index
+impl Quadrangulation {
     #[inline]
     pub fn infinite_vertex(&self) -> VertIdx {
-        VertIdx::new(self.vertex_count)
+        self.infinite_vertex
     }
 
     #[inline]
     pub fn is_infinite_vertex(&self, id: VertIdx) -> bool {
-        id == VertIdx::new(self.vertex_count)
+        id == self.infinite_vertex
     }
 
     #[inline]
@@ -127,12 +80,112 @@ impl QuadTopology {
         !self.is_infinite_vertex(id)
     }
 
+    #[inline]
+    pub fn vertex_count(&self) -> usize {
+        self.vertices.len()
+    }
+
+    #[inline]
+    pub fn finite_vertex_count(&self) -> usize {
+        if self.vertices.len() == 0 {
+            0
+        } else {
+            self.vertices.len() - 1
+        }
+    }
+
+    #[inline]
+    pub fn vertex_index_iter(&self) -> impl Iterator<Item = VertIdx> {
+        VertIdx::range(VertIdx::new(0), VertIdx::new(self.vertices.len()))
+    }
+
+    #[inline]
+    pub fn finite_vertex_index_iter(&self) -> impl Iterator<Item = VertIdx> + '_ {
+        (0..self.vertices.len())
+            .map(VertIdx::new)
+            .filter(|&vi| !self.is_infinite_vertex(vi))
+    }
+
+    #[inline]
+    pub fn vertex_iter(&self) -> impl Iterator<Item = &Vertex> + '_ {
+        self.vertices.iter()
+    }
+
+    #[inline]
+    pub fn finite_vertex_iter(&self) -> impl Iterator<Item = &Vertex> + '_ {
+        self.vertices.iter().enumerate().filter_map(|(i, v)| {
+            if self.is_finite_vertex(VertIdx::new(i)) {
+                Some(v)
+            } else {
+                None
+            }
+        })
+    }
+
+    #[inline]
+    pub fn quad_count(&self) -> usize {
+        self.quads.len()
+    }
+
+    #[inline]
+    pub fn finite_quad_count(&self) -> usize {
+        self.finite_quad_index_iter().count()
+    }
+
+    #[inline]
+    pub fn infinite_quad_count(&self) -> usize {
+        self.infinite_quad_index_iter().count()
+    }
+
+    #[inline]
+    pub fn quad_iter(&self) -> impl Iterator<Item = &Quad> + '_ {
+        self.quads.iter()
+    }
+
+    #[inline]
+    pub fn finite_quad_iter(&self) -> impl Iterator<Item = &Quad> + '_ {
+        self.quads
+            .iter()
+            .filter(|q| q.find_vertex(self.infinite_vertex).is_none())
+    }
+
+    #[inline]
+    pub fn quad_index_iter(&self) -> impl Iterator<Item = QuadIdx> {
+        QuadIdx::range(QuadIdx::new(0), QuadIdx::new(self.quads.len()))
+    }
+
+    #[inline]
+    pub fn finite_quad_index_iter(&self) -> impl Iterator<Item = QuadIdx> + '_ {
+        (0..self.quads.len())
+            .map(QuadIdx::new)
+            .filter(|&qi| !self.is_infinite_quad(qi))
+    }
+
+    #[inline]
+    pub fn infinite_quad_index_iter(&self) -> impl Iterator<Item = QuadIdx> + '_ {
+        (0..self.quads.len())
+            .map(QuadIdx::new)
+            .filter(|&qi| self.is_infinite_quad(qi))
+    }
+
+    #[inline]
+    pub fn is_infinite_quad(&self, qi: QuadIdx) -> bool {
+        let infinite = self.infinite_vertex();
+        let verts = &self.quads[qi].vertices;
+        verts.iter().any(|&v| v == infinite)
+    }
+
+    #[inline]
+    pub fn is_finite_quad(&self, qi: QuadIdx) -> bool {
+        !self.is_infinite_quad(qi)
+    }
+
     pub fn is_boundary_vertex(&self, vi: VertIdx) -> bool {
         self.vertex_ring_ccw(vi).any(|qv| self.is_infinite_quad(qv.quad))
     }
 
     pub fn boundary_vertex_count(&self) -> usize {
-        self.infinite_quad_count * 2
+        self.infinite_quad_count() * 2
     }
 
     /// Returns an iterator over boundary edges as vertex index pairs.
@@ -162,14 +215,14 @@ impl QuadTopology {
         self.vertex_ring_cw(ghost).flat_map(move |qv| {
             let p1 = qv.prev();
             let p2 = p1.prev();
-            [self.vertex_index(p1), self.vertex_index(p2)]
+            [self.vi(p1), self.vi(p2)]
         })
     }
 
     pub fn edge_type(&self, a: VertIdx, b: VertIdx) -> QuadEdgeType {
         // Find the quad containing edge a→b
         for qv in self.vertex_ring_ccw(a) {
-            if self.vertex_index(qv.next()) == b {
+            if self.vi(qv.next()) == b {
                 let edge = qv.outgoing_edge();
                 let neighbor = self.edge_twin(edge);
 
@@ -183,61 +236,6 @@ impl QuadTopology {
         }
 
         QuadEdgeType::NotAnEdge
-    }
-
-    /// Number of all quads (real + ghost)
-    #[inline]
-    pub fn quad_count(&self) -> usize {
-        self.quads.len()
-    }
-
-    /// Number of real (non-ghost) quads
-    #[inline]
-    pub fn finite_quad_count(&self) -> usize {
-        self.quads.len() - self.infinite_quad_count
-    }
-
-    /// Iterator over all quad vertex arrays (real + ghost)
-    #[inline]
-    pub fn quad_iter(&self) -> impl Iterator<Item = &IdxArray<Rot4Idx, VertIdx, 4>> + '_ {
-        self.quads.iter().map(|q| &q.vertices)
-    }
-
-    /// Iterator over all quad indices (real + ghost)
-    pub fn quad_index_iter(&self) -> impl Iterator<Item = QuadIdx> {
-        QuadIdx::range(QuadIdx::new(0), QuadIdx::new(self.quads.len()))
-    }
-
-    /// Iterator over finite (non-infinite) quad indices
-    pub fn quad_indices(&self) -> impl Iterator<Item = QuadIdx> + '_ {
-        (0..self.quads.len())
-            .map(QuadIdx::new)
-            .filter(|&qi| !self.is_infinite_quad(qi))
-    }
-
-    /// Number of infinite quads
-    #[inline]
-    pub fn infinite_quad_count(&self) -> usize {
-        self.infinite_quad_count
-    }
-
-    /// Iterator over infinite quad indices
-    pub fn infinite_quad_indices(&self) -> impl Iterator<Item = QuadIdx> + '_ {
-        (0..self.quads.len())
-            .map(QuadIdx::new)
-            .filter(|&qi| self.is_infinite_quad(qi))
-    }
-
-    #[inline]
-    pub fn is_infinite_quad(&self, qi: QuadIdx) -> bool {
-        let infinite = self.infinite_vertex();
-        let verts = &self.quads[qi].vertices;
-        verts.iter().any(|&v| v == infinite)
-    }
-
-    #[inline]
-    pub fn is_finite_quad(&self, qi: QuadIdx) -> bool {
-        !self.is_infinite_quad(qi)
     }
 
     pub fn anchor_count(&self) -> usize {
@@ -257,7 +255,7 @@ impl QuadTopology {
         // handles the case where the anchor edge wraps past the ring origin.
         let ghost = self.infinite_vertex();
         let quad = self.vertices[ghost].quad;
-        let local = self.find_vertex(quad, ghost).unwrap();
+        let local = self[quad].find_vertex(ghost).unwrap();
         let start_qv = QuadVertex { quad, local };
 
         let ring = VertexRingIter::<false> {
@@ -271,7 +269,7 @@ impl QuadTopology {
         ring.flat_map(move |qv| {
             let p1 = qv.prev();
             let p2 = p1.prev();
-            [self.vertex_index(p1), self.vertex_index(p2)]
+            [self.vi(p1), self.vi(p2)]
         })
         .skip_while(move |&v| v != start)
         .take_while(move |&v| v != end)
@@ -285,10 +283,6 @@ impl QuadTopology {
             quad: neighbor_quad,
             edge: neighbor_edge,
         }
-    }
-
-    pub fn vertex_index(&self, qv: QuadVertex) -> VertIdx {
-        self.quads[qv.quad].vertices[qv.local]
     }
 
     pub fn edge_vertices(&self, qe: QuadEdge) -> (VertIdx, VertIdx) {
@@ -306,16 +300,10 @@ impl QuadTopology {
         ]
     }
 
-    /// Find the local index (0..4) of vertex `v` in quad `qi`.
-    /// Returns None if the vertex is not part of the quad.
-    pub fn find_vertex(&self, qi: QuadIdx, v: VertIdx) -> Option<Rot4Idx> {
-        self.quads[qi].find_vertex(v)
-    }
-
     /// The ring of quads around vertex `vi`, with the local vertex index of vi.
     pub fn vertex_ring_ccw(&self, vi: VertIdx) -> impl Iterator<Item = QuadVertex> + '_ {
         let quad = self.vertices[vi].quad;
-        let local = self.find_vertex(quad, vi).unwrap();
+        let local = self[quad].find_vertex(vi).unwrap();
         let start_qv = QuadVertex { quad, local };
 
         VertexRingIter::<true> {
@@ -329,7 +317,7 @@ impl QuadTopology {
 
     pub fn vertex_ring_cw(&self, vi: VertIdx) -> impl Iterator<Item = QuadVertex> + '_ {
         let quad = self.vertices[vi].quad;
-        let local = self.find_vertex(quad, vi).unwrap();
+        let local = self[quad].find_vertex(vi).unwrap();
         let start_qv = QuadVertex { quad, local };
 
         VertexRingIter::<false> {
@@ -350,7 +338,7 @@ impl QuadTopology {
         let mut count = 0u32;
 
         for qv in self.vertex_ring_ccw(vi) {
-            let next = self.vertex_index(qv.next());
+            let next = self.vi(qv.next());
             if let Some(idx) = next.try_into_index() {
                 sum += positions[idx];
                 count += 1;
@@ -388,10 +376,40 @@ impl QuadTopology {
             QuadClue::QuadIndex(qi) => qi,
         }
     }
+
+    /// Get position for a vertex clue
+    pub fn p<T: Into<VertexClue>>(&self, id: T) -> Vec2 {
+        let vi = self.vi(id);
+        self.vertices[vi].position
+    }
+
+    /// Get mutable position reference for a vertex clue
+    pub fn p_mut<T: Into<VertexClue>>(&mut self, id: T) -> &mut Vec2 {
+        let vi = self.vi(id);
+        &mut self.vertices[vi].position
+    }
+
+    /// Get average position of quad vertices.
+    /// Returns None for infinite quads.
+    pub fn dual_p<T: Into<QuadClue>>(&self, id: T) -> Option<Vec2> {
+        let qi = self.qi(id);
+        if self.is_infinite_quad(qi) {
+            return None;
+        }
+
+        let verts = self.quad_vertices(qi);
+        let mut sum = Vec2::ZERO;
+
+        for v in verts {
+            sum += self.vertices[v].position;
+        }
+
+        Some(sum / 4.0)
+    }
 }
 
 struct VertexRingIter<'a, const CCW: bool> {
-    topology: &'a QuadTopology,
+    topology: &'a Quadrangulation,
     // Decremented on each loop completion; panics if reaches 0
     max_loops: usize,
     start: QuadVertex,
@@ -437,7 +455,7 @@ impl<'a, const CCW: bool> Iterator for VertexRingIter<'a, CCW> {
     }
 }
 
-impl ops::Index<VertIdx> for QuadTopology {
+impl ops::Index<VertIdx> for Quadrangulation {
     type Output = Vertex;
 
     #[inline]
@@ -446,14 +464,14 @@ impl ops::Index<VertIdx> for QuadTopology {
     }
 }
 
-impl ops::IndexMut<VertIdx> for QuadTopology {
+impl ops::IndexMut<VertIdx> for Quadrangulation {
     #[inline]
     fn index_mut(&mut self, v: VertIdx) -> &mut Self::Output {
         &mut self.vertices[v]
     }
 }
 
-impl ops::Index<VertexClue> for QuadTopology {
+impl ops::Index<VertexClue> for Quadrangulation {
     type Output = Vertex;
 
     #[inline]
@@ -462,7 +480,7 @@ impl ops::Index<VertexClue> for QuadTopology {
     }
 }
 
-impl ops::IndexMut<VertexClue> for QuadTopology {
+impl ops::IndexMut<VertexClue> for Quadrangulation {
     #[inline]
     fn index_mut(&mut self, v: VertexClue) -> &mut Self::Output {
         let vi = self.vi(v);
@@ -470,7 +488,7 @@ impl ops::IndexMut<VertexClue> for QuadTopology {
     }
 }
 
-impl ops::Index<QuadIdx> for QuadTopology {
+impl ops::Index<QuadIdx> for Quadrangulation {
     type Output = Quad;
 
     #[inline]
@@ -479,14 +497,14 @@ impl ops::Index<QuadIdx> for QuadTopology {
     }
 }
 
-impl ops::IndexMut<QuadIdx> for QuadTopology {
+impl ops::IndexMut<QuadIdx> for Quadrangulation {
     #[inline]
     fn index_mut(&mut self, q: QuadIdx) -> &mut Self::Output {
         &mut self.quads[q]
     }
 }
 
-impl ops::Index<QuadClue> for QuadTopology {
+impl ops::Index<QuadClue> for Quadrangulation {
     type Output = Quad;
 
     #[inline]
@@ -495,7 +513,7 @@ impl ops::Index<QuadClue> for QuadTopology {
     }
 }
 
-impl ops::IndexMut<QuadClue> for QuadTopology {
+impl ops::IndexMut<QuadClue> for Quadrangulation {
     #[inline]
     fn index_mut(&mut self, q: QuadClue) -> &mut Self::Output {
         let qi = self.qi(q);

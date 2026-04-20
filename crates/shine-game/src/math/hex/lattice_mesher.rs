@@ -3,7 +3,7 @@ use crate::{
     math::{
         hex::{AxialCoord, AxialDenseIndexer},
         prng::StableRng,
-        quadrangulation::{QuadMesh, VertIdx},
+        quadrangulation::{Quadrangulation, VertIdx},
     },
 };
 use glam::Vec2;
@@ -44,7 +44,7 @@ impl LatticeMesher {
         self.with_hex_size(AxialCoord::hex_size_from_world_size(size, radius))
     }
 
-    pub fn generate(&mut self) -> QuadMesh {
+    pub fn generate(&mut self) -> Quadrangulation {
         let radius = 2u32.pow(self.subdivision - 1);
         let indexer = AxialDenseIndexer::new(radius);
 
@@ -166,7 +166,7 @@ impl LatticeMesher {
         faces: &[Face],
         base_boundary_polygon: Vec<VertIdx>,
         anchors: Vec<VertIdx>,
-    ) -> QuadMesh {
+    ) -> Quadrangulation {
         let mut quads: Vec<[VertIdx; 4]> = Vec::new();
 
         // Cache edge midpoints: (min_idx, max_idx) → vertex index
@@ -222,7 +222,7 @@ impl LatticeMesher {
             boundary_polygon.push(VertIdx::new(mid_idx));
         }
 
-        QuadMesh::from_polygon(positions, boundary_polygon, anchors, quads).expect("valid lattice mesh topology")
+        Quadrangulation::from_polygon(boundary_polygon, anchors, quads, positions).expect("valid lattice mesh topology")
     }
 }
 

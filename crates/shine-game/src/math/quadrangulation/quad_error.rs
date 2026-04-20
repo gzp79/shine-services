@@ -56,4 +56,10 @@ pub enum QuadError {
 
     #[error("Infinite quads are not compact: infinite quad {infinite_quad} precedes finite quad {finite_quad}")]
     InfiniteQuadsNotCompact { infinite_quad: usize, finite_quad: usize },
+
+    #[error("Quad {quad} has negative or zero area (non-CCW winding)")]
+    NegativeQuadArea { quad: usize },
+
+    #[error("Self-intersection detected between quad {quad1} and quad {quad2}")]
+    SelfIntersection { quad1: usize, quad2: usize },
 }

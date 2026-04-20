@@ -1,10 +1,10 @@
 use crate::{
     indexed::TypedIndex,
-    math::quadrangulation::{QuadFilter, QuadMesh},
+    math::quadrangulation::{QuadFilter, Quadrangulation},
 };
 use glam::Vec2;
 
-/// Laplacian smoothing for [`QuadMesh`].
+/// Laplacian smoothing for [`Quadrangulation`].
 pub struct LaplacianSmoother {
     strength: f32,
     iterations: u32,
@@ -21,24 +21,21 @@ impl LaplacianSmoother {
         }
     }
 
-    fn step(&mut self, mesh: &mut QuadMesh) {
-        let QuadMesh {
-            topology, vertices: positions, ..
-        } = mesh;
+    fn step(&mut self, mesh: &mut Quadrangulation) {
+        self.buf.resize(mesh.vertex_count(), Vec2::ZERO);
 
-        self.buf.resize(topology.vertex_count(), Vec2::ZERO);
-
-        for vi in topology.vertex_indices() {
-            self.buf[vi.into_index()] = positions[vi];
+        let vertices: Vec<_> = mesh.finite_vertex_index_iter().collect();
+        for vi in &vertices {
+            self.buf[vi.into_index()] = mesh[*vi].position;
         }
 
-        for vi in topology.vertex_indices() {
-            if topology.is_boundary_vertex(vi) {
+        for vi in vertices {
+            if mesh.is_boundary_vertex(vi) {
                 continue;
             }
-            let avg = topology.neighbor_avg(vi, &self.buf);
+            let avg = mesh.neighbor_avg(vi, &self.buf);
             let old = self.buf[vi.into_index()];
-            positions[vi] = old + self.strength * (avg - old);
+            mesh[vi].position = old + self.strength * (avg - old);
         }
     }
 }
@@ -46,7 +43,7 @@ impl LaplacianSmoother {
 impl QuadFilter for LaplacianSmoother {
     /// Runs `iterations` Jacobi-style relaxation steps, moving interior vertices toward
     /// the average of their edge-connected neighbors. Boundary vertices are never moved.
-    fn apply(&mut self, mesh: &mut QuadMesh) {
+    fn apply(&mut self, mesh: &mut Quadrangulation) {
         for _ in 0..self.iterations {
             self.step(mesh);
         }

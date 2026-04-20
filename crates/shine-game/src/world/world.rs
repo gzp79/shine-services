@@ -2,7 +2,7 @@ use crate::{
     indexed::IdxVec,
     math::{
         prng::SplitMix64,
-        quadrangulation::{QuadIdx, QuadTopology, VertIdx},
+        quadrangulation::{QuadIdx, Quadrangulation, VertIdx},
     },
     world::{Chunk, ChunkId},
 };
@@ -25,35 +25,15 @@ pub const CELL_WORLD_SIZE: f32 = CHUNK_WORLD_SIZE / SUBDIVISION_COUNT as f32;
 /// Note: This is the critical piece - ring alignment logic needs careful implementation.
 /// Ghost quads in one chunk correspond to real quads in the neighbor.
 pub(crate) fn merge_vertex_ring_dual(
-    topo1: &QuadTopology,
-    centers1: &IdxVec<QuadIdx, Vec2>,
+    topo1: &Quadrangulation,
     v1: VertIdx,
-    topo2: &QuadTopology,
-    centers2: &IdxVec<QuadIdx, Vec2>,
+    topo2: &Quadrangulation,
     v2: VertIdx,
 ) -> Vec<Vec2> {
     // Collect rings with ghost markers
-    let ring1: Vec<Option<Vec2>> = topo1
-        .vertex_ring_ccw(v1)
-        .map(|qv| {
-            if topo1.is_infinite_quad(qv.quad) {
-                None
-            } else {
-                Some(centers1[qv.quad])
-            }
-        })
-        .collect();
+    let ring1: Vec<Option<Vec2>> = topo1.vertex_ring_ccw(v1).map(|qv| topo1.dual_p(qv.quad)).collect();
 
-    let ring2: Vec<Option<Vec2>> = topo2
-        .vertex_ring_ccw(v2)
-        .map(|qv| {
-            if topo2.is_infinite_quad(qv.quad) {
-                None
-            } else {
-                Some(centers2[qv.quad])
-            }
-        })
-        .collect();
+    let ring2: Vec<Option<Vec2>> = topo2.vertex_ring_ccw(v2).map(|qv| topo2.dual_p(qv.quad)).collect();
 
     // Find where ghost quad sequence starts in each ring
     let ghost_start1 = ring1.iter().position(|opt| opt.is_none());
@@ -159,14 +139,7 @@ impl World {
             let neighbor_vi = neighbor_verts[neighbor_verts.len() - 1 - i];
 
             // Merge vertex rings from both chunks
-            let polygon = merge_vertex_ring_dual(
-                &owner.topology,
-                &owner.quad_centers,
-                owner_vi,
-                &neighbor.topology,
-                &neighbor.quad_centers,
-                neighbor_vi,
-            );
+            let polygon = merge_vertex_ring_dual(&owner.topology, owner_vi, &neighbor.topology, neighbor_vi);
 
             if polygon.len() >= 3 {
                 let start_idx = (vertices.len() / 2) as u32;

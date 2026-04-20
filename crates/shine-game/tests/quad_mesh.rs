@@ -3,7 +3,7 @@ use shine_core::utils::is_rotation;
 use shine_game::{
     indexed::TypedIndex,
     math::quadrangulation::{
-        QuadEdge, QuadEdgeType, QuadError, QuadIdx, QuadMesh, QuadTopology, QuadVertex, Rot4Idx, VertIdx,
+        QuadEdge, QuadEdgeType, QuadError, QuadIdx, QuadVertex, Quadrangulation, Rot4Idx, VertIdx,
     },
 };
 use shine_test::test;
@@ -20,7 +20,7 @@ use std::collections::HashSet;
 /// Q0=[0,1,4,3]  Q1=[1,2,5,4]  Q2=[3,4,7,6]  Q3=[4,5,8,7]  (CCW)
 /// Interior: 4.  Boundary: 8 vertices (0,1,2,5,8,7,6,3).
 /// Simple 2x2 grid topology for testing.
-fn grid_2x2_topo() -> QuadTopology {
+fn grid_2x2_topo() -> Quadrangulation {
     let quads = vec![
         [VertIdx::new(0), VertIdx::new(1), VertIdx::new(4), VertIdx::new(3)],
         [VertIdx::new(1), VertIdx::new(2), VertIdx::new(5), VertIdx::new(4)],
@@ -29,7 +29,8 @@ fn grid_2x2_topo() -> QuadTopology {
     ];
     let boundaries: Vec<_> = [0, 1, 2, 5, 8, 7, 6, 3].into_iter().map(VertIdx::new).collect();
     let anchors: Vec<_> = [0, 2, 8, 6].into_iter().map(VertIdx::new).collect();
-    QuadTopology::from_polygon(9, boundaries, anchors, quads).expect("valid topology")
+    let positions = grid_2x2_positions();
+    Quadrangulation::from_polygon(boundaries, anchors, quads, positions).expect("valid topology")
 }
 
 /// Positions matching grid_2x2_topo layout.
@@ -118,7 +119,7 @@ fn test_infinite_quad_structure() {
     let topo = grid_2x2_topo();
     let infinite_vertex = topo.infinite_vertex();
 
-    for qi in topo.infinite_quad_indices() {
+    for qi in topo.infinite_quad_index_iter() {
         let verts = topo.quad_vertices(qi);
 
         // Infinite quad should have exactly one infinite vertex
@@ -204,17 +205,12 @@ fn test_vertex_rings_consistency() {
     let topo = grid_2x2_topo();
 
     // All real vertices should have valid, connected rings referencing the correct vertex
-    for vi in topo.vertex_indices() {
+    for vi in topo.finite_vertex_index_iter() {
         let ring: Vec<_> = topo.vertex_ring_ccw(vi).collect();
         assert!(!ring.is_empty(), "vertex {:?} should have non-empty ring", vi);
 
         for qv in &ring {
-            assert_eq!(
-                topo.vertex_index(*qv),
-                vi,
-                "ring entry should reference vertex {:?}",
-                vi
-            );
+            assert_eq!(topo.vi(*qv), vi, "ring entry should reference vertex {:?}", vi);
         }
 
         // Ring should be connected via incoming edge twins
@@ -245,7 +241,7 @@ fn test_boundary_detection() {
     let expected_boundary: HashSet<_> = [0, 1, 2, 3, 5, 6, 7, 8].into_iter().collect();
     let expected_interior: HashSet<_> = [4].into_iter().collect();
 
-    for vi in topo.vertex_indices() {
+    for vi in topo.finite_vertex_index_iter() {
         let idx = vi.into_index();
         let is_boundary = topo.is_boundary_vertex(vi);
 
@@ -299,7 +295,7 @@ fn test_edge_classification_interior() {
     // Interior vertex 4 should have all interior edges to its neighbors
     let infinite_vertex = topo.infinite_vertex();
     for qv in topo.vertex_ring_ccw(VertIdx::new(4)) {
-        let next_v = topo.vertex_index(qv.next());
+        let next_v = topo.vi(qv.next());
         if next_v != infinite_vertex {
             assert_eq!(
                 topo.edge_type(VertIdx::new(4), next_v),
@@ -440,8 +436,9 @@ fn test_topology_validation() {
 fn test_validation_rejects_odd_boundary() {
     let quads = vec![[VertIdx::new(0), VertIdx::new(1), VertIdx::new(2), VertIdx::new(3)]];
     let boundary: Vec<_> = [0, 1, 2].into_iter().map(VertIdx::new).collect();
+    let positions = vec![Vec2::ZERO; 4];
     assert!(
-        QuadTopology::from_polygon(4, boundary, vec![], quads).is_err(),
+        Quadrangulation::from_polygon(boundary, vec![], quads, positions).is_err(),
         "odd boundary should be rejected"
     );
 }
@@ -450,7 +447,8 @@ fn test_validation_rejects_odd_boundary() {
 fn test_validation_rejects_boundary_vertex_out_of_range() {
     let quads = vec![[VertIdx::new(0), VertIdx::new(1), VertIdx::new(2), VertIdx::new(3)]];
     let boundary: Vec<_> = [0, 1, 99, 3].into_iter().map(VertIdx::new).collect();
-    match QuadTopology::from_polygon(4, boundary, vec![], quads) {
+    let positions = vec![Vec2::ZERO; 4];
+    match Quadrangulation::from_polygon(boundary, vec![], quads, positions) {
         Err(QuadError::BoundaryVertexOutOfRange { vertex: 99, .. }) => {}
         Err(e) => panic!("expected BoundaryVertexOutOfRange, got: {}", e),
         Ok(_) => panic!("expected error, got Ok"),
@@ -461,8 +459,9 @@ fn test_validation_rejects_boundary_vertex_out_of_range() {
 fn test_validation_rejects_duplicate_boundary_vertex() {
     let quads = vec![[VertIdx::new(0), VertIdx::new(1), VertIdx::new(2), VertIdx::new(3)]];
     let boundary: Vec<_> = [0, 1, 0, 3].into_iter().map(VertIdx::new).collect();
+    let positions = vec![Vec2::ZERO; 4];
     assert!(
-        QuadTopology::from_polygon(4, boundary, vec![], quads).is_err(),
+        Quadrangulation::from_polygon(boundary, vec![], quads, positions).is_err(),
         "duplicate boundary vertex should be rejected"
     );
 }
@@ -471,7 +470,8 @@ fn test_validation_rejects_duplicate_boundary_vertex() {
 fn test_validation_rejects_quad_vertex_out_of_range() {
     let quads = vec![[VertIdx::new(0), VertIdx::new(1), VertIdx::new(99), VertIdx::new(3)]];
     let boundary: Vec<_> = [0, 1, 2, 3].into_iter().map(VertIdx::new).collect();
-    match QuadTopology::from_polygon(4, boundary, vec![], quads) {
+    let positions = vec![Vec2::ZERO; 4];
+    match Quadrangulation::from_polygon(boundary, vec![], quads, positions) {
         Err(QuadError::QuadVertexOutOfRange { vertex: 99, .. }) => {}
         Err(e) => panic!("expected QuadVertexOutOfRange, got: {}", e),
         Ok(_) => panic!("expected error, got Ok"),
@@ -511,55 +511,31 @@ fn test_neighbor_avg_boundary() {
 }
 
 // =============================================================================
-// QuadMesh
+// Quadrangulation
 // =============================================================================
 
 #[test]
 fn test_quad_centers_computed() {
-    let positions = vec![
-        Vec2::new(0.0, 0.0), // 0
-        Vec2::new(1.0, 0.0), // 1
-        Vec2::new(2.0, 0.0), // 2
-        Vec2::new(0.0, 1.0), // 3
-        Vec2::new(1.0, 1.0), // 4
-        Vec2::new(2.0, 1.0), // 5
-    ];
+    // Use the existing grid_2x2_topo which is properly constructed
+    let mesh = grid_2x2_topo();
 
-    let polygon: Vec<_> = [0, 1, 2, 5, 4, 3].into_iter().map(VertIdx::new).collect();
-    let quads = vec![
-        [VertIdx::new(0), VertIdx::new(1), VertIdx::new(4), VertIdx::new(3)],
-        [VertIdx::new(1), VertIdx::new(2), VertIdx::new(5), VertIdx::new(4)],
-    ];
-
-    let mesh = QuadMesh::from_polygon(positions, polygon, vec![], quads).unwrap();
-
-    assert_eq!(mesh.quad_centers.len(), 2);
+    assert_eq!(mesh.finite_quad_count(), 4);
 
     // First quad center: average of (0,0), (1,0), (1,1), (0,1) = (0.5, 0.5)
-    let center0 = mesh.quad_centers[QuadIdx::new(0)];
+    let center0 = mesh.dual_p(QuadIdx::new(0)).unwrap();
     assert!((center0.x - 0.5).abs() < 0.001);
     assert!((center0.y - 0.5).abs() < 0.001);
 
     // Second quad center: average of (1,0), (2,0), (2,1), (1,1) = (1.5, 0.5)
-    let center1 = mesh.quad_centers[QuadIdx::new(1)];
+    let center1 = mesh.dual_p(QuadIdx::new(1)).unwrap();
     assert!((center1.x - 1.5).abs() < 0.001);
     assert!((center1.y - 0.5).abs() < 0.001);
 }
 
 #[test]
 fn test_quad_centers_count_matches_real_quads() {
-    let positions = vec![
-        Vec2::new(0.0, 0.0),
-        Vec2::new(1.0, 0.0),
-        Vec2::new(1.0, 1.0),
-        Vec2::new(0.0, 1.0),
-    ];
+    // Use the existing grid_2x2_topo which is properly constructed
+    let mesh = grid_2x2_topo();
 
-    let polygon: Vec<_> = [0, 1, 2, 3].into_iter().map(VertIdx::new).collect();
-    let quads = vec![[VertIdx::new(0), VertIdx::new(1), VertIdx::new(2), VertIdx::new(3)]];
-
-    let mesh = QuadMesh::from_polygon(positions, polygon, vec![], quads).unwrap();
-
-    assert_eq!(mesh.quad_centers.len(), mesh.topology.finite_quad_count());
-    assert_eq!(mesh.quad_centers.len(), 1);
+    assert_eq!(mesh.finite_quad_count(), 4);
 }

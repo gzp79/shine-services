@@ -1,10 +1,10 @@
 use crate::math::{
     prng::{StableRng, StableRngExt},
-    quadrangulation::{QuadFilter, QuadMesh},
+    quadrangulation::{QuadFilter, Quadrangulation},
 };
 use glam::Vec2;
 
-/// Random jitter displacement for [`QuadMesh`] positions.
+/// Random jitter displacement for [`Quadrangulation`] positions.
 pub struct Jitter {
     amplitude: f32,
     rng: Box<dyn StableRng>,
@@ -19,20 +19,17 @@ impl Jitter {
 impl QuadFilter for Jitter {
     /// Displaces every interior vertex by a random offset scaled by `amplitude`.
     /// Boundary vertices stay fixed.
-    fn apply(&mut self, mesh: &mut QuadMesh) {
-        let QuadMesh {
-            topology, vertices: positions, ..
-        } = mesh;
-
-        for vi in topology.vertex_indices() {
-            if topology.is_boundary_vertex(vi) {
+    fn apply(&mut self, mesh: &mut Quadrangulation) {
+        let vertices: Vec<_> = mesh.finite_vertex_index_iter().collect();
+        for vi in vertices {
+            if mesh.is_boundary_vertex(vi) {
                 continue;
             }
 
-            let pos = positions[vi];
+            let pos = mesh[vi].position;
             let dx = self.rng.float_signed() * self.amplitude;
             let dy = self.rng.float_signed() * self.amplitude;
-            positions[vi] = pos + Vec2::new(dx, dy);
+            mesh[vi].position = pos + Vec2::new(dx, dy);
         }
     }
 }

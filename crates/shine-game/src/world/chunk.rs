@@ -5,7 +5,7 @@ use crate::{
     math::{
         hex::{AxialCoord, LatticeMesher},
         prng::{hash_u32_2, Pcg32, SplitMix64},
-        quadrangulation::{QuadIdx, QuadMesh, QuadTopology, VertIdx},
+        quadrangulation::{QuadIdx, Quadrangulation, VertIdx},
     },
     world::{CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
@@ -68,37 +68,24 @@ impl ChunkRngStreams {
 
 pub struct Chunk {
     pub rng_streams: ChunkRngStreams,
-    pub topology: QuadTopology,
-    pub vertices: IdxVec<VertIdx, Vec2>,
-    pub quad_centers: IdxVec<QuadIdx, Vec2>,
+    pub topology: Quadrangulation,
 }
 
 impl Chunk {
     pub fn new(parent_seed: &SplitMix64, id: ChunkId) -> Self {
         let rng_streams = ChunkRngStreams::new(parent_seed.create_seed(id.id_64()));
-        let mesh = LatticeMesher::new(SUBDIVISION_BASE, rng_streams.mesh.clone())
+        let topology = LatticeMesher::new(SUBDIVISION_BASE, rng_streams.mesh.clone())
             .with_world_size(CHUNK_WORLD_SIZE)
             .generate();
-        let QuadMesh {
-            topology,
-            vertices,
-            quad_centers,
-        } = mesh;
 
-        Self {
-            rng_streams,
-            topology,
-            vertices,
-            quad_centers,
-        }
+        Self { rng_streams, topology }
     }
 
     /// Flat (real) quad vertex positions [x, y, x, y, ...]
     pub fn quad_vertices(&self) -> Vec<f32> {
-        debug_assert_eq!(self.vertices.len(), self.topology.vertex_count());
         let mut flat = Vec::with_capacity(self.topology.vertex_count() * 2);
-        for vi in self.topology.vertex_indices() {
-            let p = self.vertices[vi];
+        for vi in self.topology.finite_vertex_index_iter() {
+            let p = self.topology[vi].position;
             flat.push(p.x);
             flat.push(p.y);
         }
@@ -108,7 +95,7 @@ impl Chunk {
     /// Flat (real) quad indices [a, b, c, d, ...].
     pub fn quad_indices(&self) -> Vec<u32> {
         let mut indices = Vec::with_capacity(self.topology.finite_quad_count() * 4);
-        for qi in self.topology.quad_indices() {
+        for qi in self.topology.finite_quad_index_iter() {
             let verts = self.topology.quad_vertices(qi);
             for &v in &verts {
                 indices.push(v.into_index() as u32);
@@ -134,16 +121,17 @@ impl Chunk {
         let quad_count = self.topology.finite_quad_count();
         let mut flat = Vec::with_capacity(quad_count * 2);
 
-        for qi in self.topology.quad_indices() {
-            let center = self.quad_centers[qi];
-            flat.push(center.x);
-            flat.push(center.y);
+        for qi in self.topology.finite_quad_index_iter() {
+            if let Some(center) = self.topology.dual_p(qi) {
+                flat.push(center.x);
+                flat.push(center.y);
+            }
         }
 
         flat
     }
 
-    /// Flat dual polygon indices referencing quad_centers.
+    /// Flat dual polygon indices referencing dual vertices.
     /// Each vertex's surrounding quads form a dual polygon.
     /// Returns (indices, starts) where starts[vi] marks the beginning of vertex vi's polygon.
     ///
@@ -155,7 +143,7 @@ impl Chunk {
         let mut starts = Vec::new();
         starts.push(0);
 
-        for vi in self.topology.vertex_indices() {
+        for vi in self.topology.finite_vertex_index_iter() {
             let start_len = indices.len();
 
             // Collect QuadIdx for all real quads around this vertex
@@ -163,7 +151,7 @@ impl Chunk {
                 if !self.topology.is_infinite_quad(qv.quad) {
                     // Map QuadIdx to its position in quad_indices() enumeration
                     let mut dual_idx = 0;
-                    for (i, qi) in self.topology.quad_indices().enumerate() {
+                    for (i, qi) in self.topology.finite_quad_index_iter().enumerate() {
                         if qi == qv.quad {
                             dual_idx = i as u32;
                             break;

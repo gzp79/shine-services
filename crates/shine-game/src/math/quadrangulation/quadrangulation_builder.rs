@@ -1,15 +1,18 @@
-use super::{quad_error::QuadError, Quad, QuadIdx, QuadTopology, Rot4Idx, VertIdx, Vertex};
+use super::{quad_error::QuadError, Quad, QuadIdx, Quadrangulation, Rot4Idx, VertIdx, Vertex};
 use crate::indexed::{IdxVec, TypedIndex};
+use glam::Vec2;
 use std::collections::HashMap;
 
-impl QuadTopology {
+impl Quadrangulation {
     /// Build topology from a boundary polygon and interior quads.
     pub fn from_polygon(
-        vertex_count: usize,
         polygon: Vec<VertIdx>,
         anchors: Vec<VertIdx>,
         quads: Vec<[VertIdx; 4]>,
+        positions: Vec<Vec2>,
     ) -> Result<Self, QuadError> {
+        let vertex_count = positions.len();
+
         // Minimal bounds checks to prevent index-out-of-bounds panics during construction.
         // All other invariants (odd boundary, duplicates, degenerates, etc.) are caught by validate().
         for &vi in &polygon {
@@ -79,11 +82,16 @@ impl QuadTopology {
             }
         }
 
-        // Build vertex → quad map (includes ghost vertex)
+        // Build vertex → quad map (includes ghost vertex) and set positions
         let mut vertices = IdxVec::with_capacity(vertex_count + 1);
-        for _ in 0..=vertex_count {
-            vertices.push(Vertex::new());
+        for i in 0..vertex_count {
+            let mut vertex = Vertex::new();
+            vertex.position = positions[i];
+            vertices.push(vertex);
         }
+        // Add infinite vertex with no position
+        vertices.push(Vertex::new());
+
         for qi_idx in 0..quad_count {
             let qi = QuadIdx::new(qi_idx);
             for &vi in quads[qi].vertices.iter() {
@@ -98,10 +106,9 @@ impl QuadTopology {
         vertices[infinite_vertex].quad = QuadIdx::new(infinite_quad_start);
 
         let topology = Self {
-            vertex_count,
-            infinite_quad_count,
-            quads,
+            infinite_vertex,
             vertices,
+            quads,
             anchor_vertices: anchors,
         };
 

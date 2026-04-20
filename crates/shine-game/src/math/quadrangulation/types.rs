@@ -1,31 +1,6 @@
 use crate::math::quadrangulation::{QuadIdx, Rot4Idx, VertIdx};
 
-/// A quad with its local edge index (0..4)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct QuadEdge {
-    pub quad: QuadIdx,
-    pub edge: Rot4Idx,
-}
-
-impl QuadEdge {
-    /// QuadVertex at the start of this edge
-    pub fn start(&self) -> QuadVertex {
-        QuadVertex {
-            quad: self.quad,
-            local: self.edge,
-        }
-    }
-
-    /// QuadVertex at the end of this edge
-    pub fn end(&self) -> QuadVertex {
-        QuadVertex {
-            quad: self.quad,
-            local: self.edge.increment(),
-        }
-    }
-}
-
-/// A quad with a vertex's local position (0..4) within it
+/// A vertex referenced by its containing quad and local vertex index (0..4)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuadVertex {
     pub quad: QuadIdx,
@@ -70,6 +45,35 @@ impl QuadVertex {
         QuadEdge {
             quad: self.quad,
             edge: self.local.decrement(),
+        }
+    }
+}
+
+/// An edge referenced by its containing quad and local edge index (0..4)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuadEdge {
+    pub quad: QuadIdx,
+    pub edge: Rot4Idx,
+}
+
+impl QuadEdge {
+    pub fn new(quad: QuadIdx, edge: Rot4Idx) -> Self {
+        Self { quad, edge }
+    }
+
+    /// QuadVertex at the start of this edge
+    pub fn start(&self) -> QuadVertex {
+        QuadVertex {
+            quad: self.quad,
+            local: self.edge,
+        }
+    }
+
+    /// QuadVertex at the end of this edge
+    pub fn end(&self) -> QuadVertex {
+        QuadVertex {
+            quad: self.quad,
+            local: self.edge.increment(),
         }
     }
 }

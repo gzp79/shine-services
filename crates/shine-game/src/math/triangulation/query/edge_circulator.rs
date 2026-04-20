@@ -3,7 +3,8 @@ use crate::{
     math::triangulation::{FaceEdge, FaceIndex, Rot3Idx, Triangulation, VertexClue, VertexIndex},
 };
 
-/// An iterator that circulates around a vertex in CCW or CW order, returning the edge (face and edge index) of each adjacent face.
+/// An iterator that circulates around a vertex in CCW or CW order
+/// returning the edge outgoing edge (face and edge index) of each adjacent face.
 pub struct EdgeCirculator<'a, const DELAUNAY: bool> {
     tri: &'a Triangulation<DELAUNAY>,
     vertex: VertexIndex,

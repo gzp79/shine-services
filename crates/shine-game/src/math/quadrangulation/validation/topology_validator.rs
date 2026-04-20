@@ -17,14 +17,14 @@ impl<'a> Validator<'a> {
 
     fn validate_vertices(&self) -> Result<(), QuadError> {
         // Check all vertices have an associated quad that references them correctly
-        for vi_idx in 0..=self.topology.vertex_count {
+        for vi_idx in 0..=self.topology.finite_vertex_count() {
             let vi = VertIdx::new(vi_idx);
             let vertex = &self.topology.vertices[vi];
             if vertex.quad.is_none() {
                 return Err(QuadError::VertexHasNoQuad(vi_idx));
             }
-            let local = self.topology.find_vertex(vertex.quad, vi).unwrap();
-            let actual = self.topology.quads[vertex.quad].vertices[local];
+            let local = self.topology[vertex.quad].find_vertex(vi).unwrap();
+            let actual = self.topology[vertex.quad].vertices[local];
             if actual != vi {
                 return Err(QuadError::VertexQuadMismatch {
                     vertex: vi_idx,
@@ -88,7 +88,7 @@ impl<'a> Validator<'a> {
         let infinite_vertex = self.topology.infinite_vertex();
 
         // Check each infinite quad has exactly one infinite vertex
-        for qi in self.topology.infinite_quad_indices() {
+        for qi in self.topology.infinite_quad_index_iter() {
             let verts = self.topology.quad_vertices(qi);
             let infinite_count = verts.iter().filter(|&&v| v == infinite_vertex).count();
 
@@ -107,15 +107,15 @@ impl<'a> Validator<'a> {
             .iter()
             .filter(|quad| quad.vertices.iter().any(|&v| v == infinite_vertex))
             .count();
-        if actual_infinite_count != self.topology.infinite_quad_count {
+        if actual_infinite_count != self.topology.infinite_quad_count() {
             return Err(QuadError::InfiniteQuadCountMismatch {
-                expected: self.topology.infinite_quad_count,
+                expected: self.topology.infinite_quad_count(),
                 actual: actual_infinite_count,
             });
         }
 
         // Verify infinite quads are contiguous at the end of the quad array
-        let finite_count = self.topology.quads.len() - self.topology.infinite_quad_count;
+        let finite_count = self.topology.quads.len() - self.topology.infinite_quad_count();
         for qi_idx in 0..finite_count {
             if self.topology.is_infinite_quad(QuadIdx::new(qi_idx)) {
                 // Find the first finite quad after this infinite quad
@@ -134,7 +134,7 @@ impl<'a> Validator<'a> {
 
     fn validate_vertex_rings(&self) -> Result<(), QuadError> {
         // Check vertex rings form closed loops (real vertices and ghost vertex)
-        for vi_idx in 0..self.topology.vertex_count {
+        for vi_idx in 0..self.topology.finite_vertex_count() {
             self.validate_vertex_ring(VertIdx::new(vi_idx))?;
         }
         self.validate_vertex_ring(self.topology.infinite_vertex())?;
@@ -184,7 +184,7 @@ impl<'a> Validator<'a> {
     fn validate_reachability(&self) -> Result<(), QuadError> {
         // Check all quads are reachable from vertex rings
         let mut reachable = vec![false; self.topology.quads.len()];
-        for vi_idx in 0..=self.topology.vertex_count {
+        for vi_idx in 0..=self.topology.finite_vertex_count() {
             for qv in self.topology.vertex_ring_ccw(VertIdx::new(vi_idx)) {
                 reachable[qv.quad.into_index()] = true;
             }

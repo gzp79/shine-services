@@ -2,14 +2,14 @@ use crate::{
     indexed::TypedIndex,
     math::{
         hex::{AxialCoord, AxialDenseIndexer, PatchCoord, PatchDenseIndexer, PatchOrientation},
-        quadrangulation::{QuadMesh, VertIdx},
+        quadrangulation::{Quadrangulation, VertIdx},
     },
 };
 use glam::Vec2;
 
 /// Generates a quad mesh inside a hexagon using 3-patch subdivision.
 ///
-/// Returns a [`QuadMesh`] with topology and positions. No smoothing or
+/// Returns a [`Quadrangulation`] with topology and positions. No smoothing or
 /// filtering is applied — use filters on the returned mesh.
 pub struct PatchMesher {
     subdivision: u32,
@@ -40,7 +40,7 @@ impl PatchMesher {
     }
 
     /// Generate the mesh with uniform vertex placement.
-    pub fn generate_uniform(&mut self) -> QuadMesh {
+    pub fn generate_uniform(&mut self) -> Quadrangulation {
         let radius = 2u32.pow(self.subdivision);
         let indexer = AxialDenseIndexer::new(radius);
 
@@ -54,7 +54,7 @@ impl PatchMesher {
     }
 
     /// Generate the mesh with recursive subdivision placement.
-    pub fn generate_subdivision(&mut self) -> QuadMesh {
+    pub fn generate_subdivision(&mut self) -> Quadrangulation {
         let radius = 2u32.pow(self.subdivision);
         let indexer = AxialDenseIndexer::new(radius);
         let orientation = self.orientation;
@@ -141,8 +141,8 @@ impl PatchMesher {
         self.build_quad_mesh(positions)
     }
 
-    /// Build a QuadMesh from vertex positions using the patch topology.
-    fn build_quad_mesh(&self, positions: Vec<Vec2>) -> QuadMesh {
+    /// Build a Quadrangulation from vertex positions using the patch topology.
+    fn build_quad_mesh(&self, positions: Vec<Vec2>) -> Quadrangulation {
         let radius = 2u32.pow(self.subdivision);
         let indexer = AxialDenseIndexer::new(radius);
         let grid = 2i32.pow(self.subdivision);
@@ -175,7 +175,7 @@ impl PatchMesher {
             .map(|c| VertIdx::new(indexer.get_dense_index(c)))
             .collect();
 
-        QuadMesh::from_polygon(positions, polygon, anchors, quads).expect("valid patch mesh topology")
+        Quadrangulation::from_polygon(polygon, anchors, quads, positions).expect("valid patch mesh topology")
     }
 }
 

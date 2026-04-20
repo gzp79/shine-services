@@ -3,7 +3,7 @@ use crate::{
     math::{
         hex::AxialCoord,
         prng::StableRng,
-        quadrangulation::{QuadMesh, VertIdx},
+        quadrangulation::{Quadrangulation, VertIdx},
         triangulation::{Rot3Idx, Triangulation, VertexIndex},
     },
 };
@@ -25,7 +25,7 @@ const Y_SCALE: i64 = 1500;
 /// 3. Run CDT with hex boundary edges as constraints.
 /// 4. Split each triangle into 3 quads via centroid-to-edge-midpoint connections.
 ///
-/// Returns a [`QuadMesh`] with topology and positions. No smoothing or
+/// Returns a [`Quadrangulation`] with topology and positions. No smoothing or
 /// filtering is applied — use filters on the returned mesh.
 pub struct CdtMesher {
     subdivision: u32,
@@ -62,7 +62,7 @@ impl CdtMesher {
     }
 
     /// Generate the CDT-based quad mesh.
-    pub fn generate(&mut self) -> QuadMesh {
+    pub fn generate(&mut self) -> Quadrangulation {
         // Step 1: Compute boundary points and internal points on integer grid
         // CDT coords (flat-top vertex positions):
         //   `x = X_SCALE * (2q + r)`,
@@ -122,7 +122,7 @@ impl CdtMesher {
             .map(|p| Vec2::new(p.x as f32, p.y as f32) * scale)
             .collect();
 
-        // Step 4: Split each triangle into 3 quads and build QuadMesh
+        // Step 4: Split each triangle into 3 quads and build Quadrangulation
         self.split_triangles_to_quad_mesh(&base_vertices, &triangles, boundary_count)
     }
 
@@ -210,13 +210,13 @@ impl CdtMesher {
         interior
     }
 
-    /// Split each triangle into 3 quads and build a QuadMesh.
+    /// Split each triangle into 3 quads and build a Quadrangulation.
     fn split_triangles_to_quad_mesh(
         &self,
         base_vertices: &[Vec2],
         triangles: &[(usize, usize, usize)],
         boundary_count: usize,
-    ) -> QuadMesh {
+    ) -> Quadrangulation {
         let mut positions: Vec<Vec2> = base_vertices.to_vec();
         let mut quads: Vec<[VertIdx; 4]> = Vec::with_capacity(triangles.len() * 3);
 
@@ -258,6 +258,6 @@ impl CdtMesher {
         let n = 2u32.pow(self.subdivision - 1) as usize;
         let anchors: Vec<VertIdx> = (0..6).map(|i| VertIdx::new(i * n)).collect();
 
-        QuadMesh::from_polygon(positions, polygon, anchors, quads).expect("valid CDT mesh topology")
+        Quadrangulation::from_polygon(polygon, anchors, quads, positions).expect("valid CDT mesh topology")
     }
 }
