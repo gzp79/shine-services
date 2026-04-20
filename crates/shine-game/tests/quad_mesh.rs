@@ -3,7 +3,7 @@ use shine_core::utils::is_rotation;
 use shine_game::{
     indexed::TypedIndex,
     math::quadrangulation::{
-        QuadEdge, QuadEdgeType, QuadError, QuadIdx, QuadVertex, Quadrangulation, Rot4Idx, VertIdx,
+        AnchorIdx, QuadEdge, QuadEdgeType, QuadError, QuadIdx, QuadVertex, Quadrangulation, Rot4Idx, VertIdx,
     },
 };
 use shine_test::test;
@@ -402,22 +402,22 @@ fn test_anchor_edges_ccw_order() {
     let topo = grid_2x2_topo();
 
     // Edge 0: anchor 0 -> 2, should be [0, 1, 2]
-    let edge0: Vec<_> = topo.anchor_edge(0).collect();
+    let edge0: Vec<_> = topo.anchor_edge(AnchorIdx::new(0)).collect();
     let expected0: Vec<_> = [0, 1, 2].into_iter().map(VertIdx::new).collect();
     assert_eq!(edge0, expected0, "anchor edge 0 should be [0, 1, 2]");
 
     // Edge 1: anchor 2 -> 8, should be [2, 5, 8]
-    let edge1: Vec<_> = topo.anchor_edge(1).collect();
+    let edge1: Vec<_> = topo.anchor_edge(AnchorIdx::new(1)).collect();
     let expected1: Vec<_> = [2, 5, 8].into_iter().map(VertIdx::new).collect();
     assert_eq!(edge1, expected1, "anchor edge 1 should be [2, 5, 8]");
 
     // Edge 2: anchor 8 -> 6, should be [8, 7, 6]
-    let edge2: Vec<_> = topo.anchor_edge(2).collect();
+    let edge2: Vec<_> = topo.anchor_edge(AnchorIdx::new(2)).collect();
     let expected2: Vec<_> = [8, 7, 6].into_iter().map(VertIdx::new).collect();
     assert_eq!(edge2, expected2, "anchor edge 2 should be [8, 7, 6]");
 
     // Edge 3: anchor 6 -> 0 (wrapping), should be [6, 3, 0]
-    let edge3: Vec<_> = topo.anchor_edge(3).collect();
+    let edge3: Vec<_> = topo.anchor_edge(AnchorIdx::new(3)).collect();
     let expected3: Vec<_> = [6, 3, 0].into_iter().map(VertIdx::new).collect();
     assert_eq!(edge3, expected3, "anchor edge 3 should be [6, 3, 0]");
 }

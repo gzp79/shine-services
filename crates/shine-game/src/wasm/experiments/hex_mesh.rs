@@ -3,6 +3,7 @@ use crate::{
     math::{
         hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
         mesh::{Jitter, LaplacianSmoother, QuadFilter, QuadMesh, QuadRelax, VertexRepulsion},
+        quadrangulation::AnchorIdx,
         rand::Xorshift32,
     },
 };
@@ -256,7 +257,7 @@ fn quad_mesh_to_wasm(mesh: &QuadMesh, world_size: f32) -> WasmPatchMesh {
         // Record the start index for this anchor edge
         anchor_edge_starts.push((anchor_indices.len() / 2) as u32);
 
-        let anchor_verts: Vec<_> = topology.anchor_edge(edge_idx).collect();
+        let anchor_verts: Vec<_> = topology.anchor_edge(AnchorIdx::new(edge_idx)).collect();
         // Create line segments between consecutive vertices
         for window in anchor_verts.windows(2) {
             anchor_indices.push(window[0].into_index() as u32);

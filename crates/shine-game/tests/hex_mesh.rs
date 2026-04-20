@@ -1,6 +1,7 @@
 use shine_game::math::{
     hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
     prng::{StableRng, SysRng},
+    quadrangulation::AnchorIdx,
 };
 use shine_test::test;
 
@@ -12,7 +13,7 @@ const EXPECTED_ANCHOR_EDGE_LEN: usize = (1 << SUBDIVISION) + 1;
 fn check_anchor_edges(mesh: &shine_game::math::quadrangulation::Quadrangulation) {
     assert_eq!(mesh.anchor_count(), 6, "hex mesh should have 6 anchor vertices");
     for i in 0..6 {
-        let edge_len = mesh.anchor_edge(i).count();
+        let edge_len = mesh.anchor_edge(AnchorIdx::new(i)).count();
         assert_eq!(
             edge_len, EXPECTED_ANCHOR_EDGE_LEN,
             "anchor edge {i} should have {EXPECTED_ANCHOR_EDGE_LEN} vertices, got {edge_len}"

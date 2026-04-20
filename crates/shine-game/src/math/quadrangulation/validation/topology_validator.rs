@@ -1,6 +1,6 @@
 use crate::{
     indexed::TypedIndex,
-    math::quadrangulation::{QuadEdge, QuadError, QuadIdx, Rot4Idx, Validator, VertIdx},
+    math::quadrangulation::{AnchorIdx, QuadEdge, QuadError, QuadIdx, Rot4Idx, Validator, VertIdx},
 };
 
 impl<'a> Validator<'a> {
@@ -203,26 +203,31 @@ impl<'a> Validator<'a> {
             let boundary: Vec<_> = self.topology.boundary_vertices().collect();
 
             // Check all anchor vertices are in the boundary
-            for (idx, &anchor_v) in self.topology.anchor_vertices.iter().enumerate() {
+            for anchor_idx in self.topology.anchor_index_iter() {
+                let anchor_v = self.topology.anchor_vertices[anchor_idx];
                 if !boundary.contains(&anchor_v) {
-                    return Err(QuadError::InvalidAnchorEdge { edge: idx });
+                    return Err(QuadError::InvalidAnchorEdge {
+                        edge: anchor_idx.into_index(),
+                    });
                 }
             }
 
             // Verify cyclic ordering: each anchor must follow the previous along the boundary
-            let first_pos = boundary
-                .iter()
-                .position(|&b| b == self.topology.anchor_vertices[0])
-                .unwrap();
+            let first_anchor_v = self.topology.anchor_vertices[AnchorIdx::new(0)];
+            let first_pos = boundary.iter().position(|&b| b == first_anchor_v).unwrap();
             let mut search_start = first_pos;
 
-            for edge_idx in 1..self.topology.anchor_vertices.len() {
-                let anchor_v = self.topology.anchor_vertices[edge_idx];
+            for anchor_idx in 1..self.topology.anchor_vertices.len() {
+                let anchor_v = self.topology.anchor_vertices[AnchorIdx::new(anchor_idx)];
                 let found =
                     (1..boundary.len()).find(|&offset| boundary[(search_start + offset) % boundary.len()] == anchor_v);
                 match found {
                     Some(offset) => search_start = (search_start + offset) % boundary.len(),
-                    None => return Err(QuadError::InvalidAnchorEdge { edge: edge_idx - 1 }),
+                    None => {
+                        return Err(QuadError::InvalidAnchorEdge {
+                            edge: anchor_idx - 1,
+                        })
+                    }
                 }
             }
         }

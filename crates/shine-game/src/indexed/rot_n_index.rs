@@ -13,12 +13,12 @@ impl<const N: usize> Default for RotNIdx<N> {
 impl<const N: usize> RotNIdx<N> {
     pub fn increment(self) -> Self {
         assert!(!self.is_none());
-        Self::new(((self.0 as usize + 1) % N))
+        Self::new((self.0 as usize + 1) % N)
     }
 
     pub fn decrement(self) -> Self {
         assert!(!self.is_none());
-        Self::new(((self.0 as usize + N - 1) % N))
+        Self::new((self.0 as usize + N - 1) % N)
     }
 }
 

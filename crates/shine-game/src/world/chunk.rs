@@ -1,11 +1,11 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    indexed::{IdxVec, TypedIndex},
+    indexed::TypedIndex,
     math::{
         hex::{AxialCoord, LatticeMesher},
         prng::{hash_u32_2, Pcg32, SplitMix64},
-        quadrangulation::{QuadIdx, Quadrangulation, VertIdx},
+        quadrangulation::{Quadrangulation, VertIdx},
     },
     world::{CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
@@ -176,11 +176,13 @@ impl Chunk {
 
     /// Returns VertIdx values along specified hex edge (0..5)
     pub fn boundary_edge_vertices(&self, edge_idx: u8) -> Vec<VertIdx> {
-        self.topology.anchor_edge(edge_idx as usize).collect()
+        use crate::math::quadrangulation::AnchorIdx;
+        self.topology.anchor_edge(AnchorIdx::new(edge_idx as usize)).collect()
     }
 
     /// Returns VertIdx at specified hex corner (0..5)
     pub fn boundary_corner_vertex(&self, corner_idx: u8) -> VertIdx {
-        self.topology.anchor_vertices[corner_idx as usize]
+        use crate::math::quadrangulation::AnchorIdx;
+        self.topology.anchor_vertex(AnchorIdx::new(corner_idx as usize))
     }
 }

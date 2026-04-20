@@ -66,11 +66,10 @@ impl Face {
 
 /// Store the topology graph of the triangualation
 pub struct Triangulation<const DELAUNAY: bool = true> {
-    pub(super) dimension: u8,
-    pub(super) vertices: IdxVec<VertexIndex, Vertex>,
-    pub(super) faces: IdxVec<FaceIndex, Face>,
-    pub(super) infinite_vertex: VertexIndex,
-
+    pub(in crate::math::triangulation) dimension: u8,
+    pub(in crate::math::triangulation) infinite_vertex: VertexIndex,
+    pub(in crate::math::triangulation) vertices: IdxVec<VertexIndex, Vertex>,
+    pub(in crate::math::triangulation) faces: IdxVec<FaceIndex, Face>,
     tag: Rc<RefCell<usize>>,
 }
 
@@ -78,9 +77,9 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
     pub fn new() -> Self {
         Triangulation {
             dimension: u8::MAX,
+            infinite_vertex: VertexIndex::NONE,
             vertices: Default::default(),
             faces: Default::default(),
-            infinite_vertex: VertexIndex::NONE,
             tag: Rc::new(RefCell::new(0)),
         }
     }
@@ -111,9 +110,9 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
 
     pub fn clear(&mut self) {
         self.dimension = u8::MAX;
+        self.infinite_vertex = VertexIndex::NONE;
         self.faces.clear();
         self.vertices.clear();
-        self.infinite_vertex = VertexIndex::NONE;
         self.tag.replace(0);
     }
 

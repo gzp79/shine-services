@@ -1,4 +1,4 @@
-use super::{quad_error::QuadError, Quad, QuadIdx, Quadrangulation, Rot4Idx, VertIdx, Vertex};
+use super::{quad_error::QuadError, AnchorIdx, Quad, QuadIdx, Quadrangulation, Rot4Idx, VertIdx, Vertex};
 use crate::indexed::{IdxVec, TypedIndex};
 use glam::Vec2;
 use std::collections::HashMap;
@@ -105,11 +105,16 @@ impl Quadrangulation {
         let infinite_vertex = VertIdx::new(vertex_count);
         vertices[infinite_vertex].quad = QuadIdx::new(infinite_quad_start);
 
+        let mut anchor_vertices = IdxVec::<AnchorIdx, VertIdx>::new();
+        for anchor in anchors {
+            anchor_vertices.push(anchor);
+        }
+
         let topology = Self {
             infinite_vertex,
             vertices,
             quads,
-            anchor_vertices: anchors,
+            anchor_vertices,
         };
 
         topology.validate()?;

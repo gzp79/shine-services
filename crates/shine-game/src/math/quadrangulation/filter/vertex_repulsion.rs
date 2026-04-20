@@ -1,6 +1,6 @@
 use crate::{
     indexed::TypedIndex,
-    math::quadrangulation::{QuadFilter, Quadrangulation, Rot4Idx},
+    math::quadrangulation::{QuadFilter, Quadrangulation},
 };
 use glam::Vec2;
 

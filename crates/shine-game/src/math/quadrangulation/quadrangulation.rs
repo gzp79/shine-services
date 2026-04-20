@@ -1,13 +1,13 @@
-use std::ops;
-
 use crate::{
     indexed::{IdxArray, IdxVec, TypedIndex},
-    math::quadrangulation::{QuadClue, QuadEdge, QuadEdgeType, QuadError, QuadVertex, Rot4Idx, VertexClue},
+    math::quadrangulation::{QuadClue, QuadEdge, QuadError, Rot4Idx, VertexClue},
 };
 use glam::Vec2;
+use std::ops;
 
 crate::define_typed_index!(VertIdx, "Typed index into a vertex array.");
 crate::define_typed_index!(QuadIdx, "Typed index into a quad array.");
+crate::define_typed_index!(AnchorIdx, "Typed index into the anchor vertices array.");
 
 pub struct Vertex {
     pub position: Vec2,
@@ -58,13 +58,25 @@ impl Quad {
 /// closed mesh. The infinite vertex acts as an apex connecting all boundary vertices,
 /// enabling consistent CCW navigation around every vertex including boundary vertices.
 pub struct Quadrangulation {
-    pub(crate) infinite_vertex: VertIdx,
-    pub(crate) vertices: IdxVec<VertIdx, Vertex>,
-    pub(crate) quads: IdxVec<QuadIdx, Quad>,
-    pub(crate) anchor_vertices: Vec<VertIdx>,
+    pub(in crate::math::quadrangulation) infinite_vertex: VertIdx,
+    pub(in crate::math::quadrangulation) vertices: IdxVec<VertIdx, Vertex>,
+    pub(in crate::math::quadrangulation) quads: IdxVec<QuadIdx, Quad>,
+    pub(in crate::math::quadrangulation) anchor_vertices: IdxVec<AnchorIdx, VertIdx>,
 }
 
 impl Quadrangulation {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.vertices.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.infinite_vertex = VertIdx::NONE;
+        self.quads.clear();
+        self.vertices.clear();
+        self.anchor_vertices.clear();
+    }
+
     #[inline]
     pub fn infinite_vertex(&self) -> VertIdx {
         self.infinite_vertex
@@ -219,27 +231,16 @@ impl Quadrangulation {
         })
     }
 
-    pub fn edge_type(&self, a: VertIdx, b: VertIdx) -> QuadEdgeType {
-        // Find the quad containing edge a→b
-        for qv in self.vertex_ring_ccw(a) {
-            if self.vi(qv.next()) == b {
-                let edge = qv.outgoing_edge();
-                let neighbor = self.edge_twin(edge);
-
-                // Boundary if either side of the edge is a ghost quad
-                if self.is_infinite_quad(qv.quad) || self.is_infinite_quad(neighbor.quad) {
-                    return QuadEdgeType::Boundary;
-                } else {
-                    return QuadEdgeType::Interior;
-                }
-            }
-        }
-
-        QuadEdgeType::NotAnEdge
-    }
-
     pub fn anchor_count(&self) -> usize {
         self.anchor_vertices.len()
+    }
+
+    pub fn anchor_index_iter(&self) -> impl Iterator<Item = AnchorIdx> {
+        AnchorIdx::range(AnchorIdx::new(0), AnchorIdx::new(self.anchor_vertices.len()))
+    }
+
+    pub fn anchor_vertex(&self, anchor_idx: AnchorIdx) -> VertIdx {
+        self.anchor_vertices[anchor_idx]
     }
 
     /// Returns an iterator over vertices along the given anchor edge.
@@ -247,42 +248,23 @@ impl Quadrangulation {
     /// An anchor edge represents an original boundary edge (before subdivision).
     /// This iterates from the anchor vertex at `edge` to the next anchor vertex,
     /// following the boundary.
-    pub fn anchor_edge(&self, edge: usize) -> impl Iterator<Item = VertIdx> + '_ {
+    pub fn anchor_edge(&self, edge: AnchorIdx) -> impl Iterator<Item = VertIdx> + '_ {
         let start = self.anchor_vertices[edge];
-        let end = self.anchor_vertices[(edge + 1) % self.anchor_vertices.len()];
+        let next_idx = AnchorIdx::new((edge.into_index() + 1) % self.anchor_vertices.len());
+        let end = self.anchor_vertices[next_idx];
 
         // Use a 2x-looped CW ring around ghost vertex so skip_while/take_while
         // handles the case where the anchor edge wraps past the ring origin.
         let ghost = self.infinite_vertex();
-        let quad = self.vertices[ghost].quad;
-        let local = self[quad].find_vertex(ghost).unwrap();
-        let start_qv = QuadVertex { quad, local };
-
-        let ring = VertexRingIter::<false> {
-            topology: self,
-            max_loops: 2,
-            start: start_qv,
-            current: start_qv,
-            done: false,
-        };
-
-        ring.flat_map(move |qv| {
-            let p1 = qv.prev();
-            let p2 = p1.prev();
-            [self.vi(p1), self.vi(p2)]
-        })
-        .skip_while(move |&v| v != start)
-        .take_while(move |&v| v != end)
-        .chain(std::iter::once(end))
-    }
-
-    pub fn edge_twin(&self, qe: QuadEdge) -> QuadEdge {
-        let neighbor_quad = self.quads[qe.quad].neighbors[qe.edge];
-        let neighbor_edge = self.quads[neighbor_quad].find_neighbor(qe.quad).unwrap();
-        QuadEdge {
-            quad: neighbor_quad,
-            edge: neighbor_edge,
-        }
+        self.vertex_ring_cw_repeated(ghost, 2)
+            .flat_map(move |qv| {
+                let p1 = qv.prev();
+                let p2 = p1.prev();
+                [self.vi(p1), self.vi(p2)]
+            })
+            .skip_while(move |&v| v != start)
+            .take_while(move |&v| v != end)
+            .chain(std::iter::once(end))
     }
 
     pub fn edge_vertices(&self, qe: QuadEdge) -> (VertIdx, VertIdx) {
@@ -298,35 +280,6 @@ impl Quadrangulation {
             v[Rot4Idx::new(2)],
             v[Rot4Idx::new(3)],
         ]
-    }
-
-    /// The ring of quads around vertex `vi`, with the local vertex index of vi.
-    pub fn vertex_ring_ccw(&self, vi: VertIdx) -> impl Iterator<Item = QuadVertex> + '_ {
-        let quad = self.vertices[vi].quad;
-        let local = self[quad].find_vertex(vi).unwrap();
-        let start_qv = QuadVertex { quad, local };
-
-        VertexRingIter::<true> {
-            topology: self,
-            max_loops: 1,
-            start: start_qv,
-            current: start_qv,
-            done: false,
-        }
-    }
-
-    pub fn vertex_ring_cw(&self, vi: VertIdx) -> impl Iterator<Item = QuadVertex> + '_ {
-        let quad = self.vertices[vi].quad;
-        let local = self[quad].find_vertex(vi).unwrap();
-        let start_qv = QuadVertex { quad, local };
-
-        VertexRingIter::<false> {
-            topology: self,
-            max_loops: 1,
-            start: start_qv,
-            current: start_qv,
-            done: false,
-        }
     }
 
     /// Average position of real edge neighbors of `vi` (via "next" in each ring quad).
@@ -405,53 +358,6 @@ impl Quadrangulation {
         }
 
         Some(sum / 4.0)
-    }
-}
-
-struct VertexRingIter<'a, const CCW: bool> {
-    topology: &'a Quadrangulation,
-    // Decremented on each loop completion; panics if reaches 0
-    max_loops: usize,
-    start: QuadVertex,
-    current: QuadVertex,
-    done: bool,
-}
-
-impl<'a, const CCW: bool> Iterator for VertexRingIter<'a, CCW> {
-    type Item = QuadVertex;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.done {
-            return None;
-        }
-
-        let result = self.current;
-
-        if !CCW {
-            // CW: Move via outgoing edge (forward around the vertex)
-            let edge = self.current.outgoing_edge();
-            let neighbor = self.topology.edge_twin(edge);
-            self.current = neighbor.end(); // Use end to stay at the same vertex
-        } else {
-            // CCW: Move via incoming edge (backward around the vertex)
-            let edge = self.current.incoming_edge();
-            let neighbor = self.topology.edge_twin(edge);
-            self.current = neighbor.start(); // Use start to stay at the same vertex
-        }
-
-        // Check if we've completed a ring loop
-        if self.current.quad == self.start.quad {
-            assert!(
-                self.max_loops > 0,
-                "VertexRingIter completed too many loops - likely skip_while/take_while didn't terminate"
-            );
-            self.max_loops -= 1;
-            if self.max_loops == 0 {
-                self.done = true;
-            }
-        }
-
-        Some(result)
     }
 }
 

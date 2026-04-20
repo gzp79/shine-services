@@ -1,8 +1,7 @@
 use crate::{
-    indexed::IdxVec,
     math::{
         prng::SplitMix64,
-        quadrangulation::{QuadIdx, Quadrangulation, VertIdx},
+        quadrangulation::{Quadrangulation, VertIdx},
     },
     world::{Chunk, ChunkId},
 };
