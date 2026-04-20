@@ -8,7 +8,7 @@ impl<'a> Validator<'a> {
         self.validate_vertices()?;
         self.validate_quads()?;
         self.validate_edge_twins()?;
-        self.validate_ghost_structure()?;
+        self.validate_infinite_structure()?;
         self.validate_vertex_rings()?;
         self.validate_reachability()?;
         self.validate_anchors()?;
@@ -24,7 +24,7 @@ impl<'a> Validator<'a> {
                 return Err(QuadError::VertexHasNoQuad(vi_idx));
             }
             let local = self.topology.find_vertex(vertex.quad, vi).unwrap();
-            let actual = self.topology.quads[vertex.quad][local as usize];
+            let actual = self.topology.quads[vertex.quad].vertices[local as usize];
             if actual != vi {
                 return Err(QuadError::VertexQuadMismatch {
                     vertex: vi_idx,
@@ -38,7 +38,7 @@ impl<'a> Validator<'a> {
     fn validate_quads(&self) -> Result<(), QuadError> {
         // Check no degenerate quads (all 4 vertices distinct)
         for qi_idx in 0..self.topology.quads.len() {
-            let verts = self.topology.quads[QuadIdx::new(qi_idx)];
+            let verts = &self.topology.quads[QuadIdx::new(qi_idx)].vertices;
             for i in 0..4 {
                 for j in (i + 1)..4 {
                     if verts[i] == verts[j] {
@@ -79,47 +79,47 @@ impl<'a> Validator<'a> {
         Ok(())
     }
 
-    fn validate_ghost_structure(&self) -> Result<(), QuadError> {
-        let ghost_vertex = self.topology.ghost_vertex();
+    fn validate_infinite_structure(&self) -> Result<(), QuadError> {
+        let infinite_vertex = self.topology.infinite_vertex();
 
-        // Check each ghost quad has exactly one ghost vertex
-        for qi in self.topology.ghost_quad_indices() {
+        // Check each infinite quad has exactly one infinite vertex
+        for qi in self.topology.infinite_quad_indices() {
             let verts = self.topology.quad_vertices(qi);
-            let ghost_count = verts.iter().filter(|&&v| v == ghost_vertex).count();
+            let infinite_count = verts.iter().filter(|&&v| v == infinite_vertex).count();
 
-            if ghost_count != 1 {
-                return Err(QuadError::InvalidGhostQuadStructure {
+            if infinite_count != 1 {
+                return Err(QuadError::InvalidInfiniteQuadStructure {
                     quad: qi.into_index(),
-                    count: ghost_count,
+                    count: infinite_count,
                 });
             }
         }
 
-        // Verify ghost_quad_count matches actual ghost quad count
-        let actual_ghost_count = self
+        // Verify infinite_quad_count matches actual infinite quad count
+        let actual_infinite_count = self
             .topology
             .quads
             .iter()
-            .filter(|verts| verts.contains(&ghost_vertex))
+            .filter(|quad| quad.vertices.contains(&infinite_vertex))
             .count();
-        if actual_ghost_count != self.topology.ghost_quad_count {
-            return Err(QuadError::GhostQuadCountMismatch {
-                expected: self.topology.ghost_quad_count,
-                actual: actual_ghost_count,
+        if actual_infinite_count != self.topology.infinite_quad_count {
+            return Err(QuadError::InfiniteQuadCountMismatch {
+                expected: self.topology.infinite_quad_count,
+                actual: actual_infinite_count,
             });
         }
 
-        // Verify ghost quads are contiguous at the end of the quad array
-        let real_count = self.topology.quads.len() - self.topology.ghost_quad_count;
-        for qi_idx in 0..real_count {
-            if self.topology.is_ghost_quad(QuadIdx::new(qi_idx)) {
-                // Find the first real quad after this ghost quad
-                let real_after = (qi_idx + 1..self.topology.quads.len())
-                    .find(|&i| !self.topology.is_ghost_quad(QuadIdx::new(i)))
+        // Verify infinite quads are contiguous at the end of the quad array
+        let finite_count = self.topology.quads.len() - self.topology.infinite_quad_count;
+        for qi_idx in 0..finite_count {
+            if self.topology.is_infinite_quad(QuadIdx::new(qi_idx)) {
+                // Find the first finite quad after this infinite quad
+                let finite_after = (qi_idx + 1..self.topology.quads.len())
+                    .find(|&i| !self.topology.is_infinite_quad(QuadIdx::new(i)))
                     .unwrap_or(qi_idx);
-                return Err(QuadError::GhostQuadsNotCompact {
-                    ghost_quad: qi_idx,
-                    real_quad: real_after,
+                return Err(QuadError::InfiniteQuadsNotCompact {
+                    infinite_quad: qi_idx,
+                    finite_quad: finite_after,
                 });
             }
         }
@@ -132,7 +132,7 @@ impl<'a> Validator<'a> {
         for vi_idx in 0..self.topology.vertex_count {
             self.validate_vertex_ring(VertIdx::new(vi_idx))?;
         }
-        self.validate_vertex_ring(self.topology.ghost_vertex())?;
+        self.validate_vertex_ring(self.topology.infinite_vertex())?;
         Ok(())
     }
 
@@ -147,7 +147,7 @@ impl<'a> Validator<'a> {
 
         // Verify all ring elements reference the correct vertex
         for qv in &ring {
-            let vertex_at_pos = self.topology.quads[qv.quad][qv.local as usize];
+            let vertex_at_pos = self.topology.quads[qv.quad].vertices[qv.local as usize];
             if vertex_at_pos != vi {
                 return Err(QuadError::VertexRingNotClosed { vertex: vi_idx });
             }
@@ -158,7 +158,7 @@ impl<'a> Validator<'a> {
         let incoming = last.incoming_edge();
         let neighbor = self.topology.edge_twin(incoming);
         let next_pos = neighbor.start();
-        let next_vertex = self.topology.quads[next_pos.quad][next_pos.local as usize];
+        let next_vertex = self.topology.quads[next_pos.quad].vertices[next_pos.local as usize];
 
         // Must be the same vertex (forms a cycle around vi)
         if next_vertex != vi {

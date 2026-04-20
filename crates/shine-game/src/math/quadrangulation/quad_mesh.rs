@@ -6,8 +6,8 @@ use glam::Vec2;
 
 /// Quad mesh with positions and topology.
 ///
-/// Combines geometric vertex positions with topological connectivity via ghost vertex
-/// and ghost quads for closed manifold traversal.
+/// Combines geometric vertex positions with topological connectivity via infinite vertex
+/// and infinite quads for closed manifold traversal.
 pub struct QuadMesh {
     pub topology: QuadTopology,
     pub vertices: IdxVec<VertIdx, Vec2>,
@@ -26,7 +26,7 @@ impl QuadMesh {
         let topology = QuadTopology::from_polygon(vertex_count, polygon, anchors, quads)?;
 
         // Compute quad centers for all real quads
-        let mut quad_centers = IdxVec::with_capacity(topology.quad_count());
+        let mut quad_centers = IdxVec::with_capacity(topology.finite_quad_count());
         for qi in topology.quad_indices() {
             let verts = topology.quad_vertices(qi);
             let mut center = Vec2::ZERO;

@@ -14,8 +14,8 @@ pub enum QuadError {
     #[error("Quad vertex {vertex} >= vertex_count {vertex_count}")]
     QuadVertexOutOfRange { vertex: usize, vertex_count: usize },
 
-    #[error("Quad references ghost vertex at index {0}")]
-    QuadReferencesGhost(usize),
+    #[error("Quad references infinite vertex at index {0}")]
+    QuadReferencesInfinite(usize),
 
     #[error("Incomplete topology: quad {quad} edge {edge} ({vertices:?}) has no neighbor")]
     IncompleteTopology {
@@ -30,11 +30,11 @@ pub enum QuadError {
     #[error("Quad {quad} edge {edge} has invalid twin: twin edge does not point back")]
     InvalidEdgeTwin { quad: usize, edge: usize },
 
-    #[error("Ghost quad {quad} has {count} ghost vertices (expected 1)")]
-    InvalidGhostQuadStructure { quad: usize, count: usize },
+    #[error("Infinite quad {quad} has {count} infinite vertices (expected 1)")]
+    InvalidInfiniteQuadStructure { quad: usize, count: usize },
 
-    #[error("ghost_quad_count mismatch: field says {expected}, actual {actual}")]
-    GhostQuadCountMismatch { expected: usize, actual: usize },
+    #[error("infinite_quad_count mismatch: field says {expected}, actual {actual}")]
+    InfiniteQuadCountMismatch { expected: usize, actual: usize },
 
     #[error("Vertex {vertex} ring traversal does not form a closed loop")]
     VertexRingNotClosed { vertex: usize },
@@ -54,6 +54,6 @@ pub enum QuadError {
     #[error("Edge twin is not an involution: quad {quad} edge {edge}")]
     EdgeTwinNotInvolution { quad: usize, edge: usize },
 
-    #[error("Ghost quads are not compact: ghost quad {ghost_quad} precedes real quad {real_quad}")]
-    GhostQuadsNotCompact { ghost_quad: usize, real_quad: usize },
+    #[error("Infinite quads are not compact: infinite quad {infinite_quad} precedes finite quad {finite_quad}")]
+    InfiniteQuadsNotCompact { infinite_quad: usize, finite_quad: usize },
 }

@@ -1,6 +1,6 @@
 use crate::{
     indexed::{IdxVec, TypedIndex},
-    math::quadrangulation::QuadError,
+    math::quadrangulation::{QuadClue, QuadEdge, QuadEdgeType, QuadError, QuadVertex, VertexClue},
 };
 use glam::Vec2;
 
@@ -21,172 +21,59 @@ impl Vertex {
     }
 }
 
-/// A quad with its local edge index (0..4)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct QuadEdge {
-    pub quad: QuadIdx,
-    pub edge: u8,
+pub struct Quad {
+    pub vertices: [VertIdx; 4],
+    pub neighbors: [QuadIdx; 4],
 }
 
-impl QuadEdge {
-    /// QuadVertex at the start of this edge
-    pub fn start(&self) -> QuadVertex {
-        QuadVertex {
-            quad: self.quad,
-            local: self.edge,
+impl Quad {
+    pub fn new() -> Self {
+        Self {
+            vertices: [VertIdx::NONE; 4],
+            neighbors: [QuadIdx::NONE; 4],
         }
     }
 
-    /// QuadVertex at the end of this edge
-    pub fn end(&self) -> QuadVertex {
-        QuadVertex {
-            quad: self.quad,
-            local: (self.edge + 1) % 4,
-        }
-    }
-}
-
-/// A quad with a vertex's local position (0..4) within it
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct QuadVertex {
-    pub quad: QuadIdx,
-    pub local: u8,
-}
-
-impl QuadVertex {
-    /// Next vertex CCW around this quad
-    pub fn next(&self) -> QuadVertex {
-        QuadVertex {
-            quad: self.quad,
-            local: (self.local + 1) % 4,
+    pub fn with_vertices(a: VertIdx, b: VertIdx, c: VertIdx, d: VertIdx) -> Self {
+        Self {
+            vertices: [a, b, c, d],
+            neighbors: [QuadIdx::NONE; 4],
         }
     }
 
-    /// Previous vertex CCW around this quad
-    pub fn prev(&self) -> QuadVertex {
-        QuadVertex {
-            quad: self.quad,
-            local: (self.local + 3) % 4,
-        }
+    pub fn find_vertex(&self, v: VertIdx) -> Option<u8> {
+        self.vertices.iter().position(|&x| x == v).map(|i| i as u8)
     }
 
-    /// Opposite vertex across the quad
-    pub fn opposite(&self) -> QuadVertex {
-        QuadVertex {
-            quad: self.quad,
-            local: (self.local + 2) % 4,
-        }
+    pub fn find_neighbor(&self, q: QuadIdx) -> Option<u8> {
+        self.neighbors.iter().position(|&x| x == q).map(|i| i as u8)
     }
-
-    /// Edge leaving this vertex (outgoing)
-    pub fn outgoing_edge(&self) -> QuadEdge {
-        QuadEdge {
-            quad: self.quad,
-            edge: self.local,
-        }
-    }
-
-    /// Edge entering this vertex (incoming)
-    pub fn incoming_edge(&self) -> QuadEdge {
-        QuadEdge {
-            quad: self.quad,
-            edge: (self.local + 3) % 4,
-        }
-    }
-}
-
-/// References a vertex in the quadrangulation, used for topology queries
-#[derive(Clone, Debug)]
-pub enum VertexClue {
-    VertexIndex(VertIdx),
-    QuadVertex(QuadIdx, u8),
-    EdgeStart(QuadIdx, u8),
-    EdgeEnd(QuadIdx, u8),
-}
-
-impl VertexClue {
-    pub fn quad_vertex(q: QuadIdx, v: u8) -> VertexClue {
-        VertexClue::QuadVertex(q, v)
-    }
-
-    pub fn edge_start(q: QuadIdx, e: u8) -> VertexClue {
-        VertexClue::EdgeStart(q, e)
-    }
-
-    pub fn edge_end(q: QuadIdx, e: u8) -> VertexClue {
-        VertexClue::EdgeEnd(q, e)
-    }
-
-    pub fn start_of(e: QuadEdge) -> VertexClue {
-        VertexClue::EdgeStart(e.quad, e.edge)
-    }
-
-    pub fn end_of(e: QuadEdge) -> VertexClue {
-        VertexClue::EdgeEnd(e.quad, e.edge)
-    }
-}
-
-impl From<VertIdx> for VertexClue {
-    fn from(v: VertIdx) -> VertexClue {
-        VertexClue::VertexIndex(v)
-    }
-}
-
-impl From<QuadVertex> for VertexClue {
-    fn from(v: QuadVertex) -> VertexClue {
-        VertexClue::QuadVertex(v.quad, v.local)
-    }
-}
-
-/// References a quad in the quadrangulation, used for topology queries
-#[derive(Clone, Debug)]
-pub enum QuadClue {
-    QuadIndex(QuadIdx),
-}
-
-impl From<QuadIdx> for QuadClue {
-    fn from(q: QuadIdx) -> QuadClue {
-        QuadClue::QuadIndex(q)
-    }
-}
-
-/// Classification of an edge in the quad mesh.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum QuadEdgeType {
-    /// Edge is shared by two real (non-ghost) quads
-    Interior,
-    /// Edge is on the boundary (shared with a ghost quad)
-    Boundary,
-    /// The two vertices don't form an edge in the mesh
-    NotAnEdge,
 }
 
 /// Quad mesh topology with adjacency — no positions.
 ///
-/// The mesh is extended with a ghost vertex and ghost quads to form a topologically
-/// closed mesh. The ghost vertex acts as an apex connecting all boundary vertices,
+/// The mesh is extended with an infinite vertex and infinite quads to form a topologically
+/// closed mesh. The infinite vertex acts as an apex connecting all boundary vertices,
 /// enabling consistent CCW navigation around every vertex including boundary vertices.
 ///
-/// ## Ghost Topology
+/// ## Infinite Topology
 ///
-/// - **Ghost vertex**: Located at `VertIdx(vertex_count)`, has no geometric position
-/// - **Ghost quads**: N/2 quads for N boundary vertices, each containing the ghost vertex
+/// - **Infinite vertex**: Located at `VertIdx(vertex_count)`, has no geometric position
+/// - **Infinite quads**: N/2 quads for N boundary vertices, each containing the infinite vertex
 ///   and 3 consecutive boundary vertices with reversed winding for twin edge adjacency
 ///
 /// ## Navigation
 ///
 /// - All vertices support full CCW ring traversal via `vertex_ring()`
 /// - Boundary edges can be identified via `edge_type()` returning `EdgeType::Boundary`
-/// - Ghost quads are detectable via `is_ghost_quad()` and should typically be excluded
+/// - Infinite quads are detectable via `is_infinite_quad()` and should typically be excluded
 ///   from geometric operations
 pub struct QuadTopology {
-    // Number of real vertices (excluding ghost vertex)
+    // Number of finite vertices (excluding infinite vertex)
     pub(crate) vertex_count: usize,
-    // Number of ghost quads (half the number of boundary edges)
-    pub(crate) ghost_quad_count: usize,
-    pub(crate) quads: IdxVec<QuadIdx, [VertIdx; 4]>,
-    // For each quad, the neighboring quads across each edge
-    pub(crate) edge_twins: IdxVec<QuadIdx, [QuadEdge; 4]>,
+    // Number of infinite quads (half the number of boundary edges)
+    pub(crate) infinite_quad_count: usize,
+    pub(crate) quads: IdxVec<QuadIdx, Quad>,
     // For each vertex, stores position and one adjacent quad reference
     pub(crate) vertices: IdxVec<VertIdx, Vertex>,
     // Start vertex for each anchour (non-subdivided) edge.
@@ -194,38 +81,63 @@ pub struct QuadTopology {
 }
 
 impl QuadTopology {
-    /// Number of (real) vertices
+    /// Number of all vertices (finite + infinite)
+    #[inline]
     pub fn vertex_count(&self) -> usize {
+        self.vertices.len()
+    }
+
+    /// Number of finite (non-infinite) vertices
+    #[inline]
+    pub fn finite_vertex_count(&self) -> usize {
         self.vertex_count
     }
 
-    /// Iterator over the (real) vertex indices
+    /// Iterator over all vertices (finite + infinite)
+    #[inline]
+    pub fn vertex_iter(&self) -> impl Iterator<Item = &Vertex> + '_ {
+        self.vertices.iter()
+    }
+
+    /// Iterator over all vertex indices (finite + infinite)
+    pub fn vertex_index_iter(&self) -> impl Iterator<Item = VertIdx> {
+        VertIdx::range(VertIdx::new(0), VertIdx::new(self.vertices.len()))
+    }
+
+    /// Iterator over the finite (non-infinite) vertex indices
     pub fn vertex_indices(&self) -> impl Iterator<Item = VertIdx> {
         (0..self.vertex_count).map(VertIdx::new)
     }
 
-    /// Ghost vertex index
-    pub fn ghost_vertex(&self) -> VertIdx {
+    /// Infinite vertex index
+    #[inline]
+    pub fn infinite_vertex(&self) -> VertIdx {
         VertIdx::new(self.vertex_count)
     }
 
-    pub fn is_ghost_vertex(&self, id: VertIdx) -> bool {
+    #[inline]
+    pub fn is_infinite_vertex(&self, id: VertIdx) -> bool {
         id == VertIdx::new(self.vertex_count)
     }
 
+    #[inline]
+    pub fn is_finite_vertex(&self, id: VertIdx) -> bool {
+        !self.is_infinite_vertex(id)
+    }
+
     pub fn is_boundary_vertex(&self, vi: VertIdx) -> bool {
-        self.vertex_ring_ccw(vi).any(|qv| self.is_ghost_quad(qv.quad))
+        self.vertex_ring_ccw(vi).any(|qv| self.is_infinite_quad(qv.quad))
     }
 
     pub fn boundary_vertex_count(&self) -> usize {
-        self.ghost_quad_count * 2
+        self.infinite_quad_count * 2
     }
 
     /// Returns an iterator over boundary edges as vertex index pairs.
     ///
     /// Boundary edges are the two edges of each ghost quad that don't touch the ghost vertex.
     pub fn boundary_edges(&self) -> impl Iterator<Item = [u32; 2]> + '_ {
-        self.vertex_ring_cw(self.ghost_vertex()).flat_map(move |qv| {
+        self.vertex_ring_cw(self.infinite_vertex()).flat_map(move |qv| {
             // The two edges not touching the ghost vertex
             let e1 = (qv.local + 1) % 4;
             let e2 = (qv.local + 2) % 4;
@@ -244,7 +156,7 @@ impl QuadTopology {
     pub fn boundary_vertices(&self) -> impl Iterator<Item = VertIdx> + '_ {
         // Walk vertex ring around ghost using CW traversal for correct CCW boundary order.
         // For each ghost quad, emit the two boundary vertices going backward from ghost.
-        let ghost = self.ghost_vertex();
+        let ghost = self.infinite_vertex();
         self.vertex_ring_cw(ghost).flat_map(move |qv| {
             let p1 = qv.prev();
             let p2 = p1.prev();
@@ -260,7 +172,7 @@ impl QuadTopology {
                 let neighbor = self.edge_twin(edge);
 
                 // Boundary if either side of the edge is a ghost quad
-                if self.is_ghost_quad(qv.quad) || self.is_ghost_quad(neighbor.quad) {
+                if self.is_infinite_quad(qv.quad) || self.is_infinite_quad(neighbor.quad) {
                     return QuadEdgeType::Boundary;
                 } else {
                     return QuadEdgeType::Interior;
@@ -271,30 +183,59 @@ impl QuadTopology {
         QuadEdgeType::NotAnEdge
     }
 
+    /// Number of all quads (real + ghost)
+    #[inline]
     pub fn quad_count(&self) -> usize {
-        self.quads.len() - self.ghost_quad_count
+        self.quads.len()
     }
 
+    /// Number of real (non-ghost) quads
+    #[inline]
+    pub fn finite_quad_count(&self) -> usize {
+        self.quads.len() - self.infinite_quad_count
+    }
+
+    /// Iterator over all quad vertex arrays (real + ghost)
+    #[inline]
+    pub fn quad_iter(&self) -> impl Iterator<Item = &[VertIdx; 4]> + '_ {
+        self.quads.iter().map(|q| &q.vertices)
+    }
+
+    /// Iterator over all quad indices (real + ghost)
+    pub fn quad_index_iter(&self) -> impl Iterator<Item = QuadIdx> {
+        QuadIdx::range(QuadIdx::new(0), QuadIdx::new(self.quads.len()))
+    }
+
+    /// Iterator over finite (non-infinite) quad indices
     pub fn quad_indices(&self) -> impl Iterator<Item = QuadIdx> + '_ {
         (0..self.quads.len())
             .map(QuadIdx::new)
-            .filter(|&qi| !self.is_ghost_quad(qi))
+            .filter(|&qi| !self.is_infinite_quad(qi))
     }
 
-    pub fn ghost_quad_count(&self) -> usize {
-        self.ghost_quad_count
+    /// Number of infinite quads
+    #[inline]
+    pub fn infinite_quad_count(&self) -> usize {
+        self.infinite_quad_count
     }
 
-    pub fn ghost_quad_indices(&self) -> impl Iterator<Item = QuadIdx> + '_ {
+    /// Iterator over infinite quad indices
+    pub fn infinite_quad_indices(&self) -> impl Iterator<Item = QuadIdx> + '_ {
         (0..self.quads.len())
             .map(QuadIdx::new)
-            .filter(|&qi| self.is_ghost_quad(qi))
+            .filter(|&qi| self.is_infinite_quad(qi))
     }
 
-    pub fn is_ghost_quad(&self, qi: QuadIdx) -> bool {
-        let ghost = self.ghost_vertex();
-        let verts = self.quads[qi];
-        verts.contains(&ghost)
+    #[inline]
+    pub fn is_infinite_quad(&self, qi: QuadIdx) -> bool {
+        let infinite = self.infinite_vertex();
+        let verts = &self.quads[qi].vertices;
+        verts.iter().any(|&v| v == infinite)
+    }
+
+    #[inline]
+    pub fn is_finite_quad(&self, qi: QuadIdx) -> bool {
+        !self.is_infinite_quad(qi)
     }
 
     pub fn anchor_count(&self) -> usize {
@@ -312,7 +253,7 @@ impl QuadTopology {
 
         // Use a 2x-looped CW ring around ghost vertex so skip_while/take_while
         // handles the case where the anchor edge wraps past the ring origin.
-        let ghost = self.ghost_vertex();
+        let ghost = self.infinite_vertex();
         let quad = self.vertices[ghost].quad;
         let local = self.find_vertex(quad, ghost).unwrap();
         let start_qv = QuadVertex { quad, local };
@@ -336,26 +277,31 @@ impl QuadTopology {
     }
 
     pub fn edge_twin(&self, qe: QuadEdge) -> QuadEdge {
-        self.edge_twins[qe.quad][qe.edge as usize]
+        let neighbor_quad = self.quads[qe.quad].neighbors[qe.edge as usize];
+        let neighbor_edge = self.quads[neighbor_quad].find_neighbor(qe.quad).unwrap();
+        QuadEdge {
+            quad: neighbor_quad,
+            edge: neighbor_edge,
+        }
     }
 
     pub fn vertex_index(&self, qv: QuadVertex) -> VertIdx {
-        self.quads[qv.quad][qv.local as usize]
+        self.quads[qv.quad].vertices[qv.local as usize]
     }
 
     pub fn edge_vertices(&self, qe: QuadEdge) -> (VertIdx, VertIdx) {
-        let quad = self.quads[qe.quad];
+        let quad = &self.quads[qe.quad].vertices;
         (quad[qe.edge as usize], quad[(qe.edge as usize + 1) % 4])
     }
 
     pub fn quad_vertices(&self, qi: QuadIdx) -> [VertIdx; 4] {
-        self.quads[qi]
+        self.quads[qi].vertices.into()
     }
 
     /// Find the local index (0..4) of vertex `v` in quad `qi`.
     /// Returns None if the vertex is not part of the quad.
     pub fn find_vertex(&self, qi: QuadIdx, v: VertIdx) -> Option<u8> {
-        self.quads[qi].iter().position(|&x| x == v).map(|i| i as u8)
+        self.quads[qi].find_vertex(v)
     }
 
     /// The ring of quads around vertex `vi`, with the local vertex index of vi.
@@ -390,7 +336,7 @@ impl QuadTopology {
     /// Average position of real edge neighbors of `vi` (via "next" in each ring quad).
     /// Ghost neighbors are skipped.
     pub fn neighbor_avg(&self, vi: VertIdx, positions: &[Vec2]) -> Vec2 {
-        assert_ne!(vi, self.ghost_vertex());
+        assert_ne!(vi, self.infinite_vertex());
 
         let mut sum = Vec2::ZERO;
         let mut count = 0u32;
@@ -421,9 +367,9 @@ impl QuadTopology {
         let clue: VertexClue = id.into();
         match clue {
             VertexClue::VertexIndex(vi) => vi,
-            VertexClue::QuadVertex(quad, local) => self.quads[quad][local as usize],
-            VertexClue::EdgeStart(quad, edge) => self.quads[quad][edge as usize],
-            VertexClue::EdgeEnd(quad, edge) => self.quads[quad][(edge as usize + 1) % 4],
+            VertexClue::QuadVertex(quad, local) => self.quads[quad].vertices[local as usize],
+            VertexClue::EdgeStart(quad, edge) => self.quads[quad].vertices[edge as usize],
+            VertexClue::EdgeEnd(quad, edge) => self.quads[quad].vertices[(edge as usize + 1) % 4],
         }
     }
 
@@ -458,12 +404,12 @@ impl<'a, const CCW: bool> Iterator for VertexRingIter<'a, CCW> {
         if !CCW {
             // CW: Move via outgoing edge (forward around the vertex)
             let edge = self.current.outgoing_edge();
-            let neighbor = self.topology.edge_twins[edge.quad][edge.edge as usize];
+            let neighbor = self.topology.edge_twin(edge);
             self.current = neighbor.end(); // Use end to stay at the same vertex
         } else {
             // CCW: Move via incoming edge (backward around the vertex)
             let edge = self.current.incoming_edge();
-            let neighbor = self.topology.edge_twins[edge.quad][edge.edge as usize];
+            let neighbor = self.topology.edge_twin(edge);
             self.current = neighbor.start(); // Use start to stay at the same vertex
         }
 
@@ -521,14 +467,14 @@ impl std::ops::Index<QuadIdx> for QuadTopology {
 
     #[inline]
     fn index(&self, q: QuadIdx) -> &Self::Output {
-        &self.quads[q]
+        &self.quads[q].vertices
     }
 }
 
 impl std::ops::IndexMut<QuadIdx> for QuadTopology {
     #[inline]
     fn index_mut(&mut self, q: QuadIdx) -> &mut Self::Output {
-        &mut self.quads[q]
+        &mut self.quads[q].vertices
     }
 }
 
@@ -537,7 +483,7 @@ impl std::ops::Index<QuadClue> for QuadTopology {
 
     #[inline]
     fn index(&self, q: QuadClue) -> &Self::Output {
-        &self.quads[self.qi(q)]
+        &self.quads[self.qi(q)].vertices
     }
 }
 
@@ -545,6 +491,6 @@ impl std::ops::IndexMut<QuadClue> for QuadTopology {
     #[inline]
     fn index_mut(&mut self, q: QuadClue) -> &mut Self::Output {
         let qi = self.qi(q);
-        &mut self.quads[qi]
+        &mut self.quads[qi].vertices
     }
 }

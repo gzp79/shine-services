@@ -36,7 +36,7 @@ pub(crate) fn merge_vertex_ring_dual(
     let ring1: Vec<Option<Vec2>> = topo1
         .vertex_ring_ccw(v1)
         .map(|qv| {
-            if topo1.is_ghost_quad(qv.quad) {
+            if topo1.is_infinite_quad(qv.quad) {
                 None
             } else {
                 Some(centers1[qv.quad])
@@ -47,7 +47,7 @@ pub(crate) fn merge_vertex_ring_dual(
     let ring2: Vec<Option<Vec2>> = topo2
         .vertex_ring_ccw(v2)
         .map(|qv| {
-            if topo2.is_ghost_quad(qv.quad) {
+            if topo2.is_infinite_quad(qv.quad) {
                 None
             } else {
                 Some(centers2[qv.quad])

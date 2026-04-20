@@ -94,39 +94,41 @@ fn test_quad_edge_navigation() {
 fn test_topology_counts() {
     let topo = grid_2x2_topo();
 
-    assert_eq!(topo.vertex_count(), 9, "9 real vertices");
-    assert_eq!(topo.quad_count(), 4, "4 real quads");
-    assert_eq!(topo.ghost_quad_count(), 4, "4 ghost quads (8 boundary edges / 2)");
+    assert_eq!(topo.vertex_count(), 10, "10 total vertices (9 finite + 1 infinite)");
+    assert_eq!(topo.finite_vertex_count(), 9, "9 finite vertices");
+    assert_eq!(topo.quad_count(), 8, "8 total quads (4 finite + 4 infinite)");
+    assert_eq!(topo.finite_quad_count(), 4, "4 finite quads");
+    assert_eq!(topo.infinite_quad_count(), 4, "4 infinite quads (8 boundary edges / 2)");
     assert_eq!(topo.boundary_vertex_count(), 8, "8 boundary vertices");
 
-    let ghost_vertex = topo.ghost_vertex();
-    assert_eq!(ghost_vertex, VertIdx::new(9), "ghost vertex at index 9");
+    let infinite_vertex = topo.infinite_vertex();
+    assert_eq!(infinite_vertex, VertIdx::new(9), "infinite vertex at index 9");
 }
 
 #[test]
-fn test_ghost_quad_structure() {
+fn test_infinite_quad_structure() {
     let topo = grid_2x2_topo();
-    let ghost_vertex = topo.ghost_vertex();
+    let infinite_vertex = topo.infinite_vertex();
 
-    for qi in topo.ghost_quad_indices() {
+    for qi in topo.infinite_quad_indices() {
         let verts = topo.quad_vertices(qi);
 
-        // Ghost quad should have exactly one ghost vertex
-        let ghost_count = verts.iter().filter(|&&v| v == ghost_vertex).count();
+        // Infinite quad should have exactly one infinite vertex
+        let infinite_count = verts.iter().filter(|&&v| v == infinite_vertex).count();
         assert_eq!(
-            ghost_count, 1,
-            "ghost quad {:?} should contain exactly 1 ghost vertex",
+            infinite_count, 1,
+            "infinite quad {:?} should contain exactly 1 infinite vertex",
             qi
         );
 
-        // Other 3 vertices should be real boundary vertices
-        let real_verts: Vec<_> = verts.iter().filter(|&&v| v != ghost_vertex).copied().collect();
-        assert_eq!(real_verts.len(), 3, "ghost quad should have 3 real vertices");
+        // Other 3 vertices should be finite boundary vertices
+        let finite_verts: Vec<_> = verts.iter().filter(|&&v| v != infinite_vertex).copied().collect();
+        assert_eq!(finite_verts.len(), 3, "infinite quad should have 3 finite vertices");
 
-        for &v in &real_verts {
+        for &v in &finite_verts {
             assert!(
                 topo.is_boundary_vertex(v),
-                "real vertex {:?} in ghost quad should be boundary",
+                "finite vertex {:?} in infinite quad should be boundary",
                 v
             );
         }
@@ -172,18 +174,21 @@ fn test_vertex_ring_cw_interior() {
 }
 
 #[test]
-fn test_vertex_ring_boundary_includes_ghost() {
+fn test_vertex_ring_boundary_includes_infinite() {
     let topo = grid_2x2_topo();
 
-    // Boundary vertex 0: its ring should include at least one ghost quad
+    // Boundary vertex 0: its ring should include at least one infinite quad
     let ring: Vec<_> = topo.vertex_ring_ccw(VertIdx::new(0)).collect();
-    let has_ghost = ring.iter().any(|qv| topo.is_ghost_quad(qv.quad));
-    assert!(has_ghost, "boundary vertex 0 ring should include a ghost quad");
+    let has_infinite = ring.iter().any(|qv| topo.is_infinite_quad(qv.quad));
+    assert!(has_infinite, "boundary vertex 0 ring should include an infinite quad");
 
-    // Interior vertex 4: its ring should NOT include any ghost quad
+    // Interior vertex 4: its ring should NOT include any infinite quad
     let ring: Vec<_> = topo.vertex_ring_ccw(VertIdx::new(4)).collect();
-    let has_ghost = ring.iter().any(|qv| topo.is_ghost_quad(qv.quad));
-    assert!(!has_ghost, "interior vertex 4 ring should not include a ghost quad");
+    let has_infinite = ring.iter().any(|qv| topo.is_infinite_quad(qv.quad));
+    assert!(
+        !has_infinite,
+        "interior vertex 4 ring should not include an infinite quad"
+    );
 }
 
 #[test]
@@ -243,7 +248,7 @@ fn test_boundary_detection() {
         }
 
         // Cross-check: is_boundary_vertex matches ring-has-ghost
-        let ring_has_ghost = topo.vertex_ring_ccw(vi).any(|qv| topo.is_ghost_quad(qv.quad));
+        let ring_has_ghost = topo.vertex_ring_ccw(vi).any(|qv| topo.is_infinite_quad(qv.quad));
         assert_eq!(
             is_boundary, ring_has_ghost,
             "vertex {}: is_boundary_vertex and ring_has_ghost should match",
@@ -284,10 +289,10 @@ fn test_edge_classification_interior() {
     let topo = grid_2x2_topo();
 
     // Interior vertex 4 should have all interior edges to its neighbors
-    let ghost_vertex = topo.ghost_vertex();
+    let infinite_vertex = topo.infinite_vertex();
     for qv in topo.vertex_ring_ccw(VertIdx::new(4)) {
         let next_v = topo.vertex_index(qv.next());
-        if next_v != ghost_vertex {
+        if next_v != infinite_vertex {
             assert_eq!(
                 topo.edge_type(VertIdx::new(4), next_v),
                 QuadEdgeType::Interior,
@@ -348,7 +353,7 @@ fn test_quad_neighbor_consistency() {
     let topo = grid_2x2_topo();
 
     // Check ALL quads, including ghost quads
-    for qi_idx in 0..(topo.quad_count() + topo.ghost_quad_count()) {
+    for qi_idx in 0..topo.quad_count() {
         let qi = QuadIdx::new(qi_idx);
         for edge in 0..4u8 {
             let qe = QuadEdge { quad: qi, edge };
@@ -544,6 +549,6 @@ fn test_quad_centers_count_matches_real_quads() {
 
     let mesh = QuadMesh::from_polygon(positions, polygon, vec![], quads).unwrap();
 
-    assert_eq!(mesh.quad_centers.len(), mesh.topology.quad_count());
+    assert_eq!(mesh.quad_centers.len(), mesh.topology.finite_quad_count());
     assert_eq!(mesh.quad_centers.len(), 1);
 }

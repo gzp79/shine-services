@@ -107,7 +107,7 @@ impl Chunk {
 
     /// Flat (real) quad indices [a, b, c, d, ...].
     pub fn quad_indices(&self) -> Vec<u32> {
-        let mut indices = Vec::with_capacity(self.topology.quad_count() * 4);
+        let mut indices = Vec::with_capacity(self.topology.finite_quad_count() * 4);
         for qi in self.topology.quad_indices() {
             let verts = self.topology.quad_vertices(qi);
             for &v in &verts {
@@ -131,7 +131,7 @@ impl Chunk {
 
     /// Dual mesh vertices (quad centroids) [x, y, x, y, ...]
     pub fn dual_vertices(&self) -> Vec<f32> {
-        let quad_count = self.topology.quad_count();
+        let quad_count = self.topology.finite_quad_count();
         let mut flat = Vec::with_capacity(quad_count * 2);
 
         for qi in self.topology.quad_indices() {
@@ -160,7 +160,7 @@ impl Chunk {
 
             // Collect QuadIdx for all real quads around this vertex
             for qv in self.topology.vertex_ring_ccw(vi) {
-                if !self.topology.is_ghost_quad(qv.quad) {
+                if !self.topology.is_infinite_quad(qv.quad) {
                     // Map QuadIdx to its position in quad_indices() enumeration
                     let mut dual_idx = 0;
                     for (i, qi) in self.topology.quad_indices().enumerate() {

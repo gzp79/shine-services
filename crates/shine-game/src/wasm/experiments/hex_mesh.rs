@@ -196,8 +196,8 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
 
 fn quad_mesh_to_wasm(mesh: &QuadMesh, world_size: f32) -> WasmPatchMesh {
     let topology = &mesh.topology;
-    let vertex_count = topology.vertex_count();
-    let quad_count = topology.quad_count();
+    let vertex_count = topology.finite_vertex_count();
+    let quad_count = topology.finite_quad_count();
 
     let mut flat_vertices = Vec::with_capacity(vertex_count * 2);
     for vi in topology.vertex_indices() {
