@@ -3,7 +3,7 @@ use crate::{
     math::{
         hex::{AxialCoord, AxialDenseIndexer},
         prng::StableRng,
-        quadrangulation::{Quadrangulation, VertIdx},
+        quadrangulation::{Quadrangulation, VertexIndex},
     },
 };
 use glam::Vec2;
@@ -55,15 +55,15 @@ impl LatticeMesher {
             let idx = indexer.get_dense_index(&coord);
             positions[idx] = coord.vertex_position(self.hex_size);
             if coord.is_boundary(radius) {
-                boundary_polygon.push(VertIdx::new(idx));
+                boundary_polygon.push(VertexIndex::new(idx));
             }
         }
 
         // 6 hex corner vertices as anchors
         let hex_corners = AxialCoord::hex_corners(radius);
-        let anchors: Vec<VertIdx> = hex_corners
+        let anchors: Vec<VertexIndex> = hex_corners
             .iter()
-            .map(|c| VertIdx::new(indexer.get_dense_index(c)))
+            .map(|c| VertexIndex::new(indexer.get_dense_index(c)))
             .collect();
 
         // Step 2: Enumerate all triangles from the axial triangular lattice.
@@ -164,10 +164,10 @@ impl LatticeMesher {
         &self,
         mut positions: Vec<Vec2>,
         faces: &[Face],
-        base_boundary_polygon: Vec<VertIdx>,
-        anchors: Vec<VertIdx>,
+        base_boundary_polygon: Vec<VertexIndex>,
+        anchors: Vec<VertexIndex>,
     ) -> Quadrangulation {
-        let mut quads: Vec<[VertIdx; 4]> = Vec::new();
+        let mut quads: Vec<[VertexIndex; 4]> = Vec::new();
 
         // Cache edge midpoints: (min_idx, max_idx) → vertex index
         let mut midpoint_cache: HashMap<(usize, usize), usize> = HashMap::new();
@@ -191,9 +191,9 @@ impl LatticeMesher {
                     let m_bc = get_midpoint(&mut positions, b, c);
                     let m_ca = get_midpoint(&mut positions, c, a);
 
-                    quads.push([a, m_ab, centroid_idx, m_ca].map(VertIdx::new));
-                    quads.push([b, m_bc, centroid_idx, m_ab].map(VertIdx::new));
-                    quads.push([c, m_ca, centroid_idx, m_bc].map(VertIdx::new));
+                    quads.push([a, m_ab, centroid_idx, m_ca].map(VertexIndex::new));
+                    quads.push([b, m_bc, centroid_idx, m_ab].map(VertexIndex::new));
+                    quads.push([c, m_ca, centroid_idx, m_bc].map(VertexIndex::new));
                 }
                 Face::Quad([a, b, c, d]) => {
                     let centroid_idx = positions.len();
@@ -204,10 +204,10 @@ impl LatticeMesher {
                     let m_cd = get_midpoint(&mut positions, c, d);
                     let m_da = get_midpoint(&mut positions, d, a);
 
-                    quads.push([a, m_ab, centroid_idx, m_da].map(VertIdx::new));
-                    quads.push([b, m_bc, centroid_idx, m_ab].map(VertIdx::new));
-                    quads.push([c, m_cd, centroid_idx, m_bc].map(VertIdx::new));
-                    quads.push([d, m_da, centroid_idx, m_cd].map(VertIdx::new));
+                    quads.push([a, m_ab, centroid_idx, m_da].map(VertexIndex::new));
+                    quads.push([b, m_bc, centroid_idx, m_ab].map(VertexIndex::new));
+                    quads.push([c, m_cd, centroid_idx, m_bc].map(VertexIndex::new));
+                    quads.push([d, m_da, centroid_idx, m_cd].map(VertexIndex::new));
                 }
             }
         }
@@ -217,9 +217,9 @@ impl LatticeMesher {
         for i in 0..base_boundary_polygon.len() {
             let v0 = base_boundary_polygon[i].into_index();
             let v1 = base_boundary_polygon[(i + 1) % base_boundary_polygon.len()].into_index();
-            boundary_polygon.push(VertIdx::new(v0));
+            boundary_polygon.push(VertexIndex::new(v0));
             let mid_idx = get_midpoint(&mut positions, v0, v1);
-            boundary_polygon.push(VertIdx::new(mid_idx));
+            boundary_polygon.push(VertexIndex::new(mid_idx));
         }
 
         Quadrangulation::from_polygon(boundary_polygon, anchors, quads, positions).expect("valid lattice mesh topology")

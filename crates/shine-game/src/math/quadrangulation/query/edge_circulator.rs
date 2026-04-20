@@ -1,18 +1,18 @@
 use crate::{
     indexed::TypedIndex,
-    math::quadrangulation::{QuadEdge, QuadIdx, Quadrangulation, Rot4Idx, VertIdx, VertexClue},
+    math::quadrangulation::{QuadEdge, QuadIndex, Quadrangulation, Rot4Idx, VertexIndex, VertexClue},
 };
 
 /// A circulator that traverses around a vertex in CCW or CW order, returning the edge (quad and edge index) of each adjacent quad.
 /// Unlike iterators, circulators can move in either direction and don't have a fixed termination.
 pub struct EdgeCirculator<'a> {
     quad: &'a Quadrangulation,
-    vertex: VertIdx,
+    vertex: VertexIndex,
     current: QuadEdge,
 }
 
 impl<'a> EdgeCirculator<'a> {
-    pub fn new(quad: &'a Quadrangulation, start: VertIdx) -> Self {
+    pub fn new(quad: &'a Quadrangulation, start: VertexIndex) -> Self {
         let q = quad[start].quad;
         let edge = quad[q].find_vertex(start).unwrap().decrement();
 
@@ -27,15 +27,15 @@ impl<'a> EdgeCirculator<'a> {
         &self.current
     }
 
-    pub fn start_vertex(&self) -> VertIdx {
+    pub fn start_vertex(&self) -> VertexIndex {
         self.vertex
     }
 
-    pub fn end_vertex(&self) -> VertIdx {
+    pub fn end_vertex(&self) -> VertexIndex {
         self.quad.vi(VertexClue::EdgeEnd(self.current.quad, self.current.edge))
     }
 
-    pub fn quad(&self) -> QuadIdx {
+    pub fn quad(&self) -> QuadIndex {
         self.current.quad
     }
 

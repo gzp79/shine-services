@@ -2,7 +2,7 @@ use crate::{
     indexed::TypedIndex,
     math::{
         hex::{AxialCoord, AxialDenseIndexer, PatchCoord, PatchDenseIndexer, PatchOrientation},
-        quadrangulation::{Quadrangulation, VertIdx},
+        quadrangulation::{Quadrangulation, VertexIndex},
     },
 };
 use glam::Vec2;
@@ -151,7 +151,7 @@ impl PatchMesher {
         let mut polygon = Vec::new();
         for coord in AxialCoord::origin().spiral(radius) {
             if coord.is_boundary(radius) {
-                polygon.push(VertIdx::new(indexer.get_dense_index(&coord)));
+                polygon.push(VertexIndex::new(indexer.get_dense_index(&coord)));
             }
         }
 
@@ -164,15 +164,15 @@ impl PatchMesher {
                 for v in 0..grid {
                     let patch = PatchCoord::new(p, u, v);
                     let quad = patch.quad_vertices(self.orientation, self.subdivision);
-                    quads.push(std::array::from_fn(|i| VertIdx::new(indexer.get_dense_index(&quad[i]))));
+                    quads.push(std::array::from_fn(|i| VertexIndex::new(indexer.get_dense_index(&quad[i]))));
                 }
             }
         }
 
         let hex_corners = AxialCoord::hex_corners(radius);
-        let anchors: Vec<VertIdx> = hex_corners
+        let anchors: Vec<VertexIndex> = hex_corners
             .iter()
-            .map(|c| VertIdx::new(indexer.get_dense_index(c)))
+            .map(|c| VertexIndex::new(indexer.get_dense_index(c)))
             .collect();
 
         Quadrangulation::from_polygon(polygon, anchors, quads, positions).expect("valid patch mesh topology")

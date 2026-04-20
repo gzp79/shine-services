@@ -3,8 +3,8 @@ use crate::{
     math::{
         hex::AxialCoord,
         prng::StableRng,
-        quadrangulation::{Quadrangulation, VertIdx},
-        triangulation::{Rot3Idx, Triangulation, VertexIndex},
+        quadrangulation::{self, Quadrangulation},
+        triangulation::{self, Rot3Idx, Triangulation},
     },
 };
 use glam::{IVec2, Vec2};
@@ -82,7 +82,7 @@ impl CdtMesher {
         let mut builder = tri.builder();
 
         // Add all vertices
-        let mut vertex_indices: Vec<VertexIndex> = Vec::with_capacity(all_points.len());
+        let mut vertex_indices: Vec<triangulation::VertexIndex> = Vec::with_capacity(all_points.len());
         for &p in &all_points {
             let vi = builder.add_vertex(p, None);
             vertex_indices.push(vi);
@@ -218,7 +218,7 @@ impl CdtMesher {
         boundary_count: usize,
     ) -> Quadrangulation {
         let mut positions: Vec<Vec2> = base_vertices.to_vec();
-        let mut quads: Vec<[VertIdx; 4]> = Vec::with_capacity(triangles.len() * 3);
+        let mut quads: Vec<[quadrangulation::VertexIndex; 4]> = Vec::with_capacity(triangles.len() * 3);
 
         // Cache edge midpoints: (min_idx, max_idx) -> vertex index
         let mut midpoint_cache: HashMap<(usize, usize), usize> = HashMap::new();
@@ -241,22 +241,22 @@ impl CdtMesher {
             let m_ca = get_midpoint(&mut positions, c, a);
 
             // 3 quads per triangle
-            quads.push([a, m_ab, centroid_idx, m_ca].map(VertIdx::new));
-            quads.push([b, m_bc, centroid_idx, m_ab].map(VertIdx::new));
-            quads.push([c, m_ca, centroid_idx, m_bc].map(VertIdx::new));
+            quads.push([a, m_ab, centroid_idx, m_ca].map(quadrangulation::VertexIndex::new));
+            quads.push([b, m_bc, centroid_idx, m_ab].map(quadrangulation::VertexIndex::new));
+            quads.push([c, m_ca, centroid_idx, m_bc].map(quadrangulation::VertexIndex::new));
         }
 
         // Build subdivided boundary polygon by inserting midpoints between base boundary vertices
         let mut polygon = Vec::with_capacity(boundary_count * 2);
         for i in 0..boundary_count {
-            polygon.push(VertIdx::new(i));
+            polygon.push(quadrangulation::VertexIndex::new(i));
             let mid_idx = get_midpoint(&mut positions, i, (i + 1) % boundary_count);
-            polygon.push(VertIdx::new(mid_idx));
+            polygon.push(quadrangulation::VertexIndex::new(mid_idx));
         }
 
         // The 6 hex corner vertices are still in the polygon at their original indices.
         let n = 2u32.pow(self.subdivision - 1) as usize;
-        let anchors: Vec<VertIdx> = (0..6).map(|i| VertIdx::new(i * n)).collect();
+        let anchors: Vec<quadrangulation::VertexIndex> = (0..6).map(|i| quadrangulation::VertexIndex::new(i * n)).collect();
 
         Quadrangulation::from_polygon(polygon, anchors, quads, positions).expect("valid CDT mesh topology")
     }

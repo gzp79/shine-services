@@ -39,7 +39,7 @@ impl QuadFilter for QuadRelax {
                 let pts: [Vec2; 4] = std::array::from_fn(|i| mesh[verts[i]].position);
                 if quad_jacobian(&pts) < self.quality {
                     any_bad = true;
-                    for &v in &verts {
+                    for &v in verts {
                         if !mesh.is_boundary_vertex(v) {
                             is_bad[v.into_index()] = true;
                         }

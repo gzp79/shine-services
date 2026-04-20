@@ -1,7 +1,7 @@
 use crate::{
     math::{
         prng::SplitMix64,
-        quadrangulation::{Quadrangulation, VertIdx},
+        quadrangulation::{Quadrangulation, VertexIndex},
     },
     world::{Chunk, ChunkId},
 };
@@ -25,9 +25,9 @@ pub const CELL_WORLD_SIZE: f32 = CHUNK_WORLD_SIZE / SUBDIVISION_COUNT as f32;
 /// Ghost quads in one chunk correspond to real quads in the neighbor.
 pub(crate) fn merge_vertex_ring_dual(
     topo1: &Quadrangulation,
-    v1: VertIdx,
+    v1: VertexIndex,
     topo2: &Quadrangulation,
-    v2: VertIdx,
+    v2: VertexIndex,
 ) -> Vec<Vec2> {
     // Collect rings with ghost markers
     let ring1: Vec<Option<Vec2>> = topo1.vertex_ring_ccw(v1).map(|qv| topo1.dual_p(qv.quad)).collect();

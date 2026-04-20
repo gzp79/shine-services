@@ -5,7 +5,7 @@ use crate::{
     math::{
         hex::{AxialCoord, LatticeMesher},
         prng::{hash_u32_2, Pcg32, SplitMix64},
-        quadrangulation::{Quadrangulation, VertIdx},
+        quadrangulation::{Quadrangulation, VertexIndex},
     },
     world::{CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
@@ -97,7 +97,7 @@ impl Chunk {
         let mut indices = Vec::with_capacity(self.topology.finite_quad_count() * 4);
         for qi in self.topology.finite_quad_index_iter() {
             let verts = self.topology.quad_vertices(qi);
-            for &v in &verts {
+            for &v in verts {
                 indices.push(v.into_index() as u32);
             }
         }
@@ -146,10 +146,10 @@ impl Chunk {
         for vi in self.topology.finite_vertex_index_iter() {
             let start_len = indices.len();
 
-            // Collect QuadIdx for all real quads around this vertex
+            // Collect QuadIndex for all real quads around this vertex
             for qv in self.topology.vertex_ring_ccw(vi) {
                 if !self.topology.is_infinite_quad(qv.quad) {
-                    // Map QuadIdx to its position in quad_indices() enumeration
+                    // Map QuadIndex to its position in quad_indices() enumeration
                     let mut dual_idx = 0;
                     for (i, qi) in self.topology.finite_quad_index_iter().enumerate() {
                         if qi == qv.quad {
@@ -174,15 +174,15 @@ impl Chunk {
         (indices, starts)
     }
 
-    /// Returns VertIdx values along specified hex edge (0..5)
-    pub fn boundary_edge_vertices(&self, edge_idx: u8) -> Vec<VertIdx> {
-        use crate::math::quadrangulation::AnchorIdx;
-        self.topology.anchor_edge(AnchorIdx::new(edge_idx as usize)).collect()
+    /// Returns VertexIndex values along specified hex edge (0..5)
+    pub fn boundary_edge_vertices(&self, edge_idx: u8) -> Vec<VertexIndex> {
+        use crate::math::quadrangulation::AnchorIndex;
+        self.topology.anchor_edge(AnchorIndex::new(edge_idx as usize)).collect()
     }
 
-    /// Returns VertIdx at specified hex corner (0..5)
-    pub fn boundary_corner_vertex(&self, corner_idx: u8) -> VertIdx {
-        use crate::math::quadrangulation::AnchorIdx;
-        self.topology.anchor_vertex(AnchorIdx::new(corner_idx as usize))
+    /// Returns VertexIndex at specified hex corner (0..5)
+    pub fn boundary_corner_vertex(&self, corner_idx: u8) -> VertexIndex {
+        use crate::math::quadrangulation::AnchorIndex;
+        self.topology.anchor_vertex(AnchorIndex::new(corner_idx as usize))
     }
 }

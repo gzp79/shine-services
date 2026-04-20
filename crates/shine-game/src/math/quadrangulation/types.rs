@@ -1,9 +1,9 @@
-use crate::math::quadrangulation::{QuadIdx, Rot4Idx, VertIdx};
+use crate::math::quadrangulation::{QuadIndex, Rot4Idx, VertexIndex};
 
 /// A vertex referenced by its containing quad and local vertex index (0..4)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuadVertex {
-    pub quad: QuadIdx,
+    pub quad: QuadIndex,
     pub local: Rot4Idx,
 }
 
@@ -52,12 +52,12 @@ impl QuadVertex {
 /// An edge referenced by its containing quad and local edge index (0..4)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuadEdge {
-    pub quad: QuadIdx,
+    pub quad: QuadIndex,
     pub edge: Rot4Idx,
 }
 
 impl QuadEdge {
-    pub fn new(quad: QuadIdx, edge: Rot4Idx) -> Self {
+    pub fn new(quad: QuadIndex, edge: Rot4Idx) -> Self {
         Self { quad, edge }
     }
 
@@ -81,22 +81,22 @@ impl QuadEdge {
 /// References a vertex in the quadrangulation, used for topology queries
 #[derive(Clone, Debug)]
 pub enum VertexClue {
-    VertexIndex(VertIdx),
-    QuadVertex(QuadIdx, Rot4Idx),
-    EdgeStart(QuadIdx, Rot4Idx),
-    EdgeEnd(QuadIdx, Rot4Idx),
+    VertexIndex(VertexIndex),
+    QuadVertex(QuadIndex, Rot4Idx),
+    EdgeStart(QuadIndex, Rot4Idx),
+    EdgeEnd(QuadIndex, Rot4Idx),
 }
 
 impl VertexClue {
-    pub fn quad_vertex(q: QuadIdx, v: Rot4Idx) -> VertexClue {
+    pub fn quad_vertex(q: QuadIndex, v: Rot4Idx) -> VertexClue {
         VertexClue::QuadVertex(q, v)
     }
 
-    pub fn edge_start(q: QuadIdx, e: Rot4Idx) -> VertexClue {
+    pub fn edge_start(q: QuadIndex, e: Rot4Idx) -> VertexClue {
         VertexClue::EdgeStart(q, e)
     }
 
-    pub fn edge_end(q: QuadIdx, e: Rot4Idx) -> VertexClue {
+    pub fn edge_end(q: QuadIndex, e: Rot4Idx) -> VertexClue {
         VertexClue::EdgeEnd(q, e)
     }
 
@@ -109,8 +109,8 @@ impl VertexClue {
     }
 }
 
-impl From<VertIdx> for VertexClue {
-    fn from(v: VertIdx) -> VertexClue {
+impl From<VertexIndex> for VertexClue {
+    fn from(v: VertexIndex) -> VertexClue {
         VertexClue::VertexIndex(v)
     }
 }
@@ -124,11 +124,11 @@ impl From<QuadVertex> for VertexClue {
 /// References a quad in the quadrangulation, used for topology queries
 #[derive(Clone, Debug)]
 pub enum QuadClue {
-    QuadIndex(QuadIdx),
+    QuadIndex(QuadIndex),
 }
 
-impl From<QuadIdx> for QuadClue {
-    fn from(q: QuadIdx) -> QuadClue {
+impl From<QuadIndex> for QuadClue {
+    fn from(q: QuadIndex) -> QuadClue {
         QuadClue::QuadIndex(q)
     }
 }

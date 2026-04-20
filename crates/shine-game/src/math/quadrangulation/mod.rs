@@ -10,7 +10,7 @@ mod validation;
 pub use self::{
     filter::{Jitter, LaplacianSmoother, QuadFilter, QuadRelax, VertexRepulsion},
     quad_error::QuadError,
-    quadrangulation::{AnchorIdx, Quad, QuadIdx, Quadrangulation, VertIdx, Vertex},
+    quadrangulation::{AnchorIndex, Quad, QuadIndex, Quadrangulation, Vertex, VertexIndex},
     query::EdgeCirculator,
     rot4_index::Rot4Idx,
     types::{QuadClue, QuadEdge, QuadEdgeType, QuadVertex, VertexClue},

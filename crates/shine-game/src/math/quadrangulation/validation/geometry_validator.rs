@@ -1,6 +1,6 @@
 use crate::{
     indexed::TypedIndex,
-    math::quadrangulation::{QuadError, QuadIdx, Validator},
+    math::quadrangulation::{QuadError, QuadIndex, Validator},
 };
 use glam::Vec2;
 
@@ -27,7 +27,7 @@ impl<'a> Validator<'a> {
 
     /// Validate that no finite quad edges intersect with other finite quad edges.
     fn validate_no_self_intersections(&self) -> Result<(), QuadError> {
-        let quads: Vec<QuadIdx> = self.topology.finite_quad_index_iter().collect();
+        let quads: Vec<QuadIndex> = self.topology.finite_quad_index_iter().collect();
 
         for (i, &qi) in quads.iter().enumerate() {
             let verts_i = self.topology.quad_vertices(qi);

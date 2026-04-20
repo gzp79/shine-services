@@ -1,8 +1,7 @@
-use crate::math::quadrangulation::{QuadEdge, QuadEdgeType, QuadVertex, Quadrangulation, VertIdx};
+use crate::math::quadrangulation::{QuadEdge, QuadEdgeType, QuadIndex, QuadVertex, Quadrangulation, VertexIndex};
 use std::iter;
 
 impl Quadrangulation {
-    /// Get the twin edge (edge on the neighboring quad).
     pub fn edge_twin(&self, qe: QuadEdge) -> QuadEdge {
         let neighbor_quad = self.quads[qe.quad].neighbors[qe.edge];
         let neighbor_edge = self.quads[neighbor_quad].find_neighbor(qe.quad).unwrap();
@@ -12,8 +11,16 @@ impl Quadrangulation {
         }
     }
 
-    /// Classify an edge between two vertices.
-    pub fn edge_type(&self, a: VertIdx, b: VertIdx) -> QuadEdgeType {
+    pub fn edge_vertices(&self, qe: QuadEdge) -> (VertexIndex, VertexIndex) {
+        let quad = &self.quads[qe.quad].vertices;
+        (quad[qe.edge], quad[qe.edge.increment()])
+    }
+
+    pub fn quad_vertices(&self, qi: QuadIndex) -> &[VertexIndex] {
+        self.quads[qi].vertices.as_slice()
+    }
+
+    pub fn edge_type(&self, a: VertexIndex, b: VertexIndex) -> QuadEdgeType {
         // Find the quad containing edge a→b
         for qv in self.vertex_ring_ccw(a) {
             if self.vi(qv.next()) == b {
@@ -32,23 +39,23 @@ impl Quadrangulation {
         QuadEdgeType::NotAnEdge
     }
 
-    pub fn vertex_ring_ccw_repeated(&self, vi: VertIdx, max_loops: usize) -> impl Iterator<Item = QuadVertex> + '_ {
+    pub fn vertex_ring_ccw_repeated(&self, vi: VertexIndex, max_loops: usize) -> impl Iterator<Item = QuadVertex> + '_ {
         self.vertex_ring_impl(vi, max_loops, true)
     }
 
-    pub fn vertex_ring_ccw(&self, vi: VertIdx) -> impl Iterator<Item = QuadVertex> + '_ {
+    pub fn vertex_ring_ccw(&self, vi: VertexIndex) -> impl Iterator<Item = QuadVertex> + '_ {
         self.vertex_ring_impl(vi, 1, true)
     }
 
-    pub fn vertex_ring_cw_repeated(&self, vi: VertIdx, max_loops: usize) -> impl Iterator<Item = QuadVertex> + '_ {
+    pub fn vertex_ring_cw_repeated(&self, vi: VertexIndex, max_loops: usize) -> impl Iterator<Item = QuadVertex> + '_ {
         self.vertex_ring_impl(vi, max_loops, false)
     }
 
-    pub fn vertex_ring_cw(&self, vi: VertIdx) -> impl Iterator<Item = QuadVertex> + '_ {
+    pub fn vertex_ring_cw(&self, vi: VertexIndex) -> impl Iterator<Item = QuadVertex> + '_ {
         self.vertex_ring_impl(vi, 1, false)
     }
 
-    fn vertex_ring_impl(&self, vi: VertIdx, max_loops: usize, ccw: bool) -> impl Iterator<Item = QuadVertex> + '_ {
+    fn vertex_ring_impl(&self, vi: VertexIndex, max_loops: usize, ccw: bool) -> impl Iterator<Item = QuadVertex> + '_ {
         let quad = self.vertices[vi].quad;
         let local = self[quad].find_vertex(vi).unwrap();
         let start_qv = QuadVertex { quad, local };
