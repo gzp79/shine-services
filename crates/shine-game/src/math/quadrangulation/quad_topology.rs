@@ -95,6 +95,61 @@ impl QuadVertex {
     }
 }
 
+/// References a vertex in the quadrangulation, used for topology queries
+#[derive(Clone, Debug)]
+pub enum VertexClue {
+    VertexIndex(VertIdx),
+    QuadVertex(QuadIdx, u8),
+    EdgeStart(QuadIdx, u8),
+    EdgeEnd(QuadIdx, u8),
+}
+
+impl VertexClue {
+    pub fn quad_vertex(q: QuadIdx, v: u8) -> VertexClue {
+        VertexClue::QuadVertex(q, v)
+    }
+
+    pub fn edge_start(q: QuadIdx, e: u8) -> VertexClue {
+        VertexClue::EdgeStart(q, e)
+    }
+
+    pub fn edge_end(q: QuadIdx, e: u8) -> VertexClue {
+        VertexClue::EdgeEnd(q, e)
+    }
+
+    pub fn start_of(e: QuadEdge) -> VertexClue {
+        VertexClue::EdgeStart(e.quad, e.edge)
+    }
+
+    pub fn end_of(e: QuadEdge) -> VertexClue {
+        VertexClue::EdgeEnd(e.quad, e.edge)
+    }
+}
+
+impl From<VertIdx> for VertexClue {
+    fn from(v: VertIdx) -> VertexClue {
+        VertexClue::VertexIndex(v)
+    }
+}
+
+impl From<QuadVertex> for VertexClue {
+    fn from(v: QuadVertex) -> VertexClue {
+        VertexClue::QuadVertex(v.quad, v.local)
+    }
+}
+
+/// References a quad in the quadrangulation, used for topology queries
+#[derive(Clone, Debug)]
+pub enum QuadClue {
+    QuadIndex(QuadIdx),
+}
+
+impl From<QuadIdx> for QuadClue {
+    fn from(q: QuadIdx) -> QuadClue {
+        QuadClue::QuadIndex(q)
+    }
+}
+
 /// Classification of an edge in the quad mesh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuadEdgeType {
@@ -360,6 +415,25 @@ impl QuadTopology {
         use crate::math::quadrangulation::Validator;
         Validator::new(self).validate()
     }
+
+    /// Convert a VertexClue to a VertIdx
+    pub fn vi<T: Into<VertexClue>>(&self, id: T) -> VertIdx {
+        let clue: VertexClue = id.into();
+        match clue {
+            VertexClue::VertexIndex(vi) => vi,
+            VertexClue::QuadVertex(quad, local) => self.quads[quad][local as usize],
+            VertexClue::EdgeStart(quad, edge) => self.quads[quad][edge as usize],
+            VertexClue::EdgeEnd(quad, edge) => self.quads[quad][(edge as usize + 1) % 4],
+        }
+    }
+
+    /// Convert a QuadClue to a QuadIdx
+    pub fn qi<T: Into<QuadClue>>(&self, id: T) -> QuadIdx {
+        let clue: QuadClue = id.into();
+        match clue {
+            QuadClue::QuadIndex(qi) => qi,
+        }
+    }
 }
 
 struct VertexRingIter<'a, const CCW: bool> {
@@ -406,5 +480,71 @@ impl<'a, const CCW: bool> Iterator for VertexRingIter<'a, CCW> {
         }
 
         Some(result)
+    }
+}
+
+impl std::ops::Index<VertIdx> for QuadTopology {
+    type Output = Vertex;
+
+    #[inline]
+    fn index(&self, v: VertIdx) -> &Self::Output {
+        &self.vertices[v]
+    }
+}
+
+impl std::ops::IndexMut<VertIdx> for QuadTopology {
+    #[inline]
+    fn index_mut(&mut self, v: VertIdx) -> &mut Self::Output {
+        &mut self.vertices[v]
+    }
+}
+
+impl std::ops::Index<VertexClue> for QuadTopology {
+    type Output = Vertex;
+
+    #[inline]
+    fn index(&self, v: VertexClue) -> &Self::Output {
+        &self.vertices[self.vi(v)]
+    }
+}
+
+impl std::ops::IndexMut<VertexClue> for QuadTopology {
+    #[inline]
+    fn index_mut(&mut self, v: VertexClue) -> &mut Self::Output {
+        let vi = self.vi(v);
+        &mut self.vertices[vi]
+    }
+}
+
+impl std::ops::Index<QuadIdx> for QuadTopology {
+    type Output = [VertIdx; 4];
+
+    #[inline]
+    fn index(&self, q: QuadIdx) -> &Self::Output {
+        &self.quads[q]
+    }
+}
+
+impl std::ops::IndexMut<QuadIdx> for QuadTopology {
+    #[inline]
+    fn index_mut(&mut self, q: QuadIdx) -> &mut Self::Output {
+        &mut self.quads[q]
+    }
+}
+
+impl std::ops::Index<QuadClue> for QuadTopology {
+    type Output = [VertIdx; 4];
+
+    #[inline]
+    fn index(&self, q: QuadClue) -> &Self::Output {
+        &self.quads[self.qi(q)]
+    }
+}
+
+impl std::ops::IndexMut<QuadClue> for QuadTopology {
+    #[inline]
+    fn index_mut(&mut self, q: QuadClue) -> &mut Self::Output {
+        let qi = self.qi(q);
+        &mut self.quads[qi]
     }
 }

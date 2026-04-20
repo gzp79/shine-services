@@ -9,6 +9,8 @@ pub use self::{
     filter::{Jitter, LaplacianSmoother, QuadFilter, QuadRelax, VertexRepulsion},
     quad_error::QuadError,
     quad_mesh::QuadMesh,
-    quad_topology::{QuadEdge, QuadEdgeType, QuadIdx, QuadTopology, QuadVertex, VertIdx, Vertex},
+    quad_topology::{
+        QuadClue, QuadEdge, QuadEdgeType, QuadIdx, QuadTopology, QuadVertex, Vertex, VertexClue, VertIdx,
+    },
     validation::Validator,
 };
