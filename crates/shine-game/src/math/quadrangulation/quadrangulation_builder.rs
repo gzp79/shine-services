@@ -1,4 +1,4 @@
-use super::{quad_error::QuadError, AnchorIndex, Quad, QuadIndex, Quadrangulation, Rot4Idx, VertexIndex, Vertex};
+use super::{quad_error::QuadError, AnchorIndex, Quad, QuadIndex, Quadrangulation, Rot4Idx, Vertex, VertexIndex};
 use crate::indexed::{IdxVec, TypedIndex};
 use glam::Vec2;
 use std::collections::HashMap;

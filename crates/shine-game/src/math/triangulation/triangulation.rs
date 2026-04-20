@@ -1,8 +1,6 @@
 use crate::{
     indexed::{IdxArray, IdxVec, TypedIndex},
-    math::triangulation::{
-        CrossingIterator, EdgeCirculator, FaceClue, FaceEdge, Rot3Idx, TriangulationBuilder, Validator, VertexClue,
-    },
+    math::triangulation::{FaceClue, FaceEdge, Rot3Idx, VertexClue},
 };
 use glam::IVec2;
 use std::{
@@ -17,26 +15,33 @@ crate::define_typed_index!(FaceIndex, "Typed index into a triangle array.");
 
 pub struct Vertex {
     pub position: IVec2,
-    pub face: FaceIndex,
+    pub triangle: FaceIndex,
 }
 
 impl Vertex {
     pub fn new() -> Self {
         Self {
             position: IVec2::ZERO,
-            face: FaceIndex::NONE,
+            triangle: FaceIndex::NONE,
+        }
+    }
+
+    pub fn with_position(position: IVec2) -> Self {
+        Self {
+            position,
+            triangle: FaceIndex::NONE,
         }
     }
 }
 
-pub struct Face {
+pub struct Triangle {
     pub vertices: IdxArray<Rot3Idx, VertexIndex, 3>,
     pub neighbors: IdxArray<Rot3Idx, FaceIndex, 3>,
     pub constraints: IdxArray<Rot3Idx, u32, 3>,
     pub tag: usize,
 }
 
-impl Face {
+impl Triangle {
     pub fn new() -> Self {
         Self {
             vertices: IdxArray::from_elem(VertexIndex::NONE),
@@ -69,7 +74,7 @@ pub struct Triangulation<const DELAUNAY: bool = true> {
     pub(in crate::math::triangulation) dimension: u8,
     pub(in crate::math::triangulation) infinite_vertex: VertexIndex,
     pub(in crate::math::triangulation) vertices: IdxVec<VertexIndex, Vertex>,
-    pub(in crate::math::triangulation) faces: IdxVec<FaceIndex, Face>,
+    pub(in crate::math::triangulation) faces: IdxVec<FaceIndex, Triangle>,
     tag: Rc<RefCell<usize>>,
 }
 
@@ -116,30 +121,13 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
         self.tag.replace(0);
     }
 
-    pub fn edge_circulator(&self, vertex: VertexIndex) -> EdgeCirculator<'_, DELAUNAY> {
-        EdgeCirculator::new(self, vertex)
-    }
-
-    pub fn crossing_iterator(&self, v0: VertexIndex, v1: VertexIndex) -> CrossingIterator<'_, DELAUNAY> {
-        CrossingIterator::new(self, v0, v1)
-    }
-
-    pub fn validator(&self) -> Validator<'_, DELAUNAY> {
-        Validator::new(self)
-    }
-
-    pub fn builder(&mut self) -> TriangulationBuilder<'_, DELAUNAY> {
-        TriangulationBuilder::new(self)
-    }
-
     pub fn scope_guard(&self) -> Rc<RefCell<usize>> {
         self.tag.clone()
     }
 
-    pub fn store_vertex(&mut self, vert: Vertex) -> VertexIndex {
-        let id = self.vertices.len();
-        self.vertices.push(vert);
-        VertexIndex::new(id)
+    #[inline]
+    pub fn vertex_count(&self) -> usize {
+        self.vertices.len()
     }
 
     #[inline]
@@ -147,15 +135,10 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
         let clue: VertexClue = id.into();
         match clue {
             VertexClue::VertexIndex(vi) => vi,
-            VertexClue::FaceVertex(face, vertex) => self.faces[face].vertices[vertex],
-            VertexClue::EdgeStart(face, edge) => self.faces[face].vertices[edge.increment()],
-            VertexClue::EdgeEnd(face, edge) => self.faces[face].vertices[edge.decrement()],
+            VertexClue::FaceVertex(triangle, vertex) => self.faces[triangle].vertices[vertex],
+            VertexClue::EdgeStart(triangle, edge) => self.faces[triangle].vertices[edge.increment()],
+            VertexClue::EdgeEnd(triangle, edge) => self.faces[triangle].vertices[edge.decrement()],
         }
-    }
-
-    #[inline]
-    pub fn vertex_count(&self) -> usize {
-        self.vertices.len()
     }
 
     #[inline]
@@ -183,10 +166,9 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
         !self.is_infinite_vertex(v)
     }
 
-    pub fn store_face(&mut self, face: Face) -> FaceIndex {
-        let id = self.faces.len();
-        self.faces.push(face);
-        FaceIndex::new(id)
+    #[inline]
+    pub fn face_count(&self) -> usize {
+        self.faces.len()
     }
 
     #[inline]
@@ -198,12 +180,7 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
     }
 
     #[inline]
-    pub fn face_count(&self) -> usize {
-        self.faces.len()
-    }
-
-    #[inline]
-    pub fn face_iter(&self) -> impl Iterator<Item = &Face> + '_ {
+    pub fn face_iter(&self) -> impl Iterator<Item = &Triangle> + '_ {
         self.faces.iter()
     }
 
@@ -214,7 +191,7 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
 
     #[inline]
     pub fn infinite_face(&self) -> FaceIndex {
-        self.vertices[self.infinite_vertex].face
+        self.vertices[self.infinite_vertex].triangle
     }
 
     #[inline]
@@ -237,7 +214,7 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
     #[inline]
     pub fn c<T: Into<FaceEdge>>(&self, edge: T) -> u32 {
         let edge: FaceEdge = edge.into();
-        self[edge.face].constraints[edge.edge]
+        self[edge.triangle].constraints[edge.edge]
     }
 }
 
@@ -275,7 +252,7 @@ impl<const DELAUNAY: bool> IndexMut<VertexClue> for Triangulation<DELAUNAY> {
 }
 
 impl<const DELAUNAY: bool> Index<FaceIndex> for Triangulation<DELAUNAY> {
-    type Output = Face;
+    type Output = Triangle;
 
     #[inline]
     fn index(&self, f: FaceIndex) -> &Self::Output {
@@ -291,7 +268,7 @@ impl<const DELAUNAY: bool> IndexMut<FaceIndex> for Triangulation<DELAUNAY> {
 }
 
 impl<const DELAUNAY: bool> Index<FaceClue> for Triangulation<DELAUNAY> {
-    type Output = Face;
+    type Output = Triangle;
 
     #[inline]
     fn index(&self, v: FaceClue) -> &Self::Output {
@@ -321,7 +298,7 @@ impl<const DELAUNAY: bool> fmt::Debug for Triangulation<DELAUNAY> {
 
         write!(f, "VF[ ")?;
         for v in self.vertex_index_iter() {
-            write!(f, "{:?}->{:?}, ", v, self.vertices[v].face)?;
+            write!(f, "{:?}->{:?}, ", v, self.vertices[v].triangle)?;
         }
         writeln!(f, "]")?;
 

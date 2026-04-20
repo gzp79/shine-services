@@ -70,7 +70,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             dump.add_tri(&self.tri, [(stack.as_slice(), "edge-delaunay", false)]);
         });
 
-        while let Some(FaceEdge { face, edge }) = stack.pop() {
+        while let Some(FaceEdge { triangle: face, edge }) = stack.pop() {
             // Never flip constrained edges
             if self.tri[face].constraints[edge] != 0 {
                 log::trace!("Skipping constrained: ({}, {})", face.into_index(), edge.into_index());

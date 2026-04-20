@@ -256,7 +256,8 @@ impl CdtMesher {
 
         // The 6 hex corner vertices are still in the polygon at their original indices.
         let n = 2u32.pow(self.subdivision - 1) as usize;
-        let anchors: Vec<quadrangulation::VertexIndex> = (0..6).map(|i| quadrangulation::VertexIndex::new(i * n)).collect();
+        let anchors: Vec<quadrangulation::VertexIndex> =
+            (0..6).map(|i| quadrangulation::VertexIndex::new(i * n)).collect();
 
         Quadrangulation::from_polygon(polygon, anchors, quads, positions).expect("valid CDT mesh topology")
     }

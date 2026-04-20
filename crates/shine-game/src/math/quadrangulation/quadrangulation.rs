@@ -1,6 +1,6 @@
 use crate::{
     indexed::{IdxArray, IdxVec, TypedIndex},
-    math::quadrangulation::{QuadClue, QuadEdge, QuadError, Rot4Idx, VertexClue},
+    math::quadrangulation::{QuadClue, QuadEdge, Rot4Idx, VertexClue},
 };
 use glam::Vec2;
 use std::ops;
@@ -106,6 +106,16 @@ impl Quadrangulation {
         }
     }
 
+    pub fn vi<T: Into<VertexClue>>(&self, id: T) -> VertexIndex {
+        let clue: VertexClue = id.into();
+        match clue {
+            VertexClue::VertexIndex(vi) => vi,
+            VertexClue::QuadVertex(quad, local) => self.quads[quad].vertices[local],
+            VertexClue::EdgeStart(quad, edge) => self.quads[quad].vertices[edge],
+            VertexClue::EdgeEnd(quad, edge) => self.quads[quad].vertices[edge.increment()],
+        }
+    }
+
     #[inline]
     pub fn vertex_index_iter(&self) -> impl Iterator<Item = VertexIndex> {
         VertexIndex::range(VertexIndex::new(0), VertexIndex::new(self.vertices.len()))
@@ -149,16 +159,12 @@ impl Quadrangulation {
         self.infinite_quad_index_iter().count()
     }
 
-    #[inline]
-    pub fn quad_iter(&self) -> impl Iterator<Item = &Quad> + '_ {
-        self.quads.iter()
-    }
-
-    #[inline]
-    pub fn finite_quad_iter(&self) -> impl Iterator<Item = &Quad> + '_ {
-        self.quads
-            .iter()
-            .filter(|q| q.find_vertex(self.infinite_vertex).is_none())
+    /// Convert a QuadClue to a QuadIndex
+    pub fn qi<T: Into<QuadClue>>(&self, id: T) -> QuadIndex {
+        let clue: QuadClue = id.into();
+        match clue {
+            QuadClue::QuadIndex(qi) => qi,
+        }
     }
 
     #[inline]
@@ -178,6 +184,18 @@ impl Quadrangulation {
         (0..self.quads.len())
             .map(QuadIndex::new)
             .filter(|&qi| self.is_infinite_quad(qi))
+    }
+
+    #[inline]
+    pub fn quad_iter(&self) -> impl Iterator<Item = &Quad> + '_ {
+        self.quads.iter()
+    }
+
+    #[inline]
+    pub fn finite_quad_iter(&self) -> impl Iterator<Item = &Quad> + '_ {
+        self.quads
+            .iter()
+            .filter(|q| q.find_vertex(self.infinite_vertex).is_none())
     }
 
     #[inline]
@@ -287,31 +305,6 @@ impl Quadrangulation {
             sum / count as f32
         } else {
             positions[vi.into_index()]
-        }
-    }
-
-    /// Validates the topology for consistency.
-    pub fn validate(&self) -> Result<(), QuadError> {
-        use crate::math::quadrangulation::Validator;
-        Validator::new(self).validate()
-    }
-
-    /// Convert a VertexClue to a VertexIndex
-    pub fn vi<T: Into<VertexClue>>(&self, id: T) -> VertexIndex {
-        let clue: VertexClue = id.into();
-        match clue {
-            VertexClue::VertexIndex(vi) => vi,
-            VertexClue::QuadVertex(quad, local) => self.quads[quad].vertices[local],
-            VertexClue::EdgeStart(quad, edge) => self.quads[quad].vertices[edge],
-            VertexClue::EdgeEnd(quad, edge) => self.quads[quad].vertices[edge.increment()],
-        }
-    }
-
-    /// Convert a QuadClue to a QuadIndex
-    pub fn qi<T: Into<QuadClue>>(&self, id: T) -> QuadIndex {
-        let clue: QuadClue = id.into();
-        match clue {
-            QuadClue::QuadIndex(qi) => qi,
         }
     }
 

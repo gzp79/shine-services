@@ -1,15 +1,15 @@
 use crate::math::triangulation::{FaceIndex, Rot3Idx, VertexIndex};
 
-/// Selection of a vertex by a face and an index
+/// Selection of a vertex by a triangle and an index
 #[derive(Clone, Copy, Debug)]
 pub struct FaceVertex {
-    pub face: FaceIndex,
+    pub triangle: FaceIndex,
     pub vertex: Rot3Idx,
 }
 
 impl FaceVertex {
     pub fn new(f: FaceIndex, v: Rot3Idx) -> FaceVertex {
-        FaceVertex { face: f, vertex: v }
+        FaceVertex { triangle: f, vertex: v }
     }
 }
 
@@ -19,24 +19,24 @@ impl From<(FaceIndex, Rot3Idx)> for FaceVertex {
     }
 }
 
-/// Selection of an edge by a face and an index
+/// Selection of an edge by a triangle and an index
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FaceEdge {
-    pub face: FaceIndex,
+    pub triangle: FaceIndex,
     pub edge: Rot3Idx,
 }
 
 impl FaceEdge {
     pub fn new(f: FaceIndex, e: Rot3Idx) -> FaceEdge {
-        FaceEdge { face: f, edge: e }
+        FaceEdge { triangle: f, edge: e }
     }
 
     pub fn next(&self) -> FaceEdge {
-        FaceEdge::new(self.face, self.edge.increment())
+        FaceEdge::new(self.triangle, self.edge.increment())
     }
 
     pub fn prev(&self) -> FaceEdge {
-        FaceEdge::new(self.face, self.edge.decrement())
+        FaceEdge::new(self.triangle, self.edge.decrement())
     }
 }
 
@@ -69,11 +69,11 @@ impl VertexClue {
     }
 
     pub fn start_of(e: FaceEdge) -> VertexClue {
-        VertexClue::EdgeStart(e.face, e.edge)
+        VertexClue::EdgeStart(e.triangle, e.edge)
     }
 
     pub fn end_of(e: FaceEdge) -> VertexClue {
-        VertexClue::EdgeEnd(e.face, e.edge)
+        VertexClue::EdgeEnd(e.triangle, e.edge)
     }
 }
 
@@ -85,11 +85,11 @@ impl From<VertexIndex> for VertexClue {
 
 impl From<FaceVertex> for VertexClue {
     fn from(v: FaceVertex) -> VertexClue {
-        VertexClue::FaceVertex(v.face, v.vertex)
+        VertexClue::FaceVertex(v.triangle, v.vertex)
     }
 }
 
-/// References a face in the triangulation, used for topology queries
+/// References a triangle in the triangulation, used for topology queries
 #[derive(Clone, Debug)]
 pub enum FaceClue {
     FaceIndex(FaceIndex),

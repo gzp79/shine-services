@@ -139,11 +139,11 @@ impl<'a, const DELAUNAY: bool> Validator<'a, DELAUNAY> {
         let tri = self.tri;
 
         for v in tri.vertex_index_iter() {
-            if !tri[v].face.is_valid() {
+            if !tri[v].triangle.is_valid() {
                 return Err(format!("Vertex-face link is invalid, no face for {:?} ", v));
             }
 
-            let nf = tri[v].face;
+            let nf = tri[v].triangle;
             let _vi = tri[nf]
                 .find_vertex(v)
                 .ok_or_else(|| format!("Vertex-face link is invalid {:?} is not a neighbor of {:?}", nf, v))?;

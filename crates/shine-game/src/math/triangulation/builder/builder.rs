@@ -50,7 +50,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
     pub fn add_constraint_segment(&mut self, p0: IVec2, p1: IVec2, c: u32) -> (VertexIndex, VertexIndex) {
         assert!(c != 0);
         let v0 = self.add_vertex(p0, None);
-        let start_face = self.tri[v0].face;
+        let start_face = self.tri[v0].triangle;
         let v1 = self.add_vertex(p1, Some(start_face));
         self.add_constraint_edge(v0, v1, c);
         (v0, v1)
@@ -65,7 +65,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
         let mut hint = None;
         for p in points {
             let vi = self.add_vertex(p, hint);
-            hint = Some(self.tri[vi].face);
+            hint = Some(self.tri[vi].triangle);
         }
     }
 
@@ -85,7 +85,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             }
 
             vi_prev = Some(vi);
-            hint = Some(self.tri[vi].face);
+            hint = Some(self.tri[vi].triangle);
         }
 
         if let (Some(vi_prev), Some(vi0)) = (vi_prev, vi0) {
@@ -95,31 +95,24 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
 
     fn add_vertex_at(&mut self, p: IVec2, loc: Location) -> VertexIndex {
         let vi = match loc {
-            Location::Empty => {
-                let vi = self.tri.create_vertex_with_position(p);
-                self.tri.extend_dimension(vi);
-                vi
-            }
+            Location::Empty => self.tri.extend_dimension(p),
             Location::Vertex(f, v) => self.tri[f].vertices[v],
             Location::Edge(f, e) => {
-                let vi = self.tri.create_vertex_with_position(p);
-                self.tri.split_edge(f, e, vi);
+                let vi = self.tri.split_edge(f, e, p);
                 if DELAUNAY && self.tri.dimension() == 2 {
                     self.delaunay_push_vertex(vi);
                 }
                 vi
             }
             Location::OutsideConvexHull(f) | Location::Face(f) => {
-                let vi = self.tri.create_vertex_with_position(p);
-                self.tri.split_face(f, vi);
+                let vi = self.tri.split_face(f, p);
                 if DELAUNAY && self.tri.dimension() == 2 {
                     self.delaunay_push_vertex(vi);
                 }
                 vi
             }
             Location::OutsideAffineHull => {
-                let vi = self.tri.create_vertex_with_position(p);
-                self.tri.extend_dimension(vi);
+                let vi = self.tri.extend_dimension(p);
                 if DELAUNAY && self.tri.dimension() == 2 {
                     self.delaunay_push_vertex(vi);
                 }
@@ -166,7 +159,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
         assert_ne!(v1, v0);
 
         // start by the face of the first vertex
-        let f0 = self.tri[v0].face;
+        let f0 = self.tri[v0].triangle;
         let i0 = self.tri[f0].find_vertex(v0).unwrap();
 
         // next vertex
@@ -235,26 +228,44 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             let mut cross = crossing_iter.next();
 
             // loop over coincident edges
-            while let Some(Crossing::CoincidentEdge { face, edge }) = cross {
-                edge_chain.push(FaceEdge { face, edge });
+            while let Some(Crossing::CoincidentEdge { triangle: face, edge }) = cross {
+                edge_chain.push(FaceEdge { triangle: face, edge });
                 cross = crossing_iter.next();
             }
 
-            if let Some(Crossing::Start { face, vertex }) = cross {
-                top_chain.push(FaceEdge { face, edge: vertex.increment() });
-                bottom_chain.push(FaceEdge { face, edge: vertex.decrement() });
+            if let Some(Crossing::Start { triangle: face, vertex }) = cross {
+                top_chain.push(FaceEdge {
+                    triangle: face,
+                    edge: vertex.increment(),
+                });
+                bottom_chain.push(FaceEdge {
+                    triangle: face,
+                    edge: vertex.decrement(),
+                });
                 loop {
                     cross = crossing_iter.next();
                     match cross {
-                        Some(Crossing::PositiveEdge { face, edge }) => {
-                            bottom_chain.push(FaceEdge { face, edge: edge.decrement() });
+                        Some(Crossing::PositiveEdge { triangle: face, edge }) => {
+                            bottom_chain.push(FaceEdge {
+                                triangle: face,
+                                edge: edge.decrement(),
+                            });
                         }
-                        Some(Crossing::NegativeEdge { face, edge }) => {
-                            top_chain.push(FaceEdge { face, edge: edge.increment() });
+                        Some(Crossing::NegativeEdge { triangle: face, edge }) => {
+                            top_chain.push(FaceEdge {
+                                triangle: face,
+                                edge: edge.increment(),
+                            });
                         }
-                        Some(Crossing::End { face, vertex }) => {
-                            top_chain.push(FaceEdge { face, edge: vertex.decrement() });
-                            bottom_chain.push(FaceEdge { face, edge: vertex.increment() });
+                        Some(Crossing::End { triangle: face, vertex }) => {
+                            top_chain.push(FaceEdge {
+                                triangle: face,
+                                edge: vertex.decrement(),
+                            });
+                            bottom_chain.push(FaceEdge {
+                                triangle: face,
+                                edge: vertex.increment(),
+                            });
                             break;
                         }
                         _ => unreachable!(),
@@ -283,10 +294,8 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             let mut next_v0 = v0;
             if !edge_chain.is_empty() {
                 next_v0 = self.tri.vi(VertexClue::end_of(*edge_chain.last().unwrap()));
-                // Collect edges to avoid borrow conflict
-                let edges: Vec<_> = edge_chain.iter().copied().collect();
-                for edge in edges {
-                    self.tri.merge_constraint(edge, c);
+                for &edge in &edge_chain {
+                    self.merge_constraint(edge, c);
                 }
             }
 
@@ -295,8 +304,8 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 top_chain.reverse();
                 let [edge1, edge2] = self.triangulate_hole(&mut top_chain, &mut bottom_chain);
                 //self.tri.merge_constraint(edge1, c);
-                self.tri[edge1.face].constraints[edge1.edge] |= c;
-                self.tri[edge2.face].constraints[edge2.edge] |= c;
+                self.tri[edge1.triangle].constraints[edge1.edge] |= c;
+                self.tri[edge2.triangle].constraints[edge2.edge] |= c;
 
                 if DELAUNAY {
                     self.delaunay_push_edge(edge1.next());
@@ -367,24 +376,24 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
 
                 log::trace!("Clipping next ear with edges ({cur_edge:?}, {next_edge:?})");
 
-                self.tri[cur_edge.face].vertices[cur_edge.edge.decrement()] = p2;
-                self.tri[next_edge.face].vertices[next_edge.edge] = p0;
+                self.tri[cur_edge.triangle].vertices[cur_edge.edge.decrement()] = p2;
+                self.tri[next_edge.triangle].vertices[next_edge.edge] = p0;
 
                 let ne = self.tri.twin_edge(cur_edge);
                 self.tri
-                    .set_adjacent((ne.face, ne.edge), (next_edge.face, next_edge.edge.decrement()));
+                    .set_adjacent((ne.triangle, ne.edge), (next_edge.triangle, next_edge.edge.decrement()));
                 self.tri.set_adjacent(
-                    (cur_edge.face, cur_edge.edge),
-                    (next_edge.face, next_edge.edge.increment()),
+                    (cur_edge.triangle, cur_edge.edge),
+                    (next_edge.triangle, next_edge.edge.increment()),
                 );
-                self.tri[p0].face = next_edge.face;
-                self.tri[p1].face = next_edge.face;
-                self.tri[p2].face = next_edge.face;
+                self.tri[p0].triangle = next_edge.triangle;
+                self.tri[p1].triangle = next_edge.triangle;
+                self.tri[p2].triangle = next_edge.triangle;
 
-                let c = self.tri[cur_edge.face].constraints[cur_edge.edge];
-                self.tri[next_edge.face].constraints[next_edge.edge.decrement()] = c;
-                self.tri[cur_edge.face].constraints[cur_edge.edge] = 0;
-                self.tri[next_edge.face].constraints[next_edge.edge.increment()] = 0;
+                let c = self.tri[cur_edge.triangle].constraints[cur_edge.edge];
+                self.tri[next_edge.triangle].constraints[next_edge.edge.decrement()] = c;
+                self.tri[cur_edge.triangle].constraints[cur_edge.edge] = 0;
+                self.tri[next_edge.triangle].constraints[next_edge.edge.increment()] = 0;
 
                 if DELAUNAY {
                     self.delaunay_push_edge(next_edge.prev());
@@ -400,26 +409,26 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 assert!(cur > 0);
                 chain.remove(cur);
 
-                self.tri[cur_edge.face].vertices[cur_edge.edge] = p2;
-                self.tri[next_edge.face].vertices[next_edge.edge.increment()] = p0;
+                self.tri[cur_edge.triangle].vertices[cur_edge.edge] = p2;
+                self.tri[next_edge.triangle].vertices[next_edge.edge.increment()] = p0;
 
                 log::trace!("Clipping current ear with edges ({cur_edge:?}, {next_edge:?})");
 
                 let ne = self.tri.twin_edge(next_edge);
                 self.tri
-                    .set_adjacent((ne.face, ne.edge), (cur_edge.face, cur_edge.edge.increment()));
+                    .set_adjacent((ne.triangle, ne.edge), (cur_edge.triangle, cur_edge.edge.increment()));
                 self.tri.set_adjacent(
-                    (next_edge.face, next_edge.edge),
-                    (cur_edge.face, cur_edge.edge.decrement()),
+                    (next_edge.triangle, next_edge.edge),
+                    (cur_edge.triangle, cur_edge.edge.decrement()),
                 );
-                self.tri[p0].face = cur_edge.face;
-                self.tri[p1].face = cur_edge.face;
-                self.tri[p2].face = cur_edge.face;
+                self.tri[p0].triangle = cur_edge.triangle;
+                self.tri[p1].triangle = cur_edge.triangle;
+                self.tri[p2].triangle = cur_edge.triangle;
 
-                let c = self.tri[next_edge.face].constraints[next_edge.edge];
-                self.tri[cur_edge.face].constraints[cur_edge.edge.increment()] = c;
-                self.tri[cur_edge.face].constraints[cur_edge.edge.decrement()] = 0;
-                self.tri[next_edge.face].constraints[next_edge.edge] = 0;
+                let c = self.tri[next_edge.triangle].constraints[next_edge.edge];
+                self.tri[cur_edge.triangle].constraints[cur_edge.edge.increment()] = c;
+                self.tri[cur_edge.triangle].constraints[cur_edge.edge.decrement()] = 0;
+                self.tri[next_edge.triangle].constraints[next_edge.edge] = 0;
 
                 if DELAUNAY {
                     self.delaunay_push_edge(cur_edge);
@@ -431,7 +440,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             }
 
             self.state
-                .dump(3, &format!("ear_clipped_{}", cur_edge.face.into_index()), |dump| {
+                .dump(3, &format!("ear_clipped_{}", cur_edge.triangle.into_index()), |dump| {
                     let delaunay_stack = self.state.delaunay_stack();
                     let delaunay_edges = delaunay_stack.map(|stack| stack.as_slice()).unwrap_or(&[]);
                     dump.add_tri(
@@ -453,9 +462,23 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
         assert!(top.len() >= 2 && bottom.len() >= 2);
         let top = self.triangulate_half_hole(top);
         let bottom = self.triangulate_half_hole(bottom);
-        let top = FaceEdge::new(top.face, top.edge.decrement());
-        let bottom = FaceEdge::new(bottom.face, bottom.edge.decrement());
+        let top = FaceEdge::new(top.triangle, top.edge.decrement());
+        let bottom = FaceEdge::new(bottom.triangle, bottom.edge.decrement());
         self.tri.set_adjacent(top, bottom);
-        self.tri.flip(top.face, top.edge)
+        self.tri.flip(top.triangle, top.edge)
+    }
+
+    fn merge_constraint<E: Into<FaceEdge>>(&mut self, edge: E, c: u32) {
+        let edge: FaceEdge = edge.into();
+        let nf = self.tri[edge.triangle].neighbors[edge.edge];
+        let ni = self.tri[nf].find_neighbor(edge.triangle).unwrap();
+        self.tri[edge.triangle].constraints[edge.edge] |= c;
+        self.tri[nf].constraints[ni] |= c;
+    }
+}
+
+impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
+    pub fn builder(&mut self) -> TriangulationBuilder<'_, DELAUNAY> {
+        TriangulationBuilder::new(self)
     }
 }

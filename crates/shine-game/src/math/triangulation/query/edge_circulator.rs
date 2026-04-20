@@ -14,7 +14,7 @@ pub struct EdgeCirculator<'a, const DELAUNAY: bool> {
 impl<'a, const DELAUNAY: bool> EdgeCirculator<'a, DELAUNAY> {
     pub fn new(tri: &Triangulation<DELAUNAY>, start: VertexIndex) -> EdgeCirculator<'_, DELAUNAY> {
         assert_eq!(tri.dimension(), 2);
-        let face = tri[start].face;
+        let face = tri[start].triangle;
         let edge = tri[face].find_vertex(start).unwrap().decrement();
 
         EdgeCirculator {
@@ -37,7 +37,7 @@ impl<'a, const DELAUNAY: bool> EdgeCirculator<'a, DELAUNAY> {
     }
 
     pub fn face(&self) -> FaceIndex {
-        self.current.face
+        self.current.triangle
     }
 
     pub fn edge(&self) -> Rot3Idx {
@@ -46,11 +46,11 @@ impl<'a, const DELAUNAY: bool> EdgeCirculator<'a, DELAUNAY> {
 
     pub fn advance_ccw(&mut self) {
         assert_eq!(self.tri.dimension(), 2);
-        assert!(self.current.face.is_valid());
+        assert!(self.current.triangle.is_valid());
         assert!(self.tri.vi(VertexClue::start_of(self.current)) == self.vertex);
 
-        self.current.face = self.tri[self.current.face].neighbors[self.current.edge.decrement()];
-        self.current.edge = self.tri[self.current.face]
+        self.current.triangle = self.tri[self.current.triangle].neighbors[self.current.edge.decrement()];
+        self.current.edge = self.tri[self.current.triangle]
             .find_vertex(self.vertex)
             .unwrap()
             .decrement();
@@ -64,11 +64,11 @@ impl<'a, const DELAUNAY: bool> EdgeCirculator<'a, DELAUNAY> {
 
     pub fn advance_cw(&mut self) {
         assert_eq!(self.tri.dimension(), 2);
-        assert!(self.current.face.is_valid());
+        assert!(self.current.triangle.is_valid());
         assert!(self.tri.vi(VertexClue::start_of(self.current)) == self.vertex);
 
-        self.current.face = self.tri[self.current.face].neighbors[self.current.edge];
-        self.current.edge = self.tri[self.current.face]
+        self.current.triangle = self.tri[self.current.triangle].neighbors[self.current.edge];
+        self.current.edge = self.tri[self.current.triangle]
             .find_vertex(self.vertex)
             .unwrap()
             .decrement();
@@ -78,5 +78,11 @@ impl<'a, const DELAUNAY: bool> EdgeCirculator<'a, DELAUNAY> {
         let edge = *self.current();
         self.advance_cw();
         edge
+    }
+}
+
+impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
+    pub fn edge_circulator(&self, vertex: VertexIndex) -> EdgeCirculator<'_, DELAUNAY> {
+        EdgeCirculator::new(self, vertex)
     }
 }

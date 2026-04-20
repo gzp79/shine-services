@@ -22,10 +22,30 @@ use std::collections::HashSet;
 /// Simple 2x2 grid topology for testing.
 fn grid_2x2_topo() -> Quadrangulation {
     let quads = vec![
-        [VertexIndex::new(0), VertexIndex::new(1), VertexIndex::new(4), VertexIndex::new(3)],
-        [VertexIndex::new(1), VertexIndex::new(2), VertexIndex::new(5), VertexIndex::new(4)],
-        [VertexIndex::new(3), VertexIndex::new(4), VertexIndex::new(7), VertexIndex::new(6)],
-        [VertexIndex::new(4), VertexIndex::new(5), VertexIndex::new(8), VertexIndex::new(7)],
+        [
+            VertexIndex::new(0),
+            VertexIndex::new(1),
+            VertexIndex::new(4),
+            VertexIndex::new(3),
+        ],
+        [
+            VertexIndex::new(1),
+            VertexIndex::new(2),
+            VertexIndex::new(5),
+            VertexIndex::new(4),
+        ],
+        [
+            VertexIndex::new(3),
+            VertexIndex::new(4),
+            VertexIndex::new(7),
+            VertexIndex::new(6),
+        ],
+        [
+            VertexIndex::new(4),
+            VertexIndex::new(5),
+            VertexIndex::new(8),
+            VertexIndex::new(7),
+        ],
     ];
     let boundaries: Vec<_> = [0, 1, 2, 5, 8, 7, 6, 3].into_iter().map(VertexIndex::new).collect();
     let anchors: Vec<_> = [0, 2, 8, 6].into_iter().map(VertexIndex::new).collect();
@@ -154,7 +174,12 @@ fn test_vertex_ring_ccw_interior() {
 
     // Interior vertex 4 ring should be [Q0, Q1, Q3, Q2] in some rotation
     let ring: Vec<_> = topo.vertex_ring_ccw(VertexIndex::new(4)).map(|qv| qv.quad).collect();
-    let expected = [QuadIndex::new(0), QuadIndex::new(1), QuadIndex::new(3), QuadIndex::new(2)];
+    let expected = [
+        QuadIndex::new(0),
+        QuadIndex::new(1),
+        QuadIndex::new(3),
+        QuadIndex::new(2),
+    ];
     assert!(
         is_rotation(&expected, &ring),
         "vertex 4 CCW ring {:?} should be a rotation of {:?}",
@@ -276,7 +301,10 @@ fn test_boundary_vertices_ccw_order() {
         assert!(seen.insert(*v), "boundary vertex {:?} appears multiple times", v);
     }
 
-    let expected: Vec<_> = [0usize, 1, 2, 5, 8, 7, 6, 3].into_iter().map(VertexIndex::new).collect();
+    let expected: Vec<_> = [0usize, 1, 2, 5, 8, 7, 6, 3]
+        .into_iter()
+        .map(VertexIndex::new)
+        .collect();
     assert!(
         is_rotation(&expected, &boundary),
         "boundary {:?} should be a rotation of [0, 1, 2, 5, 8, 7, 6, 3]",
@@ -434,7 +462,12 @@ fn test_topology_validation() {
 
 #[test]
 fn test_validation_rejects_odd_boundary() {
-    let quads = vec![[VertexIndex::new(0), VertexIndex::new(1), VertexIndex::new(2), VertexIndex::new(3)]];
+    let quads = vec![[
+        VertexIndex::new(0),
+        VertexIndex::new(1),
+        VertexIndex::new(2),
+        VertexIndex::new(3),
+    ]];
     let boundary: Vec<_> = [0, 1, 2].into_iter().map(VertexIndex::new).collect();
     let positions = vec![Vec2::ZERO; 4];
     assert!(
@@ -445,7 +478,12 @@ fn test_validation_rejects_odd_boundary() {
 
 #[test]
 fn test_validation_rejects_boundary_vertex_out_of_range() {
-    let quads = vec![[VertexIndex::new(0), VertexIndex::new(1), VertexIndex::new(2), VertexIndex::new(3)]];
+    let quads = vec![[
+        VertexIndex::new(0),
+        VertexIndex::new(1),
+        VertexIndex::new(2),
+        VertexIndex::new(3),
+    ]];
     let boundary: Vec<_> = [0, 1, 99, 3].into_iter().map(VertexIndex::new).collect();
     let positions = vec![Vec2::ZERO; 4];
     match Quadrangulation::from_polygon(boundary, vec![], quads, positions) {
@@ -457,7 +495,12 @@ fn test_validation_rejects_boundary_vertex_out_of_range() {
 
 #[test]
 fn test_validation_rejects_duplicate_boundary_vertex() {
-    let quads = vec![[VertexIndex::new(0), VertexIndex::new(1), VertexIndex::new(2), VertexIndex::new(3)]];
+    let quads = vec![[
+        VertexIndex::new(0),
+        VertexIndex::new(1),
+        VertexIndex::new(2),
+        VertexIndex::new(3),
+    ]];
     let boundary: Vec<_> = [0, 1, 0, 3].into_iter().map(VertexIndex::new).collect();
     let positions = vec![Vec2::ZERO; 4];
     assert!(
@@ -468,7 +511,12 @@ fn test_validation_rejects_duplicate_boundary_vertex() {
 
 #[test]
 fn test_validation_rejects_quad_vertex_out_of_range() {
-    let quads = vec![[VertexIndex::new(0), VertexIndex::new(1), VertexIndex::new(99), VertexIndex::new(3)]];
+    let quads = vec![[
+        VertexIndex::new(0),
+        VertexIndex::new(1),
+        VertexIndex::new(99),
+        VertexIndex::new(3),
+    ]];
     let boundary: Vec<_> = [0, 1, 2, 3].into_iter().map(VertexIndex::new).collect();
     let positions = vec![Vec2::ZERO; 4];
     match Quadrangulation::from_polygon(boundary, vec![], quads, positions) {

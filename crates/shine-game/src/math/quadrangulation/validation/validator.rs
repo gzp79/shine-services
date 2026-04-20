@@ -15,3 +15,13 @@ impl<'a> Validator<'a> {
         Ok(())
     }
 }
+
+impl Quadrangulation {
+    pub fn validator(&self) -> Validator<'_> {
+        Validator::new(self)
+    }
+
+    pub fn validate(&self) -> Result<(), QuadError> {
+        self.validator().validate()
+    }
+}

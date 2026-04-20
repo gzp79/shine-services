@@ -6,11 +6,11 @@ use std::mem;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Crossing {
-    Start { face: FaceIndex, vertex: Rot3Idx },
-    End { face: FaceIndex, vertex: Rot3Idx },
-    CoincidentEdge { face: FaceIndex, edge: Rot3Idx },
-    PositiveEdge { face: FaceIndex, edge: Rot3Idx },
-    NegativeEdge { face: FaceIndex, edge: Rot3Idx },
+    Start { triangle: FaceIndex, vertex: Rot3Idx },
+    End { triangle: FaceIndex, vertex: Rot3Idx },
+    CoincidentEdge { triangle: FaceIndex, edge: Rot3Idx },
+    PositiveEdge { triangle: FaceIndex, edge: Rot3Idx },
+    NegativeEdge { triangle: FaceIndex, edge: Rot3Idx },
 }
 
 /// Iterator to find all the edges of the triangulation crossing the segment defined by v0 and v1.
@@ -36,16 +36,16 @@ impl<'a, const DELAUNAY: bool> CrossingIterator<'a, DELAUNAY> {
     fn advance(&mut self) -> Option<Crossing> {
         let next = match self.current {
             None => None,
-            Some(Crossing::Start { face, vertex }) => self.search_edge(face, vertex),
-            Some(Crossing::End { face, vertex }) => {
+            Some(Crossing::Start { triangle: face, vertex }) => self.search_edge(face, vertex),
+            Some(Crossing::End { triangle: face, vertex }) => {
                 self.search_vertex(self.tri.vi(FaceVertex::new(face, vertex)), self.v0)
             }
-            Some(Crossing::CoincidentEdge { face, edge }) => self.search_vertex(
+            Some(Crossing::CoincidentEdge { triangle: face, edge }) => self.search_vertex(
                 self.tri.vi(VertexClue::edge_end(face, edge)),
                 self.tri.vi(VertexClue::edge_start(face, edge)),
             ),
-            Some(Crossing::PositiveEdge { face, edge }) => self.search_edge(face, edge),
-            Some(Crossing::NegativeEdge { face, edge }) => self.search_edge(face, edge),
+            Some(Crossing::PositiveEdge { triangle: face, edge }) => self.search_edge(face, edge),
+            Some(Crossing::NegativeEdge { triangle: face, edge }) => self.search_edge(face, edge),
         };
 
         mem::replace(&mut self.current, next)
@@ -71,7 +71,7 @@ impl<'a, const DELAUNAY: bool> CrossingIterator<'a, DELAUNAY> {
 
             if vertex == self.v1 {
                 return Some(Crossing::CoincidentEdge {
-                    face: circulator.face(),
+                    triangle: circulator.face(),
                     edge: circulator.edge(),
                 });
             }
@@ -99,7 +99,7 @@ impl<'a, const DELAUNAY: bool> CrossingIterator<'a, DELAUNAY> {
                         CollinearTestType::Between => {
                             // pe is between p0 and p1
                             return Some(Crossing::CoincidentEdge {
-                                face: circulator.face(),
+                                triangle: circulator.face(),
                                 edge: circulator.edge(),
                             });
                         }
@@ -131,7 +131,7 @@ impl<'a, const DELAUNAY: bool> CrossingIterator<'a, DELAUNAY> {
                 }
 
                 return Some(Crossing::Start {
-                    face: circulator.face(),
+                    triangle: circulator.face(),
                     vertex: circulator.edge().increment(),
                 });
             } else if start_orientation == OrientationType::CCW {
@@ -150,7 +150,10 @@ impl<'a, const DELAUNAY: bool> CrossingIterator<'a, DELAUNAY> {
         let vertex = self.tri[face].vertices[vertex_index];
 
         if vertex == self.v1 {
-            return Some(Crossing::End { face, vertex: vertex_index });
+            return Some(Crossing::End {
+                triangle: face,
+                vertex: vertex_index,
+            });
         };
 
         let p0 = self.tri[self.v0].position;
@@ -159,15 +162,18 @@ impl<'a, const DELAUNAY: bool> CrossingIterator<'a, DELAUNAY> {
 
         let orientation = orient2d(p0, p1, pn);
         if orientation == 0 {
-            Some(Crossing::End { face, vertex: vertex_index })
+            Some(Crossing::End {
+                triangle: face,
+                vertex: vertex_index,
+            })
         } else if orientation > 0 {
             Some(Crossing::NegativeEdge {
-                face,
+                triangle: face,
                 edge: vertex_index.increment(),
             })
         } else {
             Some(Crossing::PositiveEdge {
-                face,
+                triangle: face,
                 edge: vertex_index.decrement(),
             })
         }
@@ -179,5 +185,11 @@ impl<'a, const DELAUNAY: bool> Iterator for CrossingIterator<'a, DELAUNAY> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.advance()
+    }
+}
+
+impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
+    pub fn crossing_iterator(&self, v0: VertexIndex, v1: VertexIndex) -> CrossingIterator<'_, DELAUNAY> {
+        CrossingIterator::new(self, v0, v1)
     }
 }

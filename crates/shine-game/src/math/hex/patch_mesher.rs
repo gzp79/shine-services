@@ -164,7 +164,9 @@ impl PatchMesher {
                 for v in 0..grid {
                     let patch = PatchCoord::new(p, u, v);
                     let quad = patch.quad_vertices(self.orientation, self.subdivision);
-                    quads.push(std::array::from_fn(|i| VertexIndex::new(indexer.get_dense_index(&quad[i]))));
+                    quads.push(std::array::from_fn(|i| {
+                        VertexIndex::new(indexer.get_dense_index(&quad[i]))
+                    }));
                 }
             }
         }

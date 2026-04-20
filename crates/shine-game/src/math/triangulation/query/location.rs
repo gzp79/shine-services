@@ -84,7 +84,7 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
         let p0 = self[v0].position;
 
         if p == p0 {
-            let f0 = self[v0].face;
+            let f0 = self[v0].triangle;
             Ok(Location::Vertex(f0, self[f0].find_vertex(v0).unwrap()))
         } else {
             Ok(Location::OutsideAffineHull)
@@ -158,26 +158,26 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
     }
 
     /// Test which half-space contains the p point.
-    fn test_containment_face(&self, pos: IVec2, face: FaceIndex) -> ContainmentResult {
-        let p0 = self.p(VertexClue::face_vertex(face, Rot3Idx::new(0)));
-        let p1 = self.p(VertexClue::face_vertex(face, Rot3Idx::new(1)));
-        let p2 = self.p(VertexClue::face_vertex(face, Rot3Idx::new(2)));
+    fn test_containment_face(&self, pos: IVec2, triangle: FaceIndex) -> ContainmentResult {
+        let p0 = self.p(VertexClue::face_vertex(triangle, Rot3Idx::new(0)));
+        let p1 = self.p(VertexClue::face_vertex(triangle, Rot3Idx::new(1)));
+        let p2 = self.p(VertexClue::face_vertex(triangle, Rot3Idx::new(2)));
 
         let e01 = orient2d(p0, p1, pos);
         if e01 < 0 {
-            let next = self[face].neighbors[Rot3Idx::new(2)];
+            let next = self[triangle].neighbors[Rot3Idx::new(2)];
             return ContainmentResult::Continue(next);
         }
 
         let e20 = orient2d(p2, p0, pos);
         if e20 < 0 {
-            let next = self[face].neighbors[Rot3Idx::new(1)];
+            let next = self[triangle].neighbors[Rot3Idx::new(1)];
             return ContainmentResult::Continue(next);
         }
 
         let e12 = orient2d(p1, p2, pos);
         if e12 < 0 {
-            let next = self[face].neighbors[Rot3Idx::new(0)];
+            let next = self[triangle].neighbors[Rot3Idx::new(0)];
             return ContainmentResult::Continue(next);
         }
 
@@ -192,26 +192,26 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
     fn test_containment(
         &self,
         pos: IVec2,
-        face: FaceIndex,
+        triangle: FaceIndex,
         a: Rot3Idx,
         b: Rot3Idx,
         c: Rot3Idx,
         tag: usize,
     ) -> ContainmentResult {
-        let pa = self.p(VertexClue::face_vertex(face, a));
-        let pb = self.p(VertexClue::face_vertex(face, b));
+        let pa = self.p(VertexClue::face_vertex(triangle, a));
+        let pb = self.p(VertexClue::face_vertex(triangle, b));
         let ab = orient2d(pa, pb, pos);
         if ab < 0 {
-            let next = self[face].neighbors[c];
+            let next = self[triangle].neighbors[c];
             if self[next].tag != tag {
                 return ContainmentResult::Continue(next);
             }
         }
 
-        let pc = self.p(VertexClue::face_vertex(face, c));
+        let pc = self.p(VertexClue::face_vertex(triangle, c));
         let bc = orient2d(pb, pc, pos);
         if bc < 0 {
-            let next = self[face].neighbors[a];
+            let next = self[triangle].neighbors[a];
             assert!(self[next].tag != tag);
             return ContainmentResult::Continue(next);
         }

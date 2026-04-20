@@ -11,7 +11,7 @@ pub use self::{
     builder::TriangulationBuilder,
     query::{Crossing, CrossingIterator, EdgeCirculator, Location},
     rot3_index::Rot3Idx,
-    triangulation::{Face, FaceIndex, Triangulation, Vertex, VertexIndex},
+    triangulation::{FaceIndex, Triangle, Triangulation, Vertex, VertexIndex},
     types::{FaceClue, FaceEdge, FaceVertex, VertexClue},
     validation::{debug, Validator},
 };

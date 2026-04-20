@@ -1,6 +1,6 @@
 use crate::{
     indexed::TypedIndex,
-    math::quadrangulation::{QuadEdge, QuadIndex, Quadrangulation, Rot4Idx, VertexIndex, VertexClue},
+    math::quadrangulation::{QuadEdge, QuadIndex, Quadrangulation, Rot4Idx, VertexClue, VertexIndex},
 };
 
 /// A circulator that traverses around a vertex in CCW or CW order, returning the edge (quad and edge index) of each adjacent quad.

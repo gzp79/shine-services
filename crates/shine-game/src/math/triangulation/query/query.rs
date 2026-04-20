@@ -8,9 +8,9 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
     #[inline]
     pub fn twin_edge<E: Into<FaceEdge>>(&self, edge: E) -> FaceEdge {
         let edge: FaceEdge = edge.into();
-        let nf = self[edge.face].neighbors[edge.edge];
+        let nf = self[edge.triangle].neighbors[edge.edge];
         let i = self[nf]
-            .find_neighbor(edge.face)
+            .find_neighbor(edge.triangle)
             .expect("Neighbor should have back-reference");
         FaceEdge::new(nf, i)
     }

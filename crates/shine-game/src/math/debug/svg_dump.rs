@@ -184,9 +184,9 @@ impl SvgDump {
             for (edge_list, class, offset) in edges {
                 for fe in edge_list {
                     if offset {
-                        sub_edge_class_map.insert((fe.face, fe.edge), class);
+                        sub_edge_class_map.insert((fe.triangle, fe.edge), class);
                     } else {
-                        main_edge_class_map.insert((fe.face, fe.edge), class);
+                        main_edge_class_map.insert((fe.triangle, fe.edge), class);
                     }
                 }
             }
