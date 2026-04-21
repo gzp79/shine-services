@@ -45,6 +45,13 @@ impl<I: TypedIndex, T> IdxVec<I, T> {
         self.data.clear();
     }
 
+    pub fn resize(&mut self, new_len: usize, value: T)
+    where
+        T: Clone,
+    {
+        self.data.resize(new_len, value);
+    }
+
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.data.iter()
     }

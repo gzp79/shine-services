@@ -1,15 +1,19 @@
-use super::{quad_error::QuadError, AnchorIndex, Quad, QuadIndex, Quadrangulation, Rot4Idx, Vertex, VertexIndex};
-use crate::indexed::{IdxVec, TypedIndex};
+use crate::{
+    indexed::{IdxVec, TypedIndex},
+    math::quadrangulation::{
+        quad_error::QuadError, AnchorIndex, Quad, QuadIndex, Quadrangulation, Rot4Idx, Vertex, VertexIndex,
+    },
+};
 use glam::Vec2;
 use std::collections::HashMap;
 
 impl Quadrangulation {
-    /// Build topology from a boundary polygon and interior quads.
+    /// Build topology from a (boundary) polygon and interior quads.
     pub fn from_polygon(
-        polygon: Vec<VertexIndex>,
-        anchors: Vec<VertexIndex>,
-        quads: Vec<[VertexIndex; 4]>,
         positions: Vec<Vec2>,
+        polygon: Vec<VertexIndex>,
+        quads: Vec<[VertexIndex; 4]>,
+        anchors: Vec<VertexIndex>,
     ) -> Result<Self, QuadError> {
         let vertex_count = positions.len();
 
@@ -30,7 +34,7 @@ impl Quadrangulation {
             }
         }
 
-        // Generate ghost quads: [ghost, v2, v1, v0]
+        // Generate infinite quads: [infinite, v2, v1, v0]
         // Boundary edges are reversed (v2->v1, v1->v0) to match twin edges from real quads
         let mut all_quads: Vec<Quad> = quads
             .into_iter()
@@ -82,7 +86,7 @@ impl Quadrangulation {
             }
         }
 
-        // Build vertex → quad map (includes ghost vertex) and set positions
+        // Build vertex → quad map (includes infinite vertex) and set positions
         let mut vertices = IdxVec::with_capacity(vertex_count + 1);
         for i in 0..vertex_count {
             let mut vertex = Vertex::new();
@@ -101,7 +105,8 @@ impl Quadrangulation {
             }
         }
 
-        // Ghost vertex: use first ghost quad (ring traversal visits all regardless of start)
+        // Infinite vertex: use first infinite quad
+        // (ring traversal visits all regardless of start)
         let infinite_vertex = VertexIndex::new(vertex_count);
         vertices[infinite_vertex].quad = QuadIndex::new(infinite_quad_start);
 
@@ -110,14 +115,13 @@ impl Quadrangulation {
             anchor_vertices.push(anchor);
         }
 
-        let topology = Self {
+        let mesh = Self {
             infinite_vertex,
             vertices,
             quads,
             anchor_vertices,
         };
-
-        topology.validate()?;
-        Ok(topology)
+        debug_assert_eq!(mesh.validate(), Ok(()));
+        Ok(mesh)
     }
 }

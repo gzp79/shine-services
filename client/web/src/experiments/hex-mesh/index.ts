@@ -21,8 +21,10 @@ export async function createHexMeshExperiment(container: HTMLElement): Promise<H
 
     function applyDisplay() {
         if (currentMesh) {
-            currentMesh.setPrimalVisible(params.showPrimal);
-            currentMesh.setDualVisible(params.showDual);
+            currentMesh.setPrimalMeshVisible(params.showPrimalMesh);
+            currentMesh.setPrimalWireVisible(params.showPrimalWire);
+            currentMesh.setDualMeshVisible(params.showDualMesh);
+            currentMesh.setDualWireVisible(params.showDualWire);
             currentMesh.setAnchorVisible(params.showAnchor);
             currentMesh.setAnchorVerticesVisible(params.showAnchorVertices);
         }
@@ -59,12 +61,12 @@ export async function createHexMeshExperiment(container: HTMLElement): Promise<H
 
             const data = {
                 vertices: wasmMesh.vertices(),
-                indices: wasmMesh.quad_indices(),
-                patchIndices: wasmMesh.patch_indices(),
-                dualVertices: wasmMesh.dual_vertices(),
-                dualIndices: wasmMesh.dual_indices(),
-                anchorIndices: wasmMesh.anchor_indices(),
-                anchorEdgeStarts: wasmMesh.anchor_edge_starts()
+                quad_indices: wasmMesh.quad_indices(),
+                anchor_indices: wasmMesh.anchor_indices(),
+                anchor_edge_starts: wasmMesh.anchor_edge_starts(),
+                dual_vertices: wasmMesh.dual_vertices(),
+                dual_indices: wasmMesh.dual_indices(),
+                dual_polygon_starts: wasmMesh.dual_polygon_starts()
             };
 
             wasmMesh.free();
@@ -74,10 +76,10 @@ export async function createHexMeshExperiment(container: HTMLElement): Promise<H
             ctx.scene.add(currentMesh.group);
 
             // Debug circle showing world size
-            const ringGeom = new THREE.RingGeometry(worldSize * 0.998, worldSize, 64);
-            const ringMat = new THREE.MeshBasicMaterial({ color: 0xff0000, side: THREE.DoubleSide });
+            const ringGeom = new THREE.RingGeometry(0, worldSize, 64);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x6f6f6f, side: THREE.DoubleSide });
             debugCircle = new THREE.Mesh(ringGeom, ringMat);
-            debugCircle.position.z = 0.01;
+            debugCircle.position.z = -0.001;
             ctx.scene.add(debugCircle);
 
             // Coordinate axes: X=red, Y=green, Z=blue, length = worldSize/6

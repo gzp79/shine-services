@@ -222,7 +222,7 @@ impl LatticeMesher {
             boundary_polygon.push(VertexIndex::new(mid_idx));
         }
 
-        Quadrangulation::from_polygon(boundary_polygon, anchors, quads, positions).expect("valid lattice mesh topology")
+        Quadrangulation::from_polygon(positions, boundary_polygon, quads, anchors).expect("valid lattice mesh topology")
     }
 }
 

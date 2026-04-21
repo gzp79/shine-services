@@ -58,8 +58,9 @@ export async function createCdtExperiment(container: HTMLElement): Promise<CdtEx
             const configJson = cdtParamsToJson(params);
             const wasmCdt = generate_cdt(configJson);
 
-            if (wasmCdt.has_error()) {
-                console.warn('CDT error:', wasmCdt.error_message());
+            const error = wasmCdt.error_message();
+            if (error !== undefined) {
+                console.warn('CDT error:');
                 wasmCdt.free();
                 return;
             }
@@ -67,10 +68,14 @@ export async function createCdtExperiment(container: HTMLElement): Promise<CdtEx
             currentData = {
                 vertices: new Float32Array(wasmCdt.vertices()),
                 triangles: new Uint32Array(wasmCdt.triangles()),
-                fixedEdges: new Uint32Array(wasmCdt.fixed_edges())
+                constraints: new Uint32Array(wasmCdt.constraints())
             };
 
-            console.log(`CDT: ${wasmCdt.vertex_count()} vertices, ${wasmCdt.triangle_count()} triangles`);
+            console.log(
+                `CDT: ${currentData.vertices.length / 2} vertices ` +
+                    `${currentData.triangles.length / 3} triangles ` +
+                    `${currentData.constraints.length / 2} constraints`
+            );
             wasmCdt.free();
 
             currentMesh = buildCdtMesh(currentData);

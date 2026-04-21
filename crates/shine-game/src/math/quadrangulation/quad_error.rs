@@ -1,6 +1,6 @@
 use thiserror::Error as ThisError;
 
-#[derive(Debug, ThisError)]
+#[derive(Debug, ThisError, PartialEq, Eq)]
 pub enum QuadError {
     #[error("Boundary must have even length, got {0}")]
     OddBoundary(usize),

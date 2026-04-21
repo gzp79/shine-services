@@ -138,7 +138,7 @@ impl World {
             let neighbor_vi = neighbor_verts[neighbor_verts.len() - 1 - i];
 
             // Merge vertex rings from both chunks
-            let polygon = merge_vertex_ring_dual(&owner.topology, owner_vi, &neighbor.topology, neighbor_vi);
+            let polygon = merge_vertex_ring_dual(&owner.mesh, owner_vi, &neighbor.mesh, neighbor_vi);
 
             if polygon.len() >= 3 {
                 let start_idx = (vertices.len() / 2) as u32;

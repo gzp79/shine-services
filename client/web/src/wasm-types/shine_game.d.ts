@@ -5,12 +5,9 @@ export class WasmCdt {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
+    constraints(): Uint32Array;
     error_message(): string | undefined;
-    fixed_edges(): Uint32Array;
-    has_error(): boolean;
-    triangle_count(): number;
     triangles(): Uint32Array;
-    vertex_count(): number;
     vertices(): Float32Array;
 }
 
@@ -18,58 +15,13 @@ export class WasmPatchMesh {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
-    /**
-     * Number of anchor edges
-     */
-    anchor_edge_count(): number;
-    /**
-     * Start index in anchor_indices for each anchor edge
-     * Format: [start0, start1, ..., total_segments]
-     */
     anchor_edge_starts(): Uint32Array;
-    /**
-     * Flat anchor edge indices [a, b, ...] (2 indices per segment)
-     */
     anchor_indices(): Uint32Array;
-    /**
-     * Number of dual edges
-     */
-    dual_edge_count(): number;
-    /**
-     * Flat dual edge indices [a, b, ...] (2 indices per dual edge)
-     */
     dual_indices(): Uint32Array;
-    /**
-     * Number of dual vertices
-     */
-    dual_vertex_count(): number;
-    /**
-     * Flat dual vertex positions [x, y, x, y, ...] (2 floats per vertex, one per primal quad centroid)
-     */
+    dual_polygon_starts(): Uint32Array;
     dual_vertices(): Float32Array;
-    /**
-     * Patch index per quad (0 for all currently)
-     */
-    patch_indices(): Uint8Array;
-    /**
-     * Number of quads
-     */
-    quad_count(): number;
-    /**
-     * Flat quad indices [a, b, c, d, ...] (4 indices per quad)
-     */
     quad_indices(): Uint32Array;
-    /**
-     * Number of vertices
-     */
-    vertex_count(): number;
-    /**
-     * Flat vertex positions [x, y, x, y, ...] (2 floats per vertex)
-     */
     vertices(): Float32Array;
-    /**
-     * The world size used to generate this mesh
-     */
     world_size(): number;
 }
 
@@ -115,31 +67,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_wasmpatchmesh_free: (a: number, b: number) => void;
-    readonly generate_mesh: (a: number, b: number) => [number, number, number];
-    readonly wasmpatchmesh_anchor_edge_count: (a: number) => number;
-    readonly wasmpatchmesh_anchor_edge_starts: (a: number) => [number, number];
-    readonly wasmpatchmesh_anchor_indices: (a: number) => [number, number];
-    readonly wasmpatchmesh_dual_edge_count: (a: number) => number;
-    readonly wasmpatchmesh_dual_indices: (a: number) => [number, number];
-    readonly wasmpatchmesh_dual_vertex_count: (a: number) => number;
-    readonly wasmpatchmesh_dual_vertices: (a: number) => [number, number];
-    readonly wasmpatchmesh_patch_indices: (a: number) => [number, number];
-    readonly wasmpatchmesh_quad_count: (a: number) => number;
-    readonly wasmpatchmesh_quad_indices: (a: number) => [number, number];
-    readonly wasmpatchmesh_vertex_count: (a: number) => number;
-    readonly wasmpatchmesh_vertices: (a: number) => [number, number];
-    readonly wasmpatchmesh_world_size: (a: number) => number;
-    readonly __wbg_wasmcdt_free: (a: number, b: number) => void;
-    readonly generate_cdt: (a: number, b: number) => number;
-    readonly wasmcdt_error_message: (a: number) => [number, number];
-    readonly wasmcdt_fixed_edges: (a: number) => [number, number];
-    readonly wasmcdt_has_error: (a: number) => number;
-    readonly wasmcdt_triangle_count: (a: number) => number;
-    readonly wasmcdt_triangles: (a: number) => [number, number];
-    readonly wasmcdt_vertex_count: (a: number) => number;
-    readonly wasmcdt_vertices: (a: number) => [number, number];
-    readonly start: () => void;
     readonly __wbg_wasmworld_free: (a: number, b: number) => void;
     readonly wasmworld_boundary_edge_dual_polygons: (a: number, b: number, c: number, d: number) => [number, number];
     readonly wasmworld_boundary_edge_dual_vertices: (a: number, b: number, c: number, d: number) => [number, number];
@@ -157,6 +84,23 @@ export interface InitOutput {
     readonly wasmworld_new: () => number;
     readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
     readonly wasmworld_boundary_vertex_dual_vertices: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly start: () => void;
+    readonly __wbg_wasmpatchmesh_free: (a: number, b: number) => void;
+    readonly generate_mesh: (a: number, b: number) => [number, number, number];
+    readonly wasmpatchmesh_anchor_edge_starts: (a: number) => [number, number];
+    readonly wasmpatchmesh_anchor_indices: (a: number) => [number, number];
+    readonly wasmpatchmesh_dual_indices: (a: number) => [number, number];
+    readonly wasmpatchmesh_dual_polygon_starts: (a: number) => [number, number];
+    readonly wasmpatchmesh_dual_vertices: (a: number) => [number, number];
+    readonly wasmpatchmesh_quad_indices: (a: number) => [number, number];
+    readonly wasmpatchmesh_vertices: (a: number) => [number, number];
+    readonly wasmpatchmesh_world_size: (a: number) => number;
+    readonly __wbg_wasmcdt_free: (a: number, b: number) => void;
+    readonly generate_cdt: (a: number, b: number) => number;
+    readonly wasmcdt_constraints: (a: number) => [number, number];
+    readonly wasmcdt_error_message: (a: number) => [number, number];
+    readonly wasmcdt_triangles: (a: number) => [number, number];
+    readonly wasmcdt_vertices: (a: number) => [number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

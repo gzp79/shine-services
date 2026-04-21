@@ -1,57 +1,13 @@
-use std::{cell::RefCell, rc::Rc};
-
 use crate::{
     indexed::TypedIndex,
     math::{
-        hex::{AxialCoord, LatticeMesher},
-        prng::{hash_u32_2, Pcg32, SplitMix64},
+        hex::LatticeMesher,
+        prng::{Pcg32, SplitMix64},
         quadrangulation::{Quadrangulation, VertexIndex},
     },
-    world::{CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
+    world::{ChunkId, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
-use glam::Vec2;
-
-/// Unique identifier of a chunk of the map.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct ChunkId(pub i32, pub i32);
-
-impl ChunkId {
-    pub const ORIGIN: ChunkId = ChunkId(0, 0);
-
-    /// World-space offset from `self` to `other`.
-    pub fn relative_world_position(&self, other: ChunkId) -> Vec2 {
-        let rel = AxialCoord::new(other.0 - self.0, other.1 - self.1);
-        rel.center_position(CHUNK_WORLD_SIZE)
-    }
-
-    /// Deterministic 32-bit hash from chunk coordinates.
-    /// Uses golden-ratio mixing + murmur3 finalizer for good avalanche.
-    pub fn hash32(&self) -> u32 {
-        hash_u32_2(self.0 as u32, self.1 as u32)
-    }
-
-    pub fn id_64(&self) -> u64 {
-        let high = self.0 as u64;
-        let low = self.1 as u64;
-        (high << 32) | low
-    }
-
-    pub fn neighbor(&self, direction: u8) -> ChunkId {
-        AxialCoord::from(*self).neighbor(direction).into()
-    }
-}
-
-impl From<ChunkId> for AxialCoord {
-    fn from(id: ChunkId) -> Self {
-        AxialCoord::new(id.0, id.1)
-    }
-}
-
-impl From<AxialCoord> for ChunkId {
-    fn from(c: AxialCoord) -> Self {
-        ChunkId(c.q, c.r)
-    }
-}
+use std::{cell::RefCell, rc::Rc};
 
 /// Stable random streams for different aspects of chunk generation.
 /// Streams are cheap, create a new one for each aspect to ensure deterministic independence.
@@ -68,7 +24,7 @@ impl ChunkRngStreams {
 
 pub struct Chunk {
     pub rng_streams: ChunkRngStreams,
-    pub topology: Quadrangulation,
+    pub mesh: Quadrangulation,
 }
 
 impl Chunk {
@@ -78,14 +34,14 @@ impl Chunk {
             .with_world_size(CHUNK_WORLD_SIZE)
             .generate();
 
-        Self { rng_streams, topology }
+        Self { rng_streams, mesh: topology }
     }
 
     /// Flat (real) quad vertex positions [x, y, x, y, ...]
     pub fn quad_vertices(&self) -> Vec<f32> {
-        let mut flat = Vec::with_capacity(self.topology.vertex_count() * 2);
-        for vi in self.topology.finite_vertex_index_iter() {
-            let p = self.topology[vi].position;
+        let mut flat = Vec::with_capacity(self.mesh.vertex_count() * 2);
+        for vi in self.mesh.finite_vertex_index_iter() {
+            let p = self.mesh[vi].position;
             flat.push(p.x);
             flat.push(p.y);
         }
@@ -94,9 +50,9 @@ impl Chunk {
 
     /// Flat (real) quad indices [a, b, c, d, ...].
     pub fn quad_indices(&self) -> Vec<u32> {
-        let mut indices = Vec::with_capacity(self.topology.finite_quad_count() * 4);
-        for qi in self.topology.finite_quad_index_iter() {
-            let verts = self.topology.quad_vertices(qi);
+        let mut indices = Vec::with_capacity(self.mesh.finite_quad_count() * 4);
+        for qi in self.mesh.finite_quad_index_iter() {
+            let verts = self.mesh.quad_vertices(qi);
             for &v in verts {
                 indices.push(v.into_index() as u32);
             }
@@ -107,9 +63,9 @@ impl Chunk {
     /// Flat boundary edge indices [a, b, ...].
     pub fn boundary_indices(&self) -> Vec<u32> {
         // Each boundary vertex corresponds to one edge, so N vertices = N edges
-        let edge_count = self.topology.boundary_vertex_count();
+        let edge_count = self.mesh.boundary_vertex_count();
         let mut flat = Vec::with_capacity(edge_count * 2);
-        for [a, b] in self.topology.boundary_edges() {
+        for [a, b] in self.mesh.boundary_edges() {
             flat.push(a);
             flat.push(b);
         }
@@ -118,11 +74,11 @@ impl Chunk {
 
     /// Dual mesh vertices (quad centroids) [x, y, x, y, ...]
     pub fn dual_vertices(&self) -> Vec<f32> {
-        let quad_count = self.topology.finite_quad_count();
+        let quad_count = self.mesh.finite_quad_count();
         let mut flat = Vec::with_capacity(quad_count * 2);
 
-        for qi in self.topology.finite_quad_index_iter() {
-            if let Some(center) = self.topology.dual_p(qi) {
+        for qi in self.mesh.finite_quad_index_iter() {
+            if let Some(center) = self.mesh.dual_p(qi) {
                 flat.push(center.x);
                 flat.push(center.y);
             }
@@ -143,15 +99,15 @@ impl Chunk {
         let mut starts = Vec::new();
         starts.push(0);
 
-        for vi in self.topology.finite_vertex_index_iter() {
+        for vi in self.mesh.finite_vertex_index_iter() {
             let start_len = indices.len();
 
             // Collect QuadIndex for all real quads around this vertex
-            for qv in self.topology.vertex_ring_ccw(vi) {
-                if !self.topology.is_infinite_quad(qv.quad) {
+            for qv in self.mesh.vertex_ring_ccw(vi) {
+                if !self.mesh.is_infinite_quad(qv.quad) {
                     // Map QuadIndex to its position in quad_indices() enumeration
                     let mut dual_idx = 0;
-                    for (i, qi) in self.topology.finite_quad_index_iter().enumerate() {
+                    for (i, qi) in self.mesh.finite_quad_index_iter().enumerate() {
                         if qi == qv.quad {
                             dual_idx = i as u32;
                             break;
@@ -177,12 +133,12 @@ impl Chunk {
     /// Returns VertexIndex values along specified hex edge (0..5)
     pub fn boundary_edge_vertices(&self, edge_idx: u8) -> Vec<VertexIndex> {
         use crate::math::quadrangulation::AnchorIndex;
-        self.topology.anchor_edge(AnchorIndex::new(edge_idx as usize)).collect()
+        self.mesh.anchor_edge(AnchorIndex::new(edge_idx as usize)).collect()
     }
 
     /// Returns VertexIndex at specified hex corner (0..5)
     pub fn boundary_corner_vertex(&self, corner_idx: u8) -> VertexIndex {
         use crate::math::quadrangulation::AnchorIndex;
-        self.topology.anchor_vertex(AnchorIndex::new(corner_idx as usize))
+        self.mesh.anchor_vertex(AnchorIndex::new(corner_idx as usize))
     }
 }

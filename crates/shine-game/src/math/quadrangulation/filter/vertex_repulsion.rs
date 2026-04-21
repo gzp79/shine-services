@@ -1,14 +1,11 @@
-use crate::{
-    indexed::TypedIndex,
-    math::quadrangulation::{QuadFilter, Quadrangulation},
-};
+use crate::math::quadrangulation::{QuadFilter, Quadrangulation, VertexIndex};
 use glam::Vec2;
 
 /// Edge-length and diagonal-length equalization relaxation for [`Quadrangulation`].
 pub struct VertexRepulsion {
     strength: f32,
     iterations: u32,
-    buf: Vec<Vec2>,
+    updates: Vec<(VertexIndex, Vec2)>,
 }
 
 impl VertexRepulsion {
@@ -16,31 +13,22 @@ impl VertexRepulsion {
         Self {
             strength,
             iterations,
-            buf: Vec::new(),
+            updates: Vec::new(),
         }
     }
 }
 
 impl QuadFilter for VertexRepulsion {
     fn apply(&mut self, mesh: &mut Quadrangulation) {
-        let n = mesh.vertex_count();
-        if n == 0 {
-            return;
-        }
-
         for _ in 0..self.iterations {
-            // Snapshot positions so all updates read from the frozen state.
-            self.buf.resize(n, Vec2::ZERO);
-            let vertices: Vec<_> = mesh.finite_vertex_index_iter().collect();
-            for vi in &vertices {
-                self.buf[vi.into_index()] = mesh[*vi].position;
-            }
+            self.updates.clear();
+            self.updates.reserve(mesh.vertex_count());
 
-            for vi in vertices {
-                if mesh.is_boundary_vertex(vi) {
+            for vi in mesh.vertex_index_range() {
+                if vi == mesh.infinite_vertex() || mesh.is_boundary_vertex(vi) {
                     continue;
                 }
-                let i = vi.into_index();
+                let pi = mesh.p(vi);
 
                 // Pass 1: compute separate average lengths for edges (+1) and diagonals (+2).
                 // The separate averages are kept so their natural length ratio is preserved rather than mixed.
@@ -49,6 +37,10 @@ impl QuadFilter for VertexRepulsion {
                 let mut sum_diag = 0.0f32;
                 let mut count_diag = 0u32;
                 for r in mesh.vertex_ring_ccw(vi) {
+                    debug_assert!(
+                        mesh.is_finite_quad(r.quad),
+                        "vertex ring should only contain internal vertices"
+                    );
                     let verts = mesh.quad_vertices(r.quad);
                     for (offset, sum, count) in [
                         (1usize, &mut sum_edge, &mut count_edge),
@@ -56,8 +48,7 @@ impl QuadFilter for VertexRepulsion {
                     ] {
                         let local_idx: usize = r.local.into();
                         let vj = verts[(local_idx + offset) % 4];
-                        let Some(j) = vj.try_into_index() else { continue };
-                        let dist = (self.buf[i] - self.buf[j]).length();
+                        let dist = (pi - mesh.p(vj)).length();
                         if dist < 1e-6 {
                             continue;
                         }
@@ -66,18 +57,11 @@ impl QuadFilter for VertexRepulsion {
                     }
                 }
                 if count_edge == 0 && count_diag == 0 {
+                    // degenerate case, 0 lenghted edge or diagonal
                     continue;
                 }
-                let avg_edge = if count_edge > 0 {
-                    sum_edge / count_edge as f32
-                } else {
-                    0.0
-                };
-                let avg_diag = if count_diag > 0 {
-                    sum_diag / count_diag as f32
-                } else {
-                    0.0
-                };
+                let avg_edge = sum_edge / count_edge as f32;
+                let avg_diag = sum_diag / count_diag as f32;
 
                 // Pass 2: compute ideal position — centroid of points at the respective
                 // average distance from each edge and diagonal neighbor.
@@ -91,13 +75,12 @@ impl QuadFilter for VertexRepulsion {
                         }
                         let local_idx: usize = r.local.into();
                         let vj = verts[(local_idx + offset) % 4];
-                        let Some(j) = vj.try_into_index() else { continue };
-                        let delta = self.buf[i] - self.buf[j]; // direction: j → i
+                        let delta = pi - mesh.p(vj); // direction: j → i
                         let dist = delta.length();
                         if dist < 1e-6 {
                             continue;
                         }
-                        ideal_sum += self.buf[j] + avg_len * (delta / dist);
+                        ideal_sum += mesh.p(vj) + avg_len * (delta / dist);
                         ideal_count += 1;
                     }
                 }
@@ -105,7 +88,12 @@ impl QuadFilter for VertexRepulsion {
                     continue;
                 }
                 let ideal = ideal_sum / ideal_count as f32;
-                mesh[vi].position = self.buf[i] + self.strength * (ideal - self.buf[i]);
+                self.updates.push((vi, pi + self.strength * (ideal - pi)));
+            }
+
+            // Apply all new positions
+            for (vi, new_pos) in self.updates.drain(..) {
+                mesh[vi].position = new_pos;
             }
         }
     }

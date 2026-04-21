@@ -259,6 +259,6 @@ impl CdtMesher {
         let anchors: Vec<quadrangulation::VertexIndex> =
             (0..6).map(|i| quadrangulation::VertexIndex::new(i * n)).collect();
 
-        Quadrangulation::from_polygon(polygon, anchors, quads, positions).expect("valid CDT mesh topology")
+        Quadrangulation::from_polygon(positions, polygon, quads, anchors).expect("valid CDT mesh topology")
     }
 }

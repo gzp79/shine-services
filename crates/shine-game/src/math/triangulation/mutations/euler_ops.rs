@@ -30,6 +30,14 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
         self[f1].neighbors[i1] = f0;
     }
 
+    pub(in crate::math::triangulation) fn merge_constraint<E: Into<FaceEdge>>(&mut self, edge: E, c: u32) {
+        let edge: FaceEdge = edge.into();
+        let nf = self[edge.triangle].neighbors[edge.edge];
+        let ni = self[nf].find_neighbor(edge.triangle).unwrap();
+        self[edge.triangle].constraints[edge.edge] |= c;
+        self[nf].constraints[ni] |= c;
+    }
+
     fn clear_constraint<E: Into<FaceEdge>>(&mut self, edge: E) {
         let edge: FaceEdge = edge.into();
         let nf = self[edge.triangle].neighbors[edge.edge];

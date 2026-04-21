@@ -84,7 +84,12 @@ export function disposeExperiment(ctx: ExperimentContext) {
     ctx.renderer.domElement.remove();
 }
 
-export function disposeMesh(mesh: THREE.Mesh) {
+type DisposableMesh = THREE.Object3D & {
+    geometry: THREE.BufferGeometry;
+    material: THREE.Material | THREE.Material[];
+};
+
+export function disposeMesh(mesh: DisposableMesh) {
     mesh.geometry?.dispose();
     if (Array.isArray(mesh.material)) {
         mesh.material.forEach((mat) => mat.dispose());

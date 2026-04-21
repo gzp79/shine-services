@@ -1,14 +1,11 @@
-use crate::{
-    indexed::TypedIndex,
-    math::quadrangulation::{QuadFilter, Quadrangulation},
-};
+use crate::math::quadrangulation::{QuadFilter, Quadrangulation, VertexIndex};
 use glam::Vec2;
 
 /// Laplacian smoothing for [`Quadrangulation`].
 pub struct LaplacianSmoother {
     strength: f32,
     iterations: u32,
-    buf: Vec<Vec2>,
+    updates: Vec<(VertexIndex, Vec2)>,
 }
 
 impl LaplacianSmoother {
@@ -17,30 +14,27 @@ impl LaplacianSmoother {
         Self {
             strength,
             iterations,
-            buf: Vec::new(),
+            updates: Vec::new(),
         }
     }
 
     fn step(&mut self, mesh: &mut Quadrangulation) {
-        self.buf.clear();
-        self.buf.resize(mesh.vertex_count(), Vec2::ZERO);
-
-        let vertices: Vec<_> = mesh.finite_vertex_index_iter().collect();
+        self.updates.clear();
+        self.updates.reserve(mesh.vertex_count());
 
         // Calculate new positions using current state
-        for &vi in &vertices {
-            if mesh.is_boundary_vertex(vi) {
-                self.buf[vi.into_index()] = mesh[vi].position;
-            } else {
+        for vi in mesh.vertex_index_range() {
+            let old = mesh[vi].position;
+
+            if vi != mesh.infinite_vertex() && !mesh.is_boundary_vertex(vi) {
                 let avg = mesh.average_adjacent_positions(vi);
-                let old = mesh[vi].position;
-                self.buf[vi.into_index()] = old + self.strength * (avg - old);
+                self.updates.push((vi, old + self.strength * (avg - old)));
             }
         }
 
         // Apply all new positions
-        for vi in vertices {
-            mesh[vi].position = self.buf[vi.into_index()];
+        for (vi, new_pos) in self.updates.drain(..) {
+            mesh[vi].position = new_pos;
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
     indexed::TypedIndex,
     math::{
-        rand::{StableRng, Xorshift32},
+        prng::{StableRng, Xorshift32},
         triangulation::{Rot3Idx, Triangulation, VertexIndex},
     },
 };
@@ -13,7 +13,7 @@ use wasm_bindgen::prelude::*;
 pub struct WasmCdt {
     vertices: Vec<f32>,
     triangles: Vec<u32>,
-    fixed_edges: Vec<u32>,
+    constraints: Vec<u32>,
     error: Option<String>,
 }
 
@@ -25,18 +25,10 @@ impl WasmCdt {
     pub fn triangles(&self) -> Vec<u32> {
         self.triangles.clone()
     }
-    pub fn fixed_edges(&self) -> Vec<u32> {
-        self.fixed_edges.clone()
+    pub fn constraints(&self) -> Vec<u32> {
+        self.constraints.clone()
     }
-    pub fn vertex_count(&self) -> usize {
-        self.vertices.len() / 2
-    }
-    pub fn triangle_count(&self) -> usize {
-        self.triangles.len() / 3
-    }
-    pub fn has_error(&self) -> bool {
-        self.error.is_some()
-    }
+
     pub fn error_message(&self) -> Option<String> {
         self.error.clone()
     }
@@ -64,7 +56,7 @@ pub fn generate_cdt(config_json: &str) -> WasmCdt {
             return WasmCdt {
                 vertices: vec![],
                 triangles: vec![],
-                fixed_edges: vec![],
+                constraints: vec![],
                 error: Some(e.to_string()),
             };
         }
@@ -93,25 +85,23 @@ pub fn generate_cdt(config_json: &str) -> WasmCdt {
         edges.push((a, b));
     }
 
-    let vertices: Vec<f32> = points.iter().flat_map(|p| [p.x as f32, p.y as f32]).collect();
-
     let mut tri = Triangulation::new_cdt();
     let mut vertex_indices: Vec<VertexIndex> = Vec::with_capacity(points.len());
     {
         let mut builder = tri.builder();
-        // Add vertices
         for &p in &points {
             let vi = builder.add_vertex(p, None);
             vertex_indices.push(vi);
         }
-
-        // Add boundary constraint edges
         for edge in &edges {
             let v0 = vertex_indices[edge.0];
             let v1 = vertex_indices[edge.1];
             builder.add_constraint_edge(v0, v1, 1);
         }
     }
+
+    let vertices: Vec<f32> = points.iter().flat_map(|p| [p.x as f32, p.y as f32]).collect();
+    let constraints: Vec<u32> = edges.iter().flat_map(|&(a, b)| [a as u32, b as u32]).collect();
 
     // Extract finite triangles
     let mut triangles: Vec<u32> = Vec::new();
@@ -133,12 +123,11 @@ pub fn generate_cdt(config_json: &str) -> WasmCdt {
         triangles.push(i1);
         triangles.push(i2);
     }
-    let fixed_edges: Vec<u32> = edges.iter().flat_map(|&(a, b)| [a as u32, b as u32]).collect();
 
     WasmCdt {
         vertices,
         triangles,
-        fixed_edges,
+        constraints,
         error: None,
     }
 }

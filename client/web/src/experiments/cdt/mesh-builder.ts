@@ -8,9 +8,12 @@ const POINT_COLOR = 0x2288aa;
 const ACTIVE_TRI_COLOR = 0x3366ff;
 
 export interface CdtData {
+    // packed [x0, y0, x1, y1, ...] where each pair is a vertex position
     vertices: Float32Array;
+    // packed [a0, b0, c0, a1, b1, c1, ...]
     triangles: Uint32Array;
-    fixedEdges: Uint32Array;
+    // packed [i0, j0, i1, j1, ...] where each pair is a constraint edge between vertices i and j1
+    constraints: Uint32Array;
 }
 
 export interface CdtMeshGroup {
@@ -186,12 +189,12 @@ export function buildCdtMesh(data: CdtData): CdtMeshGroup {
     group.add(edgeLines);
 
     // Fixed/constraint edges
-    const fixedCount = data.fixedEdges.length / 2;
+    const fixedCount = data.constraints.length / 2;
     if (fixedCount > 0) {
         const fixedPositions: number[] = [];
         for (let e = 0; e < fixedCount; e++) {
-            const i0 = data.fixedEdges[e * 2];
-            const i1 = data.fixedEdges[e * 2 + 1];
+            const i0 = data.constraints[e * 2];
+            const i1 = data.constraints[e * 2 + 1];
             fixedPositions.push(
                 positions[i0 * 3],
                 positions[i0 * 3 + 1],

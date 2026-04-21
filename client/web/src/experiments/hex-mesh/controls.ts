@@ -91,8 +91,10 @@ function defaultMesher(type: MesherType, prev?: MesherEntry): MesherEntry {
 }
 
 export type Params = {
-    showPrimal: boolean;
-    showDual: boolean;
+    showPrimalMesh: boolean;
+    showPrimalWire: boolean;
+    showDualMesh: boolean;
+    showDualWire: boolean;
     showAnchor: boolean;
     showAnchorVertices: boolean;
     seed: number;
@@ -103,8 +105,10 @@ export type Params = {
 
 export function defaultParams(): Params {
     return {
-        showDual: false,
-        showPrimal: true,
+        showPrimalMesh: true,
+        showPrimalWire: true,
+        showDualMesh: false,
+        showDualWire: false,
         showAnchor: false,
         showAnchorVertices: false,
         seed: 42,
@@ -137,8 +141,10 @@ export function createControls(
 
     // ── Global ────────────────────────────────────────────────────────
     const globalFolder = gui.addFolder('Global');
-    globalFolder.add(params, 'showPrimal').name('primal wireframe').onChange(onDisplayChange);
-    globalFolder.add(params, 'showDual').name('dual wireframe').onChange(onDisplayChange);
+    globalFolder.add(params, 'showPrimalMesh').name('primal mesh').onChange(onDisplayChange);
+    globalFolder.add(params, 'showPrimalWire').name('primal wire').onChange(onDisplayChange);
+    globalFolder.add(params, 'showDualMesh').name('dual mesh').onChange(onDisplayChange);
+    globalFolder.add(params, 'showDualWire').name('dual wire').onChange(onDisplayChange);
     globalFolder.add(params, 'showAnchor').name('anchor edges').onChange(onDisplayChange);
     globalFolder.add(params, 'showAnchorVertices').name('anchor vertices').onChange(onDisplayChange);
 

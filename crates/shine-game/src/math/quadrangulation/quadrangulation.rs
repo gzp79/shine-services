@@ -116,9 +116,15 @@ impl Quadrangulation {
         }
     }
 
+    // Non-borrowing version of vertex index iterator.
     #[inline]
-    pub fn vertex_index_iter(&self) -> impl Iterator<Item = VertexIndex> {
+    pub fn vertex_index_range(&self) -> impl Iterator<Item = VertexIndex> {
         VertexIndex::range(VertexIndex::new(0), VertexIndex::new(self.vertices.len()))
+    }
+
+    #[inline]
+    pub fn vertex_index_iter(&self) -> impl Iterator<Item = VertexIndex> + '_ {
+        self.vertex_index_range()
     }
 
     #[inline]
@@ -255,6 +261,10 @@ impl Quadrangulation {
 
     pub fn anchor_index_iter(&self) -> impl Iterator<Item = AnchorIndex> {
         AnchorIndex::range(AnchorIndex::new(0), AnchorIndex::new(self.anchor_vertices.len()))
+    }
+
+    pub fn anchor_iter(&self) -> impl Iterator<Item = VertexIndex> + '_ {
+        self.anchor_vertices.iter().cloned()
     }
 
     pub fn anchor_vertex(&self, anchor_idx: AnchorIndex) -> VertexIndex {

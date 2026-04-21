@@ -20,9 +20,8 @@ impl QuadFilter for Jitter {
     /// Displaces every interior vertex by a random offset scaled by `amplitude`.
     /// Boundary vertices stay fixed.
     fn apply(&mut self, mesh: &mut Quadrangulation) {
-        let vertices: Vec<_> = mesh.finite_vertex_index_iter().collect();
-        for vi in vertices {
-            if mesh.is_boundary_vertex(vi) {
+        for vi in mesh.vertex_index_range() {
+            if vi == mesh.infinite_vertex() || mesh.is_boundary_vertex(vi) {
                 continue;
             }
 

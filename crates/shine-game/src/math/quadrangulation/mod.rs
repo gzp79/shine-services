@@ -1,7 +1,7 @@
+mod builder;
 pub mod filter;
 mod quad_error;
 mod quadrangulation;
-mod quadrangulation_builder;
 pub mod query;
 mod rot4_index;
 mod types;

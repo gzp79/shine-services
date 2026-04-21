@@ -1,10 +1,8 @@
-use crate::{
-    indexed::TypedIndex,
-    math::{
-        hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
-        mesh::{Jitter, LaplacianSmoother, QuadFilter, QuadMesh, QuadRelax, VertexRepulsion},
-        quadrangulation::AnchorIndex,
-        rand::Xorshift32,
+use crate::math::{
+    hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
+    prng::{StableRng, Xorshift32},
+    quadrangulation::{
+        Jitter, LaplacianSmoother, QuadFilter, QuadIndex, QuadRelax, Quadrangulation, VertexIndex, VertexRepulsion,
     },
 };
 use serde::Deserialize;
@@ -58,84 +56,41 @@ enum FilterConfig {
 pub struct WasmPatchMesh {
     world_size: f32,
     vertices: Vec<f32>,
-    indices: Vec<u32>,
-    patch_indices: Vec<u8>,
-    dual_vertices: Vec<f32>,
-    dual_indices: Vec<u32>,
+    quad_indices: Vec<u32>,
     anchor_indices: Vec<u32>,
     anchor_edge_starts: Vec<u32>,
+    dual_vertices: Vec<f32>,
+    dual_indices: Vec<u32>,
+    dual_polygon_starts: Vec<u32>,
 }
 
 #[wasm_bindgen]
 impl WasmPatchMesh {
-    /// The world size used to generate this mesh
     pub fn world_size(&self) -> f32 {
         self.world_size
     }
 
-    /// Flat vertex positions [x, y, x, y, ...] (2 floats per vertex)
     pub fn vertices(&self) -> Vec<f32> {
         self.vertices.clone()
     }
-
-    /// Number of vertices
-    pub fn vertex_count(&self) -> usize {
-        self.vertices.len() / 2
-    }
-
-    /// Flat quad indices [a, b, c, d, ...] (4 indices per quad)
     pub fn quad_indices(&self) -> Vec<u32> {
-        self.indices.clone()
+        self.quad_indices.clone()
     }
-
-    /// Number of quads
-    pub fn quad_count(&self) -> usize {
-        self.indices.len() / 4
-    }
-
-    /// Patch index per quad (0 for all currently)
-    pub fn patch_indices(&self) -> Vec<u8> {
-        self.patch_indices.clone()
-    }
-
-    /// Flat dual vertex positions [x, y, x, y, ...] (2 floats per vertex, one per primal quad centroid)
-    pub fn dual_vertices(&self) -> Vec<f32> {
-        self.dual_vertices.clone()
-    }
-
-    /// Number of dual vertices
-    pub fn dual_vertex_count(&self) -> usize {
-        self.dual_vertices.len() / 2
-    }
-
-    /// Flat dual edge indices [a, b, ...] (2 indices per dual edge)
-    pub fn dual_indices(&self) -> Vec<u32> {
-        self.dual_indices.clone()
-    }
-
-    /// Number of dual edges
-    pub fn dual_edge_count(&self) -> usize {
-        self.dual_indices.len() / 2
-    }
-
-    /// Flat anchor edge indices [a, b, ...] (2 indices per segment)
     pub fn anchor_indices(&self) -> Vec<u32> {
         self.anchor_indices.clone()
     }
-
-    /// Start index in anchor_indices for each anchor edge
-    /// Format: [start0, start1, ..., total_segments]
     pub fn anchor_edge_starts(&self) -> Vec<u32> {
         self.anchor_edge_starts.clone()
     }
 
-    /// Number of anchor edges
-    pub fn anchor_edge_count(&self) -> usize {
-        if self.anchor_edge_starts.is_empty() {
-            0
-        } else {
-            self.anchor_edge_starts.len() - 1
-        }
+    pub fn dual_vertices(&self) -> Vec<f32> {
+        self.dual_vertices.clone()
+    }
+    pub fn dual_indices(&self) -> Vec<u32> {
+        self.dual_indices.clone()
+    }
+    pub fn dual_polygon_starts(&self) -> Vec<u32> {
+        self.dual_polygon_starts.clone()
     }
 }
 
@@ -158,20 +113,19 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
             mesher.generate_uniform()
         }
         MesherConfig::Cdt { subdivision, interior_points } => {
-            let rng = Xorshift32::new(config.seed);
+            let rng = Xorshift32::new(config.seed).into_rc();
             let mut mesher = CdtMesher::new(subdivision, interior_points, rng).with_world_size(world_size);
             mesher.generate()
         }
         MesherConfig::Lattice { subdivision } => {
-            let rng = Xorshift32::new(config.seed);
+            let rng = Xorshift32::new(config.seed).into_rc();
             let mut mesher = LatticeMesher::new(subdivision, rng).with_world_size(world_size);
             mesher.generate()
         }
     };
 
-    mesh.topology
-        .validate()
-        .map_err(|e| JsValue::from_str(&format!("Invalid mesh topology: {:?}", e)))?;
+    mesh.validate()
+        .map_err(|e| JsValue::from_str(&format!("Invalid mesh: {:?}", e)))?;
 
     // Step 2: Apply filter pipeline
     for filter_cfg in config.filters {
@@ -195,87 +149,64 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
     Ok(quad_mesh_to_wasm(&mesh, world_size))
 }
 
-fn quad_mesh_to_wasm(mesh: &QuadMesh, world_size: f32) -> WasmPatchMesh {
-    let topology = &mesh.topology;
-    let vertex_count = topology.finite_vertex_count();
-    let quad_count = topology.finite_quad_count();
+fn quad_mesh_to_wasm(mesh: &Quadrangulation, world_size: f32) -> WasmPatchMesh {
+    let mut vert_map: HashMap<VertexIndex, usize> = HashMap::new();
+    let mut dual_vert_map: HashMap<QuadIndex, usize> = HashMap::new();
 
-    let mut flat_vertices = Vec::with_capacity(vertex_count * 2);
-    for vi in topology.vertex_indices() {
-        let p = mesh.vertices[vi];
-        flat_vertices.push(p.x);
-        flat_vertices.push(p.y);
+    let mut vertices = Vec::with_capacity(mesh.vertex_count() * 2);
+
+    for vi in mesh.finite_vertex_index_iter() {
+        let p = mesh.p(vi);
+        vert_map.insert(vi, vert_map.len());
+        vertices.push(p.x);
+        vertices.push(p.y);
     }
 
-    let mut indices = Vec::with_capacity(quad_count * 4);
-    let mut patch_indices = Vec::with_capacity(quad_count);
-    for qi in topology.quad_indices() {
-        let verts = topology.quad_vertices(qi);
-        for &v in &verts {
-            indices.push(v.into_index() as u32);
+    let mut quad_indices = Vec::with_capacity(mesh.quad_count() * 4);
+    for q in mesh.finite_quad_iter() {
+        for v in q.vertices.iter() {
+            quad_indices.push(vert_map[v] as u32);
         }
-        patch_indices.push(0u8);
     }
 
-    let mut dual_vertices = Vec::with_capacity(quad_count * 2);
-    for qi_idx in 0..quad_count {
-        let base = qi_idx * 4;
-        let mut cx = 0.0f32;
-        let mut cy = 0.0f32;
-        for k in 0..4 {
-            let vi = indices[base + k] as usize;
-            cx += flat_vertices[vi * 2];
-            cy += flat_vertices[vi * 2 + 1];
-        }
-        dual_vertices.push(cx / 4.0);
-        dual_vertices.push(cy / 4.0);
+    let mut dual_vertices = Vec::with_capacity(mesh.quad_count() * 2);
+    for qi in mesh.finite_quad_index_iter() {
+        let p = mesh.dual_p(qi).unwrap();
+        dual_vert_map.insert(qi, dual_vert_map.len());
+        dual_vertices.push(p.x);
+        dual_vertices.push(p.y);
     }
 
-    let mut edge_map: HashMap<(u32, u32), u32> = HashMap::new();
     let mut dual_indices = Vec::new();
-    for qi_idx in 0..quad_count {
-        let base = qi_idx * 4;
-        for k in 0..4 {
-            let a = indices[base + k];
-            let b = indices[base + (k + 1) % 4];
-            let edge_key = if a < b { (a, b) } else { (b, a) };
-            if let Some(&other_qi) = edge_map.get(&edge_key) {
-                dual_indices.push(other_qi);
-                dual_indices.push(qi_idx as u32);
-            } else {
-                edge_map.insert(edge_key, qi_idx as u32);
+    let mut dual_polygon_starts = Vec::new();
+    for vi in mesh.finite_vertex_index_iter() {
+        dual_polygon_starts.push(dual_indices.len() as u32);
+        for qvi in mesh.vertex_ring_ccw(vi) {
+            if mesh.is_infinite_quad(qvi.quad) {
+                // Skip infinite quads
+                continue;
             }
+            dual_indices.push(dual_vert_map[&qvi.quad] as u32);
         }
     }
 
-    // Build anchor edges from anchor_vertices in topology
+    // Build anchor edges from anchor_vertices in mesh
     let mut anchor_indices = Vec::new();
     let mut anchor_edge_starts = Vec::new();
-    let anchor_count = topology.anchor_vertices.len();
 
-    for edge_idx in 0..anchor_count {
-        // Record the start index for this anchor edge
-        anchor_edge_starts.push((anchor_indices.len() / 2) as u32);
-
-        let anchor_verts: Vec<_> = topology.anchor_edge(AnchorIndex::new(edge_idx)).collect();
-        // Create line segments between consecutive vertices
-        for window in anchor_verts.windows(2) {
-            anchor_indices.push(window[0].into_index() as u32);
-            anchor_indices.push(window[1].into_index() as u32);
-        }
+    for ai in mesh.anchor_index_iter() {
+        anchor_edge_starts.push(anchor_indices.len() as u32);
+        anchor_indices.extend(mesh.anchor_edge(ai).map(|vi| vert_map[&vi] as u32));
     }
-
-    // Add final count for convenience
-    anchor_edge_starts.push((anchor_indices.len() / 2) as u32);
 
     WasmPatchMesh {
         world_size,
-        vertices: flat_vertices,
-        indices,
-        patch_indices,
-        dual_vertices,
-        dual_indices,
+        vertices,
+        quad_indices,
         anchor_indices,
         anchor_edge_starts,
+        dual_vertices,
+        dual_indices,
+        dual_polygon_starts,
     }
 }

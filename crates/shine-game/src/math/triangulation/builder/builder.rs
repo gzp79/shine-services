@@ -294,7 +294,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             if !edge_chain.is_empty() {
                 next_v0 = self.tri.vi(VertexClue::end_of(*edge_chain.last().unwrap()));
                 for &edge in &edge_chain {
-                    self.merge_constraint(edge, c);
+                    self.tri.merge_constraint(edge, c);
                 }
             }
 
@@ -465,14 +465,6 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
         let bottom = FaceEdge::new(bottom.triangle, bottom.edge.decrement());
         self.tri.set_adjacent(top, bottom);
         self.tri.flip(top.triangle, top.edge)
-    }
-
-    fn merge_constraint<E: Into<FaceEdge>>(&mut self, edge: E, c: u32) {
-        let edge: FaceEdge = edge.into();
-        let nf = self.tri[edge.triangle].neighbors[edge.edge];
-        let ni = self.tri[nf].find_neighbor(edge.triangle).unwrap();
-        self.tri[edge.triangle].constraints[edge.edge] |= c;
-        self.tri[nf].constraints[ni] |= c;
     }
 }
 
