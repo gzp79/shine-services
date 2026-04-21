@@ -20,7 +20,7 @@ use std::collections::HashSet;
 /// Q0=[0,1,4,3]  Q1=[1,2,5,4]  Q2=[3,4,7,6]  Q3=[4,5,8,7]  (CCW)
 /// Interior: 4.  Boundary: 8 vertices (0,1,2,5,8,7,6,3).
 /// Simple 2x2 grid topology for testing.
-fn grid_2x2_topo() -> Quadrangulation {
+fn grid_2x2() -> Quadrangulation {
     let quads = vec![
         [
             VertexIndex::new(0),
@@ -49,13 +49,7 @@ fn grid_2x2_topo() -> Quadrangulation {
     ];
     let boundaries: Vec<_> = [0, 1, 2, 5, 8, 7, 6, 3].into_iter().map(VertexIndex::new).collect();
     let anchors: Vec<_> = [0, 2, 8, 6].into_iter().map(VertexIndex::new).collect();
-    let positions = grid_2x2_positions();
-    Quadrangulation::from_polygon(boundaries, anchors, quads, positions).expect("valid topology")
-}
-
-/// Positions matching grid_2x2_topo layout.
-fn grid_2x2_positions() -> Vec<Vec2> {
-    vec![
+    let positions = vec![
         Vec2::new(0.0, 0.0), // 0
         Vec2::new(1.0, 0.0), // 1
         Vec2::new(2.0, 0.0), // 2
@@ -65,7 +59,8 @@ fn grid_2x2_positions() -> Vec<Vec2> {
         Vec2::new(0.0, 2.0), // 6
         Vec2::new(1.0, 2.0), // 7
         Vec2::new(2.0, 2.0), // 8
-    ]
+    ];
+    Quadrangulation::from_polygon(positions, boundaries, quads, anchors).expect("valid topology")
 }
 
 // =============================================================================
@@ -121,26 +116,26 @@ fn test_quad_edge_navigation() {
 
 #[test]
 fn test_topology_counts() {
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
 
-    assert_eq!(topo.vertex_count(), 10, "10 total vertices (9 finite + 1 infinite)");
-    assert_eq!(topo.finite_vertex_count(), 9, "9 finite vertices");
-    assert_eq!(topo.quad_count(), 8, "8 total quads (4 finite + 4 infinite)");
-    assert_eq!(topo.finite_quad_count(), 4, "4 finite quads");
-    assert_eq!(topo.infinite_quad_count(), 4, "4 infinite quads (8 boundary edges / 2)");
-    assert_eq!(topo.boundary_vertex_count(), 8, "8 boundary vertices");
+    assert_eq!(mesh.vertex_count(), 10, "10 total vertices (9 finite + 1 infinite)");
+    assert_eq!(mesh.finite_vertex_count(), 9, "9 finite vertices");
+    assert_eq!(mesh.quad_count(), 8, "8 total quads (4 finite + 4 infinite)");
+    assert_eq!(mesh.finite_quad_count(), 4, "4 finite quads");
+    assert_eq!(mesh.infinite_quad_count(), 4, "4 infinite quads (8 boundary edges / 2)");
+    assert_eq!(mesh.boundary_vertex_count(), 8, "8 boundary vertices");
 
-    let infinite_vertex = topo.infinite_vertex();
+    let infinite_vertex = mesh.infinite_vertex();
     assert_eq!(infinite_vertex, VertexIndex::new(9), "infinite vertex at index 9");
 }
 
 #[test]
 fn test_infinite_quad_structure() {
-    let topo = grid_2x2_topo();
-    let infinite_vertex = topo.infinite_vertex();
+    let mesh = grid_2x2();
 
-    for qi in topo.infinite_quad_index_iter() {
-        let verts = topo.quad_vertices(qi);
+    let infinite_vertex = mesh.infinite_vertex();
+    for qi in mesh.infinite_quad_index_iter() {
+        let verts = mesh.quad_vertices(qi);
 
         // Infinite quad should have exactly one infinite vertex
         let infinite_count = verts.iter().filter(|&&v| v == infinite_vertex).count();
@@ -156,7 +151,7 @@ fn test_infinite_quad_structure() {
 
         for &v in &finite_verts {
             assert!(
-                topo.is_boundary_vertex(v),
+                mesh.is_boundary_vertex(v),
                 "finite vertex {:?} in infinite quad should be boundary",
                 v
             );
@@ -170,10 +165,10 @@ fn test_infinite_quad_structure() {
 
 #[test]
 fn test_vertex_ring_ccw_interior() {
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
 
     // Interior vertex 4 ring should be [Q0, Q1, Q3, Q2] in some rotation
-    let ring: Vec<_> = topo.vertex_ring_ccw(VertexIndex::new(4)).map(|qv| qv.quad).collect();
+    let ring: Vec<_> = mesh.vertex_ring_ccw(VertexIndex::new(4)).map(|qv| qv.quad).collect();
     let expected = [
         QuadIndex::new(0),
         QuadIndex::new(1),
@@ -190,11 +185,11 @@ fn test_vertex_ring_ccw_interior() {
 
 #[test]
 fn test_vertex_ring_cw_interior() {
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
 
     // CW ring should be reverse rotation of CCW
-    let ccw: Vec<_> = topo.vertex_ring_ccw(VertexIndex::new(4)).map(|qv| qv.quad).collect();
-    let cw: Vec<_> = topo.vertex_ring_cw(VertexIndex::new(4)).map(|qv| qv.quad).collect();
+    let ccw: Vec<_> = mesh.vertex_ring_ccw(VertexIndex::new(4)).map(|qv| qv.quad).collect();
+    let cw: Vec<_> = mesh.vertex_ring_cw(VertexIndex::new(4)).map(|qv| qv.quad).collect();
 
     // Reverse CW should match some rotation of CCW
     let mut cw_reversed = cw.clone();
@@ -209,16 +204,16 @@ fn test_vertex_ring_cw_interior() {
 
 #[test]
 fn test_vertex_ring_boundary_includes_infinite() {
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
 
     // Boundary vertex 0: its ring should include at least one infinite quad
-    let ring: Vec<_> = topo.vertex_ring_ccw(VertexIndex::new(0)).collect();
-    let has_infinite = ring.iter().any(|qv| topo.is_infinite_quad(qv.quad));
+    let ring: Vec<_> = mesh.vertex_ring_ccw(VertexIndex::new(0)).collect();
+    let has_infinite = ring.iter().any(|qv| mesh.is_infinite_quad(qv.quad));
     assert!(has_infinite, "boundary vertex 0 ring should include an infinite quad");
 
     // Interior vertex 4: its ring should NOT include any infinite quad
-    let ring: Vec<_> = topo.vertex_ring_ccw(VertexIndex::new(4)).collect();
-    let has_infinite = ring.iter().any(|qv| topo.is_infinite_quad(qv.quad));
+    let ring: Vec<_> = mesh.vertex_ring_ccw(VertexIndex::new(4)).collect();
+    let has_infinite = ring.iter().any(|qv| mesh.is_infinite_quad(qv.quad));
     assert!(
         !has_infinite,
         "interior vertex 4 ring should not include an infinite quad"
@@ -227,15 +222,15 @@ fn test_vertex_ring_boundary_includes_infinite() {
 
 #[test]
 fn test_vertex_rings_consistency() {
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
 
     // All real vertices should have valid, connected rings referencing the correct vertex
-    for vi in topo.finite_vertex_index_iter() {
-        let ring: Vec<_> = topo.vertex_ring_ccw(vi).collect();
+    for vi in mesh.finite_vertex_index_iter() {
+        let ring: Vec<_> = mesh.vertex_ring_ccw(vi).collect();
         assert!(!ring.is_empty(), "vertex {:?} should have non-empty ring", vi);
 
         for qv in &ring {
-            assert_eq!(topo.vi(*qv), vi, "ring entry should reference vertex {:?}", vi);
+            assert_eq!(mesh.vi(*qv), vi, "ring entry should reference vertex {:?}", vi);
         }
 
         // Ring should be connected via incoming edge twins
@@ -244,7 +239,7 @@ fn test_vertex_rings_consistency() {
             let next_in_ring = ring[(i + 1) % ring.len()];
 
             let incoming = current.incoming_edge();
-            let neighbor = topo.edge_twin(incoming);
+            let neighbor = mesh.edge_twin(incoming);
 
             assert_eq!(
                 neighbor.start(),
@@ -262,13 +257,14 @@ fn test_vertex_rings_consistency() {
 
 #[test]
 fn test_boundary_detection() {
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
+
     let expected_boundary: HashSet<_> = [0, 1, 2, 3, 5, 6, 7, 8].into_iter().collect();
     let expected_interior: HashSet<_> = [4].into_iter().collect();
 
-    for vi in topo.finite_vertex_index_iter() {
+    for vi in mesh.finite_vertex_index_iter() {
         let idx = vi.into_index();
-        let is_boundary = topo.is_boundary_vertex(vi);
+        let is_boundary = mesh.is_boundary_vertex(vi);
 
         if expected_boundary.contains(&idx) {
             assert!(is_boundary, "vertex {} should be boundary", idx);
@@ -277,7 +273,7 @@ fn test_boundary_detection() {
         }
 
         // Cross-check: is_boundary_vertex matches ring-has-ghost
-        let ring_has_ghost = topo.vertex_ring_ccw(vi).any(|qv| topo.is_infinite_quad(qv.quad));
+        let ring_has_ghost = mesh.vertex_ring_ccw(vi).any(|qv| mesh.is_infinite_quad(qv.quad));
         assert_eq!(
             is_boundary, ring_has_ghost,
             "vertex {}: is_boundary_vertex and ring_has_ghost should match",
@@ -290,9 +286,9 @@ fn test_boundary_detection() {
 
 #[test]
 fn test_boundary_vertices_ccw_order() {
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
 
-    let boundary: Vec<_> = topo.boundary_vertices().collect();
+    let boundary: Vec<_> = mesh.boundary_vertices().collect();
     assert_eq!(boundary.len(), 8, "should have 8 boundary vertices");
 
     // All boundary vertices should be unique
@@ -318,15 +314,15 @@ fn test_boundary_vertices_ccw_order() {
 
 #[test]
 fn test_edge_classification_interior() {
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
 
     // Interior vertex 4 should have all interior edges to its neighbors
-    let infinite_vertex = topo.infinite_vertex();
-    for qv in topo.vertex_ring_ccw(VertexIndex::new(4)) {
-        let next_v = topo.vi(qv.next());
+    let infinite_vertex = mesh.infinite_vertex();
+    for qv in mesh.vertex_ring_ccw(VertexIndex::new(4)) {
+        let next_v = mesh.vi(qv.next());
         if next_v != infinite_vertex {
             assert_eq!(
-                topo.edge_type(VertexIndex::new(4), next_v),
+                mesh.edge_type(VertexIndex::new(4), next_v),
                 QuadEdgeType::Interior,
                 "edge from interior vertex 4 to {:?} should be Interior",
                 next_v
@@ -337,20 +333,20 @@ fn test_edge_classification_interior() {
 
 #[test]
 fn test_edge_classification_boundary() {
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
 
     // Boundary edges should be Boundary in both directions
     let boundary_pairs = [(0, 1), (1, 2), (2, 5), (5, 8), (8, 7), (7, 6), (6, 3), (3, 0)];
     for (a, b) in boundary_pairs {
         assert_eq!(
-            topo.edge_type(VertexIndex::new(a), VertexIndex::new(b)),
+            mesh.edge_type(VertexIndex::new(a), VertexIndex::new(b)),
             QuadEdgeType::Boundary,
             "edge {}→{} should be Boundary",
             a,
             b
         );
         assert_eq!(
-            topo.edge_type(VertexIndex::new(b), VertexIndex::new(a)),
+            mesh.edge_type(VertexIndex::new(b), VertexIndex::new(a)),
             QuadEdgeType::Boundary,
             "edge {}→{} (reverse) should be Boundary",
             b,
@@ -361,16 +357,16 @@ fn test_edge_classification_boundary() {
 
 #[test]
 fn test_edge_classification_not_an_edge() {
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
 
     // Diagonal vertices that share no edge
     assert_eq!(
-        topo.edge_type(VertexIndex::new(0), VertexIndex::new(4)),
+        mesh.edge_type(VertexIndex::new(0), VertexIndex::new(4)),
         QuadEdgeType::NotAnEdge,
         "diagonal 0→4 should be NotAnEdge"
     );
     assert_eq!(
-        topo.edge_type(VertexIndex::new(0), VertexIndex::new(8)),
+        mesh.edge_type(VertexIndex::new(0), VertexIndex::new(8)),
         QuadEdgeType::NotAnEdge,
         "non-adjacent 0→8 should be NotAnEdge"
     );
@@ -382,19 +378,19 @@ fn test_edge_classification_not_an_edge() {
 
 #[test]
 fn test_quad_neighbor_consistency() {
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
 
     // Check ALL quads, including ghost quads
-    for qi_idx in 0..topo.quad_count() {
+    for qi_idx in 0..mesh.quad_count() {
         let qi = QuadIndex::new(qi_idx);
         for edge in 0..4 {
             let qe = QuadEdge {
                 quad: qi,
                 edge: Rot4Idx::new(edge),
             };
-            let twin = topo.edge_twin(qe);
-            let (v0, v1) = topo.edge_vertices(qe);
-            let (tv0, tv1) = topo.edge_vertices(twin);
+            let twin = mesh.edge_twin(qe);
+            let (v0, v1) = mesh.edge_vertices(qe);
+            let (tv0, tv1) = mesh.edge_vertices(twin);
 
             // Twin should have reversed vertices
             assert_eq!(
@@ -406,7 +402,7 @@ fn test_quad_neighbor_consistency() {
             );
 
             // Twin of twin should be the original
-            let round_trip = topo.edge_twin(twin);
+            let round_trip = mesh.edge_twin(twin);
             assert_eq!(
                 round_trip.quad, qe.quad,
                 "quad {} edge {}: twin involution (quad)",
@@ -427,25 +423,25 @@ fn test_quad_neighbor_consistency() {
 
 #[test]
 fn test_anchor_edges_ccw_order() {
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
 
     // Edge 0: anchor 0 -> 2, should be [0, 1, 2]
-    let edge0: Vec<_> = topo.anchor_edge(AnchorIndex::new(0)).collect();
+    let edge0: Vec<_> = mesh.anchor_edge(AnchorIndex::new(0)).collect();
     let expected0: Vec<_> = [0, 1, 2].into_iter().map(VertexIndex::new).collect();
     assert_eq!(edge0, expected0, "anchor edge 0 should be [0, 1, 2]");
 
     // Edge 1: anchor 2 -> 8, should be [2, 5, 8]
-    let edge1: Vec<_> = topo.anchor_edge(AnchorIndex::new(1)).collect();
+    let edge1: Vec<_> = mesh.anchor_edge(AnchorIndex::new(1)).collect();
     let expected1: Vec<_> = [2, 5, 8].into_iter().map(VertexIndex::new).collect();
     assert_eq!(edge1, expected1, "anchor edge 1 should be [2, 5, 8]");
 
     // Edge 2: anchor 8 -> 6, should be [8, 7, 6]
-    let edge2: Vec<_> = topo.anchor_edge(AnchorIndex::new(2)).collect();
+    let edge2: Vec<_> = mesh.anchor_edge(AnchorIndex::new(2)).collect();
     let expected2: Vec<_> = [8, 7, 6].into_iter().map(VertexIndex::new).collect();
     assert_eq!(edge2, expected2, "anchor edge 2 should be [8, 7, 6]");
 
     // Edge 3: anchor 6 -> 0 (wrapping), should be [6, 3, 0]
-    let edge3: Vec<_> = topo.anchor_edge(AnchorIndex::new(3)).collect();
+    let edge3: Vec<_> = mesh.anchor_edge(AnchorIndex::new(3)).collect();
     let expected3: Vec<_> = [6, 3, 0].into_iter().map(VertexIndex::new).collect();
     assert_eq!(edge3, expected3, "anchor edge 3 should be [6, 3, 0]");
 }
@@ -456,8 +452,8 @@ fn test_anchor_edges_ccw_order() {
 
 #[test]
 fn test_topology_validation() {
-    let topo = grid_2x2_topo();
-    topo.validate().expect("valid topology should pass validation");
+    let mesh = grid_2x2();
+    mesh.validate().expect("valid topology should pass validation");
 }
 
 #[test]
@@ -471,7 +467,7 @@ fn test_validation_rejects_odd_boundary() {
     let boundary: Vec<_> = [0, 1, 2].into_iter().map(VertexIndex::new).collect();
     let positions = vec![Vec2::ZERO; 4];
     assert!(
-        Quadrangulation::from_polygon(boundary, vec![], quads, positions).is_err(),
+        Quadrangulation::from_polygon(positions, boundary, quads, vec![]).is_err(),
         "odd boundary should be rejected"
     );
 }
@@ -486,7 +482,7 @@ fn test_validation_rejects_boundary_vertex_out_of_range() {
     ]];
     let boundary: Vec<_> = [0, 1, 99, 3].into_iter().map(VertexIndex::new).collect();
     let positions = vec![Vec2::ZERO; 4];
-    match Quadrangulation::from_polygon(boundary, vec![], quads, positions) {
+    match Quadrangulation::from_polygon(positions, boundary, quads, vec![]) {
         Err(QuadError::BoundaryVertexOutOfRange { vertex: 99, .. }) => {}
         Err(e) => panic!("expected BoundaryVertexOutOfRange, got: {}", e),
         Ok(_) => panic!("expected error, got Ok"),
@@ -504,7 +500,7 @@ fn test_validation_rejects_duplicate_boundary_vertex() {
     let boundary: Vec<_> = [0, 1, 0, 3].into_iter().map(VertexIndex::new).collect();
     let positions = vec![Vec2::ZERO; 4];
     assert!(
-        Quadrangulation::from_polygon(boundary, vec![], quads, positions).is_err(),
+        Quadrangulation::from_polygon(positions, boundary, quads, vec![]).is_err(),
         "duplicate boundary vertex should be rejected"
     );
 }
@@ -519,7 +515,7 @@ fn test_validation_rejects_quad_vertex_out_of_range() {
     ]];
     let boundary: Vec<_> = [0, 1, 2, 3].into_iter().map(VertexIndex::new).collect();
     let positions = vec![Vec2::ZERO; 4];
-    match Quadrangulation::from_polygon(boundary, vec![], quads, positions) {
+    match Quadrangulation::from_polygon(positions, boundary, quads, vec![]) {
         Err(QuadError::QuadVertexOutOfRange { vertex: 99, .. }) => {}
         Err(e) => panic!("expected QuadVertexOutOfRange, got: {}", e),
         Ok(_) => panic!("expected error, got Ok"),
@@ -532,24 +528,22 @@ fn test_validation_rejects_quad_vertex_out_of_range() {
 
 #[test]
 fn test_average_adjacent_positions_interior() {
-    let positions = grid_2x2_positions();
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
 
     // Interior vertex 4 at (1,1) has neighbors 1,3,5,7
     // Avg = ((1,0) + (0,1) + (2,1) + (1,2)) / 4 = (4,4)/4 = (1,1)
-    let avg = topo.average_adjacent_positions(VertexIndex::new(4));
+    let avg = mesh.average_adjacent_positions(VertexIndex::new(4));
     assert!((avg.x - 1.0).abs() < 0.001, "avg.x should be 1.0, got {}", avg.x);
     assert!((avg.y - 1.0).abs() < 0.001, "avg.y should be 1.0, got {}", avg.y);
 }
 
 #[test]
 fn test_average_adjacent_positions_boundary() {
-    let positions = grid_2x2_positions();
-    let topo = grid_2x2_topo();
+    let mesh = grid_2x2();
 
     // Boundary vertex 1 at (1,0) has real neighbors: 0, 2, 4 (ghost vertex is skipped)
     // Avg = ((0,0) + (2,0) + (1,1)) / 3 = (3,1)/3 = (1, 0.333...)
-    let avg = topo.average_adjacent_positions(VertexIndex::new(1));
+    let avg = mesh.average_adjacent_positions(VertexIndex::new(1));
     assert!((avg.x - 1.0).abs() < 0.001, "avg.x should be 1.0, got {}", avg.x);
     assert!(
         (avg.y - 1.0 / 3.0).abs() < 0.001,
@@ -564,8 +558,7 @@ fn test_average_adjacent_positions_boundary() {
 
 #[test]
 fn test_quad_centers_computed() {
-    // Use the existing grid_2x2_topo which is properly constructed
-    let mesh = grid_2x2_topo();
+    let mesh = grid_2x2();
 
     assert_eq!(mesh.finite_quad_count(), 4);
 
@@ -582,8 +575,7 @@ fn test_quad_centers_computed() {
 
 #[test]
 fn test_quad_centers_count_matches_real_quads() {
-    // Use the existing grid_2x2_topo which is properly constructed
-    let mesh = grid_2x2_topo();
+    let mesh = grid_2x2();
 
     assert_eq!(mesh.finite_quad_count(), 4);
 }
