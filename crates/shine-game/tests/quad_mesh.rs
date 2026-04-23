@@ -63,10 +63,6 @@ fn grid_2x2() -> Quadrangulation {
     Quadrangulation::from_polygon(positions, boundaries, quads, anchors).expect("valid topology")
 }
 
-// =============================================================================
-// Navigation
-// =============================================================================
-
 #[test]
 fn test_quad_vertex_navigation() {
     // From local 0
@@ -109,10 +105,6 @@ fn test_quad_edge_navigation() {
     assert_eq!(qe3.start().local, Rot4Idx::new(3));
     assert_eq!(qe3.end().local, Rot4Idx::new(0));
 }
-
-// =============================================================================
-// Topology counts & structure
-// =============================================================================
 
 #[test]
 fn test_topology_counts() {
@@ -158,10 +150,6 @@ fn test_infinite_quad_structure() {
         }
     }
 }
-
-// =============================================================================
-// Vertex rings
-// =============================================================================
 
 #[test]
 fn test_vertex_ring_ccw_interior() {
@@ -251,10 +239,6 @@ fn test_vertex_rings_consistency() {
     }
 }
 
-// =============================================================================
-// Boundary
-// =============================================================================
-
 #[test]
 fn test_boundary_detection() {
     let mesh = grid_2x2();
@@ -307,10 +291,6 @@ fn test_boundary_vertices_ccw_order() {
         boundary.iter().map(|v| v.into_index()).collect::<Vec<_>>()
     );
 }
-
-// =============================================================================
-// Edge classification
-// =============================================================================
 
 #[test]
 fn test_edge_classification_interior() {
@@ -372,10 +352,6 @@ fn test_edge_classification_not_an_edge() {
     );
 }
 
-// =============================================================================
-// Neighbor consistency (including ghost quads)
-// =============================================================================
-
 #[test]
 fn test_quad_neighbor_consistency() {
     let mesh = grid_2x2();
@@ -417,10 +393,6 @@ fn test_quad_neighbor_consistency() {
     }
 }
 
-// =============================================================================
-// Anchor edges
-// =============================================================================
-
 #[test]
 fn test_anchor_edges_ccw_order() {
     let mesh = grid_2x2();
@@ -445,10 +417,6 @@ fn test_anchor_edges_ccw_order() {
     let expected3: Vec<_> = [6, 3, 0].into_iter().map(VertexIndex::new).collect();
     assert_eq!(edge3, expected3, "anchor edge 3 should be [6, 3, 0]");
 }
-
-// =============================================================================
-// Validation
-// =============================================================================
 
 #[test]
 fn test_topology_validation() {
@@ -522,10 +490,6 @@ fn test_validation_rejects_quad_vertex_out_of_range() {
     }
 }
 
-// =============================================================================
-// average_adjacent_positions
-// =============================================================================
-
 #[test]
 fn test_average_adjacent_positions_interior() {
     let mesh = grid_2x2();
@@ -551,10 +515,6 @@ fn test_average_adjacent_positions_boundary() {
         avg.y
     );
 }
-
-// =============================================================================
-// Quadrangulation
-// =============================================================================
 
 #[test]
 fn test_quad_centers_computed() {

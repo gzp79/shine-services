@@ -1,12 +1,16 @@
-use crate::math::{
-    hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
-    prng::{StableRng, Xorshift32},
-    quadrangulation::{
-        Jitter, LaplacianSmoother, QuadFilter, QuadIndex, QuadRelax, Quadrangulation, VertexIndex, VertexRepulsion,
+use crate::{
+    indexed::TypedIndex,
+    math::{
+        hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
+        prng::{StableRng, Xorshift32},
+        quadrangulation::{
+            Jitter, LaplacianSmoother, QuadFilter, QuadIndex, QuadRelax, Quadrangulation, VertexRepulsion,
+        },
     },
+    wasm::dto::WasmIndexedMesh,
 };
+use glam::Vec2;
 use serde::Deserialize;
-use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 #[derive(Deserialize)]
@@ -55,13 +59,8 @@ enum FilterConfig {
 #[wasm_bindgen]
 pub struct WasmPatchMesh {
     world_size: f32,
-    vertices: Vec<f32>,
-    quad_indices: Vec<u32>,
-    anchor_indices: Vec<u32>,
-    anchor_edge_starts: Vec<u32>,
-    dual_vertices: Vec<f32>,
-    dual_indices: Vec<u32>,
-    dual_polygon_starts: Vec<u32>,
+    primal: WasmIndexedMesh,
+    dual: WasmIndexedMesh,
 }
 
 #[wasm_bindgen]
@@ -70,27 +69,14 @@ impl WasmPatchMesh {
         self.world_size
     }
 
-    pub fn vertices(&self) -> Vec<f32> {
-        self.vertices.clone()
-    }
-    pub fn quad_indices(&self) -> Vec<u32> {
-        self.quad_indices.clone()
-    }
-    pub fn anchor_indices(&self) -> Vec<u32> {
-        self.anchor_indices.clone()
-    }
-    pub fn anchor_edge_starts(&self) -> Vec<u32> {
-        self.anchor_edge_starts.clone()
+    /// Get the primal mesh (quads with anchor edges as wires)
+    pub fn primal(&self) -> WasmIndexedMesh {
+        self.primal.clone()
     }
 
-    pub fn dual_vertices(&self) -> Vec<f32> {
-        self.dual_vertices.clone()
-    }
-    pub fn dual_indices(&self) -> Vec<u32> {
-        self.dual_indices.clone()
-    }
-    pub fn dual_polygon_starts(&self) -> Vec<u32> {
-        self.dual_polygon_starts.clone()
+    /// Get the dual mesh (dual polygons)
+    pub fn dual(&self) -> WasmIndexedMesh {
+        self.dual.clone()
     }
 }
 
@@ -124,8 +110,32 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
         }
     };
 
-    mesh.validate()
-        .map_err(|e| JsValue::from_str(&format!("Invalid mesh: {:?}", e)))?;
+    mesh.validate().map_err(|e| {
+        log::error!("Validation failed for seed {}: {:?}", config.seed, e);
+
+        // Log quad details for SelfIntersection errors
+        if let Some(err_str) = format!("{:?}", e).strip_prefix("SelfIntersection { quad1: ") {
+            if let Some((q1_str, rest)) = err_str.split_once(", quad2: ") {
+                if let (Ok(q1), Ok(q2)) = (q1_str.parse::<usize>(), rest.trim_end_matches(" }").parse::<usize>()) {
+                    log::error!("Quad {} vertices:", q1);
+                    let verts_1 = mesh.quad_vertices(QuadIndex::new(q1));
+                    for (i, &vi) in verts_1.iter().enumerate() {
+                        let p = mesh.p(vi);
+                        log::error!("  v{}: {} -> ({}, {})", i, vi.into_index(), p.x, p.y);
+                    }
+
+                    log::error!("Quad {} vertices:", q2);
+                    let verts_2 = mesh.quad_vertices(QuadIndex::new(q2));
+                    for (i, &vi) in verts_2.iter().enumerate() {
+                        let p = mesh.p(vi);
+                        log::error!("  v{}: {} -> ({}, {})", i, vi.into_index(), p.x, p.y);
+                    }
+                }
+            }
+        }
+
+        JsValue::from_str(&format!("Invalid mesh ({}): {:?}", config.seed, e))
+    })?;
 
     // Step 2: Apply filter pipeline
     for filter_cfg in config.filters {
@@ -150,63 +160,12 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
 }
 
 fn quad_mesh_to_wasm(mesh: &Quadrangulation, world_size: f32) -> WasmPatchMesh {
-    let mut vert_map: HashMap<VertexIndex, usize> = HashMap::new();
-    let mut dual_vert_map: HashMap<QuadIndex, usize> = HashMap::new();
-
-    let mut vertices = Vec::with_capacity(mesh.vertex_count() * 2);
-
-    for vi in mesh.finite_vertex_index_iter() {
-        let p = mesh.p(vi);
-        vert_map.insert(vi, vert_map.len());
-        vertices.push(p.x);
-        vertices.push(p.y);
-    }
-
-    let mut quad_indices = Vec::with_capacity(mesh.quad_count() * 4);
-    for q in mesh.finite_quad_iter() {
-        for v in q.vertices.iter() {
-            quad_indices.push(vert_map[v] as u32);
-        }
-    }
-
-    let mut dual_vertices = Vec::with_capacity(mesh.quad_count() * 2);
-    for qi in mesh.finite_quad_index_iter() {
-        let p = mesh.dual_p(qi).unwrap();
-        dual_vert_map.insert(qi, dual_vert_map.len());
-        dual_vertices.push(p.x);
-        dual_vertices.push(p.y);
-    }
-
-    let mut dual_indices = Vec::new();
-    let mut dual_polygon_starts = Vec::new();
-    for vi in mesh.finite_vertex_index_iter() {
-        dual_polygon_starts.push(dual_indices.len() as u32);
-        for qvi in mesh.vertex_ring_ccw(vi) {
-            if mesh.is_infinite_quad(qvi.quad) {
-                // Skip infinite quads
-                continue;
-            }
-            dual_indices.push(dual_vert_map[&qvi.quad] as u32);
-        }
-    }
-
-    // Build anchor edges from anchor_vertices in mesh
-    let mut anchor_indices = Vec::new();
-    let mut anchor_edge_starts = Vec::new();
-
-    for ai in mesh.anchor_index_iter() {
-        anchor_edge_starts.push(anchor_indices.len() as u32);
-        anchor_indices.extend(mesh.anchor_edge(ai).map(|vi| vert_map[&vi] as u32));
-    }
+    let primal = mesh.primal_extractor(Vec2::ZERO).build_internal_mesh_with_anchors();
+    let dual = mesh.dual_extractor(Vec2::ZERO).build_internal_mesh();
 
     WasmPatchMesh {
         world_size,
-        vertices,
-        quad_indices,
-        anchor_indices,
-        anchor_edge_starts,
-        dual_vertices,
-        dual_indices,
-        dual_polygon_starts,
+        primal: primal.into(),
+        dual: dual.into(),
     }
 }

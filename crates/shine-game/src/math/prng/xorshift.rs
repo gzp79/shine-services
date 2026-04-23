@@ -21,3 +21,23 @@ impl StableRng for Xorshift32 {
         x
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use shine_test::test;
+
+    #[test]
+    fn test_xorshift32() {
+        let expected = [
+            3967631044, 1058470358, 3852825024, 943183310, 2470503849, 1900398643, 3225046610, 3086557162, 344369384,
+            4074949765,
+        ];
+
+        let mut rng = Xorshift32::new(745541);
+        for i in 0..10 {
+            let val = rng.next_u32();
+            assert_eq!(val, expected[i]);
+        }
+    }
+}

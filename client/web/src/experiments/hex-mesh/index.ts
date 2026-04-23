@@ -58,17 +58,22 @@ export async function createHexMeshExperiment(container: HTMLElement): Promise<H
             const wasmMesh = generate_mesh(configJson);
 
             const worldSize = wasmMesh.world_size();
+            const primal = wasmMesh.primal();
+            const dual = wasmMesh.dual();
 
             const data = {
-                vertices: wasmMesh.vertices(),
-                quad_indices: wasmMesh.quad_indices(),
-                anchor_indices: wasmMesh.anchor_indices(),
-                anchor_edge_starts: wasmMesh.anchor_edge_starts(),
-                dual_vertices: wasmMesh.dual_vertices(),
-                dual_indices: wasmMesh.dual_indices(),
-                dual_polygon_starts: wasmMesh.dual_polygon_starts()
+                vertices: primal.vertices(),
+                quad_indices: primal.indices(),
+                quad_ranges: primal.polygon_ranges(),
+                anchor_indices: primal.wire_indices(),
+                anchor_ranges: primal.wire_ranges(),
+                dual_vertices: dual.vertices(),
+                dual_indices: dual.indices(),
+                dual_ranges: dual.polygon_ranges()
             };
 
+            primal.free();
+            dual.free();
             wasmMesh.free();
 
             currentMesh = buildHexMesh(data);

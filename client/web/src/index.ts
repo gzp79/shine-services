@@ -3,8 +3,9 @@ import { createCdtExperiment } from './experiments/cdt/index';
 import { createHexMeshExperiment } from './experiments/hex-mesh/index';
 import { createInputControlExperiment } from './experiments/input-control/index';
 import { createTrilinearExperiment } from './experiments/trilinear/index';
+import { createWorldNeighborsExperiment } from './experiments/world-neighbors/index';
 
-export type Scene = 'game' | 'hex-mesh' | 'cdt' | 'input-events' | 'trilinear';
+export type Scene = 'game' | 'hex-mesh' | 'cdt' | 'input-events' | 'trilinear' | 'world-neighbors';
 export type Viewer = { dispose(): void };
 
 export async function createScene(container: HTMLElement, scene: Scene): Promise<Viewer> {
@@ -21,6 +22,9 @@ export async function createScene(container: HTMLElement, scene: Scene): Promise
         case 'trilinear': {
             return await createTrilinearExperiment(container);
         }
+        case 'world-neighbors': {
+            return await createWorldNeighborsExperiment(container);
+        }
         case 'game':
         default: {
             return createGame(container);
@@ -32,7 +36,8 @@ const hashToScene: Record<string, Scene> = {
     '#hex-mesh': 'hex-mesh',
     '#cdt': 'cdt',
     '#input-events': 'input-events',
-    '#trilinear': 'trilinear'
+    '#trilinear': 'trilinear',
+    '#world-neighbors': 'world-neighbors'
 };
 
 export function createRouter(container: HTMLElement) {

@@ -25,46 +25,57 @@
                 top: 8px;
                 left: 8px;
                 z-index: 20;
-                display: flex;
-                gap: 8px;
             }
-            #nav a {
-                color: #aaa;
-                text-decoration: none;
+            #nav select {
+                color: #fff;
                 font-family: monospace;
                 font-size: 14px;
-                padding: 4px 10px;
-                background: rgba(255, 255, 255, 0.08);
+                padding: 6px 12px;
+                background: rgba(40, 40, 60, 0.9);
+                border: 1px solid rgba(255, 255, 255, 0.3);
                 border-radius: 4px;
+                cursor: pointer;
+                outline: none;
             }
-            #nav a:hover,
-            #nav a.active {
+            #nav select:hover {
+                background: rgba(60, 60, 90, 0.9);
+                border-color: rgba(255, 255, 255, 0.5);
+            }
+            #nav select option {
+                background: #2a2a3e;
                 color: #fff;
-                background: rgba(255, 255, 255, 0.18);
             }
         </style>
     </head>
     <body>
         <div id="nav">
-            <a href="#">Game</a>
-            <a href="#hex-mesh">Hex Mesh</a>
-            <a href="#cdt">CDT</a>
-            <a href="#input-events">Input Events</a>
-            <a href="#trilinear">Trilinear</a>
+            <select id="scene-select">
+                <option value="">Game</option>
+                <option value="hex-mesh">Hex Mesh</option>
+                <option value="cdt">CDT</option>
+                <option value="input-events">Input Events</option>
+                <option value="trilinear">Trilinear</option>
+                <option value="world-neighbors">World Neighbors</option>
+            </select>
         </div>
         <div id="app"></div>
         <script type="module">
-            // Update active nav link
-            function updateActiveLink() {
-                const hash = window.location.hash;
-                document.querySelectorAll('#nav a').forEach((a) => {
-                    const href = a.getAttribute('href');
-                    const isActive = href === hash || (href === '#' && (hash === '' || hash === '#'));
-                    a.classList.toggle('active', isActive);
-                });
+            const select = document.getElementById('scene-select');
+
+            // Update select based on hash
+            function updateSelect() {
+                const hash = window.location.hash.replace('#', '');
+                select.value = hash;
             }
-            window.addEventListener('hashchange', updateActiveLink);
-            updateActiveLink();
+
+            // Navigate when select changes
+            select.addEventListener('change', () => {
+                const value = select.value;
+                window.location.hash = value ? `#${value}` : '';
+            });
+
+            window.addEventListener('hashchange', updateSelect);
+            updateSelect();
         </script>
         <script type="module" src="/src/main.ts"></script>
     </body>

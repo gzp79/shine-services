@@ -83,7 +83,7 @@ impl WasmWorld {
         vec![pos.x, pos.y]
     }
 
-    pub fn boundary_edge_dual_vertices(&self, q: i32, r: i32, edge_idx: u8) -> Vec<f32> {
+    /*    pub fn boundary_edge_dual_vertices(&self, q: i32, r: i32, edge_idx: u8) -> Vec<f32> {
         self.world
             .boundary_edge_dual_polygons(ChunkId(q, r), edge_idx)
             .map(|(vertices, _, _)| vertices)
@@ -123,5 +123,5 @@ impl WasmWorld {
                 result
             })
             .unwrap_or_default()
-    }
+    }*/
 }

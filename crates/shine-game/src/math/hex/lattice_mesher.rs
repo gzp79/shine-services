@@ -89,7 +89,8 @@ impl LatticeMesher {
         }
 
         // Convert to vec with proper CCW winding
-        let triangles: Vec<[usize; 3]> = triangle_set
+        // Sort to ensure deterministic ordering across platforms (HashSet iteration is non-deterministic)
+        let mut triangles: Vec<[usize; 3]> = triangle_set
             .into_iter()
             .map(|[a, b, c]| {
                 let signed_area = (positions[b] - positions[a]).perp_dot(positions[c] - positions[a]);
@@ -100,6 +101,7 @@ impl LatticeMesher {
                 }
             })
             .collect();
+        triangles.sort();
 
         // Step 3: Build edge→triangle adjacency
         // edge key: (min_idx, max_idx) → list of triangle indices sharing that edge

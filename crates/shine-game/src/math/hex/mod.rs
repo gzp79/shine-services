@@ -7,7 +7,7 @@ mod patch_dense_indexer;
 mod patch_mesher;
 
 pub use self::{
-    axial_coord::{AxialCoord, RingIterator, SpiralIterator},
+    axial_coord::{AxialCoord, HexNeighbor, HexVertex, RingIterator, SpiralIterator},
     axial_dense_indexer::AxialDenseIndexer,
     cdt_mesher::CdtMesher,
     lattice_mesher::LatticeMesher,

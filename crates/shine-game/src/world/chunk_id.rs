@@ -1,5 +1,8 @@
 use crate::{
-    math::{hex::AxialCoord, prng::hash_u32_2},
+    math::{
+        hex::{AxialCoord, HexNeighbor},
+        prng::hash_u32_2,
+    },
     world::CHUNK_WORLD_SIZE,
 };
 use glam::Vec2;
@@ -29,7 +32,7 @@ impl ChunkId {
         (high << 32) | low
     }
 
-    pub fn neighbor(&self, direction: u8) -> ChunkId {
+    pub fn neighbor(&self, direction: HexNeighbor) -> ChunkId {
         AxialCoord::from(*self).neighbor(direction).into()
     }
 }

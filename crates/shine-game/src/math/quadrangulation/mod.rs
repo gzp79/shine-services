@@ -1,13 +1,16 @@
 mod builder;
-pub mod filter;
+mod extraction;
 mod quad_error;
 mod quadrangulation;
-pub mod query;
+mod query;
 mod rot4_index;
 mod types;
 mod validation;
 
+pub mod filter;
+
 pub use self::{
+    extraction::{DualExtractor, PrimalExtractor},
     filter::{Jitter, LaplacianSmoother, QuadFilter, QuadRelax, VertexRepulsion},
     quad_error::QuadError,
     quadrangulation::{AnchorIndex, Quad, QuadIndex, Quadrangulation, Vertex, VertexIndex},

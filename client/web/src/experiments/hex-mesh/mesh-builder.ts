@@ -5,20 +5,17 @@ const EDGE_COLOR = 0x222222;
 const DUAL_EDGE_COLOR = 0x222222;
 
 export interface MeshData {
-    // packed as [x0, y0, x1, y1, ...] where each pair is a vertex position in 2D
-    vertices: Float32Array;
-    // packed as [a0, b0, c0, d0, a1, b1, c1, d1, ...] where each group of 4 is a quad defined by vertex indices
-    quad_indices: Uint32Array;
-    // packed as [i0, i1, i2, ...] where each value is an index into the vertex array for anchor points
-    anchor_indices: Uint32Array;
-    // packed as [start0, start1, ...] where each value is the start index of an anchor edge in the anchor_indices array
-    anchor_edge_starts: Uint32Array;
-    // packed as [x0, y0, x1, y1, ...] where each pair is a dual vertex position in 2D
-    dual_vertices: Float32Array;
-    // packed as [a0, b0, c0, ...] where each value is an index into the dual_vertices array for dual edges
-    dual_indices: Uint32Array;
-    // packed as [start0, start1, ...] where each value is the start index of a dual polygon in the dual_indices array
-    dual_polygon_starts: Uint32Array;
+    // Primal mesh (quads)
+    vertices: Float32Array; // [x0, y0, x1, y1, ...]
+    quad_indices: Uint32Array; // Quad indices
+    quad_ranges: Uint32Array; // [start0, end0, start1, end1, ...]
+    // Anchor edges (boundary wires from primal mesh)
+    anchor_indices: Uint32Array; // Wire indices
+    anchor_ranges: Uint32Array; // [start0, end0, start1, end1, ...]
+    // Dual mesh (dual polygons)
+    dual_vertices: Float32Array; // [x0, y0, x1, y1, ...]
+    dual_indices: Uint32Array; // Polygon indices
+    dual_ranges: Uint32Array; // [start0, end0, start1, end1, ...]
 }
 
 export interface HexMeshGroup {
@@ -33,19 +30,23 @@ export interface HexMeshGroup {
 }
 
 function buildPrimalMesh(data: MeshData): THREE.Mesh {
-    const quadCount = data.quad_indices.length / 4;
     const primalPositions: number[] = [];
     const primalColors: number[] = [];
     const color = new THREE.Color();
 
-    for (let q = 0; q < quadCount; q++) {
-        const a = data.quad_indices[q * 4];
-        const b = data.quad_indices[q * 4 + 1];
-        const c = data.quad_indices[q * 4 + 2];
-        const d = data.quad_indices[q * 4 + 3];
+    for (let q = 0; q < data.quad_ranges.length; q += 2) {
+        const start = data.quad_ranges[q];
+        const end = data.quad_ranges[q + 1];
+
+        if (end - start !== 4) continue; // Skip non-quads
+
+        const a = data.quad_indices[start];
+        const b = data.quad_indices[start + 1];
+        const c = data.quad_indices[start + 2];
+        const d = data.quad_indices[start + 3];
 
         // Generate a random color for this quad using HSL for better distribution
-        const hue = (q * 0.618033988749895) % 1.0; // Golden ratio for nice distribution
+        const hue = ((q / 2) * 0.618033988749895) % 1.0; // Golden ratio for nice distribution
         color.setHSL(hue, 0.6, 0.65);
 
         // Triangle 1: a, b, c
@@ -74,14 +75,16 @@ function buildPrimalMesh(data: MeshData): THREE.Mesh {
 }
 
 function buildPrimalWire(data: MeshData): THREE.LineSegments {
-    const quadCount = data.quad_indices.length / 4;
     const positions: number[] = [];
 
-    for (let q = 0; q < quadCount; q++) {
-        const qi = q * 4;
-        for (let e = 0; e < 4; e++) {
-            const i0 = data.quad_indices[qi + e];
-            const i1 = data.quad_indices[qi + ((e + 1) % 4)];
+    for (let q = 0; q < data.quad_ranges.length; q += 2) {
+        const start = data.quad_ranges[q];
+        const end = data.quad_ranges[q + 1];
+        const quadSize = end - start;
+
+        for (let e = 0; e < quadSize; e++) {
+            const i0 = data.quad_indices[start + e];
+            const i1 = data.quad_indices[start + ((e + 1) % quadSize)];
             positions.push(
                 data.vertices[i0 * 2],
                 data.vertices[i0 * 2 + 1],
@@ -100,20 +103,19 @@ function buildPrimalWire(data: MeshData): THREE.LineSegments {
 }
 
 function buildDualMesh(data: MeshData): THREE.Mesh {
-    const dualPolygonCount = data.dual_polygon_starts.length;
     const positions: number[] = [];
     const colors: number[] = [];
     const color = new THREE.Color();
 
-    for (let p = 0; p < dualPolygonCount; p++) {
-        const start = data.dual_polygon_starts[p];
-        const end = p + 1 < dualPolygonCount ? data.dual_polygon_starts[p + 1] : data.dual_indices.length;
+    for (let p = 0; p < data.dual_ranges.length; p += 2) {
+        const start = data.dual_ranges[p];
+        const end = data.dual_ranges[p + 1];
         const polySize = end - start;
 
         if (polySize < 3) continue; // Skip degenerate polygons
 
         // Generate color for this dual polygon
-        const hue = (p * 0.618033988749895) % 1.0;
+        const hue = ((p / 2) * 0.618033988749895) % 1.0;
         color.setHSL(hue, 0.7, 0.5);
 
         // Fan triangulation from first vertex
@@ -144,12 +146,11 @@ function buildDualMesh(data: MeshData): THREE.Mesh {
 }
 
 function buildDualWire(data: MeshData): THREE.LineSegments {
-    const dualPolygonCount = data.dual_polygon_starts.length;
     const positions: number[] = [];
 
-    for (let p = 0; p < dualPolygonCount; p++) {
-        const start = data.dual_polygon_starts[p];
-        const end = p + 1 < dualPolygonCount ? data.dual_polygon_starts[p + 1] : data.dual_indices.length;
+    for (let p = 0; p < data.dual_ranges.length; p += 2) {
+        const start = data.dual_ranges[p];
+        const end = data.dual_ranges[p + 1];
         const polySize = end - start;
 
         if (polySize < 2) continue;
@@ -177,20 +178,21 @@ function buildDualWire(data: MeshData): THREE.LineSegments {
 }
 
 function buildAnchorWire(data: MeshData): THREE.LineSegments {
-    const anchorEdgeCount = data.anchor_edge_starts.length;
     const positions: number[] = [];
     const colors: number[] = [];
     const color = new THREE.Color();
 
-    for (let a = 0; a < anchorEdgeCount; a++) {
-        const start = data.anchor_edge_starts[a];
-        const end = a + 1 < anchorEdgeCount ? data.anchor_edge_starts[a + 1] : data.anchor_indices.length;
+    const anchorEdgeCount = data.anchor_ranges.length / 2;
+
+    for (let a = 0; a < data.anchor_ranges.length; a += 2) {
+        const start = data.anchor_ranges[a];
+        const end = data.anchor_ranges[a + 1];
         const edgeSize = end - start;
 
         if (edgeSize < 2) continue;
 
         // Use HSL color wheel for distinct colors per anchor edge
-        const hue = (a / anchorEdgeCount) % 1.0;
+        const hue = (a / 2 / anchorEdgeCount) % 1.0;
         color.setHSL(hue, 1.0, 0.5);
 
         // Create line segments for this anchor edge
@@ -220,17 +222,18 @@ function buildAnchorWire(data: MeshData): THREE.LineSegments {
 }
 
 function buildAnchorVertices(data: MeshData): THREE.InstancedMesh {
-    const anchorEdgeCount = data.anchor_edge_starts.length;
     const positions: number[] = [];
     const colors: number[] = [];
     const vertexSet = new Set<number>();
     const color = new THREE.Color();
 
-    for (let a = 0; a < anchorEdgeCount; a++) {
-        const start = data.anchor_edge_starts[a];
-        const end = a + 1 < anchorEdgeCount ? data.anchor_edge_starts[a + 1] : data.anchor_indices.length;
+    const anchorEdgeCount = data.anchor_ranges.length / 2;
 
-        const hue = (a / anchorEdgeCount) % 1.0;
+    for (let a = 0; a < data.anchor_ranges.length; a += 2) {
+        const start = data.anchor_ranges[a];
+        const end = data.anchor_ranges[a + 1];
+
+        const hue = (a / 2 / anchorEdgeCount) % 1.0;
         color.setHSL(hue, 1.0, 0.5);
 
         for (let i = start; i < end; i++) {

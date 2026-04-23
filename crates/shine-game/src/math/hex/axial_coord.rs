@@ -1,6 +1,68 @@
 use glam::Vec2;
 use serde::{Deserialize, Serialize};
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HexVertex {
+    NNW = 0, // Top left
+    NNE = 1, // Top right
+    E = 2,   // Right
+    SSE = 3, // Bottom right
+    SSW = 4, // Bottom left
+    W = 5,   // Left
+}
+
+impl From<u8> for HexVertex {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => HexVertex::NNW,
+            1 => HexVertex::NNE,
+            2 => HexVertex::E,
+            3 => HexVertex::SSE,
+            4 => HexVertex::SSW,
+            5 => HexVertex::W,
+            _ => panic!("Invalid vertex index: {}", value),
+        }
+    }
+}
+
+impl From<HexVertex> for u8 {
+    fn from(vertex: HexVertex) -> Self {
+        vertex as u8
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HexNeighbor {
+    N = 0,  // Top
+    NE = 1, // Top-Right
+    SE = 2, // Bottom-Right
+    S = 3,  // Bottom
+    SW = 4, // Bottom-Left
+    NW = 5, // Top-Left
+}
+
+impl From<u8> for HexNeighbor {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => HexNeighbor::N,
+            1 => HexNeighbor::NE,
+            2 => HexNeighbor::SE,
+            3 => HexNeighbor::S,
+            4 => HexNeighbor::SW,
+            5 => HexNeighbor::NW,
+            _ => panic!("Invalid neighbor index: {}", value),
+        }
+    }
+}
+
+impl From<HexNeighbor> for u8 {
+    fn from(neighbor: HexNeighbor) -> Self {
+        neighbor as u8
+    }
+}
+
 /// Axial coordinates for hexagonal grid.
 ///
 /// ```text
@@ -74,7 +136,7 @@ impl AxialCoord {
 
     /// Get neighbor chunk in direction 0..5
     /// 0: North, 1: NorthEast, 2: SouthEast, 3: South, 4: SouthWest, 5: NorthWest
-    pub fn neighbor(&self, direction: u8) -> Self {
+    pub fn neighbor(&self, direction: HexNeighbor) -> Self {
         const DIRECTIONS: [(i32, i32); 6] = [
             (0, -1), // North
             (1, -1), // NorthEast
@@ -90,7 +152,7 @@ impl AxialCoord {
     /// Get the coordinates of the hex neighbors
     pub fn neighbors(&self) -> impl Iterator<Item = AxialCoord> + 'static {
         let coord = *self;
-        (0u8..6).map(move |dir| coord.neighbor(dir))
+        (0u8..6).map(move |dir| coord.neighbor(HexNeighbor::from(dir)))
     }
 
     /// Returns the 6 corner coordinates of a flat-top hexagon at the given radius.
