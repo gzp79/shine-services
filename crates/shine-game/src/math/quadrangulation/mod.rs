@@ -1,4 +1,4 @@
-mod builder;
+pub mod builder;
 mod extraction;
 mod quad_error;
 mod quadrangulation;
@@ -10,6 +10,7 @@ mod validation;
 pub mod filter;
 
 pub use self::{
+    builder::{QuadBuilder, RandomizationMap},
     extraction::{DualExtractor, PrimalExtractor},
     filter::{Jitter, LaplacianSmoother, QuadFilter, QuadRelax, VertexRepulsion},
     quad_error::QuadError,

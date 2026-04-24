@@ -1,9 +1,9 @@
 use crate::{
     indexed::TypedIndex,
     math::{
-        hex::LatticeMesher,
+        hex::{HexNeighbor, HexVertex, LatticeMesher},
         prng::{Pcg32, SplitMix64},
-        quadrangulation::{Quadrangulation, VertexIndex},
+        quadrangulation::{AnchorIndex, Quadrangulation, VertexIndex},
     },
     world::{ChunkId, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
@@ -130,38 +130,15 @@ impl Chunk {
         (indices, starts)
     }
 
-    fn boundary_dual_polygon(&self, vi: VertexIndex) -> impl Iterator<Item = QuadVertex> + '_ {
-        // Collect one ring to find size and offset to first finite quad
-        let ring: Vec<_> = self.vertex_ring_ccw(vi).collect();
-        let ring_size = ring.len();
-        let offset = ring.iter().position(|qv| !self.is_infinite_quad(qv.quad)).unwrap_or(0);
-
-        // Return rotated iterator: skip to first finite, take one ring
-        self.vertex_ring_ccw_repeated(vi, 2).skip(offset).take(ring_size)
-    }
-
-    /// Iterate around vertex CW, starting from the first finite quad.
-    /// For boundary vertices, this ensures iteration starts from a finite quad.
-    /// For interior vertices, the starting quad is arbitrary (all quads are finite).
-    pub fn vertex_ring_cw_from_finite(&self, vi: VertexIndex) -> impl Iterator<Item = QuadVertex> + '_ {
-        // Collect one ring to find size and offset to first finite quad
-        let ring: Vec<_> = self.vertex_ring_cw(vi).collect();
-        let ring_size = ring.len();
-        let offset = ring.iter().position(|qv| !self.is_infinite_quad(qv.quad)).unwrap_or(0);
-
-        // Return rotated iterator: skip to first finite, take one ring
-        self.vertex_ring_cw_repeated(vi, 2).skip(offset).take(ring_size)
-    }
-
     /// Returns VertexIndex values along specified hex edge (0..5)
-    pub fn boundary_edge_vertices(&self, edge_idx: u8) -> Vec<VertexIndex> {
-        use crate::math::quadrangulation::AnchorIndex;
+    pub fn boundary_edge_vertices(&self, edge_idx: HexNeighbor) -> Vec<VertexIndex> {
+        // asume anchor points are corresponding to hex corners in order
         self.mesh.anchor_edge(AnchorIndex::new(edge_idx as usize)).collect()
     }
 
     /// Returns VertexIndex at specified hex corner (0..5)
-    pub fn boundary_corner_vertex(&self, corner_idx: u8) -> VertexIndex {
-        use crate::math::quadrangulation::AnchorIndex;
+    pub fn boundary_corner_vertex(&self, corner_idx: HexVertex) -> VertexIndex {
+        // asume anchor points are corresponding to hex corners in order
         self.mesh.anchor_vertex(AnchorIndex::new(corner_idx as usize))
     }
 }

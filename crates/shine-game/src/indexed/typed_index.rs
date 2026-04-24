@@ -20,10 +20,6 @@ pub trait TypedIndex: Copy + Eq + std::fmt::Debug {
 }
 
 /// Define a newtype index struct implementing `TypedIndex` with Serialize/Deserialize.
-///
-/// ```ignore
-/// define_typed_index!(VertIdx, "Typed index into a vertex array.");
-/// ```
 #[macro_export]
 macro_rules! define_typed_index {
     ($name:ident, $doc:expr) => {
@@ -94,6 +90,24 @@ macro_rules! define_typed_index {
             fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                 let v = u32::deserialize(deserializer)?;
                 Ok(Self(v))
+            }
+        }
+    };
+}
+
+/// Implement From/Into conversions between a typed index and usize.
+#[macro_export]
+macro_rules! impl_typed_index_conversions {
+    ($name:ident) => {
+        impl From<usize> for $name {
+            fn from(value: usize) -> Self {
+                Self::new(value)
+            }
+        }
+
+        impl From<$name> for usize {
+            fn from(value: $name) -> Self {
+                value.into_index()
             }
         }
     };

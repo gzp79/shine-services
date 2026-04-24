@@ -1,87 +1,82 @@
 use crate::{
     indexed::TypedIndex,
-    math::quadrangulation::{QuadEdge, QuadIndex, Quadrangulation, Rot4Idx, VertexClue, VertexIndex},
+    math::quadrangulation::{QuadIndex, QuadVertex, Quadrangulation, VertexIndex},
 };
 
 /// A circulator that traverses around a vertex in CCW or CW order, returning the edge (quad and edge index) of each adjacent quad.
 /// Unlike iterators, circulators can move in either direction and don't have a fixed termination.
 pub struct EdgeCirculator<'a> {
     quad: &'a Quadrangulation,
+    /// vertex index that this circulator is centered around.
     vertex: VertexIndex,
-    current: QuadEdge,
+    /// The current position of the circulator, represented as a QuadVertex referncing the center vertex.
+    current: QuadVertex,
 }
 
 impl<'a> EdgeCirculator<'a> {
-    pub fn new(quad: &'a Quadrangulation, start: VertexIndex) -> Self {
-        let q = quad[start].quad;
-        let edge = quad[q].find_vertex(start).unwrap().decrement();
+    pub fn new(quad: &'a Quadrangulation, vi: VertexIndex) -> Self {
+        let q = quad.vertices[vi].quad;
+        let local = quad[q].find_vertex(vi).unwrap();
+        let start_qv = QuadVertex { quad: q, local };
 
         EdgeCirculator {
             quad,
-            vertex: start,
-            current: QuadEdge::new(q, edge),
+            vertex: vi,
+            current: start_qv,
         }
     }
 
-    pub fn current(&self) -> &QuadEdge {
-        &self.current
+    #[inline]
+    pub fn current(&self) -> QuadVertex {
+        self.current
     }
 
+    #[inline]
     pub fn start_vertex(&self) -> VertexIndex {
         self.vertex
     }
 
+    #[inline]
     pub fn end_vertex(&self) -> VertexIndex {
-        self.quad.vi(VertexClue::EdgeEnd(self.current.quad, self.current.edge))
+        self.quad.vi(self.current.next())
     }
 
+    #[inline]
     pub fn quad(&self) -> QuadIndex {
         self.current.quad
     }
 
-    pub fn edge(&self) -> Rot4Idx {
-        self.current.edge
-    }
-
+    #[inline]
     pub fn advance_ccw(&mut self) {
-        assert!(self.current.quad.is_valid());
-        assert!(
-            self.quad
-                .vi(VertexClue::EdgeStart(self.current.quad, self.current.edge))
-                == self.vertex
-        );
+        debug_assert!(self.current.quad.is_valid());
+        debug_assert_eq!(self.quad.vi(self.current), self.vertex);
 
-        self.current.quad = self.quad[self.current.quad].neighbors[self.current.edge.decrement()];
-        self.current.edge = self.quad[self.current.quad]
-            .find_vertex(self.vertex)
-            .unwrap()
-            .decrement();
+        let edge = self.current.incoming_edge();
+        let neighbor = self.quad.edge_twin(edge);
+        self.current = neighbor.start();
     }
 
-    pub fn next_ccw(&mut self) -> QuadEdge {
-        let edge = *self.current();
+    #[inline]
+    pub fn next_ccw(&mut self) -> QuadVertex {
+        let qv = self.current();
         self.advance_ccw();
-        edge
+        qv
     }
 
+    #[inline]
     pub fn advance_cw(&mut self) {
-        assert!(self.current.quad.is_valid());
-        assert!(
-            self.quad
-                .vi(VertexClue::EdgeStart(self.current.quad, self.current.edge))
-                == self.vertex
-        );
+        debug_assert!(self.current.quad.is_valid());
+        debug_assert_eq!(self.quad.vi(self.current), self.vertex);
 
-        self.current.quad = self.quad[self.current.quad].neighbors[self.current.edge];
-        self.current.edge = self.quad[self.current.quad]
-            .find_vertex(self.vertex)
-            .unwrap()
-            .decrement();
+        let edge = self.current.outgoing_edge();
+        let neighbor = self.quad.edge_twin(edge);
+        self.current = neighbor.end();
     }
 
-    pub fn next_cw(&mut self) -> QuadEdge {
-        let edge = *self.current();
+    #[inline]
+    pub fn next_cw(&mut self) -> QuadVertex {
+        let qv = self.current();
         self.advance_cw();
-        edge
+        qv
     }
 }

@@ -1,4 +1,6 @@
-use crate::math::quadrangulation::{QuadEdge, QuadEdgeType, QuadIndex, QuadVertex, Quadrangulation, VertexIndex};
+use crate::math::quadrangulation::{
+    EdgeCirculator, QuadEdge, QuadEdgeType, QuadIndex, QuadVertex, Quadrangulation, VertexIndex,
+};
 use glam::Vec2;
 use std::iter;
 
@@ -62,6 +64,59 @@ impl Quadrangulation {
         }
     }
 
+    /// Returns an iterator of QuadIndex for all finite quads around a vertex.
+    /// For boundary vertices: starts from the first finite quad after the boundary (CCW from first infinite in CW direction).
+    /// For interior vertices: returns all surrounding quads in some rotation.
+    pub fn boundary_dual_vertices(&self, vi: VertexIndex) -> impl Iterator<Item = QuadIndex> + '_ {
+        let mut circulator = EdgeCirculator::new(self, vi);
+        let start_quad = circulator.current().quad;
+
+        // Step 1: Circulate CW until we hit the first infinite quad (or complete a circle for interior vertices)
+        loop {
+            if self.is_infinite_quad(circulator.quad()) {
+                break;
+            }
+            circulator.advance_cw();
+            if circulator.quad() == start_quad {
+                // Completed a full circle - this is an interior vertex, no infinite quads
+                break;
+            }
+        }
+
+        // Step 2: If we started from an infinite quad or ended up in one, circulate CCW to the first finite quad
+        while self.is_infinite_quad(circulator.quad()) {
+            circulator.advance_ccw();
+        }
+
+        // Now we're positioned at the first finite quad after the boundary edge
+        let first_finite = circulator.quad();
+
+        // Step 3: Iterate CCW, yielding finite quads until we hit an infinite quad or complete the circle
+        let mut done = false;
+        iter::from_fn(move || {
+            if done {
+                return None;
+            }
+
+            let result = circulator.quad();
+
+            // Filter out infinite quads
+            if !self.is_infinite_quad(result) {
+                circulator.advance_ccw();
+
+                // Check termination: either back to start or hit an infinite quad
+                if circulator.quad() == first_finite || self.is_infinite_quad(circulator.quad()) {
+                    done = true;
+                }
+
+                Some(result)
+            } else {
+                done = true;
+                None
+            }
+        })
+    }
+
     pub fn vertex_ring_ccw_repeated(&self, vi: VertexIndex, max_loops: usize) -> impl Iterator<Item = QuadVertex> + '_ {
         self.vertex_ring_impl(vi, max_loops, true)
     }
@@ -79,11 +134,9 @@ impl Quadrangulation {
     }
 
     fn vertex_ring_impl(&self, vi: VertexIndex, max_loops: usize, ccw: bool) -> impl Iterator<Item = QuadVertex> + '_ {
-        let quad = self.vertices[vi].quad;
-        let local = self[quad].find_vertex(vi).unwrap();
-        let start_qv = QuadVertex { quad, local };
+        let mut circulator = EdgeCirculator::new(self, vi);
+        let start_quad = circulator.current().quad;
 
-        let mut current = start_qv;
         let mut loops_remaining = max_loops;
         let mut done = false;
 
@@ -92,22 +145,14 @@ impl Quadrangulation {
                 return None;
             }
 
-            let result = current;
-
-            if ccw {
-                // CCW: Move via incoming edge (backward around the vertex)
-                let edge = current.incoming_edge();
-                let neighbor = self.edge_twin(edge);
-                current = neighbor.start();
+            let result = if ccw {
+                circulator.next_ccw()
             } else {
-                // CW: Move via outgoing edge (forward around the vertex)
-                let edge = current.outgoing_edge();
-                let neighbor = self.edge_twin(edge);
-                current = neighbor.end();
-            }
+                circulator.next_cw()
+            };
 
             // Check if we've completed a ring loop
-            if current.quad == start_qv.quad {
+            if circulator.quad() == start_quad {
                 assert!(
                     loops_remaining > 0,
                     "vertex_ring completed too many loops - likely skip_while/take_while didn't terminate"

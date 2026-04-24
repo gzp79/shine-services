@@ -6,8 +6,11 @@ use glam::Vec2;
 use std::ops;
 
 crate::define_typed_index!(VertexIndex, "Typed index into a vertex array.");
+crate::impl_typed_index_conversions!(VertexIndex);
 crate::define_typed_index!(QuadIndex, "Typed index into a quad array.");
+crate::impl_typed_index_conversions!(QuadIndex);
 crate::define_typed_index!(AnchorIndex, "Typed index into the anchor vertices array.");
+crate::impl_typed_index_conversions!(AnchorIndex);
 
 pub struct Vertex {
     pub position: Vec2,

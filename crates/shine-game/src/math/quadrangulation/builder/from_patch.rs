@@ -124,4 +124,35 @@ impl Quadrangulation {
         debug_assert_eq!(mesh.validate(), Ok(()));
         Ok(mesh)
     }
+
+    /// Construct a 2x2 grid of 4 quads:
+    /// ```text
+    ///  6----7----8
+    ///  | Q2 | Q3 |
+    ///  3----4----5
+    ///  | Q0 | Q1 |
+    ///  0----1----2
+    /// ```
+    /// Q0=[0,1,4,3]  Q1=[1,2,5,4]  Q2=[3,4,7,6]  Q3=[4,5,8,7]  (CCW)
+    /// Interior: 4.  Boundary: 8 vertices (0,1,2,5,8,7,6,3).
+    /// Simple 2x2 grid topology for testing.
+    pub fn new_2x2_grid() -> Self {
+        let quads: Vec<_> = [[0, 1, 4, 3], [1, 2, 5, 4], [3, 4, 7, 6], [4, 5, 8, 7]]
+            .map(|v| v.map(VertexIndex::new))
+            .to_vec();
+        let boundaries: Vec<_> = [0, 1, 2, 5, 8, 7, 6, 3].map(VertexIndex::new).to_vec();
+        let anchors: Vec<_> = [0, 2, 8, 6].map(VertexIndex::new).to_vec();
+        let positions = vec![
+            Vec2::new(0.0, 0.0), // 0
+            Vec2::new(1.0, 0.0), // 1
+            Vec2::new(2.0, 0.0), // 2
+            Vec2::new(0.0, 1.0), // 3
+            Vec2::new(1.0, 1.0), // 4
+            Vec2::new(2.0, 1.0), // 5
+            Vec2::new(0.0, 2.0), // 6
+            Vec2::new(1.0, 2.0), // 7
+            Vec2::new(2.0, 2.0), // 8
+        ];
+        Self::from_polygon(positions, boundaries, quads, anchors).expect("valid topology")
+    }
 }
