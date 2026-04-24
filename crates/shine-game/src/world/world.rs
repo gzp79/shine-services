@@ -1,3 +1,5 @@
+use glam::Vec2;
+
 use crate::{
     math::{
         hex::{HexNeighbor, HexVertex},
@@ -70,19 +72,36 @@ impl World {
 
     /// Returns dual polygon for boundary vertex cell (single triangular cell).
     /// Format: (vertices, indices, starts) matching Chunk::dual_polygons()
-    pub fn boundary_vertex_dual_polygon(&self, owner_id: ChunkId, vertex_idx: HexVertex) -> Option<()> {
-        let (n1, n2) = match vertex_idx {
-            HexVertex::NNW => (HexNeighbor::NW, HexNeighbor::N),
-            HexVertex::NNE => (HexNeighbor::N, HexNeighbor::NE),
-            HexVertex::E => (HexNeighbor::NE, HexNeighbor::SE),
-            HexVertex::SSE => (HexNeighbor::SE, HexNeighbor::S),
-            HexVertex::SSW => (HexNeighbor::S, HexNeighbor::SW),
-            HexVertex::W => (HexNeighbor::SW, HexNeighbor::NW),
+    pub fn boundary_vertex_dual_polygon(&self, owner_id: ChunkId, vertex_idx: HexVertex) -> Option<Vec<Vec2>> {
+        let v1 = vertex_idx;
+        let (n2, v2, n0, v0) = match vertex_idx {
+            HexVertex::NNW => (HexNeighbor::NW, HexVertex::E, HexNeighbor::N, HexVertex::SSW),
+            HexVertex::NNE => (HexNeighbor::N, HexVertex::SSE, HexNeighbor::NE, HexVertex::W),
+            HexVertex::E => (HexNeighbor::NE, HexVertex::SSW, HexNeighbor::SE, HexVertex::NNW),
+            HexVertex::SSE => (HexNeighbor::SE, HexVertex::W, HexNeighbor::S, HexVertex::NNE),
+            HexVertex::SSW => (HexNeighbor::S, HexVertex::NNW, HexNeighbor::SW, HexVertex::E),
+            HexVertex::W => (HexNeighbor::SW, HexVertex::NNE, HexNeighbor::NW, HexVertex::SSE),
         };
 
-        let _n1 = self.chunk(owner_id.neighbor(n1))?;
-        let _n2 = self.chunk(owner_id.neighbor(n2))?;
+        let id0 = owner_id.neighbor(n0);
+        let id1 = owner_id;
+        let id2 = owner_id.neighbor(n2);
 
-        None
+        let chunk0 = self.chunk(id0)?;
+        let chunk1 = self.chunk(id1)?;
+        let chunk2 = self.chunk(id2)?;
+
+        let mut vertices = Vec::new();
+
+        for (id, chunk, corner) in [(id0, chunk0, v0), (id1, chunk1, v1), (id2, chunk2, v2)] {
+            let offset = owner_id.relative_world_position(id);
+            let vi = chunk.boundary_corner_vertex(corner);
+            for q in chunk.mesh.boundary_dual_vertices(vi) {
+                let pos = chunk.mesh.dual_p(q).unwrap();
+                vertices.push(pos + offset);
+            }
+        }
+
+        Some(vertices)
     }
 }

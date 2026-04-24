@@ -17,14 +17,14 @@ impl<'a> Validator<'a> {
 
     fn validate_vertices(&self) -> Result<(), QuadError> {
         // Check all vertices have an associated quad that references them correctly
-        for vi_idx in 0..=self.topology.finite_vertex_count() {
+        for vi_idx in 0..=self.mesh.finite_vertex_count() {
             let vi = VertexIndex::new(vi_idx);
-            let vertex = &self.topology.vertices[vi];
+            let vertex = &self.mesh.vertices[vi];
             if vertex.quad.is_none() {
                 return Err(QuadError::VertexHasNoQuad(vi_idx));
             }
-            let local = self.topology[vertex.quad].find_vertex(vi).unwrap();
-            let actual = self.topology[vertex.quad].vertices[local];
+            let local = self.mesh[vertex.quad].find_vertex(vi).unwrap();
+            let actual = self.mesh[vertex.quad].vertices[local];
             if actual != vi {
                 return Err(QuadError::VertexQuadMismatch {
                     vertex: vi_idx,
@@ -37,8 +37,8 @@ impl<'a> Validator<'a> {
 
     fn validate_quads(&self) -> Result<(), QuadError> {
         // Check no degenerate quads (all 4 vertices distinct)
-        for qi_idx in 0..self.topology.quads.len() {
-            let verts = &self.topology.quads[QuadIndex::new(qi_idx)].vertices;
+        for qi_idx in 0..self.mesh.quads.len() {
+            let verts = &self.mesh.quads[QuadIndex::new(qi_idx)].vertices;
             for i in 0..4 {
                 let i_idx = Rot4Idx::new(i);
                 for j in (i + 1)..4 {
@@ -57,25 +57,25 @@ impl<'a> Validator<'a> {
 
     fn validate_edge_twins(&self) -> Result<(), QuadError> {
         // Check edge twin bidirectionality and involution
-        for qi_idx in 0..self.topology.quads.len() {
+        for qi_idx in 0..self.mesh.quads.len() {
             let qi = QuadIndex::new(qi_idx);
             for edge_idx in 0..4 {
                 let qe = QuadEdge {
                     quad: qi,
                     edge: Rot4Idx::new(edge_idx),
                 };
-                let twin = self.topology.edge_twin(qe);
+                let twin = self.mesh.edge_twin(qe);
 
                 // Check twin vertices are reversed
-                let (v0, v1) = self.topology.edge_vertices(qe);
-                let (twin_v0, twin_v1) = self.topology.edge_vertices(twin);
+                let (v0, v1) = self.mesh.edge_vertices(qe);
+                let (twin_v0, twin_v1) = self.mesh.edge_vertices(twin);
 
                 if v0 != twin_v1 || v1 != twin_v0 {
                     return Err(QuadError::InvalidEdgeTwin { quad: qi_idx, edge: edge_idx });
                 }
 
                 // Check twin of twin points back to original
-                let round_trip = self.topology.edge_twin(twin);
+                let round_trip = self.mesh.edge_twin(twin);
                 if round_trip.quad != qe.quad || round_trip.edge != qe.edge {
                     return Err(QuadError::EdgeTwinNotInvolution { quad: qi_idx, edge: edge_idx });
                 }
@@ -85,11 +85,11 @@ impl<'a> Validator<'a> {
     }
 
     fn validate_infinite_structure(&self) -> Result<(), QuadError> {
-        let infinite_vertex = self.topology.infinite_vertex();
+        let infinite_vertex = self.mesh.infinite_vertex();
 
         // Check each infinite quad has exactly one infinite vertex
-        for qi in self.topology.infinite_quad_index_iter() {
-            let verts = self.topology.quad_vertices(qi);
+        for qi in self.mesh.infinite_quad_index_iter() {
+            let verts = self.mesh.quad_vertices(qi);
             let infinite_count = verts.iter().filter(|&&v| v == infinite_vertex).count();
 
             if infinite_count != 1 {
@@ -102,25 +102,25 @@ impl<'a> Validator<'a> {
 
         // Verify infinite_quad_count matches actual infinite quad count
         let actual_infinite_count = self
-            .topology
+            .mesh
             .quads
             .iter()
             .filter(|quad| quad.vertices.iter().any(|&v| v == infinite_vertex))
             .count();
-        if actual_infinite_count != self.topology.infinite_quad_count() {
+        if actual_infinite_count != self.mesh.infinite_quad_count() {
             return Err(QuadError::InfiniteQuadCountMismatch {
-                expected: self.topology.infinite_quad_count(),
+                expected: self.mesh.infinite_quad_count(),
                 actual: actual_infinite_count,
             });
         }
 
         // Verify infinite quads are contiguous at the end of the quad array
-        let finite_count = self.topology.quads.len() - self.topology.infinite_quad_count();
+        let finite_count = self.mesh.quads.len() - self.mesh.infinite_quad_count();
         for qi_idx in 0..finite_count {
-            if self.topology.is_infinite_quad(QuadIndex::new(qi_idx)) {
+            if self.mesh.is_infinite_quad(QuadIndex::new(qi_idx)) {
                 // Find the first finite quad after this infinite quad
-                let finite_after = (qi_idx + 1..self.topology.quads.len())
-                    .find(|&i| !self.topology.is_infinite_quad(QuadIndex::new(i)))
+                let finite_after = (qi_idx + 1..self.mesh.quads.len())
+                    .find(|&i| !self.mesh.is_infinite_quad(QuadIndex::new(i)))
                     .unwrap_or(qi_idx);
                 return Err(QuadError::InfiniteQuadsNotCompact {
                     infinite_quad: qi_idx,
@@ -134,17 +134,17 @@ impl<'a> Validator<'a> {
 
     fn validate_vertex_rings(&self) -> Result<(), QuadError> {
         // Check vertex rings form closed loops (real vertices and ghost vertex)
-        for vi_idx in 0..self.topology.finite_vertex_count() {
+        for vi_idx in 0..self.mesh.finite_vertex_count() {
             self.validate_vertex_ring(VertexIndex::new(vi_idx))?;
         }
-        self.validate_vertex_ring(self.topology.infinite_vertex())?;
+        self.validate_vertex_ring(self.mesh.infinite_vertex())?;
         Ok(())
     }
 
     /// Helper to validate a single vertex ring forms a closed loop
     fn validate_vertex_ring(&self, vi: VertexIndex) -> Result<(), QuadError> {
         let vi_idx = vi.into_index();
-        let ring: Vec<_> = self.topology.vertex_ring_ccw(vi).collect();
+        let ring: Vec<_> = self.mesh.vertex_ring_ccw(vi).collect();
 
         if ring.is_empty() {
             return Err(QuadError::VertexRingNotClosed { vertex: vi_idx });
@@ -152,7 +152,7 @@ impl<'a> Validator<'a> {
 
         // Verify all ring elements reference the correct vertex
         for qv in &ring {
-            let vertex_at_pos = self.topology.quads[qv.quad].vertices[qv.local];
+            let vertex_at_pos = self.mesh.quads[qv.quad].vertices[qv.local];
             if vertex_at_pos != vi {
                 return Err(QuadError::VertexRingNotClosed { vertex: vi_idx });
             }
@@ -161,9 +161,9 @@ impl<'a> Validator<'a> {
         // Check ring closure: next position after last should reference same vertex
         let last = ring[ring.len() - 1];
         let incoming = last.incoming_edge();
-        let neighbor = self.topology.edge_twin(incoming);
+        let neighbor = self.mesh.edge_twin(incoming);
         let next_pos = neighbor.start();
-        let next_vertex = self.topology.quads[next_pos.quad].vertices[next_pos.local];
+        let next_vertex = self.mesh.quads[next_pos.quad].vertices[next_pos.local];
 
         // Must be the same vertex (forms a cycle around vi)
         if next_vertex != vi {
@@ -183,9 +183,9 @@ impl<'a> Validator<'a> {
 
     fn validate_reachability(&self) -> Result<(), QuadError> {
         // Check all quads are reachable from vertex rings
-        let mut reachable = vec![false; self.topology.quads.len()];
-        for vi_idx in 0..=self.topology.finite_vertex_count() {
-            for qv in self.topology.vertex_ring_ccw(VertexIndex::new(vi_idx)) {
+        let mut reachable = vec![false; self.mesh.quads.len()];
+        for vi_idx in 0..=self.mesh.finite_vertex_count() {
+            for qv in self.mesh.vertex_ring_ccw(VertexIndex::new(vi_idx)) {
                 reachable[qv.quad.into_index()] = true;
             }
         }
@@ -199,24 +199,24 @@ impl<'a> Validator<'a> {
 
     fn validate_anchors(&self) -> Result<(), QuadError> {
         // Check anchor vertices are boundary vertices in correct cyclic order
-        if !self.topology.anchor_vertices.is_empty() {
-            let boundary: Vec<_> = self.topology.boundary_vertices().collect();
+        if !self.mesh.anchor_vertices.is_empty() {
+            let boundary: Vec<_> = self.mesh.boundary_vertices().collect();
 
             // Check all anchor vertices are in the boundary
-            for anchor_idx in self.topology.anchor_index_iter() {
-                let anchor_v = self.topology.anchor_vertices[anchor_idx];
+            for anchor_idx in self.mesh.anchor_index_iter() {
+                let anchor_v = self.mesh.anchor_vertices[anchor_idx];
                 if !boundary.contains(&anchor_v) {
                     return Err(QuadError::InvalidAnchorEdge { edge: anchor_idx.into_index() });
                 }
             }
 
             // Verify cyclic ordering: each anchor must follow the previous along the boundary
-            let first_anchor_v = self.topology.anchor_vertices[AnchorIndex::new(0)];
+            let first_anchor_v = self.mesh.anchor_vertices[AnchorIndex::new(0)];
             let first_pos = boundary.iter().position(|&b| b == first_anchor_v).unwrap();
             let mut search_start = first_pos;
 
-            for anchor_idx in 1..self.topology.anchor_vertices.len() {
-                let anchor_v = self.topology.anchor_vertices[AnchorIndex::new(anchor_idx)];
+            for anchor_idx in 1..self.mesh.anchor_vertices.len() {
+                let anchor_v = self.mesh.anchor_vertices[AnchorIndex::new(anchor_idx)];
                 let found =
                     (1..boundary.len()).find(|&offset| boundary[(search_start + offset) % boundary.len()] == anchor_v);
                 match found {

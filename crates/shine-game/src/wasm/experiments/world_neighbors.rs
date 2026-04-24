@@ -84,7 +84,7 @@ fn extract_edge_geometry(world: &World, center_id: ChunkId, edge_idx: u8) -> Ind
 /// Extract boundary vertex dual polygons from world
 fn extract_vertex_geometry(world: &World, center_id: ChunkId, vertex_idx: u8) -> IndexedMesh {
     match world.boundary_vertex_dual_polygon(center_id, HexVertex::from(vertex_idx)) {
-        Some(()) => IndexedMesh::default(),
+        Some(vertices) => IndexedMesh::from_polyline(&vertices),
         None => IndexedMesh::default(),
     }
 }

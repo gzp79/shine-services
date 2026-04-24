@@ -62,4 +62,7 @@ pub enum QuadError {
 
     #[error("Self-intersection detected between quad {quad1} and quad {quad2}")]
     SelfIntersection { quad1: usize, quad2: usize },
+
+    #[error("Invalid hexagon: {0}")]
+    InvalidHexagon(String),
 }

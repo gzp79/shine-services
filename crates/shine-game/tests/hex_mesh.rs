@@ -3,7 +3,7 @@ use shine_game::{
     math::{
         hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
         prng::{StableRng, SysRng, Xorshift32},
-        quadrangulation::{AnchorIndex, Quadrangulation},
+        quadrangulation::Quadrangulation,
     },
 };
 use shine_test::test;
@@ -11,53 +11,58 @@ use shine_test::test;
 const SUBDIVISION: u32 = 3;
 const ORIENTATION: PatchOrientation = PatchOrientation::Even;
 /// Expected vertices per anchor edge: 2^SUBDIVISION + 1
-const EXPECTED_ANCHOR_EDGE_LEN: usize = (1 << SUBDIVISION) + 1;
-
-fn check_anchor_edges(mesh: &Quadrangulation) {
-    assert_eq!(mesh.anchor_count(), 6, "hex mesh should have 6 anchor vertices");
-    for i in 0..6 {
-        let edge_len = mesh.anchor_edge(AnchorIndex::new(i)).count();
-        assert_eq!(
-            edge_len, EXPECTED_ANCHOR_EDGE_LEN,
-            "anchor edge {i} should have {EXPECTED_ANCHOR_EDGE_LEN} vertices, got {edge_len}"
-        );
-    }
-}
+const ANCHOR_SUBDIVISION: usize = (1 << SUBDIVISION) + 1;
 
 #[test]
 fn generate_uniform() {
     let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
     let mesh = mesher.generate_uniform();
-    mesh.validate().expect("uniform mesh topology should be valid");
     assert!(mesh.quad_count() > 0, "uniform mesh should have quads");
-    check_anchor_edges(&mesh);
+    let validator = mesh.validator();
+    assert_eq!(validator.validate(), Ok(()));
+    assert_eq!(
+        validator.validate_regular_flat_top_hexagon(ANCHOR_SUBDIVISION, 1e-6),
+        Ok(())
+    );
 }
 
 #[test]
 fn generate_subdiv_uniform() {
     let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
     let mesh = mesher.generate_subdivision();
-    mesh.validate().expect("subdivision mesh topology should be valid");
     assert!(mesh.quad_count() > 0, "subdivision mesh should have quads");
-    check_anchor_edges(&mesh);
+    let validator = mesh.validator();
+    assert_eq!(validator.validate(), Ok(()));
+    assert_eq!(
+        validator.validate_regular_flat_top_hexagon(ANCHOR_SUBDIVISION, 1e-6),
+        Ok(())
+    );
 }
 
 #[test]
 fn generate_cdt_mesh() {
     let mut mesher = CdtMesher::new(SUBDIVISION, 20, SysRng::new().into_rc());
     let mesh = mesher.generate();
-    mesh.validate().expect("CDT mesh topology should be valid");
     assert!(mesh.quad_count() > 0, "CDT mesh should have quads");
-    check_anchor_edges(&mesh);
+    let validator = mesh.validator();
+    assert_eq!(validator.validate(), Ok(()));
+    assert_eq!(
+        validator.validate_regular_flat_top_hexagon(ANCHOR_SUBDIVISION, 1e-6),
+        Ok(())
+    );
 }
 
 #[test]
 fn generate_lattice_mesh() {
     let mut mesher = LatticeMesher::new(SUBDIVISION, SysRng::new().into_rc());
     let mesh = mesher.generate();
-    mesh.validate().expect("lattice mesh topology should be valid");
     assert!(mesh.quad_count() > 0, "lattice mesh should have quads");
-    check_anchor_edges(&mesh);
+    let validator = mesh.validator();
+    assert_eq!(validator.validate(), Ok(()));
+    assert_eq!(
+        validator.validate_regular_flat_top_hexagon(ANCHOR_SUBDIVISION, 1e-6),
+        Ok(())
+    );
 }
 
 /// Generic helper to verify mesher determinism by generating the same mesh twice

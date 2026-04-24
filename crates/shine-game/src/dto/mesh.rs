@@ -1,3 +1,5 @@
+use glam::Vec2;
+
 /// Indexed mesh DTO for transferring geometry data
 #[derive(Debug, Clone, Default)]
 pub struct IndexedMesh {
@@ -9,6 +11,20 @@ pub struct IndexedMesh {
 }
 
 impl IndexedMesh {
+    pub fn from_polyline(polyline: &[Vec2]) -> Self {
+        let vertices = polyline.into_iter().flat_map(|v| vec![v.x, v.y]).collect();
+        let indices = (0..polyline.len() as u32).collect();
+        let polygon_ranges = vec![0, polyline.len() as u32];
+
+        Self {
+            vertices,
+            indices,
+            polygon_ranges,
+            wire_indices: Vec::new(),
+            wire_ranges: Vec::new(),
+        }
+    }
+
     /// Create a scoped appender that captures current offsets
     /// Allows safe append of vertices, polygons, and wires in any order
     pub fn append(&mut self) -> MeshAppender<'_> {

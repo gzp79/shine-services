@@ -1,10 +1,9 @@
 use crate::{
-    indexed::TypedIndex,
     math::{
         hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
         prng::{StableRng, Xorshift32},
         quadrangulation::{
-            Jitter, LaplacianSmoother, QuadFilter, QuadIndex, QuadRelax, Quadrangulation, VertexRepulsion,
+            Jitter, LaplacianSmoother, QuadError, QuadFilter, QuadRelax, Quadrangulation, VertexRepulsion,
         },
     },
     wasm::dto::WasmIndexedMesh,
@@ -88,7 +87,7 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
     let world_size = config.world_size;
 
     // Step 1: Generate base mesh from selected mesher
-    let mut mesh = match config.mesher {
+    let (mut mesh, subdivision) = match config.mesher {
         MesherConfig::Patch { subdivision, orientation } => {
             let orient = match orientation.as_str() {
                 "Even" => PatchOrientation::Even,
@@ -96,46 +95,32 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
                 _ => return Err(JsValue::from_str("orientation must be 'Even' or 'Odd'")),
             };
             let mut mesher = PatchMesher::new(subdivision, orient).with_world_size(world_size);
-            mesher.generate_uniform()
+            (mesher.generate_uniform(), subdivision)
         }
         MesherConfig::Cdt { subdivision, interior_points } => {
             let rng = Xorshift32::new(config.seed).into_rc();
             let mut mesher = CdtMesher::new(subdivision, interior_points, rng).with_world_size(world_size);
-            mesher.generate()
+            (mesher.generate(), subdivision)
         }
         MesherConfig::Lattice { subdivision } => {
             let rng = Xorshift32::new(config.seed).into_rc();
             let mut mesher = LatticeMesher::new(subdivision, rng).with_world_size(world_size);
-            mesher.generate()
+            (mesher.generate(), subdivision)
         }
     };
 
-    mesh.validate().map_err(|e| {
-        log::error!("Validation failed for seed {}: {:?}", config.seed, e);
+    let validate = || {
+        let anchor_sibdivision = (1 << subdivision) + 1;
+        let validator = mesh.validator();
+        validator.validate()?;
+        validator.validate_regular_flat_top_hexagon(anchor_sibdivision, config.world_size * 0.001)?;
+        Ok::<(), QuadError>(())
+    };
 
-        // Log quad details for SelfIntersection errors
-        if let Some(err_str) = format!("{:?}", e).strip_prefix("SelfIntersection { quad1: ") {
-            if let Some((q1_str, rest)) = err_str.split_once(", quad2: ") {
-                if let (Ok(q1), Ok(q2)) = (q1_str.parse::<usize>(), rest.trim_end_matches(" }").parse::<usize>()) {
-                    log::error!("Quad {} vertices:", q1);
-                    let verts_1 = mesh.quad_vertices(QuadIndex::new(q1));
-                    for (i, &vi) in verts_1.iter().enumerate() {
-                        let p = mesh.p(vi);
-                        log::error!("  v{}: {} -> ({}, {})", i, vi.into_index(), p.x, p.y);
-                    }
-
-                    log::error!("Quad {} vertices:", q2);
-                    let verts_2 = mesh.quad_vertices(QuadIndex::new(q2));
-                    for (i, &vi) in verts_2.iter().enumerate() {
-                        let p = mesh.p(vi);
-                        log::error!("  v{}: {} -> ({}, {})", i, vi.into_index(), p.x, p.y);
-                    }
-                }
-            }
-        }
-
-        JsValue::from_str(&format!("Invalid mesh ({}): {:?}", config.seed, e))
-    })?;
+    if let Err(err) = validate() {
+        log::error!("Validation failed for seed {}: {:?}", config.seed, err);
+        return Err(JsValue::from_str(&format!("Invalid mesh ({}): {:?}", config.seed, err)));
+    }
 
     // Step 2: Apply filter pipeline
     for filter_cfg in config.filters {
