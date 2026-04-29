@@ -67,7 +67,11 @@ impl Content {
                 let p = info.normalize(*pos);
                 format!(
                     r#"  <line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" class="{}" />"#,
-                    p.x, p.y, p.x, p.y, xml_escape(class)
+                    p.x,
+                    p.y,
+                    p.x,
+                    p.y,
+                    xml_escape(class)
                 )
             }
             Content::Line { p0, p1, class } => {
@@ -75,7 +79,11 @@ impl Content {
                 let p1 = info.normalize(*p1);
                 format!(
                     r#"  <line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" class="{}" />"#,
-                    p0.x, p0.y, p1.x, p1.y, xml_escape(class)
+                    p0.x,
+                    p0.y,
+                    p1.x,
+                    p1.y,
+                    xml_escape(class)
                 )
             }
             Content::OffsetLine { p0, p1, offset, class } => {
@@ -84,7 +92,11 @@ impl Content {
                 let p1 = info.normalize(*p1) + offset * 15.0;
                 format!(
                     r#"  <line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" class="{}"/>"#,
-                    p0.x, p0.y, p1.x, p1.y, xml_escape(class)
+                    p0.x,
+                    p0.y,
+                    p1.x,
+                    p1.y,
+                    xml_escape(class)
                 )
             }
             Content::Text { pos, offset, text, class } => {
@@ -92,7 +104,10 @@ impl Content {
                 let p = info.normalize(*pos) + offset * 12.5;
                 format!(
                     r#"  <text x="{:.2}" y="{:.2}" class="{}">{}</text>"#,
-                    p.x, p.y, xml_escape(class), xml_escape(text)
+                    p.x,
+                    p.y,
+                    xml_escape(class),
+                    xml_escape(text)
                 )
             }
         }

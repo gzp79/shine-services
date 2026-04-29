@@ -72,6 +72,14 @@ macro_rules! define_enum_index {
                 [$($name::$variant),*].into_iter()
             }
 
+            /// Converts a `usize` index into the corresponding enum variant, panicking if the index is invalid.
+            pub fn from_index(index: usize) -> Self {
+                match index {
+                    $($value => $name::$variant,)*
+                    _ => panic!(concat!("Invalid ", stringify!($name), " index: {}"), index),
+                }
+            }
+
             /// Converts this enum variant into its corresponding index.
             pub fn into_index(self) -> usize {
                 usize::from(self)

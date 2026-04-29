@@ -155,6 +155,7 @@ impl Quadrangulation {
             anchor_vertices,
         };
 
+        //FIXME!!!!
         mesh.dump();
 
         debug_assert_eq!(mesh.validate(), Ok(()));

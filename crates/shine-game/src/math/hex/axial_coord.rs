@@ -1,10 +1,10 @@
 use crate::math::{
-    hex::{HexFlatDir, HexPointyDir},
+    hex::{AxialBase, HexFlatDir, HexPointyDir},
     SQRT_3,
 };
 use glam::Vec2;
 use serde::{Deserialize, Serialize};
-use std::ops;
+use std::{array, ops};
 
 /// Axial coordinates for hexagonal grid.
 ///
@@ -74,6 +74,21 @@ impl AxialCoord {
         ((a_cube.0 - b_cube.0).abs() + (a_cube.1 - b_cube.1).abs() + (a_cube.2 - b_cube.2).abs()) / 2
     }
 
+    /// Get a navigator for stepping in flat-top hex directions
+    pub fn flat(self) -> FlatAxialCoord {
+        FlatAxialCoord(self)
+    }
+
+    /// Get a navigator for stepping in flat-top hex directions
+    pub fn pointy(self) -> PointyAxialCoord {
+        PointyAxialCoord(self)
+    }
+
+    /// Returns true if this coordinate lies on the boundary of a hex grid of given radius.
+    pub fn is_boundary(&self, radius: u32) -> bool {
+        self.distance(&AxialCoord::ORIGIN) == radius as i32
+    }
+
     /// Get the coordinates of all hexes in a ring at the given radius
     /// Starting from direction 0 (HexPointyDir, HexFlatDir) and proceeding CCW
     pub fn ring(&self, radius: u32) -> RingIterator {
@@ -84,21 +99,6 @@ impl AxialCoord {
     /// Starting from radius 0 (center) and proceeding outward in rings
     pub fn spiral(&self, radius: u32) -> SpiralIterator {
         SpiralIterator::new(*self, radius)
-    }
-
-    /// Get a navigator for stepping in flat-top hex directions
-    pub fn flat(self) -> AxialCoordFlatStepper {
-        AxialCoordFlatStepper(self)
-    }
-
-    /// Get a navigator for stepping in flat-top hex directions
-    pub fn pointy(self) -> AxialCoordPointyStepper {
-        AxialCoordPointyStepper(self)
-    }
-
-    /// Returns true if this coordinate lies on the boundary of a hex grid of given radius.
-    pub fn is_boundary(&self, radius: u32) -> bool {
-        self.distance(&AxialCoord::ORIGIN) == radius as i32
     }
 }
 
@@ -116,29 +116,41 @@ impl From<AxialCoord> for (i32, i32) {
 
 /// Navigate on a flat-top hex grid
 #[derive(Clone, Copy)]
-pub struct AxialCoordFlatStepper(AxialCoord);
+pub struct FlatAxialCoord(AxialCoord);
 
-impl AxialCoordFlatStepper {
+impl FlatAxialCoord {
+    /// Get the (Δq, Δr) delta for a direction in flat-top coordinates.
     #[inline]
-    pub fn step(mut self, direction: HexFlatDir, step: i32) -> AxialCoordFlatStepper {
-        let (dq, dr) = AxialCoord::NEIGHBOR_DIRECTIONS[direction as usize];
+    pub fn delta(direction: HexFlatDir) -> (i32, i32) {
+        AxialCoord::NEIGHBOR_DIRECTIONS[direction as usize]
+    }
+
+    /// Create an AxialBase with this coordinate as origin and the given directions as basis vectors.
+    #[inline]
+    pub fn base(self, du: HexFlatDir, dv: HexFlatDir) -> AxialBase {
+        AxialBase::new(self.0, Self::delta(du), Self::delta(dv))
+    }
+
+    #[inline]
+    pub fn step(mut self, direction: HexFlatDir, step: i32) -> FlatAxialCoord {
+        let (dq, dr) = Self::delta(direction);
         self.0.q += dq * step;
         self.0.r += dr * step;
         self
     }
 
     #[inline]
-    pub fn neighbor(self, direction: HexFlatDir) -> AxialCoordFlatStepper {
+    pub fn neighbor(self, direction: HexFlatDir) -> FlatAxialCoord {
         self.step(direction, 1)
     }
 
     #[inline]
-    pub fn corner(self, direction: HexFlatDir, radius: u32) -> AxialCoordFlatStepper {
+    pub fn corner(self, direction: HexFlatDir, radius: u32) -> FlatAxialCoord {
         self.step(direction, radius as i32)
     }
 
     /// The 6 corenrs of a hexagonal ring at the given radius, starting from direction 0 (HexFlatDir) and proceeding CCW
-    pub fn corners(self, radius: u32) -> [AxialCoordFlatStepper; 6] {
+    pub fn corners(self, radius: u32) -> [FlatAxialCoord; 6] {
         let mut corners = [self; 6];
         for i in HexFlatDir::all() {
             corners[i.into_index()] = self.corner(i, radius);
@@ -154,7 +166,7 @@ impl AxialCoordFlatStepper {
     }
 }
 
-impl ops::Deref for AxialCoordFlatStepper {
+impl ops::Deref for FlatAxialCoord {
     type Target = AxialCoord;
 
     fn deref(&self) -> &Self::Target {
@@ -164,34 +176,46 @@ impl ops::Deref for AxialCoordFlatStepper {
 
 /// Navigate in a pointy-top hex grid
 #[derive(Clone, Copy)]
-pub struct AxialCoordPointyStepper(AxialCoord);
+pub struct PointyAxialCoord(AxialCoord);
 
-impl AxialCoordPointyStepper {
+impl PointyAxialCoord {
+    /// Get the (Δq, Δr) delta for a direction in pointy-top coordinates.
     #[inline]
-    pub fn step(mut self, direction: HexPointyDir, step: i32) -> AxialCoordPointyStepper {
-        let (dq, dr) = AxialCoord::NEIGHBOR_DIRECTIONS[direction as usize];
+    pub fn delta(direction: HexPointyDir) -> (i32, i32) {
+        AxialCoord::NEIGHBOR_DIRECTIONS[direction as usize]
+    }
+
+    /// Create an AxialBase with this coordinate as origin and the given directions as basis vectors.
+    pub fn base(self, du: HexPointyDir, dv: HexPointyDir) -> AxialBase {
+        AxialBase::new(self.0, Self::delta(du), Self::delta(dv))
+    }
+
+    #[inline]
+    pub fn step(mut self, direction: HexPointyDir, step: i32) -> PointyAxialCoord {
+        let (dq, dr) = Self::delta(direction);
         self.0.q += dq * step;
         self.0.r += dr * step;
         self
     }
 
     #[inline]
-    pub fn neighbor(self, direction: HexPointyDir) -> AxialCoordPointyStepper {
+    pub fn neighbor(self, direction: HexPointyDir) -> PointyAxialCoord {
         self.step(direction, 1)
     }
 
     #[inline]
-    pub fn corner(self, direction: HexPointyDir, radius: u32) -> AxialCoordPointyStepper {
+    pub fn neighbors(self) -> [AxialCoord; 6] {
+        array::from_fn(|i| self.neighbor(HexPointyDir::from_index(i)).0)
+    }
+
+    #[inline]
+    pub fn corner(self, direction: HexPointyDir, radius: u32) -> PointyAxialCoord {
         self.step(direction, radius as i32)
     }
 
-    /// The 6 corenrs of a hexagonal ring at the given radius, starting from direction 0 (HexPointyDir) and proceeding CCW
-    pub fn corners(self, radius: u32) -> [AxialCoordPointyStepper; 6] {
-        let mut corners = [self; 6];
-        for i in HexPointyDir::all() {
-            corners[i.into_index()] = self.corner(i, radius);
-        }
-        corners
+    #[inline]
+    pub fn corners(self, radius: u32) -> [AxialCoord; 6] {
+        array::from_fn(|i| self.corner(HexPointyDir::from_index(i), radius).0)
     }
 
     /// World position of the cell center, when a cell has the given size (radius)
@@ -203,7 +227,7 @@ impl AxialCoordPointyStepper {
     }
 }
 
-impl ops::Deref for AxialCoordPointyStepper {
+impl ops::Deref for PointyAxialCoord {
     type Target = AxialCoord;
 
     fn deref(&self) -> &Self::Target {

@@ -451,7 +451,7 @@ impl SvgDump {
             // The two finite edges are v1->v0 and v0->v_prev, meeting at v0
             let infinite_count = q.vertices.iter().filter(|&&v| quad.is_infinite_vertex(v)).count();
             if infinite_count > 1 {
-                eprintln!(
+                log::error!(
                     "WARNING: Quad {} has {} infinite vertices (expected 0 or 1), skipping ghost visualization",
                     qi.try_into_index().unwrap_or(999),
                     infinite_count

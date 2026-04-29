@@ -237,7 +237,7 @@ impl Quadrangulation {
         let svg_path = output_path.join("quad_mesh_debug.svg");
         if let Ok(mut file) = std::fs::File::create(&svg_path) {
             svg.write(&mut file).ok();
-            eprintln!("DEBUG: Quad mesh SVG dumped to: {}", svg_path.display());
+            log::error!("DEBUG: Quad mesh SVG dumped to: {}", svg_path.display());
         }
     }
 }

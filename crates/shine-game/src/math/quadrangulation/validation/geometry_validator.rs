@@ -149,10 +149,29 @@ impl<'a> Validator<'a> {
                         }
 
                         if segments_intersect(a, b, c, d) {
+                            let verts_i_indices: Vec<_> = verts_i.iter().map(|v| v.into_index()).collect();
+                            let verts_j_indices: Vec<_> = verts_j.iter().map(|v| v.into_index()).collect();
                             return Err(QuadError::Geometry(format!(
-                                "Self-intersection detected between quad {} and quad {}",
+                                "Self-intersection detected between quad {} and quad {}\n\
+                                 Quad {} vertices: {:?} (indices: {:?})\n\
+                                 Quad {} vertices: {:?} (indices: {:?})\n\
+                                 Intersecting edges: quad {} edge {} [{:?} -> {:?}] vs quad {} edge {} [{:?} -> {:?}]",
                                 qi.into_index(),
-                                qj.into_index()
+                                qj.into_index(),
+                                qi.into_index(),
+                                positions_i,
+                                verts_i_indices,
+                                qj.into_index(),
+                                positions_j,
+                                verts_j_indices,
+                                qi.into_index(),
+                                edge_i,
+                                a,
+                                b,
+                                qj.into_index(),
+                                edge_j,
+                                c,
+                                d
                             )));
                         }
                     }
@@ -179,10 +198,16 @@ fn quad_signed_area(positions: &[Vec2; 4]) -> f32 {
 /// Check if two line segments (a,b) and (c,d) intersect.
 /// Returns true only for proper intersections (not touching at endpoints).
 fn segments_intersect(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> bool {
+    const EPSILON: f32 = 1e-6;
+
     let d1 = cross_2d(c - a, b - a);
     let d2 = cross_2d(d - a, b - a);
     let d3 = cross_2d(a - c, d - c);
     let d4 = cross_2d(b - c, d - c);
+
+    if d1.abs() < EPSILON || d2.abs() < EPSILON || d3.abs() < EPSILON || d4.abs() < EPSILON {
+        return false;
+    }
 
     // Proper intersection: points on opposite sides of each line
     if d1 * d2 < 0.0 && d3 * d4 < 0.0 {

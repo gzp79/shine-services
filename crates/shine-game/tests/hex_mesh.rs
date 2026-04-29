@@ -1,26 +1,20 @@
+use glam::Vec2;
 use shine_game::{
     indexed::TypedIndex,
     math::{
-        debug::SvgDump,
-        hex::{PatchMesher, PatchOrientation},
+        hex::{LatticeMesher, PatchMesher, PatchOrientation},
         prng::{StableRng, SysRng, Xorshift32},
         quadrangulation::Quadrangulation,
     },
 };
 use shine_test::test;
-use std::{fs, path::PathBuf};
 
 const SUBDIVISION: u32 = 2; // Minimum subdivision for even edge count between anchors
 const ORIENTATION: PatchOrientation = PatchOrientation::Even;
 /// Expected vertices per anchor edge: 2^SUBDIVISION + 1
 const ANCHOR_SUBDIVISION: usize = (1 << SUBDIVISION) + 1;
 
-#[test]
-fn generate_uniform() {
-    let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
-    let mesh = mesher.generate_uniform();
-    assert!(mesh.quad_count() > 0, "uniform mesh should have quads");
-
+fn assert_valid_hexagon_mesh(mesh: &Quadrangulation) {
     let validator = mesh.validator();
     assert_eq!(validator.validate(), Ok(()));
     assert_eq!(
@@ -29,46 +23,6 @@ fn generate_uniform() {
     );
 }
 
-#[test]
-fn generate_subdiv_uniform() {
-    let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
-    let mesh = mesher.generate_subdivision();
-    assert!(mesh.quad_count() > 0, "subdivision mesh should have quads");
-    let validator = mesh.validator();
-    assert_eq!(validator.validate(), Ok(()));
-    assert_eq!(
-        validator.validate_regular_flat_top_hexagon(ANCHOR_SUBDIVISION, 1e-6),
-        Ok(())
-    );
-}
-/*
-#[test]
-fn generate_cdt_mesh() {
-    let mut mesher = CdtMesher::new(SUBDIVISION, 20, SysRng::new().into_rc());
-    let mesh = mesher.generate();
-    assert!(mesh.quad_count() > 0, "CDT mesh should have quads");
-    let validator = mesh.validator();
-    assert_eq!(validator.validate(), Ok(()));
-    assert_eq!(
-        validator.validate_regular_flat_top_hexagon(ANCHOR_SUBDIVISION, 1e-6),
-        Ok(())
-    );
-}
-
-#[test]
-fn generate_lattice_mesh() {
-    let mut mesher = LatticeMesher::new(SUBDIVISION, SysRng::new().into_rc());
-    let mesh = mesher.generate();
-    assert!(mesh.quad_count() > 0, "lattice mesh should have quads");
-    let validator = mesh.validator();
-    assert_eq!(validator.validate(), Ok(()));
-    assert_eq!(
-        validator.validate_regular_flat_top_hexagon(ANCHOR_SUBDIVISION, 1e-6),
-        Ok(())
-    );
-}
-
-/// Generic helper to verify mesher determinism by generating the same mesh twice
 fn assert_mesher_deterministic<F>(name: &str, mut generate_mesh: F)
 where
     F: FnMut(u32) -> Quadrangulation,
@@ -113,7 +67,14 @@ where
 }
 
 #[test]
-fn test_patch_mesher_determinism() {
+fn generate_uniform() {
+    let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
+    let mesh = mesher.generate_uniform();
+    assert_valid_hexagon_mesh(&mesh);
+}
+
+#[test]
+fn test_uniform_determinism() {
     assert_mesher_deterministic("Patch", |_seed| {
         let mut mesher = PatchMesher::new(2, PatchOrientation::Odd);
         mesher.generate_uniform()
@@ -121,20 +82,42 @@ fn test_patch_mesher_determinism() {
 }
 
 #[test]
-fn test_lattice_mesher_determinism() {
+fn generate_subdiv_uniform() {
+    let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
+    let mesh = mesher.generate_subdivision();
+    assert_valid_hexagon_mesh(&mesh);
+}
+
+/*
+#[test]
+fn generate_cdt_mesh() {
+    let mut mesher = CdtMesher::new(SUBDIVISION, 20, SysRng::new().into_rc());
+    let mesh = mesher.generate();
+    assert_valid_hexagon_mesh(&mesh);
+}
+
+#[test]
+ fn test_cdt_determinism() {
+     assert_mesher_deterministic("CDT", |seed| {
+         let rng = Xorshift32::new(seed).into_rc();
+         let mut mesher = CdtMesher::new(2, 10, rng);
+         mesher.generate()
+     });
+ }
+*/
+
+#[test]
+fn generate_lattice() {
+    let mut mesher = LatticeMesher::new(SUBDIVISION, SysRng::new().into_rc());
+    let mesh = mesher.generate();
+    assert_valid_hexagon_mesh(&mesh);
+}
+
+#[test]
+fn test_lattice_determinism() {
     assert_mesher_deterministic("Lattice", |seed| {
         let rng = Xorshift32::new(seed).into_rc();
         let mut mesher = LatticeMesher::new(2, rng);
         mesher.generate()
     });
 }
-
-#[test]
-fn test_cdt_mesher_determinism() {
-    assert_mesher_deterministic("CDT", |seed| {
-        let rng = Xorshift32::new(seed).into_rc();
-        let mut mesher = CdtMesher::new(2, 10, rng);
-        mesher.generate()
-    });
-}
-*/
