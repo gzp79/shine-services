@@ -5,11 +5,11 @@ use crate::{
 use glam::Vec2;
 use std::ops;
 
-crate::define_typed_index!(VertexIndex, "Typed index into a vertex array.");
+crate::define_typed_index!(VertexIndex, u32, "Typed index into a vertex array.");
 crate::impl_typed_index_conversions!(VertexIndex);
-crate::define_typed_index!(QuadIndex, "Typed index into a quad array.");
+crate::define_typed_index!(QuadIndex, u32, "Typed index into a quad array.");
 crate::impl_typed_index_conversions!(QuadIndex);
-crate::define_typed_index!(AnchorIndex, "Typed index into the anchor vertices array.");
+crate::define_typed_index!(AnchorIndex, u32, "Typed index into the anchor vertices array.");
 crate::impl_typed_index_conversions!(AnchorIndex);
 
 pub struct Vertex {
@@ -247,17 +247,6 @@ impl Quadrangulation {
         })
     }
 
-    pub fn boundary_vertices(&self) -> impl Iterator<Item = VertexIndex> + '_ {
-        // Walk vertex ring around ghost using CW traversal for correct CCW boundary order.
-        // For each ghost quad, emit the two boundary vertices going backward from ghost.
-        let ghost = self.infinite_vertex();
-        self.vertex_ring_cw(ghost).flat_map(move |qv| {
-            let p1 = qv.prev();
-            let p2 = p1.prev();
-            [self.vi(p1), self.vi(p2)]
-        })
-    }
-
     pub fn anchor_count(&self) -> usize {
         self.anchor_vertices.len()
     }
@@ -270,15 +259,18 @@ impl Quadrangulation {
         self.anchor_vertices.iter().cloned()
     }
 
+    pub fn anchor_vertex_iter(&self) -> impl Iterator<Item = &Vertex> + '_ {
+        self.anchor_vertices.iter().map(move |&vi| &self.vertices[vi])
+    }
+
     pub fn anchor_vertex(&self, anchor_idx: AnchorIndex) -> VertexIndex {
         self.anchor_vertices[anchor_idx]
     }
 
     /// Returns an iterator over vertices along the given anchor edge.
     ///
-    /// An anchor edge represents an original boundary edge (before subdivision).
-    /// This iterates from the anchor vertex at `edge` to the next anchor vertex,
-    /// following the boundary.
+    /// An anchor edge connects two consecutive anchor vertices along the boundary.
+    /// This iterates from anchor[edge] to anchor[edge+1], including both endpoints.
     pub fn anchor_edge(&self, edge: AnchorIndex) -> impl Iterator<Item = VertexIndex> + '_ {
         let start = self.anchor_vertices[edge];
         let next_idx = AnchorIndex::new((edge.into_index() + 1) % self.anchor_vertices.len());

@@ -1,19 +1,26 @@
-/// Trait for typed indices backed by `u32`.
-///
-/// - Real indices: `0..u32::MAX - 1` (positive values)
-/// - `NONE`: `u32::MAX` sentinel
-///
-/// `into_index()` panics on NONE or ghost. Use `into_ghost_index()` for ghosts.
+/// Trait for typed indices backed by some scalar primitive, where
+/// the MAX value treated as a NONE sentinel.
 pub trait TypedIndex: Copy + Eq + std::fmt::Debug {
     const NONE: Self;
 
     fn new(index: usize) -> Self;
     fn into_index(self) -> usize;
-    fn try_into_index(self) -> Option<usize>;
 
-    fn is_none(self) -> bool;
+    #[inline(always)]
+    fn try_into_index(self) -> Option<usize> {
+        if self.is_none() {
+            None
+        } else {
+            Some(self.into_index())
+        }
+    }
 
-    #[inline]
+    #[inline(always)]
+    fn is_none(self) -> bool {
+        self == Self::NONE
+    }
+
+    #[inline(always)]
     fn is_valid(self) -> bool {
         !self.is_none()
     }
@@ -22,10 +29,10 @@ pub trait TypedIndex: Copy + Eq + std::fmt::Debug {
 /// Define a newtype index struct implementing `TypedIndex` with Serialize/Deserialize.
 #[macro_export]
 macro_rules! define_typed_index {
-    ($name:ident, $doc:expr) => {
+    ($name:ident, $ty:ident, $doc:expr) => {
         #[doc = $doc]
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $name(u32);
+        pub struct $name($ty);
 
         #[allow(dead_code)]
         impl $name {
@@ -35,38 +42,24 @@ macro_rules! define_typed_index {
         }
 
         impl $crate::indexed::TypedIndex for $name {
-            const NONE: Self = Self(u32::MAX);
+            const NONE: Self = Self($ty::MAX);
 
             #[inline]
             fn new(index: usize) -> Self {
                 debug_assert!(
-                    index < u32::MAX as usize,
+                    index < usize::try_from($ty::MAX).unwrap(),
                     concat!(stringify!($name), " index overflow")
                 );
-                Self(index as u32)
+                Self(index.try_into().unwrap())
             }
 
             #[inline]
             fn into_index(self) -> usize {
                 debug_assert!(
-                    self.0 != u32::MAX,
+                    self.0 < $ty::MAX,
                     concat!("called into_index() on non-real ", stringify!($name))
                 );
                 self.0 as usize
-            }
-
-            #[inline]
-            fn try_into_index(self) -> Option<usize> {
-                if $crate::indexed::TypedIndex::is_none(self) {
-                    None
-                } else {
-                    Some(self.0 as usize)
-                }
-            }
-
-            #[inline]
-            fn is_none(self) -> bool {
-                self.0 == u32::MAX
             }
         }
 
@@ -88,7 +81,7 @@ macro_rules! define_typed_index {
 
         impl<'de> serde::Deserialize<'de> for $name {
             fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                let v = u32::deserialize(deserializer)?;
+                let v = $ty::deserialize(deserializer)?;
                 Ok(Self(v))
             }
         }
@@ -118,11 +111,13 @@ mod tests {
     use super::*;
     use shine_test::test;
 
-    define_typed_index!(TestIdx, "Test index.");
+    define_typed_index!(TestIdx, u32, "Test index.");
+    define_typed_index!(TestIdxU8, u8, "Test index.");
+    define_typed_index!(TestIdxUSize, usize, "Test index.");
 
     #[test]
     fn round_trip() {
-        for i in [0, 1, 42, 1000, i32::MAX as usize - 1] {
+        for i in [0, 1, 42, 1000, u32::MAX as usize - 1] {
             let idx = TestIdx::new(i);
             assert_eq!(idx.into_index(), i);
             assert!(!idx.is_none());

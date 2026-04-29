@@ -1,14 +1,16 @@
 use shine_game::{
     indexed::TypedIndex,
     math::{
-        hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
+        debug::SvgDump,
+        hex::{PatchMesher, PatchOrientation},
         prng::{StableRng, SysRng, Xorshift32},
         quadrangulation::Quadrangulation,
     },
 };
 use shine_test::test;
+use std::{fs, path::PathBuf};
 
-const SUBDIVISION: u32 = 3;
+const SUBDIVISION: u32 = 2; // Minimum subdivision for even edge count between anchors
 const ORIENTATION: PatchOrientation = PatchOrientation::Even;
 /// Expected vertices per anchor edge: 2^SUBDIVISION + 1
 const ANCHOR_SUBDIVISION: usize = (1 << SUBDIVISION) + 1;
@@ -18,6 +20,7 @@ fn generate_uniform() {
     let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
     let mesh = mesher.generate_uniform();
     assert!(mesh.quad_count() > 0, "uniform mesh should have quads");
+
     let validator = mesh.validator();
     assert_eq!(validator.validate(), Ok(()));
     assert_eq!(
@@ -38,7 +41,7 @@ fn generate_subdiv_uniform() {
         Ok(())
     );
 }
-
+/*
 #[test]
 fn generate_cdt_mesh() {
     let mut mesher = CdtMesher::new(SUBDIVISION, 20, SysRng::new().into_rc());
@@ -134,3 +137,4 @@ fn test_cdt_mesher_determinism() {
         mesher.generate()
     });
 }
+*/

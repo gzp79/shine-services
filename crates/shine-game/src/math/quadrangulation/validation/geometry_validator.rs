@@ -11,7 +11,7 @@ impl<'a> Validator<'a> {
         Ok(())
     }
 
-    /// Validate that anchor points form a regular flat-top hexagon in CCW order
+    /// Validate that anchor points form a regular flat-top hexagon in CW order
     /// and that each anchor edge has the expected number of subdivisions.
     ///
     /// Requirements:
@@ -19,15 +19,15 @@ impl<'a> Validator<'a> {
     /// - Points form a regular hexagon (equal side lengths and angles)
     /// - Flat-top orientation (horizontal top and bottom edges)
     /// - First anchor is the NNW (North-North-West) point
-    /// - Points are in CCW order
+    /// - Points are in CW order (consistent with HexVertex enum)
     ///
-    /// Flat-top hexagon vertex order (CCW from NNW):
+    /// Flat-top hexagon vertex order (CW from NNW, matching HexVertex):
     /// ```text
-    ///      0 ---- 5
+    ///      2 ---- 1
     ///     /        \
-    ///    1          4
+    ///    3          0
     ///     \        /
-    ///      2 ---- 3
+    ///      4 ---- 5
     /// ```
     ///
     /// Returns `Ok(())` if valid, otherwise returns an error describing the issue.
@@ -36,8 +36,8 @@ impl<'a> Validator<'a> {
 
         // Check anchor count
         if anchor_positions.len() != 6 {
-            return Err(QuadError::InvalidHexagon(format!(
-                "Expected 6 anchor points, got {}",
+            return Err(QuadError::Geometry(format!(
+                "Expected a regular hexagon, but got {} anchor points",
                 anchor_positions.len()
             )));
         }
@@ -52,35 +52,27 @@ impl<'a> Validator<'a> {
         for (i, &pos) in positions.iter().enumerate() {
             let dist = (pos - center).length();
             if (dist - radius).abs() > tolerance {
-                return Err(QuadError::InvalidHexagon(format!(
-                    "Anchor {} is not equidistant from center: expected radius {:.6}, got {:.6}",
+                return Err(QuadError::Geometry(format!(
+                    "Expected a regular hexagon, but anchor {} is not equidistant from center: expected radius {:.6}, got {:.6}",
                     i, radius, dist
                 )));
             }
         }
 
-        // Expected angles for flat-top hexagon starting from NNW (CCW in standard math coordinates)
-        // In standard math coordinates (Y up), CCW from NNW (120°): 120° → 180° → 240° → 300° → 0° → 60°
-        let expected_angles_deg = [120.0, 180.0, 240.0, 300.0, 0.0, 60.0];
-
         // Validate each anchor is at the correct angle
+        let expected_angles_deg = [0.0, 60.0, 120.0, 180.0, 240.0, 300.0];
         for (i, (&pos, &expected_deg)) in positions.iter().zip(expected_angles_deg.iter()).enumerate() {
             let vec_from_center = pos - center;
             let angle_rad = vec_from_center.y.atan2(vec_from_center.x);
             let angle_deg = angle_rad.to_degrees();
 
-            // Normalize to [0, 360)
             let angle_normalized = if angle_deg < 0.0 { angle_deg + 360.0 } else { angle_deg };
-
-            // Calculate angular difference (handling wraparound)
             let angle_diff = (angle_normalized - expected_deg + 180.0).rem_euclid(360.0) - 180.0;
-
-            // Tolerance in degrees
             let angular_tolerance_deg = tolerance.atan2(radius).to_degrees();
 
             if angle_diff.abs() > angular_tolerance_deg {
-                return Err(QuadError::InvalidHexagon(format!(
-                    "Anchor {} is not at the correct angle: expected {:.1}°, got {:.1}° (diff: {:.1}°)",
+                return Err(QuadError::Geometry(format!(
+                    "Expected a regular hexagon, but anchor {} is not at the correct angle: expected {:.1}°, got {:.1}° (diff: {:.1}°)",
                     i, expected_deg, angle_normalized, angle_diff
                 )));
             }
@@ -93,33 +85,18 @@ impl<'a> Validator<'a> {
             let side_length = (positions[next_i] - positions[i]).length();
 
             if (side_length - first_side_length).abs() > tolerance {
-                return Err(QuadError::InvalidHexagon(format!(
-                    "Side {}->{} has different length: expected {:.6}, got {:.6}",
+                return Err(QuadError::Geometry(format!(
+                    "Expected a regular hexagon, but side {}->{} has different length: expected {:.6}, got {:.6}",
                     i, next_i, first_side_length, side_length
                 )));
             }
         }
 
-        // Validate CCW winding by checking signed area
-        let mut signed_area = 0.0;
-        for i in 0..6 {
-            let j = (i + 1) % 6;
-            signed_area += positions[i].x * positions[j].y;
-            signed_area -= positions[j].x * positions[i].y;
-        }
-        signed_area *= 0.5;
-
-        if signed_area <= 0.0 {
-            return Err(QuadError::InvalidHexagon(
-                "Hexagon vertices are not in CCW order".to_string(),
-            ));
-        }
-
         for i in 0..6 {
             let count = self.mesh.anchor_edge(AnchorIndex::new(i)).count();
             if count != subdivision {
-                return Err(QuadError::InvalidHexagon(format!(
-                    "Anchor edge {} should have {} subdivisions, got {}",
+                return Err(QuadError::Geometry(format!(
+                    "Expected a regular hexagon, but anchor edge {} should have {} subdivisions, got {}",
                     i, subdivision, count
                 )));
             }
@@ -136,7 +113,10 @@ impl<'a> Validator<'a> {
 
             let area = quad_signed_area(&positions);
             if area <= 0.0 {
-                return Err(QuadError::NegativeQuadArea { quad: qi.into_index() });
+                return Err(QuadError::Geometry(format!(
+                    "Quad {} has negative or zero area (non-CCW winding)",
+                    qi.into_index()
+                )));
             }
         }
         Ok(())
@@ -169,10 +149,11 @@ impl<'a> Validator<'a> {
                         }
 
                         if segments_intersect(a, b, c, d) {
-                            return Err(QuadError::SelfIntersection {
-                                quad1: qi.into_index(),
-                                quad2: qj.into_index(),
-                            });
+                            return Err(QuadError::Geometry(format!(
+                                "Self-intersection detected between quad {} and quad {}",
+                                qi.into_index(),
+                                qj.into_index()
+                            )));
                         }
                     }
                 }

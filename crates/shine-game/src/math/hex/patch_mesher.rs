@@ -1,191 +1,203 @@
+use std::array;
+
 use crate::{
     indexed::TypedIndex,
     math::{
-        hex::{AxialCoord, AxialDenseIndexer, PatchCoord, PatchDenseIndexer, PatchOrientation},
+        hex::{AxialCoord, AxialDenseIndexer, HexPointyDir, PatchCoord, PatchDenseIndexer, PatchOrientation},
         quadrangulation::{Quadrangulation, VertexIndex},
+        SQRT_3,
     },
 };
 use glam::Vec2;
 
 /// Generates a quad mesh inside a hexagon using 3-patch subdivision.
-///
-/// Returns a [`Quadrangulation`] with topology and positions. No smoothing or
-/// filtering is applied — use filters on the returned mesh.
+/// The hexagon is subdivided to 2^subdivision cells along each edge, and each patch is meshed as a grid of quads.
 pub struct PatchMesher {
     subdivision: u32,
     orientation: PatchOrientation,
-    hex_size: f32,
+    size: f32,
+
+    pointy_size: f32,
+    pointy_indexer: AxialDenseIndexer,
 }
 
 impl PatchMesher {
     pub fn new(subdivision: u32, orientation: PatchOrientation) -> Self {
+        // The center of the cells in the pointy-top grid forms the subdivision of the flat-top hexagon.
+        // Hence we can store to vetices of the resulting mesh in the dense grid corresponding to the pointy-top grid.
+
+        let pointy_radius = 2u32.pow(subdivision);
+        let size = 1.0;
+        let pointy_size = size * SQRT_3 / 2. / pointy_radius as f32;
+
         Self {
             subdivision,
             orientation,
-            hex_size: 1.0,
+            size: 1.0,
+            pointy_size,
+            pointy_indexer: AxialDenseIndexer::new(pointy_radius),
         }
     }
 
     #[must_use]
-    pub fn with_hex_size(mut self, hex_size: f32) -> Self {
-        self.hex_size = hex_size;
+    pub fn with_size(mut self, size: f32) -> Self {
+        self.size = size;
+        self.pointy_size = self.size * SQRT_3 / 2. / self.pointy_indexer.radius() as f32;
         self
     }
 
-    /// Set the world-space circumradius (center to corner) of the hex.
-    #[must_use]
-    pub fn with_world_size(self, size: f32) -> Self {
-        let radius = 2u32.pow(self.subdivision);
-        self.with_hex_size(AxialCoord::hex_size_from_world_size(size, radius))
-    }
-
     /// Generate the mesh with uniform vertex placement.
+    /// The centers of the cells in a pointy-top hex gird forms the subdivision of a flat-top hexagon, where each
+    /// vertex is the center of  a cell.
     pub fn generate_uniform(&mut self) -> Quadrangulation {
-        let radius = 2u32.pow(self.subdivision);
-        let indexer = AxialDenseIndexer::new(radius);
-
-        let mut positions = vec![Vec2::ZERO; indexer.get_total_size()];
-        for coord in AxialCoord::origin().spiral(radius) {
-            let idx = indexer.get_dense_index(&coord);
-            positions[idx] = coord.vertex_position(self.hex_size);
+        let mut positions = vec![Vec2::ZERO; self.pointy_indexer.get_total_size()];
+        for coord in AxialCoord::ORIGIN.spiral(self.pointy_indexer.radius()) {
+            let idx = self.pointy_indexer.get_dense_index(&coord);
+            positions[idx] = coord.pointy().to_position(self.pointy_size);
         }
-
         self.build_quad_mesh(positions)
     }
 
     /// Generate the mesh with recursive subdivision placement.
     pub fn generate_subdivision(&mut self) -> Quadrangulation {
-        let radius = 2u32.pow(self.subdivision);
-        let indexer = AxialDenseIndexer::new(radius);
-        let orientation = self.orientation;
+        let total = self.pointy_indexer.get_total_size();
+        let mut positions = vec![Vec2::NAN; total];
 
-        let total = indexer.get_total_size();
-        let mut positions = vec![Vec2::ZERO; total];
-        let mut placed = vec![false; total];
+        // Place center
+        let center_idx = self.pointy_indexer.get_dense_index(&AxialCoord::ORIGIN);
+        positions[center_idx] = Vec2::ZERO;
 
         // Place 6 hex corner vertices
-        let hex_corners = AxialCoord::hex_corners(radius);
-        for coord in &hex_corners {
-            let idx = indexer.get_dense_index(coord);
-            positions[idx] = coord.vertex_position(self.hex_size);
-            placed[idx] = true;
+        for coord in AxialCoord::ORIGIN.pointy().corners(self.pointy_indexer.radius()) {
+            let idx = self.pointy_indexer.get_dense_index(&coord);
+            positions[idx] = coord.pointy().to_position(self.pointy_size);
         }
-
-        // Place center at origin
-        let center_idx = indexer.get_dense_index(&AxialCoord::origin());
-        positions[center_idx] = Vec2::ZERO;
-        placed[center_idx] = true;
 
         for depth in 0..self.subdivision {
             let parent_grid = 2i32.pow(depth);
+            let step = self.pointy_indexer.radius() as i32 / parent_grid;
 
             for p in 0..3 {
-                let (a_idx, b_idx) = PatchCoord::new(p, 0, 0).hex_corner_indices(orientation);
-                let ha = hex_corners[a_idx];
-                let hb = hex_corners[b_idx];
-
-                let parent_corner = |cu: i32, cv: i32| -> AxialCoord {
-                    AxialCoord::new(
-                        (cu * ha.q + cv * hb.q) / parent_grid,
-                        (cu * ha.r + cv * hb.r) / parent_grid,
-                    )
+                let (origin, du, dv) = match (self.orientation, p) {
+                    (PatchOrientation::Even, 0) => (HexPointyDir::NE, HexPointyDir::W, HexPointyDir::SE),
+                    (PatchOrientation::Even, 1) => (HexPointyDir::W, HexPointyDir::SE, HexPointyDir::NE),
+                    (PatchOrientation::Even, 2) => (HexPointyDir::SE, HexPointyDir::NE, HexPointyDir::W),
+                    (PatchOrientation::Odd, 0) => (HexPointyDir::E, HexPointyDir::NW, HexPointyDir::SW),
+                    (PatchOrientation::Odd, 1) => (HexPointyDir::NW, HexPointyDir::SW, HexPointyDir::E),
+                    (PatchOrientation::Odd, 2) => (HexPointyDir::SW, HexPointyDir::E, HexPointyDir::NW),
+                    _ => unreachable!(),
                 };
+
+                let origin = AxialCoord::ORIGIN.pointy().corner(origin, self.pointy_indexer.radius());
 
                 for pu in 0..parent_grid {
                     for pv in 0..parent_grid {
-                        let corners = [
-                            parent_corner(pu, pv),
-                            parent_corner(pu + 1, pv),
-                            parent_corner(pu + 1, pv + 1),
-                            parent_corner(pu, pv + 1),
+                        let base = origin.step(du, pu * step).step(dv, pv * step);
+                        let corner = [
+                            base,
+                            base.step(du, step),
+                            base.step(du, step).step(dv, step),
+                            base.step(dv, step),
                         ];
+                        let edge_mid = [
+                            base.step(du, step / 2),
+                            base.step(du, step).step(dv, step / 2),
+                            base.step(du, step / 2).step(dv, step),
+                            base.step(dv, step / 2),
+                        ];
+                        let mid = base.step(du, step / 2).step(dv, step / 2);
 
-                        // Edge midpoints
-                        let edge_coords: [AxialCoord; 4] = std::array::from_fn(|i| {
-                            let a = corners[i];
-                            let b = corners[(i + 1) % 4];
-                            AxialCoord::new((a.q + b.q) / 2, (a.r + b.r) / 2)
-                        });
-                        for edge_idx in 0..4 {
-                            let mid_dense = indexer.get_dense_index(&edge_coords[edge_idx]);
-                            if !placed[mid_dense] {
-                                let a_pos = positions[indexer.get_dense_index(&corners[edge_idx])];
-                                let b_pos = positions[indexer.get_dense_index(&corners[(edge_idx + 1) % 4])];
-                                positions[mid_dense] = (a_pos + b_pos) / 2.0;
-                                placed[mid_dense] = true;
+                        let mid_idx = self.pointy_indexer.get_dense_index(&mid);
+                        let edge_mid_idx: [usize; 4] =
+                            array::from_fn(|i| self.pointy_indexer.get_dense_index(&edge_mid[i]));
+                        let corner_idx: [usize; 4] =
+                            array::from_fn(|i| self.pointy_indexer.get_dense_index(&corner[i]));
+
+                        let mut edge_mid_pos = [Vec2::NAN; 4];
+
+                        // place edge midpoints
+                        for e in 0..4 {
+                            let em_idx = edge_mid_idx[e];
+                            if positions[em_idx].is_nan() {
+                                let a = positions[corner_idx[e]];
+                                let b = positions[corner_idx[(e + 1) % 4]];
+                                debug_assert!(!a.is_nan());
+                                debug_assert!(!b.is_nan());
+                                positions[em_idx] = (a + b) / 2.0;
                             }
+                            edge_mid_pos[e] = positions[em_idx];
+                            debug_assert!(!edge_mid_pos[e].is_nan());
                         }
 
-                        // Face point: intersection of lines connecting opposite edge midpoints
-                        let e: [Vec2; 4] = std::array::from_fn(|i| positions[indexer.get_dense_index(&edge_coords[i])]);
-                        let face_pos = line_intersection(e[0], e[2], e[1], e[3]);
-                        let face_coord = AxialCoord::new(
-                            (corners[0].q + corners[1].q + corners[2].q + corners[3].q) / 4,
-                            (corners[0].r + corners[1].r + corners[2].r + corners[3].r) / 4,
-                        );
-                        let face_dense = indexer.get_dense_index(&face_coord);
-                        positions[face_dense] = face_pos;
-                        placed[face_dense] = true;
+                        // place face midpoint
+                        let mid_pos = mid_point(edge_mid_pos);
+                        positions[mid_idx] = mid_pos;
+                        debug_assert!(!positions[mid_idx].is_nan());
                     }
                 }
             }
         }
 
-        debug_assert!(
-            placed.iter().all(|&p| p),
-            "subdivision did not place all {} vertices ({} missing)",
-            total,
-            placed.iter().filter(|&&p| !p).count()
-        );
-
+        debug_assert!(positions.iter().all(|&p| !p.is_nan()), "Some vertices were not placed!");
         self.build_quad_mesh(positions)
     }
 
     /// Build a Quadrangulation from vertex positions using the patch topology.
     fn build_quad_mesh(&self, positions: Vec<Vec2>) -> Quadrangulation {
-        let radius = 2u32.pow(self.subdivision);
-        let indexer = AxialDenseIndexer::new(radius);
-        let grid = 2i32.pow(self.subdivision);
-
-        // Build boundary polygon (in spiral order)
+        // The external (anchor) vertices of the mesh correspond to the cells of the outer ring in a pointy-top hex grid.
         let mut polygon = Vec::new();
-        for coord in AxialCoord::origin().spiral(radius) {
-            if coord.is_boundary(radius) {
-                polygon.push(VertexIndex::new(indexer.get_dense_index(&coord)));
-            }
+        for coord in AxialCoord::ORIGIN.ring(self.pointy_indexer.radius()) {
+            polygon.push(VertexIndex::new(self.pointy_indexer.get_dense_index(&coord)));
         }
 
         // Build quad indices
-        let patch_indexer = PatchDenseIndexer::new(self.subdivision);
-        let mut quads = Vec::with_capacity(patch_indexer.get_total_size());
+        let mut quads = Vec::new();
+        for p in 0..3u32 {
+            let (origin, du, dv) = match (self.orientation, p) {
+                (PatchOrientation::Even, 0) => (HexPointyDir::NE, HexPointyDir::W, HexPointyDir::SE),
+                (PatchOrientation::Even, 1) => (HexPointyDir::W, HexPointyDir::SE, HexPointyDir::NE),
+                (PatchOrientation::Even, 2) => (HexPointyDir::SE, HexPointyDir::NE, HexPointyDir::W),
+                (PatchOrientation::Odd, 0) => (HexPointyDir::E, HexPointyDir::NW, HexPointyDir::SW),
+                (PatchOrientation::Odd, 1) => (HexPointyDir::NW, HexPointyDir::SW, HexPointyDir::E),
+                (PatchOrientation::Odd, 2) => (HexPointyDir::SW, HexPointyDir::E, HexPointyDir::NW),
+                _ => unreachable!(),
+            };
 
-        for p in 0..3i32 {
-            for u in 0..grid {
-                for v in 0..grid {
-                    let patch = PatchCoord::new(p, u, v);
-                    let quad = patch.quad_vertices(self.orientation, self.subdivision);
-                    quads.push(std::array::from_fn(|i| {
-                        VertexIndex::new(indexer.get_dense_index(&quad[i]))
-                    }));
+            let origin = AxialCoord::ORIGIN.pointy().corner(origin, self.pointy_indexer.radius());
+            for u in 0..self.pointy_indexer.radius() {
+                for v in 0..self.pointy_indexer.radius() {
+                    let i0 = origin.step(du, u as i32).step(dv, v as i32);
+                    let i1 = i0.step(du, 1);
+                    let i2 = i1.step(dv, 1);
+                    let i3 = i0.step(dv, 1);
+                    quads.push([
+                        VertexIndex::new(self.pointy_indexer.get_dense_index(&i0)),
+                        VertexIndex::new(self.pointy_indexer.get_dense_index(&i1)),
+                        VertexIndex::new(self.pointy_indexer.get_dense_index(&i2)),
+                        VertexIndex::new(self.pointy_indexer.get_dense_index(&i3)),
+                    ]);
                 }
             }
         }
 
-        let hex_corners = AxialCoord::hex_corners(radius);
-        let anchors: Vec<VertexIndex> = hex_corners
+        let anchors: Vec<VertexIndex> = AxialCoord::ORIGIN
+            .pointy()
+            .corners(self.pointy_indexer.radius())
             .iter()
-            .map(|c| VertexIndex::new(indexer.get_dense_index(c)))
+            .map(|c| VertexIndex::new(self.pointy_indexer.get_dense_index(c)))
             .collect();
 
         Quadrangulation::from_polygon(positions, polygon, quads, anchors).expect("valid patch mesh topology")
     }
 }
 
-fn line_intersection(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2) -> Vec2 {
+fn mid_point(quad: [Vec2; 4]) -> Vec2 {
+    let (p1, p2, p3, p4) = (quad[0], quad[1], quad[2], quad[3]);
+
     let d1 = p2 - p1;
     let d2 = p4 - p3;
     let cross = d1.perp_dot(d2);
-    if cross.abs() < 1e-10 {
+    if cross.abs() < 1e-6 {
         (p1 + p2 + p3 + p4) / 4.0
     } else {
         let t = (p3 - p1).perp_dot(d2) / cross;

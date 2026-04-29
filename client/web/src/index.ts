@@ -1,9 +1,10 @@
-import { createGame } from './engine/game';
-import { createCdtExperiment } from './experiments/cdt/index';
+//import { createGame } from './engine/game';
+//import { createCdtExperiment } from './experiments/cdt/index';
 import { createHexMeshExperiment } from './experiments/hex-mesh/index';
 import { createInputControlExperiment } from './experiments/input-control/index';
 import { createTrilinearExperiment } from './experiments/trilinear/index';
-import { createWorldNeighborsExperiment } from './experiments/world-neighbors/index';
+
+//import { createWorldNeighborsExperiment } from './experiments/world-neighbors/index';
 
 export type Scene = 'game' | 'hex-mesh' | 'cdt' | 'input-events' | 'trilinear' | 'world-neighbors';
 export type Viewer = { dispose(): void };
@@ -13,22 +14,22 @@ export async function createScene(container: HTMLElement, scene: Scene): Promise
         case 'hex-mesh': {
             return await createHexMeshExperiment(container);
         }
-        case 'cdt': {
+        /*case 'cdt': {
             return await createCdtExperiment(container);
-        }
+            }*/
         case 'input-events': {
             return await createInputControlExperiment(container);
         }
         case 'trilinear': {
             return await createTrilinearExperiment(container);
         }
-        case 'world-neighbors': {
+        /*case 'world-neighbors': {
             return await createWorldNeighborsExperiment(container);
-        }
-        case 'game':
+            }*/
+        /*case 'game':
         default: {
             return createGame(container);
-        }
+            }*/
     }
 }
 

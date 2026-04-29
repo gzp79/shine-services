@@ -1,6 +1,7 @@
 use crate::math::hex::PatchCoord;
 
-/// Helper to index into a dense store
+/// Helper to index into a dense store using patch coordinates (p, u, v) for a given subdivision depth.
+/// The store is organized as 3 contiguous grids of size grid_size x grid_size, where grid_size = 2^subdivision.
 #[derive(Clone)]
 pub struct PatchDenseIndexer {
     subdivision: u32,
@@ -36,10 +37,10 @@ impl PatchDenseIndexer {
     pub fn get_coord(&self, index: usize) -> PatchCoord {
         debug_assert!(index < self.get_total_size());
         let patch_size = self.grid_size * self.grid_size;
-        let p = (index / patch_size) as i32;
+        let p = (index / patch_size) as u32;
         let remainder = index % patch_size;
-        let u = (remainder / self.grid_size) as i32;
-        let v = (remainder % self.grid_size) as i32;
+        let u = (remainder / self.grid_size) as u32;
+        let v = (remainder % self.grid_size) as u32;
         PatchCoord::new(p, u, v)
     }
 }
@@ -52,7 +53,7 @@ mod tests {
 
     fn test_dense_indices(subdivision: u32) {
         let indexer = PatchDenseIndexer::new(subdivision);
-        let grid_size = 2_i32.pow(subdivision);
+        let grid_size = 2_u32.pow(subdivision);
 
         // Collect all valid coordinates
         let coords: Vec<_> = (0..3)

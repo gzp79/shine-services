@@ -75,12 +75,12 @@ impl World {
     pub fn boundary_vertex_dual_polygon(&self, owner_id: ChunkId, vertex_idx: HexVertex) -> Option<Vec<Vec2>> {
         let v1 = vertex_idx;
         let (n2, v2, n0, v0) = match vertex_idx {
-            HexVertex::NNW => (HexNeighbor::NW, HexVertex::E, HexNeighbor::N, HexVertex::SSW),
-            HexVertex::NNE => (HexNeighbor::N, HexVertex::SSE, HexNeighbor::NE, HexVertex::W),
             HexVertex::E => (HexNeighbor::NE, HexVertex::SSW, HexNeighbor::SE, HexVertex::NNW),
-            HexVertex::SSE => (HexNeighbor::SE, HexVertex::W, HexNeighbor::S, HexVertex::NNE),
-            HexVertex::SSW => (HexNeighbor::S, HexVertex::NNW, HexNeighbor::SW, HexVertex::E),
+            HexVertex::NNE => (HexNeighbor::N, HexVertex::SSE, HexNeighbor::NE, HexVertex::W),
+            HexVertex::NNW => (HexNeighbor::NW, HexVertex::E, HexNeighbor::N, HexVertex::SSW),
             HexVertex::W => (HexNeighbor::SW, HexVertex::NNE, HexNeighbor::NW, HexVertex::SSE),
+            HexVertex::SSW => (HexNeighbor::S, HexVertex::NNW, HexNeighbor::SW, HexVertex::E),
+            HexVertex::SSE => (HexNeighbor::SE, HexVertex::W, HexNeighbor::S, HexVertex::NNE),
         };
 
         let id0 = owner_id.neighbor(n0);

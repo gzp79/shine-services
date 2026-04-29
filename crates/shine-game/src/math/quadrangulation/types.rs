@@ -8,6 +8,10 @@ pub struct QuadVertex {
 }
 
 impl QuadVertex {
+    pub fn new(quad: QuadIndex, local: Rot4Idx) -> Self {
+        Self { quad, local }
+    }
+
     /// Next vertex CCW around this quad
     pub fn next(&self) -> QuadVertex {
         QuadVertex {

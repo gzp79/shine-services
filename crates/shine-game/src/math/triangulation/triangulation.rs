@@ -10,8 +10,8 @@ use std::{
     rc::Rc,
 };
 
-crate::define_typed_index!(VertexIndex, "Typed index into a vertex array.");
-crate::define_typed_index!(FaceIndex, "Typed index into a triangle array.");
+crate::define_typed_index!(VertexIndex, u32, "Typed index into a vertex array.");
+crate::define_typed_index!(FaceIndex, u32, "Typed index into a triangle array.");
 
 pub struct Vertex {
     pub position: IVec2,

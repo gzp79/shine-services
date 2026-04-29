@@ -4,10 +4,10 @@ use std::{
     fmt,
     marker::PhantomData,
     ops::{Index, IndexMut},
+    slice,
 };
 
-/// A `Vec<T>` that can only be indexed by a specific `TypedIndex` type.
-/// Prevents accidentally indexing a vertex array with a quad index (and vice versa).
+/// An `[T;N]` that can only be indexed by a specific `TypedIndex` type.
 pub struct IdxArray<I: TypedIndex, T, const LEN: usize> {
     data: [T; LEN],
     _phantom: PhantomData<I>,
@@ -18,11 +18,11 @@ impl<I: TypedIndex, T, const LEN: usize> IdxArray<I, T, LEN> {
         self.data.len()
     }
 
-    pub fn iter(&self) -> std::slice::Iter<'_, T> {
+    pub fn iter(&self) -> slice::Iter<'_, T> {
         self.data.iter()
     }
 
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
+    pub fn iter_mut(&mut self) -> slice::IterMut<'_, T> {
         self.data.iter_mut()
     }
 
@@ -139,7 +139,7 @@ mod tests {
     use super::*;
     use shine_test::test;
 
-    crate::define_typed_index!(TestIdx, "Test index for IdxArray tests.");
+    crate::define_typed_index!(TestIdx, u32, "Test index for IdxArray tests.");
 
     #[test]
     fn default_and_new() {

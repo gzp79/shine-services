@@ -54,12 +54,12 @@ impl CdtMesher {
         self
     }
 
-    /// Set the world-space circumradius (center to corner) of the hex.
+    /*/// Set the world-space circumradius (center to corner) of the hex.
     #[must_use]
     pub fn with_world_size(self, size: f32) -> Self {
         let radius = 2u32.pow(self.subdivision - 1);
         self.with_hex_size(AxialCoord::hex_size_from_world_size(size, radius))
-    }
+    }*/
 
     /// Generate the CDT-based quad mesh.
     pub fn generate(&mut self) -> Quadrangulation {

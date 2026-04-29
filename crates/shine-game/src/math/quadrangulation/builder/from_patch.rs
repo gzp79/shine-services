@@ -9,6 +9,17 @@ use std::collections::HashMap;
 
 impl Quadrangulation {
     /// Build topology from a (boundary) polygon and interior quads.
+    ///
+    /// Three-phase construction:
+    /// 1. Build vertices (finite + infinite) with positions
+    /// 2. Build quads (finite + ghost) with vertex references
+    /// 3. Wire up neighbor relationships via edge map
+    ///
+    /// # Arguments
+    /// * `positions` - Vertex positions (finite vertices only)
+    /// * `polygon` - Complete boundary cycle in CW order (must have even length)
+    /// * `quads` - Interior quad vertex indices in CCW order
+    /// * `anchors` - Special boundary vertices (e.g., hex corners) in order
     pub fn from_polygon(
         positions: Vec<Vec2>,
         polygon: Vec<VertexIndex>,
@@ -18,40 +29,68 @@ impl Quadrangulation {
         let vertex_count = positions.len();
 
         // Minimal bounds checks to prevent index-out-of-bounds panics during construction.
-        // All other invariants (odd boundary, duplicates, degenerates, etc.) are caught by validate().
         for &vi in &polygon {
             let idx = vi.into_index();
             if idx >= vertex_count {
-                return Err(QuadError::BoundaryVertexOutOfRange { vertex: idx, vertex_count });
+                return Err(QuadError::Input(format!(
+                    "Boundary vertex {} >= vertex_count {}",
+                    idx, vertex_count
+                )));
             }
         }
         for quad in &quads {
             for &vi in quad {
                 let idx = vi.into_index();
                 if idx >= vertex_count {
-                    return Err(QuadError::QuadVertexOutOfRange { vertex: idx, vertex_count });
+                    return Err(QuadError::Input(format!(
+                        "Quad vertex {} >= vertex_count {}",
+                        idx, vertex_count
+                    )));
                 }
             }
         }
+        if polygon.len() % 2 != 0 {
+            return Err(QuadError::Input(format!(
+                "Boundary must have even length, got {}",
+                polygon.len()
+            )));
+        }
 
-        // Generate infinite quads: [infinite, v2, v1, v0]
-        // Boundary edges are reversed (v2->v1, v1->v0) to match twin edges from real quads
-        let mut all_quads: Vec<Quad> = quads
-            .into_iter()
-            .map(|verts| Quad::with_vertices(verts[0], verts[1], verts[2], verts[3]))
-            .collect();
+        // 1. Build Vertices
         let infinite_vertex = VertexIndex::new(vertex_count);
-        let infinite_quad_count = polygon.len() / 2;
-        for j in 0..infinite_quad_count {
-            let i = j * 2;
-            let v0 = polygon[i];
-            let v1 = polygon[(i + 1) % polygon.len()];
-            let v2 = polygon[(i + 2) % polygon.len()];
+        let mut vertices = IdxVec::with_capacity(vertex_count + 1);
+
+        // Add finite vertices with positions
+        for position in positions {
+            let mut vertex = Vertex::new();
+            vertex.position = position;
+            vertices.push(vertex);
+        }
+
+        // Add infinite vertex (no position)
+        vertices.push(Vertex::new());
+
+        // 2. Build Quads
+        let mut all_quads: Vec<Quad> = Vec::new();
+
+        // Add finite quads
+        for verts in quads {
+            all_quads.push(Quad::with_vertices(verts[0], verts[1], verts[2], verts[3]));
+        }
+
+        // Add ghost for each edge-pair in the boundary polygon
+        let infinite_quad_count = polygon.len();
+        let infinite_quad_start = all_quads.len();
+        for i in 0..infinite_quad_count / 2 {
+            let v0 = polygon[2 * i];
+            let v1 = polygon[2 * i + 1];
+            let v2 = polygon[(2 * i + 2) % polygon.len()];
             all_quads.push(Quad::with_vertices(infinite_vertex, v2, v1, v0));
         }
-        let mut quads = IdxVec::from(all_quads);
-        let infinite_quad_start = quads.len() - infinite_quad_count;
 
+        let mut quads = IdxVec::from(all_quads);
+
+        // 3. Wire Up Neighbors
         // Build edge map: (v0, v1) -> (quad, edge_idx)
         let mut edge_map: HashMap<(VertexIndex, VertexIndex), (QuadIndex, Rot4Idx)> = HashMap::new();
         let quad_count = quads.len();
@@ -61,12 +100,17 @@ impl Quadrangulation {
                 let edge = Rot4Idx::new(edge_idx);
                 let v0 = quads[qi].vertices[edge];
                 let v1 = quads[qi].vertices[edge.increment()];
-                edge_map.insert((v0, v1), (qi, edge));
+                if edge_map.insert((v0, v1), (qi, edge)).is_some() {
+                    return Err(QuadError::Input(format!(
+                        "Duplicate edge ({}, {}) appears more than twice in quads",
+                        v0.into_index(),
+                        v1.into_index()
+                    )));
+                }
             }
         }
 
-        // Build edge twin structure (neighbor across each edge).
-        // Must check here — leaving NONE twins would panic in validate().
+        // Wire up twin relationships
         for qi_idx in 0..quad_count {
             let qi = QuadIndex::new(qi_idx);
             for edge_idx in 0..4 {
@@ -77,25 +121,18 @@ impl Quadrangulation {
                 if let Some(&(twin_quad, _twin_edge)) = edge_map.get(&(v1, v0)) {
                     quads[qi].neighbors[edge] = twin_quad;
                 } else {
-                    return Err(QuadError::IncompleteTopology {
-                        quad: qi_idx,
-                        edge: edge_idx,
-                        vertices: (v0.into_index(), v1.into_index()),
-                    });
+                    return Err(QuadError::Input(format!(
+                        "Incomplete topology: quad {} edge {} has no twin, missing edge ({}, {})",
+                        qi_idx,
+                        edge_idx,
+                        v1.into_index(),
+                        v0.into_index()
+                    )));
                 }
             }
         }
 
-        // Build vertex → quad map (includes infinite vertex) and set positions
-        let mut vertices = IdxVec::with_capacity(vertex_count + 1);
-        for i in 0..vertex_count {
-            let mut vertex = Vertex::new();
-            vertex.position = positions[i];
-            vertices.push(vertex);
-        }
-        // Add infinite vertex with no position
-        vertices.push(Vertex::new());
-
+        // Update vertex → quad references
         for qi_idx in 0..quad_count {
             let qi = QuadIndex::new(qi_idx);
             for &vi in quads[qi].vertices.iter() {
@@ -104,10 +141,6 @@ impl Quadrangulation {
                 }
             }
         }
-
-        // Infinite vertex: use first infinite quad
-        // (ring traversal visits all regardless of start)
-        let infinite_vertex = VertexIndex::new(vertex_count);
         vertices[infinite_vertex].quad = QuadIndex::new(infinite_quad_start);
 
         let mut anchor_vertices = IdxVec::<AnchorIndex, VertexIndex>::new();
@@ -121,6 +154,9 @@ impl Quadrangulation {
             quads,
             anchor_vertices,
         };
+
+        mesh.dump();
+
         debug_assert_eq!(mesh.validate(), Ok(()));
         Ok(mesh)
     }

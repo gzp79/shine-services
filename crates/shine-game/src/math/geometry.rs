@@ -135,3 +135,53 @@ mod tests {
         assert_eq!(sorted, expected);
     }
 }
+
+/// Return the (normalized) bisector of the two vector
+pub fn bisector(u: Vec2, v: Vec2) -> Vec2 {
+    const EPS: f32 = 1e-6;
+
+    if u.length_squared() < EPS || v.length_squared() < EPS {
+        return Vec2::ZERO; // invalid input
+    }
+
+    let u = u.normalize();
+    let v = v.normalize();
+
+    let left = Vec2::new(-u.y, u.x);
+    let sum = u + v;
+
+    let mut b = if sum.length_squared() < EPS {
+        // straight / opposite direction:
+        // infinitely many bisectors -> choose CCW normal
+        left
+    } else {
+        sum.normalize()
+    };
+
+    // orient toward CCW side
+    if b.dot(left) < 0.0 {
+        b = -b;
+    }
+
+    b
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use glam::vec2;
+    use shine_test::test;
+
+    #[test]
+    fn test_bisector() {
+        let u = vec2(1.0, -1.0);
+        let v = vec2(1.0, 1.0);
+        let b = bisector(u, v);
+        assert!((b - vec2(1.0, 0.0)).length() < 1e-6);
+
+        let u = vec2(1.0, 0.0);
+        let v = vec2(-1.0, 0.0);
+        let b = bisector(u, v);
+        assert!((b - vec2(0.0, -1.0)).length() < 1e-6);
+    }
+}

@@ -211,4 +211,33 @@ impl Quadrangulation {
     pub fn builder(&mut self) -> QuadBuilder<'_> {
         QuadBuilder { quad: self }
     }
+
+    pub fn dump(&self) {
+        let mut svg = crate::math::debug::SvgDump::new();
+        svg.add_default_styles();
+        svg.add_quad(self, std::iter::empty());
+
+        // Find workspace root by walking up from CARGO_MANIFEST_DIR
+        let output_path = std::env::var("CARGO_MANIFEST_DIR")
+            .ok()
+            .and_then(|p| {
+                let mut path = std::path::PathBuf::from(p);
+                // Walk up to workspace root (should have Cargo.toml with [workspace])
+                while path.parent().is_some() {
+                    path.pop();
+                    if path.join("Cargo.toml").exists() {
+                        return Some(path.join("temp").join("quad"));
+                    }
+                }
+                None
+            })
+            .unwrap_or_else(|| std::path::PathBuf::from("temp/quad"));
+        std::fs::create_dir_all(&output_path).ok();
+
+        let svg_path = output_path.join("quad_mesh_debug.svg");
+        if let Ok(mut file) = std::fs::File::create(&svg_path) {
+            svg.write(&mut file).ok();
+            eprintln!("DEBUG: Quad mesh SVG dumped to: {}", svg_path.display());
+        }
+    }
 }

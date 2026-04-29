@@ -1,6 +1,6 @@
 use crate::{
     math::{
-        hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
+        hex::{PatchMesher, PatchOrientation},
         prng::{StableRng, Xorshift32},
         quadrangulation::{
             Jitter, LaplacianSmoother, QuadError, QuadFilter, QuadRelax, Quadrangulation, VertexRepulsion,
@@ -30,8 +30,8 @@ fn default_world_size() -> f32 {
 #[serde(tag = "type")]
 enum MesherConfig {
     Patch { subdivision: u32, orientation: String },
-    Cdt { subdivision: u32, interior_points: u32 },
-    Lattice { subdivision: u32 },
+    //Cdt { subdivision: u32, interior_points: u32 },
+    //Lattice { subdivision: u32 },
 }
 
 #[derive(Deserialize)]
@@ -94,19 +94,18 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
                 "Odd" => PatchOrientation::Odd,
                 _ => return Err(JsValue::from_str("orientation must be 'Even' or 'Odd'")),
             };
-            let mut mesher = PatchMesher::new(subdivision, orient).with_world_size(world_size);
+            let mut mesher = PatchMesher::new(subdivision, orient).with_size(world_size);
             (mesher.generate_uniform(), subdivision)
-        }
-        MesherConfig::Cdt { subdivision, interior_points } => {
-            let rng = Xorshift32::new(config.seed).into_rc();
-            let mut mesher = CdtMesher::new(subdivision, interior_points, rng).with_world_size(world_size);
-            (mesher.generate(), subdivision)
-        }
-        MesherConfig::Lattice { subdivision } => {
-            let rng = Xorshift32::new(config.seed).into_rc();
-            let mut mesher = LatticeMesher::new(subdivision, rng).with_world_size(world_size);
-            (mesher.generate(), subdivision)
-        }
+        } /*MesherConfig::Cdt { subdivision, interior_points } => {
+              let rng = Xorshift32::new(config.seed).into_rc();
+              let mut mesher = CdtMesher::new(subdivision, interior_points, rng).with_world_size(world_size);
+              (mesher.generate(), subdivision)
+          }
+          MesherConfig::Lattice { subdivision } => {
+              let rng = Xorshift32::new(config.seed).into_rc();
+              let mut mesher = LatticeMesher::new(subdivision, rng).with_world_size(world_size);
+              (mesher.generate(), subdivision)
+          }*/
     };
 
     let validate = || {

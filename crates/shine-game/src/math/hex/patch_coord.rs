@@ -1,4 +1,4 @@
-use crate::math::hex::AxialCoord;
+use crate::math::rect::QuadFlatDir;
 use serde::{Deserialize, Serialize};
 
 /// Which of the 2 base orientations for the 3-patch split.
@@ -12,61 +12,82 @@ pub enum PatchOrientation {
 
 /// Patch coordinates for hexagonal grid subdivided into quads.
 /// p selects one of the 3 main quads (patches) and u,v indexes the grid of quads within each patch
+///
+/// ```text
+///  Even orientation:       Odd orientation:
+///           <- u               v ->
+///       x---x---+             +---x---x
+///      / \       \v         u/       / \
+///     x   x   0   x         x   1   x   x
+///   v/     \       \       /       /     \u
+///   +   1   x---x---x     x---x---x   0   +
+///   u\     /       /       \       \     /v
+///     x   x   2   x         x   2   x   x
+///      \ /       /u         v\       \ /
+///       x---x---+             +---x---x
+///           <- v               u ->
+///
+/// The origin of each patch is marked with '+' and u, v are orinted so whan u (or v) reaches the patch boundary,
+/// the neighbor patch is reached p+1 % 3 (or p-1 % 3)
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(into = "(i32, i32, i32)", from = "(i32, i32, i32)")]
+#[serde(into = "(u32, u32, u32)", from = "(u32, u32, u32)")]
 pub struct PatchCoord {
-    pub p: i32,
-    pub u: i32,
-    pub v: i32,
+    pub p: u32,
+    pub u: u32,
+    pub v: u32,
 }
 
 impl PatchCoord {
-    pub const fn new(p: i32, u: i32, v: i32) -> Self {
-        debug_assert!(p >= 0 && p < 3);
+    pub const fn new(p: u32, u: u32, v: u32) -> Self {
+        debug_assert!(p < 3);
         Self { p, u, v }
     }
 
-    /// Returns the two hex corner indices (a, b) that anchor this patch's triangle.
-    pub fn hex_corner_indices(&self, orientation: PatchOrientation) -> (usize, usize) {
-        let start = match orientation {
-            PatchOrientation::Even => 0,
-            PatchOrientation::Odd => 1,
-        };
-        let a = (start + self.p as usize * 2) % 6;
-        let b = (start + self.p as usize * 2 + 2) % 6;
-        (a, b)
-    }
+    /// Return the neighboring patch coordinate in the given direction.
+    /// If the neighbor is out of bounds (u or v < 0 or >= size), return None.
+    pub fn neighbor(&self, size: u32, dir: QuadFlatDir) -> Option<Self> {
+        debug_assert!(self.u < size);
+        debug_assert!(self.v < size);
 
-    /// Returns the 4 corner AxialCoords of this quad in CCW winding order.
-    ///
-    /// Each patch is a triangular region anchored by two hex vertices (H_a, H_b) and the center.
-    /// Within the patch, (u, v) addresses a quad cell in a grid_size x grid_size grid.
-    /// The corners are computed by affine interpolation:
-    ///   corner(cu, cv) = (cu * H_a + cv * H_b) / grid_size
-    pub fn quad_vertices(&self, orientation: PatchOrientation, subdivision: u32) -> [AxialCoord; 4] {
-        let grid = 2i32.pow(subdivision);
-        let (a_idx, b_idx) = self.hex_corner_indices(orientation);
-        let radius = grid as u32;
-        let corners = AxialCoord::hex_corners(radius);
-        let ha = corners[a_idx];
-        let hb = corners[b_idx];
-
-        let corner = |cu: i32, cv: i32| -> AxialCoord {
-            AxialCoord::new((cu * ha.q + cv * hb.q) / grid, (cu * ha.r + cv * hb.r) / grid)
+        let (u, v) = match dir {
+            QuadFlatDir::E => (self.u as i32 + 1, self.v as i32),
+            QuadFlatDir::S => (self.u as i32, self.v as i32 - 1),
+            QuadFlatDir::N => (self.u as i32, self.v as i32 + 1),
+            QuadFlatDir::W => (self.u as i32 - 1, self.v as i32),
         };
 
-        let (u, v) = (self.u, self.v);
-        [corner(u, v), corner(u + 1, v), corner(u + 1, v + 1), corner(u, v + 1)]
+        if u < 0 || v < 0 {
+            None
+        } else if u >= size as i32 {
+            Some(Self {
+                p: (self.p + 1) % 3,
+                u: size - 1,
+                v: v as u32,
+            })
+        } else if v >= size as i32 {
+            Some(Self {
+                p: (self.p + 2) % 3,
+                u: u as u32,
+                v: size - 1,
+            })
+        } else {
+            Some(Self {
+                p: self.p,
+                u: u as u32,
+                v: v as u32,
+            })
+        }
     }
 }
 
-impl From<(i32, i32, i32)> for PatchCoord {
-    fn from((p, u, v): (i32, i32, i32)) -> Self {
+impl From<(u32, u32, u32)> for PatchCoord {
+    fn from((p, u, v): (u32, u32, u32)) -> Self {
         Self { p, u, v }
     }
 }
 
-impl From<PatchCoord> for (i32, i32, i32) {
+impl From<PatchCoord> for (u32, u32, u32) {
     fn from(coord: PatchCoord) -> Self {
         (coord.p, coord.u, coord.v)
     }

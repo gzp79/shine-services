@@ -11,9 +11,19 @@ impl<const N: usize> Default for RotNIdx<N> {
 }
 
 impl<const N: usize> RotNIdx<N> {
+    pub fn add(self, value: usize) -> Self {
+        assert!(!self.is_none());
+        Self::new((self.0 as usize + value) % N)
+    }
+
     pub fn increment(self) -> Self {
         assert!(!self.is_none());
         Self::new((self.0 as usize + 1) % N)
+    }
+
+    pub fn sub(self, value: usize) -> Self {
+        assert!(!self.is_none());
+        Self::new((self.0 as usize + value + N - 1) % N)
     }
 
     pub fn decrement(self) -> Self {
@@ -51,21 +61,7 @@ impl<const N: usize> TypedIndex for RotNIdx<N> {
 
     #[inline]
     fn into_index(self) -> usize {
-        debug_assert!(self.0 != u8::MAX, "called into_index() on non-real RotN");
+        debug_assert!(self.0 < N as u8, "RotN index overflow");
         self.0 as usize
-    }
-
-    #[inline]
-    fn try_into_index(self) -> Option<usize> {
-        if self.is_none() {
-            None
-        } else {
-            Some(self.0 as usize)
-        }
-    }
-
-    #[inline]
-    fn is_none(self) -> bool {
-        self.0 == u8::MAX
     }
 }

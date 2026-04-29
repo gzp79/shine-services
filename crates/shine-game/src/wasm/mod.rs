@@ -1,6 +1,6 @@
 mod dto;
 mod experiments;
-mod world;
+//mod world;
 
 use wasm_bindgen::prelude::*;
 
