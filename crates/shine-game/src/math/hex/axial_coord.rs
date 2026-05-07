@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::{array, ops};
 
 /// Axial coordinates for hexagonal grid.
-///
+/// Flat-top orientation:
 /// ```text
 ///                    ___
 ///                  /  0  \
@@ -31,7 +31,7 @@ use std::{array, ops};
 ///                 \     2 /
 ///                  \ ___ /
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(into = "(i32, i32)", from = "(i32, i32)")]
 pub struct AxialCoord {
     pub q: i32,

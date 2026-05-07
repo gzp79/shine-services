@@ -28,6 +28,17 @@ pub trait StableRngExt: StableRng {
     fn float_range(&mut self, min: f32, max: f32) -> f32 {
         min + self.float_unit() * (max - min)
     }
+
+    /// Returns a deterministic i32.
+    fn next_i32(&mut self) -> i32 {
+        self.next_u32() as i32
+    }
+
+    /// Returns a deterministic i32 in [min, max).
+    fn i32_range(&mut self, min: i32, max: i32) -> i32 {
+        let d = (max - min) as u32;
+        min + (self.next_u32() % d) as i32
+    }
 }
 
 impl<T: StableRng + ?Sized> StableRngExt for T {}

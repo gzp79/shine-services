@@ -9,17 +9,6 @@ use std::collections::HashMap;
 
 impl Quadrangulation {
     /// Build topology from a (boundary) polygon and interior quads.
-    ///
-    /// Three-phase construction:
-    /// 1. Build vertices (finite + infinite) with positions
-    /// 2. Build quads (finite + ghost) with vertex references
-    /// 3. Wire up neighbor relationships via edge map
-    ///
-    /// # Arguments
-    /// * `positions` - Vertex positions (finite vertices only)
-    /// * `polygon` - Complete boundary cycle in CW order (must have even length)
-    /// * `quads` - Interior quad vertex indices in CCW order
-    /// * `anchors` - Special boundary vertices (e.g., hex corners) in order
     pub fn from_polygon(
         positions: Vec<Vec2>,
         polygon: Vec<VertexIndex>,
@@ -155,10 +144,7 @@ impl Quadrangulation {
             anchor_vertices,
         };
 
-        //FIXME!!!!
-        mesh.dump();
-
-        debug_assert_eq!(mesh.validate(), Ok(()));
+        debug_assert_eq!(mesh.validator().validate_topology(), Ok(()));
         Ok(mesh)
     }
 

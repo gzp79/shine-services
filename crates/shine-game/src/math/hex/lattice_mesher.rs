@@ -15,60 +15,70 @@ use std::{
 };
 
 /// Generates a quad mesh by triangulating axial hex coordinates, then randomly
-/// merging triangle pairs into quads, and finally subdividing all faces
-/// (remaining triangles → 3 quads, merged quads → 4 quads) via centroid + edge midpoints.
+/// merging triangle pairs into quads, and finally subdividing all faces.
 pub struct LatticeMesher {
+    /// Source of randomness.
     rng: Rc<RefCell<dyn StableRng>>,
+    /// The circumradius of the hex boundary, which controls the overall scale of the output mesh.
     size: f32,
-
-    cell_radius: u32,
-    cell_size: f32,
-    indexer: AxialDenseIndexer,
+    /// The radius of the (pointy) hex-grid patch forming the interior of the mesh.
+    patch_radius: u32,
+    /// Hex patch size that sums up to `size` for the enclosed hex patches.
+    patch_size: f32,
+    /// Indexer for axial coordinates, which provides a dense index for each coordinate within the cell radius.
+    patch_indexer: AxialDenseIndexer,
 }
 
 impl LatticeMesher {
     pub fn new(subdivision: u32, rng: Rc<RefCell<dyn StableRng>>) -> Self {
         let size = 1.0;
-        let cell_radius = 2u32.pow(subdivision - 1); // -1: there is an extra subdivision after merging triangles into quads
-        let cell_size = size * SQRT_3 / 2. / cell_radius as f32;
+        let patch_radius = 2u32.pow(subdivision - 1); // -1: there is an extra subdivision after merging triangles into quads
+        let patch_size = size * SQRT_3 / 3. / patch_radius as f32;
 
         Self {
             rng,
             size: 1.0,
-            cell_radius,
-            cell_size,
-            indexer: AxialDenseIndexer::new(cell_radius),
+            patch_radius,
+            patch_size,
+            patch_indexer: AxialDenseIndexer::new(patch_radius),
         }
     }
 
     #[must_use]
     pub fn with_size(mut self, size: f32) -> Self {
         self.size = size;
-        self.cell_size = self.size * SQRT_3 / 2. / self.cell_radius as f32;
+        self.patch_size = self.size * SQRT_3 / 3. / self.patch_radius as f32;
         self
     }
 
     pub fn generate(&mut self) -> Quadrangulation {
         // 1. Find the vertex positions
-        let mut positions = vec![Vec2::ZERO; self.indexer.get_total_size()];
-        for coord in AxialCoord::ORIGIN.spiral(self.cell_radius) {
-            let idx = self.indexer.get_dense_index(&coord);
-            positions[idx] = coord.pointy().to_position(self.cell_size);
+        // In the final mesh the verties are made of the axial coordinate (position) and midpoints between them.
+        // We can compute the positions of all axial coordinates upfront, and store them in a dense array indexed by the indexer.
+        // Midpoint positions will be computed on demand and stored at the end of the positions array (after all axial coordinate positions).
+        let mut positions = vec![Vec2::ZERO; self.patch_indexer.get_total_size()];
+        for coord in AxialCoord::ORIGIN.spiral(self.patch_radius) {
+            let idx = self.patch_indexer.get_dense_index(&coord);
+            positions[idx] = coord.pointy().to_position(self.patch_size);
         }
 
         // 2. Enumerate all triangles from the axial triangular lattice.
         // Each vertex generates 6 triangles (one per adjacent neighbor pair).
         // Deduplicate via sorted canonical form.
         let mut triangle_set: HashSet<[usize; 3]> = HashSet::new();
-        for coord in AxialCoord::ORIGIN.spiral(self.cell_radius - 1) {
-            let a = self.indexer.get_dense_index(&coord);
+        for coord in AxialCoord::ORIGIN.spiral(self.patch_radius - 1) {
+            let a = self.patch_indexer.get_dense_index(&coord);
             let neighbors = coord.pointy().neighbors();
 
             for i in 0..6 {
                 let b = neighbors[i];
                 let c = neighbors[(i + 1) % 6];
 
-                let mut tri = [a, self.indexer.get_dense_index(&b), self.indexer.get_dense_index(&c)];
+                let mut tri = [
+                    a,
+                    self.patch_indexer.get_dense_index(&b),
+                    self.patch_indexer.get_dense_index(&c),
+                ];
                 tri.sort_unstable();
                 triangle_set.insert(tri);
             }
@@ -192,8 +202,8 @@ impl LatticeMesher {
         }
 
         let mut polygon = Vec::new();
-        for coord in AxialCoord::ORIGIN.ring(self.cell_radius) {
-            polygon.push(VertexIndex::new(self.indexer.get_dense_index(&coord)));
+        for coord in AxialCoord::ORIGIN.ring(self.patch_radius) {
+            polygon.push(VertexIndex::new(self.patch_indexer.get_dense_index(&coord)));
             polygon.push(VertexIndex::NONE); // placeholder for midpoint
         }
         let boundary_vertex_count = polygon.len() / 2;
@@ -207,9 +217,9 @@ impl LatticeMesher {
 
         let anchors: Vec<VertexIndex> = AxialCoord::ORIGIN
             .pointy()
-            .corners(self.cell_radius)
+            .corners(self.patch_radius)
             .iter()
-            .map(|c| VertexIndex::new(self.indexer.get_dense_index(c)))
+            .map(|c| VertexIndex::new(self.patch_indexer.get_dense_index(c)))
             .collect();
 
         Quadrangulation::from_polygon(positions, polygon, quads, anchors).expect("valid lattice mesh topology")

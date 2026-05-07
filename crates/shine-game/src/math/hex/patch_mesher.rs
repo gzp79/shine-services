@@ -14,12 +14,16 @@ use glam::Vec2;
 /// The hexagon is subdivided to 2^subdivision cells along each edge, and each patch is meshed as a grid of quads.
 pub struct PatchMesher {
     subdivision: u32,
+    /// The major orientation of the hexagon patch determining the direction of the 3 main patches.
     orientation: PatchOrientation,
+    /// The circumradius of the hex boundary, which controls the overall scale of the output mesh.
     size: f32,
-
-    cell_radius: u32,
-    cell_size: f32,
-    indexer: AxialDenseIndexer,
+    /// The radius of the (pointy) hex-grid patch forming the interior of the mesh.
+    patch_radius: u32,
+    /// Hex patch size that sums up to `size` for the enclosed hex patches.
+    patch_size: f32,
+    /// Indexer for axial coordinates, which provides a dense index for each coordinate within the cell radius.
+    patch_indexer: AxialDenseIndexer,
 }
 
 impl PatchMesher {
@@ -28,23 +32,23 @@ impl PatchMesher {
         // Hence we can store to vetices of the resulting mesh in the dense grid corresponding to the pointy-top grid.
 
         let size = 1.0;
-        let cell_radius = 2u32.pow(subdivision);
-        let cell_size = size * SQRT_3 / 2. / cell_radius as f32;
+        let patch_radius = 2u32.pow(subdivision);
+        let patch_size = size * SQRT_3 / 3. / patch_radius as f32;
 
         Self {
             subdivision,
             orientation,
             size: 1.0,
-            cell_radius,
-            cell_size,
-            indexer: AxialDenseIndexer::new(cell_radius),
+            patch_radius,
+            patch_size,
+            patch_indexer: AxialDenseIndexer::new(patch_radius),
         }
     }
 
     #[must_use]
     pub fn with_size(mut self, size: f32) -> Self {
         self.size = size;
-        self.cell_size = self.size * SQRT_3 / 2. / self.cell_radius as f32;
+        self.patch_size = self.size * SQRT_3 / 3. / self.patch_radius as f32;
         self
     }
 
@@ -52,32 +56,32 @@ impl PatchMesher {
     /// The centers of the cells in a pointy-top hex gird forms the subdivision of a flat-top hexagon, where each
     /// vertex is the center of  a cell.
     pub fn generate_uniform(&mut self) -> Quadrangulation {
-        let mut positions = vec![Vec2::ZERO; self.indexer.get_total_size()];
-        for coord in AxialCoord::ORIGIN.spiral(self.cell_radius) {
-            let idx = self.indexer.get_dense_index(&coord);
-            positions[idx] = coord.pointy().to_position(self.cell_size);
+        let mut positions = vec![Vec2::ZERO; self.patch_indexer.get_total_size()];
+        for coord in AxialCoord::ORIGIN.spiral(self.patch_radius) {
+            let idx = self.patch_indexer.get_dense_index(&coord);
+            positions[idx] = coord.pointy().to_position(self.patch_size);
         }
         self.build_quad_mesh(positions)
     }
 
     /// Generate the mesh with recursive subdivision placement.
     pub fn generate_subdivision(&mut self) -> Quadrangulation {
-        let total = self.indexer.get_total_size();
+        let total = self.patch_indexer.get_total_size();
         let mut positions = vec![Vec2::NAN; total];
 
         // Place center
-        let center_idx = self.indexer.get_dense_index(&AxialCoord::ORIGIN);
+        let center_idx = self.patch_indexer.get_dense_index(&AxialCoord::ORIGIN);
         positions[center_idx] = Vec2::ZERO;
 
         // Place 6 hex corner vertices
-        for coord in AxialCoord::ORIGIN.pointy().corners(self.cell_radius) {
-            let idx = self.indexer.get_dense_index(&coord);
-            positions[idx] = coord.pointy().to_position(self.cell_size);
+        for coord in AxialCoord::ORIGIN.pointy().corners(self.patch_radius) {
+            let idx = self.patch_indexer.get_dense_index(&coord);
+            positions[idx] = coord.pointy().to_position(self.patch_size);
         }
 
         for depth in 0..self.subdivision {
             let parent_grid = 2i32.pow(depth);
-            let step = self.cell_radius as i32 / parent_grid;
+            let step = self.patch_radius as i32 / parent_grid;
 
             for p in 0..3 {
                 let (origin_dir, du_dir, dv_dir) = match (self.orientation, p) {
@@ -90,7 +94,7 @@ impl PatchMesher {
                     _ => unreachable!(),
                 };
 
-                let origin = AxialCoord::ORIGIN.pointy().corner(origin_dir, self.cell_radius);
+                let origin = AxialCoord::ORIGIN.pointy().corner(origin_dir, self.patch_radius);
                 let base_sys = origin.base(du_dir, dv_dir);
                 let half_step_sys = base_sys.scaled(step / 2);
 
@@ -114,9 +118,10 @@ impl PatchMesher {
                         ];
                         let mid = half_step_sys.at(u + 1, v + 1);
 
-                        let mid_idx = self.indexer.get_dense_index(&mid);
-                        let edge_mid_idx: [usize; 4] = array::from_fn(|i| self.indexer.get_dense_index(&edge_mid[i]));
-                        let corner_idx: [usize; 4] = array::from_fn(|i| self.indexer.get_dense_index(&corner[i]));
+                        let mid_idx = self.patch_indexer.get_dense_index(&mid);
+                        let edge_mid_idx: [usize; 4] =
+                            array::from_fn(|i| self.patch_indexer.get_dense_index(&edge_mid[i]));
+                        let corner_idx: [usize; 4] = array::from_fn(|i| self.patch_indexer.get_dense_index(&corner[i]));
 
                         // place edge midpoints
                         let mut edge_mid_pos = [Vec2::NAN; 4];
@@ -149,8 +154,8 @@ impl PatchMesher {
     /// Build a Quadrangulation from vertex positions using the patch topology.
     fn build_quad_mesh(&self, positions: Vec<Vec2>) -> Quadrangulation {
         let mut polygon = Vec::new();
-        for coord in AxialCoord::ORIGIN.ring(self.cell_radius) {
-            polygon.push(VertexIndex::new(self.indexer.get_dense_index(&coord)));
+        for coord in AxialCoord::ORIGIN.ring(self.patch_radius) {
+            polygon.push(VertexIndex::new(self.patch_indexer.get_dense_index(&coord)));
         }
 
         // Build quad indices
@@ -166,20 +171,20 @@ impl PatchMesher {
                 _ => unreachable!(),
             };
 
-            let origin = AxialCoord::ORIGIN.pointy().corner(origin_dir, self.cell_radius);
+            let origin = AxialCoord::ORIGIN.pointy().corner(origin_dir, self.patch_radius);
             let base_sys = origin.base(du_dir, dv_dir);
 
-            for u in 0..self.cell_radius {
-                for v in 0..self.cell_radius {
+            for u in 0..self.patch_radius {
+                for v in 0..self.patch_radius {
                     let i0 = base_sys.at(u as i32, v as i32);
                     let i1 = base_sys.at(u as i32 + 1, v as i32);
                     let i2 = base_sys.at(u as i32 + 1, v as i32 + 1);
                     let i3 = base_sys.at(u as i32, v as i32 + 1);
                     quads.push([
-                        VertexIndex::new(self.indexer.get_dense_index(&i0)),
-                        VertexIndex::new(self.indexer.get_dense_index(&i1)),
-                        VertexIndex::new(self.indexer.get_dense_index(&i2)),
-                        VertexIndex::new(self.indexer.get_dense_index(&i3)),
+                        VertexIndex::new(self.patch_indexer.get_dense_index(&i0)),
+                        VertexIndex::new(self.patch_indexer.get_dense_index(&i1)),
+                        VertexIndex::new(self.patch_indexer.get_dense_index(&i2)),
+                        VertexIndex::new(self.patch_indexer.get_dense_index(&i3)),
                     ]);
                 }
             }
@@ -187,12 +192,15 @@ impl PatchMesher {
 
         let anchors: Vec<VertexIndex> = AxialCoord::ORIGIN
             .pointy()
-            .corners(self.cell_radius)
+            .corners(self.patch_radius)
             .iter()
-            .map(|c| VertexIndex::new(self.indexer.get_dense_index(c)))
+            .map(|c| VertexIndex::new(self.patch_indexer.get_dense_index(c)))
             .collect();
 
-        Quadrangulation::from_polygon(positions, polygon, quads, anchors).expect("valid patch mesh topology")
+        let mesh =
+            Quadrangulation::from_polygon(positions, polygon, quads, anchors).expect("valid patch mesh topology");
+        mesh.dump();
+        mesh
     }
 }
 

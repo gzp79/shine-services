@@ -1,7 +1,7 @@
 mod axial_base;
 mod axial_coord;
 mod axial_dense_indexer;
-//mod cdt_mesher;
+mod cdt_mesher;
 mod directions;
 mod lattice_mesher;
 mod patch_coord;
@@ -12,7 +12,7 @@ pub use self::{
     axial_base::AxialBase,
     axial_coord::{AxialCoord, FlatAxialCoord, PointyAxialCoord, RingIterator, SpiralIterator},
     axial_dense_indexer::AxialDenseIndexer,
-    //cdt_mesher::CdtMesher,
+    cdt_mesher::CdtMesher,
     directions::{HexFlatDir, HexPointyDir},
     lattice_mesher::LatticeMesher,
     patch_coord::{PatchCoord, PatchOrientation},

@@ -31,7 +31,17 @@ impl<'a> Validator<'a> {
     /// ```
     ///
     /// Returns `Ok(())` if valid, otherwise returns an error describing the issue.
-    pub fn validate_regular_flat_top_hexagon(&self, subdivision: usize, tolerance: f32) -> Result<(), QuadError> {
+    /// `size` is the expected circumradius (= side length for a regular hexagon).
+    /// `tolerance` is relative to `size`.
+    pub fn validate_regular_flat_top_hexagon(
+        &self,
+        subdivision: usize,
+        size: f32,
+        tolerance: f32,
+    ) -> Result<(), QuadError> {
+        let abs_tolerance = size * tolerance;
+        let angular_tolerance_deg = tolerance.to_degrees();
+
         let anchor_positions: Vec<Vec2> = self.mesh.anchor_vertex_iter().map(|v| v.position).collect();
 
         // Check anchor count
@@ -48,10 +58,18 @@ impl<'a> Validator<'a> {
         let center = positions.iter().fold(Vec2::ZERO, |acc, &p| acc + p) / 6.0;
         let radius = (positions[0] - center).length();
 
+        // Validate circumradius matches expected size
+        if (radius - size).abs() > abs_tolerance {
+            return Err(QuadError::Geometry(format!(
+                "Expected hexagon circumradius {:.6}, got {:.6}",
+                size, radius
+            )));
+        }
+
         // Validate all points are equidistant from center (regular hexagon)
         for (i, &pos) in positions.iter().enumerate() {
             let dist = (pos - center).length();
-            if (dist - radius).abs() > tolerance {
+            if (dist - radius).abs() > abs_tolerance {
                 return Err(QuadError::Geometry(format!(
                     "Expected a regular hexagon, but anchor {} is not equidistant from center: expected radius {:.6}, got {:.6}",
                     i, radius, dist
@@ -68,7 +86,6 @@ impl<'a> Validator<'a> {
 
             let angle_normalized = if angle_deg < 0.0 { angle_deg + 360.0 } else { angle_deg };
             let angle_diff = (angle_normalized - expected_deg + 180.0).rem_euclid(360.0) - 180.0;
-            let angular_tolerance_deg = tolerance.atan2(radius).to_degrees();
 
             if angle_diff.abs() > angular_tolerance_deg {
                 return Err(QuadError::Geometry(format!(
@@ -84,7 +101,7 @@ impl<'a> Validator<'a> {
             let next_i = (i + 1) % 6;
             let side_length = (positions[next_i] - positions[i]).length();
 
-            if (side_length - first_side_length).abs() > tolerance {
+            if (side_length - first_side_length).abs() > abs_tolerance {
                 return Err(QuadError::Geometry(format!(
                     "Expected a regular hexagon, but side {}->{} has different length: expected {:.6}, got {:.6}",
                     i, next_i, first_side_length, side_length

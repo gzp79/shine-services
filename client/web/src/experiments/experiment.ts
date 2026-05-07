@@ -28,7 +28,7 @@ export async function createExperiment(container: HTMLElement, options?: Experim
     camera.position.set(0, -2.5, 4);
     camera.lookAt(0, 0, 0);
 
-    const renderer = new WebGPURenderer({ antialias: true, forceWebGL: true });
+    const renderer = new WebGPURenderer({ antialias: true });
     await renderer.init();
     renderer.setSize(width, height);
     renderer.setPixelRatio(window.devicePixelRatio);

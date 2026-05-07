@@ -1,6 +1,16 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export class WasmCdt {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    constraints(): Uint32Array;
+    error_message(): string | undefined;
+    triangles(): Uint32Array;
+    vertices(): Float32Array;
+}
+
 /**
  * WASM wrapper for IndexedMesh - exposes mesh geometry to TypeScript
  */
@@ -50,6 +60,12 @@ export class WasmPatchMesh {
 }
 
 /**
+ * Generate a CDT from random points and constraint edges.
+ * `config_json`: { "n_points": u32, "n_edges": u32, "seed": u32, "bound": i32 }
+ */
+export function generate_cdt(config_json: string): WasmCdt;
+
+/**
  * Generate a hex quad mesh from a JSON config string.
  */
 export function generate_mesh(config_json: string): WasmPatchMesh;
@@ -72,6 +88,12 @@ export interface InitOutput {
     readonly wasmpatchmesh_dual: (a: number) => number;
     readonly wasmpatchmesh_primal: (a: number) => number;
     readonly wasmpatchmesh_world_size: (a: number) => number;
+    readonly __wbg_wasmcdt_free: (a: number, b: number) => void;
+    readonly generate_cdt: (a: number, b: number) => number;
+    readonly wasmcdt_constraints: (a: number) => [number, number];
+    readonly wasmcdt_error_message: (a: number) => [number, number];
+    readonly wasmcdt_triangles: (a: number) => [number, number];
+    readonly wasmcdt_vertices: (a: number) => [number, number];
     readonly start: () => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

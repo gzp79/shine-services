@@ -1,5 +1,5 @@
 //import { createGame } from './engine/game';
-//import { createCdtExperiment } from './experiments/cdt/index';
+import { createCdtExperiment } from './experiments/cdt/index';
 import { createHexMeshExperiment } from './experiments/hex-mesh/index';
 import { createInputControlExperiment } from './experiments/input-control/index';
 import { createTrilinearExperiment } from './experiments/trilinear/index';
@@ -14,9 +14,9 @@ export async function createScene(container: HTMLElement, scene: Scene): Promise
         case 'hex-mesh': {
             return await createHexMeshExperiment(container);
         }
-        /*case 'cdt': {
+        case 'cdt': {
             return await createCdtExperiment(container);
-            }*/
+        }
         case 'input-events': {
             return await createInputControlExperiment(container);
         }

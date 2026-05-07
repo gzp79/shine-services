@@ -1,8 +1,7 @@
-use glam::Vec2;
 use shine_game::{
     indexed::TypedIndex,
     math::{
-        hex::{LatticeMesher, PatchMesher, PatchOrientation},
+        hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
         prng::{StableRng, SysRng, Xorshift32},
         quadrangulation::Quadrangulation,
     },
@@ -10,15 +9,17 @@ use shine_game::{
 use shine_test::test;
 
 const SUBDIVISION: u32 = 2; // Minimum subdivision for even edge count between anchors
+const INTERNAL_POINTS: u32 = 100; // Minimum subdivision for even edge count between anchors
 const ORIENTATION: PatchOrientation = PatchOrientation::Even;
 /// Expected vertices per anchor edge: 2^SUBDIVISION + 1
 const ANCHOR_SUBDIVISION: usize = (1 << SUBDIVISION) + 1;
+const WORLD_SIZE: f32 = 42.0;
 
 fn assert_valid_hexagon_mesh(mesh: &Quadrangulation) {
     let validator = mesh.validator();
     assert_eq!(validator.validate(), Ok(()));
     assert_eq!(
-        validator.validate_regular_flat_top_hexagon(ANCHOR_SUBDIVISION, 1e-6),
+        validator.validate_regular_flat_top_hexagon(ANCHOR_SUBDIVISION, WORLD_SIZE, 1e-6),
         Ok(())
     );
 }
@@ -68,7 +69,7 @@ where
 
 #[test]
 fn generate_uniform() {
-    let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
+    let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION).with_size(WORLD_SIZE);
     let mesh = mesher.generate_uniform();
     assert_valid_hexagon_mesh(&mesh);
 }
@@ -76,39 +77,37 @@ fn generate_uniform() {
 #[test]
 fn test_uniform_determinism() {
     assert_mesher_deterministic("Patch", |_seed| {
-        let mut mesher = PatchMesher::new(2, PatchOrientation::Odd);
+        let mut mesher = PatchMesher::new(SUBDIVISION, PatchOrientation::Odd).with_size(WORLD_SIZE);
         mesher.generate_uniform()
     });
 }
 
 #[test]
 fn generate_subdiv_uniform() {
-    let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION);
+    let mut mesher = PatchMesher::new(SUBDIVISION, ORIENTATION).with_size(WORLD_SIZE);
     let mesh = mesher.generate_subdivision();
     assert_valid_hexagon_mesh(&mesh);
 }
 
-/*
 #[test]
 fn generate_cdt_mesh() {
-    let mut mesher = CdtMesher::new(SUBDIVISION, 20, SysRng::new().into_rc());
+    let mut mesher = CdtMesher::new(SUBDIVISION, INTERNAL_POINTS, SysRng::new().into_rc()).with_size(WORLD_SIZE);
     let mesh = mesher.generate();
     assert_valid_hexagon_mesh(&mesh);
 }
 
 #[test]
- fn test_cdt_determinism() {
-     assert_mesher_deterministic("CDT", |seed| {
-         let rng = Xorshift32::new(seed).into_rc();
-         let mut mesher = CdtMesher::new(2, 10, rng);
-         mesher.generate()
-     });
- }
-*/
+fn test_cdt_determinism() {
+    assert_mesher_deterministic("CDT", |seed| {
+        let rng = Xorshift32::new(seed).into_rc();
+        let mut mesher = CdtMesher::new(SUBDIVISION, INTERNAL_POINTS, rng).with_size(WORLD_SIZE);
+        mesher.generate()
+    });
+}
 
 #[test]
 fn generate_lattice() {
-    let mut mesher = LatticeMesher::new(SUBDIVISION, SysRng::new().into_rc());
+    let mut mesher = LatticeMesher::new(SUBDIVISION, SysRng::new().into_rc()).with_size(WORLD_SIZE);
     let mesh = mesher.generate();
     assert_valid_hexagon_mesh(&mesh);
 }
@@ -117,7 +116,7 @@ fn generate_lattice() {
 fn test_lattice_determinism() {
     assert_mesher_deterministic("Lattice", |seed| {
         let rng = Xorshift32::new(seed).into_rc();
-        let mut mesher = LatticeMesher::new(2, rng);
+        let mut mesher = LatticeMesher::new(2, rng).with_size(WORLD_SIZE);
         mesher.generate()
     });
 }

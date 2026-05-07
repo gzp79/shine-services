@@ -1,6 +1,6 @@
 use crate::{
     math::{
-        hex::{LatticeMesher, PatchMesher, PatchOrientation},
+        hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
         prng::{StableRng, Xorshift32},
         quadrangulation::{
             Jitter, LaplacianSmoother, QuadError, QuadFilter, QuadRelax, Quadrangulation, VertexRepulsion,
@@ -30,7 +30,7 @@ fn default_world_size() -> f32 {
 #[serde(tag = "type")]
 enum MesherConfig {
     Patch { subdivision: u32, orientation: String },
-    //Cdt { subdivision: u32, interior_points: u32 },
+    Cdt { subdivision: u32, interior_points: u32 },
     Lattice { subdivision: u32 },
 }
 
@@ -97,11 +97,11 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
             let mut mesher = PatchMesher::new(subdivision, orient).with_size(world_size);
             (mesher.generate_uniform(), subdivision)
         }
-        // MesherConfig::Cdt { subdivision, interior_points } => {
-        //     let rng = Xorshift32::new(config.seed).into_rc();
-        //     let mut mesher = CdtMesher::new(subdivision, interior_points, rng).with_world_size(world_size);
-        //     (mesher.generate(), subdivision)
-        // }
+        MesherConfig::Cdt { subdivision, interior_points } => {
+            let rng = Xorshift32::new(config.seed).into_rc();
+            let mut mesher = CdtMesher::new(subdivision, interior_points, rng).with_size(world_size);
+            (mesher.generate(), subdivision)
+        }
         MesherConfig::Lattice { subdivision } => {
             let rng = Xorshift32::new(config.seed).into_rc();
             let mut mesher = LatticeMesher::new(subdivision, rng).with_size(world_size);
@@ -113,7 +113,7 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
         let anchor_sibdivision = (1 << subdivision) + 1;
         let validator = mesh.validator();
         validator.validate()?;
-        validator.validate_regular_flat_top_hexagon(anchor_sibdivision, config.world_size * 0.001)?;
+        validator.validate_regular_flat_top_hexagon(anchor_sibdivision, config.world_size, 0.001)?;
         Ok::<(), QuadError>(())
     };
 
