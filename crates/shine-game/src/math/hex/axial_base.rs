@@ -147,6 +147,6 @@ mod tests {
         // Test that at() produces correctly scaled positions
         let p11 = scaled_base.at(1, 1);
         assert_eq!(p11.q, 8); // 5 + 1*3 + 1*0
-        assert_eq!(p11.r, 1); // -2 + 1*(-3) + 1*3
+        assert_eq!(p11.r, -2); // -2 + 1*(-3) + 1*3
     }
 }

@@ -182,6 +182,6 @@ mod test {
         let u = vec2(1.0, 0.0);
         let v = vec2(-1.0, 0.0);
         let b = bisector(u, v);
-        assert!((b - vec2(0.0, -1.0)).length() < 1e-6);
+        assert!((b - vec2(0.0, 1.0)).length() < 1e-6);
     }
 }

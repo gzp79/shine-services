@@ -97,6 +97,7 @@ impl PatchMesher {
                 let origin = AxialCoord::ORIGIN.pointy().corner(origin_dir, self.patch_radius);
                 let base_sys = origin.base(du_dir, dv_dir);
                 let half_step_sys = base_sys.scaled(step / 2);
+                eprintln!("depth={depth} parent_grid={parent_grid} step={step}");
 
                 for pu in 0..parent_grid {
                     for pv in 0..parent_grid {
@@ -141,6 +142,7 @@ impl PatchMesher {
                         // place face midpoint
                         let mid_pos = mid_point(edge_mid_pos);
                         positions[mid_idx] = mid_pos;
+                        //positions[mid_idx] = mid.pointy().to_position(self.patch_size);
                         debug_assert!(!positions[mid_idx].is_nan());
                     }
                 }
@@ -206,14 +208,5 @@ impl PatchMesher {
 
 fn mid_point(quad: [Vec2; 4]) -> Vec2 {
     let (p1, p2, p3, p4) = (quad[0], quad[1], quad[2], quad[3]);
-
-    let d1 = p2 - p1;
-    let d2 = p4 - p3;
-    let cross = d1.perp_dot(d2);
-    if cross.abs() < 1e-6 {
-        (p1 + p2 + p3 + p4) / 4.0
-    } else {
-        let t = (p3 - p1).perp_dot(d2) / cross;
-        p1 + t * d1
-    }
+    (p1 + p2 + p3 + p4) / 4.0
 }

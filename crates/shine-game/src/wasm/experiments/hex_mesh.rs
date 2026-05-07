@@ -95,7 +95,7 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
                 _ => return Err(JsValue::from_str("orientation must be 'Even' or 'Odd'")),
             };
             let mut mesher = PatchMesher::new(subdivision, orient).with_size(world_size);
-            (mesher.generate_uniform(), subdivision)
+            (mesher.generate_subdivision(), subdivision)
         }
         MesherConfig::Cdt { subdivision, interior_points } => {
             let rng = Xorshift32::new(config.seed).into_rc();
