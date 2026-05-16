@@ -127,5 +127,5 @@ pub fn reduce_test_case_incremental_cdt(
     points: Vec<IVec2>,
     edges: Vec<(usize, usize)>,
 ) -> (Vec<IVec2>, Vec<(usize, usize)>) {
-    reduce_test_case_incremental::<false>(points, edges)
+    reduce_test_case_incremental::<true>(points, edges)
 }

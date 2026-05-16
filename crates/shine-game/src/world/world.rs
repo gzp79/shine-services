@@ -73,18 +73,18 @@ impl World {
     /// Returns dual polygon for boundary vertex cell (single triangular cell).
     /// Format: (vertices, indices, starts) matching Chunk::dual_polygons()
     pub fn boundary_vertex_dual_polygon(&self, owner_id: ChunkId, vertex_idx: HexPointyDir) -> Option<Vec<Vec2>> {
-        let v1 = vertex_idx;
-        let (n2, v2, n0, v0) = match vertex_idx {
-            HexPointyDir::E => (HexFlatDir::NE, HexPointyDir::SW, HexFlatDir::SE, HexPointyDir::NW),
-            HexPointyDir::NE => (HexFlatDir::N, HexPointyDir::SE, HexFlatDir::NE, HexPointyDir::W),
-            HexPointyDir::NW => (HexFlatDir::NW, HexPointyDir::E, HexFlatDir::N, HexPointyDir::SW),
-            HexPointyDir::W => (HexFlatDir::SW, HexPointyDir::NE, HexFlatDir::NW, HexPointyDir::SE),
-            HexPointyDir::SW => (HexFlatDir::S, HexPointyDir::NW, HexFlatDir::SW, HexPointyDir::E),
-            HexPointyDir::SE => (HexFlatDir::SE, HexPointyDir::W, HexFlatDir::S, HexPointyDir::NE),
+        let v0 = vertex_idx;
+        let (n1, v1, n2, v2) = match vertex_idx {
+            HexPointyDir::E => (HexFlatDir::SE, HexPointyDir::NW, HexFlatDir::NE, HexPointyDir::SW),
+            HexPointyDir::NE => (HexFlatDir::NE, HexPointyDir::W, HexFlatDir::N, HexPointyDir::SE),
+            HexPointyDir::NW => (HexFlatDir::N, HexPointyDir::SW, HexFlatDir::NW, HexPointyDir::E),
+            HexPointyDir::W => (HexFlatDir::NW, HexPointyDir::SE, HexFlatDir::SW, HexPointyDir::NE),
+            HexPointyDir::SW => (HexFlatDir::SW, HexPointyDir::E, HexFlatDir::S, HexPointyDir::NW),
+            HexPointyDir::SE => (HexFlatDir::S, HexPointyDir::NE, HexFlatDir::SE, HexPointyDir::W),
         };
 
-        let id0 = owner_id.neighbor(n0);
-        let id1 = owner_id;
+        let id0 = owner_id;
+        let id1 = owner_id.neighbor(n1);
         let id2 = owner_id.neighbor(n2);
 
         let chunk0 = self.chunk(id0)?;

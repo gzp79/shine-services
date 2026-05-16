@@ -10,9 +10,6 @@ use glam::IVec2;
 use std::path::PathBuf;
 
 /// High-level builder for constructing triangulations.
-///
-/// TriangulationBuilder coordinates between the triangulation data structure
-/// and the builder state, providing a clean public API for construction operations.
 pub struct TriangulationBuilder<'a, const DELAUNAY: bool> {
     pub(super) tri: &'a mut Triangulation<DELAUNAY>,
     pub(super) state: BuilderState,

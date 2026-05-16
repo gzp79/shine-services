@@ -199,10 +199,7 @@ impl PatchMesher {
             .map(|c| VertexIndex::new(self.patch_indexer.get_dense_index(c)))
             .collect();
 
-        let mesh =
-            Quadrangulation::from_polygon(positions, polygon, quads, anchors).expect("valid patch mesh topology");
-        mesh.dump();
-        mesh
+        Quadrangulation::from_polygon(positions, polygon, quads, anchors).expect("valid patch mesh topology")
     }
 }
 

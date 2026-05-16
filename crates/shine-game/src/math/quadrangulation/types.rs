@@ -32,7 +32,7 @@ impl QuadVertex {
     pub fn opposite(&self) -> QuadVertex {
         QuadVertex {
             quad: self.quad,
-            local: self.local.increment().increment(),
+            local: self.local.add(2),
         }
     }
 

@@ -120,6 +120,13 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_wasmindexedmesh_free: (a: number, b: number) => void;
+    readonly wasmindexedmesh_has_wires: (a: number) => number;
+    readonly wasmindexedmesh_indices: (a: number) => [number, number];
+    readonly wasmindexedmesh_polygon_ranges: (a: number) => [number, number];
+    readonly wasmindexedmesh_vertices: (a: number) => [number, number];
+    readonly wasmindexedmesh_wire_indices: (a: number) => [number, number];
+    readonly wasmindexedmesh_wire_ranges: (a: number) => [number, number];
     readonly __wbg_wasmcdt_free: (a: number, b: number) => void;
     readonly __wbg_wasmpatchmesh_free: (a: number, b: number) => void;
     readonly generate_cdt: (a: number, b: number) => number;
@@ -131,14 +138,10 @@ export interface InitOutput {
     readonly wasmpatchmesh_dual: (a: number) => number;
     readonly wasmpatchmesh_primal: (a: number) => number;
     readonly wasmpatchmesh_world_size: (a: number) => number;
-    readonly __wbg_wasmindexedmesh_free: (a: number, b: number) => void;
+    readonly start: () => void;
     readonly __wbg_wasmworld_free: (a: number, b: number) => void;
-    readonly wasmindexedmesh_has_wires: (a: number) => number;
-    readonly wasmindexedmesh_indices: (a: number) => [number, number];
-    readonly wasmindexedmesh_polygon_ranges: (a: number) => [number, number];
-    readonly wasmindexedmesh_vertices: (a: number) => [number, number];
-    readonly wasmindexedmesh_wire_indices: (a: number) => [number, number];
-    readonly wasmindexedmesh_wire_ranges: (a: number) => [number, number];
+    readonly __wbg_wasmworldneighbors_free: (a: number, b: number) => void;
+    readonly generate_world_neighbors: () => [number, number, number];
     readonly wasmworld_chunk_boundary_indices: (a: number, b: number, c: number) => [number, number];
     readonly wasmworld_chunk_dual_polygon_vertices: (a: number, b: number, c: number) => [number, number];
     readonly wasmworld_chunk_dual_polygons: (a: number, b: number, c: number) => [number, number];
@@ -151,9 +154,6 @@ export interface InitOutput {
     readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
     readonly wasmworld_new: () => number;
     readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
-    readonly __wbg_wasmworldneighbors_free: (a: number, b: number) => void;
-    readonly generate_world_neighbors: () => [number, number, number];
-    readonly start: () => void;
     readonly wasmworldneighbors_chunk_hex_vertices: (a: number, b: number) => [number, number];
     readonly wasmworldneighbors_edge_mesh: (a: number, b: number) => number;
     readonly wasmworldneighbors_interior_mesh: (a: number, b: number) => number;

@@ -29,10 +29,7 @@ impl BuilderState {
         self
     }
 
-    /// Execute a closure with a dump scope if enabled, with default styles pre-applied.
-    ///
-    /// This method takes a mutable reference to svg_dump to avoid borrowing the entire state,
-    /// allowing the closure to access other fields like delaunay_stack, top_chain, etc.
+    /// When dumping, the provided closure is called with a mutable reference to an SVG scope.
     pub fn dump<F>(&self, verbosity: usize, name: &str, f: F)
     where
         F: FnOnce(&mut SvgDump),
