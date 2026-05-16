@@ -7,7 +7,11 @@ edition.workspace = true
 log = { workspace = true }
 
 tracing-subscriber = { workspace = true, features = [
+    "std",
+    "registry",
     "env-filter",
+    "fmt",
+    "ansi",
     "tracing-log",
 ] }
 

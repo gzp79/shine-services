@@ -5,6 +5,7 @@ import { PolygonData, QuadData } from '../engine/mesh/geometry-data';
 import { PolygonWireMesh } from '../engine/mesh/polygon-wire-mesh';
 import { MeshBuilder, buildBaseMesh } from '../engine/mesh/quad-mesh';
 import { SelectionMesh } from '../engine/mesh/selection-mesh';
+import { span } from '../engine/utils';
 import { ChunkId } from './chunk-id';
 
 export class Chunk {
@@ -85,6 +86,7 @@ export class Chunk {
     }
 
     quadData(): QuadData {
+        using _s = span('quadData');
         return new QuadData(
             this.world.chunk_quad_vertices(this.id.q, this.id.r),
             this.world.chunk_quad_indices(this.id.q, this.id.r),
@@ -93,6 +95,7 @@ export class Chunk {
     }
 
     dualPolygons(): PolygonData {
+        using _s = span('dualPolygons');
         const vertices = this.world.chunk_dual_vertices(this.id.q, this.id.r);
         const packed = this.world.chunk_dual_polygons(this.id.q, this.id.r);
 
@@ -160,6 +163,7 @@ export class Chunk {
     private buildMesh(): void {
         if (this.mesh) return;
 
+        using _s = span('buildMesh');
         const color = new THREE.Color().setHSL(this.chunkHash() / 0xffffffff, 0.5, 0.6);
 
         this.mesh = buildBaseMesh(this.quadData(), color);

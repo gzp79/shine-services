@@ -2,7 +2,7 @@ use glam::Vec2;
 
 use crate::{
     math::{
-        hex::{HexNeighbor, HexVertex},
+        hex::{HexFlatDir, HexPointyDir},
         prng::SplitMix64,
     },
     world::{Chunk, ChunkId},
@@ -14,7 +14,7 @@ pub const SUBDIVISION_BASE: u32 = 4;
 /// The numbe of cells on the edge of a chunk
 pub const SUBDIVISION_COUNT: u32 = 2u32.pow(SUBDIVISION_BASE);
 
-/// The world size of a chunk (in meter)
+/// The world size (circumcenter) of a chunk (in meter)
 pub const CHUNK_WORLD_SIZE: f32 = 1000.0;
 /// The "ideal" length of the side of a cell (in meter)
 pub const CELL_WORLD_SIZE: f32 = CHUNK_WORLD_SIZE / SUBDIVISION_COUNT as f32;
@@ -66,21 +66,21 @@ impl World {
 
     /// Returns dual polygons for boundary edge cells owned by the given chunk.
     /// Format: (vertices, indices, starts) matching Chunk::dual_polygons()
-    pub fn boundary_edge_dual_polygons(&self, _owner_id: ChunkId, _edge_idx: HexNeighbor) -> Option<()> {
+    pub fn boundary_edge_dual_polygons(&self, _owner_id: ChunkId, _edge_idx: HexFlatDir) -> Option<()> {
         None
     }
 
     /// Returns dual polygon for boundary vertex cell (single triangular cell).
     /// Format: (vertices, indices, starts) matching Chunk::dual_polygons()
-    pub fn boundary_vertex_dual_polygon(&self, owner_id: ChunkId, vertex_idx: HexVertex) -> Option<Vec<Vec2>> {
+    pub fn boundary_vertex_dual_polygon(&self, owner_id: ChunkId, vertex_idx: HexPointyDir) -> Option<Vec<Vec2>> {
         let v1 = vertex_idx;
         let (n2, v2, n0, v0) = match vertex_idx {
-            HexVertex::E => (HexNeighbor::NE, HexVertex::SSW, HexNeighbor::SE, HexVertex::NNW),
-            HexVertex::NNE => (HexNeighbor::N, HexVertex::SSE, HexNeighbor::NE, HexVertex::W),
-            HexVertex::NNW => (HexNeighbor::NW, HexVertex::E, HexNeighbor::N, HexVertex::SSW),
-            HexVertex::W => (HexNeighbor::SW, HexVertex::NNE, HexNeighbor::NW, HexVertex::SSE),
-            HexVertex::SSW => (HexNeighbor::S, HexVertex::NNW, HexNeighbor::SW, HexVertex::E),
-            HexVertex::SSE => (HexNeighbor::SE, HexVertex::W, HexNeighbor::S, HexVertex::NNE),
+            HexPointyDir::E => (HexFlatDir::NE, HexPointyDir::SW, HexFlatDir::SE, HexPointyDir::NW),
+            HexPointyDir::NE => (HexFlatDir::N, HexPointyDir::SE, HexFlatDir::NE, HexPointyDir::W),
+            HexPointyDir::NW => (HexFlatDir::NW, HexPointyDir::E, HexFlatDir::N, HexPointyDir::SW),
+            HexPointyDir::W => (HexFlatDir::SW, HexPointyDir::NE, HexFlatDir::NW, HexPointyDir::SE),
+            HexPointyDir::SW => (HexFlatDir::S, HexPointyDir::NW, HexFlatDir::SW, HexPointyDir::E),
+            HexPointyDir::SE => (HexFlatDir::SE, HexPointyDir::W, HexFlatDir::S, HexPointyDir::NE),
         };
 
         let id0 = owner_id.neighbor(n0);

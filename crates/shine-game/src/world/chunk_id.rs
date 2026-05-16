@@ -1,6 +1,6 @@
 use crate::{
     math::{
-        hex::{AxialCoord, HexNeighbor},
+        hex::{AxialCoord, FlatAxialCoord, HexFlatDir},
         prng::hash_u32_2,
     },
     world::CHUNK_WORLD_SIZE,
@@ -17,7 +17,7 @@ impl ChunkId {
     /// World-space offset from `self` to `other`.
     pub fn relative_world_position(&self, other: ChunkId) -> Vec2 {
         let rel = AxialCoord::new(other.0 - self.0, other.1 - self.1);
-        rel.center_position(CHUNK_WORLD_SIZE)
+        rel.flat().to_position(CHUNK_WORLD_SIZE)
     }
 
     /// Deterministic 32-bit hash from chunk coordinates.
@@ -32,8 +32,8 @@ impl ChunkId {
         (high << 32) | low
     }
 
-    pub fn neighbor(&self, direction: HexNeighbor) -> ChunkId {
-        AxialCoord::from(*self).neighbor(direction).into()
+    pub fn neighbor(&self, direction: HexFlatDir) -> ChunkId {
+        AxialCoord::from(*self).flat().neighbor(direction).into()
     }
 }
 
@@ -45,6 +45,12 @@ impl From<ChunkId> for AxialCoord {
 
 impl From<AxialCoord> for ChunkId {
     fn from(c: AxialCoord) -> Self {
+        ChunkId(c.q, c.r)
+    }
+}
+
+impl From<FlatAxialCoord> for ChunkId {
+    fn from(c: FlatAxialCoord) -> Self {
         ChunkId(c.q, c.r)
     }
 }

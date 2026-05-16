@@ -1,7 +1,7 @@
 use crate::{
     dto::IndexedMesh,
     indexed::TypedIndex,
-    math::hex::{HexNeighbor, HexVertex},
+    math::hex::{HexFlatDir, HexPointyDir},
     wasm::dto::WasmIndexedMesh,
     world::{Chunk, ChunkId, World},
 };
@@ -74,16 +74,16 @@ fn extract_hex_vertices(chunk: &Chunk, offset: glam::Vec2) -> Vec<f32> {
 }
 
 /// Extract boundary edge dual polygons from world
-fn extract_edge_geometry(world: &World, center_id: ChunkId, edge_idx: u8) -> IndexedMesh {
-    match world.boundary_edge_dual_polygons(center_id, HexNeighbor::from(edge_idx)) {
+fn extract_edge_geometry(world: &World, center_id: ChunkId, edge_idx: usize) -> IndexedMesh {
+    match world.boundary_edge_dual_polygons(center_id, HexFlatDir::from_index(edge_idx)) {
         Some(()) => IndexedMesh::default(),
         None => IndexedMesh::default(),
     }
 }
 
 /// Extract boundary vertex dual polygons from world
-fn extract_vertex_geometry(world: &World, center_id: ChunkId, vertex_idx: u8) -> IndexedMesh {
-    match world.boundary_vertex_dual_polygon(center_id, HexVertex::from(vertex_idx)) {
+fn extract_vertex_geometry(world: &World, center_id: ChunkId, vertex_idx: usize) -> IndexedMesh {
+    match world.boundary_vertex_dual_polygon(center_id, HexPointyDir::from_index(vertex_idx)) {
         Some(vertices) => IndexedMesh::from_polyline(&vertices),
         None => IndexedMesh::default(),
     }
@@ -95,7 +95,7 @@ pub fn generate_world_neighbors() -> Result<WasmWorldNeighbors, JsValue> {
     let mut world = World::new();
 
     let center = CENTER_CHUNK;
-    let neighbor_ids: Vec<ChunkId> = (0..6).map(|n| center.neighbor(HexNeighbor::from(n))).collect();
+    let neighbor_ids: Vec<ChunkId> = (0..6).map(|n| center.neighbor(HexFlatDir::from_index(n))).collect();
 
     // Initialize chunks
     world.init_chunk(center);

@@ -1,7 +1,7 @@
 use crate::{
     indexed::TypedIndex,
     math::{
-        hex::{HexNeighbor, HexVertex, LatticeMesher},
+        hex::{HexFlatDir, HexPointyDir, LatticeMesher},
         prng::{Pcg32, SplitMix64},
         quadrangulation::{AnchorIndex, Quadrangulation, VertexIndex},
     },
@@ -31,7 +31,7 @@ impl Chunk {
     pub fn new(parent_seed: &SplitMix64, id: ChunkId) -> Self {
         let rng_streams = ChunkRngStreams::new(parent_seed.create_seed(id.id_64()));
         let topology = LatticeMesher::new(SUBDIVISION_BASE, rng_streams.mesh.clone())
-            .with_world_size(CHUNK_WORLD_SIZE)
+            .with_size(CHUNK_WORLD_SIZE)
             .generate();
 
         Self { rng_streams, mesh: topology }
@@ -131,13 +131,13 @@ impl Chunk {
     }
 
     /// Returns VertexIndex values along specified hex edge (0..5)
-    pub fn boundary_edge_vertices(&self, edge_idx: HexNeighbor) -> Vec<VertexIndex> {
+    pub fn boundary_edge_vertices(&self, edge_idx: HexFlatDir) -> Vec<VertexIndex> {
         // asume anchor points are corresponding to hex corners in order
         self.mesh.anchor_edge(AnchorIndex::new(edge_idx as usize)).collect()
     }
 
     /// Returns VertexIndex at specified hex corner (0..5)
-    pub fn boundary_corner_vertex(&self, corner_idx: HexVertex) -> VertexIndex {
+    pub fn boundary_corner_vertex(&self, corner_idx: HexPointyDir) -> VertexIndex {
         // asume anchor points are corresponding to hex corners in order
         self.mesh.anchor_vertex(AnchorIndex::new(corner_idx as usize))
     }

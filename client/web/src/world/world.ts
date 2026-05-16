@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { MAX_LOADED_CHUNK_DISTANCE, MAX_TRACKED_CHUNK_COUNT, MAX_TRACKED_CHUNK_DISTANCE } from '../engine/config';
 import type { DebugPanel } from '../engine/debug-panel';
 import { EventSubscriptions } from '../engine/events';
+import { span } from '../engine/utils';
 import {
     WORLD_CENTER_CHANGED,
     WORLD_REFERENCE_CHANGED,
@@ -36,6 +37,7 @@ export class World {
     private _showChunkLabels = false;
     private _showPolygonWire = false;
     private pendingChunkUpdate: number | null = null;
+    private loadQueue: ChunkId[] = [];
     private _hover: Selection | null = null;
 
     public readonly consts: WorldConsts;
@@ -86,13 +88,16 @@ export class World {
         this.subscriptions.on<WorldReferenceChangedEvent>(WORLD_REFERENCE_CHANGED, this.handleWorldReferenceChanged);
         this.subscriptions.on<WorldCenterChangedEvent>(WORLD_CENTER_CHANGED, this.handleWorldCenterChanged);
 
-        this.updateChunksAroundFocus();
+        this.loadQueue = Array.from(this._focusedChunkId.spiral(MAX_LOADED_CHUNK_DISTANCE));
+        this.scheduleLoadQueue();
     }
 
     loadChunk(id: ChunkId): Chunk {
         const key = id.key();
         const existing = this.chunks.get(key);
         if (existing) return existing;
+
+        using _s = span(`loadChunk(${id.q},${id.r})`);
 
         this.wasm.init_chunk(id.q, id.r);
 
@@ -129,11 +134,11 @@ export class World {
     }
 
     dispose(): void {
-        // Cancel pending chunk update
         if (this.pendingChunkUpdate !== null) {
             cancelIdleCallback(this.pendingChunkUpdate);
             this.pendingChunkUpdate = null;
         }
+        this.loadQueue = [];
 
         // Cleanup event listeners
         this.subscriptions.dispose();
@@ -267,21 +272,29 @@ export class World {
     private handleWorldCenterChanged = (event: WorldCenterChangedEvent): void => {
         this._focusedChunkId = event.newChunkId;
 
-        // Cancel any pending chunk update
         if (this.pendingChunkUpdate !== null) {
             cancelIdleCallback(this.pendingChunkUpdate);
         }
 
-        // Defer chunk loading to avoid blocking the current frame
-        // This prevents stuttering when crossing chunk boundaries
-        this.pendingChunkUpdate = requestIdleCallback(
-            () => {
-                this.pendingChunkUpdate = null;
-                this.updateChunksAroundFocus();
-            },
-            { timeout: 16 } // Force execution within 16ms (1 frame at 60fps) if idle time isn't available
+        // Rebuild load queue sorted by distance (closest first), then drain it chunk-by-chunk
+        this.loadQueue = Array.from(this._focusedChunkId.spiral(MAX_LOADED_CHUNK_DISTANCE)).filter(
+            (id) => !this.chunks.has(id.key())
         );
+
+        this.unloadDistantChunks();
+        this.scheduleLoadQueue();
     };
+
+    private scheduleLoadQueue(): void {
+        if (this.loadQueue.length === 0) return;
+        this.pendingChunkUpdate = requestIdleCallback((deadline) => {
+            this.pendingChunkUpdate = null;
+            while (this.loadQueue.length > 0 && deadline.timeRemaining() > 1) {
+                this.loadChunk(this.loadQueue.shift()!);
+            }
+            this.scheduleLoadQueue();
+        });
+    }
 
     private updateChunkEdgesForChunk(chunkId: ChunkId): void {
         for (const edgeIdx of [0, 1, 2] as const) {
@@ -317,34 +330,20 @@ export class World {
         }
     }
 
-    private updateChunksAroundFocus(): void {
-        // Load focused chunk and all neighbors
-        for (const neighbor of this._focusedChunkId.spiral(MAX_LOADED_CHUNK_DISTANCE)) {
-            this.loadChunk(neighbor);
-        }
-
-        // Unload chunks that are too far or if over limit
+    private unloadDistantChunks(): void {
         const chunksWithDistance = Array.from(this.chunks.values())
-            .map((chunk) => ({
-                chunk,
-                distance: chunk.id.distanceTo(this._focusedChunkId)
-            }))
-            .sort((a, b) => b.distance - a.distance); // Furthest first
+            .map((chunk) => ({ chunk, distance: chunk.id.distanceTo(this._focusedChunkId) }))
+            .sort((a, b) => b.distance - a.distance);
 
-        // Remove chunks beyond max distance
-        const distantChunks = chunksWithDistance.filter((c) => c.distance > MAX_TRACKED_CHUNK_DISTANCE);
-        for (const { chunk } of distantChunks) {
+        for (const { chunk } of chunksWithDistance.filter((c) => c.distance > MAX_TRACKED_CHUNK_DISTANCE)) {
             this.unloadChunk(chunk.id);
         }
 
-        // Remove furthest chunks if still over limit
         if (this.chunks.size > MAX_TRACKED_CHUNK_COUNT) {
             const chunksToRemove = this.chunks.size - MAX_TRACKED_CHUNK_COUNT;
-            const remainingChunks = chunksWithDistance
+            for (const { chunk } of chunksWithDistance
                 .filter((c) => c.distance <= MAX_TRACKED_CHUNK_DISTANCE)
-                .slice(0, chunksToRemove);
-
-            for (const { chunk } of remainingChunks) {
+                .slice(0, chunksToRemove)) {
                 this.unloadChunk(chunk.id);
             }
         }

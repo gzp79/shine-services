@@ -1,4 +1,5 @@
 use crate::world::{ChunkId, World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE};
+use tracing::info_span;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -14,6 +15,7 @@ impl WasmWorld {
     }
 
     pub fn init_chunk(&mut self, q: i32, r: i32) {
+        let _span = info_span!("init_chunk", q, r).entered();
         self.world.init_chunk(ChunkId(q, r));
     }
 
@@ -29,6 +31,7 @@ impl WasmWorld {
     }
 
     pub fn chunk_quad_vertices(&self, q: i32, r: i32) -> Vec<f32> {
+        let _span = info_span!("chunk_quad_vertices", q, r).entered();
         self.world
             .chunk(ChunkId(q, r))
             .map(|chunk| chunk.quad_vertices())
@@ -36,6 +39,7 @@ impl WasmWorld {
     }
 
     pub fn chunk_quad_indices(&self, q: i32, r: i32) -> Vec<u32> {
+        let _span = info_span!("chunk_quad_indices", q, r).entered();
         self.world
             .chunk(ChunkId(q, r))
             .map(|chunk| chunk.quad_indices())
@@ -43,6 +47,7 @@ impl WasmWorld {
     }
 
     pub fn chunk_boundary_indices(&self, q: i32, r: i32) -> Vec<u32> {
+        let _span = info_span!("chunk_boundary_indices", q, r).entered();
         self.world
             .chunk(ChunkId(q, r))
             .map(|chunk| chunk.boundary_indices())
@@ -50,6 +55,7 @@ impl WasmWorld {
     }
 
     pub fn chunk_dual_vertices(&self, q: i32, r: i32) -> Vec<f32> {
+        let _span = info_span!("chunk_dual_vertices", q, r).entered();
         self.world
             .chunk(ChunkId(q, r))
             .map(|chunk| chunk.dual_vertices())
@@ -57,11 +63,12 @@ impl WasmWorld {
     }
 
     pub fn chunk_dual_polygon_vertices(&self, q: i32, r: i32) -> Vec<f32> {
-        // Same as chunk_dual_vertices - returns quad centers
+        let _span = info_span!("chunk_dual_polygon_vertices", q, r).entered();
         self.chunk_dual_vertices(q, r)
     }
 
     pub fn chunk_dual_polygons(&self, q: i32, r: i32) -> Vec<u32> {
+        let _span = info_span!("chunk_dual_polygons", q, r).entered();
         self.world
             .chunk(ChunkId(q, r))
             .map(|chunk| {
