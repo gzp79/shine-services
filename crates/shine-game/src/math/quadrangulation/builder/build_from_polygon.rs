@@ -1,23 +1,48 @@
 use crate::{
     indexed::{IdxVec, TypedIndex},
     math::quadrangulation::{
-        quad_error::QuadError, AnchorIndex, Quad, QuadIndex, Quadrangulation, Rot4Idx, Vertex, VertexIndex,
+        builder::QuadBuilder, quad_error::QuadError, AnchorIndex, Quad, QuadIndex, Quadrangulation, Rot4Idx, Vertex,
+        VertexIndex,
     },
 };
 use glam::Vec2;
 use std::collections::HashMap;
 
-impl Quadrangulation {
-    /// Build topology from a (boundary) polygon and interior quads.
-    pub fn from_polygon(
+impl<'a> QuadBuilder<'a> {
+    /// Build topology from a (boundary) polygon and interior quads into an empty quadrangulation.
+    ///
+    /// - `positions`: vertex positions
+    /// - `polygon`: boundary vertex indices in CCW order (must have even length)
+    /// - `quads`: interior quad index quads (each 4 CCW vertex indices)
+    /// - `anchors`: corner vertices marking anchor edges
+    pub fn build_from_polygon(
+        &mut self,
         positions: Vec<Vec2>,
         polygon: Vec<VertexIndex>,
         quads: Vec<[VertexIndex; 4]>,
         anchors: Vec<VertexIndex>,
-    ) -> Result<Self, QuadError> {
+    ) -> Result<(), QuadError> {
+        assert!(
+            self.quad.is_empty(),
+            "build_from_polygon requires an empty quadrangulation"
+        );
+
+        self.state.dump(1, "build_from_polygon_input", |svg| {
+            svg.add_default_styles();
+            let edges: Vec<(usize, usize)> = quads
+                .iter()
+                .flat_map(|q| [(0, 1), (1, 2), (2, 3), (3, 0)].map(|(a, b)| (q[a].into_index(), q[b].into_index())))
+                .collect();
+            svg.add_points_and_edges(&positions, &edges, "vert", "vert-text", "edge");
+
+            let poly_edges: Vec<(usize, usize)> = (0..polygon.len())
+                .map(|i| (polygon[i].into_index(), polygon[(i + 1) % polygon.len()].into_index()))
+                .collect();
+            svg.add_points_and_edges(&positions, &poly_edges, "vert", "", "edge-constraint");
+        });
+
         let vertex_count = positions.len();
 
-        // Minimal bounds checks to prevent index-out-of-bounds panics during construction.
         for &vi in &polygon {
             let idx = vi.into_index();
             if idx >= vertex_count {
@@ -46,49 +71,41 @@ impl Quadrangulation {
         }
 
         // 1. Build Vertices
-        let infinite_vertex = VertexIndex::new(vertex_count);
         let mut vertices = IdxVec::with_capacity(vertex_count + 1);
-
-        // Add finite vertices with positions
         for position in positions {
             let mut vertex = Vertex::new();
             vertex.position = position;
             vertices.push(vertex);
         }
-
-        // Add infinite vertex (no position)
+        let infinite_vertex = VertexIndex::new(vertices.len());
         vertices.push(Vertex::new());
 
         // 2. Build Quads
         let mut all_quads: Vec<Quad> = Vec::new();
 
-        // Add finite quads
-        for verts in quads {
+        for verts in &quads {
             all_quads.push(Quad::with_vertices(verts[0], verts[1], verts[2], verts[3]));
         }
 
-        // Add ghost for each edge-pair in the boundary polygon
-        let infinite_quad_count = polygon.len();
         let infinite_quad_start = all_quads.len();
-        for i in 0..infinite_quad_count / 2 {
+        for i in 0..polygon.len() / 2 {
             let v0 = polygon[2 * i];
             let v1 = polygon[2 * i + 1];
             let v2 = polygon[(2 * i + 2) % polygon.len()];
             all_quads.push(Quad::with_vertices(infinite_vertex, v2, v1, v0));
         }
 
-        let mut quads = IdxVec::from(all_quads);
+        let mut all_quads_idx = IdxVec::from(all_quads);
 
         // 3. Wire Up Neighbors
-        // Build edge map: (v0, v1) -> (quad, edge_idx)
         let mut edge_map: HashMap<(VertexIndex, VertexIndex), (QuadIndex, Rot4Idx)> = HashMap::new();
-        let quad_count = quads.len();
+        let quad_count = all_quads_idx.len();
         for qi_idx in 0..quad_count {
             let qi = QuadIndex::new(qi_idx);
             for edge_idx in 0..4 {
                 let edge = Rot4Idx::new(edge_idx);
-                let v0 = quads[qi].vertices[edge];
-                let v1 = quads[qi].vertices[edge.increment()];
+                let v0 = all_quads_idx[qi].vertices[edge];
+                let v1 = all_quads_idx[qi].vertices[edge.increment()];
                 if edge_map.insert((v0, v1), (qi, edge)).is_some() {
                     return Err(QuadError::Input(format!(
                         "Duplicate edge ({}, {}) appears more than twice in quads",
@@ -99,16 +116,14 @@ impl Quadrangulation {
             }
         }
 
-        // Wire up twin relationships
         for qi_idx in 0..quad_count {
             let qi = QuadIndex::new(qi_idx);
             for edge_idx in 0..4 {
                 let edge = Rot4Idx::new(edge_idx);
-                let v0 = quads[qi].vertices[edge];
-                let v1 = quads[qi].vertices[edge.increment()];
-
-                if let Some(&(twin_quad, _twin_edge)) = edge_map.get(&(v1, v0)) {
-                    quads[qi].neighbors[edge] = twin_quad;
+                let v0 = all_quads_idx[qi].vertices[edge];
+                let v1 = all_quads_idx[qi].vertices[edge.increment()];
+                if let Some(&(twin_quad, _)) = edge_map.get(&(v1, v0)) {
+                    all_quads_idx[qi].neighbors[edge] = twin_quad;
                 } else {
                     return Err(QuadError::Input(format!(
                         "Incomplete topology: quad {} edge {} has no twin, missing edge ({}, {})",
@@ -124,7 +139,7 @@ impl Quadrangulation {
         // Update vertex → quad references
         for qi_idx in 0..quad_count {
             let qi = QuadIndex::new(qi_idx);
-            for &vi in quads[qi].vertices.iter() {
+            for &vi in all_quads_idx[qi].vertices.iter() {
                 if vertices[vi].quad.is_none() {
                     vertices[vi].quad = qi;
                 }
@@ -137,14 +152,31 @@ impl Quadrangulation {
             anchor_vertices.push(anchor);
         }
 
-        let mesh = Self {
-            infinite_vertex,
-            vertices,
-            quads,
-            anchor_vertices,
-        };
+        self.quad.infinite_vertex = infinite_vertex;
+        self.quad.vertices = vertices;
+        self.quad.quads = all_quads_idx;
+        self.quad.anchor_vertices = anchor_vertices;
 
-        debug_assert_eq!(mesh.validator().validate_topology(), Ok(()));
+        debug_assert_eq!(self.quad.validator().validate_topology(), Ok(()));
+
+        self.state.dump(1, "build_from_polygon_result", |svg| {
+            svg.add_quad(self.quad, std::iter::empty());
+        });
+
+        Ok(())
+    }
+}
+
+impl Quadrangulation {
+    /// Build topology from a (boundary) polygon and interior quads.
+    pub fn from_polygon(
+        positions: Vec<Vec2>,
+        polygon: Vec<VertexIndex>,
+        quads: Vec<[VertexIndex; 4]>,
+        anchors: Vec<VertexIndex>,
+    ) -> Result<Self, QuadError> {
+        let mut mesh = Self::new();
+        mesh.builder().build_from_polygon(positions, polygon, quads, anchors)?;
         Ok(mesh)
     }
 

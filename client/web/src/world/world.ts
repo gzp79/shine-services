@@ -12,8 +12,7 @@ import {
 } from '../systems/world-reference-system';
 import { Chunk } from './chunk';
 import { ChunkEdge, ChunkEdgeId } from './chunk-edge';
-import { ChunkId } from './chunk-id';
-import { worldPositionToChunkId } from './hex-utils';
+import { ChunkId, HexFlatDir } from './chunk-id';
 
 type Selection =
     | { type: 'cell'; chunk: Chunk; cellId: number; worldPoint: THREE.Vector3; localPoint: THREE.Vector3 }
@@ -203,7 +202,7 @@ export class World {
             }
         }
 
-        const chunkId = worldPositionToChunkId(this._referenceChunkId, new THREE.Vector2(worldPos.x, worldPos.y));
+        const chunkId = ChunkId.fromWorldPosition(this._referenceChunkId, new THREE.Vector2(worldPos.x, worldPos.y));
         const chunk = this.chunks.get(chunkId.key());
         if (chunk) {
             const selection = chunk.showSelectionAt(worldPos);
@@ -297,7 +296,7 @@ export class World {
     }
 
     private updateChunkEdgesForChunk(chunkId: ChunkId): void {
-        for (const edgeIdx of [0, 1, 2] as const) {
+        for (const edgeIdx of [HexFlatDir.NE, HexFlatDir.N, HexFlatDir.NW] as const) {
             const edgeId = new ChunkEdgeId(chunkId, edgeIdx);
             const neighborId = edgeId.neighborChunkId();
 

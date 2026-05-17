@@ -68,6 +68,15 @@ pub struct Quadrangulation {
 }
 
 impl Quadrangulation {
+    pub fn new() -> Self {
+        Self {
+            infinite_vertex: VertexIndex::NONE,
+            vertices: IdxVec::new(),
+            quads: IdxVec::new(),
+            anchor_vertices: IdxVec::new(),
+        }
+    }
+
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.vertices.is_empty()

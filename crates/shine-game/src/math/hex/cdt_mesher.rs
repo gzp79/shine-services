@@ -14,10 +14,15 @@ use std::{
     collections::{BTreeSet, HashMap},
     rc::Rc,
 };
+use tracing::info_span;
 
 /// Integer resolution for CDT grid.
-/// Independent of subdivision depth, thid controls the resolution of the CDT triangulation.
+/// Independent of subdivision depth, this controls the resolution of the CDT triangulation.
 const DENSE_RADIUS: u32 = 32768;
+
+/// Interior point density scale relative to the boundary subdivision grid.
+/// 1 = same spacing as boundary, 2 = half the spacing (4x more candidate cells), etc.
+const INTERIOR_DENSITY: i32 = 2;
 
 /// Map an axial coordinate to the CDT integer grid.
 /// Uses a pointy-top layout scaled by 1024 fixed-point: x = sqrt(3)/2, y = -3/2.
@@ -65,54 +70,52 @@ impl CdtMesher {
 
     /// Generate the CDT-based quad mesh.
     pub fn generate(&mut self) -> Quadrangulation {
-        // Step 1: Create boundary and interior points on the integer grid using axial coordinates.
+        let _span = info_span!("CdtMesher::generate").entered();
+
         let mut all_points = Vec::new();
         let corner_indices = self.create_boundary_points(&mut all_points);
         let boundary_count = all_points.len();
         self.create_interior_points(&mut all_points);
 
-        // Step 2: CDT triangulation with boundary constraint edges
-        let mut tri = Triangulation::new_cdt();
-        let mut builder = tri.builder();
+        let triangles = {
+            let _span = info_span!("CdtMesher::triangulate").entered();
+            let mut tri = Triangulation::new_cdt();
+            let mut builder = tri.builder();
 
-        // Add vertices
-        let mut vertex_indices: Vec<triangulation::VertexIndex> = Vec::with_capacity(all_points.len());
-        let mut tri_to_position: HashMap<triangulation::VertexIndex, usize> = HashMap::new();
-        for &p in &all_points {
-            let pos = axial_to_cdt_pos(p);
-            let vi = builder.add_vertex(pos, None);
-            tri_to_position.insert(vi, vertex_indices.len());
-            vertex_indices.push(vi);
-        }
-
-        // Add boundary constraints
-        for i in 0..boundary_count {
-            let v0 = vertex_indices[i];
-            let v1 = vertex_indices[(i + 1) % boundary_count];
-            builder.add_constraint_edge(v0, v1, 1);
-        }
-        drop(builder);
-
-        // Extract finite triangles
-        let mut triangles: Vec<(usize, usize, usize)> = Vec::new();
-        for f in tri.face_index_iter() {
-            if tri.is_infinite_face(f) {
-                continue;
+            let mut vertex_indices: Vec<triangulation::VertexIndex> = Vec::with_capacity(all_points.len());
+            let mut tri_to_position: HashMap<triangulation::VertexIndex, usize> = HashMap::new();
+            for &p in &all_points {
+                let pos = axial_to_cdt_pos(p);
+                let vi = builder.add_vertex(pos, None);
+                tri_to_position.insert(vi, vertex_indices.len());
+                vertex_indices.push(vi);
             }
 
-            let v0 = tri[f].vertices[Rot3Idx::new(0)];
-            let v1 = tri[f].vertices[Rot3Idx::new(1)];
-            let v2 = tri[f].vertices[Rot3Idx::new(2)];
+            for i in 0..boundary_count {
+                let v0 = vertex_indices[i];
+                let v1 = vertex_indices[(i + 1) % boundary_count];
+                builder.add_constraint_edge(v0, v1, 1);
+            }
+            drop(builder);
 
-            triangles.push((tri_to_position[&v0], tri_to_position[&v1], tri_to_position[&v2]));
-        }
+            let mut triangles: Vec<(usize, usize, usize)> = Vec::new();
+            for f in tri.face_index_iter() {
+                if tri.is_infinite_face(f) {
+                    continue;
+                }
+                let v0 = tri[f].vertices[Rot3Idx::new(0)];
+                let v1 = tri[f].vertices[Rot3Idx::new(1)];
+                let v2 = tri[f].vertices[Rot3Idx::new(2)];
+                triangles.push((tri_to_position[&v0], tri_to_position[&v1], tri_to_position[&v2]));
+            }
+            triangles
+        };
 
-        // Step 4: Split each triangle into 3 quads and build Quadrangulation
         self.split_triangles_to_quad_mesh(all_points, triangles, boundary_count, corner_indices)
     }
 
-    /// Returns the indices of the 6 hex corners within `points`.
     fn create_boundary_points(&self, points: &mut Vec<AxialCoord>) -> [usize; 6] {
+        let _span = info_span!("CdtMesher::create_boundary_points").entered();
         // Corners in pointy-hex CCW order: E, NE, NW, W, SW, SE
         let corners = AxialCoord::ORIGIN.pointy().corners(DENSE_RADIUS);
 
@@ -142,16 +145,14 @@ impl CdtMesher {
     }
 
     fn create_interior_points(&mut self, points: &mut Vec<AxialCoord>) {
+        let _span = info_span!("CdtMesher::create_interior_points").entered();
         if self.interior_points == 0 {
             points.push(AxialCoord::ORIGIN);
             return;
         }
 
-        // Interior points must stay strictly inside the boundary ring.
-        // The boundary sits at hex distance DENSE_RADIUS; stepping one grid_step
-        // inward keeps all candidates off the boundary edges.
-        let interior_radius = (DENSE_RADIUS - (self.grid_step / 2) as u32) as i32;
-        let coord_range = interior_radius;
+        let step = self.grid_step / INTERIOR_DENSITY;
+        let max_coord = INTERIOR_DENSITY * self.patch_radius as i32 - 1;
         let slack = (self.interior_points / 10).min(100);
         let max_attempts = self.interior_points + slack;
 
@@ -160,17 +161,22 @@ impl CdtMesher {
         let mut attempts = 0u32;
         while seen.len() < self.interior_points as usize && attempts < max_attempts {
             attempts += 1;
-            let q = rng.i32_range(-coord_range, coord_range + 1);
-            let r = rng.i32_range(-coord_range, coord_range + 1);
-            let c = AxialCoord::new(q, r);
-            if c.distance(&AxialCoord::ORIGIN) <= interior_radius {
-                seen.insert(c);
-            }
+
+            // Pick the first axis uniformly; derive the second axis range from it so
+            // every candidate is guaranteed inside the hex — no rejection needed.
+            let a = rng.i32_range(-max_coord, max_coord + 1);
+            let b_min = (-max_coord).max(-max_coord - a);
+            let b_max = max_coord.min(max_coord - a);
+            let b = rng.i32_range(b_min, b_max + 1);
+
+            // Randomly assign (a, b) to (q, r) or (r, q) to keep marginals symmetric.
+            let (q, r) = if rng.next_u32() & 1 == 0 { (a, b) } else { (b, a) };
+
+            seen.insert(AxialCoord::new(q * step, r * step));
         }
         points.extend(seen);
     }
 
-    /// Split each triangle into 3 quads and build a Quadrangulation.
     fn split_triangles_to_quad_mesh(
         &self,
         axial_positions: Vec<AxialCoord>,
@@ -178,7 +184,8 @@ impl CdtMesher {
         boundary_count: usize,
         corner_indices: [usize; 6],
     ) -> Quadrangulation {
-        // convert from DENSE_RADIUS axial coordinates to world-space positions
+        let _span = info_span!("CdtMesher::split_triangles_to_quad_mesh").entered();
+
         let patch_size = self.size * SQRT_3 / 3. / DENSE_RADIUS as f32;
         let mut positions: Vec<Vec2> = axial_positions
             .iter()

@@ -1,17 +1,21 @@
 import GUI from 'lil-gui';
 
 export type Params = {
+    centerQ: number;
+    centerR: number;
     showHexagons: boolean;
     showAllInterior: boolean;
-    showInterior: [boolean, boolean, boolean, boolean, boolean, boolean, boolean]; // 7 chunks
+    showInterior: [boolean, boolean, boolean, boolean, boolean, boolean, boolean];
     showAllEdges: boolean;
-    showEdges: [boolean, boolean, boolean, boolean, boolean, boolean]; // 6 edges
+    showEdges: [boolean, boolean, boolean, boolean, boolean, boolean];
     showAllVertices: boolean;
-    showVertices: [boolean, boolean, boolean, boolean, boolean, boolean]; // 6 vertices
+    showVertices: [boolean, boolean, boolean, boolean, boolean, boolean];
 };
 
 export function defaultParams(): Params {
     return {
+        centerQ: 0,
+        centerR: 0,
         showHexagons: true,
         showAllInterior: true,
         showInterior: [true, true, true, true, true, true, true],
@@ -22,110 +26,102 @@ export function defaultParams(): Params {
     };
 }
 
-export function createControls(container: HTMLElement, params: Params, onDisplayChange: () => void): GUI {
+function addToggleFolder(
+    gui: GUI,
+    title: string,
+    values: boolean[],
+    setAll: (v: boolean) => void,
+    onDisplayChange: () => void
+): void {
+    const folder = gui.addFolder(title);
+    folder.close();
+
+    const allParam = { showAll: values.every((v) => v) };
+    const allCtrl = folder.add(allParam, 'showAll').name('Show All');
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;padding:0 var(--padding);height:var(--widget-height);align-items:center;';
+
+    const checkboxes = values.map((checked, i) => {
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = checked;
+        checkbox.style.cssText = 'cursor:pointer;';
+        checkbox.addEventListener('change', () => {
+            values[i] = checkbox.checked;
+            allParam.showAll = values.every((v) => v);
+            setAll(allParam.showAll);
+            allCtrl.updateDisplay();
+            onDisplayChange();
+        });
+        const label = document.createElement('label');
+        label.textContent = String(i);
+        label.style.cssText = 'display:flex;gap:4px;align-items:center;cursor:pointer;';
+        label.prepend(checkbox);
+        row.appendChild(label);
+        return checkbox;
+    });
+
+    (folder as unknown as { $children: HTMLElement }).$children.appendChild(row);
+
+    allCtrl.onChange((value: boolean) => {
+        values.fill(value);
+        setAll(value);
+        checkboxes.forEach((cb) => (cb.checked = value));
+        onDisplayChange();
+    });
+}
+
+export function createControls(
+    container: HTMLElement,
+    params: Params,
+    onDisplayChange: () => void,
+    onRegenerate: () => void
+): GUI {
     const gui = new GUI({ title: 'World Neighbors', container });
     gui.domElement.style.position = 'absolute';
     gui.domElement.style.top = '0';
     gui.domElement.style.right = '0';
     gui.domElement.style.zIndex = '10';
 
+    const seedFolder = gui.addFolder('Chunk');
+    const qCtrl = seedFolder.add(params, 'centerQ').name('Q').step(1).onFinishChange(onRegenerate);
+    const rCtrl = seedFolder.add(params, 'centerR').name('R').step(1).onFinishChange(onRegenerate);
+    seedFolder
+        .add(
+            {
+                randomize: () => {
+                    const range = 100;
+                    params.centerQ = Math.floor(Math.random() * range * 2) - range;
+                    params.centerR = Math.floor(Math.random() * range * 2) - range;
+                    qCtrl.updateDisplay();
+                    rCtrl.updateDisplay();
+                    onRegenerate();
+                }
+            },
+            'randomize'
+        )
+        .name('Random Chunk');
+
     gui.add(params, 'showHexagons').name('Show Hexagons').onChange(onDisplayChange);
 
-    // Interior Cells - collapsible folder with master toggle inside
-    const interiorFolder = gui.addFolder('Interior Cells (0=Center, 1-6=Neighbors)');
-    interiorFolder.close(); // Collapsed by default
+    addToggleFolder(
+        gui,
+        'Interior Cells (0=Center, 1-6=Neighbors)',
+        params.showInterior,
+        (v) => (params.showAllInterior = v),
+        onDisplayChange
+    );
 
-    interiorFolder
-        .add(params, 'showAllInterior')
-        .name('Show All')
-        .onChange((value: boolean) => {
-            params.showInterior.fill(value);
-            onDisplayChange();
-        });
-    const interiorRow = document.createElement('div');
-    interiorRow.style.cssText =
-        'display:flex;gap:8px;padding:0 var(--padding);height:var(--widget-height);align-items:center;';
-    for (let i = 0; i < 7; i++) {
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = params.showInterior[i];
-        checkbox.style.cssText = 'cursor:pointer;';
-        checkbox.addEventListener('change', () => {
-            params.showInterior[i] = checkbox.checked;
-            params.showAllInterior = params.showInterior.every((v) => v);
-            onDisplayChange();
-        });
-        const label = document.createElement('label');
-        label.textContent = String(i);
-        label.style.cssText = 'display:flex;gap:4px;align-items:center;cursor:pointer;';
-        label.prepend(checkbox);
-        interiorRow.appendChild(label);
-    }
-    interiorFolder.$children.appendChild(interiorRow);
+    addToggleFolder(
+        gui,
+        'Boundary Vertices',
+        params.showVertices,
+        (v) => (params.showAllVertices = v),
+        onDisplayChange
+    );
 
-    // Boundary Edges - collapsible folder with master toggle inside
-    const edgesFolder = gui.addFolder('Boundary Edges');
-    edgesFolder.close(); // Collapsed by default
-
-    edgesFolder
-        .add(params, 'showAllEdges')
-        .name('Show All')
-        .onChange((value: boolean) => {
-            params.showEdges.fill(value);
-            onDisplayChange();
-        });
-    const edgesRow = document.createElement('div');
-    edgesRow.style.cssText =
-        'display:flex;gap:8px;padding:0 var(--padding);height:var(--widget-height);align-items:center;';
-    for (let i = 0; i < 6; i++) {
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = params.showEdges[i];
-        checkbox.style.cssText = 'cursor:pointer;';
-        checkbox.addEventListener('change', () => {
-            params.showEdges[i] = checkbox.checked;
-            params.showAllEdges = params.showEdges.every((v) => v);
-            onDisplayChange();
-        });
-        const label = document.createElement('label');
-        label.textContent = String(i);
-        label.style.cssText = 'display:flex;gap:4px;align-items:center;cursor:pointer;';
-        label.prepend(checkbox);
-        edgesRow.appendChild(label);
-    }
-    edgesFolder.$children.appendChild(edgesRow);
-
-    // Boundary Vertices - collapsible folder with master toggle inside
-    const verticesFolder = gui.addFolder('Boundary Vertices');
-    verticesFolder.close(); // Collapsed by default
-
-    verticesFolder
-        .add(params, 'showAllVertices')
-        .name('Show All')
-        .onChange((value: boolean) => {
-            params.showVertices.fill(value);
-            onDisplayChange();
-        });
-    const verticesRow = document.createElement('div');
-    verticesRow.style.cssText =
-        'display:flex;gap:8px;padding:0 var(--padding);height:var(--widget-height);align-items:center;';
-    for (let i = 0; i < 6; i++) {
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = params.showVertices[i];
-        checkbox.style.cssText = 'cursor:pointer;';
-        checkbox.addEventListener('change', () => {
-            params.showVertices[i] = checkbox.checked;
-            params.showAllVertices = params.showVertices.every((v) => v);
-            onDisplayChange();
-        });
-        const label = document.createElement('label');
-        label.textContent = String(i);
-        label.style.cssText = 'display:flex;gap:4px;align-items:center;cursor:pointer;';
-        label.prepend(checkbox);
-        verticesRow.appendChild(label);
-    }
-    verticesFolder.$children.appendChild(verticesRow);
+    addToggleFolder(gui, 'Boundary Edges', params.showEdges, (v) => (params.showAllEdges = v), onDisplayChange);
 
     return gui;
 }

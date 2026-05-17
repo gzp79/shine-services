@@ -2,14 +2,13 @@ use crate::{
     math::{
         hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
         prng::{StableRng, Xorshift32},
-        quadrangulation::{
-            Jitter, LaplacianSmoother, QuadError, QuadFilter, QuadRelax, Quadrangulation, VertexRepulsion,
-        },
+        quadrangulation::{Jitter, LaplacianSmoother, QuadFilter, QuadRelax, Quadrangulation, VertexRepulsion},
     },
     wasm::dto::WasmIndexedMesh,
 };
 use glam::Vec2;
 use serde::Deserialize;
+use tracing::info_span;
 use wasm_bindgen::prelude::*;
 
 #[derive(Deserialize)]
@@ -87,7 +86,7 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
     let world_size = config.world_size;
 
     // Step 1: Generate base mesh from selected mesher
-    let (mut mesh, subdivision) = match config.mesher {
+    let (mut mesh, _subdivision) = match config.mesher {
         MesherConfig::Patch { subdivision, orientation } => {
             let orient = match orientation.as_str() {
                 "Even" => PatchOrientation::Even,
@@ -109,20 +108,20 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
         }
     };
 
-    let validate = || {
-        let anchor_sibdivision = (1 << subdivision) + 1;
+    #[cfg(debug_assertions)]
+    {
+        let _span = info_span!("validate").entered();
+        let anchor_subdivision = (1 << subdivision) + 1;
         let validator = mesh.validator();
-        validator.validate()?;
-        validator.validate_regular_flat_top_hexagon(anchor_sibdivision, config.world_size, 0.001)?;
-        Ok::<(), QuadError>(())
-    };
-
-    if let Err(err) = validate() {
-        log::error!("Validation failed for seed {}: {:?}", config.seed, err);
-        return Err(JsValue::from_str(&format!("Invalid mesh ({}): {:?}", config.seed, err)));
+        if let Err(err) = validator
+            .validate()
+            .and_then(|_| validator.validate_regular_flat_top_hexagon(anchor_subdivision, config.world_size, 0.001))
+        {
+            log::error!("Validation failed for seed {}: {:?}", config.seed, err);
+            return Err(JsValue::from_str(&format!("Invalid mesh ({}): {:?}", config.seed, err)));
+        }
     }
 
-    // Step 2: Apply filter pipeline
     for filter_cfg in config.filters {
         let mut filter: Box<dyn QuadFilter> = match filter_cfg {
             FilterConfig::Laplacian { iterations, strength } => Box::new(LaplacianSmoother::new(strength, iterations)),
@@ -137,16 +136,23 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
                 Box::new(VertexRepulsion::new(strength, iterations))
             }
         };
+        let _span = info_span!("filter").entered();
         filter.apply(&mut mesh);
     }
 
-    // Step 3: Convert QuadMesh to flat buffers
     Ok(quad_mesh_to_wasm(&mesh, world_size))
 }
 
 fn quad_mesh_to_wasm(mesh: &Quadrangulation, world_size: f32) -> WasmPatchMesh {
-    let primal = mesh.primal_extractor(Vec2::ZERO).build_internal_mesh_with_anchors();
-    let dual = mesh.dual_extractor(Vec2::ZERO).build_internal_mesh();
+    let _span = info_span!("quad_mesh_to_wasm").entered();
+    let primal = {
+        let _span = info_span!("primal_extractor").entered();
+        mesh.primal_extractor(Vec2::ZERO).build_internal_mesh_with_anchors()
+    };
+    let dual = {
+        let _span = info_span!("dual_extractor").entered();
+        mesh.dual_extractor(Vec2::ZERO).build_internal_mesh()
+    };
 
     WasmPatchMesh {
         world_size,

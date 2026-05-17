@@ -1,5 +1,6 @@
 import init, { generate_cdt } from '#wasm';
 import wasmUrl from '#wasm-bin';
+import { span } from '../../engine/utils';
 import { ExperimentContext, animate, createExperiment } from '../experiment';
 import { cdtParamsToJson, createCdtControls, defaultCdtParams } from './controls';
 import { CdtData, CdtMeshGroup, buildCdtMesh, buildCircumcenterMesh } from './mesh-builder';
@@ -55,30 +56,35 @@ export async function createCdtExperiment(container: HTMLElement): Promise<CdtEx
         }
 
         try {
-            const configJson = cdtParamsToJson(params);
-            const wasmCdt = generate_cdt(configJson);
+            using _s = span('regenerate');
 
-            const error = wasmCdt.error_message();
-            if (error !== undefined) {
-                console.warn('CDT error:');
+            const configJson = cdtParamsToJson(params);
+            {
+                using _s = span('generate_cdt');
+                const wasmCdt = generate_cdt(configJson);
+                const error = wasmCdt.error_message();
+                if (error !== undefined) {
+                    console.warn('CDT error:');
+                    wasmCdt.free();
+                    return;
+                }
+                currentData = {
+                    vertices: new Float32Array(wasmCdt.vertices()),
+                    triangles: new Uint32Array(wasmCdt.triangles()),
+                    constraints: new Uint32Array(wasmCdt.constraints())
+                };
+                console.log(
+                    `CDT: ${currentData.vertices.length / 2} vertices ` +
+                        `${currentData.triangles.length / 3} triangles ` +
+                        `${currentData.constraints.length / 2} constraints`
+                );
                 wasmCdt.free();
-                return;
             }
 
-            currentData = {
-                vertices: new Float32Array(wasmCdt.vertices()),
-                triangles: new Uint32Array(wasmCdt.triangles()),
-                constraints: new Uint32Array(wasmCdt.constraints())
-            };
-
-            console.log(
-                `CDT: ${currentData.vertices.length / 2} vertices ` +
-                    `${currentData.triangles.length / 3} triangles ` +
-                    `${currentData.constraints.length / 2} constraints`
-            );
-            wasmCdt.free();
-
-            currentMesh = buildCdtMesh(currentData);
+            {
+                using _s = span('buildCdtMesh');
+                currentMesh = buildCdtMesh(currentData);
+            }
             ctx.scene.add(currentMesh.group);
 
             // Re-sync circumcenter if visible

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { span } from '../../engine/utils';
 import { disposeMesh } from '../experiment';
 
 const EDGE_COLOR = 0x222222;
@@ -269,12 +270,37 @@ function buildAnchorVertices(data: MeshData): THREE.InstancedMesh {
 export function buildHexMesh(data: MeshData): HexMeshGroup {
     const group = new THREE.Group();
 
-    const primalMesh = buildPrimalMesh(data);
-    const primalWireMesh = buildPrimalWire(data);
-    const dualMesh = buildDualMesh(data);
-    const dualWireMesh = buildDualWire(data);
-    const anchorWireMesh = buildAnchorWire(data);
-    const anchorVertexMesh = buildAnchorVertices(data);
+    let primalMesh: THREE.Mesh;
+    let primalWireMesh: THREE.LineSegments;
+    let dualMesh: THREE.Mesh;
+    let dualWireMesh: THREE.LineSegments;
+    let anchorWireMesh: THREE.LineSegments;
+    let anchorVertexMesh: THREE.InstancedMesh;
+
+    {
+        using _s = span('buildPrimalMesh');
+        primalMesh = buildPrimalMesh(data);
+    }
+    {
+        using _s = span('buildPrimalWire');
+        primalWireMesh = buildPrimalWire(data);
+    }
+    {
+        using _s = span('buildDualMesh');
+        dualMesh = buildDualMesh(data);
+    }
+    {
+        using _s = span('buildDualWire');
+        dualWireMesh = buildDualWire(data);
+    }
+    {
+        using _s = span('buildAnchorWire');
+        anchorWireMesh = buildAnchorWire(data);
+    }
+    {
+        using _s = span('buildAnchorVertices');
+        anchorVertexMesh = buildAnchorVertices(data);
+    }
 
     group.add(primalMesh);
     group.add(primalWireMesh);

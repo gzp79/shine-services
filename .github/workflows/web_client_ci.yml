@@ -64,6 +64,10 @@ jobs:
         working-directory: client/web
         run: pnpm build
 
+      - name: Test
+        working-directory: client/web
+        run: pnpm test
+
       - name: Copy viewer
         working-directory: client/web
         run: cp viewer.html dist/viewer.html

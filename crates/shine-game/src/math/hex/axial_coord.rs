@@ -84,6 +84,23 @@ impl AxialCoord {
         PointyAxialCoord(self)
     }
 
+    /// Round fractional axial coordinates to the nearest hex using cube-coordinate rounding.
+    pub fn round(q: f32, r: f32) -> AxialCoord {
+        let s = -q - r;
+        let mut rq = q.round() as i32;
+        let mut rr = r.round() as i32;
+        let rs = s.round() as i32;
+        let q_diff = (rq as f32 - q).abs();
+        let r_diff = (rr as f32 - r).abs();
+        let s_diff = (rs as f32 - s).abs();
+        if q_diff > r_diff && q_diff > s_diff {
+            rq = -rr - rs;
+        } else if r_diff > s_diff {
+            rr = -rq - rs;
+        }
+        AxialCoord::new(rq, rr)
+    }
+
     /// Returns true if this coordinate lies on the boundary of a hex grid of given radius.
     pub fn is_boundary(&self, radius: u32) -> bool {
         self.distance(&AxialCoord::ORIGIN) == radius as i32
@@ -164,6 +181,13 @@ impl FlatAxialCoord {
         let y = -size * SQRT_3 * (self.r as f32 + self.q as f32 / 2.0);
         Vec2::new(x, y)
     }
+
+    /// Nearest axial coordinate for the given world position, inverse of `to_position`.
+    pub fn from_position(pos: Vec2, size: f32) -> AxialCoord {
+        let q = (2.0 / 3.0) * pos.x / size;
+        let r = -pos.y / size / SQRT_3 - q / 2.0;
+        AxialCoord::round(q, r)
+    }
 }
 
 impl ops::Deref for FlatAxialCoord {
@@ -224,6 +248,15 @@ impl PointyAxialCoord {
         let x = size * SQRT_3 * ((self.q - self.r) as f32 / 2.0);
         let y = -size * 1.5 * ((self.q + self.r) as f32);
         Vec2::new(x, y)
+    }
+
+    /// Nearest axial coordinate for the given world position, inverse of `to_position`.
+    pub fn from_position(pos: Vec2, size: f32) -> AxialCoord {
+        let q_r_sum = -pos.y / size / 1.5;
+        let q_r_diff = pos.x / size / SQRT_3 * 2.0;
+        let q = (q_r_sum + q_r_diff) / 2.0;
+        let r = q_r_sum - q;
+        AxialCoord::round(q, r)
     }
 }
 

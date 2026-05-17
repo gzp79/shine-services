@@ -3,12 +3,12 @@ import * as THREE from 'three';
 import { PolygonData } from '../engine/mesh/geometry-data';
 import { PolygonWireMesh } from '../engine/mesh/polygon-wire-mesh';
 import { SelectionMesh } from '../engine/mesh/selection-mesh';
-import { ChunkId } from './chunk-id';
+import { ChunkId, HexFlatDir } from './chunk-id';
 
 export class ChunkEdgeId {
     constructor(
         public readonly chunkId: ChunkId,
-        public readonly edgeIdx: 0 | 1 | 2
+        public readonly edgeIdx: HexFlatDir.NE | HexFlatDir.N | HexFlatDir.NW
     ) {}
 
     key(): string {

@@ -1,4 +1,4 @@
-import { ChunkId } from './chunk-id';
+import { ChunkId, HexFlatDir } from './chunk-id';
 
 /**
  * Canonical identifier for boundary vertex entity.
@@ -22,9 +22,10 @@ export class BoundaryVertexId {
 
     /** Get the 2 other chunks meeting at this vertex */
     neighborChunkIds(): [ChunkId, ChunkId] {
-        // Vertex 0 (top-left): neighbors at NorthWest (5) and North (0)
-        // Vertex 1 (top-right): neighbors at North (0) and NorthEast (1)
-        const [dir1, dir2] = this.vertexIdx === 0 ? ([5, 0] as const) : ([0, 1] as const);
+        // Vertex 0 (top-left): neighbors at NW and N
+        // Vertex 1 (top-right): neighbors at N and NE
+        const [dir1, dir2] =
+            this.vertexIdx === 0 ? ([HexFlatDir.NW, HexFlatDir.N] as const) : ([HexFlatDir.N, HexFlatDir.NE] as const);
         return [this.chunkId.neighbor(dir1), this.chunkId.neighbor(dir2)];
     }
 }

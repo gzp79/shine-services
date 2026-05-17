@@ -4,7 +4,6 @@ import type { DebugPanel } from '../engine/debug-panel';
 import { EventDispatcher } from '../engine/events';
 import type { GameSystem } from '../engine/game-system';
 import { ChunkId } from '../world/chunk-id';
-import { chunkIdToWorldPosition, worldPositionToChunkId } from '../world/hex-utils';
 import type { World } from '../world/world';
 
 const CHUNK_WORLD_SIZE = 1000;
@@ -45,8 +44,8 @@ export class WorldReferenceSystem implements GameSystem {
         const referenceChunkId = this.world.referenceChunkId;
         const focusedChunkId = this.world.focusedChunkId;
 
-        const currentChunkId = worldPositionToChunkId(referenceChunkId, avatarPos);
-        const currentCenter = chunkIdToWorldPosition(referenceChunkId, currentChunkId);
+        const currentChunkId = ChunkId.fromWorldPosition(referenceChunkId, avatarPos);
+        const currentCenter = currentChunkId.toWorldPosition(referenceChunkId);
         const distanceSq = currentCenter.lengthSq();
 
         // Update debug panel

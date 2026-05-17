@@ -1,6 +1,7 @@
 import init, { generate_mesh } from '#wasm';
 import wasmUrl from '#wasm-bin';
 import * as THREE from 'three';
+import { span } from '../../engine/utils';
 import { ExperimentContext, animate, createExperiment } from '../experiment';
 import { createControls, defaultParams, paramsToConfigJson } from './controls';
 import { HexMeshGroup, buildHexMesh } from './mesh-builder';
@@ -54,29 +55,36 @@ export async function createHexMeshExperiment(container: HTMLElement): Promise<H
         }
 
         try {
+            using _s = span('regenerate');
+
             const configJson = paramsToConfigJson(params);
-            const wasmMesh = generate_mesh(configJson);
+            let worldSize: number;
+            let data: Parameters<typeof buildHexMesh>[0];
+            {
+                using _s = span('generate_mesh');
+                const wasmMesh = generate_mesh(configJson);
+                worldSize = wasmMesh.world_size();
+                const primal = wasmMesh.primal();
+                const dual = wasmMesh.dual();
+                data = {
+                    vertices: primal.vertices(),
+                    quad_indices: primal.indices(),
+                    quad_ranges: primal.polygon_ranges(),
+                    anchor_indices: primal.wire_indices(),
+                    anchor_ranges: primal.wire_ranges(),
+                    dual_vertices: dual.vertices(),
+                    dual_indices: dual.indices(),
+                    dual_ranges: dual.polygon_ranges()
+                };
+                primal.free();
+                dual.free();
+                wasmMesh.free();
+            }
 
-            const worldSize = wasmMesh.world_size();
-            const primal = wasmMesh.primal();
-            const dual = wasmMesh.dual();
-
-            const data = {
-                vertices: primal.vertices(),
-                quad_indices: primal.indices(),
-                quad_ranges: primal.polygon_ranges(),
-                anchor_indices: primal.wire_indices(),
-                anchor_ranges: primal.wire_ranges(),
-                dual_vertices: dual.vertices(),
-                dual_indices: dual.indices(),
-                dual_ranges: dual.polygon_ranges()
-            };
-
-            primal.free();
-            dual.free();
-            wasmMesh.free();
-
-            currentMesh = buildHexMesh(data);
+            {
+                using _s = span('buildHexMesh');
+                currentMesh = buildHexMesh(data);
+            }
             applyDisplay();
             ctx.scene.add(currentMesh.group);
 

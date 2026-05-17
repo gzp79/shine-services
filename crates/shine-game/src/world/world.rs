@@ -4,6 +4,7 @@ use crate::{
     math::{
         hex::{HexFlatDir, HexPointyDir},
         prng::SplitMix64,
+        quadrangulation::VertexIndex,
     },
     world::{Chunk, ChunkId},
 };
@@ -64,10 +65,53 @@ impl World {
         vec![offset.x, offset.y]
     }
 
-    /// Returns dual polygons for boundary edge cells owned by the given chunk.
-    /// Format: (vertices, indices, starts) matching Chunk::dual_polygons()
-    pub fn boundary_edge_dual_polygons(&self, _owner_id: ChunkId, _edge_idx: HexFlatDir) -> Option<()> {
-        None
+    /// Returns dual polygons for the non-corner vertices along a chunk edge.
+    /// Each such vertex lies on the shared boundary between two chunks, so its dual polygon
+    /// is built from finite quads in both the owner and the neighbor chunk.
+    /// Corner vertices are excluded — they are covered by `boundary_vertex_dual_polygon`.
+    pub fn boundary_edge_dual_polygons(&self, owner_id: ChunkId, edge_idx: HexFlatDir) -> Option<Vec<Vec<Vec2>>> {
+        let (neighbor_dir, neighbor_edge) = match edge_idx {
+            HexFlatDir::NE => (HexFlatDir::NE, HexFlatDir::SW),
+            HexFlatDir::N => (HexFlatDir::N, HexFlatDir::S),
+            HexFlatDir::NW => (HexFlatDir::NW, HexFlatDir::SE),
+            HexFlatDir::SW => (HexFlatDir::SW, HexFlatDir::NE),
+            HexFlatDir::S => (HexFlatDir::S, HexFlatDir::N),
+            HexFlatDir::SE => (HexFlatDir::SE, HexFlatDir::NW),
+        };
+
+        let neighbor_id = owner_id.neighbor(neighbor_dir);
+        let owner = self.chunk(owner_id)?;
+        let neighbor = self.chunk(neighbor_id)?;
+        let neighbor_offset = owner_id.relative_world_position(neighbor_id);
+
+        // Collect neighbor inner vertices reversed: pop both corners, reverse in-place.
+        // The neighbor edge runs in the opposite direction to the owner edge, so reversing
+        // aligns vertex positions pairwise.
+        let inner_neighbor: Vec<VertexIndex> = {
+            let mut v: Vec<_> = neighbor.boundary_edge_vertices(neighbor_edge).collect();
+            v.pop();
+            v.reverse();
+            v.pop();
+            v
+        };
+        let inner_owner = owner
+            .boundary_edge_vertices(edge_idx)
+            .skip(1)
+            .take(inner_neighbor.len());
+
+        let mut polygons = Vec::with_capacity(inner_neighbor.len());
+        for (vi_owner, vi_neighbor) in inner_owner.zip(inner_neighbor) {
+            let mut vertices = Vec::new();
+            for q in owner.mesh.boundary_dual_vertices(vi_owner) {
+                vertices.push(owner.mesh.dual_p(q).unwrap());
+            }
+            for q in neighbor.mesh.boundary_dual_vertices(vi_neighbor) {
+                vertices.push(neighbor.mesh.dual_p(q).unwrap() + neighbor_offset);
+            }
+            polygons.push(vertices);
+        }
+
+        Some(polygons)
     }
 
     /// Returns dual polygon for boundary vertex cell (single triangular cell).

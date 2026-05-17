@@ -130,15 +130,14 @@ impl Chunk {
         (indices, starts)
     }
 
-    /// Returns VertexIndex values along specified hex edge (0..5)
-    pub fn boundary_edge_vertices(&self, edge_idx: HexFlatDir) -> Vec<VertexIndex> {
-        // asume anchor points are corresponding to hex corners in order
-        self.mesh.anchor_edge(AnchorIndex::new(edge_idx as usize)).collect()
+    /// Returns VertexIndex values along specified hex edge (inclusive of both corners)
+    pub fn boundary_edge_vertices(&self, edge_idx: HexFlatDir) -> impl Iterator<Item = VertexIndex> + '_ {
+        self.mesh.anchor_edge(AnchorIndex::new(edge_idx as usize))
     }
 
     /// Returns VertexIndex at specified hex corner (0..5)
     pub fn boundary_corner_vertex(&self, corner_idx: HexPointyDir) -> VertexIndex {
-        // asume anchor points are corresponding to hex corners in order
+        // assume anchor points are corresponding to hex corners in correct  order
         self.mesh.anchor_vertex(AnchorIndex::new(corner_idx as usize))
     }
 }

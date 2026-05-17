@@ -76,7 +76,16 @@ fn extract_hex_vertices(chunk: &Chunk, offset: glam::Vec2) -> Vec<f32> {
 /// Extract boundary edge dual polygons from world
 fn extract_edge_geometry(world: &World, center_id: ChunkId, edge_idx: usize) -> IndexedMesh {
     match world.boundary_edge_dual_polygons(center_id, HexFlatDir::from_index(edge_idx)) {
-        Some(()) => IndexedMesh::default(),
+        Some(polygons) => {
+            let mut mesh = IndexedMesh::default();
+            for poly in &polygons {
+                let verts: Vec<f32> = poly.iter().flat_map(|v| [v.x, v.y]).collect();
+                let indices: Vec<u32> = (0..poly.len() as u32).collect();
+                let ranges = vec![0u32, poly.len() as u32];
+                mesh.append().vertices(&verts).polygons(&indices, &ranges);
+            }
+            mesh
+        }
         None => IndexedMesh::default(),
     }
 }
@@ -91,10 +100,10 @@ fn extract_vertex_geometry(world: &World, center_id: ChunkId, vertex_idx: usize)
 
 /// Generate world neighbors geometry for visualization
 #[wasm_bindgen]
-pub fn generate_world_neighbors() -> Result<WasmWorldNeighbors, JsValue> {
+pub fn generate_world_neighbors(center_q: i32, center_r: i32) -> Result<WasmWorldNeighbors, JsValue> {
     let mut world = World::new();
 
-    let center = CENTER_CHUNK;
+    let center = ChunkId(center_q, center_r);
     let neighbor_ids: Vec<ChunkId> = (0..6).map(|n| center.neighbor(HexFlatDir::from_index(n))).collect();
 
     // Initialize chunks
