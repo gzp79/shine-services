@@ -1,19 +1,5 @@
 /**
- * Quad mesh geometry data (primal mesh)
- */
-export class QuadData {
-    constructor(
-        /** Flat vertex array: [x, y, x, y, ...] for 2D positions */
-        public readonly vertices: Float32Array,
-        /** Flat quad indices: [a, b, c, d, a, b, c, d, ...] referencing vertices */
-        public readonly indices: Uint32Array,
-        /** Flat boundary edge indices: [a, b, a, b, ...] pairs of vertex indices (optional) */
-        public readonly boundaryIndices?: Uint32Array
-    ) {}
-}
-
-/**
- * Dual polygon mesh geometry data
+ * Polygon mesh
  */
 export class PolygonData {
     constructor(

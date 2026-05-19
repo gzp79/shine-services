@@ -6,6 +6,18 @@ const CHUNK_WORLD_SIZE = 1000;
 const SQRT3 = Math.sqrt(3);
 
 /**
+ * Pointy-top hex grid corner directions. Matches Rust HexPointyDir indices exactly.
+ */
+export const enum HexPointyDir {
+    E = 0,
+    NE = 1,
+    NW = 2,
+    W = 3,
+    SW = 4,
+    SE = 5
+}
+
+/**
  * Flat-top hex grid directions. Matches Rust HexFlatDir indices exactly.
  * Used as argument to ChunkId.neighbor().
  */

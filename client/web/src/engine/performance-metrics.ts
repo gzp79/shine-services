@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { WebGPURenderer } from 'three/webgpu';
 
 interface PerformanceMemory {
     usedJSHeapSize: number;
@@ -28,7 +29,7 @@ export class PerformanceMetrics {
     private frameTimeSamples: number[] = [];
     private readonly maxSamples = 60;
 
-    constructor(private readonly renderer: THREE.WebGLRenderer) {
+    constructor(private readonly renderer: THREE.WebGLRenderer | WebGPURenderer) {
         // Create container
         this.container = document.createElement('div');
         this.container.style.position = 'fixed';

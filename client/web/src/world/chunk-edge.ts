@@ -7,6 +7,7 @@ import { ChunkId, HexFlatDir } from './chunk-id';
 
 export class ChunkEdgeId {
     constructor(
+        // The "owner" chunk id. Edge data is stored relative to this chunk.
         public readonly chunkId: ChunkId,
         public readonly edgeIdx: HexFlatDir.NE | HexFlatDir.N | HexFlatDir.NW
     ) {}
@@ -19,8 +20,8 @@ export class ChunkEdgeId {
         return this.chunkId.equals(other.chunkId) && this.edgeIdx === other.edgeIdx;
     }
 
-    neighborChunkId(): ChunkId {
-        return this.chunkId.neighbor(this.edgeIdx);
+    involvedChunkIds(): [ChunkId, ChunkId] {
+        return [this.chunkId, this.chunkId.neighbor(this.edgeIdx)];
     }
 }
 
@@ -35,7 +36,7 @@ export class ChunkEdge {
         private readonly events: EventTarget
     ) {
         this.group.userData = { chunkEdgeId: id, chunkEdge: this };
-        const polygonData = new PolygonData(new Float32Array(), new Uint32Array(), new Uint32Array([]));
+        const polygonData = this.buildPolygonData();
         this.selection = new SelectionMesh(this.group, polygonData);
         this.wireframe = new PolygonWireMesh(this.group, polygonData);
     }
@@ -47,6 +48,22 @@ export class ChunkEdge {
 
     worldOffset(ref: ChunkId): Float32Array {
         return this.world.chunk_world_offset(ref.q, ref.r, this.id.chunkId.q, this.id.chunkId.r);
+    }
+
+    private buildPolygonData(): PolygonData {
+        const { q, r } = this.id.chunkId;
+        const edgeIdx = this.id.edgeIdx;
+        const vertices = this.world.boundary_edge_dual_polygon_vertices(q, r, edgeIdx);
+        const packed = this.world.boundary_edge_dual_polygons(q, r, edgeIdx);
+
+        if (packed.length === 0) {
+            return new PolygonData(new Float32Array(), new Uint32Array(0), new Uint32Array(0));
+        }
+
+        const startsLen = packed[0];
+        const starts = packed.slice(1, 1 + startsLen);
+        const indices = packed.slice(1 + startsLen);
+        return new PolygonData(vertices, indices, starts);
     }
 
     /*showSelectionAt(worldPos: THREE.Vector3): { cellId: number; localPos: THREE.Vector3 } | null {

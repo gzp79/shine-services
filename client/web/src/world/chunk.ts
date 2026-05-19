@@ -1,17 +1,26 @@
 import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { EventSubscriptions } from '../engine/events';
-import { PolygonData, QuadData } from '../engine/mesh/geometry-data';
+import { PolygonData } from '../engine/mesh/geometry-data';
 import { PolygonWireMesh } from '../engine/mesh/polygon-wire-mesh';
-import { MeshBuilder, buildBaseMesh } from '../engine/mesh/quad-mesh';
 import { SelectionMesh } from '../engine/mesh/selection-mesh';
 import { span } from '../engine/utils';
 import { ChunkId } from './chunk-id';
 
+export class InternalCell {
+    readonly position: THREE.Vector3;
+    readonly index: number;
+
+    constructor(index: number, x: number, y: number) {
+        this.index = index;
+        this.position = new THREE.Vector3(x, y, 0);
+    }
+}
+
 export class Chunk {
     readonly group = new THREE.Group();
-
-    private mesh: MeshBuilder | null = null;
+    readonly cells: InternalCell[];
+    
     private label: THREE.Sprite | null = null;
     private selection: SelectionMesh;
     private wireframe: PolygonWireMesh;
@@ -23,6 +32,7 @@ export class Chunk {
         private readonly events: EventTarget
     ) {
         this.group.userData = { chunkId: { q: id.q, r: id.r }, chunk: this };
+        this.cells = Chunk.buildInternalCells(this.world.chunk_quad_vertices(id.q, id.r));
         const dualPolygons = this.dualPolygons();
         this.selection = new SelectionMesh(this.group, dualPolygons);
         this.wireframe = new PolygonWireMesh(this.group, dualPolygons);
@@ -40,7 +50,7 @@ export class Chunk {
 
     dispose(): void {
         this.disposeMesh();
-        this.desposeLabel();
+        this.disposeLabel();
         this.selection.dispose();
         this.wireframe.dispose();
     }
@@ -53,7 +63,7 @@ export class Chunk {
         if (value) {
             this.createLabel();
         } else {
-            this.desposeLabel();
+            this.disposeLabel();
         }
     }
 
@@ -160,27 +170,6 @@ export class Chunk {
         return h;
     }
 
-    private buildMesh(): void {
-        if (this.mesh) return;
-
-        using _s = span('buildMesh');
-        const color = new THREE.Color().setHSL(this.chunkHash() / 0xffffffff, 0.5, 0.6);
-
-        this.mesh = buildBaseMesh(this.quadData(), color);
-        this.group.add(this.mesh.group);
-    }
-
-    private disposeMesh(): void {
-        if (this.mesh) {
-            this.group.remove(this.mesh.group);
-            this.mesh.dispose();
-            this.mesh = null;
-        }
-        this.desposeLabel();
-        this.selection.dispose();
-        this.subscription.dispose();
-    }
-
     private createLabel(): void {
         if (this.label) return;
 
@@ -213,7 +202,16 @@ export class Chunk {
         this.group.add(this.label);
     }
 
-    private desposeLabel(): void {
+    private static buildInternalCells(vertices: Float32Array): InternalCell[] {
+        const count = vertices.length / 2;
+        const cells: InternalCell[] = new Array(count);
+        for (let i = 0; i < count; i++) {
+            cells[i] = new InternalCell(i, vertices[i * 2], vertices[i * 2 + 1]);
+        }
+        return cells;
+    }
+
+    private disposeLabel(): void {
         if (!this.label) return;
 
         this.group.remove(this.label);

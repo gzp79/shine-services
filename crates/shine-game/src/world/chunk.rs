@@ -5,7 +5,7 @@ use crate::{
         prng::{Pcg32, SplitMix64},
         quadrangulation::{AnchorIndex, Quadrangulation, VertexIndex},
     },
-    world::{ChunkId, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
+    world::{ChunkId, InternalCells, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -72,35 +72,25 @@ impl Chunk {
         flat
     }
 
-    /// Dual mesh vertices (quad centroids) [x, y, x, y, ...]
-    pub fn dual_vertices(&self) -> Vec<f32> {
-        let quad_count = self.mesh.finite_quad_count();
-        let mut flat = Vec::with_capacity(quad_count * 2);
-
+    pub fn cell_data(&self) -> InternalCells {
+        let vertex_count = self.mesh.finite_quad_count();
+        let mut vertices = Vec::with_capacity(vertex_count * 2);
         for qi in self.mesh.finite_quad_index_iter() {
             if let Some(center) = self.mesh.dual_p(qi) {
-                flat.push(center.x);
-                flat.push(center.y);
+                vertices.push(center.x);
+                vertices.push(center.y);
             }
         }
 
-        flat
-    }
-
-    /// Flat dual polygon indices referencing dual vertices.
-    /// Each vertex's surrounding quads form a dual polygon.
-    /// Returns (indices, starts) where starts[vi] marks the beginning of vertex vi's polygon.
-    ///
-    /// Example: For a vertex surrounded by 4 quads (indices 0,1,2,3 in dual_vertices):
-    /// - indices: [0, 1, 2, 3]
-    /// - starts: [0, 4] (polygon starts at 0, next would start at 4)
-    pub fn dual_polygons(&self) -> (Vec<u32>, Vec<u32>) {
-        let mut indices = Vec::new();
-        let mut starts = Vec::new();
-        starts.push(0);
+        let site_count = self.mesh.finite_vertex_count();
+        // this is just an optimistic preallocation, index count is not known in advance
+        let mut indices = Vec::with_capacity(site_count * 4);
+        let mut ranges = Vec::with_capacity(site_count * 2);
+        let mut sites = Vec::with_capacity(site_count);
 
         for vi in self.mesh.finite_vertex_index_iter() {
-            let start_len = indices.len();
+            ranges.push(indices.len() as u32);
+            sites.push(vi.into_index() as u32);
 
             // Collect QuadIndex for all real quads around this vertex
             for qv in self.mesh.vertex_ring_ccw(vi) {
@@ -117,17 +107,15 @@ impl Chunk {
                 }
             }
 
-            // Only record if we found at least 3 quads (valid polygon)
-            if indices.len() - start_len >= 3 {
-                starts.push(indices.len() as u32);
-            } else {
-                // Degenerate polygon, remove indices and don't advance start
-                indices.truncate(start_len);
-                starts.push(start_len as u32);
-            }
+            ranges.push(indices.len() as u32);
         }
 
-        (indices, starts)
+        InternalCells {
+            vertices,
+            indices,
+            polygon_ranges: ranges,
+            sites,
+        }
     }
 
     /// Returns VertexIndex values along specified hex edge (inclusive of both corners)

@@ -6,11 +6,12 @@ use crate::{
     },
 };
 use glam::IVec2;
+use js_sys::{Float32Array, Uint32Array};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-pub struct WasmCdt {
+pub struct CdtMeshHandle {
     vertices: Vec<f32>,
     triangles: Vec<u32>,
     constraints: Vec<u32>,
@@ -18,15 +19,15 @@ pub struct WasmCdt {
 }
 
 #[wasm_bindgen]
-impl WasmCdt {
-    pub fn vertices(&self) -> Vec<f32> {
-        self.vertices.clone()
+impl CdtMeshHandle {
+    pub fn vertices(&self) -> Float32Array {
+        unsafe { Float32Array::view(&self.vertices) }
     }
-    pub fn triangles(&self) -> Vec<u32> {
-        self.triangles.clone()
+    pub fn triangles(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(&self.triangles) }
     }
-    pub fn constraints(&self) -> Vec<u32> {
-        self.constraints.clone()
+    pub fn constraints(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(&self.constraints) }
     }
 
     pub fn error_message(&self) -> Option<String> {
@@ -37,7 +38,7 @@ impl WasmCdt {
 /// Generate a CDT from random points and constraint edges.
 /// `config_json`: { "n_points": u32, "n_edges": u32, "seed": u32, "bound": i32 }
 #[wasm_bindgen]
-pub fn generate_cdt(config_json: &str) -> WasmCdt {
+pub fn generate_cdt(config_json: &str) -> CdtMeshHandle {
     #[derive(Deserialize)]
     struct CdtConfig {
         n_points: u32,
@@ -53,7 +54,7 @@ pub fn generate_cdt(config_json: &str) -> WasmCdt {
     let config: CdtConfig = match serde_json::from_str(config_json) {
         Ok(c) => c,
         Err(e) => {
-            return WasmCdt {
+            return CdtMeshHandle {
                 vertices: vec![],
                 triangles: vec![],
                 constraints: vec![],
@@ -103,7 +104,6 @@ pub fn generate_cdt(config_json: &str) -> WasmCdt {
     let vertices: Vec<f32> = points.iter().flat_map(|p| [p.x as f32, p.y as f32]).collect();
     let constraints: Vec<u32> = edges.iter().flat_map(|&(a, b)| [a as u32, b as u32]).collect();
 
-    // Extract finite triangles
     let mut triangles: Vec<u32> = Vec::new();
     for f in tri.face_index_iter() {
         if tri.is_infinite_face(f) {
@@ -114,7 +114,6 @@ pub fn generate_cdt(config_json: &str) -> WasmCdt {
         let v1 = tri[f].vertices[Rot3Idx::new(1)];
         let v2 = tri[f].vertices[Rot3Idx::new(2)];
 
-        // Find the original indices
         let i0 = vertex_indices.iter().position(|&v| v == v0).unwrap() as u32;
         let i1 = vertex_indices.iter().position(|&v| v == v1).unwrap() as u32;
         let i2 = vertex_indices.iter().position(|&v| v == v2).unwrap() as u32;
@@ -124,7 +123,7 @@ pub fn generate_cdt(config_json: &str) -> WasmCdt {
         triangles.push(i2);
     }
 
-    WasmCdt {
+    CdtMeshHandle {
         vertices,
         triangles,
         constraints,

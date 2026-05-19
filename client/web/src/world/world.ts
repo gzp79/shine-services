@@ -11,8 +11,9 @@ import {
     type WorldReferenceChangedEvent
 } from '../systems/world-reference-system';
 import { Chunk } from './chunk';
+import { ChunkCorner, ChunkCornerId } from './chunk-corner';
 import { ChunkEdge, ChunkEdgeId } from './chunk-edge';
-import { ChunkId, HexFlatDir } from './chunk-id';
+import { ChunkId, HexFlatDir, HexPointyDir } from './chunk-id';
 
 type Selection =
     | { type: 'cell'; chunk: Chunk; cellId: number; worldPoint: THREE.Vector3; localPoint: THREE.Vector3 }
@@ -29,6 +30,7 @@ export class World {
     private readonly wasm: WasmWorld;
     private readonly chunks = new Map<string, Chunk>();
     private readonly chunkEdges = new Map<string, ChunkEdge>();
+    private readonly chunkCorners = new Map<string, ChunkCorner>();
     private _referenceChunkId = ChunkId.ORIGIN;
     private _focusedChunkId = ChunkId.ORIGIN;
     private readonly subscriptions: EventSubscriptions;
@@ -72,6 +74,9 @@ export class World {
         for (const edge of this.chunkEdges.values()) {
             edge.showPolygonWire = value;
         }
+        for (const corner of this.chunkCorners.values()) {
+            corner.showPolygonWire = value;
+        }
     }
 
     constructor(events: EventTarget, debugPanel: DebugPanel) {
@@ -110,6 +115,14 @@ export class World {
         chunk.showPolygonWire = this._showPolygonWire;
 
         this.updateChunkEdgesForChunk(id);
+        for (const dir of [HexFlatDir.SW, HexFlatDir.S, HexFlatDir.SE] as const) {
+            this.updateChunkEdgesForChunk(id.neighbor(dir));
+        }
+
+        this.updateChunkCornersForChunk(id);
+        for (const dir of [HexFlatDir.SW, HexFlatDir.S, HexFlatDir.SE, HexFlatDir.NE, HexFlatDir.N, HexFlatDir.NW] as const) {
+            this.updateChunkCornersForChunk(id.neighbor(dir));
+        }
 
         return chunk;
     }
@@ -124,6 +137,7 @@ export class World {
         }
 
         this.removeChunkEdgesForChunk(id);
+        this.removeChunkCornersForChunk(id);
 
         this.group.remove(chunk.group);
         chunk.dispose();
@@ -148,6 +162,12 @@ export class World {
             edge.dispose();
         }
         this.chunkEdges.clear();
+
+        for (const corner of this.chunkCorners.values()) {
+            this.group.remove(corner.group);
+            corner.dispose();
+        }
+        this.chunkCorners.clear();
 
         // Dispose chunks
         for (const chunk of this.chunks.values()) {
@@ -260,11 +280,13 @@ export class World {
             chunk.group.position.x += delta.x;
             chunk.group.position.y += delta.y;
         }
-
-        // Reposition boundary entities
         for (const edge of this.chunkEdges.values()) {
             edge.group.position.x += delta.x;
             edge.group.position.y += delta.y;
+        }
+        for (const corner of this.chunkCorners.values()) {
+            corner.group.position.x += delta.x;
+            corner.group.position.y += delta.y;
         }
     };
 
@@ -296,27 +318,25 @@ export class World {
     }
 
     private updateChunkEdgesForChunk(chunkId: ChunkId): void {
+        if (!this.chunks.has(chunkId.key())) { return; }
+
         for (const edgeIdx of [HexFlatDir.NE, HexFlatDir.N, HexFlatDir.NW] as const) {
             const edgeId = new ChunkEdgeId(chunkId, edgeIdx);
-            const neighborId = edgeId.neighborChunkId();
+            if (this.chunkEdges.has(edgeId.key())) { continue; }
+            const [, neighbor] = edgeId.involvedChunkIds();
+            if (!this.chunks.has(neighbor.key())) { continue; }
 
-            if (this.chunks.has(neighborId.key()) && !this.chunkEdges.has(edgeId.key())) {
-                console.log(
-                    `Creating boundary edge entity for edge ${edgeId.key()} between chunks ${chunkId.key()} and ${neighborId.key()}`
-                );
-                const entity = new ChunkEdge(this.wasm, edgeId, this.subscriptions.events);
-                entity.init(this._referenceChunkId);
-                entity.showPolygonWire = this._showPolygonWire;
-                this.group.add(entity.group);
-                this.chunkEdges.set(edgeId.key(), entity);
-            }
+            const entity = new ChunkEdge(this.wasm, edgeId, this.subscriptions.events);
+            entity.init(this._referenceChunkId);
+            entity.showPolygonWire = this._showPolygonWire;
+            this.group.add(entity.group);
+            this.chunkEdges.set(edgeId.key(), entity);
         }
     }
 
     private removeChunkEdgesForChunk(chunkId: ChunkId): void {
         for (const [key, edge] of this.chunkEdges.entries()) {
-            const neighborId = edge.id.neighborChunkId();
-            if (edge.id.chunkId.equals(chunkId) || neighborId.equals(chunkId)) {
+            if (edge.id.involvedChunkIds().some((id) => id.equals(chunkId))) {
                 // Clear hover if it references this entity
                 if (this._hover?.type === 'edge-cell' && this._hover.edge === edge) {
                     this.clearHover();
@@ -325,6 +345,33 @@ export class World {
                 this.group.remove(edge.group);
                 edge.dispose();
                 this.chunkEdges.delete(key);
+            }
+        }
+    }
+
+    private updateChunkCornersForChunk(chunkId: ChunkId): void {
+        if (!this.chunks.has(chunkId.key())) { return; }
+        
+        for (const cornerIdx of [HexPointyDir.E, HexPointyDir.NE, HexPointyDir.NW] as const) {
+            const cornerId = new ChunkCornerId(chunkId, cornerIdx);
+            if (this.chunkCorners.has(cornerId.key())) { continue; }
+            const [, n1, n2] = cornerId.involvedChunkIds();
+            if (!this.chunks.has(n1.key()) || !this.chunks.has(n2.key())) { continue; }
+
+            const entity = new ChunkCorner(this.wasm, cornerId, this.subscriptions.events);
+            entity.init(this._referenceChunkId);
+            entity.showPolygonWire = this._showPolygonWire;
+            this.group.add(entity.group);
+            this.chunkCorners.set(cornerId.key(), entity);
+        }
+    }
+
+    private removeChunkCornersForChunk(chunkId: ChunkId): void {
+        for (const [key, corner] of this.chunkCorners.entries()) {
+            if (corner.id.involvedChunkIds().some((id) => id.equals(chunkId))) {
+                this.group.remove(corner.group);
+                corner.dispose();
+                this.chunkCorners.delete(key);
             }
         }
     }

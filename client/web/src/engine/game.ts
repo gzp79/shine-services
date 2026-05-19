@@ -1,5 +1,6 @@
 import init from '#wasm';
 import wasmUrl from '#wasm-bin';
+import { WebGPURenderer } from 'three/webgpu';
 import { InputMapper } from '../avatar/input-mapper';
 import { WorldCursor } from '../avatar/world-cursor';
 import { CameraFollowCursorSystem } from '../systems/camera-follow-cursor-system';
@@ -27,9 +28,9 @@ class Game {
     private animationId = 0;
     private lastTime = 0;
 
-    constructor(private readonly container: HTMLElement) {
+    constructor(private readonly container: HTMLElement, renderer: WebGPURenderer) {
         this.events = new EventTarget();
-        this.renderContext = new RenderContext(container, this.events);
+        this.renderContext = new RenderContext(container, this.events, renderer);
         this.debugPanel = new DebugPanel();
         this.debugPanel.setGameContainer(container);
         this.performanceMetrics = new PerformanceMetrics(this.renderContext.renderer);
@@ -68,11 +69,11 @@ class Game {
 
     init(): void {
         this.lastTime = performance.now();
-        this.animationId = requestAnimationFrame((t) => this.animate(t));
+        this.animationId = requestAnimationFrame((t) => void this.animate(t));
     }
 
-    private animate(currentTime: number): void {
-        this.animationId = requestAnimationFrame((t) => this.animate(t));
+    private async animate(currentTime: number): Promise<void> {
+        this.animationId = requestAnimationFrame((t) => void this.animate(t));
         const deltaTime = (currentTime - this.lastTime) / 1000;
         this.lastTime = currentTime;
 
@@ -83,7 +84,7 @@ class Game {
             system.update(deltaTime);
         }
 
-        this.renderContext.render(this.camera.camera);
+        await this.renderContext.render(this.camera.camera);
         this.performanceMetrics.update(deltaTime);
     }
 
@@ -102,9 +103,9 @@ class Game {
     }
 }
 
-export async function createGame(container: HTMLElement): Promise<Game> {
+export async function createGame(container: HTMLElement, renderer: WebGPURenderer): Promise<Game> {
     await init(wasmUrl);
-    const game = new Game(container);
+    const game = new Game(container, renderer);
     game.init();
     return game;
 }

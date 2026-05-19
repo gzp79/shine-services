@@ -1,17 +1,19 @@
 import init, { generate_cdt } from '#wasm';
 import wasmUrl from '#wasm-bin';
+import { WebGPURenderer } from 'three/webgpu';
 import { span } from '../../engine/utils';
 import { ExperimentContext, animate, createExperiment } from '../experiment';
 import { cdtParamsToJson, createCdtControls, defaultCdtParams } from './controls';
-import { CdtData, CdtMeshGroup, buildCdtMesh, buildCircumcenterMesh } from './mesh-builder';
+import { CdtMeshGroup, buildCdtMesh, buildCircumcenterMesh } from './mesh-builder';
+import type { CdtMeshHandle } from '../../wasm-types/shine_game';
 
 export interface CdtExperiment {
     dispose(): void;
 }
 
-export async function createCdtExperiment(container: HTMLElement): Promise<CdtExperiment> {
+export async function createCdtExperiment(container: HTMLElement, renderer: WebGPURenderer): Promise<CdtExperiment> {
     await init(wasmUrl);
-    const ctx: ExperimentContext = await createExperiment(container);
+    const ctx: ExperimentContext = createExperiment(container, renderer);
 
     // Adjust camera for the +-4096 coordinate range
     ctx.camera.near = 1;
@@ -22,11 +24,11 @@ export async function createCdtExperiment(container: HTMLElement): Promise<CdtEx
     ctx.controls?.update();
 
     const params = defaultCdtParams();
-    let currentData: CdtData | null = null;
+    let currentCdtHandle: CdtMeshHandle | null = null;
     let currentMesh: CdtMeshGroup | null = null;
     let circumcenterMesh: CdtMeshGroup | null = null;
     let activeTriangleIndex = -1;
-    let animationId = 0;
+    let stopAnimation = () => {};
 
     function updateCircumcenter() {
         if (circumcenterMesh) {
@@ -35,10 +37,10 @@ export async function createCdtExperiment(container: HTMLElement): Promise<CdtEx
             circumcenterMesh = null;
         }
 
-        if (currentData && activeTriangleIndex >= 0) {
-            const triCount = currentData.triangles.length / 3;
+        if (currentCdtHandle && activeTriangleIndex >= 0) {
+            const triCount = currentCdtHandle.triangles().length / 3;
             if (activeTriangleIndex < triCount) {
-                circumcenterMesh = buildCircumcenterMesh(currentData, activeTriangleIndex);
+                circumcenterMesh = buildCircumcenterMesh(currentCdtHandle, activeTriangleIndex);
                 if (circumcenterMesh) {
                     ctx.scene.add(circumcenterMesh.group);
                 }
@@ -54,6 +56,10 @@ export async function createCdtExperiment(container: HTMLElement): Promise<CdtEx
             currentMesh.dispose();
             currentMesh = null;
         }
+        if (currentCdtHandle) {
+            currentCdtHandle.free();
+            currentCdtHandle = null;
+        }
 
         try {
             using _s = span('regenerate');
@@ -61,33 +67,27 @@ export async function createCdtExperiment(container: HTMLElement): Promise<CdtEx
             const configJson = cdtParamsToJson(params);
             {
                 using _s = span('generate_cdt');
-                const wasmCdt = generate_cdt(configJson);
-                const error = wasmCdt.error_message();
+                const cdt = generate_cdt(configJson);
+                const error = cdt.error_message();
                 if (error !== undefined) {
                     console.warn('CDT error:');
-                    wasmCdt.free();
+                    cdt.free();
                     return;
                 }
-                currentData = {
-                    vertices: new Float32Array(wasmCdt.vertices()),
-                    triangles: new Uint32Array(wasmCdt.triangles()),
-                    constraints: new Uint32Array(wasmCdt.constraints())
-                };
                 console.log(
-                    `CDT: ${currentData.vertices.length / 2} vertices ` +
-                        `${currentData.triangles.length / 3} triangles ` +
-                        `${currentData.constraints.length / 2} constraints`
+                    `CDT: ${cdt.vertices().length / 2} vertices ` +
+                        `${cdt.triangles().length / 3} triangles ` +
+                        `${cdt.constraints().length / 2} constraints`
                 );
-                wasmCdt.free();
+                currentCdtHandle = cdt;
             }
 
             {
                 using _s = span('buildCdtMesh');
-                currentMesh = buildCdtMesh(currentData);
+                currentMesh = buildCdtMesh(currentCdtHandle!);
             }
             ctx.scene.add(currentMesh.group);
 
-            // Re-sync circumcenter if visible
             updateCircumcenter();
         } catch (e) {
             console.error('CDT generation failed:', e);
@@ -110,12 +110,12 @@ export async function createCdtExperiment(container: HTMLElement): Promise<CdtEx
 
     const gui = createCdtControls(container, params, regenerate);
     regenerate();
-    animationId = animate(ctx);
+    stopAnimation = animate(ctx);
 
     return {
         dispose() {
             window.removeEventListener('keydown', onKeyDown);
-            cancelAnimationFrame(animationId);
+            stopAnimation();
             gui.destroy();
 
             if (currentMesh) {
@@ -126,10 +126,12 @@ export async function createCdtExperiment(container: HTMLElement): Promise<CdtEx
                 ctx.scene.remove(circumcenterMesh.group);
                 circumcenterMesh.dispose();
             }
+            if (currentCdtHandle) {
+                currentCdtHandle.free();
+                currentCdtHandle = null;
+            }
 
             ctx.resizeObserver.disconnect();
-            ctx.renderer.dispose();
-            ctx.renderer.domElement.remove();
         }
     };
 }

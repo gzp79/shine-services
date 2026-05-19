@@ -3,11 +3,16 @@ use glam::Vec2;
 /// Indexed mesh DTO for transferring geometry data
 #[derive(Debug, Clone, Default)]
 pub struct IndexedMesh {
-    pub vertices: Vec<f32>,       // Flat [x,y,x,y,...] array
-    pub indices: Vec<u32>,        // Flat index array
-    pub polygon_ranges: Vec<u32>, // Flat [start0, end0, start1, end1, ...] pairs
-    pub wire_indices: Vec<u32>,   // Wire line segments (empty if no wires)
-    pub wire_ranges: Vec<u32>,    // Flat [start0, end0, start1, end1, ...] pairs
+    /// Vertex positions packed as [x, y, x, y, ...]
+    pub vertices: Vec<f32>,
+    /// Polygon indices - flat index array
+    pub indices: Vec<u32>,
+    /// Index ranges [start0, end0, start1, end1, ...] pairs
+    pub polygon_ranges: Vec<u32>,
+    /// Wire line segments (empty if no wires)
+    pub wire_indices: Vec<u32>,
+    /// Wire index ranges [start0, end0, start1, end1, ...] pairs
+    pub wire_ranges: Vec<u32>,
 }
 
 impl IndexedMesh {

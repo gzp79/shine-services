@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { attribute, mix, uniform } from 'three/tsl';
-import { MeshStandardNodeMaterial } from 'three/webgpu';
+import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
 import { ControlBox } from '../../engine/utils';
 import {
     type ExperimentContext,
@@ -16,8 +16,8 @@ export interface TrilinearExperiment {
     dispose(): void;
 }
 
-export async function createTrilinearExperiment(container: HTMLElement): Promise<TrilinearExperiment> {
-    const ctx: ExperimentContext = await createExperiment(container);
+export async function createTrilinearExperiment(container: HTMLElement, renderer: WebGPURenderer): Promise<TrilinearExperiment> {
+    const ctx: ExperimentContext = createExperiment(container, renderer);
 
     // File input UI
     const fileInput = document.createElement('input');
@@ -291,11 +291,11 @@ export async function createTrilinearExperiment(container: HTMLElement): Promise
         await createMeshFromFile(file);
     });
 
-    const animationId = animate(ctx);
+    const stopAnimation = animate(ctx);
 
     return {
         dispose() {
-            cancelAnimationFrame(animationId);
+            stopAnimation();
             disposeLoadedObject();
             controlBox.dispose();
             fileInput.remove();

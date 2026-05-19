@@ -1,14 +1,14 @@
-use glam::Vec2;
-
 use crate::{
+    indexed::TypedIndex,
     math::{
         hex::{HexFlatDir, HexPointyDir},
         prng::SplitMix64,
         quadrangulation::VertexIndex,
     },
-    world::{Chunk, ChunkId},
+    world::{Chunk, ChunkId, CornerCells, EdgeCells, InternalCells},
 };
 use std::collections::HashMap;
+use tracing::info_span;
 
 /// The core subdivision depth to align chunks
 pub const SUBDIVISION_BASE: u32 = 4;
@@ -45,18 +45,6 @@ impl World {
         self.chunks.remove(&id);
     }
 
-    pub fn chunk_vertices(&self, id: ChunkId) -> Vec<f32> {
-        self.chunk(id).map(|c| c.quad_vertices()).unwrap_or_default()
-    }
-
-    pub fn chunk_quad_indices(&self, id: ChunkId) -> Vec<u32> {
-        self.chunk(id).map(|c| c.quad_indices()).unwrap_or_default()
-    }
-
-    pub fn chunk_boundary_indices(&self, id: ChunkId) -> Vec<u32> {
-        self.chunk(id).map(|c| c.boundary_indices()).unwrap_or_default()
-    }
-
     pub fn chunk_world_offset(&self, reference: ChunkId, target: ChunkId) -> Vec<f32> {
         if self.chunk(reference).is_none() {
             return vec![];
@@ -65,11 +53,14 @@ impl World {
         vec![offset.x, offset.y]
     }
 
-    /// Returns dual polygons for the non-corner vertices along a chunk edge.
-    /// Each such vertex lies on the shared boundary between two chunks, so its dual polygon
-    /// is built from finite quads in both the owner and the neighbor chunk.
-    /// Corner vertices are excluded — they are covered by `boundary_vertex_dual_polygon`.
-    pub fn boundary_edge_dual_polygons(&self, owner_id: ChunkId, edge_idx: HexFlatDir) -> Option<Vec<Vec<Vec2>>> {
+    pub fn internal_cells(&self, id: ChunkId) -> Option<InternalCells> {
+        let _span = info_span!("internal_cells", id = ?id).entered();
+        self.chunk(id).map(|chunk| chunk.cell_data())
+    }
+
+    pub fn edge_cells(&self, id: ChunkId, edge_idx: HexFlatDir) -> Option<EdgeCells> {
+        let _span = info_span!("edge_cells", id = ?id).entered();
+
         let (neighbor_dir, neighbor_edge) = match edge_idx {
             HexFlatDir::NE => (HexFlatDir::NE, HexFlatDir::SW),
             HexFlatDir::N => (HexFlatDir::N, HexFlatDir::S),
@@ -79,44 +70,74 @@ impl World {
             HexFlatDir::SE => (HexFlatDir::SE, HexFlatDir::NW),
         };
 
-        let neighbor_id = owner_id.neighbor(neighbor_dir);
-        let owner = self.chunk(owner_id)?;
+        let neighbor_id = id.neighbor(neighbor_dir);
+        let owner = self.chunk(id)?;
         let neighbor = self.chunk(neighbor_id)?;
-        let neighbor_offset = owner_id.relative_world_position(neighbor_id);
+        let neighbor_offset = id.relative_world_position(neighbor_id);
 
         // Collect neighbor inner vertices reversed: pop both corners, reverse in-place.
         // The neighbor edge runs in the opposite direction to the owner edge, so reversing
         // aligns vertex positions pairwise.
-        let inner_neighbor: Vec<VertexIndex> = {
+        let neighbor_vis: Vec<VertexIndex> = {
             let mut v: Vec<_> = neighbor.boundary_edge_vertices(neighbor_edge).collect();
             v.pop();
             v.reverse();
             v.pop();
             v
         };
-        let inner_owner = owner
-            .boundary_edge_vertices(edge_idx)
-            .skip(1)
-            .take(inner_neighbor.len());
+        let owner_vis = owner.boundary_edge_vertices(edge_idx).skip(1).take(neighbor_vis.len());
 
-        let mut polygons = Vec::with_capacity(inner_neighbor.len());
-        for (vi_owner, vi_neighbor) in inner_owner.zip(inner_neighbor) {
-            let mut vertices = Vec::new();
+        let site_count = neighbor_vis.len();
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let mut polygon_ranges = Vec::with_capacity(site_count * 2);
+        let mut owner_sites = Vec::with_capacity(site_count);
+        let mut neighbor_sites = Vec::with_capacity(site_count);
+
+        // map from QuadIndex to index in vertices
+        let mut index_map = HashMap::new();
+        let mut neighbor_index_map = HashMap::new();
+
+        for (vi_owner, vi_neighbor) in owner_vis.zip(neighbor_vis) {
+            polygon_ranges.push(indices.len() as u32);
+            owner_sites.push(vi_owner.into_index() as u32);
+            neighbor_sites.push(vi_neighbor.into_index() as u32);
+
             for q in owner.mesh.boundary_dual_vertices(vi_owner) {
-                vertices.push(owner.mesh.dual_p(q).unwrap());
+                let index = *index_map.entry(q).or_insert_with(|| {
+                    let p = owner.mesh.dual_p(q).unwrap();
+                    let idx = (vertices.len() / 2) as u32;
+                    vertices.push(p.x);
+                    vertices.push(p.y);
+                    idx
+                });
+                indices.push(index);
             }
             for q in neighbor.mesh.boundary_dual_vertices(vi_neighbor) {
-                vertices.push(neighbor.mesh.dual_p(q).unwrap() + neighbor_offset);
+                let index = *neighbor_index_map.entry(q).or_insert_with(|| {
+                    let p = neighbor.mesh.dual_p(q).unwrap() + neighbor_offset;
+                    let idx = (vertices.len() / 2) as u32;
+                    vertices.push(p.x);
+                    vertices.push(p.y);
+                    idx
+                });
+                indices.push(index);
             }
-            polygons.push(vertices);
+            polygon_ranges.push(indices.len() as u32);
         }
 
-        Some(polygons)
+        Some(EdgeCells {
+            vertices,
+            indices,
+            polygon_ranges,
+            owner_sites,
+            neighbor_sites,
+        })
     }
 
-    /// Returns dual polygon for boundary vertex cell (single triangular cell).
-    /// Format: (vertices, indices, starts) matching Chunk::dual_polygons()
-    pub fn boundary_vertex_dual_polygon(&self, owner_id: ChunkId, vertex_idx: HexPointyDir) -> Option<Vec<Vec2>> {
+    pub fn corner_cells(&self, id: ChunkId, vertex_idx: HexPointyDir) -> Option<CornerCells> {
+        let _span = info_span!("corner_cells", id = ?id).entered();
+
         let v0 = vertex_idx;
         let (n1, v1, n2, v2) = match vertex_idx {
             HexPointyDir::E => (HexFlatDir::SE, HexPointyDir::NW, HexFlatDir::NE, HexPointyDir::SW),
@@ -127,9 +148,9 @@ impl World {
             HexPointyDir::SE => (HexFlatDir::S, HexPointyDir::NE, HexFlatDir::SE, HexPointyDir::W),
         };
 
-        let id0 = owner_id;
-        let id1 = owner_id.neighbor(n1);
-        let id2 = owner_id.neighbor(n2);
+        let id0 = id;
+        let id1 = id.neighbor(n1);
+        let id2 = id.neighbor(n2);
 
         let chunk0 = self.chunk(id0)?;
         let chunk1 = self.chunk(id1)?;
@@ -138,14 +159,20 @@ impl World {
         let mut vertices = Vec::new();
 
         for (id, chunk, corner) in [(id0, chunk0, v0), (id1, chunk1, v1), (id2, chunk2, v2)] {
-            let offset = owner_id.relative_world_position(id);
+            let offset = id.relative_world_position(id);
             let vi = chunk.boundary_corner_vertex(corner);
             for q in chunk.mesh.boundary_dual_vertices(vi) {
-                let pos = chunk.mesh.dual_p(q).unwrap();
-                vertices.push(pos + offset);
+                let pos = chunk.mesh.dual_p(q).unwrap() + offset;
+                vertices.push(pos.x);
+                vertices.push(pos.y);
             }
         }
 
-        Some(vertices)
+        Some(CornerCells {
+            vertices,
+            owner_site: v0.into_index() as u32,
+            ccw_site: v1.into_index() as u32,
+            cw_site: v2.into_index() as u32,
+        })
     }
 }

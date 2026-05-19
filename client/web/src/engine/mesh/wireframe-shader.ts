@@ -1,118 +1,45 @@
 import * as THREE from 'three';
+import { attribute, clamp, float, fwidth, min, mix, pow, smoothstep, uniform, vec3 } from 'three/tsl';
+import { MeshBasicNodeMaterial } from 'three/webgpu';
 
-/**
- * Wireframe shader with perspective-correct edge rendering.
- * Uses barycentric coordinates and edge flags to render only real edges (no diagonals).
- */
-export const wireframeVertexShader = `
-    attribute vec3 barycentric;
-    attribute vec3 edgeFlags;
-    attribute vec3 color;
+function buildWireframeMaterial(colorValue: THREE.Color, edgeWidth: number, opacity: number, glowPower: number, transparent: boolean): MeshBasicNodeMaterial {
+    const uColor = uniform(colorValue);
+    const uEdgeWidth = uniform(float(edgeWidth));
+    const uOpacity = uniform(float(opacity));
+    const uGlowPower = uniform(float(glowPower));
 
-    varying vec3 vBarycentric;
-    varying vec3 vEdgeFlags;
-    varying vec3 vColor;
-    varying float vDepth;
+    const barycentric = attribute('barycentric', 'vec3');
+    const edgeFlags = attribute('edgeFlags', 'vec3');
+    const vColor = attribute('color', 'vec3');
 
-    void main() {
-        vBarycentric = barycentric;
-        vEdgeFlags = edgeFlags;
-        vColor = color;
+    const d = fwidth(barycentric);
+    const edgeDistance = barycentric.div(d);
+    const maskedDistance = mix(vec3(999999.0), edgeDistance, edgeFlags);
+    const minDistance = min(min(maskedDistance.x, maskedDistance.y), maskedDistance.z);
+    const edgeIntensity = float(1.0).sub(smoothstep(float(0.0), uEdgeWidth, minDistance));
+    const glow = pow(edgeIntensity, uGlowPower);
+    const baseColor = uColor.mul(vColor);
+    const finalColor = baseColor.mul(float(0.7).add(glow.mul(0.8)));
+    const alpha = edgeIntensity.mul(uOpacity);
 
-        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        vDepth = -mvPosition.z; // Camera-space depth
+    const material = new MeshBasicNodeMaterial();
+    material.colorNode = vec3(finalColor.x, finalColor.y, finalColor.z);
+    material.opacityNode = alpha;
+    material.transparent = transparent;
+    material.alphaTest = 0.01;
+    material.side = THREE.DoubleSide;
+    material.depthTest = true;
+    material.depthWrite = false;
 
-        gl_Position = projectionMatrix * mvPosition;
-    }
-`;
-
-export const wireframeFragmentShader = `
-    uniform vec3 color;
-    uniform float edgeWidth;
-    uniform float opacity;
-    uniform float glowPower;
-
-    varying vec3 vBarycentric;
-    varying vec3 vEdgeFlags;
-    varying vec3 vColor;
-    varying float vDepth;
-
-    void main() {
-        // Calculate screen-space derivatives
-        vec3 d = fwidth(vBarycentric);
-
-        // Distance to each edge in pixels (barycentric = 0 at edges)
-        vec3 edgeDistance = vBarycentric / d;
-
-        // Mask out disabled edges (flag = 0 means ignore that edge)
-        vec3 maskedDistance = mix(vec3(999999.0), edgeDistance, vEdgeFlags);
-
-        // Find closest enabled edge
-        float minDistance = min(min(maskedDistance.x, maskedDistance.y), maskedDistance.z);
-
-        // Convert to edge intensity (1 = on edge, 0 = far from edge)
-        float edgeIntensity = 1.0 - smoothstep(0.0, edgeWidth, minDistance);
-
-        // Alpha test
-        if (edgeIntensity < 0.01) discard;
-
-        // Glow effect controlled by glowPower
-        float glow = pow(edgeIntensity, glowPower);
-
-        // Combine uniform color with vertex color
-        vec3 baseColor = color * vColor;
-
-        // Apply glow brightness
-        vec3 finalColor = baseColor * (0.7 + glow * 0.8);
-
-        // Depth-based opacity: farther edges are dimmer
-        float depthFade = clamp(1.0 - vDepth / 5000.0, 0.5, 1.0);
-        float alpha = edgeIntensity * opacity * depthFade;
-
-        gl_FragColor = vec4(finalColor, alpha);
-    }
-`;
-
-/**
- * Create wireframe shader material.
- */
-export function createWireframeMaterial(color: THREE.Color | number): THREE.ShaderMaterial {
-    const colorObj = color instanceof THREE.Color ? color : new THREE.Color(color);
-
-    return new THREE.ShaderMaterial({
-        uniforms: {
-            color: { value: colorObj },
-            edgeWidth: { value: 3.0 }, // Screen-space pixels - sharp core
-            opacity: { value: 1.0 }, // Opaque core
-            glowPower: { value: 1.0 } // No glow for sharp edge
-        },
-        vertexShader: wireframeVertexShader,
-        fragmentShader: wireframeFragmentShader,
-        transparent: false,
-        depthTest: true,
-        depthWrite: false,
-        side: THREE.DoubleSide
-    });
+    return material;
 }
 
-/**
- * Create glow wireframe material (wider, blurred, transparent).
- */
-export function createWireframeGlowMaterial(color: THREE.Color | number, opacity: number = 0.4): THREE.ShaderMaterial {
+export function createWireframeMaterial(color: THREE.Color | number): MeshBasicNodeMaterial {
     const colorObj = color instanceof THREE.Color ? color : new THREE.Color(color);
+    return buildWireframeMaterial(colorObj, 3.0, 1.0, 1.0, false);
+}
 
-    return new THREE.ShaderMaterial({
-        uniforms: {
-            color: { value: colorObj },
-            edgeWidth: { value: 18.0 }, // Wider for glow
-            opacity: { value: opacity },
-            glowPower: { value: 0.5 } // Strong glow falloff
-        },
-        vertexShader: wireframeVertexShader,
-        fragmentShader: wireframeFragmentShader,
-        transparent: true,
-        depthTest: true,
-        depthWrite: false,
-        side: THREE.DoubleSide
-    });
+export function createWireframeGlowMaterial(color: THREE.Color | number, opacity: number = 0.4): MeshBasicNodeMaterial {
+    const colorObj = color instanceof THREE.Color ? color : new THREE.Color(color);
+    return buildWireframeMaterial(colorObj, 18.0, opacity, 0.5, true);
 }

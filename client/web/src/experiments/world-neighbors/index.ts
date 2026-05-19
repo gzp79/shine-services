@@ -1,6 +1,7 @@
 import init, { generate_world_neighbors } from '#wasm';
 import wasmUrl from '#wasm-bin';
 import * as THREE from 'three';
+import { WebGPURenderer } from 'three/webgpu';
 import { ExperimentContext, animate, createExperiment } from '../experiment';
 import { createControls, defaultParams } from './controls';
 import { buildChunkHexagons, buildEdgeMeshes, buildInteriorMeshes, buildVertexMeshes } from './mesh-builder';
@@ -9,12 +10,12 @@ export interface WorldNeighborsExperiment {
     dispose(): void;
 }
 
-export async function createWorldNeighborsExperiment(container: HTMLElement): Promise<WorldNeighborsExperiment> {
+export async function createWorldNeighborsExperiment(container: HTMLElement, renderer: WebGPURenderer): Promise<WorldNeighborsExperiment> {
     await init(wasmUrl);
 
-    const ctx: ExperimentContext = await createExperiment(container);
+    const ctx: ExperimentContext = createExperiment(container, renderer);
     const params = defaultParams();
-    let animationId = 0;
+    let stopAnimation = () => {};
 
     let hexagons: THREE.Group | null = null;
     let interiorGroup: ReturnType<typeof buildInteriorMeshes> | null = null;
@@ -94,16 +95,14 @@ export async function createWorldNeighborsExperiment(container: HTMLElement): Pr
 
     const gui = createControls(container, params, applyDisplay, regenerate);
     regenerate();
-    animationId = animate(ctx);
+    stopAnimation = animate(ctx);
 
     return {
         dispose() {
-            cancelAnimationFrame(animationId);
+            stopAnimation();
             gui.destroy();
             disposeScene();
             ctx.resizeObserver.disconnect();
-            ctx.renderer.dispose();
-            ctx.renderer.domElement.remove();
         }
     };
 }

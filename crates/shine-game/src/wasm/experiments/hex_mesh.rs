@@ -4,7 +4,7 @@ use crate::{
         prng::{StableRng, Xorshift32},
         quadrangulation::{Jitter, LaplacianSmoother, QuadFilter, QuadRelax, Quadrangulation, VertexRepulsion},
     },
-    wasm::dto::WasmIndexedMesh,
+    wasm::dto::IndexedMeshHandle,
 };
 use glam::Vec2;
 use serde::Deserialize;
@@ -57,8 +57,8 @@ enum FilterConfig {
 #[wasm_bindgen]
 pub struct WasmPatchMesh {
     world_size: f32,
-    primal: WasmIndexedMesh,
-    dual: WasmIndexedMesh,
+    primal: IndexedMeshHandle,
+    dual: IndexedMeshHandle,
 }
 
 #[wasm_bindgen]
@@ -68,12 +68,12 @@ impl WasmPatchMesh {
     }
 
     /// Get the primal mesh (quads with anchor edges as wires)
-    pub fn primal(&self) -> WasmIndexedMesh {
+    pub fn primal(&self) -> IndexedMeshHandle {
         self.primal.clone()
     }
 
     /// Get the dual mesh (dual polygons)
-    pub fn dual(&self) -> WasmIndexedMesh {
+    pub fn dual(&self) -> IndexedMeshHandle {
         self.dual.clone()
     }
 }
@@ -111,7 +111,7 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
     #[cfg(debug_assertions)]
     {
         let _span = info_span!("validate").entered();
-        let anchor_subdivision = (1 << subdivision) + 1;
+        let anchor_subdivision = (1 << _subdivision) + 1;
         let validator = mesh.validator();
         if let Err(err) = validator
             .validate()

@@ -9,7 +9,9 @@
   },
   "rust-analyzer.cargo.features": [],
   "rust-analyzer.cargo.target": "wasm32-unknown-unknown",
-  "rust-analyzer.cargo.buildScripts.enable": true,
+  "rust-analyzer.checkOnSave": false,
+  "rust-analyzer.cargo.buildScripts.enable": false,  
+  "rust-analyzer.procMacro.enable": false,
   "cSpell.words": [
     "actionlike",
     "Animatable",
@@ -21,6 +23,7 @@
     "cacerts",
     "cfhistu",
     "chrono",
+    "circumcenter",
     "clippy",
     "cookiejar",
     "deque",

@@ -1,5 +1,6 @@
 import { InputController, type InputHandler } from '../../engine/input';
 import type { Delta, Point } from '../../engine/input';
+import { WebGPURenderer } from 'three/webgpu';
 import { ExperimentContext, animate, createExperiment } from '../experiment';
 
 export interface InputControlExperiment {
@@ -12,8 +13,8 @@ interface EventLogEntry {
     data: string;
 }
 
-export async function createInputControlExperiment(container: HTMLElement): Promise<InputControlExperiment> {
-    const ctx: ExperimentContext = await createExperiment(container, { addOrbitCamera: false });
+export async function createInputControlExperiment(container: HTMLElement, renderer: WebGPURenderer): Promise<InputControlExperiment> {
+    const ctx: ExperimentContext = createExperiment(container, renderer, { addOrbitCamera: false });
 
     // Event log (max 12 entries, compact display)
     const eventLog: EventLogEntry[] = [];
@@ -149,17 +150,15 @@ export async function createInputControlExperiment(container: HTMLElement): Prom
     };
     const inputController = new InputController(ctx.renderer.domElement, inputHandler);
 
-    const animationId = animate(ctx);
+    const stopAnimation = animate(ctx);
 
     return {
         dispose() {
-            cancelAnimationFrame(animationId);
+            stopAnimation();
             inputController.dispose();
             logDiv.remove();
             controllerDiv.remove();
             ctx.resizeObserver.disconnect();
-            ctx.renderer.dispose();
-            ctx.renderer.domElement.remove();
         }
     };
 }

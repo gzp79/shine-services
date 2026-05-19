@@ -1,7 +1,7 @@
 /* tslint:disable */
 /* eslint-disable */
 
-export class WasmCdt {
+export class CdtMeshHandle {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
@@ -12,36 +12,66 @@ export class WasmCdt {
 }
 
 /**
- * WASM wrapper for IndexedMesh - exposes mesh geometry to TypeScript
+ * Zero-copy WASM view over CornerCells.
+ * All accessors return views into Wasm linear memory — clone on the JS side
+ * (e.g. `arr.slice()`) if the data must outlive this object or any further Wasm call.
  */
-export class WasmIndexedMesh {
+export class CornerCellsView {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
-    /**
-     * Check if mesh has wire data
-     */
-    has_wires(): boolean;
-    /**
-     * Get polygon index buffer
-     */
-    indices(): Uint32Array;
-    /**
-     * Get polygon ranges [start0, end0, start1, end1, ...]
-     */
-    polygon_ranges(): Uint32Array;
-    /**
-     * Get flat vertex buffer [x,y,x,y,...]
-     */
+    ccw_site(): number;
+    cw_site(): number;
+    owner_site(): number;
     vertices(): Float32Array;
-    /**
-     * Get wire index buffer (empty if no wires)
-     */
+}
+
+/**
+ * Zero-copy WASM view over EdgeCells.
+ * All accessors return views into Wasm linear memory — clone on the JS side
+ * (e.g. `arr.slice()`) if the data must outlive this object or any further Wasm call.
+ */
+export class EdgeCellsView {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    indices(): Uint32Array;
+    neighbor_sites(): Uint32Array;
+    owner_sites(): Uint32Array;
+    polygon_ranges(): Uint32Array;
+    vertices(): Float32Array;
+}
+
+/**
+ * Zero-copy WASM view over an IndexedMesh.
+ * All accessors return views into Wasm linear memory — clone on the JS side
+ * (e.g. `arr.slice()`) if the data must outlive this object or any further Wasm call.
+ */
+export class IndexedMeshHandle {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    has_wires(): boolean;
+    indices(): Uint32Array;
+    polygon_ranges(): Uint32Array;
+    vertices(): Float32Array;
     wire_indices(): Uint32Array;
-    /**
-     * Get wire ranges [start0, end0, start1, end1, ...]
-     */
     wire_ranges(): Uint32Array;
+}
+
+/**
+ * Zero-copy WASM view over InternalCells.
+ * All accessors return views into Wasm linear memory — clone on the JS side
+ * (e.g. `arr.slice()`) if the data must outlive this object or any further Wasm call.
+ */
+export class InternalCellsView {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    indices(): Uint32Array;
+    polygon_ranges(): Uint32Array;
+    sites(): Uint32Array;
+    vertices(): Float32Array;
 }
 
 export class WasmPatchMesh {
@@ -51,23 +81,17 @@ export class WasmPatchMesh {
     /**
      * Get the dual mesh (dual polygons)
      */
-    dual(): WasmIndexedMesh;
+    dual(): IndexedMeshHandle;
     /**
      * Get the primal mesh (quads with anchor edges as wires)
      */
-    primal(): WasmIndexedMesh;
+    primal(): IndexedMeshHandle;
     world_size(): number;
 }
 
 export class WasmWorld {
     free(): void;
     [Symbol.dispose](): void;
-    chunk_boundary_indices(q: number, r: number): Uint32Array;
-    chunk_dual_polygon_vertices(q: number, r: number): Float32Array;
-    chunk_dual_polygons(q: number, r: number): Uint32Array;
-    chunk_dual_vertices(q: number, r: number): Float32Array;
-    chunk_quad_indices(q: number, r: number): Uint32Array;
-    chunk_quad_vertices(q: number, r: number): Float32Array;
     chunk_world_offset(ref_q: number, ref_r: number, q: number, r: number): Float32Array;
     const_cell_world_size(): number;
     const_chunk_world_size(): number;
@@ -87,22 +111,22 @@ export class WasmWorldNeighbors {
     /**
      * Get edge mesh for the given edge
      */
-    edge_mesh(edge_idx: number): WasmIndexedMesh | undefined;
+    edge_mesh(edge_idx: number): IndexedMeshHandle | undefined;
     /**
      * Get interior mesh for the given chunk
      */
-    interior_mesh(chunk_idx: number): WasmIndexedMesh | undefined;
+    interior_mesh(chunk_idx: number): IndexedMeshHandle | undefined;
     /**
      * Get vertex mesh for the given vertex
      */
-    vertex_mesh(vertex_idx: number): WasmIndexedMesh | undefined;
+    vertex_mesh(vertex_idx: number): IndexedMeshHandle | undefined;
 }
 
 /**
  * Generate a CDT from random points and constraint edges.
  * `config_json`: { "n_points": u32, "n_edges": u32, "seed": u32, "bound": i32 }
  */
-export function generate_cdt(config_json: string): WasmCdt;
+export function generate_cdt(config_json: string): CdtMeshHandle;
 
 /**
  * Generate a hex quad mesh from a JSON config string.
@@ -165,7 +189,53 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_cdtmeshhandle_free: (a: number, b: number) => void;
+    readonly __wbg_indexedmeshhandle_free: (a: number, b: number) => void;
+    readonly __wbg_wasmpatchmesh_free: (a: number, b: number) => void;
+    readonly __wbg_wasmworldneighbors_free: (a: number, b: number) => void;
+    readonly cdtmeshhandle_constraints: (a: number) => any;
+    readonly cdtmeshhandle_error_message: (a: number) => [number, number];
+    readonly cdtmeshhandle_triangles: (a: number) => any;
+    readonly cdtmeshhandle_vertices: (a: number) => any;
+    readonly generate_cdt: (a: number, b: number) => number;
+    readonly generate_mesh: (a: number, b: number) => [number, number, number];
+    readonly generate_world_neighbors: (a: number, b: number) => [number, number, number];
+    readonly indexedmeshhandle_has_wires: (a: number) => number;
+    readonly indexedmeshhandle_indices: (a: number) => any;
+    readonly indexedmeshhandle_polygon_ranges: (a: number) => any;
+    readonly indexedmeshhandle_vertices: (a: number) => any;
+    readonly indexedmeshhandle_wire_indices: (a: number) => any;
+    readonly indexedmeshhandle_wire_ranges: (a: number) => any;
+    readonly wasmpatchmesh_dual: (a: number) => number;
+    readonly wasmpatchmesh_primal: (a: number) => number;
+    readonly wasmpatchmesh_world_size: (a: number) => number;
+    readonly wasmworldneighbors_chunk_hex_vertices: (a: number, b: number) => [number, number];
+    readonly wasmworldneighbors_edge_mesh: (a: number, b: number) => number;
+    readonly wasmworldneighbors_interior_mesh: (a: number, b: number) => number;
+    readonly wasmworldneighbors_vertex_mesh: (a: number, b: number) => number;
+    readonly __wbg_cornercellsview_free: (a: number, b: number) => void;
+    readonly __wbg_edgecellsview_free: (a: number, b: number) => void;
+    readonly __wbg_internalcellsview_free: (a: number, b: number) => void;
+    readonly cornercellsview_ccw_site: (a: number) => number;
+    readonly cornercellsview_cw_site: (a: number) => number;
+    readonly cornercellsview_owner_site: (a: number) => number;
+    readonly cornercellsview_vertices: (a: number) => any;
+    readonly edgecellsview_indices: (a: number) => any;
+    readonly edgecellsview_neighbor_sites: (a: number) => any;
+    readonly edgecellsview_owner_sites: (a: number) => any;
+    readonly edgecellsview_polygon_ranges: (a: number) => any;
+    readonly edgecellsview_vertices: (a: number) => any;
+    readonly internalcellsview_indices: (a: number) => any;
+    readonly internalcellsview_polygon_ranges: (a: number) => any;
+    readonly internalcellsview_sites: (a: number) => any;
+    readonly internalcellsview_vertices: (a: number) => any;
     readonly __wbg_wasmworld_free: (a: number, b: number) => void;
+    readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly wasmworld_const_cell_world_size: (a: number) => number;
+    readonly wasmworld_const_chunk_world_size: (a: number) => number;
+    readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
+    readonly wasmworld_new: () => number;
+    readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
     readonly hex_distance: (a: number, b: number, c: number, d: number) => number;
     readonly hex_flat_from_position: (a: number, b: number, c: number) => [number, number];
     readonly hex_flat_neighbor: (a: number, b: number, c: number) => [number, number];
@@ -174,43 +244,7 @@ export interface InitOutput {
     readonly hex_pointy_neighbor: (a: number, b: number, c: number) => [number, number];
     readonly hex_pointy_to_position: (a: number, b: number, c: number) => [number, number];
     readonly hex_ring: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_boundary_indices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_dual_polygon_vertices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_dual_polygons: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_dual_vertices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_quad_indices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_quad_vertices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly wasmworld_const_cell_world_size: (a: number) => number;
-    readonly wasmworld_const_chunk_world_size: (a: number) => number;
-    readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
-    readonly wasmworld_new: () => number;
-    readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
-    readonly __wbg_wasmcdt_free: (a: number, b: number) => void;
-    readonly __wbg_wasmpatchmesh_free: (a: number, b: number) => void;
-    readonly generate_cdt: (a: number, b: number) => number;
-    readonly generate_mesh: (a: number, b: number) => [number, number, number];
-    readonly wasmcdt_constraints: (a: number) => [number, number];
-    readonly wasmcdt_error_message: (a: number) => [number, number];
-    readonly wasmcdt_triangles: (a: number) => [number, number];
-    readonly wasmcdt_vertices: (a: number) => [number, number];
-    readonly wasmpatchmesh_dual: (a: number) => number;
-    readonly wasmpatchmesh_primal: (a: number) => number;
-    readonly wasmpatchmesh_world_size: (a: number) => number;
-    readonly __wbg_wasmindexedmesh_free: (a: number, b: number) => void;
-    readonly __wbg_wasmworldneighbors_free: (a: number, b: number) => void;
-    readonly generate_world_neighbors: (a: number, b: number) => [number, number, number];
     readonly start: () => void;
-    readonly wasmindexedmesh_has_wires: (a: number) => number;
-    readonly wasmindexedmesh_indices: (a: number) => [number, number];
-    readonly wasmindexedmesh_polygon_ranges: (a: number) => [number, number];
-    readonly wasmindexedmesh_vertices: (a: number) => [number, number];
-    readonly wasmindexedmesh_wire_indices: (a: number) => [number, number];
-    readonly wasmindexedmesh_wire_ranges: (a: number) => [number, number];
-    readonly wasmworldneighbors_chunk_hex_vertices: (a: number, b: number) => [number, number];
-    readonly wasmworldneighbors_edge_mesh: (a: number, b: number) => number;
-    readonly wasmworldneighbors_interior_mesh: (a: number, b: number) => number;
-    readonly wasmworldneighbors_vertex_mesh: (a: number, b: number) => number;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;

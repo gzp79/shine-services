@@ -14,7 +14,14 @@ export interface ExperimentContext {
     resizeObserver: ResizeObserver;
 }
 
-export async function createExperiment(container: HTMLElement, options?: ExperimentOption): Promise<ExperimentContext> {
+export async function createSharedRenderer(): Promise<WebGPURenderer> {
+    const renderer = new WebGPURenderer({ antialias: true });
+    await renderer.init();
+    renderer.setPixelRatio(window.devicePixelRatio);
+    return renderer;
+}
+
+export function createExperiment(container: HTMLElement, renderer: WebGPURenderer, options?: ExperimentOption): ExperimentContext {
     const addOrbitCamera = options?.addOrbitCamera ?? true;
 
     const scene = new THREE.Scene();
@@ -28,11 +35,7 @@ export async function createExperiment(container: HTMLElement, options?: Experim
     camera.position.set(0, -2.5, 4);
     camera.lookAt(0, 0, 0);
 
-    const renderer = new WebGPURenderer({ antialias: true });
-    await renderer.init();
     renderer.setSize(width, height);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    container.appendChild(renderer.domElement);
 
     let controls: OrbitControls | undefined = undefined;
     if (addOrbitCamera) {
@@ -43,15 +46,12 @@ export async function createExperiment(container: HTMLElement, options?: Experim
         controls.update();
     }
 
-    // Lighting
     const ambient = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambient);
-
     const directional = new THREE.DirectionalLight(0xffffff, 0.8);
     directional.position.set(10, -5, 20);
     scene.add(directional);
 
-    // Resize handling via ResizeObserver on container
     const resizeObserver = new ResizeObserver(() => {
         const w = container.clientWidth;
         const h = container.clientHeight;
@@ -64,7 +64,7 @@ export async function createExperiment(container: HTMLElement, options?: Experim
     return { scene, camera, renderer, controls, resizeObserver };
 }
 
-export function animate(ctx: ExperimentContext): number {
+export function animate(ctx: ExperimentContext): () => void {
     let id = 0;
     function loop() {
         id = requestAnimationFrame(loop);
@@ -72,7 +72,7 @@ export function animate(ctx: ExperimentContext): number {
         void ctx.renderer.renderAsync(ctx.scene, ctx.camera);
     }
     loop();
-    return id;
+    return () => cancelAnimationFrame(id);
 }
 
 export function disposeExperiment(ctx: ExperimentContext) {
@@ -80,8 +80,6 @@ export function disposeExperiment(ctx: ExperimentContext) {
     ctx.resizeObserver.disconnect();
     disposeObject3D(ctx.scene);
     ctx.scene.clear();
-    ctx.renderer.dispose();
-    ctx.renderer.domElement.remove();
 }
 
 type DisposableMesh = THREE.Object3D & {

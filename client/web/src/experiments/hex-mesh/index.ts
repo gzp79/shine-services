@@ -1,6 +1,7 @@
 import init, { generate_mesh } from '#wasm';
 import wasmUrl from '#wasm-bin';
 import * as THREE from 'three';
+import { WebGPURenderer } from 'three/webgpu';
 import { span } from '../../engine/utils';
 import { ExperimentContext, animate, createExperiment } from '../experiment';
 import { createControls, defaultParams, paramsToConfigJson } from './controls';
@@ -10,15 +11,15 @@ export interface HexMeshExperiment {
     dispose(): void;
 }
 
-export async function createHexMeshExperiment(container: HTMLElement): Promise<HexMeshExperiment> {
+export async function createHexMeshExperiment(container: HTMLElement, renderer: WebGPURenderer): Promise<HexMeshExperiment> {
     await init(wasmUrl);
 
-    const ctx: ExperimentContext = await createExperiment(container);
+    const ctx: ExperimentContext = createExperiment(container, renderer);
     const params = defaultParams();
     let currentMesh: HexMeshGroup | null = null;
     let debugCircle: THREE.Mesh | null = null;
     let axesGroup: THREE.Group | null = null;
-    let animationId = 0;
+    let stopAnimation = () => {};
 
     function applyDisplay() {
         if (currentMesh) {
@@ -59,32 +60,20 @@ export async function createHexMeshExperiment(container: HTMLElement): Promise<H
 
             const configJson = paramsToConfigJson(params);
             let worldSize: number;
-            let data: Parameters<typeof buildHexMesh>[0];
             {
                 using _s = span('generate_mesh');
                 const wasmMesh = generate_mesh(configJson);
-                worldSize = wasmMesh.world_size();
                 const primal = wasmMesh.primal();
                 const dual = wasmMesh.dual();
-                data = {
-                    vertices: primal.vertices(),
-                    quad_indices: primal.indices(),
-                    quad_ranges: primal.polygon_ranges(),
-                    anchor_indices: primal.wire_indices(),
-                    anchor_ranges: primal.wire_ranges(),
-                    dual_vertices: dual.vertices(),
-                    dual_indices: dual.indices(),
-                    dual_ranges: dual.polygon_ranges()
-                };
-                primal.free();
+
+                worldSize = wasmMesh.world_size();
+                currentMesh = buildHexMesh(primal, dual);
+
                 dual.free();
+                primal.free();
                 wasmMesh.free();
             }
 
-            {
-                using _s = span('buildHexMesh');
-                currentMesh = buildHexMesh(data);
-            }
             applyDisplay();
             ctx.scene.add(currentMesh.group);
 
@@ -118,11 +107,11 @@ export async function createHexMeshExperiment(container: HTMLElement): Promise<H
 
     const gui = createControls(container, params, regenerate, applyDisplay);
     regenerate();
-    animationId = animate(ctx);
+    stopAnimation = animate(ctx);
 
     return {
         dispose() {
-            cancelAnimationFrame(animationId);
+            stopAnimation();
             gui.destroy();
             if (currentMesh) {
                 ctx.scene.remove(currentMesh.group);
@@ -143,8 +132,6 @@ export async function createHexMeshExperiment(container: HTMLElement): Promise<H
                 });
             }
             ctx.resizeObserver.disconnect();
-            ctx.renderer.dispose();
-            ctx.renderer.domElement.remove();
         }
     };
 }

@@ -1,52 +1,49 @@
 use crate::dto::IndexedMesh;
+use js_sys::{Float32Array, Uint32Array};
 use wasm_bindgen::prelude::*;
 
-/// WASM wrapper for IndexedMesh - exposes mesh geometry to TypeScript
+/// Zero-copy WASM view over an IndexedMesh.
+/// All accessors return views into Wasm linear memory — clone on the JS side
+/// (e.g. `arr.slice()`) if the data must outlive this object or any further Wasm call.
 #[wasm_bindgen]
 #[derive(Clone)]
-pub struct WasmIndexedMesh(IndexedMesh);
+pub struct IndexedMeshHandle(IndexedMesh);
 
 #[wasm_bindgen]
-impl WasmIndexedMesh {
-    /// Get flat vertex buffer [x,y,x,y,...]
-    pub fn vertices(&self) -> Vec<f32> {
-        self.0.vertices.clone()
+impl IndexedMeshHandle {
+    pub fn vertices(&self) -> Float32Array {
+        unsafe { Float32Array::view(&self.0.vertices) }
     }
 
-    /// Get polygon index buffer
-    pub fn indices(&self) -> Vec<u32> {
-        self.0.indices.clone()
+    pub fn indices(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(&self.0.indices) }
     }
 
-    /// Get polygon ranges [start0, end0, start1, end1, ...]
-    pub fn polygon_ranges(&self) -> Vec<u32> {
-        self.0.polygon_ranges.clone()
+    pub fn polygon_ranges(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(&self.0.polygon_ranges) }
     }
 
-    /// Get wire index buffer (empty if no wires)
-    pub fn wire_indices(&self) -> Vec<u32> {
-        self.0.wire_indices.clone()
+    pub fn wire_indices(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(&self.0.wire_indices) }
     }
 
-    /// Get wire ranges [start0, end0, start1, end1, ...]
-    pub fn wire_ranges(&self) -> Vec<u32> {
-        self.0.wire_ranges.clone()
+    pub fn wire_ranges(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(&self.0.wire_ranges) }
     }
 
-    /// Check if mesh has wire data
     pub fn has_wires(&self) -> bool {
         !self.0.wire_indices.is_empty()
     }
 }
 
-impl From<IndexedMesh> for WasmIndexedMesh {
+impl From<IndexedMesh> for IndexedMeshHandle {
     fn from(mesh: IndexedMesh) -> Self {
         Self(mesh)
     }
 }
 
-impl From<WasmIndexedMesh> for IndexedMesh {
-    fn from(wasm: WasmIndexedMesh) -> Self {
-        wasm.0
+impl From<IndexedMeshHandle> for IndexedMesh {
+    fn from(view: IndexedMeshHandle) -> Self {
+        view.0
     }
 }
