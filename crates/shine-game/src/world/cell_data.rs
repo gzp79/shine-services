@@ -1,6 +1,6 @@
 /// Cell data of the internal cells of a chunk
 #[derive(Debug, Clone, Default)]
-pub struct InternalCells {
+pub struct InnerCells {
     /// Vertex positions packed as [x, y, x, y, ...]
     pub vertices: Vec<f32>,
     /// Polygon indices - flat index array

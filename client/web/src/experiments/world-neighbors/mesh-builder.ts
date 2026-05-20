@@ -130,7 +130,7 @@ export function buildInteriorMeshes(data: WasmWorldNeighbors): ToggleableGroup {
     const color = new THREE.Color();
 
     for (let chunk_idx = 0; chunk_idx < 7; chunk_idx++) {
-        const meshData = data.interior_mesh(chunk_idx);
+        const meshData = data.inner_mesh(chunk_idx);
         const chunkGroup = new THREE.Group();
 
         if (meshData) {

@@ -5,7 +5,7 @@ use crate::{
         prng::{Pcg32, SplitMix64},
         quadrangulation::{AnchorIndex, Quadrangulation, VertexIndex},
     },
-    world::{ChunkId, InternalCells, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
+    world::{ChunkId, InnerCells, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -72,7 +72,7 @@ impl Chunk {
         flat
     }
 
-    pub fn cell_data(&self) -> InternalCells {
+    pub fn cell_data(&self) -> InnerCells {
         let vertex_count = self.mesh.finite_quad_count();
         let mut vertices = Vec::with_capacity(vertex_count * 2);
         for qi in self.mesh.finite_quad_index_iter() {
@@ -110,7 +110,7 @@ impl Chunk {
             ranges.push(indices.len() as u32);
         }
 
-        InternalCells {
+        InnerCells {
             vertices,
             indices,
             polygon_ranges: ranges,

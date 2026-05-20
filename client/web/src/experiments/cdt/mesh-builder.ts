@@ -19,7 +19,9 @@ function circumcircle(
     c: { x: number; y: number }
 ): { x: number; y: number; radius: number } | null {
     const d = 2.0 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
-    if (Math.abs(d) < 1e-10) { return null; }
+    if (Math.abs(d) < 1e-10) {
+        return null;
+    }
 
     const a2 = a.x * a.x + a.y * a.y;
     const b2 = b.x * b.x + b.y * b.y;
@@ -37,7 +39,9 @@ export function buildCircumcenterMesh(cdt: CdtMeshHandle, tri: number): CdtMeshG
     const triangles = cdt.triangles();
 
     const triCount = triangles.length / 3;
-    if (tri < 0 || tri >= triCount) { return null; }
+    if (tri < 0 || tri >= triCount) {
+        return null;
+    }
 
     const group = new THREE.Group();
 
@@ -59,33 +63,67 @@ export function buildCircumcenterMesh(cdt: CdtMeshHandle, tri: number): CdtMeshG
             const angle1 = (s / segments) * Math.PI * 2;
             const angle2 = ((s + 1) / segments) * Math.PI * 2;
             circlePositions.push(
-                cx + radius * Math.cos(angle1), cy + radius * Math.sin(angle1), 20,
-                cx + radius * Math.cos(angle2), cy + radius * Math.sin(angle2), 20
+                cx + radius * Math.cos(angle1),
+                cy + radius * Math.sin(angle1),
+                20,
+                cx + radius * Math.cos(angle2),
+                cy + radius * Math.sin(angle2),
+                20
             );
         }
 
         const pointGeom = new THREE.BufferGeometry();
         pointGeom.setAttribute('position', new THREE.Float32BufferAttribute([cx, cy, 25], 3));
-        group.add(new THREE.Points(pointGeom, new THREE.PointsMaterial({ color: CIRCLE_COLOR, size: 60, sizeAttenuation: true })));
+        group.add(
+            new THREE.Points(
+                pointGeom,
+                new THREE.PointsMaterial({ color: CIRCLE_COLOR, size: 60, sizeAttenuation: true })
+            )
+        );
 
         const triGeom = new THREE.BufferGeometry();
-        triGeom.setAttribute('position', new THREE.Float32BufferAttribute([a.x, a.y, 15, b.x, b.y, 15, c.x, c.y, 15], 3));
-        group.add(new THREE.Mesh(triGeom, new THREE.MeshBasicMaterial({ color: ACTIVE_TRI_COLOR, side: THREE.DoubleSide, transparent: true, opacity: 0.4 })));
+        triGeom.setAttribute(
+            'position',
+            new THREE.Float32BufferAttribute([a.x, a.y, 15, b.x, b.y, 15, c.x, c.y, 15], 3)
+        );
+        group.add(
+            new THREE.Mesh(
+                triGeom,
+                new THREE.MeshBasicMaterial({
+                    color: ACTIVE_TRI_COLOR,
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.4
+                })
+            )
+        );
 
         const triEdgeGeom = new THREE.BufferGeometry();
-        triEdgeGeom.setAttribute('position', new THREE.Float32BufferAttribute([a.x, a.y, 16, b.x, b.y, 16, b.x, b.y, 16, c.x, c.y, 16, c.x, c.y, 16, a.x, a.y, 16], 3));
-        group.add(new THREE.LineSegments(triEdgeGeom, new THREE.LineBasicMaterial({ color: ACTIVE_TRI_COLOR, linewidth: 3 })));
+        triEdgeGeom.setAttribute(
+            'position',
+            new THREE.Float32BufferAttribute(
+                [a.x, a.y, 16, b.x, b.y, 16, b.x, b.y, 16, c.x, c.y, 16, c.x, c.y, 16, a.x, a.y, 16],
+                3
+            )
+        );
+        group.add(
+            new THREE.LineSegments(triEdgeGeom, new THREE.LineBasicMaterial({ color: ACTIVE_TRI_COLOR, linewidth: 3 }))
+        );
 
         const circleGeom = new THREE.BufferGeometry();
         circleGeom.setAttribute('position', new THREE.Float32BufferAttribute(circlePositions, 3));
-        group.add(new THREE.LineSegments(circleGeom, new THREE.LineBasicMaterial({ color: CIRCLE_COLOR, linewidth: 2 })));
+        group.add(
+            new THREE.LineSegments(circleGeom, new THREE.LineBasicMaterial({ color: CIRCLE_COLOR, linewidth: 2 }))
+        );
     }
 
     const dispose = () => {
         group.traverse((obj) => {
             if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments || obj instanceof THREE.Points) {
                 obj.geometry.dispose();
-                if (obj.material instanceof THREE.Material) { obj.material.dispose(); }
+                if (obj.material instanceof THREE.Material) {
+                    obj.material.dispose();
+                }
             }
         });
     };
@@ -133,7 +171,14 @@ export function buildCdtMesh(cdt: CdtMeshHandle): CdtMeshGroup {
         for (let e = 0; e < 3; e++) {
             const i0 = triangles[base + e];
             const i1 = triangles[base + ((e + 1) % 3)];
-            edgePositions.push(positions[i0 * 3], positions[i0 * 3 + 1], 10, positions[i1 * 3], positions[i1 * 3 + 1], 10);
+            edgePositions.push(
+                positions[i0 * 3],
+                positions[i0 * 3 + 1],
+                10,
+                positions[i1 * 3],
+                positions[i1 * 3 + 1],
+                10
+            );
         }
     }
     const edgeGeom = new THREE.BufferGeometry();
@@ -147,24 +192,41 @@ export function buildCdtMesh(cdt: CdtMeshHandle): CdtMeshGroup {
         for (let e = 0; e < fixedCount; e++) {
             const i0 = constraints[e * 2];
             const i1 = constraints[e * 2 + 1];
-            fixedPositions.push(positions[i0 * 3], positions[i0 * 3 + 1], 10, positions[i1 * 3], positions[i1 * 3 + 1], 10);
+            fixedPositions.push(
+                positions[i0 * 3],
+                positions[i0 * 3 + 1],
+                10,
+                positions[i1 * 3],
+                positions[i1 * 3 + 1],
+                10
+            );
         }
         const fixedGeom = new THREE.BufferGeometry();
         fixedGeom.setAttribute('position', new THREE.Float32BufferAttribute(fixedPositions, 3));
-        group.add(new THREE.LineSegments(fixedGeom, new THREE.LineBasicMaterial({ color: FIXED_EDGE_COLOR, linewidth: 2 })));
+        group.add(
+            new THREE.LineSegments(fixedGeom, new THREE.LineBasicMaterial({ color: FIXED_EDGE_COLOR, linewidth: 2 }))
+        );
     }
 
     // Point sprites
-    const pointPositions = Array.from({ length: vertCount }, (_, i) => [positions[i * 3], positions[i * 3 + 1], 15]).flat();
+    const pointPositions = Array.from({ length: vertCount }, (_, i) => [
+        positions[i * 3],
+        positions[i * 3 + 1],
+        15
+    ]).flat();
     const pointGeom = new THREE.BufferGeometry();
     pointGeom.setAttribute('position', new THREE.Float32BufferAttribute(pointPositions, 3));
-    group.add(new THREE.Points(pointGeom, new THREE.PointsMaterial({ color: POINT_COLOR, size: 40, sizeAttenuation: true })));
+    group.add(
+        new THREE.Points(pointGeom, new THREE.PointsMaterial({ color: POINT_COLOR, size: 40, sizeAttenuation: true }))
+    );
 
     const dispose = () => {
         group.traverse((obj) => {
             if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments || obj instanceof THREE.Points) {
                 obj.geometry.dispose();
-                if (obj.material instanceof THREE.Material) { obj.material.dispose(); }
+                if (obj.material instanceof THREE.Material) {
+                    obj.material.dispose();
+                }
             }
         });
     };

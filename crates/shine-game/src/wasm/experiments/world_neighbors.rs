@@ -2,43 +2,75 @@ use crate::{
     dto::IndexedMesh,
     indexed::TypedIndex,
     math::hex::{HexFlatDir, HexPointyDir},
-    wasm::dto::IndexedMeshHandle,
-    world::{Chunk, ChunkId, World},
+    wasm::mesh::IndexedMeshHandle,
+    world::{ChunkId, World},
 };
 use wasm_bindgen::prelude::*;
 
-/// Center chunk for the experiment (easy to modify)
-const CENTER_CHUNK: ChunkId = ChunkId::ORIGIN;
-
-/// Internal storage for geometry grouped by chunk/edge/vertex
-struct ChunkGeometry {
-    hex_vertices: Vec<f32>,    // 12 floats per chunk (6 vertices * 2 coords)
-    interior: IndexedMeshHandle, // Interior dual polygons
-}
-
 #[wasm_bindgen]
 pub struct WasmWorldNeighbors {
-    chunks: Vec<ChunkGeometry>,     // 7 chunks (0 = center, 1-6 = neighbors)
-    edges: Vec<IndexedMeshHandle>,    // 6 edges
-    vertices: Vec<IndexedMeshHandle>, // 6 vertices
+    world: World,
+    center: ChunkId,
 }
 
 #[wasm_bindgen]
 impl WasmWorldNeighbors {
-    /// Returns 12 floats (6 vertices * 2 coords) for the given chunk
-    pub fn chunk_hex_vertices(&self, chunk_idx: u32) -> Vec<f32> {
-        if chunk_idx >= 7 {
-            return vec![];
+    fn chunk_id(&self, chunk_idx: u32) -> Option<ChunkId> {
+        match chunk_idx {
+            0 => Some(self.center),
+            1..=6 => Some(self.center.neighbor(HexFlatDir::from_index((chunk_idx - 1) as usize))),
+            _ => None,
         }
-        self.chunks[chunk_idx as usize].hex_vertices.clone()
     }
 
-    /// Get interior mesh for the given chunk
-    pub fn interior_mesh(&self, chunk_idx: u32) -> Option<IndexedMeshHandle> {
-        if chunk_idx >= 7 {
-            return None;
+    fn chunk_offset(&self, chunk_idx: u32) -> glam::Vec2 {
+        if chunk_idx == 0 {
+            glam::Vec2::ZERO
+        } else {
+            let neighbor_id = self.center.neighbor(HexFlatDir::from_index((chunk_idx - 1) as usize));
+            self.center.relative_world_position(neighbor_id)
         }
-        Some(self.chunks[chunk_idx as usize].interior.clone())
+    }
+
+    /// Returns 12 floats (6 vertices * 2 coords) for the given chunk
+    pub fn chunk_hex_vertices(&self, chunk_idx: u32) -> Vec<f32> {
+        use crate::math::quadrangulation::AnchorIndex;
+
+        let (Some(id), offset) = (self.chunk_id(chunk_idx), self.chunk_offset(chunk_idx)) else {
+            return vec![];
+        };
+        let Some(chunk) = self.world.chunk(id) else {
+            return vec![];
+        };
+
+        let mut vertices = Vec::with_capacity(12);
+        for i in 0..6 {
+            let vi = chunk.mesh.anchor_vertex(AnchorIndex::new(i));
+            let p = chunk.mesh.p(vi) + offset;
+            vertices.push(p.x);
+            vertices.push(p.y);
+        }
+        vertices
+    }
+
+    /// Get inner mesh for the given chunk
+    pub fn inner_mesh(&self, chunk_idx: u32) -> Option<IndexedMeshHandle> {
+        let (id, offset) = (self.chunk_id(chunk_idx)?, self.chunk_offset(chunk_idx));
+        let mut cells = self.world.inner_cells(id)?;
+        for i in (0..cells.vertices.len()).step_by(2) {
+            cells.vertices[i] += offset.x;
+            cells.vertices[i + 1] += offset.y;
+        }
+        Some(
+            IndexedMesh {
+                vertices: cells.vertices,
+                indices: cells.indices,
+                polygon_ranges: cells.polygon_ranges,
+                wire_indices: Vec::new(),
+                wire_ranges: Vec::new(),
+            }
+            .into(),
+        )
     }
 
     /// Get edge mesh for the given edge
@@ -46,7 +78,17 @@ impl WasmWorldNeighbors {
         if edge_idx >= 6 {
             return None;
         }
-        Some(self.edges[edge_idx as usize].clone())
+        let cells = self.world.edge_cells(self.center, HexFlatDir::from_index(edge_idx as usize))?;
+        Some(
+            IndexedMesh {
+                vertices: cells.vertices,
+                indices: cells.indices,
+                polygon_ranges: cells.polygon_ranges,
+                wire_indices: Vec::new(),
+                wire_ranges: Vec::new(),
+            }
+            .into(),
+        )
     }
 
     /// Get vertex mesh for the given vertex
@@ -54,55 +96,18 @@ impl WasmWorldNeighbors {
         if vertex_idx >= 6 {
             return None;
         }
-        Some(self.vertices[vertex_idx as usize].clone())
-    }
-}
-
-/// Extract 6 anchor vertices from chunk mesh, transform by offset, return as flat array
-fn extract_hex_vertices(chunk: &Chunk, offset: glam::Vec2) -> Vec<f32> {
-    use crate::math::quadrangulation::AnchorIndex;
-    let mut vertices = Vec::with_capacity(12);
-
-    for i in 0..6 {
-        let vi = chunk.mesh.anchor_vertex(AnchorIndex::new(i));
-        let p = chunk.mesh.p(vi) + offset;
-        vertices.push(p.x);
-        vertices.push(p.y);
-    }
-
-    vertices
-}
-
-/// Extract boundary edge dual polygons from world
-fn extract_edge_geometry(world: &World, center_id: ChunkId, edge_idx: usize) -> IndexedMesh {
-    match world.edge_cells(center_id, HexFlatDir::from_index(edge_idx)) {
-        Some(cells) => IndexedMesh {
-            vertices: cells.vertices,
-            indices: cells.indices,
-            polygon_ranges: cells.polygon_ranges,
-            wire_indices: Vec::new(),
-            wire_ranges: Vec::new(),
-        },
-        None => IndexedMesh::default(),
-    }
-}
-
-/// Extract boundary vertex (corner) dual polygon from world
-fn extract_vertex_geometry(world: &World, center_id: ChunkId, vertex_idx: usize) -> IndexedMesh {
-    match world.corner_cells(center_id, HexPointyDir::from_index(vertex_idx)) {
-        Some(cells) => {
-            let vertex_count = (cells.vertices.len() / 2) as u32;
-            let indices: Vec<u32> = (0..vertex_count).collect();
-            let polygon_ranges = vec![0, vertex_count];
+        let cells = self.world.corner_cells(self.center, HexPointyDir::from_index(vertex_idx as usize))?;
+        let vertex_count = (cells.vertices.len() / 2) as u32;
+        Some(
             IndexedMesh {
                 vertices: cells.vertices,
-                indices,
-                polygon_ranges,
+                indices: (0..vertex_count).collect(),
+                polygon_ranges: vec![0, vertex_count],
                 wire_indices: Vec::new(),
                 wire_ranges: Vec::new(),
             }
-        }
-        None => IndexedMesh::default(),
+            .into(),
+        )
     }
 }
 
@@ -112,55 +117,10 @@ pub fn generate_world_neighbors(center_q: i32, center_r: i32) -> Result<WasmWorl
     let mut world = World::new();
 
     let center = ChunkId(center_q, center_r);
-    let neighbor_ids: Vec<ChunkId> = (0..6).map(|n| center.neighbor(HexFlatDir::from_index(n))).collect();
-
-    // Initialize chunks
     world.init_chunk(center);
-    for neighbor_id in &neighbor_ids {
-        world.init_chunk(*neighbor_id);
+    for n in 0..6 {
+        world.init_chunk(center.neighbor(HexFlatDir::from_index(n)));
     }
 
-    let mut chunks = Vec::with_capacity(7);
-
-    //Process center chunk (index 0)
-    {
-        let chunk = world
-            .chunk(center)
-            .ok_or_else(|| JsValue::from_str("Center chunk not found"))?;
-        let offset = glam::Vec2::ZERO;
-        let hex_vertices = extract_hex_vertices(chunk, offset);
-        let interior = chunk.mesh.dual_extractor(offset).build_internal_mesh();
-        chunks.push(ChunkGeometry {
-            hex_vertices,
-            interior: interior.into(),
-        });
-    }
-
-    // Process 6 neighbor chunks (indices 1-6)
-    for neighbor_id in &neighbor_ids {
-        let chunk = world
-            .chunk(*neighbor_id)
-            .ok_or_else(|| JsValue::from_str("Neighbor chunk not found"))?;
-        let offset = center.relative_world_position(*neighbor_id);
-        let hex_vertices = extract_hex_vertices(chunk, offset);
-        let interior = chunk.mesh.dual_extractor(offset).build_internal_mesh();
-        chunks.push(ChunkGeometry {
-            hex_vertices,
-            interior: interior.into(),
-        });
-    }
-
-    let edges: Vec<IndexedMeshHandle> = (0..6)
-        .map(|edge_idx| extract_edge_geometry(&world, center, edge_idx).into())
-        .collect();
-
-    let vertices_geo: Vec<IndexedMeshHandle> = (0..6)
-        .map(|vertex_idx| extract_vertex_geometry(&world, center, vertex_idx).into())
-        .collect();
-
-    Ok(WasmWorldNeighbors {
-        chunks,
-        edges,
-        vertices: vertices_geo,
-    })
+    Ok(WasmWorldNeighbors { world, center })
 }

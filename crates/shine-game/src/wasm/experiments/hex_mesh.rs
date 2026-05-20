@@ -4,7 +4,7 @@ use crate::{
         prng::{StableRng, Xorshift32},
         quadrangulation::{Jitter, LaplacianSmoother, QuadFilter, QuadRelax, Quadrangulation, VertexRepulsion},
     },
-    wasm::dto::IndexedMeshHandle,
+    wasm::mesh::IndexedMeshHandle,
 };
 use glam::Vec2;
 use serde::Deserialize;

@@ -1,15 +1,14 @@
-use crate::world::{CornerCells, EdgeCells, InternalCells};
+use crate::world::{CornerCells, EdgeCells, InnerCells};
 use js_sys::{Float32Array, Uint32Array};
 use wasm_bindgen::prelude::*;
 
-/// Zero-copy WASM view over InternalCells.
+/// Zero-copy WASM view over InnerCells.
 /// All accessors return views into Wasm linear memory — clone on the JS side
-/// (e.g. `arr.slice()`) if the data must outlive this object or any further Wasm call.
 #[wasm_bindgen]
-pub struct InternalCellsView(InternalCells);
+pub struct InnerCellsHandle(InnerCells);
 
 #[wasm_bindgen]
-impl InternalCellsView {
+impl InnerCellsHandle {
     pub fn vertices(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.vertices) }
     }
@@ -27,20 +26,19 @@ impl InternalCellsView {
     }
 }
 
-impl From<InternalCells> for InternalCellsView {
-    fn from(data: InternalCells) -> Self {
+impl From<InnerCells> for InnerCellsHandle {
+    fn from(data: InnerCells) -> Self {
         Self(data)
     }
 }
 
 /// Zero-copy WASM view over EdgeCells.
 /// All accessors return views into Wasm linear memory — clone on the JS side
-/// (e.g. `arr.slice()`) if the data must outlive this object or any further Wasm call.
 #[wasm_bindgen]
-pub struct EdgeCellsView(EdgeCells);
+pub struct EdgeCellsHandle(EdgeCells);
 
 #[wasm_bindgen]
-impl EdgeCellsView {
+impl EdgeCellsHandle {
     pub fn vertices(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.vertices) }
     }
@@ -62,7 +60,7 @@ impl EdgeCellsView {
     }
 }
 
-impl From<EdgeCells> for EdgeCellsView {
+impl From<EdgeCells> for EdgeCellsHandle {
     fn from(data: EdgeCells) -> Self {
         Self(data)
     }
@@ -70,12 +68,11 @@ impl From<EdgeCells> for EdgeCellsView {
 
 /// Zero-copy WASM view over CornerCells.
 /// All accessors return views into Wasm linear memory — clone on the JS side
-/// (e.g. `arr.slice()`) if the data must outlive this object or any further Wasm call.
 #[wasm_bindgen]
-pub struct CornerCellsView(CornerCells);
+pub struct CornerCellsHandle(CornerCells);
 
 #[wasm_bindgen]
-impl CornerCellsView {
+impl CornerCellsHandle {
     pub fn vertices(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.vertices) }
     }
@@ -93,7 +90,7 @@ impl CornerCellsView {
     }
 }
 
-impl From<CornerCells> for CornerCellsView {
+impl From<CornerCells> for CornerCellsHandle {
     fn from(data: CornerCells) -> Self {
         Self(data)
     }

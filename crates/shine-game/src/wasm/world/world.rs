@@ -1,5 +1,6 @@
 use crate::{
     math::hex::{HexFlatDir, HexPointyDir},
+    wasm::world::{CornerCellsHandle, EdgeCellsHandle, InnerCellsHandle},
     world::{ChunkId, World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE},
 };
 use tracing::info_span;
@@ -38,5 +39,21 @@ impl WasmWorld {
         let chunk = ChunkId(q, r);
         let pos = reference.relative_world_position(chunk);
         vec![pos.x, pos.y]
+    }
+
+    pub fn inner_cells(&self, q: i32, r: i32) -> Option<InnerCellsHandle> {
+        self.world.inner_cells(ChunkId(q, r)).map(|c| c.into())
+    }
+
+    pub fn edge_cells(&self, q: i32, r: i32, edge_idx: u8) -> Option<EdgeCellsHandle> {
+        self.world
+            .edge_cells(ChunkId(q, r), HexFlatDir::from_index(edge_idx as usize))
+            .map(|c| c.into())
+    }
+
+    pub fn corner_cells(&self, q: i32, r: i32, vertex_idx: u8) -> Option<CornerCellsHandle> {
+        self.world
+            .corner_cells(ChunkId(q, r), HexPointyDir::from_index(vertex_idx as usize))
+            .map(|c| c.into())
     }
 }

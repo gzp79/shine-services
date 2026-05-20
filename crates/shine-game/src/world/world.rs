@@ -5,7 +5,7 @@ use crate::{
         prng::SplitMix64,
         quadrangulation::VertexIndex,
     },
-    world::{Chunk, ChunkId, CornerCells, EdgeCells, InternalCells},
+    world::{Chunk, ChunkId, CornerCells, EdgeCells, InnerCells},
 };
 use std::collections::HashMap;
 use tracing::info_span;
@@ -53,7 +53,7 @@ impl World {
         vec![offset.x, offset.y]
     }
 
-    pub fn internal_cells(&self, id: ChunkId) -> Option<InternalCells> {
+    pub fn inner_cells(&self, id: ChunkId) -> Option<InnerCells> {
         let _span = info_span!("internal_cells", id = ?id).entered();
         self.chunk(id).map(|chunk| chunk.cell_data())
     }
@@ -159,7 +159,7 @@ impl World {
         let mut vertices = Vec::new();
 
         for (id, chunk, corner) in [(id0, chunk0, v0), (id1, chunk1, v1), (id2, chunk2, v2)] {
-            let offset = id.relative_world_position(id);
+            let offset = id0.relative_world_position(id);
             let vi = chunk.boundary_corner_vertex(corner);
             for q in chunk.mesh.boundary_dual_vertices(vi) {
                 let pos = chunk.mesh.dual_p(q).unwrap() + offset;
