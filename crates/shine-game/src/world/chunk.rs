@@ -113,7 +113,7 @@ impl Chunk {
         InnerCells {
             vertices,
             indices,
-            polygon_ranges: ranges,
+            ranges,
             sites,
         }
     }

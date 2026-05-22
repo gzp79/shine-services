@@ -13,5 +13,5 @@ pub use self::{
     splitmix::SplitMix64,
     stable_rng::{StableRng, StableRngExt},
     system_rng::SysRng,
-    xorshift::Xorshift32,
+    xorshift::XorShift32,
 };

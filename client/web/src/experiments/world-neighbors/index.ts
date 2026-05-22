@@ -10,7 +10,10 @@ export interface WorldNeighborsExperiment {
     dispose(): void;
 }
 
-export async function createWorldNeighborsExperiment(container: HTMLElement, renderer: WebGPURenderer): Promise<WorldNeighborsExperiment> {
+export async function createWorldNeighborsExperiment(
+    container: HTMLElement,
+    renderer: WebGPURenderer
+): Promise<WorldNeighborsExperiment> {
     await init(wasmUrl);
 
     const ctx: ExperimentContext = createExperiment(container, renderer);

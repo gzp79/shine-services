@@ -1,6 +1,6 @@
+import { WebGPURenderer } from 'three/webgpu';
 import { InputController, type InputHandler } from '../../engine/input';
 import type { Delta, Point } from '../../engine/input';
-import { WebGPURenderer } from 'three/webgpu';
 import { ExperimentContext, animate, createExperiment } from '../experiment';
 
 export interface InputControlExperiment {
@@ -13,7 +13,10 @@ interface EventLogEntry {
     data: string;
 }
 
-export async function createInputControlExperiment(container: HTMLElement, renderer: WebGPURenderer): Promise<InputControlExperiment> {
+export async function createInputControlExperiment(
+    container: HTMLElement,
+    renderer: WebGPURenderer
+): Promise<InputControlExperiment> {
     const ctx: ExperimentContext = createExperiment(container, renderer, { addOrbitCamera: false });
 
     // Event log (max 12 entries, compact display)

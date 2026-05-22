@@ -6,6 +6,13 @@ use crate::{
 use tracing::info_span;
 use wasm_bindgen::prelude::*;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_WASM_WORLD: &str = r#"
+interface WasmWorld {
+    chunk_world_offset(ref_q: number, ref_r: number, q: number, r: number): [number, number];
+}
+"#;
+
 #[wasm_bindgen]
 pub struct WasmWorld {
     world: World,
@@ -34,6 +41,7 @@ impl WasmWorld {
         CELL_WORLD_SIZE
     }
 
+    #[wasm_bindgen(skip_typescript)]
     pub fn chunk_world_offset(&self, ref_q: i32, ref_r: i32, q: i32, r: i32) -> Vec<f32> {
         let reference = ChunkId(ref_q, ref_r);
         let chunk = ChunkId(q, r);

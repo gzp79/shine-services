@@ -1,6 +1,6 @@
 use crate::{
-    dto::IndexedMesh,
     math::quadrangulation::{Quadrangulation, VertexIndex},
+    mesh::WiredPolygonMesh,
 };
 use std::collections::HashMap;
 
@@ -40,7 +40,7 @@ impl<'a> PrimalExtractor<'a> {
     /// Extract quad indices as polygons (returns indices and ranges)
     pub fn extract_quads(&self) -> (Vec<u32>, Vec<u32>) {
         let mut indices = Vec::with_capacity(self.mesh.quad_count() * 4);
-        let mut polygon_ranges = Vec::with_capacity(self.mesh.quad_count() * 2);
+        let mut ranges = Vec::with_capacity(self.mesh.quad_count() * 2);
 
         for q in self.mesh.finite_quad_iter() {
             let start = indices.len() as u32;
@@ -48,14 +48,14 @@ impl<'a> PrimalExtractor<'a> {
                 indices.push(self.vert_map[v] as u32);
             }
             let end = indices.len() as u32;
-            polygon_ranges.push(start);
-            polygon_ranges.push(end);
+            ranges.push(start);
+            ranges.push(end);
         }
 
-        (indices, polygon_ranges)
+        (indices, ranges)
     }
 
-    /// Extract anchor edges as wire indices (returns wire_indices and ranges)
+    /// Extract anchor edges as wire indices (returns wire_indices and wire_ranges)
     pub fn extract_anchors(&self) -> (Vec<u32>, Vec<u32>) {
         let mut wire_indices = Vec::new();
         let mut wire_ranges = Vec::new();
@@ -71,15 +71,15 @@ impl<'a> PrimalExtractor<'a> {
         (wire_indices, wire_ranges)
     }
 
-    /// Build complete dual mesh of the internal (finite) quads
+    /// Build complete primal mesh of the internal (finite) quads
     #[must_use]
-    pub fn build_internal_mesh(mut self) -> IndexedMesh {
+    pub fn build_internal_mesh(mut self) -> WiredPolygonMesh {
         self.extract_vertices();
-        let (indices, polygon_ranges) = self.extract_quads();
-        IndexedMesh {
+        let (indices, ranges) = self.extract_quads();
+        WiredPolygonMesh {
             vertices: self.vertices,
             indices,
-            polygon_ranges,
+            ranges,
             wire_indices: Vec::new(),
             wire_ranges: Vec::new(),
         }
@@ -87,14 +87,14 @@ impl<'a> PrimalExtractor<'a> {
 
     /// Build complete mesh with quads and anchor wires
     #[must_use]
-    pub fn build_internal_mesh_with_anchors(mut self) -> IndexedMesh {
+    pub fn build_internal_mesh_with_anchors(mut self) -> WiredPolygonMesh {
         self.extract_vertices();
-        let (indices, polygon_ranges) = self.extract_quads();
+        let (indices, ranges) = self.extract_quads();
         let (wire_indices, wire_ranges) = self.extract_anchors();
-        IndexedMesh {
+        WiredPolygonMesh {
             vertices: self.vertices,
             indices,
-            polygon_ranges,
+            ranges,
             wire_indices,
             wire_ranges,
         }

@@ -1,37 +1,37 @@
+use crate::mesh::{AsPolygonMesh, AsWiredPolygonMesh};
 use glam::Vec2;
 
-/// Indexed mesh DTO for transferring geometry data
+/// Polygon mesh DTO for transferring geometry data
 #[derive(Debug, Clone, Default)]
-pub struct IndexedMesh {
+pub struct WiredPolygonMesh {
     /// Vertex positions packed as [x, y, x, y, ...]
     pub vertices: Vec<f32>,
     /// Polygon indices - flat index array
     pub indices: Vec<u32>,
     /// Index ranges [start0, end0, start1, end1, ...] pairs
-    pub polygon_ranges: Vec<u32>,
+    pub ranges: Vec<u32>,
     /// Wire line segments (empty if no wires)
     pub wire_indices: Vec<u32>,
     /// Wire index ranges [start0, end0, start1, end1, ...] pairs
     pub wire_ranges: Vec<u32>,
 }
 
-impl IndexedMesh {
+impl WiredPolygonMesh {
     pub fn from_polyline(polyline: &[Vec2]) -> Self {
-        let vertices = polyline.into_iter().flat_map(|v| vec![v.x, v.y]).collect();
+        let vertices = polyline.iter().flat_map(|v| [v.x, v.y]).collect();
         let indices = (0..polyline.len() as u32).collect();
-        let polygon_ranges = vec![0, polyline.len() as u32];
+        let ranges = vec![0, polyline.len() as u32];
 
         Self {
             vertices,
             indices,
-            polygon_ranges,
+            ranges,
             wire_indices: Vec::new(),
             wire_ranges: Vec::new(),
         }
     }
 
     /// Create a scoped appender that captures current offsets
-    /// Allows safe append of vertices, polygons, and wires in any order
     pub fn append(&mut self) -> MeshAppender<'_> {
         MeshAppender {
             vertex_offset: self.vertex_count() as u32,
@@ -41,26 +41,47 @@ impl IndexedMesh {
         }
     }
 
-    /// Get the current vertex count
     pub fn vertex_count(&self) -> usize {
         self.vertices.len() / 2
     }
 
-    /// Get polygon count
     pub fn polygon_count(&self) -> usize {
-        self.polygon_ranges.len() / 2
+        self.ranges.len() / 2
     }
 
-    /// Get wire count
     pub fn wire_count(&self) -> usize {
         self.wire_ranges.len() / 2
     }
 }
 
-/// Scoped appender for safely adding vertices, polygons, and wires to a mesh
-/// Captures offsets at creation, so append order doesn't matter
+impl AsPolygonMesh for WiredPolygonMesh {
+    fn vertices(&self) -> &[f32] {
+        &self.vertices
+    }
+
+    fn indices(&self) -> &[u32] {
+        &self.indices
+    }
+
+    fn ranges(&self) -> &[u32] {
+        &self.ranges
+    }
+}
+
+impl AsWiredPolygonMesh for WiredPolygonMesh {
+    fn wire_indices(&self) -> &[u32] {
+        &self.wire_indices
+    }
+
+    fn wire_ranges(&self) -> &[u32] {
+        &self.wire_ranges
+    }
+}
+
+/// Scoped appender for safely adding vertices, polygons, and wires to a mesh.
+/// Captures offsets at creation, so append order doesn't matter.
 pub struct MeshAppender<'a> {
-    mesh: &'a mut IndexedMesh,
+    mesh: &'a mut WiredPolygonMesh,
     vertex_offset: u32,
     index_offset: u32,
     wire_offset: u32,
@@ -73,37 +94,23 @@ impl<'a> MeshAppender<'a> {
         self
     }
 
-    /// Append polygon indices and ranges
-    /// Indices are offset by the initial vertex count
-    /// Ranges are offset by the initial index count
-    pub fn polygons(self, indices: &[u32], polygon_ranges: &[u32]) -> Self {
-        // Append indices with vertex offset
+    /// Append polygon indices and ranges (indices offset by vertex count, ranges by index count)
+    pub fn polygons(self, indices: &[u32], ranges: &[u32]) -> Self {
         self.mesh
             .indices
             .extend(indices.iter().map(|&idx| idx + self.vertex_offset));
-
-        // Append polygon ranges with index offset (every value is offset)
-        self.mesh
-            .polygon_ranges
-            .extend(polygon_ranges.iter().map(|&r| r + self.index_offset));
-
+        self.mesh.ranges.extend(ranges.iter().map(|&r| r + self.index_offset));
         self
     }
 
-    /// Append wire indices and ranges
-    /// Wire indices are offset by the initial vertex count
-    /// Wire ranges are offset by the initial wire index count
+    /// Append wire indices and ranges (wire indices offset by vertex count, ranges by wire count)
     pub fn wires(self, wire_indices: &[u32], wire_ranges: &[u32]) -> Self {
-        // Append wire indices with vertex offset
         self.mesh
             .wire_indices
             .extend(wire_indices.iter().map(|&idx| idx + self.vertex_offset));
-
-        // Append wire ranges with wire offset (every value is offset)
         self.mesh
             .wire_ranges
             .extend(wire_ranges.iter().map(|&r| r + self.wire_offset));
-
         self
     }
 }

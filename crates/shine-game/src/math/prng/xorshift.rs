@@ -2,16 +2,16 @@ use super::StableRng;
 
 /// Xorshift32 PRNG implementing StableRng.
 /// Simple, fast, deterministic — suitable for cross-platform reproducible generation.
-pub struct Xorshift32(u32);
+pub struct XorShift32(u32);
 
-impl Xorshift32 {
+impl XorShift32 {
     pub fn new(seed: u32) -> Self {
         // Avoid zero state which would produce all zeros
         Self(if seed == 0 { 1 } else { seed })
     }
 }
 
-impl StableRng for Xorshift32 {
+impl StableRng for XorShift32 {
     fn next_u32(&mut self) -> u32 {
         let mut x = self.0;
         x ^= x << 13;
@@ -34,7 +34,7 @@ mod test {
             4074949765,
         ];
 
-        let mut rng = Xorshift32::new(745541);
+        let mut rng = XorShift32::new(745541);
         for i in 0..10 {
             let val = rng.next_u32();
             assert_eq!(val, expected[i]);

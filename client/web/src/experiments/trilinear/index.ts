@@ -16,7 +16,10 @@ export interface TrilinearExperiment {
     dispose(): void;
 }
 
-export async function createTrilinearExperiment(container: HTMLElement, renderer: WebGPURenderer): Promise<TrilinearExperiment> {
+export async function createTrilinearExperiment(
+    container: HTMLElement,
+    renderer: WebGPURenderer
+): Promise<TrilinearExperiment> {
     const ctx: ExperimentContext = createExperiment(container, renderer);
 
     // File input UI

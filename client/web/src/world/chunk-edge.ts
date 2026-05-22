@@ -1,6 +1,5 @@
-import { WasmWorld } from '#wasm';
+import { EdgeCellsHandle, WasmWorld } from '#wasm';
 import * as THREE from 'three';
-import { PolygonData } from '../engine/mesh/geometry-data';
 import { PolygonWireMesh } from '../engine/mesh/polygon-wire-mesh';
 import { SelectionMesh } from '../engine/mesh/selection-mesh';
 import { ChunkId, HexFlatDir } from './chunk-id';
@@ -27,6 +26,7 @@ export class ChunkEdgeId {
 
 export class ChunkEdge {
     readonly group = new THREE.Group();
+    readonly cells: EdgeCellsHandle;
     private wireframe: PolygonWireMesh;
     private selection: SelectionMesh;
 
@@ -36,9 +36,9 @@ export class ChunkEdge {
         private readonly events: EventTarget
     ) {
         this.group.userData = { chunkEdgeId: id, chunkEdge: this };
-        const polygonData = this.buildPolygonData();
-        this.selection = new SelectionMesh(this.group, polygonData);
-        this.wireframe = new PolygonWireMesh(this.group, polygonData);
+        this.cells = world.edge_cells(id.chunkId.q, id.chunkId.r, id.edgeIdx)!;
+        this.selection = new SelectionMesh(this.group, this.cells);
+        this.wireframe = PolygonWireMesh.fromPolygons(this.group, this.cells);
     }
 
     init(referenceChunkId: ChunkId): void {
@@ -46,46 +46,19 @@ export class ChunkEdge {
         this.group.position.set(offset[0], offset[1], 0);
     }
 
-    worldOffset(ref: ChunkId): Float32Array {
+    worldOffset(ref: ChunkId): [number, number] {
         return this.world.chunk_world_offset(ref.q, ref.r, this.id.chunkId.q, this.id.chunkId.r);
     }
-
-    private buildPolygonData(): PolygonData {
-        const { q, r } = this.id.chunkId;
-        const edgeIdx = this.id.edgeIdx;
-        const vertices = this.world.boundary_edge_dual_polygon_vertices(q, r, edgeIdx);
-        const packed = this.world.boundary_edge_dual_polygons(q, r, edgeIdx);
-
-        if (packed.length === 0) {
-            return new PolygonData(new Float32Array(), new Uint32Array(0), new Uint32Array(0));
-        }
-
-        const startsLen = packed[0];
-        const starts = packed.slice(1, 1 + startsLen);
-        const indices = packed.slice(1 + startsLen);
-        return new PolygonData(vertices, indices, starts);
-    }
-
-    /*showSelectionAt(worldPos: THREE.Vector3): { cellId: number; localPos: THREE.Vector3 } | null {
-        const localPos = this.group.worldToLocal(worldPos.clone());
-        const vertIdx = this.findClosestVertex(localPos, this.selection.vertIdx);
-        if (vertIdx === -1) {
-            this.hideSelection();
-            return null;
-        }
-        this.selection.showAt(vertIdx);
-        return { cellId: vertIdx, localPos };
-    }*/
 
     hideSelection(): void {
         this.selection.hide();
     }
 
-    get showPolygonWire(): boolean {
-        return this.wireframe.isVisible;
+    get showCellWires(): boolean {
+        return this.wireframe.isVisible();
     }
 
-    set showPolygonWire(value: boolean) {
+    set showCellWires(value: boolean) {
         if (value) this.wireframe.show();
         else this.wireframe.hide();
     }
@@ -93,50 +66,6 @@ export class ChunkEdge {
     dispose(): void {
         this.selection.dispose();
         this.wireframe.dispose();
+        this.cells.free();
     }
-
-    /*private findClosestVertex(localPoint: THREE.Vector3, currentVertIdx: number): number {
-        // TODO: Port exact logic from Chunk.findClosestVertex for consistent behavior
-        // Simplified implementation for now
-        if (this.polygonData.vertices.length === 0) return -1;
-
-        // Find closest vertex by checking distance to each polygon center
-        let closestIdx = 0;
-        let closestDist = Infinity;
-
-        for (let vi = 0; vi < this.polygonData.starts.length - 1; vi++) {
-            const start = this.polygonData.starts[vi];
-            const end = this.polygonData.starts[vi + 1];
-            if (end <= start) continue;
-
-            // Get polygon center (average of vertices)
-            let cx = 0,
-                cy = 0;
-            let count = 0;
-            for (let i = start; i < end; i++) {
-                const idx = this.polygonData.indices[i];
-                cx += this.polygonData.vertices[idx * 2];
-                cy += this.polygonData.vertices[idx * 2 + 1];
-                count++;
-            }
-            if (count > 0) {
-                cx /= count;
-                cy /= count;
-                const dx = cx - localPoint.x;
-                const dy = cy - localPoint.y;
-                const dist = dx * dx + dy * dy;
-                if (dist < closestDist) {
-                    closestDist = dist;
-                    closestIdx = vi;
-                }
-            }
-        }
-
-        // Hysteresis: only switch if significantly closer
-        if (currentVertIdx >= 0 && closestDist > 100) {
-            return currentVertIdx;
-        }
-
-        return closestDist < 1000 ? closestIdx : -1;
-    }*/
 }

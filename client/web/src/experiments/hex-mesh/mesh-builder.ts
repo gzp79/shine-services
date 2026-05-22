@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { span } from '../../engine/utils';
+import type { WiredPolygonMeshHandle } from '../../wasm-types/shine_game';
 import { disposeMesh } from '../experiment';
-import type { IndexedMeshHandle } from '../../wasm-types/shine_game';
 
 const EDGE_COLOR = 0x222222;
 const DUAL_EDGE_COLOR = 0x222222;
@@ -17,10 +17,10 @@ export interface HexMeshGroup {
     dispose: () => void;
 }
 
-function buildPrimalMesh(primal: IndexedMeshHandle): THREE.Mesh {
-    const vertices = primal.vertices();
-    const quad_indices = primal.indices();
-    const quad_ranges = primal.polygon_ranges();
+function buildPrimalMesh(primal: WiredPolygonMeshHandle): THREE.Mesh {
+    const vertices = primal.vertices;
+    const quad_indices = primal.indices;
+    const quad_ranges = primal.ranges;
 
     const primalPositions: number[] = [];
     const primalColors: number[] = [];
@@ -62,10 +62,10 @@ function buildPrimalMesh(primal: IndexedMeshHandle): THREE.Mesh {
     return new THREE.Mesh(geom, mat);
 }
 
-function buildPrimalWire(primal: IndexedMeshHandle): THREE.LineSegments {
-    const vertices = primal.vertices();
-    const quad_indices = primal.indices();
-    const quad_ranges = primal.polygon_ranges();
+function buildPrimalWire(primal: WiredPolygonMeshHandle): THREE.LineSegments {
+    const vertices = primal.vertices;
+    const quad_indices = primal.indices;
+    const quad_ranges = primal.ranges;
 
     const positions: number[] = [];
 
@@ -87,10 +87,10 @@ function buildPrimalWire(primal: IndexedMeshHandle): THREE.LineSegments {
     return new THREE.LineSegments(geom, mat);
 }
 
-function buildDualMesh(dual: IndexedMeshHandle): THREE.Mesh {
-    const dual_vertices = dual.vertices();
-    const dual_indices = dual.indices();
-    const dual_ranges = dual.polygon_ranges();
+function buildDualMesh(dual: WiredPolygonMeshHandle): THREE.Mesh {
+    const dual_vertices = dual.vertices;
+    const dual_indices = dual.indices;
+    const dual_ranges = dual.ranges;
 
     const positions: number[] = [];
     const colors: number[] = [];
@@ -131,10 +131,10 @@ function buildDualMesh(dual: IndexedMeshHandle): THREE.Mesh {
     return mesh;
 }
 
-function buildDualWire(dual: IndexedMeshHandle): THREE.LineSegments {
-    const dual_vertices = dual.vertices();
-    const dual_indices = dual.indices();
-    const dual_ranges = dual.polygon_ranges();
+function buildDualWire(dual: WiredPolygonMeshHandle): THREE.LineSegments {
+    const dual_vertices = dual.vertices;
+    const dual_indices = dual.indices;
+    const dual_ranges = dual.ranges;
 
     const positions: number[] = [];
 
@@ -167,10 +167,10 @@ function buildDualWire(dual: IndexedMeshHandle): THREE.LineSegments {
     return lines;
 }
 
-function buildAnchorWire(primal: IndexedMeshHandle): THREE.LineSegments {
-    const vertices = primal.vertices();
-    const anchor_indices = primal.wire_indices();
-    const anchor_ranges = primal.wire_ranges();
+function buildAnchorWire(primal: WiredPolygonMeshHandle): THREE.LineSegments {
+    const vertices = primal.vertices;
+    const anchor_indices = primal.wire_indices;
+    const anchor_ranges = primal.wire_ranges;
 
     const positions: number[] = [];
     const colors: number[] = [];
@@ -191,7 +191,14 @@ function buildAnchorWire(primal: IndexedMeshHandle): THREE.LineSegments {
         for (let i = 0; i < edgeSize - 1; i++) {
             const idx0 = anchor_indices[start + i];
             const idx1 = anchor_indices[start + i + 1];
-            positions.push(vertices[idx0 * 2], vertices[idx0 * 2 + 1], 0.01, vertices[idx1 * 2], vertices[idx1 * 2 + 1], 0.01);
+            positions.push(
+                vertices[idx0 * 2],
+                vertices[idx0 * 2 + 1],
+                0.01,
+                vertices[idx1 * 2],
+                vertices[idx1 * 2 + 1],
+                0.01
+            );
             colors.push(color.r, color.g, color.b, color.r, color.g, color.b);
         }
     }
@@ -205,10 +212,10 @@ function buildAnchorWire(primal: IndexedMeshHandle): THREE.LineSegments {
     return lines;
 }
 
-function buildAnchorVertices(primal: IndexedMeshHandle): THREE.InstancedMesh {
-    const vertices = primal.vertices();
-    const anchor_indices = primal.wire_indices();
-    const anchor_ranges = primal.wire_ranges();
+function buildAnchorVertices(primal: WiredPolygonMeshHandle): THREE.InstancedMesh {
+    const vertices = primal.vertices;
+    const anchor_indices = primal.wire_indices;
+    const anchor_ranges = primal.wire_ranges;
 
     const positions: number[] = [];
     const colors: number[] = [];
@@ -253,7 +260,7 @@ function buildAnchorVertices(primal: IndexedMeshHandle): THREE.InstancedMesh {
     return instancedMesh;
 }
 
-export function buildHexMesh(primal: IndexedMeshHandle, dual: IndexedMeshHandle): HexMeshGroup {
+export function buildHexMesh(primal: WiredPolygonMeshHandle, dual: WiredPolygonMeshHandle): HexMeshGroup {
     const group = new THREE.Group();
 
     let primalMesh: THREE.Mesh;
@@ -297,12 +304,24 @@ export function buildHexMesh(primal: IndexedMeshHandle, dual: IndexedMeshHandle)
 
     return {
         group,
-        setPrimalMeshVisible: (visible: boolean) => { primalMesh.visible = visible; },
-        setPrimalWireVisible: (visible: boolean) => { primalWireMesh.visible = visible; },
-        setDualMeshVisible: (visible: boolean) => { dualMesh.visible = visible; },
-        setDualWireVisible: (visible: boolean) => { dualWireMesh.visible = visible; },
-        setAnchorVisible: (visible: boolean) => { anchorWireMesh.visible = visible; },
-        setAnchorVerticesVisible: (visible: boolean) => { anchorVertexMesh.visible = visible; },
+        setPrimalMeshVisible: (visible: boolean) => {
+            primalMesh.visible = visible;
+        },
+        setPrimalWireVisible: (visible: boolean) => {
+            primalWireMesh.visible = visible;
+        },
+        setDualMeshVisible: (visible: boolean) => {
+            dualMesh.visible = visible;
+        },
+        setDualWireVisible: (visible: boolean) => {
+            dualWireMesh.visible = visible;
+        },
+        setAnchorVisible: (visible: boolean) => {
+            anchorWireMesh.visible = visible;
+        },
+        setAnchorVerticesVisible: (visible: boolean) => {
+            anchorVertexMesh.visible = visible;
+        },
         dispose: () => {
             disposeMesh(primalMesh);
             disposeMesh(primalWireMesh);

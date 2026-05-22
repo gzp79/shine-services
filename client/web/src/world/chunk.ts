@@ -1,10 +1,7 @@
-import { WasmWorld } from '#wasm';
+import { InnerCellsHandle, WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { EventSubscriptions } from '../engine/events';
-import { PolygonData } from '../engine/mesh/geometry-data';
 import { PolygonWireMesh } from '../engine/mesh/polygon-wire-mesh';
-import { SelectionMesh } from '../engine/mesh/selection-mesh';
-import { span } from '../engine/utils';
 import { ChunkId } from './chunk-id';
 
 export class InternalCell {
@@ -19,11 +16,10 @@ export class InternalCell {
 
 export class Chunk {
     readonly group = new THREE.Group();
-    readonly cells: InternalCell[];
-    
+    readonly innerCells: InnerCellsHandle;
+
     private label: THREE.Sprite | null = null;
-    private selection: SelectionMesh;
-    private wireframe: PolygonWireMesh;
+    private cellWires: PolygonWireMesh | null = null;
     private subscription: EventSubscriptions;
 
     constructor(
@@ -32,10 +28,8 @@ export class Chunk {
         private readonly events: EventTarget
     ) {
         this.group.userData = { chunkId: { q: id.q, r: id.r }, chunk: this };
-        this.cells = Chunk.buildInternalCells(this.world.chunk_quad_vertices(id.q, id.r));
-        const dualPolygons = this.dualPolygons();
-        this.selection = new SelectionMesh(this.group, dualPolygons);
-        this.wireframe = new PolygonWireMesh(this.group, dualPolygons);
+        this.innerCells = world.inner_cells(id.q, id.r)!;
+        //this.selection = new SelectionMesh(this.group, dualPolygons);
 
         // Subscribe to focus change events
         this.subscription = new EventSubscriptions(events);
@@ -45,14 +39,16 @@ export class Chunk {
         const offset = this.worldOffset(referenceChunkId);
         this.group.position.set(offset[0], offset[1], 0);
 
-        this.buildMesh();
+        if (this.showCellWires) {
+            this.buildCellWires();
+        }
     }
 
     dispose(): void {
-        this.disposeMesh();
+        //this.selection.dispose();
         this.disposeLabel();
-        this.selection.dispose();
-        this.wireframe.dispose();
+        this.cellWires?.dispose();
+        this.innerCells.free();
     }
 
     get showLabel(): boolean {
@@ -67,19 +63,20 @@ export class Chunk {
         }
     }
 
-    get showPolygonWire(): boolean {
-        return this.wireframe.isVisible;
+    get showCellWires(): boolean {
+        return this.cellWires?.isVisible() ?? false;
     }
 
-    set showPolygonWire(value: boolean) {
+    set showCellWires(value: boolean) {
         if (value) {
-            this.wireframe.show();
+            this.buildCellWires();
         } else {
-            this.wireframe.hide();
+            this.cellWires?.dispose();
+            this.cellWires = null;
         }
     }
 
-    showSelectionAt(worldPos: THREE.Vector3): { cellId: number; localPos: THREE.Vector3 } | null {
+    /*showSelectionAt(worldPos: THREE.Vector3): { cellId: number; localPos: THREE.Vector3 } | null {
         const localPos = this.group.worldToLocal(worldPos.clone());
         const vertIdx = this.findClosestVertex(localPos, this.selection.vertIdx);
         if (vertIdx === -1) {
@@ -93,38 +90,13 @@ export class Chunk {
 
     hideSelection(): void {
         this.selection.hide();
-    }
+    }*/
 
-    quadData(): QuadData {
-        using _s = span('quadData');
-        return new QuadData(
-            this.world.chunk_quad_vertices(this.id.q, this.id.r),
-            this.world.chunk_quad_indices(this.id.q, this.id.r),
-            this.world.chunk_boundary_indices(this.id.q, this.id.r)
-        );
-    }
-
-    dualPolygons(): PolygonData {
-        using _s = span('dualPolygons');
-        const vertices = this.world.chunk_dual_vertices(this.id.q, this.id.r);
-        const packed = this.world.chunk_dual_polygons(this.id.q, this.id.r);
-
-        if (packed.length === 0) {
-            return new PolygonData(vertices, new Uint32Array(0), new Uint32Array(0));
-        }
-
-        const startsLen = packed[0];
-        const starts = packed.slice(1, 1 + startsLen);
-        const indices = packed.slice(1 + startsLen);
-
-        return new PolygonData(vertices, indices, starts);
-    }
-
-    worldOffset(ref: ChunkId): Float32Array {
+    worldOffset(ref: ChunkId): [number, number] {
         return this.world.chunk_world_offset(ref.q, ref.r, this.id.q, this.id.r);
     }
 
-    private findClosestVertex(localPoint: THREE.Vector3, currentVertIdx: number): number {
+    /*private findClosestVertex(localPoint: THREE.Vector3, currentVertIdx: number): number {
         const vertices = this.world.chunk_quad_vertices(this.id.q, this.id.r);
         if (vertices.length === 0) return -1;
 
@@ -159,16 +131,7 @@ export class Chunk {
         }
 
         return closestIdx;
-    }
-
-    /** Simple hash for deterministic debug color. */
-    private chunkHash(): number {
-        let h = ((this.id.q | 0) * 0x9e3779b9 + (this.id.r | 0)) >>> 0;
-        h ^= h >>> 16;
-        h = Math.imul(h, 0x45d9f3b) >>> 0;
-        h ^= h >>> 16;
-        return h;
-    }
+    }*/
 
     private createLabel(): void {
         if (this.label) return;
@@ -202,15 +165,6 @@ export class Chunk {
         this.group.add(this.label);
     }
 
-    private static buildInternalCells(vertices: Float32Array): InternalCell[] {
-        const count = vertices.length / 2;
-        const cells: InternalCell[] = new Array(count);
-        for (let i = 0; i < count; i++) {
-            cells[i] = new InternalCell(i, vertices[i * 2], vertices[i * 2 + 1]);
-        }
-        return cells;
-    }
-
     private disposeLabel(): void {
         if (!this.label) return;
 
@@ -219,5 +173,14 @@ export class Chunk {
         material.map?.dispose();
         material.dispose();
         this.label = null;
+    }
+
+    private buildCellWires(): void {
+        if (this.cellWires !== null) {
+            return;
+        }
+
+        this.cellWires = PolygonWireMesh.fromPolygons(this.group, this.innerCells);
+        this.cellWires.show();
     }
 }

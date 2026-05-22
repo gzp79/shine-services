@@ -19,9 +19,15 @@ export class RenderContext {
     private readonly canvas: HTMLCanvasElement;
     private _mousePosition = new THREE.Vector2(-1, -1);
 
-    get width(): number { return this._width; }
-    get height(): number { return this._height; }
-    get mousePosition(): THREE.Vector2 { return this._mousePosition; }
+    get width(): number {
+        return this._width;
+    }
+    get height(): number {
+        return this._height;
+    }
+    get mousePosition(): THREE.Vector2 {
+        return this._mousePosition;
+    }
 
     constructor(container: HTMLElement, events: EventTarget, renderer: WebGPURenderer) {
         this.dispatcher = new EventDispatcher(events);

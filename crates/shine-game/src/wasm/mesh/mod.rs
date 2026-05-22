@@ -1,3 +1,3 @@
-mod indexed_mesh;
+mod wired_polygon_mesh;
 
-pub use self::indexed_mesh::IndexedMeshHandle;
+pub use self::wired_polygon_mesh::WiredPolygonMeshHandle;

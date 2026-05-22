@@ -11,7 +11,10 @@ export interface HexMeshExperiment {
     dispose(): void;
 }
 
-export async function createHexMeshExperiment(container: HTMLElement, renderer: WebGPURenderer): Promise<HexMeshExperiment> {
+export async function createHexMeshExperiment(
+    container: HTMLElement,
+    renderer: WebGPURenderer
+): Promise<HexMeshExperiment> {
     await init(wasmUrl);
 
     const ctx: ExperimentContext = createExperiment(container, renderer);

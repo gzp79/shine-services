@@ -1,8 +1,8 @@
 use crate::{
-    dto::IndexedMesh,
     indexed::TypedIndex,
     math::hex::{HexFlatDir, HexPointyDir},
-    wasm::mesh::IndexedMeshHandle,
+    mesh::WiredPolygonMesh,
+    wasm::mesh::WiredPolygonMeshHandle,
     world::{ChunkId, World},
 };
 use wasm_bindgen::prelude::*;
@@ -54,7 +54,7 @@ impl WasmWorldNeighbors {
     }
 
     /// Get inner mesh for the given chunk
-    pub fn inner_mesh(&self, chunk_idx: u32) -> Option<IndexedMeshHandle> {
+    pub fn inner_mesh(&self, chunk_idx: u32) -> Option<WiredPolygonMeshHandle> {
         let (id, offset) = (self.chunk_id(chunk_idx)?, self.chunk_offset(chunk_idx));
         let mut cells = self.world.inner_cells(id)?;
         for i in (0..cells.vertices.len()).step_by(2) {
@@ -62,10 +62,10 @@ impl WasmWorldNeighbors {
             cells.vertices[i + 1] += offset.y;
         }
         Some(
-            IndexedMesh {
+            WiredPolygonMesh {
                 vertices: cells.vertices,
                 indices: cells.indices,
-                polygon_ranges: cells.polygon_ranges,
+                ranges: cells.ranges,
                 wire_indices: Vec::new(),
                 wire_ranges: Vec::new(),
             }
@@ -74,16 +74,18 @@ impl WasmWorldNeighbors {
     }
 
     /// Get edge mesh for the given edge
-    pub fn edge_mesh(&self, edge_idx: u32) -> Option<IndexedMeshHandle> {
+    pub fn edge_mesh(&self, edge_idx: u32) -> Option<WiredPolygonMeshHandle> {
         if edge_idx >= 6 {
             return None;
         }
-        let cells = self.world.edge_cells(self.center, HexFlatDir::from_index(edge_idx as usize))?;
+        let cells = self
+            .world
+            .edge_cells(self.center, HexFlatDir::from_index(edge_idx as usize))?;
         Some(
-            IndexedMesh {
+            WiredPolygonMesh {
                 vertices: cells.vertices,
                 indices: cells.indices,
-                polygon_ranges: cells.polygon_ranges,
+                ranges: cells.ranges,
                 wire_indices: Vec::new(),
                 wire_ranges: Vec::new(),
             }
@@ -92,17 +94,18 @@ impl WasmWorldNeighbors {
     }
 
     /// Get vertex mesh for the given vertex
-    pub fn vertex_mesh(&self, vertex_idx: u32) -> Option<IndexedMeshHandle> {
+    pub fn vertex_mesh(&self, vertex_idx: u32) -> Option<WiredPolygonMeshHandle> {
         if vertex_idx >= 6 {
             return None;
         }
-        let cells = self.world.corner_cells(self.center, HexPointyDir::from_index(vertex_idx as usize))?;
-        let vertex_count = (cells.vertices.len() / 2) as u32;
+        let cells = self
+            .world
+            .corner_cells(self.center, HexPointyDir::from_index(vertex_idx as usize))?;
         Some(
-            IndexedMesh {
-                vertices: cells.vertices,
-                indices: (0..vertex_count).collect(),
-                polygon_ranges: vec![0, vertex_count],
+            WiredPolygonMesh {
+                vertices: cells.vertices.clone(),
+                indices: cells.indices.clone(),
+                ranges: cells.ranges.to_vec(),
                 wire_indices: Vec::new(),
                 wire_ranges: Vec::new(),
             }

@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn boundary_points_form_convex_hull() {
         for subdivision in 1u32..10 {
-            let mesher = CdtMesher::new(subdivision, 0, crate::math::prng::Xorshift32::new(1).into_rc());
+            let mesher = CdtMesher::new(subdivision, 0, crate::math::prng::XorShift32::new(1).into_rc());
 
             let mut points = Vec::new();
             mesher.create_boundary_points(&mut points);

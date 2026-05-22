@@ -1,10 +1,10 @@
 use crate::{
     math::{
         hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
-        prng::{StableRng, Xorshift32},
+        prng::{StableRng, XorShift32},
         quadrangulation::{Jitter, LaplacianSmoother, QuadFilter, QuadRelax, Quadrangulation, VertexRepulsion},
     },
-    wasm::mesh::IndexedMeshHandle,
+    wasm::mesh::WiredPolygonMeshHandle,
 };
 use glam::Vec2;
 use serde::Deserialize;
@@ -55,37 +55,36 @@ enum FilterConfig {
 }
 
 #[wasm_bindgen]
-pub struct WasmPatchMesh {
+pub struct WasmHexMesh {
     world_size: f32,
-    primal: IndexedMeshHandle,
-    dual: IndexedMeshHandle,
+    mesh: Quadrangulation,
 }
 
 #[wasm_bindgen]
-impl WasmPatchMesh {
+impl WasmHexMesh {
     pub fn world_size(&self) -> f32 {
         self.world_size
     }
 
-    /// Get the primal mesh (quads with anchor edges as wires)
-    pub fn primal(&self) -> IndexedMeshHandle {
-        self.primal.clone()
+    pub fn primal(&self) -> WiredPolygonMeshHandle {
+        self.mesh
+            .primal_extractor(Vec2::ZERO)
+            .build_internal_mesh_with_anchors()
+            .into()
     }
 
-    /// Get the dual mesh (dual polygons)
-    pub fn dual(&self) -> IndexedMeshHandle {
-        self.dual.clone()
+    pub fn dual(&self) -> WiredPolygonMeshHandle {
+        self.mesh.dual_extractor(Vec2::ZERO).build_internal_mesh().into()
     }
 }
 
 /// Generate a hex quad mesh from a JSON config string.
 #[wasm_bindgen]
-pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
+pub fn generate_mesh(config_json: &str) -> Result<WasmHexMesh, JsValue> {
     let config: MeshConfig = serde_json::from_str(config_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     let world_size = config.world_size;
 
-    // Step 1: Generate base mesh from selected mesher
     let (mut mesh, _subdivision) = match config.mesher {
         MesherConfig::Patch { subdivision, orientation } => {
             let orient = match orientation.as_str() {
@@ -97,12 +96,12 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
             (mesher.generate_subdivision(), subdivision)
         }
         MesherConfig::Cdt { subdivision, interior_points } => {
-            let rng = Xorshift32::new(config.seed).into_rc();
+            let rng = XorShift32::new(config.seed).into_rc();
             let mut mesher = CdtMesher::new(subdivision, interior_points, rng).with_size(world_size);
             (mesher.generate(), subdivision)
         }
         MesherConfig::Lattice { subdivision } => {
-            let rng = Xorshift32::new(config.seed).into_rc();
+            let rng = XorShift32::new(config.seed).into_rc();
             let mut mesher = LatticeMesher::new(subdivision, rng).with_size(world_size);
             (mesher.generate(), subdivision)
         }
@@ -126,7 +125,7 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
         let mut filter: Box<dyn QuadFilter> = match filter_cfg {
             FilterConfig::Laplacian { iterations, strength } => Box::new(LaplacianSmoother::new(strength, iterations)),
             FilterConfig::Jitter { amplitude } => {
-                let rng = Xorshift32::new(config.seed);
+                let rng = XorShift32::new(config.seed);
                 Box::new(Jitter::new(amplitude, rng))
             }
             FilterConfig::QuadRelax { quality, strength, iterations } => {
@@ -140,23 +139,5 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
         filter.apply(&mut mesh);
     }
 
-    Ok(quad_mesh_to_wasm(&mesh, world_size))
-}
-
-fn quad_mesh_to_wasm(mesh: &Quadrangulation, world_size: f32) -> WasmPatchMesh {
-    let _span = info_span!("quad_mesh_to_wasm").entered();
-    let primal = {
-        let _span = info_span!("primal_extractor").entered();
-        mesh.primal_extractor(Vec2::ZERO).build_internal_mesh_with_anchors()
-    };
-    let dual = {
-        let _span = info_span!("dual_extractor").entered();
-        mesh.dual_extractor(Vec2::ZERO).build_internal_mesh()
-    };
-
-    WasmPatchMesh {
-        world_size,
-        primal: primal.into(),
-        dual: dual.into(),
-    }
+    Ok(WasmHexMesh { world_size, mesh })
 }

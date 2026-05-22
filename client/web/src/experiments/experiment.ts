@@ -21,7 +21,11 @@ export async function createSharedRenderer(): Promise<WebGPURenderer> {
     return renderer;
 }
 
-export function createExperiment(container: HTMLElement, renderer: WebGPURenderer, options?: ExperimentOption): ExperimentContext {
+export function createExperiment(
+    container: HTMLElement,
+    renderer: WebGPURenderer,
+    options?: ExperimentOption
+): ExperimentContext {
     const addOrbitCamera = options?.addOrbitCamera ?? true;
 
     const scene = new THREE.Scene();

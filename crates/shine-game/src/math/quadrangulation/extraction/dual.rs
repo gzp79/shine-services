@@ -1,6 +1,6 @@
 use crate::{
-    dto::IndexedMesh,
     math::quadrangulation::{QuadIndex, Quadrangulation},
+    mesh::WiredPolygonMesh,
 };
 use std::collections::HashMap;
 
@@ -42,7 +42,7 @@ impl<'a> DualExtractor<'a> {
     /// Extract dual polygons (one per interior primal vertex)
     pub fn extract_polygons(&self) -> (Vec<u32>, Vec<u32>) {
         let mut indices = Vec::new();
-        let mut polygon_ranges = Vec::new();
+        let mut ranges = Vec::new();
 
         for vi in self.mesh.finite_vertex_index_iter() {
             // Skip boundary vertices (they touch ghost quads)
@@ -52,7 +52,6 @@ impl<'a> DualExtractor<'a> {
 
             let start = indices.len() as u32;
 
-            // Collect indices of finite quads around this vertex
             for qv in self.mesh.vertex_ring_ccw(vi) {
                 if !self.mesh.is_infinite_quad(qv.quad) {
                     let &dual_idx = self.quad_map.get(&qv.quad).expect("QuadIndex should be in quad_map");
@@ -61,22 +60,22 @@ impl<'a> DualExtractor<'a> {
             }
 
             let end = indices.len() as u32;
-            polygon_ranges.push(start);
-            polygon_ranges.push(end);
+            ranges.push(start);
+            ranges.push(end);
         }
 
-        (indices, polygon_ranges)
+        (indices, ranges)
     }
 
     /// Build complete dual mesh of the internal (finite) polygons
     #[must_use]
-    pub fn build_internal_mesh(mut self) -> IndexedMesh {
+    pub fn build_internal_mesh(mut self) -> WiredPolygonMesh {
         self.extract_vertices();
-        let (indices, polygon_ranges) = self.extract_polygons();
-        IndexedMesh {
+        let (indices, ranges) = self.extract_polygons();
+        WiredPolygonMesh {
             vertices: self.vertices,
             indices,
-            polygon_ranges,
+            ranges,
             wire_indices: Vec::new(),
             wire_ranges: Vec::new(),
         }

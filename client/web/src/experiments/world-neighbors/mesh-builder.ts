@@ -134,9 +134,9 @@ export function buildInteriorMeshes(data: WasmWorldNeighbors): ToggleableGroup {
         const chunkGroup = new THREE.Group();
 
         if (meshData) {
-            const vertices = meshData.vertices();
-            const indices = meshData.indices();
-            const ranges = meshData.polygon_ranges();
+            const vertices = meshData.vertices;
+            const indices = meshData.indices;
+            const ranges = meshData.ranges;
 
             if (vertices.length > 0) {
                 // Color coding: HSL wheel
@@ -191,9 +191,9 @@ export function buildEdgeMeshes(data: WasmWorldNeighbors): ToggleableGroup {
         const edgeGroup = new THREE.Group();
 
         if (meshData) {
-            const vertices = meshData.vertices();
-            const indices = meshData.indices();
-            const ranges = meshData.polygon_ranges();
+            const vertices = meshData.vertices;
+            const indices = meshData.indices;
+            const ranges = meshData.ranges;
 
             if (vertices.length > 0) {
                 // Color coding: HSL wheel
@@ -248,9 +248,9 @@ export function buildVertexMeshes(data: WasmWorldNeighbors): ToggleableGroup {
         const vertexGroup = new THREE.Group();
 
         if (meshData) {
-            const vertices = meshData.vertices();
-            const indices = meshData.indices();
-            const ranges = meshData.polygon_ranges();
+            const vertices = meshData.vertices;
+            const indices = meshData.indices;
+            const ranges = meshData.ranges;
 
             if (vertices.length > 0) {
                 // Color coding: HSL wheel

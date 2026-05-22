@@ -13,16 +13,16 @@
         }
     },
     "scripts": {
-        "dev": "pnpm wasm && vite",
+        "dev": "pnpm build:wasm && vite",
         "build": "tsc && vite build",
-        "wasm": "wasm-pack build ../../crates/shine-game --target web --out-dir ../../client/web/pkg",
-        "postwasm": "node -e \"require('fs').copyFileSync('pkg/shine_game.d.ts', 'src/wasm-types/shine_game.d.ts')\"",
+        "build:wasm": "wasm-pack build ../../crates/shine-game --target web --out-dir ../../client/web/pkg && pnpm run post:wasm",
         "format": "prettier --write .",
         "test": "vitest run",
         "lint": "pnpm run lint:format && pnpm run lint:eslint && pnpm run lint:build",
         "lint:format": "prettier --check .",
         "lint:eslint": "eslint .",
-        "lint:build": "tsc -b --noEmit"
+        "lint:build": "tsc -b --noEmit",
+        "post:wasm": "node -e \"require('fs').copyFileSync('pkg/shine_game.d.ts', 'src/wasm-types/shine_game.d.ts')\""
     },
     "dependencies": {
         "lil-gui": "^0.20.0",

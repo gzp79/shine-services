@@ -2,10 +2,10 @@ import init, { generate_cdt } from '#wasm';
 import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
 import { span } from '../../engine/utils';
+import type { WasmCdtMesh } from '../../wasm-types/shine_game';
 import { ExperimentContext, animate, createExperiment } from '../experiment';
 import { cdtParamsToJson, createCdtControls, defaultCdtParams } from './controls';
 import { CdtMeshGroup, buildCdtMesh, buildCircumcenterMesh } from './mesh-builder';
-import type { CdtMeshHandle } from '../../wasm-types/shine_game';
 
 export interface CdtExperiment {
     dispose(): void;
@@ -24,7 +24,7 @@ export async function createCdtExperiment(container: HTMLElement, renderer: WebG
     ctx.controls?.update();
 
     const params = defaultCdtParams();
-    let currentCdtHandle: CdtMeshHandle | null = null;
+    let currentCdtHandle: WasmCdtMesh | null = null;
     let currentMesh: CdtMeshGroup | null = null;
     let circumcenterMesh: CdtMeshGroup | null = null;
     let activeTriangleIndex = -1;

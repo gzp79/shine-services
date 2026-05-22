@@ -36,7 +36,7 @@ export class World {
     private readonly subscriptions: EventSubscriptions;
     private readonly debugPanel: DebugPanel;
     private _showChunkLabels = false;
-    private _showPolygonWire = false;
+    private _showCellWires = false;
     private pendingChunkUpdate: number | null = null;
     private loadQueue: ChunkId[] = [];
     private _hover: Selection | null = null;
@@ -62,20 +62,20 @@ export class World {
         }
     }
 
-    get showPolygonWire(): boolean {
-        return this._showPolygonWire;
+    get showCellWires(): boolean {
+        return this._showCellWires;
     }
 
-    set showPolygonWire(value: boolean) {
-        this._showPolygonWire = value;
+    set showCellWires(value: boolean) {
+        this._showCellWires = value;
         for (const chunk of this.chunks.values()) {
-            chunk.showPolygonWire = value;
+            chunk.showCellWires = value;
         }
         for (const edge of this.chunkEdges.values()) {
-            edge.showPolygonWire = value;
+            edge.showCellWires = value;
         }
         for (const corner of this.chunkCorners.values()) {
-            corner.showPolygonWire = value;
+            corner.showCellWires = value;
         }
     }
 
@@ -112,7 +112,7 @@ export class World {
 
         chunk.init(this._referenceChunkId);
         chunk.showLabel = this._showChunkLabels;
-        chunk.showPolygonWire = this._showPolygonWire;
+        chunk.showCellWires = this._showCellWires;
 
         this.updateChunkEdgesForChunk(id);
         for (const dir of [HexFlatDir.SW, HexFlatDir.S, HexFlatDir.SE] as const) {
@@ -120,7 +120,14 @@ export class World {
         }
 
         this.updateChunkCornersForChunk(id);
-        for (const dir of [HexFlatDir.SW, HexFlatDir.S, HexFlatDir.SE, HexFlatDir.NE, HexFlatDir.N, HexFlatDir.NW] as const) {
+        for (const dir of [
+            HexFlatDir.SW,
+            HexFlatDir.S,
+            HexFlatDir.SE,
+            HexFlatDir.NE,
+            HexFlatDir.N,
+            HexFlatDir.NW
+        ] as const) {
             this.updateChunkCornersForChunk(id.neighbor(dir));
         }
 
@@ -185,7 +192,7 @@ export class World {
         if (this._hover) {
             switch (this._hover.type) {
                 case 'cell':
-                    this._hover.chunk.hideSelection();
+                    // TODO: re-enable when Chunk.hideSelection is restored
                     break;
                 case 'edge-cell':
                     this._hover.edge.hideSelection();
@@ -225,17 +232,12 @@ export class World {
         const chunkId = ChunkId.fromWorldPosition(this._referenceChunkId, new THREE.Vector2(worldPos.x, worldPos.y));
         const chunk = this.chunks.get(chunkId.key());
         if (chunk) {
-            const selection = chunk.showSelectionAt(worldPos);
-            if (selection) {
-                this.setHover({
-                    type: 'cell',
-                    chunk,
-                    worldPoint: worldPos,
-                    localPoint: selection.localPos,
-                    cellId: selection.cellId
-                });
-                return;
-            }
+            // TODO: re-enable when Chunk.showSelectionAt is restored
+            // const selection = chunk.showSelectionAt(worldPos);
+            // if (selection) {
+            //     this.setHover({ type: 'cell', chunk, worldPoint: worldPos, localPoint: selection.localPos, cellId: selection.cellId });
+            //     return;
+            // }
         }
 
         /*        // Try boundary edge entities
@@ -261,7 +263,7 @@ export class World {
 
         switch (this._hover.type) {
             case 'cell':
-                this._hover.chunk.hideSelection();
+                // TODO: re-enable when Chunk.hideSelection is restored
                 break;
             case 'edge-cell':
                 this._hover.edge.hideSelection();
@@ -318,17 +320,23 @@ export class World {
     }
 
     private updateChunkEdgesForChunk(chunkId: ChunkId): void {
-        if (!this.chunks.has(chunkId.key())) { return; }
+        if (!this.chunks.has(chunkId.key())) {
+            return;
+        }
 
         for (const edgeIdx of [HexFlatDir.NE, HexFlatDir.N, HexFlatDir.NW] as const) {
             const edgeId = new ChunkEdgeId(chunkId, edgeIdx);
-            if (this.chunkEdges.has(edgeId.key())) { continue; }
+            if (this.chunkEdges.has(edgeId.key())) {
+                continue;
+            }
             const [, neighbor] = edgeId.involvedChunkIds();
-            if (!this.chunks.has(neighbor.key())) { continue; }
+            if (!this.chunks.has(neighbor.key())) {
+                continue;
+            }
 
             const entity = new ChunkEdge(this.wasm, edgeId, this.subscriptions.events);
             entity.init(this._referenceChunkId);
-            entity.showPolygonWire = this._showPolygonWire;
+            entity.showCellWires = this._showCellWires;
             this.group.add(entity.group);
             this.chunkEdges.set(edgeId.key(), entity);
         }
@@ -350,17 +358,23 @@ export class World {
     }
 
     private updateChunkCornersForChunk(chunkId: ChunkId): void {
-        if (!this.chunks.has(chunkId.key())) { return; }
-        
+        if (!this.chunks.has(chunkId.key())) {
+            return;
+        }
+
         for (const cornerIdx of [HexPointyDir.E, HexPointyDir.NE, HexPointyDir.NW] as const) {
             const cornerId = new ChunkCornerId(chunkId, cornerIdx);
-            if (this.chunkCorners.has(cornerId.key())) { continue; }
+            if (this.chunkCorners.has(cornerId.key())) {
+                continue;
+            }
             const [, n1, n2] = cornerId.involvedChunkIds();
-            if (!this.chunks.has(n1.key()) || !this.chunks.has(n2.key())) { continue; }
+            if (!this.chunks.has(n1.key()) || !this.chunks.has(n2.key())) {
+                continue;
+            }
 
             const entity = new ChunkCorner(this.wasm, cornerId, this.subscriptions.events);
             entity.init(this._referenceChunkId);
-            entity.showPolygonWire = this._showPolygonWire;
+            entity.showCellWires = this._showCellWires;
             this.group.add(entity.group);
             this.chunkCorners.set(cornerId.key(), entity);
         }

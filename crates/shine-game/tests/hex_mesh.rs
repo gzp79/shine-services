@@ -2,7 +2,7 @@ use shine_game::{
     indexed::TypedIndex,
     math::{
         hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
-        prng::{StableRng, SysRng, Xorshift32},
+        prng::{StableRng, SysRng, XorShift32},
         quadrangulation::Quadrangulation,
     },
 };
@@ -99,7 +99,7 @@ fn generate_cdt_mesh() {
 #[test]
 fn test_cdt_determinism() {
     assert_mesher_deterministic("CDT", |seed| {
-        let rng = Xorshift32::new(seed).into_rc();
+        let rng = XorShift32::new(seed).into_rc();
         let mut mesher = CdtMesher::new(SUBDIVISION, INTERNAL_POINTS, rng).with_size(WORLD_SIZE);
         mesher.generate()
     });
@@ -115,7 +115,7 @@ fn generate_lattice() {
 #[test]
 fn test_lattice_determinism() {
     assert_mesher_deterministic("Lattice", |seed| {
-        let rng = Xorshift32::new(seed).into_rc();
+        let rng = XorShift32::new(seed).into_rc();
         let mut mesher = LatticeMesher::new(2, rng).with_size(WORLD_SIZE);
         mesher.generate()
     });

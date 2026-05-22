@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PolygonData } from './geometry-data';
+import type { PolygonMesh } from './polygon-mesh';
 import { buildPrismGeometry } from './prism-geometry';
 import { createWireframeGlowMaterial, createWireframeMaterial } from './wireframe-shader';
 
@@ -15,7 +15,7 @@ export class SelectionMesh {
 
     constructor(
         private readonly parent: THREE.Group,
-        private readonly polygonData: PolygonData
+        private readonly polygonData: PolygonMesh
     ) {}
 
     /**
@@ -24,20 +24,16 @@ export class SelectionMesh {
      * Returns true if mesh was created/updated.
      */
     showAt(vertIdx: number): boolean {
-        // Already showing this vertex
         if (this.currentVertIdx === vertIdx && this.meshCore) {
             return false;
         }
 
-        // Hide previous
         this.hide();
 
-        // Check if vertex has a polygon
-        const start = this.polygonData.starts[vertIdx];
-        const end = this.polygonData.starts[vertIdx + 1];
-        if (end <= start) return false; // No polygon for this vertex
+        const start = this.polygonData.ranges[vertIdx * 2];
+        const end = this.polygonData.ranges[vertIdx * 2 + 1];
+        if (end <= start) return false;
 
-        // Build geometry
         const polygonIndices = this.polygonData.indices.slice(start, end);
         const geometry = buildPrismGeometry(polygonIndices, this.polygonData.vertices);
 
@@ -46,22 +42,19 @@ export class SelectionMesh {
             return false;
         }
 
-        // Create glow halo (rendered first, behind sharp core)
         const glowMaterial = createWireframeGlowMaterial(0xffdd00, 0.5);
         this.meshGlow = new THREE.Mesh(geometry, glowMaterial);
         this.meshGlow.userData = { vertIdx };
-        this.meshGlow.renderOrder = -1; // Render behind core
+        this.meshGlow.renderOrder = -1;
         this.parent.add(this.meshGlow);
 
-        // Create sharp core (rendered second, in front)
         const coreMaterial = createWireframeMaterial(0xffdd00);
         this.meshCore = new THREE.Mesh(geometry, coreMaterial);
         this.meshCore.userData = { vertIdx };
-        this.meshCore.renderOrder = 0; // Render in front of glow
+        this.meshCore.renderOrder = 0;
         this.parent.add(this.meshCore);
 
         this.currentVertIdx = vertIdx;
-
         return true;
     }
 

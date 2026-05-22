@@ -1,7 +1,7 @@
 import { WebGPURenderer } from 'three/webgpu';
 import { createGame } from './engine/game';
-import { createSharedRenderer } from './experiments/experiment';
 import { createCdtExperiment } from './experiments/cdt/index';
+import { createSharedRenderer } from './experiments/experiment';
 import { createHexMeshExperiment } from './experiments/hex-mesh/index';
 import { createInputControlExperiment } from './experiments/input-control/index';
 import { createTrilinearExperiment } from './experiments/trilinear/index';

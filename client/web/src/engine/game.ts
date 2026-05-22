@@ -28,7 +28,10 @@ class Game {
     private animationId = 0;
     private lastTime = 0;
 
-    constructor(private readonly container: HTMLElement, renderer: WebGPURenderer) {
+    constructor(
+        private readonly container: HTMLElement,
+        renderer: WebGPURenderer
+    ) {
         this.events = new EventTarget();
         this.renderContext = new RenderContext(container, this.events, renderer);
         this.debugPanel = new DebugPanel();
@@ -56,7 +59,7 @@ class Game {
         this.worldCursor.showMesh = true;
         this.debugPanel.addToggle('Controls', 'Show World Cursor', this.worldCursor, 'showMesh');
         this.debugPanel.addToggle('Controls', 'Show Chunk Labels', this.world, 'showChunkLabels');
-        this.debugPanel.addToggle('Controls', 'Show Polygon Wire', this.world, 'showPolygonWire');
+        this.debugPanel.addToggle('Controls', 'Show Cell Wires', this.world, 'showCellWires');
 
         // Register systems
         this.systems.push(new CameraFollowCursorSystem(this.camera, this.worldCursor, this.events));

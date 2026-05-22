@@ -1,4 +1,7 @@
-use crate::world::{CornerCells, EdgeCells, InnerCells};
+use crate::{
+    mesh::AsPolygonMesh,
+    world::{CornerCells, EdgeCells, InnerCells},
+};
 use js_sys::{Float32Array, Uint32Array};
 use wasm_bindgen::prelude::*;
 
@@ -9,18 +12,22 @@ pub struct InnerCellsHandle(InnerCells);
 
 #[wasm_bindgen]
 impl InnerCellsHandle {
+    #[wasm_bindgen(getter)]
     pub fn vertices(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.vertices) }
     }
 
+    #[wasm_bindgen(getter)]
     pub fn indices(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.indices) }
     }
 
-    pub fn polygon_ranges(&self) -> Uint32Array {
-        unsafe { Uint32Array::view(&self.0.polygon_ranges) }
+    #[wasm_bindgen(getter)]
+    pub fn ranges(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(&self.0.ranges) }
     }
 
+    #[wasm_bindgen(getter)]
     pub fn sites(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.sites) }
     }
@@ -39,22 +46,27 @@ pub struct EdgeCellsHandle(EdgeCells);
 
 #[wasm_bindgen]
 impl EdgeCellsHandle {
+    #[wasm_bindgen(getter)]
     pub fn vertices(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.vertices) }
     }
 
+    #[wasm_bindgen(getter)]
     pub fn indices(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.indices) }
     }
 
-    pub fn polygon_ranges(&self) -> Uint32Array {
-        unsafe { Uint32Array::view(&self.0.polygon_ranges) }
+    #[wasm_bindgen(getter)]
+    pub fn ranges(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(&self.0.ranges) }
     }
 
+    #[wasm_bindgen(getter)]
     pub fn owner_sites(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.owner_sites) }
     }
 
+    #[wasm_bindgen(getter)]
     pub fn neighbor_sites(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.neighbor_sites) }
     }
@@ -73,18 +85,32 @@ pub struct CornerCellsHandle(CornerCells);
 
 #[wasm_bindgen]
 impl CornerCellsHandle {
+    #[wasm_bindgen(getter)]
     pub fn vertices(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.vertices) }
     }
 
+    #[wasm_bindgen(getter)]
+    pub fn indices(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(self.0.indices()) }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn ranges(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(self.0.ranges()) }
+    }
+
+    #[wasm_bindgen(getter)]
     pub fn owner_site(&self) -> u32 {
         self.0.owner_site
     }
 
+    #[wasm_bindgen(getter)]
     pub fn cw_site(&self) -> u32 {
         self.0.cw_site
     }
 
+    #[wasm_bindgen(getter)]
     pub fn ccw_site(&self) -> u32 {
         self.0.ccw_site
     }

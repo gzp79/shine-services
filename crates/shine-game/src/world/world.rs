@@ -90,7 +90,7 @@ impl World {
         let site_count = neighbor_vis.len();
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
-        let mut polygon_ranges = Vec::with_capacity(site_count * 2);
+        let mut ranges = Vec::with_capacity(site_count * 2);
         let mut owner_sites = Vec::with_capacity(site_count);
         let mut neighbor_sites = Vec::with_capacity(site_count);
 
@@ -99,7 +99,7 @@ impl World {
         let mut neighbor_index_map = HashMap::new();
 
         for (vi_owner, vi_neighbor) in owner_vis.zip(neighbor_vis) {
-            polygon_ranges.push(indices.len() as u32);
+            ranges.push(indices.len() as u32);
             owner_sites.push(vi_owner.into_index() as u32);
             neighbor_sites.push(vi_neighbor.into_index() as u32);
 
@@ -123,13 +123,13 @@ impl World {
                 });
                 indices.push(index);
             }
-            polygon_ranges.push(indices.len() as u32);
+            ranges.push(indices.len() as u32);
         }
 
         Some(EdgeCells {
             vertices,
             indices,
-            polygon_ranges,
+            ranges,
             owner_sites,
             neighbor_sites,
         })
@@ -168,11 +168,14 @@ impl World {
             }
         }
 
+        let vertex_count = (vertices.len() / 2) as u32;
         Some(CornerCells {
             vertices,
+            indices: (0..vertex_count).collect(),
+            ranges: [0, vertex_count],
             owner_site: v0.into_index() as u32,
-            ccw_site: v1.into_index() as u32,
             cw_site: v2.into_index() as u32,
+            ccw_site: v1.into_index() as u32,
         })
     }
 }

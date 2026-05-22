@@ -1,7 +1,7 @@
 use crate::{
     indexed::TypedIndex,
     math::{
-        prng::{StableRng, Xorshift32},
+        prng::{StableRng, XorShift32},
         triangulation::{Rot3Idx, Triangulation, VertexIndex},
     },
 };
@@ -11,7 +11,7 @@ use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
-pub struct CdtMeshHandle {
+pub struct WasmCdtMesh {
     vertices: Vec<f32>,
     triangles: Vec<u32>,
     constraints: Vec<u32>,
@@ -19,7 +19,7 @@ pub struct CdtMeshHandle {
 }
 
 #[wasm_bindgen]
-impl CdtMeshHandle {
+impl WasmCdtMesh {
     pub fn vertices(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.vertices) }
     }
@@ -38,7 +38,7 @@ impl CdtMeshHandle {
 /// Generate a CDT from random points and constraint edges.
 /// `config_json`: { "n_points": u32, "n_edges": u32, "seed": u32, "bound": i32 }
 #[wasm_bindgen]
-pub fn generate_cdt(config_json: &str) -> CdtMeshHandle {
+pub fn generate_cdt(config_json: &str) -> WasmCdtMesh {
     #[derive(Deserialize)]
     struct CdtConfig {
         n_points: u32,
@@ -54,7 +54,7 @@ pub fn generate_cdt(config_json: &str) -> CdtMeshHandle {
     let config: CdtConfig = match serde_json::from_str(config_json) {
         Ok(c) => c,
         Err(e) => {
-            return CdtMeshHandle {
+            return WasmCdtMesh {
                 vertices: vec![],
                 triangles: vec![],
                 constraints: vec![],
@@ -63,7 +63,7 @@ pub fn generate_cdt(config_json: &str) -> CdtMeshHandle {
         }
     };
 
-    let mut rng = Xorshift32::new(config.seed);
+    let mut rng = XorShift32::new(config.seed);
     let bound = config.bound;
     let n = config.n_points.max(3) as usize;
 
@@ -123,7 +123,7 @@ pub fn generate_cdt(config_json: &str) -> CdtMeshHandle {
         triangles.push(i2);
     }
 
-    CdtMeshHandle {
+    WasmCdtMesh {
         vertices,
         triangles,
         constraints,
