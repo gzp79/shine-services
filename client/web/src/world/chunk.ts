@@ -1,7 +1,7 @@
 import { InnerCellsHandle, WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { EventSubscriptions } from '../engine/events';
-import { PolygonWireMesh } from '../engine/mesh/polygon-wire-mesh';
+import { WireNode } from '../engine/nodes/wire-node';
 import { ChunkId } from './chunk-id';
 
 export class InternalCell {
@@ -19,7 +19,7 @@ export class Chunk {
     readonly innerCells: InnerCellsHandle;
 
     private label: THREE.Sprite | null = null;
-    private cellWires: PolygonWireMesh | null = null;
+    private cellWires: WireNode | null = null;
     private subscription: EventSubscriptions;
 
     constructor(
@@ -180,7 +180,7 @@ export class Chunk {
             return;
         }
 
-        this.cellWires = PolygonWireMesh.fromPolygons(this.group, this.innerCells);
+        this.cellWires = WireNode.fromPolygons(this.group, this.innerCells);
         this.cellWires.show();
     }
 }

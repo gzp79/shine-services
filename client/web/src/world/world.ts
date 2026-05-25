@@ -195,7 +195,6 @@ export class World {
                     // TODO: re-enable when Chunk.hideSelection is restored
                     break;
                 case 'edge-cell':
-                    this._hover.edge.hideSelection();
                     break;
             }
         }
@@ -266,7 +265,6 @@ export class World {
                 // TODO: re-enable when Chunk.hideSelection is restored
                 break;
             case 'edge-cell':
-                this._hover.edge.hideSelection();
                 break;
         }
 

@@ -1,7 +1,6 @@
 import { CornerCellsHandle, WasmWorld } from '#wasm';
 import * as THREE from 'three';
-import { PolygonWireMesh } from '../engine/mesh/polygon-wire-mesh';
-import { SelectionMesh } from '../engine/mesh/selection-mesh';
+import { WireNode } from '../engine/nodes/wire-node';
 import { ChunkId, HexFlatDir, HexPointyDir } from './chunk-id';
 
 export class ChunkCornerId {
@@ -32,8 +31,7 @@ export class ChunkCornerId {
 export class ChunkCorner {
     readonly group = new THREE.Group();
     readonly cells: CornerCellsHandle;
-    private wireframe: PolygonWireMesh;
-    private selection: SelectionMesh;
+    private wireframe: WireNode;
 
     constructor(
         private readonly world: WasmWorld,
@@ -42,8 +40,7 @@ export class ChunkCorner {
     ) {
         this.group.userData = { chunkCornerId: id, chunkCorner: this };
         this.cells = world.corner_cells(id.chunkId.q, id.chunkId.r, id.cornerIdx)!;
-        this.selection = new SelectionMesh(this.group, this.cells);
-        this.wireframe = PolygonWireMesh.fromPolygons(this.group, this.cells);
+        this.wireframe = WireNode.fromPolygons(this.group, this.cells);
     }
 
     init(referenceChunkId: ChunkId): void {
@@ -53,10 +50,6 @@ export class ChunkCorner {
 
     worldOffset(ref: ChunkId): [number, number] {
         return this.world.chunk_world_offset(ref.q, ref.r, this.id.chunkId.q, this.id.chunkId.r);
-    }
-
-    hideSelection(): void {
-        this.selection.hide();
     }
 
     get showCellWires(): boolean {
@@ -69,7 +62,6 @@ export class ChunkCorner {
     }
 
     dispose(): void {
-        this.selection.dispose();
         this.wireframe.dispose();
         this.cells.free();
     }
