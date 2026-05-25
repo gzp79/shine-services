@@ -78,11 +78,15 @@ export async function createInputControlExperiment(
             const pos = obj as Point;
             return `pos=(${Math.round(pos.x)}, ${Math.round(pos.y)})`;
         }
-        if (eventName.includes('ZOOM')) {
+        if (eventName === 'ZOOM_TO') {
             const { pos, delta } = obj as { pos: Point; delta: number };
             return `Δ=${delta.toFixed(1)} pos=(${Math.round(pos.x)}, ${Math.round(pos.y)})`;
         }
-        if (eventName.includes('PAN') || eventName.includes('ROTATE') || eventName.includes('INTERACT_DRAG')) {
+        if (eventName === 'ZOOM') {
+            const { direction } = obj as { direction: number };
+            return `dir=${direction}`;
+        }
+        if (eventName.includes('DRAG_PAN') || eventName.includes('DRAG_ROTATE') || eventName.includes('INTERACT_DRAG')) {
             const { start, current } = obj as { start: Point; current: Point };
             return `Δ=(${Math.round(current.x - start.x)}, ${Math.round(current.y - start.y)})`;
         }
@@ -110,7 +114,7 @@ export async function createInputControlExperiment(
                 color = '#ff00ff'; // magenta
             else if (entry.eventName.includes('TAP'))
                 color = '#00ff00'; // green
-            else if (entry.eventName.includes('PAN'))
+            else if (entry.eventName.includes('DRAG_PAN'))
                 color = '#00bfff'; // blue
             else if (entry.eventName.includes('ROTATE'))
                 color = '#ffff00'; // yellow
@@ -139,17 +143,19 @@ export async function createInputControlExperiment(
         onInteractStart: (pos) => addLogEntry('INTERACT_START', pos),
         onInteractDrag: (start, current) => addLogEntry('INTERACT_DRAG', { start, current }),
         onInteractEnd: (pos) => addLogEntry('INTERACT_END', pos),
-        onPanStart: (pos) => addLogEntry('PAN_START', pos),
-        onPan: (start, current) => addLogEntry('PAN', { start, current }),
-        onPanEnd: (pos) => addLogEntry('PAN_END', pos),
-        onRotateStart: (pos) => addLogEntry('ROTATE_START', pos),
-        onRotate: (start, current) => addLogEntry('ROTATE', { start, current }),
-        onRotateEnd: (pos) => addLogEntry('ROTATE_END', pos),
+        onDragPanStart: (pos) => addLogEntry('DRAG_PAN_START', pos),
+        onDragPan: (start, current) => addLogEntry('DRAG_PAN', { start, current }),
+        onDragPanEnd: (pos) => addLogEntry('DRAG_PAN_END', pos),
+        onDragRotateStart: (pos) => addLogEntry('DRAG_ROTATE_START', pos),
+        onDragRotate: (start, current) => addLogEntry('DRAG_ROTATE', { start, current }),
+        onDragRotateEnd: (pos) => addLogEntry('DRAG_ROTATE_END', pos),
         onPinchStart: (start, current) => addLogEntry('PINCH_START', { start, current }),
         onPinch: (start, current) => addLogEntry('PINCH', { start, current }),
         onPinchEnd: (start, current) => addLogEntry('PINCH_END', { start, current }),
-        onZoom: (pos, delta) => addLogEntry('ZOOM', { pos, delta }),
-        onMove: (direction, isSprinting) => addLogEntry('MOVE', { direction, isSprinting })
+        onZoomTo: (pos, delta) => addLogEntry('ZOOM_TO', { pos, delta }),
+        onZoom: (direction) => addLogEntry('ZOOM', { direction }),
+        onMove: (direction, isSprinting) => addLogEntry('MOVE', { direction, isSprinting }),
+        onRotate: (direction) => addLogEntry('ROTATE', { direction })
     };
     const inputController = new InputController(ctx.renderer.domElement, inputHandler);
 

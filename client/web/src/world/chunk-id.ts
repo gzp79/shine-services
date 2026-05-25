@@ -1,9 +1,6 @@
 import * as THREE from 'three';
-import { MAX_ACTIVE_CHUNK_DISTANCE, MAX_TRACKED_CHUNK_DISTANCE } from '../engine/config';
+import { CHUNK_WORLD_SIZE, MAX_ACTIVE_CHUNK_DISTANCE, MAX_TRACKED_CHUNK_DISTANCE } from '../constants';
 import { range } from '../engine/utils';
-
-const CHUNK_WORLD_SIZE = 1000;
-const SQRT3 = Math.sqrt(3);
 
 /**
  * Pointy-top hex grid corner directions. Matches Rust HexPointyDir indices exactly.
@@ -80,7 +77,7 @@ export class ChunkId {
         return this.distanceTo(reference) <= MAX_TRACKED_CHUNK_DISTANCE;
     }
 
-    isActive(reference: ChunkId): boolean {
+    isInteractable(reference: ChunkId): boolean {
         return this.distanceTo(reference) <= MAX_ACTIVE_CHUNK_DISTANCE;
     }
 
@@ -131,20 +128,20 @@ export class ChunkId {
     /** World position of this chunk relative to a reference chunk (matches Rust FlatAxialCoord::to_position). */
     toWorldPosition(reference: ChunkId): THREE.Vector2 {
         const x = CHUNK_WORLD_SIZE * 1.5 * this.q;
-        const y = -CHUNK_WORLD_SIZE * (SQRT3 * this.r + (SQRT3 / 2) * this.q);
+        const y = -CHUNK_WORLD_SIZE * (Math.sqrt(3) * this.r + (Math.sqrt(3) / 2) * this.q);
         const refX = CHUNK_WORLD_SIZE * 1.5 * reference.q;
-        const refY = -CHUNK_WORLD_SIZE * (SQRT3 * reference.r + (SQRT3 / 2) * reference.q);
+        const refY = -CHUNK_WORLD_SIZE * (Math.sqrt(3) * reference.r + (Math.sqrt(3) / 2) * reference.q);
         return new THREE.Vector2(x - refX, y - refY);
     }
 
     /** Chunk containing the given world position (position is relative to reference chunk). */
     static fromWorldPosition(reference: ChunkId, worldPos: THREE.Vector2): ChunkId {
         const refX = CHUNK_WORLD_SIZE * 1.5 * reference.q;
-        const refY = -CHUNK_WORLD_SIZE * (SQRT3 * reference.r + (SQRT3 / 2) * reference.q);
+        const refY = -CHUNK_WORLD_SIZE * (Math.sqrt(3) * reference.r + (Math.sqrt(3) / 2) * reference.q);
         const absX = worldPos.x + refX;
         const absY = worldPos.y + refY;
         const q = (2 / 3) * (absX / CHUNK_WORLD_SIZE);
-        const r = -absY / CHUNK_WORLD_SIZE / SQRT3 - q / 2;
+        const r = -absY / CHUNK_WORLD_SIZE / Math.sqrt(3) - q / 2;
         return ChunkId.roundAxial(q, r);
     }
 

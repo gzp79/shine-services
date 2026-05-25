@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ROTATE_SENSITIVITY, ZOOM_SENSITIVITY } from '../constants';
+import { ROTATE_KEY_SPEED, ROTATE_SENSITIVITY, ZOOM_KEY_SPEED, ZOOM_SENSITIVITY } from '../constants';
 import type { Camera } from '../engine/camera/camera';
 import { EventDispatcher } from '../engine/events';
 import type { Delta, InputHandler, Point } from '../engine/input';
@@ -7,10 +7,14 @@ import {
     CURSOR_MOVE,
     CURSOR_MOVE_TO,
     CURSOR_ROTATE,
+    CURSOR_ROTATE_DELTA,
     CURSOR_ZOOM,
+    CURSOR_ZOOM_DELTA,
     type CursorMoveEvent,
     type CursorMoveToEvent,
+    type CursorRotateDeltaEvent,
     type CursorRotateEvent,
+    type CursorZoomDeltaEvent,
     type CursorZoomEvent,
     INPUT_CONTROLLER_CHANGED,
     type InputControllerChangedEvent
@@ -23,7 +27,7 @@ import type { WorldCursor } from './world-cursor';
  */
 export class InputMapper implements InputHandler {
     private dispatcher: EventDispatcher;
-    private rotateLastPos: Point | null = null;
+    private dragRotateLastPos: Point | null = null;
     private pinchStartDistance: number | null = null;
     private currentMoveInput: Delta = { x: 0, y: 0 };
     private currentSprinting = false;
@@ -44,45 +48,32 @@ export class InputMapper implements InputHandler {
         this.emitMoveTo(pos);
     }
 
-    onInteractStart(_pos: Point): void {
-        // Empty - no event emitted
-    }
+    onInteractStart(_pos: Point): void {}
+    onInteractDrag(_start: Point, _current: Point): void {}
+    onInteractEnd(_pos: Point): void {}
 
-    onInteractDrag(_start: Point, _current: Point): void {
-        // Empty - no event emitted
-    }
+    onDragPanStart(_pos: Point): void {}
 
-    onInteractEnd(_pos: Point): void {
-        // Empty - no event emitted
-    }
-
-    onPanStart(_pos: Point): void {
-        // Empty - no event emitted
-    }
-
-    onPan(_start: Point, current: Point): void {
+    onDragPan(_start: Point, current: Point): void {
         this.emitMoveTo(current);
     }
 
-    onPanEnd(current: Point): void {
+    onDragPanEnd(current: Point): void {
         this.emitMoveTo(current);
     }
 
-    onRotateStart(pos: Point): void {
-        this.rotateLastPos = pos;
+    onDragRotateStart(pos: Point): void {
+        this.dragRotateLastPos = pos;
     }
 
-    onRotate(_start: Point, current: Point): void {
-        if (!this.rotateLastPos) return;
+    onDragRotate(_start: Point, current: Point): void {
+        if (!this.dragRotateLastPos) return;
 
-        // Calculate rotation from horizontal screen delta
-        const deltaX = current.x - this.rotateLastPos.x;
+        const deltaX = current.x - this.dragRotateLastPos.x;
         const angleDelta = deltaX * ROTATE_SENSITIVITY;
+        this.dragRotateLastPos = current;
 
-        this.rotateLastPos = current;
-
-        // Emit rotation delta (WorldCursor will update its yaw)
-        this.dispatcher.dispatch<CursorRotateEvent>(CURSOR_ROTATE, { angleDelta });
+        this.dispatcher.dispatch<CursorRotateDeltaEvent>(CURSOR_ROTATE_DELTA, { angleDelta });
 
         // If WASD is active, update velocity to match new cursor orientation
         if (this.currentMoveInput.x !== 0 || this.currentMoveInput.y !== 0) {
@@ -90,8 +81,8 @@ export class InputMapper implements InputHandler {
         }
     }
 
-    onRotateEnd(_pos: Point): void {
-        this.rotateLastPos = null;
+    onDragRotateEnd(_pos: Point): void {
+        this.dragRotateLastPos = null;
     }
 
     onPinchStart(_start: [Point, Point], current: [Point, Point]): void {
@@ -107,7 +98,6 @@ export class InputMapper implements InputHandler {
         const dy = current[1].y - current[0].y;
         const currentDistance = Math.sqrt(dx * dx + dy * dy);
 
-        // Calculate zoom delta (negative = zoom out, positive = zoom in)
         const delta = this.pinchStartDistance - currentDistance;
         this.pinchStartDistance = currentDistance;
 
@@ -118,24 +108,27 @@ export class InputMapper implements InputHandler {
         this.pinchStartDistance = null;
     }
 
-    onZoom(_pos: Point, delta: number): void {
-        // Mouse wheel: positive delta = zoom in (decrease distance), negative = zoom out (increase distance)
-        this.dispatcher.dispatch<CursorZoomEvent>(CURSOR_ZOOM, { delta: delta * ZOOM_SENSITIVITY });
+    onZoomTo(_pos: Point, delta: number): void {
+        this.dispatcher.dispatch<CursorZoomDeltaEvent>(CURSOR_ZOOM_DELTA, { delta: delta * ZOOM_SENSITIVITY });
+    }
+
+    onZoom(direction: number): void {
+        this.dispatcher.dispatch<CursorZoomEvent>(CURSOR_ZOOM, { direction: direction * ZOOM_KEY_SPEED });
     }
 
     onMove(direction: Delta, isSprinting: boolean): void {
-        // Store the input-space direction and sprint state
         this.currentMoveInput = direction;
         this.currentSprinting = isSprinting;
-
-        // Transform input direction to world space and emit
         this.emitMove();
     }
 
+    onRotate(direction: number): void {
+        // Emit rate scaled by speed; WorldCursor integrates direction * deltaTime each frame
+        this.dispatcher.dispatch<CursorRotateEvent>(CURSOR_ROTATE, { direction: direction * ROTATE_KEY_SPEED });
+    }
+
     private emitMove(): void {
-        // Transform input direction to world space using cursor orientation (not blended camera)
         if (this.currentMoveInput.x === 0 && this.currentMoveInput.y === 0) {
-            // No movement - emit zero vector
             this.dispatcher.dispatch<CursorMoveEvent>(CURSOR_MOVE, {
                 direction: new THREE.Vector3(0, 0, 0),
                 isSprinting: false
@@ -143,15 +136,12 @@ export class InputMapper implements InputHandler {
             return;
         }
 
-        // Get cursor orientation from WorldCursor (instant rotation, not blended like camera)
         const cursorYaw = this.worldCursor.getCameraTarget().yaw;
 
-        // Calculate forward and right vectors based on cursor yaw
         const forward = new THREE.Vector3(Math.sin(cursorYaw), Math.cos(cursorYaw), 0);
         const right = new THREE.Vector3(Math.cos(cursorYaw), -Math.sin(cursorYaw), 0);
 
-        // Combine input axes
-        forward.multiplyScalar(-this.currentMoveInput.y); // -y because up key is negative y in input
+        forward.multiplyScalar(-this.currentMoveInput.y);
         right.multiplyScalar(this.currentMoveInput.x);
         forward.add(right);
         forward.normalize();

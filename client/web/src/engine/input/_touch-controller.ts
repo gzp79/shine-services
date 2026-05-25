@@ -107,11 +107,11 @@ export class TouchController {
             // Pan (normal drag)
             if (!this.activePan && totalMoved > MOVE_THRESHOLD_PX) {
                 this.activePan = true;
-                this.handler.onPanStart(pointer.startPos);
+                this.handler.onDragPanStart(pointer.startPos);
             }
 
             if (this.activePan) {
-                this.handler.onPan(pointer.startPos, newPos);
+                this.handler.onDragPan(pointer.startPos, newPos);
             }
         }
     }
@@ -173,7 +173,7 @@ export class TouchController {
         // Handle pan end
         if (this.activePan && this.pointers.size === 0) {
             this.activePan = false;
-            this.handler.onPanEnd(pointer.currentPos);
+            this.handler.onDragPanEnd(pointer.currentPos);
             return;
         }
 
@@ -208,7 +208,7 @@ export class TouchController {
             this.handler.onInteractEnd(pointer.currentPos);
             this.activeInteract = false;
         } else if (this.activePan) {
-            this.handler.onPanEnd(pointer.currentPos);
+            this.handler.onDragPanEnd(pointer.currentPos);
             this.activePan = false;
         } else if (this.activePinch && this.pinchStart) {
             const pts = [...this.pointers.values()];
@@ -249,7 +249,7 @@ export class TouchController {
         } else if (this.activePan) {
             const pointer = [...this.pointers.values()][0];
             if (pointer) {
-                this.handler.onPanEnd(pointer.currentPos);
+                this.handler.onDragPanEnd(pointer.currentPos);
             }
         } else if (this.activePinch && this.pinchStart) {
             const pts = [...this.pointers.values()];

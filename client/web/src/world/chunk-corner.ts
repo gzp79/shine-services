@@ -30,6 +30,10 @@ export class ChunkCornerId {
         const [n1, n2] = CORNER_NEIGHBORS[this.cornerIdx];
         return [this.chunkId, this.chunkId.neighbor(n1), this.chunkId.neighbor(n2)];
     }
+
+    isInteractable(reference: ChunkId): boolean {
+        return this.involvedChunkIds().some((id) => id.isInteractable(reference));
+    }
 }
 
 export class ChunkCorner {

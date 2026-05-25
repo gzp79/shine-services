@@ -73,10 +73,11 @@ impl Chunk {
     }
 
     pub fn cell_data(&self) -> InnerCells {
-        let vertex_count = self.mesh.finite_quad_count();
-        let mut vertices = Vec::with_capacity(vertex_count * 2);
+        let mut vertices = Vec::with_capacity(self.mesh.finite_quad_count() * 2);
+        let mut quad_map = std::collections::HashMap::new();
         for qi in self.mesh.finite_quad_index_iter() {
             if let Some(center) = self.mesh.dual_p(qi) {
+                quad_map.insert(qi, (vertices.len() / 2) as u32);
                 vertices.push(center.x);
                 vertices.push(center.y);
             }
@@ -89,22 +90,15 @@ impl Chunk {
         let mut sites = Vec::with_capacity(site_count);
 
         for vi in self.mesh.finite_vertex_index_iter() {
+            if self.mesh.is_boundary_vertex(vi) {
+                continue;
+            }
+
             ranges.push(indices.len() as u32);
             sites.push(vi.into_index() as u32);
 
-            // Collect QuadIndex for all real quads around this vertex
             for qv in self.mesh.vertex_ring_ccw(vi) {
-                if !self.mesh.is_infinite_quad(qv.quad) {
-                    // Map QuadIndex to its position in quad_indices() enumeration
-                    let mut dual_idx = 0;
-                    for (i, qi) in self.mesh.finite_quad_index_iter().enumerate() {
-                        if qi == qv.quad {
-                            dual_idx = i as u32;
-                            break;
-                        }
-                    }
-                    indices.push(dual_idx);
-                }
+                indices.push(*quad_map.get(&qv.quad).unwrap());
             }
 
             ranges.push(indices.len() as u32);

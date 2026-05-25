@@ -3,10 +3,9 @@ import type { WorldCursor } from '../avatar/world-cursor';
 import type { DebugPanel } from '../engine/debug-panel';
 import { EventDispatcher } from '../engine/events';
 import type { GameSystem } from '../engine/game-system';
+import { CHUNK_WORLD_SIZE } from '../constants';
 import { ChunkId } from '../world/chunk-id';
 import type { World } from '../world/world';
-
-const CHUNK_WORLD_SIZE = 1000;
 /// Approximatelly 5 chunk away from the world reference
 const REPOSITION_THRESHOLD = 25 * CHUNK_WORLD_SIZE * CHUNK_WORLD_SIZE;
 

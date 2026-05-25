@@ -36,7 +36,7 @@ export class SelectionManager {
         if (!this._current) return;
         this._current = null;
         this.dispatcher.dispatch<SelectionChangedEvent>(SELECTION_CHANGED, { selection: null });
-        this.debugPanel.set(SCOPE, 'Hover Cell', 'None');
+        this.debugPanel.set(SCOPE, 'Selection', 'None');
     }
 
     private updateDebugPanel(sel: Selection): void {
@@ -44,21 +44,21 @@ export class SelectionManager {
             case 'cell':
                 this.debugPanel.set(
                     SCOPE,
-                    'Hover Cell',
+                    'Selection',
                     `[inner] (${sel.chunk.id.q}, ${sel.chunk.id.r})/${sel.cellId}`
                 );
                 break;
             case 'edge-cell':
                 this.debugPanel.set(
                     SCOPE,
-                    'Hover Cell',
+                    'Selection',
                     `[edge] (${sel.edge.id.chunkId.q}, ${sel.edge.id.chunkId.r})-${sel.edge.id.edgeIdx}/${sel.cellId}`
                 );
                 break;
             case 'corner-cell':
                 this.debugPanel.set(
                     SCOPE,
-                    'Hover Cell',
+                    'Selection',
                     `[corner] (${sel.corner.id.chunkId.q}, ${sel.corner.id.chunkId.r})-${sel.corner.id.cornerIdx}/${sel.cellId}`
                 );
                 break;

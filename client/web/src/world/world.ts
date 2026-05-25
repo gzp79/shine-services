@@ -1,6 +1,6 @@
 import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
-import { MAX_LOADED_CHUNK_DISTANCE, MAX_TRACKED_CHUNK_COUNT, MAX_TRACKED_CHUNK_DISTANCE } from '../engine/config';
+import { MAX_LOADED_CHUNK_DISTANCE, MAX_TRACKED_CHUNK_COUNT, MAX_TRACKED_CHUNK_DISTANCE } from '../constants';
 import type { DebugPanel } from '../engine/debug-panel';
 import { EventSubscriptions } from '../engine/events';
 import { span } from '../engine/utils';
@@ -203,6 +203,7 @@ export class World {
 
     private handleWorldFocusChanged = (event: WorldFocusChangedEvent): void => {
         this._focusedChunkId = event.newChunkId;
+        this.updateDebugPanel();
 
         if (this.pendingChunkUpdate !== null) {
             cancelIdleCallback(this.pendingChunkUpdate);
@@ -317,6 +318,7 @@ export class World {
     }
 
     private updateDebugPanel(): void {
+        this.debugPanel.set(this.SCOPE, 'Focused Chunk', `(${this._focusedChunkId.q}, ${this._focusedChunkId.r})`);
         this.debugPanel.set(this.SCOPE, 'Loaded Chunks', this.chunks.size.toString());
     }
 }

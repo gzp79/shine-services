@@ -25,6 +25,10 @@ export class ChunkEdgeId {
     involvedChunkIds(): [ChunkId, ChunkId] {
         return [this.chunkId, this.chunkId.neighbor(this.edgeIdx)];
     }
+
+    isInteractable(reference: ChunkId): boolean {
+        return this.involvedChunkIds().some((id) => id.isInteractable(reference));
+    }
 }
 
 export class ChunkEdge {

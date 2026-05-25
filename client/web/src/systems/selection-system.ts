@@ -1,43 +1,50 @@
 import * as THREE from 'three';
 import { Camera } from '../engine/camera/camera';
+import type { DebugPanel } from '../engine/debug-panel';
 import { GameSystem } from '../engine/game-system';
 import { RenderContext } from '../engine/render-context';
-import type { Chunk } from '../world/chunk';
-import type { ChunkCorner } from '../world/chunk-corner';
-import type { ChunkEdge } from '../world/chunk-edge';
+import { CHUNK_WORLD_SIZE, MAX_ACTIVE_CHUNK_DISTANCE } from '../constants';
+import { ChunkId } from '../world/chunk-id';
+import { Selection } from '../world/selection/selection-event';
 import { World } from '../world/world';
 
 // Only switch to a new cell when its centroid is closer than this fraction
 // of the current centroid's distance — creates a sticky hysteresis band.
 const SWITCH_RADIUS_FACTOR = 0.6;
 
-// Scratch state for the nearest-centroid scan — avoids per-frame allocations.
-type BestOwner =
-    | { type: 'cell'; owner: Chunk }
-    | { type: 'edge-cell'; owner: ChunkEdge }
-    | { type: 'corner-cell'; owner: ChunkCorner };
+// Radius used to clamp the cursor to the interactable zone boundary.
+const INTERACTION_RADIUS = CHUNK_WORLD_SIZE * (MAX_ACTIVE_CHUNK_DISTANCE + 1);
 
-export class ChunkHoverSystem implements GameSystem {
-    readonly name: string = 'Chunk Hover';
+const SCOPE = 'Selection';
+
+export class SelectionSystem implements GameSystem {
+    readonly name: string = 'Selection';
 
     // Reused scratch vectors — never escape this class.
     private readonly _worldPos = new THREE.Vector2();
+    private readonly _queryPos = new THREE.Vector2();
+    private readonly debugPanel: DebugPanel;
 
     constructor(
         private readonly world: World,
         private readonly renderContext: RenderContext,
-        private readonly camera: Camera
-    ) {}
+        private readonly camera: Camera,
+        debugPanel: DebugPanel
+    ) {
+        this.debugPanel = debugPanel;
+    }
 
     update(_deltaTime: number): void {
         const mousePosition = this.renderContext.mousePosition;
         if (mousePosition.x === -1 && mousePosition.y === -1) {
+            this.debugPanel.set(SCOPE, 'Hit', 'None');
             this.world.selection.clear();
             return;
         }
 
         const hit = this.camera.ndcToWorldPlanePoint(mousePosition.x, mousePosition.y);
         if (!hit) {
+            this.debugPanel.set(SCOPE, 'Hit', 'None');
             this.world.selection.clear();
             return;
         }
@@ -45,105 +52,96 @@ export class ChunkHoverSystem implements GameSystem {
         this._worldPos.set(hit.x, hit.y);
         const wpx = this._worldPos.x;
         const wpy = this._worldPos.y;
+        this.debugPanel.set(SCOPE, 'Hit', `(${wpx.toFixed(2)}, ${wpy.toFixed(2)})`);
+
         const focusedChunkId = this.world.focusedChunkId;
 
+        // Clamp query point to the interaction radius around the focused chunk center.
+        const focusCenter = focusedChunkId.toWorldPosition(this.world.referenceChunkId);
+        this._queryPos.set(wpx - focusCenter.x, wpy - focusCenter.y);
+        if (this._queryPos.lengthSq() > INTERACTION_RADIUS * INTERACTION_RADIUS) {
+            this._queryPos.normalize().multiplyScalar(INTERACTION_RADIUS);
+        }
+        const qpx = this._queryPos.x + focusCenter.x;
+        const qpy = this._queryPos.y + focusCenter.y;
+
         let bestDist = Infinity;
-        let bestCellId = -1;
-        let bestCx = 0;
-        let bestCy = 0;
-        let bestOwner: BestOwner | null = null;
+        let best: Selection | null = null;
 
         for (const chunk of this.world.chunks.values()) {
-            if (chunk.id.distanceTo(focusedChunkId) > 1) continue;
+            if (!chunk.id.isInteractable(focusedChunkId)) continue;
             const groupPos = chunk.group.position;
             const centroids = chunk.centroids;
             const count = centroids.length / 2;
             for (let i = 0; i < count; i++) {
                 const cx = centroids[i * 2] + groupPos.x;
                 const cy = centroids[i * 2 + 1] + groupPos.y;
-                const dist = (cx - wpx) * (cx - wpx) + (cy - wpy) * (cy - wpy);
+                const dist = (cx - qpx) * (cx - qpx) + (cy - qpy) * (cy - qpy);
                 if (dist < bestDist) {
                     bestDist = dist;
-                    bestCellId = i;
-                    bestCx = cx;
-                    bestCy = cy;
-                    bestOwner = { type: 'cell', owner: chunk };
+                    best = { type: 'cell', chunk, cellId: i };
                 }
             }
         }
 
         for (const edge of this.world.chunkEdges.values()) {
-            if (edge.id.chunkId.distanceTo(focusedChunkId) > 1) continue;
+            if (!edge.id.isInteractable(focusedChunkId)) continue;
             const groupPos = edge.group.position;
             const centroids = edge.centroids;
             const count = centroids.length / 2;
             for (let i = 0; i < count; i++) {
                 const cx = centroids[i * 2] + groupPos.x;
                 const cy = centroids[i * 2 + 1] + groupPos.y;
-                const dist = (cx - wpx) * (cx - wpx) + (cy - wpy) * (cy - wpy);
+                const dist = (cx - qpx) * (cx - qpx) + (cy - qpy) * (cy - qpy);
                 if (dist < bestDist) {
                     bestDist = dist;
-                    bestCellId = i;
-                    bestCx = cx;
-                    bestCy = cy;
-                    bestOwner = { type: 'edge-cell', owner: edge };
+                    best = { type: 'edge-cell', edge, cellId: i };
                 }
             }
         }
 
         for (const corner of this.world.chunkCorners.values()) {
-            if (corner.id.chunkId.distanceTo(focusedChunkId) > 1) continue;
+            if (!corner.id.isInteractable(focusedChunkId)) continue;
             const groupPos = corner.group.position;
             const centroids = corner.centroids;
             const count = centroids.length / 2;
             for (let i = 0; i < count; i++) {
                 const cx = centroids[i * 2] + groupPos.x;
                 const cy = centroids[i * 2 + 1] + groupPos.y;
-                const dist = (cx - wpx) * (cx - wpx) + (cy - wpy) * (cy - wpy);
+                const dist = (cx - qpx) * (cx - qpx) + (cy - qpy) * (cy - qpy);
                 if (dist < bestDist) {
                     bestDist = dist;
-                    bestCellId = i;
-                    bestCx = cx;
-                    bestCy = cy;
-                    bestOwner = { type: 'corner-cell', owner: corner };
+                    best = { type: 'corner-cell', corner, cellId: i };
                 }
             }
         }
 
-        if (!bestOwner) {
+        if (!best) {
             this.world.selection.clear();
             return;
         }
 
+        const cursorChunkId = ChunkId.fromWorldPosition(this.world.referenceChunkId, this._worldPos);
         const current = this.world.selection.current;
-        if (current) {
-            const cdx = current.centroid.x - wpx;
-            const cdy = current.centroid.y - wpy;
-            const currentDist = cdx * cdx + cdy * cdy;
+        if (
+            current &&
+            Selection.isInteractable(current, focusedChunkId) &&
+            cursorChunkId.isInteractable(focusedChunkId)
+        ) {
+            const owner = Selection.owner(current);
+            const ownerPos = owner.group.position;
+            const ccx = owner.centroids[current.cellId * 2] + ownerPos.x;
+            const ccy = owner.centroids[current.cellId * 2 + 1] + ownerPos.y;
+            const currentDist = (ccx - qpx) * (ccx - qpx) + (ccy - qpy) * (ccy - qpy);
             if (bestDist > currentDist * SWITCH_RADIUS_FACTOR * SWITCH_RADIUS_FACTOR) {
                 return;
             }
         }
 
-        // Allocate centroid Vector2 only for the winner, once per actual change.
-        const centroid = new THREE.Vector2(bestCx, bestCy);
-        switch (bestOwner.type) {
-            case 'cell':
-                this.world.selection.set({ type: 'cell', chunk: bestOwner.owner, cellId: bestCellId, centroid });
-                break;
-            case 'edge-cell':
-                this.world.selection.set({ type: 'edge-cell', edge: bestOwner.owner, cellId: bestCellId, centroid });
-                break;
-            case 'corner-cell':
-                this.world.selection.set({
-                    type: 'corner-cell',
-                    corner: bestOwner.owner,
-                    cellId: bestCellId,
-                    centroid
-                });
-                break;
-        }
+        this.world.selection.set(best);
     }
 
-    dispose(): void {}
+    dispose(): void {
+        this.debugPanel.removeScope(SCOPE);
+    }
 }

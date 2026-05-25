@@ -3,9 +3,8 @@ import init from '#wasm';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { CHUNK_WORLD_SIZE } from '../constants';
 import { ChunkId, HexFlatDir } from './chunk-id';
-
-const CHUNK_WORLD_SIZE = 1000;
 
 beforeAll(async () => {
     const wasmPath = fileURLToPath(new URL('../../pkg/shine_game_bg.wasm', import.meta.url));

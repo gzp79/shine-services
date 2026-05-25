@@ -1,4 +1,4 @@
-import { MOVE_KEYS } from '../../constants';
+import { MOVE_KEYS, ROTATE_KEYS, ZOOM_KEYS } from '../../constants';
 import { DesktopController } from './_desktop-controller';
 import type { InputHandler, Point } from './_input-handler';
 import { TouchController } from './_touch-controller';
@@ -150,7 +150,7 @@ export class InputController {
             return;
         }
 
-        if (!MOVE_KEYS.includes(key)) {
+        if (!MOVE_KEYS.includes(key) && !ROTATE_KEYS.includes(key) && !ZOOM_KEYS.includes(key)) {
             return;
         }
 
@@ -165,7 +165,7 @@ export class InputController {
 
     private onKeyUp = (ev: KeyboardEvent): void => {
         const key = ev.key.toLowerCase();
-        if (!MOVE_KEYS.includes(key)) {
+        if (!MOVE_KEYS.includes(key) && !ROTATE_KEYS.includes(key) && !ZOOM_KEYS.includes(key)) {
             return;
         }
 

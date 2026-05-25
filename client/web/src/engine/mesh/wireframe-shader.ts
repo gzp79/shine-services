@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { attribute, clamp, float, fwidth, min, mix, pow, smoothstep, uniform, vec3 } from 'three/tsl';
+import { attribute, float, fwidth, min, mix, pow, smoothstep, uniform, vec3 } from 'three/tsl';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 
 function buildWireframeMaterial(

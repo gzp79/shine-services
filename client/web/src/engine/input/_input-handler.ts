@@ -13,15 +13,17 @@ export interface InputHandler {
     onInteractStart(pos: Point): void;
     onInteractDrag(start: Point, current: Point): void;
     onInteractEnd(pos: Point): void;
-    onPanStart(pos: Point): void;
-    onPan(start: Point, current: Point): void;
-    onPanEnd(pos: Point): void;
-    onRotateStart(pos: Point): void;
-    onRotate(start: Point, current: Point): void;
-    onRotateEnd(pos: Point): void;
+    onDragPanStart(pos: Point): void;
+    onDragPan(start: Point, current: Point): void;
+    onDragPanEnd(pos: Point): void;
+    onDragRotateStart(pos: Point): void;
+    onDragRotate(start: Point, current: Point): void;
+    onDragRotateEnd(pos: Point): void;
     onPinchStart(start: [Point, Point], current: [Point, Point]): void;
     onPinch(start: [Point, Point], current: [Point, Point]): void;
     onPinchEnd(start: [Point, Point], current: [Point, Point]): void;
-    onZoom(pos: Point, delta: number): void;
+    onZoomTo(pos: Point, delta: number): void;
     onMove(direction: Delta, isSprinting: boolean): void;
+    onRotate(direction: number): void;
+    onZoom(direction: number): void;
 }

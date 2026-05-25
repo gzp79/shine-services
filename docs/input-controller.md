@@ -8,15 +8,17 @@ The `InputController` is a unified gesture recognition system that converts raw 
 
 **Architecture:** Main orchestrator + two sub-controllers
 - **TouchController:** Single/multi-finger gestures (tap, pan, pinch)
-- **DesktopController:** Mouse buttons, WASD keys, wheel (tap, pan, rotate, WASD movement, zoom)
+- **DesktopController:** Mouse buttons, WASD keys, Q/E keys, R/F keys, wheel (tap, drag pan, drag rotate, WASD movement, Q/E rotation, R/F zoom, wheel zoom)
 - **Orchestrator:** Routes input to active sub-controller, prevents mixing
 
 **Key Features:**
 - ✅ Sub-controller architecture (touch vs desktop separation)
 - ✅ First-input-wins controller selection (no accidental input mixing)
 - ✅ Selected/active state model (selected persists, active tracks input)
-- ✅ WASD keyboard movement concurrent with mouse rotate + wheel zoom
-- ✅ Dual-button mouse support (left=pan/interact, right=rotate)
+- ✅ WASD keyboard movement concurrent with drag rotate + wheel zoom
+- ✅ Q/E keyboard rotation concurrent with WASD + wheel zoom
+- ✅ R/F keyboard zoom concurrent with WASD + Q/E; mutually exclusive with wheel zoom
+- ✅ Dual-button mouse support (left=drag pan/interact, right=drag rotate)
 - ✅ Movement-based disambiguation (pan vs pinch)
 - ✅ Time-based disambiguation (tap vs long press)
 - ✅ Mutual exclusion per input source (no overlapping pointer gestures)
@@ -52,20 +54,29 @@ The `InputController` is a unified gesture recognition system that converts raw 
    │ • Touch events  │       │ • Mouse buttons      │
    │                 │       │ • Mouse wheel        │
    │ Gestures:       │       │ • WASD keys          │
-   │ • Tap           │       │                      │
-   │ • Long press    │       │ Gestures:            │
-   │ • Pan (1-finger)│       │ • Tap (left click)   │
-   │ • Pinch (2-fngr)│       │ • Long press (left)  │
-   │                 │       │ • Pan (left drag)    │
-   │ Rules:          │       │ • Rotate (right drag)│
-   │ • Mutually      │       │ • WASD movement      │
-   │   exclusive     │       │ • Wheel zoom         │
+   │ • Tap           │       │ • Q/E keys           │
+   │ • Long press    │       │                      │
+   │ • Pan (1-finger)│       │ Gestures:            │
+   │ • Pinch (2-fngr)│       │ • Tap (left click)   │
+   │                 │       │ • Long press (left)  │
+   │ Rules:          │       │ • Drag pan (left)    │
+   │ • Mutually      │       │ • Drag rotate (right)│
+   │   exclusive     │       │ • WASD movement      │
+   │                 │       │ • Q/E rotation       │
+   │                 │       │ • R/F zoom           │
+   │                 │       │ • Wheel zoom         │
    │                 │       │                      │
    │                 │       │ Rules:               │
    │                 │       │ • Pointer gestures   │
    │                 │       │   mutually exclusive │
-   │                 │       │ • WASD + Rotate +    │
+   │                 │       │ • WASD + DragRotate +│
    │                 │       │   Zoom concurrent    │
+   │                 │       │ • Q/E + WASD +       │
+   │                 │       │   Zoom concurrent    │
+   │                 │       │ • Q/E ↔ DragRotate   │
+   │                 │       │   mutually exclusive │
+   │                 │       │ • R/F ↔ Wheel zoom   │
+   │                 │       │   mutually exclusive │
    └─────────────────┘       └──────────────────────┘
 ```
 
@@ -123,7 +134,7 @@ type InputControllerChangedEvent = {
 
 **Usage:**
 - Listen to `INPUT_CONTROLLER_CHANGED` to show/hide UI hints
-- Desktop: show WASD controls, mouse button instructions
+- Desktop: show WASD/Q/E controls, mouse button instructions
 - Touch: show touch gesture hints
 
 **Initial selection:**
@@ -138,6 +149,8 @@ const TAP_THRESHOLD_MS = 500;   // Tap vs interact (equals LONG_PRESS_MS, no dea
 const LONG_PRESS_MS = 500;      // Interact trigger time
 const MOVE_THRESHOLD_PX = 6;    // Drag trigger distance (Euclidean)
 const PINCH_TIMING_MS = 300;    // Max time between pointers for pinch
+const ROTATE_KEY_SPEED = 90 * (Math.PI / 180);  // Key rotation speed (rad/s)
+const ZOOM_KEY_SPEED = 50;                       // Key zoom speed (distance units/s, distance-scaled in consumer)
 ```
 
 ---
@@ -149,7 +162,7 @@ const PINCH_TIMING_MS = 300;    // Max time between pointers for pinch
 - Focus loss: `window.blur` → `*_END` fires immediately, all state cleared
 - Pointer capture lost: `pointercancel` → `*_END` fires immediately for affected pointer
 
-**Dead pointer:** When WASD/wheel cancels a tap/interact timer, that pointer becomes unusable until released and re-pressed (cannot start any gesture). Dead pointers still count as active inputs for controller deactivation.
+**Dead pointer:** When WASD/Q/E/R/F/wheel cancels a tap/interact timer, that pointer becomes unusable until released and re-pressed (cannot start any gesture). Dead pointers still count as active inputs for controller deactivation.
 
 ---
 
@@ -160,11 +173,11 @@ All events dispatch through the game's `EventTarget` using typed event pattern.
 **Event subscription:**
 - Use `subscriptions.on<EventType>(EVENT_NAME, handler)` pattern
 - Controller changes: `INPUT_CONTROLLER_CHANGED`
-- Gestures: `INPUT_TAP`, `INPUT_PAN`, `INPUT_ROTATE`, etc.
+- Gestures: `INPUT_TAP`, `INPUT_DRAG_PAN`, `INPUT_DRAG_ROTATE`, etc.
 
 **Event handling:**
 - Calculate deltas from `start` and `current` positions
-- Use `INPUT_CONTROLLER_CHANGED` to update UI hints (show/hide WASD controls)
+- Use `INPUT_CONTROLLER_CHANGED` to update UI hints (show/hide WASD/Q/E controls)
 
 **Coordinate space:**
 - All position coordinates (`pos: Point`) use **screen space** (viewport-relative)
@@ -189,7 +202,7 @@ All events dispatch through the game's `EventTarget` using typed event pattern.
 |------------|----------|-------------------|
 | Touch pointer down | `pointerType === 'touch'` | TouchController |
 | Mouse/Pen pointer down | `pointerType === 'mouse'` or `'pen'` | DesktopController |
-| Keyboard (WASD) | Key down | DesktopController |
+| Keyboard (WASD, Q/E, R/F) | Key down | DesktopController |
 | Wheel scroll | Wheel event | DesktopController |
 | Middle mouse button | Button 1 pressed | **Ignored** (filtered out) |
 
@@ -200,17 +213,17 @@ All events dispatch through the game's `EventTarget` using typed event pattern.
 - Inactive controller receives **zero events** (completely disabled)
 - Controller deactivates when all inputs released: `active = null`
   - **TouchController:** All touch pointers released
-  - **DesktopController:** All pointers + all WASD keys released
+  - **DesktopController:** All pointers + all WASD keys + all Q/E keys + all R/F keys released
 - `selected` persists (no event on deactivation)
 
 **Keyboard activation:**
-- **Only WASD keys** (W, A, S, D) activate DesktopController and generate INPUT_WASD_MOVE events
+- **WASD, Q/E, and R/F keys** activate DesktopController and generate movement/rotation/zoom events
 - **All other keyboard input** (Escape, Tab, Arrow keys, Space, etc.) is completely ignored by InputController
 - Application layer must handle other keys independently (InputController never sees them)
 
 **Mouse button filtering:**
-- **Left button (0):** Pan, tap, interact
-- **Right button (2):** Rotate
+- **Left button (0):** Drag pan, tap, interact
+- **Right button (2):** Drag rotate
 - **Middle button (1):** Completely ignored (filtered out, no activation, no events)
 - **Other buttons (3+):** Completely ignored
 
@@ -223,15 +236,17 @@ All events dispatch through the game's `EventTarget` using typed event pattern.
 #### TouchController Gestures
 - ✅ Tap
 - ✅ Long press + drag (Interact)
-- ✅ Pan (single-finger drag)
+- ✅ Drag pan (single-finger drag)
 - ✅ Pinch (two-finger)
 
 #### DesktopController Gestures
 - ✅ Tap (left-click)
 - ✅ Long press + drag (Interact, left button)
-- ✅ Pan (left-drag)
-- ✅ Rotate (right-drag)
+- ✅ Drag pan (left-drag)
+- ✅ Drag rotate (right-drag)
 - ✅ WASD movement (keyboard)
+- ✅ Q/E rotation (keyboard)
+- ✅ R/F zoom (keyboard)
 - ✅ Wheel zoom
 
 ---
@@ -244,11 +259,13 @@ All events dispatch through the game's `EventTarget` using typed event pattern.
 |---------|-------|---------|
 | Tap | ✅ Any touch | ✅ Left button |
 | Long press + Drag (Interact) | ✅ Any touch | ✅ Left button |
-| Pan | ✅ Single finger | ✅ Left drag |
-| Rotate | ❌ | ✅ Right drag |
+| Drag pan | ✅ Single finger | ✅ Left drag |
+| Drag rotate | ❌ | ✅ Right drag |
 | Pinch | ✅ Two fingers | ❌ |
 | Zoom | ❌ | ✅ Wheel |
 | WASD | ❌ | ✅ Keyboard |
+| Q/E rotation | ❌ | ✅ Keyboard |
+| R/F zoom | ❌ | ✅ Keyboard |
 
 ### 1. Tap
 
@@ -273,8 +290,8 @@ type InputTapEvent = {
 - **Right-click behavior:** Right button quick press produces no INPUT_TAP event (preventDefault still called)
 
 **Cancellation:**
-- Pointer movement > MOVE_THRESHOLD_PX → becomes pan/rotate
-- WASD/wheel (desktop) → timer cancelled, pointer becomes dead
+- Pointer movement > MOVE_THRESHOLD_PX → becomes drag pan/drag rotate
+- WASD/Q/E/wheel (desktop) → timer cancelled, pointer becomes dead
 - Other button pressed (desktop) → ignored (first button owns gesture)
 - Focus loss / pointercancel → timer cancelled, no event
 
@@ -299,78 +316,70 @@ type InputTapEvent = {
 ```
 
 **Cancellation (before INTERACT_START):**
-- Pointer movement > MOVE_THRESHOLD_PX → becomes pan
+- Pointer movement > MOVE_THRESHOLD_PX → becomes drag pan
 - 2nd pointer added (touch) → timer cancelled, no interact
-- WASD/wheel (desktop) → timer cancelled, pointer becomes dead
+- WASD/Q/E/wheel (desktop) → timer cancelled, pointer becomes dead
 - Other button pressed (desktop) → ignored (first button owns gesture)
 - Focus loss / pointercancel → timer cancelled, no event
 
 **Protection (after INTERACT_START):**
 Camera-moving inputs blocked until `INTERACT_END` (stable camera for menu/selection):
-- ❌ WASD, wheel zoom, pan, rotate all blocked
+- ❌ WASD, Q/E, wheel zoom, drag pan, drag rotate all blocked
 
 ---
 
-### 3. Pan (Drag)
+### 3. Drag Pan
 
 **Trigger:** Single finger/mouse drag > MOVE_THRESHOLD_PX (6px)
 
 **Events:**
-- `INPUT_PAN_START` → `{ pos: Point }` (position where pointer first pressed)
-- `INPUT_PAN` → `{ start: Point, current: Point }` (continuous; start = pointer down position)
-- `INPUT_PAN_END` → `{ pos: Point }`
+- `INPUT_DRAG_PAN_START` → `{ pos: Point }` (position where pointer first pressed)
+- `INPUT_DRAG_PAN` → `{ start: Point, current: Point }` (continuous; start = pointer down position)
+- `INPUT_DRAG_PAN_END` → `{ pos: Point }`
 
 **Flow:**
 ```
-(Touch or Left-click) Down → Move > MOVE_THRESHOLD_PX → PAN_START
+(Touch or Left-click) Down → Move > MOVE_THRESHOLD_PX → DRAG_PAN_START
                                                       ↓
-                                                  Move → PAN (loop)
+                                                  Move → DRAG_PAN (loop)
                                                       ↓
-                                                    Up → PAN_END
+                                                    Up → DRAG_PAN_END
 ```
 
 **Cancellation:**
-- Long press timer cancelled when pan starts
+- Long press timer cancelled when drag pan starts
 - 2nd touch pointer added → see disambiguation rules
-- Right-click during pan (desktop) → ignored, pan continues
-- WASD during pan (desktop) → blocked (conflicting camera movement)
+- Right-click during drag pan (desktop) → ignored, drag pan continues
+- WASD during drag pan (desktop) → blocked (conflicting camera movement)
 
 **Concurrency:**
 - ✅ Wheel zoom allowed (different camera properties)
 
 ---
 
-
-### 4. Rotate (Drag)
+### 4. Drag Rotate
 
 **Trigger:** Right mouse button drag > MOVE_THRESHOLD_PX (6px, Euclidean distance from start position)
 
-**Event:** `INPUT_ROTATE`
-```typescript
-type InputRotateEvent = {
-    start: Point,      // Position where rotate started (screen space)
-    current: Point     // Current pointer position (screen space)
-};
-```
-
-**Movement threshold:** `sqrt((x-x0)² + (y-y0)²) > MOVE_THRESHOLD_PX` (same calculation as pan)
+**Movement threshold:** `sqrt((x-x0)² + (y-y0)²) > MOVE_THRESHOLD_PX` (same calculation as drag pan)
 
 **Events:**
-- `INPUT_ROTATE_START` → `{ pos: Point }` (position where pointer first pressed)
-- `INPUT_ROTATE` → `{ start: Point, current: Point }` (continuous; start = pointer down position)
-- `INPUT_ROTATE_END` → `{ pos: Point }`
+- `INPUT_DRAG_ROTATE_START` → `{ pos: Point }` (position where pointer first pressed)
+- `INPUT_DRAG_ROTATE` → `{ start: Point, current: Point }` (continuous; start = pointer down position)
+- `INPUT_DRAG_ROTATE_END` → `{ pos: Point }`
 
 **Flow:**
 ```
-(Right) Down → Move > MOVE_THRESHOLD_PX → ROTATE_START
+(Right) Down → Move > MOVE_THRESHOLD_PX → DRAG_ROTATE_START
                                        ↓
-                                   Move → ROTATE (loop)
+                                   Move → DRAG_ROTATE (loop)
                                        ↓
-                                     Up → ROTATE_END
+                                     Up → DRAG_ROTATE_END
 ```
 
 **Concurrency:**
 - ✅ WASD + wheel allowed (FPS-style)
+- ❌ Q/E → ignored (drag rotate and Q/E rotation are mutually exclusive)
 - ❌ Left-click → ignored (pointer gestures exclusive)
 
 ---
@@ -401,9 +410,9 @@ Finger1 Down → Finger2 Down (< PINCH_TIMING_MS) → PINCH_START
 
 **Trigger:** Mouse wheel scroll
 
-**Event:** `INPUT_ZOOM`
+**Event:** `INPUT_ZOOM_TO`
 ```typescript
-type InputZoomEvent = { 
+type InputZoomToEvent = { 
     pos: Point,         // Mouse position at time of scroll
     delta: number       // Scroll amount (positive = away, negative = toward)
 };
@@ -411,13 +420,13 @@ type InputZoomEvent = {
 
 **Flow:**
 ```
-Wheel → ZOOM (immediate)
+Wheel → ZOOM_TO (immediate)
 ```
 
 **Concurrency:**
-- ✅ Rotate allowed (zoom while rotating)
-- ✅ WASD allowed (zoom while moving)
-- ✅ Pan allowed (zoom while panning - different camera properties)
+- ✅ Drag rotate allowed (zoom while rotating)
+- ✅ WASD + Q/E allowed (zoom while moving/rotating)
+- ✅ Drag pan allowed (zoom while panning - different camera properties)
 
 **Notes:**
 - `delta > 0` = scroll down/away, `delta < 0` = scroll up/toward
@@ -425,6 +434,7 @@ Wheel → ZOOM (immediate)
 
 **Blocked by:**
 - Interact active (after INTERACT_START) → wheel events ignored
+- R/F zoom keys active → wheel events ignored
 
 ---
 
@@ -465,9 +475,10 @@ Example: W+D = { x: 0.707, y: -0.707 } (forward-right diagonal)
 ```
 
 **Concurrency:**
-- ✅ Rotate allowed (FPS-style: keyboard move + mouse look)
+- ✅ Drag rotate allowed (FPS-style: keyboard move + mouse look)
+- ✅ Q/E rotation allowed
 - ✅ Wheel zoom allowed
-- ❌ Pan blocked (conflicting camera movement)
+- ❌ Drag pan blocked (conflicting camera movement)
 - ❌ Tap blocked (target moves under cursor during movement)
 - ❌ Interact blocked (requires stationary pointer and camera)
 
@@ -484,6 +495,99 @@ Example: W+D = { x: 0.707, y: -0.707 } (forward-right diagonal)
 
 ---
 
+### 8. Q/E Rotation (Keyboard)
+
+**Trigger:** Q/E key state change
+
+**Event:** `INPUT_KEY_ROTATE`
+```typescript
+type InputKeyRotateEvent = {
+    direction: number  // -1 (rotate left), 0 (no rotation), 1 (rotate right)
+};
+```
+
+**Flow:**
+```
+Key Down (Q/E) → KEY_ROTATE (fires if direction changed)
+    ↓
+Key Up → KEY_ROTATE (fires if direction changed)
+```
+
+**Change detection:**
+- Events only fire when direction changes (same pattern as WASD movement)
+- Holding a key does NOT continuously emit events
+- Consumer integrates `direction * ROTATE_KEY_SPEED * deltaTime` each frame
+
+**Direction calculation:**
+```
+Q pressed → direction = -1  (rotate left / counter-clockwise)
+E pressed → direction = +1  (rotate right / clockwise)
+Q+E pressed → direction = 0  (cancel out)
+```
+
+**Concurrency:**
+- ✅ WASD movement allowed
+- ✅ Wheel zoom allowed
+- ❌ Drag rotate → ignored (drag rotate and Q/E rotation are mutually exclusive)
+- ❌ Drag pan blocked (conflicting camera movement)
+- ❌ Interact blocked (requires stable camera)
+
+**Blocked by:**
+- Interact active (after INTERACT_START) → Q/E keys ignored
+- Drag rotate active → Q/E keys ignored
+
+**Termination:**
+- All keys released → fires INPUT_KEY_ROTATE with direction=0
+- Focus lost (`window.blur`) → fires INPUT_KEY_ROTATE with direction=0, all keys cleared
+
+---
+
+### 9. R/F Zoom (Keyboard)
+
+**Trigger:** R/F key state change
+
+**Event:** `INPUT_KEY_ZOOM`
+```typescript
+type InputKeyZoomEvent = {
+    direction: number  // -1 (R = zoom in), 0 (no zoom), 1 (F = zoom out)
+};
+```
+
+**Flow:**
+```
+Key Down (R/F) → KEY_ZOOM (fires if direction changed)
+    ↓
+Key Up → KEY_ZOOM (fires if direction changed)
+```
+
+**Change detection:**
+- Events only fire when direction changes (same pattern as WASD movement and Q/E rotation)
+- Holding a key does NOT continuously emit events
+- Consumer integrates `direction * ZOOM_KEY_SPEED * deltaTime` each frame (distance-scaled)
+
+**Direction calculation:**
+```
+R pressed → direction = -1  (zoom in / decrease distance)
+F pressed → direction = +1  (zoom out / increase distance)
+R+F pressed → direction = 0  (cancel out)
+```
+
+**Concurrency:**
+- ✅ WASD movement allowed
+- ✅ Q/E rotation allowed
+- ✅ Drag rotate allowed
+- ❌ Wheel zoom → ignored when R/F keys are active (mutually exclusive)
+- ❌ Interact blocked (requires stable camera)
+
+**Blocked by:**
+- Interact active (after INTERACT_START) → R/F keys ignored
+
+**Termination:**
+- All keys released → fires INPUT_KEY_ZOOM with direction=0
+- Focus lost (`window.blur`) → fires INPUT_KEY_ZOOM with direction=0, all keys cleared
+
+---
+
 ## Disambiguation Rules
 
 ### Pan vs Pinch (Two-Finger Timing)
@@ -494,25 +598,43 @@ Example: W+D = { x: 0.707, y: -0.707 } (forward-right diagonal)
 
 ### Tap vs Long Press
 
-**Solution:** Up < TAP_THRESHOLD_MS → TAP. Still down at LONG_PRESS_MS → INTERACT_START. Movement → PAN. Single threshold (TAP_THRESHOLD_MS === LONG_PRESS_MS) eliminates dead zone, matches mobile OS conventions (iOS/Android ~450-500ms).
+**Solution:** Up < TAP_THRESHOLD_MS → TAP. Still down at LONG_PRESS_MS → INTERACT_START. Movement → DRAG_PAN. Single threshold (TAP_THRESHOLD_MS === LONG_PRESS_MS) eliminates dead zone, matches mobile OS conventions (iOS/Android ~450-500ms).
 
 ---
 
-### Pan vs Interact Drag
+### Drag Pan vs Interact Drag
 
-**Solution:** Immediate drag → PAN. Hold LONG_PRESS_MS → drag → INTERACT_DRAG. Mutually exclusive (only one active at a time).
+**Solution:** Immediate drag → DRAG_PAN. Hold LONG_PRESS_MS → drag → INTERACT_DRAG. Mutually exclusive (only one active at a time).
 
 ---
 
-### Pan vs Rotate (Dual Mouse Buttons)
+### Drag Pan vs Drag Rotate (Dual Mouse Buttons)
 
-**Solution:** First button down owns gesture until release. Other button ignored (prevents disorienting simultaneous pan+rotate). Exception: WASD + Rotate allowed (different input sources, FPS-style).
+**Solution:** First button down owns gesture until release. Other button ignored (prevents disorienting simultaneous pan+rotate). Exception: WASD + Drag Rotate allowed (different input sources, FPS-style).
 
 ---
 
 ### WASD vs Pointer Gestures
 
-**Solution:** Partial concurrency. Allowed: WASD + Rotate + Wheel (FPS-style). Blocked: WASD + Pan/Tap/Interact (conflicting movement or target instability). Tap/interact timers cancelled if WASD/wheel starts.
+**Solution:** Partial concurrency. Allowed: WASD + Drag Rotate + Wheel (FPS-style). Blocked: WASD + Drag Pan/Tap/Interact (conflicting movement or target instability). Tap/interact timers cancelled if WASD/wheel starts.
+
+---
+
+### Q/E vs Drag Rotate
+
+**Solution:** Mutually exclusive in both directions. Q/E ignored when drag rotate is active; drag rotate cannot start when Q/E keys are held. Prevents conflicting simultaneous rotation from two sources.
+
+---
+
+### Q/E vs Drag Pan
+
+**Solution:** Q/E blocked when drag pan is active (conflicting camera movement, same rule as WASD vs drag pan).
+
+---
+
+### R/F vs Wheel Zoom
+
+**Solution:** Mutually exclusive in one direction. Wheel ignored when R/F keys are active. R/F keys can start while wheel is idle (wheel is instantaneous, no active state to check).
 
 ---
 
@@ -533,23 +655,30 @@ Example: W+D = { x: 0.707, y: -0.707 } (forward-right diagonal)
 
 | Scenario | Resolution |
 |----------|------------|
-| **Pan → Right button** | Right ignored, pan continues |
-| **Rotate → Left button** | Left ignored, rotate continues |
+| **Drag pan → Right button** | Right ignored, drag pan continues |
+| **Drag rotate → Left button** | Left ignored, drag rotate continues |
 | **Tap/Interact timer → Other button** | Other button ignored (first owns) |
-| **Pan → Wheel** | Both fire (zoom while panning) |
-| **Rotate → Wheel** | Both fire (zoom while rotating) |
-| **Rotate → WASD** | Both fire (FPS-style) |
-| **Pan ↔ WASD** | Blocked (conflicting movement) |
+| **Drag pan → Wheel** | Both fire (zoom while panning) |
+| **Drag rotate → Wheel** | Both fire (zoom while rotating) |
+| **Drag rotate → WASD** | Both fire (FPS-style) |
+| **Drag rotate → Q/E** | Q/E ignored (mutually exclusive) |
+| **Q/E → Drag rotate attempt** | Drag rotate blocked (mutually exclusive) |
+| **WASD → Q/E** | Both fire (movement + rotation) |
+| **Drag pan ↔ WASD** | Blocked (conflicting movement) |
+| **Drag pan ↔ Q/E** | Blocked (conflicting movement) |
+| **R/F → Wheel** | Wheel ignored (R/F zoom active) |
 | **WASD → Tap/Interact** | Blocked (target/camera unstable) |
-| **Timer → WASD/Wheel** | Timer cancelled, pointer becomes dead |
-| **Interact active → WASD/Wheel** | Blocked (camera must be stable) |
-| **Pan active → Right held, left up** | Pan ends, right ignored until released |
+| **Q/E → Tap/Interact** | Blocked (camera unstable) |
+| **R/F → Interact** | Blocked (camera must be stable) |
+| **Timer → WASD/Q/E/R/F/Wheel** | Timer cancelled, pointer becomes dead |
+| **Interact active → WASD/Q/E/R/F/Wheel** | Blocked (camera must be stable) |
+| **Drag pan active → Right held, left up** | Drag pan ends, right ignored until released |
 
 ### Cross-Controller (Orchestrator Handles)
 
 | Scenario | Resolution |
 |----------|------------|
-| **Touch active → Mouse/WASD** | Not routed to DesktopController (completely ignored) |
+| **Touch active → Mouse/WASD/Q/E/R/F** | Not routed to DesktopController (completely ignored) |
 | **Desktop active → Touch** | Not routed to TouchController (completely ignored) |
 
 **Note:** Orchestrator prevents mixing by routing events only to active controller. Inactive controller receives zero events.
@@ -571,40 +700,57 @@ Example: W+D = { x: 0.707, y: -0.707 } (forward-right diagonal)
 #### TouchController Tests:
 1. **Tap** (< TAP_THRESHOLD_MS, no movement)
 2. **Long press** (≥ LONG_PRESS_MS hold)
-3. **Pan** (single-finger drag > MOVE_THRESHOLD_PX)
+3. **Drag pan** (single-finger drag > MOVE_THRESHOLD_PX)
 4. **Pinch (fast two-finger)** (< PINCH_TIMING_MS between pointers)
 5. **Pinch rejection (slow two-finger)** (pan started, 2nd finger ignored)
 6. **Post-pinch inactive** (one finger up → remaining finger inactive until lift)
 7. **Timer cancellation** (movement before LONG_PRESS_MS)
 8. **Dead zone eliminated** (300ms tap fires TAP, not swallowed)
-9. **Focus loss cleanup** (pan active → blur → PAN_END fires, active=null)
-10. **Pointer capture loss** (pan active → pointercancel → PAN_END fires)
+9. **Focus loss cleanup** (drag pan active → blur → DRAG_PAN_END fires, active=null)
+10. **Pointer capture loss** (drag pan active → pointercancel → DRAG_PAN_END fires)
 
 #### DesktopController Tests:
 11. **Tap** (left-click < TAP_THRESHOLD_MS)
 12. **Long press** (left-click ≥ LONG_PRESS_MS hold)
-13. **Pan** (left drag > MOVE_THRESHOLD_PX)
-14. **Rotate** (right drag > MOVE_THRESHOLD_PX)
+13. **Drag pan** (left drag > MOVE_THRESHOLD_PX)
+14. **Drag rotate** (right drag > MOVE_THRESHOLD_PX)
 15. **Wheel zoom** (scroll events, blocked during interact)
 16. **WASD movement** (key state changes, direction vectors, change detection)
-17. **Dual-button** (left+right pressed → first wins)
-18. **Button switching** (pan → right-click → right ignored)
-19. **FPS-style** (WASD + rotate + wheel simultaneously)
-20. **WASD blocks pan** (WASD active → left-drag ignored)
-21. **Pan blocks WASD** (left-drag active → WASD ignored)
-22. **Interact blocks WASD** (INTERACT_START fired → WASD ignored)
-23. **Interact blocks wheel** (INTERACT_START fired → wheel ignored)
-24. **Wheel cancels tap timer** (tap timer active → wheel → timer cancelled)
-25. **Focus loss cleanup** (WASD active → blur → INPUT_WASD_MOVE direction={0,0})
-26. **Pointer capture loss** (rotate active → pointercancel → ROTATE_END fires)
+17. **Q/E rotation** (key state changes, direction -1/0/1, change detection)
+18. **R/F zoom** (key state changes, direction -1/0/1, change detection)
+19. **Dual-button** (left+right pressed → first wins)
+20. **Button switching** (drag pan → right-click → right ignored)
+21. **FPS-style** (WASD + drag rotate + wheel simultaneously)
+22. **WASD + Q/E concurrent** (both active simultaneously)
+23. **WASD + R/F concurrent** (both active simultaneously)
+24. **WASD blocks drag pan** (WASD active → left-drag ignored)
+25. **Drag pan blocks WASD** (left-drag active → WASD ignored)
+26. **Q/E blocks drag pan** (Q/E active → left-drag ignored)
+27. **Drag pan blocks Q/E** (left-drag active → Q/E ignored)
+28. **Q/E blocked by drag rotate** (drag rotate active → Q/E ignored)
+29. **Drag rotate blocked by Q/E** (Q/E held → right-drag cannot start drag rotate)
+30. **R/F blocks wheel** (R/F active → wheel ignored)
+31. **Interact blocks WASD** (INTERACT_START fired → WASD ignored)
+32. **Interact blocks Q/E** (INTERACT_START fired → Q/E ignored)
+33. **Interact blocks R/F** (INTERACT_START fired → R/F ignored)
+34. **Interact blocks wheel** (INTERACT_START fired → wheel ignored)
+35. **Wheel cancels tap timer** (tap timer active → wheel → timer cancelled)
+36. **Q/E cancels tap timer** (tap timer active → Q/E → timer cancelled)
+37. **R/F cancels tap timer** (tap timer active → R/F → timer cancelled)
+38. **Focus loss cleanup WASD** (WASD active → blur → INPUT_WASD_MOVE direction={0,0})
+39. **Focus loss cleanup Q/E** (Q/E active → blur → INPUT_KEY_ROTATE direction=0)
+40. **Focus loss cleanup R/F** (R/F active → blur → INPUT_KEY_ZOOM direction=0)
+41. **Pointer capture loss** (drag rotate active → pointercancel → DRAG_ROTATE_END fires)
 
 #### Controller Switching Tests:
-27. **Touch-first** (touch down → active='touch' → mouse completely ignored)
-28. **Mouse-first** (mouse down → active='desktop' → touch completely ignored)
-29. **Clean transition** (touch up → active=null → mouse down → active='desktop')
-30. **Keyboard activates desktop** (WASD → active='desktop' → touch ignored)
-31. **Selection persistence** (touch up → active=null, selected='touch' → verify UI state)
-32. **Controller change events** (verify INPUT_CONTROLLER_CHANGED fires only on selection change, not on activation)
-33. **No duplicate events** (touch → touch again without desktop in between → no event)
-34. **Non-WASD keys ignored** (Escape, Tab, Arrow keys → no controller activation)
-35. **Multiple pointers** (mouse1 pan active → mouse2 click → ignored)
+42. **Touch-first** (touch down → active='touch' → mouse completely ignored)
+43. **Mouse-first** (mouse down → active='desktop' → touch completely ignored)
+44. **Clean transition** (touch up → active=null → mouse down → active='desktop')
+45. **Keyboard activates desktop** (WASD → active='desktop' → touch ignored)
+46. **Q/E activates desktop** (Q/E → active='desktop' → touch ignored)
+47. **R/F activates desktop** (R/F → active='desktop' → touch ignored)
+48. **Selection persistence** (touch up → active=null, selected='touch' → verify UI state)
+49. **Controller change events** (verify INPUT_CONTROLLER_CHANGED fires only on selection change, not on activation)
+50. **No duplicate events** (touch → touch again without desktop in between → no event)
+51. **Non-WASD/Q/E/R/F keys ignored** (Escape, Tab, Arrow keys → no controller activation)
+52. **Multiple pointers** (mouse1 drag pan active → mouse2 click → ignored)

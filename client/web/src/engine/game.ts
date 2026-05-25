@@ -4,7 +4,7 @@ import { WebGPURenderer } from 'three/webgpu';
 import { InputMapper } from '../avatar/input-mapper';
 import { WorldCursor } from '../avatar/world-cursor';
 import { CameraFollowCursorSystem } from '../systems/camera-follow-cursor-system';
-import { ChunkHoverSystem } from '../systems/chunk-hover-system';
+import { SelectionSystem } from '../systems/selection-system';
 import { WorldReferenceSystem } from '../systems/world-reference-system';
 import { World } from '../world/world';
 import { Camera } from './camera/camera';
@@ -64,7 +64,7 @@ class Game {
         // Register systems
         this.systems.push(new CameraFollowCursorSystem(this.camera, this.worldCursor, this.events));
         this.systems.push(new WorldReferenceSystem(this.worldCursor, this.world, this.events, this.debugPanel));
-        this.systems.push(new ChunkHoverSystem(this.world, this.renderContext, this.camera));
+        this.systems.push(new SelectionSystem(this.world, this.renderContext, this.camera, this.debugPanel));
 
         // Add world to scene
         this.renderContext.scene.add(this.world.group);
