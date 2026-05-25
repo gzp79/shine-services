@@ -1,7 +1,11 @@
 import { EdgeCellsHandle, WasmWorld } from '#wasm';
 import * as THREE from 'three';
+import { EventSubscriptions } from '../engine/events';
+import { computeLocalCentroids } from '../engine/mesh/centroid';
+import { SelectionNode } from '../engine/nodes/selection-node';
 import { WireNode } from '../engine/nodes/wire-node';
 import { ChunkId, HexFlatDir } from './chunk-id';
+import { SELECTION_CHANGED, type SelectionChangedEvent } from './selection/selection-event';
 
 export class ChunkEdgeId {
     constructor(
@@ -27,15 +31,21 @@ export class ChunkEdge {
     readonly group = new THREE.Group();
     readonly cells: EdgeCellsHandle;
     private wireframe: WireNode;
+    private selectionNode: SelectionNode;
+    private _centroids: Float32Array | null = null;
+    private readonly subscriptions: EventSubscriptions;
 
     constructor(
         private readonly world: WasmWorld,
         readonly id: ChunkEdgeId,
-        private readonly events: EventTarget
+        events: EventTarget
     ) {
         this.group.userData = { chunkEdgeId: id, chunkEdge: this };
         this.cells = world.edge_cells(id.chunkId.q, id.chunkId.r, id.edgeIdx)!;
         this.wireframe = WireNode.fromPolygons(this.group, this.cells);
+        this.selectionNode = new SelectionNode(this.group, this.cells);
+        this.subscriptions = new EventSubscriptions(events);
+        this.subscriptions.on<SelectionChangedEvent>(SELECTION_CHANGED, this.handleSelectionChanged);
     }
 
     init(referenceChunkId: ChunkId): void {
@@ -45,6 +55,13 @@ export class ChunkEdge {
 
     worldOffset(ref: ChunkId): [number, number] {
         return this.world.chunk_world_offset(ref.q, ref.r, this.id.chunkId.q, this.id.chunkId.r);
+    }
+
+    get centroids(): Float32Array {
+        if (!this._centroids) {
+            this._centroids = computeLocalCentroids(this.cells);
+        }
+        return this._centroids;
     }
 
     get showCellWires(): boolean {
@@ -57,7 +74,18 @@ export class ChunkEdge {
     }
 
     dispose(): void {
+        this.subscriptions.dispose();
+        this.selectionNode.dispose();
         this.wireframe.dispose();
         this.cells.free();
     }
+
+    private handleSelectionChanged = (event: SelectionChangedEvent): void => {
+        const sel = event.selection;
+        if (sel?.type === 'edge-cell' && sel.edge === this) {
+            this.selectionNode.show(sel.cellId);
+        } else {
+            this.selectionNode.hide();
+        }
+    };
 }

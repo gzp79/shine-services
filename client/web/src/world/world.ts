@@ -5,19 +5,16 @@ import type { DebugPanel } from '../engine/debug-panel';
 import { EventSubscriptions } from '../engine/events';
 import { span } from '../engine/utils';
 import {
-    WORLD_CENTER_CHANGED,
+    WORLD_FOCUS_CHANGED,
     WORLD_REFERENCE_CHANGED,
-    type WorldCenterChangedEvent,
+    type WorldFocusChangedEvent,
     type WorldReferenceChangedEvent
 } from '../systems/world-reference-system';
 import { Chunk } from './chunk';
 import { ChunkCorner, ChunkCornerId } from './chunk-corner';
 import { ChunkEdge, ChunkEdgeId } from './chunk-edge';
 import { ChunkId, HexFlatDir, HexPointyDir } from './chunk-id';
-
-type Selection =
-    | { type: 'cell'; chunk: Chunk; cellId: number; worldPoint: THREE.Vector3; localPoint: THREE.Vector3 }
-    | { type: 'edge-cell'; edge: ChunkEdge; cellId: number; worldPoint: THREE.Vector3; localPoint: THREE.Vector3 };
+import { SelectionManager } from './selection/selection-manager';
 
 type WorldConsts = {
     chunkWorldSize: number;
@@ -28,18 +25,18 @@ export class World {
     private readonly SCOPE = 'World';
     readonly group = new THREE.Group();
     private readonly wasm: WasmWorld;
-    private readonly chunks = new Map<string, Chunk>();
-    private readonly chunkEdges = new Map<string, ChunkEdge>();
-    private readonly chunkCorners = new Map<string, ChunkCorner>();
+    readonly chunks = new Map<string, Chunk>();
+    readonly chunkEdges = new Map<string, ChunkEdge>();
+    readonly chunkCorners = new Map<string, ChunkCorner>();
     private _referenceChunkId = ChunkId.ORIGIN;
     private _focusedChunkId = ChunkId.ORIGIN;
     private readonly subscriptions: EventSubscriptions;
+    readonly selection: SelectionManager;
     private readonly debugPanel: DebugPanel;
     private _showChunkLabels = false;
     private _showCellWires = false;
     private pendingChunkUpdate: number | null = null;
     private loadQueue: ChunkId[] = [];
-    private _hover: Selection | null = null;
 
     public readonly consts: WorldConsts;
 
@@ -86,11 +83,12 @@ export class World {
             cellWorldSize: this.wasm.const_cell_world_size()
         };
         this.subscriptions = new EventSubscriptions(events);
+        this.selection = new SelectionManager(events, debugPanel);
         this.debugPanel = debugPanel;
 
         // Subscribe to world reference changed
         this.subscriptions.on<WorldReferenceChangedEvent>(WORLD_REFERENCE_CHANGED, this.handleWorldReferenceChanged);
-        this.subscriptions.on<WorldCenterChangedEvent>(WORLD_CENTER_CHANGED, this.handleWorldCenterChanged);
+        this.subscriptions.on<WorldFocusChangedEvent>(WORLD_FOCUS_CHANGED, this.handleWorldFocusChanged);
 
         this.loadQueue = Array.from(this._focusedChunkId.spiral(MAX_LOADED_CHUNK_DISTANCE));
         this.scheduleLoadQueue();
@@ -139,9 +137,7 @@ export class World {
         const chunk = this.chunks.get(key);
         if (!chunk) return;
 
-        if (this._hover?.type === 'cell' && this._hover.chunk === chunk) {
-            this.clearHover();
-        }
+        this.selection.clearIfOwner(chunk);
 
         this.removeChunkEdgesForChunk(id);
         this.removeChunkCornersForChunk(id);
@@ -187,91 +183,6 @@ export class World {
         this.wasm.free();
     }
 
-    private setHover(selection: Selection): void {
-        // Hide previous selection
-        if (this._hover) {
-            switch (this._hover.type) {
-                case 'cell':
-                    // TODO: re-enable when Chunk.hideSelection is restored
-                    break;
-                case 'edge-cell':
-                    break;
-            }
-        }
-
-        this._hover = selection;
-
-        // Update debug panel
-        switch (selection.type) {
-            case 'cell':
-                this.debugPanel.set(
-                    this.SCOPE,
-                    'Hover Cell',
-                    `Chunk (${selection.chunk.id.q}, ${selection.chunk.id.r}), Cell ${selection.cellId}`
-                );
-                break;
-            case 'edge-cell':
-                this.debugPanel.set(
-                    this.SCOPE,
-                    'Hover Cell',
-                    `Edge (${selection.edge.id.chunkId.q}, ${selection.edge.id.chunkId.r})-${selection.edge.id.edgeIdx}, Cell ${selection.cellId}`
-                );
-                break;
-        }
-    }
-
-    setHoverAt(worldPos: THREE.Vector3) {
-        if (this._hover) {
-            const dist = worldPos.distanceTo(this._hover.worldPoint);
-            if (dist < this.consts.cellWorldSize * 0.5) {
-                return;
-            }
-        }
-
-        const chunkId = ChunkId.fromWorldPosition(this._referenceChunkId, new THREE.Vector2(worldPos.x, worldPos.y));
-        const chunk = this.chunks.get(chunkId.key());
-        if (chunk) {
-            // TODO: re-enable when Chunk.showSelectionAt is restored
-            // const selection = chunk.showSelectionAt(worldPos);
-            // if (selection) {
-            //     this.setHover({ type: 'cell', chunk, worldPoint: worldPos, localPoint: selection.localPos, cellId: selection.cellId });
-            //     return;
-            // }
-        }
-
-        /*        // Try boundary edge entities
-        for (const edge of this.chunkEdges.values()) {
-            const selection = edge.showSelectionAt(worldPos);
-            if (selection) {
-                this.setHover({
-                    type: 'edge-cell',
-                    edge,
-                    worldPoint: worldPos,
-                    localPoint: selection.localPos,
-                    cellId: selection.cellId
-                });
-                return;
-            }
-            }*/
-
-        this.clearHover();
-    }
-
-    clearHover() {
-        if (!this._hover) return;
-
-        switch (this._hover.type) {
-            case 'cell':
-                // TODO: re-enable when Chunk.hideSelection is restored
-                break;
-            case 'edge-cell':
-                break;
-        }
-
-        this._hover = null;
-        this.debugPanel.set(this.SCOPE, 'Hover Cell', 'None');
-    }
-
     private handleWorldReferenceChanged = (event: WorldReferenceChangedEvent): void => {
         this._referenceChunkId = event.newChunkId;
 
@@ -290,7 +201,7 @@ export class World {
         }
     };
 
-    private handleWorldCenterChanged = (event: WorldCenterChangedEvent): void => {
+    private handleWorldFocusChanged = (event: WorldFocusChangedEvent): void => {
         this._focusedChunkId = event.newChunkId;
 
         if (this.pendingChunkUpdate !== null) {
@@ -343,10 +254,7 @@ export class World {
     private removeChunkEdgesForChunk(chunkId: ChunkId): void {
         for (const [key, edge] of this.chunkEdges.entries()) {
             if (edge.id.involvedChunkIds().some((id) => id.equals(chunkId))) {
-                // Clear hover if it references this entity
-                if (this._hover?.type === 'edge-cell' && this._hover.edge === edge) {
-                    this.clearHover();
-                }
+                this.selection.clearIfOwner(edge);
 
                 this.group.remove(edge.group);
                 edge.dispose();
@@ -381,6 +289,7 @@ export class World {
     private removeChunkCornersForChunk(chunkId: ChunkId): void {
         for (const [key, corner] of this.chunkCorners.entries()) {
             if (corner.id.involvedChunkIds().some((id) => id.equals(chunkId))) {
+                this.selection.clearIfOwner(corner);
                 this.group.remove(corner.group);
                 corner.dispose();
                 this.chunkCorners.delete(key);

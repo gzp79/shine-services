@@ -4,11 +4,20 @@ import type { PolygonMesh } from '../mesh/polygon-mesh';
 
 export class SelectionNode {
     private mesh: THREE.Mesh | null = null;
+    private readonly material: THREE.MeshBasicMaterial;
 
     constructor(
         private readonly parent: THREE.Group,
         private readonly polygonData: PolygonMesh
-    ) {}
+    ) {
+        this.material = new THREE.MeshBasicMaterial({
+            color: 0xffdd00,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+    }
 
     show(polygonId: number): void {
         this.hide();
@@ -19,14 +28,7 @@ export class SelectionNode {
             return;
         }
 
-        const material = new THREE.MeshBasicMaterial({
-            color: 0xffdd00,
-            transparent: true,
-            opacity: 0.5,
-            side: THREE.DoubleSide,
-            depthWrite: false
-        });
-        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh = new THREE.Mesh(geometry, this.material);
         this.parent.add(this.mesh);
     }
 
@@ -34,7 +36,6 @@ export class SelectionNode {
         if (!this.mesh) return;
         this.parent.remove(this.mesh);
         this.mesh.geometry.dispose();
-        (this.mesh.material as THREE.Material).dispose();
         this.mesh = null;
     }
 
@@ -44,5 +45,6 @@ export class SelectionNode {
 
     dispose(): void {
         this.hide();
+        this.material.dispose();
     }
 }

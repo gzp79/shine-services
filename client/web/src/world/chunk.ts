@@ -1,8 +1,11 @@
 import { InnerCellsHandle, WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { EventSubscriptions } from '../engine/events';
+import { computeLocalCentroids } from '../engine/mesh/centroid';
+import { SelectionNode } from '../engine/nodes/selection-node';
 import { WireNode } from '../engine/nodes/wire-node';
 import { ChunkId } from './chunk-id';
+import { SELECTION_CHANGED, type SelectionChangedEvent } from './selection/selection-event';
 
 export class InternalCell {
     readonly position: THREE.Vector3;
@@ -20,19 +23,20 @@ export class Chunk {
 
     private label: THREE.Sprite | null = null;
     private cellWires: WireNode | null = null;
-    private subscription: EventSubscriptions;
+    private selectionNode: SelectionNode;
+    private _centroids: Float32Array | null = null;
+    private readonly subscriptions: EventSubscriptions;
 
     constructor(
         private readonly world: WasmWorld,
         readonly id: ChunkId,
-        private readonly events: EventTarget
+        events: EventTarget
     ) {
         this.group.userData = { chunkId: { q: id.q, r: id.r }, chunk: this };
         this.innerCells = world.inner_cells(id.q, id.r)!;
-        //this.selection = new SelectionMesh(this.group, dualPolygons);
-
-        // Subscribe to focus change events
-        this.subscription = new EventSubscriptions(events);
+        this.selectionNode = new SelectionNode(this.group, this.innerCells);
+        this.subscriptions = new EventSubscriptions(events);
+        this.subscriptions.on<SelectionChangedEvent>(SELECTION_CHANGED, this.handleSelectionChanged);
     }
 
     init(referenceChunkId: ChunkId): void {
@@ -45,7 +49,8 @@ export class Chunk {
     }
 
     dispose(): void {
-        //this.selection.dispose();
+        this.subscriptions.dispose();
+        this.selectionNode.dispose();
         this.disposeLabel();
         this.cellWires?.dispose();
         this.innerCells.free();
@@ -76,62 +81,25 @@ export class Chunk {
         }
     }
 
-    /*showSelectionAt(worldPos: THREE.Vector3): { cellId: number; localPos: THREE.Vector3 } | null {
-        const localPos = this.group.worldToLocal(worldPos.clone());
-        const vertIdx = this.findClosestVertex(localPos, this.selection.vertIdx);
-        if (vertIdx === -1) {
-            this.hideSelection();
-            return null;
-        }
-
-        this.selection.showAt(vertIdx);
-        return { cellId: vertIdx, localPos };
-    }
-
-    hideSelection(): void {
-        this.selection.hide();
-    }*/
-
     worldOffset(ref: ChunkId): [number, number] {
         return this.world.chunk_world_offset(ref.q, ref.r, this.id.q, this.id.r);
     }
 
-    /*private findClosestVertex(localPoint: THREE.Vector3, currentVertIdx: number): number {
-        const vertices = this.world.chunk_quad_vertices(this.id.q, this.id.r);
-        if (vertices.length === 0) return -1;
-
-        let closestIdx = 0;
-        let closestDist = Infinity;
-
-        // Calculate distance to current vertex if valid
-        let currentDist = Infinity;
-        if (currentVertIdx >= 0 && currentVertIdx < vertices.length / 2) {
-            const vx = vertices[currentVertIdx * 2];
-            const vy = vertices[currentVertIdx * 2 + 1];
-            const dx = vx - localPoint.x;
-            const dy = vy - localPoint.y;
-            currentDist = dx * dx + dy * dy;
+    get centroids(): Float32Array {
+        if (!this._centroids) {
+            this._centroids = computeLocalCentroids(this.innerCells);
         }
+        return this._centroids;
+    }
 
-        for (let i = 0; i < vertices.length / 2; i++) {
-            const vx = vertices[i * 2];
-            const vy = vertices[i * 2 + 1];
-            const dx = vx - localPoint.x;
-            const dy = vy - localPoint.y;
-            const dist = dx * dx + dy * dy;
-            if (dist < closestDist) {
-                closestDist = dist;
-                closestIdx = i;
-            }
+    private handleSelectionChanged = (event: SelectionChangedEvent): void => {
+        const sel = event.selection;
+        if (sel?.type === 'cell' && sel.chunk === this) {
+            this.selectionNode.show(sel.cellId);
+        } else {
+            this.selectionNode.hide();
         }
-
-        // Add hysteresis: only switch if new vertex is significantly closer (50% of current distance)
-        if (currentVertIdx >= 0 && closestDist > currentDist * 0.25) {
-            return currentVertIdx;
-        }
-
-        return closestIdx;
-    }*/
+    };
 
     private createLabel(): void {
         if (this.label) return;

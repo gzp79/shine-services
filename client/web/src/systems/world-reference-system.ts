@@ -18,9 +18,9 @@ export type WorldReferenceChangedEvent = {
     deltaPosition: THREE.Vector2;
 };
 
-// WorldCenterChangedEvent - The cell in focus has changed
-export const WORLD_CENTER_CHANGED = 'worldcenterchanged';
-export type WorldCenterChangedEvent = {
+// WorldFocusChangedEvent - The cell in focus has changed
+export const WORLD_FOCUS_CHANGED = 'worldcenterchanged';
+export type WorldFocusChangedEvent = {
     oldChunkId: ChunkId;
     newChunkId: ChunkId;
 };
@@ -67,7 +67,7 @@ export class WorldReferenceSystem implements GameSystem {
             }
 
             // Dispatch focus change
-            this.dispatcher.dispatch<WorldCenterChangedEvent>(WORLD_CENTER_CHANGED, {
+            this.dispatcher.dispatch<WorldFocusChangedEvent>(WORLD_FOCUS_CHANGED, {
                 oldChunkId: focusedChunkId,
                 newChunkId: currentChunkId
             });
