@@ -123,10 +123,7 @@ export class DesktopController {
             !this.activeDragRotate &&
             totalMoved > MOVE_THRESHOLD_PX
         ) {
-            // Check if move is active - block pan
-            if (this.keys.up || this.keys.left || this.keys.down || this.keys.right) {
-                return;
-            }
+            // Conflict resolution now in InputManager
             this.activeDragPan = true;
             this.handler.onDragPanStart(this.owningPointer.startPos);
         }
@@ -136,15 +133,14 @@ export class DesktopController {
             return;
         }
 
-        // DragRotate (right button drag) - blocked when Q/E rotation is active
+        // DragRotate (right button drag)
         if (
             this.owningPointer.button === 2 &&
             !this.activeDragPan &&
             !this.activeDragRotate &&
-            !this.rotateKeys.left &&
-            !this.rotateKeys.right &&
             totalMoved > MOVE_THRESHOLD_PX
         ) {
+            // Conflict resolution now in InputManager
             this.activeDragRotate = true;
             this.handler.onDragRotateStart(this.owningPointer.startPos);
         }
@@ -281,8 +277,8 @@ export class DesktopController {
     }
 
     handleWheel(ev: WheelEvent): void {
-        // Block wheel during interact or when zoom keys are active
-        if (this.activeInteract || this.zoomKeys.in || this.zoomKeys.out) {
+        // Block wheel during interact (zoom key conflict resolution now in InputManager)
+        if (this.activeInteract) {
             return;
         }
 

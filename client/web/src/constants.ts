@@ -29,7 +29,7 @@ export const ROTATE_KEYS: readonly string[] = [ROTATE_KEY_LEFT, ROTATE_KEY_RIGHT
 // Input zoom keys
 export const ZOOM_KEY_IN = 'r';
 export const ZOOM_KEY_OUT = 'f';
-export const ZOOM_KEY_SPEED = 50; // Zoom units per second (distance-scaled in consumer)
+export const ZOOM_KEY_SPEED = 250; // Zoom units per second (distance-scaled in consumer)
 export const ZOOM_KEYS: readonly string[] = [ZOOM_KEY_IN, ZOOM_KEY_OUT];
 
 // Input sensitivity constants

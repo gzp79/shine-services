@@ -1,7 +1,8 @@
 import init from '#wasm';
 import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
-import { InputMapper } from '../avatar/input-mapper';
+import { CursorLocomotionSystem } from '../avatar/cursor-locomotion-system';
+import { InputManager } from '../avatar/input-manager';
 import { WorldCursor } from '../avatar/world-cursor';
 import { CameraFollowCursorSystem } from '../systems/camera-follow-cursor-system';
 import { SelectionSystem } from '../systems/selection-system';
@@ -18,7 +19,8 @@ class Game {
     private readonly events: EventTarget;
     private readonly renderContext: RenderContext;
     private readonly inputController: InputController;
-    private readonly inputMapper: InputMapper;
+    private readonly inputManager: InputManager;
+    private readonly locomotionSystem: CursorLocomotionSystem;
     private readonly camera: Camera;
     private readonly worldCursor: WorldCursor;
     private readonly world: World;
@@ -47,13 +49,19 @@ class Game {
         container.style.outline = 'none';
         container.focus();
 
-        // Create WorldCursor first (needed by InputMapper for orientation)
+        // Create WorldCursor first (needed by InputManager for orientation)
         this.worldCursor = new WorldCursor(this.renderContext, this.events);
         this.world = new World(this.events, this.debugPanel);
 
-        // InputMapper transforms screen-space input to cursor-aware events
-        this.inputMapper = new InputMapper(this.camera, this.worldCursor, this.events);
-        this.inputController = new InputController(container, this.inputMapper);
+        // InputManager handles input with centralized conflict resolution
+        this.inputManager = new InputManager(this.camera, this.worldCursor, this.events);
+        this.inputController = new InputController(container, this.inputManager);
+
+        // CursorLocomotionSystem polls locomotion state and applies to WorldCursor
+        this.locomotionSystem = new CursorLocomotionSystem(
+            this.worldCursor,
+            () => this.inputManager.getLocomotionState()
+        );
 
         // Add debug toggles
         this.worldCursor.showMesh = true;
@@ -81,7 +89,7 @@ class Game {
         this.lastTime = currentTime;
 
         this.camera.update();
-        this.worldCursor.update(deltaTime);
+        this.locomotionSystem.update(deltaTime);
 
         for (const system of this.systems) {
             system.update(deltaTime);
