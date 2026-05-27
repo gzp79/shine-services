@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { WorldCursor } from './world-cursor';
-import type { LocomotionState } from './input-manager';
+import type { LocomotionState } from '../engine/input/input-manager';
 
 const CURSOR_MOVE_SPEED = 10; // units/second
 const CURSOR_SPRINT_MULTIPLIER = 2;
@@ -38,17 +38,17 @@ export class CursorLocomotionSystem {
             this.worldCursor.setPosition(newPosition);
         }
 
-        // Apply Q/E rotation rate
-        if (state.rotateRate !== 0) {
+        // Apply Q/E rotation
+        if (state.rotate !== 0) {
             const { yaw } = this.worldCursor.getCameraTarget();
-            const newYaw = yaw + state.rotateRate * CURSOR_ROTATE_SPEED * deltaTime;
+            const newYaw = yaw + state.rotate * CURSOR_ROTATE_SPEED * deltaTime;
             this.worldCursor.setYaw(newYaw);
         }
 
-        // Apply R/F zoom rate
-        if (state.zoomRate !== 0) {
+        // Apply R/F zoom
+        if (state.zoom !== 0) {
             const { distance } = this.worldCursor.getCameraTarget();
-            const newDistance = distance + state.zoomRate * CURSOR_ZOOM_SPEED * deltaTime;
+            const newDistance = distance + state.zoom * CURSOR_ZOOM_SPEED * deltaTime;
             this.worldCursor.setZoom(newDistance);
         }
     }

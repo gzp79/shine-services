@@ -1,29 +1,20 @@
-// Screen position (top-left origin, y downward)
 export type Point = { x: number; y: number };
-// Screen relative (y downward)
-export type Delta = { x: number; y: number };
 
-/**
- * Callback interface for handling input events.
- * Implementations can dispatch events, map to world space, or apply effects directly.
- */
 export interface InputHandler {
-    onControllerChanged(controller: 'touch' | 'desktop'): void;
-    onTap(pos: Point): void;
+    onSchemaChanged(schema: 'touch' | 'desktop'): void;
+
+    onMoveTo(pos: Point): void;
+    onRotateBy(angleDelta: number): void;
+    onZoomBy(delta: number): void;
+
+    onMoveRate(x: number, y: number, sprint: boolean): void;
+    onRotateRate(value: number): void;
+    onZoomRate(value: number): void;
+
+    onPinchStart(pos1: Point, pos2: Point): void;
+    onPinch(pos1: Point, pos2: Point): void;
+    onPinchEnd(): void;
     onInteractStart(pos: Point): void;
-    onInteractDrag(start: Point, current: Point): void;
+    onInteract(pos: Point): void;
     onInteractEnd(pos: Point): void;
-    onDragPanStart(pos: Point): void;
-    onDragPan(start: Point, current: Point): void;
-    onDragPanEnd(pos: Point): void;
-    onDragRotateStart(pos: Point): void;
-    onDragRotate(start: Point, current: Point): void;
-    onDragRotateEnd(pos: Point): void;
-    onPinchStart(start: [Point, Point], current: [Point, Point]): void;
-    onPinch(start: [Point, Point], current: [Point, Point]): void;
-    onPinchEnd(start: [Point, Point], current: [Point, Point]): void;
-    onZoomTo(pos: Point, delta: number): void;
-    onMove(direction: Delta, isSprinting: boolean): void;
-    onRotate(direction: number): void;
-    onZoom(direction: number): void;
 }

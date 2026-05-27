@@ -16,7 +16,7 @@
 
 <!-- ══════════════════════════════════════════ -->
 <h2>Problem</h2>
-<p>The input system maps raw device events (pointer, keyboard, touch, wheel) to two outputs the avatar and camera systems consume: a <em>locomotion state</em> polled every frame, and one-shot <em>gesture events</em>. Conflict resolution between simultaneous inputs (e.g., WASD vs drag-pan) lives in a single place — <code>InputManager</code> — so the rules are testable in isolation and new input sources slot in behind the same <code>InputHandler</code> interface.</p>
+<p>The input system maps raw device events (pointer, keyboard, touch, wheel) to callbacks consumed by avatar/camera systems. A layered architecture separates concerns: raw inputs detect gestures, schemas compose raw inputs and apply conflict resolution, InputManager routes callbacks from the active schema, and external systems implement InputHandler to receive input events. This structure makes gesture detection, conflict rules, and schema switching independently testable.</p>
 
 <hr>
 
@@ -27,15 +27,54 @@
 
   <!-- RAW INPUT -->
   <div class="layer-row">
-    <div class="layer-label">Raw Input<br>Controllers</div>
+    <div class="layer-label">Raw Input<br>Detectors</div>
     <div class="layer-body">
-      <div class="box box-indigo" style="flex:1.1">
-        <div class="bname">DesktopController</div>
-        <div class="bdetail">pointer → tap, drag-pan, drag-rotate, long-press<br>keyboard → WASD, Q/E, R/F &nbsp;·&nbsp; wheel → zoom</div>
+      <div class="box box-indigo" style="flex:1">
+        <div class="bname">RawPointer</div>
+        <div class="bdetail">tap, drag, long-drag<br>(per button)</div>
       </div>
-      <div class="box box-indigo" style="flex:1.1">
-        <div class="bname">TouchController</div>
-        <div class="bdetail">single finger → tap, pan, long-press<br>two fingers → pinch zoom</div>
+      <div class="box box-indigo" style="flex:1">
+        <div class="bname">RawKeyAxis2D<br>RawKeyAxis1D</div>
+        <div class="bdetail">WASD, Q/E, R/F<br>normalized axes</div>
+      </div>
+      <div class="box box-indigo" style="flex:1">
+        <div class="bname">RawWheel</div>
+        <div class="bdetail">zoom delta</div>
+      </div>
+      <div class="box box-indigo" style="flex:1">
+        <div class="bname">RawSingleTouch</div>
+        <div class="bdetail">tap, drag, long-drag</div>
+      </div>
+      <div class="box box-indigo" style="flex:1">
+        <div class="bname">RawTwoFingerGesture</div>
+        <div class="bdetail">pinch (2 finger positions)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-row" style="min-height:32px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-teal" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">gesture callbacks</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCHEMAS -->
+  <div class="layer-row">
+    <div class="layer-label">Input<br>Schemas</div>
+    <div class="layer-body">
+      <div class="box box-teal" style="flex:1">
+        <div class="bname">DesktopSchema</div>
+        <div class="bdetail">Composes: RawPointer (left, right), RawKeyAxis2D (WASD), RawKeyAxis1D (Q/E, R/F), RawWheel<br><strong>Conflict resolution:</strong> WASD ↔ left-drag, Q/E ↔ right-drag, R/F ↔ wheel</div>
+      </div>
+      <div class="box box-teal" style="flex:1">
+        <div class="bname">TouchSchema</div>
+        <div class="bdetail">Composes: RawSingleTouch, RawTwoFingerGesture<br><strong>Conflict resolution:</strong> single-finger ↔ two-finger (first to start wins)</div>
       </div>
     </div>
   </div>
@@ -45,7 +84,7 @@
     <div class="arrow-body">
       <div class="arrow-item arr-blue" style="flex:1">
         <div class="arrow-stem" style="height:8px"></div>
-        <div class="arrow-label">InputHandler callbacks — raw, unresolved<br>(onMove, onTap, onDragPan, onDragRotate, onPinch, onZoomTo, onRotate, onZoom…)</div>
+        <div class="arrow-label">InputSchema callbacks<br>(onMoveTo, onRotateBy, onZoomBy, onMoveRate, onRotateRate, onZoomRate, onPinch*, onInteract*)</div>
         <div class="arrow-stem" style="height:8px"></div>
         <div class="arrow-head"></div>
       </div>
@@ -53,111 +92,47 @@
   </div>
 
   <!-- INPUT MANAGER -->
-  <div class="layer-row" style="min-height:130px">
-    <div class="layer-label">Input<br>Manager</div>
-    <div class="layer-body" style="flex-direction:column; gap:0">
-      <div class="box-compound-header box-blue">
-        <div class="bname">InputManager</div>
-        <div class="bdetail">Source tracking &amp; desktop↔touch switching &nbsp;·&nbsp; <strong>Conflict resolution (targeted blocks) runs here</strong> — before anything is stored or emitted</div>
-      </div>
-      <div class="box-compound-body">
-        <div class="box box-green">
-          <div class="bname" style="color:#86efac">Locomotion State (stored, polled)</div>
-          <div class="bdetail">
-            <code>move: Delta</code> — raw screen-space<br>
-            <code>rotateRate: number</code><br>
-            <code>zoomRate: number</code><br>
-            <code>sprint: bool</code><br><br>
-            Written on key down/up.<br>
-            Read by CursorLocomotionSystem every frame.<br>
-            <strong>No events emitted.</strong>
-          </div>
-        </div>
-        <div class="box box-orange">
-          <div class="bname" style="color:#fdba74">Gesture Events (emitted once)</div>
-          <div class="bdetail">
-            tap → <code>CURSOR_MOVE_TO</code><br>
-            drag-pan (per frame) → <code>CURSOR_MOVE_TO</code><br>
-            drag-rotate → <code>CURSOR_ROTATE_DELTA</code><br>
-            pinch → <code>CURSOR_ZOOM_DELTA</code><br>
-            wheel → <code>CURSOR_ZOOM_DELTA</code><br>
-            long-press → <code>INTERACT_START/DRAG/END</code>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="arrow-row" style="min-height:44px">
-    <div class="arrow-spacer"></div>
-    <div class="arrow-body">
-      <div class="arrow-item arr-green" style="flex:1">
-        <div class="arrow-stem" style="height:8px"></div>
-        <div class="arrow-label">reads locomotion state<br>every frame (poll)</div>
-        <div class="arrow-stem" style="height:8px"></div>
-        <div class="arrow-head"></div>
-      </div>
-      <div class="arrow-item arr-orange" style="flex:1">
-        <div class="arrow-stem" style="height:8px"></div>
-        <div class="arrow-label">gesture events<br>(subscribed by WorldCursor)</div>
-        <div class="arrow-stem" style="height:8px"></div>
-        <div class="arrow-head"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- SYSTEMS + WORLD CURSOR -->
-  <div class="layer-row" style="min-height:120px">
-    <div class="layer-label">Systems<br>(frame update)</div>
-    <div class="layer-body">
-      <div class="box box-green" style="flex:1">
-        <div class="bname">CursorLocomotionSystem</div>
-        <div class="bdetail">
-          <strong>update(dt):</strong><br>
-          1. read <code>move</code> delta from InputManager<br>
-          2. rotate by <code>worldCursor.cameraYaw</code> → world velocity<br>
-          3. <code>worldCursor.setPosition(pos + vel × dt)</code><br>
-          4. <code>worldCursor.setYaw(yaw + rotateRate × dt)</code><br>
-          5. <code>worldCursor.setZoom(dist + zoomRate × dt)</code><br><br>
-          velocity always correct — reads live yaw each frame
-        </div>
-      </div>
-      <div style="display:flex; align-items:center; padding:0 4px; opacity:0.25; font-size:20px;">→</div>
-      <div class="box box-violet" style="flex:1.1">
-        <div class="bname">WorldCursor</div>
-        <div class="bdetail">
-          <strong>Pure state container. No update().</strong><br><br>
-          Setters: <code>setPosition</code>, <code>setYaw</code>, <code>setZoom</code><br><br>
-          Event handlers (mutates own state):<br>
-          <code>CURSOR_MOVE_TO</code> → <code>setPosition</code><br>
-          <code>CURSOR_ROTATE_DELTA</code> → <code>setYaw</code><br>
-          <code>CURSOR_ZOOM_DELTA</code> → <code>setZoom</code><br>
-          <code>WORLD_REFERENCE_CHANGED</code> → offset position<br><br>
-          Provides <code>getCameraTarget()</code>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="arrow-row" style="min-height:36px">
-    <div class="arrow-spacer"></div>
-    <div class="arrow-body">
-      <div class="arrow-item arr-pink" style="flex:1">
-        <div class="arrow-stem" style="height:8px"></div>
-        <div class="arrow-label">getCameraTarget() — called every frame</div>
-        <div class="arrow-stem" style="height:8px"></div>
-        <div class="arrow-head"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- CAMERA -->
   <div class="layer-row">
-    <div class="layer-label">Camera<br>System</div>
+    <div class="layer-label">Input<br>Manager</div>
     <div class="layer-body">
-      <div class="box box-pink" style="flex:1">
-        <div class="bname">CameraFollowCursorSystem</div>
-        <div class="bdetail">reads <code>{ position, yaw, distance, lookAt }</code> from WorldCursor each frame · adaptive lerp → updates <code>Camera.position</code> + <code>Camera.lookAt()</code> → Three.js renders</div>
+      <div class="box box-blue" style="flex:1">
+        <div class="bname">InputManager</div>
+        <div class="bdetail">
+          Tracks active schema (desktop vs touch)<br>
+          Routes callbacks from active schema to InputHandler<br>
+          <strong>First-to-start-wins:</strong> While a schema is active (mid-gesture), blocks callbacks from other schemas<br>
+          When all schemas become idle, the next active schema wins<br>
+          Emits <code>onSchemaChanged</code> on desktop↔touch switch
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-row" style="min-height:32px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-violet" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">InputHandler interface callbacks</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HANDLER IMPLEMENTATION -->
+  <div class="layer-row">
+    <div class="layer-label">Handler<br>Implementation</div>
+    <div class="layer-body">
+      <div class="box box-violet" style="flex:1">
+        <div class="bname">InputHandler (external)</div>
+        <div class="bdetail">
+          Implemented by avatar/camera systems<br><br>
+          <strong>Delta callbacks:</strong> onMoveTo, onRotateBy, onZoomBy<br>
+          <strong>Rate callbacks:</strong> onMoveRate, onRotateRate, onZoomRate<br>
+          <strong>Gesture callbacks:</strong> onPinchStart/onPinch/onPinchEnd, onInteractStart/onInteract/onInteractEnd<br>
+          <strong>Schema change:</strong> onSchemaChanged
+        </div>
       </div>
     </div>
   </div>
@@ -165,19 +140,17 @@
 </div>
 
 <div class="legend">
-  <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div>Raw controllers</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div>Raw input detectors</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#14b8a6"></div>Input schemas</div>
   <div class="legend-item"><div class="legend-dot" style="background:#0ea5e9"></div>InputManager</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>Locomotion state / CursorLocomotionSystem</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#fb923c"></div>Gesture events</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#a855f7"></div>WorldCursor</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#ec4899"></div>CameraFollowCursorSystem</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#a855f7"></div>InputHandler (external)</div>
 </div>
 
 <hr>
 
 <!-- ══════════════════════════════════════════ -->
 <h2>Conflict / Exclusion Rules</h2>
-<p>Only block the gesture that does the <em>same thing</em> as the active key. Everything else stays active — WASD + right-mouse-rotate works, WASD + wheel zoom works. Rules live entirely in <code>InputManager</code>.</p>
+<p>Only block the gesture that does the <em>same thing</em> as the active key. Everything else stays active — WASD + right-mouse-rotate works, WASD + wheel zoom works. Rules are implemented in schemas by enabling/disabling raw inputs (e.g., WASD held → leftPointer.enabled = false).</p>
 
 <table>
   <tr>
@@ -192,7 +165,7 @@
     <td><span class="tag bad">blocked</span> — both move</td>
     <td><span class="tag good">allowed</span> ✓</td>
     <td><span class="tag good">allowed</span> ✓</td>
-    <td><span class="tag bad">blocked</span></td>
+    <td><span class="tag good">allowed</span> ✓</td>
   </tr>
   <tr>
     <td><strong>Q/E held</strong></td>
@@ -217,6 +190,35 @@
   </tr>
 </table>
 
+<!-- ══════════════════════════════════════════ -->
+<h2>Touch Conflict Rules</h2>
+<p>Single-finger and two-finger gestures are mutually exclusive. First gesture to start wins and remains active until all fingers are released.</p>
+
+<table>
+  <tr>
+    <th>Currently active</th>
+    <th>tap/drag/long-press (single-finger)</th>
+    <th>pinch (two-finger)</th>
+  </tr>
+  <tr>
+    <td><strong>Single-finger gesture active</strong></td>
+    <td><span class="tag good">active</span> ✓</td>
+    <td><span class="tag bad">blocked</span> — first to start wins</td>
+  </tr>
+  <tr>
+    <td><strong>Two-finger pinch active</strong></td>
+    <td><span class="tag bad">blocked</span> — first to start wins</td>
+    <td><span class="tag good">active</span> ✓</td>
+  </tr>
+  <tr>
+    <td><strong>No gesture</strong></td>
+    <td><span class="tag good">allowed</span> ✓</td>
+    <td><span class="tag good">allowed</span> ✓</td>
+  </tr>
+</table>
+
+<p><strong>Note:</strong> After two-finger pinch ends with one finger remaining, single-finger gestures stay blocked until <em>all</em> fingers are released.</p>
+
 <hr>
 
 <!-- ══════════════════════════════════════════ -->
@@ -227,97 +229,80 @@
     <th style="width:50%">File</th>
     <th>Role</th>
   </tr>
-  <tr><td><code>engine/input/_desktop-controller.ts</code></td><td>Pointer/keyboard/wheel gesture controller; emits raw <code>InputHandler</code> callbacks.</td></tr>
-  <tr><td><code>engine/input/_touch-controller.ts</code></td><td>Touch gesture controller (tap, pan, pinch, long-press); emits raw <code>InputHandler</code> callbacks.</td></tr>
-  <tr><td><code>avatar/input-manager.ts</code></td><td>Subscribes to controllers, applies conflict resolution, stores locomotion state, emits gesture events.</td></tr>
-  <tr><td><code>avatar/cursor-locomotion-system.ts</code></td><td>Per-frame system: reads locomotion state from <code>InputManager</code> and applies it to <code>WorldCursor</code>.</td></tr>
-  <tr><td><code>avatar/world-cursor.ts</code></td><td>Pure state container with setters and gesture-event handlers; provides <code>getCameraTarget()</code>.</td></tr>
-  <tr><td><code>avatar/events.ts</code></td><td>Gesture event definitions (<code>CURSOR_MOVE_TO</code>, <code>CURSOR_ROTATE_DELTA</code>, <code>CURSOR_ZOOM_DELTA</code>, <code>INTERACT_*</code>).</td></tr>
+  <tr><td><code>engine/input/raw/raw-pointer.ts</code></td><td>Pointer gesture detector (tap, drag, long-drag) for single button.</td></tr>
+  <tr><td><code>engine/input/raw/raw-key-axis-2d.ts</code></td><td>2D keyboard axis (WASD) with normalized output.</td></tr>
+  <tr><td><code>engine/input/raw/raw-key-axis-1d.ts</code></td><td>1D keyboard axis (Q/E, R/F).</td></tr>
+  <tr><td><code>engine/input/raw/raw-wheel.ts</code></td><td>Wheel zoom detector.</td></tr>
+  <tr><td><code>engine/input/raw/raw-single-touch.ts</code></td><td>Single-finger touch gesture detector (tap, drag, long-drag).</td></tr>
+  <tr><td><code>engine/input/raw/raw-two-finger-gesture.ts</code></td><td>Two-finger touch gesture detector (pinch with positions).</td></tr>
+  <tr><td><code>engine/input/schemas/input-schema.ts</code></td><td>InputSchema interface: isActive, callbacks, dispose.</td></tr>
+  <tr><td><code>engine/input/schemas/desktop-schema.ts</code></td><td>Desktop input schema; composes raw inputs, applies WASD/Q/E/R/F conflict rules.</td></tr>
+  <tr><td><code>engine/input/schemas/touch-schema.ts</code></td><td>Touch input schema; composes single/two-finger raw inputs, applies conflict rules.</td></tr>
+  <tr><td><code>engine/input/input-handler.ts</code></td><td>InputHandler interface: callback definitions for external implementations.</td></tr>
+  <tr><td><code>engine/input/input-manager.ts</code></td><td>Manages schemas, tracks active schema, routes callbacks to InputHandler.</td></tr>
+  <tr><td><code>engine/input/types.ts</code></td><td>LocomotionState type definition.</td></tr>
 </table>
 
 <hr>
 
 <!-- ══════════════════════════════════════════ -->
 <h2>Testing</h2>
-<p>Controllers (DesktopController, TouchController) are tested for gesture detection only. Exclusion rules are tested exclusively at the <code>InputManager</code> boundary.</p>
+<p>Raw inputs are tested for gesture detection only. Schemas are tested for conflict resolution (enable/disable logic). InputManager is tested for schema tracking and callback routing.</p>
 
 <details data-agent="test">
-  <summary>Exclusion / Conflict Rule Tests (InputManager)</summary>
+  <summary>Schema Conflict Rule Tests (DesktopSchema)</summary>
   <div class="details-body">
 
     <div class="test-section">
-      <h3>WASD blocks</h3>
+      <h3>WASD blocks left pointer drag (but not long-press)</h3>
       <ul class="test-list">
-        <li><span class="test-num">1</span>WASD held → drag-pan start blocked <span class="tag t-block">block</span></li>
-        <li><span class="test-num">2</span>WASD held → drag-pan in-progress: existing drag-pan stops <span class="tag t-block">block</span></li>
-        <li><span class="test-num">3</span>WASD held → interact (long-press) blocked <span class="tag t-block">block</span></li>
-        <li><span class="test-num">4</span>WASD held → drag-rotate allowed ✓ <span class="tag t-allow">allow</span></li>
-        <li><span class="test-num">5</span>WASD held → wheel zoom allowed ✓ <span class="tag t-allow">allow</span></li>
-        <li><span class="test-num">6</span>WASD released → drag-pan unblocked <span class="tag t-state">state</span></li>
-        <li><span class="test-num">7</span>WASD + drag-rotate concurrent: both locomotion state and CURSOR_ROTATE_DELTA correct <span class="tag t-state">state</span></li>
+        <li><span class="test-num">1</span>WASD held → left-drag blocked (callbacks ignored if wasdActive) <span class="tag t-block">block</span></li>
+        <li><span class="test-num">2</span>Left-drag active → WASD pressed → WASD.enabled = false <span class="tag t-block">block</span></li>
+        <li><span class="test-num">3</span>Left-drag ends → WASD.enabled = true <span class="tag t-state">state</span></li>
+        <li><span class="test-num">4</span>WASD held → long-press still works (not blocked) <span class="tag t-allow">allow</span></li>
+        <li><span class="test-num">5</span>WASD held → rightPointer still active (not blocked) <span class="tag t-allow">allow</span></li>
+        <li><span class="test-num">6</span>WASD held → wheel still active (not blocked) <span class="tag t-allow">allow</span></li>
       </ul>
     </div>
 
     <div class="test-section">
-      <h3>Q/E blocks</h3>
+      <h3>Q/E blocks right pointer</h3>
       <ul class="test-list">
-        <li><span class="test-num">8</span>Q/E held → drag-rotate blocked <span class="tag t-block">block</span></li>
-        <li><span class="test-num">9</span>Q/E held → drag-pan allowed ✓ <span class="tag t-allow">allow</span></li>
-        <li><span class="test-num">10</span>Q/E held → wheel zoom allowed ✓ <span class="tag t-allow">allow</span></li>
-        <li><span class="test-num">11</span>Q/E held → interact allowed ✓ <span class="tag t-allow">allow</span></li>
-        <li><span class="test-num">12</span>Drag-rotate active → Q/E pressed → Q/E blocked (bidirectional) <span class="tag t-block">block</span></li>
-        <li><span class="test-num">13</span>Q/E released → drag-rotate unblocked <span class="tag t-state">state</span></li>
+        <li><span class="test-num">7</span>Q/E held → rightPointer.enabled = false <span class="tag t-block">block</span></li>
+        <li><span class="test-num">8</span>Q/E released → rightPointer.enabled = true <span class="tag t-state">state</span></li>
+        <li><span class="test-num">9</span>Right-drag active → Q/E pressed → Q/E.enabled = false <span class="tag t-block">block</span></li>
+        <li><span class="test-num">10</span>Q/E held → leftPointer still active (not blocked) <span class="tag t-allow">allow</span></li>
       </ul>
     </div>
 
     <div class="test-section">
-      <h3>R/F blocks</h3>
+      <h3>R/F blocks wheel</h3>
       <ul class="test-list">
-        <li><span class="test-num">14</span>R/F held → wheel zoom blocked <span class="tag t-block">block</span></li>
-        <li><span class="test-num">15</span>R/F held → drag-rotate allowed ✓ <span class="tag t-allow">allow</span></li>
-        <li><span class="test-num">16</span>R/F held → drag-pan allowed ✓ <span class="tag t-allow">allow</span></li>
-        <li><span class="test-num">17</span>R/F released → wheel zoom unblocked <span class="tag t-state">state</span></li>
+        <li><span class="test-num">11</span>R/F held → wheel.enabled = false <span class="tag t-block">block</span></li>
+        <li><span class="test-num">12</span>R/F released → wheel.enabled = true <span class="tag t-state">state</span></li>
+        <li><span class="test-num">13</span>Wheel active → R/F pressed → R/F.enabled = false <span class="tag t-block">block</span></li>
       </ul>
     </div>
 
     <div class="test-section">
-      <h3>WASD + Q/E concurrent</h3>
+      <h3>Callback emission</h3>
       <ul class="test-list">
-        <li><span class="test-num">18</span>WASD + Q/E both held → locomotion state has move delta and rotateRate set <span class="tag t-state">state</span></li>
-        <li><span class="test-num">19</span>WASD + Q/E both held → drag-pan blocked (WASD), drag-rotate blocked (Q/E) <span class="tag t-block">block</span></li>
+        <li><span class="test-num">14</span>WASD held → onMoveRate called with normalized (x, y, sprint) <span class="tag t-event">callback</span></li>
+        <li><span class="test-num">15</span>Q/E held → onRotateRate called with value <span class="tag t-event">callback</span></li>
+        <li><span class="test-num">16</span>R/F held → onZoomRate called with value <span class="tag t-event">callback</span></li>
+        <li><span class="test-num">17</span>Left-click tap → onMoveTo called with screen position <span class="tag t-event">callback</span></li>
+        <li><span class="test-num">18</span>Right-drag → onRotateBy called with angleDelta <span class="tag t-event">callback</span></li>
+        <li><span class="test-num">19</span>Wheel → onZoomBy called with delta <span class="tag t-event">callback</span></li>
+        <li><span class="test-num">20</span>Long-press → onInteractStart/onInteract/onInteractEnd sequence <span class="tag t-event">callback</span></li>
       </ul>
     </div>
 
     <div class="test-section">
-      <h3>No keys — all gestures allowed</h3>
+      <h3>Rate value correctness</h3>
       <ul class="test-list">
-        <li><span class="test-num">20</span>drag-pan → emits CURSOR_MOVE_TO <span class="tag t-event">event</span></li>
-        <li><span class="test-num">21</span>drag-rotate → emits CURSOR_ROTATE_DELTA <span class="tag t-event">event</span></li>
-        <li><span class="test-num">22</span>wheel zoom → emits CURSOR_ZOOM_DELTA <span class="tag t-event">event</span></li>
-        <li><span class="test-num">23</span>interact → emits INTERACT_START/DRAG/END <span class="tag t-event">event</span></li>
-      </ul>
-    </div>
-
-    <div class="test-section">
-      <h3>Locomotion state correctness</h3>
-      <ul class="test-list">
-        <li><span class="test-num">24</span>Key down → locomotion state updated immediately <span class="tag t-state">state</span></li>
-        <li><span class="test-num">25</span>Key up → locomotion state zeroed immediately <span class="tag t-state">state</span></li>
-        <li><span class="test-num">26</span>Focus lost (blur) → locomotion state fully zeroed <span class="tag t-state">state</span></li>
-        <li><span class="test-num">27</span>Diagonal WASD (W+D) → move delta is normalized unit vector <span class="tag t-state">state</span></li>
-        <li><span class="test-num">28</span>Q+E both held → rotateRate = 0 (cancel out) <span class="tag t-state">state</span></li>
-        <li><span class="test-num">29</span>R+F both held → zoomRate = 0 (cancel out) <span class="tag t-state">state</span></li>
-      </ul>
-    </div>
-
-    <div class="test-section">
-      <h3>Gesture event correctness</h3>
-      <ul class="test-list">
-        <li><span class="test-num">30</span>Tap → CURSOR_MOVE_TO emitted with raycasted world position <span class="tag t-event">event</span></li>
-        <li><span class="test-num">31</span>Drag-pan → CURSOR_MOVE_TO emitted each frame with current position <span class="tag t-event">event</span></li>
-        <li><span class="test-num">32</span>Drag-rotate → CURSOR_ROTATE_DELTA emitted with correct angleDelta <span class="tag t-event">event</span></li>
-        <li><span class="test-num">33</span>Pinch → CURSOR_ZOOM_DELTA proportional to distance change <span class="tag t-event">event</span></li>
-        <li><span class="test-num">34</span>Wheel → CURSOR_ZOOM_DELTA emitted with scaled delta <span class="tag t-event">event</span></li>
+        <li><span class="test-num">21</span>Diagonal WASD (W+D) → onMoveRate receives normalized unit vector <span class="tag t-state">state</span></li>
+        <li><span class="test-num">22</span>Q+E both held → onRotateRate receives 0 (cancel out) <span class="tag t-state">state</span></li>
+        <li><span class="test-num">23</span>R+F both held → onZoomRate receives 0 (cancel out) <span class="tag t-state">state</span></li>
       </ul>
     </div>
 
@@ -325,25 +310,37 @@
 </details>
 
 <details data-agent="test">
-  <summary>WorldCursor State Tests</summary>
+  <summary>Schema Conflict Rule Tests (TouchSchema)</summary>
   <div class="details-body">
 
     <div class="test-section">
-      <h3>Setters</h3>
+      <h3>Single-finger blocks two-finger</h3>
       <ul class="test-list">
-        <li><span class="test-num">35</span>setYaw normalizes angle to [0, 2π) <span class="tag t-state">state</span></li>
-        <li><span class="test-num">36</span>setZoom clamps to [MIN_CAMERA_DISTANCE, MAX_CAMERA_DISTANCE] <span class="tag t-state">state</span></li>
-        <li><span class="test-num">37</span>getCameraTarget returns consistent values after each setter <span class="tag t-state">state</span></li>
+        <li><span class="test-num">24</span>Single-finger drag starts → twoFingerGesture.enabled = false <span class="tag t-block">block</span></li>
+        <li><span class="test-num">25</span>Single-finger drag ends → twoFingerGesture.enabled = true <span class="tag t-state">state</span></li>
+        <li><span class="test-num">26</span>Single-finger long-drag starts → twoFingerGesture.enabled = false <span class="tag t-block">block</span></li>
+        <li><span class="test-num">27</span>Single-finger long-drag ends → twoFingerGesture.enabled = true <span class="tag t-state">state</span></li>
       </ul>
     </div>
 
     <div class="test-section">
-      <h3>Gesture event handlers</h3>
+      <h3>Two-finger blocks single-finger</h3>
       <ul class="test-list">
-        <li><span class="test-num">38</span>CURSOR_MOVE_TO → position set to event value <span class="tag t-event">event</span></li>
-        <li><span class="test-num">39</span>CURSOR_ROTATE_DELTA → yaw updated by delta, direction vector rotated <span class="tag t-event">event</span></li>
-        <li><span class="test-num">40</span>CURSOR_ZOOM_DELTA → zoom distance updated by delta, clamped <span class="tag t-event">event</span></li>
-        <li><span class="test-num">41</span>WORLD_REFERENCE_CHANGED → position offset applied correctly <span class="tag t-event">event</span></li>
+        <li><span class="test-num">28</span>Two-finger starts → singleTouch.enabled = false <span class="tag t-block">block</span></li>
+        <li><span class="test-num">29</span>Two-finger ends, 1 finger remains → singleTouch still disabled <span class="tag t-block">block</span></li>
+        <li><span class="test-num">30</span>All fingers released → singleTouch.enabled = true <span class="tag t-state">state</span></li>
+      </ul>
+    </div>
+
+    <div class="test-section">
+      <h3>Callback emission</h3>
+      <ul class="test-list">
+        <li><span class="test-num">31</span>Single-finger tap → onMoveTo called <span class="tag t-event">callback</span></li>
+        <li><span class="test-num">32</span>Single-finger drag → onMoveTo called per frame <span class="tag t-event">callback</span></li>
+        <li><span class="test-num">33</span>Two-finger pinch start → onPinchStart(pos1, pos2) called <span class="tag t-event">callback</span></li>
+        <li><span class="test-num">34</span>Two-finger pinch move → onPinch(pos1, pos2) called per frame <span class="tag t-event">callback</span></li>
+        <li><span class="test-num">35</span>Two-finger pinch end → onPinchEnd() called <span class="tag t-event">callback</span></li>
+        <li><span class="test-num">36</span>Long-press → onInteractStart/onInteract/onInteractEnd sequence <span class="tag t-event">callback</span></li>
       </ul>
     </div>
 
@@ -351,31 +348,32 @@
 </details>
 
 <details data-agent="test">
-  <summary>CursorLocomotionSystem Tests</summary>
+  <summary>InputManager Routing Tests</summary>
   <div class="details-body">
 
     <div class="test-section">
-      <h3>Velocity computation</h3>
+      <h3>Schema tracking</h3>
       <ul class="test-list">
-        <li><span class="test-num">42</span>move delta (1,0) at yaw=0 → world velocity points along +x axis <span class="tag t-state">state</span></li>
-        <li><span class="test-num">43</span>move delta (1,0) at yaw=π/2 → world velocity rotated 90° correctly <span class="tag t-state">state</span></li>
-        <li><span class="test-num">44</span>move delta (0,0) → position unchanged after update(dt) <span class="tag t-state">state</span></li>
-        <li><span class="test-num">45</span>move delta + sprint → velocity magnitude multiplied by CURSOR_SPRINT_MULTIPLIER <span class="tag t-state">state</span></li>
-        <li><span class="test-num">46</span>yaw changes between frames: next update() uses new yaw, not previous frame's <span class="tag t-state">state</span></li>
+        <li><span class="test-num">37</span>DesktopSchema becomes active → lastUsedSchema = desktop <span class="tag t-state">state</span></li>
+        <li><span class="test-num">38</span>Schema change → handler.onSchemaChanged('desktop') called <span class="tag t-event">callback</span></li>
+        <li><span class="test-num">39</span>TouchSchema becomes active → lastUsedSchema = touch, onSchemaChanged('touch') <span class="tag t-state">state</span></li>
+        <li><span class="test-num">40</span>No schema active → lastUsedSchema = null <span class="tag t-state">state</span></li>
       </ul>
     </div>
 
     <div class="test-section">
-      <h3>Integration</h3>
+      <h3>Callback routing</h3>
       <ul class="test-list">
-        <li><span class="test-num">47</span>rotateRate > 0 → setYaw called with yaw + rotateRate × dt <span class="tag t-state">state</span></li>
-        <li><span class="test-num">48</span>zoomRate > 0 → setZoom called with distance + zoomRate × dt <span class="tag t-state">state</span></li>
-        <li><span class="test-num">49</span>all rates zero → no setters called on WorldCursor <span class="tag t-state">state</span></li>
+        <li><span class="test-num">41</span>Active schema callback → routed to handler <span class="tag t-event">callback</span></li>
+        <li><span class="test-num">42</span>Inactive schema callback → blocked (not routed) <span class="tag t-block">block</span></li>
+        <li><span class="test-num">43</span>No active schema → first callback from any schema is routed <span class="tag t-allow">allow</span></li>
+        <li><span class="test-num">44</span>Mid-gesture → new schema input blocked, active schema stays active <span class="tag t-block">block</span></li>
       </ul>
     </div>
 
   </div>
 </details>
+
 
 </body>
 </html>

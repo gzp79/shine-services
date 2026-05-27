@@ -2,7 +2,7 @@ import init from '#wasm';
 import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
 import { CursorLocomotionSystem } from '../avatar/cursor-locomotion-system';
-import { InputManager } from '../avatar/input-manager';
+import { InputManager } from './input/input-manager';
 import { WorldCursor } from '../avatar/world-cursor';
 import { CameraFollowCursorSystem } from '../systems/camera-follow-cursor-system';
 import { SelectionSystem } from '../systems/selection-system';
@@ -11,14 +11,12 @@ import { World } from '../world/world';
 import { Camera } from './camera/camera';
 import { DebugPanel } from './debug-panel';
 import type { GameSystem } from './game-system';
-import { InputController } from './input';
 import { PerformanceMetrics } from './performance-metrics';
 import { RenderContext } from './render-context';
 
 class Game {
     private readonly events: EventTarget;
     private readonly renderContext: RenderContext;
-    private readonly inputController: InputController;
     private readonly inputManager: InputManager;
     private readonly locomotionSystem: CursorLocomotionSystem;
     private readonly camera: Camera;
@@ -54,8 +52,7 @@ class Game {
         this.world = new World(this.events, this.debugPanel);
 
         // InputManager handles input with centralized conflict resolution
-        this.inputManager = new InputManager(this.camera, this.worldCursor, this.events);
-        this.inputController = new InputController(container, this.inputManager);
+        this.inputManager = new InputManager(this.camera, this.events, container);
 
         // CursorLocomotionSystem polls locomotion state and applies to WorldCursor
         this.locomotionSystem = new CursorLocomotionSystem(
@@ -88,6 +85,7 @@ class Game {
         const deltaTime = (currentTime - this.lastTime) / 1000;
         this.lastTime = currentTime;
 
+        this.inputManager.update();
         this.camera.update();
         this.locomotionSystem.update(deltaTime);
 
@@ -101,7 +99,7 @@ class Game {
 
     dispose(): void {
         cancelAnimationFrame(this.animationId);
-        this.inputController.dispose();
+        this.inputManager.dispose();
         this.camera.dispose();
         this.worldCursor.dispose();
         for (const system of this.systems) {

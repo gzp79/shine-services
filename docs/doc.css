@@ -200,6 +200,7 @@ details summary:hover { color: #e2e8f0; }
 
 /* Box color variants — semantic names */
 .box-indigo  { background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.35); }
+.box-teal    { background: rgba(20,184,166,0.12);  border-color: rgba(20,184,166,0.35); }
 .box-blue    { background: rgba(14,165,233,0.12);  border-color: rgba(14,165,233,0.35); }
 .box-green   { background: rgba(34,197,94,0.10);   border-color: rgba(34,197,94,0.30); }
 .box-orange  { background: rgba(251,146,60,0.10);  border-color: rgba(251,146,60,0.30); }
@@ -243,6 +244,8 @@ details summary:hover { color: #e2e8f0; }
 /* Arrow color variants */
 .arr-indigo .arrow-stem { background: rgba(99,102,241,0.5); }
 .arr-indigo .arrow-head { border-top: 7px solid rgba(99,102,241,0.5); }
+.arr-teal   .arrow-stem { background: rgba(20,184,166,0.5); }
+.arr-teal   .arrow-head { border-top: 7px solid rgba(20,184,166,0.5); }
 .arr-blue   .arrow-stem { background: rgba(14,165,233,0.5); }
 .arr-blue   .arrow-head { border-top: 7px solid rgba(14,165,233,0.5); }
 .arr-green  .arrow-stem { background: rgba(34,197,94,0.5); }
