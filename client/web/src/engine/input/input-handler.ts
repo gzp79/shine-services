@@ -19,4 +19,6 @@ export interface InputHandler {
     onInteractStart(start: Point): void;
     onInteract(start: Point, prev: Point, current: Point): void;
     onInteractEnd(start: Point, end: Point): void;
+
+    onGesture(points: Float32Array): void;
 }

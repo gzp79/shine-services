@@ -71,4 +71,6 @@ export class CursorInputSystem implements InputHandler {
         const world = this.camera.screenToWorldPlanePoint(end.x, end.y);
         if (world) this.dispatcher.dispatch<CursorInteractEvent>(CURSOR_INTERACT_END, { pos: world });
     }
+
+    onGesture(_points: Float32Array): void {}
 }

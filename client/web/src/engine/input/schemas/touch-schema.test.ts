@@ -25,7 +25,8 @@ describe('TouchSchema', () => {
             onPinchEnd: vi.fn(),
             onInteractStart: vi.fn(),
             onInteract: vi.fn(),
-            onInteractEnd: vi.fn()
+            onInteractEnd: vi.fn(),
+            onGesture: vi.fn()
         } satisfies InputHandler;
         schema = new TouchSchema(container, handler);
     });

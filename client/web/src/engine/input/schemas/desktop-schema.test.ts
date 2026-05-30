@@ -25,7 +25,8 @@ describe('DesktopSchema', () => {
             onInteractStart: vi.fn(),
             onInteract: vi.fn(),
             onInteractEnd: vi.fn(),
-            onSchemaChanged: vi.fn()
+            onSchemaChanged: vi.fn(),
+            onGesture: vi.fn()
         } satisfies InputHandler;
 
         schema = new DesktopSchema(container, handler);

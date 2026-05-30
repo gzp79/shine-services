@@ -1,6 +1,9 @@
 import { WebGPURenderer } from 'three/webgpu';
 import { InputManager } from '../../engine/input/input-manager';
 import type { InputHandler, Point } from '../../engine/input/input-handler';
+import { GestureSchema } from '../../engine/input/schemas/gesture-schema';
+import { CanvasStrokeNode } from '../../engine/nodes/canvas-stroke-node';
+import { StrokeLineNode } from '../../engine/nodes/stroke-line-node';
 import { animate, createExperiment, type ExperimentContext } from '../experiment';
 
 export interface InputControlExperiment {
@@ -86,9 +89,15 @@ export async function createInputControlExperiment(
         onInteractStart: (s)       => addLogEntry('interactStart', fmtPoint(s)),
         onInteract:      (s, p, c) => addLogEntry('interact',      `start:${fmtPoint(s)} prev:${fmtPoint(p)} cur:${fmtPoint(c)}`),
         onInteractEnd:   (s, e)    => addLogEntry('interactEnd',   `start:${fmtPoint(s)} end:${fmtPoint(e)}`),
+
+        onGesture: (pts) => addLogEntry('gesture', `${pts.length / 2} pts`),
     };
 
     const inputManager = new InputManager(inputHandler, container);
+    const strokePath = new CanvasStrokeNode(container); // disabled — kept for reference
+    const strokeLine = new StrokeLineNode(1000, 0x00ff00);
+
+    const gestureSchema = inputManager.schemas.find((s): s is GestureSchema => s instanceof GestureSchema)!;
 
     function updateControllerDisplay() {
         const schema = inputManager.activeSchema;
@@ -99,12 +108,27 @@ export async function createInputControlExperiment(
         controllerDiv.textContent = `Controller: ${schema.name.toUpperCase()}\n${schema.state()}`;
     }
 
-    const stopAnimation = animate(ctx, updateControllerDisplay);
+    function updateStroke() {
+        const { buf, count } = gestureSchema.currentPoints;
+        if (count > 0) {
+            strokeLine.update(buf, count);
+        } else {
+            strokeLine.clear();
+        }
+    }
+
+    const stopAnimation = animate(
+        ctx,
+        (_deltaTime) => { updateControllerDisplay(); updateStroke(); },
+        (renderer) => strokeLine.render(renderer)
+    );
 
     return {
         dispose() {
             stopAnimation();
             inputManager.dispose();
+            strokePath.dispose();
+            strokeLine.dispose();
             logDiv.remove();
             controllerDiv.remove();
             ctx.resizeObserver.disconnect();

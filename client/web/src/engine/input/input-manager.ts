@@ -2,10 +2,11 @@ import { InputSchema } from './schemas/input-schema';
 import type { InputHandler } from './input-handler';
 import { DebugSchema } from './schemas/debug-schema';
 import { DesktopSchema } from './schemas/desktop-schema';
+import { GestureSchema } from './schemas/gesture-schema';
 import { TouchSchema } from './schemas/touch-schema';
 
 export class InputManager {
-    private readonly schemas: InputSchema[] = [];
+    readonly schemas: InputSchema[] = [];
     private _activeSchema: InputSchema | null = null;
 
     constructor(
@@ -15,6 +16,7 @@ export class InputManager {
         this.schemas.push(new DebugSchema());
         this.schemas.push(new DesktopSchema(container));
         this.schemas.push(new TouchSchema(container));
+        this.schemas.push(new GestureSchema(container));
 
         for (const schema of this.schemas) {
             schema.onActivated = (s) => this.onActivated(s);

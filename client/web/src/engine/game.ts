@@ -70,13 +70,13 @@ class Game {
 
     init(): void {
         this.lastTime = performance.now();
-        this.animationId = requestAnimationFrame((t) => void this.animate(t));
+        this.animationId = requestAnimationFrame(() => void this.animate());
     }
 
-    private async animate(currentTime: number): Promise<void> {
-        this.animationId = requestAnimationFrame((t) => void this.animate(t));
-        const deltaTime = (currentTime - this.lastTime) / 1000;
-        this.lastTime = currentTime;
+    private async animate(): Promise<void> {
+        const now = performance.now();
+        const deltaTime = (now - this.lastTime) / 1000;
+        this.lastTime = now;
 
         this.worldCursor.update(deltaTime);
         this.camera.update();
@@ -87,6 +87,7 @@ class Game {
 
         await this.renderContext.render(this.camera.camera);
         this.performanceMetrics.update(deltaTime);
+        this.animationId = requestAnimationFrame(() => void this.animate());
     }
 
     dispose(): void {

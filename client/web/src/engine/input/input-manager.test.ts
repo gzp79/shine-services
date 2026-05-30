@@ -24,7 +24,8 @@ describe('InputManager', () => {
             onPinchEnd: vi.fn(),
             onInteractStart: vi.fn(),
             onInteract: vi.fn(),
-            onInteractEnd: vi.fn()
+            onInteractEnd: vi.fn(),
+            onGesture: vi.fn()
         } satisfies InputHandler;
         manager = new InputManager(handler, container);
     });

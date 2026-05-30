@@ -68,15 +68,24 @@ export function createExperiment(
     return { scene, camera, renderer, controls, resizeObserver };
 }
 
-export function animate(ctx: ExperimentContext, onFrame?: () => void): () => void {
+export function animate(
+    ctx: ExperimentContext,
+    onFrame?: (deltaTime: number) => void,
+    onPostRender?: (renderer: WebGPURenderer) => Promise<void>
+): () => void {
     let id = 0;
-    function loop() {
-        id = requestAnimationFrame(loop);
-        onFrame?.();
+    let lastTime = performance.now();
+    async function loop() {
+        const now = performance.now();
+        const deltaTime = (now - lastTime) / 1000;
+        lastTime = now;
+        onFrame?.(deltaTime);
         ctx.controls?.update();
-        void ctx.renderer.renderAsync(ctx.scene, ctx.camera);
+        await ctx.renderer.renderAsync(ctx.scene, ctx.camera);
+        if (onPostRender) await onPostRender(ctx.renderer);
+        id = requestAnimationFrame(loop);
     }
-    loop();
+    void loop();
     return () => cancelAnimationFrame(id);
 }
 
