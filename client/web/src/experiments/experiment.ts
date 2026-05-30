@@ -6,14 +6,6 @@ export type ExperimentOption = {
     addOrbitCamera?: boolean;
 };
 
-export interface ExperimentContext {
-    scene: THREE.Scene;
-    camera: THREE.PerspectiveCamera;
-    renderer: WebGPURenderer;
-    controls?: OrbitControls;
-    resizeObserver: ResizeObserver;
-}
-
 export async function createSharedRenderer(): Promise<WebGPURenderer> {
     const renderer = new WebGPURenderer({ antialias: true });
     await renderer.init();
@@ -21,79 +13,83 @@ export async function createSharedRenderer(): Promise<WebGPURenderer> {
     return renderer;
 }
 
-export function createExperiment(
-    container: HTMLElement,
-    renderer: WebGPURenderer,
-    options?: ExperimentOption
-): ExperimentContext {
-    const addOrbitCamera = options?.addOrbitCamera ?? true;
+export abstract class Experiment {
+    readonly scene: THREE.Scene;
+    readonly camera: THREE.PerspectiveCamera;
+    readonly renderer: WebGPURenderer;
+    readonly controls?: OrbitControls;
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1a1a2e);
+    private readonly resizeObserver: ResizeObserver;
+    private animationId = 0;
+    private lastTime = 0;
 
-    const width = container.clientWidth;
-    const height = container.clientHeight;
+    constructor(container: HTMLElement, renderer: WebGPURenderer, options?: ExperimentOption) {
+        const addOrbitCamera = options?.addOrbitCamera ?? true;
 
-    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
-    camera.up.set(0, 0, 1);
-    camera.position.set(0, -2.5, 4);
-    camera.lookAt(0, 0, 0);
+        this.renderer = renderer;
 
-    renderer.setSize(width, height);
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x1a1a2e);
 
-    let controls: OrbitControls | undefined = undefined;
-    if (addOrbitCamera) {
-        controls = new OrbitControls(camera, renderer.domElement);
-        controls.target.set(0, 0, 0);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.1;
-        controls.update();
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        this.camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
+        this.camera.up.set(0, 0, 1);
+        this.camera.position.set(0, -2.5, 4);
+        this.camera.lookAt(0, 0, 0);
+
+        renderer.setSize(width, height);
+
+        if (addOrbitCamera) {
+            this.controls = new OrbitControls(this.camera, renderer.domElement);
+            this.controls.target.set(0, 0, 0);
+            this.controls.enableDamping = true;
+            this.controls.dampingFactor = 0.1;
+            this.controls.update();
+        }
+
+        const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+        this.scene.add(ambient);
+        const directional = new THREE.DirectionalLight(0xffffff, 0.8);
+        directional.position.set(10, -5, 20);
+        this.scene.add(directional);
+
+        this.resizeObserver = new ResizeObserver(() => {
+            const w = container.clientWidth;
+            const h = container.clientHeight;
+            this.camera.aspect = w / h;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(w, h);
+        });
+        this.resizeObserver.observe(container);
     }
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambient);
-    const directional = new THREE.DirectionalLight(0xffffff, 0.8);
-    directional.position.set(10, -5, 20);
-    scene.add(directional);
+    protected onUpdate(_deltaTime: number): void {}
+    protected onPostRender(_renderer: WebGPURenderer): Promise<void> | void {}
 
-    const resizeObserver = new ResizeObserver(() => {
-        const w = container.clientWidth;
-        const h = container.clientHeight;
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
-        renderer.setSize(w, h);
-    });
-    resizeObserver.observe(container);
-
-    return { scene, camera, renderer, controls, resizeObserver };
-}
-
-export function animate(
-    ctx: ExperimentContext,
-    onFrame?: (deltaTime: number) => void,
-    onPostRender?: (renderer: WebGPURenderer) => Promise<void>
-): () => void {
-    let id = 0;
-    let lastTime = performance.now();
-    async function loop() {
-        const now = performance.now();
-        const deltaTime = (now - lastTime) / 1000;
-        lastTime = now;
-        onFrame?.(deltaTime);
-        ctx.controls?.update();
-        await ctx.renderer.renderAsync(ctx.scene, ctx.camera);
-        if (onPostRender) await onPostRender(ctx.renderer);
-        id = requestAnimationFrame(loop);
+    start(): void {
+        this.lastTime = performance.now();
+        const loop = async () => {
+            const now = performance.now();
+            const deltaTime = (now - this.lastTime) / 1000;
+            this.lastTime = now;
+            this.onUpdate(deltaTime);
+            this.controls?.update();
+            await this.renderer.renderAsync(this.scene, this.camera);
+            await this.onPostRender(this.renderer);
+            this.animationId = requestAnimationFrame(loop);
+        };
+        void loop();
     }
-    void loop();
-    return () => cancelAnimationFrame(id);
-}
 
-export function disposeExperiment(ctx: ExperimentContext) {
-    ctx.controls?.dispose();
-    ctx.resizeObserver.disconnect();
-    disposeObject3D(ctx.scene);
-    ctx.scene.clear();
+    dispose(): void {
+        cancelAnimationFrame(this.animationId);
+        this.controls?.dispose();
+        this.resizeObserver.disconnect();
+        disposeObject3D(this.scene);
+        this.scene.clear();
+    }
 }
 
 type DisposableMesh = THREE.Object3D & {

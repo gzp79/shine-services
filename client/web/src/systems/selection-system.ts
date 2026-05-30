@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { Camera } from '../engine/camera/camera';
+import type { ICamera } from '../engine/camera/camera';
 import type { DebugPanel } from '../engine/debug-panel';
 import { GameSystem } from '../engine/game-system';
-import { RenderContext } from '../engine/render-context';
+import type { IInputState } from '../engine/input/input-state';
 import { CHUNK_WORLD_SIZE, MAX_ACTIVE_CHUNK_DISTANCE } from '../constants';
 import { ChunkId } from '../world/chunk-id';
 import { Selection } from '../world/selection/selection-event';
@@ -27,22 +27,22 @@ export class SelectionSystem implements GameSystem {
 
     constructor(
         private readonly world: World,
-        private readonly renderContext: RenderContext,
-        private readonly camera: Camera,
+        private readonly input: IInputState,
+        private readonly camera: ICamera,
         debugPanel: DebugPanel
     ) {
         this.debugPanel = debugPanel;
     }
 
     update(_deltaTime: number): void {
-        const mousePosition = this.renderContext.mousePosition;
-        if (mousePosition.x === -1 && mousePosition.y === -1) {
+        const mousePos = this.input.pointerPos;
+        if (!mousePos) {
             this.debugPanel.set(SCOPE, 'Hit', 'None');
             this.world.selection.clear();
             return;
         }
 
-        const hit = this.camera.ndcToWorldPlanePoint(mousePosition.x, mousePosition.y);
+        const hit = this.camera.screenToWorldPlanePoint(mousePos.x, mousePos.y);
         if (!hit) {
             this.debugPanel.set(SCOPE, 'Hit', 'None');
             this.world.selection.clear();

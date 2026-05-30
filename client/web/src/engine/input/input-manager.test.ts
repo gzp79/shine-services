@@ -13,6 +13,8 @@ describe('InputManager', () => {
         container = document.createElement('div');
         handler = {
             onSchemaChanged: vi.fn(),
+            onPointerAt: vi.fn(),
+            onPointerLeave: vi.fn(),
             onMoveTo: vi.fn(),
             onRotateBy: vi.fn(),
             onZoomBy: vi.fn(),

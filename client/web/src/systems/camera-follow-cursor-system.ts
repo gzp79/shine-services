@@ -54,7 +54,9 @@ export class CameraFollowCursorSystem implements GameSystem {
 
         // Blend all parameters toward target
         this.currentDistance += (target.distance - this.currentDistance) * lerpFactor;
-        this.currentYaw += (target.yaw - this.currentYaw) * lerpFactor;
+        const TWO_PI = 2 * Math.PI;
+        const yawDiff = ((target.yaw - this.currentYaw + 3 * Math.PI) % TWO_PI) - Math.PI;
+        this.currentYaw = (((this.currentYaw + yawDiff * lerpFactor) % TWO_PI) + TWO_PI) % TWO_PI;
         this.currentCursorPosition.lerp(target.cursorPosition, lerpFactor);
         this.currentLookAtPosition.lerp(target.lookAt, lerpFactor);
 
@@ -72,7 +74,6 @@ export class CameraFollowCursorSystem implements GameSystem {
             this.currentCursorPosition.z + height
         );
 
-        // Apply to camera
         this.camera.camera.position.copy(cameraPosition);
         this.camera.camera.lookAt(this.currentLookAtPosition);
     }

@@ -1,16 +1,19 @@
 import init from '#wasm';
 import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
-import { CursorInputSystem } from '../systems/cursor-input-system';
-import { InputManager } from './input/input-manager';
 import { WorldCursor } from '../avatar/world-cursor';
 import { CameraFollowCursorSystem } from '../systems/camera-follow-cursor-system';
+import { CameraViewportSystem } from '../systems/camera-viewport-system';
+import { ClearInputStateSystem } from '../systems/clear-input-state-system';
+import { CursorDriveSystem } from '../systems/cursor-drive-system';
 import { SelectionSystem } from '../systems/selection-system';
 import { WorldReferenceSystem } from '../systems/world-reference-system';
 import { World } from '../world/world';
 import { Camera } from './camera/camera';
 import { DebugPanel } from './debug-panel';
 import type { GameSystem } from './game-system';
+import { InputManager } from './input/input-manager';
+import { InputState } from './input/input-state';
 import { PerformanceMetrics } from './performance-metrics';
 import { RenderContext } from './render-context';
 
@@ -18,7 +21,7 @@ class Game {
     private readonly events: EventTarget;
     private readonly renderContext: RenderContext;
     private readonly inputManager: InputManager;
-    private readonly cursorInputSystem: CursorInputSystem;
+    private readonly inputState: InputState;
     private readonly camera: Camera;
     private readonly worldCursor: WorldCursor;
     private readonly world: World;
@@ -33,11 +36,11 @@ class Game {
         renderer: WebGPURenderer
     ) {
         this.events = new EventTarget();
-        this.renderContext = new RenderContext(container, this.events, renderer);
+        this.renderContext = new RenderContext(container, renderer);
         this.debugPanel = new DebugPanel();
         this.debugPanel.setGameContainer(container);
         this.performanceMetrics = new PerformanceMetrics(this.renderContext.renderer);
-        this.camera = new Camera(this.renderContext, this.events);
+        this.camera = new Camera(this.events);
 
         // Make container focusable so keyboard events work
         if (!container.hasAttribute('tabindex')) {
@@ -47,11 +50,10 @@ class Game {
         container.style.outline = 'none';
         container.focus();
 
+        this.inputState = new InputState();
         this.worldCursor = new WorldCursor(this.renderContext, this.events);
+        this.inputManager = new InputManager(this.inputState, container);
         this.world = new World(this.events, this.debugPanel);
-
-        this.cursorInputSystem = new CursorInputSystem(this.worldCursor, this.camera, this.events);
-        this.inputManager = new InputManager(this.cursorInputSystem, container);
 
         // Add debug toggles
         this.worldCursor.showMesh = true;
@@ -59,10 +61,13 @@ class Game {
         this.debugPanel.addToggle('Controls', 'Show Chunk Labels', this.world, 'showChunkLabels');
         this.debugPanel.addToggle('Controls', 'Show Cell Wires', this.world, 'showCellWires');
 
-        // Register systems
+        // Register systems in execution order
+        this.systems.push(new CameraViewportSystem(this.camera, this.renderContext));
+        this.systems.push(new CursorDriveSystem(this.worldCursor, this.inputState, this.camera));
         this.systems.push(new CameraFollowCursorSystem(this.camera, this.worldCursor, this.events));
         this.systems.push(new WorldReferenceSystem(this.worldCursor, this.world, this.events, this.debugPanel));
-        this.systems.push(new SelectionSystem(this.world, this.renderContext, this.camera, this.debugPanel));
+        this.systems.push(new SelectionSystem(this.world, this.inputState, this.camera, this.debugPanel));
+        this.systems.push(new ClearInputStateSystem(this.inputState));
 
         // Add world to scene
         this.renderContext.scene.add(this.world.group);
@@ -77,9 +82,6 @@ class Game {
         const now = performance.now();
         const deltaTime = (now - this.lastTime) / 1000;
         this.lastTime = now;
-
-        this.worldCursor.update(deltaTime);
-        this.camera.update();
 
         for (const system of this.systems) {
             system.update(deltaTime);

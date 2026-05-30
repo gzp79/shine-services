@@ -1,36 +1,24 @@
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
-import { EventDispatcher } from './events';
-
-export const VIEWPORT_RESIZE = 'viewportresize';
-export type ViewportResizeEvent = {
-    width: number;
-    height: number;
-};
-
 export class RenderContext {
     readonly scene: THREE.Scene;
     readonly renderer: WebGPURenderer;
     readonly domElement: HTMLElement;
     private readonly resizeObserver: ResizeObserver;
-    private readonly dispatcher: EventDispatcher;
     private _width: number;
     private _height: number;
     private readonly canvas: HTMLCanvasElement;
-    private _mousePosition = new THREE.Vector2(-1, -1);
-
     get width(): number {
         return this._width;
     }
     get height(): number {
         return this._height;
     }
-    get mousePosition(): THREE.Vector2 {
-        return this._mousePosition;
+    get aspect(): number {
+        return this._width / this._height;
     }
 
-    constructor(container: HTMLElement, events: EventTarget, renderer: WebGPURenderer) {
-        this.dispatcher = new EventDispatcher(events);
+    constructor(container: HTMLElement, renderer: WebGPURenderer) {
         this.domElement = container;
         this.renderer = renderer;
         this.canvas = renderer.domElement;
@@ -56,31 +44,16 @@ export class RenderContext {
             this._width = w;
             this._height = h;
             this.renderer.setSize(w, h);
-            this.dispatcher.dispatch<ViewportResizeEvent>(VIEWPORT_RESIZE, { width: w, height: h });
         });
         this.resizeObserver.observe(container);
 
-        this.canvas.addEventListener('mousemove', this.onMouseMove);
-        this.canvas.addEventListener('mouseleave', this.onMouseLeave);
     }
-
-    private onMouseMove = (event: MouseEvent): void => {
-        const rect = this.canvas.getBoundingClientRect();
-        this.mousePosition.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        this.mousePosition.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    };
-
-    private onMouseLeave = (): void => {
-        this.mousePosition.set(-1, -1);
-    };
 
     async render(camera: THREE.PerspectiveCamera): Promise<void> {
         await this.renderer.renderAsync(this.scene, camera);
     }
 
     dispose(): void {
-        this.canvas.removeEventListener('mousemove', this.onMouseMove);
-        this.canvas.removeEventListener('mouseleave', this.onMouseLeave);
         this.resizeObserver.disconnect();
     }
 }

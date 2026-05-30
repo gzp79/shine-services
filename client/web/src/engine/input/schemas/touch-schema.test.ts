@@ -14,6 +14,8 @@ describe('TouchSchema', () => {
         container = document.createElement('div');
         handler = {
             onSchemaChanged: vi.fn(),
+            onPointerAt: vi.fn(),
+            onPointerLeave: vi.fn(),
             onMoveTo: vi.fn(),
             onRotateBy: vi.fn(),
             onZoomBy: vi.fn(),
@@ -350,7 +352,7 @@ describe('TouchSchema', () => {
                 bubbles: true
             });
             container.dispatchEvent(touchEnd);
-            expect(handler.onInteractEnd).toHaveBeenCalledWith({ x: 120, y: 120 });
+            expect(handler.onInteractEnd).toHaveBeenCalledWith({ x: 100, y: 100 }, { x: 120, y: 120 });
 
             vi.useRealTimers();
         });

@@ -3,7 +3,7 @@ import wasmUrl from '#wasm-bin';
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import { span } from '../../engine/utils';
-import { ExperimentContext, animate, createExperiment } from '../experiment';
+import { Experiment } from '../experiment';
 import { createControls, defaultParams, paramsToConfigJson } from './controls';
 import { HexMeshGroup, buildHexMesh } from './mesh-builder';
 
@@ -11,57 +11,58 @@ export interface HexMeshExperiment {
     dispose(): void;
 }
 
-export async function createHexMeshExperiment(
-    container: HTMLElement,
-    renderer: WebGPURenderer
-): Promise<HexMeshExperiment> {
-    await init(wasmUrl);
+class HexMesh extends Experiment {
+    private params = defaultParams();
+    private currentMesh: HexMeshGroup | null = null;
+    private debugCircle: THREE.Mesh | null = null;
+    private axesGroup: THREE.Group | null = null;
+    private gui: import('lil-gui').GUI;
 
-    const ctx: ExperimentContext = createExperiment(container, renderer);
-    const params = defaultParams();
-    let currentMesh: HexMeshGroup | null = null;
-    let debugCircle: THREE.Mesh | null = null;
-    let axesGroup: THREE.Group | null = null;
-    let stopAnimation = () => {};
+    constructor(container: HTMLElement, renderer: WebGPURenderer) {
+        super(container, renderer);
+        this.gui = createControls(container, this.params, () => this.regenerate(), () => this.applyDisplay());
+        this.regenerate();
+        this.start();
+    }
 
-    function applyDisplay() {
-        if (currentMesh) {
-            currentMesh.setPrimalMeshVisible(params.showPrimalMesh);
-            currentMesh.setPrimalWireVisible(params.showPrimalWire);
-            currentMesh.setDualMeshVisible(params.showDualMesh);
-            currentMesh.setDualWireVisible(params.showDualWire);
-            currentMesh.setAnchorVisible(params.showAnchor);
-            currentMesh.setAnchorVerticesVisible(params.showAnchorVertices);
+    private applyDisplay() {
+        if (this.currentMesh) {
+            this.currentMesh.setPrimalMeshVisible(this.params.showPrimalMesh);
+            this.currentMesh.setPrimalWireVisible(this.params.showPrimalWire);
+            this.currentMesh.setDualMeshVisible(this.params.showDualMesh);
+            this.currentMesh.setDualWireVisible(this.params.showDualWire);
+            this.currentMesh.setAnchorVisible(this.params.showAnchor);
+            this.currentMesh.setAnchorVerticesVisible(this.params.showAnchorVertices);
         }
     }
 
-    function regenerate() {
-        if (currentMesh) {
-            ctx.scene.remove(currentMesh.group);
-            currentMesh.dispose();
-            currentMesh = null;
+    private regenerate() {
+        if (this.currentMesh) {
+            this.scene.remove(this.currentMesh.group);
+            this.currentMesh.dispose();
+            this.currentMesh = null;
         }
-        if (debugCircle) {
-            ctx.scene.remove(debugCircle);
-            debugCircle.geometry.dispose();
-            (debugCircle.material as THREE.Material).dispose();
-            debugCircle = null;
+        if (this.debugCircle) {
+            this.scene.remove(this.debugCircle);
+            this.debugCircle.geometry.dispose();
+            (this.debugCircle.material as THREE.Material).dispose();
+            this.debugCircle = null;
         }
-        if (axesGroup) {
-            ctx.scene.remove(axesGroup);
-            axesGroup.traverse((obj) => {
+        if (this.axesGroup) {
+            this.scene.remove(this.axesGroup);
+            this.axesGroup.traverse((obj) => {
                 if (obj instanceof THREE.Line) {
                     obj.geometry.dispose();
                     (obj.material as THREE.Material).dispose();
                 }
             });
-            axesGroup = null;
+            this.axesGroup = null;
         }
 
         try {
             using _s = span('regenerate');
 
-            const configJson = paramsToConfigJson(params);
+            const configJson = paramsToConfigJson(this.params);
             let worldSize: number;
             {
                 using _s = span('generate_mesh');
@@ -70,71 +71,70 @@ export async function createHexMeshExperiment(
                 const dual = wasmMesh.dual();
 
                 worldSize = wasmMesh.world_size();
-                currentMesh = buildHexMesh(primal, dual);
+                this.currentMesh = buildHexMesh(primal, dual);
 
                 dual.free();
                 primal.free();
                 wasmMesh.free();
             }
 
-            applyDisplay();
-            ctx.scene.add(currentMesh.group);
+            this.applyDisplay();
+            this.scene.add(this.currentMesh.group);
 
-            // Debug circle showing world size
             const ringGeom = new THREE.RingGeometry(0, worldSize, 64);
             const ringMat = new THREE.MeshBasicMaterial({ color: 0x6f6f6f, side: THREE.DoubleSide });
-            debugCircle = new THREE.Mesh(ringGeom, ringMat);
-            debugCircle.position.z = -0.001;
-            ctx.scene.add(debugCircle);
+            this.debugCircle = new THREE.Mesh(ringGeom, ringMat);
+            this.debugCircle.position.z = -0.001;
+            this.scene.add(this.debugCircle);
 
-            // Coordinate axes: X=red, Y=green, Z=blue, length = worldSize/6
             const axisLen = worldSize / 6;
-            axesGroup = new THREE.Group();
+            this.axesGroup = new THREE.Group();
             const axes: [THREE.Vector3, number][] = [
-                [new THREE.Vector3(axisLen, 0, 0), 0xff0000], // X = red
-                [new THREE.Vector3(0, axisLen, 0), 0x00ff00], // Y = green
-                [new THREE.Vector3(0, 0, axisLen), 0x0000ff] // Z = blue
+                [new THREE.Vector3(axisLen, 0, 0), 0xff0000],
+                [new THREE.Vector3(0, axisLen, 0), 0x00ff00],
+                [new THREE.Vector3(0, 0, axisLen), 0x0000ff]
             ];
             const origin = new THREE.Vector3(0, 0, 0);
             for (const [dir, color] of axes) {
                 const geom = new THREE.BufferGeometry().setFromPoints([origin, dir]);
                 const mat = new THREE.LineBasicMaterial({ color });
-                axesGroup.add(new THREE.Line(geom, mat));
+                this.axesGroup.add(new THREE.Line(geom, mat));
             }
-            axesGroup.position.z = 0.02;
-            ctx.scene.add(axesGroup);
+            this.axesGroup.position.z = 0.02;
+            this.scene.add(this.axesGroup);
         } catch (e) {
             console.error('Mesh generation failed:', e);
         }
     }
 
-    const gui = createControls(container, params, regenerate, applyDisplay);
-    regenerate();
-    stopAnimation = animate(ctx);
-
-    return {
-        dispose() {
-            stopAnimation();
-            gui.destroy();
-            if (currentMesh) {
-                ctx.scene.remove(currentMesh.group);
-                currentMesh.dispose();
-            }
-            if (debugCircle) {
-                ctx.scene.remove(debugCircle);
-                debugCircle.geometry.dispose();
-                (debugCircle.material as THREE.Material).dispose();
-            }
-            if (axesGroup) {
-                ctx.scene.remove(axesGroup);
-                axesGroup.traverse((obj) => {
-                    if (obj instanceof THREE.Line) {
-                        obj.geometry.dispose();
-                        (obj.material as THREE.Material).dispose();
-                    }
-                });
-            }
-            ctx.resizeObserver.disconnect();
+    dispose() {
+        this.gui.destroy();
+        if (this.currentMesh) {
+            this.scene.remove(this.currentMesh.group);
+            this.currentMesh.dispose();
         }
-    };
+        if (this.debugCircle) {
+            this.scene.remove(this.debugCircle);
+            this.debugCircle.geometry.dispose();
+            (this.debugCircle.material as THREE.Material).dispose();
+        }
+        if (this.axesGroup) {
+            this.scene.remove(this.axesGroup);
+            this.axesGroup.traverse((obj) => {
+                if (obj instanceof THREE.Line) {
+                    obj.geometry.dispose();
+                    (obj.material as THREE.Material).dispose();
+                }
+            });
+        }
+        super.dispose();
+    }
+}
+
+export async function createHexMeshExperiment(
+    container: HTMLElement,
+    renderer: WebGPURenderer
+): Promise<HexMeshExperiment> {
+    await init(wasmUrl);
+    return new HexMesh(container, renderer);
 }

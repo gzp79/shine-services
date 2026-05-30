@@ -4,6 +4,9 @@ export type PointPair = [Point,Point];
 export interface InputHandler {
     onSchemaChanged(schema: string): void;
 
+    onPointerAt(pos: Point): void;
+    onPointerLeave(): void;
+
     onMoveTo(pos: Point): void;
     onRotateBy(angleDelta: number): void;
     onZoomBy(delta: number): void;

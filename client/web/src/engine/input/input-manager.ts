@@ -21,6 +21,10 @@ export class InputManager {
         for (const schema of this.schemas) {
             schema.onActivated = (s) => this.onActivated(s);
         }
+
+        const desktop = this.schemas.find(s => s instanceof DesktopSchema)!;
+        this._activeSchema = desktop;
+        desktop.handler = this.handler;
     }
 
     get activeSchema(): InputSchema | null { return this._activeSchema; }

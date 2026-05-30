@@ -13,6 +13,8 @@ describe('DesktopSchema', () => {
     beforeEach(() => {
         container = document.createElement('div');
         handler = {
+            onPointerAt: vi.fn(),
+            onPointerLeave: vi.fn(),
             onMoveTo: vi.fn(),
             onRotateBy: vi.fn(),
             onZoomBy: vi.fn(),
@@ -234,7 +236,7 @@ describe('DesktopSchema', () => {
             expect(handler.onZoomBy).toHaveBeenCalled();
         });
 
-        it('13. Wheel active → R/F pressed → R/F.enabled = false', () => {
+        it('13. Wheel active → R/F pressed → wheel.enabled = false', () => {
             const wheel = new WheelEvent('wheel', { deltaY: -100 });
             container.dispatchEvent(wheel);
             expect(handler.onZoomBy).toHaveBeenCalled();

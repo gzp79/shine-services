@@ -3,7 +3,7 @@ import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
 import { span } from '../../engine/utils';
 import type { WasmCdtMesh } from '../../wasm-types/shine_game';
-import { ExperimentContext, animate, createExperiment } from '../experiment';
+import { Experiment } from '../experiment';
 import { cdtParamsToJson, createCdtControls, defaultCdtParams } from './controls';
 import { CdtMeshGroup, buildCdtMesh, buildCircumcenterMesh } from './mesh-builder';
 
@@ -11,60 +11,78 @@ export interface CdtExperiment {
     dispose(): void;
 }
 
-export async function createCdtExperiment(container: HTMLElement, renderer: WebGPURenderer): Promise<CdtExperiment> {
-    await init(wasmUrl);
-    const ctx: ExperimentContext = createExperiment(container, renderer);
+class Cdt extends Experiment {
+    private params = defaultCdtParams();
+    private currentCdtHandle: WasmCdtMesh | null = null;
+    private currentMesh: CdtMeshGroup | null = null;
+    private circumcenterMesh: CdtMeshGroup | null = null;
+    private activeTriangleIndex = -1;
+    private gui: import('lil-gui').GUI;
+    private readonly onKeyDown: (e: KeyboardEvent) => void;
 
-    // Adjust camera for the +-4096 coordinate range
-    ctx.camera.near = 1;
-    ctx.camera.far = 50000;
-    ctx.camera.position.set(0, -7000, 12000);
-    ctx.camera.lookAt(0, 0, 0);
-    ctx.camera.updateProjectionMatrix();
-    ctx.controls?.update();
+    constructor(container: HTMLElement, renderer: WebGPURenderer) {
+        super(container, renderer);
 
-    const params = defaultCdtParams();
-    let currentCdtHandle: WasmCdtMesh | null = null;
-    let currentMesh: CdtMeshGroup | null = null;
-    let circumcenterMesh: CdtMeshGroup | null = null;
-    let activeTriangleIndex = -1;
-    let stopAnimation = () => {};
+        this.camera.near = 1;
+        this.camera.far = 50000;
+        this.camera.position.set(0, -7000, 12000);
+        this.camera.lookAt(0, 0, 0);
+        this.camera.updateProjectionMatrix();
+        this.controls?.update();
 
-    function updateCircumcenter() {
-        if (circumcenterMesh) {
-            ctx.scene.remove(circumcenterMesh.group);
-            circumcenterMesh.dispose();
-            circumcenterMesh = null;
+        this.onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === '+' || e.key === '=') {
+                this.activeTriangleIndex++;
+                this.updateCircumcenter();
+            } else if (e.key === '-' || e.key === '_') {
+                if (this.activeTriangleIndex >= 0) {
+                    this.activeTriangleIndex--;
+                    this.updateCircumcenter();
+                }
+            }
+        };
+        window.addEventListener('keydown', this.onKeyDown);
+
+        this.gui = createCdtControls(container, this.params, () => this.regenerate());
+        this.regenerate();
+        this.start();
+    }
+
+    private updateCircumcenter() {
+        if (this.circumcenterMesh) {
+            this.scene.remove(this.circumcenterMesh.group);
+            this.circumcenterMesh.dispose();
+            this.circumcenterMesh = null;
         }
 
-        if (currentCdtHandle && activeTriangleIndex >= 0) {
-            const triCount = currentCdtHandle.triangles().length / 3;
-            if (activeTriangleIndex < triCount) {
-                circumcenterMesh = buildCircumcenterMesh(currentCdtHandle, activeTriangleIndex);
-                if (circumcenterMesh) {
-                    ctx.scene.add(circumcenterMesh.group);
+        if (this.currentCdtHandle && this.activeTriangleIndex >= 0) {
+            const triCount = this.currentCdtHandle.triangles().length / 3;
+            if (this.activeTriangleIndex < triCount) {
+                this.circumcenterMesh = buildCircumcenterMesh(this.currentCdtHandle, this.activeTriangleIndex);
+                if (this.circumcenterMesh) {
+                    this.scene.add(this.circumcenterMesh.group);
                 }
             } else {
-                activeTriangleIndex = -1;
+                this.activeTriangleIndex = -1;
             }
         }
     }
 
-    function regenerate() {
-        if (currentMesh) {
-            ctx.scene.remove(currentMesh.group);
-            currentMesh.dispose();
-            currentMesh = null;
+    private regenerate() {
+        if (this.currentMesh) {
+            this.scene.remove(this.currentMesh.group);
+            this.currentMesh.dispose();
+            this.currentMesh = null;
         }
-        if (currentCdtHandle) {
-            currentCdtHandle.free();
-            currentCdtHandle = null;
+        if (this.currentCdtHandle) {
+            this.currentCdtHandle.free();
+            this.currentCdtHandle = null;
         }
 
         try {
             using _s = span('regenerate');
 
-            const configJson = cdtParamsToJson(params);
+            const configJson = cdtParamsToJson(this.params);
             {
                 using _s = span('generate_cdt');
                 const cdt = generate_cdt(configJson);
@@ -79,59 +97,43 @@ export async function createCdtExperiment(container: HTMLElement, renderer: WebG
                         `${cdt.triangles().length / 3} triangles ` +
                         `${cdt.constraints().length / 2} constraints`
                 );
-                currentCdtHandle = cdt;
+                this.currentCdtHandle = cdt;
             }
 
             {
                 using _s = span('buildCdtMesh');
-                currentMesh = buildCdtMesh(currentCdtHandle!);
+                this.currentMesh = buildCdtMesh(this.currentCdtHandle!);
             }
-            ctx.scene.add(currentMesh.group);
+            this.scene.add(this.currentMesh.group);
 
-            updateCircumcenter();
+            this.updateCircumcenter();
         } catch (e) {
             console.error('CDT generation failed:', e);
         }
     }
 
-    const onKeyDown = (e: KeyboardEvent) => {
-        if (e.key === '+' || e.key === '=') {
-            activeTriangleIndex++;
-            updateCircumcenter();
-        } else if (e.key === '-' || e.key === '_') {
-            if (activeTriangleIndex >= 0) {
-                activeTriangleIndex--;
-                updateCircumcenter();
-            }
+    dispose() {
+        window.removeEventListener('keydown', this.onKeyDown);
+        this.gui.destroy();
+
+        if (this.currentMesh) {
+            this.scene.remove(this.currentMesh.group);
+            this.currentMesh.dispose();
         }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-
-    const gui = createCdtControls(container, params, regenerate);
-    regenerate();
-    stopAnimation = animate(ctx);
-
-    return {
-        dispose() {
-            window.removeEventListener('keydown', onKeyDown);
-            stopAnimation();
-            gui.destroy();
-
-            if (currentMesh) {
-                ctx.scene.remove(currentMesh.group);
-                currentMesh.dispose();
-            }
-            if (circumcenterMesh) {
-                ctx.scene.remove(circumcenterMesh.group);
-                circumcenterMesh.dispose();
-            }
-            if (currentCdtHandle) {
-                currentCdtHandle.free();
-                currentCdtHandle = null;
-            }
-
-            ctx.resizeObserver.disconnect();
+        if (this.circumcenterMesh) {
+            this.scene.remove(this.circumcenterMesh.group);
+            this.circumcenterMesh.dispose();
         }
-    };
+        if (this.currentCdtHandle) {
+            this.currentCdtHandle.free();
+            this.currentCdtHandle = null;
+        }
+
+        super.dispose();
+    }
+}
+
+export async function createCdtExperiment(container: HTMLElement, renderer: WebGPURenderer): Promise<CdtExperiment> {
+    await init(wasmUrl);
+    return new Cdt(container, renderer);
 }

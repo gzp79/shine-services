@@ -1,93 +1,41 @@
 import * as THREE from 'three';
 import {
-    CURSOR_MOVE_SPEED,
-    CURSOR_SPRINT_MULTIPLIER,
-    CURSOR_ROTATE_SPEED,
-    CURSOR_ZOOM_SPEED,
+    ZOOM_DISTANCE_SCALE,
     MAX_CAMERA_DISTANCE,
     MAX_CAMERA_PITCH,
     MIN_CAMERA_DISTANCE,
-    MIN_CAMERA_PITCH,
-    ZOOM_DISTANCE_SCALE
+    MIN_CAMERA_PITCH
 } from '../constants';
-import { EventSubscriptions } from '../engine/events';
+import { EventDispatcher, EventSubscriptions } from '../engine/events';
 import type { RenderContext } from '../engine/render-context';
 import { WORLD_REFERENCE_CHANGED, type WorldReferenceChangedEvent } from '../systems/world-reference-system';
+
+export const INPUT_CONTROLLER_CHANGED = 'input:controller:changed';
+export type InputControllerChangedEvent = { controller: string };
+
+export const CURSOR_INTERACT_START = 'cursor:interact_start';
+export const CURSOR_INTERACT = 'cursor:interact';
+export const CURSOR_INTERACT_END = 'cursor:interact_end';
+export type CursorInteractEvent = { pos: THREE.Vector3 };
+
+export type CursorInteractKind = 'start' | 'move' | 'end';
 
 export class WorldCursor {
     readonly position = new THREE.Vector3(0, 0, 0);
     private readonly direction = new THREE.Vector3(0, 1, 0);
-    private cameraDistance = 600;
-    private cameraYaw = 0;
+    cameraDistance = 600;
+    cameraYaw = 0;
     private mesh: THREE.Mesh | null = null;
     private readonly subscriptions: EventSubscriptions;
-
-    // Rate state written directly by CursorInputSystem each input callback
-    readonly moveRate = new THREE.Vector2(0, 0);
-    moveRateSprint = false;
-    rotateRate = 0;
-    zoomRate = 0;
+    private readonly dispatcher: EventDispatcher;
 
     constructor(
         private readonly renderContext: RenderContext,
         events: EventTarget
     ) {
         this.subscriptions = new EventSubscriptions(events);
+        this.dispatcher = new EventDispatcher(events);
         this.subscriptions.on<WorldReferenceChangedEvent>(WORLD_REFERENCE_CHANGED, this.handleWorldReferenceChanged);
-    }
-
-    update(deltaTime: number): void {
-        if (this.moveRate.x !== 0 || this.moveRate.y !== 0) {
-            const forward = new THREE.Vector3(Math.sin(this.cameraYaw), Math.cos(this.cameraYaw), 0);
-            const right = new THREE.Vector3(Math.cos(this.cameraYaw), -Math.sin(this.cameraYaw), 0);
-
-            forward.multiplyScalar(-this.moveRate.y);
-            right.multiplyScalar(this.moveRate.x);
-            forward.add(right).normalize();
-
-            const speed = CURSOR_MOVE_SPEED * (this.moveRateSprint ? CURSOR_SPRINT_MULTIPLIER : 1);
-            forward.multiplyScalar(speed * deltaTime);
-
-            this.setPosition(this.position.clone().add(forward));
-        }
-
-        if (this.rotateRate !== 0) {
-            this.setYaw(this.cameraYaw + this.rotateRate * CURSOR_ROTATE_SPEED * deltaTime);
-        }
-
-        if (this.zoomRate !== 0) {
-            this.setZoom(this.cameraDistance + this.zoomRate * CURSOR_ZOOM_SPEED * deltaTime);
-        }
-    }
-
-    setPosition(pos: { x: number; y: number; z: number }): void {
-        this.position.set(pos.x, pos.y, pos.z);
-        if (this.mesh) {
-            this.mesh.position.copy(this.position);
-        }
-    }
-
-    setYaw(yaw: number): void {
-        const TWO_PI = 2 * Math.PI;
-        this.cameraYaw = ((yaw % TWO_PI) + TWO_PI) % TWO_PI;
-        this.direction.set(Math.sin(this.cameraYaw), Math.cos(this.cameraYaw), 0);
-        if (this.mesh) {
-            this.mesh.rotation.z = Math.atan2(this.direction.x, this.direction.y);
-        }
-    }
-
-    setZoom(distance: number): void {
-        this.cameraDistance = Math.max(MIN_CAMERA_DISTANCE, Math.min(MAX_CAMERA_DISTANCE, distance));
-    }
-
-    rotateBy(angleDelta: number): void {
-        this.setYaw(this.cameraYaw + angleDelta);
-    }
-
-    zoomBy(delta: number): void {
-        const midDistance = (MAX_CAMERA_DISTANCE + MIN_CAMERA_DISTANCE) / 2;
-        const zoomScale = (this.cameraDistance / midDistance) * ZOOM_DISTANCE_SCALE;
-        this.setZoom(this.cameraDistance + delta * zoomScale);
     }
 
     get showMesh(): boolean {
@@ -135,6 +83,56 @@ export class WorldCursor {
             position,
             lookAt
         };
+    }
+
+    setPosition(pos: { x: number; y: number; z: number }): void {
+        this.position.set(pos.x, pos.y, pos.z);
+        if (this.mesh) {
+            this.mesh.position.copy(this.position);
+        }
+    }
+
+    moveBy(delta: THREE.Vector3): void {
+        this.setPosition(this.position.clone().add(delta));
+    }
+
+    rotateBy(angleDelta: number): void {
+        this.setYaw(this.cameraYaw - angleDelta);
+    }
+
+    zoomBy(delta: number): void {
+        this.setZoom(this.cameraDistance + delta);
+    }
+
+    zoomByDelta(delta: number): void {
+        const midDistance = (MAX_CAMERA_DISTANCE + MIN_CAMERA_DISTANCE) / 2;
+        const zoomScale = (this.cameraDistance / midDistance) * ZOOM_DISTANCE_SCALE;
+        this.setZoom(this.cameraDistance + delta * zoomScale);
+    }
+
+    dispatchSchemaChanged(schema: string): void {
+        this.dispatcher.dispatch<InputControllerChangedEvent>(INPUT_CONTROLLER_CHANGED, { controller: schema });
+    }
+
+    dispatchInteract(kind: CursorInteractKind, worldPos: THREE.Vector3): void {
+        const eventName =
+            kind === 'start' ? CURSOR_INTERACT_START :
+            kind === 'end'   ? CURSOR_INTERACT_END :
+                               CURSOR_INTERACT;
+        this.dispatcher.dispatch<CursorInteractEvent>(eventName, { pos: worldPos });
+    }
+
+    private setYaw(yaw: number): void {
+        const TWO_PI = 2 * Math.PI;
+        this.cameraYaw = ((yaw % TWO_PI) + TWO_PI) % TWO_PI;
+        this.direction.set(Math.sin(this.cameraYaw), Math.cos(this.cameraYaw), 0);
+        if (this.mesh) {
+            this.mesh.rotation.z = Math.atan2(this.direction.x, this.direction.y);
+        }
+    }
+
+    private setZoom(distance: number): void {
+        this.cameraDistance = Math.max(MIN_CAMERA_DISTANCE, Math.min(MAX_CAMERA_DISTANCE, distance));
     }
 
     private handleWorldReferenceChanged = (event: WorldReferenceChangedEvent): void => {

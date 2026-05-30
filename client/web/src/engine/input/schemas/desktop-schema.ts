@@ -3,8 +3,9 @@ import { InputSchema } from './input-schema';
 import { RawKeyAxis2D } from '../raw/raw-key-axis-2d';
 import { RawKeyAxis1D } from '../raw/raw-key-axis-1d';
 import { RawPointer } from '../raw/raw-pointer';
+import { RawPointerTracker } from '../raw/raw-pointer-tracker';
 import { RawWheel } from '../raw/raw-wheel';
-import { ROTATE_KEY_SPEED, ROTATE_SENSITIVITY, ZOOM_KEY_SPEED, ZOOM_SENSITIVITY } from '../../../constants';
+import { ROTATE_SENSITIVITY, ZOOM_SENSITIVITY } from '../../../constants';
 
 /**
  * DesktopSchema handles desktop input (keyboard + mouse).
@@ -29,6 +30,7 @@ export class DesktopSchema extends InputSchema {
     private readonly leftPointer: RawPointer;
     private readonly rightPointer: RawPointer;
     private readonly wheel: RawWheel;
+    private readonly pointerTracker: RawPointerTracker;
     private readonly container: HTMLElement;
 
     constructor(container: HTMLElement, handler?: InputHandler) {
@@ -42,6 +44,10 @@ export class DesktopSchema extends InputSchema {
         this.leftPointer = new RawPointer(0, true, container);
         this.rightPointer = new RawPointer(2, false, container);
         this.wheel = new RawWheel(container);
+        this.pointerTracker = new RawPointerTracker(container);
+
+        this.pointerTracker.onMove = (pos) => { this.handler?.onPointerAt(pos); };
+        this.pointerTracker.onLeave = () => { this.handler?.onPointerLeave(); };
 
         this.wasd.onStart = () => {
             this.activate();
@@ -84,12 +90,14 @@ export class DesktopSchema extends InputSchema {
         };
         this.leftPointer.onLongDragStart = (start) => {
             this.activate();
+            this.pointerTracker.enabled = false;
             this.handler?.onInteractStart(start);
         };
         this.leftPointer.onLongDrag = (start, prev, current) => {
             this.handler?.onInteract(start, prev, current);
         };
         this.leftPointer.onLongDragEnd = (start, end) => {
+            this.pointerTracker.enabled = true;
             this.handler?.onInteractEnd(start, end);
         };
 
@@ -98,7 +106,7 @@ export class DesktopSchema extends InputSchema {
             this.rightPointer.enabled = false;
         };
         this.qe.onChange = (value) => {
-            this.rotate = value * ROTATE_KEY_SPEED;
+            this.rotate = value;
             this.handler?.onRotateRate(this.rotate);
         };
         this.qe.onEnd = () => { this.rightPointer.enabled = true; };
@@ -107,8 +115,8 @@ export class DesktopSchema extends InputSchema {
             this.activate();
             this.qe.enabled = false;
         };
-        this.rightPointer.onDrag = (delta) => {
-            const angleDelta = delta.x * ROTATE_SENSITIVITY;
+        this.rightPointer.onDrag = (_start, prev, current) => {
+            const angleDelta = (current.x - prev.x) * ROTATE_SENSITIVITY;
             this.handler?.onRotateBy(angleDelta);
         };
         this.rightPointer.onDragEnd = () => { this.qe.enabled = true; };
@@ -118,7 +126,7 @@ export class DesktopSchema extends InputSchema {
             this.wheel.enabled = false;
         };
         this.rf.onChange = (value) => {
-            this.zoom = value * ZOOM_KEY_SPEED;
+            this.zoom = value;
             this.handler?.onZoomRate(this.zoom);
         };
         this.rf.onEnd = () => { this.wheel.enabled = true; };
@@ -167,6 +175,7 @@ export class DesktopSchema extends InputSchema {
         this.leftPointer.dispose();
         this.rightPointer.dispose();
         this.wheel.dispose();
+        this.pointerTracker.dispose();
     }
 
     private handleContextMenu = (e: Event): void => {

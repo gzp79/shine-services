@@ -106,7 +106,7 @@ export class RawSingleTouch {
             this.cancelLongPressTimer();
 
             if (!this.isLongDrag) {
-                this.onDragStart?.(this.startPos);
+                this.onDragStart?.(currentPos);
             }
         }
 

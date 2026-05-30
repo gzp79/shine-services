@@ -23,13 +23,11 @@ export const MOVE_KEYS: readonly string[] = [
 // Input rotate keys
 export const ROTATE_KEY_LEFT = 'q';
 export const ROTATE_KEY_RIGHT = 'e';
-export const ROTATE_KEY_SPEED = 90 * (Math.PI / 180); // Radians per second
 export const ROTATE_KEYS: readonly string[] = [ROTATE_KEY_LEFT, ROTATE_KEY_RIGHT];
 
 // Input zoom keys
 export const ZOOM_KEY_IN = 'r';
 export const ZOOM_KEY_OUT = 'f';
-export const ZOOM_KEY_SPEED = 250; // Zoom units per second (distance-scaled in consumer)
 export const ZOOM_KEYS: readonly string[] = [ZOOM_KEY_IN, ZOOM_KEY_OUT];
 
 // Input sensitivity constants
@@ -40,8 +38,8 @@ export const ZOOM_DISTANCE_SCALE = 25; // Distance-dependent zoom scale factor
 // World cursor movement
 export const CURSOR_MOVE_SPEED = 1200; // units per second
 export const CURSOR_SPRINT_MULTIPLIER = 3;
-export const CURSOR_ROTATE_SPEED = Math.PI; // radians/second
-export const CURSOR_ZOOM_SPEED = 10; // units/second
+export const CURSOR_ROTATE_SPEED = 90 * (Math.PI / 180); // radians/second at rate=1
+export const CURSOR_ZOOM_SPEED = 250; // units/second at rate=1
 
 // RTS Camera parameters
 export const MIN_CAMERA_DISTANCE = 40;

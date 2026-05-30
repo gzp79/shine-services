@@ -2,7 +2,7 @@ import init, { generate_world_neighbors } from '#wasm';
 import wasmUrl from '#wasm-bin';
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
-import { ExperimentContext, animate, createExperiment } from '../experiment';
+import { Experiment } from '../experiment';
 import { createControls, defaultParams } from './controls';
 import { buildChunkHexagons, buildEdgeMeshes, buildInteriorMeshes, buildVertexMeshes } from './mesh-builder';
 
@@ -10,102 +10,104 @@ export interface WorldNeighborsExperiment {
     dispose(): void;
 }
 
-export async function createWorldNeighborsExperiment(
-    container: HTMLElement,
-    renderer: WebGPURenderer
-): Promise<WorldNeighborsExperiment> {
-    await init(wasmUrl);
+class WorldNeighbors extends Experiment {
+    private params = defaultParams();
+    private hexagons: THREE.Group | null = null;
+    private interiorGroup: ReturnType<typeof buildInteriorMeshes> | null = null;
+    private edgeGroup: ReturnType<typeof buildEdgeMeshes> | null = null;
+    private vertexGroup: ReturnType<typeof buildVertexMeshes> | null = null;
+    private gui: import('lil-gui').GUI;
 
-    const ctx: ExperimentContext = createExperiment(container, renderer);
-    const params = defaultParams();
-    let stopAnimation = () => {};
+    constructor(container: HTMLElement, renderer: WebGPURenderer) {
+        super(container, renderer);
 
-    let hexagons: THREE.Group | null = null;
-    let interiorGroup: ReturnType<typeof buildInteriorMeshes> | null = null;
-    let edgeGroup: ReturnType<typeof buildEdgeMeshes> | null = null;
-    let vertexGroup: ReturnType<typeof buildVertexMeshes> | null = null;
+        this.camera.far = 10000;
+        this.camera.updateProjectionMatrix();
+        this.camera.position.set(0, -2500, 2000);
+        this.camera.lookAt(0, 0, 0);
+        if (this.controls) this.controls.update();
 
-    function applyDisplay() {
-        if (hexagons) hexagons.visible = params.showHexagons;
-        if (interiorGroup) {
-            for (let i = 0; i < 7; i++) interiorGroup.setIndividualVisible(i, params.showInterior[i]);
+        this.gui = createControls(container, this.params, () => this.applyDisplay(), () => this.regenerate());
+        this.regenerate();
+        this.start();
+    }
+
+    private applyDisplay() {
+        if (this.hexagons) this.hexagons.visible = this.params.showHexagons;
+        if (this.interiorGroup) {
+            for (let i = 0; i < 7; i++) this.interiorGroup.setIndividualVisible(i, this.params.showInterior[i]);
         }
-        if (edgeGroup) {
-            for (let i = 0; i < 6; i++) edgeGroup.setIndividualVisible(i, params.showEdges[i]);
+        if (this.edgeGroup) {
+            for (let i = 0; i < 6; i++) this.edgeGroup.setIndividualVisible(i, this.params.showEdges[i]);
         }
-        if (vertexGroup) {
-            for (let i = 0; i < 6; i++) vertexGroup.setIndividualVisible(i, params.showVertices[i]);
+        if (this.vertexGroup) {
+            for (let i = 0; i < 6; i++) this.vertexGroup.setIndividualVisible(i, this.params.showVertices[i]);
         }
     }
 
-    function disposeScene() {
-        if (hexagons) {
-            ctx.scene.remove(hexagons);
-            hexagons.traverse((obj) => {
+    private disposeScene() {
+        if (this.hexagons) {
+            this.scene.remove(this.hexagons);
+            this.hexagons.traverse((obj) => {
                 if (obj instanceof THREE.Line) {
                     obj.geometry.dispose();
                     (obj.material as THREE.Material).dispose();
                 }
             });
-            hexagons = null;
+            this.hexagons = null;
         }
-        if (interiorGroup) {
-            ctx.scene.remove(interiorGroup.group);
-            interiorGroup.dispose();
-            interiorGroup = null;
+        if (this.interiorGroup) {
+            this.scene.remove(this.interiorGroup.group);
+            this.interiorGroup.dispose();
+            this.interiorGroup = null;
         }
-        if (edgeGroup) {
-            ctx.scene.remove(edgeGroup.group);
-            edgeGroup.dispose();
-            edgeGroup = null;
+        if (this.edgeGroup) {
+            this.scene.remove(this.edgeGroup.group);
+            this.edgeGroup.dispose();
+            this.edgeGroup = null;
         }
-        if (vertexGroup) {
-            ctx.scene.remove(vertexGroup.group);
-            vertexGroup.dispose();
-            vertexGroup = null;
+        if (this.vertexGroup) {
+            this.scene.remove(this.vertexGroup.group);
+            this.vertexGroup.dispose();
+            this.vertexGroup = null;
         }
     }
 
-    function regenerate() {
-        disposeScene();
+    private regenerate() {
+        this.disposeScene();
         try {
-            const wasmData = generate_world_neighbors(params.centerQ, params.centerR);
+            const wasmData = generate_world_neighbors(this.params.centerQ, this.params.centerR);
 
-            hexagons = buildChunkHexagons(wasmData);
-            ctx.scene.add(hexagons);
+            this.hexagons = buildChunkHexagons(wasmData);
+            this.scene.add(this.hexagons);
 
-            interiorGroup = buildInteriorMeshes(wasmData);
-            ctx.scene.add(interiorGroup.group);
+            this.interiorGroup = buildInteriorMeshes(wasmData);
+            this.scene.add(this.interiorGroup.group);
 
-            edgeGroup = buildEdgeMeshes(wasmData);
-            ctx.scene.add(edgeGroup.group);
+            this.edgeGroup = buildEdgeMeshes(wasmData);
+            this.scene.add(this.edgeGroup.group);
 
-            vertexGroup = buildVertexMeshes(wasmData);
-            ctx.scene.add(vertexGroup.group);
+            this.vertexGroup = buildVertexMeshes(wasmData);
+            this.scene.add(this.vertexGroup.group);
 
             wasmData.free();
-            applyDisplay();
+            this.applyDisplay();
         } catch (e) {
             console.error('World neighbors generation failed:', e);
         }
     }
 
-    ctx.camera.far = 10000;
-    ctx.camera.updateProjectionMatrix();
-    ctx.camera.position.set(0, -2500, 2000);
-    ctx.camera.lookAt(0, 0, 0);
-    if (ctx.controls) ctx.controls.update();
+    dispose() {
+        this.gui.destroy();
+        this.disposeScene();
+        super.dispose();
+    }
+}
 
-    const gui = createControls(container, params, applyDisplay, regenerate);
-    regenerate();
-    stopAnimation = animate(ctx);
-
-    return {
-        dispose() {
-            stopAnimation();
-            gui.destroy();
-            disposeScene();
-            ctx.resizeObserver.disconnect();
-        }
-    };
+export async function createWorldNeighborsExperiment(
+    container: HTMLElement,
+    renderer: WebGPURenderer
+): Promise<WorldNeighborsExperiment> {
+    await init(wasmUrl);
+    return new WorldNeighbors(container, renderer);
 }
