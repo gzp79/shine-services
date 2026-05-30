@@ -15,6 +15,7 @@ export class RawKeyAxis1D {
     private _enabled = true;
     private active = false;
     private keys = { negative: false, positive: false };
+    private lastValue = 0;
 
     constructor(
         private readonly mapping: KeyAxis1DMapping,
@@ -31,18 +32,32 @@ export class RawKeyAxis1D {
     set enabled(value: boolean) {
         if (this._enabled === value) return;
 
-        const wasActive = this.active;
         this._enabled = value;
 
-        if (!value && wasActive) {
-            this.active = false;
-            this.onChange?.(0);
-            this.onEnd?.();
+        if (!value) {
+            if (this.active) {
+                this.active = false;
+                this.emitChange(0);
+                this.onEnd?.();
+            }
+        } else {
+            if (this.isActive()) {
+                this.active = true;
+                this.onStart?.();
+                this.emitChange(this.getValue());
+            }
         }
     }
 
     isActive(): boolean {
         return this.keys.negative || this.keys.positive;
+    }
+
+    cancel(): void {
+        if (!this.active) return;
+        this.active = false;
+        this.emitChange(0);
+        this.onEnd?.();
     }
 
     dispose(): void {
@@ -68,7 +83,7 @@ export class RawKeyAxis1D {
             this.onStart?.();
         }
 
-        this.onChange?.(this.getValue());
+        this.emitChange(this.getValue());
     };
 
     private handleKeyUp = (ev: Event): void => {
@@ -81,7 +96,7 @@ export class RawKeyAxis1D {
 
         ev.preventDefault();
 
-        this.onChange?.(this.getValue());
+        this.emitChange(this.getValue());
 
         if (this.active && !this.isActive()) {
             this.active = false;
@@ -94,5 +109,11 @@ export class RawKeyAxis1D {
         if (this.keys.negative) value -= 1;
         if (this.keys.positive) value += 1;
         return value;
+    }
+
+    private emitChange(value: number): void {
+        if (value === this.lastValue) return;
+        this.lastValue = value;
+        this.onChange?.(value);
     }
 }

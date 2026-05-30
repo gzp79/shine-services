@@ -1,5 +1,5 @@
-import type { Point } from '../input-handler';
-import type { InputSchema } from './input-schema';
+import type { InputHandler } from '../input-handler';
+import { InputSchema } from './input-schema';
 import { RawKeyAxis2D } from '../raw/raw-key-axis-2d';
 import { RawKeyAxis1D } from '../raw/raw-key-axis-1d';
 import { RawPointer } from '../raw/raw-pointer';
@@ -15,20 +15,7 @@ import { ROTATE_KEY_SPEED, ROTATE_SENSITIVITY, ZOOM_KEY_SPEED, ZOOM_SENSITIVITY 
  * - Q/E ↔ right-drag-rotate
  * - R/F ↔ wheel
  */
-export class DesktopSchema implements InputSchema {
-    onMoveTo?: (screenPos: Point) => void;
-    onRotateBy?: (angleDelta: number) => void;
-    onZoomBy?: (delta: number) => void;
-    onMoveRate?: (x: number, y: number, sprint: boolean) => void;
-    onRotateRate?: (value: number) => void;
-    onZoomRate?: (value: number) => void;
-    onPinchStart?: (pos1: Point, pos2: Point) => void;
-    onPinch?: (pos1: Point, pos2: Point) => void;
-    onPinchEnd?: () => void;
-    onInteractStart?: (pos: Point) => void;
-    onInteract?: (pos: Point) => void;
-    onInteractEnd?: (pos: Point) => void;
-
+export class DesktopSchema extends InputSchema {
     private moveX = 0;
     private moveY = 0;
     private rotate = 0;
@@ -42,8 +29,12 @@ export class DesktopSchema implements InputSchema {
     private readonly leftPointer: RawPointer;
     private readonly rightPointer: RawPointer;
     private readonly wheel: RawWheel;
+    private readonly container: HTMLElement;
 
-    constructor(container: HTMLElement) {
+    constructor(container: HTMLElement, handler?: InputHandler) {
+        super('desktop', handler);
+        this.container = container;
+        container.addEventListener('contextmenu', this.handleContextMenu);
 
         this.wasd = new RawKeyAxis2D({ up: 'w', down: 's', left: 'a', right: 'd', sprint: 'Shift' }, window);
         this.qe = new RawKeyAxis1D({ negative: 'q', positive: 'e' }, window);
@@ -52,7 +43,10 @@ export class DesktopSchema implements InputSchema {
         this.rightPointer = new RawPointer(2, false, container);
         this.wheel = new RawWheel(container);
 
-        this.wasd.onStart = () => { this.wasdActive = true; };
+        this.wasd.onStart = () => {
+            this.activate();
+            this.wasdActive = true;
+        };
         this.wasd.onChange = (x, y, sprint) => {
             const lengthSquared = x * x + y * y;
             if (lengthSquared > 0) {
@@ -64,85 +58,109 @@ export class DesktopSchema implements InputSchema {
                 this.moveY = 0;
             }
             this.sprint = sprint;
-            this.emitMoveRate();
+            this.handler?.onMoveRate(this.moveX, this.moveY, this.sprint);
         };
         this.wasd.onEnd = () => { this.wasdActive = false; };
 
         this.leftPointer.onTap = (pos) => {
             if (this.wasdActive) return;
-            this.onMoveTo?.(pos);
+            this.activate();
+            this.handler?.onMoveTo(pos);
         };
         this.leftPointer.onDragStart = (pos) => {
             if (this.wasdActive) return;
+            this.activate();
             this.wasd.enabled = false;
-            this.onMoveTo?.(pos);
+            this.handler?.onMoveTo(pos);
         };
-        this.leftPointer.onDrag = (pos) => {
+        this.leftPointer.onDrag = (_start, _prev, current) => {
             if (this.wasdActive) return;
-            this.onMoveTo?.(pos);
+            this.handler?.onMoveTo(current);
         };
-        this.leftPointer.onDragEnd = (pos) => {
+        this.leftPointer.onDragEnd = (_start, end) => {
             if (this.wasdActive) return;
-            this.onMoveTo?.(pos);
+            this.handler?.onMoveTo(end);
             this.wasd.enabled = true;
         };
-        this.leftPointer.onLongDragStart = (pos) => {
-            this.onInteractStart?.(pos);
+        this.leftPointer.onLongDragStart = (start) => {
+            this.activate();
+            this.handler?.onInteractStart(start);
         };
-        this.leftPointer.onLongDrag = (pos) => {
-            this.onInteract?.(pos);
+        this.leftPointer.onLongDrag = (start, prev, current) => {
+            this.handler?.onInteract(start, prev, current);
         };
-        this.leftPointer.onLongDragEnd = (pos) => {
-            this.onInteractEnd?.(pos);
+        this.leftPointer.onLongDragEnd = (start, end) => {
+            this.handler?.onInteractEnd(start, end);
         };
 
-        this.qe.onStart = () => { this.rightPointer.enabled = false; };
+        this.qe.onStart = () => {
+            this.activate();
+            this.rightPointer.enabled = false;
+        };
         this.qe.onChange = (value) => {
             this.rotate = value * ROTATE_KEY_SPEED;
-            this.emitRotateRate();
+            this.handler?.onRotateRate(this.rotate);
         };
         this.qe.onEnd = () => { this.rightPointer.enabled = true; };
 
-        this.rightPointer.onDragStart = () => { this.qe.enabled = false; };
+        this.rightPointer.onDragStart = () => {
+            this.activate();
+            this.qe.enabled = false;
+        };
         this.rightPointer.onDrag = (delta) => {
             const angleDelta = delta.x * ROTATE_SENSITIVITY;
-            this.onRotateBy?.(angleDelta);
+            this.handler?.onRotateBy(angleDelta);
         };
         this.rightPointer.onDragEnd = () => { this.qe.enabled = true; };
 
-        this.rf.onStart = () => { this.wheel.enabled = false; };
+        this.rf.onStart = () => {
+            this.activate();
+            this.wheel.enabled = false;
+        };
         this.rf.onChange = (value) => {
             this.zoom = value * ZOOM_KEY_SPEED;
-            this.emitZoomRate();
+            this.handler?.onZoomRate(this.zoom);
         };
         this.rf.onEnd = () => { this.wheel.enabled = true; };
 
         this.wheel.onZoom = (delta) => {
-            this.onZoomBy?.(delta * ZOOM_SENSITIVITY);
+            this.activate();
+            this.handler?.onZoomBy(delta * ZOOM_SENSITIVITY);
         };
     }
 
-    isActive(): boolean {
-        return this.wasd.isActive() ||
-               this.qe.isActive() ||
-               this.rf.isActive() ||
-               this.leftPointer.isActive() ||
-               this.rightPointer.isActive();
+    get isIdle(): boolean {
+        return !this.wasd.isActive() &&
+               !this.qe.isActive() &&
+               !this.rf.isActive() &&
+               !this.leftPointer.isActive() &&
+               !this.rightPointer.isActive();
     }
 
-    private emitMoveRate(): void {
-        this.onMoveRate?.(this.moveX, this.moveY, this.sprint);
+    state(): string {
+        const en = (v: boolean) => v ? 'on ' : 'off';
+        const ac = (v: boolean) => v ? ' [active]' : '';
+        return [
+            `idle:  ${this.isIdle}`,
+            `wasd:  ${en(this.wasd.enabled)}${ac(this.wasd.isActive())}`,
+            `qe:    ${en(this.qe.enabled)}${ac(this.qe.isActive())}`,
+            `rf:    ${en(this.rf.enabled)}${ac(this.rf.isActive())}`,
+            `left:  ${en(this.leftPointer.enabled)}${ac(this.leftPointer.isActive())}`,
+            `right: ${en(this.rightPointer.enabled)}${ac(this.rightPointer.isActive())}`,
+            `wheel: ${en(this.wheel.enabled)}`,
+        ].join('\n');
     }
 
-    private emitRotateRate(): void {
-        this.onRotateRate?.(this.rotate);
-    }
-
-    private emitZoomRate(): void {
-        this.onZoomRate?.(this.zoom);
+    cancel(): void {
+        this.wasd.cancel();
+        this.qe.cancel();
+        this.rf.cancel();
+        this.leftPointer.cancel();
+        this.rightPointer.cancel();
     }
 
     dispose(): void {
+        this.container.removeEventListener('contextmenu', this.handleContextMenu);
         this.wasd.dispose();
         this.qe.dispose();
         this.rf.dispose();
@@ -150,6 +168,8 @@ export class DesktopSchema implements InputSchema {
         this.rightPointer.dispose();
         this.wheel.dispose();
     }
+
+    private handleContextMenu = (e: Event): void => {
+        e.preventDefault();
+    };
 }
-
-

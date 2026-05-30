@@ -40,6 +40,8 @@ export const ZOOM_DISTANCE_SCALE = 25; // Distance-dependent zoom scale factor
 // World cursor movement
 export const CURSOR_MOVE_SPEED = 1200; // units per second
 export const CURSOR_SPRINT_MULTIPLIER = 3;
+export const CURSOR_ROTATE_SPEED = Math.PI; // radians/second
+export const CURSOR_ZOOM_SPEED = 10; // units/second
 
 // RTS Camera parameters
 export const MIN_CAMERA_DISTANCE = 40;

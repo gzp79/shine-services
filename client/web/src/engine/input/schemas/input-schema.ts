@@ -1,22 +1,30 @@
-import type { Point } from '../input-handler';
+import type { InputHandler } from '../input-handler';
 
-export interface InputSchema {
-    isActive(): boolean;
+export abstract class InputSchema {
+    onActivated?: (schema: InputSchema) => void;
 
-    onMoveTo?: (screenPos: Point) => void;
-    onRotateBy?: (angleDelta: number) => void;
-    onZoomBy?: (delta: number) => void;
+    private _handler?: InputHandler;
 
-    onMoveRate?: (x: number, y: number, sprint: boolean) => void;
-    onRotateRate?: (value: number) => void;
-    onZoomRate?: (value: number) => void;
+    constructor(readonly name: string, handler?: InputHandler) {
+        this._handler = handler;
+    }
 
-    onPinchStart?: (pos1: Point, pos2: Point) => void;
-    onPinch?: (pos1: Point, pos2: Point) => void;
-    onPinchEnd?: () => void;
-    onInteractStart?: (pos: Point) => void;
-    onInteract?: (pos: Point) => void;
-    onInteractEnd?: (pos: Point) => void;
+    get handler(): InputHandler | undefined { return this._handler; }
+    set handler(value: InputHandler | undefined) {
+        if (this._handler === value) return;
+        if (this._handler) this.cancel();
+        this._handler = value;
+    }
 
-    dispose(): void;
+    get isActive(): boolean { return this._handler !== undefined; }
+
+    protected activate(): boolean {
+        if (!this.isActive) this.onActivated?.(this);
+        return this.isActive;
+    }
+
+    abstract get isIdle(): boolean;
+    abstract state(): string;
+    abstract cancel(): void;
+    abstract dispose(): void;
 }

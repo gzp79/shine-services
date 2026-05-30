@@ -1,23 +1,41 @@
 // @vitest-environment jsdom
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockedObject } from 'vitest';
 import { TouchSchema } from './touch-schema';
 import { LONG_PRESS_MS } from '../../../constants';
+import type { InputHandler } from '../input-handler';
 
 describe('TouchSchema', () => {
     let schema: TouchSchema;
     let container: HTMLElement;
+    let handler: MockedObject<InputHandler>;
 
     beforeEach(() => {
         container = document.createElement('div');
-        schema = new TouchSchema(container);
+        handler = {
+            onSchemaChanged: vi.fn(),
+            onMoveTo: vi.fn(),
+            onRotateBy: vi.fn(),
+            onZoomBy: vi.fn(),
+            onMoveRate: vi.fn(),
+            onRotateRate: vi.fn(),
+            onZoomRate: vi.fn(),
+            onPinchStart: vi.fn(),
+            onPinch: vi.fn(),
+            onPinchEnd: vi.fn(),
+            onInteractStart: vi.fn(),
+            onInteract: vi.fn(),
+            onInteractEnd: vi.fn()
+        } satisfies InputHandler;
+        schema = new TouchSchema(container, handler);
+    });
+
+    afterEach(() => {
+        schema.dispose();
     });
 
     describe('Single-finger blocks two-finger', () => {
         it('24. Single-finger drag starts → twoFingerGesture.enabled = false', () => {
-            const onPinchStart = vi.fn();
-            schema.onPinchStart = onPinchStart;
-
             // Start single-finger drag
             const touchStart = new TouchEvent('touchstart', {
                 touches: [{ identifier: 1, clientX: 100, clientY: 100 } as Touch]
@@ -38,7 +56,7 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchStart2);
 
-            expect(onPinchStart).not.toHaveBeenCalled();
+            expect(handler.onPinchStart).not.toHaveBeenCalled();
         });
 
         it('25. Single-finger drag ends → twoFingerGesture.enabled = true', () => {
@@ -60,9 +78,6 @@ describe('TouchSchema', () => {
             container.dispatchEvent(touchEnd);
 
             // Two-finger should work now
-            const onPinchStart = vi.fn();
-            schema.onPinchStart = onPinchStart;
-
             const touchStart2 = new TouchEvent('touchstart', {
                 touches: [
                     { identifier: 2, clientX: 100, clientY: 100 } as Touch,
@@ -71,13 +86,10 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchStart2);
 
-            expect(onPinchStart).toHaveBeenCalled();
+            expect(handler.onPinchStart).toHaveBeenCalled();
         });
 
         it('26. Single-finger long-drag starts → twoFingerGesture.enabled = false', () => {
-            const onPinchStart = vi.fn();
-            schema.onPinchStart = onPinchStart;
-
             vi.useFakeTimers();
 
             // Start single-finger long-press
@@ -97,7 +109,7 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchStart2);
 
-            expect(onPinchStart).not.toHaveBeenCalled();
+            expect(handler.onPinchStart).not.toHaveBeenCalled();
 
             vi.useRealTimers();
         });
@@ -132,9 +144,6 @@ describe('TouchSchema', () => {
             vi.useRealTimers();
 
             // Two-finger should work now
-            const onPinchStart = vi.fn();
-            schema.onPinchStart = onPinchStart;
-
             const touchStart2 = new TouchEvent('touchstart', {
                 touches: [
                     { identifier: 2, clientX: 100, clientY: 100 } as Touch,
@@ -144,15 +153,12 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchStart2);
 
-            expect(onPinchStart).toHaveBeenCalled();
+            expect(handler.onPinchStart).toHaveBeenCalled();
         });
     });
 
     describe('Two-finger blocks single-finger', () => {
         it('28. Two-finger starts → singleTouch.enabled = false', () => {
-            const onMoveTo = vi.fn();
-            schema.onMoveTo = onMoveTo;
-
             // Start two-finger
             const touchStart = new TouchEvent('touchstart', {
                 touches: [
@@ -168,7 +174,7 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchStart2);
 
-            expect(onMoveTo).not.toHaveBeenCalled();
+            expect(handler.onMoveTo).not.toHaveBeenCalled();
         });
 
         it('29. Two-finger ends, 1 finger remains → singleTouch still disabled', () => {
@@ -188,16 +194,14 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchEnd);
 
-            // Single-touch callbacks should still be blocked
-            const onMoveTo = vi.fn();
-            schema.onMoveTo = onMoveTo;
+            vi.clearAllMocks();
 
             const touchMove = new TouchEvent('touchmove', {
                 touches: [{ identifier: 1, clientX: 110, clientY: 110 } as Touch]
             });
             container.dispatchEvent(touchMove);
 
-            expect(onMoveTo).not.toHaveBeenCalled();
+            expect(handler.onMoveTo).not.toHaveBeenCalled();
         });
 
         it('30. All fingers released → singleTouch.enabled = true', () => {
@@ -225,9 +229,6 @@ describe('TouchSchema', () => {
             container.dispatchEvent(touchEnd2);
 
             // Single-finger should work now
-            const onMoveTo = vi.fn();
-            schema.onMoveTo = onMoveTo;
-
             const touchStart2 = new TouchEvent('touchstart', {
                 touches: [{ identifier: 3, clientX: 150, clientY: 150 } as Touch]
             });
@@ -239,15 +240,12 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchEnd3);
 
-            expect(onMoveTo).toHaveBeenCalled();
+            expect(handler.onMoveTo).toHaveBeenCalled();
         });
     });
 
     describe('Callback emission', () => {
         it('31. Single-finger tap → onMoveTo called', () => {
-            const onMoveTo = vi.fn();
-            schema.onMoveTo = onMoveTo;
-
             const touchStart = new TouchEvent('touchstart', {
                 touches: [{ identifier: 1, clientX: 100, clientY: 100 } as Touch]
             });
@@ -259,13 +257,10 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchEnd);
 
-            expect(onMoveTo).toHaveBeenCalledWith({ x: 100, y: 100 });
+            expect(handler.onMoveTo).toHaveBeenCalledWith({ x: 100, y: 100 });
         });
 
         it('32. Single-finger drag → onMoveTo called per frame', () => {
-            const onMoveTo = vi.fn();
-            schema.onMoveTo = onMoveTo;
-
             const touchStart = new TouchEvent('touchstart', {
                 touches: [{ identifier: 1, clientX: 100, clientY: 100 } as Touch]
             });
@@ -276,13 +271,10 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchMove);
 
-            expect(onMoveTo).toHaveBeenCalled();
+            expect(handler.onMoveTo).toHaveBeenCalled();
         });
 
-        it('33. Two-finger pinch start → onPinchStart(pos1, pos2) called', () => {
-            const onPinchStart = vi.fn();
-            schema.onPinchStart = onPinchStart;
-
+        it('33. Two-finger pinch start → onPinchStart called', () => {
             const touchStart = new TouchEvent('touchstart', {
                 touches: [
                     { identifier: 1, clientX: 100, clientY: 100 } as Touch,
@@ -291,16 +283,10 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchStart);
 
-            expect(onPinchStart).toHaveBeenCalled();
-            const [pos1, pos2] = onPinchStart.mock.calls[0];
-            expect(pos1).toEqual({ x: 100, y: 100 });
-            expect(pos2).toEqual({ x: 200, y: 200 });
+            expect(handler.onPinchStart).toHaveBeenCalled();
         });
 
-        it('34. Two-finger pinch move → onPinch(pos1, pos2) called per frame', () => {
-            const onPinch = vi.fn();
-            schema.onPinch = onPinch;
-
+        it('34. Two-finger pinch move → onPinch called per frame', () => {
             const touchStart = new TouchEvent('touchstart', {
                 touches: [
                     { identifier: 1, clientX: 100, clientY: 100 } as Touch,
@@ -317,13 +303,10 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchMove);
 
-            expect(onPinch).toHaveBeenCalled();
+            expect(handler.onPinch).toHaveBeenCalled();
         });
 
-        it('35. Two-finger pinch end → onPinchEnd() called', () => {
-            const onPinchEnd = vi.fn();
-            schema.onPinchEnd = onPinchEnd;
-
+        it('35. Two-finger pinch end → onPinchEnd called', () => {
             const touchStart = new TouchEvent('touchstart', {
                 touches: [
                     { identifier: 1, clientX: 100, clientY: 100 } as Touch,
@@ -338,18 +321,11 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchEnd);
 
-            expect(onPinchEnd).toHaveBeenCalled();
+            expect(handler.onPinchEnd).toHaveBeenCalled();
         });
 
         it('36. Long-press → onInteractStart/onInteract/onInteractEnd sequence', () => {
             vi.useFakeTimers();
-
-            const onInteractStart = vi.fn();
-            const onInteract = vi.fn();
-            const onInteractEnd = vi.fn();
-            schema.onInteractStart = onInteractStart;
-            schema.onInteract = onInteract;
-            schema.onInteractEnd = onInteractEnd;
 
             const touchStart = new TouchEvent('touchstart', {
                 touches: [{ identifier: 1, clientX: 100, clientY: 100 } as Touch],
@@ -358,14 +334,14 @@ describe('TouchSchema', () => {
             container.dispatchEvent(touchStart);
 
             vi.advanceTimersByTime(LONG_PRESS_MS);
-            expect(onInteractStart).toHaveBeenCalledWith({ x: 100, y: 100 });
+            expect(handler.onInteractStart).toHaveBeenCalledWith({ x: 100, y: 100 });
 
             const touchMove = new TouchEvent('touchmove', {
                 touches: [{ identifier: 1, clientX: 120, clientY: 120 } as Touch],
                 bubbles: true
             });
             container.dispatchEvent(touchMove);
-            expect(onInteract).toHaveBeenCalled();
+            expect(handler.onInteract).toHaveBeenCalled();
 
             const touchEnd = new TouchEvent('touchend', {
                 changedTouches: [{ identifier: 1, clientX: 120, clientY: 120 } as Touch],
@@ -373,7 +349,7 @@ describe('TouchSchema', () => {
                 bubbles: true
             });
             container.dispatchEvent(touchEnd);
-            expect(onInteractEnd).toHaveBeenCalledWith({ x: 120, y: 120 });
+            expect(handler.onInteractEnd).toHaveBeenCalledWith({ x: 120, y: 120 });
 
             vi.useRealTimers();
         });

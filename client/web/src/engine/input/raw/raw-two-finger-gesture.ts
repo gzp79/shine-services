@@ -1,21 +1,23 @@
-import type { Point } from '../input-handler';
+import type { PointPair, Point } from '../input-handler';
 
 /**
  * RawTwoFingerGesture handles two-finger touch gestures (pinch, two-finger pan).
  * Subscribes to touch events on the provided target.
  */
 export class RawTwoFingerGesture {
-    onStart?: (pos1: Point, pos2: Point) => void;
-    onPinch?: (pos1: Point, pos2: Point) => void;
-    onEnd?: () => void;
+    onPinchStart?: (start: PointPair) => void;
+    onPinch?: (start: PointPair, prev: PointPair, current: PointPair) => void;
+    onPinchEnd?: (start: PointPair, end: PointPair) => void;
     onAllFingersReleased?: () => void;
 
     private _enabled = true;
     private firstTouchId: number | null = null;
     private secondTouchId: number | null = null;
-    private touches: Map<number, Point> = new Map();    
+    private touches: Map<number, Point> = new Map();
     private active = false;
     private everStarted = false;
+    private startPair: PointPair | null = null;
+    private lastPair: PointPair | null = null;
 
     constructor(private readonly target: HTMLElement) {
         this.target.addEventListener('touchstart', this.handleTouchStart);
@@ -34,18 +36,23 @@ export class RawTwoFingerGesture {
         this._enabled = value;
 
         if (!value) {
-            const wasActive = this.active;
-            this.active = false;
-            this.everStarted = false;
-            this.firstTouchId = null;
-            this.secondTouchId = null;
-            this.touches.clear();
-
-            if (wasActive) {
-                this.onEnd?.();
-                this.onAllFingersReleased?.();
-            }
+            this.cancel();
         }
+    }
+
+    cancel(): void {
+        if (!this.active) return;
+        const startPair = this.startPair!;
+        const lastPair = this.lastPair!;
+        this.active = false;
+        this.everStarted = false;
+        this.firstTouchId = null;
+        this.secondTouchId = null;
+        this.touches.clear();
+        this.startPair = null;
+        this.lastPair = null;
+        this.onPinchEnd?.(startPair, lastPair);
+        this.onAllFingersReleased?.();
     }
 
     isActive(): boolean {
@@ -76,12 +83,14 @@ export class RawTwoFingerGesture {
             }
         }
 
-        // Emit onStart when transitioning from 1 to 2 fingers
+        // Emit onPinchStart when transitioning from 1 to 2 fingers
         if (this.firstTouchId !== null && this.secondTouchId !== null && !this.active) {
             this.active = true;
             this.everStarted = true;
             const [p1, p2] = Array.from(this.touches.values());
-            this.onStart?.(p1, p2);
+            this.startPair = [p1, p2];
+            this.lastPair = [p1, p2];
+            this.onPinchStart?.(this.startPair);
         }
     };
 
@@ -97,8 +106,11 @@ export class RawTwoFingerGesture {
         }
 
         if (this.touches.size === 2) {
+            const prev = this.lastPair!;
             const [p1, p2] = Array.from(this.touches.values());
-            this.onPinch?.(p1, p2);
+            const current: PointPair = [p1, p2];
+            this.lastPair = current;
+            this.onPinch?.(this.startPair!, prev, current);
         }
     };
 
@@ -115,16 +127,18 @@ export class RawTwoFingerGesture {
             }
         }
 
-        // Emit onEnd when going from 2 fingers to 1 finger (either tracked touch lifted)
+        // Emit onPinchEnd when going from 2 fingers to 1 finger (either tracked touch lifted)
         if (this.active && (this.firstTouchId === null || this.secondTouchId === null)) {
             this.active = false;
-            this.onEnd?.();
+            this.onPinchEnd?.(this.startPair!, this.lastPair!);
         }
 
         // Emit onAllFingersReleased when ALL fingers are released (0 touches)
         if (this.everStarted && this.firstTouchId === null && this.secondTouchId === null) {
             this.everStarted = false;
             this.touches.clear();
+            this.startPair = null;
+            this.lastPair = null;
             this.onAllFingersReleased?.();
         }
     };

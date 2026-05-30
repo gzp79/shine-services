@@ -14,11 +14,11 @@ import { MOVE_THRESHOLD_PX, LONG_PRESS_MS } from '../../../constants';
 export class RawPointer {
     onTap?: (pos: Point) => void;
     onDragStart?: (pos: Point) => void;
-    onDrag?: (delta: Point) => void;
-    onDragEnd?: (pos: Point) => void;
+    onDrag?: (start: Point, prev: Point, current: Point) => void;
+    onDragEnd?: (start: Point, end: Point) => void;
     onLongDragStart?: (pos: Point) => void;
-    onLongDrag?: (delta: Point) => void;
-    onLongDragEnd?: (pos: Point) => void;
+    onLongDrag?: (start: Point, prev: Point, current: Point) => void;
+    onLongDragEnd?: (start: Point, end: Point) => void;
 
     private _enabled = true;
     private pointerId: number | null = null;
@@ -55,6 +55,19 @@ export class RawPointer {
 
     isActive(): boolean {
         return this.pointerId !== null;
+    }
+
+    cancel(): void {
+        if (this.pointerId === null) return;
+        this.cancelLongPressTimer();
+        if (this.movedPastThreshold && this.startPos && this.lastPos) {
+            if (this.isLongDrag) {
+                this.onLongDragEnd?.(this.startPos, this.lastPos);
+            } else {
+                this.onDragEnd?.(this.startPos, this.lastPos);
+            }
+        }
+        this.reset();
     }
 
     dispose(): void {
@@ -104,19 +117,17 @@ export class RawPointer {
             this.cancelLongPressTimer();
 
             if (this.isLongDrag) {
-                const delta = { x: currentPos.x - this.lastPos.x, y: currentPos.y - this.lastPos.y };
-                this.onLongDrag?.(delta);
+                this.onLongDrag?.(this.startPos, this.lastPos, currentPos);
             } else {
                 this.onDragStart?.(currentPos);
             }
         }
 
         if (this.movedPastThreshold) {
-            const delta = { x: currentPos.x - this.lastPos.x, y: currentPos.y - this.lastPos.y };
             if (this.isLongDrag) {
-                this.onLongDrag?.(delta);
+                this.onLongDrag?.(this.startPos, this.lastPos, currentPos);
             } else {
-                this.onDrag?.(delta);
+                this.onDrag?.(this.startPos, this.lastPos, currentPos);
             }
         }
 
@@ -131,11 +142,11 @@ export class RawPointer {
 
         if (!this.movedPastThreshold && this.startPos) {
             this.onTap?.(this.startPos);
-        } else if (this.movedPastThreshold && this.lastPos) {
+        } else if (this.movedPastThreshold && this.startPos && this.lastPos) {
             if (this.isLongDrag) {
-                this.onLongDragEnd?.(this.lastPos);
+                this.onLongDragEnd?.(this.startPos, this.lastPos);
             } else {
-                this.onDragEnd?.(this.lastPos);
+                this.onDragEnd?.(this.startPos, this.lastPos);
             }
         }
 

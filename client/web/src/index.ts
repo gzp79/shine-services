@@ -1,7 +1,14 @@
 import { WebGPURenderer } from 'three/webgpu';
 import { createGame } from './engine/game';
+import { createInputControlExperiment } from './experiments/input-control/index';
+import { createHexMeshExperiment } from './experiments/hex-mesh/index';
+import { createCdtExperiment } from './experiments/cdt/index';
+import { createTrilinearExperiment } from './experiments/trilinear/index';
+import { createWorldNeighborsExperiment } from './experiments/world-neighbors/index';
 
 export type Viewer = { dispose(): void };
+
+type SceneId = '' | 'hex-mesh' | 'cdt' | 'input-events' | 'trilinear' | 'world-neighbors';
 
 async function createSharedRenderer(): Promise<WebGPURenderer> {
     const renderer = new WebGPURenderer({ antialias: true, forceWebGL: false });
@@ -9,15 +16,36 @@ async function createSharedRenderer(): Promise<WebGPURenderer> {
     return renderer;
 }
 
+async function createScene(id: SceneId, container: HTMLElement, renderer: WebGPURenderer): Promise<Viewer> {
+    switch (id) {
+        case 'hex-mesh':        return createHexMeshExperiment(container, renderer);
+        case 'cdt':             return createCdtExperiment(container, renderer);
+        case 'input-events':    return createInputControlExperiment(container, renderer);
+        case 'trilinear':       return createTrilinearExperiment(container, renderer);
+        case 'world-neighbors': return createWorldNeighborsExperiment(container, renderer);
+        default:                return createGame(container, renderer);
+    }
+}
+
 export async function createRouter(container: HTMLElement) {
     const renderer = await createSharedRenderer();
     container.appendChild(renderer.domElement);
 
-    const game = await createGame(container, renderer);
+    let current: Viewer | null = null;
+
+    async function navigate() {
+        const hash = window.location.hash.replace('#', '') as SceneId;
+        current?.dispose();
+        current = null;
+        current = await createScene(hash, container, renderer);
+    }
+
+    window.addEventListener('hashchange', () => void navigate());
+    await navigate();
 
     return {
         dispose() {
-            game.dispose();
+            current?.dispose();
             renderer.dispose();
             renderer.domElement.remove();
         }

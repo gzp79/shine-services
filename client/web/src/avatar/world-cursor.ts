@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import {
+    CURSOR_MOVE_SPEED,
+    CURSOR_SPRINT_MULTIPLIER,
+    CURSOR_ROTATE_SPEED,
+    CURSOR_ZOOM_SPEED,
     MAX_CAMERA_DISTANCE,
     MAX_CAMERA_PITCH,
     MIN_CAMERA_DISTANCE,
@@ -9,14 +13,6 @@ import {
 import { EventSubscriptions } from '../engine/events';
 import type { RenderContext } from '../engine/render-context';
 import { WORLD_REFERENCE_CHANGED, type WorldReferenceChangedEvent } from '../systems/world-reference-system';
-import {
-    CURSOR_MOVE_TO,
-    CURSOR_ROTATE_DELTA,
-    CURSOR_ZOOM_DELTA,
-    type CursorMoveToEvent,
-    type CursorRotateDeltaEvent,
-    type CursorZoomDeltaEvent
-} from './events';
 
 export class WorldCursor {
     readonly position = new THREE.Vector3(0, 0, 0);
@@ -26,16 +22,42 @@ export class WorldCursor {
     private mesh: THREE.Mesh | null = null;
     private readonly subscriptions: EventSubscriptions;
 
+    // Rate state written directly by CursorInputSystem each input callback
+    readonly moveRate = new THREE.Vector2(0, 0);
+    moveRateSprint = false;
+    rotateRate = 0;
+    zoomRate = 0;
+
     constructor(
         private readonly renderContext: RenderContext,
         events: EventTarget
     ) {
         this.subscriptions = new EventSubscriptions(events);
-
-        this.subscriptions.on<CursorMoveToEvent>(CURSOR_MOVE_TO, this.handleCursorMoveTo);
-        this.subscriptions.on<CursorRotateDeltaEvent>(CURSOR_ROTATE_DELTA, this.handleCursorRotateDelta);
-        this.subscriptions.on<CursorZoomDeltaEvent>(CURSOR_ZOOM_DELTA, this.handleCursorZoomDelta);
         this.subscriptions.on<WorldReferenceChangedEvent>(WORLD_REFERENCE_CHANGED, this.handleWorldReferenceChanged);
+    }
+
+    update(deltaTime: number): void {
+        if (this.moveRate.x !== 0 || this.moveRate.y !== 0) {
+            const forward = new THREE.Vector3(Math.sin(this.cameraYaw), Math.cos(this.cameraYaw), 0);
+            const right = new THREE.Vector3(Math.cos(this.cameraYaw), -Math.sin(this.cameraYaw), 0);
+
+            forward.multiplyScalar(-this.moveRate.y);
+            right.multiplyScalar(this.moveRate.x);
+            forward.add(right).normalize();
+
+            const speed = CURSOR_MOVE_SPEED * (this.moveRateSprint ? CURSOR_SPRINT_MULTIPLIER : 1);
+            forward.multiplyScalar(speed * deltaTime);
+
+            this.setPosition(this.position.clone().add(forward));
+        }
+
+        if (this.rotateRate !== 0) {
+            this.setYaw(this.cameraYaw + this.rotateRate * CURSOR_ROTATE_SPEED * deltaTime);
+        }
+
+        if (this.zoomRate !== 0) {
+            this.setZoom(this.cameraDistance + this.zoomRate * CURSOR_ZOOM_SPEED * deltaTime);
+        }
     }
 
     setPosition(pos: { x: number; y: number; z: number }): void {
@@ -46,14 +68,9 @@ export class WorldCursor {
     }
 
     setYaw(yaw: number): void {
-        // Normalize to [0, 2π)
         const TWO_PI = 2 * Math.PI;
         this.cameraYaw = ((yaw % TWO_PI) + TWO_PI) % TWO_PI;
-
-        // Update direction vector to match yaw
         this.direction.set(Math.sin(this.cameraYaw), Math.cos(this.cameraYaw), 0);
-
-        // Update mesh rotation if present
         if (this.mesh) {
             this.mesh.rotation.z = Math.atan2(this.direction.x, this.direction.y);
         }
@@ -61,6 +78,16 @@ export class WorldCursor {
 
     setZoom(distance: number): void {
         this.cameraDistance = Math.max(MIN_CAMERA_DISTANCE, Math.min(MAX_CAMERA_DISTANCE, distance));
+    }
+
+    rotateBy(angleDelta: number): void {
+        this.setYaw(this.cameraYaw + angleDelta);
+    }
+
+    zoomBy(delta: number): void {
+        const midDistance = (MAX_CAMERA_DISTANCE + MIN_CAMERA_DISTANCE) / 2;
+        const zoomScale = (this.cameraDistance / midDistance) * ZOOM_DISTANCE_SCALE;
+        this.setZoom(this.cameraDistance + delta * zoomScale);
     }
 
     get showMesh(): boolean {
@@ -110,25 +137,6 @@ export class WorldCursor {
         };
     }
 
-    private applyYawDelta(angleDelta: number): void {
-        this.setYaw(this.cameraYaw + angleDelta);
-    }
-
-    private handleCursorMoveTo = (event: CursorMoveToEvent): void => {
-        this.setPosition(event.pos);
-    };
-
-    private handleCursorRotateDelta = (event: CursorRotateDeltaEvent): void => {
-        this.applyYawDelta(event.angleDelta);
-    };
-
-    private handleCursorZoomDelta = (event: CursorZoomDeltaEvent): void => {
-        const midDistance = (MAX_CAMERA_DISTANCE + MIN_CAMERA_DISTANCE) / 2;
-        const zoomScale = (this.cameraDistance / midDistance) * ZOOM_DISTANCE_SCALE;
-        const delta = event.delta * zoomScale;
-        this.setZoom(this.cameraDistance + delta);
-    };
-
     private handleWorldReferenceChanged = (event: WorldReferenceChangedEvent): void => {
         this.position.x += event.deltaPosition.x;
         this.position.y += event.deltaPosition.y;
@@ -141,15 +149,9 @@ export class WorldCursor {
         const headLength = 30;
         const baseWidth = 15;
         const vertices = new Float32Array([
-            0,
-            headLength,
-            0,
-            -baseWidth,
-            -5,
-            0,
-            baseWidth,
-            -5,
-            0
+            0, headLength, 0,
+            -baseWidth, -5, 0,
+            baseWidth, -5, 0
         ]);
         geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
         geometry.setIndex([0, 1, 2]);
@@ -166,8 +168,7 @@ export class WorldCursor {
         this.mesh.position.copy(this.position);
 
         if (this.direction.lengthSq() > 0) {
-            const angle = Math.atan2(this.direction.x, this.direction.y);
-            this.mesh.rotation.z = angle;
+            this.mesh.rotation.z = Math.atan2(this.direction.x, this.direction.y);
         }
 
         this.renderContext.scene.add(this.mesh);

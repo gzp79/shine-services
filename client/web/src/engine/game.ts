@@ -1,7 +1,7 @@
 import init from '#wasm';
 import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
-import { CursorLocomotionSystem } from '../avatar/cursor-locomotion-system';
+import { CursorInputSystem } from '../systems/cursor-input-system';
 import { InputManager } from './input/input-manager';
 import { WorldCursor } from '../avatar/world-cursor';
 import { CameraFollowCursorSystem } from '../systems/camera-follow-cursor-system';
@@ -18,7 +18,7 @@ class Game {
     private readonly events: EventTarget;
     private readonly renderContext: RenderContext;
     private readonly inputManager: InputManager;
-    private readonly locomotionSystem: CursorLocomotionSystem;
+    private readonly cursorInputSystem: CursorInputSystem;
     private readonly camera: Camera;
     private readonly worldCursor: WorldCursor;
     private readonly world: World;
@@ -47,18 +47,11 @@ class Game {
         container.style.outline = 'none';
         container.focus();
 
-        // Create WorldCursor first (needed by InputManager for orientation)
         this.worldCursor = new WorldCursor(this.renderContext, this.events);
         this.world = new World(this.events, this.debugPanel);
 
-        // InputManager handles input with centralized conflict resolution
-        this.inputManager = new InputManager(this.camera, this.events, container);
-
-        // CursorLocomotionSystem polls locomotion state and applies to WorldCursor
-        this.locomotionSystem = new CursorLocomotionSystem(
-            this.worldCursor,
-            () => this.inputManager.getLocomotionState()
-        );
+        this.cursorInputSystem = new CursorInputSystem(this.worldCursor, this.camera, this.events);
+        this.inputManager = new InputManager(this.cursorInputSystem, container);
 
         // Add debug toggles
         this.worldCursor.showMesh = true;
@@ -85,9 +78,8 @@ class Game {
         const deltaTime = (currentTime - this.lastTime) / 1000;
         this.lastTime = currentTime;
 
-        this.inputManager.update();
+        this.worldCursor.update(deltaTime);
         this.camera.update();
-        this.locomotionSystem.update(deltaTime);
 
         for (const system of this.systems) {
             system.update(deltaTime);

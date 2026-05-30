@@ -1,14 +1,12 @@
 // @vitest-environment jsdom
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockedObject } from 'vitest';
 import { InputManager } from './input-manager';
 import type { InputHandler } from './input-handler';
-import { DesktopSchema } from './schemas/desktop-schema';
-import { TouchSchema } from './schemas/touch-schema';
 
 describe('InputManager', () => {
     let manager: InputManager;
-    let handler: InputHandler;
+    let handler: MockedObject<InputHandler>;
     let container: HTMLElement;
 
     beforeEach(() => {
@@ -27,157 +25,135 @@ describe('InputManager', () => {
             onInteractStart: vi.fn(),
             onInteract: vi.fn(),
             onInteractEnd: vi.fn()
-        };
+        } satisfies InputHandler;
         manager = new InputManager(handler, container);
     });
 
+    afterEach(() => {
+        manager.dispose();
+    });
+
     describe('Schema tracking', () => {
-        it('37. DesktopSchema becomes active → lastUsedSchema = desktop', () => {
-            // Trigger desktop schema to become active by simulating keyboard input
-            const keyDown = new KeyboardEvent('keydown', { key: 'w' });
-            window.dispatchEvent(keyDown);
+        it('37. First schema activation → onSchemaChanged not called', () => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w' }));
 
-            // Call update to poll schemas
-            manager.update();
-
-            expect(handler.onSchemaChanged).toHaveBeenCalledWith('desktop');
+            expect(handler.onSchemaChanged).not.toHaveBeenCalled();
         });
 
-        it('38. Schema change → handler.onSchemaChanged(\'desktop\') called', () => {
-            const keyDown = new KeyboardEvent('keydown', { key: 'w' });
-            window.dispatchEvent(keyDown);
+        it('38. Switch from desktop → touch → onSchemaChanged(\'touch\') called', () => {
+            // Activate desktop, then release so it goes idle
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w' }));
+            window.dispatchEvent(new KeyboardEvent('keyup', { key: 'w' }));
 
-            manager.update();
-
-            expect(handler.onSchemaChanged).toHaveBeenCalledWith('desktop');
-        });
-
-        it('39. TouchSchema becomes active → lastUsedSchema = touch, onSchemaChanged(\'touch\')', () => {
-            // Trigger touch schema by simulating touch
-            const touchStart = new TouchEvent('touchstart', {
+            // Activate touch
+            container.dispatchEvent(new TouchEvent('touchstart', {
                 touches: [{ identifier: 1, clientX: 100, clientY: 100 } as Touch]
-            });
-            container.dispatchEvent(touchStart);
-
-            manager.update();
+            }));
+            container.dispatchEvent(new TouchEvent('touchend', {
+                changedTouches: [{ identifier: 1, clientX: 100, clientY: 100 } as Touch],
+                touches: []
+            }));
 
             expect(handler.onSchemaChanged).toHaveBeenCalledWith('touch');
         });
 
-        it('40. No schema active → lastUsedSchema = null', () => {
-            // Initially no schema is active
-            manager.update();
+        it('39. Switch from touch → desktop → onSchemaChanged(\'desktop\') called', () => {
+            // Activate touch, then release so it goes idle
+            container.dispatchEvent(new TouchEvent('touchstart', {
+                touches: [{ identifier: 1, clientX: 100, clientY: 100 } as Touch]
+            }));
+            container.dispatchEvent(new TouchEvent('touchend', {
+                changedTouches: [{ identifier: 1, clientX: 100, clientY: 100 } as Touch],
+                touches: []
+            }));
 
-            // Should not have called onSchemaChanged yet (no schema became active)
+            // Activate desktop
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w' }));
+
+            expect(handler.onSchemaChanged).toHaveBeenCalledWith('desktop');
+        });
+
+        it('40. No input → onSchemaChanged not called', () => {
             expect(handler.onSchemaChanged).not.toHaveBeenCalled();
         });
     });
 
     describe('Callback routing', () => {
-        it('41. Active schema callback → routed to handler', () => {
-            // Make desktop schema active
-            const keyDown = new KeyboardEvent('keydown', { key: 'w' });
-            window.dispatchEvent(keyDown);
-            manager.update();
+        it('41. First event routed immediately to handler', () => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w' }));
 
-            // Desktop schema should emit onMoveRate
             expect(handler.onMoveRate).toHaveBeenCalled();
         });
 
-        it('42. Inactive schema callback → blocked (not routed)', () => {
-            // Make desktop schema active
-            const keyDown = new KeyboardEvent('keydown', { key: 'w' });
-            window.dispatchEvent(keyDown);
-            manager.update();
+        it('42. Touch blocked while desktop is mid-gesture', () => {
+            // Start desktop drag (do not release)
+            container.dispatchEvent(new PointerEvent('pointerdown', {
+                clientX: 100, clientY: 100, button: 0, pointerType: 'mouse', pointerId: 1
+            }));
+            container.dispatchEvent(new PointerEvent('pointermove', {
+                clientX: 150, clientY: 150, button: 0, pointerType: 'mouse', pointerId: 1
+            }));
 
             vi.clearAllMocks();
 
-            // Try touch schema callback (should be blocked)
-            const touchStart = new TouchEvent('touchstart', {
-                touches: [{ identifier: 1, clientX: 100, clientY: 100 } as Touch]
-            });
-            container.dispatchEvent(touchStart);
-
-            const touchEnd = new TouchEvent('touchend', {
-                changedTouches: [{ identifier: 1, clientX: 100, clientY: 100 } as Touch],
-                touches: []
-            });
-            container.dispatchEvent(touchEnd);
-
-            // Touch onMoveTo should not reach handler because desktop is active
-            expect(handler.onMoveTo).not.toHaveBeenCalled();
-        });
-
-        it('43. No active schema → first callback from any schema is routed', () => {
-            // No schema active initially
-            // Touch schema emits callback
-            const touchStart = new TouchEvent('touchstart', {
-                touches: [{ identifier: 1, clientX: 100, clientY: 100 } as Touch]
-            });
-            container.dispatchEvent(touchStart);
-
-            const touchEnd = new TouchEvent('touchend', {
-                changedTouches: [{ identifier: 1, clientX: 100, clientY: 100 } as Touch],
-                touches: []
-            });
-            container.dispatchEvent(touchEnd);
-
-            // Should be routed
-            expect(handler.onMoveTo).toHaveBeenCalled();
-        });
-
-        it('44. Schema switch mid-gesture → new schema callbacks routed, old blocked', () => {
-            // Desktop schema active (start drag, don't release)
-            const pointerDown = new PointerEvent('pointerdown', {
-                clientX: 100,
-                clientY: 100,
-                button: 0,
-                pointerType: 'mouse',
-                pointerId: 1
-            });
-            container.dispatchEvent(pointerDown);
-            manager.update();
-
-            expect(handler.onSchemaChanged).toHaveBeenCalledWith('desktop');
-
-            // Desktop drag continues
-            const pointerMove1 = new PointerEvent('pointermove', {
-                clientX: 150,
-                clientY: 150,
-                button: 0,
-                pointerType: 'mouse',
-                pointerId: 1
-            });
-            container.dispatchEvent(pointerMove1);
-
-            vi.clearAllMocks();
-
-            // Try to start touch input (while desktop drag is ongoing)
-            const touchStart = new TouchEvent('touchstart', {
+            // Touch while desktop drag ongoing — should be blocked
+            container.dispatchEvent(new TouchEvent('touchstart', {
                 touches: [{ identifier: 1, clientX: 200, clientY: 200 } as Touch]
-            });
-            container.dispatchEvent(touchStart);
-
-            const touchEnd = new TouchEvent('touchend', {
+            }));
+            container.dispatchEvent(new TouchEvent('touchend', {
                 changedTouches: [{ identifier: 1, clientX: 200, clientY: 200 } as Touch],
                 touches: []
-            });
-            container.dispatchEvent(touchEnd);
+            }));
 
-            // Touch onMoveTo should be blocked (desktop is active)
             expect(handler.onMoveTo).not.toHaveBeenCalled();
-            // No schema change should occur
             expect(handler.onSchemaChanged).not.toHaveBeenCalled();
+        });
 
-            // Desktop callbacks should still be routed
-            const pointerMove2 = new PointerEvent('pointermove', {
-                clientX: 200,
-                clientY: 200,
-                button: 0,
-                pointerType: 'mouse',
-                pointerId: 1
-            });
-            container.dispatchEvent(pointerMove2);
+        it('43. Touch allowed after desktop goes idle', () => {
+            // Start and finish desktop tap
+            container.dispatchEvent(new PointerEvent('pointerdown', {
+                clientX: 100, clientY: 100, button: 0, pointerType: 'mouse', pointerId: 1
+            }));
+            container.dispatchEvent(new PointerEvent('pointerup', {
+                clientX: 100, clientY: 100, button: 0, pointerType: 'mouse', pointerId: 1
+            }));
+
+            vi.clearAllMocks();
+
+            // Touch should now activate and route
+            container.dispatchEvent(new TouchEvent('touchstart', {
+                touches: [{ identifier: 2, clientX: 200, clientY: 200 } as Touch]
+            }));
+            container.dispatchEvent(new TouchEvent('touchend', {
+                changedTouches: [{ identifier: 2, clientX: 200, clientY: 200 } as Touch],
+                touches: []
+            }));
+
+            expect(handler.onMoveTo).toHaveBeenCalled();
+            expect(handler.onSchemaChanged).toHaveBeenCalledWith('touch');
+        });
+
+        it('44. Desktop still routed while mid-gesture after touch attempt blocked', () => {
+            // Start desktop drag
+            container.dispatchEvent(new PointerEvent('pointerdown', {
+                clientX: 100, clientY: 100, button: 0, pointerType: 'mouse', pointerId: 1
+            }));
+            container.dispatchEvent(new PointerEvent('pointermove', {
+                clientX: 150, clientY: 150, button: 0, pointerType: 'mouse', pointerId: 1
+            }));
+
+            vi.clearAllMocks();
+
+            // Blocked touch attempt
+            container.dispatchEvent(new TouchEvent('touchstart', {
+                touches: [{ identifier: 1, clientX: 200, clientY: 200 } as Touch]
+            }));
+
+            // Desktop move still routed
+            container.dispatchEvent(new PointerEvent('pointermove', {
+                clientX: 200, clientY: 200, button: 0, pointerType: 'mouse', pointerId: 1
+            }));
+
             expect(handler.onMoveTo).toHaveBeenCalled();
         });
     });

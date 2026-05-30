@@ -18,6 +18,9 @@ export class RawKeyAxis2D {
     private _enabled = true;
     private active = false;
     private keys = { up: false, down: false, left: false, right: false, sprint: false };
+    private lastX = 0;
+    private lastY = 0;
+    private lastSprint = false;
 
     constructor(
         private readonly mapping: KeyAxis2DMapping,
@@ -34,18 +37,33 @@ export class RawKeyAxis2D {
     set enabled(value: boolean) {
         if (this._enabled === value) return;
 
-        const wasActive = this.active;
         this._enabled = value;
 
-        if (!value && wasActive) {
-            this.active = false;
-            this.onChange?.(0, 0, false);
-            this.onEnd?.();
+        if (!value) {
+            if (this.active) {
+                this.active = false;
+                this.emitChange(0, 0, false);
+                this.onEnd?.();
+            }
+        } else {
+            if (this.isActive()) {
+                this.active = true;
+                this.onStart?.();
+                const axis = this.getAxis();
+                this.emitChange(axis.x, axis.y, this.keys.sprint);
+            }
         }
     }
 
     isActive(): boolean {
         return this.keys.up || this.keys.down || this.keys.left || this.keys.right;
+    }
+
+    cancel(): void {
+        if (!this.active) return;
+        this.active = false;
+        this.emitChange(0, 0, false);
+        this.onEnd?.();
     }
 
     dispose(): void {
@@ -75,7 +93,7 @@ export class RawKeyAxis2D {
         }
 
         const axis = this.getAxis();
-        this.onChange?.(axis.x, axis.y, this.keys.sprint);
+        this.emitChange(axis.x, axis.y, this.keys.sprint);
     };
 
     private handleKeyUp = (ev: Event): void => {
@@ -92,7 +110,7 @@ export class RawKeyAxis2D {
         ev.preventDefault();
 
         const axis = this.getAxis();
-        this.onChange?.(axis.x, axis.y, this.keys.sprint);
+        this.emitChange(axis.x, axis.y, this.keys.sprint);
 
         if (this.active && !this.isActive()) {
             this.active = false;
@@ -108,5 +126,14 @@ export class RawKeyAxis2D {
         if (this.keys.up) y += 1;
         if (this.keys.down) y -= 1;
         return { x, y };
+    }
+
+    private emitChange(x: number, y: number, sprint: boolean): void {
+        if (x === this.lastX && y === this.lastY && sprint === this.lastSprint) return;
+        if (x === 0 && y === 0 && this.lastX === 0 && this.lastY === 0) return;
+        this.lastX = x;
+        this.lastY = y;
+        this.lastSprint = sprint;
+        this.onChange?.(x, y, sprint);
     }
 }
