@@ -256,3 +256,80 @@ details summary:hover { color: #e2e8f0; }
 .arr-violet .arrow-head { border-top: 7px solid rgba(168,85,247,0.5); }
 .arr-pink   .arrow-stem { background: rgba(236,72,153,0.5); }
 .arr-pink   .arrow-head { border-top: 7px solid rgba(236,72,153,0.5); }
+
+/* ── Horizontal flow (left → right linear chain) ───────── */
+/* For short cause→effect / request→response chains that read more
+   naturally across than down. Boxes are the same .box primitive. */
+.hflow {
+  display: flex; flex-wrap: wrap;
+  align-items: stretch; gap: 4px;
+  margin: 12px 0 24px;
+}
+.hflow > .box { flex: 0 1 auto; align-self: center; min-width: 120px; }
+.hconn {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-width: 56px; padding: 0 4px; align-self: center;
+}
+.hconn::before { content: '→'; color: #64748b; font-size: 18px; line-height: 1; }
+.hconn-label { font-size: 10px; color: #64748b; text-align: center; line-height: 1.3; margin-top: 3px; max-width: 130px; }
+
+/* ── Fan-out (one source, many independent reactions) ──── */
+/* For observer / event-bus flows: a single emitter feeding N peers that
+   each react on their own. The trunk + branch labels make "each subscribes
+   independently" explicit, which a flat row of boxes can't show. */
+.fanout { display: flex; flex-direction: column; align-items: stretch; margin: 12px 0 24px; }
+.fanout-source { display: flex; justify-content: center; }
+.fanout-source > .box { min-width: 240px; max-width: 70%; text-align: center; }
+.fanout-trunk {
+  align-self: center; width: 2px; height: 18px;
+  background: rgba(255,255,255,0.18);
+}
+.fanout-branches {
+  display: flex; gap: 10px; align-items: stretch;
+  border-top: 2px solid rgba(255,255,255,0.18);
+  padding-top: 0;
+}
+.fanout-branch { flex: 1; display: flex; flex-direction: column; align-items: stretch; }
+.fanout-branch::before {
+  content: ''; align-self: center;
+  width: 2px; height: 14px; background: rgba(255,255,255,0.18);
+}
+.fanout-branch-label {
+  font-size: 10px; color: #64748b; text-align: center;
+  line-height: 1.3; padding: 4px 2px 6px;
+}
+.fanout-branch > .box { flex: 1; }
+
+/* ── Lifecycle (state chain with a recycle edge) ───────── */
+/* A linear state progression that loops back: the forward chain reuses
+   .hflow, and .cycle-return draws the back-edge (last state → first) that a
+   plain chain can't show. Use for load/unload, allocate→use→reclaim, any
+   pooled-resource cycle. */
+.lifecycle { display: flex; flex-direction: column; margin: 12px 0 24px; }
+.lifecycle > .hflow { margin: 0; }
+.cycle-return {
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; margin-top: 6px; padding-top: 10px;
+  border-top: 2px dashed rgba(255,255,255,0.18);
+  font-size: 10px; color: #64748b; text-align: center; line-height: 1.3;
+}
+.cycle-return::before { content: '\21ba'; font-size: 15px; color: #94a3b8; }
+
+/* ── Spatial diagrams (SVG) ────────────────────────────── */
+/* For intrinsically geometric relationships — grid ownership, adjacency,
+   coordinate frames — that no box layout can express. Colours live here in
+   classes; never hard-code fill/stroke on the SVG elements, so the palette
+   stays centralised (and consistent with the box palette above). The
+   face/edge/corner vocabulary is generic mesh/grid geometry, reusable. */
+.svg-diagram { display: block; max-width: 100%; margin: 12px auto 8px; }
+.svg-diagram .face         { fill: rgba(255,255,255,0.03); stroke: rgba(255,255,255,0.20); stroke-width: 1.5; }
+.svg-diagram .face-dim     { fill: rgba(255,255,255,0.02); stroke: rgba(255,255,255,0.09); stroke-width: 1; }
+.svg-diagram .edge-owned   { stroke: rgba(251,146,60,0.9);  stroke-width: 4; fill: none; stroke-linecap: round; }
+.svg-diagram .edge-shared  { stroke: rgba(255,255,255,0.16); stroke-width: 1.5; fill: none; }
+.svg-diagram .corner-owned { fill: rgba(34,197,94,0.9); stroke: #0f1117; stroke-width: 1.5; }
+.svg-diagram .corner-shared { fill: rgba(255,255,255,0.22); }
+.svg-diagram text          { fill: #94a3b8; font-family: 'Inter', system-ui, sans-serif; font-size: 11px; }
+.svg-diagram .label-strong { fill: #e2e8f0; font-weight: 700; }
+.svg-diagram .label-mono   { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 10px; fill: #cbd5e1; }

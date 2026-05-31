@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chunk Lifecycle</title>
+<link rel="stylesheet" href="../../doc.css">
+</head>
+<body>
+
+<header class="doc-header">
+  <h1 class="doc-title">Chunk Lifecycle</h1>
+  <div class="doc-meta">
+    <span>Streams hex chunks — and their shared edges and corners — in and out around the focused chunk, so only a bounded neighbourhood of the infinite world is ever resident.</span>
+  </div>
+</header>
+
+<h2>Problem</h2>
+<p>
+The world is unbounded but memory and the GPU are not. <code>World</code> keeps
+only a disc of chunks around the avatar's focused chunk: it loads chunks as the
+focus moves toward them and unloads them once they fall far behind. Each chunk's
+shared boundaries — the edges between two chunks and the corners between three —
+are derived entities with their own dependent lifetime: they exist only while
+every chunk they touch is resident.
+</p>
+
+<h2>Architecture</h2>
+
+<p>
+A chunk moves through a fixed cycle. <code>WORLD_FOCUS_CHANGED</code> (see
+<code>world-reference-change.html</code>) is the clock: each focus move rebuilds
+the load queue from the spiral of chunks within <code>MAX_LOADED_DISTANCE</code>
+of the new focus, then evicts whatever has drifted too far. Loading is sliced
+across idle time so a burst of new chunks never blocks a frame.
+</p>
+
+<div class="lifecycle">
+  <div class="hflow">
+    <div class="box box-dim" style="min-width:130px">
+      <div class="bname">Unloaded</div>
+      <div class="bdetail">not in any map; no WASM data</div>
+    </div>
+    <div class="hconn"><div class="hconn-label">within spiral(MAX_LOADED_DISTANCE) of focus</div></div>
+    <div class="box box-orange" style="min-width:130px">
+      <div class="bname">Queued</div>
+      <div class="bdetail">in <code>loadQueue</code>, closest-first</div>
+    </div>
+    <div class="hconn"><div class="hconn-label">requestIdleCallback slice (&gt;1ms left)</div></div>
+    <div class="box box-green" style="min-width:130px">
+      <div class="bname">Loaded</div>
+      <div class="bdetail"><code>chunks</code> map + mesh in scene</div>
+    </div>
+  </div>
+  <div class="cycle-return">
+    focus moves away — distance &gt; MAX_TRACKED_DISTANCE, or count &gt; MAX_TRACKED_COUNT (farthest first) → <code>unloadChunk</code> → back to Unloaded
+  </div>
+</div>
+
+<p>
+Edges and corners are not queued or distance-tracked on their own; they ride on
+the chunks they connect. When a chunk loads, <code>World</code> tries to build
+the boundary entities it <em>owns</em>, and asks its neighbours to retry theirs —
+each is created only once <strong>all</strong> the chunks it touches are
+resident, and destroyed the moment <strong>any</strong> of them unloads. To build
+each shared boundary exactly once, a chunk owns only half of its ring: its three
+upper edges (<code>NE</code>, <code>N</code>, <code>NW</code>) and three corners
+(<code>E</code>, <code>NE</code>, <code>NW</code>). The lower neighbour owns the
+shared one.
+</p>
+
+<svg class="svg-diagram" viewBox="0 0 320 240" width="340">
+  <polygon class="face" points="225,150 193,94 128,94 95,150 128,206 193,206"/>
+
+  <!-- owned edges: NE, N, NW (upper three) -->
+  <line class="edge-owned" x1="225" y1="150" x2="193" y2="94"/>
+  <line class="edge-owned" x1="193" y1="94"  x2="128" y2="94"/>
+  <line class="edge-owned" x1="128" y1="94"  x2="95"  y2="150"/>
+  <!-- shared edges: SW, S, SE (owned by lower neighbours) -->
+  <line class="edge-shared" x1="95"  y1="150" x2="128" y2="206"/>
+  <line class="edge-shared" x1="128" y1="206" x2="193" y2="206"/>
+  <line class="edge-shared" x1="193" y1="206" x2="225" y2="150"/>
+
+  <!-- owned corners: E, NE, NW -->
+  <circle class="corner-owned" cx="225" cy="150" r="5"/>
+  <circle class="corner-owned" cx="193" cy="94"  r="5"/>
+  <circle class="corner-owned" cx="128" cy="94"  r="5"/>
+  <!-- shared corners: W, SW, SE -->
+  <circle class="corner-shared" cx="95"  cy="150" r="3.5"/>
+  <circle class="corner-shared" cx="128" cy="206" r="3.5"/>
+  <circle class="corner-shared" cx="193" cy="206" r="3.5"/>
+
+  <text class="label-mono label-strong" x="160" y="154" text-anchor="middle">(q, r)</text>
+
+  <text class="label-strong" x="233" y="153" text-anchor="start">E</text>
+  <text class="label-strong" x="199" y="87"  text-anchor="start">NE</text>
+  <text class="label-strong" x="124" y="87"  text-anchor="end">NW</text>
+  <text x="88"  y="153" text-anchor="end">W</text>
+  <text x="124" y="222" text-anchor="end">SW</text>
+  <text x="199" y="222" text-anchor="start">SE</text>
+
+  <text class="label-mono" x="160" y="232" text-anchor="middle">owns NE·N·NW edges, E·NE·NW corners</text>
+</svg>
+
+<p>
+Orange edges and green corners are the ones this chunk builds; grey ones belong
+to a neighbour. Because exactly one of the two (edge) or three (corner) sharers
+claims each boundary, no shared geometry is ever built twice.
+</p>
+
+<h2>Key rules</h2>
+
+<table>
+  <tr><th>Concern</th><th>Rule</th></tr>
+  <tr><td>Load radius</td><td>On every focus change, <code>loadQueue</code> = <code>focus.spiral(MAX_LOADED_DISTANCE)</code> (= 4) minus already-loaded chunks. Spiral order is closest-first, so the queue drains nearest chunks first.</td></tr>
+  <tr><td>Load scheduling</td><td>Drained in <code>requestIdleCallback</code>, loading chunks only while <code>deadline.timeRemaining() &gt; 1</code>ms, then re-scheduling. Loading never blocks a frame.</td></tr>
+  <tr><td>Unload — distance</td><td>Any chunk whose hex distance from the focus exceeds <code>MAX_TRACKED_DISTANCE</code> (= 10) is unloaded.</td></tr>
+  <tr><td>Unload — count cap</td><td>If more than <code>MAX_TRACKED_COUNT</code> (= 50) chunks remain, the farthest are unloaded down to the cap.</td></tr>
+  <tr><td>Hysteresis</td><td>Load distance (4) ≪ keep distance (10). A chunk loaded once lingers well past the load radius, so walking back and forth across a boundary doesn't thrash load/unload.</td></tr>
+  <tr><td>Edge ownership</td><td>A chunk owns edges <code>NE</code>, <code>N</code>, <code>NW</code> only. <code>ChunkEdgeId.involvedChunkIds()</code> = [owner, neighbor(edgeIdx)].</td></tr>
+  <tr><td>Corner ownership</td><td>A chunk owns corners <code>E</code>, <code>NE</code>, <code>NW</code> only. <code>involvedChunkIds()</code> returns the three chunks meeting at that corner.</td></tr>
+  <tr><td>Boundary build gate</td><td>An edge/corner is instantiated only when every involved chunk is loaded, and removed when any involved chunk unloads. On load, a chunk also retries the boundaries owned by its already-present neighbours.</td></tr>
+  <tr><td>Coordinates</td><td>Axial <code>(q, r)</code>; <code>distanceTo</code> via cube coords. Mesh data is stored relative to <code>referenceChunkId</code>; positions shift on a reference change, not on load/unload.</td></tr>
+</table>
+
+<h2>File map</h2>
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>client/web/src/world/world.ts</code></td><td>Owns the resident maps; load queue, idle scheduling, distance/count eviction, and edge/corner build-and-tear-down.</td></tr>
+  <tr><td><code>client/web/src/world/chunk.ts</code></td><td>A loaded chunk: WASM cell data, mesh group, debug labels.</td></tr>
+  <tr><td><code>client/web/src/world/chunk-edge.ts</code></td><td><code>ChunkEdgeId</code> (ownership + involved chunks) and the edge entity.</td></tr>
+  <tr><td><code>client/web/src/world/chunk-corner.ts</code></td><td><code>ChunkCornerId</code> (ownership + involved chunks) and the corner entity.</td></tr>
+  <tr><td><code>client/web/src/world/chunk-id.ts</code></td><td>Axial <code>(q,r)</code> coordinate: <code>spiral</code>/<code>ring</code>, <code>distanceTo</code>, neighbours, world-position conversion.</td></tr>
+  <tr><td><code>client/web/src/constants.ts</code></td><td><code>ChunkConst</code>: the load/track distances and counts.</td></tr>
+  <tr><td><code>client/web/src/systems/world-reference-system.ts</code></td><td>Emits <code>WORLD_FOCUS_CHANGED</code>, the signal that drives every load/unload pass.</td></tr>
+</table>
+
+<details data-agent="implementation">
+  <summary>Why two thresholds, and why loading is deferred to idle time</summary>
+  <div class="details-body">
+    The split between <code>MAX_LOADED_DISTANCE</code> (4) and
+    <code>MAX_TRACKED_DISTANCE</code> (10) is deliberate hysteresis. If a chunk
+    were unloaded the instant it left the load radius, an avatar loitering on a
+    chunk boundary would load and unload the same ring every few steps —
+    re-running WASM <code>init_chunk</code>, rebuilding meshes, and re-deriving
+    edges/corners each time. The wide keep-band absorbs that jitter; the
+    <code>MAX_TRACKED_COUNT</code> cap is the backstop that still bounds memory
+    if the avatar travels in a straight line and the band never naturally
+    evicts.
+
+    Loading is drained through <code>requestIdleCallback</code> rather than done
+    eagerly because a single focus change can enqueue the whole spiral at once
+    (up to the ring count for radius 4). Building them synchronously would spike
+    frame time; slicing by <code>deadline.timeRemaining()</code> spreads the cost
+    across whatever idle budget each frame has, at the price of chunks popping in
+    over a few frames — an acceptable trade for a steady frame rate.
+  </div>
+</details>
+
+</body>
+</html>

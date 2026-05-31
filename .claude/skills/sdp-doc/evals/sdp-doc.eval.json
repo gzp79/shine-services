@@ -1,0 +1,14 @@
+[
+  { "query": "Spec out a new notification center feature for the web client", "should_trigger": true, "note": "new feature design -> doc" },
+  { "query": "Write a design doc for the avatar camera system", "should_trigger": true, "note": "explicit doc authoring" },
+  { "query": "Plan the hex chunk streaming feature before we build it", "should_trigger": true, "note": "plan a feature -> doc" },
+  { "query": "The input-system doc is stale, sync it to the current code", "should_trigger": true, "note": "code drifted -> doc Sync" },
+  { "query": "Update the design doc to match what the code actually does now", "should_trigger": true, "note": "code is reality -> doc Sync" },
+  { "query": "Check if docs/client/web/input-system.html is conformant", "should_trigger": true, "note": "Check mode" },
+
+  { "query": "Implement the input-system doc in code", "should_trigger": false, "note": "code realization -> sdp-code" },
+  { "query": "Make the code match the design doc for the avatar system", "should_trigger": false, "note": "code must change -> sdp-code" },
+  { "query": "The doc specifies retry backoff but the code never implements it, fix the code", "should_trigger": false, "note": "code is behind -> sdp-code" },
+  { "query": "Refactor AuthHandler to remove duplication", "should_trigger": false, "note": "unrelated code work" },
+  { "query": "Run the identity service locally", "should_trigger": false, "note": "unrelated ops" }
+]
