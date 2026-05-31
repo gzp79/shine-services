@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
-
-import { describe, it, expect, vi, beforeEach, afterEach, type MockedObject } from 'vitest';
-import { TouchSchema } from './touch-schema';
-import { LONG_PRESS_MS } from '../../../constants';
+import { type MockedObject, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { InputConst } from '../../../constants';
 import type { InputHandler } from '../input-handler';
+import { TouchSchema } from './touch-schema';
 
 describe('TouchSchema', () => {
     let schema: TouchSchema;
@@ -101,7 +100,7 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchStart);
 
-            vi.advanceTimersByTime(LONG_PRESS_MS); // Wait for long-press
+            vi.advanceTimersByTime(InputConst.LONG_PRESS_MS); // Wait for long-press
 
             // Try two-finger (should be blocked)
             const touchStart2 = new TouchEvent('touchstart', {
@@ -127,7 +126,7 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchStart);
 
-            vi.advanceTimersByTime(LONG_PRESS_MS);
+            vi.advanceTimersByTime(InputConst.LONG_PRESS_MS);
 
             // Move to trigger long-drag
             const touchMove = new TouchEvent('touchmove', {
@@ -336,7 +335,7 @@ describe('TouchSchema', () => {
             });
             container.dispatchEvent(touchStart);
 
-            vi.advanceTimersByTime(LONG_PRESS_MS);
+            vi.advanceTimersByTime(InputConst.LONG_PRESS_MS);
             expect(handler.onInteractStart).toHaveBeenCalledWith({ x: 100, y: 100 });
 
             const touchMove = new TouchEvent('touchmove', {

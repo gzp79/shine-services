@@ -18,11 +18,7 @@ export class StrokeLineNode {
     private readonly posAttr: THREE.BufferAttribute;
     private readonly line: THREE.Line;
 
-    constructor(
-        capacity: number,
-        color = 0xff4500,
-        linewidth = 2,
-    ) {
+    constructor(capacity: number, color = 0xff4500, linewidth = 2) {
         // ortho camera covering exactly [-1,1] in both axes — matches NDC directly
         this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
@@ -46,7 +42,7 @@ export class StrokeLineNode {
     /** buf: interleaved NDC [x,y,...], count: number of points. */
     update(buf: Float32Array, count: number): void {
         for (let i = 0; i < count; i++) {
-            this.positions[i * 3]     = buf[i * 2];
+            this.positions[i * 3] = buf[i * 2];
             this.positions[i * 3 + 1] = buf[i * 2 + 1];
             this.positions[i * 3 + 2] = 0;
         }

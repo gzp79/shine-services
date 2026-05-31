@@ -20,7 +20,12 @@ class HexMesh extends Experiment {
 
     constructor(container: HTMLElement, renderer: WebGPURenderer) {
         super(container, renderer);
-        this.gui = createControls(container, this.params, () => this.regenerate(), () => this.applyDisplay());
+        this.gui = createControls(
+            container,
+            this.params,
+            () => this.regenerate(),
+            () => this.applyDisplay()
+        );
         this.regenerate();
         this.start();
     }

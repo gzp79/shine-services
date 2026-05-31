@@ -1,5 +1,5 @@
+import { InputConst } from '../../../constants';
 import type { Point } from '../input-handler';
-import { MOVE_THRESHOLD_PX, LONG_PRESS_MS } from '../../../constants';
 
 /**
  * RawPointer handles pointer gestures for a single button.
@@ -31,7 +31,7 @@ export class RawPointer {
     constructor(
         private readonly button: number, // 0=left, 1=middle, 2=right
         private readonly enableLongDrag: boolean,
-        private readonly target: HTMLElement,
+        private readonly target: HTMLElement
     ) {
         this.target.addEventListener('pointerdown', this.handlePointerDown);
         this.target.addEventListener('pointermove', this.handlePointerMove);
@@ -97,7 +97,7 @@ export class RawPointer {
                         this.onLongDragStart?.(this.startPos);
                     }
                 }
-            }, LONG_PRESS_MS);
+            }, InputConst.LONG_PRESS_MS);
         }
     };
 
@@ -112,7 +112,7 @@ export class RawPointer {
         const distance = Math.sqrt(dx * dx + dy * dy);
 
         // Check if moved past threshold
-        if (!this.movedPastThreshold && distance >= MOVE_THRESHOLD_PX) {
+        if (!this.movedPastThreshold && distance >= InputConst.MOVE_THRESHOLD_PX) {
             this.movedPastThreshold = true;
             this.cancelLongPressTimer();
 

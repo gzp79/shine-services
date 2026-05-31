@@ -11,6 +11,7 @@ import { WorldReferenceSystem } from '../systems/world-reference-system';
 import { World } from '../world/world';
 import { Camera } from './camera/camera';
 import { DebugPanel } from './debug-panel';
+import type { GameResource } from './game-resource';
 import type { GameSystem } from './game-system';
 import { InputManager } from './input/input-manager';
 import { InputState } from './input/input-state';
@@ -27,6 +28,7 @@ class Game {
     private readonly world: World;
     private readonly debugPanel: DebugPanel;
     private readonly performanceMetrics: PerformanceMetrics;
+    private readonly resources: GameResource[] = [];
     private readonly systems: GameSystem[] = [];
     private animationId = 0;
     private lastTime = 0;
@@ -35,25 +37,25 @@ class Game {
         private readonly container: HTMLElement,
         renderer: WebGPURenderer
     ) {
+        if (!container.hasAttribute('tabindex')) {
+            container.tabIndex = 0;
+        }
+        container.style.outline = 'none';
+        container.focus();
+
+        // Register resources
         this.events = new EventTarget();
         this.renderContext = new RenderContext(container, renderer);
         this.debugPanel = new DebugPanel();
         this.debugPanel.setGameContainer(container);
         this.performanceMetrics = new PerformanceMetrics(this.renderContext.renderer);
-        this.camera = new Camera(this.events);
 
-        // Make container focusable so keyboard events work
-        if (!container.hasAttribute('tabindex')) {
-            container.tabIndex = 0;
-        }
-        // Remove focus outline (keyboard events only, no visual indication needed)
-        container.style.outline = 'none';
-        container.focus();
+        this.camera = new Camera(this.events);
+        this.worldCursor = new WorldCursor(this.renderContext.scene, this.events);
+        this.world = new World(this.events, this.debugPanel);
 
         this.inputState = new InputState();
-        this.worldCursor = new WorldCursor(this.renderContext, this.events);
         this.inputManager = new InputManager(this.inputState, container);
-        this.world = new World(this.events, this.debugPanel);
 
         // Add debug toggles
         this.worldCursor.showMesh = true;
@@ -104,6 +106,8 @@ class Game {
         this.renderContext.dispose();
         this.debugPanel.dispose();
         this.performanceMetrics.dispose();
+
+        this.resources.forEach((r) => r.dispose());
     }
 }
 

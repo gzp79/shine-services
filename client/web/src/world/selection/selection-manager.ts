@@ -42,11 +42,7 @@ export class SelectionManager {
     private updateDebugPanel(sel: Selection): void {
         switch (sel.type) {
             case 'cell':
-                this.debugPanel.set(
-                    SCOPE,
-                    'Selection',
-                    `[inner] (${sel.chunk.id.q}, ${sel.chunk.id.r})/${sel.cellId}`
-                );
+                this.debugPanel.set(SCOPE, 'Selection', `[inner] (${sel.chunk.id.q}, ${sel.chunk.id.r})/${sel.cellId}`);
                 break;
             case 'edge-cell':
                 this.debugPanel.set(

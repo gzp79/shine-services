@@ -1,6 +1,6 @@
 import type { InputHandler } from '../input-handler';
-import { InputSchema } from './input-schema';
 import { RawKeyDown } from '../raw/raw-key-down';
+import { InputSchema } from './input-schema';
 
 /**
  * DebugSchema toggles on/off with Tab.
@@ -18,7 +18,9 @@ export class DebugSchema extends InputSchema {
         };
     }
 
-    get isIdle(): boolean { return this._isIdle; }
+    get isIdle(): boolean {
+        return this._isIdle;
+    }
 
     state(): string {
         return `idle: ${this._isIdle}`;

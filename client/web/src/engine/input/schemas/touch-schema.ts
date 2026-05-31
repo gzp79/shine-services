@@ -1,7 +1,7 @@
 import type { InputHandler } from '../input-handler';
-import { InputSchema } from './input-schema';
 import { RawSingleTouch } from '../raw/raw-single-touch';
 import { RawTwoFingerGesture } from '../raw/raw-two-finger-gesture';
+import { InputSchema } from './input-schema';
 
 /**
  * TouchSchema handles touch input (single and two-finger gestures).
@@ -72,12 +72,12 @@ export class TouchSchema extends InputSchema {
     }
 
     state(): string {
-        const en = (v: boolean) => v ? 'on ' : 'off';
-        const ac = (v: boolean) => v ? ' [active]' : '';
+        const en = (v: boolean) => (v ? 'on ' : 'off');
+        const ac = (v: boolean) => (v ? ' [active]' : '');
         return [
             `idle:   ${this.isIdle}`,
             `single: ${en(this.singleTouch.enabled)}${ac(this.singleTouch.isActive())}`,
-            `two:    ${en(this.twoFingerGesture.enabled)}${ac(this.twoFingerGesture.isActive())}`,
+            `two:    ${en(this.twoFingerGesture.enabled)}${ac(this.twoFingerGesture.isActive())}`
         ].join('\n');
     }
 

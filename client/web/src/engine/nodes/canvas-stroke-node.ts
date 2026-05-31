@@ -14,7 +14,7 @@ export class CanvasStrokeNode {
     constructor(
         private readonly container: HTMLElement,
         readonly color = '#ff4500',
-        readonly lineWidth = 2,
+        readonly lineWidth = 2
     ) {
         this.canvas = document.createElement('canvas');
         this.canvas.style.cssText = `
@@ -28,7 +28,7 @@ export class CanvasStrokeNode {
     }
 
     private syncSize(): void {
-        this.canvas.width  = this.container.clientWidth;
+        this.canvas.width = this.container.clientWidth;
         this.canvas.height = this.container.clientHeight;
     }
 
@@ -43,9 +43,9 @@ export class CanvasStrokeNode {
 
         // NDC → pixel: px = (x+1)/2 * w,  py = (1-y)/2 * h
         this.ctx.beginPath();
-        this.ctx.moveTo((buf[0] + 1) / 2 * w, (1 - buf[1]) / 2 * h);
+        this.ctx.moveTo(((buf[0] + 1) / 2) * w, ((1 - buf[1]) / 2) * h);
         for (let i = 1; i < count; i++) {
-            this.ctx.lineTo((buf[i * 2] + 1) / 2 * w, (1 - buf[i * 2 + 1]) / 2 * h);
+            this.ctx.lineTo(((buf[i * 2] + 1) / 2) * w, ((1 - buf[i * 2 + 1]) / 2) * h);
         }
         this.ctx.strokeStyle = this.color;
         this.ctx.lineWidth = this.lineWidth;

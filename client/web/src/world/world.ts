@@ -1,6 +1,6 @@
 import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
-import { MAX_LOADED_CHUNK_DISTANCE, MAX_TRACKED_CHUNK_COUNT, MAX_TRACKED_CHUNK_DISTANCE } from '../constants';
+import { ChunkConst } from '../constants';
 import type { DebugPanel } from '../engine/debug-panel';
 import { EventSubscriptions } from '../engine/events';
 import { span } from '../engine/utils';
@@ -90,7 +90,7 @@ export class World {
         this.subscriptions.on<WorldReferenceChangedEvent>(WORLD_REFERENCE_CHANGED, this.handleWorldReferenceChanged);
         this.subscriptions.on<WorldFocusChangedEvent>(WORLD_FOCUS_CHANGED, this.handleWorldFocusChanged);
 
-        this.loadQueue = Array.from(this._focusedChunkId.spiral(MAX_LOADED_CHUNK_DISTANCE));
+        this.loadQueue = Array.from(this._focusedChunkId.spiral(ChunkConst.MAX_LOADED_DISTANCE));
         this.scheduleLoadQueue();
     }
 
@@ -210,7 +210,7 @@ export class World {
         }
 
         // Rebuild load queue sorted by distance (closest first), then drain it chunk-by-chunk
-        this.loadQueue = Array.from(this._focusedChunkId.spiral(MAX_LOADED_CHUNK_DISTANCE)).filter(
+        this.loadQueue = Array.from(this._focusedChunkId.spiral(ChunkConst.MAX_LOADED_DISTANCE)).filter(
             (id) => !this.chunks.has(id.key())
         );
 
@@ -303,14 +303,14 @@ export class World {
             .map((chunk) => ({ chunk, distance: chunk.id.distanceTo(this._focusedChunkId) }))
             .sort((a, b) => b.distance - a.distance);
 
-        for (const { chunk } of chunksWithDistance.filter((c) => c.distance > MAX_TRACKED_CHUNK_DISTANCE)) {
+        for (const { chunk } of chunksWithDistance.filter((c) => c.distance > ChunkConst.MAX_TRACKED_DISTANCE)) {
             this.unloadChunk(chunk.id);
         }
 
-        if (this.chunks.size > MAX_TRACKED_CHUNK_COUNT) {
-            const chunksToRemove = this.chunks.size - MAX_TRACKED_CHUNK_COUNT;
+        if (this.chunks.size > ChunkConst.MAX_TRACKED_COUNT) {
+            const chunksToRemove = this.chunks.size - ChunkConst.MAX_TRACKED_COUNT;
             for (const { chunk } of chunksWithDistance
-                .filter((c) => c.distance <= MAX_TRACKED_CHUNK_DISTANCE)
+                .filter((c) => c.distance <= ChunkConst.MAX_TRACKED_DISTANCE)
                 .slice(0, chunksToRemove)) {
                 this.unloadChunk(chunk.id);
             }

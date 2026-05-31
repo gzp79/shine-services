@@ -1,9 +1,9 @@
 import * as THREE from 'three';
+import { ChunkConst } from '../constants';
 import type { ICamera } from '../engine/camera/camera';
 import type { DebugPanel } from '../engine/debug-panel';
 import { GameSystem } from '../engine/game-system';
 import type { IInputState } from '../engine/input/input-state';
-import { CHUNK_WORLD_SIZE, MAX_ACTIVE_CHUNK_DISTANCE } from '../constants';
 import { ChunkId } from '../world/chunk-id';
 import { Selection } from '../world/selection/selection-event';
 import { World } from '../world/world';
@@ -13,7 +13,7 @@ import { World } from '../world/world';
 const SWITCH_RADIUS_FACTOR = 0.6;
 
 // Radius used to clamp the cursor to the interactable zone boundary.
-const INTERACTION_RADIUS = CHUNK_WORLD_SIZE * (MAX_ACTIVE_CHUNK_DISTANCE + 1);
+const INTERACTION_RADIUS = ChunkConst.WORLD_SIZE * (ChunkConst.MAX_ACTIVE_DISTANCE + 1);
 
 const SCOPE = 'Selection';
 

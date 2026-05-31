@@ -14,9 +14,9 @@ export interface CdtMeshGroup {
 }
 
 function circumcircle(
-    a: { x: number; y: number },
-    b: { x: number; y: number },
-    c: { x: number; y: number }
+    a: THREE.Vector2Like,
+    b: THREE.Vector2Like,
+    c: THREE.Vector2Like
 ): { x: number; y: number; radius: number } | null {
     const d = 2.0 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
     if (Math.abs(d) < 1e-10) {

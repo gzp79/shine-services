@@ -1,8 +1,8 @@
-import { InputSchema } from './schemas/input-schema';
 import type { InputHandler } from './input-handler';
 import { DebugSchema } from './schemas/debug-schema';
 import { DesktopSchema } from './schemas/desktop-schema';
 import { GestureSchema } from './schemas/gesture-schema';
+import { InputSchema } from './schemas/input-schema';
 import { TouchSchema } from './schemas/touch-schema';
 
 export class InputManager {
@@ -22,12 +22,14 @@ export class InputManager {
             schema.onActivated = (s) => this.onActivated(s);
         }
 
-        const desktop = this.schemas.find(s => s instanceof DesktopSchema)!;
+        const desktop = this.schemas.find((s) => s instanceof DesktopSchema)!;
         this._activeSchema = desktop;
         desktop.handler = this.handler;
     }
 
-    get activeSchema(): InputSchema | null { return this._activeSchema; }
+    get activeSchema(): InputSchema | null {
+        return this._activeSchema;
+    }
 
     private onActivated(schema: InputSchema): void {
         if (this._activeSchema && !this._activeSchema.isIdle) return;

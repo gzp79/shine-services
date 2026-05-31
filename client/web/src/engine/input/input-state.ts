@@ -1,10 +1,5 @@
 import * as THREE from 'three';
-import {
-    CURSOR_MOVE_SPEED,
-    CURSOR_SPRINT_MULTIPLIER,
-    CURSOR_ROTATE_SPEED,
-    CURSOR_ZOOM_SPEED
-} from '../../constants';
+import { CameraConst } from '../../constants';
 import type { InputHandler, Point, PointPair } from './input-handler';
 
 export type PendingInteractKind = 'start' | 'move' | 'end';
@@ -70,7 +65,7 @@ export class InputState implements IInputState, InputHandler {
     }
 
     onRotateBy(angleDelta: number): void {
-        this.pendingRotateBy += angleDelta;
+        this.pendingRotateBy -= angleDelta;
     }
 
     onZoomBy(delta: number): void {
@@ -80,7 +75,7 @@ export class InputState implements IInputState, InputHandler {
     onMoveRate(x: number, y: number, sprint: boolean): void {
         const len = Math.sqrt(x * x + y * y);
         if (len > 0) {
-            const speed = CURSOR_MOVE_SPEED * (sprint ? CURSOR_SPRINT_MULTIPLIER : 1);
+            const speed = CameraConst.CURSOR_MOVE_SPEED * (sprint ? CameraConst.CURSOR_SPRINT_MULTIPLIER : 1);
             this.moveSpeed.set((x / len) * speed, (y / len) * speed);
         } else {
             this.moveSpeed.set(0, 0);
@@ -88,11 +83,11 @@ export class InputState implements IInputState, InputHandler {
     }
 
     onRotateRate(value: number): void {
-        this.rotateSpeed = -value * CURSOR_ROTATE_SPEED;
+        this.rotateSpeed = -value * CameraConst.CURSOR_ROTATE_SPEED;
     }
 
     onZoomRate(value: number): void {
-        this.zoomSpeed = value * CURSOR_ZOOM_SPEED;
+        this.zoomSpeed = value * CameraConst.CURSOR_ZOOM_SPEED;
     }
 
     onPinchStart(_start: PointPair): void {}

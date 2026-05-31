@@ -1,11 +1,11 @@
+import { InputConst } from '../../../constants';
 import type { InputHandler } from '../input-handler';
-import { InputSchema } from './input-schema';
-import { RawKeyAxis2D } from '../raw/raw-key-axis-2d';
 import { RawKeyAxis1D } from '../raw/raw-key-axis-1d';
+import { RawKeyAxis2D } from '../raw/raw-key-axis-2d';
 import { RawPointer } from '../raw/raw-pointer';
 import { RawPointerTracker } from '../raw/raw-pointer-tracker';
 import { RawWheel } from '../raw/raw-wheel';
-import { ROTATE_SENSITIVITY, ZOOM_SENSITIVITY } from '../../../constants';
+import { InputSchema } from './input-schema';
 
 /**
  * DesktopSchema handles desktop input (keyboard + mouse).
@@ -46,8 +46,12 @@ export class DesktopSchema extends InputSchema {
         this.wheel = new RawWheel(container);
         this.pointerTracker = new RawPointerTracker(container);
 
-        this.pointerTracker.onMove = (pos) => { this.handler?.onPointerAt(pos); };
-        this.pointerTracker.onLeave = () => { this.handler?.onPointerLeave(); };
+        this.pointerTracker.onMove = (pos) => {
+            this.handler?.onPointerAt(pos);
+        };
+        this.pointerTracker.onLeave = () => {
+            this.handler?.onPointerLeave();
+        };
 
         this.wasd.onStart = () => {
             this.activate();
@@ -66,7 +70,9 @@ export class DesktopSchema extends InputSchema {
             this.sprint = sprint;
             this.handler?.onMoveRate(this.moveX, this.moveY, this.sprint);
         };
-        this.wasd.onEnd = () => { this.wasdActive = false; };
+        this.wasd.onEnd = () => {
+            this.wasdActive = false;
+        };
 
         this.leftPointer.onTap = (pos) => {
             if (this.wasdActive) return;
@@ -109,17 +115,21 @@ export class DesktopSchema extends InputSchema {
             this.rotate = value;
             this.handler?.onRotateRate(this.rotate);
         };
-        this.qe.onEnd = () => { this.rightPointer.enabled = true; };
+        this.qe.onEnd = () => {
+            this.rightPointer.enabled = true;
+        };
 
         this.rightPointer.onDragStart = () => {
             this.activate();
             this.qe.enabled = false;
         };
         this.rightPointer.onDrag = (_start, prev, current) => {
-            const angleDelta = (current.x - prev.x) * ROTATE_SENSITIVITY;
+            const angleDelta = (current.x - prev.x) * InputConst.ROTATE_SENSITIVITY;
             this.handler?.onRotateBy(angleDelta);
         };
-        this.rightPointer.onDragEnd = () => { this.qe.enabled = true; };
+        this.rightPointer.onDragEnd = () => {
+            this.qe.enabled = true;
+        };
 
         this.rf.onStart = () => {
             this.activate();
@@ -129,25 +139,29 @@ export class DesktopSchema extends InputSchema {
             this.zoom = value;
             this.handler?.onZoomRate(this.zoom);
         };
-        this.rf.onEnd = () => { this.wheel.enabled = true; };
+        this.rf.onEnd = () => {
+            this.wheel.enabled = true;
+        };
 
         this.wheel.onZoom = (delta) => {
             this.activate();
-            this.handler?.onZoomBy(delta * ZOOM_SENSITIVITY);
+            this.handler?.onZoomBy(delta * InputConst.ZOOM_SENSITIVITY);
         };
     }
 
     get isIdle(): boolean {
-        return !this.wasd.isActive() &&
-               !this.qe.isActive() &&
-               !this.rf.isActive() &&
-               !this.leftPointer.isActive() &&
-               !this.rightPointer.isActive();
+        return (
+            !this.wasd.isActive() &&
+            !this.qe.isActive() &&
+            !this.rf.isActive() &&
+            !this.leftPointer.isActive() &&
+            !this.rightPointer.isActive()
+        );
     }
 
     state(): string {
-        const en = (v: boolean) => v ? 'on ' : 'off';
-        const ac = (v: boolean) => v ? ' [active]' : '';
+        const en = (v: boolean) => (v ? 'on ' : 'off');
+        const ac = (v: boolean) => (v ? ' [active]' : '');
         return [
             `idle:  ${this.isIdle}`,
             `wasd:  ${en(this.wasd.enabled)}${ac(this.wasd.isActive())}`,
@@ -155,7 +169,7 @@ export class DesktopSchema extends InputSchema {
             `rf:    ${en(this.rf.enabled)}${ac(this.rf.isActive())}`,
             `left:  ${en(this.leftPointer.enabled)}${ac(this.leftPointer.isActive())}`,
             `right: ${en(this.rightPointer.enabled)}${ac(this.rightPointer.isActive())}`,
-            `wheel: ${en(this.wheel.enabled)}`,
+            `wheel: ${en(this.wheel.enabled)}`
         ].join('\n');
     }
 

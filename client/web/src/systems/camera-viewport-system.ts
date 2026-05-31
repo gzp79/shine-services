@@ -1,6 +1,6 @@
 import type { Camera } from '../engine/camera/camera';
-import type { RenderContext } from '../engine/render-context';
 import type { GameSystem } from '../engine/game-system';
+import type { RenderContext } from '../engine/render-context';
 
 export class CameraViewportSystem implements GameSystem {
     readonly name = 'Camera Viewport';

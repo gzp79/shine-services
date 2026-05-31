@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
+
 export class RenderContext {
     readonly scene: THREE.Scene;
     readonly renderer: WebGPURenderer;
@@ -46,7 +47,6 @@ export class RenderContext {
             this.renderer.setSize(w, h);
         });
         this.resizeObserver.observe(container);
-
     }
 
     async render(camera: THREE.PerspectiveCamera): Promise<void> {

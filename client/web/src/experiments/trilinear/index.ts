@@ -37,8 +37,12 @@ class Trilinear extends Experiment {
             scene: this.scene,
             camera: this.camera,
             domElement: this.renderer.domElement,
-            onDragStart: () => { this.controls!.enabled = false; },
-            onDragEnd: () => { this.controls!.enabled = true; }
+            onDragStart: () => {
+                this.controls!.enabled = false;
+            },
+            onDragEnd: () => {
+                this.controls!.enabled = true;
+            }
         });
 
         this.loadedMesh = this.createDefaultMesh();

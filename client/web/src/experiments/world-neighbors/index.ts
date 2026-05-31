@@ -27,7 +27,12 @@ class WorldNeighbors extends Experiment {
         this.camera.lookAt(0, 0, 0);
         if (this.controls) this.controls.update();
 
-        this.gui = createControls(container, this.params, () => this.applyDisplay(), () => this.regenerate());
+        this.gui = createControls(
+            container,
+            this.params,
+            () => this.applyDisplay(),
+            () => this.regenerate()
+        );
         this.regenerate();
         this.start();
     }

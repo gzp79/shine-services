@@ -1,4 +1,4 @@
-import type { PointPair, Point } from '../input-handler';
+import type { Point, PointPair } from '../input-handler';
 
 /**
  * RawTwoFingerGesture handles two-finger touch gestures (pinch, two-finger pan).

@@ -3,7 +3,7 @@ import init from '#wasm';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { CHUNK_WORLD_SIZE } from '../constants';
+import { ChunkConst } from '../constants';
 import { ChunkId, HexFlatDir } from './chunk-id';
 
 beforeAll(async () => {
@@ -81,8 +81,8 @@ describe('ChunkId.toWorldPosition vs WASM hex_flat_to_position', () => {
     ] as [number, number, number, number][])('chunk (%i,%i) relative to ref (%i,%i)', (q, r, rq, rr) => {
         const js = new ChunkId(q, r).toWorldPosition(new ChunkId(rq, rr));
         // WASM gives absolute positions; compute relative the same way
-        const wasmChunk = hex_flat_to_position(q, r, CHUNK_WORLD_SIZE);
-        const wasmRef = hex_flat_to_position(rq, rr, CHUNK_WORLD_SIZE);
+        const wasmChunk = hex_flat_to_position(q, r, ChunkConst.WORLD_SIZE);
+        const wasmRef = hex_flat_to_position(rq, rr, ChunkConst.WORLD_SIZE);
         expect(js.x).toBeCloseTo(wasmChunk[0] - wasmRef[0], 2);
         expect(js.y).toBeCloseTo(wasmChunk[1] - wasmRef[1], 2);
     });
@@ -106,10 +106,10 @@ describe('ChunkId.fromWorldPosition vs WASM hex_flat_from_position', () => {
         expect(jsResult.equals(target)).toBe(true);
 
         // WASM inverse (absolute position)
-        const wasmRef = hex_flat_to_position(rq, rr, CHUNK_WORLD_SIZE);
+        const wasmRef = hex_flat_to_position(rq, rr, ChunkConst.WORLD_SIZE);
         const absX = pos.x + wasmRef[0];
         const absY = pos.y + wasmRef[1];
-        const wasmResult = hex_flat_from_position(absX, absY, CHUNK_WORLD_SIZE);
+        const wasmResult = hex_flat_from_position(absX, absY, ChunkConst.WORLD_SIZE);
         expect(wasmResult[0]).toBe(tq);
         expect(wasmResult[1]).toBe(tr);
     });

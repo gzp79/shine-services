@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import type { WorldCursor } from '../avatar/world-cursor';
+import { ChunkConst } from '../constants';
 import type { DebugPanel } from '../engine/debug-panel';
 import { EventDispatcher } from '../engine/events';
 import type { GameSystem } from '../engine/game-system';
-import { CHUNK_WORLD_SIZE } from '../constants';
 import { ChunkId } from '../world/chunk-id';
 import type { World } from '../world/world';
+
 /// Approximatelly 5 chunk away from the world reference
-const REPOSITION_THRESHOLD = 25 * CHUNK_WORLD_SIZE * CHUNK_WORLD_SIZE;
+const REPOSITION_THRESHOLD = 25 * ChunkConst.WORLD_SIZE * ChunkConst.WORLD_SIZE;
 
 // WorldReferenceChangedEvent - The camera moved away too much from the world center, it's time to rebase world values
 export const WORLD_REFERENCE_CHANGED = 'worldreferencechanged';

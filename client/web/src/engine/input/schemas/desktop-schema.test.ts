@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
-
-import { describe, it, expect, vi, beforeEach, afterEach, type MockedObject } from 'vitest';
-import { DesktopSchema } from './desktop-schema';
-import { LONG_PRESS_MS } from '../../../constants';
+import { type MockedObject, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { InputConst } from '../../../constants';
 import type { InputHandler } from '../input-handler';
+import { DesktopSchema } from './desktop-schema';
 
 describe('DesktopSchema', () => {
     let schema: DesktopSchema;
@@ -44,12 +43,20 @@ describe('DesktopSchema', () => {
             window.dispatchEvent(keyDownW);
 
             const pointerDown = new PointerEvent('pointerdown', {
-                clientX: 100, clientY: 100, button: 0, pointerType: 'mouse', pointerId: 1
+                clientX: 100,
+                clientY: 100,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerDown);
 
             const pointerMove = new PointerEvent('pointermove', {
-                clientX: 150, clientY: 150, button: 0, pointerType: 'mouse', pointerId: 1
+                clientX: 150,
+                clientY: 150,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerMove);
 
@@ -58,12 +65,20 @@ describe('DesktopSchema', () => {
 
         it('2. Left-drag active → WASD pressed → WASD.enabled = false', () => {
             const pointerDown = new PointerEvent('pointerdown', {
-                clientX: 100, clientY: 100, button: 0, pointerType: 'mouse', pointerId: 1
+                clientX: 100,
+                clientY: 100,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerDown);
 
             const pointerMove = new PointerEvent('pointermove', {
-                clientX: 150, clientY: 150, button: 0, pointerType: 'mouse', pointerId: 1
+                clientX: 150,
+                clientY: 150,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerMove);
 
@@ -75,17 +90,29 @@ describe('DesktopSchema', () => {
 
         it('3. Left-drag ends → WASD.enabled = true', () => {
             const pointerDown = new PointerEvent('pointerdown', {
-                clientX: 100, clientY: 100, button: 0, pointerType: 'mouse', pointerId: 1
+                clientX: 100,
+                clientY: 100,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerDown);
 
             const pointerMove = new PointerEvent('pointermove', {
-                clientX: 150, clientY: 150, button: 0, pointerType: 'mouse', pointerId: 1
+                clientX: 150,
+                clientY: 150,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerMove);
 
             const pointerUp = new PointerEvent('pointerup', {
-                clientX: 150, clientY: 150, button: 0, pointerType: 'mouse', pointerId: 1
+                clientX: 150,
+                clientY: 150,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerUp);
 
@@ -102,11 +129,16 @@ describe('DesktopSchema', () => {
             window.dispatchEvent(keyDownW);
 
             const pointerDown = new PointerEvent('pointerdown', {
-                clientX: 100, clientY: 100, button: 0, pointerType: 'mouse', pointerId: 1, bubbles: true
+                clientX: 100,
+                clientY: 100,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1,
+                bubbles: true
             });
             container.dispatchEvent(pointerDown);
 
-            vi.advanceTimersByTime(LONG_PRESS_MS);
+            vi.advanceTimersByTime(InputConst.LONG_PRESS_MS);
 
             expect(handler.onInteractStart).toHaveBeenCalledWith({ x: 100, y: 100 });
 
@@ -118,12 +150,20 @@ describe('DesktopSchema', () => {
             window.dispatchEvent(keyDownW);
 
             const pointerDown = new PointerEvent('pointerdown', {
-                clientX: 100, clientY: 100, button: 2, pointerType: 'mouse', pointerId: 1
+                clientX: 100,
+                clientY: 100,
+                button: 2,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerDown);
 
             const pointerMove = new PointerEvent('pointermove', {
-                clientX: 150, clientY: 100, button: 2, pointerType: 'mouse', pointerId: 1
+                clientX: 150,
+                clientY: 100,
+                button: 2,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerMove);
 
@@ -147,12 +187,20 @@ describe('DesktopSchema', () => {
             window.dispatchEvent(keyDownQ);
 
             const pointerDown = new PointerEvent('pointerdown', {
-                clientX: 100, clientY: 100, button: 2, pointerType: 'mouse', pointerId: 1
+                clientX: 100,
+                clientY: 100,
+                button: 2,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerDown);
 
             const pointerMove = new PointerEvent('pointermove', {
-                clientX: 150, clientY: 100, button: 2, pointerType: 'mouse', pointerId: 1
+                clientX: 150,
+                clientY: 100,
+                button: 2,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerMove);
 
@@ -166,12 +214,20 @@ describe('DesktopSchema', () => {
             window.dispatchEvent(keyUpQ);
 
             const pointerDown = new PointerEvent('pointerdown', {
-                clientX: 100, clientY: 100, button: 2, pointerType: 'mouse', pointerId: 1
+                clientX: 100,
+                clientY: 100,
+                button: 2,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerDown);
 
             const pointerMove = new PointerEvent('pointermove', {
-                clientX: 150, clientY: 100, button: 2, pointerType: 'mouse', pointerId: 1
+                clientX: 150,
+                clientY: 100,
+                button: 2,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerMove);
 
@@ -180,12 +236,20 @@ describe('DesktopSchema', () => {
 
         it('9. Right-drag active → Q/E pressed → Q/E.enabled = false', () => {
             const pointerDown = new PointerEvent('pointerdown', {
-                clientX: 100, clientY: 100, button: 2, pointerType: 'mouse', pointerId: 1
+                clientX: 100,
+                clientY: 100,
+                button: 2,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerDown);
 
             const pointerMove = new PointerEvent('pointermove', {
-                clientX: 150, clientY: 100, button: 2, pointerType: 'mouse', pointerId: 1
+                clientX: 150,
+                clientY: 100,
+                button: 2,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerMove);
 
@@ -200,12 +264,20 @@ describe('DesktopSchema', () => {
             window.dispatchEvent(keyDownQ);
 
             const pointerDown = new PointerEvent('pointerdown', {
-                clientX: 100, clientY: 100, button: 0, pointerType: 'mouse', pointerId: 1
+                clientX: 100,
+                clientY: 100,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerDown);
 
             const pointerUp = new PointerEvent('pointerup', {
-                clientX: 100, clientY: 100, button: 0, pointerType: 'mouse', pointerId: 1
+                clientX: 100,
+                clientY: 100,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerUp);
 
@@ -274,12 +346,20 @@ describe('DesktopSchema', () => {
 
         it('17. Left-click tap → onMoveTo called with screen position', () => {
             const pointerDown = new PointerEvent('pointerdown', {
-                clientX: 100, clientY: 200, button: 0, pointerType: 'mouse', pointerId: 1
+                clientX: 100,
+                clientY: 200,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerDown);
 
             const pointerUp = new PointerEvent('pointerup', {
-                clientX: 100, clientY: 200, button: 0, pointerType: 'mouse', pointerId: 1
+                clientX: 100,
+                clientY: 200,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerUp);
 
@@ -288,12 +368,20 @@ describe('DesktopSchema', () => {
 
         it('18. Right-drag → onRotateBy called with angleDelta', () => {
             const pointerDown = new PointerEvent('pointerdown', {
-                clientX: 100, clientY: 100, button: 2, pointerType: 'mouse', pointerId: 1
+                clientX: 100,
+                clientY: 100,
+                button: 2,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerDown);
 
             const pointerMove = new PointerEvent('pointermove', {
-                clientX: 150, clientY: 100, button: 2, pointerType: 'mouse', pointerId: 1
+                clientX: 150,
+                clientY: 100,
+                button: 2,
+                pointerType: 'mouse',
+                pointerId: 1
             });
             container.dispatchEvent(pointerMove);
 
@@ -313,21 +401,36 @@ describe('DesktopSchema', () => {
             vi.useFakeTimers();
 
             const pointerDown = new PointerEvent('pointerdown', {
-                clientX: 100, clientY: 100, button: 0, pointerType: 'mouse', pointerId: 1, bubbles: true
+                clientX: 100,
+                clientY: 100,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1,
+                bubbles: true
             });
             container.dispatchEvent(pointerDown);
 
-            vi.advanceTimersByTime(LONG_PRESS_MS);
+            vi.advanceTimersByTime(InputConst.LONG_PRESS_MS);
             expect(handler.onInteractStart).toHaveBeenCalledWith({ x: 100, y: 100 });
 
             const pointerMove = new PointerEvent('pointermove', {
-                clientX: 120, clientY: 120, button: 0, pointerType: 'mouse', pointerId: 1, bubbles: true
+                clientX: 120,
+                clientY: 120,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1,
+                bubbles: true
             });
             container.dispatchEvent(pointerMove);
             expect(handler.onInteract).toHaveBeenCalled();
 
             const pointerUp = new PointerEvent('pointerup', {
-                clientX: 120, clientY: 120, button: 0, pointerType: 'mouse', pointerId: 1, bubbles: true
+                clientX: 120,
+                clientY: 120,
+                button: 0,
+                pointerType: 'mouse',
+                pointerId: 1,
+                bubbles: true
             });
             container.dispatchEvent(pointerUp);
             expect(handler.onInteractEnd).toHaveBeenCalledWith({ x: 100, y: 100 }, { x: 120, y: 120 });

@@ -1,40 +1,32 @@
 import * as THREE from 'three';
-import {
-    ZOOM_DISTANCE_SCALE,
-    MAX_CAMERA_DISTANCE,
-    MAX_CAMERA_PITCH,
-    MIN_CAMERA_DISTANCE,
-    MIN_CAMERA_PITCH
-} from '../constants';
-import { EventDispatcher, EventSubscriptions } from '../engine/events';
-import type { RenderContext } from '../engine/render-context';
+import { CameraConst } from '../constants';
+import { EventSubscriptions } from '../engine/events';
+import { GameResource } from '../engine/game-resource';
 import { WORLD_REFERENCE_CHANGED, type WorldReferenceChangedEvent } from '../systems/world-reference-system';
 
-export const INPUT_CONTROLLER_CHANGED = 'input:controller:changed';
-export type InputControllerChangedEvent = { controller: string };
+export interface IWorldCursor {
+    readonly position: Readonly<THREE.Vector3>;
+    readonly rotation: number;
+    readonly direction: Readonly<THREE.Vector3>;
+    readonly cameraDistance: number;
+}
 
-export const CURSOR_INTERACT_START = 'cursor:interact_start';
-export const CURSOR_INTERACT = 'cursor:interact';
-export const CURSOR_INTERACT_END = 'cursor:interact_end';
-export type CursorInteractEvent = { pos: THREE.Vector3 };
+export class WorldCursor implements GameResource, IWorldCursor {
+    readonly name: string = 'WorldCursor';
 
-export type CursorInteractKind = 'start' | 'move' | 'end';
-
-export class WorldCursor {
     readonly position = new THREE.Vector3(0, 0, 0);
-    private readonly direction = new THREE.Vector3(0, 1, 0);
+    rotation = 0;
+    readonly direction = new THREE.Vector3(0, 1, 0);
     cameraDistance = 600;
-    cameraYaw = 0;
+
+    private parent: THREE.Object3D;
     private mesh: THREE.Mesh | null = null;
     private readonly subscriptions: EventSubscriptions;
-    private readonly dispatcher: EventDispatcher;
 
-    constructor(
-        private readonly renderContext: RenderContext,
-        events: EventTarget
-    ) {
+    constructor(parent: THREE.Object3D, events: EventTarget) {
+        this.parent = parent;
+
         this.subscriptions = new EventSubscriptions(events);
-        this.dispatcher = new EventDispatcher(events);
         this.subscriptions.on<WorldReferenceChangedEvent>(WORLD_REFERENCE_CHANGED, this.handleWorldReferenceChanged);
     }
 
@@ -50,94 +42,54 @@ export class WorldCursor {
         }
     }
 
-    dispose(): void {
-        this.subscriptions.dispose();
-        this.disposeMesh();
-    }
-
-    getCameraTarget(): {
-        distance: number;
-        yaw: number;
-        cursorPosition: THREE.Vector3;
-        position: THREE.Vector3;
-        lookAt: THREE.Vector3;
-    } {
-        const t = (this.cameraDistance - MIN_CAMERA_DISTANCE) / (MAX_CAMERA_DISTANCE - MIN_CAMERA_DISTANCE);
-        const pitch = MIN_CAMERA_PITCH + t * (MAX_CAMERA_PITCH - MIN_CAMERA_PITCH);
-
-        const height = this.cameraDistance * Math.sin(pitch);
-        const horizontalDist = this.cameraDistance * Math.cos(pitch);
-
-        const position = new THREE.Vector3(
-            this.position.x - horizontalDist * Math.sin(this.cameraYaw),
-            this.position.y - horizontalDist * Math.cos(this.cameraYaw),
-            this.position.z + height
-        );
-
-        const lookAt = this.position.clone().add(this.direction.clone().multiplyScalar(10));
-
-        return {
-            distance: this.cameraDistance,
-            yaw: this.cameraYaw,
-            cursorPosition: this.position.clone(),
-            position,
-            lookAt
-        };
-    }
-
-    setPosition(pos: { x: number; y: number; z: number }): void {
-        this.position.set(pos.x, pos.y, pos.z);
+    setPosition(pos: THREE.Vector3Like): void {
+        this.position.copy(pos);
         if (this.mesh) {
             this.mesh.position.copy(this.position);
         }
     }
 
-    moveBy(delta: THREE.Vector3): void {
-        this.setPosition(this.position.clone().add(delta));
-    }
-
-    rotateBy(angleDelta: number): void {
-        this.setYaw(this.cameraYaw - angleDelta);
-    }
-
-    zoomBy(delta: number): void {
-        this.setZoom(this.cameraDistance + delta);
-    }
-
-    zoomByDelta(delta: number): void {
-        const midDistance = (MAX_CAMERA_DISTANCE + MIN_CAMERA_DISTANCE) / 2;
-        const zoomScale = (this.cameraDistance / midDistance) * ZOOM_DISTANCE_SCALE;
-        this.setZoom(this.cameraDistance + delta * zoomScale);
-    }
-
-    dispatchSchemaChanged(schema: string): void {
-        this.dispatcher.dispatch<InputControllerChangedEvent>(INPUT_CONTROLLER_CHANGED, { controller: schema });
-    }
-
-    dispatchInteract(kind: CursorInteractKind, worldPos: THREE.Vector3): void {
-        const eventName =
-            kind === 'start' ? CURSOR_INTERACT_START :
-            kind === 'end'   ? CURSOR_INTERACT_END :
-                               CURSOR_INTERACT;
-        this.dispatcher.dispatch<CursorInteractEvent>(eventName, { pos: worldPos });
-    }
-
-    private setYaw(yaw: number): void {
-        const TWO_PI = 2 * Math.PI;
-        this.cameraYaw = ((yaw % TWO_PI) + TWO_PI) % TWO_PI;
-        this.direction.set(Math.sin(this.cameraYaw), Math.cos(this.cameraYaw), 0);
+    moveBy(forward: number, side: number, up: number): void {
+        this.position.x += forward * this.direction.x + side * this.direction.y;
+        this.position.y += forward * this.direction.y - side * this.direction.x;
+        this.position.z += up;
         if (this.mesh) {
-            this.mesh.rotation.z = Math.atan2(this.direction.x, this.direction.y);
+            this.mesh.position.copy(this.position);
         }
     }
 
-    private setZoom(distance: number): void {
-        this.cameraDistance = Math.max(MIN_CAMERA_DISTANCE, Math.min(MAX_CAMERA_DISTANCE, distance));
+    setRotation(angle: number): void {
+        this.rotation = angle;
+        this.direction.set(-Math.sin(angle), Math.cos(angle), 0);
+        if (this.mesh) {
+            this.mesh.rotation.z = angle;
+        }
+    }
+
+    rotateBy(delta: number): void {
+        this.setRotation(this.rotation + delta);
+    }
+
+    setZoom(distance: number): void {
+        this.cameraDistance = Math.max(CameraConst.MIN_DISTANCE, Math.min(CameraConst.MAX_DISTANCE, distance));
+    }
+
+    zoomBy(delta: number): void {
+        const midDistance = (CameraConst.MAX_DISTANCE + CameraConst.MIN_DISTANCE) / 2;
+        const zoomScale = (this.cameraDistance / midDistance) * CameraConst.ZOOM_DISTANCE_SCALE;
+        this.setZoom(this.cameraDistance + delta * zoomScale);
+    }
+
+    dispose(): void {
+        this.disposeMesh();
     }
 
     private handleWorldReferenceChanged = (event: WorldReferenceChangedEvent): void => {
-        this.position.x += event.deltaPosition.x;
-        this.position.y += event.deltaPosition.y;
+        this.setPosition({
+            x: this.position.x + event.deltaPosition.x,
+            y: this.position.y + event.deltaPosition.y,
+            z: this.position.z
+        });
     };
 
     private createMesh(): void {
@@ -146,11 +98,7 @@ export class WorldCursor {
         const geometry = new THREE.BufferGeometry();
         const headLength = 30;
         const baseWidth = 15;
-        const vertices = new Float32Array([
-            0, headLength, 0,
-            -baseWidth, -5, 0,
-            baseWidth, -5, 0
-        ]);
+        const vertices = new Float32Array([0, headLength, 0, -baseWidth, -5, 0, baseWidth, -5, 0]);
         geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
         geometry.setIndex([0, 1, 2]);
 
@@ -164,18 +112,15 @@ export class WorldCursor {
         this.mesh.renderOrder = 998;
         this.mesh.frustumCulled = false;
         this.mesh.position.copy(this.position);
+        this.mesh.rotation.z = this.rotation;
 
-        if (this.direction.lengthSq() > 0) {
-            this.mesh.rotation.z = Math.atan2(this.direction.x, this.direction.y);
-        }
-
-        this.renderContext.scene.add(this.mesh);
+        this.parent.add(this.mesh);
     }
 
     private disposeMesh(): void {
         if (!this.mesh) return;
 
-        this.mesh.parent?.remove(this.mesh);
+        this.parent.remove(this.mesh);
         this.mesh.geometry.dispose();
         (this.mesh.material as THREE.Material).dispose();
         this.mesh = null;

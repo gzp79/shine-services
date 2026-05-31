@@ -1,6 +1,6 @@
 import { WebGPURenderer } from 'three/webgpu';
-import { InputManager } from '../../engine/input/input-manager';
 import type { InputHandler, Point } from '../../engine/input/input-handler';
+import { InputManager } from '../../engine/input/input-manager';
 import { GestureSchema } from '../../engine/input/schemas/gesture-schema';
 import { CanvasStrokeNode } from '../../engine/nodes/canvas-stroke-node';
 import { StrokeLineNode } from '../../engine/nodes/stroke-line-node';
@@ -54,21 +54,31 @@ class InputControl extends Experiment {
 
         const inputHandler: InputHandler = {
             onSchemaChanged: (s) => this.addLogEntry('schemaChanged', s),
-            onPointerAt:  (p) => this.addLogEntry('pointerAt',  fmtPoint(p)),
-            onPointerLeave:   () => this.addLogEntry('pointerLeave', ''),
-            onMoveTo:    (p) => this.addLogEntry('moveTo',    fmtPoint(p)),
-            onRotateBy:  (d) => this.addLogEntry('rotateBy',  `${(d * 180 / Math.PI).toFixed(1)}°`),
-            onZoomBy:    (d) => this.addLogEntry('zoomBy',    d.toFixed(1)),
-            onMoveRate:   (x, y, s) => this.addLogEntry('moveRate',   `x=${x.toFixed(2)} y=${y.toFixed(2)}${s ? ' sprint' : ''}`),
-            onRotateRate: (v)       => this.addLogEntry('rotateRate', v.toFixed(2)),
-            onZoomRate:   (v)       => this.addLogEntry('zoomRate',   v.toFixed(2)),
-            onPinchStart: ([p1, p2])                    => this.addLogEntry('pinchStart', `${fmtPoint(p1)} / ${fmtPoint(p2)}`),
-            onPinch:      ([s1, s2], [v1, v2], [c1, c2]) => this.addLogEntry('pinch', `start:${fmtPoint(s1)}/${fmtPoint(s2)} prev:${fmtPoint(v1)}/${fmtPoint(v2)} cur:${fmtPoint(c1)}/${fmtPoint(c2)}`),
-            onPinchEnd:   ([s1, s2], [e1, e2])           => this.addLogEntry('pinchEnd', `start:${fmtPoint(s1)}/${fmtPoint(s2)} end:${fmtPoint(e1)}/${fmtPoint(e2)}`),
-            onInteractStart: (s)       => this.addLogEntry('interactStart', fmtPoint(s)),
-            onInteract:      (s, p, c) => this.addLogEntry('interact',      `start:${fmtPoint(s)} prev:${fmtPoint(p)} cur:${fmtPoint(c)}`),
-            onInteractEnd:   (s, e)    => this.addLogEntry('interactEnd',   `start:${fmtPoint(s)} end:${fmtPoint(e)}`),
-            onGesture: (pts) => this.addLogEntry('gesture', `${pts.length / 2} pts`),
+            onPointerAt: (p) => this.addLogEntry('pointerAt', fmtPoint(p)),
+            onPointerLeave: () => this.addLogEntry('pointerLeave', ''),
+            onMoveTo: (p) => this.addLogEntry('moveTo', fmtPoint(p)),
+            onRotateBy: (d) => this.addLogEntry('rotateBy', d.toFixed(2)),
+            onZoomBy: (d) => this.addLogEntry('zoomBy', d.toFixed(1)),
+            onMoveRate: (x, y, s) =>
+                this.addLogEntry('moveRate', `x=${x.toFixed(2)} y=${y.toFixed(2)}${s ? ' sprint' : ''}`),
+            onRotateRate: (v) => this.addLogEntry('rotateRate', v.toFixed(2)),
+            onZoomRate: (v) => this.addLogEntry('zoomRate', v.toFixed(2)),
+            onPinchStart: ([p1, p2]) => this.addLogEntry('pinchStart', `${fmtPoint(p1)} / ${fmtPoint(p2)}`),
+            onPinch: ([s1, s2], [v1, v2], [c1, c2]) =>
+                this.addLogEntry(
+                    'pinch',
+                    `start:${fmtPoint(s1)}/${fmtPoint(s2)} prev:${fmtPoint(v1)}/${fmtPoint(v2)} cur:${fmtPoint(c1)}/${fmtPoint(c2)}`
+                ),
+            onPinchEnd: ([s1, s2], [e1, e2]) =>
+                this.addLogEntry(
+                    'pinchEnd',
+                    `start:${fmtPoint(s1)}/${fmtPoint(s2)} end:${fmtPoint(e1)}/${fmtPoint(e2)}`
+                ),
+            onInteractStart: (s) => this.addLogEntry('interactStart', fmtPoint(s)),
+            onInteract: (s, p, c) =>
+                this.addLogEntry('interact', `start:${fmtPoint(s)} prev:${fmtPoint(p)} cur:${fmtPoint(c)}`),
+            onInteractEnd: (s, e) => this.addLogEntry('interactEnd', `start:${fmtPoint(s)} end:${fmtPoint(e)}`),
+            onGesture: (pts) => this.addLogEntry('gesture', `${pts.length / 2} pts`)
         };
 
         this.inputManager = new InputManager(inputHandler, container);
@@ -86,18 +96,20 @@ class InputControl extends Experiment {
     }
 
     private updateLogDisplay() {
-        this.logDiv.innerHTML = this.eventLog.map((entry) => {
-            const time = (entry.timestamp / 1000).toFixed(2);
-            let color = '#00ff00';
-            if (entry.eventName.includes('schema'))       color = '#ff00ff';
-            else if (entry.eventName.includes('moveTo'))  color = '#00bfff';
-            else if (entry.eventName.includes('rotate'))  color = '#ffff00';
-            else if (entry.eventName.includes('zoom'))    color = '#ff1493';
-            else if (entry.eventName.includes('Rate'))    color = '#7fff00';
-            else if (entry.eventName.includes('pinch'))   color = '#ff8c00';
-            else if (entry.eventName.includes('interact'))color = '#ff4500';
-            return `<div style="color:${color}">[${time}s] ${entry.eventName} ${entry.data}</div>`;
-        }).join('');
+        this.logDiv.innerHTML = this.eventLog
+            .map((entry) => {
+                const time = (entry.timestamp / 1000).toFixed(2);
+                let color = '#00ff00';
+                if (entry.eventName.includes('schema')) color = '#ff00ff';
+                else if (entry.eventName.includes('moveTo')) color = '#00bfff';
+                else if (entry.eventName.includes('rotate')) color = '#ffff00';
+                else if (entry.eventName.includes('zoom')) color = '#ff1493';
+                else if (entry.eventName.includes('Rate')) color = '#7fff00';
+                else if (entry.eventName.includes('pinch')) color = '#ff8c00';
+                else if (entry.eventName.includes('interact')) color = '#ff4500';
+                return `<div style="color:${color}">[${time}s] ${entry.eventName} ${entry.data}</div>`;
+            })
+            .join('');
     }
 
     protected onUpdate(_deltaTime: number) {

@@ -1,5 +1,5 @@
 export type Point = { x: number; y: number };
-export type PointPair = [Point,Point];
+export type PointPair = [Point, Point];
 
 export interface InputHandler {
     onSchemaChanged(schema: string): void;
@@ -14,9 +14,9 @@ export interface InputHandler {
     onMoveRate(x: number, y: number, sprint: boolean): void;
     onRotateRate(value: number): void;
     onZoomRate(value: number): void;
-    
+
     onPinchStart(pos: PointPair): void;
-    onPinch(start: PointPair, prev: PointPair, current: PointPair): void;    
+    onPinch(start: PointPair, prev: PointPair, current: PointPair): void;
     onPinchEnd(start: PointPair, end: PointPair): void;
 
     onInteractStart(start: Point): void;

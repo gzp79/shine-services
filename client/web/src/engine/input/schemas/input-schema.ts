@@ -5,18 +5,25 @@ export abstract class InputSchema {
 
     private _handler?: InputHandler;
 
-    constructor(readonly name: string, handler?: InputHandler) {
+    constructor(
+        readonly name: string,
+        handler?: InputHandler
+    ) {
         this._handler = handler;
     }
 
-    get handler(): InputHandler | undefined { return this._handler; }
+    get handler(): InputHandler | undefined {
+        return this._handler;
+    }
     set handler(value: InputHandler | undefined) {
         if (this._handler === value) return;
         if (this._handler) this.cancel();
         this._handler = value;
     }
 
-    get isActive(): boolean { return this._handler !== undefined; }
+    get isActive(): boolean {
+        return this._handler !== undefined;
+    }
 
     protected activate(): boolean {
         if (!this.isActive) this.onActivated?.(this);

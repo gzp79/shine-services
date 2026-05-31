@@ -1,5 +1,5 @@
-import type { InputState } from '../engine/input/input-state';
 import type { GameSystem } from '../engine/game-system';
+import type { InputState } from '../engine/input/input-state';
 
 export class ClearInputStateSystem implements GameSystem {
     readonly name = 'Clear Input State';

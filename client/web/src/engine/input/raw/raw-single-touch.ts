@@ -1,5 +1,5 @@
+import { InputConst } from '../../../constants';
 import type { Point } from '../input-handler';
-import { MOVE_THRESHOLD_PX, LONG_PRESS_MS } from '../../../constants';
 
 /**
  * RawSingleTouch handles single-finger touch gestures.
@@ -87,13 +87,13 @@ export class RawSingleTouch {
                 this.isLongDrag = true;
                 this.onLongDragStart?.(this.startPos);
             }
-        }, LONG_PRESS_MS);
+        }, InputConst.LONG_PRESS_MS);
     };
 
     private handleTouchMove = (ev: TouchEvent): void => {
         if (!this.enabled || this.touchId === null) return;
 
-        const touch = Array.from(ev.touches).find(t => t.identifier === this.touchId);
+        const touch = Array.from(ev.touches).find((t) => t.identifier === this.touchId);
         if (!touch || !this.startPos || !this.lastPos) return;
 
         const currentPos = { x: touch.clientX, y: touch.clientY };
@@ -101,7 +101,7 @@ export class RawSingleTouch {
         const dy = currentPos.y - this.startPos.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        if (!this.movedPastThreshold && distance >= MOVE_THRESHOLD_PX) {
+        if (!this.movedPastThreshold && distance >= InputConst.MOVE_THRESHOLD_PX) {
             this.movedPastThreshold = true;
             this.cancelLongPressTimer();
 
@@ -124,7 +124,7 @@ export class RawSingleTouch {
     private handleTouchEnd = (ev: TouchEvent): void => {
         if (this.touchId === null) return;
 
-        const touch = Array.from(ev.changedTouches).find(t => t.identifier === this.touchId);
+        const touch = Array.from(ev.changedTouches).find((t) => t.identifier === this.touchId);
         if (!touch) return;
 
         this.cancelLongPressTimer();
@@ -144,7 +144,7 @@ export class RawSingleTouch {
 
     private handleTouchCancel = (ev: TouchEvent): void => {
         if (this.touchId === null) return;
-        const touch = Array.from(ev.changedTouches).find(t => t.identifier === this.touchId);
+        const touch = Array.from(ev.changedTouches).find((t) => t.identifier === this.touchId);
         if (touch) this.cancel();
     };
 

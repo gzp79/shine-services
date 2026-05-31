@@ -1,8 +1,8 @@
 import { WebGPURenderer } from 'three/webgpu';
 import { createGame } from './engine/game';
-import { createInputControlExperiment } from './experiments/input-control/index';
-import { createHexMeshExperiment } from './experiments/hex-mesh/index';
 import { createCdtExperiment } from './experiments/cdt/index';
+import { createHexMeshExperiment } from './experiments/hex-mesh/index';
+import { createInputControlExperiment } from './experiments/input-control/index';
 import { createTrilinearExperiment } from './experiments/trilinear/index';
 import { createWorldNeighborsExperiment } from './experiments/world-neighbors/index';
 
@@ -18,12 +18,18 @@ async function createSharedRenderer(): Promise<WebGPURenderer> {
 
 async function createScene(id: SceneId, container: HTMLElement, renderer: WebGPURenderer): Promise<Viewer> {
     switch (id) {
-        case 'hex-mesh':        return createHexMeshExperiment(container, renderer);
-        case 'cdt':             return createCdtExperiment(container, renderer);
-        case 'input-events':    return createInputControlExperiment(container, renderer);
-        case 'trilinear':       return createTrilinearExperiment(container, renderer);
-        case 'world-neighbors': return createWorldNeighborsExperiment(container, renderer);
-        default:                return createGame(container, renderer);
+        case 'hex-mesh':
+            return createHexMeshExperiment(container, renderer);
+        case 'cdt':
+            return createCdtExperiment(container, renderer);
+        case 'input-events':
+            return createInputControlExperiment(container, renderer);
+        case 'trilinear':
+            return createTrilinearExperiment(container, renderer);
+        case 'world-neighbors':
+            return createWorldNeighborsExperiment(container, renderer);
+        default:
+            return createGame(container, renderer);
     }
 }
 

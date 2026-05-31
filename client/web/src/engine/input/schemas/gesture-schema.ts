@@ -1,8 +1,8 @@
 import type { InputHandler, Point } from '../input-handler';
-import { InputSchema } from './input-schema';
 import { RawKeyDown } from '../raw/raw-key-down';
 import { RawPointer } from '../raw/raw-pointer';
 import { RawSingleTouch } from '../raw/raw-single-touch';
+import { InputSchema } from './input-schema';
 
 const MAX_POINTS = 1000;
 
@@ -65,12 +65,22 @@ export class GestureSchema extends InputSchema {
         };
 
         this.pointer.onDragStart = onPointerStart;
-        this.pointer.onDrag = (_start, _prev, current) => { onMove(current); };
-        this.pointer.onDragEnd = (_start, end) => { onMove(end); onEnd(); };
+        this.pointer.onDrag = (_start, _prev, current) => {
+            onMove(current);
+        };
+        this.pointer.onDragEnd = (_start, end) => {
+            onMove(end);
+            onEnd();
+        };
 
         this.touch.onDragStart = onTouchStart;
-        this.touch.onDrag = (_start, _prev, current) => { onMove(current); };
-        this.touch.onDragEnd = (_start, end) => { onMove(end); onEnd(); };
+        this.touch.onDrag = (_start, _prev, current) => {
+            onMove(current);
+        };
+        this.touch.onDragEnd = (_start, end) => {
+            onMove(end);
+            onEnd();
+        };
     }
 
     get currentPoints(): { buf: Float32Array; count: number } {
@@ -84,7 +94,7 @@ export class GestureSchema extends InputSchema {
         }
         const w = this.container.clientWidth;
         const h = this.container.clientHeight;
-        this.buf[this.count * 2]     =  (p.x / w) * 2 - 1;
+        this.buf[this.count * 2] = (p.x / w) * 2 - 1;
         this.buf[this.count * 2 + 1] = -(p.y / h) * 2 + 1;
         this.count++;
     }
@@ -98,7 +108,9 @@ export class GestureSchema extends InputSchema {
         this.touch.enabled = true;
     }
 
-    get isIdle(): boolean { return this._isIdle; }
+    get isIdle(): boolean {
+        return this._isIdle;
+    }
 
     state(): string {
         const status = this._isIdle ? 'off' : 'on';
