@@ -31,6 +31,16 @@ impl InnerCellsHandle {
     pub fn sites(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.sites) }
     }
+
+    #[wasm_bindgen(getter)]
+    pub fn tiles(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(&self.0.tiles) }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn tile_distortions(&self) -> Float32Array {
+        unsafe { Float32Array::view(&self.0.tile_distortions) }
+    }
 }
 
 impl From<InnerCells> for InnerCellsHandle {
@@ -62,13 +72,18 @@ impl EdgeCellsHandle {
     }
 
     #[wasm_bindgen(getter)]
-    pub fn owner_sites(&self) -> Uint32Array {
-        unsafe { Uint32Array::view(&self.0.owner_sites) }
+    pub fn sites(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(&self.0.sites) }
     }
 
     #[wasm_bindgen(getter)]
-    pub fn neighbor_sites(&self) -> Uint32Array {
-        unsafe { Uint32Array::view(&self.0.neighbor_sites) }
+    pub fn tiles(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(&self.0.tiles) }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn tile_distortions(&self) -> Float32Array {
+        unsafe { Float32Array::view(&self.0.tile_distortions) }
     }
 }
 
@@ -101,18 +116,18 @@ impl CornerCellsHandle {
     }
 
     #[wasm_bindgen(getter)]
-    pub fn owner_site(&self) -> u32 {
-        self.0.owner_site
+    pub fn sites(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(&self.0.sites) }
     }
 
     #[wasm_bindgen(getter)]
-    pub fn cw_site(&self) -> u32 {
-        self.0.cw_site
+    pub fn tiles(&self) -> Uint32Array {
+        unsafe { Uint32Array::view(&self.0.tiles) }
     }
 
     #[wasm_bindgen(getter)]
-    pub fn ccw_site(&self) -> u32 {
-        self.0.ccw_site
+    pub fn tile_distortions(&self) -> Float32Array {
+        unsafe { Float32Array::view(&self.0.tile_distortions) }
     }
 }
 

@@ -24,11 +24,11 @@ export const InputConst = {
 } as const;
 
 export const CameraConst = {
-    MIN_DISTANCE: 40,
-    MAX_DISTANCE: 10000,
-    MIN_PITCH: 35 * (Math.PI / 180),
-    MAX_PITCH: 65 * (Math.PI / 180),
-    BASE_LERP: 0.05,
+    MIN_DISTANCE: 500,
+    MAX_DISTANCE: 4000,
+    MIN_PITCH: 20 * (Math.PI / 180),
+    MAX_PITCH: 85 * (Math.PI / 180),
+    BASE_LERP: 0.5,
     LERP_DISTANCE_FACTOR: 0.1,
     ZOOM_DISTANCE_SCALE: 25, // distance-dependent zoom scale factor
 

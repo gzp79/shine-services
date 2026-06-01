@@ -7,12 +7,12 @@
 </head>
 <body>
 
-<div class="doc-header">
-  <div class="doc-title">Input System</div>
+<header class="doc-header">
+  <h1 class="doc-title">Input System</h1>
   <div class="doc-meta">
     <span>Maps raw device input to locomotion state and gesture events for the avatar/camera systems.</span>
   </div>
-</div>
+</header>
 
 <!-- ══════════════════════════════════════════ -->
 <h2>Problem</h2>
@@ -21,7 +21,7 @@
 <hr>
 
 <!-- ══════════════════════════════════════════ -->
-<h2>Architecture Flow</h2>
+<h2>Architecture</h2>
 
 <div class="canvas">
 
@@ -82,11 +82,22 @@
       </div>
       <div class="box box-teal" style="flex:2">
         <div class="bname">DesktopSchema</div>
-        <div class="bdetail">Composes: RawPointer (left, right), RawKeyAxis2D (WASD), RawKeyAxis1D (Q/E, R/F), RawWheel, RawPointerTracker<br><strong>Conflict resolution:</strong> WASD ↔ left-drag, Q/E ↔ right-drag, R/F ↔ wheel<br><strong>Pointer tracking:</strong> RawPointerTracker disabled on long-drag start, re-enabled on long-drag end</div>
+        <div class="bdetail">
+          <code>RawPointer</code> L → onMoveTo (tap/drag), onInteract* (long-drag)<br>
+          <code>RawPointer</code> R → onRotateBy (drag)<br>
+          <code>RawKeyAxis2D</code> WASD → onMoveRate<br>
+          <code>RawKeyAxis1D</code> Q/E → onRotateRate<br>
+          <code>RawKeyAxis1D</code> R/F → onZoomRate<br>
+          <code>RawWheel</code> → onZoomBy<br>
+          <code>RawPointerTracker</code> → onPointerAt/Leave
+        </div>
       </div>
       <div class="box box-teal" style="flex:1.5">
         <div class="bname">TouchSchema</div>
-        <div class="bdetail">Composes: RawSingleTouch, RawTwoFingerGesture<br><strong>Conflict resolution:</strong> single-finger ↔ two-finger (first to start wins)</div>
+        <div class="bdetail">
+          <code>RawSingleTouch</code> → onMoveTo (tap/drag), onInteract* (long-drag)<br>
+          <code>RawTwoFingerGesture</code> → onPinch*
+        </div>
       </div>
       <div class="box box-teal" style="flex:1.5">
         <div class="bname">GestureSchema</div>
@@ -115,9 +126,9 @@
         <div class="bname">InputManager</div>
         <div class="bdetail">
           Registers 4 schemas: DebugSchema, DesktopSchema, TouchSchema, GestureSchema<br>
-          When a schema fires <code>onActivated</code>: if the active schema <code>isIdle</code>, transfers the handler — previous schema loses handler (triggering <code>cancel()</code>), new schema gains handler<br>
-          <strong>Mid-gesture lock:</strong> while the active schema is not idle, <code>onActivated</code> from other schemas is ignored<br>
-          Emits <code>onSchemaChanged</code> on every switch after the first activation
+          DesktopSchema is pre-activated at construction (handler assigned directly, no <code>onSchemaChanged</code>)<br>
+          When any schema fires <code>onActivated</code>: if the active schema <code>isIdle</code>, transfers the handler — previous schema loses handler (triggering <code>cancel()</code>), new schema gains handler, <code>onSchemaChanged</code> emitted<br>
+          <strong>Mid-gesture lock:</strong> while the active schema is not idle, <code>onActivated</code> from other schemas is ignored
         </div>
       </div>
     </div>
@@ -156,111 +167,147 @@
 </div>
 
 <div class="legend">
-  <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div>Raw input detectors</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#14b8a6"></div>Input schemas</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#0ea5e9"></div>InputManager</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#a855f7"></div>InputHandler (external)</div>
+  <div class="legend-item"><div class="legend-dot box-indigo"></div>Raw input detectors</div>
+  <div class="legend-item"><div class="legend-dot box-teal"></div>Input schemas</div>
+  <div class="legend-item"><div class="legend-dot box-blue"></div>InputManager</div>
+  <div class="legend-item"><div class="legend-dot box-violet"></div>InputHandler (external)</div>
 </div>
 
 <hr>
 
 <!-- ══════════════════════════════════════════ -->
-<h2>Conflict / Exclusion Rules</h2>
-<p>Only block the gesture that does the <em>same thing</em> as the active key. Everything else stays active — WASD + right-mouse-rotate works, WASD + wheel zoom works. Rules are implemented in schemas by enabling/disabling raw inputs (e.g., WASD held → leftPointer.enabled = false).</p>
+<h2>DesktopSchema — conflict rules</h2>
+<p>Only the input that does the <em>same thing</em> as the currently active one is blocked; everything else stays live. First to start wins: the loser's raw input is disabled until the winner ends.</p>
 
 <table>
   <tr>
-    <th>Active keys</th>
-    <th>drag-pan</th>
-    <th>drag-rotate</th>
-    <th>wheel zoom</th>
-    <th>interact (long-press)</th>
+    <th>Active →<br>Blocked ↓</th>
+    <th>RawKeyAxis1D<br><small>Q/E rotate</small></th>
+    <th>RawKeyAxis1D<br><small>R/F zoom</small></th>
+    <th>RawKeyAxis2D<br><small>WASD move</small></th>
+    <th>RawPointer L<br><small>pan</small></th>
+    <th>RawPointer L<br><small>long-drag</small></th>
+    <th>RawPointer R<br><small>rotate</small></th>
   </tr>
   <tr>
-    <td><strong>WASD held</strong></td>
-    <td><span class="tag bad">blocked</span> — both move</td>
-    <td><span class="tag good">allowed</span> ✓</td>
-    <td><span class="tag good">allowed</span> ✓</td>
-    <td><span class="tag good">allowed</span> ✓</td>
+    <td><strong>RawKeyAxis1D</strong> Q/E rotate</td>
+    <td>—</td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag bad">blocked</span></td>
   </tr>
   <tr>
-    <td><strong>Q/E held</strong></td>
-    <td><span class="tag good">allowed</span> ✓</td>
-    <td><span class="tag bad">blocked</span> — both rotate</td>
-    <td><span class="tag good">allowed</span> ✓</td>
-    <td><span class="tag good">allowed</span> ✓</td>
+    <td><strong>RawKeyAxis1D</strong> R/F zoom</td>
+    <td><span class="tag good">allowed</span></td>
+    <td>—</td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
   </tr>
   <tr>
-    <td><strong>R/F held</strong></td>
-    <td><span class="tag good">allowed</span> ✓</td>
-    <td><span class="tag good">allowed</span> ✓</td>
-    <td><span class="tag bad">blocked</span> — both zoom</td>
-    <td><span class="tag good">allowed</span> ✓</td>
+    <td><strong>RawKeyAxis2D</strong> WASD move</td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td>—</td>
+    <td><span class="tag bad">blocked</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
   </tr>
   <tr>
-    <td><strong>No keys</strong></td>
-    <td><span class="tag good">allowed</span> ✓</td>
-    <td><span class="tag good">allowed</span> ✓</td>
-    <td><span class="tag good">allowed</span> ✓</td>
-    <td><span class="tag good">allowed</span> ✓</td>
+    <td><strong>RawPointer L</strong> pan</td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag bad">blocked</span></td>
+    <td>—</td>
+    <td>—</td>
+    <td><span class="tag good">allowed</span></td>
+  </tr>
+  <tr>
+    <td><strong>RawPointer L</strong> long-drag</td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td>—</td>
+    <td>—</td>
+    <td><span class="tag good">allowed</span></td>
+  </tr>
+  <tr>
+    <td><strong>RawPointer R</strong> rotate</td>
+    <td><span class="tag bad">blocked</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td>—</td>
+  </tr>
+  <tr>
+    <td><strong>RawWheel</strong> zoom</td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+  </tr>
+  <tr>
+    <td><strong>RawPointerTracker</strong> position</td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag good">allowed</span></td>
+    <td><span class="tag warn">muted</span></td>
+    <td><span class="tag good">allowed</span></td>
   </tr>
 </table>
 
 <!-- ══════════════════════════════════════════ -->
-<h2>Touch Conflict Rules</h2>
-<p>Single-finger and two-finger gestures are mutually exclusive. First gesture to start wins and remains active until all fingers are released.</p>
+<h2>TouchSchema — conflict rules</h2>
+<p><code>TouchSchema</code> makes single-finger and two-finger gestures mutually exclusive. First gesture to start wins; the loser stays disabled until all fingers are released (<code>onAllFingersReleased</code> re-enables single-touch even when one finger lingers after a pinch).</p>
 
 <table>
   <tr>
-    <th>Currently active</th>
-    <th>tap/drag/long-press (single-finger)</th>
-    <th>pinch (two-finger)</th>
+    <th>Active →<br>Blocked ↓</th>
+    <th>RawSingleTouch<br><small>tap / drag / long-drag</small></th>
+    <th>RawTwoFingerGesture<br><small>pinch</small></th>
   </tr>
   <tr>
-    <td><strong>Single-finger gesture active</strong></td>
-    <td><span class="tag good">active</span> ✓</td>
-    <td><span class="tag bad">blocked</span> — first to start wins</td>
+    <td><strong>RawSingleTouch</strong> tap / drag / long-drag</td>
+    <td>—</td>
+    <td><span class="tag bad">blocked</span></td>
   </tr>
   <tr>
-    <td><strong>Two-finger pinch active</strong></td>
-    <td><span class="tag bad">blocked</span> — first to start wins</td>
-    <td><span class="tag good">active</span> ✓</td>
-  </tr>
-  <tr>
-    <td><strong>No gesture</strong></td>
-    <td><span class="tag good">allowed</span> ✓</td>
-    <td><span class="tag good">allowed</span> ✓</td>
+    <td><strong>RawTwoFingerGesture</strong> pinch</td>
+    <td><span class="tag bad">blocked</span></td>
+    <td>—</td>
   </tr>
 </table>
-
-<p><strong>Note:</strong> After two-finger pinch ends with one finger remaining, single-finger gestures stay blocked until <em>all</em> fingers are released.</p>
 
 <hr>
 
 <!-- ══════════════════════════════════════════ -->
-<h2>File Map</h2>
+<h2>File map</h2>
 
 <table>
-  <tr>
-    <th style="width:50%">File</th>
-    <th>Role</th>
-  </tr>
-  <tr><td><code>engine/input/raw/raw-pointer.ts</code></td><td>Pointer gesture detector (tap, drag, long-drag) for single button.</td></tr>
-  <tr><td><code>engine/input/raw/raw-pointer-tracker.ts</code></td><td>Continuous pointer position tracker (pointermove / mouseleave); disabled while long-drag is active.</td></tr>
-  <tr><td><code>engine/input/raw/raw-key-axis-2d.ts</code></td><td>2D keyboard axis (WASD) with normalized output.</td></tr>
-  <tr><td><code>engine/input/raw/raw-key-axis-1d.ts</code></td><td>1D keyboard axis (Q/E, R/F).</td></tr>
-  <tr><td><code>engine/input/raw/raw-key-down.ts</code></td><td>Single key-press detector (no repeat); used for schema mode toggles.</td></tr>
-  <tr><td><code>engine/input/raw/raw-wheel.ts</code></td><td>Wheel zoom detector.</td></tr>
-  <tr><td><code>engine/input/raw/raw-single-touch.ts</code></td><td>Single-finger touch gesture detector (tap, drag, long-drag).</td></tr>
-  <tr><td><code>engine/input/raw/raw-two-finger-gesture.ts</code></td><td>Two-finger touch gesture detector (pinch with positions).</td></tr>
-  <tr><td><code>engine/input/schemas/input-schema.ts</code></td><td>InputSchema base class: handler injection, isActive/isIdle contract, activate helper.</td></tr>
-  <tr><td><code>engine/input/schemas/debug-schema.ts</code></td><td>Debug schema toggled by Tab; holds the input slot without emitting callbacks.</td></tr>
-  <tr><td><code>engine/input/schemas/desktop-schema.ts</code></td><td>Desktop input schema; composes raw inputs, applies WASD/Q/E/R/F conflict rules.</td></tr>
-  <tr><td><code>engine/input/schemas/touch-schema.ts</code></td><td>Touch input schema; composes single/two-finger raw inputs, applies conflict rules.</td></tr>
-  <tr><td><code>engine/input/schemas/gesture-schema.ts</code></td><td>Stroke-capture schema toggled by Space; records pointer/touch path as NDC points and fires onGesture.</td></tr>
-  <tr><td><code>engine/input/input-handler.ts</code></td><td>InputHandler interface: callback definitions for external implementations.</td></tr>
-  <tr><td><code>engine/input/input-state.ts</code></td><td>InputHandler implementation; accumulates per-frame pending events and exposes <code>pointerPos</code> for polling consumers.</td></tr>
-  <tr><td><code>engine/input/input-manager.ts</code></td><td>Manages schemas, tracks active schema, transfers handler reference on schema switch.</td></tr>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>client/web/src/engine/input/raw/raw-pointer.ts</code></td><td>Pointer gesture detector (tap, drag, long-drag) for single button.</td></tr>
+  <tr><td><code>client/web/src/engine/input/raw/raw-pointer-tracker.ts</code></td><td>Continuous pointer position tracker (pointermove / mouseleave); disabled while long-drag is active.</td></tr>
+  <tr><td><code>client/web/src/engine/input/raw/raw-key-axis-2d.ts</code></td><td>2D keyboard axis (WASD) with normalized output.</td></tr>
+  <tr><td><code>client/web/src/engine/input/raw/raw-key-axis-1d.ts</code></td><td>1D keyboard axis (Q/E, R/F).</td></tr>
+  <tr><td><code>client/web/src/engine/input/raw/raw-key-down.ts</code></td><td>Single key-press detector (no repeat); used for schema mode toggles.</td></tr>
+  <tr><td><code>client/web/src/engine/input/raw/raw-wheel.ts</code></td><td>Wheel zoom detector.</td></tr>
+  <tr><td><code>client/web/src/engine/input/raw/raw-single-touch.ts</code></td><td>Single-finger touch gesture detector (tap, drag, long-drag).</td></tr>
+  <tr><td><code>client/web/src/engine/input/raw/raw-two-finger-gesture.ts</code></td><td>Two-finger touch gesture detector (pinch with positions).</td></tr>
+  <tr><td><code>client/web/src/engine/input/schemas/input-schema.ts</code></td><td>InputSchema base class: handler injection, isActive/isIdle contract, activate helper.</td></tr>
+  <tr><td><code>client/web/src/engine/input/schemas/debug-schema.ts</code></td><td>Debug schema toggled by Tab; holds the input slot without emitting callbacks.</td></tr>
+  <tr><td><code>client/web/src/engine/input/schemas/desktop-schema.ts</code></td><td>Desktop input schema; composes raw inputs, applies WASD/Q/E/R/F conflict rules.</td></tr>
+  <tr><td><code>client/web/src/engine/input/schemas/touch-schema.ts</code></td><td>Touch input schema; composes single/two-finger raw inputs, applies conflict rules.</td></tr>
+  <tr><td><code>client/web/src/engine/input/schemas/gesture-schema.ts</code></td><td>Stroke-capture schema toggled by Space; records pointer/touch path as NDC points and fires onGesture.</td></tr>
+  <tr><td><code>client/web/src/engine/input/input-handler.ts</code></td><td>InputHandler interface: callback definitions for external implementations.</td></tr>
+  <tr><td><code>client/web/src/engine/input/input-state.ts</code></td><td>InputHandler implementation; accumulates per-frame pending events and exposes <code>pointerPos</code> for polling consumers.</td></tr>
+  <tr><td><code>client/web/src/engine/input/input-manager.ts</code></td><td>Manages schemas, tracks active schema, transfers handler reference on schema switch.</td></tr>
 </table>
 
 <hr>

@@ -88,11 +88,13 @@ impl World {
         let owner_vis = owner.boundary_edge_vertices(edge_idx).skip(1).take(neighbor_vis.len());
 
         let site_count = neighbor_vis.len();
+
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
         let mut ranges = Vec::with_capacity(site_count * 2);
-        let mut owner_sites = Vec::with_capacity(site_count);
-        let mut neighbor_sites = Vec::with_capacity(site_count);
+        let mut sites = Vec::with_capacity(site_count * 2);
+        let mut tiles = Vec::new();
+        let mut tile_distortions = Vec::new();
 
         // map from QuadIndex to index in vertices
         let mut index_map = HashMap::new();
@@ -100,25 +102,37 @@ impl World {
 
         for (vi_owner, vi_neighbor) in owner_vis.zip(neighbor_vis) {
             ranges.push(indices.len() as u32);
-            owner_sites.push(vi_owner.into_index() as u32);
-            neighbor_sites.push(vi_neighbor.into_index() as u32);
+            sites.push(vi_owner.into_index() as u32);
+            sites.push(vi_neighbor.into_index() as u32);
 
-            for q in owner.mesh.boundary_dual_vertices(vi_owner) {
-                let index = *index_map.entry(q).or_insert_with(|| {
-                    let p = owner.mesh.dual_p(q).unwrap();
+            for qi in owner.mesh.boundary_dual_vertices(vi_owner) {
+                let index = *index_map.entry(qi).or_insert_with(|| {
+                    let p = owner.mesh.dual_p(qi).unwrap();
                     let idx = (vertices.len() / 2) as u32;
                     vertices.push(p.x);
                     vertices.push(p.y);
+                    tiles.push(0); // owner tile id is always 0
+                    tiles.push(qi.into_index() as u32);
+                    for &qv in owner.mesh.quad_vertices(qi) {
+                        tile_distortions.push(owner.mesh[qv].position.x);
+                        tile_distortions.push(owner.mesh[qv].position.y);
+                    }
                     idx
                 });
                 indices.push(index);
             }
-            for q in neighbor.mesh.boundary_dual_vertices(vi_neighbor) {
-                let index = *neighbor_index_map.entry(q).or_insert_with(|| {
-                    let p = neighbor.mesh.dual_p(q).unwrap() + neighbor_offset;
+            for qi in neighbor.mesh.boundary_dual_vertices(vi_neighbor) {
+                let index = *neighbor_index_map.entry(qi).or_insert_with(|| {
+                    let p = neighbor.mesh.dual_p(qi).unwrap() + neighbor_offset;
                     let idx = (vertices.len() / 2) as u32;
                     vertices.push(p.x);
                     vertices.push(p.y);
+                    tiles.push(1); // neighbor tile id is always 1
+                    tiles.push(qi.into_index() as u32);
+                    for &qv in neighbor.mesh.quad_vertices(qi) {
+                        tile_distortions.push(neighbor.mesh[qv].position.x);
+                        tile_distortions.push(neighbor.mesh[qv].position.y);
+                    }
                     idx
                 });
                 indices.push(index);
@@ -130,8 +144,9 @@ impl World {
             vertices,
             indices,
             ranges,
-            owner_sites,
-            neighbor_sites,
+            sites,
+            tiles,
+            tile_distortions,
         })
     }
 
@@ -157,14 +172,24 @@ impl World {
         let chunk2 = self.chunk(id2)?;
 
         let mut vertices = Vec::new();
+        let mut sites = Vec::with_capacity(3);
+        let mut tiles = Vec::new();
+        let mut tile_distortions = Vec::new();
 
-        for (id, chunk, corner) in [(id0, chunk0, v0), (id1, chunk1, v1), (id2, chunk2, v2)] {
+        for (cid, id, chunk, corner) in [(0, id0, chunk0, v0), (1, id1, chunk1, v1), (2, id2, chunk2, v2)] {
             let offset = id0.relative_world_position(id);
             let vi = chunk.boundary_corner_vertex(corner);
-            for q in chunk.mesh.boundary_dual_vertices(vi) {
-                let pos = chunk.mesh.dual_p(q).unwrap() + offset;
+            sites.push(vi.into_index() as u32);
+            for qi in chunk.mesh.boundary_dual_vertices(vi) {
+                let pos = chunk.mesh.dual_p(qi).unwrap() + offset;
                 vertices.push(pos.x);
                 vertices.push(pos.y);
+                tiles.push(cid);
+                tiles.push(qi.into_index() as u32);
+                for &qv in chunk.mesh.quad_vertices(qi) {
+                    tile_distortions.push(chunk.mesh[qv].position.x);
+                    tile_distortions.push(chunk.mesh[qv].position.y);
+                }
             }
         }
 
@@ -173,9 +198,9 @@ impl World {
             vertices,
             indices: (0..vertex_count).collect(),
             ranges: [0, vertex_count],
-            owner_site: v0.into_index() as u32,
-            cw_site: v2.into_index() as u32,
-            ccw_site: v1.into_index() as u32,
+            sites,
+            tiles,
+            tile_distortions,
         })
     }
 }

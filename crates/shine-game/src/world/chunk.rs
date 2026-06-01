@@ -73,21 +73,32 @@ impl Chunk {
     }
 
     pub fn cell_data(&self) -> InnerCells {
-        let mut vertices = Vec::with_capacity(self.mesh.finite_quad_count() * 2);
-        let mut quad_map = std::collections::HashMap::new();
+        let site_count = self.mesh.finite_vertex_count();
+        let tile_count = self.mesh.finite_quad_count();
+
+        // Some optimistic preallocation, actual counts may be smaller due to boundary vertices and quads
+
+        let mut indices = Vec::with_capacity(site_count * 4); // 4 quads per vertex on average
+        let mut ranges = Vec::with_capacity(site_count * 2);
+        let mut sites = Vec::with_capacity(site_count);
+        let mut tiles = Vec::with_capacity(tile_count);
+        let mut tile_distortions = Vec::with_capacity(tile_count * 8);
+
+        let mut vertices = Vec::with_capacity(tile_count * 2);
+        let mut quad_map: std::collections::HashMap<crate::math::quadrangulation::QuadIndex, u32> =
+            std::collections::HashMap::new();
         for qi in self.mesh.finite_quad_index_iter() {
             if let Some(center) = self.mesh.dual_p(qi) {
                 quad_map.insert(qi, (vertices.len() / 2) as u32);
                 vertices.push(center.x);
                 vertices.push(center.y);
+                tiles.push(qi.into_index() as u32);
+                for &qv in self.mesh.quad_vertices(qi) {
+                    tile_distortions.push(self.mesh[qv].position.x);
+                    tile_distortions.push(self.mesh[qv].position.y);
+                }
             }
         }
-
-        let site_count = self.mesh.finite_vertex_count();
-        // this is just an optimistic preallocation, index count is not known in advance
-        let mut indices = Vec::with_capacity(site_count * 4);
-        let mut ranges = Vec::with_capacity(site_count * 2);
-        let mut sites = Vec::with_capacity(site_count);
 
         for vi in self.mesh.finite_vertex_index_iter() {
             if self.mesh.is_boundary_vertex(vi) {
@@ -109,6 +120,8 @@ impl Chunk {
             indices,
             ranges,
             sites,
+            tiles,
+            tile_distortions,
         }
     }
 

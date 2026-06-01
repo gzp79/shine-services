@@ -11,6 +11,10 @@ pub struct InnerCells {
     pub ranges: Vec<u32>,
     /// Site id of each polygon in the same order as the polygon indices.
     pub sites: Vec<u32>,
+    /// Tile id of each vertex in the same order as the vertex positions.
+    pub tiles: Vec<u32>,
+    /// Tile distortion in the same order as tiles packed as [x, y, ...], where each octet corresponds to a single tile
+    pub tile_distortions: Vec<f32>,
 }
 
 impl AsPolygonMesh for InnerCells {
@@ -36,10 +40,13 @@ pub struct EdgeCells {
     pub indices: Vec<u32>,
     /// Index ranges forming a closed polygon packed as [start0, end0, start1, end1, ...] pairs
     pub ranges: Vec<u32>,
-    /// Site id of the owner chunk for each polygon in the same order as the polygon indices.
-    pub owner_sites: Vec<u32>,
-    /// Site id of the neighbor chunk for each polygon in the same order as the polygon indices.
-    pub neighbor_sites: Vec<u32>,
+    /// Site id pairs in the same order as the polygon indices [owner_site, neighbor_site, owner_site, neighbor_site, ...]
+    pub sites: Vec<u32>,
+    /// Packed owner chunk and tile id pairs in the same order as the vertex positions [owner, tile_id, owner, tile_id, ...],
+    /// where 0 means the owning chunk, 1 the neighbor chunk
+    pub tiles: Vec<u32>,
+    /// Tile distortion in the same order as tiles packed as [x, y, ...], where each octet corresponds to a single tile
+    pub tile_distortions: Vec<f32>,
 }
 
 impl AsPolygonMesh for EdgeCells {
@@ -65,12 +72,13 @@ pub struct CornerCells {
     pub indices: Vec<u32>,
     /// Index range [0, vertex_count]
     pub ranges: [u32; 2],
-    /// Site id of the owner chunk
-    pub owner_site: u32,
-    /// Site id of neighbor in clockwise direction
-    pub cw_site: u32,
-    /// Site id of neighbor in counter-clockwise direction
-    pub ccw_site: u32,
+    /// Site id in the [owner, ccw_neighbor, cw_neighbor (same as 2*ccw neighbor) ] order
+    pub sites: Vec<u32>,
+    /// Packed owner chunk and tile id pairs in the same order as the vertex positions [owner, tile_id, owner, tile_id, ...],
+    /// where 0 means the owning chunk, 1 the ccw neighbor chunk, and 2 the cw (2*ccw) neighbor chunk
+    pub tiles: Vec<u32>,
+    /// Tile distortion in the same order as tiles packed as [x, y, ...], where each octet corresponds to a single tile
+    pub tile_distortions: Vec<f32>,
 }
 
 impl AsPolygonMesh for CornerCells {
