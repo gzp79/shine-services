@@ -1,7 +1,7 @@
 import * as THREE from 'three';
+import { CameraConst } from '../../constants';
+import { EventSubscriptions } from '../../engine/events';
 import { ManagedMesh } from '../../engine/render/managed-mesh';
-import { CameraConst } from '../constants';
-import { EventSubscriptions } from '../engine/events';
 import { GameResource } from '../game-resource';
 import { WORLD_REFERENCE_CHANGED, type WorldReferenceChangedEvent } from '../systems/world-reference-system';
 

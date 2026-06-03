@@ -3,7 +3,7 @@ import init from '#wasm';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { ChunkConst } from '../constants';
+import { ChunkConst } from '../../constants';
 import { ChunkId, HexFlatDir } from './chunk-id';
 
 beforeAll(async () => {

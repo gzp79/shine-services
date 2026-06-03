@@ -1,5 +1,5 @@
-import type { DebugPanel } from '../../engine/debug-panel';
-import { EventDispatcher } from '../../engine/events';
+import type { DebugPanel } from '../../../engine/debug-panel';
+import { EventDispatcher } from '../../../engine/events';
 import { SELECTION_CHANGED, type Selection, type SelectionChangedEvent } from './selection-event';
 
 const SCOPE = 'World';

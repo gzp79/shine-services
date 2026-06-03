@@ -63,7 +63,7 @@ function buildPrimalMesh(primal: WiredPolygonMeshHandle): ManagedMesh {
     return ManagedMesh.own(geom, mat);
 }
 
-function buildPrimalWire(primal: WiredPolygonMeshHandle): THREE.LineSegments {
+function buildPrimalWire(primal: WiredPolygonMeshHandle): ManagedLineSegments {
     const vertices = primal.vertices;
     const quad_indices = primal.indices;
     const quad_ranges = primal.ranges;
@@ -132,7 +132,7 @@ function buildDualMesh(dual: WiredPolygonMeshHandle): ManagedMesh {
     return mesh;
 }
 
-function buildDualWire(dual: WiredPolygonMeshHandle): THREE.LineSegments {
+function buildDualWire(dual: WiredPolygonMeshHandle): ManagedLineSegments {
     const dual_vertices = dual.vertices;
     const dual_indices = dual.indices;
     const dual_ranges = dual.ranges;
@@ -168,7 +168,7 @@ function buildDualWire(dual: WiredPolygonMeshHandle): THREE.LineSegments {
     return lines;
 }
 
-function buildAnchorWire(primal: WiredPolygonMeshHandle): THREE.LineSegments {
+function buildAnchorWire(primal: WiredPolygonMeshHandle): ManagedLineSegments {
     const vertices = primal.vertices;
     const anchor_indices = primal.wire_indices;
     const anchor_ranges = primal.wire_ranges;

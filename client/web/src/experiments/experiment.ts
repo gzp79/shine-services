@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { WebGPURenderer } from 'three/webgpu';
+import { disposeObject3D } from '../engine/render/ownership';
 
 export type ExperimentOption = {
     addOrbitCamera?: boolean;

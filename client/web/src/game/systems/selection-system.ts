@@ -1,8 +1,8 @@
 import * as THREE from 'three';
+import { ChunkConst } from '../../constants';
+import type { DebugPanel } from '../../engine/debug-panel';
+import type { IInputState } from '../../engine/input/input-state';
 import type { IRtsCamera } from '../avatar/rts-camera';
-import { ChunkConst } from '../constants';
-import type { DebugPanel } from '../engine/debug-panel';
-import type { IInputState } from '../engine/input/input-state';
 import { GameSystem } from '../game-system';
 import { ChunkId } from '../world/chunk-id';
 import { type Selection, isSelectionInteractable, selectionOwner } from '../world/selection/selection-event';

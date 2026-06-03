@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CameraConst } from '../../../constants';
+import { CameraConst } from '../../constants';
 import { EventSubscriptions } from '../../engine/events';
 import { VEC3_UNIT_Z } from '../../engine/utils';
 import { WORLD_REFERENCE_CHANGED, type WorldReferenceChangedEvent } from '../systems/world-reference-system';

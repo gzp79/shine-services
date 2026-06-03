@@ -1,8 +1,8 @@
 import * as THREE from 'three';
+import { CameraConst } from '../../constants';
+import { EventSubscriptions } from '../../engine/events';
 import type { RtsCamera } from '../avatar/rts-camera';
 import { type IWorldCursor } from '../avatar/world-cursor';
-import { CameraConst } from '../constants';
-import { EventSubscriptions } from '../engine/events';
 import type { GameSystem } from '../game-system';
 
 export class CameraFollowCursorSystem implements GameSystem {

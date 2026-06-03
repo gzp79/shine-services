@@ -1,9 +1,9 @@
 import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
-import { ChunkConst } from '../constants';
-import type { DebugPanel } from '../engine/debug-panel';
-import { EventSubscriptions } from '../engine/events';
-import { span } from '../engine/utils';
+import { ChunkConst } from '../../constants';
+import type { DebugPanel } from '../../engine/debug-panel';
+import { EventSubscriptions } from '../../engine/events';
+import { span } from '../../engine/utils';
 import {
     WORLD_FOCUS_CHANGED,
     WORLD_REFERENCE_CHANGED,

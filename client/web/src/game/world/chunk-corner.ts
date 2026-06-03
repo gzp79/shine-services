@@ -1,9 +1,9 @@
 import { CornerCellsHandle, WasmWorld } from '#wasm';
 import * as THREE from 'three';
-import { EventSubscriptions } from '../engine/events';
-import { computeLocalCentroids } from '../engine/mesh/centroid';
-import { SelectionNode } from '../engine/nodes/selection-node';
-import { WireNode } from '../engine/nodes/wire-node';
+import { EventSubscriptions } from '../../engine/events';
+import { SelectionNode } from '../../engine/nodes/selection-node';
+import { WireNode } from '../../engine/nodes/wire-node';
+import { computeLocalCentroids } from '../../mesh/centroid';
 import { ChunkId, HexFlatDir, HexPointyDir } from './chunk-id';
 import { SELECTION_CHANGED, type SelectionChangedEvent } from './selection/selection-event';
 
@@ -68,7 +68,7 @@ export class ChunkCorner {
 
     get centroids(): Float32Array {
         if (!this._centroids) {
-            this._centroids = computeLocalCentroids(this.cells);
+            this._centroids = computeLocalCentroids(this.cells)!;
         }
         return this._centroids;
     }

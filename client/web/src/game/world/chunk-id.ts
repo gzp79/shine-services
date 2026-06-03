@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { ChunkConst } from '../constants';
-import { range } from '../engine/utils';
+import { ChunkConst } from '../../constants';
+import { range } from '../../engine/utils';
 
 /**
  * Pointy-top hex grid corner directions. Matches Rust HexPointyDir indices exactly.
@@ -120,7 +120,7 @@ export class ChunkId {
     /** Return all coordinates within the given radius. */
     spiral(radius: number): ChunkId[] {
         return range(0, radius)
-            .map((r) => this.ring(r))
+            .map((r: number) => this.ring(r))
             .flatten()
             .toArray();
     }

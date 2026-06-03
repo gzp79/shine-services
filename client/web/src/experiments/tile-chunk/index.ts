@@ -14,7 +14,7 @@ export interface TileChunkExperiment {
 
 const TILE_HEIGHT = 80;
 
-function buildCombinedMesh(): { vertices: Float32Array; indices: Uint32Array; ranges: Uint32Array } {
+function buildCombinedMesh(): { geometry: THREE.BufferGeometry; ranges: Uint32Array } {
     const boxGeo = new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
     boxGeo.translate(0.5, 0.5, 0.5);
     const boxPos = new Float32Array(boxGeo.attributes.position.array);
@@ -38,13 +38,17 @@ function buildCombinedMesh(): { vertices: Float32Array; indices: Uint32Array; ra
     indices.set(boxIdx, 0);
     indices.set(sphereIdx, boxIdx.length);
 
-    // range 0 = box, range 1 = sphere
-    const ranges = new Uint32Array([0, boxIdx.length, boxIdx.length, indices.length]);
-
     boxGeo.dispose();
     sphereGeo.dispose();
 
-    return { vertices, indices, ranges };
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+
+    // range 0 = box, range 1 = sphere
+    const ranges = new Uint32Array([0, boxIdx.length, boxIdx.length, indices.length]);
+
+    return { geometry, ranges };
 }
 
 function buildTileDistortion(tileDistortions: Float32Array, tileIdx: number): TileDistortion {
@@ -88,7 +92,7 @@ class TileChunk extends Experiment {
 
         this.world = new WasmWorld();
 
-        this.tileNode = new TileSetNode(this.scene, { ...buildCombinedMesh(), vertexStride: 3, maxInstances: 2048 });
+        this.tileNode = new TileSetNode(this.scene, { ...buildCombinedMesh(), maxInstances: 2048 });
 
         this.cellsGroup = new THREE.Group();
         this.scene.add(this.cellsGroup);
@@ -167,7 +171,7 @@ class TileChunk extends Experiment {
         for (let i = 0; i < tileCount; i++) {
             const d = buildTileDistortion(tileDistortions, i);
             this.distortions.push(d);
-            this.tileNode.addTile(0, i, d);
+            this.tileNode.setTile(0, i, d);
         }
         this.cellWire = WireNode.fromPolygons(this.cellsGroup, {
             vertices: cellVertices,
@@ -183,7 +187,7 @@ class TileChunk extends Experiment {
         const currentRange = this.tileAssignments[key];
         const nextRange = currentRange === 0 ? 1 : 0;
         this.tileNode.removeInstance(currentRange, key);
-        this.tileNode.addTile(nextRange, key, this.distortions[key]);
+        this.tileNode.setTile(nextRange, key, this.distortions[key]);
         this.tileAssignments[key] = nextRange;
     }
 

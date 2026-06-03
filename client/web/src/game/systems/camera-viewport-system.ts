@@ -1,5 +1,5 @@
+import type { RenderContext } from '../../engine/render-context';
 import type { RtsCamera } from '../avatar/rts-camera';
-import type { RenderContext } from '../engine/render-context';
 import type { GameSystem } from '../game-system';
 
 export class CameraViewportSystem implements GameSystem {

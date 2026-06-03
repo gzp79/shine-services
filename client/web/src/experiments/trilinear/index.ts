@@ -185,7 +185,9 @@ class Trilinear extends Experiment {
 
             rejectedMeshes.forEach((mesh) => {
                 mesh.parent?.remove(mesh);
-                mesh.dispose();
+                mesh.geometry.dispose();
+                if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
+                else mesh.material?.dispose();
             });
             filteredMeshes.forEach((mesh) => mesh.parent?.remove(mesh));
 

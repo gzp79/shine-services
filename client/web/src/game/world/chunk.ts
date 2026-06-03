@@ -1,9 +1,9 @@
 import { InnerCellsHandle, WasmWorld } from '#wasm';
 import * as THREE from 'three';
-import { EventSubscriptions } from '../engine/events';
-import { computeLocalCentroids } from '../engine/mesh/centroid';
-import { SelectionNode } from '../engine/nodes/selection-node';
-import { WireNode } from '../engine/nodes/wire-node';
+import { EventSubscriptions } from '../../engine/events';
+import { SelectionNode } from '../../engine/nodes/selection-node';
+import { WireNode } from '../../engine/nodes/wire-node';
+import { computeLocalCentroids } from '../../mesh/centroid';
 import { ChunkId } from './chunk-id';
 import { SELECTION_CHANGED, type SelectionChangedEvent } from './selection/selection-event';
 
@@ -87,7 +87,7 @@ export class Chunk {
 
     get centroids(): Float32Array {
         if (!this._centroids) {
-            this._centroids = computeLocalCentroids(this.innerCells);
+            this._centroids = computeLocalCentroids(this.innerCells)!;
         }
         return this._centroids;
     }

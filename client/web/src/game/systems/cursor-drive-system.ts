@@ -1,6 +1,6 @@
+import type { IInputState } from '../../engine/input/input-state';
 import type { IRtsCamera } from '../avatar/rts-camera';
 import type { WorldCursor } from '../avatar/world-cursor';
-import type { IInputState } from '../engine/input/input-state';
 import type { GameSystem } from '../game-system';
 
 export class CursorDriveSystem implements GameSystem {
