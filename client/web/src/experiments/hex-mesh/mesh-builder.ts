@@ -1,7 +1,8 @@
 import * as THREE from 'three';
+import { ManagedLineSegments, ManagedMesh } from '../../engine/render/managed-mesh';
+import { disposeObject3D } from '../../engine/render/ownership';
 import { span } from '../../engine/utils';
 import type { WiredPolygonMeshHandle } from '../../wasm-types/shine_game';
-import { disposeMesh } from '../experiment';
 
 const EDGE_COLOR = 0x222222;
 const DUAL_EDGE_COLOR = 0x222222;
@@ -17,7 +18,7 @@ export interface HexMeshGroup {
     dispose: () => void;
 }
 
-function buildPrimalMesh(primal: WiredPolygonMeshHandle): THREE.Mesh {
+function buildPrimalMesh(primal: WiredPolygonMeshHandle): ManagedMesh {
     const vertices = primal.vertices;
     const quad_indices = primal.indices;
     const quad_ranges = primal.ranges;
@@ -59,7 +60,7 @@ function buildPrimalMesh(primal: WiredPolygonMeshHandle): THREE.Mesh {
         flatShading: true,
         side: THREE.DoubleSide
     });
-    return new THREE.Mesh(geom, mat);
+    return ManagedMesh.own(geom, mat);
 }
 
 function buildPrimalWire(primal: WiredPolygonMeshHandle): THREE.LineSegments {
@@ -84,10 +85,10 @@ function buildPrimalWire(primal: WiredPolygonMeshHandle): THREE.LineSegments {
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     const mat = new THREE.LineBasicMaterial({ color: EDGE_COLOR });
-    return new THREE.LineSegments(geom, mat);
+    return ManagedLineSegments.own(geom, mat);
 }
 
-function buildDualMesh(dual: WiredPolygonMeshHandle): THREE.Mesh {
+function buildDualMesh(dual: WiredPolygonMeshHandle): ManagedMesh {
     const dual_vertices = dual.vertices;
     const dual_indices = dual.indices;
     const dual_ranges = dual.ranges;
@@ -126,7 +127,7 @@ function buildDualMesh(dual: WiredPolygonMeshHandle): THREE.Mesh {
         flatShading: true,
         side: THREE.DoubleSide
     });
-    const mesh = new THREE.Mesh(geom, mat);
+    const mesh = ManagedMesh.own(geom, mat);
     mesh.visible = false;
     return mesh;
 }
@@ -162,7 +163,7 @@ function buildDualWire(dual: WiredPolygonMeshHandle): THREE.LineSegments {
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     const mat = new THREE.LineBasicMaterial({ color: DUAL_EDGE_COLOR });
-    const lines = new THREE.LineSegments(geom, mat);
+    const lines = ManagedLineSegments.own(geom, mat);
     lines.visible = false;
     return lines;
 }
@@ -207,7 +208,7 @@ function buildAnchorWire(primal: WiredPolygonMeshHandle): THREE.LineSegments {
     geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     const mat = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 2 });
-    const lines = new THREE.LineSegments(geom, mat);
+    const lines = ManagedLineSegments.own(geom, mat);
     lines.visible = false;
     return lines;
 }
@@ -263,11 +264,11 @@ function buildAnchorVertices(primal: WiredPolygonMeshHandle): THREE.InstancedMes
 export function buildHexMesh(primal: WiredPolygonMeshHandle, dual: WiredPolygonMeshHandle): HexMeshGroup {
     const group = new THREE.Group();
 
-    let primalMesh: THREE.Mesh;
-    let primalWireMesh: THREE.LineSegments;
-    let dualMesh: THREE.Mesh;
-    let dualWireMesh: THREE.LineSegments;
-    let anchorWireMesh: THREE.LineSegments;
+    let primalMesh: ManagedMesh;
+    let primalWireMesh: ManagedLineSegments;
+    let dualMesh: ManagedMesh;
+    let dualWireMesh: ManagedLineSegments;
+    let anchorWireMesh: ManagedLineSegments;
     let anchorVertexMesh: THREE.InstancedMesh;
 
     {
@@ -323,12 +324,7 @@ export function buildHexMesh(primal: WiredPolygonMeshHandle, dual: WiredPolygonM
             anchorVertexMesh.visible = visible;
         },
         dispose: () => {
-            disposeMesh(primalMesh);
-            disposeMesh(primalWireMesh);
-            disposeMesh(dualMesh);
-            disposeMesh(dualWireMesh);
-            disposeMesh(anchorWireMesh);
-            disposeMesh(anchorVertexMesh);
+            disposeObject3D(group);
         }
     };
 }

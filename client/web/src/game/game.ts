@@ -1,15 +1,8 @@
 import init from '#wasm';
 import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
-import { WorldCursor } from '../avatar/world-cursor';
-import { CameraFollowCursorSystem } from '../systems/camera-follow-cursor-system';
-import { CameraViewportSystem } from '../systems/camera-viewport-system';
-import { ClearInputStateSystem } from '../systems/clear-input-state-system';
-import { CursorDriveSystem } from '../systems/cursor-drive-system';
-import { SelectionSystem } from '../systems/selection-system';
-import { WorldReferenceSystem } from '../systems/world-reference-system';
-import { World } from '../world/world';
-import { Camera } from './camera/camera';
+import { RtsCamera } from './avatar/rts-camera';
+import { WorldCursor } from './avatar/world-cursor';
 import { DebugPanel } from './debug-panel';
 import type { GameResource } from './game-resource';
 import type { GameSystem } from './game-system';
@@ -17,13 +10,20 @@ import { InputManager } from './input/input-manager';
 import { InputState } from './input/input-state';
 import { PerformanceMetrics } from './performance-metrics';
 import { RenderContext } from './render-context';
+import { CameraFollowCursorSystem } from './systems/camera-follow-cursor-system';
+import { CameraViewportSystem } from './systems/camera-viewport-system';
+import { ClearInputStateSystem } from './systems/clear-input-state-system';
+import { CursorDriveSystem } from './systems/cursor-drive-system';
+import { SelectionSystem } from './systems/selection-system';
+import { WorldReferenceSystem } from './systems/world-reference-system';
+import { World } from './world/world';
 
 class Game {
     private readonly events: EventTarget;
     private readonly renderContext: RenderContext;
     private readonly inputManager: InputManager;
     private readonly inputState: InputState;
-    private readonly camera: Camera;
+    private readonly camera: RtsCamera;
     private readonly worldCursor: WorldCursor;
     private readonly world: World;
     private readonly debugPanel: DebugPanel;
@@ -50,7 +50,7 @@ class Game {
         this.debugPanel.setGameContainer(container);
         this.performanceMetrics = new PerformanceMetrics(this.renderContext.renderer);
 
-        this.camera = new Camera(this.events);
+        this.camera = new RtsCamera(this.events);
         this.worldCursor = new WorldCursor(this.renderContext.scene, this.events);
         this.world = new World(this.events, this.debugPanel);
 

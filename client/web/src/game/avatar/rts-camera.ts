@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { CameraConst } from '../../constants';
-import { WORLD_REFERENCE_CHANGED, type WorldReferenceChangedEvent } from '../../systems/world-reference-system';
-import { EventSubscriptions } from '../events';
-import { VEC3_UNIT_Z } from '../utils';
+import { CameraConst } from '../../../constants';
+import { EventSubscriptions } from '../../engine/events';
+import { VEC3_UNIT_Z } from '../../engine/utils';
+import { WORLD_REFERENCE_CHANGED, type WorldReferenceChangedEvent } from '../systems/world-reference-system';
 
-export interface ICamera {
+export interface IRtsCamera {
     readonly width: number;
     readonly height: number;
     readonly aspect: number;
@@ -18,7 +18,7 @@ export interface ICamera {
     ndcToWorldPlanePoint(ndcX: number, ndcY: number, planeZ?: number): THREE.Vector3 | null;
 }
 
-export class Camera implements ICamera {
+export class RtsCamera implements IRtsCamera {
     width = 1;
     height = 1;
 

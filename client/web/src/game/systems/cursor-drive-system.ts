@@ -1,7 +1,7 @@
+import type { IRtsCamera } from '../avatar/rts-camera';
 import type { WorldCursor } from '../avatar/world-cursor';
-import type { ICamera } from '../engine/camera/camera';
-import type { GameSystem } from '../engine/game-system';
 import type { IInputState } from '../engine/input/input-state';
+import type { GameSystem } from '../game-system';
 
 export class CursorDriveSystem implements GameSystem {
     readonly name = 'Cursor Drive';
@@ -9,7 +9,7 @@ export class CursorDriveSystem implements GameSystem {
     constructor(
         private readonly cursor: WorldCursor,
         private readonly input: IInputState,
-        private readonly camera: ICamera
+        private readonly camera: IRtsCamera
     ) {}
 
     update(deltaTime: number): void {

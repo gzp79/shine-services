@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DragControls } from 'three/addons/controls/DragControls.js';
+import { ManagedMesh } from '../render/managed-mesh';
 
 export interface ControlBoxOptions {
     scene: THREE.Scene;
@@ -19,7 +20,7 @@ export class ControlBox {
     private readonly onDragStartCallback?: () => void;
     private readonly onDragEndCallback?: () => void;
 
-    private readonly controlPoints: THREE.Mesh[] = [];
+    private readonly controlPoints: ManagedMesh[] = [];
     private readonly cornerPositions: THREE.Vector3[] = [];
 
     constructor(options: ControlBoxOptions) {
@@ -81,7 +82,7 @@ export class ControlBox {
                 transparent: true,
                 opacity: 0.8
             });
-            const mesh = new THREE.Mesh(geometry, material);
+            const mesh = ManagedMesh.own(geometry, material);
             mesh.position.set(x, y, z);
 
             this.controlPoints.push(mesh);
@@ -166,8 +167,7 @@ export class ControlBox {
 
         // Dispose control points
         this.controlPoints.forEach((cp) => {
-            cp.geometry.dispose();
-            (cp.material as THREE.Material).dispose();
+            cp.dispose();
             this.scene.remove(cp);
         });
         this.controlPoints.length = 0;

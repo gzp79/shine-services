@@ -2,15 +2,17 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { attribute, mix, uniform } from 'three/tsl';
 import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
+import { ManagedMesh } from '../../engine/render/managed-mesh';
+import { disposeObject3D } from '../../engine/render/ownership';
 import { ControlBox } from '../../engine/utils';
-import { Experiment, disposeMesh, disposeObject3D } from '../experiment';
+import { Experiment } from '../experiment';
 
 export interface TrilinearExperiment {
     dispose(): void;
 }
 
 class Trilinear extends Experiment {
-    private loadedMesh: THREE.Mesh | null = null;
+    private loadedMesh: ManagedMesh | THREE.Mesh | null = null;
     private loadedObject: THREE.Group | null = null;
     private readonly controlBox: ControlBox;
     private readonly fileInput: HTMLInputElement;
@@ -134,12 +136,12 @@ class Trilinear extends Experiment {
         }
     }
 
-    private createDefaultMesh(): THREE.Mesh {
+    private createDefaultMesh(): ManagedMesh {
         this.disposeLoadedObject();
         const geometry = new THREE.BoxGeometry(3, 3, 3, 16, 16, 16);
         geometry.computeBoundingBox();
         this.convertToTrilinearCoordinates(geometry, geometry.boundingBox!);
-        return new THREE.Mesh(geometry, this.createTrilinearMaterial());
+        return ManagedMesh.own(geometry, this.createTrilinearMaterial());
     }
 
     private async createMeshFromFile(file: File) {
@@ -183,7 +185,7 @@ class Trilinear extends Experiment {
 
             rejectedMeshes.forEach((mesh) => {
                 mesh.parent?.remove(mesh);
-                disposeMesh(mesh);
+                mesh.dispose();
             });
             filteredMeshes.forEach((mesh) => mesh.parent?.remove(mesh));
 

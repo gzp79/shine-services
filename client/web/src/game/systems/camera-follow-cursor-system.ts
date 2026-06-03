@@ -1,9 +1,9 @@
 import * as THREE from 'three';
+import type { RtsCamera } from '../avatar/rts-camera';
 import { type IWorldCursor } from '../avatar/world-cursor';
 import { CameraConst } from '../constants';
-import type { Camera } from '../engine/camera/camera';
 import { EventSubscriptions } from '../engine/events';
-import type { GameSystem } from '../engine/game-system';
+import type { GameSystem } from '../game-system';
 
 export class CameraFollowCursorSystem implements GameSystem {
     readonly name: string = 'Camera Follow Cursor';
@@ -13,7 +13,7 @@ export class CameraFollowCursorSystem implements GameSystem {
     private position = new THREE.Vector3();
 
     constructor(
-        private readonly camera: Camera,
+        private readonly camera: RtsCamera,
         private readonly worldCursor: IWorldCursor,
         events: EventTarget
     ) {

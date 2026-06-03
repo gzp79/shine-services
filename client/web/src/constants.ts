@@ -30,7 +30,7 @@ export const CameraConst = {
     MAX_PITCH: 85 * (Math.PI / 180),
     BASE_LERP: 0.5,
     LERP_DISTANCE_FACTOR: 0.1,
-    ZOOM_DISTANCE_SCALE: 25, // distance-dependent zoom scale factor
+    ZOOM_DISTANCE_SCALE: 8, // distance-dependent zoom scale factor
 
     CURSOR_MOVE_SPEED: 1200, // units per second
     CURSOR_SPRINT_MULTIPLIER: 3,

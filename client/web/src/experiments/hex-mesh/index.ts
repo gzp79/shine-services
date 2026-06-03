@@ -2,6 +2,7 @@ import init, { generate_mesh } from '#wasm';
 import wasmUrl from '#wasm-bin';
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
+import { ManagedMesh } from '../../engine/render/managed-mesh';
 import { span } from '../../engine/utils';
 import { Experiment } from '../experiment';
 import { createControls, defaultParams, paramsToConfigJson } from './controls';
@@ -14,7 +15,7 @@ export interface HexMeshExperiment {
 class HexMesh extends Experiment {
     private params = defaultParams();
     private currentMesh: HexMeshGroup | null = null;
-    private debugCircle: THREE.Mesh | null = null;
+    private debugCircle: ManagedMesh | null = null;
     private axesGroup: THREE.Group | null = null;
     private gui: import('lil-gui').GUI;
 
@@ -49,8 +50,7 @@ class HexMesh extends Experiment {
         }
         if (this.debugCircle) {
             this.scene.remove(this.debugCircle);
-            this.debugCircle.geometry.dispose();
-            (this.debugCircle.material as THREE.Material).dispose();
+            this.debugCircle.dispose();
             this.debugCircle = null;
         }
         if (this.axesGroup) {
@@ -88,7 +88,7 @@ class HexMesh extends Experiment {
 
             const ringGeom = new THREE.RingGeometry(0, worldSize, 64);
             const ringMat = new THREE.MeshBasicMaterial({ color: 0x6f6f6f, side: THREE.DoubleSide });
-            this.debugCircle = new THREE.Mesh(ringGeom, ringMat);
+            this.debugCircle = ManagedMesh.own(ringGeom, ringMat);
             this.debugCircle.position.z = -0.001;
             this.scene.add(this.debugCircle);
 
@@ -120,8 +120,7 @@ class HexMesh extends Experiment {
         }
         if (this.debugCircle) {
             this.scene.remove(this.debugCircle);
-            this.debugCircle.geometry.dispose();
-            (this.debugCircle.material as THREE.Material).dispose();
+            this.debugCircle.dispose();
         }
         if (this.axesGroup) {
             this.scene.remove(this.axesGroup);

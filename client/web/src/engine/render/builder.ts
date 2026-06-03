@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { PolygonMesh, WiredPolygonMesh } from './polygon-mesh';
+import type { PolygonMesh, WiredPolygonMesh } from '../../mesh/polygon-mesh';
 
 const PRISM_HEIGHT = 100.0;
 

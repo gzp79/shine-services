@@ -1,14 +1,15 @@
 import { WebGPURenderer } from 'three/webgpu';
-import { createGame } from './engine/game';
 import { createCdtExperiment } from './experiments/cdt/index';
 import { createHexMeshExperiment } from './experiments/hex-mesh/index';
 import { createInputControlExperiment } from './experiments/input-control/index';
+import { createTileChunkExperiment } from './experiments/tile-chunk/index';
 import { createTrilinearExperiment } from './experiments/trilinear/index';
 import { createWorldNeighborsExperiment } from './experiments/world-neighbors/index';
+import { createGame } from './game/game';
 
 export type Viewer = { dispose(): void };
 
-type SceneId = '' | 'hex-mesh' | 'cdt' | 'input-events' | 'trilinear' | 'world-neighbors';
+type SceneId = '' | 'hex-mesh' | 'cdt' | 'input-events' | 'trilinear' | 'world-neighbors' | 'tile-chunk';
 
 async function createSharedRenderer(): Promise<WebGPURenderer> {
     const renderer = new WebGPURenderer({ antialias: true, forceWebGL: false });
@@ -28,6 +29,8 @@ async function createScene(id: SceneId, container: HTMLElement, renderer: WebGPU
             return createTrilinearExperiment(container, renderer);
         case 'world-neighbors':
             return createWorldNeighborsExperiment(container, renderer);
+        case 'tile-chunk':
+            return createTileChunkExperiment(container, renderer);
         default:
             return createGame(container, renderer);
     }

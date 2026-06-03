@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { buildPrismGeometry } from '../mesh/builder';
-import type { PolygonMesh } from '../mesh/polygon-mesh';
+import type { PolygonMesh } from '../../mesh/polygon-mesh';
+import { buildPrismGeometry } from '../render/builder';
 
 export class SelectionNode {
     private mesh: THREE.Mesh | null = null;

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
+import { ManagedMesh } from '../../engine/render/managed-mesh';
 import { CameraConst } from '../constants';
 import { EventSubscriptions } from '../engine/events';
-import { GameResource } from '../engine/game-resource';
+import { GameResource } from '../game-resource';
 import { WORLD_REFERENCE_CHANGED, type WorldReferenceChangedEvent } from '../systems/world-reference-system';
 
 export interface IWorldCursor {
@@ -20,7 +21,7 @@ export class WorldCursor implements GameResource, IWorldCursor {
     cameraDistance = 600;
 
     private parent: THREE.Object3D;
-    private mesh: THREE.Mesh | null = null;
+    private mesh: ManagedMesh | null = null;
     private readonly subscriptions: EventSubscriptions;
 
     constructor(parent: THREE.Object3D, events: EventTarget) {
@@ -108,7 +109,7 @@ export class WorldCursor implements GameResource, IWorldCursor {
             depthTest: false,
             depthWrite: false
         });
-        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh = ManagedMesh.own(geometry, material);
         this.mesh.renderOrder = 998;
         this.mesh.frustumCulled = false;
         this.mesh.position.copy(this.position);
@@ -121,8 +122,7 @@ export class WorldCursor implements GameResource, IWorldCursor {
         if (!this.mesh) return;
 
         this.parent.remove(this.mesh);
-        this.mesh.geometry.dispose();
-        (this.mesh.material as THREE.Material).dispose();
+        this.mesh.dispose();
         this.mesh = null;
     }
 }

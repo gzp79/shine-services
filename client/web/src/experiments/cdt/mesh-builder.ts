@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ManagedMesh } from '../../engine/render/managed-mesh';
 import type { WasmCdtMesh } from '../../wasm-types/shine_game';
 
 const FILL_COLOR = new THREE.Color(0.82, 0.85, 0.88);
@@ -87,7 +88,7 @@ export function buildCircumcenterMesh(cdt: WasmCdtMesh, tri: number): CdtMeshGro
             new THREE.Float32BufferAttribute([a.x, a.y, 15, b.x, b.y, 15, c.x, c.y, 15], 3)
         );
         group.add(
-            new THREE.Mesh(
+            ManagedMesh.own(
                 triGeom,
                 new THREE.MeshBasicMaterial({
                     color: ACTIVE_TRI_COLOR,
@@ -162,7 +163,7 @@ export function buildCdtMesh(cdt: WasmCdtMesh): CdtMeshGroup {
     const fillGeom = new THREE.BufferGeometry();
     fillGeom.setAttribute('position', new THREE.Float32BufferAttribute(triPositions, 3));
     fillGeom.setAttribute('color', new THREE.Float32BufferAttribute(triColors, 3));
-    group.add(new THREE.Mesh(fillGeom, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })));
+    group.add(ManagedMesh.own(fillGeom, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })));
 
     // Triangle edge wireframe
     const edgePositions: number[] = [];

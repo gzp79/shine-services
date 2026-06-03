@@ -1,13 +1,14 @@
 import * as THREE from 'three';
+import type { PolygonMesh } from '../../mesh/polygon-mesh';
 import { buildPrismGeometry } from './builder';
-import type { PolygonMesh } from './polygon-mesh';
+import { ManagedMesh } from './managed-mesh';
 
 /**
  * Build all selection prisms for a chunk.
  * Returns a map of vertIdx -> THREE.Mesh.
  */
-export function buildSelectionMeshes(data: PolygonMesh, chunkId: { q: number; r: number }): Map<number, THREE.Mesh> {
-    const meshes = new Map<number, THREE.Mesh>();
+export function buildSelectionMeshes(data: PolygonMesh, chunkId: { q: number; r: number }): Map<number, ManagedMesh> {
+    const meshes = new Map<number, ManagedMesh>();
     const polygonCount = data.ranges.length / 2;
 
     for (let vi = 0; vi < polygonCount; vi++) {
@@ -27,7 +28,7 @@ export function buildSelectionMeshes(data: PolygonMesh, chunkId: { q: number; r:
                 depthWrite: false
             });
 
-            const mesh = new THREE.Mesh(geometry, material);
+            const mesh = ManagedMesh.own(geometry, material);
             mesh.userData = { vertIdx: vi, chunkId, isSelectionMesh: true };
             mesh.layers.set(1);
             meshes.set(vi, mesh);

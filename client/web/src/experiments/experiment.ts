@@ -91,25 +91,3 @@ export abstract class Experiment {
         this.scene.clear();
     }
 }
-
-type DisposableMesh = THREE.Object3D & {
-    geometry: THREE.BufferGeometry;
-    material: THREE.Material | THREE.Material[];
-};
-
-export function disposeMesh(mesh: DisposableMesh) {
-    mesh.geometry?.dispose();
-    if (Array.isArray(mesh.material)) {
-        mesh.material.forEach((mat) => mat.dispose());
-    } else {
-        mesh.material?.dispose();
-    }
-}
-
-export function disposeObject3D(obj: THREE.Object3D) {
-    obj.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-            disposeMesh(child);
-        }
-    });
-}

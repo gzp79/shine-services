@@ -3,7 +3,7 @@ import type { WorldCursor } from '../avatar/world-cursor';
 import { ChunkConst } from '../constants';
 import type { DebugPanel } from '../engine/debug-panel';
 import { EventDispatcher } from '../engine/events';
-import type { GameSystem } from '../engine/game-system';
+import type { GameSystem } from '../game-system';
 import { ChunkId } from '../world/chunk-id';
 import type { World } from '../world/world';
 

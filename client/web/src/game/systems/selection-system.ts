@@ -1,11 +1,11 @@
 import * as THREE from 'three';
+import type { IRtsCamera } from '../avatar/rts-camera';
 import { ChunkConst } from '../constants';
-import type { ICamera } from '../engine/camera/camera';
 import type { DebugPanel } from '../engine/debug-panel';
-import { GameSystem } from '../engine/game-system';
 import type { IInputState } from '../engine/input/input-state';
+import { GameSystem } from '../game-system';
 import { ChunkId } from '../world/chunk-id';
-import { Selection } from '../world/selection/selection-event';
+import { type Selection, isSelectionInteractable, selectionOwner } from '../world/selection/selection-event';
 import { World } from '../world/world';
 
 // Only switch to a new cell when its centroid is closer than this fraction
@@ -28,7 +28,7 @@ export class SelectionSystem implements GameSystem {
     constructor(
         private readonly world: World,
         private readonly input: IInputState,
-        private readonly camera: ICamera,
+        private readonly camera: IRtsCamera,
         debugPanel: DebugPanel
     ) {
         this.debugPanel = debugPanel;
@@ -125,10 +125,10 @@ export class SelectionSystem implements GameSystem {
         const current = this.world.selection.current;
         if (
             current &&
-            Selection.isInteractable(current, focusedChunkId) &&
+            isSelectionInteractable(current, focusedChunkId) &&
             cursorChunkId.isInteractable(focusedChunkId)
         ) {
-            const owner = Selection.owner(current);
+            const owner = selectionOwner(current);
             const ownerPos = owner.group.position;
             const ccx = owner.centroids[current.cellId * 2] + ownerPos.x;
             const ccy = owner.centroids[current.cellId * 2 + 1] + ownerPos.y;

@@ -1,12 +1,12 @@
-import type { Camera } from '../engine/camera/camera';
-import type { GameSystem } from '../engine/game-system';
+import type { RtsCamera } from '../avatar/rts-camera';
 import type { RenderContext } from '../engine/render-context';
+import type { GameSystem } from '../game-system';
 
 export class CameraViewportSystem implements GameSystem {
     readonly name = 'Camera Viewport';
 
     constructor(
-        private readonly camera: Camera,
+        private readonly camera: RtsCamera,
         private readonly renderContext: RenderContext
     ) {}
 

@@ -1,4 +1,4 @@
-import type { PolygonMesh } from '../../engine/mesh/polygon-mesh';
+import type { PolygonMesh } from './polygon-mesh';
 
 export function computeLocalCentroids(mesh: PolygonMesh): Float32Array {
     const { vertices, indices, ranges } = mesh;

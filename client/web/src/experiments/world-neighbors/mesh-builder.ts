@@ -1,6 +1,7 @@
 import { WasmWorldNeighbors } from '#wasm';
 import * as THREE from 'three';
-import { disposeMesh } from '../experiment';
+import { ManagedMesh } from '../../engine/render/managed-mesh';
+import { disposeObject3D } from '../../engine/render/ownership';
 
 const EDGE_COLOR = 0x222222;
 
@@ -53,7 +54,7 @@ function buildPolygonMesh(
         side: THREE.DoubleSide
     });
 
-    return new THREE.Mesh(geom, mat);
+    return ManagedMesh.own(geom, mat);
 }
 
 // Build wireframe for polygons with z-offset
@@ -170,13 +171,7 @@ export function buildInteriorMeshes(data: WasmWorldNeighbors): ToggleableGroup {
             }
         },
         dispose: () => {
-            meshGroups.forEach((g) =>
-                g.traverse((obj) => {
-                    if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
-                        disposeMesh(obj);
-                    }
-                })
-            );
+            meshGroups.forEach((g) => disposeObject3D(g));
         }
     };
 }
@@ -227,13 +222,7 @@ export function buildEdgeMeshes(data: WasmWorldNeighbors): ToggleableGroup {
             }
         },
         dispose: () => {
-            meshGroups.forEach((g) =>
-                g.traverse((obj) => {
-                    if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
-                        disposeMesh(obj);
-                    }
-                })
-            );
+            meshGroups.forEach((g) => disposeObject3D(g));
         }
     };
 }
@@ -284,13 +273,7 @@ export function buildVertexMeshes(data: WasmWorldNeighbors): ToggleableGroup {
             }
         },
         dispose: () => {
-            meshGroups.forEach((g) =>
-                g.traverse((obj) => {
-                    if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
-                        disposeMesh(obj);
-                    }
-                })
-            );
+            meshGroups.forEach((g) => disposeObject3D(g));
         }
     };
 }

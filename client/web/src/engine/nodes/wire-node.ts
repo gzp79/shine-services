@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { buildGeometryFromPolygons, buildGeometryFromWires } from '../mesh/builder';
-import type { PolygonMesh, WiredPolygonMesh } from '../mesh/polygon-mesh';
+import type { PolygonMesh, WiredPolygonMesh } from '../../mesh/polygon-mesh';
+import { buildGeometryFromPolygons, buildGeometryFromWires } from '../render/builder';
 
 export class WireNode {
     private mesh: THREE.LineSegments | null = null;
