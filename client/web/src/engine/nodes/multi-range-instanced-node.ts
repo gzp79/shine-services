@@ -1,111 +1,5 @@
 import * as THREE from 'three';
-import { StorageInstancedBufferAttribute } from 'three/webgpu';
-
-/** Manage instance data associated to each instance with unique keys */
-class InstanceBuffer {
-    readonly maxInstances: number;
-    readonly floatsPerInstance: number;
-    readonly data: Float32Array;
-    readonly storageAttr: StorageInstancedBufferAttribute;
-
-    readonly keyToSlot = new Map<number, number>();
-    private readonly slotToKey: Uint32Array;
-    private readonly live: Uint8Array;
-    private freeList: number[] = [];
-    private count = 0;
-    private tail = 0;
-    private dirty = false;
-
-    constructor(maxInstances: number, floatsPerInstance: number) {
-        this.maxInstances = maxInstances;
-        this.floatsPerInstance = floatsPerInstance;
-        // itemSize=3 (vec3); total elements = maxInstances * (floatsPerInstance / 3)
-        this.data = new Float32Array(maxInstances * floatsPerInstance);
-        this.storageAttr = new StorageInstancedBufferAttribute(this.data, 3);
-        this.storageAttr.setUsage(THREE.DynamicDrawUsage);
-        this.slotToKey = new Uint32Array(maxInstances);
-        this.live = new Uint8Array(maxInstances);
-    }
-
-    get length(): number {
-        return this.count;
-    }
-
-    get keys(): IterableIterator<number> {
-        return this.keyToSlot.keys();
-    }
-
-    set(key: number, values: Float32Array): boolean {
-        const existing = this.keyToSlot.get(key);
-        if (existing !== undefined) {
-            this.write(existing, values);
-            return true;
-        }
-
-        if (this.count >= this.maxInstances) return false;
-        const slot = this.freeList.length > 0 ? this.freeList.pop()! : this.tail++;
-        this.slotToKey[slot] = key;
-        this.live[slot] = 1;
-        this.keyToSlot.set(key, slot);
-        this.count++;
-        if (slot < this.tail - 1) this.dirty = true;
-        this.write(slot, values);
-        return true;
-    }
-
-    remove(key: number): boolean {
-        const slot = this.keyToSlot.get(key);
-        if (slot === undefined) return false;
-        this.live[slot] = 0;
-        this.freeList.push(slot);
-        this.keyToSlot.delete(key);
-        this.count--;
-        this.dirty = true;
-        return true;
-    }
-
-    compact(): number {
-        if (this.dirty) {
-            while (this.tail > 0 && !this.live[this.tail - 1]) this.tail--;
-            let lo = 0;
-            while (lo < this.tail) {
-                if (this.live[lo]) {
-                    lo++;
-                    continue;
-                }
-                let hi = this.tail - 1;
-                while (hi > lo && !this.live[hi]) hi--;
-                if (hi <= lo) break;
-                this.moveSlot(hi, lo);
-                this.tail = hi;
-                lo++;
-            }
-            this.tail = this.count;
-            this.freeList = [];
-            this.dirty = false;
-        }
-
-        this.storageAttr.needsUpdate = true;
-        return this.count;
-    }
-
-    private write(slot: number, values: Float32Array): void {
-        this.data.set(values, slot * this.floatsPerInstance);
-    }
-
-    private moveSlot(src: number, dst: number): void {
-        this.data.copyWithin(
-            dst * this.floatsPerInstance,
-            src * this.floatsPerInstance,
-            (src + 1) * this.floatsPerInstance
-        );
-        const key = this.slotToKey[src];
-        this.slotToKey[dst] = key;
-        this.live[dst] = 1;
-        this.live[src] = 0;
-        this.keyToSlot.set(key, dst);
-    }
-}
+import { InstanceBuffer } from './instance-buffer';
 
 class RangeMesh extends THREE.Mesh {
     readonly instanceBuffer: InstanceBuffer;
@@ -117,7 +11,6 @@ class RangeMesh extends THREE.Mesh {
         instanceBuffer: InstanceBuffer,
         material: THREE.Material
     ) {
-        // create a new geometry sharing all but instance buffer with the source geometry
         const geo = new THREE.InstancedBufferGeometry();
         for (const [name, attr] of Object.entries(sourceGeo.attributes)) geo.setAttribute(name, attr);
         geo.setIndex(sourceGeo.index);
@@ -128,7 +21,14 @@ class RangeMesh extends THREE.Mesh {
         this.instanceBuffer = instanceBuffer;
         this.frustumCulled = false;
         this.onBeforeRender = (renderer, scene, camera, geometry, material, group) => {
-            (this.geometry as THREE.InstancedBufferGeometry).instanceCount = this.instanceBuffer.compact();
+            const count = this.instanceBuffer.compact();
+            (this.geometry as THREE.InstancedBufferGeometry).instanceCount = count;
+            for (let i = 0; i < instanceBuffer.textures.length; i++) {
+                if (this.instanceBuffer.isDirty(i)) {
+                    this.instanceBuffer.textures[i].needsUpdate = true;
+                    this.instanceBuffer.clearDirty(i);
+                }
+            }
             THREE.Mesh.prototype.onBeforeRender.call(this, renderer, scene, camera, geometry, material, group);
         };
     }
@@ -139,12 +39,23 @@ class RangeMesh extends THREE.Mesh {
 }
 
 export type MultiRangeInstancedParams = {
-    /** Geometry to instanace. All attributes will be shared for each range. */
+    /** Geometry to instance. All attributes will be shared for each range. */
     geometry: THREE.BufferGeometry;
     /** Pairs of (start, end) vertex indices defining the draw ranges. */
     ranges: Uint32Array;
     /** Number of maximum instances per range. Either a single number applied to all ranges, or an array of length equal to the number of ranges. */
     maxInstances: number | number[];
+};
+
+/**
+ * Per-instance data layout across N DataTexture buffers.
+ *
+ * Each buffer is a RGBA32F texture — only dirty buffers are re-uploaded.
+ *   - `floatsPerInstance`: floats written per instance (must be a multiple of 4)
+ *   - `isDynamic`: hint for update frequency (default true); currently informational only
+ */
+export type InstanceBufferLayout = {
+    buffers: Array<{ floatsPerInstance: number; isDynamic?: boolean }>;
 };
 
 export abstract class MultiRangeInstancedNode {
@@ -162,29 +73,33 @@ export abstract class MultiRangeInstancedNode {
     }
 
     protected init(): void {
-        const fpi = this.floatsPerInstance();
+        const layout = this.instanceBufferLayout();
         const n = this._ranges.length >> 1;
         for (let rangeIndex = 0; rangeIndex < n; rangeIndex++) {
             const start = this._ranges[rangeIndex * 2];
             const end = this._ranges[rangeIndex * 2 + 1];
             if (end <= start) continue;
             const cap = Array.isArray(this._maxInstances) ? (this._maxInstances[rangeIndex] ?? 1) : this._maxInstances;
-            const instanceBuffer = new InstanceBuffer(cap, fpi);
-            const mat = this.createMaterial(rangeIndex, instanceBuffer.storageAttr);
+            const texelsPerBuffer = layout.buffers.map((b) => {
+                if (b.floatsPerInstance % 4 !== 0)
+                    throw new Error(`floatsPerInstance (${b.floatsPerInstance}) must be a multiple of 4`);
+                return b.floatsPerInstance / 4;
+            });
+            const instanceBuffer = new InstanceBuffer(cap, texelsPerBuffer);
+            const mat = this.createMaterial(rangeIndex, instanceBuffer.textures);
             const mesh = new RangeMesh(this.sourceGeo, start, end, instanceBuffer, mat);
             this.group.add(mesh);
             this.rangeMeshes.push(mesh);
         }
     }
 
-    /** Total floats stored per instance in the storage buffer. Must be a multiple of 3. */
-    protected abstract floatsPerInstance(): number;
+    protected abstract instanceBufferLayout(): InstanceBufferLayout;
 
-    /** Called once per range during init(). storageAttr is already allocated. */
-    protected abstract createMaterial(rangeIndex: number, storageAttr: StorageInstancedBufferAttribute): THREE.Material;
+    /** Called once per range during init(). textures[i] corresponds to layout.buffers[i]. */
+    protected abstract createMaterial(rangeIndex: number, textures: readonly THREE.DataTexture[]): THREE.Material;
 
-    protected setInstance(rangeIndex: number, key: number, values: Float32Array): boolean {
-        return this.rangeMeshes[rangeIndex]?.instanceBuffer.set(key, values) ?? false;
+    protected setInstanceBuffer(rangeIndex: number, key: number, bufIndex: number, values: Float32Array): boolean {
+        return this.rangeMeshes[rangeIndex]?.instanceBuffer.setBuffer(key, bufIndex, values) ?? false;
     }
 
     removeInstance(rangeIndex: number, key: number): boolean {
@@ -200,7 +115,10 @@ export abstract class MultiRangeInstancedNode {
     }
 
     dispose(): void {
-        for (const mesh of this.rangeMeshes) mesh.dispose();
+        for (const mesh of this.rangeMeshes) {
+            mesh.instanceBuffer.dispose();
+            mesh.dispose();
+        }
         this.rangeMeshes.length = 0;
         this.group.parent?.remove(this.group);
     }
