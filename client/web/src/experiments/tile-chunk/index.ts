@@ -134,7 +134,6 @@ class TileChunk extends Experiment {
             .name('Random Chunk');
 
         this.gui.add({ switchRandom: () => this.switchRandomTile() }, 'switchRandom').name('Switch Random Tile');
-        this.gui.add({ shiftZ: () => this.shiftRandomTileZ() }, 'shiftZ').name('Shift Random Tile Z');
 
         this.gui
             .add(this.displayParams, 'showCells')
@@ -198,17 +197,6 @@ class TileChunk extends Experiment {
         this.tileNode.removeInstance(currentRange, key);
         this.tileNode.setTile(nextRange, key, this.distortions[key]);
         this.tileAssignments[key] = nextRange;
-    }
-
-    private shiftRandomTileZ(): void {
-        if (this.tileCount === 0) return;
-        const key = Math.floor(Math.random() * this.tileCount);
-        const rangeIndex = this.tileAssignments[key];
-        const d = new Float32Array(this.distortions[key]);
-        // Shift all 8 top control points (cp4-cp7, z=1 face) by +50
-        for (let cp = 4; cp < 8; cp++) d[cp * 3 + 2] += 50;
-        this.distortions[key] = d;
-        this.tileNode.setTile(rangeIndex, key, d);
     }
 
     dispose(): void {

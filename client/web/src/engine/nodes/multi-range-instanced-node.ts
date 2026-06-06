@@ -1,5 +1,48 @@
 import * as THREE from 'three';
+import { instanceIndex, ivec2, textureLoad, vec2, vec3, vec4 } from 'three/tsl';
 import { InstanceBuffer } from './instance-buffer';
+
+const SWIZZLE = ['x', 'y', 'z', 'w'] as const;
+
+export class InstanceData {
+    private readonly textures: readonly THREE.DataTexture[];
+    private readonly cache = new Map<number, ReturnType<typeof textureLoad>>();
+    private readonly iIdx = instanceIndex.toInt();
+
+    constructor(textures: readonly THREE.DataTexture[]) {
+        this.textures = textures;
+    }
+
+    private texel(bufIdx: number, row: number): ReturnType<typeof textureLoad> {
+        const key = bufIdx * 1024 + row;
+        if (!this.cache.has(key)) this.cache.set(key, textureLoad(this.textures[bufIdx], ivec2(row, this.iIdx)));
+        return this.cache.get(key)!;
+    }
+
+    private float(bufIdx: number, fi: number) {
+        return this.texel(bufIdx, Math.floor(fi / 4))[SWIZZLE[fi % 4]];
+    }
+
+    vec2(bufIdx: number, i: number) {
+        const s = i * 2;
+        return vec2(this.float(bufIdx, s), this.float(bufIdx, s + 1));
+    }
+
+    vec3(bufIdx: number, i: number) {
+        const s = i * 3;
+        return vec3(this.float(bufIdx, s), this.float(bufIdx, s + 1), this.float(bufIdx, s + 2));
+    }
+
+    vec4(bufIdx: number, i: number) {
+        const s = i * 4;
+        return vec4(
+            this.float(bufIdx, s),
+            this.float(bufIdx, s + 1),
+            this.float(bufIdx, s + 2),
+            this.float(bufIdx, s + 3)
+        );
+    }
+}
 
 class RangeMesh extends THREE.Mesh {
     readonly instanceBuffer: InstanceBuffer;
@@ -86,7 +129,7 @@ export abstract class MultiRangeInstancedNode {
                 return b.floatsPerInstance / 4;
             });
             const instanceBuffer = new InstanceBuffer(cap, texelsPerBuffer);
-            const mat = this.createMaterial(rangeIndex, instanceBuffer.textures);
+            const mat = this.createMaterial(rangeIndex, new InstanceData(instanceBuffer.textures));
             const mesh = new RangeMesh(this.sourceGeo, start, end, instanceBuffer, mat);
             this.group.add(mesh);
             this.rangeMeshes.push(mesh);
@@ -95,8 +138,8 @@ export abstract class MultiRangeInstancedNode {
 
     protected abstract instanceBufferLayout(): InstanceBufferLayout;
 
-    /** Called once per range during init(). textures[i] corresponds to layout.buffers[i]. */
-    protected abstract createMaterial(rangeIndex: number, textures: readonly THREE.DataTexture[]): THREE.Material;
+    /** Called once per range during init(). */
+    protected abstract createMaterial(rangeIndex: number, instanceData: InstanceData): THREE.Material;
 
     protected setInstanceBuffer(rangeIndex: number, key: number, bufIndex: number, values: Float32Array): boolean {
         return this.rangeMeshes[rangeIndex]?.instanceBuffer.setBuffer(key, bufIndex, values) ?? false;
