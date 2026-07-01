@@ -77,7 +77,7 @@ pub async fn email_login(
     let identity = match state
         .email_auth_handler()
         .send_login_email(
-            query.email.raw(),
+            &query.email,
             query.remember_me,
             query.redirect_url.as_ref(),
             &site_info,

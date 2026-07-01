@@ -19,6 +19,7 @@ use openidconnect::{
 };
 use reqwest::Client as HttpClient;
 use serde::Serialize;
+use shine_infra::email::Email;
 use thiserror::Error as ThisError;
 use tokio::sync::Mutex;
 use url::Url;
@@ -90,7 +91,7 @@ impl OIDCUserInfoExtractor for CoreClient {
             .nickname()
             .and_then(|n| n.get(None))
             .map(|n| n.as_str().to_owned());
-        let email = claims.email().map(|e| e.as_str().to_owned());
+        let email = claims.email().and_then(|e| Email::new(e.as_str()).ok());
 
         let external_user_info = ExternalUserInfo {
             provider,

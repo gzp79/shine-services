@@ -108,12 +108,11 @@ impl<DB: IdentityDb> UserService<DB> {
     pub async fn create_with_retry(
         &self,
         name: Option<&str>,
-        email: Option<&str>,
+        email: Option<&Email>,
     ) -> Result<Identity, CreateUserError> {
         const MAX_RETRY_COUNT: usize = 10;
 
         let mut name = name.map(|e| e.to_owned());
-        let email = email.and_then(|e| Email::new(e).ok());
 
         let mut retry_count = 0;
         loop {
@@ -129,10 +128,7 @@ impl<DB: IdentityDb> UserService<DB> {
                 None => self.generate_name().await?,
             };
 
-            match self
-                .create(user_id, &user_name, email.as_ref().map(|e| (e, false)))
-                .await
-            {
+            match self.create(user_id, &user_name, email.map(|e| (e, false))).await {
                 Ok(identity) => return Ok(identity),
                 Err(IdentityError::NameConflict) => continue,
                 Err(IdentityError::UserIdConflict) => continue,
@@ -166,11 +162,8 @@ impl<DB: IdentityDb> UserService<DB> {
 
             let mut ctx = self.db.create_context().await?;
 
-            // Store email from external provider if available and valid (already normalized by ExternalUserInfo::normalized)
-            let email = external_user.email.as_deref().and_then(|e| Email::new(e).ok());
-
             let identity = match ctx
-                .create_user(user_id, &user_name, email.as_ref().map(|e| (e, false)))
+                .create_user(user_id, &user_name, external_user.email.as_ref().map(|e| (e, false)))
                 .await
             {
                 Ok(identity) => identity,

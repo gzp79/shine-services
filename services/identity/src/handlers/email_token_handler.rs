@@ -100,26 +100,20 @@ where
     /// Creates user if doesn't exist, then sends email with login token
     pub async fn send_login_email(
         &self,
-        email: &str,
+        email: &Email,
         remember_me: Option<bool>,
         redirect_url: Option<&Url>,
         site_info: &SiteInfo,
         lang: Option<Language>,
     ) -> Result<Identity, EmailAuthError> {
-        let parsed_email = Email::new(email).map_err(|_| EmailAuthError::MissingEmail)?;
-
         let (is_registration, identity) = {
-            match self
-                .user_service
-                .create_with_retry(None, Some(parsed_email.raw()))
-                .await
-            {
+            match self.user_service.create_with_retry(None, Some(email)).await {
                 Ok(identity) => {
                     log::debug!("New user created through email flow: {identity:#?}");
                     (true, identity)
                 }
                 Err(CreateUserError::IdentityError(IdentityError::EmailConflict)) => {
-                    match self.user_service.find_by_email(&parsed_email).await? {
+                    match self.user_service.find_by_email(email).await? {
                         Some(identity) => {
                             log::debug!("User found by email: {identity:#?}");
                             (false, identity)
@@ -146,7 +140,7 @@ where
                 TokenKind::EmailAccess,
                 &time_to_live,
                 None,
-                Some(parsed_email.raw()),
+                Some(email.raw()),
                 site_info,
             )
             .await?;
@@ -161,7 +155,7 @@ where
             let mut query = link_url.query_pairs_mut();
             query.clear();
             query.append_pair("token", &token);
-            query.append_pair("captcha", &parsed_email.raw_hash());
+            query.append_pair("captcha", &email.raw_hash());
 
             if let Some(remember_me) = remember_me {
                 query.append_pair("rememberMe", &remember_me.to_string());
@@ -173,11 +167,11 @@ where
 
         if is_registration {
             self.mailer_service
-                .send_email_register(parsed_email.raw(), link_url, &identity.name, lang)
+                .send_email_register(email.raw(), link_url, &identity.name, lang)
                 .await?;
         } else {
             self.mailer_service
-                .send_email_login(parsed_email.raw(), link_url, &identity.name, lang)
+                .send_email_login(email.raw(), link_url, &identity.name, lang)
                 .await?;
         }
 
@@ -224,7 +218,7 @@ where
     pub async fn start_email_change_flow(
         &self,
         user_id: Uuid,
-        new_email: &str,
+        new_email: &Email,
         site_info: &SiteInfo,
         lang: Option<Language>,
     ) -> Result<(), EmailAuthError> {
@@ -243,14 +237,14 @@ where
                 user_id,
                 TokenKind::EmailAccess,
                 &ttl,
-                None,            // No fingerprint binding
-                Some(new_email), // Bind to new email
+                None,                  // No fingerprint binding
+                Some(new_email.raw()), // Bind to new email
                 site_info,
             )
             .await?;
 
         self.mailer_service
-            .send_email_change(new_email, &token, lang, &user.name)
+            .send_email_change(new_email.raw(), &token, lang, &user.name)
             .await?;
 
         Ok(())

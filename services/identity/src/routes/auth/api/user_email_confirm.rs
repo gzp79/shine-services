@@ -83,7 +83,7 @@ pub async fn start_user_email_change(
     // Email is already validated and normalized by the Email type
     state
         .email_auth_handler()
-        .start_email_change_flow(user.user_id, body.email.raw(), &site_info, query.lang)
+        .start_email_change_flow(user.user_id, &body.email, &site_info, query.lang)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 

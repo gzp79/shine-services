@@ -114,7 +114,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
     async fn link_user(&mut self, user_id: Uuid, external_user: &ExternalUserInfo) -> Result<(), IdentityError> {
         let encrypted_email = if let Some(email) = &external_user.email {
-            Some(self.email_protection.encrypt(email)?)
+            Some(self.email_protection.encrypt(email.raw())?)
         } else {
             None
         };
