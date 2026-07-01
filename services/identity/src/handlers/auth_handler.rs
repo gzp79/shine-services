@@ -7,7 +7,7 @@ use crate::{
 };
 use axum_extra::headers::{authorization::Bearer, Authorization};
 use axum_extra::typed_header::TypedHeader;
-use shine_infra::{models::hash_email, web::extracts::ClientFingerprint};
+use shine_infra::web::extracts::ClientFingerprint;
 
 /// Result of a successful authentication attempt
 pub struct AuthenticationSuccess {
@@ -59,21 +59,21 @@ where
 
         let confirmed_email = token_info
             .bound_email
-            .as_deref()
+            .as_ref()
             .expect("Email shall be bound to the token");
 
-        let confirmed_email_hash = Some(hash_email(confirmed_email));
-        let identity_email_hash = identity.email.as_ref().map(|email| email.hash());
-        // during email verification the captcha is used to check the link is from the email
-        let query_email_hash = captcha.map(|s| s.to_string());
+        let confirmed_raw_hash = Some(confirmed_email.raw_hash());
+        let confirmed_norm_hash = Some(confirmed_email.hash());
+        let identity_norm_hash = identity.email.as_ref().map(|email| email.hash());
+        let query_raw_hash = captcha.map(|s| s.to_string());
 
-        if confirmed_email_hash != identity_email_hash || confirmed_email_hash.as_ref() != query_email_hash.as_ref() {
+        if confirmed_norm_hash != identity_norm_hash || confirmed_raw_hash.as_ref() != query_raw_hash.as_ref() {
             log::info!(
-                "Identity {} has non-matching emails to verify. [{:?}], [{:?}], [{:?}]",
+                "Identity {} has non-matching emails to verify. norm=[{:?}], identity=[{:?}], captcha=[{:?}]",
                 identity.id,
-                confirmed_email_hash,
-                identity_email_hash,
-                query_email_hash
+                confirmed_norm_hash,
+                identity_norm_hash,
+                query_raw_hash
             );
             return Err(AuthenticationFailure {
                 error: AuthError::EmailConflict,
@@ -81,25 +81,29 @@ where
             });
         }
 
-        log::info!("Updating email verification for identity {}.", identity.id);
-        let identity = match self
-            .user_service
-            .update(identity.id, None, Some((confirmed_email, true)))
-            .await
-        {
-            Ok(Some(identity)) => identity,
-            Ok(None) => {
-                return Err(AuthenticationFailure {
-                    error: IdentityError::UserDeleted.into(),
-                    auth_session,
-                })
+        let identity = if !identity.is_email_confirmed {
+            log::info!("Confirming email for identity {}.", identity.id);
+            match self
+                .user_service
+                .update(identity.id, None, Some((confirmed_email, true)))
+                .await
+            {
+                Ok(Some(identity)) => identity,
+                Ok(None) => {
+                    return Err(AuthenticationFailure {
+                        error: IdentityError::UserDeleted.into(),
+                        auth_session,
+                    })
+                }
+                Err(err) => {
+                    return Err(AuthenticationFailure {
+                        error: AuthError::from(err),
+                        auth_session,
+                    })
+                }
             }
-            Err(err) => {
-                return Err(AuthenticationFailure {
-                    error: AuthError::from(err),
-                    auth_session,
-                })
-            }
+        } else {
+            identity
         };
 
         Ok(AuthenticationSuccess {

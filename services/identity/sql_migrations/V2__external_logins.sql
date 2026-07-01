@@ -5,7 +5,6 @@ CREATE TABLE external_logins (
     linked TIMESTAMPTZ NULL,
     name VARCHAR(64),
     encrypted_email VARCHAR(512),
-    email_hash VARCHAR(64),
     CONSTRAINT fkey_user_id FOREIGN KEY (user_id) REFERENCES identities (user_id) ON DELETE CASCADE
 );
 

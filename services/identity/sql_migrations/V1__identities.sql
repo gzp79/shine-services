@@ -4,6 +4,7 @@ CREATE TABLE identities (
     created TIMESTAMPTZ NULL,
     name VARCHAR(64) NOT NULL,
     encrypted_email VARCHAR(512),
+    encrypted_normalized_email VARCHAR(512),
     email_hash VARCHAR(64),
     email_confirmed BOOLEAN NOT NULL DEFAULT False,
     profile_image TEXT

@@ -534,6 +534,60 @@ test.describe('Email change', () => {
         });
     }
 
+    test('Changing to a tag variant of own email goes through the normal change flow', async ({ api }) => {
+        const smtp = await startMockEmail();
+
+        const local = randomUUID().replace(/-/g, '').slice(0, 12);
+        const baseEmail = `${local}@gmail.com`;
+        const taggedEmail = `${local}+work@gmail.com`;
+
+        const user = await api.testUsers.createLinked(mockAuth, { email: baseEmail });
+        await user.confirmEmail(smtp);
+        const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
+
+        await user.changeEmail(smtp, taggedEmail);
+
+        expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
+            expect.objectContaining({
+                ...userInfo,
+                isEmailConfirmed: true,
+                details: { ...userInfo?.details, email: taggedEmail }
+            })
+        );
+    });
+
+    test('Changing to a tagged email already owned by another user shall fail', async ({ api }) => {
+        const smtp = await startMockEmail();
+
+        const local = randomUUID().replace(/-/g, '').slice(0, 12);
+        const canonicalEmail = `${local}@gmail.com`;
+        const taggedEmail = `${local}+other@gmail.com`;
+
+        // user1 owns the canonical form
+        const user1 = await api.testUsers.createLinked(mockAuth, { email: canonicalEmail });
+        await user1.confirmEmail(smtp);
+
+        // user2 owns the tagged variant
+        const user2 = await api.testUsers.createLinked(mockAuth, { email: taggedEmail });
+        await user2.confirmEmail(smtp);
+
+        // user1 tries to change to the tagged variant — normalized hash collision → conflict
+        const mailPromise = smtp.waitMail();
+        await api.user.startChangeEmail(user1.sid, taggedEmail);
+        const mail = await mailPromise;
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+
+        const response = await api.user.completeConfirmEmailRequest(user1.sid, token!);
+        expect(response).toHaveStatus(412);
+        expect(await response.parseProblem()).toEqual(
+            expect.objectContaining({
+                type: 'email-conflict',
+                status: 412
+            })
+        );
+    });
+
     test('Delete user with pending email change shall prevent completing email change', async ({ api }) => {
         const smtp = await startMockEmail();
         const user = await api.testUsers.createLinked(mockAuth);

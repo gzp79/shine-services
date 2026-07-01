@@ -103,7 +103,7 @@ pub async fn search_identity(
                 IdentityKind::User => "user".to_string(),
                 IdentityKind::Studio => "studio".to_string(),
             },
-            email: x.email.map(|e| e.as_str().to_string()),
+            email: x.email.map(|e| e.raw().to_string()),
             is_email_confirmed: x.is_email_confirmed,
             creation: x.created,
         })

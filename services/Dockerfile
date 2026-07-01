@@ -50,8 +50,8 @@ RUN cargo fmt --check
 
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG="debug"
-ENV SHINE_TEST_REDIS_CNS="redis://redis.mockbox.com:6379"
-ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.mockbox.com:5432/database-test?sslmode=disable"
+ENV SHINE_TEST_REDIS_CNS="redis://redis.mockbox.foo:6379"
+ENV SHINE_TEST_PG_CNS="postgres://username:password@postgres.mockbox.foo:5432/database-test?sslmode=disable"
 
 # build the final project  
 RUN for proj in $SERVICE_PROJECTS; do PROJECTS="$PROJECTS -p $proj"; done \

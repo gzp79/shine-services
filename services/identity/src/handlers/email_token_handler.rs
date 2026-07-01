@@ -8,8 +8,8 @@ use crate::{
     services::{CreateUserError, MailerService, SettingsService, TokenError, TokenService, UserService},
 };
 use shine_infra::{
+    email::Email,
     language::Language,
-    models::hash_email,
     web::{extracts::SiteInfo, responses::Problem},
 };
 use thiserror::Error as ThisError;
@@ -106,14 +106,20 @@ where
         site_info: &SiteInfo,
         lang: Option<Language>,
     ) -> Result<Identity, EmailAuthError> {
+        let parsed_email = Email::new(email).map_err(|_| EmailAuthError::MissingEmail)?;
+
         let (is_registration, identity) = {
-            match self.user_service.create_with_retry(None, Some(email)).await {
+            match self
+                .user_service
+                .create_with_retry(None, Some(parsed_email.raw()))
+                .await
+            {
                 Ok(identity) => {
                     log::debug!("New user created through email flow: {identity:#?}");
                     (true, identity)
                 }
                 Err(CreateUserError::IdentityError(IdentityError::EmailConflict)) => {
-                    match self.user_service.find_by_email(email).await? {
+                    match self.user_service.find_by_email(&parsed_email).await? {
                         Some(identity) => {
                             log::debug!("User found by email: {identity:#?}");
                             (false, identity)
@@ -140,7 +146,7 @@ where
                 TokenKind::EmailAccess,
                 &time_to_live,
                 None,
-                Some(email),
+                Some(parsed_email.raw()),
                 site_info,
             )
             .await?;
@@ -155,7 +161,7 @@ where
             let mut query = link_url.query_pairs_mut();
             query.clear();
             query.append_pair("token", &token);
-            query.append_pair("captcha", &hash_email(email));
+            query.append_pair("captcha", &parsed_email.raw_hash());
 
             if let Some(remember_me) = remember_me {
                 query.append_pair("rememberMe", &remember_me.to_string());
@@ -167,11 +173,11 @@ where
 
         if is_registration {
             self.mailer_service
-                .send_email_register(email, link_url, &identity.name, lang)
+                .send_email_register(parsed_email.raw(), link_url, &identity.name, lang)
                 .await?;
         } else {
             self.mailer_service
-                .send_email_login(email, link_url, &identity.name, lang)
+                .send_email_login(parsed_email.raw(), link_url, &identity.name, lang)
                 .await?;
         }
 
@@ -201,14 +207,14 @@ where
                 user_id,
                 TokenKind::EmailAccess,
                 &ttl,
-                None,        // No fingerprint binding
-                Some(email), // Bind to email being confirmed
+                None,              // No fingerprint binding
+                Some(email.raw()), // Bind to email being confirmed
                 site_info,
             )
             .await?;
 
         self.mailer_service
-            .send_email_confirmation(email, &token, &user.name, lang)
+            .send_email_confirmation(email.raw(), &token, &user.name, lang)
             .await?;
 
         Ok(())
@@ -277,7 +283,7 @@ where
         }
 
         // Get target email from token's bound email
-        let new_email = token_data.bound_email.as_deref().ok_or(EmailAuthError::MissingEmail)?;
+        let new_email = token_data.bound_email.as_ref().ok_or(EmailAuthError::MissingEmail)?;
 
         // Update user's email and mark as confirmed
         match self.user_service.update(user_id, None, Some((new_email, true))).await {

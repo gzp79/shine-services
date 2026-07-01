@@ -8,8 +8,8 @@
 
   "identity": {
     "db": {
-      "redisCns": "redis://redis.mockbox.com:6379?timeout=3000&pool_timeout=5000",
-      "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-identity?sslmode=disable&connect_timeout=3&pool_timeout=5",
+      "redisCns": "redis://redis.mockbox.foo:6379?timeout=3000&pool_timeout=5000",
+      "sqlCns": "postgres://username:password@postgres.mockbox.foo:5432/database-identity?sslmode=disable&connect_timeout=3&pool_timeout=5",
       "emailProtection": {
         "encryptionKey": "r8BZ2woALT0mI_WdOluZqD9-N3WCW7j7r6w-1LfVYf8",
         "hashKey": "Pl7rHydaV8WLqFRMVGXEAw_UwXueD46cpfrMx2EqmYE"
@@ -24,7 +24,7 @@
 
     "mailer": {
       "type": "smtp",
-      "smtpUrl": "mockbox.com:2525",
+      "smtpUrl": "mockbox.foo:2525",
       "useTls": false,
       "smtpUsername": "user",
       "smtpPassword": "password",
@@ -52,9 +52,9 @@
       "openidStartupDiscovery": false,
       "oauth2": {
         "oauth2_flow": {
-          "authorizationUrl": "https://mockbox.com:8090/oauth2/authorize",
-          "tokenUrl": "https://mockbox.com:8090/oauth2/token",
-          "userInfoUrl": "https://mockbox.com:8090/oauth2/users",
+          "authorizationUrl": "https://mockbox.foo:8090/oauth2/authorize",
+          "tokenUrl": "https://mockbox.foo:8090/oauth2/token",
+          "userInfoUrl": "https://mockbox.foo:8090/oauth2/users",
           "userInfoMapping": {
             "name": "name"
           },
@@ -67,7 +67,7 @@
       },
       "openid": {
         "openid_flow": {
-          "discoveryUrl": "https://mockbox.com:8091/openid",
+          "discoveryUrl": "https://mockbox.foo:8091/openid",
           "scopes": ["openid", "email", "profile"],
           "ignoreCertificates": true,
           "clientId": "someClientId",

@@ -4,8 +4,8 @@
     "MIRIFLAGS": "-Zmiri-backtrace=full",
     "RUST_LOG": "info,shine_game=trace,shine_forge=trace,shine_infra=trace,test_map=trace",
 
-    "SHINE_TEST_REDIS_CNS": "redis://redis.mockbox.com:6379",
-    "SHINE_TEST_PG_CNS": "postgres://username:password@postgres.mockbox.com:5432/database-test?sslmode=disable"
+    "SHINE_TEST_REDIS_CNS": "redis://redis.mockbox.foo:6379",
+    "SHINE_TEST_PG_CNS": "postgres://username:password@postgres.mockbox.foo:5432/database-test?sslmode=disable"
   },
   "rust-analyzer.cargo.features": [],
   "rust-analyzer.cargo.target": "wasm32-unknown-unknown",

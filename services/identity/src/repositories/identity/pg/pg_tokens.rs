@@ -10,7 +10,7 @@ use chrono::{DateTime, Duration, Utc};
 use postgres_from_row::FromRow;
 use shine_infra::{
     db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
-    models::Email,
+    email::Email,
     pg_query,
     web::extracts::{ClientFingerprint, SiteInfo},
 };

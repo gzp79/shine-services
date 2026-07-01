@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Database Migrations</title>
+<link rel="stylesheet" href="../doc.css">
+</head>
+<body>
+
+<header class="doc-header">
+  <h1 class="doc-title">Database Migrations</h1>
+  <div class="doc-meta">
+    <span>Versioned SQL schema evolution via Refinery — applied automatically at service startup</span>
+  </div>
+</header>
+
+<h2>Problem</h2>
+<p>
+  Each service owns a PostgreSQL schema that must stay in sync with the code deployed alongside it.
+  Migrations are versioned, append-only SQL files that are compiled into the service binary at build
+  time and applied once against the live database at startup. This ensures any running binary has
+  already applied every schema change it depends on, with no manual intervention.
+</p>
+
+<h2>Architecture</h2>
+
+<div class="canvas">
+  <div class="layer-row">
+    <div class="layer-label">Build time</div>
+    <div class="layer-body">
+      <div class="box box-indigo" style="flex:1">
+        <div class="bname">sql_migrations/V<em>N</em>__*.sql</div>
+        <div class="bdetail">versioned SQL files<br>in service source tree</div>
+      </div>
+      <div class="box box-teal" style="flex:1">
+        <div class="bname">embed_migrations!</div>
+        <div class="bdetail">Refinery macro — compiles<br>SQL into the binary</div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow-row" style="min-height:32px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-blue" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">service starts</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-label">Startup</div>
+    <div class="layer-body">
+      <div class="box box-blue" style="flex:1">
+        <div class="bname">AppState::new</div>
+        <div class="bdetail">constructs the pool</div>
+      </div>
+      <div class="box box-blue" style="flex:1">
+        <div class="bname">DBPool::new</div>
+        <div class="bdetail">creates PG + Redis pools,<br>then calls migrate()</div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow-row" style="min-height:32px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-green" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">runner().run_async(client)</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-label">Execution</div>
+    <div class="layer-body">
+      <div class="box box-green" style="flex:2">
+        <div class="bname">Refinery runner</div>
+        <div class="bdetail">queries _refinery_migrations,<br>applies any unapplied versions in order,<br>records each applied migration</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>
+  If any migration fails, <code>DBPool::new</code> returns <code>DBError::SqlMigration</code>, which
+  propagates to a service startup failure. There is no partial-start: either all migrations succeed
+  or the service refuses to run.
+</p>
+
+<h2>Key rules</h2>
+
+<table>
+  <tr><th>Rule</th><th>Detail</th></tr>
+  <tr>
+    <td>Naming</td>
+    <td><code>V&lt;N&gt;__&lt;description&gt;.sql</code> — double underscore, sequential integer, kebab-or-snake description</td>
+  </tr>
+  <tr>
+    <td>Sequential, no gaps</td>
+    <td>Refinery requires a contiguous version sequence. Skipping a number or reusing one is an error.</td>
+  </tr>
+  <tr>
+    <td>Append-only</td>
+    <td>Never edit or delete an applied migration file. Change the schema by adding a new version.</td>
+  </tr>
+  <tr>
+    <td>Idempotent runs</td>
+    <td>Refinery checks <code>_refinery_migrations</code> before each file; already-applied versions are skipped.</td>
+  </tr>
+  <tr>
+    <td>Startup gate</td>
+    <td>Migration runs inside <code>DBPool::new</code> — the pool is not returned until all migrations pass.</td>
+  </tr>
+  <tr>
+    <td>No DDL in app code</td>
+    <td>All schema changes go in migration files. Application code assumes the schema is already up to date.</td>
+  </tr>
+</table>
+
+<h2>Adding a migration</h2>
+
+<table>
+  <tr><th>Step</th><th>Action</th></tr>
+  <tr>
+    <td>1. Pick the next version</td>
+    <td>Find the highest <code>V&lt;N&gt;</code> in the service's <code>sql_migrations/</code> directory and add 1.</td>
+  </tr>
+  <tr>
+    <td>2. Create the file</td>
+    <td>Add <code>V&lt;N+1&gt;__&lt;description&gt;.sql</code> to <code>sql_migrations/</code> with your DDL/DML.</td>
+  </tr>
+  <tr>
+    <td>3. Rebuild</td>
+    <td><code>cargo build</code> — <code>embed_migrations!</code> picks up the new file at compile time.</td>
+  </tr>
+  <tr>
+    <td>4. Run the service</td>
+    <td>On next startup the runner applies the new version and records it in <code>_refinery_migrations</code>.</td>
+  </tr>
+</table>
+
+<p>
+  No code changes are needed beyond the new SQL file — the <code>embed_migrations!</code> macro
+  in <code>db.rs</code> scans the directory at compile time and the runner iterates all embedded
+  versions at startup.
+</p>
+
+<h2>File map</h2>
+
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>services/identity/src/repositories/db.rs</code></td><td>Embeds migrations and runs them inside <code>DBPool::new</code>.</td></tr>
+  <tr><td><code>services/identity/sql_migrations/</code></td><td>Identity service SQL migration files (<code>V1</code>–<code>V6</code>).</td></tr>
+  <tr><td><code>services/builder/sql_migrations/</code></td><td>Builder service SQL migration files (<code>V1</code>).</td></tr>
+  <tr><td><code>crates/shine-infra/src/db/db_error.rs</code></td><td><code>DBError::SqlMigration</code> variant wrapping <code>refinery::Error</code>.</td></tr>
+  <tr><td><code>crates/Cargo.toml</code></td><td>Workspace dependency: <code>refinery = { version = "0.9", features = ["tokio-postgres"] }</code>.</td></tr>
+</table>
+
+<details data-agent="implementation">
+  <summary>Why migrations are embedded in the binary, not loaded from disk at runtime</summary>
+  <div class="details-body">
+    <p>
+      <code>embed_migrations!</code> compiles the SQL files into the binary via Rust's
+      <code>include_str!</code> under the hood. This means the deployed binary is self-contained:
+      no <code>sql_migrations/</code> directory needs to exist on the server at runtime, and there
+      is no risk of a version mismatch between the binary and migration files on disk.
+      The tradeoff is that adding a migration requires a rebuild and redeploy — there is no
+      hotfix path that applies SQL without shipping a new binary.
+    </p>
+  </div>
+</details>
+
+<details data-agent="implementation">
+  <summary>PGConnection.migrate — per-domain migration tracks for event-sourcing patterns</summary>
+  <div class="details-body">
+    <p>
+      <code>crates/shine-infra/src/db/postgres/pg_connection.rs</code> exposes a lower-level
+      <code>PGConnection::migrate(name, migrations)</code> that accepts raw SQL strings and stores
+      its tracking data in <code>__migration__{name}</code> instead of <code>_refinery_migrations</code>.
+      This allows multiple independent migration sequences to coexist in a single database —
+      useful for event-sourcing aggregates that each own their own projection tables.
+      Services that use the standard <code>DBPool</code> pattern do not need this.
+    </p>
+  </div>
+</details>
+
+</body>
+</html>

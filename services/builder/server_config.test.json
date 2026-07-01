@@ -8,8 +8,8 @@
 
   "builder": {
     "db": {
-      "redisCns": "redis://redis.mockbox.com:6379",
-      "sqlCns": "postgres://username:password@postgres.mockbox.com:5432/database-builder?sslmode=disable"
+      "redisCns": "redis://redis.mockbox.foo:6379",
+      "sqlCns": "postgres://username:password@postgres.mockbox.foo:5432/database-builder?sslmode=disable"
     }
   }
 }

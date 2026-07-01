@@ -124,7 +124,7 @@ pub async fn get_user_info(
                 details: Some(CurrentUserInfoDetails {
                     kind: user_info.identity.kind,
                     created_at: user_info.identity.created,
-                    email: user_info.identity.email.map(|e| e.into_inner()),
+                    email: user_info.identity.email.map(|e| e.to_raw()),
                 }),
             }
         }

@@ -82,8 +82,8 @@ jobs:
           push: false
           load: true
           add-hosts: |
-            postgres.mockbox.com:${{ steps.mockbox.outputs.pg_host }}
-            redis.mockbox.com:${{ steps.mockbox.outputs.redis_host }}
+            postgres.mockbox.foo:${{ steps.mockbox.outputs.pg_host }}
+            redis.mockbox.foo:${{ steps.mockbox.outputs.redis_host }}
           cache-to: type=gha,mode=max
           cache-from: type=gha
           tags: ${{ env.IMAGE_NAME }}:test
@@ -92,9 +92,9 @@ jobs:
         run: |
           sudo echo "127.0.0.1 local.scytta.com" | sudo tee -a /etc/hosts
           sudo echo "127.0.0.1 cloud.local.scytta.com" | sudo tee -a /etc/hosts
-          sudo echo "127.0.0.1 mockbox.com" | sudo tee -a /etc/hosts
-          sudo echo "127.0.0.1 postgres.mockbox.com" | sudo tee -a /etc/hosts
-          sudo echo "127.0.0.1 redis.mockbox.com" | sudo tee -a /etc/hosts
+          sudo echo "127.0.0.1 mockbox.foo" | sudo tee -a /etc/hosts
+          sudo echo "127.0.0.1 postgres.mockbox.foo" | sudo tee -a /etc/hosts
+          sudo echo "127.0.0.1 redis.mockbox.foo" | sudo tee -a /etc/hosts
 
       - name: Integration test
         run: |
@@ -133,8 +133,8 @@ jobs:
           # these setting are added to allow the reuse of the layer from the build step
           # without host parameters it would trigger a new build
           add-hosts: |
-            postgres.mockbox.com:${{ steps.mockbox.outputs.pg_host }}
-            redis.mockbox.com:${{ steps.mockbox.outputs.redis_host }}
+            postgres.mockbox.foo:${{ steps.mockbox.outputs.pg_host }}
+            redis.mockbox.foo:${{ steps.mockbox.outputs.redis_host }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 

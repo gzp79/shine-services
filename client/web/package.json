@@ -25,25 +25,25 @@
         "post:wasm": "node -e \"require('fs').copyFileSync('pkg/shine_game.d.ts', 'src/wasm-types/shine_game.d.ts')\""
     },
     "dependencies": {
-        "lil-gui": "^0.20.0",
-        "three": "^0.172.0"
+        "lil-gui": "^0.21.0",
+        "three": "^0.175.0"
     },
     "devDependencies": {
-        "@eslint/js": "^9.39.4",
+        "@eslint/js": "^10.0.1",
         "@stylistic/eslint-plugin": "^5.10.0",
-        "@trivago/prettier-plugin-sort-imports": "5.2.2",
+        "@trivago/prettier-plugin-sort-imports": "6.0.2",
         "@types/jsdom": "^28.0.3",
-        "@types/node": "^25.5.0",
-        "@types/three": "^0.172.0",
+        "@types/node": "^25.9.4",
+        "@types/three": "^0.175.0",
         "@vitest/coverage-v8": "^4.1.6",
-        "eslint": "^9.39.4",
+        "eslint": "^10.5.0",
         "eslint-config-prettier": "^10.1.8",
         "jiti": "^2.6.1",
         "jsdom": "^29.1.1",
         "prettier": "^3.8.1",
         "typescript": "^5.9.3",
         "typescript-eslint": "^8.57.2",
-        "vite": "^6.4.1",
+        "vite": "^8.0.16",
         "vitest": "^4.1.6"
     }
 }

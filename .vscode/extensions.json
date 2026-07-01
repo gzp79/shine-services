@@ -1,9 +1,7 @@
 {
     "recommendations": [
-        "humao.rest-client",
         "rust-lang.rust-analyzer",
         "vadimcn.vscode-lldb",
-        "shd101wyy.markdown-preview-enhanced",
         "streetsidesoftware.code-spell-checker",
         "fill-labs.dependi",
         "lokalise.i18n-ally",

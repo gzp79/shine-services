@@ -110,6 +110,7 @@ utoipa = { version = "5.4", features = [
 	"uuid",
 	"chrono",
 	"debug",
+	"url",
 ] }
 utoipa-axum = "0.2"
 utoipa-swagger-ui = { version = "9.0", features = ["axum"] }

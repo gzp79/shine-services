@@ -1,4 +1,4 @@
-use shine_infra::models::Email;
+use shine_infra::email::Email;
 
 #[derive(Clone, Debug)]
 pub struct ExternalUserInfo {
@@ -21,7 +21,7 @@ impl ExternalUserInfo {
         }
 
         if let Some(email) = &self.email {
-            self.email = Email::new(email).ok().map(|e| e.into_inner());
+            self.email = Email::new(email).ok().map(|e| e.to_raw());
         }
 
         self

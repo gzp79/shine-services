@@ -45,7 +45,7 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
 
     let redis_manager = RedisConnectionManager::new(cns_clean)?;
     let redis = bb8::Pool::builder()
-        .max_size(10) // Set the maximum number of connections in the pool
+        .max_size(10)
         .connection_timeout(std::time::Duration::from_millis(pool_timeout_ms))
         .build(redis_manager)
         .await?;

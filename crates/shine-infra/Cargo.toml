@@ -40,7 +40,7 @@ pin-project = { workspace = true }
 futures = { workspace = true }
 futures-channel = { workspace = true }
 async-trait = { workspace = true }
-tokio = { workspace = true, features = ["macros", "signal", "rt"] }
+tokio = { workspace = true, features = ["macros", "signal", "rt", "rt-multi-thread"] }
 
 ############################# TRACING #############################
 tracing = { workspace = true }

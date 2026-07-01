@@ -3,7 +3,10 @@ use crate::{
     repositories::identity::{pg::PgIdentityDbContext, IdentitySearch},
 };
 use postgres_from_row::FromRow;
-use shine_infra::db::{DBError, QueryBuilder};
+use shine_infra::{
+    db::{DBError, QueryBuilder},
+    email::Email,
+};
 use tracing::instrument;
 
 use super::pg_identities::IdentityRow;
@@ -11,8 +14,9 @@ use super::pg_identities::IdentityRow;
 impl IdentitySearch for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
     async fn search_identity(&mut self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, IdentityError> {
-        let mut builder =
-            QueryBuilder::new("SELECT user_id, kind, name, encrypted_email, email_confirmed, created FROM identities");
+        let mut builder = QueryBuilder::new(
+            "SELECT user_id, kind, name, encrypted_email, encrypted_normalized_email, email_confirmed, created FROM identities",
+        );
 
         let name_patterns: Vec<String> = search
             .names
@@ -22,11 +26,7 @@ impl IdentitySearch for PgIdentityDbContext<'_> {
         let email_hashes: Vec<String> = search
             .emails
             .iter()
-            .flat_map(|emails| {
-                emails
-                    .iter()
-                    .map(|e| self.email_protection.hash(e).as_str().to_string())
-            })
+            .flat_map(|emails| emails.iter().filter_map(|e| Email::new(e).ok()).map(|e| e.hash()))
             .collect();
 
         if let Some(user_ids) = &search.user_ids {
