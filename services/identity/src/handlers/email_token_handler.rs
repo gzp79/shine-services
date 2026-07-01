@@ -8,8 +8,8 @@ use crate::{
     services::{CreateUserError, MailerService, SettingsService, TokenError, TokenService, UserService},
 };
 use shine_infra::{
+    email::Email,
     language::Language,
-    models::hash_email,
     web::{extracts::SiteInfo, responses::Problem},
 };
 use thiserror::Error as ThisError;
@@ -100,7 +100,7 @@ where
     /// Creates user if doesn't exist, then sends email with login token
     pub async fn send_login_email(
         &self,
-        email: &str,
+        email: &Email,
         remember_me: Option<bool>,
         redirect_url: Option<&Url>,
         site_info: &SiteInfo,
@@ -140,7 +140,7 @@ where
                 TokenKind::EmailAccess,
                 &time_to_live,
                 None,
-                Some(email),
+                Some(email.raw()),
                 site_info,
             )
             .await?;
@@ -155,7 +155,7 @@ where
             let mut query = link_url.query_pairs_mut();
             query.clear();
             query.append_pair("token", &token);
-            query.append_pair("captcha", &hash_email(email));
+            query.append_pair("captcha", &email.raw_hash());
 
             if let Some(remember_me) = remember_me {
                 query.append_pair("rememberMe", &remember_me.to_string());
@@ -167,11 +167,11 @@ where
 
         if is_registration {
             self.mailer_service
-                .send_email_register(email, link_url, &identity.name, lang)
+                .send_email_register(email.raw(), link_url, &identity.name, lang)
                 .await?;
         } else {
             self.mailer_service
-                .send_email_login(email, link_url, &identity.name, lang)
+                .send_email_login(email.raw(), link_url, &identity.name, lang)
                 .await?;
         }
 
@@ -201,14 +201,14 @@ where
                 user_id,
                 TokenKind::EmailAccess,
                 &ttl,
-                None,        // No fingerprint binding
-                Some(email), // Bind to email being confirmed
+                None,              // No fingerprint binding
+                Some(email.raw()), // Bind to email being confirmed
                 site_info,
             )
             .await?;
 
         self.mailer_service
-            .send_email_confirmation(email, &token, &user.name, lang)
+            .send_email_confirmation(email.raw(), &token, &user.name, lang)
             .await?;
 
         Ok(())
@@ -218,7 +218,7 @@ where
     pub async fn start_email_change_flow(
         &self,
         user_id: Uuid,
-        new_email: &str,
+        new_email: &Email,
         site_info: &SiteInfo,
         lang: Option<Language>,
     ) -> Result<(), EmailAuthError> {
@@ -237,14 +237,14 @@ where
                 user_id,
                 TokenKind::EmailAccess,
                 &ttl,
-                None,            // No fingerprint binding
-                Some(new_email), // Bind to new email
+                None,                  // No fingerprint binding
+                Some(new_email.raw()), // Bind to new email
                 site_info,
             )
             .await?;
 
         self.mailer_service
-            .send_email_change(new_email, &token, lang, &user.name)
+            .send_email_change(new_email.raw(), &token, lang, &user.name)
             .await?;
 
         Ok(())
@@ -277,7 +277,7 @@ where
         }
 
         // Get target email from token's bound email
-        let new_email = token_data.bound_email.as_deref().ok_or(EmailAuthError::MissingEmail)?;
+        let new_email = token_data.bound_email.as_ref().ok_or(EmailAuthError::MissingEmail)?;
 
         // Update user's email and mark as confirmed
         match self.user_service.update(user_id, None, Some((new_email, true))).await {

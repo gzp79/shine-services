@@ -1,68 +1,62 @@
-import { createGame } from './engine/game';
+import { WebGPURenderer } from 'three/webgpu';
 import { createCdtExperiment } from './experiments/cdt/index';
 import { createHexMeshExperiment } from './experiments/hex-mesh/index';
 import { createInputControlExperiment } from './experiments/input-control/index';
+import { createTileChunkExperiment } from './experiments/tile-chunk/index';
 import { createTrilinearExperiment } from './experiments/trilinear/index';
+import { createWorldNeighborsExperiment } from './experiments/world-neighbors/index';
+import { createGame } from './game/game';
 
-export type Scene = 'game' | 'hex-mesh' | 'cdt' | 'input-events' | 'trilinear';
 export type Viewer = { dispose(): void };
 
-export async function createScene(container: HTMLElement, scene: Scene): Promise<Viewer> {
-    switch (scene) {
-        case 'hex-mesh': {
-            return await createHexMeshExperiment(container);
-        }
-        case 'cdt': {
-            return await createCdtExperiment(container);
-        }
-        case 'input-events': {
-            return await createInputControlExperiment(container);
-        }
-        case 'trilinear': {
-            return await createTrilinearExperiment(container);
-        }
-        case 'game':
-        default: {
-            return createGame(container);
-        }
+type SceneId = '' | 'hex-mesh' | 'cdt' | 'input-events' | 'trilinear' | 'world-neighbors' | 'tile-chunk';
+
+async function createSharedRenderer(): Promise<WebGPURenderer> {
+    const renderer = new WebGPURenderer({ antialias: true, forceWebGL: false });
+    await renderer.init();
+    return renderer;
+}
+
+async function createScene(id: SceneId, container: HTMLElement, renderer: WebGPURenderer): Promise<Viewer> {
+    switch (id) {
+        case 'hex-mesh':
+            return createHexMeshExperiment(container, renderer);
+        case 'cdt':
+            return createCdtExperiment(container, renderer);
+        case 'input-events':
+            return createInputControlExperiment(container, renderer);
+        case 'trilinear':
+            return createTrilinearExperiment(container, renderer);
+        case 'world-neighbors':
+            return createWorldNeighborsExperiment(container, renderer);
+        case 'tile-chunk':
+            return createTileChunkExperiment(container, renderer);
+        default:
+            return createGame(container, renderer);
     }
 }
 
-const hashToScene: Record<string, Scene> = {
-    '#hex-mesh': 'hex-mesh',
-    '#cdt': 'cdt',
-    '#input-events': 'input-events',
-    '#trilinear': 'trilinear'
-};
+export async function createRouter(container: HTMLElement) {
+    const renderer = await createSharedRenderer();
+    container.appendChild(renderer.domElement);
 
-export function createRouter(container: HTMLElement) {
     let current: Viewer | null = null;
 
-    async function route() {
-        if (current) {
-            current.dispose();
-            current = null;
-        }
-
-        const hash = window.location.hash;
-        const scene = hashToScene[hash] ?? 'game';
-
-        try {
-            current = await createScene(container, scene);
-        } catch (e) {
-            console.error('Scene failed to load:', e);
-        }
+    async function navigate() {
+        const hash = window.location.hash.replace('#', '') as SceneId;
+        current?.dispose();
+        current = null;
+        current = await createScene(hash, container, renderer);
     }
 
-    window.addEventListener('hashchange', () => void route());
-    void route();
+    window.addEventListener('hashchange', () => void navigate());
+    await navigate();
 
     return {
         dispose() {
-            if (current) {
-                current.dispose();
-                current = null;
-            }
+            current?.dispose();
+            renderer.dispose();
+            renderer.domElement.remove();
         }
     };
 }

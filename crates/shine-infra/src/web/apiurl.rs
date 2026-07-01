@@ -1,13 +1,26 @@
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
 use url::Url;
-use utoipa::ToSchema;
+use utoipa::{
+    openapi::{schema::Schema, KnownFormat, ObjectBuilder, SchemaFormat, Type},
+    PartialSchema, ToSchema,
+};
 
 /// Url type used in the API
-#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
-#[schema(value_type = String )]
-#[schema(as = Url)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiUrl(Url);
+
+impl PartialSchema for ApiUrl {
+    fn schema() -> utoipa::openapi::RefOr<Schema> {
+        ObjectBuilder::new()
+            .schema_type(Type::String)
+            .format(Some(SchemaFormat::KnownFormat(KnownFormat::Uri)))
+            .build()
+            .into()
+    }
+}
+
+impl ToSchema for ApiUrl {}
 
 impl ApiUrl {
     pub fn new(url: Url) -> Self {

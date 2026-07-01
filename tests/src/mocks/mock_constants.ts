@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { JWKObject } from 'ts-jose';
 
-export const DEFAULT_URL = 'https://mockbox.com';
+export const DEFAULT_URL = 'https://mockbox.foo';
 
 function findCertLocation(): string {
     const certPath = ['./certs/scytta.crt', '../certs/scytta.crt'];

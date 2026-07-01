@@ -1,27 +1,40 @@
-use crate::world::{Chunk, ChunkId};
+use crate::{
+    indexed::TypedIndex,
+    math::{
+        hex::{HexFlatDir, HexPointyDir},
+        prng::SplitMix64,
+        quadrangulation::VertexIndex,
+    },
+    world::{Chunk, ChunkId, CornerCells, EdgeCells, InnerCells},
+};
 use std::collections::HashMap;
+use tracing::info_span;
 
 /// The core subdivision depth to align chunks
 pub const SUBDIVISION_BASE: u32 = 4;
 /// The numbe of cells on the edge of a chunk
 pub const SUBDIVISION_COUNT: u32 = 2u32.pow(SUBDIVISION_BASE);
 
-/// The world size of a chunk (in meter)
+/// The world size (circumcenter) of a chunk (in meter)
 pub const CHUNK_WORLD_SIZE: f32 = 1000.0;
 /// The "ideal" length of the side of a cell (in meter)
 pub const CELL_WORLD_SIZE: f32 = CHUNK_WORLD_SIZE / SUBDIVISION_COUNT as f32;
 
 pub struct World {
+    rng_seed: SplitMix64,
     chunks: HashMap<ChunkId, Chunk>,
 }
 
 impl World {
     pub fn new() -> Self {
-        Self { chunks: HashMap::new() }
+        Self {
+            rng_seed: SplitMix64::new(),
+            chunks: HashMap::new(),
+        }
     }
 
     pub fn init_chunk(&mut self, id: ChunkId) {
-        self.chunks.insert(id, Chunk::new(id));
+        self.chunks.insert(id, Chunk::new(&self.rng_seed, id));
     }
 
     pub fn chunk(&self, id: ChunkId) -> Option<&Chunk> {
@@ -32,18 +45,6 @@ impl World {
         self.chunks.remove(&id);
     }
 
-    pub fn chunk_vertices(&self, id: ChunkId) -> Vec<f32> {
-        self.chunk(id).map(|c| c.quad_vertices()).unwrap_or_default()
-    }
-
-    pub fn chunk_quad_indices(&self, id: ChunkId) -> Vec<u32> {
-        self.chunk(id).map(|c| c.quad_indices()).unwrap_or_default()
-    }
-
-    pub fn chunk_boundary_indices(&self, id: ChunkId) -> Vec<u32> {
-        self.chunk(id).map(|c| c.boundary_indices()).unwrap_or_default()
-    }
-
     pub fn chunk_world_offset(&self, reference: ChunkId, target: ChunkId) -> Vec<f32> {
         if self.chunk(reference).is_none() {
             return vec![];
@@ -51,77 +52,155 @@ impl World {
         let offset = reference.relative_world_position(target);
         vec![offset.x, offset.y]
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use shine_test::test;
-
-    #[test]
-    fn test_init_and_query_chunk() {
-        let mut world = World::new();
-        let id = ChunkId::ORIGIN;
-        world.init_chunk(id);
-
-        let verts = world.chunk_vertices(id);
-        assert!(!verts.is_empty(), "vertices should not be empty after init");
-        assert_eq!(verts.len() % 2, 0, "vertices should have even length (x,y pairs)");
-
-        let indices = world.chunk_quad_indices(id);
-        assert!(!indices.is_empty(), "quad indices should not be empty");
-        assert_eq!(indices.len() % 4, 0, "quad indices should be multiple of 4");
-
-        let border = world.chunk_boundary_indices(id);
-        assert!(!border.is_empty(), "border indices should not be empty");
-        assert_eq!(border.len() % 2, 0, "border indices should be pairs");
+    pub fn inner_cells(&self, id: ChunkId) -> Option<InnerCells> {
+        let _span = info_span!("internal_cells", id = ?id).entered();
+        self.chunk(id).map(|chunk| chunk.cell_data())
     }
 
-    #[test]
-    fn test_uninitialized_chunk_returns_empty() {
-        let world = World::new();
-        let id = ChunkId(999, 999);
+    pub fn edge_cells(&self, id: ChunkId, edge_idx: HexFlatDir) -> Option<EdgeCells> {
+        let _span = info_span!("edge_cells", id = ?id).entered();
 
-        assert!(world.chunk_vertices(id).is_empty());
-        assert!(world.chunk_quad_indices(id).is_empty());
-        assert!(world.chunk_boundary_indices(id).is_empty());
-        assert!(world.chunk_world_offset(ChunkId::ORIGIN, id).is_empty());
+        let (neighbor_dir, neighbor_edge) = match edge_idx {
+            HexFlatDir::NE => (HexFlatDir::NE, HexFlatDir::SW),
+            HexFlatDir::N => (HexFlatDir::N, HexFlatDir::S),
+            HexFlatDir::NW => (HexFlatDir::NW, HexFlatDir::SE),
+            HexFlatDir::SW => (HexFlatDir::SW, HexFlatDir::NE),
+            HexFlatDir::S => (HexFlatDir::S, HexFlatDir::N),
+            HexFlatDir::SE => (HexFlatDir::SE, HexFlatDir::NW),
+        };
+
+        let neighbor_id = id.neighbor(neighbor_dir);
+        let owner = self.chunk(id)?;
+        let neighbor = self.chunk(neighbor_id)?;
+        let neighbor_offset = id.relative_world_position(neighbor_id);
+
+        // Collect neighbor inner vertices reversed: pop both corners, reverse in-place.
+        // The neighbor edge runs in the opposite direction to the owner edge, so reversing
+        // aligns vertex positions pairwise.
+        let neighbor_vis: Vec<VertexIndex> = {
+            let mut v: Vec<_> = neighbor.boundary_edge_vertices(neighbor_edge).collect();
+            v.pop();
+            v.reverse();
+            v.pop();
+            v
+        };
+        let owner_vis = owner.boundary_edge_vertices(edge_idx).skip(1).take(neighbor_vis.len());
+
+        let site_count = neighbor_vis.len();
+
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let mut ranges = Vec::with_capacity(site_count * 2);
+        let mut sites = Vec::with_capacity(site_count * 2);
+        let mut tiles = Vec::new();
+        let mut tile_distortions = Vec::new();
+
+        // map from QuadIndex to index in vertices
+        let mut index_map = HashMap::new();
+        let mut neighbor_index_map = HashMap::new();
+
+        for (vi_owner, vi_neighbor) in owner_vis.zip(neighbor_vis) {
+            ranges.push(indices.len() as u32);
+            sites.push(vi_owner.into_index() as u32);
+            sites.push(vi_neighbor.into_index() as u32);
+
+            for qi in owner.mesh.boundary_dual_vertices(vi_owner) {
+                let index = *index_map.entry(qi).or_insert_with(|| {
+                    let p = owner.mesh.dual_p(qi).unwrap();
+                    let idx = (vertices.len() / 2) as u32;
+                    vertices.push(p.x);
+                    vertices.push(p.y);
+                    tiles.push(0); // owner tile id is always 0
+                    tiles.push(qi.into_index() as u32);
+                    for &qv in owner.mesh.quad_vertices(qi) {
+                        tile_distortions.push(owner.mesh[qv].position.x);
+                        tile_distortions.push(owner.mesh[qv].position.y);
+                    }
+                    idx
+                });
+                indices.push(index);
+            }
+            for qi in neighbor.mesh.boundary_dual_vertices(vi_neighbor) {
+                let index = *neighbor_index_map.entry(qi).or_insert_with(|| {
+                    let p = neighbor.mesh.dual_p(qi).unwrap() + neighbor_offset;
+                    let idx = (vertices.len() / 2) as u32;
+                    vertices.push(p.x);
+                    vertices.push(p.y);
+                    tiles.push(1); // neighbor tile id is always 1
+                    tiles.push(qi.into_index() as u32);
+                    for &qv in neighbor.mesh.quad_vertices(qi) {
+                        tile_distortions.push(neighbor.mesh[qv].position.x);
+                        tile_distortions.push(neighbor.mesh[qv].position.y);
+                    }
+                    idx
+                });
+                indices.push(index);
+            }
+            ranges.push(indices.len() as u32);
+        }
+
+        Some(EdgeCells {
+            vertices,
+            indices,
+            ranges,
+            sites,
+            tiles,
+            tile_distortions,
+        })
     }
 
-    #[test]
-    fn test_remove_chunk() {
-        let mut world = World::new();
-        let id = ChunkId::ORIGIN;
-        world.init_chunk(id);
-        assert!(!world.chunk_vertices(id).is_empty());
+    pub fn corner_cells(&self, id: ChunkId, vertex_idx: HexPointyDir) -> Option<CornerCells> {
+        let _span = info_span!("corner_cells", id = ?id).entered();
 
-        world.remove_chunk(id);
-        assert!(world.chunk_vertices(id).is_empty());
-    }
+        let v0 = vertex_idx;
+        let (n1, v1, n2, v2) = match vertex_idx {
+            HexPointyDir::E => (HexFlatDir::SE, HexPointyDir::NW, HexFlatDir::NE, HexPointyDir::SW),
+            HexPointyDir::NE => (HexFlatDir::NE, HexPointyDir::W, HexFlatDir::N, HexPointyDir::SE),
+            HexPointyDir::NW => (HexFlatDir::N, HexPointyDir::SW, HexFlatDir::NW, HexPointyDir::E),
+            HexPointyDir::W => (HexFlatDir::NW, HexPointyDir::SE, HexFlatDir::SW, HexPointyDir::NE),
+            HexPointyDir::SW => (HexFlatDir::SW, HexPointyDir::E, HexFlatDir::S, HexPointyDir::NW),
+            HexPointyDir::SE => (HexFlatDir::S, HexPointyDir::NE, HexFlatDir::SE, HexPointyDir::W),
+        };
 
-    #[test]
-    fn test_chunk_world_offset_origin() {
-        let mut world = World::new();
-        let origin = ChunkId::ORIGIN;
-        world.init_chunk(origin);
+        let id0 = id;
+        let id1 = id.neighbor(n1);
+        let id2 = id.neighbor(n2);
 
-        let offset = world.chunk_world_offset(origin, origin);
-        assert_eq!(offset.len(), 2);
-        assert!((offset[0]).abs() < f32::EPSILON, "same chunk offset x should be 0");
-        assert!((offset[1]).abs() < f32::EPSILON, "same chunk offset y should be 0");
-    }
+        let chunk0 = self.chunk(id0)?;
+        let chunk1 = self.chunk(id1)?;
+        let chunk2 = self.chunk(id2)?;
 
-    #[test]
-    fn test_chunk_world_offset_neighbor() {
-        let mut world = World::new();
-        let origin = ChunkId::ORIGIN;
-        let neighbor = ChunkId(1, 0); // q+1, same r
-        world.init_chunk(origin);
-        world.init_chunk(neighbor);
+        let mut vertices = Vec::new();
+        let mut sites = Vec::with_capacity(3);
+        let mut tiles = Vec::new();
+        let mut tile_distortions = Vec::new();
 
-        let offset = world.chunk_world_offset(origin, neighbor);
-        assert_eq!(offset.len(), 2);
-        // q+1 neighbor: x should be positive (1.5 * CHUNK_WORLD_SIZE), y should be non-zero
-        assert!(offset[0] > 0.0, "q+1 neighbor should have positive x offset");
+        for (cid, id, chunk, corner) in [(0, id0, chunk0, v0), (1, id1, chunk1, v1), (2, id2, chunk2, v2)] {
+            let offset = id0.relative_world_position(id);
+            let vi = chunk.boundary_corner_vertex(corner);
+            sites.push(vi.into_index() as u32);
+            for qi in chunk.mesh.boundary_dual_vertices(vi) {
+                let pos = chunk.mesh.dual_p(qi).unwrap() + offset;
+                vertices.push(pos.x);
+                vertices.push(pos.y);
+                tiles.push(cid);
+                tiles.push(qi.into_index() as u32);
+                for &qv in chunk.mesh.quad_vertices(qi) {
+                    tile_distortions.push(chunk.mesh[qv].position.x);
+                    tile_distortions.push(chunk.mesh[qv].position.y);
+                }
+            }
+        }
+
+        let vertex_count = (vertices.len() / 2) as u32;
+        Some(CornerCells {
+            vertices,
+            indices: (0..vertex_count).collect(),
+            ranges: [0, vertex_count],
+            sites,
+            tiles,
+            tile_distortions,
+        })
     }
 }

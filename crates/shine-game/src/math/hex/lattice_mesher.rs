@@ -2,117 +2,104 @@ use crate::{
     indexed::TypedIndex,
     math::{
         hex::{AxialCoord, AxialDenseIndexer},
-        mesh::{QuadMesh, VertIdx},
-        rand::StableRng,
+        prng::StableRng,
+        quadrangulation::{Quadrangulation, VertexIndex},
+        SQRT_3,
     },
 };
 use glam::Vec2;
-use std::collections::HashMap;
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 /// Generates a quad mesh by triangulating axial hex coordinates, then randomly
-/// merging triangle pairs into quads, and finally subdividing all faces
-/// (remaining triangles → 3 quads, merged quads → 4 quads) via centroid + edge midpoints.
+/// merging triangle pairs into quads, and finally subdividing all faces.
 pub struct LatticeMesher {
-    subdivision: u32,
-    hex_size: f32,
-    rng: Box<dyn StableRng>,
+    /// Source of randomness.
+    rng: Rc<RefCell<dyn StableRng>>,
+    /// The circumradius of the hex boundary, which controls the overall scale of the output mesh.
+    size: f32,
+    /// The radius of the (pointy) hex-grid patch forming the interior of the mesh.
+    patch_radius: u32,
+    /// Hex patch size that sums up to `size` for the enclosed hex patches.
+    patch_size: f32,
+    /// Indexer for axial coordinates, which provides a dense index for each coordinate within the cell radius.
+    patch_indexer: AxialDenseIndexer,
 }
 
 impl LatticeMesher {
-    pub fn new(subdivision: u32, rng: impl StableRng + 'static) -> Self {
+    pub fn new(subdivision: u32, rng: Rc<RefCell<dyn StableRng>>) -> Self {
+        let size = 1.0;
+        let patch_radius = 2u32.pow(subdivision - 1); // -1: there is an extra subdivision after merging triangles into quads
+        let patch_size = size * SQRT_3 / 3. / patch_radius as f32;
+
         Self {
-            subdivision,
-            hex_size: 1.0,
-            rng: Box::new(rng),
+            rng,
+            size: 1.0,
+            patch_radius,
+            patch_size,
+            patch_indexer: AxialDenseIndexer::new(patch_radius),
         }
     }
 
     #[must_use]
-    pub fn with_hex_size(mut self, hex_size: f32) -> Self {
-        self.hex_size = hex_size;
+    pub fn with_size(mut self, size: f32) -> Self {
+        self.size = size;
+        self.patch_size = self.size * SQRT_3 / 3. / self.patch_radius as f32;
         self
     }
 
-    /// Set the world-space circumradius (center to corner) of the hex.
-    #[must_use]
-    pub fn with_world_size(self, size: f32) -> Self {
-        let radius = 2u32.pow(self.subdivision - 1);
-        self.with_hex_size(AxialCoord::hex_size_from_world_size(size, radius))
-    }
-
-    pub fn generate(&mut self) -> QuadMesh {
-        let radius = 2u32.pow(self.subdivision - 1);
-        let indexer = AxialDenseIndexer::new(radius);
-
-        // Step 1: Vertex positions
-        let mut positions = vec![Vec2::ZERO; indexer.get_total_size()];
-        let mut is_boundary = vec![false; indexer.get_total_size()];
-        let mut boundary_polygon = Vec::new();
-        for coord in AxialCoord::origin().spiral(radius) {
-            let idx = indexer.get_dense_index(&coord);
-            positions[idx] = coord.vertex_position(self.hex_size);
-            is_boundary[idx] = coord.is_boundary(radius);
-            if coord.is_boundary(radius) {
-                boundary_polygon.push(VertIdx::new(idx));
-            }
+    pub fn generate(&mut self) -> Quadrangulation {
+        // 1. Find the vertex positions
+        // In the final mesh the verties are made of the axial coordinate (position) and midpoints between them.
+        // We can compute the positions of all axial coordinates upfront, and store them in a dense array indexed by the indexer.
+        // Midpoint positions will be computed on demand and stored at the end of the positions array (after all axial coordinate positions).
+        let mut positions = vec![Vec2::ZERO; self.patch_indexer.get_total_size()];
+        for coord in AxialCoord::ORIGIN.spiral(self.patch_radius) {
+            let idx = self.patch_indexer.get_dense_index(&coord);
+            positions[idx] = coord.pointy().to_position(self.patch_size);
         }
 
-        // Step 2: Enumerate all triangles from the axial triangular lattice.
-        // From each vertex, generate 6 triangles (one per pair of adjacent neighbors).
-        // Each triangle will be generated 3 times, so deduplicate using unordered edge sets.
-        let mut triangle_set: std::collections::HashSet<[usize; 3]> = std::collections::HashSet::new();
+        // 2. Enumerate all triangles from the axial triangular lattice.
+        // Each vertex generates 6 triangles (one per adjacent neighbor pair).
+        // Deduplicate via sorted canonical form.
+        let mut triangle_set: HashSet<[usize; 3]> = HashSet::new();
+        for coord in AxialCoord::ORIGIN.spiral(self.patch_radius - 1) {
+            let a = self.patch_indexer.get_dense_index(&coord);
+            let neighbors = coord.pointy().neighbors();
 
-        for coord in AxialCoord::origin().spiral(radius) {
-            let a_idx = indexer.get_dense_index(&coord);
-
-            // 6 neighbors in CCW order
-            let neighbors = [
-                AxialCoord::new(coord.q + 1, coord.r),     // East
-                AxialCoord::new(coord.q, coord.r + 1),     // Southeast
-                AxialCoord::new(coord.q - 1, coord.r + 1), // Southwest
-                AxialCoord::new(coord.q - 1, coord.r),     // West
-                AxialCoord::new(coord.q, coord.r - 1),     // Northwest
-                AxialCoord::new(coord.q + 1, coord.r - 1), // Northeast
-            ];
-
-            // Generate 6 triangles around this vertex
             for i in 0..6 {
                 let b = neighbors[i];
                 let c = neighbors[(i + 1) % 6];
 
-                // Only include triangle if all vertices are within the hex
-                if b.distance(&AxialCoord::origin()) <= radius as i32
-                    && c.distance(&AxialCoord::origin()) <= radius as i32
-                {
-                    let b_idx = indexer.get_dense_index(&b);
-                    let c_idx = indexer.get_dense_index(&c);
+                let mut tri = [
+                    a,
+                    self.patch_indexer.get_dense_index(&b),
+                    self.patch_indexer.get_dense_index(&c),
+                ];
+                tri.sort_unstable();
+                triangle_set.insert(tri);
+            }
+        }
 
-                    // Create canonical form (sorted) for deduplication
-                    let mut tri = [a_idx, b_idx, c_idx];
-                    tri.sort_unstable();
-                    triangle_set.insert(tri);
+        // Convert to triangles with proper CCW winding
+        let mut triangles: Vec<[usize; 3]> = triangle_set
+            .into_iter()
+            .map(|[a, b, c]| {
+                let signed_area = (positions[b] - positions[a]).perp_dot(positions[c] - positions[a]);
+                if signed_area > 0.0 {
+                    [a, b, c]
+                } else {
+                    [a, c, b]
                 }
-            }
-        }
+            })
+            .collect();
+        // Sort to ensure deterministic ordering across platforms (HashSet iteration is non-deterministic)
+        triangles.sort();
 
-        // Convert to vec with proper CCW winding
-        let mut triangles: Vec<[usize; 3]> = Vec::new();
-        for tri in triangle_set {
-            let [a, b, c] = tri;
-            // Ensure CCW winding using signed area
-            let pa = positions[a];
-            let pb = positions[b];
-            let pc = positions[c];
-            let signed_area = (pb.x - pa.x) * (pc.y - pa.y) - (pc.x - pa.x) * (pb.y - pa.y);
-
-            if signed_area > 0.0 {
-                triangles.push([a, b, c]);
-            } else {
-                triangles.push([a, c, b]); // Flip to CCW
-            }
-        }
-
-        // Step 3: Build edge→triangle adjacency
+        // 3. Build edge→triangle adjacency
         // edge key: (min_idx, max_idx) → list of triangle indices sharing that edge
         let mut edge_to_tris: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
         for (ti, tri) in triangles.iter().enumerate() {
@@ -138,9 +125,8 @@ impl LatticeMesher {
             interior_edges.swap(i, j);
         }
 
-        // Step 4: Greedily merge triangle pairs into quads
+        // 4. Greedily merge triangle pairs into quads
         let mut merged = vec![false; triangles.len()];
-        // Faces: either a triangle [a,b,c] or a quad [a,b,c,d]
         let mut faces: Vec<Face> = Vec::new();
 
         for (ea, eb) in &interior_edges {
@@ -151,8 +137,7 @@ impl LatticeMesher {
                 continue;
             }
 
-            // Merge: form a quad from the two triangles sharing edge (ea, eb).
-            // The quad vertices are the 4 unique vertices in order.
+            // Merge the two triangles along the sharing (ea, eb)  edge.
             if let Some(quad) = merge_triangles(&triangles[ti0], &triangles[ti1], *ea, *eb) {
                 merged[ti0] = true;
                 merged[ti1] = true;
@@ -160,39 +145,27 @@ impl LatticeMesher {
             }
         }
 
-        // Remaining unmerged triangles
+        // Keep the remaining unmerged triangles
         for (ti, tri) in triangles.iter().enumerate() {
             if !merged[ti] {
                 faces.push(Face::Tri(*tri));
             }
         }
 
-        // Step 5: Subdivide all faces into quads via centroid + edge midpoints
-        // Note: boundary_polygon is from BEFORE subdivision
-        self.subdivide_faces(&positions, &is_boundary, &faces, boundary_polygon)
+        // 5. Subdivide all faces into quads via centroid + edge midpoints
+        self.subdivide_faces(positions, &faces)
     }
 
-    fn subdivide_faces(
-        &self,
-        base_positions: &[Vec2],
-        base_is_boundary: &[bool],
-        faces: &[Face],
-        base_boundary_polygon: Vec<VertIdx>,
-    ) -> QuadMesh {
-        let base_count = base_positions.len();
-        let mut positions: Vec<Vec2> = base_positions.to_vec();
-        let mut is_boundary: Vec<bool> = base_is_boundary.to_vec();
-        let mut quads: Vec<[VertIdx; 4]> = Vec::new();
+    fn subdivide_faces(&self, mut positions: Vec<Vec2>, faces: &[Face]) -> Quadrangulation {
+        let mut quads: Vec<[VertexIndex; 4]> = Vec::new();
 
         // Cache edge midpoints: (min_idx, max_idx) → vertex index
         let mut midpoint_cache: HashMap<(usize, usize), usize> = HashMap::new();
-
-        let mut get_midpoint = |positions: &mut Vec<Vec2>, is_boundary: &mut Vec<bool>, a: usize, b: usize| -> usize {
+        let mut get_midpoint = |positions: &mut Vec<Vec2>, a: usize, b: usize| -> usize {
             let key = if a < b { (a, b) } else { (b, a) };
             *midpoint_cache.entry(key).or_insert_with(|| {
                 let idx = positions.len();
                 positions.push((positions[a] + positions[b]) / 2.0);
-                is_boundary.push(a < base_count && b < base_count && is_boundary[a] && is_boundary[b]);
                 idx
             })
         };
@@ -202,50 +175,54 @@ impl LatticeMesher {
                 Face::Tri([a, b, c]) => {
                     let centroid_idx = positions.len();
                     positions.push((positions[a] + positions[b] + positions[c]) / 3.0);
-                    is_boundary.push(false);
 
-                    let m_ab = get_midpoint(&mut positions, &mut is_boundary, a, b);
-                    let m_bc = get_midpoint(&mut positions, &mut is_boundary, b, c);
-                    let m_ca = get_midpoint(&mut positions, &mut is_boundary, c, a);
+                    let m_ab = get_midpoint(&mut positions, a, b);
+                    let m_bc = get_midpoint(&mut positions, b, c);
+                    let m_ca = get_midpoint(&mut positions, c, a);
 
-                    quads.push([a, m_ab, centroid_idx, m_ca].map(VertIdx::new));
-                    quads.push([b, m_bc, centroid_idx, m_ab].map(VertIdx::new));
-                    quads.push([c, m_ca, centroid_idx, m_bc].map(VertIdx::new));
+                    quads.push([a, m_ab, centroid_idx, m_ca].map(VertexIndex::new));
+                    quads.push([b, m_bc, centroid_idx, m_ab].map(VertexIndex::new));
+                    quads.push([c, m_ca, centroid_idx, m_bc].map(VertexIndex::new));
                 }
                 Face::Quad([a, b, c, d]) => {
                     let centroid_idx = positions.len();
                     positions.push((positions[a] + positions[b] + positions[c] + positions[d]) / 4.0);
-                    is_boundary.push(false);
 
-                    let m_ab = get_midpoint(&mut positions, &mut is_boundary, a, b);
-                    let m_bc = get_midpoint(&mut positions, &mut is_boundary, b, c);
-                    let m_cd = get_midpoint(&mut positions, &mut is_boundary, c, d);
-                    let m_da = get_midpoint(&mut positions, &mut is_boundary, d, a);
+                    let m_ab = get_midpoint(&mut positions, a, b);
+                    let m_bc = get_midpoint(&mut positions, b, c);
+                    let m_cd = get_midpoint(&mut positions, c, d);
+                    let m_da = get_midpoint(&mut positions, d, a);
 
-                    quads.push([a, m_ab, centroid_idx, m_da].map(VertIdx::new));
-                    quads.push([b, m_bc, centroid_idx, m_ab].map(VertIdx::new));
-                    quads.push([c, m_cd, centroid_idx, m_bc].map(VertIdx::new));
-                    quads.push([d, m_da, centroid_idx, m_cd].map(VertIdx::new));
+                    quads.push([a, m_ab, centroid_idx, m_da].map(VertexIndex::new));
+                    quads.push([b, m_bc, centroid_idx, m_ab].map(VertexIndex::new));
+                    quads.push([c, m_cd, centroid_idx, m_bc].map(VertexIndex::new));
+                    quads.push([d, m_da, centroid_idx, m_cd].map(VertexIndex::new));
                 }
             }
         }
 
-        // Build subdivided boundary polygon by inserting midpoints between base boundary vertices
-        // For each edge (v_i, v_{i+1}) in base boundary, include: v_i, midpoint(v_i, v_{i+1})
-        let mut boundary_polygon = Vec::new();
-        for i in 0..base_boundary_polygon.len() {
-            let v0 = base_boundary_polygon[i].into_index();
-            let v1 = base_boundary_polygon[(i + 1) % base_boundary_polygon.len()].into_index();
-
-            // Add the base vertex
-            boundary_polygon.push(VertIdx::new(v0));
-
-            // Ensure midpoint exists (create if not already cached)
-            let mid_idx = get_midpoint(&mut positions, &mut is_boundary, v0, v1);
-            boundary_polygon.push(VertIdx::new(mid_idx));
+        let mut polygon = Vec::new();
+        for coord in AxialCoord::ORIGIN.ring(self.patch_radius) {
+            polygon.push(VertexIndex::new(self.patch_indexer.get_dense_index(&coord)));
+            polygon.push(VertexIndex::NONE); // placeholder for midpoint
         }
+        let boundary_vertex_count = polygon.len() / 2;
+        for i in 0..boundary_vertex_count {
+            let v0 = polygon[2 * i].into_index();
+            let v1 = polygon[2 * ((i + 1) % boundary_vertex_count)].into_index();
+            let mid_idx = get_midpoint(&mut positions, v0, v1);
+            polygon[2 * i + 1] = VertexIndex::new(mid_idx);
+        }
+        debug_assert!(polygon.iter().all(|v| v.is_valid()));
 
-        QuadMesh::from_polygon(positions, boundary_polygon, quads).expect("valid lattice mesh topology")
+        let anchors: Vec<VertexIndex> = AxialCoord::ORIGIN
+            .pointy()
+            .corners(self.patch_radius)
+            .iter()
+            .map(|c| VertexIndex::new(self.patch_indexer.get_dense_index(c)))
+            .collect();
+
+        Quadrangulation::from_polygon(positions, polygon, quads, anchors).expect("valid lattice mesh topology")
     }
 }
 

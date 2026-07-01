@@ -2,8 +2,8 @@ use crate::app_state::AppState;
 use axum::{extract::State, Extension};
 use serde::Deserialize;
 use shine_infra::{
+    email::Email,
     language::Language,
-    models::Email,
     session::CheckedCurrentUser,
     web::{
         extracts::{SiteInfo, ValidatedJson, ValidatedQuery},
@@ -83,7 +83,7 @@ pub async fn start_user_email_change(
     // Email is already validated and normalized by the Email type
     state
         .email_auth_handler()
-        .start_email_change_flow(user.user_id, body.email.as_str(), &site_info, query.lang)
+        .start_email_change_flow(user.user_id, &body.email, &site_info, query.lang)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 

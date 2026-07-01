@@ -1,5 +1,6 @@
 use crate::models::{Identity, IdentityError};
 use chrono::{DateTime, Utc};
+use shine_infra::email::Email;
 use std::future::Future;
 use uuid::Uuid;
 
@@ -13,17 +14,17 @@ pub trait Identities {
         &mut self,
         user_id: Uuid,
         user_name: &str,
-        email: Option<(&str, bool)>,
+        email: Option<(&Email, bool)>,
     ) -> impl Future<Output = Result<Identity, IdentityError>> + Send;
 
     fn find_by_id(&mut self, id: Uuid) -> impl Future<Output = Result<Option<Identity>, IdentityError>> + Send;
-    fn find_by_email(&mut self, id: &str) -> impl Future<Output = Result<Option<Identity>, IdentityError>> + Send;
+    fn find_by_email(&mut self, email: &Email) -> impl Future<Output = Result<Option<Identity>, IdentityError>> + Send;
 
     fn update(
         &mut self,
         id: Uuid,
         name: Option<&str>,
-        email: Option<(&str, bool)>,
+        email: Option<(&Email, bool)>,
     ) -> impl Future<Output = Result<Option<Identity>, IdentityError>> + Send;
 
     fn cascaded_delete(&mut self, id: Uuid) -> impl Future<Output = Result<(), IdentityError>> + Send;

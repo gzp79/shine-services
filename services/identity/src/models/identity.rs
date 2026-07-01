@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use shine_infra::models::Email;
+use shine_infra::email::Email;
 use utoipa::ToSchema;
 use uuid::Uuid;
 

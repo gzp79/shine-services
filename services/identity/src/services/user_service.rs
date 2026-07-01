@@ -4,11 +4,10 @@ use crate::{
     services::{IdentityTopic, UserEvent, UserLinkEvent},
 };
 use chrono::{DateTime, Utc};
-use shine_infra::{crypto::IdEncoder, sync::TopicBus, web::responses::Problem};
+use shine_infra::{crypto::IdEncoder, email::Email, sync::TopicBus, web::responses::Problem};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
 use uuid::Uuid;
-use validator::ValidateEmail;
 
 #[derive(Debug, ThisError)]
 pub enum CreateUserError {
@@ -44,7 +43,7 @@ impl<DB: IdentityDb> UserService<DB> {
         }
     }
 
-    pub async fn create(&self, id: Uuid, name: &str, email: Option<(&str, bool)>) -> Result<Identity, IdentityError> {
+    pub async fn create(&self, id: Uuid, name: &str, email: Option<(&Email, bool)>) -> Result<Identity, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         let identity = ctx.create_user(id, name, email).await?;
         drop(ctx);
@@ -58,7 +57,7 @@ impl<DB: IdentityDb> UserService<DB> {
         ctx.find_by_id(id).await
     }
 
-    pub async fn find_by_email(&self, email: &str) -> Result<Option<Identity>, IdentityError> {
+    pub async fn find_by_email(&self, email: &Email) -> Result<Option<Identity>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.find_by_email(email).await
     }
@@ -67,7 +66,7 @@ impl<DB: IdentityDb> UserService<DB> {
         &self,
         id: Uuid,
         name: Option<&str>,
-        email: Option<(&str, bool)>,
+        email: Option<(&Email, bool)>,
     ) -> Result<Option<Identity>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         match ctx.update(id, name, email).await? {
@@ -109,12 +108,11 @@ impl<DB: IdentityDb> UserService<DB> {
     pub async fn create_with_retry(
         &self,
         name: Option<&str>,
-        email: Option<&str>,
+        email: Option<&Email>,
     ) -> Result<Identity, CreateUserError> {
         const MAX_RETRY_COUNT: usize = 10;
 
         let mut name = name.map(|e| e.to_owned());
-        let email = email.filter(|email| email.validate_email()).map(|email| (email, false));
 
         let mut retry_count = 0;
         loop {
@@ -130,7 +128,7 @@ impl<DB: IdentityDb> UserService<DB> {
                 None => self.generate_name().await?,
             };
 
-            match self.create(user_id, &user_name, email).await {
+            match self.create(user_id, &user_name, email.map(|e| (e, false))).await {
                 Ok(identity) => return Ok(identity),
                 Err(IdentityError::NameConflict) => continue,
                 Err(IdentityError::UserIdConflict) => continue,
@@ -164,10 +162,10 @@ impl<DB: IdentityDb> UserService<DB> {
 
             let mut ctx = self.db.create_context().await?;
 
-            // Store email from external provider if available and valid
-            let email = external_user.email.as_ref().map(|e| (e.as_str(), false));
-
-            let identity = match ctx.create_user(user_id, &user_name, email).await {
+            let identity = match ctx
+                .create_user(user_id, &user_name, external_user.email.as_ref().map(|e| (e, false)))
+                .await
+            {
                 Ok(identity) => identity,
                 Err(IdentityError::NameConflict) => continue,
                 Err(IdentityError::UserIdConflict) => continue,

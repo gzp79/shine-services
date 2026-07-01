@@ -91,8 +91,12 @@ function defaultMesher(type: MesherType, prev?: MesherEntry): MesherEntry {
 }
 
 export type Params = {
-    showPrimal: boolean;
-    showDual: boolean;
+    showPrimalMesh: boolean;
+    showPrimalWire: boolean;
+    showDualMesh: boolean;
+    showDualWire: boolean;
+    showAnchor: boolean;
+    showAnchorVertices: boolean;
     seed: number;
     world_size: number;
     mesher: MesherEntry;
@@ -101,8 +105,12 @@ export type Params = {
 
 export function defaultParams(): Params {
     return {
-        showDual: false,
-        showPrimal: true,
+        showPrimalMesh: true,
+        showPrimalWire: true,
+        showDualMesh: false,
+        showDualWire: false,
+        showAnchor: false,
+        showAnchorVertices: false,
         seed: 42,
         world_size: 1.0,
         mesher: defaultMesher('Lattice'),
@@ -133,30 +141,55 @@ export function createControls(
 
     // ── Global ────────────────────────────────────────────────────────
     const globalFolder = gui.addFolder('Global');
-    globalFolder.add(params, 'showPrimal').name('primal wireframe').onChange(onDisplayChange);
-    globalFolder.add(params, 'showDual').name('dual wireframe').onChange(onDisplayChange);
+    globalFolder.add(params, 'showPrimalMesh').name('primal mesh').onChange(onDisplayChange);
+    globalFolder.add(params, 'showPrimalWire').name('primal wire').onChange(onDisplayChange);
+    globalFolder.add(params, 'showDualMesh').name('dual mesh').onChange(onDisplayChange);
+    globalFolder.add(params, 'showDualWire').name('dual wire').onChange(onDisplayChange);
+    globalFolder.add(params, 'showAnchor').name('anchor edges').onChange(onDisplayChange);
+    globalFolder.add(params, 'showAnchorVertices').name('anchor vertices').onChange(onDisplayChange);
 
     globalFolder.add(params, 'world_size', 0.1, 10, 0.1).name('world size').onChange(onChange);
     const seedCtrl = globalFolder.add(params, 'seed').name('seed').onChange(onChange);
+
+    // Helper to create styled button
+    const createButton = (text: string, onClick: () => void) => {
+        const btn = document.createElement('button');
+        btn.textContent = text;
+        btn.style.cssText =
+            'flex:1;height:var(--widget-height);cursor:pointer;border:none;background:var(--widget-color);color:var(--text-color);font-family:inherit;font-size:inherit;border-radius:var(--widget-border-radius);margin:0 2px;';
+        btn.addEventListener('mouseenter', () => (btn.style.background = 'var(--hover-color)'));
+        btn.addEventListener('mouseleave', () => (btn.style.background = 'var(--widget-color)'));
+        btn.addEventListener('click', onClick);
+        return btn;
+    };
+
+    // "New Seed" button
     const seedRow = document.createElement('li');
     seedRow.style.cssText = 'display:flex;align-items:center;padding:0 var(--padding);height:var(--widget-height);';
     const label = document.createElement('span');
     label.textContent = '';
     label.style.cssText = 'flex:0 0 var(--name-width);min-width:var(--name-width);';
-    const btn = document.createElement('button');
-    btn.textContent = 'New Seed';
-    btn.style.cssText =
-        'flex:1;height:var(--widget-height);cursor:pointer;border:none;background:var(--widget-color);color:var(--text-color);font-family:inherit;font-size:inherit;border-radius:var(--widget-border-radius);';
-    btn.addEventListener('mouseenter', () => (btn.style.background = 'var(--hover-color)'));
-    btn.addEventListener('mouseleave', () => (btn.style.background = 'var(--widget-color)'));
-    btn.addEventListener('click', () => {
+    const newSeedBtn = createButton('New Seed', () => {
         params.seed = Math.floor(Math.random() * 999999);
         seedCtrl.updateDisplay();
         onChange();
     });
     seedRow.appendChild(label);
-    seedRow.appendChild(btn);
+    seedRow.appendChild(newSeedBtn);
     seedCtrl.domElement.parentElement?.insertBefore(seedRow, seedCtrl.domElement.nextSibling);
+
+    // "Regenerate" button (uses current seed)
+    const regenRow = document.createElement('li');
+    regenRow.style.cssText = 'display:flex;align-items:center;padding:0 var(--padding);height:var(--widget-height);';
+    const label2 = document.createElement('span');
+    label2.textContent = '';
+    label2.style.cssText = 'flex:0 0 var(--name-width);min-width:var(--name-width);';
+    const regenBtn = createButton('Regenerate', () => {
+        onChange();
+    });
+    regenRow.appendChild(label2);
+    regenRow.appendChild(regenBtn);
+    seedCtrl.domElement.parentElement?.insertBefore(regenRow, seedCtrl.domElement.nextSibling);
 
     // Mesher
     const mesherFolder = gui.addFolder('Mesher');

@@ -53,6 +53,32 @@ Rust workspace with identity/builder services. Stack: Axum, PostgreSQL, Redis, T
 - **Pattern**: `.filter(|e| e.validate_email()).map(|e| (e.as_str(), false))`
 - **Critical**: Validation prevents invalid emails, storage enables future email login
 
+## Agent Conventions
+
+### Skills
+Project skills live in `.claude/skills/`. Invoke before working in a domain.
+
+| Skill | When |
+|---|---|
+| `client-web-architecture` | any file under `client/web/src/` |
+| `handler-patterns` | adding/reviewing Axum handlers |
+| `mesh-topology` | world/chunk/hex geometry |
+| `sdp-doc` | create/update/sync/check feature design doc |
+| `sdp-code` | doc ahead of code, implement or plan |
+| `local-development` | run services locally |
+
+### Design docs
+HTML files under `docs/<domain>/`. Domain subfolders:
+
+| Domain | Path |
+|---|---|
+| web game client | `docs/client/web/` |
+| identity service | `docs/services/identity/` |
+| core game | `docs/core/game/` |
+| cross-cutting | `docs/shared/` |
+
+Docs are human-readable HTML + agentic extensions: `<details data-agent="implementation|test|security|…">` blocks (collapsed by default) carry implementation notes, test plans, and other detail targeted at agents. CSS: `docs/doc.css` (shared, GitHub-raw-friendly via relative path). Conventions: `.claude/skills/sdp-plan/references/conventions.md`.
+
 ## Type-Level Flow Control
 **Goal**: Use Rust's type system to encode "continue vs error" and "success vs failure" in function signatures
 - **Why**: Compiler enforces error handling; impossible to forget checks; intent is clear from signature

@@ -86,16 +86,16 @@ impl TelemetryService {
         };
         service.install_telemetry(service_name, config)?;
 
-        log::trace!("trace - log:ok");
-        log::debug!("debug - log:ok");
-        log::info!("info  - log:ok");
-        log::warn!("warn  - log:ok");
-        log::error!("error - log:ok");
-        tracing::trace!("trace - tracing:ok");
-        tracing::debug!("debug - tracing:ok");
-        tracing::info!("info  - tracing:ok");
-        tracing::warn!("warn  - tracing:ok");
-        tracing::error!("error - tracing:ok");
+        log::trace!("trace - log: ok");
+        log::debug!("debug - log: ok");
+        log::info!("info  - log: ok");
+        log::warn!("warn  - log: ok");
+        log::error!("error - log: ok");
+        tracing::trace!("trace - tracing: ok");
+        tracing::debug!("debug - tracing: ok");
+        tracing::info!("info  - tracing: ok");
+        tracing::warn!("warn  - tracing: ok");
+        tracing::error!("error - tracing: ok");
 
         Ok(service)
     }

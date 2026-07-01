@@ -1,6 +1,10 @@
-import { InputController, type InputHandler } from '../../engine/input';
-import type { Delta, Point } from '../../engine/input';
-import { ExperimentContext, animate, createExperiment } from '../experiment';
+import { WebGPURenderer } from 'three/webgpu';
+import type { InputHandler, Point } from '../../engine/input/input-handler';
+import { InputManager } from '../../engine/input/input-manager';
+import { GestureSchema } from '../../engine/input/schemas/gesture-schema';
+import { CanvasStrokeNode } from '../../engine/nodes/canvas-stroke-node';
+import { StrokeLineNode } from '../../engine/nodes/stroke-line-node';
+import { Experiment } from '../experiment';
 
 export interface InputControlExperiment {
     dispose(): void;
@@ -12,154 +16,135 @@ interface EventLogEntry {
     data: string;
 }
 
-export async function createInputControlExperiment(container: HTMLElement): Promise<InputControlExperiment> {
-    const ctx: ExperimentContext = await createExperiment(container, { addOrbitCamera: false });
+class InputControl extends Experiment {
+    private readonly inputManager: InputManager;
+    private readonly strokePath: CanvasStrokeNode;
+    private readonly strokeLine: StrokeLineNode;
+    private readonly logDiv: HTMLDivElement;
+    private readonly controllerDiv: HTMLDivElement;
+    private readonly gestureSchema: GestureSchema;
+    private readonly eventLog: EventLogEntry[] = [];
+    private readonly maxLogEntries = 12;
 
-    // Event log (max 12 entries, compact display)
-    const eventLog: EventLogEntry[] = [];
-    const maxLogEntries = 12;
+    constructor(container: HTMLElement, renderer: WebGPURenderer) {
+        super(container, renderer, { addOrbitCamera: false });
 
-    // Create log display div
-    const logDiv = document.createElement('div');
-    logDiv.style.position = 'absolute';
-    logDiv.style.top = '10px';
-    logDiv.style.left = '10px';
-    logDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-    logDiv.style.color = '#00ff00';
-    logDiv.style.fontFamily = 'monospace';
-    logDiv.style.fontSize = '11px';
-    logDiv.style.padding = '8px';
-    logDiv.style.borderRadius = '4px';
-    logDiv.style.pointerEvents = 'none';
-    logDiv.style.lineHeight = '1.3';
-    container.appendChild(logDiv);
+        this.logDiv = document.createElement('div');
+        this.logDiv.style.cssText = `
+            position: absolute; top: 48px; left: 10px;
+            background: rgba(0,0,0,0.8); color: #00ff00;
+            font-family: monospace; font-size: 11px;
+            padding: 8px; border-radius: 4px;
+            pointer-events: none; line-height: 1.3;
+        `;
+        container.appendChild(this.logDiv);
 
-    // Create controller display
-    const controllerDiv = document.createElement('div');
-    controllerDiv.style.position = 'absolute';
-    controllerDiv.style.top = '10px';
-    controllerDiv.style.right = '10px';
-    controllerDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-    controllerDiv.style.color = '#ffffff';
-    controllerDiv.style.fontFamily = 'monospace';
-    controllerDiv.style.fontSize = '16px';
-    controllerDiv.style.padding = '15px';
-    controllerDiv.style.borderRadius = '4px';
-    controllerDiv.style.pointerEvents = 'none';
-    controllerDiv.style.fontWeight = 'bold';
-    controllerDiv.textContent = 'Controller: DESKTOP';
-    container.appendChild(controllerDiv);
+        this.controllerDiv = document.createElement('div');
+        this.controllerDiv.style.cssText = `
+            position: absolute; top: 48px; right: 10px;
+            background: rgba(0,0,0,0.8); color: #ffffff;
+            font-family: monospace; font-size: 14px;
+            padding: 15px; border-radius: 4px;
+            pointer-events: none; font-weight: bold;
+            white-space: pre;
+        `;
+        container.appendChild(this.controllerDiv);
 
-    function addLogEntry(eventName: string, data: unknown) {
-        const entry: EventLogEntry = {
-            timestamp: performance.now(),
-            eventName,
-            data: JSON.stringify(data, null, 2)
+        const fmtPoint = (p: Point) => `(${Math.round(p.x)}, ${Math.round(p.y)})`;
+
+        const inputHandler: InputHandler = {
+            onSchemaChanged: (s) => this.addLogEntry('schemaChanged', s),
+            onPointerAt: (p) => this.addLogEntry('pointerAt', fmtPoint(p)),
+            onPointerLeave: () => this.addLogEntry('pointerLeave', ''),
+            onMoveTo: (p) => this.addLogEntry('moveTo', fmtPoint(p)),
+            onRotateBy: (d) => this.addLogEntry('rotateBy', d.toFixed(2)),
+            onZoomBy: (d) => this.addLogEntry('zoomBy', d.toFixed(1)),
+            onMoveRate: (x, y, s) =>
+                this.addLogEntry('moveRate', `x=${x.toFixed(2)} y=${y.toFixed(2)}${s ? ' sprint' : ''}`),
+            onRotateRate: (v) => this.addLogEntry('rotateRate', v.toFixed(2)),
+            onZoomRate: (v) => this.addLogEntry('zoomRate', v.toFixed(2)),
+            onPinchStart: ([p1, p2]) => this.addLogEntry('pinchStart', `${fmtPoint(p1)} / ${fmtPoint(p2)}`),
+            onPinch: ([s1, s2], [v1, v2], [c1, c2]) =>
+                this.addLogEntry(
+                    'pinch',
+                    `start:${fmtPoint(s1)}/${fmtPoint(s2)} prev:${fmtPoint(v1)}/${fmtPoint(v2)} cur:${fmtPoint(c1)}/${fmtPoint(c2)}`
+                ),
+            onPinchEnd: ([s1, s2], [e1, e2]) =>
+                this.addLogEntry(
+                    'pinchEnd',
+                    `start:${fmtPoint(s1)}/${fmtPoint(s2)} end:${fmtPoint(e1)}/${fmtPoint(e2)}`
+                ),
+            onInteractStart: (s) => this.addLogEntry('interactStart', fmtPoint(s)),
+            onInteract: (s, p, c) =>
+                this.addLogEntry('interact', `start:${fmtPoint(s)} prev:${fmtPoint(p)} cur:${fmtPoint(c)}`),
+            onInteractEnd: (s, e) => this.addLogEntry('interactEnd', `start:${fmtPoint(s)} end:${fmtPoint(e)}`),
+            onGesture: (pts) => this.addLogEntry('gesture', `${pts.length / 2} pts`)
         };
-        eventLog.unshift(entry);
-        if (eventLog.length > maxLogEntries) {
-            eventLog.pop();
-        }
-        updateLogDisplay();
+
+        this.inputManager = new InputManager(inputHandler, container);
+        this.strokePath = new CanvasStrokeNode(container);
+        this.strokeLine = new StrokeLineNode(1000, 0x00ff00);
+        this.gestureSchema = this.inputManager.schemas.find((s): s is GestureSchema => s instanceof GestureSchema)!;
+
+        this.start();
     }
 
-    function formatEventData(eventName: string, data: unknown): string {
-        const obj = typeof data === 'string' ? JSON.parse(data) : data;
-
-        if (eventName.includes('MOVE')) {
-            const { direction, isSprinting } = obj as { direction: Delta; isSprinting: boolean };
-            return `dir=(${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${isSprinting ? 'sprint' : 'walk'})`;
-        }
-        if (eventName.includes('TAP') || eventName.includes('_START') || eventName.includes('_END')) {
-            const pos = obj as Point;
-            return `pos=(${Math.round(pos.x)}, ${Math.round(pos.y)})`;
-        }
-        if (eventName.includes('ZOOM')) {
-            const { pos, delta } = obj as { pos: Point; delta: number };
-            return `Δ=${delta.toFixed(1)} pos=(${Math.round(pos.x)}, ${Math.round(pos.y)})`;
-        }
-        if (eventName.includes('PAN') || eventName.includes('ROTATE') || eventName.includes('INTERACT_DRAG')) {
-            const { start, current } = obj as { start: Point; current: Point };
-            return `Δ=(${Math.round(current.x - start.x)}, ${Math.round(current.y - start.y)})`;
-        }
-        if (eventName.includes('PINCH')) {
-            const { start, current } = obj as { start: [Point, Point]; current: [Point, Point] };
-            const [p1, p2] = start;
-            const [c1, c2] = current;
-            const startDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-            const currentDist = Math.hypot(c2.x - c1.x, c2.y - c1.y);
-            return `dist=${Math.round(currentDist)} (${Math.round(startDist)})`;
-        }
-        if (eventName.includes('CONTROLLER_CHANGED')) {
-            return obj as string;
-        }
-        return '';
+    private addLogEntry(eventName: string, data: string) {
+        this.eventLog.unshift({ timestamp: performance.now(), eventName, data });
+        if (this.eventLog.length > this.maxLogEntries) this.eventLog.pop();
+        this.updateLogDisplay();
     }
 
-    function updateLogDisplay() {
-        const lines = eventLog.map((entry) => {
-            const time = (entry.timestamp / 1000).toFixed(2);
-
-            // Color code event types
-            let color = '#00ff00'; // default green
-            if (entry.eventName.includes('CONTROLLER_CHANGED'))
-                color = '#ff00ff'; // magenta
-            else if (entry.eventName.includes('TAP'))
-                color = '#00ff00'; // green
-            else if (entry.eventName.includes('PAN'))
-                color = '#00bfff'; // blue
-            else if (entry.eventName.includes('ROTATE'))
-                color = '#ffff00'; // yellow
-            else if (entry.eventName.includes('PINCH'))
-                color = '#ff8c00'; // orange
-            else if (entry.eventName.includes('ZOOM'))
-                color = '#ff1493'; // pink
-            else if (entry.eventName.includes('MOVE'))
-                color = '#7fff00'; // chartreuse
-            else if (entry.eventName.includes('INTERACT')) color = '#ff4500'; // red-orange
-
-            const formatted = formatEventData(entry.eventName, entry.data);
-            return `<div style="color: ${color}">[${time}s] ${entry.eventName} ${formatted}</div>`;
-        });
-        logDiv.innerHTML = lines.join('');
+    private updateLogDisplay() {
+        this.logDiv.innerHTML = this.eventLog
+            .map((entry) => {
+                const time = (entry.timestamp / 1000).toFixed(2);
+                let color = '#00ff00';
+                if (entry.eventName.includes('schema')) color = '#ff00ff';
+                else if (entry.eventName.includes('moveTo')) color = '#00bfff';
+                else if (entry.eventName.includes('rotate')) color = '#ffff00';
+                else if (entry.eventName.includes('zoom')) color = '#ff1493';
+                else if (entry.eventName.includes('Rate')) color = '#7fff00';
+                else if (entry.eventName.includes('pinch')) color = '#ff8c00';
+                else if (entry.eventName.includes('interact')) color = '#ff4500';
+                return `<div style="color:${color}">[${time}s] ${entry.eventName} ${entry.data}</div>`;
+            })
+            .join('');
     }
 
-    // Create input handler that logs events directly
-    const inputHandler: InputHandler = {
-        onControllerChanged: (controller) => {
-            addLogEntry('CONTROLLER_CHANGED', controller);
-            controllerDiv.textContent = `Controller: ${controller.toUpperCase()}`;
-            controllerDiv.style.color = controller === 'touch' ? '#00bfff' : '#ffffff';
-        },
-        onTap: (pos) => addLogEntry('TAP', pos),
-        onInteractStart: (pos) => addLogEntry('INTERACT_START', pos),
-        onInteractDrag: (start, current) => addLogEntry('INTERACT_DRAG', { start, current }),
-        onInteractEnd: (pos) => addLogEntry('INTERACT_END', pos),
-        onPanStart: (pos) => addLogEntry('PAN_START', pos),
-        onPan: (start, current) => addLogEntry('PAN', { start, current }),
-        onPanEnd: (pos) => addLogEntry('PAN_END', pos),
-        onRotateStart: (pos) => addLogEntry('ROTATE_START', pos),
-        onRotate: (start, current) => addLogEntry('ROTATE', { start, current }),
-        onRotateEnd: (pos) => addLogEntry('ROTATE_END', pos),
-        onPinchStart: (start, current) => addLogEntry('PINCH_START', { start, current }),
-        onPinch: (start, current) => addLogEntry('PINCH', { start, current }),
-        onPinchEnd: (start, current) => addLogEntry('PINCH_END', { start, current }),
-        onZoom: (pos, delta) => addLogEntry('ZOOM', { pos, delta }),
-        onMove: (direction, isSprinting) => addLogEntry('MOVE', { direction, isSprinting })
-    };
-    const inputController = new InputController(ctx.renderer.domElement, inputHandler);
-
-    const animationId = animate(ctx);
-
-    return {
-        dispose() {
-            cancelAnimationFrame(animationId);
-            inputController.dispose();
-            logDiv.remove();
-            controllerDiv.remove();
-            ctx.resizeObserver.disconnect();
-            ctx.renderer.dispose();
-            ctx.renderer.domElement.remove();
+    protected onUpdate(_deltaTime: number) {
+        const schema = this.inputManager.activeSchema;
+        if (!schema) {
+            this.controllerDiv.textContent = 'Controller: none';
+        } else {
+            this.controllerDiv.textContent = `Controller: ${schema.name.toUpperCase()}\n${schema.state()}`;
         }
-    };
+
+        const { buf, count } = this.gestureSchema.currentPoints;
+        if (count > 0) {
+            this.strokeLine.update(buf, count);
+        } else {
+            this.strokeLine.clear();
+        }
+    }
+
+    protected async onPostRender(renderer: WebGPURenderer) {
+        await this.strokeLine.render(renderer);
+    }
+
+    dispose() {
+        this.inputManager.dispose();
+        this.strokePath.dispose();
+        this.strokeLine.dispose();
+        this.logDiv.remove();
+        this.controllerDiv.remove();
+        super.dispose();
+    }
+}
+
+export async function createInputControlExperiment(
+    container: HTMLElement,
+    renderer: WebGPURenderer
+): Promise<InputControlExperiment> {
+    return new InputControl(container, renderer);
 }

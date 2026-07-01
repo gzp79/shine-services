@@ -1,5 +1,17 @@
-use crate::world::{ChunkId, World};
+use crate::{
+    math::hex::{HexFlatDir, HexPointyDir},
+    wasm::world::{CornerCellsHandle, EdgeCellsHandle, InnerCellsHandle},
+    world::{ChunkId, World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE},
+};
+use tracing::info_span;
 use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_WASM_WORLD: &str = r#"
+interface WasmWorld {
+    chunk_world_offset(ref_q: number, ref_r: number, q: number, r: number): [number, number];
+}
+"#;
 
 #[wasm_bindgen]
 pub struct WasmWorld {
@@ -14,6 +26,7 @@ impl WasmWorld {
     }
 
     pub fn init_chunk(&mut self, q: i32, r: i32) {
+        let _span = info_span!("init_chunk", q, r).entered();
         self.world.init_chunk(ChunkId(q, r));
     }
 
@@ -21,58 +34,34 @@ impl WasmWorld {
         self.world.remove_chunk(ChunkId(q, r));
     }
 
-    pub fn chunk_quad_vertices(&self, q: i32, r: i32) -> Vec<f32> {
-        self.world
-            .chunk(ChunkId(q, r))
-            .map(|chunk| chunk.quad_vertices())
-            .unwrap_or_default()
+    pub fn const_chunk_world_size(&self) -> f32 {
+        CHUNK_WORLD_SIZE
+    }
+    pub fn const_cell_world_size(&self) -> f32 {
+        CELL_WORLD_SIZE
     }
 
-    pub fn chunk_quad_indices(&self, q: i32, r: i32) -> Vec<u32> {
-        self.world
-            .chunk(ChunkId(q, r))
-            .map(|chunk| chunk.quad_indices())
-            .unwrap_or_default()
-    }
-
-    pub fn chunk_boundary_indices(&self, q: i32, r: i32) -> Vec<u32> {
-        self.world
-            .chunk(ChunkId(q, r))
-            .map(|chunk| chunk.boundary_indices())
-            .unwrap_or_default()
-    }
-
-    pub fn chunk_dual_vertices(&self, q: i32, r: i32) -> Vec<f32> {
-        self.world
-            .chunk(ChunkId(q, r))
-            .map(|chunk| chunk.dual_vertices())
-            .unwrap_or_default()
-    }
-
-    pub fn chunk_dual_polygon_vertices(&self, q: i32, r: i32) -> Vec<f32> {
-        // Same as chunk_dual_vertices - returns quad centers
-        self.chunk_dual_vertices(q, r)
-    }
-
-    pub fn chunk_dual_polygons(&self, q: i32, r: i32) -> Vec<u32> {
-        self.world
-            .chunk(ChunkId(q, r))
-            .map(|chunk| {
-                let (indices, starts) = chunk.dual_polygons();
-                // Pack as: [starts_len, ...starts, ...indices]
-                let mut result = Vec::with_capacity(1 + starts.len() + indices.len());
-                result.push(starts.len() as u32);
-                result.extend(starts);
-                result.extend(indices);
-                result
-            })
-            .unwrap_or_default()
-    }
-
+    #[wasm_bindgen(skip_typescript)]
     pub fn chunk_world_offset(&self, ref_q: i32, ref_r: i32, q: i32, r: i32) -> Vec<f32> {
         let reference = ChunkId(ref_q, ref_r);
         let chunk = ChunkId(q, r);
         let pos = reference.relative_world_position(chunk);
         vec![pos.x, pos.y]
+    }
+
+    pub fn inner_cells(&self, q: i32, r: i32) -> Option<InnerCellsHandle> {
+        self.world.inner_cells(ChunkId(q, r)).map(|c| c.into())
+    }
+
+    pub fn edge_cells(&self, q: i32, r: i32, edge_idx: u8) -> Option<EdgeCellsHandle> {
+        self.world
+            .edge_cells(ChunkId(q, r), HexFlatDir::from_index(edge_idx as usize))
+            .map(|c| c.into())
+    }
+
+    pub fn corner_cells(&self, q: i32, r: i32, vertex_idx: u8) -> Option<CornerCellsHandle> {
+        self.world
+            .corner_cells(ChunkId(q, r), HexPointyDir::from_index(vertex_idx as usize))
+            .map(|c| c.into())
     }
 }

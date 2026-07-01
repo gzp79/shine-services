@@ -1,5 +1,6 @@
 import { Api, expect, test } from '$fixtures/setup';
 import { ApiResponse, ProblemSchema } from '$lib/api/api';
+import { TestUser } from '$lib/api/test_user';
 import { getEmailLink, getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import OpenIDMockServer from '$lib/mocks/openid';
@@ -350,6 +351,108 @@ test.describe('Login with email for guest', () => {
         // Should be the same user (case-insensitive email matching)
         expect(userId1).toBe(userId2);
         expect(userInfo2.details?.email).toBe(userInfo1.details?.email); // Email stored normalized
+    });
+
+    test('Gmail plus-tag shall be stripped for uniqueness (raw != normalized)', async ({ api }) => {
+        // raw: user+tag@gmail.com, normalized: user@gmail.com
+        const local = randomUUID().replace(/-/g, '').slice(0, 12);
+        const canonicalEmail = `${local}@gmail.com`;
+        const taggedEmail = `${local}+newsletter@gmail.com`;
+
+        // Register with canonical form first
+        const mail1Promise = mock.waitMail();
+        await api.auth.loginWithEmailRequest(canonicalEmail, true, null);
+        const mail1 = await mail1Promise;
+        const response1 = await api.client.get(getEmailLink(mail1));
+        expect(response1).toHaveStatus(200);
+        const userId1 = (await api.user.getUserInfo(response1.cookies().sid.value, 'full')).userId;
+
+        // Login with plus-tag variant — must resolve to same user
+        const mail2Promise = mock.waitMail();
+        await api.auth.loginWithEmailRequest(taggedEmail, true, null);
+        const mail2 = await mail2Promise;
+        const response2 = await api.client.get(getEmailLink(mail2));
+        expect(response2).toHaveStatus(200);
+        const userInfo2 = await api.user.getUserInfo(response2.cookies().sid.value, 'full');
+
+        expect(userInfo2.userId).toBe(userId1);
+        // raw email stored, not the normalized form
+        expect(userInfo2.details?.email).toBe(canonicalEmail);
+    });
+
+    test('Login link is bound to the exact email variant (cross-tag reuse is rejected)', async ({ api, homeUrl }) => {
+        const local = randomUUID().replace(/-/g, '').slice(0, 12);
+        const tag1Email = `${local}+tag1@gmail.com`;
+        const tag2Email = `${local}+tag2@gmail.com`;
+
+        // Register with tag1 and complete login
+        const mail1Promise = mock.waitMail();
+        await api.auth.loginWithEmailRequest(tag1Email, true, null);
+        const mail1 = await mail1Promise;
+        const response1 = await api.client.get(getEmailLink(mail1));
+        expect(response1).toHaveStatus(200);
+        const sid = response1.cookies().sid?.value;
+        expect(sid).toBeString();
+
+        // Request tag1 login link and capture its captcha — don't follow it
+        const tag1MailPromise = mock.waitMail();
+        await api.auth.loginWithEmailRequest(tag1Email, true, null);
+        const tag1Mail = await tag1MailPromise;
+        const tag1Captcha = new URL(getEmailLink(tag1Mail)).searchParams.get('captcha')!;
+
+        // Change the account email to tag2
+        const info = await api.user.getUserInfo(sid!, 'full');
+        const testUser = new TestUser(info.userId, api.auth, api.user);
+        testUser.sid = sid!;
+        testUser.userInfo = info;
+        await testUser.changeEmail(mock, tag2Email);
+
+        // Request tag2 login link
+        const mail2Promise = mock.waitMail();
+        await api.auth.loginWithEmailRequest(tag2Email, true, null);
+        const mail2 = await mail2Promise;
+        const loginLink = new URL(getEmailLink(mail2));
+
+        // Swap in tag1's captcha — token is bound to tag2, captcha claims tag1
+        loginLink.searchParams.set('captcha', tag1Captcha);
+
+        const loginResponse = await api.client.get(loginLink.toString());
+        expect(loginResponse).toHaveStatus(200);
+        const loginText = await loginResponse.text();
+        expect(getPageRedirectUrl(loginText)).toEqual(
+            createUrl(`${homeUrl}/error`, { errorType: 'auth-token-expired' })
+        );
+        expect(getPageProblem(loginText)).toEqual(
+            expect.objectContaining({
+                type: 'auth-token-expired',
+                status: 401,
+                sensitive: 'emailConflict'
+            })
+        );
+    });
+
+    test('Gmail dot-removal and googlemail alias shall normalize to gmail.com', async ({ api }) => {
+        // u.ser+tag@googlemail.com normalizes to user@gmail.com
+        const local = randomUUID().replace(/-/g, '').slice(0, 6);
+        const canonicalEmail = `${local}@gmail.com`;
+        // insert dots and a plus-tag, use googlemail.com domain alias
+        const aliasEmail = `${local.slice(0, 2)}.${local.slice(2)}+promo@googlemail.com`;
+
+        const mail1Promise = mock.waitMail();
+        await api.auth.loginWithEmailRequest(canonicalEmail, true, null);
+        const mail1 = await mail1Promise;
+        const response1 = await api.client.get(getEmailLink(mail1));
+        expect(response1).toHaveStatus(200);
+        const userId1 = (await api.user.getUserInfo(response1.cookies().sid.value, 'full')).userId;
+
+        const mail2Promise = mock.waitMail();
+        await api.auth.loginWithEmailRequest(aliasEmail, true, null);
+        const mail2 = await mail2Promise;
+        const response2 = await api.client.get(getEmailLink(mail2));
+        expect(response2).toHaveStatus(200);
+        const userInfo2 = await api.user.getUserInfo(response2.cookies().sid.value, 'full');
+
+        expect(userInfo2.userId).toBe(userId1);
     });
 });
 

@@ -8,7 +8,7 @@ use postgres_from_row::FromRow;
 use shine_infra::{
     crypto::DataProtectionUtils,
     db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
-    models::{normalize_email, Email},
+    email::{Email, NORM_EMAIL_VERSION},
     pg_query,
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type};
@@ -48,11 +48,11 @@ impl ToPGType for IdentityKind {
 }
 
 pg_query!( InsertIdentity =>
-    in = user_id: Uuid, kind: IdentityKind, name: &str, encrypted_email: Option<&str>, email_hash: Option<&str>;
+    in = user_id: Uuid, kind: IdentityKind, name: &str, encrypted_email: Option<&str>, encrypted_normalized_email: Option<&str>, email_hash: Option<&str>;
     out = created: DateTime<Utc>;
     sql = r#"
-        INSERT INTO identities (user_id, kind, created, name, encrypted_email, email_hash)
-            VALUES ($1, $2, now(), $3, $4, $5)
+        INSERT INTO identities (user_id, kind, created, name, encrypted_email, encrypted_normalized_email, email_hash)
+            VALUES ($1, $2, now(), $3, $4, $5, $6)
         RETURNING created
     "#
 );
@@ -71,6 +71,7 @@ pub(in crate::repositories::identity::pg) struct IdentityRow {
     kind: IdentityKind,
     name: String,
     encrypted_email: Option<String>,
+    encrypted_normalized_email: Option<String>,
     email_confirmed: bool,
     created: DateTime<Utc>,
 }
@@ -80,11 +81,13 @@ impl IdentityRow {
         self,
         email_protection: &DataProtectionUtils,
     ) -> Result<Identity, IdentityError> {
-        let email = if let Some(enc) = self.encrypted_email {
-            let decrypted = email_protection.decrypt(&enc)?;
-            Some(Email::new(decrypted).expect("Email from database should be valid"))
-        } else {
-            None
+        let email = match (self.encrypted_email, self.encrypted_normalized_email) {
+            (Some(enc_raw), Some(enc_norm)) => {
+                let raw = email_protection.decrypt(&enc_raw)?;
+                let normalized = email_protection.decrypt_versioned(NORM_EMAIL_VERSION, &enc_norm)?;
+                Some(Email::from_parts(raw, normalized))
+            }
+            _ => None,
         };
         Ok(Identity {
             id: self.user_id,
@@ -101,7 +104,7 @@ pg_query!( FindById =>
     in = user_id: Uuid;
     out = IdentityRow;
     sql = r#"
-        SELECT user_id, kind, name, encrypted_email, email_confirmed, created
+        SELECT user_id, kind, name, encrypted_email, encrypted_normalized_email, email_confirmed, created
             FROM identities
             WHERE user_id = $1
     "#
@@ -111,23 +114,24 @@ pg_query!( FindByEmailHash =>
     in = email_hash: &str;
     out = IdentityRow;
     sql = r#"
-        SELECT user_id, kind, name, encrypted_email, email_confirmed, created
+        SELECT user_id, kind, name, encrypted_email, encrypted_normalized_email, email_confirmed, created
             FROM identities
             WHERE email_hash = $1
     "#
 );
 
 pg_query!( UpdateIdentity =>
-    in = user_id: Uuid, user_name: Option<&str>, encrypted_email: Option<&str>, email_hash: Option<&str>, email_confirmed: Option<bool>;
+    in = user_id: Uuid, user_name: Option<&str>, encrypted_email: Option<&str>, encrypted_normalized_email: Option<&str>, email_hash: Option<&str>, email_confirmed: Option<bool>;
     out = IdentityRow;
     sql = r#"
         UPDATE identities
             SET name = COALESCE($2, name),
                 encrypted_email = COALESCE($3, encrypted_email),
-                email_hash = COALESCE($4, email_hash),
-                email_confirmed = COALESCE($5, email_confirmed)
+                encrypted_normalized_email = COALESCE($4, encrypted_normalized_email),
+                email_hash = COALESCE($5, email_hash),
+                email_confirmed = COALESCE($6, email_confirmed)
             WHERE user_id = $1
-        RETURNING user_id, kind, name, encrypted_email, email_confirmed, created
+        RETURNING user_id, kind, name, encrypted_email, encrypted_normalized_email, email_confirmed, created
     "#
 );
 
@@ -183,22 +187,25 @@ impl Identities for PgIdentityDbContext<'_> {
         &mut self,
         user_id: Uuid,
         user_name: &str,
-        email: Option<(&str, bool)>,
+        email: Option<(&Email, bool)>,
     ) -> Result<Identity, IdentityError> {
         if user_name.chars().count() > 20 {
             return Err(IdentityError::NameTooLong);
         }
 
-        if let Some((email, _)) = email {
-            assert_eq!(email, normalize_email(email));
-        }
-
-        let (encrypted_email, email_hash) = if let Some((email, _)) = email {
-            let encrypted_email = self.email_protection.encrypt(email)?;
-            let email_hash = self.email_protection.hash(email);
-            (Some(encrypted_email), Some(email_hash))
+        let (encrypted_email, encrypted_normalized_email, email_hash) = if let Some((email, _)) = email {
+            let encrypted_email = self.email_protection.encrypt(email.raw())?;
+            let encrypted_normalized_email = self
+                .email_protection
+                .encrypt_versioned(NORM_EMAIL_VERSION, email.normalized())?;
+            let email_hash = email.hash();
+            (
+                Some(encrypted_email),
+                Some(encrypted_normalized_email),
+                Some(email_hash),
+            )
         } else {
-            (None, None)
+            (None, None, None)
         };
 
         let created = match self
@@ -210,6 +217,7 @@ impl Identities for PgIdentityDbContext<'_> {
                 &IdentityKind::User,
                 &user_name,
                 &encrypted_email.as_deref(),
+                &encrypted_normalized_email.as_deref(),
                 &email_hash.as_deref(),
             )
             .await
@@ -235,8 +243,8 @@ impl Identities for PgIdentityDbContext<'_> {
         Ok(Identity {
             id: user_id,
             name: user_name.to_owned(),
-            email: email.map(|x| Email::new(x.0).expect("Email from database should be valid")),
-            is_email_confirmed: email.map(|x| x.1).unwrap_or(false),
+            email: email.map(|(e, _)| e.clone()),
+            is_email_confirmed: email.map(|(_, confirmed)| confirmed).unwrap_or(false),
             kind: IdentityKind::User,
             created,
         })
@@ -255,10 +263,8 @@ impl Identities for PgIdentityDbContext<'_> {
     }
 
     #[instrument(skip(self))]
-    async fn find_by_email(&mut self, email: &str) -> Result<Option<Identity>, IdentityError> {
-        assert_eq!(email, normalize_email(email));
-
-        let email_hash = self.email_protection.hash(email);
+    async fn find_by_email(&mut self, email: &Email) -> Result<Option<Identity>, IdentityError> {
+        let email_hash = email.hash();
         let row = self
             .stmts_identities
             .find_by_email_hash
@@ -274,18 +280,21 @@ impl Identities for PgIdentityDbContext<'_> {
         &mut self,
         id: Uuid,
         name: Option<&str>,
-        email: Option<(&str, bool)>,
+        email: Option<(&Email, bool)>,
     ) -> Result<Option<Identity>, IdentityError> {
-        if let Some((email, _)) = email {
-            assert_eq!(email, normalize_email(email));
-        }
-
-        let (encrypted_email, email_hash) = if let Some((email, _)) = email {
-            let encrypted_email = self.email_protection.encrypt(email)?;
-            let email_hash = self.email_protection.hash(email);
-            (Some(encrypted_email), Some(email_hash))
+        let (encrypted_email, encrypted_normalized_email, email_hash) = if let Some((email, _)) = email {
+            let encrypted_email = self.email_protection.encrypt(email.raw())?;
+            let encrypted_normalized_email = self
+                .email_protection
+                .encrypt_versioned(NORM_EMAIL_VERSION, email.normalized())?;
+            let email_hash = email.hash();
+            (
+                Some(encrypted_email),
+                Some(encrypted_normalized_email),
+                Some(email_hash),
+            )
         } else {
-            (None, None)
+            (None, None, None)
         };
 
         let identity_row = match self
@@ -296,8 +305,9 @@ impl Identities for PgIdentityDbContext<'_> {
                 &id,
                 &name,
                 &encrypted_email.as_deref(),
+                &encrypted_normalized_email.as_deref(),
                 &email_hash.as_deref(),
-                &email.map(|x| x.1),
+                &email.map(|(_, confirmed)| confirmed),
             )
             .await
         {

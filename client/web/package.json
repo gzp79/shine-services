@@ -13,33 +13,37 @@
         }
     },
     "scripts": {
-        "dev": "vite",
+        "dev": "pnpm build:wasm && vite",
         "build": "tsc && vite build",
-        "wasm": "wasm-pack build ../../crates/shine-game --target web --out-dir ../../client/web/pkg",
-        "postwasm": "cp pkg/shine_game.d.ts src/wasm-types/",
-        "wasm:dev": "pnpm wasm && pnpm dev",
+        "build:wasm": "wasm-pack build ../../crates/shine-game --target web --out-dir ../../client/web/pkg && pnpm run post:wasm",
         "format": "prettier --write .",
+        "test": "vitest run",
         "lint": "pnpm run lint:format && pnpm run lint:eslint && pnpm run lint:build",
         "lint:format": "prettier --check .",
         "lint:eslint": "eslint .",
-        "lint:build": "tsc -b --noEmit"
+        "lint:build": "tsc -b --noEmit",
+        "post:wasm": "node -e \"require('fs').copyFileSync('pkg/shine_game.d.ts', 'src/wasm-types/shine_game.d.ts')\""
     },
     "dependencies": {
         "lil-gui": "^0.20.0",
-        "three": "^0.172.0"
+        "three": "^0.184.0"
     },
     "devDependencies": {
-        "@eslint/js": "^9.39.4",
+        "@eslint/js": "^10.0.1",
         "@stylistic/eslint-plugin": "^5.10.0",
-        "@trivago/prettier-plugin-sort-imports": "5.2.2",
+        "@trivago/prettier-plugin-sort-imports": "6.0.2",
+        "@types/jsdom": "^28.0.3",
         "@types/node": "^25.5.0",
-        "@types/three": "^0.172.0",
-        "eslint": "^9.39.4",
+        "@types/three": "^0.184.0",
+        "@vitest/coverage-v8": "^4.1.6",
+        "eslint": "^10.5.0",
         "eslint-config-prettier": "^10.1.8",
         "jiti": "^2.6.1",
+        "jsdom": "^29.1.1",
         "prettier": "^3.8.1",
         "typescript": "^5.9.3",
         "typescript-eslint": "^8.57.2",
-        "vite": "^6.4.1"
+        "vite": "^8.0.16",
+        "vitest": "^4.1.6"
     }
 }

@@ -1,78 +1,47 @@
 use crate::{
-    indexed::{IdxVec, TypedIndex},
+    indexed::TypedIndex,
     math::{
-        hex::{AxialCoord, LatticeMesher},
-        mesh::{QuadIdx, QuadTopology, VertIdx},
-        rand::Xorshift32,
+        hex::{HexFlatDir, HexPointyDir, LatticeMesher},
+        prng::{Pcg32, SplitMix64},
+        quadrangulation::{AnchorIndex, Quadrangulation, VertexIndex},
     },
-    world::{CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
+    world::{ChunkId, InnerCells, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
-use glam::Vec2;
+use std::{cell::RefCell, rc::Rc};
 
-/// Unique identifier of a chunk of the map.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct ChunkId(pub i32, pub i32);
-
-impl ChunkId {
-    pub const ORIGIN: ChunkId = ChunkId(0, 0);
-
-    /// World-space offset from `self` to `other`.
-    pub fn relative_world_position(&self, other: ChunkId) -> Vec2 {
-        let rel = AxialCoord::new(other.0 - self.0, other.1 - self.1);
-        rel.center_position(CHUNK_WORLD_SIZE)
-    }
-
-    /// Deterministic 32-bit hash from chunk coordinates.
-    /// Uses golden-ratio mixing + murmur3 finalizer for good avalanche.
-    pub fn hash32(&self) -> u32 {
-        let a = self.0 as u32;
-        let b = self.1 as u32;
-        let mut h = a.wrapping_mul(0x9e3779b9).wrapping_add(b);
-        h ^= h >> 16;
-        h = h.wrapping_mul(0x45d9f3b);
-        h ^= h >> 16;
-        h
-    }
+/// Stable random streams for different aspects of chunk generation.
+/// Streams are cheap, create a new one for each aspect to ensure deterministic independence.
+pub struct ChunkRngStreams {
+    pub mesh: Rc<RefCell<Pcg32>>,
 }
 
-impl From<ChunkId> for AxialCoord {
-    fn from(id: ChunkId) -> Self {
-        AxialCoord::new(id.0, id.1)
-    }
-}
-
-impl From<AxialCoord> for ChunkId {
-    fn from(c: AxialCoord) -> Self {
-        ChunkId(c.q, c.r)
+impl ChunkRngStreams {
+    pub fn new(mut seed: SplitMix64) -> Self {
+        let mesh = Rc::new(RefCell::new(seed.next_stream()));
+        Self { mesh }
     }
 }
 
 pub struct Chunk {
-    pub topology: QuadTopology,
-    pub vertices: IdxVec<VertIdx, Vec2>,
-    pub quad_centers: IdxVec<QuadIdx, Vec2>,
+    pub rng_streams: ChunkRngStreams,
+    pub mesh: Quadrangulation,
 }
 
 impl Chunk {
-    pub fn new(id: ChunkId) -> Self {
-        let rng = Xorshift32::new(id.hash32());
-        let mesh = LatticeMesher::new(SUBDIVISION_BASE, rng)
-            .with_world_size(CHUNK_WORLD_SIZE)
+    pub fn new(parent_seed: &SplitMix64, id: ChunkId) -> Self {
+        let rng_streams = ChunkRngStreams::new(parent_seed.create_seed(id.id_64()));
+        let topology = LatticeMesher::new(SUBDIVISION_BASE, rng_streams.mesh.clone())
+            .with_size(CHUNK_WORLD_SIZE)
             .generate();
-        let (topology, vertices, quad_centers) = mesh.into_parts();
-        Self {
-            topology,
-            vertices,
-            quad_centers,
-        }
+
+        Self { rng_streams, mesh: topology }
     }
 
     /// Flat (real) quad vertex positions [x, y, x, y, ...]
     pub fn quad_vertices(&self) -> Vec<f32> {
-        debug_assert_eq!(self.vertices.len(), self.topology.vertex_count());
-        let mut flat = Vec::with_capacity(self.topology.vertex_count() * 2);
-        for vi in self.topology.vertex_indices() {
-            let p = self.vertices[vi];
+        let mut flat = Vec::with_capacity(self.mesh.vertex_count() * 2);
+        for vi in self.mesh.finite_vertex_index_iter() {
+            let p = self.mesh[vi].position;
             flat.push(p.x);
             flat.push(p.y);
         }
@@ -81,10 +50,10 @@ impl Chunk {
 
     /// Flat (real) quad indices [a, b, c, d, ...].
     pub fn quad_indices(&self) -> Vec<u32> {
-        let mut indices = Vec::with_capacity(self.topology.quad_count() * 4);
-        for qi in self.topology.quad_indices() {
-            let verts = self.topology.quad_vertices(qi);
-            for &v in &verts {
+        let mut indices = Vec::with_capacity(self.mesh.finite_quad_count() * 4);
+        for qi in self.mesh.finite_quad_index_iter() {
+            let verts = self.mesh.quad_vertices(qi);
+            for &v in verts {
                 indices.push(v.into_index() as u32);
             }
         }
@@ -94,120 +63,76 @@ impl Chunk {
     /// Flat boundary edge indices [a, b, ...].
     pub fn boundary_indices(&self) -> Vec<u32> {
         // Each boundary vertex corresponds to one edge, so N vertices = N edges
-        let edge_count = self.topology.boundary_vertex_count();
+        let edge_count = self.mesh.boundary_vertex_count();
         let mut flat = Vec::with_capacity(edge_count * 2);
-        for [a, b] in self.topology.boundary_edges() {
+        for [a, b] in self.mesh.boundary_edges() {
             flat.push(a);
             flat.push(b);
         }
         flat
     }
 
-    /// Dual mesh vertices (quad centroids) [x, y, x, y, ...]
-    pub fn dual_vertices(&self) -> Vec<f32> {
-        let quad_count = self.topology.quad_count();
-        let mut flat = Vec::with_capacity(quad_count * 2);
+    pub fn cell_data(&self) -> InnerCells {
+        let site_count = self.mesh.finite_vertex_count();
+        let tile_count = self.mesh.finite_quad_count();
 
-        for qi in self.topology.quad_indices() {
-            let center = self.quad_centers[qi];
-            flat.push(center.x);
-            flat.push(center.y);
-        }
+        // Some optimistic preallocation, actual counts may be smaller due to boundary vertices and quads
 
-        flat
-    }
+        let mut indices = Vec::with_capacity(site_count * 4); // 4 quads per vertex on average
+        let mut ranges = Vec::with_capacity(site_count * 2);
+        let mut sites = Vec::with_capacity(site_count);
+        let mut tiles = Vec::with_capacity(tile_count);
+        let mut tile_distortions = Vec::with_capacity(tile_count * 8);
 
-    /// Flat dual polygon indices referencing quad_centers.
-    /// Each vertex's surrounding quads form a dual polygon.
-    /// Returns (indices, starts) where starts[vi] marks the beginning of vertex vi's polygon.
-    ///
-    /// Example: For a vertex surrounded by 4 quads (indices 0,1,2,3 in dual_vertices):
-    /// - indices: [0, 1, 2, 3]
-    /// - starts: [0, 4] (polygon starts at 0, next would start at 4)
-    pub fn dual_polygons(&self) -> (Vec<u32>, Vec<u32>) {
-        let mut indices = Vec::new();
-        let mut starts = Vec::new();
-        starts.push(0);
-
-        for vi in self.topology.vertex_indices() {
-            let start_len = indices.len();
-
-            // Collect QuadIdx for all real quads around this vertex
-            for qv in self.topology.vertex_ring(vi) {
-                if !self.topology.is_ghost_quad(qv.quad) {
-                    // Map QuadIdx to its position in quad_indices() enumeration
-                    let mut dual_idx = 0;
-                    for (i, qi) in self.topology.quad_indices().enumerate() {
-                        if qi == qv.quad {
-                            dual_idx = i as u32;
-                            break;
-                        }
-                    }
-                    indices.push(dual_idx);
+        let mut vertices = Vec::with_capacity(tile_count * 2);
+        let mut quad_map: std::collections::HashMap<crate::math::quadrangulation::QuadIndex, u32> =
+            std::collections::HashMap::new();
+        for qi in self.mesh.finite_quad_index_iter() {
+            if let Some(center) = self.mesh.dual_p(qi) {
+                quad_map.insert(qi, (vertices.len() / 2) as u32);
+                vertices.push(center.x);
+                vertices.push(center.y);
+                tiles.push(qi.into_index() as u32);
+                for &qv in self.mesh.quad_vertices(qi) {
+                    tile_distortions.push(self.mesh[qv].position.x);
+                    tile_distortions.push(self.mesh[qv].position.y);
                 }
             }
+        }
 
-            // Only record if we found at least 3 quads (valid polygon)
-            if indices.len() - start_len >= 3 {
-                starts.push(indices.len() as u32);
-            } else {
-                // Degenerate polygon, remove indices and don't advance start
-                indices.truncate(start_len);
-                starts.push(start_len as u32);
+        for vi in self.mesh.finite_vertex_index_iter() {
+            if self.mesh.is_boundary_vertex(vi) {
+                continue;
             }
+
+            ranges.push(indices.len() as u32);
+            sites.push(vi.into_index() as u32);
+
+            for qv in self.mesh.vertex_ring_ccw(vi) {
+                indices.push(*quad_map.get(&qv.quad).unwrap());
+            }
+
+            ranges.push(indices.len() as u32);
         }
 
-        (indices, starts)
+        InnerCells {
+            vertices,
+            indices,
+            ranges,
+            sites,
+            tiles,
+            tile_distortions,
+        }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+    /// Returns VertexIndex values along specified hex edge (inclusive of both corners)
+    pub fn boundary_edge_vertices(&self, edge_idx: HexFlatDir) -> impl Iterator<Item = VertexIndex> + '_ {
+        self.mesh.anchor_edge(AnchorIndex::new(edge_idx as usize))
+    }
 
-    #[test]
-    fn test_dual_polygons() {
-        let chunk = Chunk::new(ChunkId::ORIGIN);
-
-        let (indices, starts) = chunk.dual_polygons();
-
-        // Basic sanity checks
-        assert!(!indices.is_empty(), "Should have dual polygon indices");
-        assert!(!starts.is_empty(), "Should have dual polygon starts");
-        assert_eq!(starts[0], 0, "First start should be 0");
-
-        // Verify starts is monotonically increasing
-        for i in 1..starts.len() {
-            assert!(starts[i] >= starts[i - 1], "Starts should be monotonically increasing");
-        }
-
-        // Verify last start points to end of indices
-        assert_eq!(
-            *starts.last().unwrap() as usize,
-            indices.len(),
-            "Last start should point to end of indices"
-        );
-
-        // Verify all indices are valid (refer to actual quads)
-        let quad_count = chunk.topology.quad_count();
-        for &idx in &indices {
-            assert!(
-                (idx as usize) < quad_count,
-                "Index {} should be less than quad count {}",
-                idx,
-                quad_count
-            );
-        }
-
-        // Verify each polygon has at least 3 vertices (or is degenerate with 0)
-        for i in 0..starts.len() - 1 {
-            let polygon_size = (starts[i + 1] - starts[i]) as usize;
-            assert!(
-                polygon_size == 0 || polygon_size >= 3,
-                "Polygon {} has invalid size {} (should be 0 or >= 3)",
-                i,
-                polygon_size
-            );
-        }
+    /// Returns VertexIndex at specified hex corner (0..5)
+    pub fn boundary_corner_vertex(&self, corner_idx: HexPointyDir) -> VertexIndex {
+        // assume anchor points are corresponding to hex corners in correct  order
+        self.mesh.anchor_vertex(AnchorIndex::new(corner_idx as usize))
     }
 }

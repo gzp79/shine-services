@@ -1,11 +1,11 @@
-use shine_infra::models::Email;
+use shine_infra::email::Email;
 
 #[derive(Clone, Debug)]
 pub struct ExternalUserInfo {
     pub provider: String,
     pub provider_id: String,
     pub name: Option<String>,
-    pub email: Option<String>,
+    pub email: Option<Email>,
 }
 
 impl ExternalUserInfo {
@@ -18,10 +18,6 @@ impl ExternalUserInfo {
                 log::info!("Truncating name from '{name}' to '{truncated_name}'");
                 self.name = Some(truncated_name);
             }
-        }
-
-        if let Some(email) = &self.email {
-            self.email = Email::new(email).ok().map(|e| e.into_inner());
         }
 
         self

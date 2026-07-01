@@ -10,6 +10,7 @@ use openidconnect::UserInfoUrl;
 use reqwest::{header, Client as HttpClient};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
+use shine_infra::email::Email;
 use std::collections::HashMap;
 use thiserror::Error as ThisError;
 use url::Url;
@@ -129,7 +130,10 @@ impl OAuth2Client {
         let name = user_info.get(name_id).and_then(|v| v.as_str()).map(ToOwned::to_owned);
         log::debug!("{name_id} - {name:?}");
         let email_id = id_mapping.get("email").map(|s| s.as_str()).unwrap_or("email");
-        let email = user_info.get(email_id).and_then(|v| v.as_str()).map(ToOwned::to_owned);
+        let email = user_info
+            .get(email_id)
+            .and_then(|v| v.as_str())
+            .and_then(|e| Email::new(e).ok());
         log::debug!("{email_id} - {email:?}");
 
         let mut external_user_info = ExternalUserInfo {
@@ -192,7 +196,10 @@ impl OAuth2Client {
             };
             log::info!("{email_info:?}");
 
-            external_user_info.email = email_info.into_iter().find(|e| e.primary).map(|e| e.email);
+            external_user_info.email = email_info
+                .into_iter()
+                .find(|e| e.primary)
+                .and_then(|e| Email::new(e.email).ok());
         }
 
         Ok(external_user_info)

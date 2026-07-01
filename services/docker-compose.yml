@@ -46,10 +46,10 @@ services:
       - "8443:443"
       - "9464:9464"
     links:
-      - toxiproxy:postgres.mockbox.com
-      - toxiproxy:redis.mockbox.com
+      - toxiproxy:postgres.mockbox.foo
+      - toxiproxy:redis.mockbox.foo
     extra_hosts:
-      - mockbox.com:host-gateway
+      - mockbox.foo:host-gateway
       - local.scytta.com:127.0.0.1
       - cloud.local.scytta.com:127.0.0.1
     networks:

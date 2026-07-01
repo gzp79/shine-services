@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use shine_infra::{models::Email, web::extracts::ClientFingerprint};
+use shine_infra::{email::Email, web::extracts::ClientFingerprint};
 use uuid::Uuid;
 
 use super::TokenKind;

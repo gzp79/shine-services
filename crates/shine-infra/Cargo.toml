@@ -40,12 +40,12 @@ pin-project = { workspace = true }
 futures = { workspace = true }
 futures-channel = { workspace = true }
 async-trait = { workspace = true }
-tokio = { workspace = true, features = ["macros", "signal", "rt"] }
+tokio = { workspace = true, features = ["macros", "signal", "rt", "rt-multi-thread"] }
 
 ############################# TRACING #############################
 tracing = { workspace = true }
 tracing-log = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+tracing-subscriber = { workspace = true, features = ["std", "registry", "env-filter", "fmt", "ansi", "json"] }
 
 tracing-opentelemetry = { version = "0.32", features = [
     "metrics",

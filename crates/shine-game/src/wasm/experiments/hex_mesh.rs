@@ -1,13 +1,14 @@
 use crate::{
-    indexed::TypedIndex,
     math::{
         hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
-        mesh::{Jitter, LaplacianSmoother, QuadFilter, QuadMesh, QuadRelax, VertexRepulsion},
-        rand::Xorshift32,
+        prng::{StableRng, XorShift32},
+        quadrangulation::{Jitter, LaplacianSmoother, QuadFilter, QuadRelax, Quadrangulation, VertexRepulsion},
     },
+    wasm::mesh::WiredPolygonMeshHandle,
 };
+use glam::Vec2;
 use serde::Deserialize;
-use std::collections::HashMap;
+use tracing::info_span;
 use wasm_bindgen::prelude::*;
 
 #[derive(Deserialize)]
@@ -54,104 +55,77 @@ enum FilterConfig {
 }
 
 #[wasm_bindgen]
-pub struct WasmPatchMesh {
+pub struct WasmHexMesh {
     world_size: f32,
-    vertices: Vec<f32>,
-    indices: Vec<u32>,
-    patch_indices: Vec<u8>,
-    dual_vertices: Vec<f32>,
-    dual_indices: Vec<u32>,
+    mesh: Quadrangulation,
 }
 
 #[wasm_bindgen]
-impl WasmPatchMesh {
-    /// The world size used to generate this mesh
+impl WasmHexMesh {
     pub fn world_size(&self) -> f32 {
         self.world_size
     }
 
-    /// Flat vertex positions [x, y, x, y, ...] (2 floats per vertex)
-    pub fn vertices(&self) -> Vec<f32> {
-        self.vertices.clone()
+    pub fn primal(&self) -> WiredPolygonMeshHandle {
+        self.mesh
+            .primal_extractor(Vec2::ZERO)
+            .build_internal_mesh_with_anchors()
+            .into()
     }
 
-    /// Number of vertices
-    pub fn vertex_count(&self) -> usize {
-        self.vertices.len() / 2
-    }
-
-    /// Flat quad indices [a, b, c, d, ...] (4 indices per quad)
-    pub fn quad_indices(&self) -> Vec<u32> {
-        self.indices.clone()
-    }
-
-    /// Number of quads
-    pub fn quad_count(&self) -> usize {
-        self.indices.len() / 4
-    }
-
-    /// Patch index per quad (0 for all currently)
-    pub fn patch_indices(&self) -> Vec<u8> {
-        self.patch_indices.clone()
-    }
-
-    /// Flat dual vertex positions [x, y, x, y, ...] (2 floats per vertex, one per primal quad centroid)
-    pub fn dual_vertices(&self) -> Vec<f32> {
-        self.dual_vertices.clone()
-    }
-
-    /// Number of dual vertices
-    pub fn dual_vertex_count(&self) -> usize {
-        self.dual_vertices.len() / 2
-    }
-
-    /// Flat dual edge indices [a, b, ...] (2 indices per dual edge)
-    pub fn dual_indices(&self) -> Vec<u32> {
-        self.dual_indices.clone()
-    }
-
-    /// Number of dual edges
-    pub fn dual_edge_count(&self) -> usize {
-        self.dual_indices.len() / 2
+    pub fn dual(&self) -> WiredPolygonMeshHandle {
+        self.mesh.dual_extractor(Vec2::ZERO).build_internal_mesh().into()
     }
 }
 
 /// Generate a hex quad mesh from a JSON config string.
 #[wasm_bindgen]
-pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
+pub fn generate_mesh(config_json: &str) -> Result<WasmHexMesh, JsValue> {
     let config: MeshConfig = serde_json::from_str(config_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     let world_size = config.world_size;
 
-    // Step 1: Generate base mesh from selected mesher
-    let mut mesh = match config.mesher {
+    let (mut mesh, _subdivision) = match config.mesher {
         MesherConfig::Patch { subdivision, orientation } => {
             let orient = match orientation.as_str() {
                 "Even" => PatchOrientation::Even,
                 "Odd" => PatchOrientation::Odd,
                 _ => return Err(JsValue::from_str("orientation must be 'Even' or 'Odd'")),
             };
-            let mut mesher = PatchMesher::new(subdivision, orient).with_world_size(world_size);
-            mesher.generate_uniform()
+            let mut mesher = PatchMesher::new(subdivision, orient).with_size(world_size);
+            (mesher.generate_subdivision(), subdivision)
         }
         MesherConfig::Cdt { subdivision, interior_points } => {
-            let rng = Xorshift32::new(config.seed);
-            let mut mesher = CdtMesher::new(subdivision, interior_points, rng).with_world_size(world_size);
-            mesher.generate()
+            let rng = XorShift32::new(config.seed).into_rc();
+            let mut mesher = CdtMesher::new(subdivision, interior_points, rng).with_size(world_size);
+            (mesher.generate(), subdivision)
         }
         MesherConfig::Lattice { subdivision } => {
-            let rng = Xorshift32::new(config.seed);
-            let mut mesher = LatticeMesher::new(subdivision, rng).with_world_size(world_size);
-            mesher.generate()
+            let rng = XorShift32::new(config.seed).into_rc();
+            let mut mesher = LatticeMesher::new(subdivision, rng).with_size(world_size);
+            (mesher.generate(), subdivision)
         }
     };
 
-    // Step 2: Apply filter pipeline
+    #[cfg(debug_assertions)]
+    {
+        let _span = info_span!("validate").entered();
+        let anchor_subdivision = (1 << _subdivision) + 1;
+        let validator = mesh.validator();
+        if let Err(err) = validator
+            .validate()
+            .and_then(|_| validator.validate_regular_flat_top_hexagon(anchor_subdivision, config.world_size, 0.001))
+        {
+            log::error!("Validation failed for seed {}: {:?}", config.seed, err);
+            return Err(JsValue::from_str(&format!("Invalid mesh ({}): {:?}", config.seed, err)));
+        }
+    }
+
     for filter_cfg in config.filters {
         let mut filter: Box<dyn QuadFilter> = match filter_cfg {
             FilterConfig::Laplacian { iterations, strength } => Box::new(LaplacianSmoother::new(strength, iterations)),
             FilterConfig::Jitter { amplitude } => {
-                let rng = Xorshift32::new(config.seed);
+                let rng = XorShift32::new(config.seed);
                 Box::new(Jitter::new(amplitude, rng))
             }
             FilterConfig::QuadRelax { quality, strength, iterations } => {
@@ -161,71 +135,9 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmPatchMesh, JsValue> {
                 Box::new(VertexRepulsion::new(strength, iterations))
             }
         };
+        let _span = info_span!("filter").entered();
         filter.apply(&mut mesh);
     }
 
-    // Step 3: Convert QuadMesh to flat buffers
-    Ok(quad_mesh_to_wasm(&mesh, world_size))
-}
-
-fn quad_mesh_to_wasm(mesh: &QuadMesh, world_size: f32) -> WasmPatchMesh {
-    let vertex_count = mesh.topology().vertex_count();
-    let quad_count = mesh.topology().quad_count();
-
-    let mut flat_vertices = Vec::with_capacity(vertex_count * 2);
-    for vi in mesh.vertex_indices() {
-        let p = mesh.position(vi);
-        flat_vertices.push(p.x);
-        flat_vertices.push(p.y);
-    }
-
-    let mut indices = Vec::with_capacity(quad_count * 4);
-    let mut patch_indices = Vec::with_capacity(quad_count);
-    for qi in mesh.topology().quad_indices() {
-        let verts = mesh.topology().quad_vertices(qi);
-        for &v in &verts {
-            indices.push(v.into_index() as u32);
-        }
-        patch_indices.push(0u8);
-    }
-
-    let mut dual_vertices = Vec::with_capacity(quad_count * 2);
-    for qi_idx in 0..quad_count {
-        let base = qi_idx * 4;
-        let mut cx = 0.0f32;
-        let mut cy = 0.0f32;
-        for k in 0..4 {
-            let vi = indices[base + k] as usize;
-            cx += flat_vertices[vi * 2];
-            cy += flat_vertices[vi * 2 + 1];
-        }
-        dual_vertices.push(cx / 4.0);
-        dual_vertices.push(cy / 4.0);
-    }
-
-    let mut edge_map: HashMap<(u32, u32), u32> = HashMap::new();
-    let mut dual_indices = Vec::new();
-    for qi_idx in 0..quad_count {
-        let base = qi_idx * 4;
-        for k in 0..4 {
-            let a = indices[base + k];
-            let b = indices[base + (k + 1) % 4];
-            let edge_key = if a < b { (a, b) } else { (b, a) };
-            if let Some(&other_qi) = edge_map.get(&edge_key) {
-                dual_indices.push(other_qi);
-                dual_indices.push(qi_idx as u32);
-            } else {
-                edge_map.insert(edge_key, qi_idx as u32);
-            }
-        }
-    }
-
-    WasmPatchMesh {
-        world_size,
-        vertices: flat_vertices,
-        indices,
-        patch_indices,
-        dual_vertices,
-        dual_indices,
-    }
+    Ok(WasmHexMesh { world_size, mesh })
 }

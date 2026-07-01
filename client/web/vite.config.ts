@@ -13,5 +13,14 @@ export default defineConfig(({ command }) => ({
                       formats: ['es']
                   }
               }
-            : {}
+            : {},
+    test: {
+        environment: 'node',
+        include: ['src/**/*.test.ts'],
+        resolve: {
+            alias: {
+                '#wasm': fileURLToPath(new URL('./pkg/shine_game.js', import.meta.url))
+            }
+        }
+    }
 }));

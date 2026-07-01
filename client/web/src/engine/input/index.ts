@@ -1,2 +1,2 @@
-export * from './_input-handler';
-export * from './_input-controller';
+export * from './input-handler';
+export * from './input-manager';

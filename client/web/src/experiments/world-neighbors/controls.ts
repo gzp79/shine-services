@@ -1,0 +1,127 @@
+import GUI from 'lil-gui';
+
+export type Params = {
+    centerQ: number;
+    centerR: number;
+    showHexagons: boolean;
+    showAllInterior: boolean;
+    showInterior: [boolean, boolean, boolean, boolean, boolean, boolean, boolean];
+    showAllEdges: boolean;
+    showEdges: [boolean, boolean, boolean, boolean, boolean, boolean];
+    showAllVertices: boolean;
+    showVertices: [boolean, boolean, boolean, boolean, boolean, boolean];
+};
+
+export function defaultParams(): Params {
+    return {
+        centerQ: 0,
+        centerR: 0,
+        showHexagons: true,
+        showAllInterior: true,
+        showInterior: [true, true, true, true, true, true, true],
+        showAllEdges: true,
+        showEdges: [true, true, true, true, true, true],
+        showAllVertices: true,
+        showVertices: [true, true, true, true, true, true]
+    };
+}
+
+function addToggleFolder(
+    gui: GUI,
+    title: string,
+    values: boolean[],
+    setAll: (v: boolean) => void,
+    onDisplayChange: () => void
+): void {
+    const folder = gui.addFolder(title);
+    folder.close();
+
+    const allParam = { showAll: values.every((v) => v) };
+    const allCtrl = folder.add(allParam, 'showAll').name('Show All');
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;padding:0 var(--padding);height:var(--widget-height);align-items:center;';
+
+    const checkboxes = values.map((checked, i) => {
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = checked;
+        checkbox.style.cssText = 'cursor:pointer;';
+        checkbox.addEventListener('change', () => {
+            values[i] = checkbox.checked;
+            allParam.showAll = values.every((v) => v);
+            setAll(allParam.showAll);
+            allCtrl.updateDisplay();
+            onDisplayChange();
+        });
+        const label = document.createElement('label');
+        label.textContent = String(i);
+        label.style.cssText = 'display:flex;gap:4px;align-items:center;cursor:pointer;';
+        label.prepend(checkbox);
+        row.appendChild(label);
+        return checkbox;
+    });
+
+    (folder as unknown as { $children: HTMLElement }).$children.appendChild(row);
+
+    allCtrl.onChange((value: boolean) => {
+        values.fill(value);
+        setAll(value);
+        checkboxes.forEach((cb) => (cb.checked = value));
+        onDisplayChange();
+    });
+}
+
+export function createControls(
+    container: HTMLElement,
+    params: Params,
+    onDisplayChange: () => void,
+    onRegenerate: () => void
+): GUI {
+    const gui = new GUI({ title: 'World Neighbors', container });
+    gui.domElement.style.position = 'absolute';
+    gui.domElement.style.top = '0';
+    gui.domElement.style.right = '0';
+    gui.domElement.style.zIndex = '10';
+
+    const seedFolder = gui.addFolder('Chunk');
+    const qCtrl = seedFolder.add(params, 'centerQ').name('Q').step(1).onFinishChange(onRegenerate);
+    const rCtrl = seedFolder.add(params, 'centerR').name('R').step(1).onFinishChange(onRegenerate);
+    seedFolder
+        .add(
+            {
+                randomize: () => {
+                    const range = 100;
+                    params.centerQ = Math.floor(Math.random() * range * 2) - range;
+                    params.centerR = Math.floor(Math.random() * range * 2) - range;
+                    qCtrl.updateDisplay();
+                    rCtrl.updateDisplay();
+                    onRegenerate();
+                }
+            },
+            'randomize'
+        )
+        .name('Random Chunk');
+
+    gui.add(params, 'showHexagons').name('Show Hexagons').onChange(onDisplayChange);
+
+    addToggleFolder(
+        gui,
+        'Interior Cells (0=Center, 1-6=Neighbors)',
+        params.showInterior,
+        (v) => (params.showAllInterior = v),
+        onDisplayChange
+    );
+
+    addToggleFolder(
+        gui,
+        'Boundary Vertices',
+        params.showVertices,
+        (v) => (params.showAllVertices = v),
+        onDisplayChange
+    );
+
+    addToggleFolder(gui, 'Boundary Edges', params.showEdges, (v) => (params.showAllEdges = v), onDisplayChange);
+
+    return gui;
+}

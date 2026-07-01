@@ -534,6 +534,57 @@ test.describe('Email change', () => {
         });
     }
 
+    test('Changing to a tag variant of own email goes through the normal change flow', async ({ api }) => {
+        const smtp = await startMockEmail();
+
+        const local = randomUUID().replace(/-/g, '').slice(0, 12);
+        const baseEmail = `${local}@gmail.com`;
+        const taggedEmail = `${local}+work@gmail.com`;
+
+        const user = await api.testUsers.createLinked(mockAuth, { email: baseEmail });
+        await user.confirmEmail(smtp);
+        const { sessionLength, remainingSessionTime, ...userInfo } = user.userInfo!;
+
+        await user.changeEmail(smtp, taggedEmail);
+
+        expect(await api.user.getUserInfo(user.sid, 'full')).toEqual(
+            expect.objectContaining({
+                ...userInfo,
+                isEmailConfirmed: true,
+                details: { ...userInfo?.details, email: taggedEmail }
+            })
+        );
+    });
+
+    test('Changing email to a tagged variant that normalizes to another user email shall fail', async ({ api }) => {
+        const smtp = await startMockEmail();
+
+        const local = randomUUID().replace(/-/g, '').slice(0, 12);
+        const tag1Email = `${local}+tag1@gmail.com`;
+        const tag2Email = `${local}+tag2@gmail.com`;
+
+        const user1 = await api.testUsers.createLinked(mockAuth, { email: tag1Email });
+        await user1.confirmEmail(smtp);
+
+        const user2 = await api.testUsers.createLinked(mockAuth);
+
+        // user2 tries to set email to a different tagged variant — normalized hash collision → conflict
+        const mailPromise = smtp.waitMail();
+        await api.user.startChangeEmail(user2.sid, tag2Email);
+        const mail = await mailPromise;
+        const token = getEmailLinkToken(mail);
+        expect(token).toBeString();
+
+        const response = await api.user.completeConfirmEmailRequest(user2.sid, token!);
+        expect(response).toHaveStatus(412);
+        expect(await response.parseProblem()).toEqual(
+            expect.objectContaining({
+                type: 'email-conflict',
+                status: 412
+            })
+        );
+    });
+
     test('Delete user with pending email change shall prevent completing email change', async ({ api }) => {
         const smtp = await startMockEmail();
         const user = await api.testUsers.createLinked(mockAuth);

@@ -30,7 +30,7 @@ export function createCdtControls(container: HTMLElement, params: CdtParams, onC
     gui.domElement.style.right = '0';
     gui.domElement.style.zIndex = '10';
 
-    gui.add(params, 'n_points', 3, 500, 1).name('points').onChange(onChange);
+    gui.add(params, 'n_points', 3, 5000, 1).name('points').onChange(onChange);
     gui.add(params, 'n_edges', 0, 50, 1).name('constraints').onChange(onChange);
     const seedCtrl = gui.add(params, 'seed').name('seed').onChange(onChange);
 

@@ -147,16 +147,16 @@ async fn load_app_config<A: WebApplication>() -> Result<WebAppConfig<A::AppConfi
         tracing::dispatcher::set_default(&pre_init_log.into())
     };
 
-    log::trace!("init-trace - log:ok");
-    log::debug!("init-debug - log:ok");
-    log::info!("init-info  - log:ok");
-    log::warn!("init-warn  - log:ok");
-    log::error!("init-error - log:ok");
-    tracing::trace!("init-trace - tracing:ok");
-    tracing::debug!("init-debug - tracing:ok");
-    tracing::info!("init-info  - tracing:ok");
-    tracing::warn!("init-warn  - tracing:ok");
-    tracing::error!("init-error - tracing:ok");
+    log::trace!("init-trace - log: ok");
+    log::debug!("init-debug - log: ok");
+    log::info!("init-info  - log: ok");
+    log::warn!("init-warn  - log: ok");
+    log::error!("init-error - log: ok");
+    tracing::trace!("init-trace - tracing: ok");
+    tracing::debug!("init-debug - tracing: ok");
+    tracing::info!("init-info  - tracing: ok");
+    tracing::warn!("init-warn  - tracing: ok");
+    tracing::error!("init-error - tracing: ok");
 
     let config = WebAppConfig::<A::AppConfig>::load(&stage, None).await?;
     log::info!("pre-init completed");
@@ -169,12 +169,18 @@ async fn create_web_app<A: WebApplication>(
     config: &WebAppConfig<A::AppConfig>,
     app: &A,
 ) -> Result<Router<()>, AnyError> {
+    log::trace!("Creating telemetry service...");
     let telemetry_service = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
+    log::trace!("Creating health service...");
     let mut health_service = HealthService::new(app.feature_name(), config)?;
+    log::trace!("Creating problem service...");
     let problem_service = ProblemConfig::new(config.service.full_problem_response);
+    log::trace!("Creating in-flight service...");
     let in_flight_service = crate::health::InFlightService::new();
+    log::trace!("Creating current user service...");
     let current_user_service = CurrentUserService::from_config(&config.service).await?;
 
+    log::trace!("Creating layer...");
     let cors_layer = create_cors_layer(&config.service.allowed_origins)?;
     let powered_by_layer = if config.service.expose_powered_by {
         Some(PoweredBy::from_service_info(app.feature_name(), &config.core.version)?)
@@ -189,12 +195,15 @@ async fn create_web_app<A: WebApplication>(
     health_service.add_provider(crate::health::UptimeStatus::new());
     health_service.add_provider(in_flight_service.clone());
 
+    log::trace!("Creating common routes...");
     let mut router = OpenApiRouter::new();
     router = router.nest(&format!("/{}", app.feature_name()), health_service.create_router());
     router = router.nest(&format!("/{}", app.feature_name()), telemetry_service.create_router());
 
+    log::trace!("Creating app state...");
     let app_state = app.create(config, &mut health_service, &mut router).await?;
 
+    log::trace!("Setting up open API...");
     let (router, open_api) = router.split_for_parts();
     let router = if config.service.expose_api_docs {
         let mut doc = ApiDoc::with_default_components();
@@ -212,6 +221,7 @@ async fn create_web_app<A: WebApplication>(
         router
     };
 
+    log::trace!("Creating app routes...");
     Ok(router
         .layer(current_user_service.create_layer())
         .layer(problem_service.into_layer())
@@ -227,6 +237,7 @@ async fn create_web_app<A: WebApplication>(
 async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
     let config = load_app_config::<A>().await?;
     let router = create_web_app(&config, &app).await?;
+    log::info!("Starting web app with config...");
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
 

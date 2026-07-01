@@ -1,18 +1,12 @@
-/// Trait for typed indices backed by `u32`.
-///
-/// - Real indices: `0..u32::MAX - 1` (positive values)
-/// - `NONE`: `u32::MAX` sentinel
-///
-/// `into_index()` panics on NONE or ghost. Use `into_ghost_index()` for ghosts.
+/// Trait for typed indices backed by some scalar primitive, where
+/// the MAX value treated as a NONE sentinel.
 pub trait TypedIndex: Copy + Eq + std::fmt::Debug {
     const NONE: Self;
 
     fn new(index: usize) -> Self;
     fn into_index(self) -> usize;
 
-    fn is_none(self) -> bool;
-
-    /// Convert to `usize` if real, `None` otherwise.
+    #[inline(always)]
     fn try_into_index(self) -> Option<usize> {
         if self.is_none() {
             None
@@ -20,44 +14,52 @@ pub trait TypedIndex: Copy + Eq + std::fmt::Debug {
             Some(self.into_index())
         }
     }
+
+    #[inline(always)]
+    fn is_none(self) -> bool {
+        self == Self::NONE
+    }
+
+    #[inline(always)]
+    fn is_valid(self) -> bool {
+        !self.is_none()
+    }
 }
 
 /// Define a newtype index struct implementing `TypedIndex` with Serialize/Deserialize.
-///
-/// ```ignore
-/// define_typed_index!(VertIdx, "Typed index into a vertex array.");
-/// ```
 #[macro_export]
 macro_rules! define_typed_index {
-    ($name:ident, $doc:expr) => {
+    ($name:ident, $ty:ident, $doc:expr) => {
         #[doc = $doc]
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $name(u32);
+        pub struct $name($ty);
+
+        #[allow(dead_code)]
+        impl $name {
+            pub fn range(start: Self, end: Self) -> impl Iterator<Item = Self> {
+                (start.0..end.0).map(Self)
+            }
+        }
 
         impl $crate::indexed::TypedIndex for $name {
-            const NONE: Self = Self(u32::MAX);
+            const NONE: Self = Self($ty::MAX);
 
             #[inline]
             fn new(index: usize) -> Self {
                 debug_assert!(
-                    index < u32::MAX as usize,
+                    index < usize::try_from($ty::MAX).unwrap(),
                     concat!(stringify!($name), " index overflow")
                 );
-                Self(index as u32)
+                Self(index.try_into().unwrap())
             }
 
             #[inline]
             fn into_index(self) -> usize {
                 debug_assert!(
-                    self.0 != u32::MAX,
+                    self.0 < $ty::MAX,
                     concat!("called into_index() on non-real ", stringify!($name))
                 );
                 self.0 as usize
-            }
-
-            #[inline]
-            fn is_none(self) -> bool {
-                self.0 == u32::MAX
             }
         }
 
@@ -79,8 +81,26 @@ macro_rules! define_typed_index {
 
         impl<'de> serde::Deserialize<'de> for $name {
             fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                let v = u32::deserialize(deserializer)?;
+                let v = $ty::deserialize(deserializer)?;
                 Ok(Self(v))
+            }
+        }
+    };
+}
+
+/// Implement From/Into conversions between a typed index and usize.
+#[macro_export]
+macro_rules! impl_typed_index_conversions {
+    ($name:ident) => {
+        impl From<usize> for $name {
+            fn from(value: usize) -> Self {
+                Self::new(value)
+            }
+        }
+
+        impl From<$name> for usize {
+            fn from(value: $name) -> Self {
+                value.into_index()
             }
         }
     };
@@ -91,11 +111,13 @@ mod tests {
     use super::*;
     use shine_test::test;
 
-    define_typed_index!(TestIdx, "Test index.");
+    define_typed_index!(TestIdx, u32, "Test index.");
+    define_typed_index!(TestIdxU8, u8, "Test index.");
+    define_typed_index!(TestIdxUSize, usize, "Test index.");
 
     #[test]
     fn round_trip() {
-        for i in [0, 1, 42, 1000, i32::MAX as usize - 1] {
+        for i in [0, 1, 42, 1000, u32::MAX as usize - 1] {
             let idx = TestIdx::new(i);
             assert_eq!(idx.into_index(), i);
             assert!(!idx.is_none());
@@ -111,5 +133,13 @@ mod tests {
     fn debug_format() {
         assert_eq!(format!("{:?}", TestIdx::new(42)), "TestIdx(42)");
         assert_eq!(format!("{:?}", TestIdx::NONE), "TestIdx(NONE)");
+    }
+
+    #[test]
+    fn range() {
+        let range = TestIdx::range(TestIdx::new(5), TestIdx::new(10));
+        let collected: Vec<_> = range.collect();
+        let expected: Vec<_> = (5..10).map(|i| TestIdx::new(i)).collect();
+        assert_eq!(collected, expected);
     }
 }

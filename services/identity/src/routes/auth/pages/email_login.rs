@@ -5,8 +5,8 @@ use crate::{
 use axum::extract::State;
 use serde::Deserialize;
 use shine_infra::{
+    email::Email,
     language::Language,
-    models::Email,
     web::{
         extracts::{InputError, SiteInfo, ValidatedQuery},
         responses::ErrorResponse,
@@ -77,7 +77,7 @@ pub async fn email_login(
     let identity = match state
         .email_auth_handler()
         .send_login_email(
-            query.email.as_str(),
+            &query.email,
             query.remember_me,
             query.redirect_url.as_ref(),
             &site_info,

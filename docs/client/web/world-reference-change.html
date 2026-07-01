@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>World Reference Change</title>
+<link rel="stylesheet" href="../../doc.css">
+</head>
+<body>
+
+<header class="doc-header">
+  <h1 class="doc-title">World Reference Change</h1>
+  <div class="doc-meta">
+    <span>Rebases the world coordinate origin to the avatar's chunk so geometry stays near zero, and lets every world-space entity shift itself to compensate.</span>
+  </div>
+</header>
+
+<h2>Problem</h2>
+<p>
+The avatar can roam arbitrarily far, but floating-point precision degrades as
+world coordinates grow. The world reference is the chunk treated as the origin
+for all loaded geometry; periodically it is rebased to the avatar's current
+chunk and every world-space position is shifted by the same delta so nothing
+appears to move. Any entity that caches a world-space position must react to the
+rebase or it will jump.
+</p>
+
+<h2>Architecture</h2>
+
+<p>
+Each frame, the trigger checks the avatar's chunk. Crossing into a new chunk
+always emits <code>WORLD_FOCUS_CHANGED</code>; if the avatar is also past the
+rebase threshold it <em>additionally</em> emits <code>WORLD_REFERENCE_CHANGED</code>
+first. Each event then fans out to consumers that react independently.
+</p>
+
+<div class="canvas">
+  <div class="layer-row">
+    <div class="layer-label">Per-frame<br>trigger</div>
+    <div class="layer-body">
+      <div class="box box-blue" style="flex:1">
+        <div class="bname">WorldReferenceSystem.update()</div>
+        <div class="bdetail">reads avatar pos + reference/focus chunk; finds avatar's chunk relative to the reference</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-row" style="min-height:40px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-orange" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">past threshold (~5 chunks) &amp; chunk changed</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+      <div class="arrow-item arr-orange" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">chunk changed (any distance)</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="layer-row">
+    <div class="layer-label">Events<br>(typed bus)</div>
+    <div class="layer-body">
+      <div class="box box-orange" style="flex:1">
+        <div class="bname">WORLD_REFERENCE_CHANGED</div>
+        <div class="bdetail">{ oldChunkId, newChunkId, deltaPosition }</div>
+      </div>
+      <div class="box box-orange" style="flex:1">
+        <div class="bname">WORLD_FOCUS_CHANGED</div>
+        <div class="bdetail">{ oldChunkId, newChunkId }</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="fanout">
+  <div class="fanout-source">
+    <div class="box box-orange" style="flex:0 1 320px">
+      <div class="bname">WORLD_REFERENCE_CHANGED</div>
+      <div class="bdetail">consumers add <code>deltaPosition</code> to their own world-space state (x,y; z kept)</div>
+    </div>
+  </div>
+  <div class="fanout-trunk"></div>
+  <div class="fanout-branches">
+    <div class="fanout-branch">
+      <div class="fanout-branch-label">sets referenceChunkId,<br>then shifts every group</div>
+      <div class="box box-green"><div class="bname">World</div>
+        <div class="bdetail">all chunk / edge / corner groups</div></div>
+    </div>
+    <div class="fanout-branch">
+      <div class="fanout-branch-label">shifts cached pose</div>
+      <div class="box box-green"><div class="bname">Camera</div>
+        <div class="bdetail">position + lookAt</div></div>
+    </div>
+    <div class="fanout-branch">
+      <div class="fanout-branch-label">shifts cached pose</div>
+      <div class="box box-green"><div class="bname">WorldCursor</div>
+        <div class="bdetail">position</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="fanout">
+  <div class="fanout-source">
+    <div class="box box-orange" style="flex:0 1 320px">
+      <div class="bname">WORLD_FOCUS_CHANGED</div>
+      <div class="bdetail">drives chunk streaming around the new focus</div>
+    </div>
+  </div>
+  <div class="fanout-trunk"></div>
+  <div class="fanout-branches">
+    <div class="fanout-branch">
+      <div class="fanout-branch-label">sets focusedChunkId</div>
+      <div class="box box-green"><div class="bname">World</div>
+        <div class="bdetail">rebuilds load queue, unloads distant chunks</div></div>
+    </div>
+  </div>
+</div>
+
+<p>
+The system never mutates state directly — it only reads and dispatches; each
+consumer owns its reaction. Not every component needs to: <code>SelectionSystem</code>
+never subscribes, because it reads chunk/edge/corner positions that
+<code>World</code> has already shifted, so it sees correct coordinates for free.
+</p>
+
+<h2>Key rules</h2>
+
+<table>
+  <tr><th>Concern</th><th>Rule</th></tr>
+  <tr><td>Reference change condition</td><td>Focus chunk changed <strong>and</strong> squared distance from reference center exceeds <code>REPOSITION_THRESHOLD</code> (~5 chunks). Both must hold.</td></tr>
+  <tr><td>Focus change condition</td><td>Avatar's containing chunk differs from <code>focusedChunkId</code>. Fires on every crossing, independent of the threshold.</td></tr>
+  <tr><td>Nesting</td><td>Reference change is dispatched <em>inside</em> the focus-change branch, before the focus event. A reference change can never fire without a focus change in the same frame.</td></tr>
+  <tr><td>Delta direction</td><td><code>deltaPosition = currentCenter.negate()</code>. Add it to a world-space position to keep that point visually fixed across the rebase.</td></tr>
+  <tr><td>Axes shifted</td><td>X and Y only. Z (height) is never rebased.</td></tr>
+  <tr><td>Subscription model</td><td><code>EventSubscriptions.on()</code> keeps one listener per event name (re-subscribing replaces). Always <code>dispose()</code>.</td></tr>
+</table>
+
+<h2>How a future entity hooks in</h2>
+<p>
+Any entity that stores a world-space position must compensate for the rebase.
+The contract is identical for every consumer today (see
+<code>engine/camera/camera.ts · handleWorldReferenceChanged</code> for the
+canonical form):
+</p>
+<ol>
+  <li>Subscribe in the constructor via <code>EventSubscriptions.on&lt;WorldReferenceChangedEvent&gt;(WORLD_REFERENCE_CHANGED, handler)</code> (import both from <code>systems/world-reference-system.ts</code>).</li>
+  <li>In the handler, add <code>event.deltaPosition.x/y</code> to every world-space position the entity caches — including derived targets (the camera also shifts its <code>lookAt</code>), but never Z.</li>
+  <li>Re-sync any Three.js object from the adjusted position.</li>
+  <li>Release the subscription in <code>dispose()</code>.</li>
+</ol>
+<p>
+Subscribe to <code>WORLD_FOCUS_CHANGED</code> instead (or as well) only if the
+entity cares about which chunk is focused rather than the coordinate shift —
+today only <code>World</code> does, to drive chunk streaming.
+</p>
+
+<h2>File map</h2>
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>client/web/src/systems/world-reference-system.ts</code></td><td>Per-frame trigger; defines and dispatches both events. Source of the event constants and types.</td></tr>
+  <tr><td><code>client/web/src/world/world.ts</code></td><td>Owns <code>referenceChunkId</code>/<code>focusedChunkId</code>; shifts all chunk geometry on reference change; drives streaming on focus change.</td></tr>
+  <tr><td><code>client/web/src/world/chunk-id.ts</code></td><td>Axial chunk coordinate; <code>toWorldPosition</code>/<code>fromWorldPosition</code> convert relative to a reference chunk.</td></tr>
+  <tr><td><code>client/web/src/engine/camera/camera.ts</code></td><td>Consumer: shifts camera position and lookAt.</td></tr>
+  <tr><td><code>client/web/src/avatar/world-cursor.ts</code></td><td>Consumer: shifts cursor position (x,y).</td></tr>
+  <tr><td><code>client/web/src/systems/selection-system.ts</code></td><td>Indirect consumer: reads already-shifted chunk geometry; no subscription.</td></tr>
+</table>
+
+<details data-agent="implementation">
+  <summary>Why two events instead of one, and why reference change is nested</summary>
+  <div class="details-body">
+    Focus and reference are deliberately separate concerns. Focus changes
+    constantly as the avatar walks between chunks and drives chunk
+    load/unload — cheap, frequent. Reference rebasing shifts <em>all</em>
+    loaded geometry and every cached world position — expensive, rare. Gating
+    the reference change behind both "focus changed" and "distance &gt;
+    threshold" means a player wandering near the origin pays only the focus
+    cost; rebasing waits until precision is actually at risk (~5 chunks out).
+    The nesting guarantees a reference change is always accompanied by a focus
+    change, so consumers of focus never miss a rebase frame.
+  </div>
+</details>
+
+</body>
+</html>

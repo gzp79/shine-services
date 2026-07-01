@@ -3,10 +3,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     marker::PhantomData,
     ops::{Index, IndexMut},
+    slice,
 };
 
 /// A `Vec<T>` that can only be indexed by a specific `TypedIndex` type.
-/// Prevents accidentally indexing a vertex array with a quad index (and vice versa).
 pub struct IdxVec<I: TypedIndex, T> {
     data: Vec<T>,
     _phantom: PhantomData<I>,
@@ -27,10 +27,6 @@ impl<I: TypedIndex, T> IdxVec<I, T> {
         }
     }
 
-    pub fn from_vec(data: Vec<T>) -> Self {
-        Self { data, _phantom: PhantomData }
-    }
-
     pub fn len(&self) -> usize {
         self.data.len()
     }
@@ -45,11 +41,22 @@ impl<I: TypedIndex, T> IdxVec<I, T> {
         idx
     }
 
-    pub fn iter(&self) -> std::slice::Iter<'_, T> {
+    pub fn clear(&mut self) {
+        self.data.clear();
+    }
+
+    pub fn resize(&mut self, new_len: usize, value: T)
+    where
+        T: Clone,
+    {
+        self.data.resize(new_len, value);
+    }
+
+    pub fn iter(&self) -> slice::Iter<'_, T> {
         self.data.iter()
     }
 
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
+    pub fn iter_mut(&mut self) -> slice::IterMut<'_, T> {
         self.data.iter_mut()
     }
 
@@ -69,6 +76,10 @@ impl<I: TypedIndex, T> IdxVec<I, T> {
     pub fn into_inner(self) -> Vec<T> {
         self.data
     }
+
+    pub fn swap(&mut self, a: I, b: I) {
+        self.data.swap(a.into_index(), b.into_index());
+    }
 }
 
 impl<I: TypedIndex, T: Clone> IdxVec<I, T> {
@@ -77,6 +88,12 @@ impl<I: TypedIndex, T: Clone> IdxVec<I, T> {
             data: vec![value; count],
             _phantom: PhantomData,
         }
+    }
+}
+
+impl<I: TypedIndex, T> From<Vec<T>> for IdxVec<I, T> {
+    fn from(data: Vec<T>) -> Self {
+        Self { data, _phantom: PhantomData }
     }
 }
 
@@ -129,7 +146,7 @@ impl<I: TypedIndex, T: Serialize> Serialize for IdxVec<I, T> {
 impl<'de, I: TypedIndex, T: Deserialize<'de>> Deserialize<'de> for IdxVec<I, T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let data = Vec::<T>::deserialize(deserializer)?;
-        Ok(Self::from_vec(data))
+        Ok(Self::from(data))
     }
 }
 
@@ -138,7 +155,7 @@ mod tests {
     use super::*;
     use shine_test::test;
 
-    crate::define_typed_index!(TestIdx, "Test index for IdxVec tests.");
+    crate::define_typed_index!(TestIdx, u32, "Test index for IdxVec tests.");
 
     #[test]
     fn basic() {
@@ -166,7 +183,7 @@ mod tests {
 
     #[test]
     fn iter_indexed() {
-        let v: IdxVec<TestIdx, &str> = IdxVec::from_vec(vec!["a", "b", "c"]);
+        let v: IdxVec<TestIdx, &str> = IdxVec::from(vec!["a", "b", "c"]);
         let collected: Vec<_> = v.iter_indexed().collect();
         assert_eq!(collected[0], (TestIdx::new(0), &"a"));
         assert_eq!(collected[1], (TestIdx::new(1), &"b"));
@@ -175,7 +192,7 @@ mod tests {
 
     #[test]
     fn serde_round_trip() {
-        let v: IdxVec<TestIdx, u32> = IdxVec::from_vec(vec![10, 20, 30]);
+        let v: IdxVec<TestIdx, u32> = IdxVec::from(vec![10, 20, 30]);
         let json = serde_json::to_string(&v).unwrap();
         assert_eq!(json, "[10,20,30]");
         let v2: IdxVec<TestIdx, u32> = serde_json::from_str(&json).unwrap();

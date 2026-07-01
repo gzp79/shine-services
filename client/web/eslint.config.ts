@@ -35,7 +35,7 @@ const config: ReturnType<typeof ts.config> = [
                     ignoreRestSiblings: true
                 }
             ],
-            '@stylistic/quotes': ['error', 'single'],
+            '@stylistic/quotes': ['error', 'single', { avoidEscape: true }],
             '@typescript-eslint/no-floating-promises': ['error']
         }
     },

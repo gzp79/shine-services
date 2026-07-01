@@ -1,8 +1,13 @@
+use crate::math::{
+    hex::{AxialBase, HexFlatDir, HexPointyDir},
+    SQRT_3,
+};
 use glam::Vec2;
 use serde::{Deserialize, Serialize};
+use std::{array, ops};
 
 /// Axial coordinates for hexagonal grid.
-///
+/// Flat-top orientation:
 /// ```text
 ///                    ___
 ///                  /  0  \
@@ -26,7 +31,7 @@ use serde::{Deserialize, Serialize};
 ///                 \     2 /
 ///                  \ ___ /
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(into = "(i32, i32)", from = "(i32, i32)")]
 pub struct AxialCoord {
     pub q: i32,
@@ -34,12 +39,19 @@ pub struct AxialCoord {
 }
 
 impl AxialCoord {
+    const NEIGHBOR_DIRECTIONS: [(i32, i32); 6] = [
+        (1, -1), //
+        (0, -1),
+        (-1, 0),
+        (-1, 1),
+        (0, 1),
+        (1, 0),
+    ];
+
+    pub const ORIGIN: AxialCoord = AxialCoord { q: 0, r: 0 };
+
     pub const fn new(q: i32, r: i32) -> Self {
         Self { q, r }
-    }
-
-    pub const fn origin() -> Self {
-        Self { q: 0, r: 0 }
     }
 
     /// Get the third cube coordinate (s = -q-r)
@@ -62,75 +74,48 @@ impl AxialCoord {
         ((a_cube.0 - b_cube.0).abs() + (a_cube.1 - b_cube.1).abs() + (a_cube.2 - b_cube.2).abs()) / 2
     }
 
+    /// Get a navigator for stepping in flat-top hex directions
+    pub fn flat(self) -> FlatAxialCoord {
+        FlatAxialCoord(self)
+    }
+
+    /// Get a navigator for stepping in flat-top hex directions
+    pub fn pointy(self) -> PointyAxialCoord {
+        PointyAxialCoord(self)
+    }
+
+    /// Round fractional axial coordinates to the nearest hex using cube-coordinate rounding.
+    pub fn round(q: f32, r: f32) -> AxialCoord {
+        let s = -q - r;
+        let mut rq = q.round() as i32;
+        let mut rr = r.round() as i32;
+        let rs = s.round() as i32;
+        let q_diff = (rq as f32 - q).abs();
+        let r_diff = (rr as f32 - r).abs();
+        let s_diff = (rs as f32 - s).abs();
+        if q_diff > r_diff && q_diff > s_diff {
+            rq = -rr - rs;
+        } else if r_diff > s_diff {
+            rr = -rq - rs;
+        }
+        AxialCoord::new(rq, rr)
+    }
+
+    /// Returns true if this coordinate lies on the boundary of a hex grid of given radius.
+    pub fn is_boundary(&self, radius: u32) -> bool {
+        self.distance(&AxialCoord::ORIGIN) == radius as i32
+    }
+
     /// Get the coordinates of all hexes in a ring at the given radius
+    /// Starting from direction 0 (HexPointyDir, HexFlatDir) and proceeding CCW
     pub fn ring(&self, radius: u32) -> RingIterator {
         RingIterator::new(*self, radius)
     }
 
     /// Get the coordinates of all hexes within the given radius (inclusive)
+    /// Starting from radius 0 (center) and proceeding outward in rings
     pub fn spiral(&self, radius: u32) -> SpiralIterator {
         SpiralIterator::new(*self, radius)
-    }
-
-    /// Get the coordinates of the hex neighbors
-    pub fn neighbors(&self) -> impl Iterator<Item = AxialCoord> + 'static {
-        const DIRECTIONS: [(i32, i32); 6] = [
-            (0, -1), // North
-            (1, -1), // NorthEast
-            (1, 0),  // SouthEast
-            (0, 1),  // South
-            (-1, 1), // SouthWest
-            (-1, 0), // NorthWest
-        ];
-        let coord = *self;
-        DIRECTIONS
-            .into_iter()
-            .map(move |(dq, dr)| AxialCoord::new(coord.q + dq, coord.r + dr))
-    }
-
-    /// Returns the 6 corner coordinates of a flat-top hexagon at the given radius.
-    /// v0=(R,0), v1=(0,R), v2=(-R,R), v3=(-R,0), v4=(0,-R), v5=(R,-R)
-    pub fn hex_corners(radius: u32) -> [AxialCoord; 6] {
-        let r = radius as i32;
-        [
-            AxialCoord::new(r, 0),
-            AxialCoord::new(0, r),
-            AxialCoord::new(-r, r),
-            AxialCoord::new(-r, 0),
-            AxialCoord::new(0, -r),
-            AxialCoord::new(r, -r),
-        ]
-    }
-
-    /// Returns true if this coordinate lies on the boundary of a hex grid of given radius.
-    /// Operates on the integer coordinate address, not the jittered vertex position.
-    pub fn is_boundary(&self, radius: u32) -> bool {
-        self.distance(&AxialCoord::origin()) == radius as i32
-    }
-
-    /// Derive per-cell hex_size from a world-space circumradius and axial grid radius.
-    /// circumradius = sqrt(3) * hex_size * radius → hex_size = circumradius / (sqrt(3) * radius).
-    pub fn hex_size_from_world_size(world_size: f32, radius: u32) -> f32 {
-        const SQRT_3: f32 = 1.732050807568877293527446341505872367_f32;
-        world_size / (SQRT_3 * radius as f32)
-    }
-
-    /// World position for placing vertices in a flat-top hex grid.
-    /// Produces a flat-top overall hex shape.
-    pub fn vertex_position(&self, hex_size: f32) -> Vec2 {
-        const SQRT_3: f32 = 1.732050807568877293527446341505872367_f32;
-        let x = hex_size * SQRT_3 * (self.q as f32 + self.r as f32 / 2.0);
-        let y = hex_size * 1.5 * (self.r as f32);
-        Vec2::new(x, y)
-    }
-
-    /// World position for placing hex centers (chunk tiling).
-    /// Correct spacing to tile flat-top hexes without overlap.
-    pub fn center_position(&self, hex_size: f32) -> Vec2 {
-        const SQRT_3: f32 = 1.732050807568877293527446341505872367_f32;
-        let x = hex_size * 1.5 * (self.q as f32);
-        let y = hex_size * SQRT_3 * (self.r as f32 + self.q as f32 / 2.0);
-        Vec2::new(x, y)
     }
 }
 
@@ -146,6 +131,143 @@ impl From<AxialCoord> for (i32, i32) {
     }
 }
 
+/// Navigate on a flat-top hex grid
+#[derive(Clone, Copy)]
+pub struct FlatAxialCoord(AxialCoord);
+
+impl FlatAxialCoord {
+    /// Get the (Δq, Δr) delta for a direction in flat-top coordinates.
+    #[inline]
+    pub fn delta(direction: HexFlatDir) -> (i32, i32) {
+        AxialCoord::NEIGHBOR_DIRECTIONS[direction as usize]
+    }
+
+    /// Create an AxialBase with this coordinate as origin and the given directions as basis vectors.
+    #[inline]
+    pub fn base(self, du: HexFlatDir, dv: HexFlatDir) -> AxialBase {
+        AxialBase::new(self.0, Self::delta(du), Self::delta(dv))
+    }
+
+    #[inline]
+    pub fn step(mut self, direction: HexFlatDir, step: i32) -> FlatAxialCoord {
+        let (dq, dr) = Self::delta(direction);
+        self.0.q += dq * step;
+        self.0.r += dr * step;
+        self
+    }
+
+    #[inline]
+    pub fn neighbor(self, direction: HexFlatDir) -> FlatAxialCoord {
+        self.step(direction, 1)
+    }
+
+    #[inline]
+    pub fn corner(self, direction: HexFlatDir, radius: u32) -> FlatAxialCoord {
+        self.step(direction, radius as i32)
+    }
+
+    /// The 6 corenrs of a hexagonal ring at the given radius, starting from direction 0 (HexFlatDir) and proceeding CCW
+    pub fn corners(self, radius: u32) -> [FlatAxialCoord; 6] {
+        let mut corners = [self; 6];
+        for i in HexFlatDir::all() {
+            corners[i.into_index()] = self.corner(i, radius);
+        }
+        corners
+    }
+
+    /// World position of the cell center, when a cell has the given size (radius)
+    pub fn to_position(&self, size: f32) -> Vec2 {
+        let x = size * 1.5 * (self.q as f32);
+        let y = -size * SQRT_3 * (self.r as f32 + self.q as f32 / 2.0);
+        Vec2::new(x, y)
+    }
+
+    /// Nearest axial coordinate for the given world position, inverse of `to_position`.
+    pub fn from_position(pos: Vec2, size: f32) -> AxialCoord {
+        let q = (2.0 / 3.0) * pos.x / size;
+        let r = -pos.y / size / SQRT_3 - q / 2.0;
+        AxialCoord::round(q, r)
+    }
+}
+
+impl ops::Deref for FlatAxialCoord {
+    type Target = AxialCoord;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Navigate in a pointy-top hex grid
+#[derive(Clone, Copy)]
+pub struct PointyAxialCoord(AxialCoord);
+
+impl PointyAxialCoord {
+    /// Get the (Δq, Δr) delta for a direction in pointy-top coordinates.
+    #[inline]
+    pub fn delta(direction: HexPointyDir) -> (i32, i32) {
+        AxialCoord::NEIGHBOR_DIRECTIONS[direction as usize]
+    }
+
+    /// Create an AxialBase with this coordinate as origin and the given directions as basis vectors.
+    pub fn base(self, du: HexPointyDir, dv: HexPointyDir) -> AxialBase {
+        AxialBase::new(self.0, Self::delta(du), Self::delta(dv))
+    }
+
+    #[inline]
+    pub fn step(mut self, direction: HexPointyDir, step: i32) -> PointyAxialCoord {
+        let (dq, dr) = Self::delta(direction);
+        self.0.q += dq * step;
+        self.0.r += dr * step;
+        self
+    }
+
+    #[inline]
+    pub fn neighbor(self, direction: HexPointyDir) -> PointyAxialCoord {
+        self.step(direction, 1)
+    }
+
+    #[inline]
+    pub fn neighbors(self) -> [AxialCoord; 6] {
+        array::from_fn(|i| self.neighbor(HexPointyDir::from_index(i)).0)
+    }
+
+    #[inline]
+    pub fn corner(self, direction: HexPointyDir, radius: u32) -> PointyAxialCoord {
+        self.step(direction, radius as i32)
+    }
+
+    #[inline]
+    pub fn corners(self, radius: u32) -> [AxialCoord; 6] {
+        array::from_fn(|i| self.corner(HexPointyDir::from_index(i), radius).0)
+    }
+
+    /// World position of the cell center, when a cell has the given size (radius)
+    pub fn to_position(&self, size: f32) -> Vec2 {
+        // This is a +30° CCW rotation of the flat-top formula
+        let x = size * SQRT_3 * ((self.q - self.r) as f32 / 2.0);
+        let y = -size * 1.5 * ((self.q + self.r) as f32);
+        Vec2::new(x, y)
+    }
+
+    /// Nearest axial coordinate for the given world position, inverse of `to_position`.
+    pub fn from_position(pos: Vec2, size: f32) -> AxialCoord {
+        let q_r_sum = -pos.y / size / 1.5;
+        let q_r_diff = pos.x / size / SQRT_3 * 2.0;
+        let q = (q_r_sum + q_r_diff) / 2.0;
+        let r = q_r_sum - q;
+        AxialCoord::round(q, r)
+    }
+}
+
+impl ops::Deref for PointyAxialCoord {
+    type Target = AxialCoord;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// Iterator that yields coordinates in a hexagonal ring
 #[derive(Debug)]
 pub struct RingIterator {
@@ -158,8 +280,9 @@ pub struct RingIterator {
 impl RingIterator {
     fn new(center: AxialCoord, radius: u32) -> Self {
         let mut current = center;
-        // Start at the north neighbor
-        current.r -= radius as i32;
+        let (dq, dr) = AxialCoord::NEIGHBOR_DIRECTIONS[0];
+        current.q += dq * radius as i32;
+        current.r += dr * radius as i32;
 
         Self {
             radius,
@@ -174,31 +297,32 @@ impl Iterator for RingIterator {
     type Item = AxialCoord;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.direction_idx >= DIRECTIONS.len() {
+        const DIR: [usize; 6] = [
+            HexFlatDir::NW as usize,
+            HexFlatDir::SW as usize,
+            HexFlatDir::S as usize,
+            HexFlatDir::SE as usize,
+            HexFlatDir::NE as usize,
+            HexFlatDir::N as usize,
+        ];
+        if self.direction_idx >= DIR.len() {
             return None;
         }
 
         if self.radius == 0 {
-            self.direction_idx = DIRECTIONS.len();
+            self.direction_idx = DIR.len();
             return Some(self.current);
         }
-
-        const DIRECTIONS: [(i32, i32); 6] = [
-            (1, 0),  // SouthEast
-            (0, 1),  // South
-            (-1, 1), // SouthWest
-            (-1, 0), // NorthWest
-            (0, -1), // North
-            (1, -1), // NorthEast
-        ];
-
         // Move to next position
         if self.steps_taken >= self.radius {
             self.direction_idx += 1;
             self.steps_taken = 0;
         }
 
-        if let Some((dq, dr)) = DIRECTIONS.get(self.direction_idx) {
+        if let Some((dq, dr)) = DIR
+            .get(self.direction_idx)
+            .map(|&dir| AxialCoord::NEIGHBOR_DIRECTIONS[dir])
+        {
             let result = self.current;
             self.current = AxialCoord::new(self.current.q + dq, self.current.r + dr);
             self.steps_taken += 1;
@@ -253,11 +377,11 @@ mod tests {
     #[rustfmt::skip]
     const RING0: [(i32, i32); 1] = [(0, 0)];
     #[rustfmt::skip]
-    const RING1: [(i32, i32); 6] = [(0, -1), (1, -1), (1, 0), (0, 1), (-1, 1), (-1, 0)];
+    const RING1: [(i32, i32); 6] = [(1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1), (1, 0)];
     #[rustfmt::skip]
-    const RING2: [(i32, i32); 12] = [(0, -2), (1, -2), (2, -2), (2, -1), (2, 0), (1, 1), (0, 2), (-1, 2), (-2, 2), (-2, 1), (-2, 0), (-1, -1)];
+    const RING2: [(i32, i32); 12] = [(2, -2), (1, -2), (0, -2), (-1, -1), (-2, 0), (-2, 1), (-2, 2), (-1, 2), (0, 2), (1, 1), (2, 0), (2, -1)];
     #[rustfmt::skip]
-    const RING3: [(i32, i32); 18] = [(0, -3), (1, -3), (2, -3), (3, -3), (3, -2), (3, -1), (3, 0), (2, 1), (1, 2), (0, 3), (-1, 3), (-2, 3), (-3, 3), (-3, 2), (-3, 1), (-3, 0), (-2, -1), (-1, -2)];
+    const RING3: [(i32, i32); 18] = [(3, -3), (2, -3), (1, -3), (0, -3), (-1, -2), (-2, -1), (-3, 0), (-3, 1), (-3, 2), (-3, 3), (-2, 3), (-1, 3), (0, 3), (1, 2), (2, 1), (3, 0), (3, -1), (3, -2)];
 
     #[test]
     fn test_distance() {
@@ -291,41 +415,41 @@ mod tests {
 
     #[test]
     fn test_ring_0() {
-        test_ring(0, AxialCoord::origin(), Some(&RING0));
+        test_ring(0, AxialCoord::ORIGIN, Some(&RING0));
         test_ring(0, AxialCoord::new(13, -51), Some(&RING0));
     }
 
     #[test]
     fn test_ring_1() {
-        test_ring(1, AxialCoord::origin(), Some(&RING1));
+        test_ring(1, AxialCoord::ORIGIN, Some(&RING1));
         test_ring(1, AxialCoord::new(13, -51), Some(&RING1));
     }
 
     #[test]
     fn test_ring_2() {
-        test_ring(2, AxialCoord::origin(), Some(&RING2));
+        test_ring(2, AxialCoord::ORIGIN, Some(&RING2));
         test_ring(2, AxialCoord::new(13, -51), Some(&RING2));
     }
 
     #[test]
     fn test_ring_3() {
-        test_ring(3, AxialCoord::origin(), Some(&RING3));
+        test_ring(3, AxialCoord::ORIGIN, Some(&RING3));
         test_ring(3, AxialCoord::new(13, -51), Some(&RING3));
     }
 
     #[test]
     fn test_ring_big() {
         // test for both even and odd radius
-        test_ring(31, AxialCoord::origin(), None);
+        test_ring(31, AxialCoord::ORIGIN, None);
         test_ring(31, AxialCoord::new(13, -51), None);
-        test_ring(32, AxialCoord::origin(), None);
+        test_ring(32, AxialCoord::ORIGIN, None);
         test_ring(32, AxialCoord::new(13, -51), None);
     }
 
     #[test]
     fn test_spiral_0() {
         // Test spiral of radius 1
-        let spiral: Vec<_> = AxialCoord::origin().spiral(0).collect();
+        let spiral: Vec<_> = AxialCoord::ORIGIN.spiral(0).collect();
         assert_equal(
             spiral.iter().cloned(),
             (RING0.iter()).map(|(q, r)| AxialCoord::new(*q, *r)),
@@ -335,7 +459,7 @@ mod tests {
     #[test]
     fn test_spiral_1() {
         // Test spiral of radius 1
-        let spiral: Vec<_> = AxialCoord::origin().spiral(1).collect();
+        let spiral: Vec<_> = AxialCoord::ORIGIN.spiral(1).collect();
         assert_equal(
             spiral.iter().cloned(),
             (RING0.iter().chain(RING1.iter())).map(|(q, r)| AxialCoord::new(*q, *r)),
@@ -345,7 +469,7 @@ mod tests {
     #[test]
     fn test_spiral_2() {
         // Test spiral of radius 2
-        let spiral: Vec<_> = AxialCoord::origin().spiral(2).collect();
+        let spiral: Vec<_> = AxialCoord::ORIGIN.spiral(2).collect();
         assert_equal(
             spiral.iter().cloned(),
             (RING0.iter().chain(RING1.iter()).chain(RING2.iter())).map(|(q, r)| AxialCoord::new(*q, *r)),
@@ -360,7 +484,7 @@ mod tests {
     #[test]
     fn test_is_boundary_radius_1() {
         assert!(!AxialCoord::new(0, 0).is_boundary(1));
-        for coord in AxialCoord::origin().ring(1) {
+        for coord in AxialCoord::ORIGIN.ring(1) {
             assert!(coord.is_boundary(1), "expected boundary: {:?}", coord);
         }
     }
@@ -368,10 +492,10 @@ mod tests {
     #[test]
     fn test_is_boundary_radius_2() {
         assert!(!AxialCoord::new(0, 0).is_boundary(2));
-        for coord in AxialCoord::origin().ring(1) {
+        for coord in AxialCoord::ORIGIN.ring(1) {
             assert!(!coord.is_boundary(2), "expected interior: {:?}", coord);
         }
-        for coord in AxialCoord::origin().ring(2) {
+        for coord in AxialCoord::ORIGIN.ring(2) {
             assert!(coord.is_boundary(2), "expected boundary: {:?}", coord);
         }
     }
@@ -390,11 +514,55 @@ mod tests {
     #[test]
     fn test_spiral_3() {
         // Test spiral of radius 3
-        let spiral: Vec<_> = AxialCoord::origin().spiral(3).collect();
+        let spiral: Vec<_> = AxialCoord::ORIGIN.spiral(3).collect();
         assert_equal(
             spiral.iter().cloned(),
             (RING0.iter().chain(RING1.iter()).chain(RING2.iter()).chain(RING3.iter()))
                 .map(|(q, r)| AxialCoord::new(*q, *r)),
         );
+    }
+
+    #[test]
+    fn test_flat_position() {
+        let ring: Vec<_> = AxialCoord::ORIGIN.ring(1).collect();
+        let positions: Vec<_> = ring.iter().map(|coord| coord.flat().to_position(1.0)).collect();
+        let expected = [
+            Vec2::new(1.500, 0.866),
+            Vec2::new(0.000, 1.732),
+            Vec2::new(-1.500, 0.866),
+            Vec2::new(-1.500, -0.866),
+            Vec2::new(0.000, -1.732),
+            Vec2::new(1.500, -0.866),
+        ];
+        for (pos, exp) in positions.iter().zip(expected.iter()) {
+            assert!(
+                (pos.x - exp.x).abs() < 0.001 && (pos.y - exp.y).abs() < 0.001,
+                "expected: {:?}, got: {:?}",
+                exp,
+                pos
+            );
+        }
+    }
+
+    #[test]
+    fn test_pointy_position() {
+        let ring: Vec<_> = AxialCoord::ORIGIN.ring(1).collect();
+        let positions: Vec<_> = ring.iter().map(|coord| coord.pointy().to_position(1.0)).collect();
+        let expected = [
+            Vec2::new(1.732, 0.000),
+            Vec2::new(0.866, 1.500),
+            Vec2::new(-0.866, 1.500),
+            Vec2::new(-1.732, 0.000),
+            Vec2::new(-0.866, -1.500),
+            Vec2::new(0.866, -1.500),
+        ];
+        for (pos, exp) in positions.iter().zip(expected.iter()) {
+            assert!(
+                (pos.x - exp.x).abs() < 0.001 && (pos.y - exp.y).abs() < 0.001,
+                "expected: {:?}, got: {:?}",
+                exp,
+                pos
+            );
+        }
     }
 }

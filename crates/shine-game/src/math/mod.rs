@@ -1,5 +1,11 @@
-pub mod cdt;
+mod utils;
+
+pub mod debug;
 pub mod geometry;
 pub mod hex;
-pub mod mesh;
-pub mod rand;
+pub mod prng;
+pub mod quadrangulation;
+pub mod rect;
+pub mod triangulation;
+
+pub use self::utils::SQRT_3;
