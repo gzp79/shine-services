@@ -1,4 +1,4 @@
-import { createRouter } from './index';
+import { createRoutedScene } from './index';
 
 const container = document.getElementById('app')!;
-void createRouter(container);
+void createRoutedScene(container);

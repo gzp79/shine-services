@@ -56,7 +56,7 @@
         </div>
         <div id="app"></div>
         <script type="module">
-            import { createRouter } from './shine-web.js';
+            import { createRoutedScene } from './shine-web.js';
 
             const select = document.getElementById('scene-select');
 
@@ -76,7 +76,7 @@
             updateSelect();
 
             const container = document.getElementById('app');
-            createRouter(container);
+            createRoutedScene(container);
         </script>
     </body>
 </html>
