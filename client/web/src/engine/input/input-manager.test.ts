@@ -3,6 +3,16 @@ import { type MockedObject, afterEach, beforeEach, describe, expect, it, vi } fr
 import type { InputHandler } from './input-handler';
 import { InputManager } from './input-manager';
 
+// jsdom does not implement ResizeObserver — stub it so RawPointerTracker can construct
+vi.stubGlobal(
+    'ResizeObserver',
+    class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    }
+);
+
 describe('InputManager', () => {
     let manager: InputManager;
     let handler: MockedObject<InputHandler>;

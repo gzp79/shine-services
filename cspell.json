@@ -89,6 +89,7 @@
     "srgb",
     "srgba",
     "tera",
+    "texels",
     "thiserror",
     "timestamptz",
     "timestampz",

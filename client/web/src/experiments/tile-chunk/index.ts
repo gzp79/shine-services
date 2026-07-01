@@ -15,7 +15,7 @@ export interface TileChunkExperiment {
 const TILE_HEIGHT = 80;
 
 function buildCombinedMesh(): { geometry: THREE.BufferGeometry; ranges: Uint32Array } {
-    const boxGeo = new THREE.BoxGeometry(1, 1, 1, 4, 4, 4);
+    const boxGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8, 4, 4, 4);
     boxGeo.translate(0.5, 0.5, 0.5);
     const boxPos = new Float32Array(boxGeo.attributes.position.array);
     const boxIdx = new Uint32Array(boxGeo.index!.array);
@@ -51,18 +51,24 @@ function buildCombinedMesh(): { geometry: THREE.BufferGeometry; ranges: Uint32Ar
     return { geometry, ranges };
 }
 
+// CCW quad corners [BL, BR, TR, TL] → trilinear cp indices [0, 1, 3, 2]
+// cp layout: (0,0)=cp0, (1,0)=cp1, (0,1)=cp2, (1,1)=cp3  (bottom face, z=0)
+//            (0,0)=cp4, (1,0)=cp5, (0,1)=cp6, (1,1)=cp7  (top face,    z=1)
+const CCW_TO_CP = [0, 1, 3, 2];
+
 function buildTileDistortion(tileDistortions: Float32Array, tileIdx: number): TileDistortion {
     const d = new Float32Array(24);
     const base = tileIdx * 8; // 4 corners × 2 coords
     for (let c = 0; c < 4; c++) {
         const x = tileDistortions[base + c * 2];
         const y = tileDistortions[base + c * 2 + 1];
-        d[c * 3] = x;
-        d[c * 3 + 1] = y;
-        d[c * 3 + 2] = 0; // bottom plane, flat z=0
-        d[(c + 4) * 3] = x;
-        d[(c + 4) * 3 + 1] = y;
-        d[(c + 4) * 3 + 2] = TILE_HEIGHT; // top plane, flat z=TILE_HEIGHT
+        const cp = CCW_TO_CP[c];
+        d[cp * 3] = x;
+        d[cp * 3 + 1] = y;
+        d[cp * 3 + 2] = 0;
+        d[(cp + 4) * 3] = x;
+        d[(cp + 4) * 3 + 1] = y;
+        d[(cp + 4) * 3 + 2] = TILE_HEIGHT;
     }
     return d;
 }
@@ -166,12 +172,14 @@ class TileChunk extends Experiment {
         cells.free();
 
         this.tileCount = tileCount;
-        this.tileAssignments = new Uint8Array(tileCount); // all start as box (0)
+        this.tileAssignments = new Uint8Array(tileCount).map(() => (Math.random() < 0.5 ? 0 : 1));
 
         for (let i = 0; i < tileCount; i++) {
             const d = buildTileDistortion(tileDistortions, i);
             this.distortions.push(d);
-            this.tileNode.setTile(0, i, d);
+            if (!this.tileNode.setTile(this.tileAssignments[i], i, d)) {
+                console.warn(`setTile failed for key=${i} range=${this.tileAssignments[i]}`);
+            }
         }
         this.cellWire = WireNode.fromPolygons(this.cellsGroup, {
             vertices: cellVertices,

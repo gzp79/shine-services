@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
-import { attribute, mix, uniform } from 'three/tsl';
+import { mix, positionLocal, uniform } from 'three/tsl';
 import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
 import { ManagedMesh } from '../../engine/render/managed-mesh';
 import { disposeObject3D } from '../../engine/render/ownership';
@@ -116,7 +116,7 @@ class Trilinear extends Experiment {
         const cp5 = uniform(corners[5]);
         const cp6 = uniform(corners[6]);
         const cp7 = uniform(corners[7]);
-        const pos = attribute('position', 'vec3');
+        const pos = positionLocal;
         const c00 = mix(cp0, cp1, pos.x);
         const c01 = mix(cp2, cp3, pos.x);
         const c10 = mix(cp4, cp5, pos.x);

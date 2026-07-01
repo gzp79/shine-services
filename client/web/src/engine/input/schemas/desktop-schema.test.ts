@@ -4,6 +4,16 @@ import { InputConst } from '../../../constants';
 import type { InputHandler } from '../input-handler';
 import { DesktopSchema } from './desktop-schema';
 
+// jsdom does not implement ResizeObserver — stub it so RawPointerTracker can construct
+vi.stubGlobal(
+    'ResizeObserver',
+    class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    }
+);
+
 describe('DesktopSchema', () => {
     let schema: DesktopSchema;
     let container: HTMLElement;
