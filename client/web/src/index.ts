@@ -17,7 +17,7 @@ async function createSharedRenderer(): Promise<WebGPURenderer> {
     return renderer;
 }
 
-async function createScene(id: SceneId, container: HTMLElement, renderer: WebGPURenderer): Promise<Viewer> {
+async function createContent(id: SceneId, container: HTMLElement, renderer: WebGPURenderer): Promise<Viewer> {
     switch (id) {
         case 'hex-mesh':
             return createHexMeshExperiment(container, renderer);
@@ -36,7 +36,21 @@ async function createScene(id: SceneId, container: HTMLElement, renderer: WebGPU
     }
 }
 
-export async function createRouter(container: HTMLElement) {
+export async function createScene(container: HTMLElement, id: SceneId): Promise<Viewer> {
+    const renderer = await createSharedRenderer();
+    container.appendChild(renderer.domElement);
+    const scene = await createContent(id, container, renderer);
+
+    return {
+        dispose() {
+            scene?.dispose();
+            renderer.dispose();
+            renderer.domElement.remove();
+        }
+    };
+}
+
+export async function createRoutedScene(container: HTMLElement) {
     const renderer = await createSharedRenderer();
     container.appendChild(renderer.domElement);
 
@@ -46,7 +60,7 @@ export async function createRouter(container: HTMLElement) {
         const hash = window.location.hash.replace('#', '') as SceneId;
         current?.dispose();
         current = null;
-        current = await createScene(hash, container, renderer);
+        current = await createContent(hash, container, renderer);
     }
 
     window.addEventListener('hashchange', () => void navigate());
