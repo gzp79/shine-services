@@ -60,6 +60,10 @@ jobs:
         working-directory: client/web
         run: pnpm install
 
+      - name: Build WASM
+        working-directory: client/web
+        run: pnpm build:wasm
+
       - name: Build
         working-directory: client/web
         run: pnpm build

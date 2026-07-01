@@ -7,7 +7,7 @@ import { ChunkConst } from '../../constants';
 import { ChunkId, HexFlatDir } from './chunk-id';
 
 beforeAll(async () => {
-    const wasmPath = fileURLToPath(new URL('../../pkg/shine_game_bg.wasm', import.meta.url));
+    const wasmPath = fileURLToPath(new URL('../../../pkg/shine_game_bg.wasm', import.meta.url));
     const wasmModule = new WebAssembly.Module(readFileSync(wasmPath));
     await init(wasmModule);
 });
