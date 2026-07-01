@@ -8,7 +8,7 @@ use postgres_from_row::FromRow;
 use shine_infra::{
     crypto::DataProtectionUtils,
     db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
-    email::Email,
+    email::{Email, NORM_EMAIL_VERSION},
     pg_query,
 };
 use tokio_postgres::types::{accepts, to_sql_checked, FromSql, IsNull, ToSql, Type};
@@ -84,7 +84,7 @@ impl IdentityRow {
         let email = match (self.encrypted_email, self.encrypted_normalized_email) {
             (Some(enc_raw), Some(enc_norm)) => {
                 let raw = email_protection.decrypt(&enc_raw)?;
-                let normalized = email_protection.decrypt(&enc_norm)?;
+                let normalized = email_protection.decrypt_versioned(NORM_EMAIL_VERSION, &enc_norm)?;
                 Some(Email::from_parts(raw, normalized))
             }
             _ => None,
@@ -195,7 +195,9 @@ impl Identities for PgIdentityDbContext<'_> {
 
         let (encrypted_email, encrypted_normalized_email, email_hash) = if let Some((email, _)) = email {
             let encrypted_email = self.email_protection.encrypt(email.raw())?;
-            let encrypted_normalized_email = self.email_protection.encrypt(email.normalized())?;
+            let encrypted_normalized_email = self
+                .email_protection
+                .encrypt_versioned(NORM_EMAIL_VERSION, email.normalized())?;
             let email_hash = email.hash();
             (
                 Some(encrypted_email),
@@ -282,7 +284,9 @@ impl Identities for PgIdentityDbContext<'_> {
     ) -> Result<Option<Identity>, IdentityError> {
         let (encrypted_email, encrypted_normalized_email, email_hash) = if let Some((email, _)) = email {
             let encrypted_email = self.email_protection.encrypt(email.raw())?;
-            let encrypted_normalized_email = self.email_protection.encrypt(email.normalized())?;
+            let encrypted_normalized_email = self
+                .email_protection
+                .encrypt_versioned(NORM_EMAIL_VERSION, email.normalized())?;
             let email_hash = email.hash();
             (
                 Some(encrypted_email),

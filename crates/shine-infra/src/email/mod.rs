@@ -3,4 +3,4 @@
 mod email;
 mod normalizer;
 
-pub use crate::email::email::Email;
+pub use crate::email::{email::Email, normalizer::NORM_EMAIL_VERSION};

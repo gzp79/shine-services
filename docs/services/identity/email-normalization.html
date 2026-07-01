@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Email Normalization &amp; Storage</title>
+<link rel="stylesheet" href="../../doc.css">
+</head>
+<body>
+
+<header class="doc-header">
+  <h1 class="doc-title">Email Normalization &amp; Storage</h1>
+  <div class="doc-meta">
+    <span>How emails are validated, provider-normalized, encrypted, and stored for identity lookup.</span>
+  </div>
+</header>
+
+<h2>Problem</h2>
+<p>
+  The same physical inbox can be reached by multiple address strings: <code>user+tag@gmail.com</code>,
+  <code>U.Ser@Gmail.Com</code>, and <code>user@googlemail.com</code> all deliver to the same person.
+  Without normalization, a duplicate registration would succeed and the user would own two accounts.
+  The system therefore stores three distinct representations of every email: the raw form for display
+  and sending, a provider-normalized form for uniqueness enforcement, and an unkeyed hash for
+  indexed lookup without exposing plaintext.
+</p>
+
+<h2>Architecture</h2>
+
+<div class="canvas">
+  <div class="layer-row">
+    <div class="layer-label">Input</div>
+    <div class="layer-body">
+      <div class="box box-indigo" style="flex:1">
+        <div class="bname">Raw string</div>
+        <div class="bdetail">user input or OAuth provider claim</div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow-row" style="min-height:32px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-teal" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">Email::new() — validate, trim, lowercase, provider rules</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-label">Email value</div>
+    <div class="layer-body">
+      <div class="box box-teal" style="flex:1">
+        <div class="bname">Email { raw, normalized }</div>
+        <div class="bdetail">raw = trimmed+lowercased<br>normalized = raw + provider steps</div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow-row" style="min-height:32px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-blue" style="flex:2">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">encrypt(raw), encrypt(normalized, version)</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+      <div class="arrow-item arr-green" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">SHA-256(normalized) → email_hash</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-label">Storage</div>
+    <div class="layer-body">
+      <div class="box box-blue" style="flex:2">
+        <div class="bname">encrypted_email<br>encrypted_normalized_email</div>
+        <div class="bdetail">AES-256-GCM; normalized carries version prefix</div>
+      </div>
+      <div class="box box-green" style="flex:1">
+        <div class="bname">email_hash</div>
+        <div class="bdetail">unique index; no key needed for lookup</div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow-row" style="min-height:32px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-blue" style="flex:2">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">decrypt, version check → Email::from_parts(raw, norm)</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+      <div class="arrow-item arr-green" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">hash input, WHERE email_hash = $1</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-label">Read back</div>
+    <div class="layer-body">
+      <div class="box box-violet" style="flex:1">
+        <div class="bname">Email { raw, normalized }</div>
+        <div class="bdetail">reconstructed via from_parts — no re-normalization</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>Provider normalization rules</h2>
+<table>
+  <tr><th>Provider</th><th>Domains</th><th>Steps applied to local part</th></tr>
+  <tr><td>Gmail</td><td>gmail.com, googlemail.com → gmail.com</td><td>strip plus-tag, remove dots</td></tr>
+  <tr><td>Yahoo</td><td>yahoo.com, yahoo.co.uk, ymail.com</td><td>strip dash-tag (first <code>-</code>)</td></tr>
+  <tr><td>Outlook</td><td>outlook.com, hotmail.com, live.com</td><td>strip plus-tag</td></tr>
+  <tr><td>All others</td><td>—</td><td>none (raw = normalized)</td></tr>
+</table>
+
+<h2>Key rules</h2>
+<table>
+  <tr><th>Rule</th><th>Details</th></tr>
+  <tr>
+    <td>Use <code>raw</code> for human-facing output</td>
+    <td>Display, sending email, API responses — never expose <code>normalized</code>.</td>
+  </tr>
+  <tr>
+    <td>Use <code>normalized</code> + <code>email_hash</code> for uniqueness</td>
+    <td>DB unique index on <code>email_hash</code>; lookup by hashing the normalized input.</td>
+  </tr>
+  <tr>
+    <td>Always reconstruct via <code>from_parts</code> on DB read</td>
+    <td>Decrypt both columns, call <code>Email::from_parts(raw, norm)</code>. Never call <code>Email::new</code>
+        on a stored value — it would re-derive normalization and diverge if rules changed.</td>
+  </tr>
+  <tr>
+    <td>Normalized field carries a version prefix</td>
+    <td><code>encrypt(normalized, version)</code> prepends a version tag before encryption.
+        <code>decrypt</code> verifies the prefix and fails on mismatch, flagging rows that need migration.
+        See the implementation note below.</td>
+  </tr>
+  <tr>
+    <td>Version mismatch = needs re-normalization</td>
+    <td>A row whose <code>encrypted_normalized_email</code> decrypts to a different version
+        must be re-normalized and re-written before use. A background migration job scans
+        for mismatches after a rule change.</td>
+  </tr>
+</table>
+
+<h2>Storage locations</h2>
+<table>
+  <tr><th>Table</th><th>Columns</th><th>What is stored</th></tr>
+  <tr>
+    <td><code>identities</code></td>
+    <td><code>encrypted_email</code><br><code>encrypted_normalized_email</code><br><code>email_hash</code></td>
+    <td>Primary user account email. Both forms encrypted; hash is the unique lookup key.</td>
+  </tr>
+  <tr>
+    <td><code>login_tokens</code></td>
+    <td><code>encrypted_email</code></td>
+    <td>Email bound to an <code>EmailAccess</code> token (raw form only). Required for token kind 4.</td>
+  </tr>
+  <tr>
+    <td><code>external_logins</code></td>
+    <td><code>encrypted_email</code></td>
+    <td>Raw email claim from OAuth/OIDC provider. Informational; not used for uniqueness.</td>
+  </tr>
+</table>
+
+<h2>File map</h2>
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>crates/shine-infra/src/email/email.rs</code></td><td><code>Email</code> type: construction, normalization dispatch, hash, serialization.</td></tr>
+  <tr><td><code>crates/shine-infra/src/email/normalizer.rs</code></td><td>Provider rule registry and <code>normalize_email()</code>.</td></tr>
+  <tr><td><code>crates/shine-infra/src/email/mod.rs</code></td><td>Module exports and normalization version constant.</td></tr>
+  <tr><td><code>crates/shine-infra/src/crypto/data_protection.rs</code></td><td><code>DataProtectionUtils</code>: AES-256-GCM encrypt/decrypt with optional version prefix.</td></tr>
+  <tr><td><code>services/identity/sql_migrations/V1__identities.sql</code></td><td>Defines <code>encrypted_email</code>, <code>encrypted_normalized_email</code>, <code>email_hash</code> on <code>identities</code>.</td></tr>
+  <tr><td><code>services/identity/sql_migrations/V4__login_tokens.sql</code></td><td>Defines <code>encrypted_email</code> on <code>login_tokens</code>.</td></tr>
+  <tr><td><code>services/identity/src/repositories/identity/pg/pg_identities.rs</code></td><td>Encrypts/decrypts both email columns; reads via <code>from_parts</code>.</td></tr>
+  <tr><td><code>services/identity/src/repositories/identity/pg/pg_tokens.rs</code></td><td>Stores and reads token-bound email; identity email reads via <code>from_parts</code>.</td></tr>
+  <tr><td><code>services/identity/src/repositories/identity/pg/pg_external_links.rs</code></td><td>Stores raw provider email; identity join reads via <code>from_parts</code>.</td></tr>
+</table>
+
+<details data-agent="implementation" data-transient="true">
+  <summary>Versioned normalized-email encryption — design intent</summary>
+  <div class="details-body">
+    <p>
+      The normalization rules are provider-specific and may change (e.g. a new provider added,
+      or a rule corrected). Any change invalidates every stored <code>encrypted_normalized_email</code>
+      that was written under the old rules. Without a way to detect which rows are stale, a silent
+      divergence occurs: the DB holds old normalized forms while new logins hash against new rules,
+      breaking lookup.
+    </p>
+    <p>
+      The version prefix makes stale rows detectable at read time:
+    </p>
+    <pre><code>// Conceptual shape — not yet implemented
+const NORM_EMAIL_VERSION: &str = "v1";
+
+// Encrypt: prepend version before encrypting
+fn encrypt_normalized(data_protection: &DataProtectionUtils, normalized: &str) -> String {
+    data_protection.encrypt(&format!("{NORM_EMAIL_VERSION}.{normalized}"))
+}
+
+// Decrypt: verify prefix, strip it, return normalized string
+fn decrypt_normalized(data_protection: &DataProtectionUtils, ciphertext: &str)
+    -> Result<String, DataProtectionError>
+{
+    let plain = data_protection.decrypt(ciphertext)?;
+    let expected = format!("{NORM_EMAIL_VERSION}.");
+    plain
+        .strip_prefix(&expected)
+        .map(|s| s.to_owned())
+        .ok_or(DataProtectionError::VersionMismatch)
+}</code></pre>
+    <p>
+      The version constant lives in <code>crates/shine-infra/src/email/mod.rs</code> so it is
+      co-located with the normalization rules. When the rules change, bump the constant;
+      a background job can then scan for rows where decrypt returns <code>VersionMismatch</code>
+      and re-normalize them.
+    </p>
+    <p>
+      The <code>DataProtectionUtils</code> encrypt/decrypt signatures should accept an optional
+      version argument used only for the normalized column. The <code>encrypted_email</code>
+      (raw form) column never changes meaning and does not need versioning.
+    </p>
+  </div>
+</details>
+
+<details data-agent="security">
+  <summary>Why email_hash is unkeyed SHA-256</summary>
+  <div class="details-body">
+    <p>
+      <code>email_hash</code> is a plain SHA-256 of the normalized address. It is stored in
+      clear text and used as a unique index for fast lookup. Because the hash is unkeyed,
+      a database dump exposes it to offline dictionary attacks: an attacker with the hash column
+      can check candidate addresses by hashing them.
+    </p>
+    <p>
+      This is a deliberate trade-off: a keyed HMAC would require the application key to be
+      present for every lookup, but the hash is also used as a DB-level uniqueness constraint
+      (<code>UNIQUE INDEX idx_email_hash</code>) that fires at INSERT time — before the
+      application layer is involved. Switching to a keyed HMAC would require computing it
+      in-application and dropping the DB constraint, which sacrifices atomicity of the
+      duplicate-detection step.
+    </p>
+    <p>
+      Mitigation: the actual email content is encrypted at rest (<code>encrypted_email</code>,
+      <code>encrypted_normalized_email</code>); an attacker with only the hash column still
+      cannot read email addresses without brute-force. Monitor access to the hash column in
+      any DB-level audit logging.
+    </p>
+  </div>
+</details>
+
+</body>
+</html>

@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+/// Bump when normalization rules change. All rows whose
+/// `encrypted_normalized_email` decrypts to a different version are stale
+/// and must be re-normalized before use.
+pub const NORM_EMAIL_VERSION: &str = "1";
+
 type NormStep = fn(&mut String);
 
 struct ProviderRule {

@@ -16,6 +16,8 @@ pub enum DataProtectionError {
     DecryptionError,
     #[error("Invalid key length")]
     InvalidKeyLength,
+    #[error("Version mismatch in encrypted data")]
+    VersionMismatch,
 }
 
 pub struct DataProtectionUtils {
@@ -71,6 +73,21 @@ impl DataProtectionUtils {
     pub fn hash(&self, data: &str) -> String {
         let signature = hmac::sign(&self.hmac_key, data.as_bytes());
         B64.encode(signature.as_ref())
+    }
+
+    /// Encrypt `data` and prepend a cleartext version tag: `"<version>.<ciphertext>"`.
+    pub fn encrypt_versioned(&self, version: &str, data: &str) -> Result<String, DataProtectionError> {
+        let ciphertext = self.encrypt(data)?;
+        Ok(format!("{version}.{ciphertext}"))
+    }
+
+    /// Decrypt data produced by `encrypt_versioned` and verifies the cleartext version.
+    pub fn decrypt_versioned(&self, version: &str, data: &str) -> Result<String, DataProtectionError> {
+        let ciphertext = data
+            .strip_prefix(version)
+            .and_then(|s| s.strip_prefix('.'))
+            .ok_or(DataProtectionError::VersionMismatch)?;
+        self.decrypt(ciphertext)
     }
 }
 

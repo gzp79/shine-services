@@ -13,7 +13,6 @@ use validator::ValidationError;
 fn hash_email(normalized: &str) -> String {
     let hash = digest::digest(&digest::SHA256, normalized.as_bytes());
     let hash = hex::encode(hash);
-    tracing::debug!("Hashing email: {normalized:?} -> [{hash}]");
     hash
 }
 

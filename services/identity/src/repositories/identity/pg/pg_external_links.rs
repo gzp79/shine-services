@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
 use shine_infra::{
     db::{DBError, PGClient, PGErrorChecks},
-    email::Email,
+    email::{Email, NORM_EMAIL_VERSION},
     pg_query,
 };
 use tracing::instrument;
@@ -202,7 +202,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
             let email = match (row.encrypted_email, row.encrypted_normalized_email) {
                 (Some(enc_raw), Some(enc_norm)) => {
                     let raw = self.email_protection.decrypt(&enc_raw)?;
-                    let normalized = self.email_protection.decrypt(&enc_norm)?;
+                    let normalized = self.email_protection.decrypt_versioned(NORM_EMAIL_VERSION, &enc_norm)?;
                     Some(Email::from_parts(raw, normalized))
                 }
                 _ => None,

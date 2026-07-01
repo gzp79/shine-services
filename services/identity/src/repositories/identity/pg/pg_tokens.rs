@@ -10,7 +10,7 @@ use chrono::{DateTime, Duration, Utc};
 use postgres_from_row::FromRow;
 use shine_infra::{
     db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
-    email::Email,
+    email::{Email, NORM_EMAIL_VERSION},
     pg_query,
     web::extracts::{ClientFingerprint, SiteInfo},
 };
@@ -145,6 +145,7 @@ struct IdentityTokenRow {
     kind: IdentityKind,
     name: String,
     encrypted_email: Option<String>,
+    encrypted_normalized_email: Option<String>,
     email_confirmed: bool,
     created: DateTime<Utc>,
     token_hash: String,
@@ -165,7 +166,7 @@ pg_query!( TestToken =>
     in = token: &str, allowed_kind: &[TokenKind];
     out = IdentityTokenRow;
     sql = r#"
-        SELECT i.user_id, i.kind, i.name, i.encrypted_email, i.email_confirmed, i.created,
+        SELECT i.user_id, i.kind, i.name, i.encrypted_email, i.encrypted_normalized_email, i.email_confirmed, i.created,
                 t.token token_hash,
                 t.created token_created,
                 t.expire token_expire,
@@ -194,7 +195,7 @@ pg_query!( TakeToken =>
         WHERE lt.token = $1 AND lt.kind = any($2)
         RETURNING *        
     )
-    SELECT i.user_id, i.kind, i.name, i.encrypted_email, i.email_confirmed, i.created,
+    SELECT i.user_id, i.kind, i.name, i.encrypted_email, i.encrypted_normalized_email, i.email_confirmed, i.created,
         t.token token_hash,
         t.created token_created,
         t.expire token_expire,
@@ -469,16 +470,14 @@ impl Tokens for PgIdentityDbContext<'_> {
                 city: row.token_city,
             };
 
-            let identity_email = row
-                .encrypted_email
-                .as_deref()
-                .map(|email| {
-                    let decrypted = self.email_protection.decrypt(email)?;
-                    Email::new(decrypted).map_err(|_| {
-                        IdentityError::DataProtectionError(shine_infra::crypto::DataProtectionError::DecryptionError)
-                    })
-                })
-                .transpose()?;
+            let identity_email = match (row.encrypted_email, row.encrypted_normalized_email) {
+                (Some(enc_raw), Some(enc_norm)) => {
+                    let raw = self.email_protection.decrypt(&enc_raw)?;
+                    let normalized = self.email_protection.decrypt_versioned(NORM_EMAIL_VERSION, &enc_norm)?;
+                    Some(Email::from_parts(raw, normalized))
+                }
+                _ => None,
+            };
             let identity = Identity {
                 id: row.user_id,
                 kind: row.kind,
@@ -533,16 +532,14 @@ impl Tokens for PgIdentityDbContext<'_> {
                 city: row.token_city,
             };
 
-            let identity_email = row
-                .encrypted_email
-                .as_deref()
-                .map(|email| {
-                    let decrypted = self.email_protection.decrypt(email)?;
-                    Email::new(decrypted).map_err(|_| {
-                        IdentityError::DataProtectionError(shine_infra::crypto::DataProtectionError::DecryptionError)
-                    })
-                })
-                .transpose()?;
+            let identity_email = match (row.encrypted_email, row.encrypted_normalized_email) {
+                (Some(enc_raw), Some(enc_norm)) => {
+                    let raw = self.email_protection.decrypt(&enc_raw)?;
+                    let normalized = self.email_protection.decrypt_versioned(NORM_EMAIL_VERSION, &enc_norm)?;
+                    Some(Email::from_parts(raw, normalized))
+                }
+                _ => None,
+            };
             let identity = Identity {
                 id: row.user_id,
                 kind: row.kind,
