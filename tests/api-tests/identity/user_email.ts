@@ -556,29 +556,26 @@ test.describe('Email change', () => {
         );
     });
 
-    test('Changing to a tagged email already owned by another user shall fail', async ({ api }) => {
+    test('Changing email to a tagged variant that normalizes to another user email shall fail', async ({ api }) => {
         const smtp = await startMockEmail();
 
         const local = randomUUID().replace(/-/g, '').slice(0, 12);
-        const canonicalEmail = `${local}@gmail.com`;
-        const taggedEmail = `${local}+other@gmail.com`;
+        const tag1Email = `${local}+tag1@gmail.com`;
+        const tag2Email = `${local}+tag2@gmail.com`;
 
-        // user1 owns the canonical form
-        const user1 = await api.testUsers.createLinked(mockAuth, { email: canonicalEmail });
+        const user1 = await api.testUsers.createLinked(mockAuth, { email: tag1Email });
         await user1.confirmEmail(smtp);
 
-        // user2 owns the tagged variant
-        const user2 = await api.testUsers.createLinked(mockAuth, { email: taggedEmail });
-        await user2.confirmEmail(smtp);
+        const user2 = await api.testUsers.createLinked(mockAuth);
 
-        // user1 tries to change to the tagged variant — normalized hash collision → conflict
+        // user2 tries to set email to a different tagged variant — normalized hash collision → conflict
         const mailPromise = smtp.waitMail();
-        await api.user.startChangeEmail(user1.sid, taggedEmail);
+        await api.user.startChangeEmail(user2.sid, tag2Email);
         const mail = await mailPromise;
         const token = getEmailLinkToken(mail);
         expect(token).toBeString();
 
-        const response = await api.user.completeConfirmEmailRequest(user1.sid, token!);
+        const response = await api.user.completeConfirmEmailRequest(user2.sid, token!);
         expect(response).toHaveStatus(412);
         expect(await response.parseProblem()).toEqual(
             expect.objectContaining({

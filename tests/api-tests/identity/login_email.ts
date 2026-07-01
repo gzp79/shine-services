@@ -1,5 +1,6 @@
 import { Api, expect, test } from '$fixtures/setup';
 import { ApiResponse, ProblemSchema } from '$lib/api/api';
+import { TestUser } from '$lib/api/test_user';
 import { getEmailLink, getPageProblem, getPageRedirectUrl } from '$lib/api/utils';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import OpenIDMockServer from '$lib/mocks/openid';
@@ -381,31 +382,41 @@ test.describe('Login with email for guest', () => {
 
     test('Login link is bound to the exact email variant (cross-tag reuse is rejected)', async ({ api, homeUrl }) => {
         const local = randomUUID().replace(/-/g, '').slice(0, 12);
-        const canonicalEmail = `${local}@gmail.com`;
-        const taggedEmail = `${local}+promo@gmail.com`;
+        const tag1Email = `${local}+tag1@gmail.com`;
+        const tag2Email = `${local}+tag2@gmail.com`;
 
-        // Register with canonical form
+        // Register with tag1 and complete login
         const mail1Promise = mock.waitMail();
-        await api.auth.loginWithEmailRequest(canonicalEmail, true, null);
+        await api.auth.loginWithEmailRequest(tag1Email, true, null);
         const mail1 = await mail1Promise;
         const response1 = await api.client.get(getEmailLink(mail1));
         expect(response1).toHaveStatus(200);
+        const sid = response1.cookies().sid?.value;
+        expect(sid).toBeString();
 
-        // Request a login link for the tagged variant
+        // Request tag1 login link and capture its captcha — don't follow it
+        const tag1MailPromise = mock.waitMail();
+        await api.auth.loginWithEmailRequest(tag1Email, true, null);
+        const tag1Mail = await tag1MailPromise;
+        const tag1Captcha = new URL(getEmailLink(tag1Mail)).searchParams.get('captcha')!;
+
+        // Change the account email to tag2
+        const info = await api.user.getUserInfo(sid!, 'full');
+        const testUser = new TestUser(info.userId, api.auth, api.user);
+        testUser.sid = sid!;
+        testUser.userInfo = info;
+        await testUser.changeEmail(mock, tag2Email);
+
+        // Request tag2 login link
         const mail2Promise = mock.waitMail();
-        await api.auth.loginWithEmailRequest(taggedEmail, true, null);
+        await api.auth.loginWithEmailRequest(tag2Email, true, null);
         const mail2 = await mail2Promise;
-        const taggedLink = new URL(getEmailLink(mail2));
+        const loginLink = new URL(getEmailLink(mail2));
 
-        // Swap the captcha for the canonical email's hash — simulating a cross-variant reuse attempt
-        const canonicalMailPromise = mock.waitMail();
-        await api.auth.loginWithEmailRequest(canonicalEmail, true, null);
-        const canonicalMail = await canonicalMailPromise;
-        const canonicalCaptcha = new URL(getEmailLink(canonicalMail)).searchParams.get('captcha')!;
+        // Swap in tag1's captcha — token is bound to tag2, captcha claims tag1
+        loginLink.searchParams.set('captcha', tag1Captcha);
 
-        taggedLink.searchParams.set('captcha', canonicalCaptcha);
-
-        const loginResponse = await api.client.get(taggedLink.toString());
+        const loginResponse = await api.client.get(loginLink.toString());
         expect(loginResponse).toHaveStatus(200);
         const loginText = await loginResponse.text();
         expect(getPageRedirectUrl(loginText)).toEqual(
