@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { instanceIndex, ivec2, textureLoad, vec2, vec3, vec4 } from 'three/tsl';
+import { instanceIndex, int, ivec2, textureLoad, vec2, vec3, vec4 } from 'three/tsl';
 import { InstanceBuffer, nextPow2 } from './instance-buffer';
 
 const SWIZZLE = ['x', 'y', 'z', 'w'] as const;
@@ -8,9 +8,15 @@ export class InstanceData {
     private textures: readonly THREE.DataTexture[];
     private readonly cache = new Map<number, ReturnType<typeof textureLoad>>();
     private readonly iIdx = instanceIndex.toInt();
+    // In strip mode: number of texels per instance per buffer (baked into shader at material time).
+    // Null in tall-texture mode.
+    private readonly texelsPerBuf: readonly number[] | null;
+    private readonly stripHeight: number;
 
-    constructor(textures: readonly THREE.DataTexture[]) {
+    constructor(textures: readonly THREE.DataTexture[], stripHeight: number, texelsPerBuf: readonly number[] | null) {
         this.textures = textures;
+        this.stripHeight = stripHeight;
+        this.texelsPerBuf = texelsPerBuf;
     }
 
     replaceTextures(newTextures: readonly THREE.DataTexture[]): void {
@@ -18,9 +24,25 @@ export class InstanceData {
         this.cache.clear();
     }
 
-    private texel(bufIdx: number, row: number): ReturnType<typeof textureLoad> {
-        const key = bufIdx * 1024 + row;
-        if (!this.cache.has(key)) this.cache.set(key, textureLoad(this.textures[bufIdx], ivec2(row, this.iIdx)));
+    private texel(bufIdx: number, texelOffset: number): ReturnType<typeof textureLoad> {
+        const key = bufIdx * 1024 + texelOffset;
+        if (!this.cache.has(key)) {
+            let coord;
+            if (this.stripHeight > 0) {
+                // strip layout: width = numStrips * T, height = stripHeight (fixed)
+                // slot = iIdx; strip = floor(slot / stripHeight); row = slot % stripHeight
+                // x = strip * T + texelOffset;  y = row
+                const T = this.texelsPerBuf![bufIdx];
+                const strip = this.iIdx.div(int(this.stripHeight));
+                const row = this.iIdx.mod(int(this.stripHeight));
+                coord = ivec2(strip.mul(int(T)).add(int(texelOffset)), row);
+            } else {
+                // tall layout: width = T, height = maxInstances
+                // x = texelOffset, y = instanceIndex
+                coord = ivec2(texelOffset, this.iIdx);
+            }
+            this.cache.set(key, textureLoad(this.textures[bufIdx], coord));
+        }
         return this.cache.get(key)!;
     }
 
@@ -63,6 +85,10 @@ export type InstancedMultiMeshParams = {
     geometry: THREE.BufferGeometry;
     variants: VariantDef[];
     instanceCountHint?: number;
+    // Strip height for wide-texture mode. When set, the texture grows in width
+    // (adding strips) rather than height, keeping height <= pageSizeHint.
+    // Defaults to 0 (tall texture mode, grows height).
+    pageSizeHint?: number;
 };
 
 export type InstanceBufferLayout = {
@@ -96,16 +122,19 @@ type VariantEntry = {
     instanceData: InstanceData;
     subMeshes: SubMesh[];
     parts: SubMeshDef[];
+    texelsPerBuffer: readonly number[];
 };
 
 export abstract class InstancedMultiMesh {
     readonly group = new THREE.Group();
     protected readonly sourceGeo: THREE.BufferGeometry;
     private readonly variants: VariantEntry[] = [];
+    private readonly stripHeight: number;
 
     protected constructor(parent: THREE.Object3D, params: InstancedMultiMeshParams) {
         parent.add(this.group);
         this.sourceGeo = params.geometry;
+        this.stripHeight = params.pageSizeHint ?? 0;
         const layout = this.instanceBufferLayout();
         const hint = nextPow2(Math.max(1, params.instanceCountHint ?? DEFAULT_INSTANCE_HINT));
 
@@ -116,10 +145,16 @@ export abstract class InstancedMultiMesh {
         });
 
         for (const variantDef of params.variants) {
-            const instanceBuffer = new InstanceBuffer(hint, texelsPerBuffer);
-            const instanceData = new InstanceData(instanceBuffer.textures);
+            const instanceBuffer = new InstanceBuffer(hint, texelsPerBuffer, this.stripHeight);
+            const instanceData = this._makeInstanceData(instanceBuffer.textures, texelsPerBuffer);
             const subMeshes: SubMesh[] = [];
-            const entry: VariantEntry = { instanceBuffer, instanceData, subMeshes, parts: variantDef.parts };
+            const entry: VariantEntry = {
+                instanceBuffer,
+                instanceData,
+                subMeshes,
+                parts: variantDef.parts,
+                texelsPerBuffer
+            };
             this.variants.push(entry);
 
             for (let pi = 0; pi < variantDef.parts.length; pi++) {
@@ -144,6 +179,13 @@ export abstract class InstancedMultiMesh {
                 };
             }
         }
+    }
+
+    private _makeInstanceData(
+        textures: readonly THREE.DataTexture[],
+        texelsPerBuffer: readonly number[]
+    ): InstanceData {
+        return new InstanceData(textures, this.stripHeight, this.stripHeight > 0 ? texelsPerBuffer : null);
     }
 
     protected abstract instanceBufferLayout(): InstanceBufferLayout;

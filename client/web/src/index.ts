@@ -21,7 +21,7 @@ type SceneId =
     | 'instanced-color-mesh';
 
 async function createSharedRenderer(): Promise<WebGPURenderer> {
-    const renderer = new WebGPURenderer({ antialias: true, forceWebGL: false });
+    const renderer = new WebGPURenderer({ antialias: true, forceWebGL: false, powerPreference: 'high-performance' });
     await renderer.init();
     return renderer;
 }

@@ -2,6 +2,7 @@ import GUI from 'lil-gui';
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import { InstancedColorMesh } from '../../engine/nodes/instanced-color-mesh';
+import { PerformanceMetrics } from '../../engine/performance-metrics';
 import { Experiment } from '../experiment';
 
 export interface InstancedColorMeshExperiment {
@@ -19,21 +20,19 @@ const PALETTE = [
     new THREE.Color(0xffffff) // white
 ];
 
-const MAX_ROW = 10;
-const SPACING = 1.2;
-const LANE_GAP = 3.0;
+const BOX_HALF = 5.0;
 
-function makeTranslation(variantIndex: number, instanceIndex: number): THREE.Matrix4 {
-    const x = (instanceIndex % MAX_ROW) * SPACING;
-    const y = variantIndex * LANE_GAP;
-    const z = Math.floor(instanceIndex / MAX_ROW) * SPACING;
+function randomTransform(): THREE.Matrix4 {
+    const x = (Math.random() * 2 - 1) * BOX_HALF;
+    const y = (Math.random() * 2 - 1) * BOX_HALF;
+    const z = (Math.random() * 2 - 1) * BOX_HALF;
     return new THREE.Matrix4().makeTranslation(x, y, z);
 }
 
 function buildGeometry(): { geometry: THREE.BufferGeometry; ranges: number[] } {
-    const sphere = new THREE.SphereGeometry(0.4, 16, 12);
-    const cone = new THREE.ConeGeometry(0.3, 0.8, 16);
-    const torus = new THREE.TorusGeometry(0.3, 0.1, 12, 24);
+    const sphere = new THREE.SphereGeometry(0.08, 16, 12);
+    const cone = new THREE.ConeGeometry(0.06, 0.16, 16);
+    const torus = new THREE.TorusGeometry(0.06, 0.02, 12, 24);
     const geos = [sphere, cone, torus];
 
     let totalVerts = 0;
@@ -87,20 +86,24 @@ function buildGeometry(): { geometry: THREE.BufferGeometry; ranges: number[] } {
 class InstancedColorMeshExp extends Experiment {
     private readonly mesh: InstancedColorMesh;
     private readonly gui: GUI;
+    private readonly metrics: PerformanceMetrics;
     private readonly params = { a: 5, b: 5, c: 5 };
     private readonly counts = [0, 0, 0];
 
     constructor(container: HTMLElement, renderer: WebGPURenderer) {
         super(container, renderer);
 
-        this.camera.position.set(6, 14, 16);
-        this.camera.lookAt(6, 4, 3);
+        this.camera.position.set(0, -18, 12);
+        this.camera.lookAt(0, 0, 0);
         if (this.controls) {
-            this.controls.target.set(6, 4, 3);
+            this.controls.target.set(0, 0, 0);
             this.controls.update();
         }
 
         const { geometry, ranges } = buildGeometry();
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const maxDim: number = (renderer.backend as any).device?.limits?.maxTextureDimension2D ?? 8192;
 
         this.mesh = new InstancedColorMesh(this.scene, {
             geometry,
@@ -109,8 +112,11 @@ class InstancedColorMeshExp extends Experiment {
                 { parts: [{ materialName: 'cone', indexStart: ranges[2], indexEnd: ranges[3] }] },
                 { parts: [{ materialName: 'torus', indexStart: ranges[4], indexEnd: ranges[5] }] }
             ],
-            instanceCountHint: 1
+            instanceCountHint: 1,
+            pageSizeHint: maxDim
         });
+
+        this.metrics = new PerformanceMetrics(renderer);
 
         this.gui = new GUI({ title: 'Instanced Color Mesh', container });
         this.gui.domElement.style.cssText = 'position:absolute;top:0;right:0;z-index:10';
@@ -140,6 +146,16 @@ class InstancedColorMeshExp extends Experiment {
         this.start();
     }
 
+    protected onUpdate(deltaTime: number): void {
+        this.lastDeltaTime = deltaTime;
+    }
+
+    protected onPostRender(): void {
+        this.metrics.update(this.lastDeltaTime);
+    }
+
+    private lastDeltaTime = 0;
+
     private update(variantIndex: number, newCount: number): void {
         const current = this.counts[variantIndex];
         for (let i = newCount; i < current; i++) {
@@ -147,7 +163,7 @@ class InstancedColorMeshExp extends Experiment {
         }
         for (let i = current; i < newCount; i++) {
             const key = variantIndex * 100_000 + i;
-            const matrix = makeTranslation(variantIndex, i);
+            const matrix = randomTransform();
             const color = PALETTE[i % PALETTE.length];
             this.mesh.setObject(variantIndex, key, matrix, color);
         }
@@ -155,6 +171,7 @@ class InstancedColorMeshExp extends Experiment {
     }
 
     dispose(): void {
+        this.metrics.dispose();
         this.gui.destroy();
         this.mesh.dispose();
         super.dispose();

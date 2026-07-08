@@ -8,7 +8,7 @@ export type ExperimentOption = {
 };
 
 export async function createSharedRenderer(): Promise<WebGPURenderer> {
-    const renderer = new WebGPURenderer({ antialias: true });
+    const renderer = new WebGPURenderer({ antialias: true, powerPreference: 'high-performance' });
     await renderer.init();
     renderer.setPixelRatio(window.devicePixelRatio);
     return renderer;
