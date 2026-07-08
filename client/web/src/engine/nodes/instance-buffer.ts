@@ -1,5 +1,12 @@
 import * as THREE from 'three';
 
+export function nextPow2(n: number): number {
+    if (n <= 1) return 1;
+    let p = 1;
+    while (p < n) p <<= 1;
+    return p;
+}
+
 /**
  * Manage instance data across N separate DataTexture buffers, keyed by unique instance keys.
  *
@@ -8,13 +15,13 @@ import * as THREE from 'three';
  * Buffers are independent — only dirty ones are re-uploaded each frame.
  */
 export class InstanceBuffer {
-    readonly maxInstances: number;
-    readonly textures: readonly THREE.DataTexture[];
+    maxInstances: number;
+    textures: readonly THREE.DataTexture[];
     readonly texelsPerBuffer: readonly number[];
 
     readonly keyToSlot = new Map<number, number>();
-    private readonly slotToKey: Uint32Array;
-    private readonly live: Uint8Array;
+    private slotToKey: Uint32Array;
+    private live: Uint8Array;
     private freeList: number[] = [];
     private count = 0;
     private tail = 0;
@@ -22,7 +29,7 @@ export class InstanceBuffer {
     private readonly bufferDirty: boolean[];
 
     constructor(maxInstances: number, texelsPerBuffer: number[]) {
-        this.maxInstances = maxInstances;
+        this.maxInstances = nextPow2(Math.max(1, maxInstances));
         this.texelsPerBuffer = texelsPerBuffer;
         this.textures = texelsPerBuffer.map((t) => {
             // Layout: width=texelsPerInstance, height=maxInstances
@@ -30,9 +37,9 @@ export class InstanceBuffer {
             // Access in shader: ivec2(texelOffset, instanceIndex)
             // Enables contiguous subarray views per slot and partial row re-upload.
             const tex = new THREE.DataTexture(
-                new Float32Array(t * maxInstances * 4),
+                new Float32Array(t * this.maxInstances * 4),
                 t,
-                maxInstances,
+                this.maxInstances,
                 THREE.RGBAFormat,
                 THREE.FloatType
             );
@@ -41,8 +48,8 @@ export class InstanceBuffer {
             tex.needsUpdate = true;
             return tex;
         });
-        this.slotToKey = new Uint32Array(maxInstances);
-        this.live = new Uint8Array(maxInstances);
+        this.slotToKey = new Uint32Array(this.maxInstances);
+        this.live = new Uint8Array(this.maxInstances);
         this.bufferDirty = texelsPerBuffer.map(() => false);
     }
 
@@ -56,6 +63,36 @@ export class InstanceBuffer {
 
     get hasDirty(): boolean {
         return this.bufferDirty.some((d) => d);
+    }
+
+    /** Grow to newCapacity (must be > maxInstances). Returns new DataTexture array. */
+    grow(newCapacity: number): THREE.DataTexture[] {
+        if (newCapacity <= this.maxInstances)
+            throw new Error(`grow: newCapacity ${newCapacity} must be > current ${this.maxInstances}`);
+
+        const newTextures = (this.texelsPerBuffer as number[]).map((t, i) => {
+            const oldData = this.textures[i].image.data as Float32Array;
+            const newData = new Float32Array(t * newCapacity * 4);
+            newData.set(oldData);
+            const tex = new THREE.DataTexture(newData, t, newCapacity, THREE.RGBAFormat, THREE.FloatType);
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestFilter;
+            tex.needsUpdate = true;
+            this.textures[i].dispose();
+            return tex;
+        });
+        (this.textures as THREE.DataTexture[]) = newTextures;
+
+        const oldSlotToKey = this.slotToKey;
+        const oldLive = this.live;
+        this.slotToKey = new Uint32Array(newCapacity);
+        this.live = new Uint8Array(newCapacity);
+        this.slotToKey.set(oldSlotToKey);
+        this.live.set(oldLive);
+
+        this.maxInstances = newCapacity;
+        for (let i = 0; i < this.bufferDirty.length; i++) this.bufferDirty[i] = true;
+        return newTextures;
     }
 
     setBuffer(key: number, bufIndex: number, values: Float32Array): boolean {

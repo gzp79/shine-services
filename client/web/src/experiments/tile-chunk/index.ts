@@ -3,8 +3,8 @@ import wasmUrl from '#wasm-bin';
 import GUI from 'lil-gui';
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
-import { TileSetNode } from '../../engine/nodes/tile-set-node';
-import type { TileDistortion } from '../../engine/nodes/tile-set-node';
+import { InstancedTileSet } from '../../engine/nodes/instanced-tile-set';
+import type { TileDistortion } from '../../engine/nodes/instanced-tile-set';
 import { WireNode } from '../../engine/nodes/wire-node';
 import { Experiment } from '../experiment';
 
@@ -13,6 +13,7 @@ export interface TileChunkExperiment {
 }
 
 const TILE_HEIGHT = 80;
+const TILE_TYPE_COUNT = 3;
 
 function buildCombinedMesh(): { geometry: THREE.BufferGeometry; ranges: Uint32Array } {
     const boxGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8, 4, 4, 4);
@@ -75,14 +76,14 @@ function buildTileDistortion(tileDistortions: Float32Array, tileIdx: number): Ti
 
 class TileChunk extends Experiment {
     private readonly world: WasmWorld;
-    private readonly tileNode: TileSetNode;
+    private readonly tileNode: InstancedTileSet;
     private readonly cellsGroup: THREE.Group;
     private readonly gui: GUI;
     private readonly params = { q: 0, r: 0 };
     private readonly displayParams = { showCells: true };
 
     private tileCount = 0;
-    private tileAssignments = new Uint8Array(0); // 0=box, 1=sphere per tile
+    private tileAssignments = new Uint8Array(0); // 0=box, 1=sphere, 2=both
     private distortions: TileDistortion[] = [];
     private loadedChunk: { q: number; r: number } | null = null;
     private cellWire: WireNode | null = null;
@@ -98,7 +99,24 @@ class TileChunk extends Experiment {
 
         this.world = new WasmWorld();
 
-        this.tileNode = new TileSetNode(this.scene, { ...buildCombinedMesh(), maxInstances: 2048 });
+        const { geometry, ranges } = buildCombinedMesh();
+        this.tileNode = new InstancedTileSet(this.scene, {
+            geometry,
+            tileTypes: [
+                // type 0: box only
+                { parts: [{ materialName: 'box', indexStart: ranges[0], indexEnd: ranges[1] }] },
+                // type 1: sphere only
+                { parts: [{ materialName: 'sphere', indexStart: ranges[2], indexEnd: ranges[3] }] },
+                // type 2: both box and sphere — two parts, one shared instance buffer
+                {
+                    parts: [
+                        { materialName: 'box', indexStart: ranges[0], indexEnd: ranges[1] },
+                        { materialName: 'sphere', indexStart: ranges[2], indexEnd: ranges[3] }
+                    ]
+                }
+            ],
+            instanceCountHint: 2048
+        });
 
         this.cellsGroup = new THREE.Group();
         this.scene.add(this.cellsGroup);
@@ -133,7 +151,9 @@ class TileChunk extends Experiment {
             )
             .name('Random Chunk');
 
-        this.gui.add({ switchRandom: () => this.switchRandomTile() }, 'switchRandom').name('Switch Random Tile');
+        this.gui
+            .add({ switchRandom: () => this.switchRandomTile() }, 'switchRandom')
+            .name('Switch Random Tile (box/sphere/both)');
 
         this.gui
             .add(this.displayParams, 'showCells')
@@ -147,7 +167,7 @@ class TileChunk extends Experiment {
     private regenerate(): void {
         if (this.loadedChunk) {
             for (let i = 0; i < this.tileCount; i++) {
-                this.tileNode.removeInstance(this.tileAssignments[i], i);
+                this.tileNode.removeTile(this.tileAssignments[i], i);
             }
             this.world.remove_chunk(this.loadedChunk.q, this.loadedChunk.r);
             this.loadedChunk = null;
@@ -172,13 +192,14 @@ class TileChunk extends Experiment {
         cells.free();
 
         this.tileCount = tileCount;
-        this.tileAssignments = new Uint8Array(tileCount).map(() => (Math.random() < 0.5 ? 0 : 1));
+        // Distribute evenly across all 3 tile types
+        this.tileAssignments = new Uint8Array(tileCount).map((_, i) => i % TILE_TYPE_COUNT);
 
         for (let i = 0; i < tileCount; i++) {
             const d = buildTileDistortion(tileDistortions, i);
             this.distortions.push(d);
             if (!this.tileNode.setTile(this.tileAssignments[i], i, d)) {
-                console.warn(`setTile failed for key=${i} range=${this.tileAssignments[i]}`);
+                console.warn(`setTile failed for key=${i} type=${this.tileAssignments[i]}`);
             }
         }
         this.cellWire = WireNode.fromPolygons(this.cellsGroup, {
@@ -192,11 +213,11 @@ class TileChunk extends Experiment {
     private switchRandomTile(): void {
         if (this.tileCount === 0) return;
         const key = Math.floor(Math.random() * this.tileCount);
-        const currentRange = this.tileAssignments[key];
-        const nextRange = currentRange === 0 ? 1 : 0;
-        this.tileNode.removeInstance(currentRange, key);
-        this.tileNode.setTile(nextRange, key, this.distortions[key]);
-        this.tileAssignments[key] = nextRange;
+        const currentType = this.tileAssignments[key];
+        const nextType = (currentType + 1) % TILE_TYPE_COUNT;
+        this.tileNode.removeTile(currentType, key);
+        this.tileNode.setTile(nextType, key, this.distortions[key]);
+        this.tileAssignments[key] = nextType;
     }
 
     dispose(): void {

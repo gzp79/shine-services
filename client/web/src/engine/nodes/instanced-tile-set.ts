@@ -4,12 +4,14 @@ import { MeshBasicNodeMaterial } from 'three/webgpu';
 import {
     type InstanceBufferLayout,
     InstanceData,
-    MultiRangeInstancedNode,
-    MultiRangeInstancedParams
-} from './multi-range-instanced-node';
+    InstancedMultiMesh,
+    type InstancedMultiMeshParams
+} from './instanced-multi-mesh';
+
+export type { SubMeshDef, TileTypeDef, InstancedMultiMeshParams } from './instanced-multi-mesh';
 
 /**
- * Per-tile trilinear distortion: 8 control points (vec3 each) tightly packed into a single array.
+ * Per-tile trilinear distortion: 8 control points (vec3 each).
  *
  * Corner mapping:
  *   cp[0]:(0,0,0)  cp[1]:(1,0,0)  cp[2]:(0,1,0)  cp[3]:(1,1,0)
@@ -19,17 +21,16 @@ export type TileDistortion = Float32Array; // 24 floats
 
 const CP_COUNT = 8;
 
-export class TileSetNode extends MultiRangeInstancedNode {
-    constructor(parent: THREE.Object3D, params: MultiRangeInstancedParams) {
+export class InstancedTileSet extends InstancedMultiMesh {
+    constructor(parent: THREE.Object3D, params: InstancedMultiMeshParams) {
         super(parent, params);
-        this.init();
     }
 
     protected instanceBufferLayout(): InstanceBufferLayout {
         return { buffers: [{ floatsPerInstance: CP_COUNT * 3 }] };
     }
 
-    protected createMaterial(_rangeIndex: number, instanceData: InstanceData): MeshBasicNodeMaterial {
+    protected createMaterial(_materialName: string, instanceData: InstanceData): MeshBasicNodeMaterial {
         const cp = Array.from({ length: CP_COUNT }, (_, i) => instanceData.vec3(0, i));
 
         const p = positionLocal;
@@ -45,11 +46,11 @@ export class TileSetNode extends MultiRangeInstancedNode {
         return mat;
     }
 
-    setTile(rangeIndex: number, key: number, distortion: TileDistortion): boolean {
-        return super.setInstanceBuffer(rangeIndex, key, 0, distortion);
+    setTile(tileTypeIndex: number, key: number, distortion: TileDistortion): boolean {
+        return super.setInstance(tileTypeIndex, key, 0, distortion);
     }
 
-    removeTile(rangeIndex: number, key: number): boolean {
-        return super.removeInstance(rangeIndex, key);
+    removeTile(tileTypeIndex: number, key: number): boolean {
+        return super.removeInstance(tileTypeIndex, key);
     }
 }
