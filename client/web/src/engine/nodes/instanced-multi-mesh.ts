@@ -72,16 +72,12 @@ export type InstanceBufferLayout = {
 const DEFAULT_INSTANCE_HINT = 1024;
 
 class SubMesh extends THREE.Mesh {
-    readonly instanceBuffer: InstanceBuffer;
-    readonly isPrimary: boolean;
-
     constructor(
         sourceGeo: THREE.BufferGeometry,
         indexStart: number,
         indexEnd: number,
-        instanceBuffer: InstanceBuffer,
-        material: THREE.Material,
-        isPrimary: boolean
+        readonly instanceBuffer: InstanceBuffer,
+        material: THREE.Material
     ) {
         const geo = new THREE.InstancedBufferGeometry();
         for (const [name, attr] of Object.entries(sourceGeo.attributes)) geo.setAttribute(name, attr);
@@ -91,18 +87,7 @@ class SubMesh extends THREE.Mesh {
 
         super(geo, material);
         this.instanceBuffer = instanceBuffer;
-        this.isPrimary = isPrimary;
         this.frustumCulled = false;
-        this.onBeforeRender = (_renderer, _scene, _camera, geometry, _material, _group) => {
-            const count = this.isPrimary ? this.instanceBuffer.compact() : this.instanceBuffer.length;
-            (geometry as THREE.InstancedBufferGeometry).instanceCount = count;
-            for (let i = 0; i < this.instanceBuffer.textures.length; i++) {
-                if (this.instanceBuffer.isDirty(i)) {
-                    this.instanceBuffer.textures[i].needsUpdate = true;
-                    this.instanceBuffer.clearDirty(i);
-                }
-            }
-        };
     }
 }
 
@@ -110,6 +95,7 @@ type TileTypeEntry = {
     instanceBuffer: InstanceBuffer;
     instanceData: InstanceData;
     subMeshes: SubMesh[];
+    parts: SubMeshDef[];
 };
 
 export abstract class InstancedMultiMesh {
@@ -133,35 +119,49 @@ export abstract class InstancedMultiMesh {
             const instanceBuffer = new InstanceBuffer(hint, texelsPerBuffer);
             const instanceData = new InstanceData(instanceBuffer.textures);
             const subMeshes: SubMesh[] = [];
+            const entry: TileTypeEntry = { instanceBuffer, instanceData, subMeshes, parts: tileDef.parts };
+            this.entries.push(entry);
 
             for (let pi = 0; pi < tileDef.parts.length; pi++) {
                 const part = tileDef.parts[pi];
                 const mat = this.createMaterial(part.materialName, instanceData);
-                const mesh = new SubMesh(this.sourceGeo, part.indexStart, part.indexEnd, instanceBuffer, mat, pi === 0);
+                const mesh = new SubMesh(this.sourceGeo, part.indexStart, part.indexEnd, instanceBuffer, mat);
                 this.group.add(mesh);
                 subMeshes.push(mesh);
-            }
 
-            this.entries.push({ instanceBuffer, instanceData, subMeshes });
+                const isPrimary = pi === 0;
+                mesh.onBeforeRender = (_renderer, _scene, _camera, geometry) => {
+                    if (isPrimary) {
+                        if (entry.instanceBuffer.compact()) this._onGrow(entry);
+                        for (let i = 0; i < entry.instanceBuffer.textures.length; i++) {
+                            if (entry.instanceBuffer.isDirty(i)) {
+                                entry.instanceBuffer.textures[i].needsUpdate = true;
+                                entry.instanceBuffer.clearDirty(i);
+                            }
+                        }
+                    }
+                    (geometry as THREE.InstancedBufferGeometry).instanceCount = entry.instanceBuffer.length;
+                };
+            }
         }
     }
 
     protected abstract instanceBufferLayout(): InstanceBufferLayout;
     protected abstract createMaterial(materialName: string, instanceData: InstanceData): THREE.Material;
 
+    private _onGrow(entry: TileTypeEntry): void {
+        entry.instanceData.replaceTextures(entry.instanceBuffer.textures);
+        for (let pi = 0; pi < entry.subMeshes.length; pi++) {
+            const mesh = entry.subMeshes[pi];
+            const oldMat = mesh.material as THREE.Material;
+            mesh.material = this.createMaterial(entry.parts[pi].materialName, entry.instanceData);
+            oldMat.dispose();
+        }
+    }
+
     protected setInstance(tileTypeIndex: number, key: number, bufIndex: number, values: Float32Array): boolean {
         const entry = this.entries[tileTypeIndex];
         if (!entry) return false;
-
-        if (entry.instanceBuffer.length >= entry.instanceBuffer.maxInstances) {
-            const newCap = entry.instanceBuffer.maxInstances * 2;
-            const newTextures = entry.instanceBuffer.grow(newCap);
-            entry.instanceData.replaceTextures(newTextures);
-            for (const mesh of entry.subMeshes) {
-                (mesh.material as THREE.Material).needsUpdate = true;
-            }
-        }
-
         return entry.instanceBuffer.setBuffer(key, bufIndex, values);
     }
 

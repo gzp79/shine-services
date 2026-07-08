@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mix, positionLocal, uniform } from 'three/tsl';
 import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
 import { ManagedMesh } from '../../engine/render/managed-mesh';
@@ -22,7 +23,7 @@ class Trilinear extends Experiment {
 
         this.fileInput = document.createElement('input');
         this.fileInput.type = 'file';
-        this.fileInput.accept = '.fbx';
+        this.fileInput.accept = '.fbx, .glb';
         this.fileInput.style.position = 'absolute';
         this.fileInput.style.top = '50px';
         this.fileInput.style.left = '10px';
@@ -153,6 +154,11 @@ class Trilinear extends Experiment {
                 const buffer = await file.arrayBuffer();
                 const loader = new FBXLoader();
                 this.loadedObject = loader.parse(buffer, '');
+            } else if (fileExt === 'glb') {
+                const buffer = await file.arrayBuffer();
+                const loader = new GLTFLoader();
+                const gltf = await loader.parseAsync(buffer, '');
+                this.loadedObject = gltf.scene;
             } else {
                 const msg = 'Unsupported file format. Please use .fbx';
                 console.error(msg);
