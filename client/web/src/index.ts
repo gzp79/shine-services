@@ -2,6 +2,7 @@ import { WebGPURenderer } from 'three/webgpu';
 import { createCdtExperiment } from './experiments/cdt/index';
 import { createHexMeshExperiment } from './experiments/hex-mesh/index';
 import { createInputControlExperiment } from './experiments/input-control/index';
+import { createInstancedColorMeshExperiment } from './experiments/instanced-color-mesh/index';
 import { createTileChunkExperiment } from './experiments/tile-chunk/index';
 import { createTrilinearExperiment } from './experiments/trilinear/index';
 import { createWorldNeighborsExperiment } from './experiments/world-neighbors/index';
@@ -9,7 +10,15 @@ import { createGame } from './game/game';
 
 export type Viewer = { dispose(): void };
 
-type SceneId = '' | 'hex-mesh' | 'cdt' | 'input-events' | 'trilinear' | 'world-neighbors' | 'tile-chunk';
+type SceneId =
+    | ''
+    | 'hex-mesh'
+    | 'cdt'
+    | 'input-events'
+    | 'trilinear'
+    | 'world-neighbors'
+    | 'tile-chunk'
+    | 'instanced-color-mesh';
 
 async function createSharedRenderer(): Promise<WebGPURenderer> {
     const renderer = new WebGPURenderer({ antialias: true, forceWebGL: false });
@@ -31,6 +40,8 @@ async function createContent(id: SceneId, container: HTMLElement, renderer: WebG
             return createWorldNeighborsExperiment(container, renderer);
         case 'tile-chunk':
             return createTileChunkExperiment(container, renderer);
+        case 'instanced-color-mesh':
+            return createInstancedColorMeshExperiment(container, renderer);
         default:
             return createGame(container, renderer);
     }

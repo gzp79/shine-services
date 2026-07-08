@@ -102,7 +102,7 @@ class TileChunk extends Experiment {
         const { geometry, ranges } = buildCombinedMesh();
         this.tileNode = new InstancedTileSet(this.scene, {
             geometry,
-            tileTypes: [
+            variants: [
                 // type 0: box only
                 { parts: [{ materialName: 'box', indexStart: ranges[0], indexEnd: ranges[1] }] },
                 // type 1: sphere only

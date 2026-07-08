@@ -55,13 +55,13 @@ export type SubMeshDef = {
     indexEnd: number;
 };
 
-export type TileTypeDef = {
+export type VariantDef = {
     parts: SubMeshDef[];
 };
 
 export type InstancedMultiMeshParams = {
     geometry: THREE.BufferGeometry;
-    tileTypes: TileTypeDef[];
+    variants: VariantDef[];
     instanceCountHint?: number;
 };
 
@@ -91,7 +91,7 @@ class SubMesh extends THREE.Mesh {
     }
 }
 
-type TileTypeEntry = {
+type VariantEntry = {
     instanceBuffer: InstanceBuffer;
     instanceData: InstanceData;
     subMeshes: SubMesh[];
@@ -101,7 +101,7 @@ type TileTypeEntry = {
 export abstract class InstancedMultiMesh {
     readonly group = new THREE.Group();
     protected readonly sourceGeo: THREE.BufferGeometry;
-    private readonly entries: TileTypeEntry[] = [];
+    private readonly variants: VariantEntry[] = [];
 
     protected constructor(parent: THREE.Object3D, params: InstancedMultiMeshParams) {
         parent.add(this.group);
@@ -115,15 +115,15 @@ export abstract class InstancedMultiMesh {
             return b.floatsPerInstance / 4;
         });
 
-        for (const tileDef of params.tileTypes) {
+        for (const variantDef of params.variants) {
             const instanceBuffer = new InstanceBuffer(hint, texelsPerBuffer);
             const instanceData = new InstanceData(instanceBuffer.textures);
             const subMeshes: SubMesh[] = [];
-            const entry: TileTypeEntry = { instanceBuffer, instanceData, subMeshes, parts: tileDef.parts };
-            this.entries.push(entry);
+            const entry: VariantEntry = { instanceBuffer, instanceData, subMeshes, parts: variantDef.parts };
+            this.variants.push(entry);
 
-            for (let pi = 0; pi < tileDef.parts.length; pi++) {
-                const part = tileDef.parts[pi];
+            for (let pi = 0; pi < variantDef.parts.length; pi++) {
+                const part = variantDef.parts[pi];
                 const mat = this.createMaterial(part.materialName, instanceData);
                 const mesh = new SubMesh(this.sourceGeo, part.indexStart, part.indexEnd, instanceBuffer, mat);
                 this.group.add(mesh);
@@ -149,7 +149,8 @@ export abstract class InstancedMultiMesh {
     protected abstract instanceBufferLayout(): InstanceBufferLayout;
     protected abstract createMaterial(materialName: string, instanceData: InstanceData): THREE.Material;
 
-    private _onGrow(entry: TileTypeEntry): void {
+    private _onGrow(entry: VariantEntry): void {
+        console.log(`[InstancedMultiMesh] grow → capacity=${entry.instanceBuffer.maxInstances}`);
         entry.instanceData.replaceTextures(entry.instanceBuffer.textures);
         for (let pi = 0; pi < entry.subMeshes.length; pi++) {
             const mesh = entry.subMeshes[pi];
@@ -159,33 +160,33 @@ export abstract class InstancedMultiMesh {
         }
     }
 
-    protected setInstance(tileTypeIndex: number, key: number, bufIndex: number, values: Float32Array): boolean {
-        const entry = this.entries[tileTypeIndex];
+    protected setInstance(variantIndex: number, key: number, bufIndex: number, values: Float32Array): boolean {
+        const entry = this.variants[variantIndex];
         if (!entry) return false;
         return entry.instanceBuffer.setBuffer(key, bufIndex, values);
     }
 
-    removeInstance(tileTypeIndex: number, key: number): boolean {
-        return this.entries[tileTypeIndex]?.instanceBuffer.remove(key) ?? false;
+    removeInstance(variantIndex: number, key: number): boolean {
+        return this.variants[variantIndex]?.instanceBuffer.remove(key) ?? false;
     }
 
-    instanceCount(tileTypeIndex: number): number {
-        return this.entries[tileTypeIndex]?.instanceBuffer.length ?? 0;
+    instanceCount(variantIndex: number): number {
+        return this.variants[variantIndex]?.instanceBuffer.length ?? 0;
     }
 
-    instances(tileTypeIndex: number): IterableIterator<number> {
-        return this.entries[tileTypeIndex]?.instanceBuffer.keys ?? [][Symbol.iterator]();
+    instances(variantIndex: number): IterableIterator<number> {
+        return this.variants[variantIndex]?.instanceBuffer.keys ?? [][Symbol.iterator]();
     }
 
     dispose(): void {
-        for (const entry of this.entries) {
+        for (const entry of this.variants) {
             entry.instanceBuffer.dispose();
             for (const mesh of entry.subMeshes) {
                 (mesh.material as THREE.Material).dispose();
                 mesh.geometry.dispose();
             }
         }
-        this.entries.length = 0;
+        this.variants.length = 0;
         this.group.parent?.remove(this.group);
     }
 }

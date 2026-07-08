@@ -8,7 +8,7 @@ import {
     type InstancedMultiMeshParams
 } from './instanced-multi-mesh';
 
-export type { SubMeshDef, TileTypeDef, InstancedMultiMeshParams } from './instanced-multi-mesh';
+export type { SubMeshDef, VariantDef, InstancedMultiMeshParams } from './instanced-multi-mesh';
 
 /**
  * Per-tile trilinear distortion: 8 control points (vec3 each).
@@ -46,11 +46,11 @@ export class InstancedTileSet extends InstancedMultiMesh {
         return mat;
     }
 
-    setTile(tileTypeIndex: number, key: number, distortion: TileDistortion): boolean {
-        return super.setInstance(tileTypeIndex, key, 0, distortion);
+    setTile(variantIndex: number, key: number, distortion: TileDistortion): boolean {
+        return super.setInstance(variantIndex, key, 0, distortion);
     }
 
-    removeTile(tileTypeIndex: number, key: number): boolean {
-        return super.removeInstance(tileTypeIndex, key);
+    removeTile(variantIndex: number, key: number): boolean {
+        return super.removeInstance(variantIndex, key);
     }
 }
