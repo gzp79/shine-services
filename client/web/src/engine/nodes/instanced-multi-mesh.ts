@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { instanceIndex, int, ivec2, textureLoad, vec2, vec3, vec4 } from 'three/tsl';
+import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { InstanceBuffer, nextPow2 } from './instance-buffer';
 
 const SWIZZLE = ['x', 'y', 'z', 'w'] as const;
@@ -60,6 +61,10 @@ export class InstanceData {
         return vec3(this.float(bufIdx, s), this.float(bufIdx, s + 1), this.float(bufIdx, s + 2));
     }
 
+    vec3At(bufIdx: number, floatIndex: number) {
+        return vec3(this.float(bufIdx, floatIndex), this.float(bufIdx, floatIndex + 1), this.float(bufIdx, floatIndex + 2));
+    }
+
     vec4(bufIdx: number, i: number) {
         const s = i * 4;
         return vec4(
@@ -72,7 +77,7 @@ export class InstanceData {
 }
 
 export type SubMeshDef = {
-    materialName: string;
+    baseMaterial: MeshStandardNodeMaterial;
     indexStart: number;
     indexEnd: number;
 };
@@ -159,7 +164,7 @@ export abstract class InstancedMultiMesh {
 
             for (let pi = 0; pi < variantDef.parts.length; pi++) {
                 const part = variantDef.parts[pi];
-                const mat = this.createMaterial(part.materialName, instanceData);
+                const mat = this.createMaterial(part.baseMaterial.clone() as MeshStandardNodeMaterial, instanceData);
                 const mesh = new SubMesh(this.sourceGeo, part.indexStart, part.indexEnd, instanceBuffer, mat);
                 this.group.add(mesh);
                 subMeshes.push(mesh);
@@ -189,7 +194,7 @@ export abstract class InstancedMultiMesh {
     }
 
     protected abstract instanceBufferLayout(): InstanceBufferLayout;
-    protected abstract createMaterial(materialName: string, instanceData: InstanceData): THREE.Material;
+    protected abstract createMaterial(mat: MeshStandardNodeMaterial, instanceData: InstanceData): MeshStandardNodeMaterial;
 
     private _onGrow(entry: VariantEntry): void {
         console.log(`[InstancedMultiMesh] grow → capacity=${entry.instanceBuffer.maxInstances}`);
@@ -197,7 +202,7 @@ export abstract class InstancedMultiMesh {
         for (let pi = 0; pi < entry.subMeshes.length; pi++) {
             const mesh = entry.subMeshes[pi];
             const oldMat = mesh.material as THREE.Material;
-            mesh.material = this.createMaterial(entry.parts[pi].materialName, entry.instanceData);
+            mesh.material = this.createMaterial(entry.parts[pi].baseMaterial.clone() as MeshStandardNodeMaterial, entry.instanceData);
             oldMat.dispose();
         }
     }
@@ -210,6 +215,10 @@ export abstract class InstancedMultiMesh {
 
     removeInstance(variantIndex: number, key: number): boolean {
         return this.variants[variantIndex]?.instanceBuffer.remove(key) ?? false;
+    }
+
+    get variantCount(): number {
+        return this.variants.length;
     }
 
     instanceCount(variantIndex: number): number {

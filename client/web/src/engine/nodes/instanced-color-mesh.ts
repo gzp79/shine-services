@@ -23,7 +23,7 @@ export class InstancedColorMesh extends InstancedMultiMesh {
         return { buffers: [{ floatsPerInstance: 20 }] };
     }
 
-    protected createMaterial(_materialName: string, instanceData: InstanceData): MeshStandardNodeMaterial {
+    protected createMaterial(mat: MeshStandardNodeMaterial, instanceData: InstanceData): MeshStandardNodeMaterial {
         const col0 = instanceData.vec4(0, 0);
         const col1 = instanceData.vec4(0, 1);
         const col2 = instanceData.vec4(0, 2);
@@ -34,7 +34,6 @@ export class InstancedColorMesh extends InstancedMultiMesh {
         const localPos = vec4(positionLocal, float(1.0));
         const transformed = instanceMatrix.mul(localPos);
 
-        const mat = new MeshStandardNodeMaterial({ roughness: 0.6, metalness: 0.2 });
         mat.positionNode = vec3(transformed.x, transformed.y, transformed.z);
         mat.colorNode = vec3(color.x, color.y, color.z);
         return mat;
@@ -42,7 +41,7 @@ export class InstancedColorMesh extends InstancedMultiMesh {
 
     setObject(variantIndex: number, key: number, matrix: THREE.Matrix4, color: THREE.Color): boolean {
         const data = new Float32Array(20);
-        data.set(matrix.elements, 0); // 16 floats, column-major
+        data.set(matrix.elements, 0);
         data[16] = color.r;
         data[17] = color.g;
         data[18] = color.b;
