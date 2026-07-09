@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { WebGPURenderer } from 'three/webgpu';
+import type { RenderOverlay } from './render-context';
 
 /**
  * Renders an interleaved NDC [x0,y0,x1,y1,...] point path as a Three.js line
@@ -8,11 +8,11 @@ import type { WebGPURenderer } from 'three/webgpu';
  * NDC convention: center=(0,0), x right, y up, range [-1,1].
  * The ortho camera maps that range directly to clip space, so no extra math needed.
  *
- * Usage: call render(renderer) from an onPostRender callback.
+ * Usage: register with renderContext.addOverlay(strokeLine).
  */
-export class StrokeLineNode {
-    private readonly scene: THREE.Scene;
-    private readonly camera: THREE.OrthographicCamera;
+export class StrokeLineOverlay implements RenderOverlay {
+    readonly scene: THREE.Scene;
+    readonly camera: THREE.OrthographicCamera;
     private readonly geometry: THREE.BufferGeometry;
     private readonly positions: Float32Array;
     private readonly posAttr: THREE.BufferAttribute;
@@ -52,13 +52,6 @@ export class StrokeLineNode {
 
     clear(): void {
         this.geometry.setDrawRange(0, 0);
-    }
-
-    async render(renderer: WebGPURenderer): Promise<void> {
-        const prevAutoClear = renderer.autoClear;
-        renderer.autoClear = false;
-        await renderer.renderAsync(this.scene, this.camera);
-        renderer.autoClear = prevAutoClear;
     }
 
     dispose(): void {

@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { instanceIndex, int, ivec2, textureLoad, vec2, vec3, vec4 } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
+import {
+    type OwnedMaterial,
+    type Shareable,
+    type SharedMeshStandardNodeMaterial,
+    disposeIfOwned,
+    own
+} from '../render/ownership';
 import { InstanceBuffer, nextPow2 } from './instance-buffer';
 
 const SWIZZLE = ['x', 'y', 'z', 'w'] as const;
@@ -81,7 +88,7 @@ export class InstanceData {
 }
 
 export type SubMeshDef = {
-    baseMaterial: MeshStandardNodeMaterial;
+    baseMaterial: SharedMeshStandardNodeMaterial;
     indexStart: number;
     indexEnd: number;
 };
@@ -91,7 +98,7 @@ export type VariantDef = {
 };
 
 export type InstancedMultiMeshParams = {
-    geometry: THREE.BufferGeometry;
+    geometry: Shareable<THREE.BufferGeometry>;
     variants: VariantDef[];
     instanceCountHint?: number;
     // Strip height for wide-texture mode. When set, the texture grows in width
@@ -107,12 +114,14 @@ export type InstanceBufferLayout = {
 const DEFAULT_INSTANCE_HINT = 1024;
 
 class SubMesh extends THREE.Mesh {
+    declare material: OwnedMaterial;
+
     constructor(
         sourceGeo: THREE.BufferGeometry,
         indexStart: number,
         indexEnd: number,
         readonly instanceBuffer: InstanceBuffer,
-        material: THREE.Material
+        material: OwnedMaterial
     ) {
         const geo = new THREE.InstancedBufferGeometry();
         for (const [name, attr] of Object.entries(sourceGeo.attributes)) geo.setAttribute(name, attr);
@@ -121,8 +130,17 @@ class SubMesh extends THREE.Mesh {
         geo.instanceCount = 0;
 
         super(geo, material);
-        this.instanceBuffer = instanceBuffer;
         this.frustumCulled = false;
+    }
+
+    replaceMaterial(material: OwnedMaterial): void {
+        disposeIfOwned(this.material);
+        this.material = material;
+    }
+
+    dispose(): void {
+        disposeIfOwned(this.material);
+        this.geometry.dispose();
     }
 }
 
@@ -136,7 +154,7 @@ type VariantEntry = {
 
 export abstract class InstancedMultiMesh {
     readonly group = new THREE.Group();
-    protected readonly sourceGeo: THREE.BufferGeometry;
+    protected readonly sourceGeo: Shareable<THREE.BufferGeometry>;
     private readonly variants: VariantEntry[] = [];
     private readonly stripHeight: number;
 
@@ -168,7 +186,9 @@ export abstract class InstancedMultiMesh {
 
             for (let pi = 0; pi < variantDef.parts.length; pi++) {
                 const part = variantDef.parts[pi];
-                const mat = this.createMaterial(part.baseMaterial.clone() as MeshStandardNodeMaterial, instanceData);
+                const mat = own(
+                    this.createMaterial(part.baseMaterial.clone() as MeshStandardNodeMaterial, instanceData)
+                );
                 const mesh = new SubMesh(this.sourceGeo, part.indexStart, part.indexEnd, instanceBuffer, mat);
                 this.group.add(mesh);
                 subMeshes.push(mesh);
@@ -208,12 +228,13 @@ export abstract class InstancedMultiMesh {
         entry.instanceData.replaceTextures(entry.instanceBuffer.textures);
         for (let pi = 0; pi < entry.subMeshes.length; pi++) {
             const mesh = entry.subMeshes[pi];
-            const oldMat = mesh.material as THREE.Material;
-            mesh.material = this.createMaterial(
-                entry.parts[pi].baseMaterial.clone() as MeshStandardNodeMaterial,
-                entry.instanceData
+            const mat = own(
+                this.createMaterial(
+                    entry.parts[pi].baseMaterial.clone() as MeshStandardNodeMaterial,
+                    entry.instanceData
+                )
             );
-            oldMat.dispose();
+            mesh.replaceMaterial(mat);
         }
     }
 
@@ -242,12 +263,10 @@ export abstract class InstancedMultiMesh {
     dispose(): void {
         for (const entry of this.variants) {
             entry.instanceBuffer.dispose();
-            for (const mesh of entry.subMeshes) {
-                (mesh.material as THREE.Material).dispose();
-                mesh.geometry.dispose();
-            }
+            for (const mesh of entry.subMeshes) mesh.dispose();
         }
         this.variants.length = 0;
+        disposeIfOwned(this.sourceGeo);
         this.group.parent?.remove(this.group);
     }
 }

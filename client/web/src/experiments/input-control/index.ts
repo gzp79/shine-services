@@ -1,9 +1,8 @@
 import { WebGPURenderer } from 'three/webgpu';
+import { StrokeLineOverlay } from '../../engine/compositor/stroke-line-overlay';
 import type { InputHandler, Point } from '../../engine/input/input-handler';
 import { InputManager } from '../../engine/input/input-manager';
 import { GestureSchema } from '../../engine/input/schemas/gesture-schema';
-import { CanvasStrokeNode } from '../../engine/nodes/canvas-stroke-node';
-import { StrokeLineNode } from '../../engine/nodes/stroke-line-node';
 import { Experiment } from '../experiment';
 
 export interface InputControlExperiment {
@@ -18,8 +17,7 @@ interface EventLogEntry {
 
 class InputControl extends Experiment {
     private readonly inputManager: InputManager;
-    private readonly strokePath: CanvasStrokeNode;
-    private readonly strokeLine: StrokeLineNode;
+    private readonly strokeLine: StrokeLineOverlay;
     private readonly logDiv: HTMLDivElement;
     private readonly controllerDiv: HTMLDivElement;
     private readonly gestureSchema: GestureSchema;
@@ -82,9 +80,9 @@ class InputControl extends Experiment {
         };
 
         this.inputManager = new InputManager(inputHandler, container);
-        this.strokePath = new CanvasStrokeNode(container);
-        this.strokeLine = new StrokeLineNode(1000, 0x00ff00);
+        this.strokeLine = new StrokeLineOverlay(1000, 0x00ff00);
         this.gestureSchema = this.inputManager.schemas.find((s): s is GestureSchema => s instanceof GestureSchema)!;
+        this.renderContext.addOverlay(this.strokeLine);
 
         this.start();
     }
@@ -128,13 +126,8 @@ class InputControl extends Experiment {
         }
     }
 
-    protected async onPostRender(renderer: WebGPURenderer) {
-        await this.strokeLine.render(renderer);
-    }
-
     dispose() {
         this.inputManager.dispose();
-        this.strokePath.dispose();
         this.strokeLine.dispose();
         this.logDiv.remove();
         this.controllerDiv.remove();

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { WebGPURenderer } from 'three/webgpu';
+import { RenderContext } from '../engine/compositor/render-context';
 import { disposeObject3D } from '../engine/render/ownership';
 
 export type ExperimentOption = {
@@ -15,32 +16,42 @@ export async function createSharedRenderer(): Promise<WebGPURenderer> {
 }
 
 export abstract class Experiment {
-    readonly scene: THREE.Scene;
+    readonly renderContext: RenderContext;
     readonly camera: THREE.PerspectiveCamera;
-    readonly renderer: WebGPURenderer;
     readonly controls?: OrbitControls;
 
-    private readonly resizeObserver: ResizeObserver;
+    /** Convenience accessor — same scene as renderContext.scene */
+    get scene(): THREE.Scene {
+        return this.renderContext.scene;
+    }
+
+    /** Convenience accessor — same renderer as renderContext.renderer */
+    get renderer(): WebGPURenderer {
+        return this.renderContext.renderer;
+    }
+
     private animationId = 0;
     private lastTime = 0;
+    private readonly _resizeObserver: ResizeObserver;
 
     constructor(container: HTMLElement, renderer: WebGPURenderer, options?: ExperimentOption) {
         const addOrbitCamera = options?.addOrbitCamera ?? true;
 
-        this.renderer = renderer;
+        this.renderContext = new RenderContext(container, renderer, { setupScene: false, showMetrics: true });
 
-        this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x1a1a2e);
+        const scene = this.renderContext.scene;
+        scene.background = new THREE.Color(0x1a1a2e);
+        const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambient);
+        const directional = new THREE.DirectionalLight(0xffffff, 0.8);
+        directional.position.set(10, -5, 20);
+        scene.add(directional);
 
-        const width = container.clientWidth;
-        const height = container.clientHeight;
-
+        const { width, height } = this.renderContext;
         this.camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
         this.camera.up.set(0, 0, 1);
         this.camera.position.set(0, -2.5, 4);
         this.camera.lookAt(0, 0, 0);
-
-        renderer.setSize(width, height);
 
         if (addOrbitCamera) {
             this.controls = new OrbitControls(this.camera, renderer.domElement);
@@ -50,45 +61,37 @@ export abstract class Experiment {
             this.controls.update();
         }
 
-        const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-        this.scene.add(ambient);
-        const directional = new THREE.DirectionalLight(0xffffff, 0.8);
-        directional.position.set(10, -5, 20);
-        this.scene.add(directional);
-
-        this.resizeObserver = new ResizeObserver(() => {
-            const w = container.clientWidth;
-            const h = container.clientHeight;
-            this.camera.aspect = w / h;
+        // Update camera aspect on resize — RenderContext already handles renderer resize
+        const resizeObserver = new ResizeObserver(() => {
+            this.camera.aspect = this.renderContext.aspect;
             this.camera.updateProjectionMatrix();
-            this.renderer.setSize(w, h);
         });
-        this.resizeObserver.observe(container);
+        resizeObserver.observe(container);
+        this._resizeObserver = resizeObserver;
     }
 
     protected onUpdate(_deltaTime: number): void {}
-    protected onPostRender(_renderer: WebGPURenderer): Promise<void> | void {}
 
     start(): void {
         this.lastTime = performance.now();
-        const loop = async () => {
+        const loop = () => {
             const now = performance.now();
             const deltaTime = (now - this.lastTime) / 1000;
             this.lastTime = now;
             this.onUpdate(deltaTime);
             this.controls?.update();
-            await this.renderer.renderAsync(this.scene, this.camera);
-            await this.onPostRender(this.renderer);
+            this.renderContext.render(this.camera, deltaTime);
             this.animationId = requestAnimationFrame(loop);
         };
-        void loop();
+        loop();
     }
 
     dispose(): void {
         cancelAnimationFrame(this.animationId);
+        this._resizeObserver.disconnect();
         this.controls?.dispose();
-        this.resizeObserver.disconnect();
-        disposeObject3D(this.scene);
-        this.scene.clear();
+        this.renderContext.dispose();
+        disposeObject3D(this.renderContext.scene);
+        this.renderContext.scene.clear();
     }
 }

@@ -120,6 +120,10 @@ export class PerformanceMetrics {
         return num.toString();
     }
 
+    setVisible(visible: boolean): void {
+        this.container.style.display = visible ? '' : 'none';
+    }
+
     dispose(): void {
         this.container.remove();
     }

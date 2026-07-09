@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { InstancedColorMesh } from '../../engine/nodes/instanced-color-mesh';
-import { PerformanceMetrics } from '../../engine/performance-metrics';
+import { own, share } from '../../engine/render/ownership';
 import { Experiment } from '../experiment';
 
 export interface InstancedColorMeshExperiment {
@@ -39,15 +39,12 @@ function buildGeometry(): { geometry: THREE.BufferGeometry; ranges: number[] } {
     let totalVerts = 0;
     let totalIndices = 0;
     const vertCounts: number[] = [];
-    const idxCounts: number[] = [];
 
     for (const g of geos) {
         const vc = g.attributes.position.count;
-        const ic = g.index!.count;
         vertCounts.push(vc);
-        idxCounts.push(ic);
         totalVerts += vc;
-        totalIndices += ic;
+        totalIndices += g.index!.count;
     }
 
     const positions = new Float32Array(totalVerts * 3);
@@ -87,7 +84,6 @@ function buildGeometry(): { geometry: THREE.BufferGeometry; ranges: number[] } {
 class InstancedColorMeshExp extends Experiment {
     private readonly mesh: InstancedColorMesh;
     private readonly gui: GUI;
-    private readonly metrics: PerformanceMetrics;
     private readonly params = { a: 5, b: 5, c: 5 };
     private readonly counts = [0, 0, 0];
 
@@ -107,12 +103,12 @@ class InstancedColorMeshExp extends Experiment {
         const maxDim: number = (renderer.backend as any).device?.limits?.maxTextureDimension2D ?? 8192;
 
         this.mesh = new InstancedColorMesh(this.scene, {
-            geometry,
+            geometry: own(geometry),
             variants: [
                 {
                     parts: [
                         {
-                            baseMaterial: new MeshStandardNodeMaterial({ roughness: 0.6, metalness: 0.2 }),
+                            baseMaterial: share(new MeshStandardNodeMaterial({ roughness: 0.6, metalness: 0.2 })),
                             indexStart: ranges[0],
                             indexEnd: ranges[1]
                         }
@@ -121,7 +117,7 @@ class InstancedColorMeshExp extends Experiment {
                 {
                     parts: [
                         {
-                            baseMaterial: new MeshStandardNodeMaterial({ roughness: 0.5, metalness: 0.3 }),
+                            baseMaterial: share(new MeshStandardNodeMaterial({ roughness: 0.5, metalness: 0.3 })),
                             indexStart: ranges[2],
                             indexEnd: ranges[3]
                         }
@@ -130,7 +126,7 @@ class InstancedColorMeshExp extends Experiment {
                 {
                     parts: [
                         {
-                            baseMaterial: new MeshStandardNodeMaterial({ roughness: 0.4, metalness: 0.4 }),
+                            baseMaterial: share(new MeshStandardNodeMaterial({ roughness: 0.4, metalness: 0.4 })),
                             indexStart: ranges[4],
                             indexEnd: ranges[5]
                         }
@@ -140,8 +136,6 @@ class InstancedColorMeshExp extends Experiment {
             instanceCountHint: 1,
             pageSizeHint: maxDim
         });
-
-        this.metrics = new PerformanceMetrics(renderer);
 
         this.gui = new GUI({ title: 'Instanced Color Mesh', container });
         this.gui.domElement.style.cssText = 'position:absolute;top:0;right:0;z-index:10';
@@ -171,16 +165,6 @@ class InstancedColorMeshExp extends Experiment {
         this.start();
     }
 
-    protected onUpdate(deltaTime: number): void {
-        this.lastDeltaTime = deltaTime;
-    }
-
-    protected onPostRender(): void {
-        this.metrics.update(this.lastDeltaTime);
-    }
-
-    private lastDeltaTime = 0;
-
     private update(variantIndex: number, newCount: number): void {
         const current = this.counts[variantIndex];
         for (let i = newCount; i < current; i++) {
@@ -196,7 +180,6 @@ class InstancedColorMeshExp extends Experiment {
     }
 
     dispose(): void {
-        this.metrics.dispose();
         this.gui.destroy();
         this.mesh.dispose();
         super.dispose();

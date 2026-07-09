@@ -7,6 +7,7 @@ import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
 import { InstancedTileSet } from '../../engine/nodes/instanced-tile-set';
 import type { TileDistortion } from '../../engine/nodes/instanced-tile-set';
 import { WireNode } from '../../engine/nodes/wire-node';
+import { own, share } from '../../engine/render/ownership';
 import { Experiment } from '../experiment';
 
 export interface TileChunkExperiment {
@@ -56,11 +57,11 @@ function buildProceduralTileSet(parent: THREE.Object3D, instanceCountHint: numbe
     const makeMat = (hex: number) => {
         const m = new MeshStandardNodeMaterial({ roughness: 0.6, metalness: 0.2, side: THREE.DoubleSide });
         m.colorNode = color(hex);
-        return m;
+        return share(m);
     };
 
     return new InstancedTileSet(parent, {
-        geometry,
+        geometry: own(geometry),
         variants: [
             { parts: [{ baseMaterial: makeMat(0x4488cc), indexStart: ranges[0], indexEnd: ranges[1] }] },
             { parts: [{ baseMaterial: makeMat(0xcc4444), indexStart: ranges[2], indexEnd: ranges[3] }] },
@@ -163,8 +164,8 @@ class TileChunk extends Experiment {
             .add(this.displayParams, 'showCells')
             .name('Show Cells')
             .onChange((v: boolean) => (v ? this.cellWire?.show() : this.cellWire?.hide()));
-        const loadCtrl = this.gui.add({ loadGltf: () => this.fileInput.click() }, 'loadGltf').name('Load glTF...');
-        const clearCtrl = this.gui
+        this.gui.add({ loadGltf: () => this.fileInput.click() }, 'loadGltf').name('Load glTF...');
+        this.gui
             .add(
                 {
                     clearGltf: () => {
@@ -175,15 +176,6 @@ class TileChunk extends Experiment {
                 'clearGltf'
             )
             .name('Clear glTF');
-
-        // Place load and clear side by side
-        const gltfRow = document.createElement('div');
-        gltfRow.style.cssText = 'display:flex;gap:2px;padding:2px 4px 4px';
-        loadCtrl.domElement.style.flex = '1';
-        clearCtrl.domElement.style.flex = '1';
-        loadCtrl.domElement.parentElement!.insertBefore(gltfRow, loadCtrl.domElement);
-        gltfRow.appendChild(loadCtrl.domElement);
-        gltfRow.appendChild(clearCtrl.domElement);
 
         this.regenerate();
         this.start();
@@ -274,7 +266,6 @@ class TileChunk extends Experiment {
     }
 
     dispose(): void {
-        this.fileInput.remove();
         this.gui.destroy();
         if (this.loadedChunk) {
             this.world.remove_chunk(this.loadedChunk.q, this.loadedChunk.r);

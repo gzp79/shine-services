@@ -28,11 +28,7 @@ Infra everything else depends on. Passed as constructor args.
 | `inputManager` | `InputManager` | DOM → schemas → inputState |
 
 ### Resources
-Domain data stores. Implement `GameResource` (`engine/game-resource.ts`):
-```ts
-interface GameResource { name: string; dispose(): void; }
-```
-Registered in `this.resources[]` for lifecycle. Read/write own state, may fire events, no direct cross-resource calls.
+Domain data stores. Read/write own state, may fire events, no direct cross-resource calls.
 
 | Field | Type | Depends on |
 |---|---|---|
@@ -84,7 +80,7 @@ See `experiments/hex-mesh/` or `experiments/cdt/` as reference.
 
 ## Adding things
 
-- **Resource**: impl `GameResource`, register in `game.ts` `this.resources[]`
+- **Resource**: construct in `Game`, dispose in `Game.dispose()`
 - **System**: impl `GameSystem`, register in `game.ts` `this.systems[]` in correct order
 - **Event**: add const name, dispatch with `EventDispatcher`, subscribe with `EventSubscriptions`
 - **Experiment**: extend `Experiment` in new `experiments/<name>/` — never wired into `Game`

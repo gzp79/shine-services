@@ -1,14 +1,12 @@
 import init from '#wasm';
 import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
+import { RenderContext } from '../engine/compositor/render-context';
 import { DebugPanel } from '../engine/debug-panel';
 import { InputManager } from '../engine/input/input-manager';
 import { InputState } from '../engine/input/input-state';
-import { PerformanceMetrics } from '../engine/performance-metrics';
-import { RenderContext } from '../engine/render-context';
 import { RtsCamera } from './avatar/rts-camera';
 import { WorldCursor } from './avatar/world-cursor';
-import type { GameResource } from './game-resource';
 import type { GameSystem } from './game-system';
 import { CameraFollowCursorSystem } from './systems/camera-follow-cursor-system';
 import { CameraViewportSystem } from './systems/camera-viewport-system';
@@ -27,8 +25,6 @@ class Game {
     private readonly worldCursor: WorldCursor;
     private readonly world: World;
     private readonly debugPanel: DebugPanel;
-    private readonly performanceMetrics: PerformanceMetrics;
-    private readonly resources: GameResource[] = [];
     private readonly systems: GameSystem[] = [];
     private animationId = 0;
     private lastTime = 0;
@@ -45,10 +41,9 @@ class Game {
 
         // Register resources
         this.events = new EventTarget();
-        this.renderContext = new RenderContext(container, renderer);
+        this.renderContext = new RenderContext(container, renderer, { showMetrics: true });
         this.debugPanel = new DebugPanel();
         this.debugPanel.setGameContainer(container);
-        this.performanceMetrics = new PerformanceMetrics(this.renderContext.renderer);
 
         this.camera = new RtsCamera(this.events);
         this.worldCursor = new WorldCursor(this.renderContext.scene, this.events);
@@ -77,10 +72,10 @@ class Game {
 
     init(): void {
         this.lastTime = performance.now();
-        this.animationId = requestAnimationFrame(() => void this.animate());
+        this.animationId = requestAnimationFrame(this.animate);
     }
 
-    private async animate(): Promise<void> {
+    private readonly animate = () => {
         const now = performance.now();
         const deltaTime = (now - this.lastTime) / 1000;
         this.lastTime = now;
@@ -89,10 +84,9 @@ class Game {
             system.update(deltaTime);
         }
 
-        await this.renderContext.render(this.camera.camera);
-        this.performanceMetrics.update(deltaTime);
-        this.animationId = requestAnimationFrame(() => void this.animate());
-    }
+        this.renderContext.render(this.camera.camera, deltaTime);
+        this.animationId = requestAnimationFrame(this.animate);
+    };
 
     dispose(): void {
         cancelAnimationFrame(this.animationId);
@@ -105,9 +99,6 @@ class Game {
         this.world.dispose();
         this.renderContext.dispose();
         this.debugPanel.dispose();
-        this.performanceMetrics.dispose();
-
-        this.resources.forEach((r) => r.dispose());
     }
 }
 
