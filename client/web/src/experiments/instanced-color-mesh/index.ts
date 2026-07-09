@@ -109,9 +109,33 @@ class InstancedColorMeshExp extends Experiment {
         this.mesh = new InstancedColorMesh(this.scene, {
             geometry,
             variants: [
-                { parts: [{ baseMaterial: new MeshStandardNodeMaterial({ roughness: 0.6, metalness: 0.2 }), indexStart: ranges[0], indexEnd: ranges[1] }] },
-                { parts: [{ baseMaterial: new MeshStandardNodeMaterial({ roughness: 0.5, metalness: 0.3 }), indexStart: ranges[2], indexEnd: ranges[3] }] },
-                { parts: [{ baseMaterial: new MeshStandardNodeMaterial({ roughness: 0.4, metalness: 0.4 }), indexStart: ranges[4], indexEnd: ranges[5] }] }
+                {
+                    parts: [
+                        {
+                            baseMaterial: new MeshStandardNodeMaterial({ roughness: 0.6, metalness: 0.2 }),
+                            indexStart: ranges[0],
+                            indexEnd: ranges[1]
+                        }
+                    ]
+                },
+                {
+                    parts: [
+                        {
+                            baseMaterial: new MeshStandardNodeMaterial({ roughness: 0.5, metalness: 0.3 }),
+                            indexStart: ranges[2],
+                            indexEnd: ranges[3]
+                        }
+                    ]
+                },
+                {
+                    parts: [
+                        {
+                            baseMaterial: new MeshStandardNodeMaterial({ roughness: 0.4, metalness: 0.4 }),
+                            indexStart: ranges[4],
+                            indexEnd: ranges[5]
+                        }
+                    ]
+                }
             ],
             instanceCountHint: 1,
             pageSizeHint: maxDim

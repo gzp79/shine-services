@@ -1,7 +1,7 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { float, mat4, mix, positionLocal, vec3, vec4 } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
     type InstanceBufferLayout,
     InstanceData,
@@ -76,7 +76,10 @@ export class InstancedTileSet extends InstancedMultiMesh {
                 const byteOffset = (bv.byteOffset ?? 0) + (acc.byteOffset ?? 0);
                 const indexStart = byteOffset / componentSize;
                 const indexEnd = indexStart + acc.count;
-                const baseMaterial = (await gltf.parser.getDependency('material', prim.material)) as MeshStandardNodeMaterial;
+                const baseMaterial = (await gltf.parser.getDependency(
+                    'material',
+                    prim.material
+                )) as MeshStandardNodeMaterial;
                 parts.push({ baseMaterial, indexStart, indexEnd });
             }
 

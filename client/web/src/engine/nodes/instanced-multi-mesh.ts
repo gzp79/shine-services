@@ -62,7 +62,11 @@ export class InstanceData {
     }
 
     vec3At(bufIdx: number, floatIndex: number) {
-        return vec3(this.float(bufIdx, floatIndex), this.float(bufIdx, floatIndex + 1), this.float(bufIdx, floatIndex + 2));
+        return vec3(
+            this.float(bufIdx, floatIndex),
+            this.float(bufIdx, floatIndex + 1),
+            this.float(bufIdx, floatIndex + 2)
+        );
     }
 
     vec4(bufIdx: number, i: number) {
@@ -194,7 +198,10 @@ export abstract class InstancedMultiMesh {
     }
 
     protected abstract instanceBufferLayout(): InstanceBufferLayout;
-    protected abstract createMaterial(mat: MeshStandardNodeMaterial, instanceData: InstanceData): MeshStandardNodeMaterial;
+    protected abstract createMaterial(
+        mat: MeshStandardNodeMaterial,
+        instanceData: InstanceData
+    ): MeshStandardNodeMaterial;
 
     private _onGrow(entry: VariantEntry): void {
         console.log(`[InstancedMultiMesh] grow → capacity=${entry.instanceBuffer.maxInstances}`);
@@ -202,7 +209,10 @@ export abstract class InstancedMultiMesh {
         for (let pi = 0; pi < entry.subMeshes.length; pi++) {
             const mesh = entry.subMeshes[pi];
             const oldMat = mesh.material as THREE.Material;
-            mesh.material = this.createMaterial(entry.parts[pi].baseMaterial.clone() as MeshStandardNodeMaterial, entry.instanceData);
+            mesh.material = this.createMaterial(
+                entry.parts[pi].baseMaterial.clone() as MeshStandardNodeMaterial,
+                entry.instanceData
+            );
             oldMat.dispose();
         }
     }

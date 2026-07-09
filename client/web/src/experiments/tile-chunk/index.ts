@@ -132,8 +132,16 @@ class TileChunk extends Experiment {
         this.gui.domElement.appendChild(this.fileInput);
         this.fileInput.addEventListener('change', (e) => void this.onGltfFileChange(e));
 
-        const qCtrl = this.gui.add(this.params, 'q').name('Q').step(1).onFinishChange(() => this.regenerate());
-        const rCtrl = this.gui.add(this.params, 'r').name('R').step(1).onFinishChange(() => this.regenerate());
+        const qCtrl = this.gui
+            .add(this.params, 'q')
+            .name('Q')
+            .step(1)
+            .onFinishChange(() => this.regenerate());
+        const rCtrl = this.gui
+            .add(this.params, 'r')
+            .name('R')
+            .step(1)
+            .onFinishChange(() => this.regenerate());
         this.gui
             .add(
                 {
