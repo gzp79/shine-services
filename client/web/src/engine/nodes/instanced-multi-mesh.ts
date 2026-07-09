@@ -8,7 +8,7 @@ import {
     disposeIfOwned,
     own
 } from '../render/ownership';
-import { InstanceBuffer, nextPow2 } from './instance-buffer';
+import { InstanceBuffer } from './instance-buffer';
 
 const SWIZZLE = ['x', 'y', 'z', 'w'] as const;
 
@@ -34,24 +34,25 @@ export class InstanceData {
 
     private texel(bufIdx: number, texelOffset: number): ReturnType<typeof textureLoad> {
         const key = bufIdx * 1024 + texelOffset;
-        if (!this.cache.has(key)) {
-            let coord;
-            if (this.stripHeight > 0) {
-                // strip layout: width = numStrips * T, height = stripHeight (fixed)
-                // slot = iIdx; strip = floor(slot / stripHeight); row = slot % stripHeight
-                // x = strip * T + texelOffset;  y = row
-                const T = this.texelsPerBuf![bufIdx];
-                const strip = this.iIdx.div(int(this.stripHeight));
-                const row = this.iIdx.mod(int(this.stripHeight));
-                coord = ivec2(strip.mul(int(T)).add(int(texelOffset)), row);
-            } else {
-                // tall layout: width = T, height = maxInstances
-                // x = texelOffset, y = instanceIndex
-                coord = ivec2(texelOffset, this.iIdx);
-            }
-            this.cache.set(key, textureLoad(this.textures[bufIdx], coord));
+        const cached = this.cache.get(key);
+        if (cached !== undefined) return cached;
+        let coord;
+        if (this.stripHeight > 0) {
+            // strip layout: width = numStrips * T, height = stripHeight (fixed)
+            // slot = iIdx; strip = floor(slot / stripHeight); row = slot % stripHeight
+            // x = strip * T + texelOffset;  y = row
+            const T = this.texelsPerBuf![bufIdx];
+            const strip = this.iIdx.div(int(this.stripHeight));
+            const row = this.iIdx.mod(int(this.stripHeight));
+            coord = ivec2(strip.mul(int(T)).add(int(texelOffset)), row);
+        } else {
+            // tall layout: width = T, height = maxInstances
+            // x = texelOffset, y = instanceIndex
+            coord = ivec2(texelOffset, this.iIdx);
         }
-        return this.cache.get(key)!;
+        const result = textureLoad(this.textures[bufIdx], coord);
+        this.cache.set(key, result);
+        return result;
     }
 
     private float(bufIdx: number, fi: number) {
@@ -149,7 +150,6 @@ type VariantEntry = {
     instanceData: InstanceData;
     subMeshes: SubMesh[];
     parts: SubMeshDef[];
-    texelsPerBuffer: readonly number[];
 };
 
 export abstract class InstancedMultiMesh {
@@ -163,7 +163,7 @@ export abstract class InstancedMultiMesh {
         this.sourceGeo = params.geometry;
         this.stripHeight = params.pageSizeHint ?? 0;
         const layout = this.instanceBufferLayout();
-        const hint = nextPow2(Math.max(1, params.instanceCountHint ?? DEFAULT_INSTANCE_HINT));
+        const hint = Math.max(1, params.instanceCountHint ?? DEFAULT_INSTANCE_HINT);
 
         const texelsPerBuffer = layout.buffers.map((b) => {
             if (b.floatsPerInstance % 4 !== 0)
@@ -179,8 +179,7 @@ export abstract class InstancedMultiMesh {
                 instanceBuffer,
                 instanceData,
                 subMeshes,
-                parts: variantDef.parts,
-                texelsPerBuffer
+                parts: variantDef.parts
             };
             this.variants.push(entry);
 

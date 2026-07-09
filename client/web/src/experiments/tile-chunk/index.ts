@@ -1,6 +1,5 @@
 import init, { WasmWorld } from '#wasm';
 import wasmUrl from '#wasm-bin';
-import GUI from 'lil-gui';
 import * as THREE from 'three';
 import { color } from 'three/tsl';
 import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
@@ -97,7 +96,6 @@ class TileChunk extends Experiment {
     private readonly world: WasmWorld;
     private tileNode: InstancedTileSet;
     private readonly cellsGroup: THREE.Group;
-    private readonly gui: GUI;
     private readonly fileInput: HTMLInputElement;
     private readonly params = { q: 0, r: 0 };
     private readonly displayParams = { showCells: true };
@@ -109,7 +107,7 @@ class TileChunk extends Experiment {
     private cellWire: WireNode | null = null;
 
     constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer);
+        super(container, renderer, { title: 'Tile Chunk' });
 
         this.camera.far = 8000;
         this.camera.updateProjectionMatrix();
@@ -122,60 +120,52 @@ class TileChunk extends Experiment {
         this.cellsGroup = new THREE.Group();
         this.scene.add(this.cellsGroup);
 
-        this.gui = new GUI({ title: 'Tile Chunk', container });
-        this.gui.domElement.style.cssText = 'position:absolute;top:0;right:0;z-index:10';
-
-        // File input hidden inside the GUI DOM, triggered by a button
         this.fileInput = document.createElement('input');
         this.fileInput.type = 'file';
         this.fileInput.accept = '.glb';
         this.fileInput.style.display = 'none';
-        this.gui.domElement.appendChild(this.fileInput);
+        container.appendChild(this.fileInput);
         this.fileInput.addEventListener('change', (e) => void this.onGltfFileChange(e));
 
-        const qCtrl = this.gui
+        const gui = this.debugPanel.root();
+        const qCtrl = gui
             .add(this.params, 'q')
             .name('Q')
             .step(1)
             .onFinishChange(() => this.regenerate());
-        const rCtrl = this.gui
+        const rCtrl = gui
             .add(this.params, 'r')
             .name('R')
             .step(1)
             .onFinishChange(() => this.regenerate());
-        this.gui
-            .add(
-                {
-                    randomize: () => {
-                        const range = 100;
-                        this.params.q = Math.floor(Math.random() * 2 * range) - range;
-                        this.params.r = Math.floor(Math.random() * 2 * range) - range;
-                        qCtrl.updateDisplay();
-                        rCtrl.updateDisplay();
-                        this.regenerate();
-                    }
-                },
-                'randomize'
-            )
-            .name('Random Chunk');
+        gui.add(
+            {
+                randomize: () => {
+                    const range = 100;
+                    this.params.q = Math.floor(Math.random() * 2 * range) - range;
+                    this.params.r = Math.floor(Math.random() * 2 * range) - range;
+                    qCtrl.updateDisplay();
+                    rCtrl.updateDisplay();
+                    this.regenerate();
+                }
+            },
+            'randomize'
+        ).name('Random Chunk');
 
-        this.gui.add({ switchRandom: () => this.switchRandomTile() }, 'switchRandom').name('Switch Random Tile');
-        this.gui
-            .add(this.displayParams, 'showCells')
+        gui.add({ switchRandom: () => this.switchRandomTile() }, 'switchRandom').name('Switch Random Tile');
+        gui.add(this.displayParams, 'showCells')
             .name('Show Cells')
             .onChange((v: boolean) => (v ? this.cellWire?.show() : this.cellWire?.hide()));
-        this.gui.add({ loadGltf: () => this.fileInput.click() }, 'loadGltf').name('Load glTF...');
-        this.gui
-            .add(
-                {
-                    clearGltf: () => {
-                        this.fileInput.value = '';
-                        this.replaceTileSet(buildProceduralTileSet(this.scene, 2048));
-                    }
-                },
-                'clearGltf'
-            )
-            .name('Clear glTF');
+        gui.add({ loadGltf: () => this.fileInput.click() }, 'loadGltf').name('Load glTF...');
+        gui.add(
+            {
+                clearGltf: () => {
+                    this.fileInput.value = '';
+                    this.replaceTileSet(buildProceduralTileSet(this.scene, 2048));
+                }
+            },
+            'clearGltf'
+        ).name('Clear glTF');
 
         this.regenerate();
         this.start();
@@ -198,10 +188,6 @@ class TileChunk extends Experiment {
     }
 
     private replaceTileSet(next: InstancedTileSet): void {
-        // Remove all tiles from old set, then dispose it
-        for (let i = 0; i < this.tileCount; i++) {
-            this.tileNode.removeTile(this.tileVariants[i], i);
-        }
         this.tileNode.dispose();
         this.tileNode = next;
         // Re-add all current tiles into the new set
@@ -266,7 +252,7 @@ class TileChunk extends Experiment {
     }
 
     dispose(): void {
-        this.gui.destroy();
+        this.fileInput.remove();
         if (this.loadedChunk) {
             this.world.remove_chunk(this.loadedChunk.q, this.loadedChunk.r);
         }

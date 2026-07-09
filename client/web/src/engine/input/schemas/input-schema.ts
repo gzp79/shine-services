@@ -31,7 +31,7 @@ export abstract class InputSchema {
     }
 
     abstract get isIdle(): boolean;
-    abstract state(): string;
+    abstract state(): Record<string, string>;
     abstract cancel(): void;
     abstract dispose(): void;
 }

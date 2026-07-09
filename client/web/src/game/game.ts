@@ -1,8 +1,8 @@
 import init from '#wasm';
 import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
+import { DebugPanel } from '../engine/compositor/debug-panel';
 import { RenderContext } from '../engine/compositor/render-context';
-import { DebugPanel } from '../engine/debug-panel';
 import { InputManager } from '../engine/input/input-manager';
 import { InputState } from '../engine/input/input-state';
 import { RtsCamera } from './avatar/rts-camera';
@@ -23,8 +23,8 @@ class Game {
     private readonly inputState: InputState;
     private readonly camera: RtsCamera;
     private readonly worldCursor: WorldCursor;
-    private readonly world: World;
     private readonly debugPanel: DebugPanel;
+    private readonly world: World;
     private readonly systems: GameSystem[] = [];
     private animationId = 0;
     private lastTime = 0;
@@ -42,8 +42,7 @@ class Game {
         // Register resources
         this.events = new EventTarget();
         this.renderContext = new RenderContext(container, renderer, { showMetrics: true });
-        this.debugPanel = new DebugPanel();
-        this.debugPanel.setGameContainer(container);
+        this.debugPanel = new DebugPanel(container);
 
         this.camera = new RtsCamera(this.events);
         this.worldCursor = new WorldCursor(this.renderContext.scene, this.events);
@@ -52,11 +51,11 @@ class Game {
         this.inputState = new InputState();
         this.inputManager = new InputManager(this.inputState, container);
 
-        // Add debug toggles
         this.worldCursor.showMesh = true;
-        this.debugPanel.addToggle('Controls', 'Show World Cursor', this.worldCursor, 'showMesh');
-        this.debugPanel.addToggle('Controls', 'Show Chunk Labels', this.world, 'showChunkLabels');
-        this.debugPanel.addToggle('Controls', 'Show Cell Wires', this.world, 'showCellWires');
+        const controls = this.debugPanel.scope('Controls');
+        controls.add(this.worldCursor, 'showMesh').name('Show World Cursor');
+        controls.add(this.world, 'showChunkLabels').name('Show Chunk Labels');
+        controls.add(this.world, 'showCellWires').name('Show Cell Wires');
 
         // Register systems in execution order
         this.systems.push(new CameraViewportSystem(this.camera, this.renderContext));

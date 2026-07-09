@@ -17,12 +17,11 @@ class HexMesh extends Experiment {
     private currentMesh: HexMeshGroup | null = null;
     private debugCircle: ManagedMesh | null = null;
     private axesGroup: THREE.Group | null = null;
-    private gui: import('lil-gui').GUI;
 
     constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer);
-        this.gui = createControls(
-            container,
+        super(container, renderer, { title: 'Hex Mesh' });
+        createControls(
+            this.debugPanel,
             this.params,
             () => this.regenerate(),
             () => this.applyDisplay()
@@ -113,7 +112,6 @@ class HexMesh extends Experiment {
     }
 
     dispose() {
-        this.gui.destroy();
         if (this.currentMesh) {
             this.scene.remove(this.currentMesh.group);
             this.currentMesh.dispose();

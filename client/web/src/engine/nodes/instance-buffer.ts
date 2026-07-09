@@ -63,7 +63,7 @@ export class InstanceBuffer {
             this.slotToKey = new Uint32Array(stripHeight);
             this.live = new Uint8Array(stripHeight);
         } else {
-            this.numStrips = 1;
+            this.numStrips = 0;
             this.maxInstances = nextPow2(Math.max(1, maxInstances));
             this.cpuCapacity = this.maxInstances;
             this.cpuData = texelsPerBuffer.map((t) => new Float32Array(t * this.maxInstances * 4));
@@ -107,40 +107,25 @@ export class InstanceBuffer {
         if (newCapacity > this.cpuCapacity) {
             this._growCpu(newCapacity);
         }
-        if (this.stripHeight > 0) {
-            // cpuData already rearranged by _growCpu; numStrips already updated
-            const newTextures = (this.texelsPerBuffer as number[]).map((t, i) => {
-                const tex = new THREE.DataTexture(
-                    this.cpuData[i],
-                    this.numStrips * t,
-                    this.stripHeight,
-                    THREE.RGBAFormat,
-                    THREE.FloatType
-                );
-                tex.magFilter = THREE.NearestFilter;
-                tex.minFilter = THREE.NearestFilter;
-                tex.needsUpdate = true;
-                this.textures[i].dispose();
-                return tex;
-            });
-            (this.textures as THREE.DataTexture[]) = newTextures;
-            this.maxInstances = this.cpuCapacity;
-            for (let i = 0; i < this.bufferDirty.length; i++) this.bufferDirty[i] = true;
-            return newTextures;
-        } else {
-            const newTextures = (this.texelsPerBuffer as number[]).map((t, i) => {
-                const tex = new THREE.DataTexture(this.cpuData[i], t, newCapacity, THREE.RGBAFormat, THREE.FloatType);
-                tex.magFilter = THREE.NearestFilter;
-                tex.minFilter = THREE.NearestFilter;
-                tex.needsUpdate = true;
-                this.textures[i].dispose();
-                return tex;
-            });
-            (this.textures as THREE.DataTexture[]) = newTextures;
-            this.maxInstances = newCapacity;
-            for (let i = 0; i < this.bufferDirty.length; i++) this.bufferDirty[i] = true;
-            return newTextures;
-        }
+        const strip = this.stripHeight > 0;
+        const newTextures = (this.texelsPerBuffer as number[]).map((t, i) => {
+            const tex = new THREE.DataTexture(
+                this.cpuData[i],
+                strip ? this.numStrips * t : t,
+                strip ? this.stripHeight : newCapacity,
+                THREE.RGBAFormat,
+                THREE.FloatType
+            );
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestFilter;
+            tex.needsUpdate = true;
+            this.textures[i].dispose();
+            return tex;
+        });
+        (this.textures as THREE.DataTexture[]) = newTextures;
+        this.maxInstances = strip ? this.cpuCapacity : newCapacity;
+        for (let i = 0; i < this.bufferDirty.length; i++) this.bufferDirty[i] = true;
+        return newTextures;
     }
 
     setBuffer(key: number, bufIndex: number, values: Float32Array): boolean {
@@ -247,46 +232,41 @@ export class InstanceBuffer {
             const newNumStrips = Math.ceil(newCap / this.stripHeight);
             const actualNewCap = newNumStrips * this.stripHeight;
             const oldNumStrips = this.numStrips;
-            const newCpuData = (this.texelsPerBuffer as number[]).map((T, i) => {
+            this.cpuData = (this.texelsPerBuffer as number[]).map((T, i) => {
                 const oldData = this.cpuData[i];
                 const newData = new Float32Array(newNumStrips * T * this.stripHeight * 4);
                 // Rearrange strip layout: row stride changes from oldNumStrips*T to newNumStrips*T
                 for (let row = 0; row < this.stripHeight; row++) {
-                    for (let s = 0; s < oldNumStrips; s++) {
-                        const oldOff = (row * oldNumStrips + s) * T * 4;
-                        const newOff = (row * newNumStrips + s) * T * 4;
-                        newData.set(oldData.subarray(oldOff, oldOff + T * 4), newOff);
-                    }
+                    const rowOldBase = row * oldNumStrips * T * 4;
+                    newData.set(
+                        oldData.subarray(rowOldBase, rowOldBase + oldNumStrips * T * 4),
+                        row * newNumStrips * T * 4
+                    );
                 }
                 return newData;
             });
-            this.cpuData = newCpuData;
             this.numStrips = newNumStrips;
-            if (actualNewCap > this.slotToKey.length) {
-                const oldSlotToKey = this.slotToKey;
-                const oldLive = this.live;
-                this.slotToKey = new Uint32Array(actualNewCap);
-                this.live = new Uint8Array(actualNewCap);
-                this.slotToKey.set(oldSlotToKey);
-                this.live.set(oldLive);
-            }
+            this._growSlotArrays(actualNewCap);
             this.cpuCapacity = actualNewCap;
         } else {
-            const newCpuData = (this.texelsPerBuffer as number[]).map((t, i) => {
-                const oldData = this.cpuData[i];
+            this.cpuData = (this.texelsPerBuffer as number[]).map((t, i) => {
                 const newData = new Float32Array(t * newCap * 4);
-                newData.set(oldData);
+                newData.set(this.cpuData[i]);
                 return newData;
             });
-            this.cpuData = newCpuData;
-            const oldSlotToKey = this.slotToKey;
-            const oldLive = this.live;
-            this.slotToKey = new Uint32Array(newCap);
-            this.live = new Uint8Array(newCap);
-            this.slotToKey.set(oldSlotToKey);
-            this.live.set(oldLive);
+            this._growSlotArrays(newCap);
             this.cpuCapacity = newCap;
         }
+    }
+
+    private _growSlotArrays(newCap: number): void {
+        if (newCap <= this.slotToKey.length) return;
+        const newSlotToKey = new Uint32Array(newCap);
+        const newLive = new Uint8Array(newCap);
+        newSlotToKey.set(this.slotToKey);
+        newLive.set(this.live);
+        this.slotToKey = newSlotToKey;
+        this.live = newLive;
     }
 
     private writeBuffer(slot: number, bufIndex: number, values: Float32Array): void {
@@ -305,7 +285,7 @@ export class InstanceBuffer {
             if (this.stripHeight > 0) {
                 const srcOff = this._stripOffset(i, src);
                 const dstOff = this._stripOffset(i, dst);
-                for (let j = 0; j < floats; j++) data[dstOff + j] = data[srcOff + j];
+                data.set(data.subarray(srcOff, srcOff + floats), dstOff);
             } else {
                 data.copyWithin(dst * floats, src * floats, src * floats + floats);
             }

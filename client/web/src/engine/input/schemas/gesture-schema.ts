@@ -112,10 +112,11 @@ export class GestureSchema extends InputSchema {
         return this._isIdle;
     }
 
-    state(): string {
-        const status = this._isIdle ? 'off' : 'on';
-        const pts = this.overflow ? `${MAX_POINTS}+ (overflow)` : `${this.count}`;
-        return `enabled: ${status}\npoints:  ${pts}`;
+    state(): Record<string, string> {
+        return {
+            enabled: this._isIdle ? 'off' : 'on',
+            points: this.overflow ? `${MAX_POINTS}+ (overflow)` : `${this.count}`
+        };
     }
 
     cancel(): void {

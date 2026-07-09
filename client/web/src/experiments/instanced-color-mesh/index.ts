@@ -1,7 +1,5 @@
-import GUI from 'lil-gui';
 import * as THREE from 'three';
-import { WebGPURenderer } from 'three/webgpu';
-import { MeshStandardNodeMaterial } from 'three/webgpu';
+import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
 import { InstancedColorMesh } from '../../engine/nodes/instanced-color-mesh';
 import { own, share } from '../../engine/render/ownership';
 import { Experiment } from '../experiment';
@@ -83,12 +81,11 @@ function buildGeometry(): { geometry: THREE.BufferGeometry; ranges: number[] } {
 
 class InstancedColorMeshExp extends Experiment {
     private readonly mesh: InstancedColorMesh;
-    private readonly gui: GUI;
     private readonly params = { a: 5, b: 5, c: 5 };
     private readonly counts = [0, 0, 0];
 
     constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer);
+        super(container, renderer, { title: 'Instanced Color Mesh' });
 
         this.camera.position.set(0, -18, 12);
         this.camera.lookAt(0, 0, 0);
@@ -137,22 +134,18 @@ class InstancedColorMeshExp extends Experiment {
             pageSizeHint: maxDim
         });
 
-        this.gui = new GUI({ title: 'Instanced Color Mesh', container });
-        this.gui.domElement.style.cssText = 'position:absolute;top:0;right:0;z-index:10';
-        this.gui
-            .add(this.params, 'a')
+        const gui = this.debugPanel.root();
+        gui.add(this.params, 'a')
             .name('Spheres')
             .min(0)
             .step(1)
             .onChange((v: number) => this.update(0, v));
-        this.gui
-            .add(this.params, 'b')
+        gui.add(this.params, 'b')
             .name('Cones')
             .min(0)
             .step(1)
             .onChange((v: number) => this.update(1, v));
-        this.gui
-            .add(this.params, 'c')
+        gui.add(this.params, 'c')
             .name('Tori')
             .min(0)
             .step(1)
@@ -180,7 +173,6 @@ class InstancedColorMeshExp extends Experiment {
     }
 
     dispose(): void {
-        this.gui.destroy();
         this.mesh.dispose();
         super.dispose();
     }

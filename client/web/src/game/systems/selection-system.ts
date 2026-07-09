@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ChunkConst } from '../../constants';
-import type { DebugPanel } from '../../engine/debug-panel';
+import type { DebugPanel } from '../../engine/compositor/debug-panel';
 import type { IInputState } from '../../engine/input/input-state';
 import type { IRtsCamera } from '../avatar/rts-camera';
 import { GameSystem } from '../game-system';
@@ -23,13 +23,13 @@ export class SelectionSystem implements GameSystem {
     // Reused scratch vectors — never escape this class.
     private readonly _worldPos = new THREE.Vector2();
     private readonly _queryPos = new THREE.Vector2();
-    private readonly debugPanel: DebugPanel;
+    private readonly debugPanel: DebugPanel | null;
 
     constructor(
         private readonly world: World,
         private readonly input: IInputState,
         private readonly camera: IRtsCamera,
-        debugPanel: DebugPanel
+        debugPanel: DebugPanel | null
     ) {
         this.debugPanel = debugPanel;
     }
@@ -37,14 +37,14 @@ export class SelectionSystem implements GameSystem {
     update(_deltaTime: number): void {
         const mousePos = this.input.pointerPos;
         if (!mousePos) {
-            this.debugPanel.set(SCOPE, 'Hit', 'None');
+            this.debugPanel?.set(SCOPE, 'Hit', 'None');
             this.world.selection.clear();
             return;
         }
 
         const hit = this.camera.screenToWorldPlanePoint(mousePos.x, mousePos.y);
         if (!hit) {
-            this.debugPanel.set(SCOPE, 'Hit', 'None');
+            this.debugPanel?.set(SCOPE, 'Hit', 'None');
             this.world.selection.clear();
             return;
         }
@@ -52,7 +52,7 @@ export class SelectionSystem implements GameSystem {
         this._worldPos.set(hit.x, hit.y);
         const wpx = this._worldPos.x;
         const wpy = this._worldPos.y;
-        this.debugPanel.set(SCOPE, 'Hit', `(${wpx.toFixed(2)}, ${wpy.toFixed(2)})`);
+        this.debugPanel?.set(SCOPE, 'Hit', `(${wpx.toFixed(2)}, ${wpy.toFixed(2)})`);
 
         const focusedChunkId = this.world.focusedChunkId;
 
@@ -142,6 +142,6 @@ export class SelectionSystem implements GameSystem {
     }
 
     dispose(): void {
-        this.debugPanel.removeScope(SCOPE);
+        this.debugPanel?.removeScope(SCOPE);
     }
 }

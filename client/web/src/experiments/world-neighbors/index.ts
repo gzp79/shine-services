@@ -16,10 +16,8 @@ class WorldNeighbors extends Experiment {
     private interiorGroup: ReturnType<typeof buildInteriorMeshes> | null = null;
     private edgeGroup: ReturnType<typeof buildEdgeMeshes> | null = null;
     private vertexGroup: ReturnType<typeof buildVertexMeshes> | null = null;
-    private gui: import('lil-gui').GUI;
-
     constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer);
+        super(container, renderer, { title: 'World Neighbors' });
 
         this.camera.far = 10000;
         this.camera.updateProjectionMatrix();
@@ -27,8 +25,8 @@ class WorldNeighbors extends Experiment {
         this.camera.lookAt(0, 0, 0);
         if (this.controls) this.controls.update();
 
-        this.gui = createControls(
-            container,
+        createControls(
+            this.debugPanel,
             this.params,
             () => this.applyDisplay(),
             () => this.regenerate()
@@ -103,7 +101,6 @@ class WorldNeighbors extends Experiment {
     }
 
     dispose() {
-        this.gui.destroy();
         this.disposeScene();
         super.dispose();
     }

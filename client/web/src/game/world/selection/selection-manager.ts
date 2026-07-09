@@ -1,4 +1,4 @@
-import type { DebugPanel } from '../../../engine/debug-panel';
+import type { DebugPanel } from '../../../engine/compositor/debug-panel';
 import { EventDispatcher } from '../../../engine/events';
 import { SELECTION_CHANGED, type Selection, type SelectionChangedEvent } from './selection-event';
 
@@ -7,9 +7,9 @@ const SCOPE = 'World';
 export class SelectionManager {
     private _current: Selection | null = null;
     private readonly dispatcher: EventDispatcher;
-    private readonly debugPanel: DebugPanel;
+    private readonly debugPanel: DebugPanel | null;
 
-    constructor(events: EventTarget, debugPanel: DebugPanel) {
+    constructor(events: EventTarget, debugPanel: DebugPanel | null) {
         this.dispatcher = new EventDispatcher(events);
         this.debugPanel = debugPanel;
     }
@@ -36,23 +36,27 @@ export class SelectionManager {
         if (!this._current) return;
         this._current = null;
         this.dispatcher.dispatch<SelectionChangedEvent>(SELECTION_CHANGED, { selection: null });
-        this.debugPanel.set(SCOPE, 'Selection', 'None');
+        this.debugPanel?.set(SCOPE, 'Selection', 'None');
     }
 
     private updateDebugPanel(sel: Selection): void {
         switch (sel.type) {
             case 'cell':
-                this.debugPanel.set(SCOPE, 'Selection', `[inner] (${sel.chunk.id.q}, ${sel.chunk.id.r})/${sel.cellId}`);
+                this.debugPanel?.set(
+                    SCOPE,
+                    'Selection',
+                    `[inner] (${sel.chunk.id.q}, ${sel.chunk.id.r})/${sel.cellId}`
+                );
                 break;
             case 'edge-cell':
-                this.debugPanel.set(
+                this.debugPanel?.set(
                     SCOPE,
                     'Selection',
                     `[edge] (${sel.edge.id.chunkId.q}, ${sel.edge.id.chunkId.r})-${sel.edge.id.edgeIdx}/${sel.cellId}`
                 );
                 break;
             case 'corner-cell':
-                this.debugPanel.set(
+                this.debugPanel?.set(
                     SCOPE,
                     'Selection',
                     `[corner] (${sel.corner.id.chunkId.q}, ${sel.corner.id.chunkId.r})-${sel.corner.id.cornerIdx}/${sel.cellId}`

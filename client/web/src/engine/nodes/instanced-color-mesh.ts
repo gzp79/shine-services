@@ -15,6 +15,8 @@ export type { VariantDef, SubMeshDef, InstancedMultiMeshParams } from './instanc
 //   texel  4:   vec4 color (RGBA)
 
 export class InstancedColorMesh extends InstancedMultiMesh {
+    private readonly _scratch = new Float32Array(20);
+
     constructor(parent: THREE.Object3D, params: InstancedMultiMeshParams) {
         super(parent, params);
     }
@@ -40,13 +42,12 @@ export class InstancedColorMesh extends InstancedMultiMesh {
     }
 
     setObject(variantIndex: number, key: number, matrix: THREE.Matrix4, color: THREE.Color): boolean {
-        const data = new Float32Array(20);
-        data.set(matrix.elements, 0);
-        data[16] = color.r;
-        data[17] = color.g;
-        data[18] = color.b;
-        data[19] = 1.0;
-        return this.setInstance(variantIndex, key, 0, data);
+        this._scratch.set(matrix.elements, 0);
+        this._scratch[16] = color.r;
+        this._scratch[17] = color.g;
+        this._scratch[18] = color.b;
+        this._scratch[19] = 1.0;
+        return this.setInstance(variantIndex, key, 0, this._scratch);
     }
 
     removeObject(variantIndex: number, key: number): boolean {

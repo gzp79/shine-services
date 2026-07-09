@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { WebGPURenderer } from 'three/webgpu';
+import { DebugPanel } from '../engine/compositor/debug-panel';
 import { RenderContext } from '../engine/compositor/render-context';
 import { disposeObject3D } from '../engine/render/ownership';
 
 export type ExperimentOption = {
+    title: string;
     addOrbitCamera?: boolean;
 };
 
@@ -19,13 +21,12 @@ export abstract class Experiment {
     readonly renderContext: RenderContext;
     readonly camera: THREE.PerspectiveCamera;
     readonly controls?: OrbitControls;
+    readonly debugPanel: DebugPanel;
 
-    /** Convenience accessor — same scene as renderContext.scene */
     get scene(): THREE.Scene {
         return this.renderContext.scene;
     }
 
-    /** Convenience accessor — same renderer as renderContext.renderer */
     get renderer(): WebGPURenderer {
         return this.renderContext.renderer;
     }
@@ -34,10 +35,11 @@ export abstract class Experiment {
     private lastTime = 0;
     private readonly _resizeObserver: ResizeObserver;
 
-    constructor(container: HTMLElement, renderer: WebGPURenderer, options?: ExperimentOption) {
-        const addOrbitCamera = options?.addOrbitCamera ?? true;
+    constructor(container: HTMLElement, renderer: WebGPURenderer, options: ExperimentOption) {
+        const addOrbitCamera = options.addOrbitCamera ?? true;
 
         this.renderContext = new RenderContext(container, renderer, { setupScene: false, showMetrics: true });
+        this.debugPanel = new DebugPanel(container, options.title);
 
         const scene = this.renderContext.scene;
         scene.background = new THREE.Color(0x1a1a2e);
@@ -89,6 +91,7 @@ export abstract class Experiment {
     dispose(): void {
         cancelAnimationFrame(this.animationId);
         this._resizeObserver.disconnect();
+        this.debugPanel.dispose();
         this.controls?.dispose();
         this.renderContext.dispose();
         disposeObject3D(this.renderContext.scene);

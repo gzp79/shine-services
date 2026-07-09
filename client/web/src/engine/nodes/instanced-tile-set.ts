@@ -41,6 +41,8 @@ type GltfJson = {
 };
 
 export class InstancedTileSet extends InstancedMultiMesh {
+    private readonly _scratch = new Float32Array(40);
+
     constructor(parent: THREE.Object3D, params: InstancedMultiMeshParams) {
         super(parent, params);
     }
@@ -121,10 +123,9 @@ export class InstancedTileSet extends InstancedMultiMesh {
     }
 
     setTile(variantIndex: number, key: number, matrix: THREE.Matrix4, distortion: TileDistortion): boolean {
-        const data = new Float32Array(40);
-        data.set(matrix.elements, 0);
-        data.set(distortion, 16);
-        return super.setInstance(variantIndex, key, 0, data);
+        this._scratch.set(matrix.elements, 0);
+        this._scratch.set(distortion, 16);
+        return super.setInstance(variantIndex, key, 0, this._scratch);
     }
 
     removeTile(variantIndex: number, key: number): boolean {
