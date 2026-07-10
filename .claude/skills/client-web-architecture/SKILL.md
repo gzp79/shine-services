@@ -11,6 +11,19 @@ description: >
 
 `client/web/src/` — TypeScript WebGPU game loop around a central `Game` store.
 
+## `engine/` layout
+
+| Folder | Role |
+|---|---|
+| `resources/` | Resource-lifetime primitives (ownership tracking, disposal-aware mesh wrappers) |
+| `loaders/` | Asset ingestion from external formats, no scene objects |
+| `geometry/` | Geometry-building functions, no materials or scene graph |
+| `scene/` | Scene-graph classes meant to be added to the Three.js scene |
+| `scene/instancing/` | GPU instanced-mesh rendering subsystem |
+| `compositor/` | Renderer/scene setup, debug panel, perf metrics |
+| `input/` | Raw detectors → schemas → input state pipeline |
+| `utils/` | Small stateless helpers; private modules re-exported via a barrel — always import from the barrel |
+
 ## Game — central store (`engine/game.ts`)
 
 Three groups; no formal type boundary — just construction order.
