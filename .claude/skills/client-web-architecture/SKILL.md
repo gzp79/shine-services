@@ -90,3 +90,5 @@ See `experiments/hex-mesh/` or `experiments/cdt/` as reference.
 | Doc | Load when |
 |---|---|
 | `docs/client/web/input-system.html` | working on anything in `engine/input/` |
+| `docs/client/web/chunk-lifecycle.html` | working on world streaming, chunk load/unload, or `WorldReferenceSystem` |
+| `docs/client/web/world-reference-change.html` | working on world rebase, coordinate rebasing, or `WorldReferenceSystem` events |

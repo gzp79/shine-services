@@ -94,12 +94,18 @@ export class TileChunk extends Experiment {
     private readonly fileInput: HTMLInputElement;
     private readonly params = { q: 0, r: 0 };
     private readonly displayParams = { showCells: true };
+    private readonly fillParams = { variant: 0 };
 
     private tileCount = 0;
     private tileVariants = new Uint8Array(0);
     private distortions: TileDistortion[] = [];
     private loadedChunk: { q: number; r: number } | null = null;
     private cellWire: WireNode | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private fillVariantCtrl: any = null;
+    private variantVisible: boolean[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private variantVisibleFolder: any = null;
 
     constructor(container: HTMLElement, renderer: WebGPURenderer) {
         super(container, renderer, { title: 'Tile Chunk' });
@@ -162,6 +168,16 @@ export class TileChunk extends Experiment {
             'clearGltf'
         ).name('Clear glTF');
 
+        this.fillVariantCtrl = gui
+            .add(this.fillParams, 'variant')
+            .name('Fill Variant')
+            .min(0)
+            .max(this.tileNode.variantCount - 1)
+            .step(1);
+        gui.add({ fillAll: () => this.fillAll() }, 'fillAll').name('Fill All');
+
+        this.rebuildVariantVisibilityFolder();
+
         this.regenerate();
     }
 
@@ -184,11 +200,28 @@ export class TileChunk extends Experiment {
     private replaceTileSet(next: InstancedTileSet): void {
         this.tileNode.dispose();
         this.tileNode = next;
-        // Re-add all current tiles into the new set
+        this.fillParams.variant = 0;
+        this.fillVariantCtrl?.max(next.variantCount - 1).updateDisplay();
+        this.rebuildVariantVisibilityFolder();
         for (let i = 0; i < this.tileCount; i++) {
             const v = i % this.tileNode.variantCount;
             this.tileVariants[i] = v;
             this.tileNode.setTile(v, i, new THREE.Matrix4(), this.distortions[i]);
+        }
+        for (let i = 0; i < this.tileNode.variantCount; i++) {
+            this.tileNode.setVariantVisible(i, this.variantVisible[i] ?? true);
+        }
+    }
+
+    private fillAll(): void {
+        if (this.tileCount === 0) return;
+        const v = Math.min(this.fillParams.variant, this.tileNode.variantCount - 1);
+        for (let i = 0; i < this.tileCount; i++) {
+            if (this.tileVariants[i] !== v) {
+                this.tileNode.removeTile(this.tileVariants[i], i);
+                this.tileNode.setTile(v, i, new THREE.Matrix4(), this.distortions[i]);
+                this.tileVariants[i] = v;
+            }
         }
     }
 
@@ -243,6 +276,57 @@ export class TileChunk extends Experiment {
         this.tileNode.removeTile(currentVariant, key);
         this.tileNode.setTile(nextVariant, key, new THREE.Matrix4(), this.distortions[key]);
         this.tileVariants[key] = nextVariant;
+    }
+
+    private rebuildVariantVisibilityFolder(): void {
+        const gui = this.debugPanel.root();
+        if (this.variantVisibleFolder) {
+            this.variantVisibleFolder.destroy();
+            this.variantVisibleFolder = null;
+        }
+
+        const count = this.tileNode.variantCount;
+        this.variantVisible = Array.from({ length: count }, (_, i) =>
+            i < this.variantVisible.length ? this.variantVisible[i] : true
+        );
+
+        const folder = gui.addFolder('Variants');
+        folder.close();
+        this.variantVisibleFolder = folder;
+
+        const allParam = { showAll: this.variantVisible.every((v) => v) };
+        const allCtrl = folder.add(allParam, 'showAll').name('Show All');
+
+        const row = document.createElement('div');
+        row.style.cssText =
+            'display:flex;gap:8px;padding:0 var(--padding);height:var(--widget-height);align-items:center;';
+
+        const checkboxes = this.variantVisible.map((checked, i) => {
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = checked;
+            checkbox.style.cssText = 'cursor:pointer;';
+            checkbox.addEventListener('change', () => {
+                this.variantVisible[i] = checkbox.checked;
+                allParam.showAll = this.variantVisible.every((v) => v);
+                allCtrl.updateDisplay();
+                this.tileNode.setVariantVisible(i, checkbox.checked);
+            });
+            const label = document.createElement('label');
+            label.textContent = String(i);
+            label.style.cssText = 'display:flex;gap:4px;align-items:center;cursor:pointer;';
+            label.prepend(checkbox);
+            row.appendChild(label);
+            return checkbox;
+        });
+
+        (folder as unknown as { $children: HTMLElement }).$children.appendChild(row);
+
+        allCtrl.onChange((value: boolean) => {
+            this.variantVisible.fill(value);
+            checkboxes.forEach((cb) => (cb.checked = value));
+            for (let i = 0; i < count; i++) this.tileNode.setVariantVisible(i, value);
+        });
     }
 
     dispose(): void {

@@ -61,10 +61,10 @@ Project skills live in `.claude/skills/`. Invoke before working in a domain.
 | Skill | When |
 |---|---|
 | `client-web-architecture` | any file under `client/web/src/` |
-| `handler-patterns` | adding/reviewing Axum handlers |
+| `service-architecture` | adding/reviewing routes, handlers, services, or repositories |
 | `mesh-topology` | world/chunk/hex geometry |
-| `sdp-doc` | create/update/sync/check feature design doc |
-| `sdp-code` | doc ahead of code, implement or plan |
+| `sdp-doc` | **any new feature or non-trivial change** — create/update/sync design doc first; do not write code without a doc |
+| `sdp-code` | implementing a feature — reads the design doc and drives code from it; invoke after `sdp-doc` |
 | `local-development` | run services locally |
 
 ### Design docs

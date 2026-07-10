@@ -2,6 +2,7 @@ import init from '#wasm';
 import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
 import type { Application } from './engine/application';
+import { AssetViewer } from './experiments/asset-viewer/index';
 import { Cdt } from './experiments/cdt/index';
 import { HexMesh } from './experiments/hex-mesh/index';
 import { InputControl } from './experiments/input-control/index';
@@ -21,7 +22,8 @@ type SceneId =
     | 'trilinear'
     | 'world-neighbors'
     | 'tile-chunk'
-    | 'instanced-color-mesh';
+    | 'instanced-color-mesh'
+    | 'asset-viewer';
 
 async function createSharedRenderer(): Promise<WebGPURenderer> {
     const renderer = new WebGPURenderer({ antialias: true, forceWebGL: false, powerPreference: 'high-performance' });
@@ -46,12 +48,14 @@ function createContent(id: SceneId, container: HTMLElement, renderer: WebGPURend
             return new TileChunk(container, renderer);
         case 'instanced-color-mesh':
             return new InstancedColorMeshExp(container, renderer);
+        case 'asset-viewer':
+            return new AssetViewer(container, renderer);
         default:
             return new Game(container, renderer);
     }
 }
 
-export async function createScene(container: HTMLElement, id: SceneId): Promise<{ dispose(): void; }> {
+export async function createScene(container: HTMLElement, id: SceneId): Promise<{ dispose(): void }> {
     const renderer = await createSharedRenderer();
     container.appendChild(renderer.domElement);
     const content = createContent(id, container, renderer);
@@ -66,7 +70,7 @@ export async function createScene(container: HTMLElement, id: SceneId): Promise<
     };
 }
 
-export async function createRoutedScene(container: HTMLElement): Promise<{ dispose(): void; }> {
+export async function createRoutedScene(container: HTMLElement): Promise<{ dispose(): void }> {
     const renderer = await createSharedRenderer();
     container.appendChild(renderer.domElement);
 

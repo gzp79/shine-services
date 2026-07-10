@@ -1,14 +1,13 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { float, mat4, mix, positionLocal, vec3, vec4 } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
+import { loadGltf } from '../render/asset-loader';
 import { share } from '../render/ownership';
 import {
     type InstanceBufferLayout,
     InstanceData,
     InstancedMultiMesh,
     type InstancedMultiMeshParams,
-    type SubMeshDef,
     type VariantDef
 } from './instanced-multi-mesh';
 
@@ -25,21 +24,6 @@ export type TileDistortion = Float32Array; // 24 floats
 
 const CP_COUNT = 8;
 
-type GltfAccessor = { bufferView: number; byteOffset?: number; count: number; componentType: number };
-type GltfBufferView = { byteOffset?: number };
-type GltfPrimitive = { indices: number; material: number };
-type GltfMesh = { primitives: GltfPrimitive[] };
-type GltfNode = { mesh?: number };
-type GltfScene = { nodes?: number[] };
-type GltfJson = {
-    scene?: number;
-    scenes: GltfScene[];
-    nodes: GltfNode[];
-    meshes: GltfMesh[];
-    accessors: GltfAccessor[];
-    bufferViews: GltfBufferView[];
-};
-
 export class InstancedTileSet extends InstancedMultiMesh {
     private readonly _scratch = new Float32Array(40);
 
@@ -52,43 +36,15 @@ export class InstancedTileSet extends InstancedMultiMesh {
         url: string,
         params?: Omit<InstancedMultiMeshParams, 'geometry' | 'variants'>
     ): Promise<InstancedTileSet> {
-        const loader = new GLTFLoader();
-        const gltf = await loader.loadAsync(url);
-
-        // Extract the single shared geometry from the first mesh in the scene
-        const firstMesh = gltf.scene.getObjectByProperty('isMesh', true) as THREE.Mesh;
-        if (!firstMesh) throw new Error('fromGltf: no mesh found in glTF scene');
-        const geometry = firstMesh.geometry;
-
-        const json = gltf.parser.json as GltfJson;
-        const sceneJson = json.scenes[json.scene ?? 0];
-        const variants: VariantDef[] = [];
-
-        for (const nodeIdx of sceneJson.nodes ?? []) {
-            const nodeJson = json.nodes[nodeIdx];
-            if (nodeJson.mesh === undefined) continue;
-
-            const meshPrims = json.meshes[nodeJson.mesh].primitives;
-            const parts: SubMeshDef[] = [];
-
-            for (const prim of meshPrims) {
-                const acc = json.accessors[prim.indices];
-                const bv = json.bufferViews[acc.bufferView];
-                // UNSIGNED_INT=5125 (4 bytes), UNSIGNED_SHORT=5123 (2 bytes)
-                const componentSize = acc.componentType === 5125 ? 4 : 2;
-                const byteOffset = (bv.byteOffset ?? 0) + (acc.byteOffset ?? 0);
-                const indexStart = byteOffset / componentSize;
-                const indexEnd = indexStart + acc.count;
-                const baseMaterial = share(
-                    (await gltf.parser.getDependency('material', prim.material)) as MeshStandardNodeMaterial
-                );
-                parts.push({ baseMaterial, indexStart, indexEnd });
-            }
-
-            variants.push({ parts });
-        }
-
-        return new InstancedTileSet(parent, { geometry: share(geometry), variants, ...params });
+        const asset = await loadGltf(url);
+        const variants: VariantDef[] = asset.meshes.map((m) => ({
+            parts: m.submeshes.map((s) => ({
+                baseMaterial: share(s.material),
+                indexStart: s.indexStart,
+                indexEnd: s.indexEnd
+            }))
+        }));
+        return new InstancedTileSet(parent, { geometry: share(asset.geometry), variants, ...params });
     }
 
     // Instance data: 40 floats = 10 texels

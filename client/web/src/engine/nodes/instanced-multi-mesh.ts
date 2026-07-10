@@ -244,7 +244,9 @@ export abstract class InstancedMultiMesh {
     }
 
     removeInstance(variantIndex: number, key: number): boolean {
-        return this.variants[variantIndex]?.instanceBuffer.remove(key) ?? false;
+        const entry = this.variants[variantIndex];
+        if (!entry) return false;
+        return entry.instanceBuffer.remove(key);
     }
 
     get variantCount(): number {
@@ -253,6 +255,12 @@ export abstract class InstancedMultiMesh {
 
     instanceCount(variantIndex: number): number {
         return this.variants[variantIndex]?.instanceBuffer.length ?? 0;
+    }
+
+    setVariantVisible(variantIndex: number, visible: boolean): void {
+        const entry = this.variants[variantIndex];
+        if (!entry) return;
+        for (const mesh of entry.subMeshes) mesh.visible = visible;
     }
 
     instances(variantIndex: number): IterableIterator<number> {
