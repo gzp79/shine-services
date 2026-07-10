@@ -1,39 +1,36 @@
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mix, positionLocal, uniform } from 'three/tsl';
 import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
-import { ManagedMesh } from '../../engine/render/managed-mesh';
-import { disposeObject3D } from '../../engine/render/ownership';
+import { ManagedMesh } from '../../engine/resources/managed-mesh';
+import { disposeObject3D } from '../../engine/resources/ownership';
 import { ControlBox } from '../../engine/utils';
 import { Experiment } from '../experiment';
 
-export interface TrilinearExperiment {
-    dispose(): void;
-}
-
-class Trilinear extends Experiment {
+export class Trilinear extends Experiment {
     private loadedMesh: ManagedMesh | THREE.Mesh | null = null;
     private loadedObject: THREE.Group | null = null;
     private readonly controlBox: ControlBox;
     private readonly fileInput: HTMLInputElement;
 
     constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer);
+        super(container, renderer, { title: 'Trilinear' });
 
         this.fileInput = document.createElement('input');
         this.fileInput.type = 'file';
-        this.fileInput.accept = '.fbx';
-        this.fileInput.style.position = 'absolute';
-        this.fileInput.style.top = '50px';
-        this.fileInput.style.left = '10px';
-        this.fileInput.style.zIndex = '100';
-        this.fileInput.style.padding = '8px';
-        this.fileInput.style.background = 'rgba(0, 0, 0, 0.8)';
-        this.fileInput.style.color = 'white';
-        this.fileInput.style.border = '1px solid #555';
-        this.fileInput.style.borderRadius = '4px';
-        this.fileInput.style.fontFamily = 'monospace';
+        this.fileInput.accept = '.fbx, .glb';
+        this.fileInput.style.display = 'none';
         container.appendChild(this.fileInput);
+        this.fileInput.addEventListener('change', async (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+            await this.createMeshFromFile(file);
+        });
+
+        const gui = this.debugPanel.root();
+        gui.add({ load: () => this.fileInput.click() }, 'load').name('Load (.fbx / .glb)');
+        gui.add({ clear: () => this.resetToDefault() }, 'clear').name('Clear');
 
         this.controlBox = new ControlBox({
             scene: this.scene,
@@ -47,18 +44,17 @@ class Trilinear extends Experiment {
             }
         });
 
-        this.loadedMesh = this.createDefaultMesh();
+        this.resetToDefault();
+    }
+
+    private resetToDefault(): void {
+        this.disposeLoadedObject();
+        const mesh = this.createDefaultMesh();
+        this.loadedMesh = mesh;
         this.loadedObject = new THREE.Group();
-        this.loadedObject.add(this.loadedMesh);
+        this.loadedObject.add(mesh);
         this.scene.add(this.loadedObject);
-
-        this.fileInput.addEventListener('change', async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (!file) return;
-            await this.createMeshFromFile(file);
-        });
-
-        this.start();
+        this.fileInput.value = '';
     }
 
     private validateMeshForTrilinear(mesh: THREE.Mesh): { valid: boolean; reason?: string } {
@@ -137,7 +133,6 @@ class Trilinear extends Experiment {
     }
 
     private createDefaultMesh(): ManagedMesh {
-        this.disposeLoadedObject();
         const geometry = new THREE.BoxGeometry(3, 3, 3, 16, 16, 16);
         geometry.computeBoundingBox();
         this.convertToTrilinearCoordinates(geometry, geometry.boundingBox!);
@@ -149,19 +144,22 @@ class Trilinear extends Experiment {
 
         const fileExt = file.name.split('.').pop()?.toLowerCase();
         try {
+            let loadedObject: THREE.Group;
             if (fileExt === 'fbx') {
                 const buffer = await file.arrayBuffer();
-                const loader = new FBXLoader();
-                this.loadedObject = loader.parse(buffer, '');
+                loadedObject = new FBXLoader().parse(buffer, '');
+            } else if (fileExt === 'glb') {
+                const buffer = await file.arrayBuffer();
+                loadedObject = (await new GLTFLoader().parseAsync(buffer, '')).scene;
             } else {
-                const msg = 'Unsupported file format. Please use .fbx';
+                const msg = 'Unsupported file format. Please use .fbx or .glb';
                 console.error(msg);
                 alert(msg);
                 return;
             }
 
             const meshes: THREE.Mesh[] = [];
-            this.loadedObject.traverse((child) => {
+            loadedObject.traverse((child) => {
                 if (child instanceof THREE.Mesh) meshes.push(child);
             });
 
@@ -191,11 +189,8 @@ class Trilinear extends Experiment {
             });
             filteredMeshes.forEach((mesh) => mesh.parent?.remove(mesh));
 
-            if (this.loadedObject) {
-                disposeObject3D(this.loadedObject);
-                this.loadedObject.clear();
-            }
-            this.loadedObject = new THREE.Group();
+            disposeObject3D(loadedObject);
+            loadedObject.clear();
 
             for (let i = 0; i < filteredMeshes.length; i++) {
                 const validation = this.validateMeshForTrilinear(filteredMeshes[i]);
@@ -220,12 +215,10 @@ class Trilinear extends Experiment {
                 if (mesh.geometry.boundingBox) combinedBox.union(mesh.geometry.boundingBox);
             });
 
+            this.loadedObject = new THREE.Group();
             filteredMeshes.forEach((mesh, i) => {
-                if (Array.isArray(mesh.material)) {
-                    mesh.material.forEach((mat) => mat.dispose());
-                } else {
-                    mesh.material?.dispose();
-                }
+                if (Array.isArray(mesh.material)) mesh.material.forEach((mat) => mat.dispose());
+                else mesh.material?.dispose();
                 console.log(`Converting mesh ${i} to trilinear coordinates`);
                 this.convertToTrilinearCoordinates(mesh.geometry, combinedBox);
                 mesh.material = this.createTrilinearMaterial();
@@ -247,11 +240,4 @@ class Trilinear extends Experiment {
         this.fileInput.remove();
         super.dispose();
     }
-}
-
-export async function createTrilinearExperiment(
-    container: HTMLElement,
-    renderer: WebGPURenderer
-): Promise<TrilinearExperiment> {
-    return new Trilinear(container, renderer);
 }

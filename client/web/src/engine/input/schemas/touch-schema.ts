@@ -71,14 +71,14 @@ export class TouchSchema extends InputSchema {
         return !this.singleTouch.isActive() && !this.twoFingerGesture.isActive();
     }
 
-    state(): string {
-        const en = (v: boolean) => (v ? 'on ' : 'off');
+    state(): Record<string, string> {
+        const en = (v: boolean) => (v ? 'on' : 'off');
         const ac = (v: boolean) => (v ? ' [active]' : '');
-        return [
-            `idle:   ${this.isIdle}`,
-            `single: ${en(this.singleTouch.enabled)}${ac(this.singleTouch.isActive())}`,
-            `two:    ${en(this.twoFingerGesture.enabled)}${ac(this.twoFingerGesture.isActive())}`
-        ].join('\n');
+        return {
+            idle: String(this.isIdle),
+            single: `${en(this.singleTouch.enabled)}${ac(this.singleTouch.isActive())}`,
+            two: `${en(this.twoFingerGesture.enabled)}${ac(this.twoFingerGesture.isActive())}`
+        };
     }
 
     cancel(): void {

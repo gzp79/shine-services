@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InstanceBuffer } from './instance-buffer';
+import { InstanceBuffer, nextPow2 } from './instance-buffer';
 
 // 1 texel = 4 floats (RGBA32F); storing key, key*10, key*100 in first 3 components
 function buf1(maxInstances: number): InstanceBuffer {
@@ -28,12 +28,73 @@ function expectSlots(buf: InstanceBuffer, keys: number[]): void {
     }
 }
 
+describe('nextPow2', () => {
+    it('returns 1 for 0 and 1', () => {
+        expect(nextPow2(0)).toBe(1);
+        expect(nextPow2(1)).toBe(1);
+    });
+    it('returns next power for non-power inputs', () => {
+        expect(nextPow2(3)).toBe(4);
+        expect(nextPow2(5)).toBe(8);
+        expect(nextPow2(1000)).toBe(1024);
+    });
+    it('returns same value for exact powers', () => {
+        expect(nextPow2(2)).toBe(2);
+        expect(nextPow2(16)).toBe(16);
+        expect(nextPow2(1024)).toBe(1024);
+    });
+});
+
+describe('InstanceBuffer.grow', () => {
+    it('doubles capacity and preserves existing slot data', () => {
+        const buf = new InstanceBuffer(2, [1]);
+        buf.setBuffer(10, 0, new Float32Array([1, 2, 3, 4]));
+        buf.setBuffer(20, 0, new Float32Array([5, 6, 7, 8]));
+        const newTextures = buf.grow(4);
+        expect(newTextures).toHaveLength(1);
+        expect(buf.maxInstances).toBe(4);
+        const slot10 = buf.keyToSlot.get(10)!;
+        const slot20 = buf.keyToSlot.get(20)!;
+        // textures[i].image.data is the same Float32Array as cpuData[i]
+        const d = newTextures[0].image.data as Float32Array;
+        expect(Array.from(d.slice(slot10 * 4, slot10 * 4 + 4))).toEqual([1, 2, 3, 4]);
+        expect(Array.from(d.slice(slot20 * 4, slot20 * 4 + 4))).toEqual([5, 6, 7, 8]);
+    });
+    it('throws if newCapacity <= current maxInstances', () => {
+        const buf = new InstanceBuffer(4, [1]);
+        expect(() => buf.grow(4)).toThrow();
+        expect(() => buf.grow(2)).toThrow();
+    });
+    it('marks all buffers dirty after grow', () => {
+        const buf = new InstanceBuffer(2, [1]);
+        buf.setBuffer(1, 0, new Float32Array(4));
+        buf.compact();
+        buf.clearDirty(0);
+        buf.grow(4);
+        expect(buf.isDirty(0)).toBe(true);
+    });
+    it('compact() returns true when DataTextures were grown', () => {
+        const buf = new InstanceBuffer(2, [1]);
+        buf.setBuffer(0, 0, val(0));
+        buf.setBuffer(1, 0, val(1));
+        expect(buf.compact()).toBe(false);
+        buf.clearDirty(0);
+        // overflow into CPU-only territory
+        buf.setBuffer(2, 0, val(2));
+        expect(buf.maxInstances).toBe(2); // GPU texture still old size
+        expect(buf.compact()).toBe(true); // grew
+        expect(buf.maxInstances).toBe(4); // GPU texture grown
+        expectSlots(buf, [0, 1, 2]);
+    });
+});
+
 describe('InstanceBuffer', () => {
     describe('set / remove basics', () => {
-        it('setBuffer adds a key and compact returns count', () => {
+        it('setBuffer adds a key and compact updates length', () => {
             const buf = buf1(4);
             buf.setBuffer(1, 0, val(1));
-            expect(buf.compact()).toBe(1);
+            buf.compact();
+            expect(buf.length).toBe(1);
             expectSlots(buf, [1]);
         });
 
@@ -42,7 +103,7 @@ describe('InstanceBuffer', () => {
             buf.setBuffer(1, 0, val(1));
             buf.setBuffer(1, 0, new Float32Array([99, 99, 99, 0]));
             expect(buf.length).toBe(1);
-            expect(buf.compact()).toBe(1);
+            buf.compact();
             const slot = buf.keyToSlot.get(1)!;
             expect(buf.toSlotArray(0, slot)[0]).toBe(99);
         });
@@ -52,12 +113,17 @@ describe('InstanceBuffer', () => {
             expect(buf.remove(42)).toBe(false);
         });
 
-        it('setBuffer returns false when full', () => {
+        it('setBuffer auto-grows CPU capacity when full', () => {
             const buf = buf1(2);
             buf.setBuffer(0, 0, val(0));
             buf.setBuffer(1, 0, val(1));
-            expect(buf.setBuffer(2, 0, val(2))).toBe(false);
-            expect(buf.length).toBe(2);
+            // No longer returns false — CPU grows automatically
+            expect(buf.setBuffer(2, 0, val(2))).toBe(true);
+            expect(buf.length).toBe(3);
+            // GPU texture is still the old size until compact()
+            expect(buf.maxInstances).toBe(2);
+            expect(buf.compact()).toBe(true); // grew
+            expect(buf.maxInstances).toBe(4); // nextPow2(3) = 4
         });
     });
 
@@ -68,7 +134,8 @@ describe('InstanceBuffer', () => {
             buf.setBuffer(1, 0, val(1));
             buf.setBuffer(2, 0, val(2));
             buf.remove(2);
-            expect(buf.compact()).toBe(2);
+            buf.compact();
+            expect(buf.length).toBe(2);
             expectSlots(buf, [0, 1]);
         });
 
@@ -78,7 +145,8 @@ describe('InstanceBuffer', () => {
             buf.setBuffer(1, 0, val(1));
             buf.setBuffer(2, 0, val(2));
             buf.remove(0);
-            expect(buf.compact()).toBe(2);
+            buf.compact();
+            expect(buf.length).toBe(2);
             expectSlots(buf, [1, 2]);
         });
 
@@ -88,7 +156,8 @@ describe('InstanceBuffer', () => {
             buf.setBuffer(1, 0, val(1));
             buf.setBuffer(2, 0, val(2));
             buf.remove(1);
-            expect(buf.compact()).toBe(2);
+            buf.compact();
+            expect(buf.length).toBe(2);
             expectSlots(buf, [0, 2]);
         });
 
@@ -99,17 +168,18 @@ describe('InstanceBuffer', () => {
             buf.remove(3);
             buf.remove(5);
             buf.remove(7);
-            expect(buf.compact()).toBe(4);
+            buf.compact();
+            expect(buf.length).toBe(4);
             expectSlots(buf, [0, 2, 4, 6]);
         });
 
-        it('remove all — compact returns 0', () => {
+        it('remove all — compact returns false, length is 0', () => {
             const buf = buf1(4);
             buf.setBuffer(0, 0, val(0));
             buf.setBuffer(1, 0, val(1));
             buf.remove(0);
             buf.remove(1);
-            expect(buf.compact()).toBe(0);
+            expect(buf.compact()).toBe(false);
             expect(buf.length).toBe(0);
         });
 
@@ -119,7 +189,8 @@ describe('InstanceBuffer', () => {
             for (let i = 0; i < 4; i++) buf.remove(i);
             buf.compact();
             for (let i = 10; i < 14; i++) buf.setBuffer(i, 0, val(i));
-            expect(buf.compact()).toBe(4);
+            buf.compact();
+            expect(buf.length).toBe(4);
             expectSlots(buf, [10, 11, 12, 13]);
         });
 
@@ -143,7 +214,8 @@ describe('InstanceBuffer', () => {
             buf.remove(1);
             buf.compact();
             buf.setBuffer(5, 0, val(5));
-            expect(buf.compact()).toBe(3);
+            buf.compact();
+            expect(buf.length).toBe(3);
             expectSlots(buf, [0, 2, 5]);
         });
 
@@ -153,7 +225,8 @@ describe('InstanceBuffer', () => {
             buf.remove(0);
             buf.remove(2);
             buf.remove(5);
-            expect(buf.compact()).toBe(3);
+            buf.compact();
+            expect(buf.length).toBe(3);
             expectSlots(buf, [1, 3, 4]);
         });
     });

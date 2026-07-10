@@ -1,4 +1,4 @@
-import type { RenderContext } from '../../engine/render-context';
+import type { RenderContext } from '../../engine/compositor/render-context';
 import type { RtsCamera } from '../avatar/rts-camera';
 import type { GameSystem } from '../game-system';
 

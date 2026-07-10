@@ -1,5 +1,4 @@
-import init, { generate_cdt } from '#wasm';
-import wasmUrl from '#wasm-bin';
+import { generate_cdt } from '#wasm';
 import { WebGPURenderer } from 'three/webgpu';
 import { span } from '../../engine/utils';
 import type { WasmCdtMesh } from '../../wasm-types/shine_game';
@@ -7,21 +6,16 @@ import { Experiment } from '../experiment';
 import { cdtParamsToJson, createCdtControls, defaultCdtParams } from './controls';
 import { CdtMeshGroup, buildCdtMesh, buildCircumcenterMesh } from './mesh-builder';
 
-export interface CdtExperiment {
-    dispose(): void;
-}
-
-class Cdt extends Experiment {
+export class Cdt extends Experiment {
     private params = defaultCdtParams();
     private currentCdtHandle: WasmCdtMesh | null = null;
     private currentMesh: CdtMeshGroup | null = null;
     private circumcenterMesh: CdtMeshGroup | null = null;
     private activeTriangleIndex = -1;
-    private gui: import('lil-gui').GUI;
     private readonly onKeyDown: (e: KeyboardEvent) => void;
 
     constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer);
+        super(container, renderer, { title: 'CDT' });
 
         this.camera.near = 1;
         this.camera.far = 50000;
@@ -43,9 +37,8 @@ class Cdt extends Experiment {
         };
         window.addEventListener('keydown', this.onKeyDown);
 
-        this.gui = createCdtControls(container, this.params, () => this.regenerate());
+        createCdtControls(this.debugPanel, this.params, () => this.regenerate());
         this.regenerate();
-        this.start();
     }
 
     private updateCircumcenter() {
@@ -114,7 +107,6 @@ class Cdt extends Experiment {
 
     dispose() {
         window.removeEventListener('keydown', this.onKeyDown);
-        this.gui.destroy();
 
         if (this.currentMesh) {
             this.scene.remove(this.currentMesh.group);
@@ -131,9 +123,4 @@ class Cdt extends Experiment {
 
         super.dispose();
     }
-}
-
-export async function createCdtExperiment(container: HTMLElement, renderer: WebGPURenderer): Promise<CdtExperiment> {
-    await init(wasmUrl);
-    return new Cdt(container, renderer);
 }

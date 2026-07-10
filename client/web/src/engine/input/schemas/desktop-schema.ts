@@ -159,18 +159,18 @@ export class DesktopSchema extends InputSchema {
         );
     }
 
-    state(): string {
-        const en = (v: boolean) => (v ? 'on ' : 'off');
+    state(): Record<string, string> {
+        const en = (v: boolean) => (v ? 'on' : 'off');
         const ac = (v: boolean) => (v ? ' [active]' : '');
-        return [
-            `idle:  ${this.isIdle}`,
-            `wasd:  ${en(this.wasd.enabled)}${ac(this.wasd.isActive())}`,
-            `qe:    ${en(this.qe.enabled)}${ac(this.qe.isActive())}`,
-            `rf:    ${en(this.rf.enabled)}${ac(this.rf.isActive())}`,
-            `left:  ${en(this.leftPointer.enabled)}${ac(this.leftPointer.isActive())}`,
-            `right: ${en(this.rightPointer.enabled)}${ac(this.rightPointer.isActive())}`,
-            `wheel: ${en(this.wheel.enabled)}`
-        ].join('\n');
+        return {
+            idle: String(this.isIdle),
+            wasd: `${en(this.wasd.enabled)}${ac(this.wasd.isActive())}`,
+            qe: `${en(this.qe.enabled)}${ac(this.qe.isActive())}`,
+            rf: `${en(this.rf.enabled)}${ac(this.rf.isActive())}`,
+            left: `${en(this.leftPointer.enabled)}${ac(this.leftPointer.isActive())}`,
+            right: `${en(this.rightPointer.enabled)}${ac(this.rightPointer.isActive())}`,
+            wheel: en(this.wheel.enabled)
+        };
     }
 
     cancel(): void {

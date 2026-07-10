@@ -11,6 +11,19 @@ description: >
 
 `client/web/src/` — TypeScript WebGPU game loop around a central `Game` store.
 
+## `engine/` layout
+
+| Folder | Role |
+|---|---|
+| `resources/` | Resource-lifetime primitives (ownership tracking, disposal-aware mesh wrappers) |
+| `loaders/` | Asset ingestion from external formats, no scene objects |
+| `geometry/` | Geometry-building functions, no materials or scene graph |
+| `scene/` | Scene-graph classes meant to be added to the Three.js scene |
+| `scene/instancing/` | GPU instanced-mesh rendering subsystem |
+| `compositor/` | Renderer/scene setup, debug panel, perf metrics |
+| `input/` | Raw detectors → schemas → input state pipeline |
+| `utils/` | Small stateless helpers; private modules re-exported via a barrel — always import from the barrel |
+
 ## Game — central store (`engine/game.ts`)
 
 Three groups; no formal type boundary — just construction order.
@@ -28,11 +41,7 @@ Infra everything else depends on. Passed as constructor args.
 | `inputManager` | `InputManager` | DOM → schemas → inputState |
 
 ### Resources
-Domain data stores. Implement `GameResource` (`engine/game-resource.ts`):
-```ts
-interface GameResource { name: string; dispose(): void; }
-```
-Registered in `this.resources[]` for lifecycle. Read/write own state, may fire events, no direct cross-resource calls.
+Domain data stores. Read/write own state, may fire events, no direct cross-resource calls.
 
 | Field | Type | Depends on |
 |---|---|---|
@@ -84,7 +93,7 @@ See `experiments/hex-mesh/` or `experiments/cdt/` as reference.
 
 ## Adding things
 
-- **Resource**: impl `GameResource`, register in `game.ts` `this.resources[]`
+- **Resource**: construct in `Game`, dispose in `Game.dispose()`
 - **System**: impl `GameSystem`, register in `game.ts` `this.systems[]` in correct order
 - **Event**: add const name, dispatch with `EventDispatcher`, subscribe with `EventSubscriptions`
 - **Experiment**: extend `Experiment` in new `experiments/<name>/` — never wired into `Game`
@@ -94,3 +103,5 @@ See `experiments/hex-mesh/` or `experiments/cdt/` as reference.
 | Doc | Load when |
 |---|---|
 | `docs/client/web/input-system.html` | working on anything in `engine/input/` |
+| `docs/client/web/chunk-lifecycle.html` | working on world streaming, chunk load/unload, or `WorldReferenceSystem` |
+| `docs/client/web/world-reference-change.html` | working on world rebase, coordinate rebasing, or `WorldReferenceSystem` events |

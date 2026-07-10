@@ -1,8 +1,8 @@
 import { InnerCellsHandle, WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { EventSubscriptions } from '../../engine/events';
-import { SelectionNode } from '../../engine/nodes/selection-node';
-import { WireNode } from '../../engine/nodes/wire-node';
+import { SelectionMesh } from '../../engine/scene/selection-mesh';
+import { WireMesh } from '../../engine/scene/wire-mesh';
 import { computeLocalCentroids } from '../../mesh/centroid';
 import { ChunkId } from './chunk-id';
 import { SELECTION_CHANGED, type SelectionChangedEvent } from './selection/selection-event';
@@ -22,8 +22,8 @@ export class Chunk {
     readonly innerCells: InnerCellsHandle;
 
     private label: THREE.Sprite | null = null;
-    private cellWires: WireNode | null = null;
-    private selectionNode: SelectionNode;
+    private cellWires: WireMesh | null = null;
+    private selectionMesh: SelectionMesh;
     private _centroids: Float32Array | null = null;
     private readonly subscriptions: EventSubscriptions;
 
@@ -34,7 +34,7 @@ export class Chunk {
     ) {
         this.group.userData = { chunkId: { q: id.q, r: id.r }, chunk: this };
         this.innerCells = world.inner_cells(id.q, id.r)!;
-        this.selectionNode = new SelectionNode(this.group, this.innerCells);
+        this.selectionMesh = new SelectionMesh(this.group, this.innerCells);
         this.subscriptions = new EventSubscriptions(events);
         this.subscriptions.on<SelectionChangedEvent>(SELECTION_CHANGED, this.handleSelectionChanged);
     }
@@ -50,7 +50,7 @@ export class Chunk {
 
     dispose(): void {
         this.subscriptions.dispose();
-        this.selectionNode.dispose();
+        this.selectionMesh.dispose();
         this.disposeLabel();
         this.cellWires?.dispose();
         this.innerCells.free();
@@ -95,9 +95,9 @@ export class Chunk {
     private handleSelectionChanged = (event: SelectionChangedEvent): void => {
         const sel = event.selection;
         if (sel?.type === 'cell' && sel.chunk === this) {
-            this.selectionNode.show(sel.cellId);
+            this.selectionMesh.show(sel.cellId);
         } else {
-            this.selectionNode.hide();
+            this.selectionMesh.hide();
         }
     };
 
@@ -148,7 +148,7 @@ export class Chunk {
             return;
         }
 
-        this.cellWires = WireNode.fromPolygons(this.group, this.innerCells);
+        this.cellWires = WireMesh.fromPolygons(this.group, this.innerCells);
         this.cellWires.show();
     }
 }

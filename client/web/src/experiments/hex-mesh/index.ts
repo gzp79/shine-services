@@ -1,34 +1,27 @@
-import init, { generate_mesh } from '#wasm';
-import wasmUrl from '#wasm-bin';
+import { generate_mesh } from '#wasm';
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
-import { ManagedMesh } from '../../engine/render/managed-mesh';
+import { ManagedMesh } from '../../engine/resources/managed-mesh';
 import { span } from '../../engine/utils';
 import { Experiment } from '../experiment';
 import { createControls, defaultParams, paramsToConfigJson } from './controls';
 import { HexMeshGroup, buildHexMesh } from './mesh-builder';
 
-export interface HexMeshExperiment {
-    dispose(): void;
-}
-
-class HexMesh extends Experiment {
+export class HexMesh extends Experiment {
     private params = defaultParams();
     private currentMesh: HexMeshGroup | null = null;
     private debugCircle: ManagedMesh | null = null;
     private axesGroup: THREE.Group | null = null;
-    private gui: import('lil-gui').GUI;
 
     constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer);
-        this.gui = createControls(
-            container,
+        super(container, renderer, { title: 'Hex Mesh' });
+        createControls(
+            this.debugPanel,
             this.params,
             () => this.regenerate(),
             () => this.applyDisplay()
         );
         this.regenerate();
-        this.start();
     }
 
     private applyDisplay() {
@@ -113,7 +106,6 @@ class HexMesh extends Experiment {
     }
 
     dispose() {
-        this.gui.destroy();
         if (this.currentMesh) {
             this.scene.remove(this.currentMesh.group);
             this.currentMesh.dispose();
@@ -133,12 +125,4 @@ class HexMesh extends Experiment {
         }
         super.dispose();
     }
-}
-
-export async function createHexMeshExperiment(
-    container: HTMLElement,
-    renderer: WebGPURenderer
-): Promise<HexMeshExperiment> {
-    await init(wasmUrl);
-    return new HexMesh(container, renderer);
 }

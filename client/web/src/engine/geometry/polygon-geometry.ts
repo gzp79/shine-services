@@ -75,10 +75,10 @@ export function buildPrismGeometry(mesh: PolygonMesh, polygonId: number): THREE.
         return new THREE.BufferGeometry();
     }
 
-    const polyVerts: Array<[number, number]> = [];
+    const polyVertices: Array<[number, number]> = [];
     for (let i = 0; i < n; i++) {
         const idx = mesh.indices[start + i];
-        polyVerts.push([mesh.vertices[idx * 2], mesh.vertices[idx * 2 + 1]]);
+        polyVertices.push([mesh.vertices[idx * 2], mesh.vertices[idx * 2 + 1]]);
     }
 
     const positions: number[] = [];
@@ -89,14 +89,14 @@ export function buildPrismGeometry(mesh: PolygonMesh, polygonId: number): THREE.
     // Bottom face (z=0) - fan triangulation from first vertex
     for (let i = 1; i < n - 1; i++) {
         positions.push(
-            polyVerts[0][0],
-            polyVerts[0][1],
+            polyVertices[0][0],
+            polyVertices[0][1],
             0,
-            polyVerts[i][0],
-            polyVerts[i][1],
+            polyVertices[i][0],
+            polyVertices[i][1],
             0,
-            polyVerts[i + 1][0],
-            polyVerts[i + 1][1],
+            polyVertices[i + 1][0],
+            polyVertices[i + 1][1],
             0
         );
         barycentrics.push(1, 0, 0, 0, 1, 0, 0, 0, 1);
@@ -111,14 +111,14 @@ export function buildPrismGeometry(mesh: PolygonMesh, polygonId: number): THREE.
     // Top face (z=PRISM_HEIGHT) - fan triangulation
     for (let i = 1; i < n - 1; i++) {
         positions.push(
-            polyVerts[0][0],
-            polyVerts[0][1],
+            polyVertices[0][0],
+            polyVertices[0][1],
             PRISM_HEIGHT,
-            polyVerts[i][0],
-            polyVerts[i][1],
+            polyVertices[i][0],
+            polyVertices[i][1],
             PRISM_HEIGHT,
-            polyVerts[i + 1][0],
-            polyVerts[i + 1][1],
+            polyVertices[i + 1][0],
+            polyVertices[i + 1][1],
             PRISM_HEIGHT
         );
         barycentrics.push(1, 0, 0, 0, 1, 0, 0, 0, 1);
@@ -133,8 +133,8 @@ export function buildPrismGeometry(mesh: PolygonMesh, polygonId: number): THREE.
     // Side faces
     for (let i = 0; i < n; i++) {
         const next = (i + 1) % n;
-        const [x0, y0] = polyVerts[i];
-        const [x1, y1] = polyVerts[next];
+        const [x0, y0] = polyVertices[i];
+        const [x1, y1] = polyVertices[next];
 
         positions.push(x0, y0, 0, x1, y1, 0, x1, y1, PRISM_HEIGHT);
         barycentrics.push(1, 0, 0, 0, 1, 0, 0, 0, 1);

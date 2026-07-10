@@ -1,4 +1,5 @@
-import GUI from 'lil-gui';
+import type GUI from 'lil-gui';
+import type { DebugPanel } from '../../engine/compositor/debug-panel';
 
 export type Params = {
     centerQ: number;
@@ -73,21 +74,17 @@ function addToggleFolder(
 }
 
 export function createControls(
-    container: HTMLElement,
+    debugPanel: DebugPanel,
     params: Params,
     onDisplayChange: () => void,
     onRegenerate: () => void
-): GUI {
-    const gui = new GUI({ title: 'World Neighbors', container });
-    gui.domElement.style.position = 'absolute';
-    gui.domElement.style.top = '0';
-    gui.domElement.style.right = '0';
-    gui.domElement.style.zIndex = '10';
+): void {
+    const gui = debugPanel.root();
 
-    const seedFolder = gui.addFolder('Chunk');
-    const qCtrl = seedFolder.add(params, 'centerQ').name('Q').step(1).onFinishChange(onRegenerate);
-    const rCtrl = seedFolder.add(params, 'centerR').name('R').step(1).onFinishChange(onRegenerate);
-    seedFolder
+    const chunkFolder = gui.addFolder('Chunk');
+    const qCtrl = chunkFolder.add(params, 'centerQ').name('Q').step(1).onFinishChange(onRegenerate);
+    const rCtrl = chunkFolder.add(params, 'centerR').name('R').step(1).onFinishChange(onRegenerate);
+    chunkFolder
         .add(
             {
                 randomize: () => {
@@ -112,7 +109,6 @@ export function createControls(
         (v) => (params.showAllInterior = v),
         onDisplayChange
     );
-
     addToggleFolder(
         gui,
         'Boundary Vertices',
@@ -120,8 +116,5 @@ export function createControls(
         (v) => (params.showAllVertices = v),
         onDisplayChange
     );
-
     addToggleFolder(gui, 'Boundary Edges', params.showEdges, (v) => (params.showAllEdges = v), onDisplayChange);
-
-    return gui;
 }

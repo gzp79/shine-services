@@ -1,8 +1,8 @@
 import { CornerCellsHandle, WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { EventSubscriptions } from '../../engine/events';
-import { SelectionNode } from '../../engine/nodes/selection-node';
-import { WireNode } from '../../engine/nodes/wire-node';
+import { SelectionMesh } from '../../engine/scene/selection-mesh';
+import { WireMesh } from '../../engine/scene/wire-mesh';
 import { computeLocalCentroids } from '../../mesh/centroid';
 import { ChunkId, HexFlatDir, HexPointyDir } from './chunk-id';
 import { SELECTION_CHANGED, type SelectionChangedEvent } from './selection/selection-event';
@@ -39,8 +39,8 @@ export class ChunkCornerId {
 export class ChunkCorner {
     readonly group = new THREE.Group();
     readonly cells: CornerCellsHandle;
-    private wireframe: WireNode;
-    private selectionNode: SelectionNode;
+    private wireframe: WireMesh;
+    private selectionMesh: SelectionMesh;
     private _centroids: Float32Array | null = null;
     private readonly subscriptions: EventSubscriptions;
 
@@ -51,8 +51,8 @@ export class ChunkCorner {
     ) {
         this.group.userData = { chunkCornerId: id, chunkCorner: this };
         this.cells = world.corner_cells(id.chunkId.q, id.chunkId.r, id.cornerIdx)!;
-        this.wireframe = WireNode.fromPolygons(this.group, this.cells);
-        this.selectionNode = new SelectionNode(this.group, this.cells);
+        this.wireframe = WireMesh.fromPolygons(this.group, this.cells);
+        this.selectionMesh = new SelectionMesh(this.group, this.cells);
         this.subscriptions = new EventSubscriptions(events);
         this.subscriptions.on<SelectionChangedEvent>(SELECTION_CHANGED, this.handleSelectionChanged);
     }
@@ -84,7 +84,7 @@ export class ChunkCorner {
 
     dispose(): void {
         this.subscriptions.dispose();
-        this.selectionNode.dispose();
+        this.selectionMesh.dispose();
         this.wireframe.dispose();
         this.cells.free();
     }
@@ -92,9 +92,9 @@ export class ChunkCorner {
     private handleSelectionChanged = (event: SelectionChangedEvent): void => {
         const sel = event.selection;
         if (sel?.type === 'corner-cell' && sel.corner === this) {
-            this.selectionNode.show(sel.cellId);
+            this.selectionMesh.show(sel.cellId);
         } else {
-            this.selectionNode.hide();
+            this.selectionMesh.hide();
         }
     };
 }

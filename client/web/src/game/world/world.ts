@@ -1,7 +1,7 @@
 import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { ChunkConst } from '../../constants';
-import type { DebugPanel } from '../../engine/debug-panel';
+import type { DebugPanel } from '../../engine/compositor/debug-panel';
 import { EventSubscriptions } from '../../engine/events';
 import { span } from '../../engine/utils';
 import {
@@ -32,7 +32,7 @@ export class World {
     private _focusedChunkId = ChunkId.ORIGIN;
     private readonly subscriptions: EventSubscriptions;
     readonly selection: SelectionManager;
-    private readonly debugPanel: DebugPanel;
+    private readonly debugPanel: DebugPanel | null;
     private _showChunkLabels = false;
     private _showCellWires = false;
     private pendingChunkUpdate: number | null = null;
@@ -76,7 +76,7 @@ export class World {
         }
     }
 
-    constructor(events: EventTarget, debugPanel: DebugPanel) {
+    constructor(events: EventTarget, debugPanel: DebugPanel | null) {
         this.wasm = new WasmWorld();
         this.consts = {
             chunkWorldSize: this.wasm.const_chunk_world_size(),
@@ -179,7 +179,7 @@ export class World {
         }
         this.chunks.clear();
 
-        this.debugPanel.removeScope(this.SCOPE);
+        this.debugPanel?.removeScope(this.SCOPE);
         this.wasm.free();
     }
 
@@ -318,7 +318,7 @@ export class World {
     }
 
     private updateDebugPanel(): void {
-        this.debugPanel.set(this.SCOPE, 'Focused Chunk', `(${this._focusedChunkId.q}, ${this._focusedChunkId.r})`);
-        this.debugPanel.set(this.SCOPE, 'Loaded Chunks', this.chunks.size.toString());
+        this.debugPanel?.set(this.SCOPE, 'Focused Chunk', `(${this._focusedChunkId.q}, ${this._focusedChunkId.r})`);
+        this.debugPanel?.set(this.SCOPE, 'Loaded Chunks', this.chunks.size.toString());
     }
 }

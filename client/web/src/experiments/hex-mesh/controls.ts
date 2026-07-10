@@ -1,4 +1,4 @@
-import GUI from 'lil-gui';
+import type { DebugPanel } from '../../engine/compositor/debug-panel';
 
 const filtersList = ['None', 'Laplacian', 'Jitter', 'QuadRelax', 'VertexRepulsion'] as const;
 type FilterType = (typeof filtersList)[number];
@@ -9,29 +9,11 @@ export type FilterEntryBase = {
 };
 export type FilterEntry = FilterEntryBase &
     (
-        | {
-              type: 'None';
-          }
-        | {
-              type: 'Laplacian';
-              strength: number;
-              iterations: number;
-          }
-        | {
-              type: 'Jitter';
-              amplitude: number;
-          }
-        | {
-              type: 'QuadRelax';
-              quality: number;
-              strength: number;
-              iterations: number;
-          }
-        | {
-              type: 'VertexRepulsion';
-              strength: number;
-              iterations: number;
-          }
+        | { type: 'None' }
+        | { type: 'Laplacian'; strength: number; iterations: number }
+        | { type: 'Jitter'; amplitude: number }
+        | { type: 'QuadRelax'; quality: number; strength: number; iterations: number }
+        | { type: 'VertexRepulsion'; strength: number; iterations: number }
     );
 
 function defaultFilter(type: FilterType): FilterEntry {
@@ -54,27 +36,10 @@ function defaultFilter(type: FilterType): FilterEntry {
 const meshersList = ['Patch', 'Cdt', 'Lattice'] as const;
 type MesherType = (typeof meshersList)[number];
 
-export type MesherEntryBase = {
-    type: MesherType;
-    subdivision: number;
-};
-
+export type MesherEntryBase = { type: MesherType; subdivision: number };
 export type PatchOrientation = 'Odd' | 'Even';
-
 export type MesherEntry = MesherEntryBase &
-    (
-        | {
-              type: 'Patch';
-              orientation: PatchOrientation;
-          }
-        | {
-              type: 'Cdt';
-              interior_points: number;
-          }
-        | {
-              type: 'Lattice';
-          }
-    );
+    ({ type: 'Patch'; orientation: PatchOrientation } | { type: 'Cdt'; interior_points: number } | { type: 'Lattice' });
 
 function defaultMesher(type: MesherType, prev?: MesherEntry): MesherEntry {
     const subdivision = prev?.subdivision ?? 3;
@@ -119,27 +84,17 @@ export function defaultParams(): Params {
 }
 
 export function paramsToConfigJson(params: Params): string {
-    const filters = params.filters.filter((f) => f.type !== 'None' && f.enabled);
-
-    return JSON.stringify({
-        ...params,
-        filters
-    });
+    return JSON.stringify({ ...params, filters: params.filters.filter((f) => f.type !== 'None' && f.enabled) });
 }
 
 export function createControls(
-    container: HTMLElement,
+    debugPanel: DebugPanel,
     params: Params,
     onChange: () => void,
     onDisplayChange: () => void
-): GUI {
-    const gui = new GUI({ title: 'Hex Mesh', container });
-    gui.domElement.style.position = 'absolute';
-    gui.domElement.style.top = '0';
-    gui.domElement.style.right = '0';
-    gui.domElement.style.zIndex = '10';
+): void {
+    const gui = debugPanel.root();
 
-    // ── Global ────────────────────────────────────────────────────────
     const globalFolder = gui.addFolder('Global');
     globalFolder.add(params, 'showPrimalMesh').name('primal mesh').onChange(onDisplayChange);
     globalFolder.add(params, 'showPrimalWire').name('primal wire').onChange(onDisplayChange);
@@ -147,11 +102,9 @@ export function createControls(
     globalFolder.add(params, 'showDualWire').name('dual wire').onChange(onDisplayChange);
     globalFolder.add(params, 'showAnchor').name('anchor edges').onChange(onDisplayChange);
     globalFolder.add(params, 'showAnchorVertices').name('anchor vertices').onChange(onDisplayChange);
-
     globalFolder.add(params, 'world_size', 0.1, 10, 0.1).name('world size').onChange(onChange);
     const seedCtrl = globalFolder.add(params, 'seed').name('seed').onChange(onChange);
 
-    // Helper to create styled button
     const createButton = (text: string, onClick: () => void) => {
         const btn = document.createElement('button');
         btn.textContent = text;
@@ -163,35 +116,26 @@ export function createControls(
         return btn;
     };
 
-    // "New Seed" button
-    const seedRow = document.createElement('li');
-    seedRow.style.cssText = 'display:flex;align-items:center;padding:0 var(--padding);height:var(--widget-height);';
-    const label = document.createElement('span');
-    label.textContent = '';
-    label.style.cssText = 'flex:0 0 var(--name-width);min-width:var(--name-width);';
-    const newSeedBtn = createButton('New Seed', () => {
-        params.seed = Math.floor(Math.random() * 999999);
-        seedCtrl.updateDisplay();
-        onChange();
-    });
-    seedRow.appendChild(label);
-    seedRow.appendChild(newSeedBtn);
-    seedCtrl.domElement.parentElement?.insertBefore(seedRow, seedCtrl.domElement.nextSibling);
+    const addButtonRow = (afterCtrl: typeof seedCtrl, ...buttons: HTMLButtonElement[]) => {
+        const row = document.createElement('li');
+        row.style.cssText = 'display:flex;align-items:center;padding:0 var(--padding);height:var(--widget-height);';
+        const label = document.createElement('span');
+        label.style.cssText = 'flex:0 0 var(--name-width);min-width:var(--name-width);';
+        row.appendChild(label);
+        buttons.forEach((b) => row.appendChild(b));
+        afterCtrl.domElement.parentElement?.insertBefore(row, afterCtrl.domElement.nextSibling);
+    };
 
-    // "Regenerate" button (uses current seed)
-    const regenRow = document.createElement('li');
-    regenRow.style.cssText = 'display:flex;align-items:center;padding:0 var(--padding);height:var(--widget-height);';
-    const label2 = document.createElement('span');
-    label2.textContent = '';
-    label2.style.cssText = 'flex:0 0 var(--name-width);min-width:var(--name-width);';
-    const regenBtn = createButton('Regenerate', () => {
-        onChange();
-    });
-    regenRow.appendChild(label2);
-    regenRow.appendChild(regenBtn);
-    seedCtrl.domElement.parentElement?.insertBefore(regenRow, seedCtrl.domElement.nextSibling);
+    addButtonRow(
+        seedCtrl,
+        createButton('New Seed', () => {
+            params.seed = Math.floor(Math.random() * 999999);
+            seedCtrl.updateDisplay();
+            onChange();
+        }),
+        createButton('Regenerate', onChange)
+    );
 
-    // Mesher
     const mesherFolder = gui.addFolder('Mesher');
     mesherFolder
         .add(params.mesher, 'type', meshersList)
@@ -202,12 +146,11 @@ export function createControls(
             onChange();
         });
 
-    let mesherCtrls: GUI['controllers'][number][] = [];
+    let mesherCtrls: ReturnType<typeof mesherFolder.add>[] = [];
 
     function rebuildMesherParams() {
         for (const c of mesherCtrls) c.destroy();
         mesherCtrls = [];
-
         const mesher = params.mesher;
         mesherCtrls.push(mesherFolder.add(mesher, 'subdivision', 1, 5, 1).name('subdivision').onChange(onChange));
         if (mesher.type === 'Patch') {
@@ -225,13 +168,10 @@ export function createControls(
             mesherCtrls.push(
                 mesherFolder.add(mesher, 'interior_points', 0, 2000, 1).name('interior points').onChange(onChange)
             );
-        } else if (mesher.type === 'Lattice') {
-            // nop
         }
     }
 
-    // Filters
-    let filterFolders: GUI[] = [];
+    let filterFolders: ReturnType<typeof gui.addFolder>[] = [];
 
     function rebuildFilters() {
         for (const f of filterFolders) f.destroy();
@@ -245,16 +185,12 @@ export function createControls(
                 .add(entry, 'type', filtersList)
                 .name('type')
                 .onChange((v: string) => {
-                    if (v === 'None') {
-                        params.filters.splice(idx, 1);
-                    } else {
-                        params.filters[idx] = defaultFilter(v as FilterType);
-                    }
+                    if (v === 'None') params.filters.splice(idx, 1);
+                    else params.filters[idx] = defaultFilter(v as FilterType);
                     rebuildFilters();
                     onChange();
                 });
 
-            // Inline enabled checkbox next to the type dropdown
             const cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.checked = entry.enabled;
@@ -266,9 +202,7 @@ export function createControls(
                 onChange();
             });
             const widget = typeCtrl.domElement.querySelector('.widget');
-            if (widget) {
-                typeCtrl.domElement.insertBefore(cb, widget);
-            }
+            if (widget) typeCtrl.domElement.insertBefore(cb, widget);
 
             switch (entry.type) {
                 case 'Laplacian':
@@ -290,7 +224,6 @@ export function createControls(
             }
         });
 
-        // Trailing "None" dropdown to add a new filter
         const addObj = { type: 'None' };
         const addFolder = gui.addFolder('Add');
         filterFolders.push(addFolder);
@@ -306,9 +239,6 @@ export function createControls(
             });
     }
 
-    // Build initial dynamic sections
     rebuildMesherParams();
     rebuildFilters();
-
-    return gui;
 }

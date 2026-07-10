@@ -1,25 +1,18 @@
-import init, { generate_world_neighbors } from '#wasm';
-import wasmUrl from '#wasm-bin';
+import { generate_world_neighbors } from '#wasm';
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import { Experiment } from '../experiment';
 import { createControls, defaultParams } from './controls';
 import { buildChunkHexagons, buildEdgeMeshes, buildInteriorMeshes, buildVertexMeshes } from './mesh-builder';
 
-export interface WorldNeighborsExperiment {
-    dispose(): void;
-}
-
-class WorldNeighbors extends Experiment {
+export class WorldNeighbors extends Experiment {
     private params = defaultParams();
     private hexagons: THREE.Group | null = null;
     private interiorGroup: ReturnType<typeof buildInteriorMeshes> | null = null;
     private edgeGroup: ReturnType<typeof buildEdgeMeshes> | null = null;
     private vertexGroup: ReturnType<typeof buildVertexMeshes> | null = null;
-    private gui: import('lil-gui').GUI;
-
     constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer);
+        super(container, renderer, { title: 'World Neighbors' });
 
         this.camera.far = 10000;
         this.camera.updateProjectionMatrix();
@@ -27,14 +20,13 @@ class WorldNeighbors extends Experiment {
         this.camera.lookAt(0, 0, 0);
         if (this.controls) this.controls.update();
 
-        this.gui = createControls(
-            container,
+        createControls(
+            this.debugPanel,
             this.params,
             () => this.applyDisplay(),
             () => this.regenerate()
         );
         this.regenerate();
-        this.start();
     }
 
     private applyDisplay() {
@@ -103,16 +95,7 @@ class WorldNeighbors extends Experiment {
     }
 
     dispose() {
-        this.gui.destroy();
         this.disposeScene();
         super.dispose();
     }
-}
-
-export async function createWorldNeighborsExperiment(
-    container: HTMLElement,
-    renderer: WebGPURenderer
-): Promise<WorldNeighborsExperiment> {
-    await init(wasmUrl);
-    return new WorldNeighbors(container, renderer);
 }

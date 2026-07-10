@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 import { CameraConst } from '../../constants';
 import { EventSubscriptions } from '../../engine/events';
-import { ManagedMesh } from '../../engine/render/managed-mesh';
-import { GameResource } from '../game-resource';
+import { ManagedMesh } from '../../engine/resources/managed-mesh';
 import { WORLD_REFERENCE_CHANGED, type WorldReferenceChangedEvent } from '../systems/world-reference-system';
 
 export interface IWorldCursor {
@@ -12,9 +11,7 @@ export interface IWorldCursor {
     readonly cameraDistance: number;
 }
 
-export class WorldCursor implements GameResource, IWorldCursor {
-    readonly name: string = 'WorldCursor';
-
+export class WorldCursor implements IWorldCursor {
     readonly position = new THREE.Vector3(0, 0, 0);
     rotation = 0;
     readonly direction = new THREE.Vector3(0, 1, 0);

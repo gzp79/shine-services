@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { ManagedLineSegments, ManagedMesh } from '../../engine/render/managed-mesh';
-import { disposeObject3D } from '../../engine/render/ownership';
+import { ManagedLineSegments, ManagedMesh } from '../../engine/resources/managed-mesh';
+import { disposeObject3D } from '../../engine/resources/ownership';
 import { span } from '../../engine/utils';
 import type { WiredPolygonMeshHandle } from '../../wasm-types/shine_game';
 

@@ -1,7 +1,7 @@
 import { WasmWorldNeighbors } from '#wasm';
 import * as THREE from 'three';
-import { ManagedMesh } from '../../engine/render/managed-mesh';
-import { disposeObject3D } from '../../engine/render/ownership';
+import { ManagedMesh } from '../../engine/resources/managed-mesh';
+import { disposeObject3D } from '../../engine/resources/ownership';
 
 const EDGE_COLOR = 0x222222;
 

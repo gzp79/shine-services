@@ -7,7 +7,7 @@
  *
  * Screen-space only. No Three.js dependency.
  */
-export class CanvasStrokeNode {
+export class StrokeCanvasOverlay {
     private readonly canvas: HTMLCanvasElement;
     private readonly ctx: CanvasRenderingContext2D;
 

@@ -22,8 +22,8 @@ export class DebugSchema extends InputSchema {
         return this._isIdle;
     }
 
-    state(): string {
-        return `idle: ${this._isIdle}`;
+    state(): Record<string, string> {
+        return { idle: String(this._isIdle) };
     }
 
     cancel(): void {

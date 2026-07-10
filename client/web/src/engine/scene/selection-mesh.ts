@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import type { PolygonMesh } from '../../mesh/polygon-mesh';
-import { buildPrismGeometry } from '../render/builder';
+import { buildPrismGeometry } from '../geometry/polygon-geometry';
 
-export class SelectionNode {
+export class SelectionMesh {
     private mesh: THREE.Mesh | null = null;
     private readonly material: THREE.MeshBasicMaterial;
 

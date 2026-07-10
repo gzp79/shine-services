@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { DragControls } from 'three/addons/controls/DragControls.js';
-import { ManagedMesh } from '../render/managed-mesh';
+import { ManagedMesh } from '../resources/managed-mesh';
 
 export interface ControlBoxOptions {
     scene: THREE.Scene;

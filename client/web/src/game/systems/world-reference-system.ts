@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ChunkConst } from '../../constants';
-import type { DebugPanel } from '../../engine/debug-panel';
+import type { DebugPanel } from '../../engine/compositor/debug-panel';
 import { EventDispatcher } from '../../engine/events';
 import type { WorldCursor } from '../avatar/world-cursor';
 import type { GameSystem } from '../game-system';
@@ -34,7 +34,7 @@ export class WorldReferenceSystem implements GameSystem {
         private readonly worldCursor: WorldCursor,
         private readonly world: World,
         events: EventTarget,
-        private readonly debugPanel: DebugPanel
+        private readonly debugPanel: DebugPanel | null
     ) {
         this.dispatcher = new EventDispatcher(events);
     }
@@ -49,11 +49,11 @@ export class WorldReferenceSystem implements GameSystem {
         const distanceSq = currentCenter.lengthSq();
 
         // Update debug panel
-        this.debugPanel.set(this.name, 'Avatar Pos', `(${avatarPos.x.toFixed(0)}, ${avatarPos.y.toFixed(0)})`);
-        this.debugPanel.set(this.name, 'Current Chunk', `(${currentChunkId.q}, ${currentChunkId.r})`);
-        this.debugPanel.set(this.name, 'Reference Chunk', `(${referenceChunkId.q}, ${referenceChunkId.r})`);
-        this.debugPanel.set(this.name, 'Focused Chunk', `(${focusedChunkId.q}, ${focusedChunkId.r})`);
-        this.debugPanel.set(this.name, 'Distance', Math.sqrt(distanceSq).toFixed(0));
+        this.debugPanel?.set(this.name, 'Avatar Pos', `(${avatarPos.x.toFixed(0)}, ${avatarPos.y.toFixed(0)})`);
+        this.debugPanel?.set(this.name, 'Current Chunk', `(${currentChunkId.q}, ${currentChunkId.r})`);
+        this.debugPanel?.set(this.name, 'Reference Chunk', `(${referenceChunkId.q}, ${referenceChunkId.r})`);
+        this.debugPanel?.set(this.name, 'Focused Chunk', `(${focusedChunkId.q}, ${focusedChunkId.r})`);
+        this.debugPanel?.set(this.name, 'Distance', Math.sqrt(distanceSq).toFixed(0));
 
         // Check if focused chunk changed
         if (focusedChunkId.q !== currentChunkId.q || focusedChunkId.r !== currentChunkId.r) {
@@ -75,6 +75,6 @@ export class WorldReferenceSystem implements GameSystem {
     }
 
     dispose(): void {
-        this.debugPanel.removeScope(this.name);
+        this.debugPanel?.removeScope(this.name);
     }
 }

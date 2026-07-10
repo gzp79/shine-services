@@ -1,54 +1,68 @@
-import init, { WasmWorld } from '#wasm';
-import wasmUrl from '#wasm-bin';
-import GUI from 'lil-gui';
+import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
-import { WebGPURenderer } from 'three/webgpu';
-import { TileSetNode } from '../../engine/nodes/tile-set-node';
-import type { TileDistortion } from '../../engine/nodes/tile-set-node';
-import { WireNode } from '../../engine/nodes/wire-node';
+import { color } from 'three/tsl';
+import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
+import { own, share } from '../../engine/resources/ownership';
+import { InstancedTileSet } from '../../engine/scene/instancing/instanced-tile-set';
+import type { TileDistortion } from '../../engine/scene/instancing/instanced-tile-set';
+import { WireMesh } from '../../engine/scene/wire-mesh';
 import { Experiment } from '../experiment';
-
-export interface TileChunkExperiment {
-    dispose(): void;
-}
 
 const TILE_HEIGHT = 80;
 
-function buildCombinedMesh(): { geometry: THREE.BufferGeometry; ranges: Uint32Array } {
-    const boxGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8, 4, 4, 4);
-    boxGeo.translate(0.5, 0.5, 0.5);
-    const boxPos = new Float32Array(boxGeo.attributes.position.array);
-    const boxIdx = new Uint32Array(boxGeo.index!.array);
-    const boxVertCount = boxPos.length / 3;
-
-    const sphereGeo = new THREE.SphereGeometry(0.5, 16, 12);
+function buildProceduralTileSet(parent: THREE.Object3D, instanceCountHint: number): InstancedTileSet {
+    const sphereGeo = new THREE.SphereGeometry(0.4, 16, 12);
     sphereGeo.translate(0.5, 0.5, 0.5);
-    const spherePos = new Float32Array(sphereGeo.attributes.position.array);
-    const sphereIdxRaw = sphereGeo.index!.array;
-    const sphereIdx = new Uint32Array(sphereIdxRaw.length);
-    for (let i = 0; i < sphereIdxRaw.length; i++) {
-        sphereIdx[i] = sphereIdxRaw[i] + boxVertCount;
+    const boxGeo = new THREE.BoxGeometry(0.7, 0.7, 0.7, 2, 2, 2);
+    boxGeo.translate(0.5, 0.5, 0.5);
+    const torusGeo = new THREE.TorusGeometry(0.3, 0.12, 12, 24);
+    torusGeo.translate(0.5, 0.5, 0.5);
+
+    const geos = [sphereGeo, boxGeo, torusGeo];
+    let totalVerts = 0;
+    let totalIndices = 0;
+    for (const g of geos) {
+        totalVerts += g.attributes.position.count;
+        totalIndices += g.index!.count;
     }
 
-    const vertices = new Float32Array(boxPos.length + spherePos.length);
-    vertices.set(boxPos, 0);
-    vertices.set(spherePos, boxPos.length);
+    const positions = new Float32Array(totalVerts * 3);
+    const indices = new Uint32Array(totalIndices);
+    const ranges: number[] = [];
+    let vOffset = 0;
+    let iOffset = 0;
 
-    const indices = new Uint32Array(boxIdx.length + sphereIdx.length);
-    indices.set(boxIdx, 0);
-    indices.set(sphereIdx, boxIdx.length);
-
-    boxGeo.dispose();
-    sphereGeo.dispose();
+    for (const g of geos) {
+        const pos = g.attributes.position.array as Float32Array;
+        positions.set(pos, vOffset * 3);
+        const src = g.index!.array;
+        ranges.push(iOffset);
+        for (let i = 0; i < src.length; i++) indices[iOffset + i] = src[i] + vOffset;
+        iOffset += src.length;
+        ranges.push(iOffset);
+        vOffset += g.attributes.position.count;
+        g.dispose();
+    }
 
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
 
-    // range 0 = box, range 1 = sphere
-    const ranges = new Uint32Array([0, boxIdx.length, boxIdx.length, indices.length]);
+    const makeMat = (hex: number) => {
+        const m = new MeshStandardNodeMaterial({ roughness: 0.6, metalness: 0.2, side: THREE.DoubleSide });
+        m.colorNode = color(hex);
+        return share(m);
+    };
 
-    return { geometry, ranges };
+    return new InstancedTileSet(parent, {
+        geometry: own(geometry),
+        variants: [
+            { parts: [{ baseMaterial: makeMat(0x4488cc), indexStart: ranges[0], indexEnd: ranges[1] }] },
+            { parts: [{ baseMaterial: makeMat(0xcc4444), indexStart: ranges[2], indexEnd: ranges[3] }] },
+            { parts: [{ baseMaterial: makeMat(0x44cc88), indexStart: ranges[4], indexEnd: ranges[5] }] }
+        ],
+        instanceCountHint
+    });
 }
 
 // CCW quad corners [BL, BR, TR, TL] → trilinear cp indices [0, 1, 3, 2]
@@ -73,22 +87,28 @@ function buildTileDistortion(tileDistortions: Float32Array, tileIdx: number): Ti
     return d;
 }
 
-class TileChunk extends Experiment {
+export class TileChunk extends Experiment {
     private readonly world: WasmWorld;
-    private readonly tileNode: TileSetNode;
+    private tileNode: InstancedTileSet;
     private readonly cellsGroup: THREE.Group;
-    private readonly gui: GUI;
+    private readonly fileInput: HTMLInputElement;
     private readonly params = { q: 0, r: 0 };
     private readonly displayParams = { showCells: true };
+    private readonly fillParams = { variant: 0 };
 
     private tileCount = 0;
-    private tileAssignments = new Uint8Array(0); // 0=box, 1=sphere per tile
+    private tileVariants = new Uint8Array(0);
     private distortions: TileDistortion[] = [];
     private loadedChunk: { q: number; r: number } | null = null;
-    private cellWire: WireNode | null = null;
+    private cellWire: WireMesh | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private fillVariantCtrl: any = null;
+    private variantVisible: boolean[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private variantVisibleFolder: any = null;
 
     constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer);
+        super(container, renderer, { title: 'Tile Chunk' });
 
         this.camera.far = 8000;
         this.camera.updateProjectionMatrix();
@@ -97,63 +117,124 @@ class TileChunk extends Experiment {
         if (this.controls) this.controls.update();
 
         this.world = new WasmWorld();
-
-        this.tileNode = new TileSetNode(this.scene, { ...buildCombinedMesh(), maxInstances: 2048 });
-
+        this.tileNode = buildProceduralTileSet(this.scene, 2048);
         this.cellsGroup = new THREE.Group();
         this.scene.add(this.cellsGroup);
 
-        this.gui = new GUI({ title: 'Tile Chunk', container });
-        this.gui.domElement.style.cssText = 'position:absolute;top:0;right:0;z-index:10';
+        this.fileInput = document.createElement('input');
+        this.fileInput.type = 'file';
+        this.fileInput.accept = '.glb';
+        this.fileInput.style.display = 'none';
+        container.appendChild(this.fileInput);
+        this.fileInput.addEventListener('change', (e) => void this.onGltfFileChange(e));
 
-        const chunkFolder = this.gui.addFolder('Chunk');
-        const qCtrl = chunkFolder
+        const gui = this.debugPanel.root();
+        const qCtrl = gui
             .add(this.params, 'q')
             .name('Q')
             .step(1)
             .onFinishChange(() => this.regenerate());
-        const rCtrl = chunkFolder
+        const rCtrl = gui
             .add(this.params, 'r')
             .name('R')
             .step(1)
             .onFinishChange(() => this.regenerate());
-        chunkFolder
-            .add(
-                {
-                    randomize: () => {
-                        const range = 100;
-                        this.params.q = Math.floor(Math.random() * 2 * range) - range;
-                        this.params.r = Math.floor(Math.random() * 2 * range) - range;
-                        qCtrl.updateDisplay();
-                        rCtrl.updateDisplay();
-                        this.regenerate();
-                    }
-                },
-                'randomize'
-            )
-            .name('Random Chunk');
+        gui.add(
+            {
+                randomize: () => {
+                    const range = 100;
+                    this.params.q = Math.floor(Math.random() * 2 * range) - range;
+                    this.params.r = Math.floor(Math.random() * 2 * range) - range;
+                    qCtrl.updateDisplay();
+                    rCtrl.updateDisplay();
+                    this.regenerate();
+                }
+            },
+            'randomize'
+        ).name('Random Chunk');
 
-        this.gui.add({ switchRandom: () => this.switchRandomTile() }, 'switchRandom').name('Switch Random Tile');
-
-        this.gui
-            .add(this.displayParams, 'showCells')
+        gui.add({ switchRandom: () => this.switchRandomTile() }, 'switchRandom').name('Switch Random Tile');
+        gui.add(this.displayParams, 'showCells')
             .name('Show Cells')
             .onChange((v: boolean) => (v ? this.cellWire?.show() : this.cellWire?.hide()));
+        gui.add({ loadGltf: () => this.fileInput.click() }, 'loadGltf').name('Load glTF...');
+        gui.add(
+            {
+                clearGltf: () => {
+                    this.fileInput.value = '';
+                    this.replaceTileSet(buildProceduralTileSet(this.scene, 2048));
+                }
+            },
+            'clearGltf'
+        ).name('Clear glTF');
+
+        this.fillVariantCtrl = gui
+            .add(this.fillParams, 'variant')
+            .name('Fill Variant')
+            .min(0)
+            .max(this.tileNode.variantCount - 1)
+            .step(1);
+        gui.add({ fillAll: () => this.fillAll() }, 'fillAll').name('Fill All');
+
+        this.rebuildVariantVisibilityFolder();
 
         this.regenerate();
-        this.start();
+    }
+
+    private async onGltfFileChange(e: Event): Promise<void> {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (!file) {
+            this.replaceTileSet(buildProceduralTileSet(this.scene, 2048));
+            return;
+        }
+        try {
+            const url = URL.createObjectURL(file);
+            const next = await InstancedTileSet.fromGltf(this.scene, url, { instanceCountHint: 2048 });
+            URL.revokeObjectURL(url);
+            this.replaceTileSet(next);
+        } catch (err) {
+            console.error('Failed to load glTF:', err);
+        }
+    }
+
+    private replaceTileSet(next: InstancedTileSet): void {
+        this.tileNode.dispose();
+        this.tileNode = next;
+        this.fillParams.variant = 0;
+        this.fillVariantCtrl?.max(next.variantCount - 1).updateDisplay();
+        this.rebuildVariantVisibilityFolder();
+        for (let i = 0; i < this.tileCount; i++) {
+            const v = i % this.tileNode.variantCount;
+            this.tileVariants[i] = v;
+            this.tileNode.setTile(v, i, new THREE.Matrix4(), this.distortions[i]);
+        }
+        for (let i = 0; i < this.tileNode.variantCount; i++) {
+            this.tileNode.setVariantVisible(i, this.variantVisible[i] ?? true);
+        }
+    }
+
+    private fillAll(): void {
+        if (this.tileCount === 0) return;
+        const v = Math.min(this.fillParams.variant, this.tileNode.variantCount - 1);
+        for (let i = 0; i < this.tileCount; i++) {
+            if (this.tileVariants[i] !== v) {
+                this.tileNode.removeTile(this.tileVariants[i], i);
+                this.tileNode.setTile(v, i, new THREE.Matrix4(), this.distortions[i]);
+                this.tileVariants[i] = v;
+            }
+        }
     }
 
     private regenerate(): void {
         if (this.loadedChunk) {
             for (let i = 0; i < this.tileCount; i++) {
-                this.tileNode.removeInstance(this.tileAssignments[i], i);
+                this.tileNode.removeTile(this.tileVariants[i], i);
             }
             this.world.remove_chunk(this.loadedChunk.q, this.loadedChunk.r);
             this.loadedChunk = null;
         }
         this.tileCount = 0;
-        this.tileAssignments = new Uint8Array(0);
+        this.tileVariants = new Uint8Array(0);
         this.distortions = [];
 
         this.cellWire?.dispose();
@@ -172,16 +253,14 @@ class TileChunk extends Experiment {
         cells.free();
 
         this.tileCount = tileCount;
-        this.tileAssignments = new Uint8Array(tileCount).map(() => (Math.random() < 0.5 ? 0 : 1));
+        this.tileVariants = new Uint8Array(tileCount).map((_, i) => i % this.tileNode.variantCount);
 
         for (let i = 0; i < tileCount; i++) {
             const d = buildTileDistortion(tileDistortions, i);
             this.distortions.push(d);
-            if (!this.tileNode.setTile(this.tileAssignments[i], i, d)) {
-                console.warn(`setTile failed for key=${i} range=${this.tileAssignments[i]}`);
-            }
+            this.tileNode.setTile(this.tileVariants[i], i, new THREE.Matrix4(), d);
         }
-        this.cellWire = WireNode.fromPolygons(this.cellsGroup, {
+        this.cellWire = WireMesh.fromPolygons(this.cellsGroup, {
             vertices: cellVertices,
             indices: cellIndices,
             ranges: cellRanges
@@ -192,15 +271,66 @@ class TileChunk extends Experiment {
     private switchRandomTile(): void {
         if (this.tileCount === 0) return;
         const key = Math.floor(Math.random() * this.tileCount);
-        const currentRange = this.tileAssignments[key];
-        const nextRange = currentRange === 0 ? 1 : 0;
-        this.tileNode.removeInstance(currentRange, key);
-        this.tileNode.setTile(nextRange, key, this.distortions[key]);
-        this.tileAssignments[key] = nextRange;
+        const currentVariant = this.tileVariants[key];
+        const nextVariant = (currentVariant + 1) % this.tileNode.variantCount;
+        this.tileNode.removeTile(currentVariant, key);
+        this.tileNode.setTile(nextVariant, key, new THREE.Matrix4(), this.distortions[key]);
+        this.tileVariants[key] = nextVariant;
+    }
+
+    private rebuildVariantVisibilityFolder(): void {
+        const gui = this.debugPanel.root();
+        if (this.variantVisibleFolder) {
+            this.variantVisibleFolder.destroy();
+            this.variantVisibleFolder = null;
+        }
+
+        const count = this.tileNode.variantCount;
+        this.variantVisible = Array.from({ length: count }, (_, i) =>
+            i < this.variantVisible.length ? this.variantVisible[i] : true
+        );
+
+        const folder = gui.addFolder('Variants');
+        folder.close();
+        this.variantVisibleFolder = folder;
+
+        const allParam = { showAll: this.variantVisible.every((v) => v) };
+        const allCtrl = folder.add(allParam, 'showAll').name('Show All');
+
+        const row = document.createElement('div');
+        row.style.cssText =
+            'display:flex;gap:8px;padding:0 var(--padding);height:var(--widget-height);align-items:center;';
+
+        const checkboxes = this.variantVisible.map((checked, i) => {
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = checked;
+            checkbox.style.cssText = 'cursor:pointer;';
+            checkbox.addEventListener('change', () => {
+                this.variantVisible[i] = checkbox.checked;
+                allParam.showAll = this.variantVisible.every((v) => v);
+                allCtrl.updateDisplay();
+                this.tileNode.setVariantVisible(i, checkbox.checked);
+            });
+            const label = document.createElement('label');
+            label.textContent = String(i);
+            label.style.cssText = 'display:flex;gap:4px;align-items:center;cursor:pointer;';
+            label.prepend(checkbox);
+            row.appendChild(label);
+            return checkbox;
+        });
+
+        (folder as unknown as { $children: HTMLElement }).$children.appendChild(row);
+
+        allCtrl.onChange((value: boolean) => {
+            this.variantVisible.fill(value);
+            checkboxes.forEach((cb) => (cb.checked = value));
+            for (let i = 0; i < count; i++) this.tileNode.setVariantVisible(i, value);
+        });
     }
 
     dispose(): void {
-        this.gui.destroy();
+        this.fileInput.remove();
         if (this.loadedChunk) {
             this.world.remove_chunk(this.loadedChunk.q, this.loadedChunk.r);
         }
@@ -210,12 +340,4 @@ class TileChunk extends Experiment {
         this.world.free();
         super.dispose();
     }
-}
-
-export async function createTileChunkExperiment(
-    container: HTMLElement,
-    renderer: WebGPURenderer
-): Promise<TileChunkExperiment> {
-    await init(wasmUrl);
-    return new TileChunk(container, renderer);
 }

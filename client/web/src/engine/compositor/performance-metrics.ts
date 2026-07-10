@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 
 interface PerformanceMemory {
@@ -21,6 +20,7 @@ export class PerformanceMetrics {
     private readonly frameTimeElement: HTMLDivElement;
     private readonly drawCallsElement: HTMLDivElement;
     private readonly trianglesElement: HTMLDivElement;
+    private readonly pointsElement: HTMLDivElement;
     private readonly memoryElement: HTMLDivElement;
 
     private frameCount = 0;
@@ -29,7 +29,7 @@ export class PerformanceMetrics {
     private frameTimeSamples: number[] = [];
     private readonly maxSamples = 60;
 
-    constructor(private readonly renderer: THREE.WebGLRenderer | WebGPURenderer) {
+    constructor(private readonly renderer: WebGPURenderer) {
         // Create container
         this.container = document.createElement('div');
         this.container.style.position = 'fixed';
@@ -49,8 +49,9 @@ export class PerformanceMetrics {
         // Create metric elements
         this.fpsElement = this.createMetricElement('FPS', '0');
         this.frameTimeElement = this.createMetricElement('Frame', '0.0 ms');
-        this.drawCallsElement = this.createMetricElement('Calls', '0');
+        this.drawCallsElement = this.createMetricElement('DrawCalls', '0');
         this.trianglesElement = this.createMetricElement('Tris', '0');
+        this.pointsElement = this.createMetricElement('Points', '0');
         this.memoryElement = this.createMetricElement('Memory', '0 MB');
 
         document.body.appendChild(this.container);
@@ -89,8 +90,9 @@ export class PerformanceMetrics {
 
         // Get renderer info
         const info = this.renderer.info;
-        const drawCalls = info.render.calls;
+        const drawCalls = info.render.drawCalls;
         const triangles = info.render.triangles;
+        const points = info.render.points;
 
         // Get memory usage (if available)
         const memory = (performance as PerformanceWithMemory).memory;
@@ -100,8 +102,9 @@ export class PerformanceMetrics {
         const fpsColor = this.fps >= 55 ? '#00ff00' : this.fps >= 30 ? '#ffff00' : '#ff0000';
         this.updateMetricElement(this.fpsElement, 'FPS', `<span style="color: ${fpsColor}">${this.fps}</span>`);
         this.updateMetricElement(this.frameTimeElement, 'Frame', `${avgFrameTime.toFixed(1)} ms`);
-        this.updateMetricElement(this.drawCallsElement, 'Calls', `${drawCalls}`);
+        this.updateMetricElement(this.drawCallsElement, 'DrawCalls', `${drawCalls}`);
         this.updateMetricElement(this.trianglesElement, 'Tris', `${this.formatNumber(triangles)}`);
+        this.updateMetricElement(this.pointsElement, 'Points', `${this.formatNumber(points)}`);
 
         if (memory) {
             this.updateMetricElement(this.memoryElement, 'Memory', `${memoryMB} MB`);
@@ -115,6 +118,10 @@ export class PerformanceMetrics {
             return (num / 1000).toFixed(1) + 'K';
         }
         return num.toString();
+    }
+
+    setVisible(visible: boolean): void {
+        this.container.style.display = visible ? '' : 'none';
     }
 
     dispose(): void {

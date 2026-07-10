@@ -1,66 +1,87 @@
+import init from '#wasm';
+import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
-import { createCdtExperiment } from './experiments/cdt/index';
-import { createHexMeshExperiment } from './experiments/hex-mesh/index';
-import { createInputControlExperiment } from './experiments/input-control/index';
-import { createTileChunkExperiment } from './experiments/tile-chunk/index';
-import { createTrilinearExperiment } from './experiments/trilinear/index';
-import { createWorldNeighborsExperiment } from './experiments/world-neighbors/index';
-import { createGame } from './game/game';
+import type { Application } from './engine/application';
+import { AssetViewer } from './experiments/asset-viewer/index';
+import { Cdt } from './experiments/cdt/index';
+import { HexMesh } from './experiments/hex-mesh/index';
+import { InputControl } from './experiments/input-control/index';
+import { InstancedColorMeshExp } from './experiments/instanced-color-mesh/index';
+import { TileChunk } from './experiments/tile-chunk/index';
+import { Trilinear } from './experiments/trilinear/index';
+import { WorldNeighbors } from './experiments/world-neighbors/index';
+import { Game } from './game/game';
 
-export type Viewer = { dispose(): void };
+export type { Application } from './engine/application';
 
-type SceneId = '' | 'hex-mesh' | 'cdt' | 'input-events' | 'trilinear' | 'world-neighbors' | 'tile-chunk';
+type SceneId =
+    | ''
+    | 'hex-mesh'
+    | 'cdt'
+    | 'input-events'
+    | 'trilinear'
+    | 'world-neighbors'
+    | 'tile-chunk'
+    | 'instanced-color-mesh'
+    | 'asset-viewer';
 
 async function createSharedRenderer(): Promise<WebGPURenderer> {
-    const renderer = new WebGPURenderer({ antialias: true, forceWebGL: false });
+    const renderer = new WebGPURenderer({ antialias: true, forceWebGL: false, powerPreference: 'high-performance' });
     await renderer.init();
+    await init({ module_or_path: wasmUrl });
     return renderer;
 }
 
-async function createContent(id: SceneId, container: HTMLElement, renderer: WebGPURenderer): Promise<Viewer> {
+function createContent(id: SceneId, container: HTMLElement, renderer: WebGPURenderer): Application {
     switch (id) {
         case 'hex-mesh':
-            return createHexMeshExperiment(container, renderer);
+            return new HexMesh(container, renderer);
         case 'cdt':
-            return createCdtExperiment(container, renderer);
+            return new Cdt(container, renderer);
         case 'input-events':
-            return createInputControlExperiment(container, renderer);
+            return new InputControl(container, renderer);
         case 'trilinear':
-            return createTrilinearExperiment(container, renderer);
+            return new Trilinear(container, renderer);
         case 'world-neighbors':
-            return createWorldNeighborsExperiment(container, renderer);
+            return new WorldNeighbors(container, renderer);
         case 'tile-chunk':
-            return createTileChunkExperiment(container, renderer);
+            return new TileChunk(container, renderer);
+        case 'instanced-color-mesh':
+            return new InstancedColorMeshExp(container, renderer);
+        case 'asset-viewer':
+            return new AssetViewer(container, renderer);
         default:
-            return createGame(container, renderer);
+            return new Game(container, renderer);
     }
 }
 
-export async function createScene(container: HTMLElement, id: SceneId): Promise<Viewer> {
+export async function createScene(container: HTMLElement, id: SceneId): Promise<{ dispose(): void }> {
     const renderer = await createSharedRenderer();
     container.appendChild(renderer.domElement);
-    const scene = await createContent(id, container, renderer);
+    const content = createContent(id, container, renderer);
+    content.start();
 
     return {
         dispose() {
-            scene?.dispose();
+            content?.dispose();
             renderer.dispose();
             renderer.domElement.remove();
         }
     };
 }
 
-export async function createRoutedScene(container: HTMLElement) {
+export async function createRoutedScene(container: HTMLElement): Promise<{ dispose(): void }> {
     const renderer = await createSharedRenderer();
     container.appendChild(renderer.domElement);
 
-    let current: Viewer | null = null;
+    let current: Application | null = null;
 
     async function navigate() {
         const hash = window.location.hash.replace('#', '') as SceneId;
         current?.dispose();
         current = null;
-        current = await createContent(hash, container, renderer);
+        current = createContent(hash, container, renderer);
+        current.start();
     }
 
     window.addEventListener('hashchange', () => void navigate());
