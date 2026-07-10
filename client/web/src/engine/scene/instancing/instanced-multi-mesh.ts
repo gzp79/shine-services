@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { instanceIndex, int, ivec2, textureLoad, vec2, vec3, vec4 } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
-import { type OwnedMaterial, type Shareable, disposeIfOwned, own } from '../render/ownership';
-import { cloneStandardMaterial } from '../utils';
+import { type OwnedMaterial, type Shareable, disposeIfOwned, own } from '../../resources/ownership';
+import { cloneStandardMaterial } from '../../utils';
 import { InstanceBuffer } from './instance-buffer';
 
 const SWIZZLE = ['x', 'y', 'z', 'w'] as const;

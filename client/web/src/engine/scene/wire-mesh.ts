@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import type { PolygonMesh, WiredPolygonMesh } from '../../mesh/polygon-mesh';
-import { buildGeometryFromPolygons, buildGeometryFromWires } from '../render/builder';
+import { buildGeometryFromPolygons, buildGeometryFromWires } from '../geometry/polygon-geometry';
 
-export class WireNode {
+export class WireMesh {
     private mesh: THREE.LineSegments | null = null;
 
     private constructor(
@@ -10,12 +10,12 @@ export class WireNode {
         private readonly buildGeometryFn: () => THREE.BufferGeometry
     ) {}
 
-    static fromPolygons(parent: THREE.Group, mesh: PolygonMesh): WireNode {
-        return new WireNode(parent, () => buildGeometryFromPolygons(mesh));
+    static fromPolygons(parent: THREE.Group, mesh: PolygonMesh): WireMesh {
+        return new WireMesh(parent, () => buildGeometryFromPolygons(mesh));
     }
 
-    static fromWires(parent: THREE.Group, mesh: WiredPolygonMesh): WireNode {
-        return new WireNode(parent, () => buildGeometryFromWires(mesh));
+    static fromWires(parent: THREE.Group, mesh: WiredPolygonMesh): WireMesh {
+        return new WireMesh(parent, () => buildGeometryFromWires(mesh));
     }
 
     show(): void {

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
-import { InstancedColorMesh } from '../../engine/nodes/instanced-color-mesh';
-import { own, share } from '../../engine/render/ownership';
+import { own, share } from '../../engine/resources/ownership';
+import { InstancedColorMesh } from '../../engine/scene/instancing/instanced-color-mesh';
 import { Experiment } from '../experiment';
 
 const PALETTE = [

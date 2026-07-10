@@ -4,7 +4,7 @@ import { WebGPURenderer } from 'three/webgpu';
 import type { Application } from '../engine/application';
 import { DebugPanel } from '../engine/compositor/debug-panel';
 import { RenderContext } from '../engine/compositor/render-context';
-import { disposeObject3D } from '../engine/render/ownership';
+import { disposeObject3D } from '../engine/resources/ownership';
 
 export type ExperimentOption = {
     title: string;

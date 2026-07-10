@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ManagedMesh } from '../../engine/render/managed-mesh';
+import { ManagedMesh } from '../../engine/resources/managed-mesh';
 import type { WasmCdtMesh } from '../../wasm-types/shine_game';
 
 const FILL_COLOR = new THREE.Color(0.82, 0.85, 0.88);

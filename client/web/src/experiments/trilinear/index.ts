@@ -3,8 +3,8 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mix, positionLocal, uniform } from 'three/tsl';
 import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
-import { ManagedMesh } from '../../engine/render/managed-mesh';
-import { disposeObject3D } from '../../engine/render/ownership';
+import { ManagedMesh } from '../../engine/resources/managed-mesh';
+import { disposeObject3D } from '../../engine/resources/ownership';
 import { ControlBox } from '../../engine/utils';
 import { Experiment } from '../experiment';
 

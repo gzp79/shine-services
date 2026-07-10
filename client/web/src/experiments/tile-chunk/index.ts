@@ -2,10 +2,10 @@ import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { color } from 'three/tsl';
 import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
-import { InstancedTileSet } from '../../engine/nodes/instanced-tile-set';
-import type { TileDistortion } from '../../engine/nodes/instanced-tile-set';
-import { WireNode } from '../../engine/nodes/wire-node';
-import { own, share } from '../../engine/render/ownership';
+import { own, share } from '../../engine/resources/ownership';
+import { InstancedTileSet } from '../../engine/scene/instancing/instanced-tile-set';
+import type { TileDistortion } from '../../engine/scene/instancing/instanced-tile-set';
+import { WireMesh } from '../../engine/scene/wire-mesh';
 import { Experiment } from '../experiment';
 
 const TILE_HEIGHT = 80;
@@ -100,7 +100,7 @@ export class TileChunk extends Experiment {
     private tileVariants = new Uint8Array(0);
     private distortions: TileDistortion[] = [];
     private loadedChunk: { q: number; r: number } | null = null;
-    private cellWire: WireNode | null = null;
+    private cellWire: WireMesh | null = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private fillVariantCtrl: any = null;
     private variantVisible: boolean[] = [];
@@ -260,7 +260,7 @@ export class TileChunk extends Experiment {
             this.distortions.push(d);
             this.tileNode.setTile(this.tileVariants[i], i, new THREE.Matrix4(), d);
         }
-        this.cellWire = WireNode.fromPolygons(this.cellsGroup, {
+        this.cellWire = WireMesh.fromPolygons(this.cellsGroup, {
             vertices: cellVertices,
             indices: cellIndices,
             ranges: cellRanges

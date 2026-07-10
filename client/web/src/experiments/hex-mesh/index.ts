@@ -1,7 +1,7 @@
 import { generate_mesh } from '#wasm';
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
-import { ManagedMesh } from '../../engine/render/managed-mesh';
+import { ManagedMesh } from '../../engine/resources/managed-mesh';
 import { span } from '../../engine/utils';
 import { Experiment } from '../experiment';
 import { createControls, defaultParams, paramsToConfigJson } from './controls';

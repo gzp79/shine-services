@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { float, mat4, mix, positionLocal, vec3, vec4 } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
-import { loadGltf } from '../render/asset-loader';
-import { own } from '../render/ownership';
+import { loadGltf } from '../../loaders/gltf-loader';
+import { own } from '../../resources/ownership';
 import {
     type InstanceBufferLayout,
     InstanceData,

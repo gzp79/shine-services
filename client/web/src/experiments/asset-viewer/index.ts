@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
-import type { GltfAsset } from '../../engine/render/asset-loader';
-import { loadGltf } from '../../engine/render/asset-loader';
+import type { GltfAsset } from '../../engine/loaders/gltf-loader';
+import { loadGltf } from '../../engine/loaders/gltf-loader';
 import { Experiment } from '../experiment';
 
 export class AssetViewer extends Experiment {
