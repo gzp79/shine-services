@@ -4,10 +4,6 @@ import { InstancedColorMesh } from '../../engine/nodes/instanced-color-mesh';
 import { own, share } from '../../engine/render/ownership';
 import { Experiment } from '../experiment';
 
-export interface InstancedColorMeshExperiment {
-    dispose(): void;
-}
-
 const PALETTE = [
     new THREE.Color(0xff3333), // red
     new THREE.Color(0xff9933), // orange
@@ -79,7 +75,7 @@ function buildGeometry(): { geometry: THREE.BufferGeometry; ranges: number[] } {
     return { geometry, ranges };
 }
 
-class InstancedColorMeshExp extends Experiment {
+export class InstancedColorMeshExp extends Experiment {
     private readonly mesh: InstancedColorMesh;
     private readonly params = { a: 5, b: 5, c: 5 };
     private readonly counts = [0, 0, 0];
@@ -154,8 +150,6 @@ class InstancedColorMeshExp extends Experiment {
         this.update(0, this.params.a);
         this.update(1, this.params.b);
         this.update(2, this.params.c);
-
-        this.start();
     }
 
     private update(variantIndex: number, newCount: number): void {
@@ -176,11 +170,4 @@ class InstancedColorMeshExp extends Experiment {
         this.mesh.dispose();
         super.dispose();
     }
-}
-
-export async function createInstancedColorMeshExperiment(
-    container: HTMLElement,
-    renderer: WebGPURenderer
-): Promise<InstancedColorMeshExperiment> {
-    return new InstancedColorMeshExp(container, renderer);
 }

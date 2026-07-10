@@ -1,5 +1,4 @@
-import init, { WasmWorld } from '#wasm';
-import wasmUrl from '#wasm-bin';
+import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { color } from 'three/tsl';
 import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
@@ -8,10 +7,6 @@ import type { TileDistortion } from '../../engine/nodes/instanced-tile-set';
 import { WireNode } from '../../engine/nodes/wire-node';
 import { own, share } from '../../engine/render/ownership';
 import { Experiment } from '../experiment';
-
-export interface TileChunkExperiment {
-    dispose(): void;
-}
 
 const TILE_HEIGHT = 80;
 
@@ -92,7 +87,7 @@ function buildTileDistortion(tileDistortions: Float32Array, tileIdx: number): Ti
     return d;
 }
 
-class TileChunk extends Experiment {
+export class TileChunk extends Experiment {
     private readonly world: WasmWorld;
     private tileNode: InstancedTileSet;
     private readonly cellsGroup: THREE.Group;
@@ -168,7 +163,6 @@ class TileChunk extends Experiment {
         ).name('Clear glTF');
 
         this.regenerate();
-        this.start();
     }
 
     private async onGltfFileChange(e: Event): Promise<void> {
@@ -262,12 +256,4 @@ class TileChunk extends Experiment {
         this.world.free();
         super.dispose();
     }
-}
-
-export async function createTileChunkExperiment(
-    container: HTMLElement,
-    renderer: WebGPURenderer
-): Promise<TileChunkExperiment> {
-    await init(wasmUrl);
-    return new TileChunk(container, renderer);
 }

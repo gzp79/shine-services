@@ -1,6 +1,5 @@
-import init from '#wasm';
-import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
+import type { Application } from '../engine/application';
 import { DebugPanel } from '../engine/compositor/debug-panel';
 import { RenderContext } from '../engine/compositor/render-context';
 import { InputManager } from '../engine/input/input-manager';
@@ -16,7 +15,7 @@ import { SelectionSystem } from './systems/selection-system';
 import { WorldReferenceSystem } from './systems/world-reference-system';
 import { World } from './world/world';
 
-class Game {
+export class Game implements Application {
     private readonly events: EventTarget;
     private readonly renderContext: RenderContext;
     private readonly inputManager: InputManager;
@@ -69,23 +68,20 @@ class Game {
         this.renderContext.scene.add(this.world.group);
     }
 
-    init(): void {
+    start(): void {
         this.lastTime = performance.now();
-        this.animationId = requestAnimationFrame(this.animate);
+        const tick = () => {
+            const now = performance.now();
+            const dt = (now - this.lastTime) / 1000;
+            this.lastTime = now;
+            for (const system of this.systems) {
+                system.update(dt);
+            }
+            this.renderContext.render(this.camera.camera, dt);
+            this.animationId = requestAnimationFrame(tick);
+        };
+        tick();
     }
-
-    private readonly animate = () => {
-        const now = performance.now();
-        const deltaTime = (now - this.lastTime) / 1000;
-        this.lastTime = now;
-
-        for (const system of this.systems) {
-            system.update(deltaTime);
-        }
-
-        this.renderContext.render(this.camera.camera, deltaTime);
-        this.animationId = requestAnimationFrame(this.animate);
-    };
 
     dispose(): void {
         cancelAnimationFrame(this.animationId);
@@ -99,11 +95,4 @@ class Game {
         this.renderContext.dispose();
         this.debugPanel.dispose();
     }
-}
-
-export async function createGame(container: HTMLElement, renderer: WebGPURenderer): Promise<Game> {
-    await init(wasmUrl);
-    const game = new Game(container, renderer);
-    game.init();
-    return game;
 }

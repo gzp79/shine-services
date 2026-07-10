@@ -1,5 +1,4 @@
-import init, { generate_cdt } from '#wasm';
-import wasmUrl from '#wasm-bin';
+import { generate_cdt } from '#wasm';
 import { WebGPURenderer } from 'three/webgpu';
 import { span } from '../../engine/utils';
 import type { WasmCdtMesh } from '../../wasm-types/shine_game';
@@ -7,11 +6,7 @@ import { Experiment } from '../experiment';
 import { cdtParamsToJson, createCdtControls, defaultCdtParams } from './controls';
 import { CdtMeshGroup, buildCdtMesh, buildCircumcenterMesh } from './mesh-builder';
 
-export interface CdtExperiment {
-    dispose(): void;
-}
-
-class Cdt extends Experiment {
+export class Cdt extends Experiment {
     private params = defaultCdtParams();
     private currentCdtHandle: WasmCdtMesh | null = null;
     private currentMesh: CdtMeshGroup | null = null;
@@ -44,7 +39,6 @@ class Cdt extends Experiment {
 
         createCdtControls(this.debugPanel, this.params, () => this.regenerate());
         this.regenerate();
-        this.start();
     }
 
     private updateCircumcenter() {
@@ -129,9 +123,4 @@ class Cdt extends Experiment {
 
         super.dispose();
     }
-}
-
-export async function createCdtExperiment(container: HTMLElement, renderer: WebGPURenderer): Promise<CdtExperiment> {
-    await init(wasmUrl);
-    return new Cdt(container, renderer);
 }

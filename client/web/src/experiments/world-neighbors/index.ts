@@ -1,16 +1,11 @@
-import init, { generate_world_neighbors } from '#wasm';
-import wasmUrl from '#wasm-bin';
+import { generate_world_neighbors } from '#wasm';
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
 import { Experiment } from '../experiment';
 import { createControls, defaultParams } from './controls';
 import { buildChunkHexagons, buildEdgeMeshes, buildInteriorMeshes, buildVertexMeshes } from './mesh-builder';
 
-export interface WorldNeighborsExperiment {
-    dispose(): void;
-}
-
-class WorldNeighbors extends Experiment {
+export class WorldNeighbors extends Experiment {
     private params = defaultParams();
     private hexagons: THREE.Group | null = null;
     private interiorGroup: ReturnType<typeof buildInteriorMeshes> | null = null;
@@ -32,7 +27,6 @@ class WorldNeighbors extends Experiment {
             () => this.regenerate()
         );
         this.regenerate();
-        this.start();
     }
 
     private applyDisplay() {
@@ -104,12 +98,4 @@ class WorldNeighbors extends Experiment {
         this.disposeScene();
         super.dispose();
     }
-}
-
-export async function createWorldNeighborsExperiment(
-    container: HTMLElement,
-    renderer: WebGPURenderer
-): Promise<WorldNeighborsExperiment> {
-    await init(wasmUrl);
-    return new WorldNeighbors(container, renderer);
 }

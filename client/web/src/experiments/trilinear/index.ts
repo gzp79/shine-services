@@ -8,11 +8,7 @@ import { disposeObject3D } from '../../engine/render/ownership';
 import { ControlBox } from '../../engine/utils';
 import { Experiment } from '../experiment';
 
-export interface TrilinearExperiment {
-    dispose(): void;
-}
-
-class Trilinear extends Experiment {
+export class Trilinear extends Experiment {
     private loadedMesh: ManagedMesh | THREE.Mesh | null = null;
     private loadedObject: THREE.Group | null = null;
     private readonly controlBox: ControlBox;
@@ -49,7 +45,6 @@ class Trilinear extends Experiment {
         });
 
         this.resetToDefault();
-        this.start();
     }
 
     private resetToDefault(): void {
@@ -245,11 +240,4 @@ class Trilinear extends Experiment {
         this.fileInput.remove();
         super.dispose();
     }
-}
-
-export async function createTrilinearExperiment(
-    container: HTMLElement,
-    renderer: WebGPURenderer
-): Promise<TrilinearExperiment> {
-    return new Trilinear(container, renderer);
 }

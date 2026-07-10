@@ -5,17 +5,13 @@ import { InputManager } from '../../engine/input/input-manager';
 import { GestureSchema } from '../../engine/input/schemas/gesture-schema';
 import { Experiment } from '../experiment';
 
-export interface InputControlExperiment {
-    dispose(): void;
-}
-
 interface EventLogEntry {
     timestamp: number;
     eventName: string;
     data: string;
 }
 
-class InputControl extends Experiment {
+export class InputControl extends Experiment {
     private readonly inputManager: InputManager;
     private readonly strokeLine: StrokeLineOverlay;
     private readonly logDiv: HTMLDivElement;
@@ -114,8 +110,6 @@ class InputControl extends Experiment {
         this.strokeLine = new StrokeLineOverlay(1000, 0x00ff00);
         this.gestureSchema = this.inputManager.schemas.find((s): s is GestureSchema => s instanceof GestureSchema)!;
         this.renderContext.addOverlay(this.strokeLine);
-
-        this.start();
     }
 
     private addLogEntry(eventName: string, data: string) {
@@ -164,11 +158,4 @@ class InputControl extends Experiment {
         this.logDiv.remove();
         super.dispose();
     }
-}
-
-export async function createInputControlExperiment(
-    container: HTMLElement,
-    renderer: WebGPURenderer
-): Promise<InputControlExperiment> {
-    return new InputControl(container, renderer);
 }

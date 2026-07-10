@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { WebGPURenderer } from 'three/webgpu';
+import type { Application } from '../engine/application';
 import { DebugPanel } from '../engine/compositor/debug-panel';
 import { RenderContext } from '../engine/compositor/render-context';
 import { disposeObject3D } from '../engine/render/ownership';
@@ -10,14 +11,7 @@ export type ExperimentOption = {
     addOrbitCamera?: boolean;
 };
 
-export async function createSharedRenderer(): Promise<WebGPURenderer> {
-    const renderer = new WebGPURenderer({ antialias: true, powerPreference: 'high-performance' });
-    await renderer.init();
-    renderer.setPixelRatio(window.devicePixelRatio);
-    return renderer;
-}
-
-export abstract class Experiment {
+export abstract class Experiment implements Application {
     readonly renderContext: RenderContext;
     readonly camera: THREE.PerspectiveCamera;
     readonly controls?: OrbitControls;
@@ -76,16 +70,16 @@ export abstract class Experiment {
 
     start(): void {
         this.lastTime = performance.now();
-        const loop = () => {
+        const tick = () => {
             const now = performance.now();
-            const deltaTime = (now - this.lastTime) / 1000;
+            const dt = (now - this.lastTime) / 1000;
             this.lastTime = now;
-            this.onUpdate(deltaTime);
+            this.onUpdate(dt);
             this.controls?.update();
-            this.renderContext.render(this.camera, deltaTime);
-            this.animationId = requestAnimationFrame(loop);
+            this.renderContext.render(this.camera, dt);
+            this.animationId = requestAnimationFrame(tick);
         };
-        loop();
+        tick();
     }
 
     dispose(): void {
