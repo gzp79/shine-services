@@ -1,20 +1,14 @@
 import * as THREE from 'three';
 import { instanceIndex, int, ivec2, textureLoad, vec2, vec3, vec4 } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
-import {
-    type OwnedMaterial,
-    type Shareable,
-    type SharedMeshStandardNodeMaterial,
-    disposeIfOwned,
-    own
-} from '../render/ownership';
+import { type OwnedMaterial, type Shareable, disposeIfOwned, own } from '../render/ownership';
 import { InstanceBuffer } from './instance-buffer';
 
 const SWIZZLE = ['x', 'y', 'z', 'w'] as const;
 
 export class InstanceData {
     private textures: readonly THREE.DataTexture[];
-    private readonly cache = new Map<number, ReturnType<typeof textureLoad>>();
+    private readonly cache = new Map<string, ReturnType<typeof textureLoad>>();
     private readonly iIdx = instanceIndex.toInt();
     // In strip mode: number of texels per instance per buffer (baked into shader at material time).
     // Null in tall-texture mode.
@@ -33,7 +27,7 @@ export class InstanceData {
     }
 
     private texel(bufIdx: number, texelOffset: number): ReturnType<typeof textureLoad> {
-        const key = bufIdx * 1024 + texelOffset;
+        const key = `${bufIdx}:${texelOffset}`;
         const cached = this.cache.get(key);
         if (cached !== undefined) return cached;
         let coord;
@@ -89,7 +83,7 @@ export class InstanceData {
 }
 
 export type SubMeshDef = {
-    baseMaterial: SharedMeshStandardNodeMaterial;
+    baseMaterial: Shareable<MeshStandardNodeMaterial>;
     indexStart: number;
     indexEnd: number;
 };
@@ -109,7 +103,7 @@ export type InstancedMultiMeshParams = {
 };
 
 export type InstanceBufferLayout = {
-    buffers: Array<{ floatsPerInstance: number; isDynamic?: boolean }>;
+    buffers: Array<{ floatsPerInstance: number }>;
 };
 
 const DEFAULT_INSTANCE_HINT = 1024;

@@ -53,7 +53,6 @@ export class InstanceBuffer {
             this.cpuCapacity = stripHeight;
             this.cpuData = texelsPerBuffer.map((t) => new Float32Array(t * stripHeight * 4));
             this.textures = texelsPerBuffer.map((t, i) => {
-                // width = numStrips(1) * t, height = stripHeight
                 const tex = new THREE.DataTexture(this.cpuData[i], t, stripHeight, THREE.RGBAFormat, THREE.FloatType);
                 tex.magFilter = THREE.NearestFilter;
                 tex.minFilter = THREE.NearestFilter;
@@ -68,9 +67,6 @@ export class InstanceBuffer {
             this.cpuCapacity = this.maxInstances;
             this.cpuData = texelsPerBuffer.map((t) => new Float32Array(t * this.maxInstances * 4));
             this.textures = texelsPerBuffer.map((t, i) => {
-                // Layout: width=texelsPerInstance, height=maxInstances
-                // Slot N occupies a contiguous row: cpuData[slot*t*4 .. (slot+1)*t*4)
-                // Access in shader: ivec2(texelOffset, instanceIndex)
                 const tex = new THREE.DataTexture(
                     this.cpuData[i],
                     t,

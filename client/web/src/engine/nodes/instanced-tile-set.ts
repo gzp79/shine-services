@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { float, mat4, mix, positionLocal, vec3, vec4 } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { loadGltf } from '../render/asset-loader';
-import { share } from '../render/ownership';
+import { own } from '../render/ownership';
 import {
     type InstanceBufferLayout,
     InstanceData,
@@ -39,12 +39,12 @@ export class InstancedTileSet extends InstancedMultiMesh {
         const asset = await loadGltf(url);
         const variants: VariantDef[] = asset.meshes.map((m) => ({
             parts: m.submeshes.map((s) => ({
-                baseMaterial: share(s.material),
+                baseMaterial: own(s.material),
                 indexStart: s.indexStart,
                 indexEnd: s.indexEnd
             }))
         }));
-        return new InstancedTileSet(parent, { geometry: share(asset.geometry), variants, ...params });
+        return new InstancedTileSet(parent, { geometry: own(asset.geometry), variants, ...params });
     }
 
     // Instance data: 40 floats = 10 texels

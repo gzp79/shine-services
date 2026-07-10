@@ -49,7 +49,7 @@ const ATTRIB_NAME: Record<string, string> = {
 
 const ITEM_SIZES: Record<string, number> = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
 
-type AttribDesc = { bufferView: number; byteOffset: number; byteStride: number; itemSize: number; normalized: boolean };
+type AttribDesc = { byteOffset: number; byteStride: number; itemSize: number; normalized: boolean };
 
 function collectAttribs(json: GltfJson, prims: GltfPrimitive[]): Map<string, AttribDesc> {
     const attribs = new Map<string, AttribDesc>();
@@ -60,7 +60,6 @@ function collectAttribs(json: GltfJson, prims: GltfPrimitive[]): Map<string, Att
             const itemSize = ITEM_SIZES[acc.type] ?? 1;
             const byteStride = bv.byteStride ?? itemSize * 4;
             const desc: AttribDesc = {
-                bufferView: acc.bufferView,
                 byteOffset: acc.byteOffset ?? 0,
                 byteStride,
                 itemSize,
@@ -85,9 +84,9 @@ function buildGeometry(
     json: GltfJson,
     rawBuffer: ArrayBuffer,
     prims: GltfPrimitive[],
-    attribs: Map<string, AttribDesc>
+    attribs: Map<string, AttribDesc>,
+    vertexCounts: number[]
 ): THREE.BufferGeometry {
-    const vertexCounts = prims.map((p) => json.accessors[p.attributes.POSITION].count);
     const totalVertices = vertexCounts.reduce((a, b) => a + b, 0);
 
     const merged = new Map<string, Float32Array>();
@@ -106,8 +105,9 @@ function buildGeometry(
             const bv = json.bufferViews[acc.bufferView];
             const bvOff = (bv.byteOffset ?? 0) + (acc.byteOffset ?? 0);
             const stride = desc.byteStride / 4;
+            const srcLength = (count - 1) * stride + desc.itemSize;
             const dst = merged.get(name)!;
-            const src = new Float32Array(rawBuffer, bvOff);
+            const src = new Float32Array(rawBuffer, bvOff, srcLength);
             for (let v = 0; v < count; v++) {
                 for (let c = 0; c < desc.itemSize; c++) {
                     dst[(vertexOffset + v) * desc.itemSize + c] = src[v * stride + c];
@@ -184,7 +184,6 @@ export async function loadGltf(url: string): Promise<GltfAsset> {
     const sceneJson = json.scenes[json.scene ?? 0];
     const rawBuffer = (await gltf.parser.loadBuffer(0)) as ArrayBuffer;
 
-    // Warn about non-root nodes.
     const rootNodeSet = new Set(sceneJson.nodes ?? []);
     const skippedCount = json.nodes.filter((n, i) => n.mesh !== undefined && !rootNodeSet.has(i)).length;
     if (skippedCount > 0) {
@@ -196,24 +195,28 @@ export async function loadGltf(url: string): Promise<GltfAsset> {
 
     const allPrims = meshNodeIndices.flatMap((ni) => json.meshes[json.nodes[ni].mesh!].primitives);
 
-    // Build shared geometry from unified attribute and index buffers.
     const attribs = collectAttribs(json, allPrims);
     const vertexCounts = allPrims.map((p) => json.accessors[p.attributes.POSITION].count);
-    const geometry = buildGeometry(json, rawBuffer, allPrims, attribs);
+    const geometry = buildGeometry(json, rawBuffer, allPrims, attribs, vertexCounts);
     const { attr: indexAttr, ranges } = buildIndexBuffer(json, rawBuffer, allPrims, vertexCounts);
     geometry.setIndex(indexAttr);
 
-    // Build mesh entries with index ranges and node materials.
     const meshes: GltfMeshEntry[] = [];
-    let primIdx = 0;
+    let globalPrimIdx = 0;
     for (const ni of meshNodeIndices) {
         const node = json.nodes[ni];
         const gltfMesh = json.meshes[node.mesh!];
         const name = node.name ?? gltfMesh.name ?? `node_${ni}`;
+        const primRanges = gltfMesh.primitives.map((_, pi) => ranges[globalPrimIdx + pi]);
+        globalPrimIdx += gltfMesh.primitives.length;
         const submeshes = await Promise.all(
-            gltfMesh.primitives.map(async (prim, _pi) => {
-                if (prim.material === undefined) console.warn(`[loadGltf] primitive in "${name}" has no material`);
-                const { indexStart, indexEnd } = ranges[primIdx++];
+            gltfMesh.primitives.map(async (prim, pi) => {
+                if (prim.material === undefined) {
+                    console.warn(`[loadGltf] primitive in "${name}" has no material, using default`);
+                    const { indexStart, indexEnd } = primRanges[pi];
+                    return { material: new MeshStandardNodeMaterial(), indexStart, indexEnd };
+                }
+                const { indexStart, indexEnd } = primRanges[pi];
                 const material = await toNodeMaterial(gltf.parser, prim.material);
                 return { material, indexStart, indexEnd };
             })
