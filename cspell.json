@@ -51,6 +51,7 @@
     "linestrip",
     "mailparser",
     "mesher",
+    "metalness",
     "mkcert",
     "mockbox",
     "nextval",

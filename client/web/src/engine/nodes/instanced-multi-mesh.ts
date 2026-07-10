@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { instanceIndex, int, ivec2, textureLoad, vec2, vec3, vec4 } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { type OwnedMaterial, type Shareable, disposeIfOwned, own } from '../render/ownership';
+import { cloneStandardMaterial } from '../utils';
 import { InstanceBuffer } from './instance-buffer';
 
 const SWIZZLE = ['x', 'y', 'z', 'w'] as const;
@@ -179,9 +180,7 @@ export abstract class InstancedMultiMesh {
 
             for (let pi = 0; pi < variantDef.parts.length; pi++) {
                 const part = variantDef.parts[pi];
-                const mat = own(
-                    this.createMaterial(part.baseMaterial.clone() as MeshStandardNodeMaterial, instanceData)
-                );
+                const mat = own(this.createMaterial(cloneStandardMaterial(part.baseMaterial), instanceData));
                 const mesh = new SubMesh(this.sourceGeo, part.indexStart, part.indexEnd, instanceBuffer, mat);
                 this.group.add(mesh);
                 subMeshes.push(mesh);
@@ -222,10 +221,7 @@ export abstract class InstancedMultiMesh {
         for (let pi = 0; pi < entry.subMeshes.length; pi++) {
             const mesh = entry.subMeshes[pi];
             const mat = own(
-                this.createMaterial(
-                    entry.parts[pi].baseMaterial.clone() as MeshStandardNodeMaterial,
-                    entry.instanceData
-                )
+                this.createMaterial(cloneStandardMaterial(entry.parts[pi].baseMaterial), entry.instanceData)
             );
             mesh.replaceMaterial(mat);
         }
