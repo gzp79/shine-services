@@ -48,6 +48,14 @@ where
             );
             headers.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
             headers.insert("x-frame-options", HeaderValue::from_static("DENY"));
+            headers.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
+            headers.insert(
+                "content-security-policy",
+                HeaderValue::from_static(
+                    "default-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+                ),
+            );
+            headers.insert("cache-control", HeaderValue::from_static("no-store"));
             Ok(response)
         })
     }

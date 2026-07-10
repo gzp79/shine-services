@@ -6,6 +6,30 @@ use axum::{
 use axum_extra::{headers::UserAgent, TypedHeader};
 use std::convert::Infallible;
 
+const MAX_GEO_LEN: usize = 64;
+
+fn sanitize_country(raw: &str) -> Option<String> {
+    let s = raw.trim();
+    if s.len() == 2 && s.chars().all(|c| c.is_ascii_alphabetic()) {
+        Some(s.to_ascii_uppercase())
+    } else {
+        None
+    }
+}
+
+fn sanitize_geo(raw: &str) -> Option<String> {
+    let s: String = raw
+        .chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | ',' | '.'))
+        .take(MAX_GEO_LEN)
+        .collect();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// General client info used for human readable site identification
 pub struct SiteInfo {
@@ -34,13 +58,16 @@ where
             agent,
             country: headers
                 .get("cf-ipcountry")
-                .map(|c| c.to_str().unwrap_or_default().to_string()),
+                .and_then(|c| c.to_str().ok())
+                .and_then(sanitize_country),
             region: headers
                 .get("cf-region")
-                .map(|c| c.to_str().unwrap_or_default().to_string()),
+                .and_then(|c| c.to_str().ok())
+                .and_then(sanitize_geo),
             city: headers
                 .get("cf-ipcity")
-                .map(|c| c.to_str().unwrap_or_default().to_string()),
+                .and_then(|c| c.to_str().ok())
+                .and_then(sanitize_geo),
         })
     }
 }

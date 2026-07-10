@@ -227,7 +227,7 @@ mod test {
     fn generate_master_key() {
         let key: String = rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
 
-        let hash = bcrypt::hash(&key, 5).unwrap();
+        let hash = bcrypt::hash(&key, 12).unwrap();
         println!("key: {key}");
         println!("hash: {hash}");
     }
