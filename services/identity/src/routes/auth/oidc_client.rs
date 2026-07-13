@@ -10,6 +10,7 @@ use oauth2::{
     basic::BasicTokenType, ClientId, ClientSecret, EmptyExtraTokenFields, EndpointMaybeSet, EndpointNotSet,
     EndpointSet, RedirectUrl, Scope, StandardTokenResponse,
 };
+use oauth2_reqwest::ReqwestClient;
 use openidconnect::{
     core::{
         CoreClient as OIDCCoreClient, CoreGenderClaim, CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm,
@@ -186,26 +187,27 @@ impl OIDCClient {
         }
 
         // get client configuration from discovery
-        let client =
+        let client = {
+            let provider_metadata = match CoreProviderMetadata::discover_async(
+                client_info.discovery_url.clone(),
+                &ReqwestClient::from(self.http_client.clone()),
+            )
+            .await
             {
-                let provider_metadata =
-                    match CoreProviderMetadata::discover_async(client_info.discovery_url.clone(), &self.http_client)
-                        .await
-                    {
-                        Ok(meta) => meta,
-                        Err(err) => {
-                            log::warn!("Discovery failed for {}: {:#?}", self.provider, err);
-                            return Err(OIDCDiscoveryError(format!("{err:#?}")));
-                        }
-                    };
-
-                CoreClient::from_provider_metadata(
-                    provider_metadata,
-                    client_info.client_id.clone(),
-                    client_info.client_secret.clone(),
-                )
-                .set_redirect_uri(client_info.redirect_url.clone())
+                Ok(meta) => meta,
+                Err(err) => {
+                    log::warn!("Discovery failed for {}: {:#?}", self.provider, err);
+                    return Err(OIDCDiscoveryError(format!("{err:#?}")));
+                }
             };
+
+            CoreClient::from_provider_metadata(
+                provider_metadata,
+                client_info.client_id.clone(),
+                client_info.client_secret.clone(),
+            )
+            .set_redirect_uri(client_info.redirect_url.clone())
+        };
 
         // cache the new client (last writer wins)
         {

@@ -79,7 +79,8 @@ impl AppState {
         let problem_config = ProblemConfig::new(config.service.full_problem_response);
 
         let tera = {
-            let mut tera = Tera::new("tera_templates/**/*").map_err(|e| anyhow!(e))?;
+            let mut tera = Tera::new();
+            tera.load_from_glob("tera_templates/**/*").map_err(|e| anyhow!(e))?;
             tera.autoescape_on(vec![".html"]);
             tera
         };

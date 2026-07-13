@@ -174,12 +174,6 @@ impl TelemetryService {
                     .build()?;
                 builder.with_batch_exporter(exporter)
             }
-            #[cfg(feature = "ot_zipkin")]
-            Tracing::Zipkin => {
-                log::info!("Registering Zipkin tracing exporter...");
-                let exporter = opentelemetry_zipkin::ZipkinExporter::builder().build()?;
-                builder.with_batch_exporter(exporter)
-            }
             #[cfg(feature = "ot_app_insight")]
             Tracing::AppInsight { connection_string } => {
                 log::info!("Registering AppInsight tracing exporter...");
