@@ -15,23 +15,29 @@ pub struct SecurityHeaders {
 
 impl SecurityHeaders {
     pub fn new() -> Self {
+        let static_headers = [
+            ("strict-transport-security", "max-age=31536000; includeSubDomains"),
+            ("x-content-type-options", "nosniff"),
+            ("x-frame-options", "DENY"),
+            ("referrer-policy", "no-referrer"),
+            (
+                "permissions-policy",
+                "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()",
+            ),
+            (
+                "content-security-policy",
+                "default-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+            ),
+            ("cache-control", "no-store"),
+        ];
+
         Self {
-            headers: Arc::new(vec![
-                (
-                    "strict-transport-security",
-                    HeaderValue::from_static("max-age=31536000; includeSubDomains"),
-                ),
-                ("x-content-type-options", HeaderValue::from_static("nosniff")),
-                ("x-frame-options", HeaderValue::from_static("DENY")),
-                ("referrer-policy", HeaderValue::from_static("no-referrer")),
-                (
-                    "content-security-policy",
-                    HeaderValue::from_static(
-                        "default-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
-                    ),
-                ),
-                ("cache-control", HeaderValue::from_static("no-store")),
-            ]),
+            headers: Arc::new(
+                static_headers
+                    .into_iter()
+                    .map(|(name, value)| (name, HeaderValue::from_static(value)))
+                    .collect(),
+            ),
         }
     }
 }
