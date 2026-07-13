@@ -63,7 +63,7 @@ impl<'a> QuadBuilder<'a> {
                 }
             }
         }
-        if polygon.len() % 2 != 0 {
+        if !polygon.len().is_multiple_of(2) {
             return Err(QuadError::Input(format!(
                 "Boundary must have even length, got {}",
                 polygon.len()

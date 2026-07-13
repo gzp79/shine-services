@@ -50,7 +50,7 @@ impl CdtMesher {
     /// Create a new CDT mesher.
     pub fn new(subdivision: u32, interior_points: u32, rng: Rc<RefCell<dyn StableRng>>) -> Self {
         let patch_radius = 2u32.pow(subdivision - 1);
-        debug_assert!(DENSE_RADIUS % patch_radius == 0);
+        debug_assert!(DENSE_RADIUS.is_multiple_of(patch_radius));
         let grid_step = (DENSE_RADIUS / patch_radius) as i32;
 
         Self {

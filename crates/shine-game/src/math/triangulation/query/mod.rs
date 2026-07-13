@@ -1,3 +1,5 @@
+#![allow(clippy::module_inception)]
+
 mod crossing_iterator;
 mod edge_circulator;
 mod location;

@@ -16,8 +16,8 @@ impl SplitMix64 {
 
     pub fn from_seed(seed: u64) -> Self {
         let mut mix = Self { seed, state: seed };
-        // call next to avoid starting with a low-entropy state.
-        mix.next();
+        // call generate to avoid starting with a low-entropy state.
+        mix.generate();
         mix
     }
 
@@ -28,18 +28,18 @@ impl SplitMix64 {
     }
 
     pub fn create_seed_for_domain(&self, domain: &str) -> Self {
-        Self::create_seed(&self, fnv1a64(domain))
+        Self::create_seed(self, fnv1a64(domain))
     }
 
     /// Create a new independent random stream from the current state.
     /// Streams should be created in a consistent order to ensure deterministic results.
-    pub fn next_stream(&mut self) -> Pcg32 {
-        let seed = self.next();
-        let seq = self.next() | 1;
+    pub fn generate_stream(&mut self) -> Pcg32 {
+        let seed = self.generate();
+        let seq = self.generate() | 1;
         Pcg32::new(seed, seq)
     }
 
-    pub fn next(&mut self) -> u64 {
+    pub fn generate(&mut self) -> u64 {
         self.state = self.state.wrapping_add(0x9e3779b97f4a7c15);
         let mut z = self.state;
         z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);

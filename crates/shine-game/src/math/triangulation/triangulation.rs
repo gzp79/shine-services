@@ -18,6 +18,12 @@ pub struct Vertex {
     pub triangle: FaceIndex,
 }
 
+impl Default for Vertex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Vertex {
     pub fn new() -> Self {
         Self {
@@ -41,6 +47,12 @@ pub struct Triangle {
     pub tag: usize,
 }
 
+impl Default for Triangle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Triangle {
     pub fn new() -> Self {
         Self {
@@ -61,11 +73,11 @@ impl Triangle {
     }
 
     pub fn find_vertex(&self, v: VertexIndex) -> Option<Rot3Idx> {
-        self.vertices.iter().position(|&x| x == v).map(|i| Rot3Idx::new(i))
+        self.vertices.iter().position(|&x| x == v).map(Rot3Idx::new)
     }
 
     pub fn find_neighbor(&self, f: FaceIndex) -> Option<Rot3Idx> {
-        self.neighbors.iter().position(|&x| x == f).map(|i| Rot3Idx::new(i))
+        self.neighbors.iter().position(|&x| x == f).map(Rot3Idx::new)
     }
 }
 
@@ -76,6 +88,12 @@ pub struct Triangulation<const DELAUNAY: bool = true> {
     pub(in crate::math::triangulation) vertices: IdxVec<VertexIndex, Vertex>,
     pub(in crate::math::triangulation) faces: IdxVec<FaceIndex, Triangle>,
     tag: Rc<RefCell<usize>>,
+}
+
+impl<const DELAUNAY: bool> Default for Triangulation<DELAUNAY> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {

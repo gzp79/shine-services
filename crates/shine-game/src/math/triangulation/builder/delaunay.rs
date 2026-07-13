@@ -10,22 +10,22 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
     pub fn delaunay_push_vertex(&mut self, vertex: VertexIndex) {
         debug_assert!(self.tri.dimension() == 2);
 
-        let mut circulator = EdgeCirculator::new(&self.tri, vertex);
+        let mut circulator = EdgeCirculator::new(self.tri, vertex);
         let start = *circulator.current();
 
         // Push the edge opposite to the vertex in each triangle
-        self.state.delaunay_push_edge(&self.tri, start.next());
+        self.state.delaunay_push_edge(self.tri, start.next());
         circulator.advance_ccw();
 
         while *circulator.current() != start {
-            self.state.delaunay_push_edge(&self.tri, circulator.current().next());
+            self.state.delaunay_push_edge(self.tri, circulator.current().next());
             circulator.advance_ccw();
         }
     }
 
     pub fn delaunay_push_edge(&mut self, edge: FaceEdge) {
         debug_assert!(self.tri.dimension() == 2);
-        self.state.delaunay_push_edge(&self.tri, edge);
+        self.state.delaunay_push_edge(self.tri, edge);
     }
 
     /// Full mesh Delaunay refinement processes all edges in the triangulation.
@@ -48,7 +48,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
 
             for i in 0..3 {
                 let e = Rot3Idx::new(i);
-                BuilderState::delaunay_push_edge_into(&mut stack, &self.tri, FaceEdge::new(face_idx, e));
+                BuilderState::delaunay_push_edge_into(&mut stack, self.tri, FaceEdge::new(face_idx, e));
             }
         }
         self.state.unlock_delaunay_stack(stack);
@@ -67,7 +67,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
 
         log::trace!("Running delaunay with {} edges in stack", stack.len());
         self.state.dump(1, "before_delaunay", |dump| {
-            dump.add_tri(&self.tri, [(stack.as_slice(), "edge-delaunay", false)]);
+            dump.add_tri(self.tri, [(stack.as_slice(), "edge-delaunay", false)]);
         });
 
         while let Some(FaceEdge { triangle: face, edge }) = stack.pop() {
@@ -109,10 +109,10 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 log::trace!("Flipping edge: ({}, {})", face.into_index(), edge.into_index());
                 let [e1, e2] = self.tri.flip(face, edge);
 
-                BuilderState::delaunay_push_edge_into(&mut stack, &self.tri, e1.next());
-                BuilderState::delaunay_push_edge_into(&mut stack, &self.tri, e1.prev());
-                BuilderState::delaunay_push_edge_into(&mut stack, &self.tri, e2.next());
-                BuilderState::delaunay_push_edge_into(&mut stack, &self.tri, e2.prev());
+                BuilderState::delaunay_push_edge_into(&mut stack, self.tri, e1.next());
+                BuilderState::delaunay_push_edge_into(&mut stack, self.tri, e1.prev());
+                BuilderState::delaunay_push_edge_into(&mut stack, self.tri, e2.next());
+                BuilderState::delaunay_push_edge_into(&mut stack, self.tri, e2.prev());
                 stack.retain(|&e| e != e1 && e != e2);
             } else {
                 log::trace!("Skipping delaunay edge: ({}, {})", face.into_index(), edge.into_index());
@@ -122,7 +122,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                 4,
                 &format!("delaunay_check_{}_{}", face.into_index(), u8::from(edge)),
                 |dump| {
-                    dump.add_tri(&self.tri, [(stack.as_slice(), "edge-delaunay", false)]);
+                    dump.add_tri(self.tri, [(stack.as_slice(), "edge-delaunay", false)]);
                 },
             );
         }
@@ -130,7 +130,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
         // Unlock the stack
         self.state.unlock_delaunay_stack(stack);
         self.state.dump(1, "after_delaunay", |dump| {
-            dump.add_tri(&self.tri, []);
+            dump.add_tri(self.tri, []);
         });
     }
 }

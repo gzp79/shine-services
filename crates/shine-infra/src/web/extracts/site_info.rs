@@ -58,7 +58,7 @@ where
             headers
                 .get(name)
                 .and_then(|v| v.to_str().ok())
-                .and_then(|s| sanitizer(s))
+                .and_then(&sanitizer)
         };
 
         Ok(SiteInfo {
