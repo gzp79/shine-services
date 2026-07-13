@@ -227,7 +227,7 @@ async fn create_web_app<A: WebApplication>(
         .layer(problem_service.into_layer())
         .layer(in_flight_service.create_layer())
         .layer(tower::util::option_layer(powered_by_layer))
-        .layer(SecurityHeaders)
+        .layer(SecurityHeaders::default())
         .layer(cors_layer)
         .layer(telemetry_service.create_layer())
         .layer(log_layer)
