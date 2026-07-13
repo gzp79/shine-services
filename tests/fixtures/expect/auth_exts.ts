@@ -50,7 +50,7 @@ export const expect = baseExpect.extend({
         expect(received.name).toEqual('eid');
         expect(received.secure).toBeTruthy();
         expect(received.httpOnly).toBeTruthy();
-        expect(received.sameSite).toEqual('Strict');
+        expect(received.sameSite).toEqual('Lax');
         expect(received.path).toEndWith('/auth/');
         expect(received.domain).toEqual('cloud.local.scytta.com');
         expect(received.expires).toBeUndefined();

@@ -54,20 +54,18 @@ where
 
         let headers = parts.extract::<HeaderMap>().await.unwrap_or_default();
 
+        let get_sanitized_header = |name: &str, sanitizer: fn(&str) -> Option<String>| {
+            headers
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| sanitizer(s))
+        };
+
         Ok(SiteInfo {
             agent,
-            country: headers
-                .get("cf-ipcountry")
-                .and_then(|c| c.to_str().ok())
-                .and_then(sanitize_country),
-            region: headers
-                .get("cf-region")
-                .and_then(|c| c.to_str().ok())
-                .and_then(sanitize_site_text),
-            city: headers
-                .get("cf-ipcity")
-                .and_then(|c| c.to_str().ok())
-                .and_then(sanitize_site_text),
+            country: get_sanitized_header("cf-ipcountry", sanitize_country),
+            region: get_sanitized_header("cf-region", sanitize_site_text),
+            city: get_sanitized_header("cf-ipcity", sanitize_site_text),
         })
     }
 }

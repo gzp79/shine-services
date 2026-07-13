@@ -1,9 +1,3 @@
-use std::{
-    num::TryFromIntError,
-    sync::Arc,
-    time::{Duration as StdDuration, Instant},
-};
-
 use crate::{app_config::OIDCConfig, models::ExternalUserInfo, routes::auth::ExternalLoginError};
 use anyhow::Error as AnyError;
 use oauth2::{
@@ -21,6 +15,11 @@ use openidconnect::{
 use reqwest::Client as HttpClient;
 use serde::Serialize;
 use shine_infra::email::Email;
+use std::{
+    num::TryFromIntError,
+    sync::Arc,
+    time::{Duration as StdDuration, Instant},
+};
 use thiserror::Error as ThisError;
 use tokio::sync::Mutex;
 use url::Url;
@@ -171,6 +170,10 @@ impl OIDCClient {
         Ok(Some(client))
     }
 
+    pub fn reqwest_client(&self) -> ReqwestClient {
+        ReqwestClient::from(self.http_client.clone())
+    }
+
     pub async fn client(&self) -> Result<CoreClient, OIDCDiscoveryError> {
         let client_info = &self.client_info;
 
@@ -188,18 +191,16 @@ impl OIDCClient {
 
         // get client configuration from discovery
         let client = {
-            let provider_metadata = match CoreProviderMetadata::discover_async(
-                client_info.discovery_url.clone(),
-                &ReqwestClient::from(self.http_client.clone()),
-            )
-            .await
-            {
-                Ok(meta) => meta,
-                Err(err) => {
-                    log::warn!("Discovery failed for {}: {:#?}", self.provider, err);
-                    return Err(OIDCDiscoveryError(format!("{err:#?}")));
-                }
-            };
+            let provider_metadata =
+                match CoreProviderMetadata::discover_async(client_info.discovery_url.clone(), &self.reqwest_client())
+                    .await
+                {
+                    Ok(meta) => meta,
+                    Err(err) => {
+                        log::warn!("Discovery failed for {}: {:#?}", self.provider, err);
+                        return Err(OIDCDiscoveryError(format!("{err:#?}")));
+                    }
+                };
 
             CoreClient::from_provider_metadata(
                 provider_metadata,

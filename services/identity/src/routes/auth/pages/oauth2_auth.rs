@@ -4,7 +4,6 @@ use crate::{
 };
 use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};
-use oauth2_reqwest::ReqwestClient;
 use serde::Deserialize;
 use shine_infra::web::{
     extracts::{ClientFingerprint, InputError, SiteInfo, ValidatedQuery},
@@ -91,7 +90,7 @@ pub async fn oauth2_auth(
         .client
         .exchange_code(auth_code)
         .set_pkce_verifier(PkceCodeVerifier::new(pkce_code_verifier))
-        .request_async(&ReqwestClient::from(client.http_client.clone()))
+        .request_async(&client.reqwest_client())
         .await
     {
         Ok(token) => token,

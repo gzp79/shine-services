@@ -147,7 +147,7 @@ impl AuthSessionMeta {
                 secret,
                 domain: auth_domain,
                 path: auth_path,
-                same_site: SameSite::Strict,
+                same_site: SameSite::Lax,
             }
         };
 
