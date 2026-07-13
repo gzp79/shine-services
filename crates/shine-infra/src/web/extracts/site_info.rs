@@ -55,10 +55,7 @@ where
         let headers = parts.extract::<HeaderMap>().await.unwrap_or_default();
 
         let get_sanitized_header = |name: &str, sanitizer: fn(&str) -> Option<String>| {
-            headers
-                .get(name)
-                .and_then(|v| v.to_str().ok())
-                .and_then(&sanitizer)
+            headers.get(name).and_then(|v| v.to_str().ok()).and_then(&sanitizer)
         };
 
         Ok(SiteInfo {
