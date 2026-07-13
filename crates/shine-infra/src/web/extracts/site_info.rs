@@ -10,14 +10,14 @@ const MAX_GEO_LEN: usize = 64;
 
 fn sanitize_country(raw: &str) -> Option<String> {
     let s = raw.trim();
-    if s.len() == 2 && s.chars().all(|c| c.is_ascii_alphabetic()) {
+    if s.len() == 2 && s.is_ascii() && s.chars().all(|c| c.is_ascii_alphanumeric()) {
         Some(s.to_ascii_uppercase())
     } else {
         None
     }
 }
 
-fn sanitize_geo(raw: &str) -> Option<String> {
+fn sanitize_site_text(raw: &str) -> Option<String> {
     let s: String = raw
         .chars()
         .filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | ',' | '.'))
@@ -63,11 +63,31 @@ where
             region: headers
                 .get("cf-region")
                 .and_then(|c| c.to_str().ok())
-                .and_then(sanitize_geo),
+                .and_then(sanitize_site_text),
             city: headers
                 .get("cf-ipcity")
                 .and_then(|c| c.to_str().ok())
-                .and_then(sanitize_geo),
+                .and_then(sanitize_site_text),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_country;
+
+    #[test]
+    fn sanitize_country_normalizes_valid_two_letter_codes() {
+        assert_eq!(sanitize_country("fi"), Some("FI".to_string()));
+        assert_eq!(sanitize_country(" T1 "), Some("T1".to_string()));
+        assert_eq!(sanitize_country("XX"), Some("XX".to_string()));
+        assert_eq!(sanitize_country("1a"), Some("1A".to_string()));
+    }
+
+    #[test]
+    fn sanitize_country_rejects_ugly_inputs() {
+        assert_eq!(sanitize_country("country"), None);
+        assert_eq!(sanitize_country("A-"), None);
+        assert_eq!(sanitize_country(""), None);
     }
 }
