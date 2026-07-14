@@ -1,6 +1,6 @@
 use crate::{
-    repositories::mailer::{Email, EmailContent, EmailSender, EmailSenderError},
-    services::SettingsService,
+    integration::mailer::{Email, EmailContent, EmailSender, EmailSenderError},
+    settings::IdentitySettings,
 };
 use shine_infra::language::Language;
 use tera::Tera;
@@ -8,13 +8,13 @@ use url::Url;
 
 #[derive(Clone)]
 pub struct MailerService<'a, E: EmailSender> {
-    pub settings: &'a SettingsService,
+    pub settings: &'a IdentitySettings,
     pub mailer: &'a E,
     pub tera: &'a Tera,
 }
 
 impl<'a, E: EmailSender> MailerService<'a, E> {
-    pub fn new(settings: &'a SettingsService, mailer: &'a E, tera: &'a Tera) -> Self {
+    pub fn new(settings: &'a IdentitySettings, mailer: &'a E, tera: &'a Tera) -> Self {
         Self { settings, mailer, tera }
     }
 

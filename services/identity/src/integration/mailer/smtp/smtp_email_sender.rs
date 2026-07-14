@@ -1,4 +1,4 @@
-use crate::repositories::mailer::{Email, EmailContent, EmailSender, EmailSenderError};
+use crate::integration::mailer::{Email, EmailContent, EmailSender, EmailSenderError};
 use lettre::{
     address::AddressError,
     error::Error as EmailError,

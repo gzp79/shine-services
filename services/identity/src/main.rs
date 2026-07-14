@@ -1,10 +1,12 @@
 mod app_config;
 mod app_state;
 mod handlers;
+mod integration;
 mod models;
 mod repositories;
 mod routes;
 mod services;
+mod settings;
 
 use self::{
     app_config::AppConfig,

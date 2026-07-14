@@ -1,11 +1,10 @@
 use crate::{
     app_state::AppState,
+    integration::mailer::{EmailSender, EmailSenderError},
     models::{Identity, IdentityError, TokenKind},
-    repositories::{
-        identity::IdentityDb,
-        mailer::{EmailSender, EmailSenderError},
-    },
-    services::{CreateUserError, MailerService, SettingsService, TokenError, TokenService, UserService},
+    repositories::identity::IdentityDb,
+    services::{CreateUserError, MailerService, TokenError, TokenService, UserService},
+    settings::IdentitySettings,
 };
 use shine_infra::{
     email::Email,
@@ -71,7 +70,7 @@ where
     IDB: IdentityDb,
     EMS: EmailSender,
 {
-    settings: &'a SettingsService,
+    settings: &'a IdentitySettings,
     user_service: &'a UserService<IDB>,
     token_service: &'a TokenService<IDB>,
     mailer_service: MailerService<'a, EMS>,
@@ -83,7 +82,7 @@ where
     EMS: EmailSender,
 {
     pub fn new(
-        settings: &'a SettingsService,
+        settings: &'a IdentitySettings,
         user_service: &'a UserService<IDB>,
         token_service: &'a TokenService<IDB>,
         mailer_service: MailerService<'a, EMS>,

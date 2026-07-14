@@ -1,15 +1,12 @@
 use crate::{
     app_config::{AppConfig, IdEncoderConfig, MailerConfig},
-    repositories::{
-        identity::pg::PgIdentityDb,
+    integration::{
         mailer::{smtp::SmtpEmailSender, EmailSender},
-        session::redis::RedisSessionDb,
-        CaptchaValidator, DBPool,
+        CaptchaValidator,
     },
-    services::{
-        IdentityTopic, LinkService, MailerService, RoleService, SessionService, SettingsService, TokenService,
-        TokenSettings, UserService,
-    },
+    repositories::{identity::pg::PgIdentityDb, session::redis::RedisSessionDb, DBPool},
+    services::{IdentityTopic, LinkService, MailerService, RoleService, SessionService, TokenService, UserService},
+    settings::{IdentitySettings, TokenSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
 use chrono::Duration;
@@ -23,7 +20,7 @@ use std::sync::Arc;
 use tera::Tera;
 
 struct Inner {
-    settings: SettingsService,
+    settings: IdentitySettings,
     problem_config: ProblemConfig,
     random: SystemRandom,
     tera: Tera,
@@ -57,7 +54,7 @@ impl AppState {
                 return Err(anyhow!("allowed_redirect_urls is empty"));
             }
 
-            SettingsService {
+            IdentitySettings {
                 app_name: config_auth.app_name.clone(),
                 home_url: config_auth.home_url.clone(),
                 auth_base_url: config_auth.auth_base_url.clone(),
@@ -163,7 +160,7 @@ impl AppState {
         })))
     }
 
-    pub fn settings(&self) -> &SettingsService {
+    pub fn settings(&self) -> &IdentitySettings {
         &self.0.settings
     }
 

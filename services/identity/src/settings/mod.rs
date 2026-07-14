@@ -9,7 +9,7 @@ pub struct TokenSettings {
     pub ttl_email_login_token: Duration,
 }
 
-pub struct SettingsService {
+pub struct IdentitySettings {
     pub app_name: String,
     pub home_url: Url,
     pub auth_base_url: Url,

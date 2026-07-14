@@ -1,4 +1,4 @@
-use super::EmailSenderError;
+use crate::integration::mailer::EmailSenderError;
 use std::future::Future;
 
 pub enum EmailContent {

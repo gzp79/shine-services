@@ -1,8 +1,6 @@
 mod identity_permissions;
 pub use self::identity_permissions::*;
 
-mod settings_service;
-pub use self::settings_service::*;
 mod identity_events;
 pub use self::identity_events::*;
 mod session_service;
