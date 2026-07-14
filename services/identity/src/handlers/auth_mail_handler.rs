@@ -1,4 +1,5 @@
 use crate::{
+    app_state::AppState,
     integration::mailer::{Email, EmailContent, EmailSender, EmailSenderError},
     settings::IdentitySettings,
 };
@@ -7,19 +8,18 @@ use tera::Tera;
 use url::Url;
 
 #[derive(Clone)]
-pub struct MailerService<'a, E: EmailSender> {
-    pub settings: &'a IdentitySettings,
-    pub mailer: &'a E,
-    pub tera: &'a Tera,
+pub struct AuthMailHandler<'a, E: EmailSender> {
+    settings: &'a IdentitySettings,
+    mailer: &'a E,
+    tera: &'a Tera,
 }
 
-impl<'a, E: EmailSender> MailerService<'a, E> {
+impl<'a, E: EmailSender> AuthMailHandler<'a, E> {
     pub fn new(settings: &'a IdentitySettings, mailer: &'a E, tera: &'a Tera) -> Self {
         Self { settings, mailer, tera }
     }
 
     fn find_subject(&self, html: &str) -> Option<String> {
-        //extract the title text from the html
         let start = html.find("<title>")? + "<title>".len();
         let end = html.find("</title>")?;
         let subject = &html[start..end];
@@ -117,5 +117,11 @@ impl<'a, E: EmailSender> MailerService<'a, E> {
     ) -> Result<(), EmailSenderError> {
         self.send_email(to, redirect_url, user_name, lang, "register.html")
             .await
+    }
+}
+
+impl AppState {
+    pub fn auth_mail_handler(&self) -> AuthMailHandler<'_, impl EmailSender> {
+        AuthMailHandler::new(self.settings(), self.email_sender(), self.tera())
     }
 }

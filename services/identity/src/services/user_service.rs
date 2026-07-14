@@ -1,5 +1,6 @@
 use crate::{
-    models::{ExternalUserInfo, Identity, IdentityError, SearchIdentity},
+    handlers::SearchIdentity,
+    models::{ExternalUserInfo, Identity, IdentityError},
     repositories::identity::{ExternalLinks, IdSequences, Identities, IdentityDb, IdentitySearch},
     services::{IdentityTopic, UserEvent, UserLinkEvent},
 };

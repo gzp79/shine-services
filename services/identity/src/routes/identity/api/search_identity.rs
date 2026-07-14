@@ -1,6 +1,7 @@
 use crate::{
     app_state::AppState,
-    models::{IdentityKind, SearchIdentity, MAX_SEARCH_RESULT_COUNT},
+    handlers::{SearchIdentity, MAX_SEARCH_RESULT_COUNT},
+    models::IdentityKind,
     services::{permissions, IdentityPermissions},
 };
 use axum::{extract::State, Extension, Json};

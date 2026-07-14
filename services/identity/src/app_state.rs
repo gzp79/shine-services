@@ -1,11 +1,8 @@
 use crate::{
     app_config::{AppConfig, IdEncoderConfig, MailerConfig},
-    integration::{
-        mailer::{smtp::SmtpEmailSender, EmailSender},
-        CaptchaValidator,
-    },
+    integration::{mailer::smtp::SmtpEmailSender, CaptchaValidator},
     repositories::{identity::pg::PgIdentityDb, session::redis::RedisSessionDb, DBPool},
-    services::{IdentityTopic, LinkService, MailerService, RoleService, SessionService, TokenService, UserService},
+    services::{IdentityTopic, LinkService, RoleService, SessionService, TokenService, UserService},
     settings::{IdentitySettings, TokenSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -110,7 +107,6 @@ impl AppState {
             }
         };
 
-        // Phase 2 services
         let events = Arc::new(TopicBus::<IdentityTopic>::new());
 
         let user_service = {
@@ -184,15 +180,14 @@ impl AppState {
         &self.0.session_service
     }
 
+    pub fn email_sender(&self) -> &SmtpEmailSender {
+        &self.0.email_sender
+    }
+
     pub fn random(&self) -> &SystemRandom {
         &self.0.random
     }
 
-    pub fn mailer_service(&self) -> MailerService<'_, impl EmailSender> {
-        MailerService::new(&self.0.settings, &self.0.email_sender, &self.0.tera)
-    }
-
-    // Phase 2 service getters
     pub fn events(&self) -> &Arc<TopicBus<IdentityTopic>> {
         &self.0.events
     }

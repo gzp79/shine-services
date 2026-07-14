@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    models::PurgeGuestsResult,
+    handlers::PurgeGuestsResult,
     services::{permissions, IdentityPermissions},
 };
 use axum::{extract::State, Extension, Json};

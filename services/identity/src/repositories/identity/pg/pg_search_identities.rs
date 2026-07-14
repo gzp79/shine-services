@@ -1,5 +1,6 @@
 use crate::{
-    models::{Identity, IdentityError, SearchIdentity, MAX_SEARCH_RESULT_COUNT},
+    handlers::{SearchIdentity, MAX_SEARCH_RESULT_COUNT},
+    models::{Identity, IdentityError},
     repositories::identity::{pg::PgIdentityDbContext, IdentitySearch},
 };
 use postgres_from_row::FromRow;

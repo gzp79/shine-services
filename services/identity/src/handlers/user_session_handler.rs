@@ -1,6 +1,7 @@
 use crate::{
     app_state::AppState,
-    models::{Identity, UserInfo},
+    handlers::UserInfo,
+    models::Identity,
     repositories::{
         identity::{pg::PgIdentityDb, IdentityDb},
         session::{redis::RedisSessionDb, SessionDb},

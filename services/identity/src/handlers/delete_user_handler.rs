@@ -1,7 +1,8 @@
 use crate::{
     app_state::AppState,
+    handlers::PurgeGuestsResult,
     handlers::{AuthPage, AuthPageHandler},
-    models::{IdentityError, PurgeGuestsResult},
+    models::IdentityError,
     repositories::{
         identity::{pg::PgIdentityDb, IdentityDb},
         session::{redis::RedisSessionDb, SessionDb},

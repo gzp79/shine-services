@@ -1,4 +1,7 @@
-use crate::models::{Identity, IdentityError, SearchIdentity};
+use crate::{
+    handlers::SearchIdentity,
+    models::{Identity, IdentityError},
+};
 use std::future::Future;
 
 /// Search for identities.

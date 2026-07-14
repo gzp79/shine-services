@@ -1,5 +1,13 @@
 mod auth_page_handler;
 pub use self::auth_page_handler::*;
+mod auth_mail_handler;
+pub use self::auth_mail_handler::*;
+mod search_identity;
+pub use self::search_identity::*;
+mod user_info;
+pub use self::user_info::*;
+mod purge_guests_result;
+pub use self::purge_guests_result::*;
 mod guest_login_handler;
 //pub use self::guest_login_handler::*;
 mod logout_handler;
