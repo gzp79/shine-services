@@ -1,8 +1,7 @@
 use crate::{
     handlers::SearchIdentity,
-    models::{ExternalUserInfo, Identity, IdentityError},
+    models::{ExternalUserInfo, Identity, IdentityError, IdentityTopic, UserEvent, UserLinkEvent},
     repositories::identity::{ExternalLinks, IdSequences, Identities, IdentityDb, IdentitySearch},
-    services::{IdentityTopic, UserEvent, UserLinkEvent},
 };
 use chrono::{DateTime, Utc};
 use shine_infra::{crypto::IdEncoder, email::Email, sync::TopicBus, web::responses::Problem};

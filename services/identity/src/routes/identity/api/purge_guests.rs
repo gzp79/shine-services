@@ -1,7 +1,7 @@
 use crate::{
     app_state::AppState,
     handlers::PurgeGuestsResult,
-    services::{permissions, IdentityPermissions},
+    models::{permissions, IdentityPermissions},
 };
 use axum::{extract::State, Extension, Json};
 use chrono::Utc;

@@ -1,8 +1,9 @@
 use crate::{
     app_config::{AppConfig, IdEncoderConfig, MailerConfig},
     integration::{mailer::smtp::SmtpEmailSender, CaptchaValidator},
+    models::IdentityTopic,
     repositories::{identity::pg::PgIdentityDb, session::redis::RedisSessionDb, DBPool},
-    services::{IdentityTopic, LinkService, RoleService, SessionService, TokenService, UserService},
+    services::{LinkService, RoleService, SessionService, TokenService, UserService},
     settings::{IdentitySettings, TokenSettings},
 };
 use anyhow::{anyhow, Error as AnyError};

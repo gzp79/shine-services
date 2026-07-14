@@ -4,9 +4,8 @@ use shine_infra::sync::TopicBus;
 use uuid::Uuid;
 
 use crate::{
-    models::{ExternalLink, ExternalUserInfo, Identity, IdentityError},
+    models::{ExternalLink, ExternalUserInfo, Identity, IdentityError, IdentityTopic, UserLinkEvent},
     repositories::identity::{ExternalLinks, IdentityDb},
-    services::{IdentityTopic, UserLinkEvent},
 };
 
 pub struct LinkService<DB: IdentityDb> {

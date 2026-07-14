@@ -3,6 +3,9 @@ pub use self::token_kind::*;
 mod token_info;
 pub use self::token_info::*;
 
+mod events;
+pub use self::events::*;
+
 mod identity;
 pub use self::identity::*;
 mod identity_error;
@@ -11,6 +14,8 @@ mod external_user_info;
 pub use self::external_user_info::*;
 mod external_link;
 pub use self::external_link::*;
+mod permission;
+pub use self::permission::*;
 
 mod session;
 pub use self::session::*;

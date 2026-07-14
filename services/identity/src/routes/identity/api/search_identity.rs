@@ -1,8 +1,7 @@
 use crate::{
     app_state::AppState,
     handlers::{SearchIdentity, MAX_SEARCH_RESULT_COUNT},
-    models::IdentityKind,
-    services::{permissions, IdentityPermissions},
+    models::{permissions, IdentityKind, IdentityPermissions},
 };
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};

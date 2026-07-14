@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    services::{permissions, IdentityPermissions},
+    models::{permissions, IdentityPermissions},
 };
 use axum::{extract::State, Extension, Json};
 use axum_extra::{
