@@ -1,6 +1,13 @@
 {
   "service": {
-    "allowedOrigins": ["^https:\\/\\/([a-zA-Z0-9-]+\\.)+scytta\\.com(:\\d+)?$"],
+    "allowedOrigins": [
+      "^https:\\/\\/cloud\\.scytta\\.com$",
+      "^https:\\/\\/dev\\.scytta\\.com$",
+      "^https:\\/\\/www\\.scytta\\.com$",
+      "^https:\\/\\/ws\\.scytta\\.com$",
+      "^https:\\/\\/scytta\\.com$"
+    ],
+    "allowedWsHosts": ["^ws\\.scytta\\.com(:443)?$"],
     "fullProblemResponse": false,
     "sessionTtl": 1800
   },

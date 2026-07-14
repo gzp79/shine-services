@@ -3818,6 +3818,7 @@ dependencies = [
  "rand 0.10.2",
  "redis",
  "refinery",
+ "regex",
  "ring",
  "serde",
  "serde_json",

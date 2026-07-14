@@ -15,8 +15,8 @@ use serde::Deserialize;
 use shine_infra::{
     session::{CheckedCurrentUser, CurrentUser},
     web::{
-        extracts::ValidatedPath,
-        responses::{IntoProblemResponse, ProblemConfig, ProblemResponse},
+        extracts::{Origin, TargetHost, ValidatedPath},
+        responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
     },
 };
 use std::sync::Arc;
@@ -49,8 +49,22 @@ pub async fn connect(
     Extension(problem_config): Extension<ProblemConfig>,
     ValidatedPath(path): ValidatedPath<PathParams>,
     user: CheckedCurrentUser,
+    TargetHost(target_host): TargetHost,
+    Origin(origin): Origin,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, ProblemResponse> {
+    if !state.is_allowed_ws_host(target_host.as_bytes()) {
+        return Err(Problem::forbidden()
+            .with_detail("host is not allowed")
+            .into_response(&problem_config));
+    }
+
+    if !state.is_allowed_ws_origin(origin.as_bytes()) {
+        return Err(Problem::forbidden()
+            .with_detail("origin is not allowed")
+            .into_response(&problem_config));
+    }
+
     let user = user.into_user();
     log::info!(
         "User {} requesting a connection to the session {}...",

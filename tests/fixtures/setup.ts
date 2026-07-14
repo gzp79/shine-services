@@ -73,7 +73,7 @@ export const test = base.extend<ServiceTestFixture, ServiceOptions>({
 
             await use(admin!);
         },
-        { scope: 'worker', auto: true }
+        { scope: 'worker' }
     ],
 
     api: [

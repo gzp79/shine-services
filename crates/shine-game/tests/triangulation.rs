@@ -371,7 +371,12 @@ fn ct_constraint_concave() {
 #[test]
 fn ct_constraint() {
     // coordinates multiplied by 10 to convert from float to integer
-    let cases: Vec<(Vec<(i32, i32)>, Vec<(Vec<(usize, usize)>, Option<Vec<(usize, usize)>>)>)> = vec![
+    type Coord = (i32, i32);
+    type EdgeIndex = (usize, usize);
+    type ConstraintCase = (Vec<EdgeIndex>, Option<Vec<EdgeIndex>>);
+    type TestCase = (Vec<Coord>, Vec<ConstraintCase>);
+
+    let cases: Vec<TestCase> = vec![
         (
             vec![(0, 0), (0, 10), (10, 0)],
             vec![
