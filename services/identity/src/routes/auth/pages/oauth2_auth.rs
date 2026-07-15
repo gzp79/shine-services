@@ -1,6 +1,7 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OAuth2Client},
+    handlers::AuthPage,
+    routes::auth::{AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OAuth2Client},
 };
 use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};

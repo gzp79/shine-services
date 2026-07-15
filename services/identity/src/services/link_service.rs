@@ -4,7 +4,10 @@ use shine_infra::sync::TopicBus;
 use uuid::Uuid;
 
 use crate::{
-    models::{ExternalLink, ExternalUserInfo, Identity, IdentityError, IdentityTopic, UserLinkEvent},
+    models::{
+        events::identity::{IdentityTopic, UserLinkEvent},
+        ExternalLink, ExternalUserInfo, Identity, IdentityError,
+    },
     repositories::identity::{ExternalLinks, IdentityDb},
 };
 
@@ -34,6 +37,7 @@ impl<DB: IdentityDb> LinkService<DB> {
     ) -> Result<(), IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.link_user(user_id, external_user).await?;
+        // Notify downstream consumers that this identity now has an external link.
         self.events.publish(&UserLinkEvent::Linked(user_id)).await;
         Ok(())
     }
@@ -47,6 +51,7 @@ impl<DB: IdentityDb> LinkService<DB> {
         let mut ctx = self.db.create_context().await?;
         match ctx.delete_link(user_id, provider, provider_id).await? {
             Some(_) => {
+                // Notify downstream consumers that this identity link was removed.
                 self.events.publish(&UserLinkEvent::Unlinked(user_id)).await;
                 Ok(Some(()))
             }

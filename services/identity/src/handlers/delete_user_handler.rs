@@ -1,6 +1,5 @@
 use crate::{
     app_state::AppState,
-    handlers::PurgeGuestsResult,
     handlers::{AuthPage, AuthPageHandler},
     models::IdentityError,
     repositories::{
@@ -12,6 +11,11 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use url::Url;
+
+pub struct PurgeGuestsResult {
+    pub deleted: usize,
+    pub has_more: bool,
+}
 
 /// Handler for user account deletion
 ///

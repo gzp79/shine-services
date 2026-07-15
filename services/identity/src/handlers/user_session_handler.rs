@@ -1,6 +1,5 @@
 use crate::{
     app_state::AppState,
-    handlers::UserInfo,
     models::Identity,
     repositories::{
         identity::{pg::PgIdentityDb, IdentityDb},
@@ -16,6 +15,12 @@ use shine_infra::{
     },
 };
 use uuid::Uuid;
+
+pub struct UserInfo {
+    pub identity: Identity,
+    pub roles: Vec<String>,
+    pub is_linked: bool,
+}
 
 pub struct UserSessionHandler<'a, IDB, SDB>
 where

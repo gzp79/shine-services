@@ -1,2 +1,1 @@
-mod identity;
-pub use self::identity::*;
+pub mod identity;

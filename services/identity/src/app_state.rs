@@ -1,7 +1,7 @@
 use crate::{
     app_config::{AppConfig, IdEncoderConfig, MailerConfig},
     integration::{mailer::smtp::SmtpEmailSender, CaptchaValidator},
-    models::IdentityTopic,
+    models::events::identity::IdentityTopic,
     repositories::{identity::pg::PgIdentityDb, session::redis::RedisSessionDb, DBPool},
     services::{LinkService, RoleService, SessionService, TokenService, UserService},
     settings::{IdentitySettings, TokenSettings},

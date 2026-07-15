@@ -1,7 +1,7 @@
 use crate::{
     app_state::AppState,
-    handlers::{AuthenticationSuccess, TokenIssuance},
-    routes::auth::{AuthPage, AuthPageRequest, AuthSession},
+    handlers::{AuthPage, AuthenticationSuccess, TokenIssuance},
+    routes::auth::{AuthPageRequest, AuthSession},
 };
 use axum::extract::State;
 use axum_extra::{

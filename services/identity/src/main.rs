@@ -33,7 +33,7 @@ impl WebApplication for Application {
         health_service: &mut HealthService,
         router: &mut OpenApiRouter<Self::AppState>,
     ) -> Result<Self::AppState, AnyError> {
-        use crate::models::{UserEvent, UserLinkEvent};
+        use crate::models::events::identity::{UserEvent, UserLinkEvent};
         use shine_infra::sync::EventHandler;
 
         let state = AppState::new(config).await?;

@@ -1,5 +1,8 @@
 use crate::{
-    models::{IdentityError, IdentityTopic, UserEvent},
+    models::{
+        events::identity::{IdentityTopic, UserEvent},
+        IdentityError,
+    },
     repositories::identity::{IdentityDb, Roles},
 };
 use shine_infra::sync::TopicBus;
@@ -19,6 +22,7 @@ impl<DB: IdentityDb> RoleService<DB> {
     pub async fn add_role(&self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         if let Some(roles) = ctx.add_role(user_id, role).await? {
+            // Notify session refresh subscribers that role membership changed.
             self.events.publish(&UserEvent::RoleChange(user_id)).await;
             Ok(Some(roles))
         } else {
@@ -34,6 +38,7 @@ impl<DB: IdentityDb> RoleService<DB> {
     pub async fn delete_role(&self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         if let Some(roles) = ctx.delete_role(user_id, role).await? {
+            // Notify session refresh subscribers that role membership changed.
             self.events.publish(&UserEvent::RoleChange(user_id)).await;
             Ok(Some(roles))
         } else {

@@ -1,8 +1,7 @@
-mod search_identity;
-pub use self::search_identity::*;
 mod generate_user_name;
-pub use self::generate_user_name::*;
 mod purge_guests;
-pub use self::purge_guests::*;
+mod router;
+mod search_identity;
 mod user_roles;
-pub use self::user_roles::*;
+
+pub use self::router::api_routes;
