@@ -8,7 +8,7 @@ test.describe('Session mint', () => {
         const mint = await SessionMint.fromServerConfig();
         const userId = randomUUID();
 
-        const created = await mint.addUser({
+        const created = await mint.createUserSession({
             userId,
             userAgent: 'mint-test-agent-1'
         });

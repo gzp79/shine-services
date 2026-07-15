@@ -66,6 +66,7 @@ Project skills live in `.claude/skills/`. Invoke before working in a domain.
 | `sdp-doc` | **any new feature or non-trivial change** — create/update/sync design doc first; do not write code without a doc |
 | `sdp-code` | implementing a feature — reads the design doc and drives code from it; invoke after `sdp-doc` |
 | `local-development` | run services locally |
+| `api-test-writing` | writing or modifying tests under `tests/api-tests/` or `tests/mock-tests/` |
 
 ### Design docs
 HTML files under `docs/<domain>/`. Domain subfolders:

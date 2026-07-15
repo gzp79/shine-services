@@ -1,6 +1,6 @@
 import { expect, test } from '$fixtures/setup';
 import { MintedSession, SessionMint } from '$lib/mocks/session_mint';
-import { joinURL } from '$lib/utils';
+import { DEFAULT_USER_AGENT, joinURL } from '$lib/utils';
 import { randomUUID } from 'node:crypto';
 import { IncomingMessage } from 'node:http';
 import { WebSocket } from 'ws';
@@ -20,7 +20,7 @@ async function connectWs(url: string, options: WsConnectOptions): Promise<WsOutc
         const timeoutMs = options.timeoutMs ?? 5000;
         const headers: Record<string, string> = {
             Cookie: `sid=${options.sid}`,
-            'User-Agent': options.userAgent ?? 'ws-test-agent',
+            'User-Agent': options.userAgent ?? DEFAULT_USER_AGENT,
             ...(options.extraHeaders ?? {})
         };
 
@@ -74,7 +74,7 @@ test.describe('Builder websocket origin checks', { tag: ['@regression'] }, () =>
 
     test.beforeEach(async () => {
         mint = await SessionMint.fromServerConfig();
-        user = await mint.addUser({ userId: randomUUID(), userAgent: 'ws-test-agent' });
+        user = await mint.createUserSession({ userId: randomUUID() });
     });
 
     test.afterEach(async () => {
@@ -84,7 +84,6 @@ test.describe('Builder websocket origin checks', { tag: ['@regression'] }, () =>
     test('WS connect shall reject missing Origin header', async ({ builderUrl }) => {
         const result = await connectWs(wsConnectUrl(builderUrl), {
             sid: user.sessionCookie,
-            userAgent: 'ws-test-agent',
             extraHeaders: {
                 'x-forwarded-host': 'ws.local.scytta.com:8444'
             }
@@ -97,7 +96,6 @@ test.describe('Builder websocket origin checks', { tag: ['@regression'] }, () =>
         const result = await connectWs(wsConnectUrl(builderUrl), {
             sid: user.sessionCookie,
             origin: 'https://example.com',
-            userAgent: 'ws-test-agent',
             extraHeaders: {
                 'x-forwarded-host': 'ws.local.scytta.com:8444'
             }
@@ -110,7 +108,6 @@ test.describe('Builder websocket origin checks', { tag: ['@regression'] }, () =>
         const result = await connectWs(wsConnectUrl(builderUrl), {
             sid: user.sessionCookie,
             origin: 'https://cloud.local.scytta.com:8443',
-            userAgent: 'ws-test-agent',
             extraHeaders: {
                 'x-forwarded-host': 'cloud.local.scytta.com:8444'
             }
@@ -123,7 +120,6 @@ test.describe('Builder websocket origin checks', { tag: ['@regression'] }, () =>
         const result = await connectWs(wsConnectUrl(builderUrl), {
             sid: user.sessionCookie,
             origin: 'https://cloud.local.scytta.com:8443',
-            userAgent: 'ws-test-agent',
             extraHeaders: {
                 'x-forwarded-host': 'ws.local.scytta.com:8444'
             }

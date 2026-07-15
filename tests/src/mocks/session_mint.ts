@@ -1,3 +1,4 @@
+import { DEFAULT_USER_AGENT } from '$lib/utils';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -11,7 +12,7 @@ type ServerTestConfig = {
     };
 };
 
-type AddUserInput = {
+type CreateUserSessionInput = {
     userId?: string;
     name?: string;
     isEmailConfirmed?: boolean;
@@ -62,10 +63,10 @@ export class SessionMint {
         return new SessionMint(service.sessionRedisCns, service.sessionTtl, service.sessionSecret);
     }
 
-    public async addUser(input: AddUserInput = {}): Promise<MintedSession> {
+    public async createUserSession(input: CreateUserSessionInput = {}): Promise<MintedSession> {
         const userId = input.userId ?? randomUUID();
         const sessionKeyHex = randomBytes(16).toString('hex');
-        const fingerprint = fingerprintFromUserAgent(input.userAgent ?? 'ws-test-agent');
+        const fingerprint = fingerprintFromUserAgent(input.userAgent ?? DEFAULT_USER_AGENT);
 
         const userData = {
             name: input.name ?? `Minted_${userId.slice(0, 8)}`,
