@@ -6,6 +6,10 @@ import { IncomingMessage } from 'node:http';
 import { WebSocket } from 'ws';
 
 type WsOutcome = { kind: 'open' } | { kind: 'http_error'; status: number } | { kind: 'error'; message: string };
+type WsCloseOutcome =
+    | { kind: 'closed'; code: number }
+    | { kind: 'http_error'; status: number }
+    | { kind: 'error'; message: string };
 
 type WsConnectOptions = {
     sid: string;
@@ -68,7 +72,52 @@ function wsConnectUrl(builderUrl: string): string {
     return wsUrl.toString();
 }
 
-test.describe('Builder websocket origin checks', { tag: ['@regression'] }, () => {
+type WsHoldOptions = WsConnectOptions & { holdTimeoutMs?: number };
+
+async function openAndWaitClose(url: string, options: WsHoldOptions): Promise<WsCloseOutcome> {
+    return await new Promise<WsCloseOutcome>((resolve) => {
+        const holdTimeoutMs = options.holdTimeoutMs ?? 10_000;
+        const headers: Record<string, string> = {
+            Cookie: `sid=${options.sid}`,
+            'User-Agent': options.userAgent ?? DEFAULT_USER_AGENT,
+            ...(options.extraHeaders ?? {})
+        };
+
+        const ws = new WebSocket(url, {
+            origin: options.origin,
+            headers,
+            rejectUnauthorized: false
+        });
+
+        let settled = false;
+
+        const finish = (value: WsCloseOutcome) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            resolve(value);
+        };
+
+        const timeout = setTimeout(() => {
+            ws.terminate();
+            finish({ kind: 'error', message: `timeout after ${holdTimeoutMs}ms` });
+        }, holdTimeoutMs);
+
+        ws.once('unexpected-response', (_request: unknown, response: IncomingMessage) => {
+            finish({ kind: 'http_error', status: response.statusCode ?? 0 });
+        });
+
+        ws.once('error', (error: Error) => {
+            finish({ kind: 'error', message: error.message });
+        });
+
+        ws.once('close', (code: number) => {
+            finish({ kind: 'closed', code });
+        });
+    });
+}
+
+test.describe('Builder websocket', { tag: ['@regression'] }, () => {
     let mint: SessionMint;
     let user: MintedSession;
 
@@ -126,5 +175,28 @@ test.describe('Builder websocket origin checks', { tag: ['@regression'] }, () =>
         });
 
         expect(result).toEqual({ kind: 'open' });
+    });
+
+    test('WS connection shall be dropped when session is deleted', async ({ builderUrl }) => {
+        const url = wsConnectUrl(builderUrl);
+        const wsHeaders = {
+            origin: 'https://cloud.local.scytta.com:8443',
+            extraHeaders: { 'x-forwarded-host': 'ws.local.scytta.com:8444' }
+        };
+
+        // Start holding the connection open; resolve when the server closes it.
+        // authCheckInterval is 2s in test config, allow up to 10s total.
+        const closePromise = openAndWaitClose(url, {
+            sid: user.sessionCookie,
+            ...wsHeaders,
+            holdTimeoutMs: 10_000
+        });
+
+        // Give the WS time to establish before invalidating the session.
+        await new Promise((r) => setTimeout(r, 500));
+        await mint.deleteUser(user);
+
+        const result = await closePromise;
+        expect(result.kind).toBe('closed');
     });
 });

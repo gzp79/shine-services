@@ -7,7 +7,7 @@
       "^https:\\/\\/ws\\.scytta\\.com$",
       "^https:\\/\\/scytta\\.com$"
     ],
-    "allowedWsHosts": ["^ws\\.scytta\\.com(:443)?$"],
+
     "fullProblemResponse": false,
     "sessionTtl": 1800
   },

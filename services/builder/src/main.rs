@@ -1,12 +1,13 @@
 mod app_config;
 mod app_state;
-mod controllers;
 mod repositories;
+mod routes;
 mod services;
+mod settings;
 
 use self::{app_config::AppConfig, app_state::AppState};
 use anyhow::Error as AnyError;
-use controllers::builder::BuilderController;
+use routes::ws::ws_routes;
 use shine_infra::{
     health::HealthService,
     web::{FeatureConfig, WebAppConfig, WebApplication},
@@ -27,9 +28,7 @@ impl WebApplication for Application {
     ) -> Result<Self::AppState, AnyError> {
         let state = AppState::new(config).await?;
 
-        let builder_controller = BuilderController::new().into_router();
-        let app_router = OpenApiRouter::new().merge(builder_controller);
-        *router = router.clone().nest(&format!("/{}", Self::AppConfig::NAME), app_router);
+        *router = router.clone().nest(&format!("/{}", Self::AppConfig::NAME), ws_routes());
 
         Ok(state)
     }

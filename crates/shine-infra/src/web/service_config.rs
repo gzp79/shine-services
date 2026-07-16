@@ -16,10 +16,6 @@ pub struct ServiceConfig {
     pub port: u16,
     /// Regular expressions for the allowed origins.
     pub allowed_origins: Vec<String>,
-    /// Regular expressions for allowed websocket target hosts.
-    /// Checked against `X-Forwarded-Host`, `Forwarded host=`, then `Host`.
-    #[serde(default)]
-    pub allowed_ws_hosts: Vec<String>,
     /// Indicates if the full problem response should be returned. In production, it should be `false`.
     pub full_problem_response: bool,
     /// The secret for the used captcha solution.

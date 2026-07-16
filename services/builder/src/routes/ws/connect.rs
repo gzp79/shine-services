@@ -1,5 +1,6 @@
 use crate::{
     app_state::AppState,
+    routes::ws::message::{RequestMessage, ResponseMessage},
     services::{Message, MessageSource, Session},
 };
 use axum::{
@@ -13,18 +14,18 @@ use axum::{
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
 use shine_infra::{
-    session::{CheckedCurrentUser, CurrentUser},
+    session::{CheckedCurrentUser, CurrentUser, CurrentUserService},
     web::{
         extracts::{Origin, TargetHost, ValidatedPath},
         responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
     },
 };
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time;
 use utoipa::IntoParams;
 use uuid::Uuid;
 use validator::Validate;
-
-use super::{RequestMessage, ResponseMessage};
 
 #[derive(Deserialize, Validate, IntoParams)]
 #[serde(rename_all = "camelCase")]
@@ -47,23 +48,26 @@ pub struct PathParams {
 pub async fn connect(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
+    Extension(session_service): Extension<Arc<CurrentUserService>>,
     ValidatedPath(path): ValidatedPath<PathParams>,
-    user: CheckedCurrentUser,
     TargetHost(target_host): TargetHost,
     Origin(origin): Origin,
+    user: CheckedCurrentUser,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, ProblemResponse> {
-    if !state.is_allowed_ws_host(target_host.as_bytes()) {
+    if !state.settings().ws.is_allowed_host(target_host.as_str()) {
         return Err(Problem::forbidden()
             .with_detail("host is not allowed")
             .into_response(&problem_config));
     }
 
-    if !state.is_allowed_ws_origin(origin.as_bytes()) {
+    if !state.settings().ws.is_allowed_origin(origin.as_str()) {
         return Err(Problem::forbidden()
             .with_detail("origin is not allowed")
             .into_response(&problem_config));
     }
+
+    let auth_check_interval = state.settings().ws.auth_check_interval;
 
     let user = user.into_user();
     log::info!(
@@ -77,12 +81,19 @@ pub async fn connect(
         .acquire_session(&path.session_id, &user.user_id)
         .await
         .map_err(|err| err.into_response(&problem_config))?;
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, session)))
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, session, session_service, auth_check_interval)))
 }
 
-async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Session>) {
+async fn handle_socket(
+    socket: WebSocket,
+    user: CurrentUser,
+    session: Arc<Session>,
+    session_service: Arc<CurrentUserService>,
+    auth_check_interval: Duration,
+) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let current_user_id = user.user_id;
+    let session_key = user.key;
     let session_id = session.id();
 
     log::info!("[{current_user_id}] Connected to the session {session_id}");
@@ -140,15 +151,38 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, session: Arc<Sessio
         }
     });
 
-    // If any one of the tasks exit, abort the other.
+    let mut auth_task = tokio::spawn(async move {
+        let mut interval = time::interval(auth_check_interval);
+        interval.tick().await; // skip the first immediate tick
+        loop {
+            interval.tick().await;
+            if session_service
+                .get_current_user(current_user_id, session_key)
+                .await
+                .is_err()
+            {
+                log::info!("[{current_user_id}] Session expired, closing WebSocket connection");
+                break;
+            }
+        }
+    });
+
+    // If any one of the tasks exits, abort the others.
     tokio::select! {
         rv_a = (&mut send_task) => {
             log::info!("Send task exited: {rv_a:?}");
             recv_task.abort();
+            auth_task.abort();
         },
         rv_b = (&mut recv_task) => {
             log::info!("Receive task exited: {rv_b:?}");
             send_task.abort();
+            auth_task.abort();
+        },
+        _ = (&mut auth_task) => {
+            log::info!("[{current_user_id}] Auth task exited, dropping connection");
+            send_task.abort();
+            recv_task.abort();
         }
     }
 

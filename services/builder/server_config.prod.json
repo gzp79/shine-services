@@ -7,5 +7,12 @@
 
   "service": {
     "port": 7001
+  },
+
+  "builder": {
+    "ws": {
+      "allowedHosts": ["^ws\\.scytta\\.com(:443)?$"],
+      "authCheckInterval": 60
+    }
   }
 }
