@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DB Pooling and Listening</title>
+<link rel="stylesheet" href="../doc.css">
+</head>
+<body>
+
+<header class="doc-header">
+  <h1 class="doc-title">DB Pooling and Listening</h1>
+  <div class="doc-meta">
+    <span>bb8-pooled short-lived connections, plus one shared, reconnecting listener connection per backend</span>
+  </div>
+</header>
+
+<h2>Problem</h2>
+<p>
+  Both Postgres and Redis need two different shapes of connection: short-lived checkouts for
+  regular commands/queries, issued concurrently from many call sites, and one long-lived
+  connection for push notifications (Postgres <code>LISTEN</code>/<code>NOTIFY</code>, Redis
+  pub/sub), watched for as long as any channel is subscribed. A bb8 pool is built for the first
+  shape and wrong for the second — a pooled connection can be recycled or reused for an unrelated
+  command mid-subscription. Each backend's connection manager owns both: a bb8 pool of command
+  connections, and a single shared listener that every pooled connection can reach to add or
+  remove subscriptions.
+</p>
+
+<h2>Architecture</h2>
+
+<div class="canvas">
+  <div class="layer-row">
+    <div class="layer-label">Setup</div>
+    <div class="layer-body">
+      <div class="box box-indigo" style="flex:1">
+        <div class="bname">create_*_pool(cns)</div>
+        <div class="bdetail">builds one connection manager<br>(<code>PGConnectionManager</code> / <code>RedisConnectionManager</code>)</div>
+      </div>
+      <div class="box box-teal" style="flex:2">
+        <div class="bname">Connection manager</div>
+        <div class="bdetail">holds connection info + one shared Listener,<br>cloned into every pooled connection</div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow-row" style="min-height:32px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-blue" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">conn.listen(channel, handler) / conn.unlisten(channel)</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-label">Shared listener state</div>
+    <div class="layer-body">
+      <div class="box box-blue" style="flex:2">
+        <div class="bname">Listener</div>
+        <div class="bdetail">lock-guarded <code>HashMap&lt;channel, handler&gt;</code><br>+ the live subscribe/publish half, once connected</div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow-row" style="min-height:32px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-orange" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">LISTEN/UNLISTEN "channel" (PG) · sink.(un)subscribe(channel) (Redis)</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-label">One shared connection</div>
+    <div class="layer-body">
+      <div class="box box-green" style="flex:1">
+        <div class="bname">Notification stream</div>
+        <div class="bdetail">read by the streaming task,<br>dispatches by channel name</div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow-row" style="min-height:32px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-pink" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">channel name → handlers.get(channel)</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-label">Dispatch</div>
+    <div class="layer-body">
+      <div class="box box-pink" style="flex:1">
+        <div class="bname">Handler A</div>
+      </div>
+      <div class="box box-pink" style="flex:1">
+        <div class="bname">Handler B</div>
+      </div>
+      <div class="box box-dim" style="flex:1">
+        <div class="bname">…</div>
+        <div class="bdetail">one entry per subscribed channel</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>
+  Regular command connections are unaffected by any of this: they come from the same bb8 pool as
+  before, each an independent connection, unrelated to the listener's single notification socket.
+</p>
+
+<h3>Reconnect</h3>
+
+<div class="lifecycle">
+  <div class="hflow">
+    <div class="box box-dim"><div class="bname">Disconnected</div></div>
+    <div class="hconn"><div class="hconn-label">first listen() call, or after a drop</div></div>
+    <div class="box box-orange"><div class="bname">Connecting</div>
+      <div class="bdetail">opens the connection, re-subscribes<br>every channel in the handler map</div></div>
+    <div class="hconn"><div class="hconn-label">subscribe confirmed</div></div>
+    <div class="box box-green"><div class="bname">Streaming</div>
+      <div class="bdetail">reads notifications,<br>dispatches to handlers</div></div>
+  </div>
+  <div class="cycle-return">stream ends (connection lost) → keep-alive task notified → reconnect, back to Connecting</div>
+</div>
+
+<p>
+  Both listeners share this shape: a keep-alive task waits on a <code>Notify</code>, connects, and
+  spawns a streaming task that reads notifications until the connection drops — at which point it
+  notifies the keep-alive task to try again. Because every channel shares one connection, a drop
+  pauses <em>all</em> subscriptions at once until reconnect completes and every channel is
+  re-subscribed; this is the cost of sharing one socket, traded for not needing a socket per
+  subscribed channel (Postgres) or per <code>listen()</code> call (Redis, before this pattern).
+</p>
+
+<h2>Key rules</h2>
+
+<table>
+  <tr><th>Question</th><th>Answer</th></tr>
+  <tr>
+    <td>When does a command connection get created?</td>
+    <td>Lazily, on the first pool checkout that needs one, up to the pool's <code>max_size</code>. Idle ones are reused across checkouts.</td>
+  </tr>
+  <tr>
+    <td>How many listener connections exist?</td>
+    <td>At most one per connection manager — shared by clone across every pooled connection — regardless of how many channels are subscribed.</td>
+  </tr>
+  <tr>
+    <td>Can a channel be unsubscribed?</td>
+    <td>Yes — <code>unlisten(channel)</code> removes the handler and, if connected, issues the backend's unsubscribe on the shared connection.</td>
+  </tr>
+  <tr>
+    <td>What happens if the shared connection drops?</td>
+    <td>The streaming task ends, which notifies the keep-alive task; it reconnects and re-subscribes every channel still in the handler map. All subscriptions pause together during the gap.</td>
+  </tr>
+  <tr>
+    <td>Can subscriptions change while messages are being read?</td>
+    <td>Yes — reading and subscribing use independent halves of the connection (Postgres: a raw command connection alongside the notification stream; Redis: <code>PubSub::split()</code> into a <code>Sink</code> and a <code>Stream</code>), so <code>listen()</code>/<code>unlisten()</code> don't block dispatch.</td>
+  </tr>
+  <tr>
+    <td>Regular commands on a pooled connection</td>
+    <td>Go through the backend's normal connection type (Postgres: <code>tokio_postgres::Client</code>/<code>Transaction</code> via <code>Deref</code>; Redis: <code>MultiplexedConnection</code> via <code>ConnectionLike</code>/<code>Deref</code>/<code>DerefMut</code>), entirely separate from the listener connection.</td>
+  </tr>
+</table>
+
+<h2>File map</h2>
+
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>crates/shine-infra/src/db/postgres/pg_listener.rs</code></td><td><code>PGListener</code> — shared handler map + keep-alive/streaming task pair managing one <code>LISTEN</code>/<code>NOTIFY</code> connection.</td></tr>
+  <tr><td><code>crates/shine-infra/src/db/postgres/pg_connection.rs</code></td><td><code>PGConnectionManager</code>, <code>PGConnection</code> (pooled connection + <code>listen()</code>/<code>unlisten()</code> passthrough), <code>create_postgres_pool</code>.</td></tr>
+  <tr><td><code>crates/shine-infra/src/db/redis/redis_listener.rs</code></td><td><code>RedisListener</code> — shared handler map + keep-alive/streaming task pair managing one pub/sub connection.</td></tr>
+  <tr><td><code>crates/shine-infra/src/db/redis/redis_connection.rs</code></td><td><code>RedisConnectionManager</code>, <code>RedisConnection</code> (pooled connection + <code>ConnectionLike</code> impl + <code>listen()</code>/<code>unlisten()</code> passthrough), <code>create_redis_pool</code>.</td></tr>
+  <tr><td><code>crates/shine-infra/tests/redis_listener.rs</code></td><td>Integration test: publish/subscribe across pooled connections, multi-channel dispatch, <code>unlisten()</code>. Gated on <code>SHINE_TEST_REDIS_CNS</code>.</td></tr>
+</table>
+
+<details data-agent="implementation">
+  <summary>Same shape, different primitives underneath</summary>
+  <div class="details-body">
+    <p>
+      <code>PGListener</code> and <code>RedisListener</code> independently converged on the same
+      internal shape: a lock-guarded state struct holding <code>Option&lt;write-half&gt;</code> +
+      <code>HashMap&lt;String, BoxedHandler&gt;</code>, a keep-alive task looping on a shared
+      <code>Arc&lt;(Notify, AtomicBool)&gt;</code> that connects and re-subscribes every registered
+      channel, and a streaming task (spawned fresh per successful connect) that reads notifications,
+      dispatches by channel name, and notifies keep-alive on exit.
+    </p>
+    <p>
+      What differs is backend plumbing, not the pattern: Postgres opens a raw
+      <code>tokio_postgres</code> socket connection and issues <code>LISTEN "channel"</code>/
+      <code>UNLISTEN "channel"</code> as SQL commands on it directly — there's no separate
+      read/write split, since <code>tokio_postgres::Client</code> already lets commands and the
+      notification stream run concurrently. Redis instead calls <code>Client::get_async_pubsub()</code>
+      then <code>PubSub::split()</code> to get an explicit <code>PubSubSink</code> (subscribe/unsubscribe)
+      and <code>PubSubStream</code> (message reads), because the underlying pub/sub connection type
+      doesn't expose that concurrency for free the way <code>tokio_postgres</code> does. Dispatch key
+      is <code>Notification::channel()</code> (Postgres) vs. <code>Msg::get_channel_name()</code>
+      (Redis); payload is the raw notification string (Postgres) vs.
+      <code>Msg::get_payload::&lt;String&gt;()</code> (Redis).
+    </p>
+  </div>
+</details>
+
+</body>
+</html>
