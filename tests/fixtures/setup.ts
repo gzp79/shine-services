@@ -6,6 +6,7 @@ import { TestUser, TestUserHelper } from '$lib/api/test_user';
 import { TokenAPI } from '$lib/api/token_api';
 import { UserAPI } from '$lib/api/user_api';
 import OAuth2MockServer from '$lib/mocks/oauth2';
+import { SharedServiceName } from '$lib/utils';
 import { expect as authExpect } from './expect/auth_exts';
 import { expect as commonExpect } from './expect/common';
 import { expect as mailExpect } from './expect/mail';
@@ -42,6 +43,7 @@ export type Api = {
 
 export type ServiceTestFixture = {
     api: Api;
+    serviceUrl: (serviceName: SharedServiceName) => string;
 };
 
 export const test = base.extend<ServiceTestFixture, ServiceOptions>({
@@ -73,7 +75,7 @@ export const test = base.extend<ServiceTestFixture, ServiceOptions>({
 
             await use(admin!);
         },
-        { scope: 'worker', auto: true }
+        { scope: 'worker' }
     ],
 
     api: [
@@ -91,6 +93,20 @@ export const test = base.extend<ServiceTestFixture, ServiceOptions>({
                 token,
                 user,
                 testUsers
+            });
+        },
+        { scope: 'test' }
+    ],
+
+    serviceUrl: [
+        async ({ identityUrl, builderUrl }, use) => {
+            await use((serviceName: SharedServiceName): string => {
+                switch (serviceName) {
+                    case 'identity':
+                        return identityUrl;
+                    case 'builder':
+                        return builderUrl;
+                }
             });
         },
         { scope: 'test' }

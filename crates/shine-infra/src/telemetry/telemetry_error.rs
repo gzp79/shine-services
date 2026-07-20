@@ -1,5 +1,4 @@
 use crate::web::responses::Problem;
-use opentelemetry_sdk::trace::TraceError;
 use thiserror::Error as ThisError;
 use tracing::subscriber::SetGlobalDefaultError;
 use tracing_subscriber::filter::ParseError;
@@ -19,11 +18,6 @@ pub enum TelemetryBuildError {
     #[cfg(feature = "ot_otlp")]
     #[error(transparent)]
     OtlpBuildError(#[from] opentelemetry_otlp::ExporterBuildError),
-    #[cfg(feature = "ot_zipkin")]
-    #[error(transparent)]
-    ZipkinBuildError(#[from] opentelemetry_zipkin::ExporterBuildError),
-    #[error(transparent)]
-    TraceError(#[from] TraceError),
 }
 
 #[derive(Debug, ThisError)]

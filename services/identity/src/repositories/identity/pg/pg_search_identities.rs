@@ -1,6 +1,6 @@
 use crate::{
-    models::{Identity, IdentityError, SearchIdentity, MAX_SEARCH_RESULT_COUNT},
-    repositories::identity::{pg::PgIdentityDbContext, IdentitySearch},
+    models::{Identity, IdentityError},
+    repositories::identity::{pg::PgIdentityDbContext, IdentitySearch, SearchIdentityQuery, MAX_SEARCH_RESULT_COUNT},
 };
 use postgres_from_row::FromRow;
 use shine_infra::{
@@ -13,7 +13,7 @@ use super::pg_identities::IdentityRow;
 
 impl IdentitySearch for PgIdentityDbContext<'_> {
     #[instrument(skip(self))]
-    async fn search_identity(&mut self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, IdentityError> {
+    async fn search_identity(&mut self, search: SearchIdentityQuery<'_>) -> Result<Vec<Identity>, IdentityError> {
         let mut builder = QueryBuilder::new(
             "SELECT user_id, kind, name, encrypted_email, encrypted_normalized_email, email_confirmed, created FROM identities",
         );

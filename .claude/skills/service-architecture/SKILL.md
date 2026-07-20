@@ -9,16 +9,23 @@ description: >
 
 # Service Architecture
 
-Clean architecture: Routes → Handlers → Services → Repositories.
+Clean architecture: Routes → Handlers → Services → Repositories/Integration, with `settings` as a shared normalized configuration module.
 
 ## Layer responsibilities
 
-| Layer | Owns | Does NOT |
-|---|---|---|
-| **Routes** | HTTP extraction, validation (`AuthPageRequest`), response formatting | Business logic, DB access |
-| **Handlers** | Orchestrate services, cross-cutting concerns | Direct DB/HTTP, raw SQL |
-| **Services** | Business logic (User, Token, Link, Role, Session, Mailer) | HTTP concerns, orchestration |
-| **Repositories** | Data access (`PgIdentityDb`, `RedisSessionDb`) | Business logic, validation |
+| Layer | Responsibility |
+|---|---|
+| **Routes** | HTTP extraction, validation (`AuthPageRequest`), response formatting |
+| **Handlers** | Borrow services/handlers and orchestrate app workflows |
+| **Services** | Owning, flat application logic units (User, Token, Link, Role, Session, Mail) |
+| **Repositories** | **DB-oriented persistence only** (`PgIdentityDb`, `RedisSessionDb`) |
+| **Integration** | Third-party adapters/clients (`mailer`, captcha, provider clients) |
+| **Settings** | Normalized/validated runtime configuration (`IdentitySettings`) |
+
+## Config naming convention
+
+- `*Config`: raw loaded config (serde/env/file input shape)
+- `*Settings`: selected/validated/compiled runtime values (for example compiled `Regex`, parsed `Url`, derived lists)
 
 ## Handler struct: borrow services, generic over DB types
 
@@ -97,12 +104,14 @@ impl AppState {
 from one factory won't unify with `PgIdentityDb`, causing type errors. Concrete types
 make this work.
 
-## AppState service accessors: also concrete
+## AppState accessors: concrete and explicit
 
 ```rust
 pub fn user_service(&self) -> &UserService<PgIdentityDb> { &self.0.user_service }
 pub fn token_service(&self) -> &TokenService<PgIdentityDb> { &self.0.token_service }
 pub fn session_service(&self) -> &SessionService<RedisSessionDb> { &self.0.session_service }
+pub fn settings(&self) -> &IdentitySettings { &self.0.settings }
+pub fn captcha_validator(&self) -> &CaptchaValidator { &self.0.captcha_validator }
 ```
 
 `impl Trait` is acceptable only for accessors that construct a value on the fly (not a
@@ -115,7 +124,9 @@ reference to a stored field), e.g. `MailerService::new(...)`.
 | Handler struct + `impl AppState` factory | `services/identity/src/handlers/<name>_handler.rs` |
 | Handler export | `handlers/mod.rs` |
 | Service | `services/identity/src/services/<name>_service.rs` |
-| Repository trait | `services/identity/src/repositories/<name>_db.rs` |
+| Settings | `services/identity/src/settings/mod.rs` |
+| Integration adapters | `services/identity/src/integration/**` |
+| Repository trait (DB only) | `services/identity/src/repositories/<name>_db.rs` |
 | Route | `services/identity/src/routes/<name>.rs` |
 
 ## Call sites
@@ -149,6 +160,11 @@ Usage: `if let Some(err) = req.validate_query(query) { return Ok(err) }`
 | Rule | Reason |
 |---|---|
 | Handlers borrow services, not `AppState` | Decouples handler from full state; makes dependencies explicit |
+| Handlers may compose other handlers | Keeps higher-level workflows reusable while preserving borrowed dependencies |
+| Services are owning and flat | Keeps reusable app logic cohesive; avoids hidden orchestration chains |
+| Repositories are DB-only | Prevents persistence abstractions from becoming generic "infra" buckets |
+| Integrations hold third-party adapters | Keeps external API concerns separate from DB repositories |
+| Settings module stores normalized runtime config | Separates raw config loading from runtime-safe values |
 | Generic over `IDB`/`SDB` trait bounds | Keeps handlers testable and DB-agnostic in their own logic |
 | Factory on `AppState` returns concrete types | Prevents opaque-type unification errors when composing handlers |
 | Factory colocated in handler file | Easy to find; keeps construction logic next to the struct |

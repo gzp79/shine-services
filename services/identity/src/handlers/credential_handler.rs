@@ -7,7 +7,8 @@ use crate::{
         session::{redis::RedisSessionDb, SessionDb},
     },
     routes::auth::{AuthSession, TokenCookie},
-    services::{SettingsService, TokenService},
+    services::TokenService,
+    settings::IdentitySettings,
 };
 use shine_infra::web::extracts::{ClientFingerprint, SiteInfo};
 use url::Url;
@@ -32,7 +33,7 @@ where
 {
     page_handler: AuthPageHandler<'a>,
     user_session_handler: UserSessionHandler<'a, IDB, SDB>,
-    settings: &'a SettingsService,
+    settings: &'a IdentitySettings,
     token_service: &'a TokenService<IDB>,
 }
 
@@ -44,7 +45,7 @@ where
     pub fn new(
         page_handler: AuthPageHandler<'a>,
         user_session_handler: UserSessionHandler<'a, IDB, SDB>,
-        settings: &'a SettingsService,
+        settings: &'a IdentitySettings,
         token_service: &'a TokenService<IDB>,
     ) -> Self {
         Self {

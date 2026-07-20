@@ -77,6 +77,7 @@ struct CookieSettings {
     secret: Key,
     domain: String,
     path: String,
+    same_site: SameSite,
 }
 
 /// Layer to configure auth related cookie.
@@ -118,6 +119,7 @@ impl AuthSessionMeta {
                 secret,
                 domain: auth_domain.clone(),
                 path: auth_path.clone(),
+                same_site: SameSite::Strict,
             }
         };
 
@@ -131,6 +133,7 @@ impl AuthSessionMeta {
                 secret,
                 domain,
                 path: "/".into(),
+                same_site: SameSite::Lax,
             }
         };
 
@@ -144,6 +147,7 @@ impl AuthSessionMeta {
                 secret,
                 domain: auth_domain,
                 path: auth_path,
+                same_site: SameSite::Lax,
             }
         };
 
@@ -359,8 +363,7 @@ fn create_jar<T: Serialize, X: Into<Expiration>>(
     cookie.set_domain(settings.domain.clone());
     cookie.set_path(settings.path.clone());
     cookie.set_http_only(true);
-    cookie.set_same_site(SameSite::Lax);
-    cookie.set_path(settings.path.clone());
+    cookie.set_same_site(settings.same_site);
     SignedCookieJar::new(settings.secret.clone()).add(cookie)
 }
 

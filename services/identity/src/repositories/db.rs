@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use shine_infra::db::{self, DBError, PGConnectionPool, RedisConnectionPool};
+use shine_infra::db::{DBError, PGConnectionPool, RedisConnectionPool};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,32 +21,25 @@ mod embedded {
     embed_migrations!("./sql_migrations");
 }
 
-#[derive(Clone)]
-pub struct DBPool {
-    pub postgres: PGConnectionPool,
-    pub redis: RedisConnectionPool,
+pub async fn create_postgres_pool(config: &DBConfig) -> Result<PGConnectionPool, DBError> {
+    let postgres = shine_infra::db::create_postgres_pool(config.sql_cns.as_str())
+        .await
+        .map_err(DBError::PGCreatePoolError)?;
+
+    migrate_postgres(&postgres).await?;
+    Ok(postgres)
 }
 
-impl DBPool {
-    pub async fn new(config: &DBConfig) -> Result<Self, DBError> {
-        let postgres = db::create_postgres_pool(config.sql_cns.as_str())
-            .await
-            .map_err(DBError::PGCreatePoolError)?;
+pub async fn create_redis_pool(config: &DBConfig) -> Result<RedisConnectionPool, DBError> {
+    shine_infra::db::create_redis_pool(config.redis_cns.as_str())
+        .await
+        .map_err(DBError::RedisPoolError)
+}
 
-        let redis = db::create_redis_pool(config.redis_cns.as_str())
-            .await
-            .map_err(DBError::RedisPoolError)?;
-
-        let pool = Self { postgres, redis };
-        pool.migrate().await?;
-        Ok(pool)
-    }
-
-    async fn migrate(&self) -> Result<(), DBError> {
-        let mut backend = self.postgres.get().await.map_err(DBError::PGPoolError)?;
-        log::debug!("migrations: {:#?}", embedded::migrations::runner().get_migrations());
-        let client = &mut **backend;
-        embedded::migrations::runner().run_async(client).await?;
-        Ok(())
-    }
+async fn migrate_postgres(postgres: &PGConnectionPool) -> Result<(), DBError> {
+    let mut backend = postgres.get().await.map_err(DBError::PGPoolError)?;
+    log::debug!("migrations: {:#?}", embedded::migrations::runner().get_migrations());
+    let client = &mut **backend;
+    embedded::migrations::runner().run_async(client).await?;
+    Ok(())
 }

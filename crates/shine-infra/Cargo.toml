@@ -6,12 +6,10 @@ edition.workspace = true
 [features]
 default = [
     "ot_otlp",
-    "ot_zipkin",
-    #"ot_app_insight"  disabled as it is not updated for opentelemetry 0.31
+    "ot_app_insight",
 ]
 
 ot_otlp = ["opentelemetry-otlp"]
-ot_zipkin = ["opentelemetry-zipkin"]
 ot_app_insight = ["opentelemetry-application-insights"]
 
 [dependencies]
@@ -47,30 +45,25 @@ tracing = { workspace = true }
 tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["std", "registry", "env-filter", "fmt", "ansi", "json"] }
 
-tracing-opentelemetry = { version = "0.32", features = [
+tracing-opentelemetry = { version = "0.33", features = [
     "metrics",
     "tracing-log",
 ] }
-tracing-opentelemetry-instrumentation-sdk = "0.32"
+tracing-opentelemetry-instrumentation-sdk = "0.38"
 
-opentelemetry = "0.31"
-opentelemetry-semantic-conventions = "0.31"
-opentelemetry_sdk = { version = "0.31", features = [
+opentelemetry = "0.32"
+opentelemetry-semantic-conventions = "0.32"
+opentelemetry_sdk = { version = "0.32", features = [
     "rt-tokio",
     "metrics",
     "trace",
 ] }
-opentelemetry-stdout = { version = "0.31", features = ["logs", "trace"] }
-opentelemetry-otlp = { version = "0.31", features = [
+opentelemetry-stdout = { version = "0.32", features = ["logs", "trace"] }
+opentelemetry-otlp = { version = "0.32", features = [
     "tokio",
     "grpc-tonic",
 ], optional = true }
-opentelemetry-zipkin = { version = "0.31", features = [
-    "reqwest-client",
-], default-features = false, optional = true }
-opentelemetry-application-insights = { version = "0.44", features = [
-    "reqwest-client-rustls",
-], optional = true }
+opentelemetry-application-insights = { version = "0.45", optional = true }
 
 
 ############################# DB #############################

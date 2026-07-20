@@ -1,7 +1,4 @@
-use crate::{
-    app_state::AppState,
-    routes::auth::{AuthPage, AuthSession},
-};
+use crate::{app_state::AppState, handlers::AuthPage, routes::auth::AuthSession};
 use shine_infra::web::{
     extracts::{InputError, ValidatedQuery},
     responses::ErrorResponse,

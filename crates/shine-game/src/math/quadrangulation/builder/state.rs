@@ -26,7 +26,7 @@ impl BuilderState {
         let mut svg_dump = self.svg_dump.borrow_mut();
         if let Some(mut scope) = svg_dump.scope(verbosity, name) {
             scope.add_default_styles();
-            f(&mut *scope);
+            f(&mut scope);
         };
     }
 }

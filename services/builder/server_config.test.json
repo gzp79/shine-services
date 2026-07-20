@@ -7,9 +7,14 @@
   },
 
   "builder": {
+    "hubHeartbeatSeconds": 300,
+    "authCheckInterval": 2,
     "db": {
       "redisCns": "redis://redis.mockbox.foo:6379",
       "sqlCns": "postgres://username:password@postgres.mockbox.foo:5432/database-builder?sslmode=disable"
+    },
+    "ws": {
+      "allowedHosts": ["^ws\\.local\\.scytta\\.com(:\\d+)?$"]
     }
   }
 }

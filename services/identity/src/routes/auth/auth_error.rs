@@ -1,7 +1,7 @@
 use crate::{
     handlers::EmailAuthError,
+    integration::CaptchaError,
     models::{IdentityError, SessionError},
-    repositories::CaptchaError,
     services::{CreateUserError, TokenError},
 };
 use reqwest::StatusCode;

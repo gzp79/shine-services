@@ -1,21 +1,17 @@
 use crate::{
     app_config::{AppConfig, IdEncoderConfig, MailerConfig},
-    repositories::{
-        identity::pg::PgIdentityDb,
-        mailer::{smtp::SmtpEmailSender, EmailSender},
-        session::redis::RedisSessionDb,
-        CaptchaValidator, DBPool,
-    },
-    services::{
-        IdentityTopic, LinkService, MailerService, RoleService, SessionService, SettingsService, TokenService,
-        TokenSettings, UserService,
-    },
+    integration::{mailer::smtp::SmtpEmailSender, CaptchaValidator},
+    models::events::identity::IdentityTopic,
+    repositories::{identity::pg::PgIdentityDb, session::redis::RedisSessionDb},
+    services::{LinkService, RoleService, SessionService, TokenService, UserService},
+    settings::{IdentitySettings, TokenSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
 use chrono::Duration;
 use ring::rand::SystemRandom;
 use shine_infra::{
     crypto::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
+    db::{PGConnectionPool, RedisConnectionPool},
     sync::TopicBus,
     web::{responses::ProblemConfig, WebAppConfig},
 };
@@ -23,11 +19,10 @@ use std::sync::Arc;
 use tera::Tera;
 
 struct Inner {
-    settings: SettingsService,
+    settings: IdentitySettings,
     problem_config: ProblemConfig,
     random: SystemRandom,
     tera: Tera,
-    db: DBPool,
     captcha_validator: CaptchaValidator,
     session_service: SessionService<RedisSessionDb>,
     email_sender: SmtpEmailSender,
@@ -42,7 +37,11 @@ struct Inner {
 pub struct AppState(Arc<Inner>);
 
 impl AppState {
-    pub async fn new(config: &WebAppConfig<AppConfig>) -> Result<Self, AnyError> {
+    pub async fn new(
+        config: &WebAppConfig<AppConfig>,
+        postgres_pool: &PGConnectionPool,
+        redis_pool: &RedisConnectionPool,
+    ) -> Result<Self, AnyError> {
         let config_auth = &config.feature.auth;
         let config_db = &config.feature.db;
         let config_user_name = &config.feature.name;
@@ -57,7 +56,7 @@ impl AppState {
                 return Err(anyhow!("allowed_redirect_urls is empty"));
             }
 
-            SettingsService {
+            IdentitySettings {
                 app_name: config_auth.app_name.clone(),
                 home_url: config_auth.home_url.clone(),
                 auth_base_url: config_auth.auth_base_url.clone(),
@@ -79,17 +78,17 @@ impl AppState {
         let problem_config = ProblemConfig::new(config.service.full_problem_response);
 
         let tera = {
-            let mut tera = Tera::new("tera_templates/**/*").map_err(|e| anyhow!(e))?;
+            let mut tera = Tera::new();
+            tera.load_from_glob("tera_templates/**/*").map_err(|e| anyhow!(e))?;
             tera.autoescape_on(vec![".html"]);
             tera
         };
 
-        let db_pool = DBPool::new(config_db).await?;
         let captcha_validator = CaptchaValidator::new(&config.service.captcha_secret);
 
         let session_service = {
             let ttl_session = Duration::seconds(i64::try_from(config.service.session_ttl)?);
-            let session_db = RedisSessionDb::new(&db_pool.redis, "".to_string(), ttl_session).await?;
+            let session_db = RedisSessionDb::new(redis_pool, "".to_string(), ttl_session).await?;
             SessionService::new(session_db)
         };
 
@@ -112,11 +111,10 @@ impl AppState {
             }
         };
 
-        // Phase 2 services
         let events = Arc::new(TopicBus::<IdentityTopic>::new());
 
         let user_service = {
-            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
+            let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
             let user_name_generator: Box<dyn IdEncoder> = match &config_user_name.id_encoder {
                 IdEncoderConfig::Optimus { prime, random } => Box::new(PrefixedIdEncoder::new(
                     &config_user_name.base_name,
@@ -131,17 +129,17 @@ impl AppState {
         };
 
         let token_service = {
-            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
+            let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
             TokenService::new(identity_db)
         };
 
         let role_service = {
-            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
+            let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
             RoleService::new(identity_db, Arc::clone(&events))
         };
 
         let link_service = {
-            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
+            let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
             LinkService::new(identity_db, Arc::clone(&events))
         };
 
@@ -150,7 +148,6 @@ impl AppState {
             problem_config,
             random: SystemRandom::new(),
             tera,
-            db: db_pool,
             captcha_validator,
             session_service,
             email_sender,
@@ -162,7 +159,7 @@ impl AppState {
         })))
     }
 
-    pub fn settings(&self) -> &SettingsService {
+    pub fn settings(&self) -> &IdentitySettings {
         &self.0.settings
     }
 
@@ -174,10 +171,6 @@ impl AppState {
         &self.0.tera
     }
 
-    pub fn db(&self) -> &DBPool {
-        &self.0.db
-    }
-
     pub fn captcha_validator(&self) -> &CaptchaValidator {
         &self.0.captcha_validator
     }
@@ -186,15 +179,14 @@ impl AppState {
         &self.0.session_service
     }
 
+    pub fn email_sender(&self) -> &SmtpEmailSender {
+        &self.0.email_sender
+    }
+
     pub fn random(&self) -> &SystemRandom {
         &self.0.random
     }
 
-    pub fn mailer_service(&self) -> MailerService<'_, impl EmailSender> {
-        MailerService::new(&self.0.settings, &self.0.email_sender, &self.0.tera)
-    }
-
-    // Phase 2 service getters
     pub fn events(&self) -> &Arc<TopicBus<IdentityTopic>> {
         &self.0.events
     }

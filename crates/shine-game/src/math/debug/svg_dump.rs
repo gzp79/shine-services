@@ -51,7 +51,6 @@ impl SvgDump {
         self.styles.clear();
     }
 
-    #[must_use]
     pub fn write(&self, stream: &mut dyn io::Write) -> io::Result<()> {
         let mut bounds = (Vec2::MAX, Vec2::MIN);
         for content in &self.content {
@@ -89,7 +88,6 @@ impl SvgDump {
         Ok(())
     }
 
-    #[must_use]
     pub fn to_string(self) -> io::Result<String> {
         let mut output = Vec::new();
         self.write(&mut output)?;
@@ -146,7 +144,7 @@ impl SvgDump {
                 pos: p,
                 class: point_class.into(),
             });
-            if text_class != "" {
+            if !text_class.is_empty() {
                 self.add_content(Content::Text {
                     pos: p,
                     offset: Vec2::ZERO,
@@ -160,7 +158,7 @@ impl SvgDump {
     }
 
     pub fn add_polygon<V: DebugVec2, IV: Iterator<Item = V>>(&mut self, points: IV, edge_class: &str) -> &mut Self {
-        let edge_class = if edge_class == "" { "edge" } else { edge_class };
+        let edge_class = if edge_class.is_empty() { "edge" } else { edge_class };
 
         let mut prev: Option<Vec2> = None;
         for p in points {

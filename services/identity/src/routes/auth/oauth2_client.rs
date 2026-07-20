@@ -6,6 +6,7 @@ use anyhow::Error as AnyError;
 use oauth2::{
     basic::BasicClient, AuthUrl, ClientId, ClientSecret, EndpointNotSet, EndpointSet, RedirectUrl, Scope, TokenUrl,
 };
+use oauth2_reqwest::ReqwestClient;
 use openidconnect::UserInfoUrl;
 use reqwest::{header, Client as HttpClient};
 use serde::Deserialize;
@@ -80,6 +81,10 @@ impl OAuth2Client {
             http_client,
             client,
         })
+    }
+
+    pub fn reqwest_client(&self) -> ReqwestClient {
+        ReqwestClient::from(self.http_client.clone())
     }
 
     pub async fn get_external_user_info(

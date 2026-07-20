@@ -78,7 +78,7 @@ impl<'a> Drop for SvgDumpFileScope<'a> {
         if let Err(err) = self.dump_file.write_current(self.prefix) {
             log::error!(
                 "Error writing SVG dump file [{}]: {}",
-                self.dump_file.filename(&self.prefix).to_string_lossy(),
+                self.dump_file.filename(self.prefix).to_string_lossy(),
                 err
             );
         }

@@ -24,6 +24,10 @@ where
         self.data.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
     pub fn iter(&self) -> slice::Iter<'_, T> {
         self.data.iter()
     }

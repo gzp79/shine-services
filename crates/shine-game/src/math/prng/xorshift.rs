@@ -35,9 +35,9 @@ mod test {
         ];
 
         let mut rng = XorShift32::new(745541);
-        for i in 0..10 {
+        for &expected_val in expected.iter() {
             let val = rng.next_u32();
-            assert_eq!(val, expected[i]);
+            assert_eq!(val, expected_val);
         }
     }
 }

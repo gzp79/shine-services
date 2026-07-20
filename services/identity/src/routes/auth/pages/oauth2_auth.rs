@@ -1,6 +1,7 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OAuth2Client},
+    handlers::AuthPage,
+    routes::auth::{AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OAuth2Client},
 };
 use axum::{extract::State, Extension};
 use oauth2::{AuthorizationCode, PkceCodeVerifier, TokenResponse};
@@ -90,7 +91,7 @@ pub async fn oauth2_auth(
         .client
         .exchange_code(auth_code)
         .set_pkce_verifier(PkceCodeVerifier::new(pkce_code_verifier))
-        .request_async(&client.http_client)
+        .request_async(&client.reqwest_client())
         .await
     {
         Ok(token) => token,

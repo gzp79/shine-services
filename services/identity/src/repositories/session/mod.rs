@@ -1,6 +1,9 @@
 mod session_db;
-pub use self::session_db::*;
 mod sessions;
-pub use self::sessions::*;
 
 pub mod redis;
+
+pub use self::{
+    session_db::{SessionDb, SessionDbContext},
+    sessions::Sessions,
+};

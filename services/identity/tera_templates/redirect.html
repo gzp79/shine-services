@@ -12,7 +12,7 @@
     <body>
         <p>Redirecting to <a href="{{ targetUrl | safe }}"> link </a> ...</p>
         {% if problem != '' %}
-        <div style="display: none">
+        <div hidden>
             <h2>Problem</h2>
             <pre>{{problem}}</pre>
         </div>

@@ -50,7 +50,7 @@ fn ct_collinear() {
 
         let mut tri = Triangulation::new_ct();
 
-        let positions = vec![0, 4, 2, 1, 3, 7];
+        let positions = [0, 4, 2, 1, 3, 7];
         for (i, &p) in positions.iter().enumerate() {
             let expected_dim = match i {
                 0 => 0,
@@ -76,7 +76,7 @@ fn ct_collinear() {
 #[test]
 fn ct_coplanar() {
     let transforms: Vec<(&str, Box<dyn Fn(i32, i32) -> IVec2>)> = vec![
-        ("(x, y)", Box::new(|x, y| IVec2::new(x, y))),
+        ("(x, y)", Box::new(IVec2::new)),
         ("(-x, y)", Box::new(|x, y| IVec2::new(-x, y))),
         ("(-x, -y)", Box::new(|x, y| IVec2::new(-x, -y))),
         ("(x, -y)", Box::new(|x, y| IVec2::new(x, -y))),
@@ -168,7 +168,7 @@ fn ct_constraint_segment() {
 #[test]
 fn ct_constraint_no_fill1() {
     let transforms: Vec<(&str, Box<dyn Fn(i32, i32) -> IVec2>)> = vec![
-        ("(x, y)", Box::new(|x, y| IVec2::new(x, y))),
+        ("(x, y)", Box::new(IVec2::new)),
         ("(-x, y)", Box::new(|x, y| IVec2::new(-x, y))),
         ("(-x, -y)", Box::new(|x, y| IVec2::new(-x, -y))),
         ("(x, -y)", Box::new(|x, y| IVec2::new(x, -y))),
@@ -207,7 +207,7 @@ fn ct_constraint_no_fill1() {
 #[test]
 fn ct_constraint_no_fill2() {
     let transforms: Vec<(&str, Box<dyn Fn(i32, i32) -> IVec2>)> = vec![
-        ("(x, y)", Box::new(|x, y| IVec2::new(x, y))),
+        ("(x, y)", Box::new(IVec2::new)),
         ("(-x, y)", Box::new(|x, y| IVec2::new(-x, y))),
         ("(-x, -y)", Box::new(|x, y| IVec2::new(-x, -y))),
         ("(x, -y)", Box::new(|x, y| IVec2::new(x, -y))),
@@ -280,7 +280,7 @@ fn ct_constraint_no_fill2() {
 #[test]
 fn ct_crossing_iterator() {
     let transforms: Vec<(&str, Box<dyn Fn(i32, i32) -> IVec2>)> = vec![
-        ("(x, y)", Box::new(|x, y| IVec2::new(x, y))),
+        ("(x, y)", Box::new(IVec2::new)),
         ("(-x, y)", Box::new(|x, y| IVec2::new(-x, y))),
         ("(-x, -y)", Box::new(|x, y| IVec2::new(-x, -y))),
         ("(x, -y)", Box::new(|x, y| IVec2::new(x, -y))),
@@ -334,7 +334,7 @@ fn ct_crossing_iterator() {
 #[test]
 fn ct_constraint_concave() {
     let transforms: Vec<(&str, Box<dyn Fn(i32, i32) -> IVec2>)> = vec![
-        ("(x, y)", Box::new(|x, y| IVec2::new(x, y))),
+        ("(x, y)", Box::new(IVec2::new)),
         ("(-x, y)", Box::new(|x, y| IVec2::new(-x, y))),
         ("(-x, -y)", Box::new(|x, y| IVec2::new(-x, -y))),
         ("(x, -y)", Box::new(|x, y| IVec2::new(x, -y))),
@@ -371,7 +371,12 @@ fn ct_constraint_concave() {
 #[test]
 fn ct_constraint() {
     // coordinates multiplied by 10 to convert from float to integer
-    let cases: Vec<(Vec<(i32, i32)>, Vec<(Vec<(usize, usize)>, Option<Vec<(usize, usize)>>)>)> = vec![
+    type Coord = (i32, i32);
+    type EdgeIndex = (usize, usize);
+    type ConstraintCase = (Vec<EdgeIndex>, Option<Vec<EdgeIndex>>);
+    type TestCase = (Vec<Coord>, Vec<ConstraintCase>);
+
+    let cases: Vec<TestCase> = vec![
         (
             vec![(0, 0), (0, 10), (10, 0)],
             vec![
@@ -438,7 +443,7 @@ fn ct_constraint() {
     ];
 
     let transforms: Vec<(&str, Box<dyn Fn(i32, i32) -> IVec2>)> = vec![
-        ("(x, y)", Box::new(|x, y| IVec2::new(x, y))),
+        ("(x, y)", Box::new(IVec2::new)),
         ("(-x, y)", Box::new(|x, y| IVec2::new(-x, y))),
         ("(-x, -y)", Box::new(|x, y| IVec2::new(-x, -y))),
         ("(x, -y)", Box::new(|x, y| IVec2::new(x, -y))),
@@ -470,10 +475,9 @@ fn ct_constraint() {
 
                 let edges_check = edges_check.as_ref().unwrap_or(edges);
                 for e in edges_check.iter() {
-                    let edge = tri.find_edge_by_vertex(vertices[e.0], vertices[e.1]).expect(&format!(
-                        "Missing edge between {:?} and {:?}",
-                        vertices[e.0], vertices[e.1]
-                    ));
+                    let edge = tri
+                        .find_edge_by_vertex(vertices[e.0], vertices[e.1])
+                        .unwrap_or_else(|| panic!("Missing edge between {:?} and {:?}", vertices[e.0], vertices[e.1]));
                     assert_eq!(tri.c(edge), 1);
                 }
             }

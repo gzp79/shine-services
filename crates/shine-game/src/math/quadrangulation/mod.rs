@@ -1,3 +1,5 @@
+#![allow(clippy::module_inception)]
+
 pub mod builder;
 mod extraction;
 mod quad_error;

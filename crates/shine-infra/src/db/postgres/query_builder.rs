@@ -97,6 +97,10 @@ impl<'a> QueryBuilder<'a> {
     }
 
     pub fn order_by(&mut self, order: &str) {
+        assert!(
+            order.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
+            "order_by: column name contains unsafe characters: {order:?}"
+        );
         if let Some(order_by) = &mut self.order_by {
             order_by.push_str(", ");
             order_by.push_str(order);

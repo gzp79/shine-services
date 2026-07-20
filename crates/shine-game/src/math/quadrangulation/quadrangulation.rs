@@ -17,6 +17,12 @@ pub struct Vertex {
     pub quad: QuadIndex,
 }
 
+impl Default for Vertex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Vertex {
     pub fn new() -> Self {
         Self {
@@ -29,6 +35,12 @@ impl Vertex {
 pub struct Quad {
     pub vertices: IdxArray<Rot4Idx, VertexIndex, 4>,
     pub neighbors: IdxArray<Rot4Idx, QuadIndex, 4>,
+}
+
+impl Default for Quad {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Quad {
@@ -65,6 +77,12 @@ pub struct Quadrangulation {
     pub(in crate::math::quadrangulation) vertices: IdxVec<VertexIndex, Vertex>,
     pub(in crate::math::quadrangulation) quads: IdxVec<QuadIndex, Quad>,
     pub(in crate::math::quadrangulation) anchor_vertices: IdxVec<AnchorIndex, VertexIndex>,
+}
+
+impl Default for Quadrangulation {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Quadrangulation {
@@ -111,7 +129,7 @@ impl Quadrangulation {
 
     #[inline]
     pub fn finite_vertex_count(&self) -> usize {
-        if self.vertices.len() == 0 {
+        if self.vertices.is_empty() {
             0
         } else {
             self.vertices.len() - 1

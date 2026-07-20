@@ -52,8 +52,8 @@ fixedbitset = "0.5"
 harsh = "0.2"
 primal-check = "0.3"
 
-glam = { version = "0.32", features = ["serde"] }
-itertools = "0.14"
+glam = { version = "0.33", features = ["serde"] }
+itertools = "0.15"
 smallbox = "0.8"
 
 ############################# PROC MACRO #############################
@@ -80,30 +80,28 @@ bb8-redis = "0.26"
 redis = { version = "1.0", features = ["tokio-comp", "tokio-rustls-comp"] }
 bb8-postgres = "0.9"
 tokio-postgres = "0.7"
-tokio-postgres-rustls = "0.13"
+tokio-postgres-rustls = "0.14"
 postgres-from-row = "0.5"
 refinery = { version = "0.9", features = ["tokio-postgres"] }
 
 ############################# AZURE #############################
-azure_core = { version = "0.33" }
-azure_identity = { version = "0.33" }
-azure_security_keyvault_secrets = { version = "0.12" }
+azure_core = { version = "1.1" }
+azure_identity = { version = "1.0" }
+azure_security_keyvault_secrets = { version = "1.0" }
 
 ############################# NET #############################
 rustls = "0.23"
 tokio-rustls = "0.26"
-# TODO: reqwest = "0.13" is not yet compatible to oauth2, so we use 0.12 for now. See https://github.com/ramosbugs/oauth2-rs/issues/333
-# reqwest = { version = "0.13", features = ["form", "json"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["form", "json"] }
 ureq = { version = "3.2", default-features = false }
 
 ############################# WEB #############################
 tower = "0.5"
-tower-http = "0.6"
+tower-http = "0.7"
 axum = "0.8"
 axum-extra = { version = "0.12" }
 axum-server = { version = "0.8", features = ["tls-rustls"] }
-tera = "1.20"
+tera = { version = "2.0", features = ["glob_fs"] }
 validator = { version = "0.20", features = ["derive"] }
 utoipa = { version = "5.4", features = [
 	"axum_extras",

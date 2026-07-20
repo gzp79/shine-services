@@ -12,8 +12,8 @@ use validator::ValidationError;
 
 fn hash_email(normalized: &str) -> String {
     let hash = digest::digest(&digest::SHA256, normalized.as_bytes());
-    let hash = hex::encode(hash);
-    hash
+
+    hex::encode(hash)
 }
 
 /// Validated email address carrying both raw (trimmed+lowercased) and
