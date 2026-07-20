@@ -9,6 +9,7 @@ mod settings;
 use self::{app_config::AppConfig, app_state::AppState};
 use anyhow::Error as AnyError;
 use models::messages::HubCommand;
+use repositories::create_redis_pool;
 use routes::ws::ws_routes;
 use shine_infra::web::{AppBuildContext, FeatureConfig, WebAppConfig, WebApplication};
 use utoipa_axum::router::OpenApiRouter;
@@ -25,7 +26,8 @@ impl WebApplication for Application {
         context: &mut AppBuildContext<'_>,
         router: &mut OpenApiRouter<Self::AppState>,
     ) -> Result<Self::AppState, AnyError> {
-        let state = AppState::new(config, context.core_services()).await?;
+        let redis_pool = create_redis_pool(&config.feature.db).await?;
+        let state = AppState::new(config, &redis_pool, context.core_services()).await?;
 
         let shutdown_sender = state.hub_service().sender();
         context.add_shutdown_hook(move || {

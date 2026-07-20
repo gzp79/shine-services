@@ -2,7 +2,7 @@ use crate::{
     app_config::{AppConfig, IdEncoderConfig, MailerConfig},
     integration::{mailer::smtp::SmtpEmailSender, CaptchaValidator},
     models::events::identity::IdentityTopic,
-    repositories::{identity::pg::PgIdentityDb, session::redis::RedisSessionDb, DBPool},
+    repositories::{identity::pg::PgIdentityDb, session::redis::RedisSessionDb},
     services::{LinkService, RoleService, SessionService, TokenService, UserService},
     settings::{IdentitySettings, TokenSettings},
 };
@@ -11,6 +11,7 @@ use chrono::Duration;
 use ring::rand::SystemRandom;
 use shine_infra::{
     crypto::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
+    db::{PGConnectionPool, RedisConnectionPool},
     sync::TopicBus,
     web::{responses::ProblemConfig, WebAppConfig},
 };
@@ -22,7 +23,6 @@ struct Inner {
     problem_config: ProblemConfig,
     random: SystemRandom,
     tera: Tera,
-    db: DBPool,
     captcha_validator: CaptchaValidator,
     session_service: SessionService<RedisSessionDb>,
     email_sender: SmtpEmailSender,
@@ -37,7 +37,11 @@ struct Inner {
 pub struct AppState(Arc<Inner>);
 
 impl AppState {
-    pub async fn new(config: &WebAppConfig<AppConfig>) -> Result<Self, AnyError> {
+    pub async fn new(
+        config: &WebAppConfig<AppConfig>,
+        postgres_pool: &PGConnectionPool,
+        redis_pool: &RedisConnectionPool,
+    ) -> Result<Self, AnyError> {
         let config_auth = &config.feature.auth;
         let config_db = &config.feature.db;
         let config_user_name = &config.feature.name;
@@ -80,12 +84,11 @@ impl AppState {
             tera
         };
 
-        let db_pool = DBPool::new(config_db).await?;
         let captcha_validator = CaptchaValidator::new(&config.service.captcha_secret);
 
         let session_service = {
             let ttl_session = Duration::seconds(i64::try_from(config.service.session_ttl)?);
-            let session_db = RedisSessionDb::new(&db_pool.redis, "".to_string(), ttl_session).await?;
+            let session_db = RedisSessionDb::new(redis_pool, "".to_string(), ttl_session).await?;
             SessionService::new(session_db)
         };
 
@@ -111,7 +114,7 @@ impl AppState {
         let events = Arc::new(TopicBus::<IdentityTopic>::new());
 
         let user_service = {
-            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
+            let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
             let user_name_generator: Box<dyn IdEncoder> = match &config_user_name.id_encoder {
                 IdEncoderConfig::Optimus { prime, random } => Box::new(PrefixedIdEncoder::new(
                     &config_user_name.base_name,
@@ -126,17 +129,17 @@ impl AppState {
         };
 
         let token_service = {
-            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
+            let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
             TokenService::new(identity_db)
         };
 
         let role_service = {
-            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
+            let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
             RoleService::new(identity_db, Arc::clone(&events))
         };
 
         let link_service = {
-            let identity_db = PgIdentityDb::new(&db_pool.postgres, &config_db.email_protection).await?;
+            let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
             LinkService::new(identity_db, Arc::clone(&events))
         };
 
@@ -145,7 +148,6 @@ impl AppState {
             problem_config,
             random: SystemRandom::new(),
             tera,
-            db: db_pool,
             captcha_validator,
             session_service,
             email_sender,
@@ -167,10 +169,6 @@ impl AppState {
 
     pub fn tera(&self) -> &Tera {
         &self.0.tera
-    }
-
-    pub fn db(&self) -> &DBPool {
-        &self.0.db
     }
 
     pub fn captcha_validator(&self) -> &CaptchaValidator {

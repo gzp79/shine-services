@@ -34,6 +34,9 @@ impl DataProtectionUtils {
         Ok(Self { encryption_key, hmac_key })
     }
 
+    /// Encrypts the given data and returns a Base64-encoded string.
+    /// The encryption is non-deterministic, meaning that encrypting the same data
+    /// multiple times yields different results due to the use of a random nonce.
     pub fn encrypt(&self, data: &str) -> Result<String, DataProtectionError> {
         let mut nonce_bytes = [0u8; NONCE_LEN];
         SysRng
@@ -70,6 +73,9 @@ impl DataProtectionUtils {
         String::from_utf8(decrypted_data.to_vec()).map_err(|_| DataProtectionError::DecryptionError)
     }
 
+    /// Computes an HMAC signature for the given data and returns it as a base64-encoded string.
+    /// This operation is deterministic: the same input always produces the same output,
+    /// but it does not preserve the ordering of the input data.
     pub fn hash(&self, data: &str) -> String {
         let signature = hmac::sign(&self.hmac_key, data.as_bytes());
         B64.encode(signature.as_ref())

@@ -1,16 +1,16 @@
 use crate::{
     app_config::AppConfig,
-    repositories::DBPool,
+    repositories::hub_connections::redis::RedisHubConnectionDb,
     services::{HubService, SessionChecker},
     settings::{BuilderSettings, WsSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
 use regex::bytes::Regex;
+use shine_infra::db::RedisConnectionPool;
 use shine_infra::web::{CoreServices, WebAppConfig};
 use std::{sync::Arc, time::Duration};
 
 struct Inner {
-    db: DBPool,
     hub_service: HubService,
     settings: BuilderSettings,
 }
@@ -19,8 +19,11 @@ struct Inner {
 pub struct AppState(Arc<Inner>);
 
 impl AppState {
-    pub async fn new(config: &WebAppConfig<AppConfig>, core_services: &CoreServices) -> Result<Self, AnyError> {
-        let config_db = &config.feature.db;
+    pub async fn new(
+        config: &WebAppConfig<AppConfig>,
+        redis_pool: &RedisConnectionPool,
+        core_services: &CoreServices,
+    ) -> Result<Self, AnyError> {
         let config_ws = &config.feature.ws;
 
         let settings = {
@@ -43,7 +46,7 @@ impl AppState {
             }
         };
 
-        let db_pool = DBPool::new(config_db).await?;
+        let _hub_connection_db = RedisHubConnectionDb::new(redis_pool).await?;
         let hub_service = HubService::new();
 
         let auth_check_interval = Duration::from_secs(config.feature.auth_check_interval.max(1));
@@ -55,15 +58,7 @@ impl AppState {
         .spawn()
         .await;
 
-        Ok(Self(Arc::new(Inner {
-            db: db_pool,
-            hub_service,
-            settings,
-        })))
-    }
-
-    pub fn db(&self) -> &DBPool {
-        &self.0.db
+        Ok(Self(Arc::new(Inner { hub_service, settings })))
     }
 
     pub fn hub_service(&self) -> &HubService {
