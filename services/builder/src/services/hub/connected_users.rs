@@ -6,6 +6,12 @@ use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
+#[derive(Clone, Copy, Debug)]
+struct ConnectedUser {
+    pub connection_id: Uuid,
+    pub session_key: SessionKey,
+}
+
 struct Subscriber {
     topics: Vec<TopicKey>,
     tx: mpsc::Sender<HubMessage>,
@@ -16,7 +22,7 @@ struct Subscriber {
 /// which topics. Mutated only from inside HubService's command loop.
 #[derive(Clone)]
 pub struct ConnectedUsers {
-    sessions: Arc<RwLock<HashMap<Uuid, SessionKey>>>,
+    sessions: Arc<RwLock<HashMap<Uuid, ConnectedUser>>>,
     subscribers: Arc<RwLock<Vec<Subscriber>>>,
 }
 
@@ -28,17 +34,22 @@ impl ConnectedUsers {
         }
     }
 
-    /// Connects a user with the given session key.
-    /// If the user was already connected, this will overwrite their session key.
-    pub async fn connect(&self, user_id: Uuid, session_key: SessionKey) {
+    /// Connects a user with the given connection record.
+    /// If the user was already connected, this will overwrite the prior record.
+    pub async fn connect(&self, user_id: Uuid, connection_id: Uuid, session_key: SessionKey) {
         let mut sessions = self.sessions.write().await;
-        sessions.insert(user_id, session_key);
+        sessions.insert(user_id, ConnectedUser { connection_id, session_key });
     }
 
-    /// Removes the user if present and returns whether it was present.
-    pub async fn disconnect(&self, user_id: Uuid) -> bool {
+    /// Removes the user if present and the session key matches.
+    pub async fn disconnect(&self, user_id: Uuid, session_key: SessionKey) -> Option<Uuid> {
         let mut sessions = self.sessions.write().await;
-        sessions.remove(&user_id).is_some()
+        let should_remove = matches!(sessions.get(&user_id), Some(current) if current.session_key == session_key);
+        if should_remove {
+            sessions.remove(&user_id).map(|connection| connection.connection_id)
+        } else {
+            None
+        }
     }
 
     pub async fn subscribe(&self, topics: Vec<TopicKey>, tx: mpsc::Sender<HubMessage>) {

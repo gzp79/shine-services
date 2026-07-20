@@ -3,7 +3,7 @@ use crate::{
     repositories::session::{redis::RedisSessionDbContext, Sessions},
 };
 use chrono::{DateTime, Duration, Utc};
-use redis::AsyncCommands;
+use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 use serde::{Deserialize, Serialize};
 use shine_infra::{
     db::{DBError, RedisJsonValue},
@@ -159,12 +159,18 @@ impl Sessions for RedisSessionDbContext<'_> {
         };
 
         log::debug!("sentinel:{sentinel:#?}");
-        let created = self
-            .client
-            .set_nx(&sentinel_key, &sentinel)
-            .await
-            .map_err(DBError::RedisError)?;
-        if created {
+
+        let created: Option<()> = {
+            let options = SetOptions::default()
+                .conditional_set(ExistenceCheck::NX)
+                .with_expiration(SetExpiry::EX(self.ttl_session as u64));
+
+            self.client
+                .set_options(&sentinel_key, &sentinel, options)
+                .await
+                .map_err(DBError::RedisError)?
+        };
+        if created.is_some() {
             let data = RedisSessionUser {
                 name: identity.name.clone(),
                 is_email_confirmed: identity.is_email_confirmed,
@@ -172,13 +178,14 @@ impl Sessions for RedisSessionDbContext<'_> {
                 roles,
             };
             log::debug!("data:{sentinel:#?}");
-            redis::pipe()
-                .expire(&sentinel_key, self.ttl_session)
-                .set(&key, &data)
-                .expire(&key, self.ttl_session)
-                .query_async::<()>(&mut *self.client)
-                .await
-                .map_err(DBError::RedisError)?;
+            let _: Option<()> = {
+                let options = SetOptions::default().with_expiration(SetExpiry::EX(self.ttl_session as u64));
+
+                self.client
+                    .set_options(&key, &data, options)
+                    .await
+                    .map_err(DBError::RedisError)?
+            };
 
             Ok(Session {
                 info: SessionInfo {

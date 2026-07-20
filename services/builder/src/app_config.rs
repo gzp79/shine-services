@@ -18,12 +18,19 @@ pub struct WsConfig {
 pub struct AppConfig {
     pub db: DBConfig,
     pub ws: WsConfig,
+    /// Hub heartbeat interval in seconds; Redis TTL is derived as heartbeat * 2.
+    #[serde(default = "AppConfig::default_hub_heartbeat_seconds")]
+    pub hub_heartbeat_seconds: u64,
     /// Interval in seconds between session-liveness re-checks.
     #[serde(default = "AppConfig::default_auth_check_interval")]
     pub auth_check_interval: u64,
 }
 
 impl AppConfig {
+    fn default_hub_heartbeat_seconds() -> u64 {
+        5 * 60
+    }
+
     fn default_auth_check_interval() -> u64 {
         60
     }

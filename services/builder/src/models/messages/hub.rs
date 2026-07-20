@@ -17,7 +17,7 @@ pub trait ToTopic {
 #[derive(Clone, Debug)]
 pub enum HubCommand {
     ConnectUser { user_id: Uuid, session_key: SessionKey },
-    DisconnectUser { user_id: Uuid },
+    DisconnectUser { user_id: Uuid, session_key: SessionKey },
     Shutdown,
 
     Chat(ChatMessage),

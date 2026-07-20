@@ -42,7 +42,7 @@ async fn check_sessions(snapshot: &[(Uuid, SessionKey)], session_service: &Curre
     for (user_id, session_key) in snapshot.iter().copied() {
         if session_service.get_current_user(user_id, session_key).await.is_err() {
             log::info!("[{user_id}] Session expired, requesting disconnect");
-            if let Err(err) = sender.send_command(HubCommand::DisconnectUser { user_id }) {
+            if let Err(err) = sender.send_command(HubCommand::DisconnectUser { user_id, session_key }) {
                 log::error!("[{user_id}] Failed to send expiry disconnect command: {err:#?}");
             }
         }

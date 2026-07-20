@@ -142,7 +142,10 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, 
     }
 
     log::info!("{current_user_id}] Disconnecting from hub");
-    if let Err(err) = sender.send_command(HubCommand::DisconnectUser { user_id: current_user_id }) {
+    if let Err(err) = sender.send_command(HubCommand::DisconnectUser {
+        user_id: current_user_id,
+        session_key: user.key,
+    }) {
         log::error!("[{current_user_id}] Failed to send disconnect command: {err:#?}");
     }
 }

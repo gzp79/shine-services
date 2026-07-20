@@ -1,4 +1,6 @@
 use crate::models::messages::{HubCommand, HubEvent, HubMessage, TopicKey};
+use crate::repositories::hub_connections::redis::RedisHubConnectionDb;
+use crate::repositories::hub_connections::{HubConnectionDb, HubConnections};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -10,6 +12,7 @@ use super::{
 struct Inner {
     command_tx: mpsc::Sender<HubCommand>,
     users: ConnectedUsers,
+    hub_connection_db: RedisHubConnectionDb,
 }
 
 /// Messaging service for connected users and processes.
@@ -21,13 +24,14 @@ pub struct HubService {
 }
 
 impl HubService {
-    pub fn new() -> Self {
+    pub fn new(hub_connection_db: RedisHubConnectionDb) -> Self {
         let (command_tx, command_rx) = mpsc::channel(128);
 
         let service = Self {
             inner: Arc::new(Inner {
                 command_tx,
                 users: ConnectedUsers::new(),
+                hub_connection_db,
             }),
         };
 
@@ -58,15 +62,44 @@ impl HubService {
         log::debug!("Processing command: {command:#?}");
         match command {
             HubCommand::ConnectUser { user_id, session_key } => {
-                self.inner.users.connect(user_id, session_key).await;
+                let mut context = match self.inner.hub_connection_db.create_context().await {
+                    Ok(context) => context,
+                    Err(err) => {
+                        log::error!("[{user_id}] Failed to create hub connection db context: {err:#?}");
+                        return;
+                    }
+                };
+                let connection_id = match context.create_connection(user_id).await {
+                    Ok(connection_id) => connection_id,
+                    Err(err) => {
+                        log::error!("[{user_id}] Failed to store hub connection: {err:#?}");
+                        return;
+                    }
+                };
+                self.inner.users.connect(user_id, connection_id, session_key).await;
                 self.publish(HubMessage::Hub(HubEvent::UserConnected { user_id, session_key }))
                     .await;
             }
-            HubCommand::DisconnectUser { user_id } => {
-                if self.inner.users.disconnect(user_id).await {
-                    self.publish(HubMessage::Hub(HubEvent::UserDisconnected { user_id }))
-                        .await;
+            HubCommand::DisconnectUser { user_id, session_key } => {
+                let Some(connection_id) = self.inner.users.disconnect(user_id, session_key).await else {
+                    return;
+                };
+
+                let mut context = match self.inner.hub_connection_db.create_context().await {
+                    Ok(context) => context,
+                    Err(err) => {
+                        log::error!("[{user_id}] Failed to create hub connection db context: {err:#?}");
+                        return;
+                    }
+                };
+
+                if let Err(err) = context.remove_connection_if_active(user_id, connection_id).await {
+                    log::error!("[{user_id}] Failed to remove hub connection: {err:#?}");
+                    return;
                 }
+
+                self.publish(HubMessage::Hub(HubEvent::UserDisconnected { user_id }))
+                    .await;
             }
             HubCommand::Shutdown => {
                 self.publish(HubMessage::Hub(HubEvent::Shutdown)).await;

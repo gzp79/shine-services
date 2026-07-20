@@ -7,6 +7,7 @@
   },
 
   "builder": {
+    "hubHeartbeatSeconds": 300,
     "authCheckInterval": 2,
     "db": {
       "redisCns": "redis://redis.mockbox.foo:6379",
