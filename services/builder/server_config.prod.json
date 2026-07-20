@@ -10,9 +10,9 @@
   },
 
   "builder": {
+    "authCheckInterval": 60,
     "ws": {
-      "allowedHosts": ["^ws\\.scytta\\.com(:443)?$"],
-      "authCheckInterval": 60
+      "allowedHosts": ["^ws\\.scytta\\.com(:443)?$"]
     }
   }
 }

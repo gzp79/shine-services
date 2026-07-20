@@ -1,10 +1,8 @@
 use regex::bytes::Regex;
-use std::time::Duration;
 
 pub struct WsSettings {
     pub allowed_origins: Vec<Regex>,
     pub allowed_hosts: Vec<Regex>,
-    pub auth_check_interval: Duration,
 }
 
 impl WsSettings {

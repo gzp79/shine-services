@@ -1,7 +1,8 @@
 use crate::{
     app_state::AppState,
-    routes::ws::message::{RequestMessage, ResponseMessage},
-    services::{Message, MessageSource, Session},
+    models::messages::{ChatMessage, DisconnectReason, HubBusMessage, HubCommand, TopicKey},
+    routes::ws::message::{WSMessageRequest, WSMessageResponse},
+    services::{HubReceiver, HubSender},
 };
 use axum::{
     extract::{
@@ -12,35 +13,19 @@ use axum::{
     Extension,
 };
 use futures::{SinkExt, StreamExt};
-use serde::Deserialize;
 use shine_infra::{
-    session::{CheckedCurrentUser, CurrentUser, CurrentUserService},
+    session::{CheckedCurrentUser, CurrentUser},
     web::{
-        extracts::{Origin, TargetHost, ValidatedPath},
+        extracts::{Origin, TargetHost},
         responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
     },
 };
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::time;
-use utoipa::IntoParams;
-use uuid::Uuid;
-use validator::Validate;
-
-#[derive(Deserialize, Validate, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct PathParams {
-    #[serde(rename = "id")]
-    session_id: Uuid,
-}
 
 #[utoipa::path(
     get,
-    path = "/api/connect/{id}",
+    path = "/api/connect",
     tag = "builder",
-    params (
-        PathParams
-    ),
+    params (),
     responses(
         (status = OK)
     )
@@ -48,8 +33,6 @@ pub struct PathParams {
 pub async fn connect(
     State(state): State<AppState>,
     Extension(problem_config): Extension<ProblemConfig>,
-    Extension(session_service): Extension<Arc<CurrentUserService>>,
-    ValidatedPath(path): ValidatedPath<PathParams>,
     TargetHost(target_host): TargetHost,
     Origin(origin): Origin,
     user: CheckedCurrentUser,
@@ -67,76 +50,75 @@ pub async fn connect(
             .into_response(&problem_config));
     }
 
-    let auth_check_interval = state.settings().ws.auth_check_interval;
-
     let user = user.into_user();
-    log::info!(
-        "User {} requesting a connection to the session {}...",
-        path.session_id,
-        user.user_id
-    );
+    log::info!("User {} requesting a connection...", user.user_id);
 
-    let session = state
-        .sessions()
-        .acquire_session(&path.session_id, &user.user_id)
-        .await
+    let sender = state.hub_service().sender();
+    let subscription = state.hub_service().subscribe(vec![TopicKey::Chat]).await;
+
+    sender
+        .send_command(HubCommand::ConnectUser {
+            user_id: user.user_id,
+            session_key: user.key,
+        })
         .map_err(|err| err.into_response(&problem_config))?;
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, session, session_service, auth_check_interval)))
+
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, sender, subscription)))
 }
 
-async fn handle_socket(
-    socket: WebSocket,
-    user: CurrentUser,
-    session: Arc<Session>,
-    session_service: Arc<CurrentUserService>,
-    auth_check_interval: Duration,
-) {
+fn event_to_wire_message(message: HubBusMessage) -> Option<WSMessageResponse> {
+    match message {
+        HubBusMessage::Chat(ChatMessage::User { user_id, text }) => {
+            Some(WSMessageResponse::Chat { from: user_id, text })
+        }
+        HubBusMessage::Chat(ChatMessage::System { .. }) => None,
+        HubBusMessage::Hub(_) => None,
+    }
+}
+
+async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, mut subscription: HubReceiver) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let current_user_id = user.user_id;
-    let session_key = user.key;
-    let session_id = session.id();
 
-    log::info!("[{current_user_id}] Connected to the session {session_id}");
-    let message_sender = session.message_sender(MessageSource::User(current_user_id));
-    let mut message_receiver = session.subscribe_messages();
+    log::info!("[{current_user_id}] Connected to the hub");
 
     let mut recv_task = {
-        let message_sender = message_sender.clone();
+        let sender = sender.clone();
         tokio::spawn(async move {
-            message_sender.send(Message::Chat(current_user_id, "${tr: Connected}".to_string()));
+            if let Err(err) = sender.send_command(HubCommand::Chat(ChatMessage::User {
+                user_id: current_user_id,
+                text: "${tr: Connected}".to_string(),
+            })) {
+                log::error!("[{current_user_id}] Failed to send initial message: {err:#?}");
+            }
 
             while let Some(Ok(message)) = ws_receiver.next().await {
                 log::info!("[{current_user_id}] WsMessage received");
-                match message {
-                    WsMessage::Text(text) => {
-                        let msg = match serde_json::from_str::<RequestMessage>(&text) {
-                            Ok(msg) => match msg {
-                                RequestMessage::Chat { text } => Some(Message::Chat(current_user_id, text)),
-                            },
-                            Err(_) => {
-                                log::error!("[{current_user_id}] Received invalid message: {text}");
-                                None
-                            }
-                        };
+                if let WsMessage::Text(text) = message {
+                    let msg = match serde_json::from_str::<WSMessageRequest>(&text) {
+                        Ok(WSMessageRequest::Chat { text }) => Some(text),
+                        Err(_) => {
+                            log::error!("[{current_user_id}] Received invalid message: {text}");
+                            None
+                        }
+                    };
 
-                        if let Some(msg) = msg {
-                            message_sender.send(msg);
+                    if let Some(text) = msg {
+                        if let Err(err) =
+                            sender.send_command(HubCommand::Chat(ChatMessage::User { user_id: current_user_id, text }))
+                        {
+                            log::error!("[{current_user_id}] Failed to send message: {err:#?}");
                         }
                     }
-                    _ => {}
                 }
             }
         })
     };
 
     let mut send_task = tokio::spawn(async move {
-        while let Ok(message) = message_receiver.recv().await {
-            log::info!("[{current_user_id}] Message received");
-            let msg = match message {
-                Message::Chat(user_id, text) => Some(ResponseMessage::Chat { from: user_id, text }),
-            };
-
-            if let Some(msg) = msg {
+        while let Some(message) = subscription.recv().await {
+            log::info!("[{current_user_id}] Bus message received");
+            if let Some(msg) = event_to_wire_message(message) {
                 let data = match serde_json::to_string(&msg) {
                     Ok(data) => data,
                     Err(err) => {
@@ -151,41 +133,65 @@ async fn handle_socket(
         }
     });
 
-    let mut auth_task = tokio::spawn(async move {
-        let mut interval = time::interval(auth_check_interval);
-        interval.tick().await; // skip the first immediate tick
-        loop {
-            interval.tick().await;
-            if session_service
-                .get_current_user(current_user_id, session_key)
-                .await
-                .is_err()
-            {
-                log::info!("[{current_user_id}] Session expired, closing WebSocket connection");
-                break;
-            }
-        }
-    });
-
-    // If any one of the tasks exits, abort the others.
     tokio::select! {
         rv_a = (&mut send_task) => {
             log::info!("Send task exited: {rv_a:?}");
             recv_task.abort();
-            auth_task.abort();
         },
         rv_b = (&mut recv_task) => {
             log::info!("Receive task exited: {rv_b:?}");
             send_task.abort();
-            auth_task.abort();
-        },
-        _ = (&mut auth_task) => {
-            log::info!("[{current_user_id}] Auth task exited, dropping connection");
-            send_task.abort();
-            recv_task.abort();
         }
     }
 
-    session.disconnect_user(current_user_id).await;
-    message_sender.send(Message::Chat(current_user_id, "${tr: Disconnected}".to_string()));
+    log::info!("{current_user_id}] Disconnecting from hub");
+    if let Err(err) = sender.send_command(HubCommand::DisconnectUser {
+        user_id: current_user_id,
+        reason: DisconnectReason::ClientClosed,
+    }) {
+        log::error!("[{current_user_id}] Failed to send disconnect command: {err:#?}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shine_test::test;
+    use uuid::Uuid;
+
+    #[test]
+    async fn chat_published_from_user_translates_to_wire_chat() {
+        let from = Uuid::new_v4();
+        let message = HubBusMessage::Chat(ChatMessage::User {
+            user_id: from,
+            text: "hi".into(),
+        });
+        let wire = event_to_wire_message(message);
+        match wire {
+            Some(WSMessageResponse::Chat { from: got, text }) => {
+                assert_eq!(got, from);
+                assert_eq!(text, "hi");
+            }
+            _ => panic!("expected a wire chat message"),
+        }
+    }
+
+    #[test]
+    async fn chat_published_from_system_is_not_forwarded() {
+        let message = HubBusMessage::Chat(ChatMessage::System { text: "hi".into() });
+        assert!(event_to_wire_message(message).is_none());
+    }
+
+    #[test]
+    async fn connection_lifecycle_events_are_not_forwarded() {
+        use crate::models::messages::UserEvent;
+        use ring::rand::SystemRandom;
+        use shine_infra::session::SessionKey;
+
+        assert!(event_to_wire_message(HubBusMessage::Hub(UserEvent::UserConnected {
+            user_id: Uuid::new_v4(),
+            session_key: SessionKey::new_random(&SystemRandom::new()).unwrap(),
+        }))
+        .is_none());
+    }
 }

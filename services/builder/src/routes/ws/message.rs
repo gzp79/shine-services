@@ -4,13 +4,13 @@ use uuid::Uuid;
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type")]
-pub enum RequestMessage {
+pub enum WSMessageRequest {
     Chat { text: String },
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "type")]
-pub enum ResponseMessage {
+pub enum WSMessageResponse {
     Chat { from: Uuid, text: String },
 }

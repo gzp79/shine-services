@@ -1,19 +1,19 @@
 use crate::{
     app_config::AppConfig,
     repositories::DBPool,
-    services::SessionHandler,
+    services::{HubService, SessionChecker},
     settings::{BuilderSettings, WsSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
 use regex::bytes::Regex;
 use ring::rand::SystemRandom;
-use shine_infra::web::WebAppConfig;
+use shine_infra::{session::CurrentUserService, web::WebAppConfig};
 use std::{sync::Arc, time::Duration};
 
 struct Inner {
     random: SystemRandom,
     db: DBPool,
-    sessions: SessionHandler,
+    hub_service: HubService,
     settings: BuilderSettings,
 }
 
@@ -39,24 +39,32 @@ impl AppState {
                 .map(|r| Regex::new(r))
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|err| anyhow!("WebSocket host config error: {err}"))?;
-            let auth_check_interval =
-                Duration::from_secs(u64::try_from(config_ws.auth_check_interval).unwrap_or(1).max(1));
 
             BuilderSettings {
-                ws: WsSettings {
-                    allowed_origins,
-                    allowed_hosts,
-                    auth_check_interval,
-                },
+                ws: WsSettings { allowed_origins, allowed_hosts },
             }
         };
 
         let db_pool = DBPool::new(config_db).await?;
+        let hub_service = HubService::new();
+
+        // Dedicated CurrentUserService instance for the session checker.
+        // Duplicates one Redis pool versus the Extension-injected instance
+        // used by request handlers (crates/shine-infra/src/web/web_app.rs) —
+        // AppState::new runs before that layer is attached, so it can't reuse it.
+        let session_service = Arc::new(
+            CurrentUserService::from_config(&config.service)
+                .await
+                .map_err(|err| anyhow!("Failed to create session checker's CurrentUserService: {err}"))?,
+        );
+        let auth_check_interval =
+            Duration::from_secs(u64::try_from(config.feature.auth_check_interval).unwrap_or(1).max(1));
+        let _session_checker = SessionChecker::spawn(&hub_service, session_service, auth_check_interval).await;
 
         Ok(Self(Arc::new(Inner {
             random: SystemRandom::new(),
             db: db_pool,
-            sessions: SessionHandler::new(),
+            hub_service,
             settings,
         })))
     }
@@ -65,8 +73,8 @@ impl AppState {
         &self.0.db
     }
 
-    pub fn sessions(&self) -> &SessionHandler {
-        &self.0.sessions
+    pub fn hub_service(&self) -> &HubService {
+        &self.0.hub_service
     }
 
     pub fn settings(&self) -> &BuilderSettings {

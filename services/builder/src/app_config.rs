@@ -10,15 +10,6 @@ pub struct WsConfig {
     /// Checked against `X-Forwarded-Host`, `Forwarded host=`, then `Host`.
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
-    /// Interval in seconds between auth re-checks for active WebSocket connections.
-    #[serde(default = "WsConfig::default_auth_check_interval")]
-    pub auth_check_interval: u64,
-}
-
-impl WsConfig {
-    fn default_auth_check_interval() -> u64 {
-        60
-    }
 }
 
 /// The application configuration
@@ -27,6 +18,15 @@ impl WsConfig {
 pub struct AppConfig {
     pub db: DBConfig,
     pub ws: WsConfig,
+    /// Interval in seconds between session-liveness re-checks.
+    #[serde(default = "AppConfig::default_auth_check_interval")]
+    pub auth_check_interval: u64,
+}
+
+impl AppConfig {
+    fn default_auth_check_interval() -> u64 {
+        60
+    }
 }
 
 impl FeatureConfig for AppConfig {
