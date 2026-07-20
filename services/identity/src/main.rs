@@ -16,8 +16,7 @@ use self::{
 use anyhow::Error as AnyError;
 use shine_infra::{
     db::{PostgresPoolStatus, RedisPoolStatus},
-    health::HealthService,
-    web::{WebAppConfig, WebApplication},
+    web::{AppBuildContext, WebAppConfig, WebApplication},
 };
 use utoipa_axum::router::OpenApiRouter;
 
@@ -30,7 +29,7 @@ impl WebApplication for Application {
     async fn create(
         &self,
         config: &WebAppConfig<Self::AppConfig>,
-        health_service: &mut HealthService,
+        context: &mut AppBuildContext<'_>,
         router: &mut OpenApiRouter<Self::AppState>,
     ) -> Result<Self::AppState, AnyError> {
         use crate::models::events::identity::{UserEvent, UserLinkEvent};
@@ -89,8 +88,8 @@ impl WebApplication for Application {
         }
 
         // Register status providers
-        health_service.add_provider(PostgresPoolStatus::new(state.db().postgres.clone()));
-        health_service.add_provider(RedisPoolStatus::new(state.db().redis.clone()));
+        context.add_health_provider(PostgresPoolStatus::new(state.db().postgres.clone()));
+        context.add_health_provider(RedisPoolStatus::new(state.db().redis.clone()));
 
         // Register routes
         let identity_controller = identity::IdentityRouter::new().into_router();

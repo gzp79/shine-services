@@ -1,11 +1,11 @@
-use crate::models::messages::{ChatMessage, DisconnectReason, UserEvent};
+use crate::models::messages::{ChatMessage, HubEvent};
 use shine_infra::session::SessionKey;
 use uuid::Uuid;
 
 /// High level filter for messages sent to the hub bus.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TopicKey {
-    UserEvent,
+    Hub,
     Chat,
 }
 
@@ -17,22 +17,24 @@ pub trait ToTopic {
 #[derive(Clone, Debug)]
 pub enum HubCommand {
     ConnectUser { user_id: Uuid, session_key: SessionKey },
-    DisconnectUser { user_id: Uuid, reason: DisconnectReason },
+    DisconnectUser { user_id: Uuid },
+    Shutdown,
+
     Chat(ChatMessage),
 }
 
 /// Wrapper for messages received from the hub bus.
 #[derive(Clone, Debug)]
-pub enum HubBusMessage {
-    Hub(UserEvent),
+pub enum HubMessage {
+    Hub(HubEvent),
     Chat(ChatMessage),
 }
 
-impl ToTopic for HubBusMessage {
+impl ToTopic for HubMessage {
     fn topic(&self) -> TopicKey {
         match self {
-            HubBusMessage::Hub(event) => event.topic(),
-            HubBusMessage::Chat(msg) => msg.topic(),
+            HubMessage::Hub(event) => event.topic(),
+            HubMessage::Chat(msg) => msg.topic(),
         }
     }
 }

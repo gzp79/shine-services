@@ -12,6 +12,7 @@ use anyhow::{anyhow, Error as AnyError};
 use axum::{
     http::{header, Method},
     routing::Router,
+    Extension,
 };
 use axum_server::Handle;
 use regex::bytes::Regex;
@@ -31,6 +32,10 @@ use utoipa::{
 };
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::{Config as SwaggerConfig, SwaggerUi};
+
+use std::sync::Arc;
+
+type ShutdownHook = Box<dyn FnOnce() + Send + 'static>;
 
 #[derive(OpenApi)]
 #[openapi(paths(), components(), tags())]
@@ -83,8 +88,15 @@ async fn shutdown_signal() {
     }
 }
 
-async fn graceful_shutdown(handle: Handle<SocketAddr>) {
+fn run_shutdown_hooks(shutdown_hooks: Vec<ShutdownHook>) {
+    for hook in shutdown_hooks {
+        hook();
+    }
+}
+
+async fn graceful_shutdown(handle: Handle<SocketAddr>, shutdown_hooks: Vec<ShutdownHook>) {
     shutdown_signal().await;
+    run_shutdown_hooks(shutdown_hooks);
     handle.graceful_shutdown(Some(StdDuration::from_secs(10)));
 
     loop {
@@ -104,9 +116,49 @@ pub trait WebApplication {
     fn create(
         &self,
         config: &WebAppConfig<Self::AppConfig>,
-        health_service: &mut HealthService,
+        context: &mut AppBuildContext,
         router: &mut OpenApiRouter<Self::AppState>,
     ) -> impl Future<Output = Result<Self::AppState, AnyError>> + Send;
+}
+
+#[derive(Clone)]
+pub struct CoreServices {
+    pub current_user_service: Arc<CurrentUserService>,
+}
+
+pub struct AppBuildContext<'a> {
+    core_services: &'a CoreServices,
+    health_service: &'a mut HealthService,
+    shutdown_hooks: &'a mut Vec<ShutdownHook>,
+}
+
+impl<'a> AppBuildContext<'a> {
+    pub fn new(
+        core_services: &'a CoreServices,
+        health_service: &'a mut HealthService,
+        shutdown_hooks: &'a mut Vec<ShutdownHook>,
+    ) -> Self {
+        Self {
+            core_services,
+            health_service,
+            shutdown_hooks,
+        }
+    }
+
+    pub fn core_services(&self) -> &CoreServices {
+        self.core_services
+    }
+
+    pub fn add_health_provider<P: crate::health::StatusProvider>(&mut self, provider: P) {
+        self.health_service.add_provider(provider);
+    }
+
+    pub fn add_shutdown_hook<F>(&mut self, hook: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        self.shutdown_hooks.push(Box::new(hook));
+    }
 }
 
 fn create_cors_layer(allowed_origins: &[String]) -> Result<CorsLayer, AnyError> {
@@ -168,7 +220,7 @@ async fn load_app_config<A: WebApplication>() -> Result<WebAppConfig<A::AppConfi
 async fn create_web_app<A: WebApplication>(
     config: &WebAppConfig<A::AppConfig>,
     app: &A,
-) -> Result<Router<()>, AnyError> {
+) -> Result<(Router<()>, Vec<ShutdownHook>), AnyError> {
     log::trace!("Creating telemetry service...");
     let telemetry_service = TelemetryService::new(app.feature_name(), &config.telemetry).await?;
     log::trace!("Creating health service...");
@@ -178,7 +230,10 @@ async fn create_web_app<A: WebApplication>(
     log::trace!("Creating in-flight service...");
     let in_flight_service = crate::health::InFlightService::new();
     log::trace!("Creating current user service...");
-    let current_user_service = CurrentUserService::from_config(&config.service).await?;
+    let current_user_service = Arc::new(CurrentUserService::from_config(&config.service).await?);
+    let core_services = CoreServices {
+        current_user_service: Arc::clone(&current_user_service),
+    };
 
     log::trace!("Creating layer...");
     let cors_layer = create_cors_layer(&config.service.allowed_origins)?;
@@ -201,7 +256,9 @@ async fn create_web_app<A: WebApplication>(
     router = router.nest(&format!("/{}", app.feature_name()), telemetry_service.create_router());
 
     log::trace!("Creating app state...");
-    let app_state = app.create(config, &mut health_service, &mut router).await?;
+    let mut shutdown_hooks: Vec<ShutdownHook> = Vec::new();
+    let mut app_context = AppBuildContext::new(&core_services, &mut health_service, &mut shutdown_hooks);
+    let app_state = app.create(config, &mut app_context, &mut router).await?;
 
     log::trace!("Setting up open API...");
     let (router, open_api) = router.split_for_parts();
@@ -222,21 +279,24 @@ async fn create_web_app<A: WebApplication>(
     };
 
     log::trace!("Creating app routes...");
-    Ok(router
-        .layer(current_user_service.create_layer())
-        .layer(problem_service.into_layer())
-        .layer(in_flight_service.create_layer())
-        .layer(tower::util::option_layer(powered_by_layer))
-        .layer(SecurityHeaders::default())
-        .layer(cors_layer)
-        .layer(telemetry_service.create_layer())
-        .layer(log_layer)
-        .with_state(app_state))
+    Ok((
+        router
+            .layer(Extension(current_user_service))
+            .layer(problem_service.into_layer())
+            .layer(in_flight_service.create_layer())
+            .layer(tower::util::option_layer(powered_by_layer))
+            .layer(SecurityHeaders::default())
+            .layer(cors_layer)
+            .layer(telemetry_service.create_layer())
+            .layer(log_layer)
+            .with_state(app_state),
+        shutdown_hooks,
+    ))
 }
 
 async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
     let config = load_app_config::<A>().await?;
-    let router = create_web_app(&config, &app).await?;
+    let (router, shutdown_hooks) = create_web_app(&config, &app).await?;
     log::info!("Starting web app with config...");
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.service.port));
@@ -252,7 +312,7 @@ async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
             .map_err(|e| anyhow!(e))?;
 
         let handle = Handle::new();
-        tokio::spawn(graceful_shutdown(handle.clone()));
+        tokio::spawn(graceful_shutdown(handle.clone(), shutdown_hooks));
 
         axum_server::bind_rustls(addr, config)
             .handle(handle)
@@ -262,8 +322,12 @@ async fn start_web_app<A: WebApplication>(app: A) -> Result<(), AnyError> {
     } else {
         log::info!("Starting service on http://{addr:?} ...");
         let listener = TcpListener::bind(&addr).await.unwrap();
+        let shutdown = async move {
+            shutdown_signal().await;
+            run_shutdown_hooks(shutdown_hooks);
+        };
         axum::serve(listener, router)
-            .with_graceful_shutdown(shutdown_signal())
+            .with_graceful_shutdown(shutdown)
             .await
             .map_err(|e| anyhow!(e))
     }

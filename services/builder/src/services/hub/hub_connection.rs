@@ -1,5 +1,5 @@
 use crate::models::{
-    messages::{HubBusMessage, HubCommand},
+    messages::{HubCommand, HubMessage},
     HubError,
 };
 use tokio::sync::mpsc;
@@ -26,15 +26,15 @@ impl HubSender {
 
 /// Topic-filtered receiver. Filtering happens on the hub's send side (see ConnectedUsers).
 pub struct HubReceiver {
-    rx: mpsc::Receiver<HubBusMessage>,
+    rx: mpsc::Receiver<HubMessage>,
 }
 
 impl HubReceiver {
-    pub fn new(rx: mpsc::Receiver<HubBusMessage>) -> Self {
+    pub fn new(rx: mpsc::Receiver<HubMessage>) -> Self {
         Self { rx }
     }
 
-    pub async fn recv(&mut self) -> Option<HubBusMessage> {
+    pub async fn recv(&mut self) -> Option<HubMessage> {
         self.rx.recv().await
     }
 }

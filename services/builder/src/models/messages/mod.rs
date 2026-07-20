@@ -1,9 +1,9 @@
 mod chat;
 mod hub;
-mod user_event;
+mod hub_event;
 
 pub use self::{
     chat::ChatMessage,
-    hub::{HubBusMessage, HubCommand, ToTopic, TopicKey},
-    user_event::{DisconnectReason, UserEvent},
+    hub::{HubCommand, HubMessage, ToTopic, TopicKey},
+    hub_event::HubEvent,
 };

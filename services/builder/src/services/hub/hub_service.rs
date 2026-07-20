@@ -1,4 +1,4 @@
-use crate::models::messages::{HubBusMessage, HubCommand, TopicKey, UserEvent};
+use crate::models::messages::{HubCommand, HubEvent, HubMessage, TopicKey};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -59,22 +59,25 @@ impl HubService {
         match command {
             HubCommand::ConnectUser { user_id, session_key } => {
                 self.inner.users.connect(user_id, session_key).await;
-                self.publish(HubBusMessage::Hub(UserEvent::UserConnected { user_id, session_key }))
+                self.publish(HubMessage::Hub(HubEvent::UserConnected { user_id, session_key }))
                     .await;
             }
-            HubCommand::DisconnectUser { user_id, reason } => {
+            HubCommand::DisconnectUser { user_id } => {
                 if self.inner.users.disconnect(user_id).await {
-                    self.publish(HubBusMessage::Hub(UserEvent::UserDisconnected { user_id, reason }))
+                    self.publish(HubMessage::Hub(HubEvent::UserDisconnected { user_id }))
                         .await;
                 }
             }
+            HubCommand::Shutdown => {
+                self.publish(HubMessage::Hub(HubEvent::Shutdown)).await;
+            }
             HubCommand::Chat(msg) => {
-                self.publish(HubBusMessage::Chat(msg)).await;
+                self.publish(HubMessage::Chat(msg)).await;
             }
         }
     }
 
-    async fn publish(&self, message: HubBusMessage) {
+    async fn publish(&self, message: HubMessage) {
         self.inner.users.publish(message).await;
     }
 }

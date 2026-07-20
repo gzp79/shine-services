@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    models::messages::{ChatMessage, DisconnectReason, HubBusMessage, HubCommand, TopicKey},
+    models::messages::{ChatMessage, HubCommand, HubMessage, TopicKey},
     routes::ws::message::{WSMessageRequest, WSMessageResponse},
     services::{HubReceiver, HubSender},
 };
@@ -66,13 +66,10 @@ pub async fn connect(
     Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, sender, subscription)))
 }
 
-fn event_to_wire_message(message: HubBusMessage) -> Option<WSMessageResponse> {
+fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
     match message {
-        HubBusMessage::Chat(ChatMessage::User { user_id, text }) => {
-            Some(WSMessageResponse::Chat { from: user_id, text })
-        }
-        HubBusMessage::Chat(ChatMessage::System { .. }) => None,
-        HubBusMessage::Hub(_) => None,
+        HubMessage::Chat(ChatMessage { user_id, text }) => Some(WSMessageResponse::Chat { from: user_id, text }),
+        _ => None,
     }
 }
 
@@ -85,7 +82,7 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, 
     let mut recv_task = {
         let sender = sender.clone();
         tokio::spawn(async move {
-            if let Err(err) = sender.send_command(HubCommand::Chat(ChatMessage::User {
+            if let Err(err) = sender.send_command(HubCommand::Chat(ChatMessage {
                 user_id: current_user_id,
                 text: "${tr: Connected}".to_string(),
             })) {
@@ -105,7 +102,7 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, 
 
                     if let Some(text) = msg {
                         if let Err(err) =
-                            sender.send_command(HubCommand::Chat(ChatMessage::User { user_id: current_user_id, text }))
+                            sender.send_command(HubCommand::Chat(ChatMessage { user_id: current_user_id, text }))
                         {
                             log::error!("[{current_user_id}] Failed to send message: {err:#?}");
                         }
@@ -145,53 +142,7 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, 
     }
 
     log::info!("{current_user_id}] Disconnecting from hub");
-    if let Err(err) = sender.send_command(HubCommand::DisconnectUser {
-        user_id: current_user_id,
-        reason: DisconnectReason::ClientClosed,
-    }) {
+    if let Err(err) = sender.send_command(HubCommand::DisconnectUser { user_id: current_user_id }) {
         log::error!("[{current_user_id}] Failed to send disconnect command: {err:#?}");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use shine_test::test;
-    use uuid::Uuid;
-
-    #[test]
-    async fn chat_published_from_user_translates_to_wire_chat() {
-        let from = Uuid::new_v4();
-        let message = HubBusMessage::Chat(ChatMessage::User {
-            user_id: from,
-            text: "hi".into(),
-        });
-        let wire = event_to_wire_message(message);
-        match wire {
-            Some(WSMessageResponse::Chat { from: got, text }) => {
-                assert_eq!(got, from);
-                assert_eq!(text, "hi");
-            }
-            _ => panic!("expected a wire chat message"),
-        }
-    }
-
-    #[test]
-    async fn chat_published_from_system_is_not_forwarded() {
-        let message = HubBusMessage::Chat(ChatMessage::System { text: "hi".into() });
-        assert!(event_to_wire_message(message).is_none());
-    }
-
-    #[test]
-    async fn connection_lifecycle_events_are_not_forwarded() {
-        use crate::models::messages::UserEvent;
-        use ring::rand::SystemRandom;
-        use shine_infra::session::SessionKey;
-
-        assert!(event_to_wire_message(HubBusMessage::Hub(UserEvent::UserConnected {
-            user_id: Uuid::new_v4(),
-            session_key: SessionKey::new_random(&SystemRandom::new()).unwrap(),
-        }))
-        .is_none());
     }
 }

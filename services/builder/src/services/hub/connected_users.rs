@@ -1,4 +1,4 @@
-use crate::models::messages::{HubBusMessage, ToTopic, TopicKey};
+use crate::models::messages::{HubMessage, ToTopic, TopicKey};
 use shine_infra::session::SessionKey;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 struct Subscriber {
     topics: Vec<TopicKey>,
-    tx: mpsc::Sender<HubBusMessage>,
+    tx: mpsc::Sender<HubMessage>,
 }
 
 /// Owns the hub's connection state: which users are connected (with their
@@ -41,7 +41,7 @@ impl ConnectedUsers {
         sessions.remove(&user_id).is_some()
     }
 
-    pub async fn subscribe(&self, topics: Vec<TopicKey>, tx: mpsc::Sender<HubBusMessage>) {
+    pub async fn subscribe(&self, topics: Vec<TopicKey>, tx: mpsc::Sender<HubMessage>) {
         let mut subscribers = self.subscribers.write().await;
         subscribers.push(Subscriber { topics, tx });
     }
@@ -50,7 +50,7 @@ impl ConnectedUsers {
     /// topic. A closed subscriber channel is logged and pruned. A full channel
     /// is a transient back-pressure signal: the message is dropped for that
     /// subscriber but the subscriber itself is kept.
-    pub async fn publish(&self, message: HubBusMessage) {
+    pub async fn publish(&self, message: HubMessage) {
         let mut subscribers = self.subscribers.write().await;
         subscribers.retain(|subscriber| {
             if !subscriber.topics.contains(&message.topic()) {
