@@ -11,6 +11,11 @@ type WsCloseOutcome =
     | { kind: 'http_error'; status: number }
     | { kind: 'error'; message: string };
 
+type WsHoldResult = {
+    opened: Promise<boolean>;
+    settled: Promise<WsCloseOutcome>;
+};
+
 type WsConnectOptions = {
     sid: string;
     origin?: string;
@@ -66,7 +71,7 @@ async function connectWs(url: string, options: WsConnectOptions): Promise<WsOutc
 }
 
 function wsConnectUrl(builderUrl: string): string {
-    const httpUrl = joinURL(builderUrl, `/api/connect/${randomUUID()}`);
+    const httpUrl = joinURL(builderUrl, '/api/connect');
     const wsUrl = new URL(httpUrl);
     wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
     return wsUrl.toString();
@@ -74,8 +79,13 @@ function wsConnectUrl(builderUrl: string): string {
 
 type WsHoldOptions = WsConnectOptions & { holdTimeoutMs?: number };
 
-async function openAndWaitClose(url: string, options: WsHoldOptions): Promise<WsCloseOutcome> {
-    return await new Promise<WsCloseOutcome>((resolve) => {
+function openAndWaitClose(url: string, options: WsHoldOptions): WsHoldResult {
+    let resolveOpened!: (opened: boolean) => void;
+    const opened = new Promise<boolean>((resolve) => {
+        resolveOpened = resolve;
+    });
+
+    const settled = new Promise<WsCloseOutcome>((resolve) => {
         const holdTimeoutMs = options.holdTimeoutMs ?? 10_000;
         const headers: Record<string, string> = {
             Cookie: `sid=${options.sid}`,
@@ -90,11 +100,22 @@ async function openAndWaitClose(url: string, options: WsHoldOptions): Promise<Ws
         });
 
         let settled = false;
+        let wasOpened = false;
+        let openedResolved = false;
+
+        const markOpened = (value: boolean) => {
+            if (openedResolved) {
+                return;
+            }
+            openedResolved = true;
+            resolveOpened(value);
+        };
 
         const finish = (value: WsCloseOutcome) => {
             if (settled) return;
             settled = true;
             clearTimeout(timeout);
+            markOpened(false);
             resolve(value);
         };
 
@@ -107,7 +128,17 @@ async function openAndWaitClose(url: string, options: WsHoldOptions): Promise<Ws
             finish({ kind: 'http_error', status: response.statusCode ?? 0 });
         });
 
+        ws.once('open', () => {
+            wasOpened = true;
+            markOpened(true);
+        });
+
         ws.once('error', (error: Error) => {
+            // After a successful upgrade, forced disconnects can surface as
+            // either close or error depending on timing and transport teardown.
+            if (wasOpened) {
+                return;
+            }
             finish({ kind: 'error', message: error.message });
         });
 
@@ -115,6 +146,8 @@ async function openAndWaitClose(url: string, options: WsHoldOptions): Promise<Ws
             finish({ kind: 'closed', code });
         });
     });
+
+    return { opened, settled };
 }
 
 test.describe('Builder websocket', { tag: ['@regression'] }, () => {
@@ -179,24 +212,24 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
 
     test('WS connection shall be dropped when session is deleted', async ({ builderUrl }) => {
         const url = wsConnectUrl(builderUrl);
+        const authCheckIntervalMs = 2_000;
         const wsHeaders = {
             origin: 'https://cloud.local.scytta.com:8443',
             extraHeaders: { 'x-forwarded-host': 'ws.local.scytta.com:8444' }
         };
 
-        // Start holding the connection open; resolve when the server closes it.
-        // authCheckInterval is 2s in test config, allow up to 10s total.
-        const closePromise = openAndWaitClose(url, {
+        // SessionChecker runs every 2s in test config; allow several intervals
+        // for detection, hub command processing, and websocket teardown.
+        const closeCtx = openAndWaitClose(url, {
             sid: user.sessionCookie,
             ...wsHeaders,
-            holdTimeoutMs: 10_000
+            holdTimeoutMs: authCheckIntervalMs * 4
         });
 
-        // Give the WS time to establish before invalidating the session.
-        await new Promise((r) => setTimeout(r, 500));
+        expect(await closeCtx.opened).toBe(true);
         await mint.deleteUser(user);
 
-        const result = await closePromise;
+        const result = await closeCtx.settled;
         expect(result.kind).toBe('closed');
     });
 });

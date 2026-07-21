@@ -1,4 +1,4 @@
-use crate::repositories::hub_connections::HubConnectionError;
+use crate::repositories::hub_registry::HubConnectionError;
 use std::future::Future;
 use uuid::Uuid;
 
@@ -8,7 +8,7 @@ pub struct HubConnection {
     pub connection_id: Uuid,
 }
 
-pub trait HubConnections {
+pub trait HubRegistry {
     /// Creates or replaces the active connection for the user and returns the new connection id.
     ///
     /// At most one active connection may exist per user.

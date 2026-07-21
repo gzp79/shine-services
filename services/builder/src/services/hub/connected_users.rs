@@ -41,15 +41,18 @@ impl ConnectedUsers {
         sessions.insert(user_id, ConnectedUser { connection_id, session_key });
     }
 
-    /// Removes the user if present and the session key matches.
-    pub async fn disconnect(&self, user_id: Uuid, session_key: SessionKey) -> Option<Uuid> {
+    /// Removes the user if present and returns the removed connection id.
+    pub async fn disconnect(&self, user_id: Uuid) -> Option<Uuid> {
         let mut sessions = self.sessions.write().await;
-        let should_remove = matches!(sessions.get(&user_id), Some(current) if current.session_key == session_key);
-        if should_remove {
-            sessions.remove(&user_id).map(|connection| connection.connection_id)
-        } else {
-            None
-        }
+        sessions.remove(&user_id).map(|connection| connection.connection_id)
+    }
+
+    /// Returns the current local connection/session tuple for a user, when present.
+    pub async fn find_connection(&self, user_id: Uuid) -> Option<(Uuid, SessionKey)> {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&user_id)
+            .map(|connection| (connection.connection_id, connection.session_key))
     }
 
     pub async fn subscribe(&self, topics: Vec<TopicKey>, tx: mpsc::Sender<HubMessage>) {

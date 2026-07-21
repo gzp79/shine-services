@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    models::messages::{ChatMessage, HubCommand, HubMessage, TopicKey},
+    models::messages::{ChatMessage, HubCommand, HubEvent, HubMessage, TopicKey},
     routes::ws::message::{WSMessageRequest, WSMessageResponse},
     services::{HubReceiver, HubSender},
 };
@@ -54,7 +54,7 @@ pub async fn connect(
     log::info!("User {} requesting a connection...", user.user_id);
 
     let sender = state.hub_service().sender();
-    let subscription = state.hub_service().subscribe(vec![TopicKey::Chat]).await;
+    let subscription = state.hub_service().subscribe(vec![TopicKey::Chat, TopicKey::Hub]).await;
 
     sender
         .send_command(HubCommand::ConnectUser {
@@ -115,6 +115,15 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, 
     let mut send_task = tokio::spawn(async move {
         while let Some(message) = subscription.recv().await {
             log::info!("[{current_user_id}] Bus message received");
+            if matches!(message, HubMessage::Hub(HubEvent::UserDisconnected { user_id }) if user_id == current_user_id)
+            {
+                log::info!("[{current_user_id}] ws-close-triggered-by-hub-event: UserDisconnected");
+                if let Err(err) = ws_sender.close().await {
+                    log::error!("[{current_user_id}] Failed to close websocket on hub event: {err:#?}");
+                }
+                break;
+            }
+
             if let Some(msg) = event_to_wire_message(message) {
                 let data = match serde_json::to_string(&msg) {
                     Ok(data) => data,
@@ -142,10 +151,7 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, 
     }
 
     log::info!("{current_user_id}] Disconnecting from hub");
-    if let Err(err) = sender.send_command(HubCommand::DisconnectUser {
-        user_id: current_user_id,
-        session_key: user.key,
-    }) {
+    if let Err(err) = sender.send_command(HubCommand::DisconnectUser { user_id: current_user_id }) {
         log::error!("[{current_user_id}] Failed to send disconnect command: {err:#?}");
     }
 }

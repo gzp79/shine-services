@@ -1,11 +1,12 @@
-use crate::repositories::hub_connections::{
-    redis::RedisHubConnectionDbContext, HubConnection, HubConnectionError, HubConnections,
+use crate::repositories::hub_registry::{
+    redis::RedisHubConnectionDbContext, HubConnection, HubConnectionError, HubRegistry,
 };
-use redis::{aio::transaction_async, AsyncCommands, SetExpiry, SetOptions};
+use redis::{aio::transaction_async, AsyncCommands};
 use shine_infra::db::DBError;
 use uuid::Uuid;
 
 const HUB_CONNECTION_KEYSPACE: &str = "hub-connection:";
+pub const HUB_REGISTRY_CHANGED_CHANNEL: &str = "hub-registry-changed";
 
 impl RedisHubConnectionDbContext<'_> {
     fn to_redis_key(&self, user_id: Uuid) -> String {
@@ -38,19 +39,26 @@ impl RedisHubConnectionDbContext<'_> {
     }
 }
 
-impl HubConnections for RedisHubConnectionDbContext<'_> {
+impl HubRegistry for RedisHubConnectionDbContext<'_> {
     async fn create_connection(&mut self, user_id: Uuid) -> Result<Uuid, HubConnectionError> {
         let connection_id = Uuid::new_v4();
         let key = self.to_redis_key(user_id);
 
-        let _: Option<()> = {
-            let options = SetOptions::default().with_expiration(SetExpiry::EX(self.ttl_seconds));
+        let client = &mut *self.client;
 
-            self.client
-                .set_options(&key, connection_id.to_string(), options)
-                .await
-                .map_err(DBError::RedisError)?
-        };
+        let _: (usize,) = redis::pipe()
+            .cmd("SET")
+            .arg(&key)
+            .arg(connection_id.to_string())
+            .arg("EX")
+            .arg(self.ttl_seconds)
+            .ignore()
+            .cmd("PUBLISH")
+            .arg(HUB_REGISTRY_CHANGED_CHANNEL)
+            .arg(user_id.to_string())
+            .query_async(client)
+            .await
+            .map_err(DBError::RedisError)?;
 
         Ok(connection_id)
     }
@@ -75,7 +83,8 @@ impl HubConnections for RedisHubConnectionDbContext<'_> {
                     return Ok(Some(false));
                 }
 
-                pipe.expire(&key, ttl_seconds).query_async(&mut con).await
+                let (updated,): (usize,) = pipe.expire(&key, ttl_seconds).query_async(&mut con).await?;
+                Ok(Some(updated > 0))
             }
         })
         .await
@@ -144,6 +153,14 @@ impl HubConnections for RedisHubConnectionDbContext<'_> {
         })
         .await
         .map_err(DBError::RedisError)?;
+
+        if removed {
+            let _: usize = self
+                .client
+                .publish(HUB_REGISTRY_CHANGED_CHANNEL, user_id.to_string())
+                .await
+                .map_err(DBError::RedisError)?;
+        }
 
         Ok(removed)
     }

@@ -1,6 +1,6 @@
 use crate::{
     app_config::AppConfig,
-    repositories::hub_connections::redis::RedisHubConnectionDb,
+    repositories::hub_registry::redis::RedisHubConnectionDb,
     services::{HubService, SessionChecker},
     settings::{BuilderSettings, WsSettings},
 };
@@ -48,8 +48,8 @@ impl AppState {
 
         let hub_heartbeat_seconds = config.feature.hub_heartbeat_seconds.max(1);
         let hub_connection_ttl_seconds = hub_heartbeat_seconds.saturating_mul(2);
-        let hub_connection_db = RedisHubConnectionDb::new(redis_pool, hub_connection_ttl_seconds).await?;
-        let hub_service = HubService::new(hub_connection_db);
+        let hub_registry = RedisHubConnectionDb::new(redis_pool, hub_connection_ttl_seconds).await?;
+        let hub_service = HubService::new(hub_registry);
 
         let auth_check_interval = Duration::from_secs(config.feature.auth_check_interval.max(1));
         SessionChecker::new(

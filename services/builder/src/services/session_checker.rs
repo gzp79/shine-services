@@ -41,8 +41,8 @@ fn apply_lifecycle_event(map: &mut HashMap<Uuid, SessionKey>, message: HubMessag
 async fn check_sessions(snapshot: &[(Uuid, SessionKey)], session_service: &CurrentUserService, sender: &HubSender) {
     for (user_id, session_key) in snapshot.iter().copied() {
         if session_service.get_current_user(user_id, session_key).await.is_err() {
-            log::info!("[{user_id}] Session expired, requesting disconnect");
-            if let Err(err) = sender.send_command(HubCommand::DisconnectUser { user_id, session_key }) {
+            log::info!("[{user_id}] session-expiry-detected; requesting hub disconnect");
+            if let Err(err) = sender.send_command(HubCommand::DisconnectUser { user_id }) {
                 log::error!("[{user_id}] Failed to send expiry disconnect command: {err:#?}");
             }
         }

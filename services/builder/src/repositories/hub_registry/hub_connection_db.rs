@@ -1,7 +1,7 @@
-use crate::repositories::hub_connections::{HubConnectionError, HubConnections};
+use crate::repositories::hub_registry::{HubConnectionError, HubRegistry};
 use std::future::Future;
 
-pub trait HubConnectionDbContext<'c>: HubConnections + Send {}
+pub trait HubConnectionDbContext<'c>: HubRegistry + Send {}
 
 pub trait HubConnectionDb: Send + Sync {
     fn create_context(

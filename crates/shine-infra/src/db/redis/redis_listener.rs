@@ -151,7 +151,7 @@ impl RedisListener {
                 let channel = msg.get_channel_name().to_string();
                 match msg.get_payload::<String>() {
                     Ok(payload) => {
-                        log::trace!("RedisListener received message on channel {channel:?}");
+                        log::trace!("RedisListener received message on channel {channel:?}: [{payload:?}");
                         state.read().await.handle(&channel, &payload);
                     }
                     Err(err) => log::error!("RedisListener payload error on channel {channel:?}: {err:#?}"),
