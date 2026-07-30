@@ -16,7 +16,7 @@ use crate::{
 };
 use shine_infra::session::CurrentUserService;
 use std::{sync::Arc, time::Duration};
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task::JoinHandle};
 use uuid::Uuid;
 
 /// Cadence configuration for the hub's periodic connection consumers.
@@ -70,10 +70,12 @@ impl HubService {
         // lost to them forever. The start_* calls subscribe synchronously (awaited), and the
         // dispatcher is started last so nothing drains the channels until every subscription is in
         // place.
-        Self::start_registry_listener(service.clone());
-        Self::start_heartbeat(service.clone(), intervals.heartbeat).await;
-        Self::start_session_checker(service.clone(), session_service, intervals.session_check).await;
-        Self::start_dispatcher(service.clone(), control_rx, payload_rx);
+        let background_tasks = vec![
+            Self::start_registry_listener(service.clone()),
+            Self::start_heartbeat(service.clone(), intervals.heartbeat).await,
+            Self::start_session_checker(service.clone(), session_service, intervals.session_check).await,
+        ];
+        Self::start_dispatcher(service.clone(), control_rx, payload_rx, background_tasks);
         service
     }
 
@@ -107,22 +109,26 @@ impl HubService {
 
     /// Starts the periodic registry heartbeat on its own connection loop, refreshing TTLs for
     /// locally-tracked connections and disconnecting any the registry no longer holds as active.
-    async fn start_heartbeat(service: HubService, interval: Duration) {
+    async fn start_heartbeat(service: HubService, interval: Duration) -> JoinHandle<()> {
         let subscription = service.subscribe(vec![TopicKey::Hub]).await;
         tokio::spawn(async move {
             let task = HeartbeatTask::new(service);
             run_connection_loop(subscription, interval, task).await;
-        });
+        })
     }
 
     /// Starts the periodic session checker on its own connection loop, validating each tracked
     /// session and issuing a targeted disconnect on expiry.
-    async fn start_session_checker(service: HubService, session_service: Arc<CurrentUserService>, interval: Duration) {
+    async fn start_session_checker(
+        service: HubService,
+        session_service: Arc<CurrentUserService>,
+        interval: Duration,
+    ) -> JoinHandle<()> {
         let subscription = service.subscribe(vec![TopicKey::Hub]).await;
         tokio::spawn(async move {
             let checker = SessionChecker::new(session_service, &service);
             run_connection_loop(subscription, interval, checker).await;
-        });
+        })
     }
 
     /// Starts the central dispatch loop that drains the control and payload channels, biased so
@@ -131,6 +137,7 @@ impl HubService {
         service: HubService,
         mut control_rx: mpsc::UnboundedReceiver<ControlCommand>,
         mut payload_rx: mpsc::Receiver<Workload>,
+        background_tasks: Vec<JoinHandle<()>>,
     ) {
         tokio::spawn(async move {
             loop {
@@ -148,10 +155,13 @@ impl HubService {
                     },
                 }
             }
+            for task in background_tasks {
+                task.abort();
+            }
         });
     }
 
-    fn start_registry_listener(service: HubService) {
+    fn start_registry_listener(service: HubService) -> JoinHandle<()> {
         tokio::spawn(async move {
             let sender = service.sender();
             if let Err(err) = service
@@ -166,7 +176,7 @@ impl HubService {
             {
                 log::error!("Failed to listen to hub registry changes: {err:#?}");
             }
-        });
+        })
     }
 
     /// Processes one control command. Returns if the dispatcher should continue (true) or exit (false).
