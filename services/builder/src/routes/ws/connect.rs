@@ -2,7 +2,7 @@ use crate::{
     app_state::AppState,
     models::messages::{ChatMessage, HubEvent, HubMessage, TopicKey},
     routes::ws::message::{WSMessageRequest, WSMessageResponse},
-    services::{HubReceiver, HubSender},
+    services::HubService,
 };
 use axum::{
     extract::{
@@ -58,13 +58,8 @@ pub async fn connect(
     let user = user.into_user();
     log::info!("User {} requesting a connection...", user.user_id);
 
-    let sender = state.hub_service().sender();
-    let subscription = state
-        .hub_service()
-        .subscribe_bounded(vec![TopicKey::Chat, TopicKey::Hub], WS_CLIENT_CHANNEL_CAPACITY)
-        .await;
-
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, sender, subscription)))
+    let hub_service = state.hub_service().clone();
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, hub_service)))
 }
 
 fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
@@ -74,9 +69,16 @@ fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
     }
 }
 
-async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, mut subscription: HubReceiver) {
+async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubService) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let current_user_id = user.user_id;
+
+    // Subscribe only after the upgrade completes: an aborted upgrade would otherwise leave the
+    // subscriber registered until the next publish lazily prunes it.
+    let sender = hub_service.sender();
+    let mut subscription = hub_service
+        .subscribe_bounded(vec![TopicKey::Chat, TopicKey::Hub], WS_CLIENT_CHANNEL_CAPACITY)
+        .await;
 
     // Register the connection now that the upgrade has completed. If registration fails there is no
     // live connection to keep, so close the socket without emitting a disconnect for it.

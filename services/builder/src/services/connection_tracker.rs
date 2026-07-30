@@ -68,9 +68,18 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
 ) {
     let mut tracker = ConnectionTracker::new();
     let mut ticker = time::interval(interval);
+    // Delay (not Burst) so a slow tick reschedules a full interval ahead instead of firing missed
+    // ticks back-to-back, keeping the cadence honest against the TTL margin.
+    ticker.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
     ticker.tick().await; // skip the immediate first tick
     loop {
         tokio::select! {
+            // The tick is prioritized so a heavy event stream cannot starve TTL refreshes and let a
+            // live connection expire.
+            biased;
+            _ = ticker.tick() => {
+                consumer.on_tick(&tracker).await;
+            }
             message = subscription.recv() => match message {
                 Some(message) => {
                     if tracker.apply(message) {
@@ -80,9 +89,6 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
                 // Channel closed without a Shutdown event: stop instead of busy-looping.
                 None => break,
             },
-            _ = ticker.tick() => {
-                consumer.on_tick(&tracker).await;
-            }
         }
     }
 }

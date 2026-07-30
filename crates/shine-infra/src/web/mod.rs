@@ -1,3 +1,5 @@
+mod anchored_regex;
+pub use self::anchored_regex::*;
 mod apiurl;
 pub use self::apiurl::*;
 mod config;

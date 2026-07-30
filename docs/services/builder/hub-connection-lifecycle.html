@@ -26,6 +26,63 @@ connection identity (<code>connection_id</code>) that lets both the in-memory
 state and the cross-instance Redis registry safely resolve "which connection is
 current".</p>
 
+<h2>Invariants</h2>
+<p>Every mechanism below exists to uphold these properties. They must <em>all</em>
+hold simultaneously, across restarts and across multiple service instances.</p>
+
+<table>
+  <tr><th>#</th><th>Invariant</th><th>Upheld by</th></tr>
+  <tr>
+    <td>1</td>
+    <td>A user may have multiple sessions.</td>
+    <td>Connection identity is <code>(connection_id, session_key)</code>; the hub never assumes a user has a single session.</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>A user has at most one live connection; a new connection kills the previous.</td>
+    <td><code>process(ConnectUser)</code> publishes <code>UserDisconnected</code> for the old <code>connection_id</code> before recording the new one — see <a href="#last-connection-wins">Last connection wins</a>.</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>The same session may renew the connection at any time.</td>
+    <td>Each <code>connect</code> mints a fresh <code>connection_id</code>; renewing simply replaces the prior connection via the same last-wins path.</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>A user may switch the connection to any of their sessions.</td>
+    <td><code>ConnectUser</code> carries the new <code>session_key</code>; the 1:1 bind of connection to session lets any session take over the single slot.</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td>There can be multiple instances of the service.</td>
+    <td>The Redis registry (<code>hub-connection:{user}</code>) + <code>hub-registry-changed</code> pub/sub reconcile connections held by other nodes — see <a href="#cross-instance">Cross-instance</a>.</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td>When a session expires, all its connections must be closed.</td>
+    <td>The <code>SessionChecker</code> validates every tracked session each tick and issues a targeted <code>disconnect(user_id, connection_id)</code> on failure.</td>
+  </tr>
+  <tr>
+    <td>7</td>
+    <td>On a server crash, Redis is cleaned up.</td>
+    <td>Every registry key carries a TTL; a crashed node's entries expire, and the <code>HeartbeatTask</code> only refreshes TTLs for connections it still holds.</td>
+  </tr>
+</table>
+
+<details data-agent="security">
+  <summary>Why compare-and-remove on <code>connection_id</code> is load-bearing for #2, #3, #6</summary>
+  <div class="details-body">
+    Invariants 2, 3, and 6 all reduce to the same race: a disconnect intended for
+    one connection must never tear down a fresher one that has since replaced it.
+    Every removal path (session expiry, heartbeat miss, lagging socket, explicit
+    disconnect) is a compare-and-remove keyed on <code>connection_id</code>,
+    enforced identically in memory and in Redis. A stale
+    <code>disconnect(C_A)</code> arriving after <code>C_B</code> has taken the slot
+    is a no-op. Without this CAS, a renew (#3) or session switch (#4) would race
+    the cleanup of the connection it replaced.
+  </div>
+</details>
+
 <h2>Architecture — message flow</h2>
 <p>A client feeds the hub over two inbound channels of different classes; the
 hub's serial loop processes them and calls <code>publish</code>, which fans each
@@ -229,7 +286,7 @@ reconnect. Expiry handling in full:</p>
   <div class="box box-pink"><div class="bname">WS close</div></div>
 </div>
 
-<h3>Cross-instance</h3>
+<h3 id="cross-instance">Cross-instance</h3>
 <p>The Redis registry holds one key per user, <code>hub-connection:{user_id}</code>
 → <code>connection_id</code>, with a TTL. Creating a connection <code>SET</code>s
 the key (replacing any prior value) and <code>PUBLISH</code>es the user id on the
@@ -243,7 +300,7 @@ the task funnels a <code>disconnect</code> through the same CAS'd command path.
 <span class="tag warn">invariant</span> <code>session_key</code> is never written
 to Redis, logged, or placed in any broadcast payload — it stays in-memory only.</p>
 
-<h2>Last connection wins</h2>
+<h2 id="last-connection-wins">Last connection wins</h2>
 <p>Each user has at most one live connection. Every <code>connect</code> mints a
 fresh <code>connection_id</code> bound 1:1 to the session key that opened it, so
 identity is unambiguous. When a new connection arrives for a user who already has

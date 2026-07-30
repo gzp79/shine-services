@@ -5,9 +5,10 @@ use crate::{
     settings::{BuilderSettings, WsSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
-use regex::bytes::Regex;
-use shine_infra::db::RedisConnectionPool;
-use shine_infra::web::{CoreServices, WebAppConfig};
+use shine_infra::{
+    db::RedisConnectionPool,
+    web::{compile_anchored_bytes, CoreServices, WebAppConfig},
+};
 use std::{sync::Arc, time::Duration};
 
 struct Inner {
@@ -31,15 +32,13 @@ impl AppState {
                 .service
                 .allowed_origins
                 .iter()
-                .map(|r| Regex::new(r))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|err| anyhow!("WebSocket origin config error: {err}"))?;
+                .map(|r| compile_anchored_bytes(r).map_err(|err| anyhow!("WebSocket origin config error: {err}")))
+                .collect::<Result<Vec<_>, _>>()?;
             let allowed_hosts = config_ws
                 .allowed_hosts
                 .iter()
-                .map(|r| Regex::new(r))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|err| anyhow!("WebSocket host config error: {err}"))?;
+                .map(|r| compile_anchored_bytes(r).map_err(|err| anyhow!("WebSocket host config error: {err}")))
+                .collect::<Result<Vec<_>, _>>()?;
 
             BuilderSettings {
                 ws: WsSettings { allowed_origins, allowed_hosts },
@@ -47,7 +46,9 @@ impl AppState {
         };
 
         let hub_heartbeat_seconds = config.feature.hub_heartbeat_seconds.max(1);
-        let hub_connection_ttl_seconds = hub_heartbeat_seconds.saturating_mul(2);
+        // 3× heartbeat leaves room for a missed refresh (slow registry / deferred tick) before a
+        // live connection's registry entry expires and it is wrongly reaped as stale.
+        let hub_connection_ttl_seconds = hub_heartbeat_seconds.saturating_mul(3);
         let hub_registry = RedisHubConnectionDb::new(redis_pool, hub_connection_ttl_seconds).await?;
 
         // The hub owns its periodic connection consumers (heartbeat + session checker), each on

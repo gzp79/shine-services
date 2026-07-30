@@ -13,7 +13,7 @@ use shine_infra::{
     crypto::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
     db::{PGConnectionPool, RedisConnectionPool},
     sync::TopicBus,
-    web::{responses::ProblemConfig, WebAppConfig},
+    web::{compile_anchored, responses::ProblemConfig, WebAppConfig},
 };
 use std::sync::Arc;
 use tera::Tera;
@@ -50,7 +50,7 @@ impl AppState {
             let allowed_redirect_urls = config_auth
                 .allowed_redirect_urls
                 .iter()
-                .map(|r| regex::Regex::new(r).map_err(|e| anyhow!(e)))
+                .map(|r| compile_anchored(r).map_err(|e| anyhow!("allowed_redirect_urls config error: {e}")))
                 .collect::<Result<Vec<_>, _>>()?;
             if allowed_redirect_urls.is_empty() {
                 return Err(anyhow!("allowed_redirect_urls is empty"));

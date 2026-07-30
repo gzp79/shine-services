@@ -30,6 +30,7 @@ hex = { workspace = true }
 ring = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
+regex-syntax = { workspace = true }
 harsh = { workspace = true }
 primal-check = { workspace = true }
 

@@ -3,6 +3,7 @@ use crate::{
     session::CurrentUserService,
     telemetry::TelemetryService,
     web::{
+        compile_anchored_bytes,
         middlewares::{PoweredBy, SecurityHeaders},
         responses::ProblemConfig,
         ApiUrl, FeatureConfig, WebAppConfig,
@@ -15,7 +16,6 @@ use axum::{
     Extension,
 };
 use axum_server::Handle;
-use regex::bytes::Regex;
 use serde::de::DeserializeOwned;
 use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, time::Duration as StdDuration};
 use tokio::{net::TcpListener, runtime::Runtime, signal, time::sleep};
@@ -164,7 +164,7 @@ impl<'a> AppBuildContext<'a> {
 fn create_cors_layer(allowed_origins: &[String]) -> Result<CorsLayer, AnyError> {
     let allowed_origins = allowed_origins
         .iter()
-        .map(|r| Regex::new(r))
+        .map(|r| compile_anchored_bytes(r))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| anyhow!("Cors config error: {err}"))?;
     let cors = CorsLayer::default()

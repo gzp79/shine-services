@@ -3968,6 +3968,7 @@ dependencies = [
  "redis",
  "refinery",
  "regex",
+ "regex-syntax",
  "reqwest",
  "ring",
  "rustls",

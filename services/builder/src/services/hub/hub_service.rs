@@ -138,7 +138,7 @@ impl HubService {
                     // Control is prioritized so lifecycle signals are handled promptly.
                     biased;
                     control = control_rx.recv() => match control {
-                        Some(command) => service.process(command).await,
+                        Some(command) => if !service.process(command).await { break },
                         None => break,
                     },
                     payload = payload_rx.recv() => match payload {
@@ -169,7 +169,8 @@ impl HubService {
         });
     }
 
-    async fn process(&self, command: ControlCommand) {
+    /// Processes one control command. Returns if the dispatcher should continue (true) or exit (false).
+    async fn process(&self, command: ControlCommand) -> bool {
         log::debug!("Processing command: {command:#?}");
         match command {
             ControlCommand::ConnectUser {
@@ -183,7 +184,7 @@ impl HubService {
                 // an orphaned, untracked new socket.
                 if let Err(err) = self.create_registry_connection(user_id, connection_id).await {
                     log::error!("[{user_id}] Failed to create hub connection: {err:#?}");
-                    return;
+                    return true;
                 }
 
                 // Now that the new connection is durably registered, tear down any different
@@ -206,18 +207,20 @@ impl HubService {
                     session_key,
                 }))
                 .await;
+                true
             }
             ControlCommand::DisconnectUser { user_id, connection_id } => {
                 // Only removes the entry when `connection_id` still matches the active
                 // connection, so a stale disconnect can never tear down a fresh reconnect.
                 let Some(removed_connection_id) = self.inner.users.disconnect(user_id, Some(connection_id)).await
                 else {
-                    return;
+                    return true;
                 };
 
                 if let Err(err) = self.remove_registry_connection(user_id, removed_connection_id).await {
-                    log::error!("[{user_id}] Failed to remove hub connection: {err:#?}");
-                    return;
+                    // Best-effort: publish UserDisconnected regardless so the socket and trackers
+                    // never wedge, and let the registry TTL clean up the stale row.
+                    log::error!("[{user_id}] Failed to remove hub connection (relying on TTL cleanup): {err:#?}");
                 }
 
                 self.publish(HubMessage::Hub(HubEvent::UserDisconnected {
@@ -225,12 +228,15 @@ impl HubService {
                     connection_id: removed_connection_id,
                 }))
                 .await;
+                true
             }
             ControlCommand::HubRegistryChanged { user_id } => {
                 self.process_registry_change(user_id).await;
+                true
             }
             ControlCommand::Shutdown => {
                 self.publish(HubMessage::Hub(HubEvent::Shutdown)).await;
+                false
             }
         }
     }
