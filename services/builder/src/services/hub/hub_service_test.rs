@@ -1,14 +1,18 @@
-use super::HubService;
+use super::{HubIntervals, HubService};
 use crate::{
-    models::messages::{HubCommand, HubEvent, HubMessage, TopicKey},
+    models::messages::{HubEvent, HubMessage, TopicKey},
     repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnectionDb, HubRegistry},
 };
 use ring::rand::SystemRandom;
-use shine_infra::{db, session::SessionKey};
+use shine_infra::{
+    db,
+    session::{CurrentUserService, SessionKey},
+};
 use shine_test::test;
 use std::{
     collections::HashMap,
     env,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::{
@@ -29,7 +33,17 @@ async fn create_test_hub_service() -> Option<(HubService, RedisHubConnectionDb)>
 
     let redis_pool = db::create_redis_pool(redis_cns.as_str()).await.unwrap();
     let hub_registry = RedisHubConnectionDb::new(&redis_pool, 120).await.unwrap();
-    let hub_service = HubService::new(hub_registry.clone());
+
+    // URL_SAFE_NO_PAD: 86 'A' chars decode to 64 zero bytes, a valid cookie key for tests.
+    let cookie_secret = "A".repeat(86);
+    let session_service = Arc::new(CurrentUserService::new(None, &cookie_secret, "", 120, redis_pool.clone()).unwrap());
+
+    // Long consumer intervals so neither internal loop fires during these tests.
+    let intervals = HubIntervals {
+        heartbeat: Duration::from_secs(3600),
+        session_check: Duration::from_secs(3600),
+    };
+    let hub_service = HubService::new(hub_registry.clone(), session_service, intervals);
 
     Some((hub_service, hub_registry))
 }
@@ -92,43 +106,39 @@ async fn reconnect_and_idempotent_disconnect_edge_cases() {
     let mut receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
 
     // Edge case: disconnecting a never-connected user is a no-op.
-    sender.send_command(HubCommand::DisconnectUser { user_id }).unwrap();
+    sender.disconnect(user_id, Uuid::new_v4()).unwrap();
     assert!(
         timeout(Duration::from_millis(120), receiver.recv()).await.is_err(),
         "disconnecting an unknown user should not produce an event"
     );
 
-    sender
-        .send_command(HubCommand::ConnectUser {
-            user_id,
-            session_key: session_key_1,
-        })
-        .unwrap();
+    let first_connection_id = sender.connect(user_id, session_key_1).unwrap();
     wait_for_registry_connection_state(&hub_registry, user_id, true).await;
-    let first_connection_id = find_registry_connection(&hub_registry, user_id)
-        .await
-        .expect("first connection should exist in registry");
+    assert_eq!(
+        find_registry_connection(&hub_registry, user_id).await,
+        Some(first_connection_id),
+        "hub-issued connection id should be the one stored in the registry"
+    );
 
     // Late subscriber should only observe events published after this point.
     let mut late_receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
 
-    sender
-        .send_command(HubCommand::ConnectUser {
-            user_id,
-            session_key: session_key_2,
-        })
-        .unwrap();
+    let second_connection_id = sender.connect(user_id, session_key_2).unwrap();
     wait_for_registry_connection_state(&hub_registry, user_id, true).await;
-    let second_connection_id = find_registry_connection(&hub_registry, user_id)
-        .await
-        .expect("reconnected user should remain in registry");
-    assert_ne!(
-        first_connection_id, second_connection_id,
+    assert_eq!(
+        find_registry_connection(&hub_registry, user_id).await,
+        Some(second_connection_id),
         "reconnect should replace the old active registry connection"
     );
+    assert_ne!(
+        first_connection_id, second_connection_id,
+        "reconnect should mint a distinct connection id"
+    );
 
-    sender.send_command(HubCommand::DisconnectUser { user_id }).unwrap();
-    sender.send_command(HubCommand::DisconnectUser { user_id }).unwrap();
+    // Edge case: a stale disconnect for the replaced connection is ignored; only the
+    // current connection can be disconnected.
+    sender.disconnect(user_id, first_connection_id).unwrap();
+    sender.disconnect(user_id, second_connection_id).unwrap();
     wait_for_registry_connection_state(&hub_registry, user_id, false).await;
 
     let events = collect_hub_events(&mut receiver, Duration::from_millis(500)).await;
@@ -140,6 +150,7 @@ async fn reconnect_and_idempotent_disconnect_edge_cases() {
             HubEvent::UserConnected {
                 user_id: event_user_id,
                 session_key,
+                ..
             } if *event_user_id == user_id => Some(*session_key),
             _ => None,
         })
@@ -159,6 +170,7 @@ async fn reconnect_and_idempotent_disconnect_edge_cases() {
             HubEvent::UserConnected {
                 user_id: event_user_id,
                 session_key,
+                ..
             } if *event_user_id == user_id => Some(*session_key),
             _ => None,
         })
@@ -175,7 +187,7 @@ async fn reconnect_and_idempotent_disconnect_edge_cases() {
     let disconnect_count = events
         .iter()
         .filter(
-            |event| matches!(event, HubEvent::UserDisconnected { user_id: event_user_id } if *event_user_id == user_id),
+            |event| matches!(event, HubEvent::UserDisconnected { user_id: event_user_id, .. } if *event_user_id == user_id),
         )
         .count();
     assert!(disconnect_count >= 1, "at least one disconnect event is expected");
@@ -183,7 +195,7 @@ async fn reconnect_and_idempotent_disconnect_edge_cases() {
     let late_disconnect_count = late_events
         .iter()
         .filter(
-            |event| matches!(event, HubEvent::UserDisconnected { user_id: event_user_id } if *event_user_id == user_id),
+            |event| matches!(event, HubEvent::UserDisconnected { user_id: event_user_id, .. } if *event_user_id == user_id),
         )
         .count();
     assert!(
@@ -195,6 +207,83 @@ async fn reconnect_and_idempotent_disconnect_edge_cases() {
         find_registry_connection(&hub_registry, user_id).await.is_none(),
         "registry connection should be removed after disconnect"
     );
+}
+
+#[test]
+async fn reconnect_replace_emits_disconnect_for_old_connection() {
+    let (hub_service, hub_registry) = match create_test_hub_service().await {
+        Some(data) => data,
+        None => return,
+    };
+
+    let random = SystemRandom::new();
+    let user_id = Uuid::new_v4();
+    let session_key_1 = SessionKey::new_random(&random).unwrap();
+    let session_key_2 = SessionKey::new_random(&random).unwrap();
+
+    let sender = hub_service.sender();
+    let mut receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
+
+    let first_connection_id = sender.connect(user_id, session_key_1).unwrap();
+    wait_for_registry_connection_state(&hub_registry, user_id, true).await;
+
+    // Reconnect WITHOUT an explicit disconnect: the replace itself must emit
+    // UserDisconnected for the old connection.
+    let second_connection_id = sender.connect(user_id, session_key_2).unwrap();
+    wait_for_registry_connection_state(&hub_registry, user_id, true).await;
+
+    let events = collect_hub_events(&mut receiver, Duration::from_millis(500)).await;
+
+    let disconnected_old = events.iter().any(|event| {
+        matches!(event, HubEvent::UserDisconnected { user_id: u, connection_id }
+            if *u == user_id && *connection_id == first_connection_id)
+    });
+    assert!(
+        disconnected_old,
+        "replacing a connection must publish UserDisconnected for the old connection id"
+    );
+    assert_ne!(first_connection_id, second_connection_id);
+
+    // cleanup
+    sender.disconnect(user_id, second_connection_id).unwrap();
+    wait_for_registry_connection_state(&hub_registry, user_id, false).await;
+}
+
+#[test]
+async fn heartbeat_registry_connection_matches_active_only() {
+    let (hub_service, hub_registry) = match create_test_hub_service().await {
+        Some(data) => data,
+        None => return,
+    };
+
+    let random = SystemRandom::new();
+    let user_id = Uuid::new_v4();
+    let session_key = SessionKey::new_random(&random).unwrap();
+
+    let sender = hub_service.sender();
+    let connection_id = sender.connect(user_id, session_key).unwrap();
+    wait_for_registry_connection_state(&hub_registry, user_id, true).await;
+
+    assert_eq!(
+        hub_service
+            .heartbeat_registry_connection(user_id, connection_id)
+            .await
+            .unwrap(),
+        true,
+        "heartbeat of the active connection should succeed"
+    );
+    assert_eq!(
+        hub_service
+            .heartbeat_registry_connection(user_id, Uuid::new_v4())
+            .await
+            .unwrap(),
+        false,
+        "heartbeat of a stale connection id should report inactive"
+    );
+
+    // cleanup
+    sender.disconnect(user_id, connection_id).unwrap();
+    wait_for_registry_connection_state(&hub_registry, user_id, false).await;
 }
 
 #[test]
@@ -236,27 +325,29 @@ async fn concurrent_connect_disconnect_churn_keeps_consistent_registry_state() {
     for user_id in users {
         let task_sender = sender.clone();
         tasks.push(tokio::spawn(async move {
+            // Track the last connection id created so cleanup can target the active one.
+            let mut last_connection_id = Uuid::new_v4();
             for idx in 0..8 {
                 let key = SessionKey::new_random(&SystemRandom::new()).unwrap();
-                task_sender
-                    .send_command(HubCommand::ConnectUser { user_id, session_key: key })
-                    .unwrap();
+                let connection_id = task_sender.connect(user_id, key).unwrap();
+                last_connection_id = connection_id;
                 if idx % 2 == 0 {
-                    task_sender
-                        .send_command(HubCommand::DisconnectUser { user_id })
-                        .unwrap();
+                    task_sender.disconnect(user_id, connection_id).unwrap();
                 }
                 tokio::task::yield_now().await;
             }
+            (user_id, last_connection_id)
         }));
     }
 
+    let mut last_connection_ids = HashMap::<Uuid, Uuid>::new();
     for task in tasks {
-        task.await.unwrap();
+        let (user_id, connection_id) = task.await.unwrap();
+        last_connection_ids.insert(user_id, connection_id);
     }
 
     for user_id in users {
-        sender.send_command(HubCommand::DisconnectUser { user_id }).unwrap();
+        sender.disconnect(user_id, last_connection_ids[&user_id]).unwrap();
         wait_for_registry_connection_state(&hub_registry, user_id, false).await;
     }
 
@@ -272,7 +363,7 @@ async fn concurrent_connect_disconnect_churn_keeps_consistent_registry_state() {
             HubEvent::UserConnected { user_id, .. } => {
                 *connected_count_by_user.entry(*user_id).or_insert(0) += 1;
             }
-            HubEvent::UserDisconnected { user_id } => {
+            HubEvent::UserDisconnected { user_id, .. } => {
                 *disconnected_count_by_user.entry(*user_id).or_insert(0) += 1;
             }
             HubEvent::Shutdown => {}

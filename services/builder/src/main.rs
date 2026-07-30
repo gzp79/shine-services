@@ -8,7 +8,6 @@ mod settings;
 
 use self::{app_config::AppConfig, app_state::AppState};
 use anyhow::Error as AnyError;
-use models::messages::HubCommand;
 use repositories::create_redis_pool;
 use routes::ws::ws_routes;
 use shine_infra::web::{AppBuildContext, FeatureConfig, WebAppConfig, WebApplication};
@@ -31,7 +30,7 @@ impl WebApplication for Application {
 
         let shutdown_sender = state.hub_service().sender();
         context.add_shutdown_hook(move || {
-            if let Err(err) = shutdown_sender.send_command(HubCommand::Shutdown) {
+            if let Err(err) = shutdown_sender.shutdown() {
                 log::warn!("Failed to send hub shutdown command from shutdown hook: {err:#?}");
             }
         });

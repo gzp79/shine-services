@@ -1,7 +1,7 @@
 use crate::{
     app_config::AppConfig,
     repositories::hub_registry::redis::RedisHubConnectionDb,
-    services::{HubService, SessionChecker},
+    services::{HubIntervals, HubService},
     settings::{BuilderSettings, WsSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -49,16 +49,14 @@ impl AppState {
         let hub_heartbeat_seconds = config.feature.hub_heartbeat_seconds.max(1);
         let hub_connection_ttl_seconds = hub_heartbeat_seconds.saturating_mul(2);
         let hub_registry = RedisHubConnectionDb::new(redis_pool, hub_connection_ttl_seconds).await?;
-        let hub_service = HubService::new(hub_registry);
 
-        let auth_check_interval = Duration::from_secs(config.feature.auth_check_interval.max(1));
-        SessionChecker::new(
-            core_services.current_user_service.clone(),
-            &hub_service,
-            auth_check_interval,
-        )
-        .spawn()
-        .await;
+        // The hub owns its periodic connection consumers (heartbeat + session checker), each on
+        // its own loop event-sourced from a Hub subscription.
+        let intervals = HubIntervals {
+            heartbeat: Duration::from_secs(hub_heartbeat_seconds),
+            session_check: Duration::from_secs(config.feature.auth_check_interval.max(1)),
+        };
+        let hub_service = HubService::new(hub_registry, core_services.current_user_service.clone(), intervals);
 
         Ok(Self(Arc::new(Inner { hub_service, settings })))
     }

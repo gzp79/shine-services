@@ -1,6 +1,6 @@
 use crate::{
     app_state::AppState,
-    models::messages::{ChatMessage, HubCommand, HubEvent, HubMessage, TopicKey},
+    models::messages::{ChatMessage, HubEvent, HubMessage, TopicKey},
     routes::ws::message::{WSMessageRequest, WSMessageResponse},
     services::{HubReceiver, HubSender},
 };
@@ -20,6 +20,7 @@ use shine_infra::{
         responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
     },
 };
+use uuid::Uuid;
 
 #[utoipa::path(
     get,
@@ -56,14 +57,11 @@ pub async fn connect(
     let sender = state.hub_service().sender();
     let subscription = state.hub_service().subscribe(vec![TopicKey::Chat, TopicKey::Hub]).await;
 
-    sender
-        .send_command(HubCommand::ConnectUser {
-            user_id: user.user_id,
-            session_key: user.key,
-        })
+    let connection_id = sender
+        .connect(user.user_id, user.key)
         .map_err(|err| err.into_response(&problem_config))?;
 
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, sender, subscription)))
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, connection_id, sender, subscription)))
 }
 
 fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
@@ -73,7 +71,13 @@ fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
     }
 }
 
-async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, mut subscription: HubReceiver) {
+async fn handle_socket(
+    socket: WebSocket,
+    user: CurrentUser,
+    connection_id: Uuid,
+    sender: HubSender,
+    mut subscription: HubReceiver,
+) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let current_user_id = user.user_id;
 
@@ -82,10 +86,10 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, 
     let mut recv_task = {
         let sender = sender.clone();
         tokio::spawn(async move {
-            if let Err(err) = sender.send_command(HubCommand::Chat(ChatMessage {
+            if let Err(err) = sender.send_workload(ChatMessage {
                 user_id: current_user_id,
                 text: "${tr: Connected}".to_string(),
-            })) {
+            }) {
                 log::error!("[{current_user_id}] Failed to send initial message: {err:#?}");
             }
 
@@ -101,9 +105,7 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, 
                     };
 
                     if let Some(text) = msg {
-                        if let Err(err) =
-                            sender.send_command(HubCommand::Chat(ChatMessage { user_id: current_user_id, text }))
-                        {
+                        if let Err(err) = sender.send_workload(ChatMessage { user_id: current_user_id, text }) {
                             log::error!("[{current_user_id}] Failed to send message: {err:#?}");
                         }
                     }
@@ -115,7 +117,7 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, 
     let mut send_task = tokio::spawn(async move {
         while let Some(message) = subscription.recv().await {
             log::info!("[{current_user_id}] Bus message received");
-            if matches!(message, HubMessage::Hub(HubEvent::UserDisconnected { user_id }) if user_id == current_user_id)
+            if matches!(message, HubMessage::Hub(HubEvent::UserDisconnected { connection_id: disconnected, .. }) if disconnected == connection_id)
             {
                 log::info!("[{current_user_id}] ws-close-triggered-by-hub-event: UserDisconnected");
                 if let Err(err) = ws_sender.close().await {
@@ -151,7 +153,7 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, 
     }
 
     log::info!("{current_user_id}] Disconnecting from hub");
-    if let Err(err) = sender.send_command(HubCommand::DisconnectUser { user_id: current_user_id }) {
+    if let Err(err) = sender.disconnect(current_user_id, connection_id) {
         log::error!("[{current_user_id}] Failed to send disconnect command: {err:#?}");
     }
 }

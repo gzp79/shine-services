@@ -1,23 +1,20 @@
-use crate::models::messages::{ToTopic, TopicKey};
 use shine_infra::session::SessionKey;
 use uuid::Uuid;
 
+/// Control messages processed by the hub's command loop.
 #[derive(Clone, Debug)]
-pub enum HubEvent {
-    UserConnected {
+pub enum ControlCommand {
+    ConnectUser {
         user_id: Uuid,
         connection_id: Uuid,
         session_key: SessionKey,
     },
-    UserDisconnected {
+    DisconnectUser {
         user_id: Uuid,
         connection_id: Uuid,
     },
+    HubRegistryChanged {
+        user_id: Uuid,
+    },
     Shutdown,
-}
-
-impl ToTopic for HubEvent {
-    fn topic(&self) -> TopicKey {
-        TopicKey::Hub
-    }
 }

@@ -1,5 +1,5 @@
 use crate::repositories::hub_registry::{
-    redis::{HUB_REGISTRY_CHANGED_CHANNEL, RedisHubRegistryBuildError},
+    redis::{RedisHubRegistryBuildError, HUB_REGISTRY_CHANGED_CHANNEL},
     HubConnectionDb, HubConnectionDbContext, HubConnectionError,
 };
 use shine_infra::db::{DBError, RedisConnectionPool, RedisListenerError, RedisPooledConnection};

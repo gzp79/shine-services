@@ -1,7 +1,8 @@
+mod connection_tracker;
 mod hub;
 mod session_checker;
 
 pub use self::{
-    hub::{HubReceiver, HubSender, HubService},
-    session_checker::SessionChecker,
+    connection_tracker::{run_connection_loop, ConnectionConsumer, ConnectionTracker},
+    hub::{HubIntervals, HubReceiver, HubSender, HubService},
 };

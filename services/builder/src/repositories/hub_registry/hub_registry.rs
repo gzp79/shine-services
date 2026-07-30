@@ -9,10 +9,14 @@ pub struct HubConnection {
 }
 
 pub trait HubRegistry {
-    /// Creates or replaces the active connection for the user and returns the new connection id.
+    /// Creates or replaces the active connection for the user with the given connection id.
     ///
     /// At most one active connection may exist per user.
-    fn create_connection(&mut self, user_id: Uuid) -> impl Future<Output = Result<Uuid, HubConnectionError>> + Send;
+    fn create_connection(
+        &mut self,
+        user_id: Uuid,
+        connection_id: Uuid,
+    ) -> impl Future<Output = Result<(), HubConnectionError>> + Send;
 
     /// Extends the heartbeat TTL for the user only when the provided connection id matches
     /// the currently active one.

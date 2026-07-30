@@ -1,6 +1,4 @@
 use crate::models::messages::{ChatMessage, HubEvent};
-use shine_infra::session::SessionKey;
-use uuid::Uuid;
 
 /// High level filter for messages sent to the hub bus.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -13,18 +11,8 @@ pub trait ToTopic {
     fn topic(&self) -> TopicKey;
 }
 
-/// Wrapper for messages sent to the hub bus.
-#[derive(Clone, Debug)]
-pub enum HubCommand {
-    ConnectUser { user_id: Uuid, session_key: SessionKey },
-    DisconnectUser { user_id: Uuid },
-    HubRegistryChanged { user_id: Uuid },
-    Shutdown,
-
-    Chat(ChatMessage),
-}
-
-/// Wrapper for messages received from the hub bus.
+/// Wrapper for messages received from the hub bus. Carries both hub-generated lifecycle
+/// events and workloads that are broadcast verbatim (see [`Workload`]).
 #[derive(Clone, Debug)]
 pub enum HubMessage {
     Hub(HubEvent),

@@ -2,7 +2,6 @@ use crate::models::messages::{HubMessage, ToTopic, TopicKey};
 use shine_infra::session::SessionKey;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
@@ -14,7 +13,7 @@ struct ConnectedUser {
 
 struct Subscriber {
     topics: Vec<TopicKey>,
-    tx: mpsc::Sender<HubMessage>,
+    tx: mpsc::UnboundedSender<HubMessage>,
 }
 
 /// Owns the hub's connection state: which users are connected (with their
@@ -41,9 +40,21 @@ impl ConnectedUsers {
         sessions.insert(user_id, ConnectedUser { connection_id, session_key });
     }
 
-    /// Removes the user if present and returns the removed connection id.
-    pub async fn disconnect(&self, user_id: Uuid) -> Option<Uuid> {
+    /// Removes the user's connection and returns the removed connection id.
+    ///
+    /// When `connection_id` is `Some`, the entry is removed only if it still matches the
+    /// currently active connection for the user; a stale request whose connection has already
+    /// been replaced by a fresh reconnect is ignored (returns `None`). `None` forces removal
+    /// regardless of which connection is active.
+    pub async fn disconnect(&self, user_id: Uuid, connection_id: Option<Uuid>) -> Option<Uuid> {
         let mut sessions = self.sessions.write().await;
+
+        if let Some(expected) = connection_id {
+            if sessions.get(&user_id).map(|connection| connection.connection_id) != Some(expected) {
+                return None;
+            }
+        }
+
         sessions.remove(&user_id).map(|connection| connection.connection_id)
     }
 
@@ -55,28 +66,23 @@ impl ConnectedUsers {
             .map(|connection| (connection.connection_id, connection.session_key))
     }
 
-    pub async fn subscribe(&self, topics: Vec<TopicKey>, tx: mpsc::Sender<HubMessage>) {
+    pub async fn subscribe(&self, topics: Vec<TopicKey>, tx: mpsc::UnboundedSender<HubMessage>) {
         let mut subscribers = self.subscribers.write().await;
         subscribers.push(Subscriber { topics, tx });
     }
 
-    /// Delivers to every subscriber whose topic set includes this message's
-    /// topic. A closed subscriber channel is logged and pruned. A full channel
-    /// is a transient back-pressure signal: the message is dropped for that
-    /// subscriber but the subscriber itself is kept.
+    /// Delivers to every subscriber whose topic set includes this message's topic. The channel is
+    /// unbounded, so a message is guaranteed delivered once accepted; the only failure is a closed
+    /// receiver, in which case the subscriber is pruned.
     pub async fn publish(&self, message: HubMessage) {
         let mut subscribers = self.subscribers.write().await;
         subscribers.retain(|subscriber| {
             if !subscriber.topics.contains(&message.topic()) {
                 return true;
             }
-            match subscriber.tx.try_send(message.clone()) {
+            match subscriber.tx.send(message.clone()) {
                 Ok(()) => true,
-                Err(TrySendError::Full(_)) => {
-                    log::warn!("Subscriber buffer full, dropping {:?} message", message.topic());
-                    true
-                }
-                Err(TrySendError::Closed(_)) => {
+                Err(_) => {
                     log::error!("Subscriber closed, pruning {:?} subscriber", message.topic());
                     false
                 }

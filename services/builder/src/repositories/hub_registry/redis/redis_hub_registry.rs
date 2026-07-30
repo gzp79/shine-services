@@ -40,8 +40,7 @@ impl RedisHubConnectionDbContext<'_> {
 }
 
 impl HubRegistry for RedisHubConnectionDbContext<'_> {
-    async fn create_connection(&mut self, user_id: Uuid) -> Result<Uuid, HubConnectionError> {
-        let connection_id = Uuid::new_v4();
+    async fn create_connection(&mut self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubConnectionError> {
         let key = self.to_redis_key(user_id);
 
         let client = &mut *self.client;
@@ -60,7 +59,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
             .await
             .map_err(DBError::RedisError)?;
 
-        Ok(connection_id)
+        Ok(())
     }
 
     async fn heartbeat_connection(&mut self, user_id: Uuid, connection_id: Uuid) -> Result<bool, HubConnectionError> {
