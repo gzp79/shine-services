@@ -32,10 +32,6 @@ pub trait HubRegistry {
     /// registry entry that still holds the provided connection id, and reports the connections
     /// the registry no longer holds as active so the caller can disconnect them.
     ///
-    /// The TTL is only a crash-cleanup backstop, so refreshing it is never harmful even if the
-    /// entry now holds a newer connection; disconnect decisions rely on the id comparison, which
-    /// is also covered by the pub/sub path and the next tick.
-    ///
     /// Returns the subset of `connections` whose registry entry is missing or holds a different
     /// connection id (i.e. the ones to disconnect locally).
     fn heartbeat_connections(
