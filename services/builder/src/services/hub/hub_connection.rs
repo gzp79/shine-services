@@ -65,17 +65,28 @@ impl HubSender {
     }
 }
 
-/// Topic-filtered receiver. Filtering happens on the hub's send side (see ConnectedUsers).
-pub struct HubReceiver {
-    rx: mpsc::UnboundedReceiver<HubMessage>,
+/// Receiving end of a subscription. Internal consumers use an unbounded channel (lossless — a
+/// dropped lifecycle event would corrupt their connection tracker); WS clients use a bounded
+/// channel so a slow reader cannot make the hub buffer without limit (see ConnectedUsers::publish,
+/// which drops the subscriber when its bounded channel is full).
+pub enum HubReceiver {
+    Unbounded(mpsc::UnboundedReceiver<HubMessage>),
+    Bounded(mpsc::Receiver<HubMessage>),
 }
 
 impl HubReceiver {
     pub fn new(rx: mpsc::UnboundedReceiver<HubMessage>) -> Self {
-        Self { rx }
+        Self::Unbounded(rx)
+    }
+
+    pub fn new_bounded(rx: mpsc::Receiver<HubMessage>) -> Self {
+        Self::Bounded(rx)
     }
 
     pub async fn recv(&mut self) -> Option<HubMessage> {
-        self.rx.recv().await
+        match self {
+            Self::Unbounded(rx) => rx.recv().await,
+            Self::Bounded(rx) => rx.recv().await,
+        }
     }
 }

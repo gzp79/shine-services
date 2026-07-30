@@ -21,6 +21,11 @@ use shine_infra::{
     },
 };
 
+/// Per-WS-client egress buffer capacity. A client that lets this many broadcast messages queue
+/// without draining them is considered too slow, and the hub drops its subscription — closing the
+/// receiver and thus the socket. Internal hub consumers are unbounded and unaffected.
+const WS_CLIENT_CHANNEL_CAPACITY: usize = 256;
+
 #[utoipa::path(
     get,
     path = "/api/connect",
@@ -54,7 +59,10 @@ pub async fn connect(
     log::info!("User {} requesting a connection...", user.user_id);
 
     let sender = state.hub_service().sender();
-    let subscription = state.hub_service().subscribe(vec![TopicKey::Chat, TopicKey::Hub]).await;
+    let subscription = state
+        .hub_service()
+        .subscribe_bounded(vec![TopicKey::Chat, TopicKey::Hub], WS_CLIENT_CHANNEL_CAPACITY)
+        .await;
 
     Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, sender, subscription)))
 }

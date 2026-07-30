@@ -11,9 +11,17 @@ struct ConnectedUser {
     pub session_key: SessionKey,
 }
 
+/// Sending end of a subscription. Internal consumers get an unbounded, lossless channel; slow
+/// consumers (e.g. remote clients) get a bounded one that is dropped rather than buffered without
+/// limit when the consumer cannot keep up. See [`ConnectedUsers::publish`].
+enum SubscriberTx {
+    Unbounded(mpsc::UnboundedSender<HubMessage>),
+    Bounded(mpsc::Sender<HubMessage>),
+}
+
 struct Subscriber {
     topics: Vec<TopicKey>,
-    tx: mpsc::UnboundedSender<HubMessage>,
+    tx: SubscriberTx,
 }
 
 /// Owns the hub's connection state: which users are connected (with their
@@ -66,28 +74,67 @@ impl ConnectedUsers {
             .map(|connection| (connection.connection_id, connection.session_key))
     }
 
+    /// Registers a lossless, unbounded subscriber. Intended for internal consumers (heartbeat,
+    /// session checker) where dropping a lifecycle event would corrupt their connection tracker.
     pub async fn subscribe(&self, topics: Vec<TopicKey>, tx: mpsc::UnboundedSender<HubMessage>) {
         let mut subscribers = self.subscribers.write().await;
-        subscribers.push(Subscriber { topics, tx });
+        subscribers.push(Subscriber {
+            topics,
+            tx: SubscriberTx::Unbounded(tx),
+        });
     }
 
-    /// Delivers to every subscriber whose topic set includes this message's topic. The channel is
-    /// unbounded, so a message is guaranteed delivered once accepted; the only failure is a closed
-    /// receiver, in which case the subscriber is pruned.
+    /// Registers a bounded subscriber. Intended for slow consumers (e.g. remote clients): if the
+    /// consumer cannot keep up and its channel fills, `publish` drops the subscriber instead of
+    /// buffering without limit, which closes the receiver.
+    pub async fn subscribe_bounded(&self, topics: Vec<TopicKey>, tx: mpsc::Sender<HubMessage>) {
+        let mut subscribers = self.subscribers.write().await;
+        subscribers.push(Subscriber {
+            topics,
+            tx: SubscriberTx::Bounded(tx),
+        });
+    }
+
+    /// Delivers to every subscriber whose topic set includes this message's topic.
+    ///
+    /// Unbounded subscribers only fail on a closed receiver. Bounded subscribers additionally fail
+    /// when the channel is full — a consumer too slow to drain the broadcast — in which case the
+    /// subscriber is dropped (closing its receiver) rather than letting the hub buffer without
+    /// limit.
     pub async fn publish(&self, message: HubMessage) {
         let mut subscribers = self.subscribers.write().await;
         subscribers.retain(|subscriber| {
             if !subscriber.topics.contains(&message.topic()) {
                 return true;
             }
-            match subscriber.tx.send(message.clone()) {
-                Ok(()) => true,
-                Err(_) => {
-                    log::error!("Subscriber closed, pruning {:?} subscriber", message.topic());
-                    false
-                }
+            match &subscriber.tx {
+                SubscriberTx::Unbounded(tx) => match tx.send(message.clone()) {
+                    Ok(()) => true,
+                    Err(_) => {
+                        log::error!("Subscriber closed, pruning {:?} subscriber", message.topic());
+                        false
+                    }
+                },
+                SubscriberTx::Bounded(tx) => match tx.try_send(message.clone()) {
+                    Ok(()) => true,
+                    Err(mpsc::error::TrySendError::Full(_)) => {
+                        log::warn!("Bounded subscriber lagging, dropping {:?} subscriber", message.topic());
+                        false
+                    }
+                    Err(mpsc::error::TrySendError::Closed(_)) => {
+                        log::error!("Subscriber closed, pruning {:?} subscriber", message.topic());
+                        false
+                    }
+                },
             }
         });
+    }
+
+    /// Number of connected users and current subscribers, for status reporting.
+    pub async fn stats(&self) -> (usize, usize) {
+        let connections = self.sessions.read().await.len();
+        let subscribers = self.subscribers.read().await.len();
+        (connections, subscribers)
     }
 }
 

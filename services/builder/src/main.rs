@@ -6,7 +6,7 @@ mod routes;
 mod services;
 mod settings;
 
-use self::{app_config::AppConfig, app_state::AppState};
+use self::{app_config::AppConfig, app_state::AppState, services::HubStatus};
 use anyhow::Error as AnyError;
 use repositories::create_redis_pool;
 use routes::ws::ws_routes;
@@ -27,6 +27,8 @@ impl WebApplication for Application {
     ) -> Result<Self::AppState, AnyError> {
         let redis_pool = create_redis_pool(&config.feature.db).await?;
         let state = AppState::new(config, &redis_pool, context.core_services()).await?;
+
+        context.add_health_provider(HubStatus::new(state.hub_service().clone()));
 
         let shutdown_sender = state.hub_service().sender();
         context.add_shutdown_hook(move || {

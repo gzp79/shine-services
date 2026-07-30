@@ -25,6 +25,13 @@ pub struct HubIntervals {
     pub session_check: Duration,
 }
 
+/// Point-in-time counts of hub state, for status reporting.
+#[derive(Clone, Copy, Debug)]
+pub struct HubStats {
+    pub connections: usize,
+    pub subscribers: usize,
+}
+
 struct Inner {
     control_tx: mpsc::UnboundedSender<ControlCommand>,
     payload_tx: mpsc::Sender<Workload>,
@@ -41,7 +48,7 @@ pub struct HubService {
 }
 
 impl HubService {
-    pub fn new(
+    pub async fn new(
         hub_registry: RedisHubConnectionDb,
         session_service: Arc<CurrentUserService>,
         intervals: HubIntervals,
@@ -58,10 +65,15 @@ impl HubService {
             }),
         };
 
-        Self::start_dispatcher(service.clone(), control_rx, payload_rx);
+        // All consumer subscriptions must be registered before the dispatcher starts: the
+        // consumers are event-sourced, so a lifecycle event dispatched before they subscribe is
+        // lost to them forever. The start_* calls subscribe synchronously (awaited), and the
+        // dispatcher is started last so nothing drains the channels until every subscription is in
+        // place.
         Self::start_registry_listener(service.clone());
-        Self::start_heartbeat(service.clone(), intervals.heartbeat);
-        Self::start_session_checker(service.clone(), session_service, intervals.session_check);
+        Self::start_heartbeat(service.clone(), intervals.heartbeat).await;
+        Self::start_session_checker(service.clone(), session_service, intervals.session_check).await;
+        Self::start_dispatcher(service.clone(), control_rx, payload_rx);
         service
     }
 
@@ -69,18 +81,35 @@ impl HubService {
         HubSender::new(self.inner.control_tx.clone(), self.inner.payload_tx.clone())
     }
 
-    /// Subscribe to a set of topics.
+    /// Subscribe to a set of topics on an unbounded, lossless channel. For internal consumers
+    /// only — a dropped lifecycle event would corrupt a consumer's connection tracker.
     pub async fn subscribe(&self, topics: Vec<TopicKey>) -> HubReceiver {
         let (tx, rx) = mpsc::unbounded_channel();
         self.inner.users.subscribe(topics, tx).await;
         HubReceiver::new(rx)
     }
 
+    /// Subscribe to a set of topics on a bounded channel of the given `capacity`. A subscriber too
+    /// slow to drain the broadcast has its subscription dropped once the buffer fills, which closes
+    /// the receiver, rather than letting the hub buffer without limit. Callers choose a capacity
+    /// appropriate to their consumer; the hub itself is transport-agnostic.
+    pub async fn subscribe_bounded(&self, topics: Vec<TopicKey>, capacity: usize) -> HubReceiver {
+        let (tx, rx) = mpsc::channel(capacity);
+        self.inner.users.subscribe_bounded(topics, tx).await;
+        HubReceiver::new_bounded(rx)
+    }
+
+    /// Live connection and subscriber counts for status reporting.
+    pub async fn stats(&self) -> HubStats {
+        let (connections, subscribers) = self.inner.users.stats().await;
+        HubStats { connections, subscribers }
+    }
+
     /// Starts the periodic registry heartbeat on its own connection loop, refreshing TTLs for
     /// locally-tracked connections and disconnecting any the registry no longer holds as active.
-    fn start_heartbeat(service: HubService, interval: Duration) {
+    async fn start_heartbeat(service: HubService, interval: Duration) {
+        let subscription = service.subscribe(vec![TopicKey::Hub]).await;
         tokio::spawn(async move {
-            let subscription = service.subscribe(vec![TopicKey::Hub]).await;
             let task = HeartbeatTask::new(service);
             run_connection_loop(subscription, interval, task).await;
         });
@@ -88,9 +117,9 @@ impl HubService {
 
     /// Starts the periodic session checker on its own connection loop, validating each tracked
     /// session and issuing a targeted disconnect on expiry.
-    fn start_session_checker(service: HubService, session_service: Arc<CurrentUserService>, interval: Duration) {
+    async fn start_session_checker(service: HubService, session_service: Arc<CurrentUserService>, interval: Duration) {
+        let subscription = service.subscribe(vec![TopicKey::Hub]).await;
         tokio::spawn(async move {
-            let subscription = service.subscribe(vec![TopicKey::Hub]).await;
             let checker = SessionChecker::new(session_service, &service);
             run_connection_loop(subscription, interval, checker).await;
         });

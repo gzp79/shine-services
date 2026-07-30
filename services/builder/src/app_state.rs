@@ -56,7 +56,7 @@ impl AppState {
             heartbeat: Duration::from_secs(hub_heartbeat_seconds),
             session_check: Duration::from_secs(config.feature.auth_check_interval.max(1)),
         };
-        let hub_service = HubService::new(hub_registry, core_services.current_user_service.clone(), intervals);
+        let hub_service = HubService::new(hub_registry, core_services.current_user_service.clone(), intervals).await;
 
         Ok(Self(Arc::new(Inner { hub_service, settings })))
     }

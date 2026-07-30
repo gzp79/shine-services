@@ -1,6 +1,6 @@
 use super::{HubIntervals, HubService};
 use crate::{
-    models::messages::{HubEvent, HubMessage, TopicKey},
+    models::messages::{ChatMessage, HubEvent, HubMessage, TopicKey},
     repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
 };
 use ring::rand::SystemRandom;
@@ -43,7 +43,7 @@ async fn create_test_hub_service() -> Option<(HubService, RedisHubConnectionDb)>
         heartbeat: Duration::from_secs(3600),
         session_check: Duration::from_secs(3600),
     };
-    let hub_service = HubService::new(hub_registry.clone(), session_service, intervals);
+    let hub_service = HubService::new(hub_registry.clone(), session_service, intervals).await;
 
     Some((hub_service, hub_registry))
 }
@@ -359,6 +359,69 @@ async fn batched_heartbeat_refreshes_active_and_reports_stale() {
     sender.disconnect(active_b, conn_b).unwrap();
     wait_for_registry_connection_state(&hub_registry, active_a, false).await;
     wait_for_registry_connection_state(&hub_registry, active_b, false).await;
+}
+
+#[test]
+async fn bounded_subscriber_is_auto_disconnected_when_it_falls_behind() {
+    let (hub_service, _hub_registry) = match create_test_hub_service().await {
+        Some(data) => data,
+        None => return,
+    };
+
+    let sender = hub_service.sender();
+
+    // Let the internal consumers (heartbeat, session checker) finish subscribing so the subscriber
+    // count is stable before we add ours; they subscribe from their own spawned tasks.
+    sleep(Duration::from_millis(100)).await;
+    let baseline_subscribers = hub_service.stats().await.subscribers;
+
+    // A slow client: a bounded subscriber of capacity 1 that never drains its channel.
+    let mut slow = hub_service.subscribe_bounded(vec![TopicKey::Chat], 1).await;
+    assert_eq!(
+        hub_service.stats().await.subscribers,
+        baseline_subscribers + 1,
+        "the bounded subscriber should be registered"
+    );
+
+    // Flood the Chat topic without ever calling `slow.recv()`. The first message fills the
+    // capacity-1 buffer; a subsequent one overflows it, and `publish` drops the subscriber.
+    let chatter = Uuid::new_v4();
+    for idx in 0..32 {
+        sender
+            .send_workload(ChatMessage {
+                user_id: chatter,
+                text: format!("msg {idx}"),
+            })
+            .unwrap();
+    }
+
+    // Once pruned, the sending half is dropped and the receiver closes: after draining whatever
+    // was buffered, `recv()` returns None. Poll until the channel is observed closed.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match timeout(Duration::from_millis(100), slow.recv()).await {
+            Ok(None) => break, // channel closed => subscriber was dropped by the hub
+            Ok(Some(_)) => {}  // drain the single buffered message, keep waiting for close
+            Err(_) => {}       // timed out waiting for a message; retry until deadline
+        }
+        assert!(
+            Instant::now() < deadline,
+            "slow bounded subscriber was never auto-disconnected"
+        );
+    }
+
+    // The hub must have pruned the lagging subscriber from its registry, back to baseline.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if hub_service.stats().await.subscribers == baseline_subscribers {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "lagging subscriber was not removed from the hub subscriber set"
+        );
+        sleep(Duration::from_millis(20)).await;
+    }
 }
 
 #[test]
