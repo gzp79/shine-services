@@ -250,7 +250,7 @@ async fn reconnect_replace_emits_disconnect_for_old_connection() {
 }
 
 #[test]
-async fn heartbeat_registry_connection_matches_active_only() {
+async fn shutdown_publishes_event_and_stops_dispatcher() {
     let (hub_service, hub_registry) = match create_test_hub_service().await {
         Some(data) => data,
         None => return,
@@ -261,28 +261,125 @@ async fn heartbeat_registry_connection_matches_active_only() {
     let session_key = SessionKey::new_random(&random).unwrap();
 
     let sender = hub_service.sender();
-    let connection_id = sender.connect(user_id, session_key).unwrap();
+    let mut receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
+
+    // Shut down, then enqueue a connect. The control channel is a single FIFO drained biased-first,
+    // so the dispatcher processes Shutdown (and breaks) before ever reaching this connect.
+    sender.shutdown().unwrap();
+    sender.connect(user_id, session_key).unwrap();
+
+    let events = collect_hub_events(&mut receiver, Duration::from_millis(500)).await;
+    assert!(
+        events.iter().any(|event| matches!(event, HubEvent::Shutdown)),
+        "shutdown should publish a Shutdown event"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, HubEvent::UserConnected { user_id: u, .. } if *u == user_id)),
+        "a connect enqueued after shutdown must not be processed"
+    );
+    assert!(
+        find_registry_connection(&hub_registry, user_id).await.is_none(),
+        "no registry connection should be created after shutdown"
+    );
+}
+
+#[test]
+async fn chat_payload_is_delivered_and_topic_filtered() {
+    let (hub_service, _hub_registry) = match create_test_hub_service().await {
+        Some(data) => data,
+        None => return,
+    };
+
+    let sender = hub_service.sender();
+    // One subscriber on Chat, one on Hub only. The Chat payload must reach the first and never
+    // the second — the hub's core fan-out and topic-filtering contract.
+    let mut chat_receiver = hub_service.subscribe(vec![TopicKey::Chat]).await;
+    let mut hub_receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
+
+    let author = Uuid::new_v4();
+    sender
+        .send_workload(ChatMessage {
+            user_id: author,
+            text: "hello".to_string(),
+        })
+        .unwrap();
+
+    let delivered = timeout(Duration::from_millis(500), chat_receiver.recv()).await;
+    match delivered {
+        Ok(Some(HubMessage::Chat(message))) => {
+            assert_eq!(message.user_id, author, "delivered chat should carry the author id");
+            assert_eq!(
+                message.text, "hello",
+                "delivered chat should carry the payload verbatim"
+            );
+        }
+        other => panic!("chat subscriber should receive the chat message, got {other:?}"),
+    }
+
+    assert!(
+        timeout(Duration::from_millis(200), hub_receiver.recv()).await.is_err(),
+        "a Hub-only subscriber must not receive Chat payloads"
+    );
+}
+
+#[test]
+async fn registry_change_disconnects_stale_local_connection() {
+    let (hub_service, hub_registry) = match create_test_hub_service().await {
+        Some(data) => data,
+        None => return,
+    };
+
+    let random = SystemRandom::new();
+    let user_id = Uuid::new_v4();
+    let session_key = SessionKey::new_random(&random).unwrap();
+
+    let sender = hub_service.sender();
+    let mut receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
+
+    let local_connection_id = sender.connect(user_id, session_key).unwrap();
     wait_for_registry_connection_state(&hub_registry, user_id, true).await;
 
-    assert_eq!(
-        hub_service
-            .heartbeat_registry_connection(user_id, connection_id)
+    // Simulate another service instance taking over the user's single connection slot: overwrite
+    // the registry key with a different connection id, then deliver the registry-change notice.
+    let other_instance_connection_id = Uuid::new_v4();
+    {
+        let mut context = hub_registry.create_context().await.unwrap();
+        context
+            .create_connection(user_id, other_instance_connection_id)
             .await
-            .unwrap(),
-        true,
-        "heartbeat of the active connection should succeed"
+            .unwrap();
+    }
+    sender.notify_registry_changed(user_id).unwrap();
+
+    // This instance must find its local connection is no longer the active one and disconnect it,
+    // publishing UserDisconnected for exactly the local (now stale) connection id.
+    let events = collect_hub_events(&mut receiver, Duration::from_millis(500)).await;
+    assert!(
+        events.iter().any(|event| {
+            matches!(event, HubEvent::UserDisconnected { user_id: u, connection_id }
+                if *u == user_id && *connection_id == local_connection_id)
+        }),
+        "a registry change that replaced this instance's connection must disconnect it locally"
     );
+
+    // The other instance's entry must be left intact — reconciliation only removes the local stale
+    // connection, never the fresher winner.
     assert_eq!(
-        hub_service
-            .heartbeat_registry_connection(user_id, Uuid::new_v4())
-            .await
-            .unwrap(),
-        false,
-        "heartbeat of a stale connection id should report inactive"
+        find_registry_connection(&hub_registry, user_id).await,
+        Some(other_instance_connection_id),
+        "reconciliation must not remove the connection owned by the other instance"
     );
 
     // cleanup
-    sender.disconnect(user_id, connection_id).unwrap();
+    {
+        let mut context = hub_registry.create_context().await.unwrap();
+        context
+            .remove_connection_if_active(user_id, other_instance_connection_id)
+            .await
+            .unwrap();
+    }
     wait_for_registry_connection_state(&hub_registry, user_id, false).await;
 }
 
@@ -344,7 +441,8 @@ async fn batched_heartbeat_refreshes_active_and_reports_stale() {
         "only the mismatching / missing entries are reported stale"
     );
 
-    // The matching entry is still active after the batched heartbeat (TTL refreshed, not removed).
+    // Single-heartbeat CAS: the matching id is still active (TTL refreshed, not removed), while a
+    // stale id for the same user reports inactive.
     assert_eq!(
         hub_service
             .heartbeat_registry_connection(active_a, conn_a)
@@ -352,6 +450,14 @@ async fn batched_heartbeat_refreshes_active_and_reports_stale() {
             .unwrap(),
         true,
         "the active connection should remain active after a batched heartbeat"
+    );
+    assert_eq!(
+        hub_service
+            .heartbeat_registry_connection(active_a, Uuid::new_v4())
+            .await
+            .unwrap(),
+        false,
+        "a stale connection id should report inactive"
     );
 
     // cleanup
