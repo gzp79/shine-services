@@ -1,11 +1,10 @@
 # SDP Doc Conventions
 
-These rules govern every `docs/<feature>.html` produced or modified by `sdp-doc`
-and `sdp-code`. Follow them exactly. Deviations break the skills' ability
-to find and reason about the doc.
+These rules govern every `docs/<feature>.html` the `sdp` skill produces or
+modifies. Follow them exactly. Deviations break the skill's ability to find and
+reason about the doc.
 
-This file lives in `.claude/skills/sdp-doc/references/` and is referenced from
-`.claude/skills/sdp-code/` via a relative path — keep it canonical here.
+This file lives in `.claude/skills/sdp/references/` and is canonical here.
 
 ---
 
@@ -317,7 +316,7 @@ Two columns only: **File** and **Role**. No status column, no change badges
 (`new` / `refactor` / `keep` / `removed`). The map is the target-state set of
 files; if a file doesn't belong, it shouldn't be listed.
 
-This is the anchor both skills use to find the code. Keep it accurate
+This is the anchor the skill uses to find the code. Keep it accurate
 and complete: every file that implements (or is intended to implement) the
 feature should appear, and only those files. Generated files, tests, and
 build artifacts go in collapsibles, not the file map.
@@ -384,7 +383,7 @@ that fits. Common tags:
 | `data-agent="accessibility"` | a11y requirements and their rationale |
 | `data-agent="migration"` | one-shot migration notes (transient; remove once done) |
 
-Other tags are fine if they fit. Both skills filter by tag, so consistency
+Other tags are fine if they fit. The skill filters by tag, so consistency
 within a feature matters more than the exact label.
 
 Inside a collapsible:
@@ -443,7 +442,7 @@ Inside a collapsible:
 ## Self-review checklist
 
 Run this against every doc before handing back to the user (the user
-reviews and commits — the skills never do):
+reviews and commits — the skill never does):
 
 - [ ] Filename is `docs/<feature>.html`, kebab-case, no `-spec` / `-design` /
       date / version suffixes.
@@ -469,12 +468,12 @@ reviews and commits — the skills never do):
 
 ## Conformance check
 
-`sdp-doc` (Sync/Update modes) and `sdp-code` run this check against the
-target doc **before** doing their own work. Only `sdp-doc` Fix mode patches the
-violations.
+The `sdp` skill runs this check against the target doc **before** doing its own
+work (the preamble). Because one skill both reads and writes the doc, fixes are
+applied inline — there is no cross-skill handoff.
 
 The check is the self-review checklist above plus these extra items the
-skills depend on:
+skill depends on:
 
 - [ ] File map exists if the feature has code attached.
 - [ ] File map paths actually exist in the repo (or are explicitly marked
@@ -489,17 +488,17 @@ skills depend on:
 ### Severity
 
 Violations are sorted into two tiers, because the cost of fixing them
-differs:
+differs — but both are fixed inline by the same skill; the tiers only govern
+whether to ask first:
 
-**Cosmetic** — one-line, mechanical, can be applied inline with user approval:
+**Cosmetic** — one-line, mechanical, apply inline without asking:
 
 - Filename suffix (`-spec`, `-design`, dates) — plain rename via the
   filesystem; the user stages the rename when committing.
 - Untagged `<details>` block — needs one `data-agent="…"` attribute.
 - Date or status line in the header — delete a line.
 
-**Structural** — touches diagram, file map, or content; needs `sdp-doc` Fix
-mode:
+**Structural** — touches diagram, file map, or content:
 
 - Change badges in the diagram, file map, or anywhere in the body.
 - Status column in the file map.
@@ -510,41 +509,31 @@ mode:
 - Roadmap / future placeholder content in the architecture diagram.
 - Missing file map when one is required.
 
+Structural violations are fixed inline so the doc is readable. The one case that
+is **not** a mechanical fix: a structural change that would alter the doc's
+*meaning* rather than its form (e.g. a "future" section that might be real
+intent, not stray roadmap content). That's a design question — ask before
+touching it (see the skill's *Asking* section).
+
 ### How to report
 
-Group findings by tier, then offer:
+When the check finds anything, note it briefly, then apply:
 
 > "Conformance check found:
 >
-> Cosmetic (can fix inline): <list>
-> Structural (needs sdp-doc Fix mode): <list>
->
-> Fix the cosmetic items inline now? Hand off the structural items to
-> `sdp-doc` Fix mode?"
+> Cosmetic: <list> — fixing inline.
+> Structural: <list> — fixing inline (asking first on any that change meaning)."
 
-Handling depends on which skill is running:
+When reporting an untagged `<details>` block, propose a `data-agent` tag if the
+content makes it obvious (e.g., a block full of test lists → `data-agent="test"`;
+a block of type signatures and edge cases → `data-agent="implementation"`). The
+proposed tag must come from the taxonomy above — never invent new tags. If the
+content is mixed or unclear, flag it and ask.
 
-- **`sdp-doc`** owns doc edits. If only cosmetic items exist, switch to Fix mode
-  (with user approval), apply them, and resume. If any structural items exist,
-  Fix mode is required before Sync/Update can proceed.
-- **`sdp-code`** never edits the doc. Cosmetic items → note and proceed (they
-  don't impede reading the doc). Any structural item → hand off to `sdp-doc`
-  Fix mode and stop, then re-invoke once the doc is conformant.
+When a filename-suffix violation triggers a rename, call it out so the user
+knows to re-invoke against the new path:
 
-When reporting an untagged `<details>` block, the checking skill **may** propose
-a `data-agent` tag if the content makes it obvious (e.g., a block full of
-test lists → `data-agent="test"`; a block of type signatures and edge cases
-→ `data-agent="implementation"`). The proposed tag must come from the
-taxonomy listed above — never invent new tags. If the content is mixed or
-unclear, just flag the block as untagged and let Fix mode ask.
+> "Note: renaming `<old>.html` → `<new>.html`. After the rename, subsequent work
+> targets the new path."
 
-When Fix mode will rename the file (filename-suffix violations), call this out
-so the user knows to re-invoke against the new path:
-
-> "Note: Fix mode will rename `<old>.html` → `<new>.html`. After Fix mode,
-> re-invoke against the new path."
-
-The doc on disk is the only state — there is no resume checkpoint. For
-`sdp-code`, a Fix-mode handoff means a hard restart: re-invoke from scratch
-once the doc is conformant. For `sdp-doc`, Fix is just an internal mode switch,
-then it resumes the original mode.
+The doc on disk is the only state — there is no resume checkpoint.

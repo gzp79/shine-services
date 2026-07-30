@@ -8,7 +8,6 @@ use axum_extra::extract::cookie::Key;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Duration, Utc};
 use redis::AsyncCommands;
-use ring::digest;
 use serde::{Deserialize, Serialize};
 use shine_infra_macros::RedisJsonValue;
 use std::sync::Arc;
@@ -94,8 +93,7 @@ impl CurrentUserService {
         }
 
         let (sentinel_key, key) = {
-            let key_hash = digest::digest(&digest::SHA256, session_key.as_bytes());
-            let key_hash = hex::encode(key_hash);
+            let key_hash = session_key.key_hash();
 
             let prefix = format!("{}session:{}:{}", self.key_prefix, user_id.as_simple(), key_hash);
             let sentinel_key = format!("{prefix}:sentinel");

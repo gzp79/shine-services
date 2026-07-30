@@ -1,7 +1,7 @@
 use super::{HubIntervals, HubService};
 use crate::{
     models::messages::{HubEvent, HubMessage, TopicKey},
-    repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnectionDb, HubRegistry},
+    repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
 };
 use ring::rand::SystemRandom;
 use shine_infra::{
@@ -284,6 +284,81 @@ async fn heartbeat_registry_connection_matches_active_only() {
     // cleanup
     sender.disconnect(user_id, connection_id).unwrap();
     wait_for_registry_connection_state(&hub_registry, user_id, false).await;
+}
+
+#[test]
+async fn batched_heartbeat_refreshes_active_and_reports_stale() {
+    let (hub_service, hub_registry) = match create_test_hub_service().await {
+        Some(data) => data,
+        None => return,
+    };
+
+    let random = SystemRandom::new();
+    let sender = hub_service.sender();
+
+    // Two active connections and one that was never registered.
+    let active_a = Uuid::new_v4();
+    let active_b = Uuid::new_v4();
+    let never_registered = Uuid::new_v4();
+
+    let conn_a = sender
+        .connect(active_a, SessionKey::new_random(&random).unwrap())
+        .unwrap();
+    let conn_b = sender
+        .connect(active_b, SessionKey::new_random(&random).unwrap())
+        .unwrap();
+    wait_for_registry_connection_state(&hub_registry, active_a, true).await;
+    wait_for_registry_connection_state(&hub_registry, active_b, true).await;
+
+    // Batch mixes: the two active ids, a stale id for an active user, and a user with no entry.
+    let requested = vec![
+        HubConnection {
+            user_id: active_a,
+            connection_id: conn_a,
+        },
+        HubConnection {
+            user_id: active_b,
+            connection_id: Uuid::new_v4(),
+        },
+        HubConnection {
+            user_id: never_registered,
+            connection_id: Uuid::new_v4(),
+        },
+    ];
+
+    let mut stale = hub_service.heartbeat_registry_connections(&requested).await.unwrap();
+    stale.sort_by_key(|c| c.user_id);
+    let mut expected = vec![
+        HubConnection {
+            user_id: active_b,
+            connection_id: requested[1].connection_id,
+        },
+        HubConnection {
+            user_id: never_registered,
+            connection_id: requested[2].connection_id,
+        },
+    ];
+    expected.sort_by_key(|c| c.user_id);
+    assert_eq!(
+        stale, expected,
+        "only the mismatching / missing entries are reported stale"
+    );
+
+    // The matching entry is still active after the batched heartbeat (TTL refreshed, not removed).
+    assert_eq!(
+        hub_service
+            .heartbeat_registry_connection(active_a, conn_a)
+            .await
+            .unwrap(),
+        true,
+        "the active connection should remain active after a batched heartbeat"
+    );
+
+    // cleanup
+    sender.disconnect(active_a, conn_a).unwrap();
+    sender.disconnect(active_b, conn_b).unwrap();
+    wait_for_registry_connection_state(&hub_registry, active_a, false).await;
+    wait_for_registry_connection_state(&hub_registry, active_b, false).await;
 }
 
 #[test]

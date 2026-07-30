@@ -177,12 +177,16 @@ fed by lifecycle events and both resolve identity by <code>connection_id</code>,
 so neither can tear down a fresher connection.</p>
 
 <h3>In-memory</h3>
-<p>A single <code>ConnectionTracker</code> owns one <code>Hub</code>-topic
-subscription and event-sources a <code>user_id → (connection_id, session_key)</code>
-map from <code>UserConnected</code> / <code>UserDisconnected</code>. Periodic
-consumers poll it via <code>refresh_if_changed</code>, which copies the map only
-when a monotonic generation counter advanced. The <code>SessionChecker</code> is
-one such consumer: on each tick it validates every tracked session against
+<p>Each periodic consumer runs a self-contained <code>run_connection_loop</code>: it
+takes its <em>own</em> <code>Hub</code>-topic subscription and owns a private
+<code>ConnectionTracker</code> that event-sources a
+<code>user_id → (connection_id, session_key)</code> map from
+<code>UserConnected</code> / <code>UserDisconnected</code>. The loop is a
+<code>select!</code> between the subscription (each message is applied to the owned
+map) and an interval ticker (each tick invokes the consumer's <code>on_tick</code>
+with the current map). Because every consumer owns its tracker, there is no shared
+state and no lock between them. The <code>SessionChecker</code> is one such consumer:
+on each tick it validates every tracked session against
 <code>CurrentUserService</code> and, on failure, issues a <strong>targeted</strong>
 <code>disconnect(user_id, connection_id)</code>.</p>
 
@@ -209,9 +213,11 @@ one such consumer: on each tick it validates every tracked session against
     </div>
   </div>
 </div>
-<p>The tracker treats a closed subscription (channel returns <code>None</code>)
-as a shutdown signal via a <code>watch</code> flag, so consumers stop cleanly
-instead of busy-looping over a stale snapshot. Expiry handling in full:</p>
+<p>The loop ends cleanly on a <code>Shutdown</code> event or a closed subscription
+(recv returns <code>None</code>), so consumers stop instead of busy-looping over a
+stale snapshot. A <code>UserDisconnected</code> is applied only when it matches the
+tracked <code>connection_id</code>, so a stale disconnect never drops a fresh
+reconnect. Expiry handling in full:</p>
 
 <div class="hflow">
   <div class="box box-green"><div class="bname">SessionChecker tick</div></div>

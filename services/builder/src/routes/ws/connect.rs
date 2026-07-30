@@ -20,7 +20,6 @@ use shine_infra::{
         responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
     },
 };
-use uuid::Uuid;
 
 #[utoipa::path(
     get,
@@ -57,11 +56,7 @@ pub async fn connect(
     let sender = state.hub_service().sender();
     let subscription = state.hub_service().subscribe(vec![TopicKey::Chat, TopicKey::Hub]).await;
 
-    let connection_id = sender
-        .connect(user.user_id, user.key)
-        .map_err(|err| err.into_response(&problem_config))?;
-
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, connection_id, sender, subscription)))
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, sender, subscription)))
 }
 
 fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
@@ -71,15 +66,22 @@ fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
     }
 }
 
-async fn handle_socket(
-    socket: WebSocket,
-    user: CurrentUser,
-    connection_id: Uuid,
-    sender: HubSender,
-    mut subscription: HubReceiver,
-) {
+async fn handle_socket(socket: WebSocket, user: CurrentUser, sender: HubSender, mut subscription: HubReceiver) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let current_user_id = user.user_id;
+
+    // Register the connection now that the upgrade has completed. If registration fails there is no
+    // live connection to keep, so close the socket without emitting a disconnect for it.
+    let connection_id = match sender.connect(current_user_id, user.key) {
+        Ok(connection_id) => connection_id,
+        Err(err) => {
+            log::error!("[{current_user_id}] Failed to register connection: {err:#?}");
+            if let Err(err) = ws_sender.close().await {
+                log::error!("[{current_user_id}] Failed to close websocket after failed registration: {err:#?}");
+            }
+            return;
+        }
+    };
 
     log::info!("[{current_user_id}] Connected to the hub");
 

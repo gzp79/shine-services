@@ -13,6 +13,11 @@ impl RedisHubConnectionDbContext<'_> {
         format!("{HUB_CONNECTION_KEYSPACE}{}", user_id.as_simple())
     }
 
+    /// Wire payload for the `hub-registry-changed` channel.
+    fn to_change_payload(&self, user_id: Uuid) -> String {
+        format!("{}:{}", self.instance_id, user_id)
+    }
+
     fn user_id_from_redis_key(&self, key: &str) -> Option<Uuid> {
         key.strip_prefix(HUB_CONNECTION_KEYSPACE)
             .and_then(|raw| Uuid::parse_str(raw).ok())
@@ -42,6 +47,8 @@ impl RedisHubConnectionDbContext<'_> {
 impl HubRegistry for RedisHubConnectionDbContext<'_> {
     async fn create_connection(&mut self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubConnectionError> {
         let key = self.to_redis_key(user_id);
+        let change_payload = self.to_change_payload(user_id);
+        let ttl_seconds = self.ttl_seconds;
 
         let client = &mut *self.client;
 
@@ -50,11 +57,11 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
             .arg(&key)
             .arg(connection_id.to_string())
             .arg("EX")
-            .arg(self.ttl_seconds)
+            .arg(ttl_seconds)
             .ignore()
             .cmd("PUBLISH")
             .arg(HUB_REGISTRY_CHANGED_CHANNEL)
-            .arg(user_id.to_string())
+            .arg(change_payload)
             .query_async(client)
             .await
             .map_err(DBError::RedisError)?;
@@ -90,6 +97,49 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
         .map_err(DBError::RedisError)?;
 
         Ok(updated)
+    }
+
+    async fn heartbeat_connections(
+        &mut self,
+        connections: &[HubConnection],
+    ) -> Result<Vec<HubConnection>, HubConnectionError> {
+        if connections.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Read every tracked user's current registry entry in one round trip.
+        let keys: Vec<String> = connections.iter().map(|c| self.to_redis_key(c.user_id)).collect();
+        let current: Vec<Option<String>> = self.client.mget(&keys).await.map_err(DBError::RedisError)?;
+
+        // Compare in memory: entries that still hold our connection id get their TTL refreshed;
+        // the rest are reported back so the caller can disconnect them. There is no per-key CAS —
+        // a connection replaced between the MGET and the EXPIRE below simply gets a fresh TTL for
+        // the newer entry (harmless, TTL is only crash cleanup).
+        let mut pipe = redis::pipe();
+        let mut refreshed = 0usize;
+        let mut stale = Vec::new();
+
+        for ((connection, key), value) in connections.iter().zip(&keys).zip(current) {
+            let matches = value
+                .as_deref()
+                .and_then(|raw| Uuid::parse_str(raw).ok())
+                .is_some_and(|id| id == connection.connection_id);
+
+            if matches {
+                pipe.expire(key, self.ttl_seconds as i64).ignore();
+                refreshed += 1;
+            } else {
+                stale.push(*connection);
+            }
+        }
+
+        if refreshed > 0 {
+            pipe.query_async::<()>(&mut *self.client)
+                .await
+                .map_err(DBError::RedisError)?;
+        }
+
+        Ok(stale)
     }
 
     async fn list_connections(&mut self) -> Result<Vec<HubConnection>, HubConnectionError> {
@@ -154,9 +204,10 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
         .map_err(DBError::RedisError)?;
 
         if removed {
+            let change_payload = self.to_change_payload(user_id);
             let _: usize = self
                 .client
-                .publish(HUB_REGISTRY_CHANGED_CHANNEL, user_id.to_string())
+                .publish(HUB_REGISTRY_CHANGED_CHANNEL, change_payload)
                 .await
                 .map_err(DBError::RedisError)?;
         }

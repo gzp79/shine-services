@@ -28,6 +28,21 @@ pub trait HubRegistry {
         connection_id: Uuid,
     ) -> impl Future<Output = Result<bool, HubConnectionError>> + Send;
 
+    /// Batched heartbeat for a set of locally-tracked connections. Extends the TTL of every
+    /// registry entry that still holds the provided connection id, and reports the connections
+    /// the registry no longer holds as active so the caller can disconnect them.
+    ///
+    /// The TTL is only a crash-cleanup backstop, so refreshing it is never harmful even if the
+    /// entry now holds a newer connection; disconnect decisions rely on the id comparison, which
+    /// is also covered by the pub/sub path and the next tick.
+    ///
+    /// Returns the subset of `connections` whose registry entry is missing or holds a different
+    /// connection id (i.e. the ones to disconnect locally).
+    fn heartbeat_connections(
+        &mut self,
+        connections: &[HubConnection],
+    ) -> impl Future<Output = Result<Vec<HubConnection>, HubConnectionError>> + Send;
+
     #[allow(dead_code)]
     /// Returns all currently connected users with their active connection ids.
     fn list_connections(&mut self) -> impl Future<Output = Result<Vec<HubConnection>, HubConnectionError>> + Send;

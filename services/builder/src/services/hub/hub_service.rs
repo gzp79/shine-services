@@ -1,6 +1,8 @@
 use crate::{
     models::messages::{HubEvent, HubMessage, TopicKey, Workload},
-    repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnectionDb, HubConnectionError, HubRegistry},
+    repositories::hub_registry::{
+        redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubConnectionError, HubRegistry,
+    },
     services::{
         hub::{
             connected_users::ConnectedUsers,
@@ -126,15 +128,7 @@ impl HubService {
             if let Err(err) = service
                 .inner
                 .hub_registry
-                .listen_to_registry_changes(move |payload| {
-                    let user_id = match Uuid::parse_str(payload) {
-                        Ok(user_id) => user_id,
-                        Err(err) => {
-                            log::error!("Failed to parse hub registry payload {payload:?}: {err:#?}");
-                            return;
-                        }
-                    };
-
+                .listen_to_registry_changes(move |user_id| {
                     if let Err(err) = sender.notify_registry_changed(user_id) {
                         log::error!("[{user_id}] Failed to enqueue hub registry change command: {err:#?}");
                     }
@@ -154,8 +148,17 @@ impl HubService {
                 connection_id,
                 session_key,
             } => {
-                // If a different connection is currently active for this user, tear it down
-                // explicitly before recording the replacement, so the old socket closes and the
+                // Record the replacement in the registry first. If this fails, the previously
+                // active connection must stay intact and tracked, so return before tearing it down
+                // — otherwise a transient Redis error would leave the user with no connection and
+                // an orphaned, untracked new socket.
+                if let Err(err) = self.create_registry_connection(user_id, connection_id).await {
+                    log::error!("[{user_id}] Failed to create hub connection: {err:#?}");
+                    return;
+                }
+
+                // Now that the new connection is durably registered, tear down any different
+                // connection that was active for this user, so the old socket closes and the
                 // connection tracker drops it. Same-id re-registration is not a replacement.
                 if let Some((old_connection_id, _)) = self.inner.users.find_connection(user_id).await {
                     if old_connection_id != connection_id {
@@ -167,10 +170,6 @@ impl HubService {
                     }
                 }
 
-                if let Err(err) = self.create_registry_connection(user_id, connection_id).await {
-                    log::error!("[{user_id}] Failed to create hub connection: {err:#?}");
-                    return;
-                }
                 self.inner.users.connect(user_id, connection_id, session_key).await;
                 self.publish(HubMessage::Hub(HubEvent::UserConnected {
                     user_id,
@@ -225,6 +224,17 @@ impl HubService {
     ) -> Result<bool, HubConnectionError> {
         let mut context = self.inner.hub_registry.create_context().await?;
         context.heartbeat_connection(user_id, connection_id).await
+    }
+
+    /// Batched heartbeat over all locally-tracked connections on a single pooled connection.
+    /// Returns the connections the registry no longer holds as active, which the caller should
+    /// disconnect. See [`HubRegistry::heartbeat_connections`] for the reconciliation semantics.
+    pub(crate) async fn heartbeat_registry_connections(
+        &self,
+        connections: &[HubConnection],
+    ) -> Result<Vec<HubConnection>, HubConnectionError> {
+        let mut context = self.inner.hub_registry.create_context().await?;
+        context.heartbeat_connections(connections).await
     }
 
     async fn process_registry_change(&self, user_id: Uuid) {
