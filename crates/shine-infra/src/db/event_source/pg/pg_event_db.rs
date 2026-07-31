@@ -126,11 +126,10 @@ where
         log::info!("Listening to event notifications for {channel}");
         client
             .listen(&channel, move |p| {
-                // log::trace!(
-                //     "Received event notification on {}: {:?}",
-                //     format!("es_notification_{}", E::NAME),
-                //     p
-                // );
+                let Some(p) = p else {
+                    // None signals a reconnect; the periodic poll will catch up on missed events
+                    return;
+                };
                 match serde_json::from_str::<EventMsg>(p)
                     .map_err(|err| format!("Error deserializing event notification: {err:#?}"))
                     .and_then(|msg| msg.try_into_notification())

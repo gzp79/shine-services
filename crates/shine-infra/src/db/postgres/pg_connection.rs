@@ -70,7 +70,7 @@ impl<T: PGRawConnection> PGConnection<T> {
     #[inline]
     pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), DBError>
     where
-        F: Fn(&str) + Send + Sync + 'static,
+        F: Fn(Option<&str>) + Send + Sync + 'static,
     {
         self.listener.listen(channel, handler).await
     }
@@ -78,6 +78,11 @@ impl<T: PGRawConnection> PGConnection<T> {
     #[inline]
     pub async fn unlisten(&self, channel: &str) -> Result<(), DBError> {
         self.listener.unlisten(channel).await
+    }
+
+    #[inline]
+    pub async fn listener_backend_pid(&self) -> Option<i32> {
+        self.listener.backend_pid().await
     }
 }
 
@@ -199,7 +204,7 @@ impl bb8::ManageConnection for PGConnectionManager {
     }
 
     async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
-        conn.simple_query("").await.map(|_| ())
+        self.connection_manager.is_valid(&mut conn.client).await
     }
 
     fn has_broken(&self, conn: &mut Self::Connection) -> bool {
