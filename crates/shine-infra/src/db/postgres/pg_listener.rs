@@ -29,8 +29,18 @@ impl ListenClient {
         }
     }
 
-    async fn connect(&mut self, config: PGConfig, tls: MakeRustlsConnect) -> Result<PGRawSocketConnection, DBError> {
-        assert!(self.client.is_none(), "PGListener already connected");
+    /// Connect only if not already connected. Returns the new socket connection to be streamed, or
+    /// `None` if a connection already exists. Callers hold the `client` write lock across this call,
+    /// so `listen()` and the keep-alive task can never create two connections concurrently: whoever
+    /// takes the lock first connects, the other observes the connection and gets `None`.
+    async fn connect(
+        &mut self,
+        config: PGConfig,
+        tls: MakeRustlsConnect,
+    ) -> Result<Option<PGRawSocketConnection>, DBError> {
+        if self.client.is_some() {
+            return Ok(None);
+        }
 
         log::trace!("PGListener connecting to PostgreSQL...");
         let (client, connection) = config.connect(tls).await?;
@@ -38,16 +48,12 @@ impl ListenClient {
 
         self.client = Some(client);
 
-        Ok(connection)
+        Ok(Some(connection))
     }
 
     fn disconnect(&mut self) {
         log::info!("PGListener disconnecting from PostgreSQL...");
         self.client = None;
-    }
-
-    pub fn is_connected(&self) -> bool {
-        self.client.is_some()
     }
 
     pub async fn listen<F>(&mut self, channel: &str, handler: F) -> Result<(), DBError>
@@ -165,7 +171,13 @@ impl PGListener {
 
                 let connection = client.write().await.connect(config.clone(), tls.clone()).await;
                 match connection {
-                    Ok(connection) => {
+                    Ok(None) => {
+                        // Another caller (listen()) connected first and already started a streaming
+                        // thread. Park until that connection is lost, then reconnect.
+                        log::info!("PGListener already connected, skipping reconnect.");
+                        notify_keep_alive.0.notified().await;
+                    }
+                    Ok(Some(connection)) => {
                         log::info!("PGListener reconnected to PostgreSQL.");
 
                         Self::start_streaming_thread(client.clone(), connection, notify_keep_alive.clone());
@@ -270,10 +282,10 @@ impl PGListener {
     {
         let mut client = self.inner.client.write().await;
 
-        if !client.is_connected() {
-            let connection = client
-                .connect(self.inner.config.clone(), self.inner.tls.clone())
-                .await?;
+        if let Some(connection) = client
+            .connect(self.inner.config.clone(), self.inner.tls.clone())
+            .await?
+        {
             Self::start_streaming_thread(
                 self.inner.client.clone(),
                 connection,
@@ -291,7 +303,7 @@ impl PGListener {
     }
 
     /// Stops listening for notifications on all channels.
-    pub async fn unlisten_all(&mut self) -> Result<(), DBError> {
+    pub async fn unlisten_all(&self) -> Result<(), DBError> {
         self.inner.client.write().await.unlisten_all().await?;
         Ok(())
     }
