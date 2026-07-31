@@ -112,9 +112,9 @@ impl AppState {
         };
 
         let events = Arc::new(TopicBus::<IdentityTopic>::new());
+        let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
 
         let user_service = {
-            let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
             let user_name_generator: Box<dyn IdEncoder> = match &config_user_name.id_encoder {
                 IdEncoderConfig::Optimus { prime, random } => Box::new(PrefixedIdEncoder::new(
                     &config_user_name.base_name,
@@ -125,23 +125,14 @@ impl AppState {
                     HarshIdEncoder::new(salt)?,
                 )),
             };
-            UserService::new(identity_db, user_name_generator, Arc::clone(&events))
+            UserService::new(identity_db.clone(), user_name_generator, Arc::clone(&events))
         };
 
-        let token_service = {
-            let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
-            TokenService::new(identity_db)
-        };
+        let token_service = TokenService::new(identity_db.clone());
 
-        let role_service = {
-            let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
-            RoleService::new(identity_db, Arc::clone(&events))
-        };
+        let role_service = RoleService::new(identity_db.clone(), Arc::clone(&events));
 
-        let link_service = {
-            let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
-            LinkService::new(identity_db, Arc::clone(&events))
-        };
+        let link_service = LinkService::new(identity_db, Arc::clone(&events));
 
         Ok(Self(Arc::new(Inner {
             settings,

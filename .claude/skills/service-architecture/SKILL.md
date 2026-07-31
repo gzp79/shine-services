@@ -145,6 +145,44 @@ let result = AuthHandler::new(&state)
     .await;
 ```
 
+## Repositories are cheap cloneable handles
+
+Repository types (`PgIdentityDb`, `RedisSessionDb`, …) must be **cheap to clone**, and
+their repository trait (`IdentityDb`, `SessionDb`) must have `Clone` as a supertrait:
+
+```rust
+pub trait IdentityDb: Clone + Send + Sync {
+    fn create_context(&self) -> impl Future<Output = Result<impl IdentityDbContext<'_>, IdentityError>> + Send;
+}
+```
+
+Implement the concrete type as a thin `Arc<Inner>` wrapper (pool + prepared statements +
+config live in `Inner`) so cloning is a refcount bump:
+
+```rust
+struct Inner { client: PGConnectionPool, /* prepared statements, config */ }
+
+#[derive(Clone)]
+pub struct PgIdentityDb(Arc<Inner>);
+```
+
+**Why:** Services own their DB (`UserService<DB>` takes `DB` by value), and several
+services share the *same* store. Construct the repository **once** in `AppState::new`,
+then `.clone()` it into each service:
+
+```rust
+let identity_db = PgIdentityDb::new(postgres_pool, &config_db.email_protection).await?;
+let user_service  = UserService::new(identity_db.clone(), ...);
+let token_service = TokenService::new(identity_db.clone());
+let role_service  = RoleService::new(identity_db.clone(), ...);
+let link_service  = LinkService::new(identity_db, ...);
+```
+
+Constructing a fresh repository per service re-runs one-time setup (e.g. registering
+the same prepared statements under new ids in the pool-wide statement builder), wasting
+resources and duplicating work on every pooled connection. One construction + cheap
+clones avoids that.
+
 ## Type-level flow control
 
 | Type | Meaning |
@@ -163,6 +201,7 @@ Usage: `if let Some(err) = req.validate_query(query) { return Ok(err) }`
 | Handlers may compose other handlers | Keeps higher-level workflows reusable while preserving borrowed dependencies |
 | Services are owning and flat | Keeps reusable app logic cohesive; avoids hidden orchestration chains |
 | Repositories are DB-only | Prevents persistence abstractions from becoming generic "infra" buckets |
+| Repositories are cheap cloneable handles (`Arc<Inner>`, `Clone` supertrait); construct once and clone into services | Lets multiple owning services share one store; avoids re-running one-time setup like prepared-statement registration |
 | Integrations hold third-party adapters | Keeps external API concerns separate from DB repositories |
 | Settings module stores normalized runtime config | Separates raw config loading from runtime-safe values |
 | Generic over `IDB`/`SDB` trait bounds | Keeps handlers testable and DB-agnostic in their own logic |
