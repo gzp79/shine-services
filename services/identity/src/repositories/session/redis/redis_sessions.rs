@@ -6,7 +6,7 @@ use chrono::{DateTime, Duration, Utc};
 use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 use serde::{Deserialize, Serialize};
 use shine_infra::{
-    db::{DBError, RedisJsonValue},
+    db::{redis::RedisJsonValue, DBError},
     web::extracts::SiteInfo,
 };
 use uuid::Uuid;

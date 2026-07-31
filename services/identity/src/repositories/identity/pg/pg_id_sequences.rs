@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use shine_infra::{
-    db::{DBError, PGClient},
+    db::{postgres::PGClient, DBError},
     pg_query,
 };
 

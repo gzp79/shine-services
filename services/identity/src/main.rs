@@ -17,7 +17,7 @@ use self::{
 };
 use anyhow::Error as AnyError;
 use shine_infra::{
-    db::{PostgresPoolStatus, RedisPoolStatus},
+    db::{postgres::PostgresPoolStatus, redis::RedisPoolStatus},
     sync::EventHandler,
     web::{AppBuildContext, WebAppConfig, WebApplication},
 };

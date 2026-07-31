@@ -11,7 +11,7 @@ use chrono::Duration;
 use ring::rand::SystemRandom;
 use shine_infra::{
     crypto::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
-    db::{PGConnectionPool, RedisConnectionPool},
+    db::{postgres::PGConnectionPool, redis::RedisConnectionPool},
     sync::TopicBus,
     web::{compile_anchored, responses::ProblemConfig, WebAppConfig},
 };

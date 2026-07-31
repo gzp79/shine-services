@@ -4,7 +4,8 @@ use crate::{
             pg::PgEventDbContext, Aggregate, AggregateInfo, AggregateStore, Event, EventSourceError, EventStore,
             StoredAggregate, StreamId,
         },
-        DBError, PGClient, PGErrorChecks,
+        postgres::{PGClient, PGErrorChecks},
+        DBError,
     },
     pg_query,
 };

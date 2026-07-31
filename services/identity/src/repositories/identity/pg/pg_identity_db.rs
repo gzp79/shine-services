@@ -8,7 +8,10 @@ use crate::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use shine_infra::{
     crypto::DataProtectionUtils,
-    db::{DBError, PGConnectionPool, PGPooledConnection},
+    db::{
+        postgres::{PGConnectionPool, PGPooledConnection},
+        DBError,
+    },
 };
 use std::sync::Arc;
 

@@ -239,6 +239,8 @@ pub enum PGCreatePoolError {
     PgError(#[from] PGError),
     #[error("Certificate load error")]
     CertError(#[source] CertError),
+    #[error(transparent)]
+    ConfigError(#[from] crate::db::CnsParamError),
 }
 
 pub struct PostgresPoolStatus {
@@ -275,17 +277,21 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PGConnectionPool, PGCreat
     let tls = MakeRustlsConnect::new(tls_config);
 
     // Parse connection string
-    // Format: postgres://...?connect_timeout=3&pool_timeout=5
+    // Format: postgres://...?connect_timeout=3&pool_timeout=5&max_size=10
     // - connect_timeout: PostgreSQL native parameter in SECONDS (TCP connection establishment)
     // - pool_timeout: custom parameter in SECONDS for bb8 pool (acquiring connection from pool, including waiting for connection to be established if pool is exhausted)
+    // - max_size: custom parameter for the maximum number of pooled connections (default 10)
 
-    let (pool_timeout_opt, cns_clean) = crate::db::extract_and_strip_param(cns, "pool_timeout");
-    let pool_timeout = std::time::Duration::from_secs(pool_timeout_opt.unwrap_or(30)); // Default: 30s
+    let (pool_timeout_opt, cns_clean) = crate::db::cns_param::extract_and_strip_param(cns, "pool_timeout")?;
+    let pool_timeout = std::time::Duration::from_secs(pool_timeout_opt.unwrap_or(30));
+
+    let (max_size_opt, cns_clean) = crate::db::cns_param::extract_and_strip_param(&cns_clean, "max_size")?;
+    let max_size = max_size_opt.unwrap_or(10) as u32;
 
     let pg_config = PGConfig::from_str(&cns_clean)?;
     let postgres_manager = PGConnectionManager::new(pg_config, tls, pool_timeout);
     let postgres = bb8::Pool::builder()
-        .max_size(10)
+        .max_size(max_size)
         .connection_timeout(pool_timeout)
         .build(postgres_manager)
         .await?;

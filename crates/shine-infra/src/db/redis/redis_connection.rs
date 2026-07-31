@@ -1,5 +1,5 @@
 use super::{RedisListener, RedisListenerError};
-use crate::health::StatusProvider;
+use crate::{db::CnsParamError, health::StatusProvider};
 use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use redis::{
@@ -144,16 +144,30 @@ impl StatusProvider for RedisPoolStatus {
 
 pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisConnectionError> {
     // Parse connection string
-    // Format: redis://host:port?timeout=3000&pool_timeout=5000
+    // Format: redis://host:port?timeout=3000&pool_timeout=5000&max_size=10
     // - timeout: Redis native parameter in MILLISECONDS (TCP connection and command timeout)
     // - pool_timeout: custom parameter in MILLISECONDS for bb8 pool (acquiring connection from pool, including waiting for connection to be established if pool is exhausted)
+    // - max_size: custom parameter for the maximum number of pooled connections (default 10)
 
-    let (pool_timeout_opt, cns_clean) = crate::db::extract_and_strip_param(cns, "pool_timeout");
-    let pool_timeout = std::time::Duration::from_millis(pool_timeout_opt.unwrap_or(30000)); // Default: 30s
+    let to_redis_err = |e: CnsParamError| {
+        RunError::User(RedisError::from((
+            ErrorKind::InvalidClientConfig,
+            "invalid connection string parameter",
+            e.to_string(),
+        )))
+    };
+
+    let (pool_timeout_opt, cns_clean) =
+        crate::db::cns_param::extract_and_strip_param(cns, "pool_timeout").map_err(to_redis_err)?;
+    let pool_timeout = std::time::Duration::from_millis(pool_timeout_opt.unwrap_or(30000));
+
+    let (max_size_opt, cns_clean) =
+        crate::db::cns_param::extract_and_strip_param(&cns_clean, "max_size").map_err(to_redis_err)?;
+    let max_size = max_size_opt.unwrap_or(10) as u32;
 
     let redis_manager = RedisConnectionManager::new(&cns_clean, pool_timeout)?;
     let redis = bb8::Pool::builder()
-        .max_size(10)
+        .max_size(max_size)
         .connection_timeout(pool_timeout)
         .build(redis_manager)
         .await?;

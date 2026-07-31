@@ -2,7 +2,10 @@ use crate::repositories::hub_registry::{
     redis::{RedisHubRegistryBuildError, HUB_REGISTRY_CHANGED_CHANNEL},
     HubConnectionDb, HubConnectionDbContext, HubConnectionError,
 };
-use shine_infra::db::{DBError, RedisConnectionPool, RedisListenerError, RedisPooledConnection};
+use shine_infra::db::{
+    redis::{RedisConnectionPool, RedisListenerError, RedisPooledConnection},
+    DBError,
+};
 use uuid::Uuid;
 
 pub struct RedisHubConnectionDbContext<'c> {

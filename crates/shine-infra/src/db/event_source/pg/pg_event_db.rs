@@ -3,7 +3,8 @@ use crate::db::{
         pg::{migration_001, PgAggregateStoreStatement, PgEventStoreStatement},
         Event, EventDb, EventDbContext, EventNotification, EventSourceError, StreamId,
     },
-    DBError, PGConnectionPool, PGPooledConnection,
+    postgres::{PGConnectionPool, PGPooledConnection},
+    DBError,
 };
 use serde::Deserialize;
 use std::marker::PhantomData;

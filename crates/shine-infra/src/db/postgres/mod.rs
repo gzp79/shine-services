@@ -16,14 +16,14 @@ macro_rules! pg_prepared_statement {
     ($id:ident => $stmt:expr, [$($pid:ident:$pty:ty),*]) => {
 
         #[derive(Clone, Copy, Debug)]
-        struct $id($crate::db::PGStatementId);
+        struct $id($crate::db::postgres::PGStatementId);
 
         impl $id {
             #[allow(dead_code)]
-            pub async fn new(client: &$crate::db::PGClient) -> Result<Self, $crate::db::PGError>
+            pub async fn new(client: &$crate::db::postgres::PGClient) -> Result<Self, $crate::db::postgres::PGError>
             {
                 log::debug!("Creating prepared statement for {}...", stringify!{$id});
-                let params = vec![$(<$pty as $crate::db::ToPGType>::PG_TYPE,)*];
+                let params = vec![$(<$pty as $crate::db::postgres::ToPGType>::PG_TYPE,)*];
                 log::trace!("Statement: {}\nArguments: {:#?}", $stmt, params);
                 let stmt = client.create_prepared_statement($stmt, params).await;
                 let _ = client.get_prepared_statement(stmt).await?;
@@ -32,21 +32,21 @@ macro_rules! pg_prepared_statement {
             }
 
             #[allow(dead_code)]
-            pub async fn new_with_process<'a, F>(client: &$crate::db::PGClient, process: F) -> Result<Self, $crate::db::PGError>
+            pub async fn new_with_process<'a, F>(client: &$crate::db::postgres::PGClient, process: F) -> Result<Self, $crate::db::postgres::PGError>
             where
                 F : FnOnce(&'a str) -> std::borrow::Cow<'a, str>
             {
                 log::debug!("Creating prepared statement for {} with process...", stringify!{$id});
-                let stmt = client.create_prepared_statement(&process($stmt), vec![$(<$pty as $crate::db::ToPGType>::PG_TYPE,)*]).await;
+                let stmt = client.create_prepared_statement(&process($stmt), vec![$(<$pty as $crate::db::postgres::ToPGType>::PG_TYPE,)*]).await;
                 let _ = client.get_prepared_statement(stmt).await?;
                 log::trace!("Creating prepared statement for {} with process done.", stringify!{$id});
                 Ok(Self(stmt))
             }
 
             #[allow(dead_code)]
-            pub async fn statement<T>(&self, client: &$crate::db::PGConnection<T>) -> Result<$crate::db::PGStatement, $crate::db::PGError>
+            pub async fn statement<T>(&self, client: &$crate::db::postgres::PGConnection<T>) -> Result<$crate::db::postgres::PGStatement, $crate::db::postgres::PGError>
             where
-                T: $crate::db::PGRawConnection
+                T: $crate::db::postgres::PGRawConnection
             {
                 client.get_prepared_statement(self.0).await
             }
@@ -69,11 +69,11 @@ macro_rules! pg_query {
             #[allow(dead_code)]
             pub async fn query<T>(
                 &self,
-                client: &$crate::db::PGConnection<T>,
+                client: &$crate::db::postgres::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<Vec<$rty>, $crate::db::PGError>
+            ) -> Result<Vec<$rty>, $crate::db::postgres::PGError>
             where
-                T: $crate::db::PGRawConnection
+                T: $crate::db::postgres::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 let rows = client.query(&statement, &[$($pid,)*]).await?;
@@ -85,11 +85,11 @@ macro_rules! pg_query {
             #[allow(dead_code)]
             pub async fn query_one<T>(
                 &self,
-                client: &$crate::db::PGConnection<T>,
+                client: &$crate::db::postgres::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<$rty, $crate::db::PGError>
+            ) -> Result<$rty, $crate::db::postgres::PGError>
             where
-                T: $crate::db::PGRawConnection
+                T: $crate::db::postgres::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 let row = client.query_one(&statement, &[$($pid,)*]).await?;
@@ -101,11 +101,11 @@ macro_rules! pg_query {
             #[allow(dead_code)]
             pub async fn query_opt<T>(
                 &self,
-                client: &$crate::db::PGConnection<T>,
+                client: &$crate::db::postgres::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<Option<$rty>, $crate::db::PGError>
+            ) -> Result<Option<$rty>, $crate::db::postgres::PGError>
             where
-                T: $crate::db::PGRawConnection
+                T: $crate::db::postgres::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 client.query_opt(&statement, &[$($pid,)*])
@@ -128,11 +128,11 @@ macro_rules! pg_query {
             #[allow(dead_code)]
             pub async fn query<T>(
                 &self,
-                client: &$crate::db::PGConnection<T>,
+                client: &$crate::db::postgres::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<Vec<$oty>, $crate::db::PGError>
+            ) -> Result<Vec<$oty>, $crate::db::postgres::PGError>
             where
-                T: $crate::db::PGRawConnection
+                T: $crate::db::postgres::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 let rows = client.query(&statement, &[$($pid,)*]).await?;
@@ -146,11 +146,11 @@ macro_rules! pg_query {
             #[allow(dead_code)]
             pub async fn query_one<T>(
                 &self,
-                client: &$crate::db::PGConnection<T>,
+                client: &$crate::db::postgres::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<$oty, $crate::db::PGError>
+            ) -> Result<$oty, $crate::db::postgres::PGError>
             where
-                T: $crate::db::PGRawConnection
+                T: $crate::db::postgres::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 let row = client
@@ -163,11 +163,11 @@ macro_rules! pg_query {
             #[allow(dead_code)]
             pub async fn query_opt<T>(
                 &self,
-                client: &$crate::db::PGConnection<T>,
+                client: &$crate::db::postgres::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<Option<$oty>, $crate::db::PGError>
+            ) -> Result<Option<$oty>, $crate::db::postgres::PGError>
             where
-                T: $crate::db::PGRawConnection
+                T: $crate::db::postgres::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 client.query_opt(&statement, &[$($pid,)*])
@@ -189,11 +189,11 @@ macro_rules! pg_query {
             #[allow(dead_code)]
             pub async fn execute<T>(
                 &self,
-                client: &$crate::db::PGConnection<T>,
+                client: &$crate::db::postgres::PGConnection<T>,
                 $($pid: &$pty,)*
-            ) -> Result<u64, $crate::db::PGError>
+            ) -> Result<u64, $crate::db::postgres::PGError>
             where
-                T: $crate::db::PGRawConnection
+                T: $crate::db::postgres::PGRawConnection
             {
                 let statement = self.statement(client).await?;
                 client.execute(&statement, &[$($pid,)*]).await

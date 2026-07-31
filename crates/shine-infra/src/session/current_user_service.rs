@@ -1,5 +1,5 @@
 use crate::{
-    db::RedisConnectionPool,
+    db::redis::RedisConnectionPool,
     session::{CurrentUser, SessionKey, UserSessionError},
     web::ServiceConfig,
 };

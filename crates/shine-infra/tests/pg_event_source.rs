@@ -7,7 +7,8 @@ use shine_infra::db::{
         pg::PgEventDb, Aggregate, AggregateInfo, AggregateStore, Event, EventDb, EventNotification, EventSourceError,
         EventStore, Snapshot,
     },
-    DBError, PGConnectionPool,
+    postgres::PGConnectionPool,
+    DBError,
 };
 use shine_test::test;
 use std::{

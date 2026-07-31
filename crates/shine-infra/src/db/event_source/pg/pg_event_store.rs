@@ -1,7 +1,8 @@
 use crate::{
     db::{
         event_source::{pg::PgEventDbContext, Event, EventSourceError, EventStore, StoredEvent, StreamId},
-        DBError, PGClient, PGErrorChecks,
+        postgres::{PGClient, PGErrorChecks},
+        DBError,
     },
     pg_query,
 };

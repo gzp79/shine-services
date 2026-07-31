@@ -1,4 +1,7 @@
-use super::{PGConnectionError, PGCreatePoolError, PGError, RedisConnectionError};
+use crate::db::{
+    postgres::{PGConnectionError, PGCreatePoolError, PGError},
+    redis::RedisConnectionError,
+};
 use crate::web::responses::Problem;
 use thiserror::Error as ThisError;
 

@@ -6,7 +6,7 @@ use crate::{
 };
 use anyhow::{anyhow, Error as AnyError};
 use shine_infra::{
-    db::RedisConnectionPool,
+    db::redis::RedisConnectionPool,
     web::{compile_anchored_bytes, CoreServices, WebAppConfig},
 };
 use std::{sync::Arc, time::Duration};
