@@ -32,6 +32,11 @@ impl RedisConnection {
     pub async fn unlisten(&self, channel: &str) -> Result<(), RedisListenerError> {
         self.listener.unlisten(channel).await
     }
+
+    #[inline]
+    pub async fn unlisten_all(&self) -> Result<(), RedisListenerError> {
+        self.listener.unlisten_all().await
+    }
 }
 
 impl ConnectionLike for RedisConnection {
@@ -77,7 +82,7 @@ pub struct RedisConnectionManager {
 impl RedisConnectionManager {
     pub fn new(raw_cns: &str) -> Result<Self, RedisError> {
         let client = Client::open(raw_cns)?;
-        let listener = RedisListener::new(raw_cns)?;
+        let listener = RedisListener::new(client.clone());
         Ok(Self { client, listener })
     }
 }

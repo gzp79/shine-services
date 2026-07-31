@@ -104,6 +104,18 @@ impl ListenState {
         Ok(())
     }
 
+    async fn unlisten_all(&mut self) -> Result<(), RedisError> {
+        let channels = self.handlers.drain().map(|(channel, _)| channel).collect::<Vec<_>>();
+        if let Some(sink) = self.sink.as_mut() {
+            for channel in channels {
+                log::info!("RedisListener unsubscribing from channel {channel:?}...");
+                sink.unsubscribe(&channel).await?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn handle(&self, channel: &str, payload: Option<&str>) {
         if let Some(handler) = self.handlers.get(channel) {
             handler(payload);
@@ -228,20 +240,19 @@ impl RedisListener {
         task
     }
 
-    pub fn new(raw_cns: &str) -> Result<Self, RedisError> {
-        let client = Client::open(raw_cns)?;
+    pub fn new(client: Client) -> Self {
         let notify_keep_alive = Arc::new((Notify::new(), AtomicBool::new(true)));
         let state = Arc::new(RwLock::new(ListenState::new()));
 
         Self::start_keep_alive_task(client.clone(), state.clone(), notify_keep_alive.clone());
 
-        Ok(Self {
+        Self {
             inner: Arc::new(Inner {
                 client,
                 notify_keep_alive,
                 state,
             }),
-        })
+        }
     }
 
     /// Stops the keep-alive task and tears down the dedicated pub/sub connection.
@@ -274,6 +285,12 @@ impl RedisListener {
     /// Removes `channel`'s handler and unsubscribes on the shared connection, if connected.
     pub async fn unlisten(&self, channel: &str) -> Result<(), RedisListenerError> {
         self.inner.state.write().await.unlisten(channel).await?;
+        Ok(())
+    }
+
+    /// Removes all handlers and unsubscribes from every channel on the shared connection.
+    pub async fn unlisten_all(&self) -> Result<(), RedisListenerError> {
+        self.inner.state.write().await.unlisten_all().await?;
         Ok(())
     }
 }
