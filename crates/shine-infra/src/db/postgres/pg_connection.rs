@@ -9,6 +9,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use std::{collections::HashMap, ops::DerefMut};
 use thiserror::Error as ThisError;
 use tokio::sync::RwLock;
@@ -176,9 +177,9 @@ pub struct PGConnectionManager {
 }
 
 impl PGConnectionManager {
-    pub fn new(config: PGConfig, tls: MakeRustlsConnect) -> Self {
+    pub fn new(config: PGConfig, tls: MakeRustlsConnect, max_reconnect_backoff: Duration) -> Self {
         let connection_manager = PostgresConnectionManager::new(config.clone(), tls.clone());
-        let listener = PGListener::new(config, tls);
+        let listener = PGListener::new(config, tls, max_reconnect_backoff);
 
         Self {
             connection_manager,
@@ -279,13 +280,13 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PGConnectionPool, PGCreat
     // - pool_timeout: custom parameter in SECONDS for bb8 pool (acquiring connection from pool, including waiting for connection to be established if pool is exhausted)
 
     let (pool_timeout_opt, cns_clean) = crate::db::extract_and_strip_param(cns, "pool_timeout");
-    let pool_timeout_secs = pool_timeout_opt.unwrap_or(30); // Default: 30s
+    let pool_timeout = std::time::Duration::from_secs(pool_timeout_opt.unwrap_or(30)); // Default: 30s
 
     let pg_config = PGConfig::from_str(&cns_clean)?;
-    let postgres_manager = PGConnectionManager::new(pg_config, tls);
+    let postgres_manager = PGConnectionManager::new(pg_config, tls, pool_timeout);
     let postgres = bb8::Pool::builder()
-        .max_size(10) // Set the maximum number of connections in the pool
-        .connection_timeout(std::time::Duration::from_secs(pool_timeout_secs))
+        .max_size(10)
+        .connection_timeout(pool_timeout)
         .build(postgres_manager)
         .await?;
 

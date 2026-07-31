@@ -14,10 +14,14 @@ use thiserror::Error as ThisError;
 use tokio::{
     sync::{Notify, RwLock},
     task::JoinHandle,
+    time::{sleep, Duration, Instant},
 };
 
 /// Handler for pub/sub messages.
 type BoxedHandler = Box<dyn Fn(Option<&str>) + Send + Sync + 'static>;
+
+/// A handler blocking the dispatch task longer than this is logged as a warning.
+const SLOW_HANDLER: Duration = Duration::from_millis(100);
 
 #[derive(Debug, ThisError)]
 pub enum RedisListenerError {
@@ -60,7 +64,6 @@ impl ListenState {
         Ok(Some(stream))
     }
 
-    /// Records the handle of the streaming task draining the current connection.
     fn set_stream_task(&mut self, task: JoinHandle<()>) {
         self.stream_task = Some(task);
     }
@@ -118,13 +121,25 @@ impl ListenState {
 
     fn handle(&self, channel: &str, payload: Option<&str>) {
         if let Some(handler) = self.handlers.get(channel) {
-            handler(payload);
+            Self::invoke(channel, handler, payload);
         }
     }
 
     fn handle_reconnect(&self) {
-        for handler in self.handlers.values() {
-            handler(None);
+        for (channel, handler) in &self.handlers {
+            Self::invoke(channel, handler, None);
+        }
+    }
+
+    // Handlers run synchronously on the single dispatch task while the read lock is held, so a slow
+    // one stalls every other channel and blocks subscription changes. Not queued by design (the
+    // caller decides whether to spawn/queue); this just makes an over-long handler visible.
+    fn invoke(channel: &str, handler: &BoxedHandler, payload: Option<&str>) {
+        let started = Instant::now();
+        handler(payload);
+        let elapsed = started.elapsed();
+        if elapsed >= SLOW_HANDLER {
+            log::warn!("RedisListener handler for channel {channel:?} took {elapsed:?}, blocking dispatch");
         }
     }
 }
@@ -137,10 +152,8 @@ struct Inner {
 
 impl Drop for Inner {
     fn drop(&mut self) {
-        // The last RedisListener handle is gone (typically when the pool/AppState is dropped).
-        // Signal the keep-alive task to stop and wake it. On exit the task tears down the pub/sub
-        // connection (dropping the sink and aborting the streaming task). Without this the
-        // keep-alive task and its dedicated Redis connection would live for the whole process
+        // Last handle gone: stop the keep-alive task and wake it so it tears down the dedicated
+        // pub/sub connection, else the task and its Redis connection would leak for the process
         // lifetime.
         self.notify_keep_alive.1.store(false, Ordering::Relaxed);
         self.notify_keep_alive.0.notify_one();
@@ -163,19 +176,19 @@ impl RedisListener {
         client: Client,
         state: Arc<RwLock<ListenState>>,
         notify_keep_alive: Arc<(Notify, AtomicBool)>,
+        max_backoff: Duration,
     ) {
-        // Task to keep the listener connected using notifications. Whenever the connection is
-        // (maybe) lost, we trigger a reconnect as long as the listener is not closed. As messages
-        // are processed on another task, there's no loop here to detect a connection drop directly
-        // — the streaming task notifies this one when its stream ends.
-        //
-        // The streaming task clears the sink (disconnect) before notifying, so a concurrent
-        // `listen()` may reconnect in that window. `connect()` therefore returns `Ok(None)` when a
-        // connection already exists and the keep-alive task simply parks, instead of asserting and
-        // panicking. This mirrors the race fix in `PGListener`.
+        // Reconnects whenever the streaming task signals its stream ended, until the listener is
+        // closed. A concurrent `listen()` may reconnect in the disconnect-then-notify window, so
+        // `connect()` returns `Ok(None)` when already connected and this task simply parks.
 
         tokio::spawn(async move {
-            const RETRY: u64 = 500;
+            const RETRY_MIN: Duration = Duration::from_millis(500);
+            // A connection that stayed up at least this long is considered healthy and resets the backoff.
+            const STABLE: Duration = Duration::from_secs(10);
+            let retry_max = max_backoff.max(RETRY_MIN);
+            let mut backoff = RETRY_MIN;
+
             notify_keep_alive.0.notified().await;
             while notify_keep_alive.1.load(Ordering::Relaxed) {
                 log::info!("RedisListener reconnection triggered...");
@@ -191,11 +204,20 @@ impl RedisListener {
                         let task = Self::start_streaming_task(state.clone(), stream, notify_keep_alive.clone());
                         state.write().await.set_stream_task(task);
                         state.read().await.handle_reconnect();
+                        let connected_at = Instant::now();
                         notify_keep_alive.0.notified().await;
+                        if connected_at.elapsed() >= STABLE {
+                            backoff = RETRY_MIN;
+                        }
+                        if notify_keep_alive.1.load(Ordering::Relaxed) {
+                            sleep(backoff).await;
+                            backoff = (backoff * 2).min(retry_max);
+                        }
                     }
                     Err(err) => {
                         log::error!("RedisListener reconnection error: {err:#?}");
-                        tokio::time::sleep(tokio::time::Duration::from_millis(RETRY)).await;
+                        sleep(backoff).await;
+                        backoff = (backoff * 2).min(retry_max);
                     }
                 }
             }
@@ -240,11 +262,11 @@ impl RedisListener {
         task
     }
 
-    pub fn new(client: Client) -> Self {
+    pub fn new(client: Client, max_backoff: Duration) -> Self {
         let notify_keep_alive = Arc::new((Notify::new(), AtomicBool::new(true)));
         let state = Arc::new(RwLock::new(ListenState::new()));
 
-        Self::start_keep_alive_task(client.clone(), state.clone(), notify_keep_alive.clone());
+        Self::start_keep_alive_task(client.clone(), state.clone(), notify_keep_alive.clone(), max_backoff);
 
         Self {
             inner: Arc::new(Inner {

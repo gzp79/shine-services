@@ -1,13 +1,13 @@
 use rustls::crypto::ring;
 use shine_infra::db::create_postgres_pool;
 use shine_test::test;
-use std::{env, sync::Arc, time::Duration};
+use std::{collections::HashSet, env, sync::Arc, time::Duration};
 use tokio::{
     sync::{Mutex, Notify},
     time::{sleep, timeout},
 };
 
-#[test]
+#[test(serial = "pg-listener")]
 async fn test_pg_listener_pub_sub() {
     let _ = ring::default_provider().install_default();
 
@@ -51,7 +51,7 @@ async fn test_pg_listener_pub_sub() {
     }
 }
 
-#[test]
+#[test(serial = "pg-listener")]
 async fn test_pg_listener_shared_connection_multi_channel() {
     let _ = ring::default_provider().install_default();
 
@@ -147,7 +147,7 @@ async fn test_pg_listener_shared_connection_multi_channel() {
     }
 }
 
-#[test]
+#[test(serial = "pg-listener")]
 async fn test_pg_listener_reconnect_signal() {
     let _ = ring::default_provider().install_default();
 
@@ -218,7 +218,7 @@ async fn test_pg_listener_reconnect_signal() {
 // Regression test for the listener connection/task leak: once the last handle to the pool is
 // dropped, the dedicated LISTEN backend connection must be torn down (not left open for the
 // process lifetime).
-#[test]
+#[test(serial = "pg-listener")]
 async fn test_pg_listener_closes_connection_on_drop() {
     let _ = ring::default_provider().install_default();
 
@@ -283,7 +283,7 @@ async fn test_pg_listener_closes_connection_on_drop() {
 // Regression test for the duplicate-streaming-thread path: after a reconnect there must be exactly
 // one streaming thread, so a single NOTIFY is dispatched exactly once (a duplicated thread would
 // deliver it twice).
-#[test]
+#[test(serial = "pg-listener")]
 async fn test_pg_listener_no_duplicate_dispatch_after_reconnect() {
     let _ = ring::default_provider().install_default();
 
@@ -372,10 +372,135 @@ async fn test_pg_listener_no_duplicate_dispatch_after_reconnect() {
     }
 }
 
+// Regression test: when a `listen()` call is the one that re-establishes the connection after an
+// outage, it must re-subscribe every already-registered channel (via relisten), not only the newly
+// added one. The bug left previously-registered channels silently unsubscribed.
+#[test(serial = "pg-listener")]
+async fn test_pg_listener_relisten_all_channels_on_listen_reconnect() {
+    let _ = ring::default_provider().install_default();
+
+    match env::var("SHINE_TEST_PG_CNS") {
+        Ok(cns) => {
+            let pool = create_postgres_pool(&cns).await.unwrap();
+            let conn = pool.get().await.unwrap();
+            let helper = pool.get().await.unwrap();
+
+            let events_a: Arc<Mutex<Vec<Option<String>>>> = Arc::new(Mutex::new(Vec::new()));
+            let events_a_write = events_a.clone();
+            let notify_a = Arc::new(Notify::new());
+            let notify_a_signal = notify_a.clone();
+
+            // Register channel "a" on the live connection.
+            conn.listen("shine-test-relisten-a", move |payload| {
+                let events_a_write = events_a_write.clone();
+                let notify_a_signal = notify_a_signal.clone();
+                let payload = payload.map(|s| s.to_string());
+                tokio::spawn(async move {
+                    events_a_write.lock().await.push(payload);
+                    notify_a_signal.notify_one();
+                });
+            })
+            .await
+            .unwrap();
+
+            let listener_pid = conn
+                .listener_backend_pid()
+                .await
+                .expect("listener connection not found");
+
+            // Kill the listener backend to force a reconnect.
+            helper
+                .execute("SELECT pg_terminate_backend($1)", &[&listener_pid])
+                .await
+                .unwrap();
+
+            let events_b: Arc<Mutex<Vec<Option<String>>>> = Arc::new(Mutex::new(Vec::new()));
+            let notify_b = Arc::new(Notify::new());
+
+            // Hammer listen("b") right after the kill so a listen() call (rather than the keep-alive
+            // task) drives the reconnect. Retry through the transient dead-connection window until it
+            // succeeds on a fresh connection.
+            let mut listened = false;
+            for _ in 0..100 {
+                let events_b_write = events_b.clone();
+                let notify_b_signal = notify_b.clone();
+                let res = conn
+                    .listen("shine-test-relisten-b", move |payload| {
+                        let events_b_write = events_b_write.clone();
+                        let notify_b_signal = notify_b_signal.clone();
+                        let payload = payload.map(|s| s.to_string());
+                        tokio::spawn(async move {
+                            events_b_write.lock().await.push(payload);
+                            notify_b_signal.notify_one();
+                        });
+                    })
+                    .await;
+                if res.is_ok() {
+                    listened = true;
+                    break;
+                }
+                sleep(Duration::from_millis(50)).await;
+            }
+            assert!(listened, "listen() never succeeded after the backend was terminated");
+
+            // Wait until the listener is on a fresh backend before publishing, so the NOTIFYs can't
+            // race the reconnect window.
+            let mut reconnected = false;
+            for _ in 0..100 {
+                if let Some(pid) = conn.listener_backend_pid().await {
+                    if pid != listener_pid {
+                        reconnected = true;
+                        break;
+                    }
+                }
+                sleep(Duration::from_millis(100)).await;
+            }
+            assert!(reconnected, "listener did not reconnect onto a new backend");
+
+            let publisher = pool.get().await.unwrap();
+            publisher
+                .execute("SELECT pg_notify('shine-test-relisten-a', 'a-after')", &[])
+                .await
+                .unwrap();
+            publisher
+                .execute("SELECT pg_notify('shine-test-relisten-b', 'b-after')", &[])
+                .await
+                .unwrap();
+
+            // Reconnect fires handler(None) on every channel to signal a resync, so a plain
+            // notify wait could be satisfied by that None before the real payload lands. Poll the
+            // recorded events for the specific payloads instead, ignoring the None signals.
+            let wait_for = |events: Arc<Mutex<Vec<Option<String>>>>, notify: Arc<Notify>, want: &'static str| async move {
+                let want = Some(want.to_string());
+                for _ in 0..50 {
+                    if events.lock().await.contains(&want) {
+                        return true;
+                    }
+                    let _ = timeout(Duration::from_millis(100), notify.notified()).await;
+                }
+                events.lock().await.contains(&want)
+            };
+
+            // The pre-existing channel "a" must still deliver after the listen()-driven reconnect;
+            // this is the exact property the bug broke (only "b" would have been re-LISTENed).
+            assert!(
+                wait_for(events_a.clone(), notify_a.clone(), "a-after").await,
+                "previously-registered channel a was dropped on a listen()-triggered reconnect"
+            );
+            assert!(
+                wait_for(events_b.clone(), notify_b.clone(), "b-after").await,
+                "newly-registered channel b did not receive after reconnect"
+            );
+        }
+
+        _ => log::warn!("Skipping test_pg_listener_relisten_all_channels_on_listen_reconnect"),
+    }
+}
+
 // Regression test for the channel-name key mismatch: a channel whose name contains a double quote
 // must still dispatch. The map must be keyed on the name PostgreSQL reports (msg.channel()), not on
 // the quote-escaped SQL form, otherwise the handler never matches.
-#[test]
+#[test(serial = "pg-listener")]
 async fn test_pg_listener_channel_name_with_quote() {
     let _ = ring::default_provider().install_default();
 
@@ -419,5 +544,76 @@ async fn test_pg_listener_channel_name_with_quote() {
         }
 
         _ => log::warn!("Skipping test_pg_listener_channel_name_with_quote"),
+    }
+}
+
+// Many listen() calls fired concurrently on a fresh pool all race to open the initial connection.
+// The write lock in listen() must let exactly one win and open a single shared connection; every
+// channel must still be LISTENed on it and receive. Proves parallel connect is safe (no split-brain
+// second connection, no lost subscriptions).
+#[test(serial = "pg-listener")]
+async fn test_pg_listener_parallel_connect() {
+    let _ = ring::default_provider().install_default();
+
+    match env::var("SHINE_TEST_PG_CNS") {
+        Ok(cns) => {
+            let pool = create_postgres_pool(&cns).await.unwrap();
+
+            const N: usize = 16;
+            let notify = Arc::new(Notify::new());
+            let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+
+            let mut tasks = Vec::new();
+            for i in 0..N {
+                let pool = pool.clone();
+                let notify = notify.clone();
+                let received = received.clone();
+                tasks.push(tokio::spawn(async move {
+                    let conn = pool.get().await.unwrap();
+                    let channel = format!("shine-test-parallel-{i}");
+                    let notify_signal = notify.clone();
+                    let received_write = received.clone();
+                    conn.listen(&channel, move |payload| {
+                        if let Some(payload) = payload.map(|s| s.to_string()) {
+                            let notify_signal = notify_signal.clone();
+                            let received_write = received_write.clone();
+                            tokio::spawn(async move {
+                                received_write.lock().await.push(payload);
+                                notify_signal.notify_one();
+                            });
+                        }
+                    })
+                    .await
+                    .unwrap();
+                    (channel, format!("hit-{i}"))
+                }));
+            }
+
+            let mut channels = Vec::new();
+            for task in tasks {
+                channels.push(task.await.unwrap());
+            }
+
+            let publisher = pool.get().await.unwrap();
+            for (channel, expected) in &channels {
+                publisher
+                    .execute("SELECT pg_notify($1, $2)", &[channel, expected])
+                    .await
+                    .unwrap();
+            }
+
+            let expected: HashSet<String> = channels.iter().map(|(_, e)| e.clone()).collect();
+            let ok = timeout(Duration::from_secs(10), async {
+                while received.lock().await.len() < expected.len() {
+                    notify.notified().await;
+                }
+            })
+            .await;
+
+            assert!(ok.is_ok(), "timed out; received {:?}", *received.lock().await);
+            assert_eq!(received.lock().await.iter().cloned().collect::<HashSet<_>>(), expected);
+        }
+
+        _ => log::warn!("Skipping test_pg_listener_parallel_connect"),
     }
 }

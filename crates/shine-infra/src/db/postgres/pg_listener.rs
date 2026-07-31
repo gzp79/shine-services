@@ -7,7 +7,10 @@ use std::{
         Arc,
     },
 };
-use tokio::sync::{Notify, RwLock};
+use tokio::{
+    sync::{Notify, RwLock},
+    time::{sleep, Duration, Instant},
+};
 use tokio_postgres::{AsyncMessage, Notification};
 use tokio_postgres_rustls::MakeRustlsConnect;
 
@@ -15,6 +18,9 @@ use super::{PGConfig, PGRawClient, PGRawSocketConnection};
 
 pub type PGNotification = Notification;
 type BoxedHandler = Box<dyn Fn(Option<&str>) + Send + Sync + 'static>;
+
+/// A handler blocking the dispatch task longer than this is logged as a warning.
+const SLOW_HANDLER: Duration = Duration::from_millis(100);
 
 struct ListenClient {
     client: Option<PGRawClient>,
@@ -114,13 +120,25 @@ impl ListenClient {
 
     pub fn handle(&self, channel: &str, payload: Option<&str>) {
         if let Some(handler) = self.handlers.get(channel) {
-            handler(payload);
+            Self::invoke(channel, handler, payload);
         }
     }
 
     pub fn handle_reconnect(&self) {
-        for handler in self.handlers.values() {
-            handler(None);
+        for (channel, handler) in &self.handlers {
+            Self::invoke(channel, handler, None);
+        }
+    }
+
+    // Handlers run synchronously on the single dispatch task while the read lock is held, so a slow
+    // one stalls every other channel and blocks subscription changes. Not queued by design (the
+    // caller decides whether to spawn/queue); this just makes an over-long handler visible.
+    fn invoke(channel: &str, handler: &BoxedHandler, payload: Option<&str>) {
+        let started = Instant::now();
+        handler(payload);
+        let elapsed = started.elapsed();
+        if elapsed >= SLOW_HANDLER {
+            log::warn!("PGListener handler for channel {channel:?} took {elapsed:?}, blocking dispatch");
         }
     }
 }
@@ -134,10 +152,8 @@ struct Inner {
 
 impl Drop for Inner {
     fn drop(&mut self) {
-        // The last PGListener handle is gone (typically when the pool/AppState is dropped).
-        // Signal the keep-alive task to stop and wake it. On exit the task disconnects, which
-        // drops the LISTEN client and ends the streaming task as well. Without this the keep-alive
-        // task and its dedicated PG connection would live for the whole process lifetime.
+        // Last handle gone: stop the keep-alive task and wake it so it tears down the dedicated
+        // connection, else the task and its PG connection would leak for the process lifetime.
         self.notify_keep_alive.1.store(false, Ordering::Relaxed);
         self.notify_keep_alive.0.notify_one();
     }
@@ -154,18 +170,19 @@ impl PGListener {
         tls: MakeRustlsConnect,
         client: Arc<RwLock<ListenClient>>,
         notify_keep_alive: Arc<(Notify, AtomicBool)>,
+        max_backoff: Duration,
     ) {
-        // Task to keep the listener connected using notifications. Whenever the connection is (maybe) lost,
-        // we will trigger a reconnect as long as the Pool is not dropped.
-        // As the messages are processed using another task, we have no loop on the main "thread" to check for connection lost. When the messaging task
-        // detects a connection lost, it will notify the reconnect task to reconnect. As long as the Pool is not dropped, the reconnect task will keep
-        // trying to reconnect for each channel.
-        // The `client` write lock is held across this call, so `listen()` and the keep-alive task
-        // can never create two connections concurrently: whoever takes the lock first connects, the other
-        // observes the connection and gets `None`.
+        // Reconnects whenever the streaming thread signals a connection loss, until the pool is
+        // dropped. The `client` write lock serializes this task and `listen()`, so the two can never
+        // open two connections concurrently: the loser observes the connection and gets `None`.
 
         tokio::spawn(async move {
-            const RETRY: u64 = 500;
+            const RETRY_MIN: Duration = Duration::from_millis(500);
+            // A connection that stayed up at least this long is considered healthy and resets the backoff.
+            const STABLE: Duration = Duration::from_secs(10);
+            let retry_max = max_backoff.max(RETRY_MIN);
+            let mut backoff = RETRY_MIN;
+
             notify_keep_alive.0.notified().await;
             while notify_keep_alive.1.load(Ordering::Relaxed) {
                 log::info!("PGListener reconnection triggered...");
@@ -182,28 +199,31 @@ impl PGListener {
                         log::info!("PGListener reconnected to PostgreSQL.");
 
                         Self::start_streaming_thread(client.clone(), connection, notify_keep_alive.clone());
+                        let connected_at = Instant::now();
                         match client.read().await.relisten().await {
                             Ok(()) => client.read().await.handle_reconnect(),
                             Err(e) => {
                                 log::error!("PGListener resubscribe error: {e:#?}");
-                                // Drop the just-connected client. This ends the streaming thread we
-                                // spawned above (its connection driver completes), and that thread
-                                // re-triggers the keep-alive notification on exit. We must NOT loop
-                                // back to connect() directly: doing so would spawn a second streaming
-                                // thread over a new connection while this one is still polling,
-                                // causing duplicate dispatch and an orphaned connection.
+                                // Must not loop straight back to connect(): that would spawn a second
+                                // streaming thread over the still-polling connection. disconnect()
+                                // ends this thread, which re-triggers the notification below.
                                 client.write().await.disconnect();
-                                tokio::time::sleep(tokio::time::Duration::from_millis(RETRY)).await;
                             }
                         }
-                        // Park until the (single) streaming thread signals a connection loss. On the
-                        // relisten-failure path above the notification is already pending, so this
-                        // returns promptly and the loop reconnects.
                         notify_keep_alive.0.notified().await;
+                        // Reset only after a connection that stayed up, so accept-then-drop keeps backing off.
+                        if connected_at.elapsed() >= STABLE {
+                            backoff = RETRY_MIN;
+                        }
+                        if notify_keep_alive.1.load(Ordering::Relaxed) {
+                            sleep(backoff).await;
+                            backoff = (backoff * 2).min(retry_max);
+                        }
                     }
                     Err(e) => {
                         log::error!("PGListener reconnection error: {e:#?}");
-                        tokio::time::sleep(tokio::time::Duration::from_millis(RETRY)).await;
+                        sleep(backoff).await;
+                        backoff = (backoff * 2).min(retry_max);
                     }
                 }
             }
@@ -221,30 +241,42 @@ impl PGListener {
     ) {
         log::trace!("PGListener starting streaming thread...");
 
-        let messages = stream::poll_fn(move |cx| connection.poll_message(cx)).map(|msg| match msg {
-            Ok(AsyncMessage::Notification(notification)) => {
-                log::trace!("PGListener received notification: {notification:?}");
-                Some(notification)
-            }
-            Ok(_) => {
-                log::trace!("PGListener received no notification");
-                None
-            }
-            Err(e) => {
-                log::error!("PGListener notification error: {e:#?}");
-                None
-            }
-        });
+        // Yields the raw poll result so the streaming loop can distinguish a notification (dispatch),
+        // a non-notification async message such as a server NOTICE (skip and keep polling), and an
+        // error (stop and let the keep-alive task reconnect).
+        let messages = stream::poll_fn(move |cx| connection.poll_message(cx));
 
         tokio::spawn(async move {
             let mut stream = Box::pin(messages);
-            while let Some(Some(msg)) = stream.next().await {
-                let client = client.read().await;
-                client.handle(msg.channel(), Some(msg.payload()));
+            while let Some(msg) = stream.next().await {
+                match msg {
+                    Ok(AsyncMessage::Notification(notification)) => {
+                        log::trace!("PGListener received notification: {notification:?}");
+                        let client = client.read().await;
+                        client.handle(notification.channel(), Some(notification.payload()));
+                    }
+                    Ok(_) => {
+                        // Non-notification async message (e.g. a server NOTICE). Skip it and keep
+                        // polling; it must NOT tear the connection down and force a reconnect.
+                        log::trace!("PGListener received no notification");
+                    }
+                    Err(e) => {
+                        // A real connection/driver error: stop streaming so the keep-alive task
+                        // reconnects.
+                        log::error!("PGListener notification error: {e:#?}");
+                        break;
+                    }
+                }
             }
 
-            log::trace!("PGListener streaming stopped.");
+            log::trace!("PGListener stopping stream...");
+            // Drop the connection driver before taking the write lock. A query still in flight on
+            // this client (e.g. backend_pid) holds a read lock while awaiting a response only this
+            // now-stopped driver could deliver; dropping it makes that query fail fast, releasing
+            // the read lock so disconnect() below proceeds instead of deadlocking.
+            drop(stream);
             client.write().await.disconnect();
+            log::trace!("PGListener streaming stopped.");
 
             if notify_keep_alive.1.load(Ordering::Relaxed) {
                 log::info!("PGListener triggering a reconnection for connection lost...");
@@ -257,10 +289,16 @@ impl PGListener {
         log::trace!("PGListener streaming thread is ready.");
     }
 
-    pub fn new(config: PGConfig, tls: MakeRustlsConnect) -> Self {
+    pub fn new(config: PGConfig, tls: MakeRustlsConnect, max_backoff: Duration) -> Self {
         let notify_keep_alive = Arc::new((Notify::new(), AtomicBool::new(true)));
         let client = Arc::new(RwLock::new(ListenClient::new()));
-        Self::start_keep_alive_thread(config.clone(), tls.clone(), client.clone(), notify_keep_alive.clone());
+        Self::start_keep_alive_thread(
+            config.clone(),
+            tls.clone(),
+            client.clone(),
+            notify_keep_alive.clone(),
+            max_backoff,
+        );
 
         Self {
             inner: Arc::new(Inner {
@@ -287,11 +325,15 @@ impl PGListener {
             .connect(self.inner.config.clone(), self.inner.tls.clone())
             .await?
         {
+            // Fresh connection (this call reconnected before the keep-alive task): re-subscribe all
+            // already-registered channels, else only the new one below would be LISTENed.
             Self::start_streaming_thread(
                 self.inner.client.clone(),
                 connection,
                 self.inner.notify_keep_alive.clone(),
             );
+            client.relisten().await?;
+            client.handle_reconnect();
         }
 
         client.listen(channel, handler).await?;

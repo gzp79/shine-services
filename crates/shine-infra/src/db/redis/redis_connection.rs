@@ -7,6 +7,7 @@ use redis::{
     Client, Cmd, ErrorKind, Pipeline, RedisError, RedisFuture, Value,
 };
 use std::ops::{Deref, DerefMut};
+use std::time::Duration;
 
 pub use shine_infra_macros::RedisJsonValue;
 
@@ -80,9 +81,9 @@ pub struct RedisConnectionManager {
 }
 
 impl RedisConnectionManager {
-    pub fn new(raw_cns: &str) -> Result<Self, RedisError> {
+    pub fn new(raw_cns: &str, max_reconnect_backoff: Duration) -> Result<Self, RedisError> {
         let client = Client::open(raw_cns)?;
-        let listener = RedisListener::new(client.clone());
+        let listener = RedisListener::new(client.clone(), max_reconnect_backoff);
         Ok(Self { client, listener })
     }
 }
@@ -148,12 +149,12 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
     // - pool_timeout: custom parameter in MILLISECONDS for bb8 pool (acquiring connection from pool, including waiting for connection to be established if pool is exhausted)
 
     let (pool_timeout_opt, cns_clean) = crate::db::extract_and_strip_param(cns, "pool_timeout");
-    let pool_timeout_ms = pool_timeout_opt.unwrap_or(30000); // Default: 30s
+    let pool_timeout = std::time::Duration::from_millis(pool_timeout_opt.unwrap_or(30000)); // Default: 30s
 
-    let redis_manager = RedisConnectionManager::new(&cns_clean)?;
+    let redis_manager = RedisConnectionManager::new(&cns_clean, pool_timeout)?;
     let redis = bb8::Pool::builder()
         .max_size(10)
-        .connection_timeout(std::time::Duration::from_millis(pool_timeout_ms))
+        .connection_timeout(pool_timeout)
         .build(redis_manager)
         .await?;
 
