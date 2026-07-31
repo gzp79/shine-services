@@ -23,7 +23,7 @@ impl RedisConnection {
     #[inline]
     pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), RedisListenerError>
     where
-        F: Fn(&str) + Send + Sync + 'static,
+        F: Fn(Option<&str>) + Send + Sync + 'static,
     {
         self.listener.listen(channel, handler).await
     }

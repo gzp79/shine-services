@@ -43,6 +43,13 @@ impl RedisHubConnectionDb {
         let client = self.client.get().await.map_err(DBError::RedisPoolError)?;
         client
             .listen(HUB_REGISTRY_CHANGED_CHANNEL, move |payload| {
+                let Some(payload) = payload else {
+                    // None signals a reconnect: pub/sub messages published during the outage were
+                    // lost. The periodic registry heartbeat reconciles stale connections, so no
+                    // resync is needed here.
+                    return;
+                };
+
                 // Payload is "{instance_id}:{user_id}".
                 let Some((origin, raw_user_id)) = payload.split_once(':') else {
                     log::error!("Malformed hub registry payload {payload:?}");

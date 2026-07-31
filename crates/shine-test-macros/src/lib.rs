@@ -52,7 +52,15 @@ pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     if let Some(serial) = attrs.serial {
-        test_decors.push(quote! { #[::shine_test::serial_test::serial(#serial)] });
+        let key: String = serial
+            .value()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect();
+        let key = Ident::new(&key, serial.span());
+        test_decors.push(quote! {
+            #[cfg_attr(not(target_arch = "wasm32"), ::shine_test::serial_test::serial(#key, crate = shine_test::serial_test))]
+        });
     }
     if let Some(skip) = attrs.skip {
         test_decors.push(quote! { #[ignore = #skip] });

@@ -1,4 +1,8 @@
 pub use shine_test_macros::test;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use serial_test;
+
 use std::sync::Once;
 
 static INIT: Once = Once::new();

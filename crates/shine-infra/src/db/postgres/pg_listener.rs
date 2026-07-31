@@ -30,9 +30,7 @@ impl ListenClient {
     }
 
     /// Connect only if not already connected. Returns the new socket connection to be streamed, or
-    /// `None` if a connection already exists. Callers hold the `client` write lock across this call,
-    /// so `listen()` and the keep-alive task can never create two connections concurrently: whoever
-    /// takes the lock first connects, the other observes the connection and gets `None`.
+    /// `None` if a connection already exists.
     async fn connect(
         &mut self,
         config: PGConfig,
@@ -162,6 +160,9 @@ impl PGListener {
         // As the messages are processed using another task, we have no loop on the main "thread" to check for connection lost. When the messaging task
         // detects a connection lost, it will notify the reconnect task to reconnect. As long as the Pool is not dropped, the reconnect task will keep
         // trying to reconnect for each channel.
+        // The `client` write lock is held across this call, so `listen()` and the keep-alive task
+        // can never create two connections concurrently: whoever takes the lock first connects, the other
+        // observes the connection and gets `None`.
 
         tokio::spawn(async move {
             const RETRY: u64 = 500;
