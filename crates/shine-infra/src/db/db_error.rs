@@ -15,6 +15,8 @@ pub enum DBError {
     PGError(#[from] PGError),
     #[error(transparent)]
     SqlMigration(#[from] refinery::Error),
+    #[error("The listener has been closed")]
+    ListenerClosed,
 
     #[error("Failed to get pooled redis connection")]
     RedisPoolError(#[source] RedisConnectionError),

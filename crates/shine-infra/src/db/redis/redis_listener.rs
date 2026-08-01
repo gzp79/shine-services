@@ -27,6 +27,8 @@ const SLOW_HANDLER: Duration = Duration::from_millis(100);
 pub enum RedisListenerError {
     #[error(transparent)]
     Redis(#[from] RedisError),
+    #[error("The listener has been closed")]
+    Closed,
 }
 
 struct ListenState {
@@ -289,15 +291,24 @@ impl RedisListener {
     where
         F: Fn(Option<&str>) + Send + Sync + 'static,
     {
+        // A closed listener has no keep-alive task, so a connection opened here would never self-heal
+        // on a later drop. Reject rather than resurrect an unmanaged connection.
+        if !self.inner.notify_keep_alive.1.load(Ordering::Relaxed) {
+            return Err(RedisListenerError::Closed);
+        }
+
         // The write lock is held across connect + set_stream_task + listen, so the keep-alive task
         // and listen() can never create two connections concurrently: whoever takes the lock first
         // connects, the other observes the connection and gets `None`.
         let mut state = self.inner.state.write().await;
 
         if let Some(stream) = state.connect(&self.inner.client).await? {
+            // Fresh connection (this call reconnected before the keep-alive task): notify existing
+            // handlers of the bounce, matching the keep-alive path and the PG listener.
             let task =
                 Self::start_streaming_task(self.inner.state.clone(), stream, self.inner.notify_keep_alive.clone());
             state.set_stream_task(task);
+            state.handle_reconnect();
         }
 
         state.listen(channel, handler).await?;

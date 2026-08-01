@@ -63,8 +63,12 @@ impl<T: PGRawConnection> PGConnection<T> {
             prepared_statements.insert(prepared_id.0, prepared.clone());
             Ok(prepared)
         } else {
-            //todo: return some PGError instead of panic
-            panic!("No prepared statement found for id: {}", prepared_id.0);
+            // Ids come only from create_prepared_statement, never from user/DB input, so a missing
+            // id is a program error, not a recoverable condition.
+            panic!(
+                "No prepared statement registered for id {}: statement was not built, or a handle was used across pools (independent id spaces)",
+                prepared_id.0
+            );
         }
     }
 

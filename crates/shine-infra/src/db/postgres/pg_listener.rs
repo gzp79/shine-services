@@ -313,12 +313,21 @@ impl PGListener {
     pub async fn close(&self) {
         self.inner.notify_keep_alive.1.store(false, Ordering::Relaxed);
         self.inner.client.write().await.disconnect();
+        // Wake the keep-alive task so it observes the cleared flag and exits now, instead of parking
+        // until the last handle drops.
+        self.inner.notify_keep_alive.0.notify_one();
     }
 
     pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), DBError>
     where
         F: Fn(Option<&str>) + Send + Sync + 'static,
     {
+        // A closed listener has no keep-alive task, so a connection opened here would never self-heal
+        // on a later drop. Reject rather than resurrect an unmanaged connection.
+        if !self.inner.notify_keep_alive.1.load(Ordering::Relaxed) {
+            return Err(DBError::ListenerClosed);
+        }
+
         let mut client = self.inner.client.write().await;
 
         if let Some(connection) = client

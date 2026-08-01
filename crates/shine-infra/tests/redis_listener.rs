@@ -1,5 +1,8 @@
-use redis::{aio::ConnectionLike, AsyncCommands};
-use shine_infra::db::create_redis_pool;
+use redis::{aio::ConnectionLike, AsyncCommands, Client};
+use shine_infra::db::{
+    create_redis_pool,
+    redis::{RedisListener, RedisListenerError},
+};
 use shine_test::test;
 use std::{collections::HashSet, env, sync::Arc, time::Duration};
 use tokio::{
@@ -360,4 +363,19 @@ async fn test_redis_listener_parallel_connect() {
 
         _ => log::warn!("Skipping test_redis_listener_parallel_connect"),
     }
+}
+
+// listen() after close() must be rejected instead of resurrecting an unmanaged connection whose
+// streaming task would never self-heal. The guard returns before any I/O, so no server is needed.
+#[test(serial = "redis-listener")]
+async fn test_redis_listener_listen_after_close_is_rejected() {
+    let client = Client::open("redis://127.0.0.1:6379").unwrap();
+    let listener = RedisListener::new(client, Duration::from_millis(500));
+    listener.close().await;
+
+    let err = listener.listen("shine-test-after-close", |_| {}).await.unwrap_err();
+    assert!(
+        matches!(err, RedisListenerError::Closed),
+        "expected RedisListenerError::Closed, got {err:?}"
+    );
 }

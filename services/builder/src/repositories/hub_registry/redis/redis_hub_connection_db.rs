@@ -73,6 +73,7 @@ impl RedisHubConnectionDb {
             .await
             .map_err(|err| match err {
                 RedisListenerError::Redis(err) => DBError::RedisError(err),
+                RedisListenerError::Closed => DBError::ListenerClosed,
             })?;
         Ok(())
     }

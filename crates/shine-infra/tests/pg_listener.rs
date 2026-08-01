@@ -1,11 +1,16 @@
 use rustls::crypto::ring;
-use shine_infra::db::create_postgres_pool;
+use shine_infra::db::{
+    create_postgres_pool,
+    postgres::{PGConfig, PGListener},
+    DBError,
+};
 use shine_test::test;
-use std::{collections::HashSet, env, sync::Arc, time::Duration};
+use std::{collections::HashSet, env, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
     sync::{Mutex, Notify},
     time::{sleep, timeout},
 };
+use tokio_postgres_rustls::MakeRustlsConnect;
 
 #[test(serial = "pg-listener")]
 async fn test_pg_listener_pub_sub() {
@@ -616,4 +621,24 @@ async fn test_pg_listener_parallel_connect() {
 
         _ => log::warn!("Skipping test_pg_listener_parallel_connect"),
     }
+}
+
+// listen() after close() must be rejected instead of resurrecting an unmanaged connection whose
+// streaming thread would never self-heal. The guard returns before any I/O, so no server is needed.
+#[test(serial = "pg-listener")]
+async fn test_pg_listener_listen_after_close_is_rejected() {
+    let _ = ring::default_provider().install_default();
+
+    let config = PGConfig::from_str("postgres://user:pass@127.0.0.1:5432/db").unwrap();
+    let tls_config = rustls::ClientConfig::builder()
+        .with_root_certificates(rustls::RootCertStore::empty())
+        .with_no_client_auth();
+    let listener = PGListener::new(config, MakeRustlsConnect::new(tls_config), Duration::from_millis(500));
+    listener.close().await;
+
+    let err = listener.listen("shine-test-after-close", |_| {}).await.unwrap_err();
+    assert!(
+        matches!(err, DBError::ListenerClosed),
+        "expected DBError::ListenerClosed, got {err:?}"
+    );
 }
