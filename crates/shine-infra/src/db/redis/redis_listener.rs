@@ -1,3 +1,4 @@
+use crate::sync::ExponentialBackoff;
 use futures::StreamExt;
 use redis::{
     aio::{PubSubSink, PubSubStream},
@@ -14,7 +15,7 @@ use thiserror::Error as ThisError;
 use tokio::{
     sync::{Notify, RwLock},
     task::JoinHandle,
-    time::{sleep, Duration, Instant},
+    time::{Duration, Instant},
 };
 
 /// Handler for pub/sub messages.
@@ -29,6 +30,8 @@ pub enum RedisListenerError {
     Redis(#[from] RedisError),
     #[error("The listener has been closed")]
     Closed,
+    #[error("A handler is already registered for channel {0:?}")]
+    AlreadyListening(String),
 }
 
 struct ListenState {
@@ -88,12 +91,11 @@ impl ListenState {
     where
         F: Fn(Option<&str>) + Send + Sync + 'static,
     {
-        if self.handlers.insert(channel.to_string(), Box::new(handler)).is_none() {
-            if let Some(sink) = self.sink.as_mut() {
-                log::info!("RedisListener subscribing to channel {channel:?}...");
-                sink.subscribe(channel).await?;
-            }
+        if let Some(sink) = self.sink.as_mut() {
+            log::info!("RedisListener subscribing to channel {channel:?}...");
+            sink.subscribe(channel).await?;
         }
+        self.handlers.insert(channel.to_string(), Box::new(handler));
 
         Ok(())
     }
@@ -188,8 +190,7 @@ impl RedisListener {
             const RETRY_MIN: Duration = Duration::from_millis(500);
             // A connection that stayed up at least this long is considered healthy and resets the backoff.
             const STABLE: Duration = Duration::from_secs(10);
-            let retry_max = max_backoff.max(RETRY_MIN);
-            let mut backoff = RETRY_MIN;
+            let mut backoff = ExponentialBackoff::new(RETRY_MIN, max_backoff);
 
             notify_keep_alive.0.notified().await;
             while notify_keep_alive.1.load(Ordering::Relaxed) {
@@ -209,17 +210,15 @@ impl RedisListener {
                         let connected_at = Instant::now();
                         notify_keep_alive.0.notified().await;
                         if connected_at.elapsed() >= STABLE {
-                            backoff = RETRY_MIN;
+                            backoff.reset();
                         }
                         if notify_keep_alive.1.load(Ordering::Relaxed) {
-                            sleep(backoff).await;
-                            backoff = (backoff * 2).min(retry_max);
+                            backoff.delay().await;
                         }
                     }
                     Err(err) => {
                         log::error!("RedisListener reconnection error: {err:#?}");
-                        sleep(backoff).await;
-                        backoff = (backoff * 2).min(retry_max);
+                        backoff.delay().await;
                     }
                 }
             }
@@ -301,6 +300,10 @@ impl RedisListener {
         // and listen() can never create two connections concurrently: whoever takes the lock first
         // connects, the other observes the connection and gets `None`.
         let mut state = self.inner.state.write().await;
+
+        if state.handlers.contains_key(channel) {
+            return Err(RedisListenerError::AlreadyListening(channel.to_string()));
+        }
 
         if let Some(stream) = state.connect(&self.inner.client).await? {
             // Fresh connection (this call reconnected before the keep-alive task): notify existing

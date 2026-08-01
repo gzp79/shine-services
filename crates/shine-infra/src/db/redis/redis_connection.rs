@@ -157,13 +157,11 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
         )))
     };
 
-    let (pool_timeout_opt, cns_clean) =
-        crate::db::cns_param::extract_and_strip_param(cns, "pool_timeout").map_err(to_redis_err)?;
-    let pool_timeout = std::time::Duration::from_millis(pool_timeout_opt.unwrap_or(30000));
-
-    let (max_size_opt, cns_clean) =
-        crate::db::cns_param::extract_and_strip_param(&cns_clean, "max_size").map_err(to_redis_err)?;
-    let max_size = max_size_opt.unwrap_or(10) as u32;
+    let mut cns = crate::db::ConnectionString::parse(cns);
+    let pool_timeout =
+        std::time::Duration::from_millis(cns.take_u64("pool_timeout").map_err(to_redis_err)?.unwrap_or(30000));
+    let max_size = cns.take_u64("max_size").map_err(to_redis_err)?.unwrap_or(10) as u32;
+    let cns_clean = cns.into_cns();
 
     let redis_manager = RedisConnectionManager::new(&cns_clean, pool_timeout)?;
     let redis = bb8::Pool::builder()

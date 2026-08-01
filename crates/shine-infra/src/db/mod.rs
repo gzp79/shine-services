@@ -8,7 +8,7 @@ pub mod redis;
 
 pub use self::{
     cacerts::{get_root_cert_store, CertError},
-    cns_param::CnsParamError,
+    cns_param::{split_query, CnsParamError, ConnectionString},
     db_error::DBError,
     postgres::create_postgres_pool,
     redis::create_redis_pool,

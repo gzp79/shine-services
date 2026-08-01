@@ -74,6 +74,7 @@ impl RedisHubConnectionDb {
             .map_err(|err| match err {
                 RedisListenerError::Redis(err) => DBError::RedisError(err),
                 RedisListenerError::Closed => DBError::ListenerClosed,
+                RedisListenerError::AlreadyListening(channel) => DBError::AlreadyListening(channel),
             })?;
         Ok(())
     }

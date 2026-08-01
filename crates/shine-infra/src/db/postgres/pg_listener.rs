@@ -1,4 +1,4 @@
-use crate::db::DBError;
+use crate::{db::DBError, sync::ExponentialBackoff};
 use futures::{stream, StreamExt};
 use std::{
     collections::HashMap,
@@ -9,7 +9,7 @@ use std::{
 };
 use tokio::{
     sync::{Notify, RwLock},
-    time::{sleep, Duration, Instant},
+    time::{Duration, Instant},
 };
 use tokio_postgres::{AsyncMessage, Notification};
 use tokio_postgres_rustls::MakeRustlsConnect;
@@ -66,11 +66,13 @@ impl ListenClient {
     {
         let channel = channel_name(channel);
 
-        if self.handlers.insert(channel.clone(), Box::new(handler)).is_none() {
-            if let Some(client) = self.client.as_ref() {
-                Self::pg_listen(client, &channel).await?;
-            }
+        if self.handlers.contains_key(&channel) {
+            return Err(DBError::AlreadyListening(channel));
         }
+        if let Some(client) = self.client.as_ref() {
+            Self::pg_listen(client, &channel).await?;
+        }
+        self.handlers.insert(channel, Box::new(handler));
 
         Ok(())
     }
@@ -180,8 +182,7 @@ impl PGListener {
             const RETRY_MIN: Duration = Duration::from_millis(500);
             // A connection that stayed up at least this long is considered healthy and resets the backoff.
             const STABLE: Duration = Duration::from_secs(10);
-            let retry_max = max_backoff.max(RETRY_MIN);
-            let mut backoff = RETRY_MIN;
+            let mut backoff = ExponentialBackoff::new(RETRY_MIN, max_backoff);
 
             notify_keep_alive.0.notified().await;
             while notify_keep_alive.1.load(Ordering::Relaxed) {
@@ -213,17 +214,15 @@ impl PGListener {
                         notify_keep_alive.0.notified().await;
                         // Reset only after a connection that stayed up, so accept-then-drop keeps backing off.
                         if connected_at.elapsed() >= STABLE {
-                            backoff = RETRY_MIN;
+                            backoff.reset();
                         }
                         if notify_keep_alive.1.load(Ordering::Relaxed) {
-                            sleep(backoff).await;
-                            backoff = (backoff * 2).min(retry_max);
+                            backoff.delay().await;
                         }
                     }
                     Err(e) => {
                         log::error!("PGListener reconnection error: {e:#?}");
-                        sleep(backoff).await;
-                        backoff = (backoff * 2).min(retry_max);
+                        backoff.delay().await;
                     }
                 }
             }

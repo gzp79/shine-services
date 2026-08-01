@@ -642,3 +642,26 @@ async fn test_pg_listener_listen_after_close_is_rejected() {
         "expected DBError::ListenerClosed, got {err:?}"
     );
 }
+
+// A second listen() on an already-registered channel must be rejected, not silently replace the
+// handler. Needs a server: the first listen() opens the shared connection.
+#[test(serial = "pg-listener")]
+async fn test_pg_listener_duplicate_listen_is_rejected() {
+    let _ = ring::default_provider().install_default();
+
+    match env::var("SHINE_TEST_PG_CNS") {
+        Ok(cns) => {
+            let pool = create_postgres_pool(&cns).await.unwrap();
+            let conn = pool.get().await.unwrap();
+
+            conn.listen("shine-test-duplicate", |_| {}).await.unwrap();
+            let err = conn.listen("shine-test-duplicate", |_| {}).await.unwrap_err();
+            assert!(
+                matches!(err, DBError::AlreadyListening(ref channel) if channel == "shine-test-duplicate"),
+                "expected DBError::AlreadyListening, got {err:?}"
+            );
+        }
+
+        _ => log::warn!("Skipping test_pg_listener_duplicate_listen_is_rejected"),
+    }
+}
