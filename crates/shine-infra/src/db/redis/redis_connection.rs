@@ -87,10 +87,11 @@ impl RedisConnectionManager {
     pub fn new(
         raw_cns: &str,
         conn_config: AsyncConnectionConfig,
+        connect_timeout: Duration,
         max_reconnect_backoff: Duration,
     ) -> Result<Self, RedisError> {
         let client = Client::open(raw_cns)?;
-        let listener = RedisListener::new(client.clone(), max_reconnect_backoff);
+        let listener = RedisListener::new(client.clone(), connect_timeout, max_reconnect_backoff);
         Ok(Self { client, conn_config, listener })
     }
 }
@@ -198,25 +199,23 @@ pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisCo
     let pool_timeout = std::time::Duration::from_millis(pool_timeout_ms);
 
     let mut conn_config = AsyncConnectionConfig::new();
+    // The listener's pub/sub path ignores redis-rs's connect/response timeouts, so it takes an
+    // explicit connect timeout: the `timeout` param if set, else a sane default.
+    let mut listener_connect_timeout = RedisListener::DEFAULT_CONNECT_TIMEOUT;
     if let Some(timeout_ms) = timeout_ms {
         let timeout = std::time::Duration::from_millis(timeout_ms);
         conn_config = conn_config
             .set_connection_timeout(Some(timeout))
             .set_response_timeout(Some(timeout));
+        listener_connect_timeout = timeout;
     }
 
-    let redis_manager = RedisConnectionManager::new(&cns_clean, conn_config, pool_timeout)?;
+    let redis_manager = RedisConnectionManager::new(&cns_clean, conn_config, listener_connect_timeout, pool_timeout)?;
     let redis = bb8::Pool::builder()
         .max_size(max_size)
         .connection_timeout(pool_timeout)
         .build(redis_manager)
         .await?;
-
-    {
-        let mut client = redis.get().await?;
-        let pong: String = redis::cmd("PING").query_async(&mut *client).await?;
-        log::info!("Redis pong: {pong}");
-    }
 
     Ok(redis)
 }

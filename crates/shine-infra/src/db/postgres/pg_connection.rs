@@ -97,6 +97,11 @@ impl<T: PGRawConnection> PGConnection<T> {
     }
 
     #[inline]
+    pub async fn unlisten_all(&self) -> Result<(), DBError> {
+        self.listener.unlisten_all().await
+    }
+
+    #[inline]
     pub async fn listener_backend_pid(&self) -> Option<i32> {
         self.listener.backend_pid().await
     }
@@ -192,9 +197,14 @@ pub struct PGConnectionManager {
 }
 
 impl PGConnectionManager {
-    pub fn new(config: PGConfig, tls: MakeRustlsConnect, max_reconnect_backoff: Duration) -> Self {
+    pub fn new(
+        config: PGConfig,
+        tls: MakeRustlsConnect,
+        connect_timeout: Duration,
+        max_reconnect_backoff: Duration,
+    ) -> Self {
         let connection_manager = PostgresConnectionManager::new(config.clone(), tls.clone());
-        let listener = PGListener::new(config, tls, max_reconnect_backoff);
+        let listener = PGListener::new(config, tls, connect_timeout, max_reconnect_backoff);
 
         Self {
             connection_manager,
@@ -317,7 +327,13 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PGConnectionPool, PGCreat
     let tls = MakeRustlsConnect::new(tls_config);
 
     let pg_config = PGConfig::from_str(&cns_clean)?;
-    let postgres_manager = PGConnectionManager::new(pg_config, tls, pool_timeout);
+    // The listener's keep-alive connect needs a hard bound (tokio_postgres's connect_timeout covers
+    // only the socket): honor the connection string's connect_timeout if set, else a sane default.
+    let connect_timeout = pg_config
+        .get_connect_timeout()
+        .copied()
+        .unwrap_or(PGListener::DEFAULT_CONNECT_TIMEOUT);
+    let postgres_manager = PGConnectionManager::new(pg_config, tls, connect_timeout, pool_timeout);
     let postgres = bb8::Pool::builder()
         .max_size(max_size)
         .connection_timeout(pool_timeout)

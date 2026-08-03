@@ -57,13 +57,10 @@ macro_rules! pg_prepared_statement {
 /// Helper to create prepared SQL statements
 #[macro_export]
 macro_rules! pg_query {
-    ($id:ident =>
-        in = $($pid:ident: $pty:ty),*;
-        out = $rid:ident: $rty:ty;
-        sql = $stmt:expr ) => {
-
-        $crate::pg_prepared_statement!($id => $stmt, [$($pid:$pty),*]);
-
+    // The two row-returning shapes differ only in how a single row is turned into the output type;
+    // this internal rule defines query/query_one/query_opt once, given `$row => $extract` as the
+    // per-row conversion (a fragment, not a closure, so `$row`'s type is fixed at each use site).
+    (@row_queries $id:ident, [$($pid:ident: $pty:ty),*], $rty:ty, $row:ident => $extract:expr) => {
         impl $id {
             #[allow(clippy::too_many_arguments)]
             #[allow(dead_code)]
@@ -77,8 +74,7 @@ macro_rules! pg_query {
             {
                 let statement = self.statement(client).await?;
                 let rows = client.query(&statement, &[$($pid,)*]).await?;
-
-                rows.into_iter().map(|row| row.try_get(&stringify!($rid))).collect::<Result<Vec<_>,_>>()
+                rows.into_iter().map(|$row| $extract).collect::<Result<Vec<_>,_>>()
             }
 
             #[allow(clippy::too_many_arguments)]
@@ -92,9 +88,8 @@ macro_rules! pg_query {
                 T: $crate::db::postgres::PGRawConnection
             {
                 let statement = self.statement(client).await?;
-                let row = client.query_one(&statement, &[$($pid,)*]).await?;
-                let value: $rty = row.try_get(&stringify!($rid))?;
-                Ok(value)
+                let $row = client.query_one(&statement, &[$($pid,)*]).await?;
+                $extract
             }
 
             #[allow(clippy::too_many_arguments)]
@@ -110,10 +105,20 @@ macro_rules! pg_query {
                 let statement = self.statement(client).await?;
                 client.query_opt(&statement, &[$($pid,)*])
                     .await?
-                    .map(|r| r.try_get(&stringify!($rid)))
+                    .map(|$row| $extract)
                     .transpose()
             }
         }
+    };
+
+    ($id:ident =>
+        in = $($pid:ident: $pty:ty),*;
+        out = $rid:ident: $rty:ty;
+        sql = $stmt:expr ) => {
+
+        $crate::pg_prepared_statement!($id => $stmt, [$($pid:$pty),*]);
+        $crate::pg_query!(@row_queries $id, [$($pid: $pty),*], $rty,
+            row => row.try_get(&stringify!($rid)));
     };
 
     ($id:ident =>
@@ -122,60 +127,8 @@ macro_rules! pg_query {
         sql = $stmt:expr ) => {
 
         $crate::pg_prepared_statement!($id => $stmt, [$($pid:$pty),*]);
-
-        impl $id {
-            #[allow(clippy::too_many_arguments)]
-            #[allow(dead_code)]
-            pub async fn query<T>(
-                &self,
-                client: &$crate::db::postgres::PGConnection<T>,
-                $($pid: &$pty,)*
-            ) -> Result<Vec<$oty>, $crate::db::postgres::PGError>
-            where
-                T: $crate::db::postgres::PGRawConnection
-            {
-                let statement = self.statement(client).await?;
-                let rows = client.query(&statement, &[$($pid,)*]).await?;
-
-                rows.into_iter()
-                    .map(|row| <$oty as postgres_from_row::FromRow>::try_from_row(&row))
-                    .collect::<Result<Vec<_>,_>>()
-            }
-
-            #[allow(clippy::too_many_arguments)]
-            #[allow(dead_code)]
-            pub async fn query_one<T>(
-                &self,
-                client: &$crate::db::postgres::PGConnection<T>,
-                $($pid: &$pty,)*
-            ) -> Result<$oty, $crate::db::postgres::PGError>
-            where
-                T: $crate::db::postgres::PGRawConnection
-            {
-                let statement = self.statement(client).await?;
-                let row = client
-                    .query_one(&statement, &[$($pid,)*])
-                    .await?;
-                <$oty as postgres_from_row::FromRow>::try_from_row(&row)
-            }
-
-            #[allow(clippy::too_many_arguments)]
-            #[allow(dead_code)]
-            pub async fn query_opt<T>(
-                &self,
-                client: &$crate::db::postgres::PGConnection<T>,
-                $($pid: &$pty,)*
-            ) -> Result<Option<$oty>, $crate::db::postgres::PGError>
-            where
-                T: $crate::db::postgres::PGRawConnection
-            {
-                let statement = self.statement(client).await?;
-                client.query_opt(&statement, &[$($pid,)*])
-                    .await?
-                    .map(|row| <$oty as postgres_from_row::FromRow>::try_from_row(&row) )
-                    .transpose()
-            }
-        }
+        $crate::pg_query!(@row_queries $id, [$($pid: $pty),*], $oty,
+            row => <$oty as postgres_from_row::FromRow>::try_from_row(&row));
     };
 
     ($id:ident =>

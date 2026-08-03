@@ -24,7 +24,6 @@ tokio = { workspace = true }
 
 ############################# DB #############################
 bb8 = { workspace = true }
-bb8-redis = { workspace = true }
 redis = { workspace = true, features = [
     "tokio-comp",
     "tokio-rustls-comp",

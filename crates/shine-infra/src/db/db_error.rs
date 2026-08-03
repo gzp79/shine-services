@@ -17,6 +17,8 @@ pub enum DBError {
     SqlMigration(#[from] refinery::Error),
     #[error("The listener has been closed")]
     ListenerClosed,
+    #[error("The listener connection timed out")]
+    ListenerConnectTimeout,
     #[error("A handler is already registered for channel {0:?}")]
     AlreadyListening(String),
 

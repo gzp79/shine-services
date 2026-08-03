@@ -181,9 +181,12 @@
 
 <p>
   A subscription change (<code>listen</code>/<code>unlisten</code>) and the streaming task both touch
-  <code>ListenState</code>, and the two backends resolve that contention differently — the one place
-  the listeners are <em>not</em> identical. The difference is forced by the driver model of each
-  client library, not by choice.
+  <code>ListenState</code>. Both backends resolve that contention the same way: a one-permit
+  <code>Semaphore</code> (<code>ops</code>) serializes subscription/lifecycle changes, and the actual
+  network command runs <em>without</em> the <code>state</code> lock so the streaming task can keep
+  dispatching. The driver model differs (below), but neither listener holds <code>state</code> across
+  network I/O, and every listener network op is bounded by a timeout so a broker outage cannot stall
+  <code>listen</code>/<code>unlisten</code>/<code>close</code>.
 </p>
 
 <table>
@@ -194,21 +197,35 @@
     <td>An internal task inside redis-rs.</td>
   </tr>
   <tr>
-    <td>Can a subscribe complete while the state lock is held?</td>
-    <td><span class="tag bad">No</span> — the command needs the streaming task to poll, which needs the same lock to dispatch. Holding the lock across it deadlocks.</td>
-    <td><span class="tag good">Yes</span> — redis-rs drives its own connection, so <code>subscribe()</code> completes regardless.</td>
+    <td>Serialize subscription changes with</td>
+    <td colspan="2">A one-permit <code>Semaphore</code> (<code>ops</code>), held across the whole change.</td>
   </tr>
   <tr>
-    <td>Serialize subscription changes with</td>
-    <td>A one-permit <code>Semaphore</code> (<code>ops</code>). The command runs on a snapshot of <code>Arc&lt;Client&gt;</code> taken under a brief lock, then released.</td>
-    <td>The <code>state</code> write lock itself — held across the whole change, which doubles as the serializer.</td>
+    <td>Run the network command</td>
+    <td>On a snapshot of <code>Arc&lt;Client&gt;</code> taken under a brief lock, then released.</td>
+    <td>On a clone of the <code>PubSubSink</code> taken under a brief lock, then released.</td>
+  </tr>
+  <tr>
+    <td>Bound on the connect</td>
+    <td>A <code>tokio::time::timeout</code> around <code>config.connect()</code> (the connection string's <code>connect_timeout</code>, else a default) — <code>tokio_postgres</code>'s own <code>connect_timeout</code> covers only the socket, not the TLS handshake/startup.</td>
+    <td>A <code>tokio::time::timeout</code> around <code>get_async_pubsub()</code>/<code>subscribe()</code> (the connection string's <code>timeout</code>, else a default) — redis-rs applies its timeouts only on the multiplexed path, not pub/sub.</td>
   </tr>
   <tr>
     <td>Close-vs-listen safety</td>
-    <td><code>listen()</code> and <code>close()</code> re-check the closed flag under the <code>ops</code> permit.</td>
-    <td><code>listen()</code> and <code>close()</code> touch the closed flag under the <code>state</code> write lock.</td>
+    <td colspan="2"><code>listen()</code> and <code>close()</code> re-check the closed flag under the <code>ops</code> permit.</td>
   </tr>
 </table>
+
+<p>
+  Why Redis no longer holds the <code>state</code> write lock across <code>subscribe()</code> (it
+  safely could — redis-rs drives its own connection): <code>get_async_pubsub</code> and
+  <code>PubSubSink::subscribe</code> are <em>untimed</em> (redis-rs applies its connect/response
+  timeouts only on the multiplexed command path, not pub/sub). Holding the write lock across an
+  untimed connect means a single unreachable broker blocks every other <code>listen</code>,
+  <code>unlisten</code>, and <code>close</code> behind the lock for the full OS TCP timeout. Snapshotting
+  the sink and running the bounded command lock-free removes that liveness hazard and makes both
+  listeners structurally identical here.
+</p>
 
 <h2>Key rules</h2>
 
@@ -232,7 +249,7 @@
   </tr>
   <tr>
     <td>Can subscriptions change while messages are being read?</td>
-    <td>Yes. Redis uses <code>PubSub::split()</code> — an independent <code>Sink</code> and <code>Stream</code> over the one connection. Postgres issues the command on a cloned <code>Arc&lt;Client&gt;</code> without holding the state lock, so the streaming task keeps dispatching (see Concurrency model).</td>
+    <td>Yes. Redis uses <code>PubSub::split()</code> — an independent <code>Sink</code> and <code>Stream</code> over the one connection — and issues the command on a cloned <code>PubSubSink</code>; Postgres issues it on a cloned <code>Arc&lt;Client&gt;</code>. Neither holds the state lock across the command, so the streaming task keeps dispatching (see Concurrency model).</td>
   </tr>
   <tr>
     <td>Regular commands on a pooled connection</td>
@@ -267,18 +284,19 @@
       <code>notified().await</code> reconstitutes the cycle.
     </p>
     <p>
-      <strong>The PG/Redis divergence is forced by who drives the socket, not chosen for style</strong>
-      (see Concurrency model). With redis-rs the driver is internal, so <code>subscribe()</code>
-      completes while the <code>state</code> write lock is held — the lock doubles as the
-      subscription serializer. With tokio-postgres this listener's own streaming task is the driver,
-      and it needs <code>state.read()</code> to dispatch, so a subscribe under the write lock
-      deadlocks; PG instead snapshots <code>Arc&lt;Client&gt;</code> under a brief lock, runs the
-      command lock-free, and serializes with a one-permit <code>Semaphore</code>. A read lock across
-      the command doesn't avoid the deadlock either: tokio's fair <code>RwLock</code> lets a queued
-      <code>unlisten</code> writer block the streaming task's next read, which stalls the driver the
-      command is waiting on. Removing PG's <code>Arc</code>/<code>Semaphore</code> would mean
-      splitting drive from dispatch (a forwarder task feeding a channel), i.e. rebuilding what
-      redis-rs does internally — more moving parts, not fewer.
+      <strong>Both listeners run the subscribe command lock-free, serialized by a one-permit
+      <code>Semaphore</code>.</strong> Neither holds the <code>state</code> lock across network I/O:
+      PG snapshots <code>Arc&lt;Client&gt;</code>, Redis clones the <code>PubSubSink</code>, each under a
+      brief lock, then runs the (timeout-bounded) command after releasing it. For PG this is
+      <em>mandatory</em>: its own streaming task is the driver and needs <code>state.read()</code> to
+      dispatch, so a subscribe under the write lock deadlocks (a read lock doesn't help either —
+      tokio's fair <code>RwLock</code> lets a queued <code>unlisten</code> writer block the streaming
+      task's next read, stalling the driver the command waits on). For Redis the driver is internal,
+      so holding the lock would <em>not</em> deadlock — but <code>get_async_pubsub</code>/
+      <code>subscribe</code> are untimed, so holding it across an unreachable-broker connect would
+      block every other <code>listen</code>/<code>unlisten</code>/<code>close</code> for the full OS
+      TCP timeout. Running lock-free under a timeout removes that hazard and keeps the two listeners
+      structurally identical.
     </p>
   </div>
 </details>

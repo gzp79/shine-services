@@ -39,7 +39,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 ############################# DB #############################
 bb8 = { workspace = true }
-bb8-redis = { workspace = true }
 redis = { workspace = true, features = [
     "tokio-comp",
     "tokio-rustls-comp",

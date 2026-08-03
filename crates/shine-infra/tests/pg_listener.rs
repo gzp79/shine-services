@@ -633,7 +633,12 @@ async fn test_pg_listener_listen_after_close_is_rejected() {
     let tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(rustls::RootCertStore::empty())
         .with_no_client_auth();
-    let listener = PGListener::new(config, MakeRustlsConnect::new(tls_config), Duration::from_millis(500));
+    let listener = PGListener::new(
+        config,
+        MakeRustlsConnect::new(tls_config),
+        Duration::from_secs(5),
+        Duration::from_millis(500),
+    );
     listener.close().await;
 
     let err = listener.listen("shine-test-after-close", |_| {}).await.unwrap_err();
@@ -641,6 +646,49 @@ async fn test_pg_listener_listen_after_close_is_rejected() {
         matches!(err, DBError::ListenerClosed),
         "expected DBError::ListenerClosed, got {err:?}"
     );
+}
+
+// listen() against an unreachable server must fail within the connect timeout rather than blocking
+// on the socket/handshake, and close() must not be held up behind it. Uses a black-hole address
+// (TEST-NET-1, RFC 5737) so the connect never completes; no server needed.
+#[test(serial = "pg-listener")]
+async fn test_pg_listener_listen_times_out_when_unreachable() {
+    let _ = ring::default_provider().install_default();
+
+    let config = PGConfig::from_str("postgres://user:pass@192.0.2.1:5432/db").unwrap();
+    let tls_config = rustls::ClientConfig::builder()
+        .with_root_certificates(rustls::RootCertStore::empty())
+        .with_no_client_auth();
+    let connect_timeout = Duration::from_millis(500);
+    let listener = PGListener::new(
+        config,
+        MakeRustlsConnect::new(tls_config),
+        connect_timeout,
+        Duration::from_millis(500),
+    );
+
+    let started = std::time::Instant::now();
+    let err = timeout(
+        Duration::from_secs(3),
+        listener.listen("shine-test-unreachable", |_| {}),
+    )
+    .await
+    .expect("listen() hung past the connect timeout")
+    .unwrap_err();
+    assert!(
+        matches!(err, DBError::ListenerConnectTimeout | DBError::PGError(_)),
+        "expected a connect timeout error, got {err:?}"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "listen() took {:?}, expected roughly the {connect_timeout:?} connect timeout",
+        started.elapsed()
+    );
+
+    // close() must not be blocked behind the stalled connect.
+    timeout(Duration::from_secs(3), listener.close())
+        .await
+        .expect("close() was blocked behind the stalled connect");
 }
 
 // A second listen() on an already-registered channel must be rejected, not silently replace the

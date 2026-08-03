@@ -1,19 +1,13 @@
-use crate::sync::ExponentialBackoff;
+use crate::sync::{ExponentialBackoff, KeepAlive};
 use futures::StreamExt;
 use redis::{
     aio::{PubSubSink, PubSubStream},
-    Client, RedisError,
+    Client, ErrorKind, RedisError,
 };
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::{collections::HashMap, sync::Arc};
 use thiserror::Error as ThisError;
 use tokio::{
-    sync::{Notify, RwLock},
+    sync::{RwLock, Semaphore},
     task::JoinHandle,
     time::{Duration, Instant},
 };
@@ -94,18 +88,18 @@ impl ListenState {
 
 struct Inner {
     client: Client,
-    notify_keep_alive: Arc<(Notify, AtomicBool)>,
-    /// Guards the connection + handler map. Unlike PGListener it may be held across subscribe:
-    /// redis-rs drives its own pub/sub connection, so the write lock also serves as the "one
-    /// subscription change at a time" serializer. See the design doc, "Concurrency model".
+    connect_timeout: Duration,
+    keep_alive: Arc<KeepAlive>,
+    /// Serializes every subscription/lifecycle change; see the design doc, "Concurrency model".
+    op_lock: Arc<Semaphore>,
+    /// Guards the sink handle + handler map. Never held across a network command.
     state: Arc<RwLock<ListenState>>,
 }
 
 impl Drop for Inner {
     fn drop(&mut self) {
-        // Last handle gone: stop the keep-alive task and wake it so it tears the connection down.
-        self.notify_keep_alive.1.store(false, Ordering::Relaxed);
-        self.notify_keep_alive.0.notify_one();
+        // Last handle gone: stop the keep-alive task so it tears the connection down.
+        self.keep_alive.stop();
     }
 }
 
@@ -117,49 +111,57 @@ pub struct RedisListener {
 }
 
 impl RedisListener {
+    /// Bound for a pub/sub connect/subscribe/unsubscribe when the connection string sets no
+    /// `timeout`. redis-rs applies its connect/response timeouts only on the multiplexed path, not
+    /// pub/sub, so without this a `listen`/`unlisten`/`close` could block for the full OS TCP
+    /// timeout while Redis is unreachable.
+    pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
     fn start_keep_alive_task(
         client: Client,
+        connect_timeout: Duration,
+        op_lock: Arc<Semaphore>,
         state: Arc<RwLock<ListenState>>,
-        notify_keep_alive: Arc<(Notify, AtomicBool)>,
-        max_backoff: Duration,
+        keep_alive: Arc<KeepAlive>,
+        max_reconnect_backoff: Duration,
     ) {
         tokio::spawn(async move {
-            const RETRY_MIN: Duration = Duration::from_millis(500);
+            const MIN_BACKOFF: Duration = Duration::from_millis(500);
             // A connection that stayed up at least this long is considered healthy and resets the backoff.
             const STABLE: Duration = Duration::from_secs(10);
-            let mut backoff = ExponentialBackoff::new(RETRY_MIN, max_backoff);
+            let mut backoff = ExponentialBackoff::new(MIN_BACKOFF, max_reconnect_backoff);
 
-            notify_keep_alive.0.notified().await;
-            while notify_keep_alive.1.load(Ordering::Relaxed) {
+            keep_alive.wait().await;
+            while keep_alive.is_running() {
                 log::info!("RedisListener reconnection triggered...");
 
-                // Connect under the write lock so a concurrent listen() cannot open a second
-                // connection; the lock is released before parking below.
+                // Reconnect under the op permit so a concurrent listen() cannot open a second connection.
                 let established = {
-                    let mut guard = state.write().await;
-                    if !notify_keep_alive.1.load(Ordering::Relaxed) {
+                    let _permit = op_lock.acquire().await.expect("op_lock is never closed");
+                    if !keep_alive.is_running() {
                         break;
                     }
-                    Self::connect_and_subscribe(&mut guard, &state, &client, &notify_keep_alive).await
+                    Self::connect_and_subscribe(&state, &client, connect_timeout, &keep_alive).await
                 };
                 match established {
                     Ok(true) => {
                         log::info!("RedisListener reconnected to Redis.");
                         let connected_at = Instant::now();
-                        notify_keep_alive.0.notified().await;
+                        keep_alive.wait().await;
                         if connected_at.elapsed() >= STABLE {
                             backoff.reset();
                         }
-                        if notify_keep_alive.1.load(Ordering::Relaxed) {
+                        if keep_alive.is_running() {
                             backoff.delay().await;
                         }
                     }
                     Ok(false) => {
                         // Already connected (listen won the race); park for the next trigger.
-                        notify_keep_alive.0.notified().await;
+                        keep_alive.wait().await;
                     }
-                    Err(err) => {
-                        log::error!("RedisListener reconnection error: {err:#?}");
+                    Err(e) => {
+                        log::error!("RedisListener reconnection error: {e:#?}");
+                        state.write().await.disconnect();
                         backoff.delay().await;
                     }
                 }
@@ -171,28 +173,37 @@ impl RedisListener {
 
     /// Opens the shared connection if absent, spawns its streaming task, re-subscribes every
     /// registered channel, and nudges their handlers. Returns whether a new connection was opened.
-    /// Runs under the caller's `state` write lock; `state` is passed only to hand a clone to the
-    /// streaming task (which locks later, after this guard is released).
+    /// Caller must hold the op permit. The network I/O (connect + subscribe) runs without the
+    /// `state` lock and under a timeout, so a Redis outage cannot stall concurrent ops or `close()`.
     async fn connect_and_subscribe(
-        state_guard: &mut ListenState,
         state: &Arc<RwLock<ListenState>>,
         client: &Client,
-        notify_keep_alive: &Arc<(Notify, AtomicBool)>,
+        connect_timeout: Duration,
+        keep_alive: &Arc<KeepAlive>,
     ) -> Result<bool, RedisError> {
-        if state_guard.sink.is_some() {
+        if state.read().await.sink.is_some() {
             return Ok(false);
         }
 
         log::trace!("RedisListener connecting to Redis...");
-        let pubsub = client.get_async_pubsub().await?;
+        let pubsub = with_timeout(connect_timeout, client.get_async_pubsub()).await?;
         let (mut sink, stream) = pubsub.split();
-        for channel in state_guard.handlers.keys() {
+
+        // The op permit is held, so the handler set can't change while we snapshot and re-subscribe it.
+        let channels = state.read().await.handlers.keys().cloned().collect::<Vec<_>>();
+        for channel in &channels {
             log::info!("RedisListener subscribing to channel {channel:?}...");
-            sink.subscribe(channel).await?;
+            with_timeout(connect_timeout, sink.subscribe(channel)).await?;
         }
-        let task = Self::start_streaming_task(state.clone(), stream, notify_keep_alive.clone());
-        state_guard.set_sink(sink, task);
-        state_guard.handle_reconnect();
+
+        // Publish the sink and its streaming task only after every re-subscribe succeeded, so a
+        // partially-subscribed connection is never left behind for callers to use.
+        let task = Self::start_streaming_task(state.clone(), stream, keep_alive.clone());
+        {
+            let mut state = state.write().await;
+            state.set_sink(sink, task);
+            state.handle_reconnect();
+        }
 
         Ok(true)
     }
@@ -200,50 +211,57 @@ impl RedisListener {
     fn start_streaming_task(
         state: Arc<RwLock<ListenState>>,
         mut stream: PubSubStream,
-        notify_keep_alive: Arc<(Notify, AtomicBool)>,
+        keep_alive: Arc<KeepAlive>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
             while let Some(msg) = stream.next().await {
-                let channel = msg.get_channel_name().to_string();
+                let channel = msg.get_channel_name();
                 match msg.get_payload::<String>() {
-                    Ok(payload) => state.read().await.handle(&channel, Some(&payload)),
-                    Err(err) => log::warn!("RedisListener dropping non-UTF-8 payload on channel {channel:?}: {err:#?}"),
+                    Ok(payload) => state.read().await.handle(channel, Some(&payload)),
+                    Err(e) => log::warn!("RedisListener dropping non-UTF-8 payload on channel {channel:?}: {e:#?}"),
                 }
             }
 
             state.write().await.disconnect();
 
-            if notify_keep_alive.1.load(Ordering::Relaxed) {
+            if keep_alive.is_running() {
                 log::info!("RedisListener triggering a reconnection for connection lost...");
-                notify_keep_alive.0.notify_one();
+                keep_alive.wake();
             }
         })
     }
 
-    pub fn new(client: Client, max_backoff: Duration) -> Self {
-        let notify_keep_alive = Arc::new((Notify::new(), AtomicBool::new(true)));
+    pub fn new(client: Client, connect_timeout: Duration, max_reconnect_backoff: Duration) -> Self {
+        let keep_alive = Arc::new(KeepAlive::new());
+        let op_lock = Arc::new(Semaphore::new(1));
         let state = Arc::new(RwLock::new(ListenState::new()));
-        Self::start_keep_alive_task(client.clone(), state.clone(), notify_keep_alive.clone(), max_backoff);
+        Self::start_keep_alive_task(
+            client.clone(),
+            connect_timeout,
+            op_lock.clone(),
+            state.clone(),
+            keep_alive.clone(),
+            max_reconnect_backoff,
+        );
 
         Self {
             inner: Arc::new(Inner {
                 client,
-                notify_keep_alive,
+                connect_timeout,
+                keep_alive,
+                op_lock,
                 state,
             }),
         }
     }
 
-    /// Stops the keep-alive task and tears down the shared connection.
+    /// Stops the keep-alive task and tears down the shared connection. Sets the stopped flag under
+    /// the op permit so a concurrent listen() (which re-checks it under the same permit) can never
+    /// leave an unmanaged connection behind.
     pub async fn close(&self) {
-        // Set the closed flag and tear down under the write lock: a concurrent listen() checks the
-        // flag under the same lock, so it can never leave an unmanaged connection behind.
-        {
-            let mut state = self.inner.state.write().await;
-            self.inner.notify_keep_alive.1.store(false, Ordering::Relaxed);
-            state.shutdown();
-        }
-        self.inner.notify_keep_alive.0.notify_one();
+        let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
+        self.inner.state.write().await.shutdown();
+        self.inner.keep_alive.stop();
     }
 
     /// Registers `handler` for `channel`, opening the shared connection on first use.
@@ -251,58 +269,94 @@ impl RedisListener {
     where
         F: Fn(Option<&str>) + Send + Sync + 'static,
     {
-        // One write-lock span across the closed check, connect, and subscribe. Holding it that long
-        // is safe here (redis-rs drives its own connection) and gives, for free, both the "one
-        // subscription change at a time" serialization and the close-vs-listen safety: close() sets
-        // the closed flag under the same lock.
-        let mut state = self.inner.state.write().await;
+        let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
 
-        if !self.inner.notify_keep_alive.1.load(Ordering::Relaxed) {
+        // Re-check the stopped flag under the permit so a concurrent close() can't leave an
+        // unmanaged connection behind.
+        if !self.inner.keep_alive.is_running() {
             return Err(RedisListenerError::Closed);
         }
-        if state.handlers.contains_key(channel) {
+        if self.inner.state.read().await.handlers.contains_key(channel) {
             return Err(RedisListenerError::AlreadyListening(channel.to_string()));
         }
 
         Self::connect_and_subscribe(
-            &mut state,
             &self.inner.state,
             &self.inner.client,
-            &self.inner.notify_keep_alive,
+            self.inner.connect_timeout,
+            &self.inner.keep_alive,
         )
         .await?;
 
-        if let Some(sink) = state.sink.as_mut() {
+        // Subscribe on a clone of the sink so the network round-trip runs without the state lock. If
+        // the connection was just lost, skip it: the handler is registered below and the keep-alive
+        // reconnect re-subscribes it.
+        let sink = self.inner.state.read().await.sink.clone();
+        if let Some(mut sink) = sink {
             log::info!("RedisListener subscribing to channel {channel:?}...");
-            sink.subscribe(channel).await?;
+            with_timeout(self.inner.connect_timeout, sink.subscribe(channel)).await?;
         }
-        state.handlers.insert(channel.to_string(), Box::new(handler));
+        self.inner
+            .state
+            .write()
+            .await
+            .handlers
+            .insert(channel.to_string(), Box::new(handler));
         Ok(())
     }
 
     /// Removes `channel`'s handler and unsubscribes on the shared connection, if connected.
     pub async fn unlisten(&self, channel: &str) -> Result<(), RedisListenerError> {
-        let mut state = self.inner.state.write().await;
-        if state.handlers.remove(channel).is_none() {
-            return Ok(());
-        }
-        if let Some(sink) = state.sink.as_mut() {
+        let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
+        let sink = {
+            let mut state = self.inner.state.write().await;
+            if state.handlers.remove(channel).is_none() {
+                return Ok(());
+            }
+            state.sink.clone()
+        };
+        if let Some(mut sink) = sink {
             log::info!("RedisListener unsubscribing from channel {channel:?}...");
-            sink.unsubscribe(channel).await?;
+            with_timeout(self.inner.connect_timeout, sink.unsubscribe(channel)).await?;
         }
         Ok(())
     }
 
     /// Removes all handlers and unsubscribes from every channel on the shared connection.
     pub async fn unlisten_all(&self) -> Result<(), RedisListenerError> {
-        let mut state = self.inner.state.write().await;
-        let channels = state.handlers.drain().map(|(channel, _)| channel).collect::<Vec<_>>();
-        if let Some(sink) = state.sink.as_mut() {
+        let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
+        let (channels, sink) = {
+            let mut state = self.inner.state.write().await;
+            let channels = state.handlers.drain().map(|(channel, _)| channel).collect::<Vec<_>>();
+            (channels, state.sink.clone())
+        };
+        if let Some(mut sink) = sink {
+            // Unsubscribe every channel even if one fails: bailing early would leave the rest
+            // subscribed server-side with no local handler. Report the first error afterwards.
+            let mut first_err = None;
             for channel in channels {
                 log::info!("RedisListener unsubscribing from channel {channel:?}...");
-                sink.unsubscribe(&channel).await?;
+                if let Err(e) = with_timeout(self.inner.connect_timeout, sink.unsubscribe(&channel)).await {
+                    first_err = first_err.or(Some(e));
+                }
+            }
+            if let Some(e) = first_err {
+                return Err(e.into());
             }
         }
         Ok(())
+    }
+}
+
+/// Bounds a pub/sub network op; a timeout maps to an `Io` error so the keep-alive task treats it as
+/// a lost connection and retries, and `listen`/`unlisten`/`close` never block on a stalled socket
+/// for longer than this.
+async fn with_timeout<F, T>(timeout: Duration, fut: F) -> Result<T, RedisError>
+where
+    F: std::future::Future<Output = Result<T, RedisError>>,
+{
+    match tokio::time::timeout(timeout, fut).await {
+        Ok(result) => result,
+        Err(_) => Err(RedisError::from((ErrorKind::Io, "Redis pub/sub operation timed out"))),
     }
 }

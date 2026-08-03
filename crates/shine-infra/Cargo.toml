@@ -69,7 +69,6 @@ opentelemetry-application-insights = { version = "0.45", optional = true }
 
 ############################# DB #############################
 bb8 = { workspace = true }
-bb8-redis = { workspace = true }
 redis = { workspace = true, features = ["json"] }
 bb8-postgres = { workspace = true }
 tokio-postgres = { workspace = true, features = [

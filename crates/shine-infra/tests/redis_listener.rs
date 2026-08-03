@@ -370,7 +370,7 @@ async fn test_redis_listener_parallel_connect() {
 #[test(serial = "redis-listener")]
 async fn test_redis_listener_listen_after_close_is_rejected() {
     let client = Client::open("redis://127.0.0.1:6379").unwrap();
-    let listener = RedisListener::new(client, Duration::from_millis(500));
+    let listener = RedisListener::new(client, Duration::from_secs(5), Duration::from_millis(500));
     listener.close().await;
 
     let err = listener.listen("shine-test-after-close", |_| {}).await.unwrap_err();
@@ -378,6 +378,41 @@ async fn test_redis_listener_listen_after_close_is_rejected() {
         matches!(err, RedisListenerError::Closed),
         "expected RedisListenerError::Closed, got {err:?}"
     );
+}
+
+// listen() against an unreachable broker must fail within the connect timeout rather than blocking
+// on the untimed pub/sub connect, and close() must not be held up behind it (the network I/O runs
+// off the state lock). Uses a black-hole address (TEST-NET-1, RFC 5737) so the connect never
+// completes; no server needed.
+#[test(serial = "redis-listener")]
+async fn test_redis_listener_listen_times_out_when_unreachable() {
+    let client = Client::open("redis://192.0.2.1:6379").unwrap();
+    let connect_timeout = Duration::from_millis(300);
+    let listener = RedisListener::new(client, connect_timeout, Duration::from_millis(500));
+
+    // listen() must return an error promptly, not hang for the OS TCP timeout.
+    let started = std::time::Instant::now();
+    let err = timeout(
+        Duration::from_secs(3),
+        listener.listen("shine-test-unreachable", |_| {}),
+    )
+    .await
+    .expect("listen() hung past the connect timeout")
+    .unwrap_err();
+    assert!(
+        matches!(err, RedisListenerError::Redis(_)),
+        "expected a Redis error from the timed-out connect, got {err:?}"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "listen() took {:?}, expected roughly the {connect_timeout:?} connect timeout",
+        started.elapsed()
+    );
+
+    // close() must not be blocked behind the stalled connect.
+    timeout(Duration::from_secs(3), listener.close())
+        .await
+        .expect("close() was blocked behind the stalled connect");
 }
 
 // A second listen() on an already-registered channel must be rejected, not silently replace the
