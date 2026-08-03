@@ -61,9 +61,7 @@ pub fn split_query(cns: &str) -> (&str, Option<&str>) {
     let scan_from = match cns.find("://") {
         Some(scheme_end) => {
             let authority = scheme_end + 3;
-            let userinfo_end = cns[authority..]
-                .find(['/', '#'])
-                .map_or(cns.len(), |i| authority + i);
+            let userinfo_end = cns[authority..].find(['/', '#']).map_or(cns.len(), |i| authority + i);
             match cns[authority..userinfo_end].find('@') {
                 Some(at) => authority + at + 1,
                 None => authority,
@@ -89,7 +87,10 @@ mod test {
             split_query("redis://user:pa?ss@host?a=1"),
             ("redis://user:pa?ss@host", Some("a=1"))
         );
-        assert_eq!(split_query("redis://user:pa?ss@host"), ("redis://user:pa?ss@host", None));
+        assert_eq!(
+            split_query("redis://user:pa?ss@host"),
+            ("redis://user:pa?ss@host", None)
+        );
     }
 
     #[test]

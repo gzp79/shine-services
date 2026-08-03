@@ -48,28 +48,39 @@ impl<T: PGRawConnection> PGConnection<T> {
 
     #[inline]
     pub async fn get_prepared_statement(&self, prepared_id: PGStatementId) -> Result<Statement, PGError> {
-        {
-            let prepared_statements = self.prepared_statements.read().await;
-            if let Some(prepared_statements) = prepared_statements.get(&prepared_id.0) {
-                return Ok(prepared_statements.to_owned());
-            }
+        // Fast path: already prepared on this connection.
+        if let Some(prepared) = self.prepared_statements.read().await.get(&prepared_id.0) {
+            return Ok(prepared.to_owned());
         }
 
-        let prepared_statements_builder = self.prepared_statements_builder.read().await;
-        if let Some((stmt, types)) = prepared_statements_builder.get(&prepared_id.0) {
-            // create a new prepared statement for the current connection
-            let mut prepared_statements = self.prepared_statements.write().await;
-            let prepared = self.client.prepare_typed(stmt, types).await?;
-            prepared_statements.insert(prepared_id.0, prepared.clone());
-            Ok(prepared)
-        } else {
-            // Ids come only from create_prepared_statement, never from user/DB input, so a missing
-            // id is a program error, not a recoverable condition.
+        // Copy the builder entry out so the prepare round-trip below holds no lock. Ids come only
+        // from create_prepared_statement, never from user/DB input, so a missing id is a program
+        // error, not a recoverable condition.
+        let Some((stmt, types)) = self
+            .prepared_statements_builder
+            .read()
+            .await
+            .get(&prepared_id.0)
+            .cloned()
+        else {
             panic!(
                 "No prepared statement registered for id {}: statement was not built, or a handle was used across pools (independent id spaces)",
                 prepared_id.0
             );
-        }
+        };
+
+        let prepared = self.client.prepare_typed(&stmt, &types).await?;
+
+        // A pooled connection is used by one task at a time, so a concurrent prepare of the same id
+        // cannot happen; entry() keeps the cache single-valued if that assumption ever changes
+        // (the redundant prepared statement is dropped, deallocating it server-side).
+        Ok(self
+            .prepared_statements
+            .write()
+            .await
+            .entry(prepared_id.0)
+            .or_insert(prepared)
+            .clone())
     }
 
     #[inline]
@@ -245,6 +256,8 @@ pub enum PGCreatePoolError {
     CertError(#[source] CertError),
     #[error(transparent)]
     ConfigError(#[from] crate::db::CnsParamError),
+    #[error("Connection string parameter {0:?} must be greater than zero")]
+    InvalidPoolParam(&'static str),
 }
 
 pub struct PostgresPoolStatus {
@@ -272,24 +285,36 @@ impl StatusProvider for PostgresPoolStatus {
     }
 }
 
+/// Format: `postgres://...?connect_timeout=3&pool_timeout=5&max_size=10`
+/// - `connect_timeout`: PostgreSQL native parameter in SECONDS (TCP connection establishment)
+/// - `pool_timeout`: custom parameter in SECONDS for bb8 pool (acquiring connection from pool, including waiting for connection to be established if pool is exhausted)
+/// - `max_size`: custom parameter for the maximum number of pooled connections (default 10)
 pub async fn create_postgres_pool(cns: &str) -> Result<PGConnectionPool, PGCreatePoolError> {
+    // Parse and validate before the TLS/cert setup so a bad connection string fails fast without
+    // touching the cert store or a crypto provider.
+    let mut cns = crate::db::ConnectionString::parse(cns);
+    let pool_timeout_s = cns.take_u64("pool_timeout")?.unwrap_or(30);
+    let max_size = cns.take_u64("max_size")?.unwrap_or(10);
+    let cns_clean = cns.into_cns();
+
+    // Reject the degenerate values bb8 would otherwise accept: max_size=0 builds a pool that can
+    // never hand out a connection (and a value > u32::MAX would truncate to 0 in the cast below),
+    // and pool_timeout=0 makes every checkout time out immediately.
+    if max_size == 0 || max_size > u32::MAX as u64 {
+        return Err(PGCreatePoolError::InvalidPoolParam("max_size"));
+    }
+    if pool_timeout_s == 0 {
+        return Err(PGCreatePoolError::InvalidPoolParam("pool_timeout"));
+    }
+    let pool_timeout = std::time::Duration::from_secs(pool_timeout_s);
+    let max_size = max_size as u32;
+
     let certs = get_root_cert_store().map_err(PGCreatePoolError::CertError)?;
     let tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(certs)
         .with_no_client_auth();
 
     let tls = MakeRustlsConnect::new(tls_config);
-
-    // Parse connection string
-    // Format: postgres://...?connect_timeout=3&pool_timeout=5&max_size=10
-    // - connect_timeout: PostgreSQL native parameter in SECONDS (TCP connection establishment)
-    // - pool_timeout: custom parameter in SECONDS for bb8 pool (acquiring connection from pool, including waiting for connection to be established if pool is exhausted)
-    // - max_size: custom parameter for the maximum number of pooled connections (default 10)
-
-    let mut cns = crate::db::ConnectionString::parse(cns);
-    let pool_timeout = std::time::Duration::from_secs(cns.take_u64("pool_timeout")?.unwrap_or(30));
-    let max_size = cns.take_u64("max_size")?.unwrap_or(10) as u32;
-    let cns_clean = cns.into_cns();
 
     let pg_config = PGConfig::from_str(&cns_clean)?;
     let postgres_manager = PGConnectionManager::new(pg_config, tls, pool_timeout);
@@ -300,4 +325,42 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PGConnectionPool, PGCreat
         .await?;
 
     Ok(postgres)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    // Degenerate pool params are rejected before any network I/O, so these run without a server.
+    // Parsing (non-integer / duplicate values) is covered by the connection-string parser's own
+    // tests; here only the range checks are exercised.
+    fn invalid_param(err: PGCreatePoolError) -> &'static str {
+        match err {
+            PGCreatePoolError::InvalidPoolParam(name) => name,
+            other => panic!("expected InvalidPoolParam, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn max_size_zero_is_rejected_not_panicked() {
+        let err = create_postgres_pool("postgres://localhost?max_size=0")
+            .await
+            .unwrap_err();
+        assert_eq!(invalid_param(err), "max_size");
+    }
+
+    #[tokio::test]
+    async fn max_size_overflowing_u32_is_rejected() {
+        let cns = format!("postgres://localhost?max_size={}", u32::MAX as u64 + 1);
+        let err = create_postgres_pool(&cns).await.unwrap_err();
+        assert_eq!(invalid_param(err), "max_size");
+    }
+
+    #[tokio::test]
+    async fn pool_timeout_zero_is_rejected() {
+        let err = create_postgres_pool("postgres://localhost?pool_timeout=0")
+            .await
+            .unwrap_err();
+        assert_eq!(invalid_param(err), "pool_timeout");
+    }
 }

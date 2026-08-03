@@ -9,13 +9,7 @@ where
     F: FnOnce() -> String,
 {
     fn into_statement(self, builder: &mut QueryBuilder<'_>) {
-        let and_condition = (self)();
-        if let Some(condition) = &mut builder.condition {
-            condition.push_str(" AND ");
-            condition.push_str(&and_condition);
-        } else {
-            builder.condition = Some(and_condition);
-        }
+        builder.push_and((self)());
     }
 }
 
@@ -24,13 +18,7 @@ where
     F: FnOnce(usize) -> String,
 {
     fn into_statement(self, builder: &mut QueryBuilder<'_>) {
-        let and_condition = (self)(builder.bind_id);
-        if let Some(condition) = &mut builder.condition {
-            condition.push_str(" AND ");
-            condition.push_str(&and_condition);
-        } else {
-            builder.condition = Some(and_condition);
-        }
+        builder.push_and((self)(builder.bind_id));
         builder.bind_id += 1;
     }
 }
@@ -40,13 +28,7 @@ where
     F: FnOnce(usize, usize) -> String,
 {
     fn into_statement(self, builder: &mut QueryBuilder<'_>) {
-        let and_condition = (self)(builder.bind_id, builder.bind_id + 1);
-        if let Some(condition) = &mut builder.condition {
-            condition.push_str(" AND ");
-            condition.push_str(&and_condition);
-        } else {
-            builder.condition = Some(and_condition);
-        }
+        builder.push_and((self)(builder.bind_id, builder.bind_id + 1));
         builder.bind_id += 2;
     }
 }
@@ -56,13 +38,7 @@ where
     F: FnOnce(usize, usize, usize) -> String,
 {
     fn into_statement(self, builder: &mut QueryBuilder<'_>) {
-        let and_condition = (self)(builder.bind_id, builder.bind_id + 1, builder.bind_id + 2);
-        if let Some(condition) = &mut builder.condition {
-            condition.push_str(" AND ");
-            condition.push_str(&and_condition);
-        } else {
-            builder.condition = Some(and_condition);
-        }
+        builder.push_and((self)(builder.bind_id, builder.bind_id + 1, builder.bind_id + 2));
         builder.bind_id += 3;
     }
 }
@@ -85,6 +61,17 @@ impl<'a> QueryBuilder<'a> {
             condition: None,
             order_by: None,
             limit: None,
+        }
+    }
+
+    /// Appends a rendered condition, joining it to any existing one with ` AND `.
+    fn push_and(&mut self, condition: String) {
+        match &mut self.condition {
+            Some(existing) => {
+                existing.push_str(" AND ");
+                existing.push_str(&condition);
+            }
+            None => self.condition = Some(condition),
         }
     }
 

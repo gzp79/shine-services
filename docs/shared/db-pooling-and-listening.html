@@ -19,11 +19,11 @@
   Both Postgres and Redis need two different shapes of connection: short-lived checkouts for
   regular commands/queries, issued concurrently from many call sites, and one long-lived
   connection for push notifications (Postgres <code>LISTEN</code>/<code>NOTIFY</code>, Redis
-  pub/sub), watched for as long as any channel is subscribed. A bb8 pool is built for the first
-  shape and wrong for the second — a pooled connection can be recycled or reused for an unrelated
-  command mid-subscription. Each backend's connection manager owns both: a bb8 pool of command
-  connections, and a single shared listener that every pooled connection can reach to add or
-  remove subscriptions.
+  pub/sub), opened on the first <code>listen()</code> and held until the listener is closed. A bb8
+  pool is built for the first shape and wrong for the second — a pooled connection can be recycled
+  or reused for an unrelated command mid-subscription. Each backend's connection manager owns both:
+  a bb8 pool of command connections, and a single shared listener that every pooled connection can
+  reach to add or remove subscriptions.
 </p>
 
 <h2>Architecture</h2>
@@ -58,7 +58,7 @@
     <div class="layer-body">
       <div class="box box-blue" style="flex:2">
         <div class="bname">Listener</div>
-        <div class="bdetail">lock-guarded <code>HashMap&lt;channel, handler&gt;</code><br>+ the live subscribe/publish half, once connected</div>
+        <div class="bdetail">lock-guarded <code>ListenState</code>: <code>HashMap&lt;channel, handler&gt;</code><br>+ the live subscribe half, once connected</div>
       </div>
     </div>
   </div>
@@ -136,8 +136,79 @@
   notifies the keep-alive task to try again. Because every channel shares one connection, a drop
   pauses <em>all</em> subscriptions at once until reconnect completes and every channel is
   re-subscribed; this is the cost of sharing one socket, traded for not needing a socket per
-  subscribed channel (Postgres) or per <code>listen()</code> call (Redis, before this pattern).
+  subscribed channel.
 </p>
+<p>
+  The first connection is opened lazily by <code>listen()</code>, not by the keep-alive task —
+  whichever of the two runs the connect re-subscribes every channel already in the handler map, so
+  the map (not the socket) is the durable record of what is subscribed. On connect the order is
+  fixed: publish the connection into <code>ListenState</code> and spawn the streaming task
+  <em>before</em> issuing any subscribe, because a Postgres <code>LISTEN</code> only completes while
+  the streaming task is polling the connection driver (see Concurrency model).
+</p>
+
+<h3>Dispatch</h3>
+
+<p>
+  One streaming task reads the shared connection and routes each notification to the single handler
+  registered for its channel. Handlers run synchronously on that task, so a slow handler stalls
+  dispatch for every channel — an over-long one is logged, not queued.
+</p>
+
+<div class="fanout">
+  <div class="fanout-source">
+    <div class="box box-orange"><div class="bname">Notification</div>
+      <div class="bdetail">channel name + payload</div></div>
+  </div>
+  <div class="fanout-trunk"></div>
+  <div class="fanout-branches">
+    <div class="fanout-branch">
+      <div class="fanout-branch-label">handlers.get("orders")</div>
+      <div class="box box-pink"><div class="bname">Handler A</div></div>
+    </div>
+    <div class="fanout-branch">
+      <div class="fanout-branch-label">handlers.get("audit")</div>
+      <div class="box box-pink"><div class="bname">Handler B</div></div>
+    </div>
+    <div class="fanout-branch">
+      <div class="fanout-branch-label">no entry → dropped</div>
+      <div class="box box-dim"><div class="bname">(unknown)</div></div>
+    </div>
+  </div>
+</div>
+
+<h3>Concurrency model</h3>
+
+<p>
+  A subscription change (<code>listen</code>/<code>unlisten</code>) and the streaming task both touch
+  <code>ListenState</code>, and the two backends resolve that contention differently — the one place
+  the listeners are <em>not</em> identical. The difference is forced by the driver model of each
+  client library, not by choice.
+</p>
+
+<table>
+  <tr><th></th><th>Postgres</th><th>Redis</th></tr>
+  <tr>
+    <td>Who polls the connection driver</td>
+    <td>Only this listener's streaming task.</td>
+    <td>An internal task inside redis-rs.</td>
+  </tr>
+  <tr>
+    <td>Can a subscribe complete while the state lock is held?</td>
+    <td><span class="tag bad">No</span> — the command needs the streaming task to poll, which needs the same lock to dispatch. Holding the lock across it deadlocks.</td>
+    <td><span class="tag good">Yes</span> — redis-rs drives its own connection, so <code>subscribe()</code> completes regardless.</td>
+  </tr>
+  <tr>
+    <td>Serialize subscription changes with</td>
+    <td>A one-permit <code>Semaphore</code> (<code>ops</code>). The command runs on a snapshot of <code>Arc&lt;Client&gt;</code> taken under a brief lock, then released.</td>
+    <td>The <code>state</code> write lock itself — held across the whole change, which doubles as the serializer.</td>
+  </tr>
+  <tr>
+    <td>Close-vs-listen safety</td>
+    <td><code>listen()</code> and <code>close()</code> re-check the closed flag under the <code>ops</code> permit.</td>
+    <td><code>listen()</code> and <code>close()</code> touch the closed flag under the <code>state</code> write lock.</td>
+  </tr>
+</table>
 
 <h2>Key rules</h2>
 
@@ -149,11 +220,11 @@
   </tr>
   <tr>
     <td>How many listener connections exist?</td>
-    <td>At most one per connection manager — shared by clone across every pooled connection — regardless of how many channels are subscribed.</td>
+    <td>At most one per connection manager — shared by clone across every pooled connection — regardless of how many channels are subscribed. It opens on the first <code>listen()</code> and stays open until <code>close()</code> or the last handle drops, even if every channel is later unlistened.</td>
   </tr>
   <tr>
     <td>Can a channel be unsubscribed?</td>
-    <td>Yes — <code>unlisten(channel)</code> removes the handler and, if connected, issues the backend's unsubscribe on the shared connection.</td>
+    <td>Yes — <code>unlisten(channel)</code> removes the handler and, if connected, issues the backend's unsubscribe on the shared connection. The connection itself stays open for the remaining (and any future) channels.</td>
   </tr>
   <tr>
     <td>What happens if the shared connection drops?</td>
@@ -161,7 +232,7 @@
   </tr>
   <tr>
     <td>Can subscriptions change while messages are being read?</td>
-    <td>Yes — reading and subscribing use independent halves of the connection (Postgres: a raw command connection alongside the notification stream; Redis: <code>PubSub::split()</code> into a <code>Sink</code> and a <code>Stream</code>), so <code>listen()</code>/<code>unlisten()</code> don't block dispatch.</td>
+    <td>Yes. Redis uses <code>PubSub::split()</code> — an independent <code>Sink</code> and <code>Stream</code> over the one connection. Postgres issues the command on a cloned <code>Arc&lt;Client&gt;</code> without holding the state lock, so the streaming task keeps dispatching (see Concurrency model).</td>
   </tr>
   <tr>
     <td>Regular commands on a pooled connection</td>
@@ -177,32 +248,37 @@
   <tr><td><code>crates/shine-infra/src/db/postgres/pg_connection.rs</code></td><td><code>PGConnectionManager</code>, <code>PGConnection</code> (pooled connection + <code>listen()</code>/<code>unlisten()</code> passthrough), <code>create_postgres_pool</code>.</td></tr>
   <tr><td><code>crates/shine-infra/src/db/redis/redis_listener.rs</code></td><td><code>RedisListener</code> — shared handler map + keep-alive/streaming task pair managing one pub/sub connection.</td></tr>
   <tr><td><code>crates/shine-infra/src/db/redis/redis_connection.rs</code></td><td><code>RedisConnectionManager</code>, <code>RedisConnection</code> (pooled connection + <code>ConnectionLike</code> impl + <code>listen()</code>/<code>unlisten()</code> passthrough), <code>create_redis_pool</code>.</td></tr>
+  <tr><td><code>crates/shine-infra/tests/pg_listener.rs</code></td><td>Integration test: <code>LISTEN</code>/<code>NOTIFY</code> across pooled connections, multi-channel dispatch, reconnect. Gated on <code>SHINE_TEST_PG_CNS</code>.</td></tr>
   <tr><td><code>crates/shine-infra/tests/redis_listener.rs</code></td><td>Integration test: publish/subscribe across pooled connections, multi-channel dispatch, <code>unlisten()</code>. Gated on <code>SHINE_TEST_REDIS_CNS</code>.</td></tr>
 </table>
 
 <details data-agent="implementation">
-  <summary>Same shape, different primitives underneath</summary>
+  <summary>Two invariants a refactor must preserve</summary>
   <div class="details-body">
     <p>
-      <code>PGListener</code> and <code>RedisListener</code> independently converged on the same
-      internal shape: a lock-guarded state struct holding <code>Option&lt;write-half&gt;</code> +
-      <code>HashMap&lt;String, BoxedHandler&gt;</code>, a keep-alive task looping on a shared
-      <code>Arc&lt;(Notify, AtomicBool)&gt;</code> that connects and re-subscribes every registered
-      channel, and a streaming task (spawned fresh per successful connect) that reads notifications,
-      dispatches by channel name, and notifies keep-alive on exit.
+      <strong>Shutdown depends on the background tasks never holding <code>Arc&lt;Inner&gt;</code>.</strong>
+      Drop is the only shutdown path: <code>Drop for Inner</code> clears the closed flag and wakes the
+      keep-alive task. The keep-alive and streaming tasks therefore hold only the pieces they need —
+      <code>Arc&lt;RwLock&lt;ListenState&gt;&gt;</code> and <code>Arc&lt;(Notify, AtomicBool)&gt;</code> —
+      never <code>Arc&lt;Inner&gt;</code>. Giving a task an <code>Arc&lt;Inner&gt;</code> (or flattening
+      <code>ListenState</code> into <code>Inner</code>) would keep <code>Inner</code> alive as long as
+      the task parks on <code>notified()</code>, so the last handle drop would never fire and the
+      listener would never stop. A <code>Weak&lt;Inner&gt;</code> doesn't help — the parked
+      <code>notified().await</code> reconstitutes the cycle.
     </p>
     <p>
-      What differs is backend plumbing, not the pattern: Postgres opens a raw
-      <code>tokio_postgres</code> socket connection and issues <code>LISTEN "channel"</code>/
-      <code>UNLISTEN "channel"</code> as SQL commands on it directly — there's no separate
-      read/write split, since <code>tokio_postgres::Client</code> already lets commands and the
-      notification stream run concurrently. Redis instead calls <code>Client::get_async_pubsub()</code>
-      then <code>PubSub::split()</code> to get an explicit <code>PubSubSink</code> (subscribe/unsubscribe)
-      and <code>PubSubStream</code> (message reads), because the underlying pub/sub connection type
-      doesn't expose that concurrency for free the way <code>tokio_postgres</code> does. Dispatch key
-      is <code>Notification::channel()</code> (Postgres) vs. <code>Msg::get_channel_name()</code>
-      (Redis); payload is the raw notification string (Postgres) vs.
-      <code>Msg::get_payload::&lt;String&gt;()</code> (Redis).
+      <strong>The PG/Redis divergence is forced by who drives the socket, not chosen for style</strong>
+      (see Concurrency model). With redis-rs the driver is internal, so <code>subscribe()</code>
+      completes while the <code>state</code> write lock is held — the lock doubles as the
+      subscription serializer. With tokio-postgres this listener's own streaming task is the driver,
+      and it needs <code>state.read()</code> to dispatch, so a subscribe under the write lock
+      deadlocks; PG instead snapshots <code>Arc&lt;Client&gt;</code> under a brief lock, runs the
+      command lock-free, and serializes with a one-permit <code>Semaphore</code>. A read lock across
+      the command doesn't avoid the deadlock either: tokio's fair <code>RwLock</code> lets a queued
+      <code>unlisten</code> writer block the streaming task's next read, which stalls the driver the
+      command is waiting on. Removing PG's <code>Arc</code>/<code>Semaphore</code> would mean
+      splitting drive from dispatch (a forwarder task feeding a channel), i.e. rebuilding what
+      redis-rs does internally — more moving parts, not fewer.
     </p>
   </div>
 </details>
