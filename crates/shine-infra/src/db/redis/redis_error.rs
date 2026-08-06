@@ -15,14 +15,18 @@ pub enum RedisDBError {
     AlreadyListening(String),
 }
 
+/// Legacy conversion kept for backward compatibility.
+///
+/// Prefer mapping infra errors to service-level boxed internal errors and
+/// converting to `Problem` only at API boundaries.
 impl From<RedisDBError> for Problem {
     fn from(err: RedisDBError) -> Self {
         match err {
             RedisDBError::PoolError(_) | RedisDBError::RedisError(_) => Problem::service_unavailable()
-                .with_detail(err.to_string())
+                .with_detail("redis-unavailable")
                 .with_sensitive_dbg(err),
             err => Problem::internal_error()
-                .with_detail(err.to_string())
+                .with_detail("redis-internal-error")
                 .with_sensitive_dbg(err),
         }
     }

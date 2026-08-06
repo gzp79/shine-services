@@ -1,6 +1,6 @@
 use shine_infra::{
     crypto::{DataProtectionError, IdEncoderError},
-    db::PGDBError,
+    db::postgres::PGDBError,
     web::responses::Problem,
 };
 use thiserror::Error as ThisError;

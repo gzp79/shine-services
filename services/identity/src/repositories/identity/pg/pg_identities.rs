@@ -7,10 +7,7 @@ use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
 use shine_infra::{
     crypto::DataProtectionUtils,
-    db::{
-        postgres::{PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
-        PGDBError,
-    },
+    db::postgres::{PGClient, PGConvertError, PGDBError, PGErrorChecks, PGValueTypeINT2, ToPGType},
     email::{Email, NORM_EMAIL_VERSION},
     pg_query,
 };

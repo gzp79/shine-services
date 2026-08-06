@@ -1,17 +1,16 @@
-mod query_builder;
-mod pg_error;
 mod error_check;
 mod pg_connection;
-mod pg_type;
+mod pg_error;
 mod pg_listener;
+mod pg_type;
+mod query_builder;
 
 pub use self::{
     error_check::PGErrorChecks,
     pg_connection::{
         create_postgres_pool, PGClient, PGConfig, PGConnection, PGConnectionError, PGConnectionManager,
-        PGConnectionPool, PGConvertError, PGCreatePoolError, PGError, PGPooledConnection, PGRawClient,
-        PGRawConnection, PGRawSocketConnection, PGRawTransaction, PGStatement, PGStatementId, PGTransaction,
-        PGType, PostgresPoolStatus,
+        PGConnectionPool, PGConvertError, PGCreatePoolError, PGError, PGPooledConnection, PGRawClient, PGRawConnection,
+        PGRawSocketConnection, PGRawTransaction, PGStatement, PGStatementId, PGTransaction, PGType, PostgresPoolStatus,
     },
     pg_error::PGDBError,
     pg_listener::{PGListener, PGNotification},

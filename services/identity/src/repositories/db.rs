@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use shine_infra::db::{postgres::PGConnectionPool, redis::RedisConnectionPool, PGDBError, RedisDBError};
+use shine_infra::db::{
+    postgres::{PGConnectionPool, PGDBError},
+    redis::{RedisConnectionPool, RedisDBError},
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

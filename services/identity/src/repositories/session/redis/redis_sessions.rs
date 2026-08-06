@@ -6,7 +6,7 @@ use chrono::{DateTime, Duration, Utc};
 use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 use serde::{Deserialize, Serialize};
 use shine_infra::{
-    db::{redis::RedisJsonValue, RedisDBError},
+    db::redis::{RedisDBError, RedisJsonValue},
     web::extracts::SiteInfo,
 };
 use uuid::Uuid;
@@ -301,7 +301,11 @@ impl Sessions for RedisSessionDbContext<'_> {
             identity.id
         );
 
-        let is_open = self.client.exists(sentinel_key).await.map_err(RedisDBError::RedisError)?;
+        let is_open = self
+            .client
+            .exists(sentinel_key)
+            .await
+            .map_err(RedisDBError::RedisError)?;
         if is_open {
             // an update on the session extends the expiration time
             let data = RedisSessionUser {

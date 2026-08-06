@@ -9,10 +9,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use postgres_from_row::FromRow;
 use shine_infra::{
-    db::{
-        postgres::{PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
-        PGDBError,
-    },
+    db::postgres::{PGClient, PGConvertError, PGDBError, PGErrorChecks, PGValueTypeINT2, ToPGType},
     email::{Email, NORM_EMAIL_VERSION},
     pg_query,
     web::extracts::{ClientFingerprint, SiteInfo},

@@ -1,6 +1,6 @@
 mod redis_connection;
-mod redis_listener;
 mod redis_error;
+mod redis_listener;
 
 pub use self::{
     redis_connection::{

@@ -7,10 +7,7 @@ use crate::{
 };
 use postgres_from_row::FromRow;
 use shine_infra::{
-    db::{
-        postgres::{PGClient, PGErrorChecks},
-        PGDBError,
-    },
+    db::postgres::{PGClient, PGDBError, PGErrorChecks},
     pg_query,
 };
 use tracing::instrument;

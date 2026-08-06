@@ -1,11 +1,9 @@
+use crate::models::HubError;
 use crate::repositories::hub_registry::{
     redis::{RedisHubRegistryBuildError, HUB_REGISTRY_CHANGED_CHANNEL},
-    HubConnectionDb, HubConnectionDbContext, HubConnectionError,
+    HubConnectionDb, HubConnectionDbContext,
 };
-use shine_infra::db::{
-    redis::{RedisConnectionPool, RedisPooledConnection},
-    RedisDBError,
-};
+use shine_infra::db::redis::{RedisConnectionPool, RedisDBError, RedisPooledConnection};
 use uuid::Uuid;
 
 pub struct RedisHubConnectionDbContext<'c> {
@@ -38,7 +36,7 @@ impl RedisHubConnectionDb {
     }
 
     /// Listens for registry changes.
-    pub async fn listen_to_registry_changes<F>(&self, handler: F) -> Result<(), HubConnectionError>
+    pub async fn listen_to_registry_changes<F>(&self, handler: F) -> Result<(), HubError>
     where
         F: Fn(Uuid) + Send + Sync + 'static,
     {
@@ -76,7 +74,7 @@ impl RedisHubConnectionDb {
 }
 
 impl HubConnectionDb for RedisHubConnectionDb {
-    async fn create_context(&self) -> Result<impl HubConnectionDbContext<'_>, HubConnectionError> {
+    async fn create_context(&self) -> Result<impl HubConnectionDbContext<'_>, HubError> {
         let client = self.client.get().await.map_err(RedisDBError::PoolError)?;
 
         Ok(RedisHubConnectionDbContext {

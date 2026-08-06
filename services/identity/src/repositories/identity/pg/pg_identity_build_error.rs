@@ -1,7 +1,7 @@
 use base64::DecodeError;
 use shine_infra::{
     crypto::{DataProtectionError, IdEncoderError},
-    db::PGDBError,
+    db::postgres::PGDBError,
 };
 use thiserror::Error as ThisError;
 

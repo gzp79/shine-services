@@ -1,4 +1,4 @@
-use shine_infra::{db::RedisDBError, session::SessionKeyError, web::responses::Problem};
+use shine_infra::{db::redis::RedisDBError, session::SessionKeyError, web::responses::Problem};
 use thiserror::Error as ThisError;
 
 mod pr {

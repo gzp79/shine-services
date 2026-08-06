@@ -1,4 +1,4 @@
-use crate::repositories::hub_registry::HubConnectionError;
+use crate::models::HubError;
 use std::future::Future;
 use uuid::Uuid;
 
@@ -16,7 +16,7 @@ pub trait HubRegistry {
         &mut self,
         user_id: Uuid,
         connection_id: Uuid,
-    ) -> impl Future<Output = Result<(), HubConnectionError>> + Send;
+    ) -> impl Future<Output = Result<(), HubError>> + Send;
 
     /// Extends the heartbeat TTL for the user only when the provided connection id matches
     /// the currently active one.
@@ -26,7 +26,7 @@ pub trait HubRegistry {
         &mut self,
         user_id: Uuid,
         connection_id: Uuid,
-    ) -> impl Future<Output = Result<bool, HubConnectionError>> + Send;
+    ) -> impl Future<Output = Result<bool, HubError>> + Send;
 
     /// Batched heartbeat for a set of locally-tracked connections. Extends the TTL of every
     /// registry entry that still holds the provided connection id, and reports the connections
@@ -37,18 +37,18 @@ pub trait HubRegistry {
     fn heartbeat_connections(
         &mut self,
         connections: &[HubConnection],
-    ) -> impl Future<Output = Result<Vec<HubConnection>, HubConnectionError>> + Send;
+    ) -> impl Future<Output = Result<Vec<HubConnection>, HubError>> + Send;
 
     #[allow(dead_code)]
     /// Returns all currently connected users with their active connection ids.
-    fn list_connections(&mut self) -> impl Future<Output = Result<Vec<HubConnection>, HubConnectionError>> + Send;
+    fn list_connections(&mut self) -> impl Future<Output = Result<Vec<HubConnection>, HubError>> + Send;
 
     #[allow(dead_code)]
     /// Returns the active connection for the user, or `None` if the user is not connected.
     fn find_connection_by_user(
         &mut self,
         user_id: Uuid,
-    ) -> impl Future<Output = Result<Option<HubConnection>, HubConnectionError>> + Send;
+    ) -> impl Future<Output = Result<Option<HubConnection>, HubError>> + Send;
 
     /// Removes the active connection only when both user and connection id match.
     ///
@@ -57,5 +57,5 @@ pub trait HubRegistry {
         &mut self,
         user_id: Uuid,
         connection_id: Uuid,
-    ) -> impl Future<Output = Result<bool, HubConnectionError>> + Send;
+    ) -> impl Future<Output = Result<bool, HubError>> + Send;
 }

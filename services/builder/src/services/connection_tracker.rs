@@ -93,11 +93,6 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
     }
 }
 
-/// Detaches [`run_connection_loop`] onto its own task.
-pub fn spawn_connection_loop<C: ConnectionConsumer>(subscription: HubReceiver, interval: Duration, consumer: C) {
-    tokio::spawn(run_connection_loop(subscription, interval, consumer));
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,6 +105,10 @@ mod tests {
             connection_id,
             session_key: SessionKey::new_random(&SystemRandom::new()).unwrap(),
         })
+    }
+
+    fn spawn_connection_loop<C: ConnectionConsumer>(subscription: HubReceiver, interval: Duration, consumer: C) {
+        tokio::spawn(run_connection_loop(subscription, interval, consumer));
     }
 
     struct Probe {

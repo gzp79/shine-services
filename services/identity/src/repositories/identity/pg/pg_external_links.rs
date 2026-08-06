@@ -8,10 +8,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
 use shine_infra::{
-    db::{
-        postgres::{PGClient, PGErrorChecks},
-        PGDBError,
-    },
+    db::postgres::{PGClient, PGDBError, PGErrorChecks},
     email::{Email, NORM_EMAIL_VERSION},
     pg_query,
 };

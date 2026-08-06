@@ -1,4 +1,4 @@
-use shine_infra::db::RedisDBError;
+use shine_infra::db::redis::RedisDBError;
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]

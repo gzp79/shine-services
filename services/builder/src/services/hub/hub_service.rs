@@ -1,8 +1,9 @@
 use crate::{
-    models::messages::{HubEvent, HubMessage, TopicKey, Workload},
-    repositories::hub_registry::{
-        redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubConnectionError, HubRegistry,
+    models::{
+        messages::{HubEvent, HubMessage, TopicKey, Workload},
+        HubError,
     },
+    repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
     services::{
         hub::{
             connected_users::ConnectedUsers,
@@ -251,12 +252,12 @@ impl HubService {
         }
     }
 
-    async fn create_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubConnectionError> {
+    async fn create_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
         let mut context = self.inner.hub_registry.create_context().await?;
         context.create_connection(user_id, connection_id).await
     }
 
-    async fn remove_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubConnectionError> {
+    async fn remove_registry_connection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
         let mut context = self.inner.hub_registry.create_context().await?;
         context.remove_connection_if_active(user_id, connection_id).await?;
         Ok(())
@@ -266,7 +267,7 @@ impl HubService {
         &self,
         user_id: Uuid,
         connection_id: Uuid,
-    ) -> Result<bool, HubConnectionError> {
+    ) -> Result<bool, HubError> {
         let mut context = self.inner.hub_registry.create_context().await?;
         context.heartbeat_connection(user_id, connection_id).await
     }
@@ -277,7 +278,7 @@ impl HubService {
     pub(crate) async fn heartbeat_registry_connections(
         &self,
         connections: &[HubConnection],
-    ) -> Result<Vec<HubConnection>, HubConnectionError> {
+    ) -> Result<Vec<HubConnection>, HubError> {
         let mut context = self.inner.hub_registry.create_context().await?;
         context.heartbeat_connections(connections).await
     }

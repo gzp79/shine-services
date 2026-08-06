@@ -1,8 +1,7 @@
-use crate::repositories::hub_registry::{
-    redis::RedisHubConnectionDbContext, HubConnection, HubConnectionError, HubRegistry,
-};
+use crate::models::HubError;
+use crate::repositories::hub_registry::{redis::RedisHubConnectionDbContext, HubConnection, HubRegistry};
 use redis::{aio::transaction_async, AsyncCommands};
-use shine_infra::db::RedisDBError;
+use shine_infra::db::redis::RedisDBError;
 use uuid::Uuid;
 
 const HUB_CONNECTION_KEYSPACE: &str = "hub-connection:";
@@ -27,7 +26,7 @@ impl RedisHubConnectionDbContext<'_> {
         value.and_then(|raw| Uuid::parse_str(&raw).ok())
     }
 
-    async fn find_redis_keys(&mut self) -> Result<Vec<String>, HubConnectionError> {
+    async fn find_redis_keys(&mut self) -> Result<Vec<String>, HubError> {
         let pattern = format!("{HUB_CONNECTION_KEYSPACE}*");
         let mut keys = vec![];
         let mut iter = self
@@ -45,7 +44,7 @@ impl RedisHubConnectionDbContext<'_> {
 }
 
 impl HubRegistry for RedisHubConnectionDbContext<'_> {
-    async fn create_connection(&mut self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubConnectionError> {
+    async fn create_connection(&mut self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
         let key = self.to_redis_key(user_id);
         let change_payload = self.to_change_payload(user_id);
         let ttl_seconds = self.ttl_seconds;
@@ -69,7 +68,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
         Ok(())
     }
 
-    async fn heartbeat_connection(&mut self, user_id: Uuid, connection_id: Uuid) -> Result<bool, HubConnectionError> {
+    async fn heartbeat_connection(&mut self, user_id: Uuid, connection_id: Uuid) -> Result<bool, HubError> {
         let key = self.to_redis_key(user_id);
         let ttl_seconds = self.ttl_seconds as i64;
         let client = (*self.client).clone();
@@ -99,10 +98,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
         Ok(updated)
     }
 
-    async fn heartbeat_connections(
-        &mut self,
-        connections: &[HubConnection],
-    ) -> Result<Vec<HubConnection>, HubConnectionError> {
+    async fn heartbeat_connections(&mut self, connections: &[HubConnection]) -> Result<Vec<HubConnection>, HubError> {
         if connections.is_empty() {
             return Ok(Vec::new());
         }
@@ -142,7 +138,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
         Ok(stale)
     }
 
-    async fn list_connections(&mut self) -> Result<Vec<HubConnection>, HubConnectionError> {
+    async fn list_connections(&mut self) -> Result<Vec<HubConnection>, HubError> {
         let keys = self.find_redis_keys().await?;
         if keys.is_empty() {
             return Ok(Vec::new());
@@ -165,7 +161,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
         Ok(connections)
     }
 
-    async fn find_connection_by_user(&mut self, user_id: Uuid) -> Result<Option<HubConnection>, HubConnectionError> {
+    async fn find_connection_by_user(&mut self, user_id: Uuid) -> Result<Option<HubConnection>, HubError> {
         let key = self.to_redis_key(user_id);
         let connection: Option<String> = self.client.get(&key).await.map_err(RedisDBError::RedisError)?;
         let connection_id = self.parse_connection_id(connection);
@@ -173,11 +169,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
         Ok(connection_id.map(|connection_id| HubConnection { user_id, connection_id }))
     }
 
-    async fn remove_connection_if_active(
-        &mut self,
-        user_id: Uuid,
-        connection_id: Uuid,
-    ) -> Result<bool, HubConnectionError> {
+    async fn remove_connection_if_active(&mut self, user_id: Uuid, connection_id: Uuid) -> Result<bool, HubError> {
         let key = self.to_redis_key(user_id);
         let client = (*self.client).clone();
 

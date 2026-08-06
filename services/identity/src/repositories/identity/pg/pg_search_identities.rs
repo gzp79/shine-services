@@ -4,7 +4,7 @@ use crate::{
 };
 use postgres_from_row::FromRow;
 use shine_infra::{
-    db::{postgres::QueryBuilder, PGDBError},
+    db::postgres::{PGDBError, QueryBuilder},
     email::Email,
 };
 use tracing::instrument;

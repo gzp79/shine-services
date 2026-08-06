@@ -443,20 +443,18 @@ async fn batched_heartbeat_refreshes_active_and_reports_stale() {
 
     // Single-heartbeat CAS: the matching id is still active (TTL refreshed, not removed), while a
     // stale id for the same user reports inactive.
-    assert_eq!(
+    assert!(
         hub_service
             .heartbeat_registry_connection(active_a, conn_a)
             .await
             .unwrap(),
-        true,
         "the active connection should remain active after a batched heartbeat"
     );
-    assert_eq!(
-        hub_service
+    assert!(
+        !hub_service
             .heartbeat_registry_connection(active_a, Uuid::new_v4())
             .await
             .unwrap(),
-        false,
         "a stale connection id should report inactive"
     );
 
