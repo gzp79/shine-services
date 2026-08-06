@@ -1,7 +1,7 @@
 use crate::{
     db::{
         cacerts::{get_root_cert_store, CertError},
-        postgres::PGDBError,
+        postgres::PgError,
     },
     health::StatusProvider,
 };
@@ -20,38 +20,38 @@ use tokio::sync::RwLock;
 use tokio_postgres::{tls::MakeTlsConnect, GenericClient, IsolationLevel, Statement};
 use tokio_postgres_rustls::MakeRustlsConnect;
 
-use super::PGListener;
+use super::PgListener;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PGStatementId(usize);
+pub struct PgStatementId(usize);
 
-pub trait PGRawConnection: GenericClient {}
-impl<T> PGRawConnection for T where T: GenericClient {}
+pub trait PgRawConnection: GenericClient {}
+impl<T> PgRawConnection for T where T: GenericClient {}
 
-type PreparedStatementBuilder = (String, Vec<PGType>);
+type PreparedStatementBuilder = (String, Vec<PgType>);
 
-pub struct PGConnection<T>
+pub struct PgConnection<T>
 where
-    T: PGRawConnection,
+    T: PgRawConnection,
 {
     prepared_statement_id: Arc<AtomicUsize>,
     prepared_statements_builder: Arc<RwLock<HashMap<usize, PreparedStatementBuilder>>>,
     prepared_statements: Arc<RwLock<HashMap<usize, Statement>>>,
     client: T,
-    listener: PGListener,
+    listener: PgListener,
 }
 
-impl<T: PGRawConnection> PGConnection<T> {
+impl<T: PgRawConnection> PgConnection<T> {
     #[inline]
-    pub async fn create_prepared_statement(&self, stmt: &str, types: Vec<PGType>) -> PGStatementId {
+    pub async fn create_prepared_statement(&self, stmt: &str, types: Vec<PgType>) -> PgStatementId {
         let id = self.prepared_statement_id.fetch_add(1, Ordering::Relaxed);
         let mut prepared_statements = self.prepared_statements_builder.write().await;
         prepared_statements.insert(id, (stmt.to_string(), types));
-        PGStatementId(id)
+        PgStatementId(id)
     }
 
     #[inline]
-    pub async fn get_prepared_statement(&self, prepared_id: PGStatementId) -> Result<Statement, PGError> {
+    pub async fn get_prepared_statement(&self, prepared_id: PgStatementId) -> Result<Statement, PgRawError> {
         // Fast path: already prepared on this connection.
         if let Some(prepared) = self.prepared_statements.read().await.get(&prepared_id.0) {
             return Ok(prepared.to_owned());
@@ -88,7 +88,7 @@ impl<T: PGRawConnection> PGConnection<T> {
     }
 
     #[inline]
-    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), PGDBError>
+    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), PgError>
     where
         F: Fn(Option<&str>) + Send + Sync + 'static,
     {
@@ -96,12 +96,12 @@ impl<T: PGRawConnection> PGConnection<T> {
     }
 
     #[inline]
-    pub async fn unlisten(&self, channel: &str) -> Result<(), PGDBError> {
+    pub async fn unlisten(&self, channel: &str) -> Result<(), PgError> {
         self.listener.unlisten(channel).await
     }
 
     #[inline]
-    pub async fn unlisten_all(&self) -> Result<(), PGDBError> {
+    pub async fn unlisten_all(&self) -> Result<(), PgError> {
         self.listener.unlisten_all().await
     }
 
@@ -111,10 +111,10 @@ impl<T: PGRawConnection> PGConnection<T> {
     }
 }
 
-impl PGConnection<PGRawClient> {
+impl PgConnection<PgRawClient> {
     fn new(
-        pg_client: PGRawClient,
-        listener: PGListener,
+        pg_client: PgRawClient,
+        listener: PgListener,
         prepared_statement_id: Arc<AtomicUsize>,
         prepared_statements_builder: Arc<RwLock<HashMap<usize, PreparedStatementBuilder>>>,
     ) -> Self {
@@ -129,7 +129,7 @@ impl PGConnection<PGRawClient> {
 
     /// Handle migration manually. Allows to keep multiple (independent) migration in a single
     /// database.
-    pub async fn migrate(&mut self, name: &str, migrations: &[String]) -> Result<(), PGDBError> {
+    pub async fn migrate(&mut self, name: &str, migrations: &[String]) -> Result<(), PgError> {
         let migrations = migrations
             .iter()
             .inspect(|m| log::debug!("Migration: {m}"))
@@ -143,7 +143,7 @@ impl PGConnection<PGRawClient> {
         runner
             .run_async(&mut self.client)
             .await
-            .map_err(PGDBError::SqlMigration)?;
+            .map_err(PgError::SqlMigration)?;
         Ok(())
     }
 
@@ -151,13 +151,13 @@ impl PGConnection<PGRawClient> {
     pub async fn transaction(
         &mut self,
         isolation_level: Option<IsolationLevel>,
-    ) -> Result<PGConnection<PGRawTransaction<'_>>, PGError> {
+    ) -> Result<PgConnection<PgRawTransaction<'_>>, PgRawError> {
         let mut transaction_builder = self.client.build_transaction();
         if let Some(level) = isolation_level {
             transaction_builder = transaction_builder.isolation_level(level);
         }
         let transaction = transaction_builder.start().await?;
-        Ok(PGConnection {
+        Ok(PgConnection {
             prepared_statement_id: self.prepared_statement_id.clone(),
             prepared_statements_builder: self.prepared_statements_builder.clone(),
             prepared_statements: self.prepared_statements.clone(),
@@ -167,17 +167,17 @@ impl PGConnection<PGRawClient> {
     }
 }
 
-impl PGConnection<PGRawTransaction<'_>> {
-    pub async fn commit(self) -> Result<(), PGError> {
+impl PgConnection<PgRawTransaction<'_>> {
+    pub async fn commit(self) -> Result<(), PgRawError> {
         self.client.commit().await
     }
 
-    pub async fn rollback(self) -> Result<(), PGError> {
+    pub async fn rollback(self) -> Result<(), PgRawError> {
         self.client.rollback().await
     }
 }
 
-impl<T: PGRawConnection> Deref for PGConnection<T> {
+impl<T: PgRawConnection> Deref for PgConnection<T> {
     type Target = T;
 
     #[inline]
@@ -186,29 +186,29 @@ impl<T: PGRawConnection> Deref for PGConnection<T> {
     }
 }
 
-impl<T: PGRawConnection> DerefMut for PGConnection<T> {
+impl<T: PgRawConnection> DerefMut for PgConnection<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.client
     }
 }
 
-pub struct PGConnectionManager {
+pub struct PgConnectionManager {
     connection_manager: PostgresConnectionManager<MakeRustlsConnect>,
     prepared_statement_id: Arc<AtomicUsize>,
     prepared_statements_builder: Arc<RwLock<HashMap<usize, PreparedStatementBuilder>>>,
-    listener: PGListener,
+    listener: PgListener,
 }
 
-impl PGConnectionManager {
+impl PgConnectionManager {
     pub fn new(
-        config: PGConfig,
+        config: PgConfig,
         tls: MakeRustlsConnect,
         connect_timeout: Duration,
         max_reconnect_backoff: Duration,
     ) -> Self {
         let connection_manager = PostgresConnectionManager::new(config.clone(), tls.clone());
-        let listener = PGListener::new(config, tls, connect_timeout, max_reconnect_backoff);
+        let listener = PgListener::new(config, tls, connect_timeout, max_reconnect_backoff);
 
         Self {
             connection_manager,
@@ -219,13 +219,13 @@ impl PGConnectionManager {
     }
 }
 
-impl bb8::ManageConnection for PGConnectionManager {
-    type Connection = PGConnection<PGRawClient>;
-    type Error = PGError;
+impl bb8::ManageConnection for PgConnectionManager {
+    type Connection = PgConnection<PgRawClient>;
+    type Error = PgRawError;
 
     async fn connect(&self) -> Result<Self::Connection, Self::Error> {
         let conn = self.connection_manager.connect().await?;
-        Ok(PGConnection::new(
+        Ok(PgConnection::new(
             conn,
             self.listener.clone(),
             self.prepared_statement_id.clone(),
@@ -242,30 +242,30 @@ impl bb8::ManageConnection for PGConnectionManager {
     }
 }
 
-pub type PGConnectionError = RunError<<PGConnectionManager as ManageConnection>::Error>;
-pub type PGConnectionPool = BB8Pool<PGConnectionManager>;
-pub type PGPooledConnection<'a> = PooledConnection<'a, PGConnectionManager>;
-pub type PGError = tokio_postgres::Error;
-pub type PGStatement = tokio_postgres::Statement;
+pub type PgPoolError = RunError<<PgConnectionManager as ManageConnection>::Error>;
+pub type PgConnectionPool = BB8Pool<PgConnectionManager>;
+pub type PgPooledConnection<'a> = PooledConnection<'a, PgConnectionManager>;
+pub type PgRawError = tokio_postgres::Error;
+pub type PgStatement = tokio_postgres::Statement;
 
-pub type PGConfig = tokio_postgres::Config;
-pub type PGType = tokio_postgres::types::Type;
+pub type PgConfig = tokio_postgres::Config;
+pub type PgType = tokio_postgres::types::Type;
 
-pub type PGRawClient = tokio_postgres::Client;
-type PGSocket = tokio_postgres::Socket;
-type PGSocketStream = <MakeRustlsConnect as MakeTlsConnect<PGSocket>>::Stream;
-pub type PGRawSocketConnection = tokio_postgres::Connection<PGSocket, PGSocketStream>;
-pub type PGRawTransaction<'a> = tokio_postgres::Transaction<'a>;
-pub type PGClient = PGConnection<PGRawClient>;
-pub type PGTransaction<'a> = PGConnection<PGRawTransaction<'a>>;
+pub type PgRawClient = tokio_postgres::Client;
+type PgSocket = tokio_postgres::Socket;
+type PgSocketStream = <MakeRustlsConnect as MakeTlsConnect<PgSocket>>::Stream;
+pub type PgRawSocketConnection = tokio_postgres::Connection<PgSocket, PgSocketStream>;
+pub type PgRawTransaction<'a> = tokio_postgres::Transaction<'a>;
+pub type PgClient = PgConnection<PgRawClient>;
+pub type PgTransaction<'a> = PgConnection<PgRawTransaction<'a>>;
 
 /// A shorthand used for the return types in the ToSql and FromSql implementations.
-pub type PGConvertError = Box<dyn std::error::Error + Sync + Send>;
+pub type PgConvertError = Box<dyn std::error::Error + Sync + Send>;
 
 #[derive(ThisError, Debug)]
-pub enum PGCreatePoolError {
+pub enum PgConnectionError {
     #[error(transparent)]
-    PgError(#[from] PGError),
+    PgError(#[from] PgRawError),
     #[error("Certificate load error")]
     CertError(#[source] CertError),
     #[error(transparent)]
@@ -275,11 +275,11 @@ pub enum PGCreatePoolError {
 }
 
 pub struct PostgresPoolStatus {
-    pool: PGConnectionPool,
+    pool: PgConnectionPool,
 }
 
 impl PostgresPoolStatus {
-    pub fn new(pool: PGConnectionPool) -> Self {
+    pub fn new(pool: PgConnectionPool) -> Self {
         Self { pool }
     }
 }
@@ -303,7 +303,7 @@ impl StatusProvider for PostgresPoolStatus {
 /// - `connect_timeout`: PostgreSQL native parameter in SECONDS (TCP connection establishment)
 /// - `pool_timeout`: custom parameter in SECONDS for bb8 pool (acquiring connection from pool, including waiting for connection to be established if pool is exhausted)
 /// - `max_size`: custom parameter for the maximum number of pooled connections (default 10)
-pub async fn create_postgres_pool(cns: &str) -> Result<PGConnectionPool, PGCreatePoolError> {
+pub async fn create_postgres_pool(cns: &str) -> Result<PgConnectionPool, PgConnectionError> {
     // Parse and validate before the TLS/cert setup so a bad connection string fails fast without
     // touching the cert store or a crypto provider.
     let mut cns = crate::db::ConnectionString::parse(cns);
@@ -315,29 +315,29 @@ pub async fn create_postgres_pool(cns: &str) -> Result<PGConnectionPool, PGCreat
     // never hand out a connection (and a value > u32::MAX would truncate to 0 in the cast below),
     // and pool_timeout=0 makes every checkout time out immediately.
     if max_size == 0 || max_size > u32::MAX as u64 {
-        return Err(PGCreatePoolError::InvalidPoolParam("max_size"));
+        return Err(PgConnectionError::InvalidPoolParam("max_size"));
     }
     if pool_timeout_s == 0 {
-        return Err(PGCreatePoolError::InvalidPoolParam("pool_timeout"));
+        return Err(PgConnectionError::InvalidPoolParam("pool_timeout"));
     }
     let pool_timeout = std::time::Duration::from_secs(pool_timeout_s);
     let max_size = max_size as u32;
 
-    let certs = get_root_cert_store().map_err(PGCreatePoolError::CertError)?;
+    let certs = get_root_cert_store().map_err(PgConnectionError::CertError)?;
     let tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(certs)
         .with_no_client_auth();
 
     let tls = MakeRustlsConnect::new(tls_config);
 
-    let pg_config = PGConfig::from_str(&cns_clean)?;
+    let pg_config = PgConfig::from_str(&cns_clean)?;
     // The listener's keep-alive connect needs a hard bound (tokio_postgres's connect_timeout covers
     // only the socket): honor the connection string's connect_timeout if set, else a sane default.
     let connect_timeout = pg_config
         .get_connect_timeout()
         .copied()
-        .unwrap_or(PGListener::DEFAULT_CONNECT_TIMEOUT);
-    let postgres_manager = PGConnectionManager::new(pg_config, tls, connect_timeout, pool_timeout);
+        .unwrap_or(PgListener::DEFAULT_CONNECT_TIMEOUT);
+    let postgres_manager = PgConnectionManager::new(pg_config, tls, connect_timeout, pool_timeout);
     let postgres = bb8::Pool::builder()
         .max_size(max_size)
         .connection_timeout(pool_timeout)
@@ -354,9 +354,9 @@ mod test {
     // Degenerate pool params are rejected before any network I/O, so these run without a server.
     // Parsing (non-integer / duplicate values) is covered by the connection-string parser's own
     // tests; here only the range checks are exercised.
-    fn invalid_param(err: PGCreatePoolError) -> &'static str {
+    fn invalid_param(err: PgConnectionError) -> &'static str {
         match err {
-            PGCreatePoolError::InvalidPoolParam(name) => name,
+            PgConnectionError::InvalidPoolParam(name) => name,
             other => panic!("expected InvalidPoolParam, got {other:?}"),
         }
     }

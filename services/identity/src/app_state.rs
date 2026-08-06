@@ -11,7 +11,7 @@ use chrono::Duration;
 use ring::rand::SystemRandom;
 use shine_infra::{
     crypto::{HarshIdEncoder, IdEncoder, OptimusIdEncoder, PrefixedIdEncoder},
-    db::{postgres::PGConnectionPool, redis::RedisConnectionPool},
+    db::{postgres::PgConnectionPool, redis::RedisConnectionPool},
     sync::TopicBus,
     web::{compile_anchored, responses::ProblemConfig, WebAppConfig},
 };
@@ -39,7 +39,7 @@ pub struct AppState(Arc<Inner>);
 impl AppState {
     pub async fn new(
         config: &WebAppConfig<AppConfig>,
-        postgres_pool: &PGConnectionPool,
+        postgres_pool: &PgConnectionPool,
         redis_pool: &RedisConnectionPool,
     ) -> Result<Self, AnyError> {
         let config_auth = &config.feature.auth;

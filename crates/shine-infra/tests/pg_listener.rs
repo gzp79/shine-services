@@ -1,8 +1,5 @@
 use rustls::crypto::ring;
-use shine_infra::db::{
-    create_postgres_pool,
-    postgres::{PGConfig, PGDBError, PGListener},
-};
+use shine_infra::db::postgres::{create_postgres_pool, PgConfig, PgError, PgListener};
 use shine_test::test;
 use std::{collections::HashSet, env, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
@@ -628,11 +625,11 @@ async fn test_pg_listener_parallel_connect() {
 async fn test_pg_listener_listen_after_close_is_rejected() {
     let _ = ring::default_provider().install_default();
 
-    let config = PGConfig::from_str("postgres://user:pass@127.0.0.1:5432/db").unwrap();
+    let config = PgConfig::from_str("postgres://user:pass@127.0.0.1:5432/db").unwrap();
     let tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(rustls::RootCertStore::empty())
         .with_no_client_auth();
-    let listener = PGListener::new(
+    let listener = PgListener::new(
         config,
         MakeRustlsConnect::new(tls_config),
         Duration::from_secs(5),
@@ -642,8 +639,8 @@ async fn test_pg_listener_listen_after_close_is_rejected() {
 
     let err = listener.listen("shine-test-after-close", |_| {}).await.unwrap_err();
     assert!(
-        matches!(err, PGDBError::ListenerClosed),
-        "expected PGDBError::ListenerClosed, got {err:?}"
+        matches!(err, PgError::ListenerClosed),
+        "expected PGError::ListenerClosed, got {err:?}"
     );
 }
 
@@ -654,12 +651,12 @@ async fn test_pg_listener_listen_after_close_is_rejected() {
 async fn test_pg_listener_listen_times_out_when_unreachable() {
     let _ = ring::default_provider().install_default();
 
-    let config = PGConfig::from_str("postgres://user:pass@192.0.2.1:5432/db").unwrap();
+    let config = PgConfig::from_str("postgres://user:pass@192.0.2.1:5432/db").unwrap();
     let tls_config = rustls::ClientConfig::builder()
         .with_root_certificates(rustls::RootCertStore::empty())
         .with_no_client_auth();
     let connect_timeout = Duration::from_millis(500);
-    let listener = PGListener::new(
+    let listener = PgListener::new(
         config,
         MakeRustlsConnect::new(tls_config),
         connect_timeout,
@@ -675,7 +672,7 @@ async fn test_pg_listener_listen_times_out_when_unreachable() {
     .expect("listen() hung past the connect timeout")
     .unwrap_err();
     assert!(
-        matches!(err, PGDBError::ListenerConnectTimeout | PGDBError::PGError(_)),
+        matches!(err, PgError::ListenerConnectTimeout | PgError::PgRawError(_)),
         "expected a connect timeout error, got {err:?}"
     );
     assert!(
@@ -704,8 +701,8 @@ async fn test_pg_listener_duplicate_listen_is_rejected() {
             conn.listen("shine-test-duplicate", |_| {}).await.unwrap();
             let err = conn.listen("shine-test-duplicate", |_| {}).await.unwrap_err();
             assert!(
-                matches!(err, PGDBError::AlreadyListening(ref channel) if channel == "shine-test-duplicate"),
-                "expected PGDBError::AlreadyListening, got {err:?}"
+                matches!(err, PgError::AlreadyListening(ref channel) if channel == "shine-test-duplicate"),
+                "expected PGError::AlreadyListening, got {err:?}"
             );
         }
 

@@ -1,7 +1,7 @@
 use base64::DecodeError;
 use shine_infra::{
     crypto::{DataProtectionError, IdEncoderError},
-    db::postgres::PGDBError,
+    db::postgres::PgError,
 };
 use thiserror::Error as ThisError;
 
@@ -13,9 +13,10 @@ pub enum IdentityBuildError {
     #[error(transparent)]
     IdEncoder(#[from] IdEncoderError),
     #[error(transparent)]
-    DBError(#[from] PGDBError),
+    DBError(#[from] PgError),
     #[error(transparent)]
     DataProtectionError(#[from] DataProtectionError),
     #[error(transparent)]
     DecodeError(#[from] DecodeError),
 }
+

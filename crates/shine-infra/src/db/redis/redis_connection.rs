@@ -1,16 +1,20 @@
-use super::RedisListener;
 use crate::{
-    db::{redis::RedisDBError, CnsParamError},
+    db::{
+        redis::{RedisError, RedisListener},
+        CnsParamError,
+    },
     health::StatusProvider,
 };
 use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use redis::{
     aio::{ConnectionLike, MultiplexedConnection},
-    AsyncConnectionConfig, Client, Cmd, ErrorKind, Pipeline, RedisError, RedisFuture, Value,
+    AsyncConnectionConfig, Client, Cmd, ErrorKind, Pipeline, RedisFuture, Value,
 };
-use std::ops::{Deref, DerefMut};
-use std::time::Duration;
+use std::{
+    ops::{Deref, DerefMut},
+    time::Duration,
+};
 
 pub use shine_infra_macros::RedisJsonValue;
 
@@ -25,7 +29,7 @@ pub struct RedisConnection {
 
 impl RedisConnection {
     #[inline]
-    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), RedisDBError>
+    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), RedisError>
     where
         F: Fn(Option<&str>) + Send + Sync + 'static,
     {
@@ -33,12 +37,12 @@ impl RedisConnection {
     }
 
     #[inline]
-    pub async fn unlisten(&self, channel: &str) -> Result<(), RedisDBError> {
+    pub async fn unlisten(&self, channel: &str) -> Result<(), RedisError> {
         self.listener.unlisten(channel).await
     }
 
     #[inline]
-    pub async fn unlisten_all(&self) -> Result<(), RedisDBError> {
+    pub async fn unlisten_all(&self) -> Result<(), RedisError> {
         self.listener.unlisten_all().await
     }
 }
@@ -92,7 +96,7 @@ impl RedisConnectionManager {
         conn_config: AsyncConnectionConfig,
         connect_timeout: Duration,
         max_reconnect_backoff: Duration,
-    ) -> Result<Self, RedisError> {
+    ) -> Result<Self, RedisRawError> {
         let client = Client::open(raw_cns)?;
         let listener = RedisListener::new(client.clone(), connect_timeout, max_reconnect_backoff);
         Ok(Self { client, conn_config, listener })
@@ -101,7 +105,7 @@ impl RedisConnectionManager {
 
 impl ManageConnection for RedisConnectionManager {
     type Connection = RedisConnection;
-    type Error = RedisError;
+    type Error = RedisRawError;
 
     async fn connect(&self) -> Result<Self::Connection, Self::Error> {
         let client = self
@@ -118,7 +122,7 @@ impl ManageConnection for RedisConnectionManager {
         let pong: String = redis::cmd("PING").query_async(&mut conn.client).await?;
         match pong.as_str() {
             "PONG" => Ok(()),
-            _ => Err((ErrorKind::Extension, "ping request").into()),
+            _ => Err(RedisRawError::from((ErrorKind::Extension, "ping request"))),
         }
     }
 
@@ -130,6 +134,7 @@ impl ManageConnection for RedisConnectionManager {
 pub type RedisConnectionError = RunError<<RedisConnectionManager as ManageConnection>::Error>;
 pub type RedisConnectionPool = BB8Pool<RedisConnectionManager>;
 pub type RedisPooledConnection<'a> = PooledConnection<'a, RedisConnectionManager>;
+pub type RedisRawError = redis::RedisError;
 
 pub struct RedisPoolStatus {
     pool: RedisConnectionPool,
@@ -163,14 +168,14 @@ impl StatusProvider for RedisPoolStatus {
 /// - `max_size`: custom parameter for the maximum number of pooled connections (default 10)
 pub async fn create_redis_pool(cns: &str) -> Result<RedisConnectionPool, RedisConnectionError> {
     let to_redis_err = |e: CnsParamError| {
-        RunError::User(RedisError::from((
+        RunError::User(RedisRawError::from((
             ErrorKind::InvalidClientConfig,
             "invalid connection string parameter",
             e.to_string(),
         )))
     };
     let invalid_param = |name: &'static str| -> RedisConnectionError {
-        RunError::User(RedisError::from((
+        RunError::User(RedisRawError::from((
             ErrorKind::InvalidClientConfig,
             "connection string parameter must be greater than zero",
             name.to_string(),

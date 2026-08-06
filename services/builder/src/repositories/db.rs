@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use shine_infra::db::redis::{RedisConnectionPool, RedisDBError};
+use shine_infra::db::redis::{RedisConnectionPool, RedisError};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -13,9 +13,9 @@ mod embedded {
     embed_migrations!("./sql_migrations");
 }
 
-pub async fn create_redis_pool(config: &DBConfig) -> Result<RedisConnectionPool, RedisDBError> {
+pub async fn create_redis_pool(config: &DBConfig) -> Result<RedisConnectionPool, RedisError> {
     log::info!("Creating redis pool...");
-    shine_infra::db::create_redis_pool(config.redis_cns.as_str())
+    shine_infra::db::redis::create_redis_pool(config.redis_cns.as_str())
         .await
-        .map_err(RedisDBError::PoolError)
+        .map_err(RedisError::PoolError)
 }

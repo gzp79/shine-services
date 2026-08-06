@@ -1,18 +1,18 @@
 use crate::models::HubError;
-use shine_infra::db::redis::RedisDBError;
+use shine_infra::db::redis::RedisError;
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
 pub enum RedisHubRegistryBuildError {
     #[error(transparent)]
-    DBError(#[from] RedisDBError),
+    DBError(#[from] RedisError),
 }
 
-impl From<RedisDBError> for HubError {
-    fn from(err: RedisDBError) -> Self {
+impl From<RedisError> for HubError {
+    fn from(err: RedisError) -> Self {
         match err {
-            RedisDBError::PoolError(_) | RedisDBError::RedisError(_) => HubError::registry_db(err),
-            RedisDBError::ListenerClosed | RedisDBError::AlreadyListening(_) => HubError::internal(err),
+            RedisError::PoolError(_) | RedisError::RawError(_) => HubError::registry_db(err),
+            RedisError::ListenerClosed | RedisError::AlreadyListening(_) => HubError::internal(err),
         }
     }
 }

@@ -4,7 +4,7 @@ use crate::{
             pg::PgEventDbContext, Aggregate, AggregateInfo, AggregateStore, Event, EventSourceError, EventStore,
             StoredAggregate, StreamId,
         },
-        postgres::{PGClient, PGDBError, PGErrorChecks},
+        postgres::{PgClient, PgError, PgErrorChecks},
     },
     pg_query,
 };
@@ -94,22 +94,22 @@ impl<E> PgAggregateStoreStatement<E>
 where
     E: Event,
 {
-    pub async fn new(client: &PGClient) -> Result<Self, EventSourceError> {
+    pub async fn new(client: &PgClient) -> Result<Self, EventSourceError> {
         let table_name_process = |x: &str| Cow::Owned(x.replace("%table%", <E as Event>::NAME));
 
         Ok(Self {
             store_snapshot: StoreSnapshot::new_with_process(client, table_name_process)
                 .await
-                .map_err(PGDBError::from)?,
+                .map_err(PgError::from)?,
             get_snapshot: GetSnapshot::new_with_process(client, table_name_process)
                 .await
-                .map_err(PGDBError::from)?,
+                .map_err(PgError::from)?,
             list_snapshots: ListSnapshots::new_with_process(client, table_name_process)
                 .await
-                .map_err(PGDBError::from)?,
+                .map_err(PgError::from)?,
             prune_snapshot: PruneSnapshot::new_with_process(client, table_name_process)
                 .await
-                .map_err(PGDBError::from)?,
+                .map_err(PgError::from)?,
             _ph: PhantomData,
         })
     }
@@ -183,7 +183,7 @@ where
                     Err(EventSourceError::InvalidAggregateVersion(start_version, version))
                 } else {
                     log::info!("Insert snapshot error: {err:#?}");
-                    Err(PGDBError::from(err).into())
+                    Err(PgError::from(err).into())
                 }
             }
         }
@@ -212,7 +212,7 @@ where
                 &(version.map(|v| v as i32)),
             )
             .await
-            .map_err(PGDBError::from)?
+            .map_err(PgError::from)?
         {
             Ok(Some(StoredAggregate::from_json(
                 stream_id.clone(),
@@ -241,7 +241,7 @@ where
             .list_snapshots
             .query(&self.client, &stream_id.to_string().as_str(), &aggregate_id)
             .await
-            .map_err(PGDBError::from)?;
+            .map_err(PgError::from)?;
 
         let infos = rows
             .into_iter()
@@ -269,7 +269,7 @@ where
             .prune_snapshot
             .execute(&self.client, &id.as_str(), &aggregate_id, &(version as i32))
             .await
-            .map_err(PGDBError::from)?;
+            .map_err(PgError::from)?;
 
         Ok(())
     }

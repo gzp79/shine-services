@@ -1,11 +1,11 @@
 use tokio_postgres::error::SqlState;
 
-pub trait PGErrorChecks {
+pub trait PgErrorChecks {
     fn is_constraint(&self, table: &str, constraint: &str) -> bool;
     fn is_raise_exception(&self, message: &str) -> bool;
 }
 
-impl PGErrorChecks for tokio_postgres::Error {
+impl PgErrorChecks for tokio_postgres::Error {
     fn is_constraint(&self, table: &str, constraint: &str) -> bool {
         // Match the violated constraint by its exact name from the error's constraint field, not a
         // substring of the message, so e.g. `user_email` no longer matches `user_email_key`.

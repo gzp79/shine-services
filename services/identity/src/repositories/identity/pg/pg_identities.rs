@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
 use shine_infra::{
     crypto::DataProtectionUtils,
-    db::postgres::{PGClient, PGConvertError, PGDBError, PGErrorChecks, PGValueTypeINT2, ToPGType},
+    db::postgres::{PgClient, PgConvertError, PgError, PgErrorChecks, PgValueTypeInt2, ToPgType},
     email::{Email, NORM_EMAIL_VERSION},
     pg_query,
 };
@@ -18,7 +18,7 @@ use uuid::Uuid;
 use super::PgIdentityDbContext;
 
 impl ToSql for IdentityKind {
-    fn to_sql(&self, ty: &Type, out: &mut BytesMut) -> Result<IsNull, PGConvertError> {
+    fn to_sql(&self, ty: &Type, out: &mut BytesMut) -> Result<IsNull, PgConvertError> {
         let value = match self {
             IdentityKind::User => 1_i16,
             IdentityKind::Studio => 2_i16,
@@ -31,20 +31,20 @@ impl ToSql for IdentityKind {
 }
 
 impl FromSql<'_> for IdentityKind {
-    fn from_sql(ty: &Type, raw: &[u8]) -> Result<IdentityKind, PGConvertError> {
+    fn from_sql(ty: &Type, raw: &[u8]) -> Result<IdentityKind, PgConvertError> {
         let value = i16::from_sql(ty, raw)?;
         match value {
             1 => Ok(IdentityKind::User),
             2 => Ok(IdentityKind::Studio),
-            _ => Err(PGConvertError::from("Invalid value for IdentityKind")),
+            _ => Err(PgConvertError::from("Invalid value for IdentityKind")),
         }
     }
 
     accepts!(INT2);
 }
 
-impl ToPGType for IdentityKind {
-    type PGValueType = PGValueTypeINT2;
+impl ToPgType for IdentityKind {
+    type PgValueType = PgValueTypeInt2;
 }
 
 pg_query!( InsertIdentity =>
@@ -169,14 +169,14 @@ pub struct PgIdentitiesStatements {
 }
 
 impl PgIdentitiesStatements {
-    pub async fn new(client: &PGClient) -> Result<Self, PgIdentityBuildError> {
+    pub async fn new(client: &PgClient) -> Result<Self, PgIdentityBuildError> {
         Ok(Self {
-            insert_identity: InsertIdentity::new(client).await.map_err(PGDBError::from)?,
-            cascaded_delete: CascadedDelete::new(client).await.map_err(PGDBError::from)?,
-            find_by_id: FindById::new(client).await.map_err(PGDBError::from)?,
-            find_by_email_hash: FindByEmailHash::new(client).await.map_err(PGDBError::from)?,
-            update: UpdateIdentity::new(client).await.map_err(PGDBError::from)?,
-            delete_guests: DeleteGuests::new(client).await.map_err(PGDBError::from)?,
+            insert_identity: InsertIdentity::new(client).await.map_err(PgError::from)?,
+            cascaded_delete: CascadedDelete::new(client).await.map_err(PgError::from)?,
+            find_by_id: FindById::new(client).await.map_err(PgError::from)?,
+            find_by_email_hash: FindByEmailHash::new(client).await.map_err(PgError::from)?,
+            update: UpdateIdentity::new(client).await.map_err(PgError::from)?,
+            delete_guests: DeleteGuests::new(client).await.map_err(PgError::from)?,
         })
     }
 }
@@ -236,7 +236,7 @@ impl Identities for PgIdentityDbContext<'_> {
                 return Err(IdentityError::EmailConflict);
             }
             Err(err) => {
-                return Err(PGDBError::from(err).into());
+                return Err(PgError::from(err).into());
             }
         };
 
@@ -257,7 +257,7 @@ impl Identities for PgIdentityDbContext<'_> {
             .find_by_id
             .query_opt(&self.client, &id)
             .await
-            .map_err(PGDBError::from)?;
+            .map_err(PgError::from)?;
 
         row.map(|r| r.into_identity(self.email_protection)).transpose()
     }
@@ -270,7 +270,7 @@ impl Identities for PgIdentityDbContext<'_> {
             .find_by_email_hash
             .query_opt(&self.client, &email_hash.as_str())
             .await
-            .map_err(PGDBError::from)?;
+            .map_err(PgError::from)?;
 
         row.map(|r| r.into_identity(self.email_protection)).transpose()
     }
@@ -321,7 +321,7 @@ impl Identities for PgIdentityDbContext<'_> {
                 log::info!("Conflicting email: {email:?}, rolling back user update");
                 return Err(IdentityError::EmailConflict);
             }
-            Err(err) => return Err(PGDBError::from(err).into()),
+            Err(err) => return Err(PgError::from(err).into()),
         };
 
         Ok(Some(identity_row.into_identity(self.email_protection)?))
@@ -333,7 +333,7 @@ impl Identities for PgIdentityDbContext<'_> {
             .cascaded_delete
             .execute(&self.client, &id)
             .await
-            .map_err(PGDBError::from)?;
+            .map_err(PgError::from)?;
         Ok(())
     }
 
@@ -344,7 +344,7 @@ impl Identities for PgIdentityDbContext<'_> {
             .delete_guests
             .query(&self.client, &cutoff, &limit)
             .await
-            .map_err(PGDBError::from)?;
+            .map_err(PgError::from)?;
         Ok(rows.into_iter().map(|r| r.user_id).collect())
     }
 }

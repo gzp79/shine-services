@@ -5,8 +5,8 @@ mod redis_listener;
 pub use self::{
     redis_connection::{
         create_redis_pool, RedisConnection, RedisConnectionError, RedisConnectionManager, RedisConnectionPool,
-        RedisJsonValue, RedisPoolStatus, RedisPooledConnection,
+        RedisJsonValue, RedisPoolStatus, RedisPooledConnection, RedisRawError,
     },
-    redis_error::RedisDBError,
+    redis_error::RedisError,
     redis_listener::RedisListener,
 };

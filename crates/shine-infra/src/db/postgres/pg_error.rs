@@ -1,16 +1,16 @@
 use crate::web::responses::Problem;
 use thiserror::Error as ThisError;
 
-use super::pg_connection::{PGConnectionError, PGCreatePoolError, PGError};
+use super::pg_connection::{PgConnectionError, PgPoolError, PgRawError};
 
 #[derive(Debug, ThisError)]
-pub enum PGDBError {
+pub enum PgError {
     #[error("Failed to get a PG connection from the pool")]
-    CreatePoolError(#[source] PGCreatePoolError),
+    CreatePoolError(#[source] PgConnectionError),
     #[error("Failed to get a PG connection from the pool")]
-    PoolError(#[source] PGConnectionError),
+    PoolError(#[source] PgPoolError),
     #[error(transparent)]
-    PGError(#[from] PGError),
+    PgRawError(#[from] PgRawError),
     #[error(transparent)]
     SqlMigration(#[from] refinery::Error),
     #[error("The listener has been closed")]
@@ -21,10 +21,10 @@ pub enum PGDBError {
     AlreadyListening(String),
 }
 
-impl From<PGDBError> for Problem {
-    fn from(err: PGDBError) -> Self {
+impl From<PgError> for Problem {
+    fn from(err: PgError) -> Self {
         match err {
-            PGDBError::CreatePoolError(_) | PGDBError::PoolError(_) => Problem::service_unavailable()
+            PgError::CreatePoolError(_) | PgError::PoolError(_) => Problem::service_unavailable()
                 .with_detail(err.to_string())
                 .with_sensitive_dbg(err),
             err => Problem::internal_error()

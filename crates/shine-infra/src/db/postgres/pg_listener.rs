@@ -1,5 +1,5 @@
 use crate::{
-    db::postgres::PGDBError,
+    db::postgres::PgError,
     sync::{ExponentialBackoff, KeepAlive},
 };
 use futures::{stream, StreamExt};
@@ -11,9 +11,9 @@ use tokio::{
 use tokio_postgres::{AsyncMessage, Notification};
 use tokio_postgres_rustls::MakeRustlsConnect;
 
-use super::{PGConfig, PGRawClient, PGRawSocketConnection};
+use super::{PgConfig, PgRawClient, PgRawSocketConnection};
 
-pub type PGNotification = Notification;
+pub type PgNotification = Notification;
 type BoxedHandler = Box<dyn Fn(Option<&str>) + Send + Sync + 'static>;
 
 /// A handler blocking the dispatch task longer than this is logged as a warning.
@@ -22,7 +22,7 @@ const SLOW_HANDLER: Duration = Duration::from_millis(100);
 /// The dedicated `LISTEN` connection (behind an `Arc` so commands can run without the state lock)
 /// and the channel→handler map it serves.
 struct ListenState {
-    client: Option<Arc<PGRawClient>>,
+    client: Option<Arc<PgRawClient>>,
     handlers: HashMap<String, BoxedHandler>,
 }
 
@@ -34,7 +34,7 @@ impl ListenState {
         }
     }
 
-    fn set_client(&mut self, client: Arc<PGRawClient>) {
+    fn set_client(&mut self, client: Arc<PgRawClient>) {
         self.client = Some(client);
     }
 
@@ -67,7 +67,7 @@ impl ListenState {
 }
 
 struct Inner {
-    config: PGConfig,
+    config: PgConfig,
     tls: MakeRustlsConnect,
     connect_timeout: Duration,
     keep_alive: Arc<KeepAlive>,
@@ -85,11 +85,11 @@ impl Drop for Inner {
 }
 
 #[derive(Clone)]
-pub struct PGListener {
+pub struct PgListener {
     inner: Arc<Inner>,
 }
 
-impl PGListener {
+impl PgListener {
     /// Bound for the listener's connect when the connection string sets no `connect_timeout`.
     /// `tokio_postgres`'s own `connect_timeout` covers only the socket connect, not the TLS
     /// handshake/startup, and the keep-alive holds the op permit across the whole connect — so
@@ -97,7 +97,7 @@ impl PGListener {
     pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
     fn start_keep_alive_task(
-        config: PGConfig,
+        config: PgConfig,
         tls: MakeRustlsConnect,
         connect_timeout: Duration,
         op_lock: Arc<Semaphore>,
@@ -156,12 +156,12 @@ impl PGListener {
     /// registered channel, and nudges their handlers. Returns whether a new connection was opened.
     /// Caller must hold the op permit.
     async fn connect_and_subscribe(
-        config: &PGConfig,
+        config: &PgConfig,
         tls: &MakeRustlsConnect,
         connect_timeout: Duration,
         state: &Arc<RwLock<ListenState>>,
         keep_alive: &Arc<KeepAlive>,
-    ) -> Result<bool, PGDBError> {
+    ) -> Result<bool, PgError> {
         if state.read().await.client.is_some() {
             return Ok(false);
         }
@@ -171,7 +171,7 @@ impl PGListener {
         log::trace!("PGListener connecting to PostgreSQL...");
         let (client, connection) = match tokio::time::timeout(connect_timeout, config.connect(tls.clone())).await {
             Ok(result) => result?,
-            Err(_) => return Err(PGDBError::ListenerConnectTimeout),
+            Err(_) => return Err(PgError::ListenerConnectTimeout),
         };
         let client = Arc::new(client);
 
@@ -194,7 +194,7 @@ impl PGListener {
 
     fn start_streaming_task(
         state: Arc<RwLock<ListenState>>,
-        mut connection: PGRawSocketConnection,
+        mut connection: PgRawSocketConnection,
         keep_alive: Arc<KeepAlive>,
     ) {
         // Raw poll result so the loop can tell a notification (dispatch) from a non-notification
@@ -232,7 +232,7 @@ impl PGListener {
     }
 
     pub fn new(
-        config: PGConfig,
+        config: PgConfig,
         tls: MakeRustlsConnect,
         connect_timeout: Duration,
         max_reconnect_backoff: Duration,
@@ -272,7 +272,7 @@ impl PGListener {
     }
 
     /// Registers `handler` for `channel`, opening the shared connection on first use.
-    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), PGDBError>
+    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), PgError>
     where
         F: Fn(Option<&str>) + Send + Sync + 'static,
     {
@@ -281,12 +281,12 @@ impl PGListener {
         // Re-check the stopped flag under the permit so a concurrent close() can't leave an
         // unmanaged connection behind.
         if !self.inner.keep_alive.is_running() {
-            return Err(PGDBError::ListenerClosed);
+            return Err(PgError::ListenerClosed);
         }
 
         let channel = channel_name(channel);
         if self.inner.state.read().await.handlers.contains_key(&channel) {
-            return Err(PGDBError::AlreadyListening(channel));
+            return Err(PgError::AlreadyListening(channel));
         }
 
         Self::connect_and_subscribe(
@@ -318,7 +318,7 @@ impl PGListener {
     }
 
     /// Removes `channel`'s handler and unsubscribes on the shared connection, if connected.
-    pub async fn unlisten(&self, channel: &str) -> Result<(), PGDBError> {
+    pub async fn unlisten(&self, channel: &str) -> Result<(), PgError> {
         let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
         let channel = channel_name(channel);
 
@@ -336,7 +336,7 @@ impl PGListener {
     }
 
     /// Removes all handlers and unsubscribes from every channel on the shared connection.
-    pub async fn unlisten_all(&self) -> Result<(), PGDBError> {
+    pub async fn unlisten_all(&self) -> Result<(), PgError> {
         let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
         let client = {
             let mut state = self.inner.state.write().await;
@@ -359,7 +359,7 @@ impl PGListener {
             .map(|row| row.get(0))
     }
 
-    async fn pg_listen(client: &PGRawClient, channel: &str) -> Result<(), PGDBError> {
+    async fn pg_listen(client: &PgRawClient, channel: &str) -> Result<(), PgError> {
         log::info!("PGListener start listening to channel {channel:?}...");
         client
             .execute(&format!(r#"LISTEN "{}""#, quote_ident(channel)), &[])
@@ -367,7 +367,7 @@ impl PGListener {
         Ok(())
     }
 
-    async fn pg_unlisten(client: &PGRawClient, channel: &str) -> Result<(), PGDBError> {
+    async fn pg_unlisten(client: &PgRawClient, channel: &str) -> Result<(), PgError> {
         log::info!("PGListener stop listening to channel {channel:?}...");
         client
             .execute(&format!(r#"UNLISTEN "{}""#, quote_ident(channel)), &[])

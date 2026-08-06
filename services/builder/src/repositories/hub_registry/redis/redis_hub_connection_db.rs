@@ -3,7 +3,7 @@ use crate::repositories::hub_registry::{
     redis::{RedisHubRegistryBuildError, HUB_REGISTRY_CHANGED_CHANNEL},
     HubConnectionDb, HubConnectionDbContext,
 };
-use shine_infra::db::redis::{RedisConnectionPool, RedisDBError, RedisPooledConnection};
+use shine_infra::db::redis::{RedisConnectionPool, RedisError, RedisPooledConnection};
 use uuid::Uuid;
 
 pub struct RedisHubConnectionDbContext<'c> {
@@ -26,7 +26,7 @@ pub struct RedisHubConnectionDb {
 
 impl RedisHubConnectionDb {
     pub async fn new(redis: &RedisConnectionPool, ttl_seconds: u64) -> Result<Self, RedisHubRegistryBuildError> {
-        let _client = redis.get().await.map_err(RedisDBError::PoolError)?;
+        let _client = redis.get().await.map_err(RedisError::PoolError)?;
 
         Ok(Self {
             client: redis.clone(),
@@ -41,7 +41,7 @@ impl RedisHubConnectionDb {
         F: Fn(Uuid) + Send + Sync + 'static,
     {
         let self_id = self.instance_id.to_string();
-        let client = self.client.get().await.map_err(RedisDBError::PoolError)?;
+        let client = self.client.get().await.map_err(RedisError::PoolError)?;
         client
             .listen(HUB_REGISTRY_CHANGED_CHANNEL, move |payload| {
                 let Some(payload) = payload else {
@@ -75,7 +75,7 @@ impl RedisHubConnectionDb {
 
 impl HubConnectionDb for RedisHubConnectionDb {
     async fn create_context(&self) -> Result<impl HubConnectionDbContext<'_>, HubError> {
-        let client = self.client.get().await.map_err(RedisDBError::PoolError)?;
+        let client = self.client.get().await.map_err(RedisError::PoolError)?;
 
         Ok(RedisHubConnectionDbContext {
             client,

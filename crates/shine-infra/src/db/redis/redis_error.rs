@@ -1,14 +1,15 @@
-use crate::web::responses::Problem;
+use crate::{
+    db::redis::redis_connection::{RedisConnectionError, RedisRawError},
+    web::responses::Problem,
+};
 use thiserror::Error as ThisError;
 
-use super::redis_connection::RedisConnectionError;
-
 #[derive(Debug, ThisError)]
-pub enum RedisDBError {
+pub enum RedisError {
     #[error("Failed to get pooled redis connection")]
     PoolError(#[source] RedisConnectionError),
     #[error(transparent)]
-    RedisError(#[from] redis::RedisError),
+    RawError(#[from] RedisRawError),
     #[error("The listener has been closed")]
     ListenerClosed,
     #[error("A handler is already registered for channel {0:?}")]
@@ -19,10 +20,10 @@ pub enum RedisDBError {
 ///
 /// Prefer mapping infra errors to service-level boxed internal errors and
 /// converting to `Problem` only at API boundaries.
-impl From<RedisDBError> for Problem {
-    fn from(err: RedisDBError) -> Self {
+impl From<RedisError> for Problem {
+    fn from(err: RedisError) -> Self {
         match err {
-            RedisDBError::PoolError(_) | RedisDBError::RedisError(_) => Problem::service_unavailable()
+            RedisError::PoolError(_) | RedisError::RawError(_) => Problem::service_unavailable()
                 .with_detail("redis-unavailable")
                 .with_sensitive_dbg(err),
             err => Problem::internal_error()

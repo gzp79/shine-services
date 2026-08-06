@@ -4,7 +4,7 @@ use crate::{
 };
 use postgres_from_row::FromRow;
 use shine_infra::{
-    db::postgres::{PGDBError, QueryBuilder},
+    db::postgres::{PgError, QueryBuilder},
     email::Email,
 };
 use tracing::instrument;
@@ -48,7 +48,7 @@ impl IdentitySearch for PgIdentityDbContext<'_> {
         builder.limit(count);
 
         let (stmt, params) = builder.build();
-        let rows = self.client.query(&stmt, &params).await.map_err(PGDBError::from)?;
+        let rows = self.client.query(&stmt, &params).await.map_err(PgError::from)?;
 
         let identities = rows
             .into_iter()

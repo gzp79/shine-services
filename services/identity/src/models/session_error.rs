@@ -1,4 +1,4 @@
-use shine_infra::{db::redis::RedisDBError, session::SessionKeyError, web::responses::Problem};
+use shine_infra::{db::redis::RedisError, session::SessionKeyError, web::responses::Problem};
 use std::{backtrace::Backtrace as StdBacktrace, error::Error as StdError, panic::Location};
 use thiserror::Error as ThisError;
 
@@ -37,11 +37,11 @@ impl SessionError {
     }
 }
 
-impl From<RedisDBError> for SessionError {
+impl From<RedisError> for SessionError {
     #[track_caller]
-    fn from(err: RedisDBError) -> Self {
+    fn from(err: RedisError) -> Self {
         match err {
-            RedisDBError::PoolError(_) | RedisDBError::RedisError(_) => Self::internal_error(err, true),
+            RedisError::PoolError(_) | RedisError::RawError(_) => Self::internal_error(err, true),
             _ => Self::internal_error(err, false),
         }
     }

@@ -8,7 +8,7 @@ use crate::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use shine_infra::{
     crypto::DataProtectionUtils,
-    db::postgres::{PGConnectionPool, PGDBError, PGPooledConnection},
+    db::postgres::{PgConnectionPool, PgError, PgPooledConnection},
 };
 use std::sync::Arc;
 
@@ -17,7 +17,7 @@ use super::{
 };
 
 pub struct PgIdentityDbContext<'c> {
-    pub(in crate::repositories::identity::pg) client: PGPooledConnection<'c>,
+    pub(in crate::repositories::identity::pg) client: PgPooledConnection<'c>,
     pub(in crate::repositories::identity::pg) email_protection: &'c DataProtectionUtils,
     pub(in crate::repositories::identity::pg) stmts_identities: PgIdentitiesStatements,
     pub(in crate::repositories::identity::pg) stmts_external_links: PgExternalLinksStatements,
@@ -29,7 +29,7 @@ pub struct PgIdentityDbContext<'c> {
 impl<'c> IdentityDbContext<'c> for PgIdentityDbContext<'c> {}
 
 struct Inner {
-    client: PGConnectionPool,
+    client: PgConnectionPool,
     email_protection: DataProtectionUtils,
     stmts_identities: PgIdentitiesStatements,
     stmts_external_links: PgExternalLinksStatements,
@@ -44,10 +44,10 @@ pub struct PgIdentityDb(Arc<Inner>);
 
 impl PgIdentityDb {
     pub async fn new(
-        postgres: &PGConnectionPool,
+        postgres: &PgConnectionPool,
         config: &EmailProtectionConfig,
     ) -> Result<Self, PgIdentityBuildError> {
-        let client = postgres.get().await.map_err(PGDBError::PoolError)?;
+        let client = postgres.get().await.map_err(PgError::PoolError)?;
 
         let encryption_key = B64.decode(config.encryption_key.as_bytes())?;
         let hash_key = B64.decode(config.hash_key.as_bytes())?;
@@ -67,7 +67,7 @@ impl PgIdentityDb {
 
 impl IdentityDb for PgIdentityDb {
     async fn create_context(&self) -> Result<impl IdentityDbContext<'_>, IdentityError> {
-        let client = self.0.client.get().await.map_err(PGDBError::PoolError)?;
+        let client = self.0.client.get().await.map_err(PgError::PoolError)?;
         Ok(PgIdentityDbContext {
             client,
             email_protection: &self.0.email_protection,

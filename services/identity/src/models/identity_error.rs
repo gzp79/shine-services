@@ -1,6 +1,6 @@
 use shine_infra::{
     crypto::{DataProtectionError, IdEncoderError},
-    db::postgres::PGDBError,
+    db::postgres::PgError,
     web::responses::Problem,
 };
 use std::{backtrace::Backtrace as StdBacktrace, error::Error as StdError, panic::Location};
@@ -65,11 +65,11 @@ impl IdentityError {
     }
 }
 
-impl From<PGDBError> for IdentityError {
+impl From<PgError> for IdentityError {
     #[track_caller]
-    fn from(err: PGDBError) -> Self {
+    fn from(err: PgError) -> Self {
         match err {
-            PGDBError::CreatePoolError(_) | PGDBError::PoolError(_) => Self::internal_error(err, true),
+            PgError::CreatePoolError(_) | PgError::PoolError(_) => Self::internal_error(err, true),
             _ => Self::internal_error(err, false),
         }
     }

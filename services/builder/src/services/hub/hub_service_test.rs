@@ -31,7 +31,7 @@ async fn create_test_hub_service() -> Option<(HubService, RedisHubConnectionDb)>
         return None;
     };
 
-    let redis_pool = db::create_redis_pool(redis_cns.as_str()).await.unwrap();
+    let redis_pool = db::redis::create_redis_pool(redis_cns.as_str()).await.unwrap();
     let hub_registry = RedisHubConnectionDb::new(&redis_pool, 120).await.unwrap();
 
     // URL_SAFE_NO_PAD: 86 'A' chars decode to 64 zero bytes, a valid cookie key for tests.

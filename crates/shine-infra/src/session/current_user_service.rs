@@ -59,7 +59,7 @@ impl CurrentUserService {
     }
 
     pub async fn from_config(config: &ServiceConfig) -> Result<Self, UserSessionError> {
-        let redis = crate::db::create_redis_pool(config.session_redis_cns.as_str())
+        let redis = crate::db::redis::create_redis_pool(config.session_redis_cns.as_str())
             .await
             .map_err(UserSessionError::RedisPoolError)?;
         Self::new(None, &config.session_secret, "", config.session_ttl, redis)

@@ -1,11 +1,11 @@
 use crate::{
-    db::redis::RedisDBError,
+    db::redis::RedisError,
     sync::{ExponentialBackoff, KeepAlive},
 };
 use futures::StreamExt;
 use redis::{
     aio::{PubSubSink, PubSubStream},
-    Client, ErrorKind, RedisError,
+    Client, ErrorKind, RedisError as RedisRawError,
 };
 use std::{collections::HashMap, sync::Arc};
 use tokio::{
@@ -257,7 +257,7 @@ impl RedisListener {
     }
 
     /// Registers `handler` for `channel`, opening the shared connection on first use.
-    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), RedisDBError>
+    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), RedisError>
     where
         F: Fn(Option<&str>) + Send + Sync + 'static,
     {
@@ -266,10 +266,10 @@ impl RedisListener {
         // Re-check the stopped flag under the permit so a concurrent close() can't leave an
         // unmanaged connection behind.
         if !self.inner.keep_alive.is_running() {
-            return Err(RedisDBError::ListenerClosed);
+            return Err(RedisError::ListenerClosed);
         }
         if self.inner.state.read().await.handlers.contains_key(channel) {
-            return Err(RedisDBError::AlreadyListening(channel.to_string()));
+            return Err(RedisError::AlreadyListening(channel.to_string()));
         }
 
         Self::connect_and_subscribe(
@@ -298,7 +298,7 @@ impl RedisListener {
     }
 
     /// Removes `channel`'s handler and unsubscribes on the shared connection, if connected.
-    pub async fn unlisten(&self, channel: &str) -> Result<(), RedisDBError> {
+    pub async fn unlisten(&self, channel: &str) -> Result<(), RedisError> {
         let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
         let sink = {
             let mut state = self.inner.state.write().await;
@@ -315,7 +315,7 @@ impl RedisListener {
     }
 
     /// Removes all handlers and unsubscribes from every channel on the shared connection.
-    pub async fn unlisten_all(&self) -> Result<(), RedisDBError> {
+    pub async fn unlisten_all(&self) -> Result<(), RedisError> {
         let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
         let (channels, sink) = {
             let mut state = self.inner.state.write().await;
@@ -343,12 +343,15 @@ impl RedisListener {
 /// Bounds a pub/sub network op; a timeout maps to an `Io` error so the keep-alive task treats it as
 /// a lost connection and retries, and `listen`/`unlisten`/`close` never block on a stalled socket
 /// for longer than this.
-async fn with_timeout<F, T>(timeout: Duration, fut: F) -> Result<T, RedisError>
+async fn with_timeout<F, T>(timeout: Duration, fut: F) -> Result<T, RedisRawError>
 where
-    F: std::future::Future<Output = Result<T, RedisError>>,
+    F: std::future::Future<Output = Result<T, RedisRawError>>,
 {
     match tokio::time::timeout(timeout, fut).await {
         Ok(result) => result,
-        Err(_) => Err(RedisError::from((ErrorKind::Io, "Redis pub/sub operation timed out"))),
+        Err(_) => Err(RedisRawError::from((
+            ErrorKind::Io,
+            "Redis pub/sub operation timed out",
+        ))),
     }
 }
