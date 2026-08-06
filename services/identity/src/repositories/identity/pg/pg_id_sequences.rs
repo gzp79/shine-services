@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use shine_infra::{
-    db::{postgres::PGClient, DBError},
+    db::{postgres::PGClient, PGDBError},
     pg_query,
 };
 
@@ -26,7 +26,7 @@ pub struct PgIdSequencesStatements {
 impl PgIdSequencesStatements {
     pub async fn new(client: &PGClient) -> Result<Self, PgIdentityBuildError> {
         Ok(Self {
-            stmt_next_id: GetNextId::new(client).await.map_err(DBError::from)?,
+            stmt_next_id: GetNextId::new(client).await.map_err(PGDBError::from)?,
         })
     }
 }
@@ -38,7 +38,7 @@ impl IdSequences for PgIdentityDbContext<'_> {
             .stmt_next_id
             .query_one(&self.client)
             .await
-            .map_err(DBError::from)?;
+            .map_err(PGDBError::from)?;
         Ok(id as u64)
     }
 }

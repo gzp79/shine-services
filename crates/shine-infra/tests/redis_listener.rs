@@ -1,7 +1,7 @@
 use redis::{aio::ConnectionLike, AsyncCommands, Client};
 use shine_infra::db::{
     create_redis_pool,
-    redis::{RedisListener, RedisListenerError},
+    redis::{RedisDBError, RedisListener},
 };
 use shine_test::test;
 use std::{collections::HashSet, env, sync::Arc, time::Duration};
@@ -375,8 +375,8 @@ async fn test_redis_listener_listen_after_close_is_rejected() {
 
     let err = listener.listen("shine-test-after-close", |_| {}).await.unwrap_err();
     assert!(
-        matches!(err, RedisListenerError::Closed),
-        "expected RedisListenerError::Closed, got {err:?}"
+        matches!(err, RedisDBError::ListenerClosed),
+        "expected RedisDBError::ListenerClosed, got {err:?}"
     );
 }
 
@@ -400,7 +400,7 @@ async fn test_redis_listener_listen_times_out_when_unreachable() {
     .expect("listen() hung past the connect timeout")
     .unwrap_err();
     assert!(
-        matches!(err, RedisListenerError::Redis(_)),
+        matches!(err, RedisDBError::RedisError(_)),
         "expected a Redis error from the timed-out connect, got {err:?}"
     );
     assert!(
@@ -427,8 +427,8 @@ async fn test_redis_listener_duplicate_listen_is_rejected() {
             conn.listen("shine-test-duplicate", |_| {}).await.unwrap();
             let err = conn.listen("shine-test-duplicate", |_| {}).await.unwrap_err();
             assert!(
-                matches!(err, RedisListenerError::AlreadyListening(ref channel) if channel == "shine-test-duplicate"),
-                "expected RedisListenerError::AlreadyListening, got {err:?}"
+                matches!(err, RedisDBError::AlreadyListening(ref channel) if channel == "shine-test-duplicate"),
+                "expected RedisDBError::AlreadyListening, got {err:?}"
             );
         }
 

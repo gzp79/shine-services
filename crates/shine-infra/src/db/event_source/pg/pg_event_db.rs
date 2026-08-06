@@ -3,8 +3,7 @@ use crate::db::{
         pg::{migration_001, PgAggregateStoreStatement, PgEventStoreStatement},
         Event, EventDb, EventDbContext, EventNotification, EventSourceError, StreamId,
     },
-    postgres::{PGConnectionPool, PGPooledConnection},
-    DBError,
+    postgres::{PGConnectionPool, PGDBError, PGPooledConnection},
 };
 use serde::Deserialize;
 use std::marker::PhantomData;
@@ -44,7 +43,7 @@ where
     A: StreamId,
 {
     pub async fn new(postgres: &PGConnectionPool) -> Result<Self, EventSourceError> {
-        let client = postgres.get().await.map_err(DBError::PGPoolError)?;
+        let client = postgres.get().await.map_err(PGDBError::PoolError)?;
 
         Ok(Self {
             client: postgres.clone(),
@@ -65,7 +64,7 @@ where
     A: StreamId,
 {
     async fn create_context(&self) -> Result<impl EventDbContext<'_, E, A>, EventSourceError> {
-        let client = self.client.get().await.map_err(DBError::PGPoolError)?;
+        let client = self.client.get().await.map_err(PGDBError::PoolError)?;
         Ok(PgEventDbContext {
             client,
             stmts_store: self.stmts_store.clone(),
@@ -122,7 +121,7 @@ where
             }
         }
 
-        let client = self.client.get().await.map_err(DBError::PGPoolError)?;
+        let client = self.client.get().await.map_err(PGDBError::PoolError)?;
         let channel = format!("es_notification_{}", E::NAME);
         log::info!("Listening to event notifications for {channel}");
         client
@@ -146,7 +145,7 @@ where
     }
 
     async fn unlisten_to_stream_updates(&self) -> Result<(), EventSourceError> {
-        let client = self.client.get().await.map_err(DBError::PGPoolError)?;
+        let client = self.client.get().await.map_err(PGDBError::PoolError)?;
         client.unlisten(&format!("es_notification_{}", E::NAME)).await?;
         Ok(())
     }

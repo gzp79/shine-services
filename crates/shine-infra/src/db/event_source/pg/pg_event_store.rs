@@ -1,8 +1,7 @@
 use crate::{
     db::{
         event_source::{pg::PgEventDbContext, Event, EventSourceError, EventStore, StoredEvent, StreamId},
-        postgres::{PGClient, PGErrorChecks},
-        DBError,
+        postgres::{PGClient, PGDBError, PGErrorChecks},
     },
     pg_query,
 };
@@ -136,25 +135,25 @@ where
         Ok(Self {
             create_stream: CreateStream::new_with_process(client, table_name_process)
                 .await
-                .map_err(DBError::from)?,
+                .map_err(PGDBError::from)?,
             delete_stream: DeleteStream::new_with_process(client, table_name_process)
                 .await
-                .map_err(DBError::from)?,
+                .map_err(PGDBError::from)?,
             get_version: GetStreamVersion::new_with_process(client, table_name_process)
                 .await
-                .map_err(DBError::from)?,
+                .map_err(PGDBError::from)?,
             update_version: UpdateStreamVersion::new_with_process(client, table_name_process)
                 .await
-                .map_err(DBError::from)?,
+                .map_err(PGDBError::from)?,
             store_event: StoreEvent::new_with_process(client, table_name_process)
                 .await
-                .map_err(DBError::from)?,
+                .map_err(PGDBError::from)?,
             store_next_event: StoreNextEvent::new_with_process(client, table_name_process)
                 .await
-                .map_err(DBError::from)?,
+                .map_err(PGDBError::from)?,
             get_events: GetEvents::new_with_process(client, table_name_process)
                 .await
-                .map_err(DBError::from)?,
+                .map_err(PGDBError::from)?,
 
             _ph: PhantomData,
         })
@@ -182,7 +181,7 @@ where
             ) {
                 Err(EventSourceError::Conflict)
             } else {
-                Err(DBError::from(err).into())
+                Err(PGDBError::from(err).into())
             }
         } else {
             Ok(())
@@ -195,7 +194,7 @@ where
             .get_version
             .query_opt(&self.client, &aggregate_id.to_string().as_str())
             .await
-            .map_err(DBError::from)?
+            .map_err(PGDBError::from)?
         {
             Some(v) => Ok(Some(v as usize)),
             None => Ok(None),
@@ -208,7 +207,7 @@ where
             .delete_stream
             .execute(&self.client, &aggregate_id.to_string().as_str())
             .await
-            .map_err(DBError::from)?
+            .map_err(PGDBError::from)?
             != 1
         {
             Err(EventSourceError::StreamNotFound)
@@ -230,7 +229,7 @@ where
             //  - no need for more strict level as the version check ensures failure on concurrent updates
             .transaction(Some(IsolationLevel::ReadCommitted))
             .await
-            .map_err(DBError::from)?;
+            .map_err(PGDBError::from)?;
 
         // Update the header version with a check on the expected version and insert all the events.
 
@@ -251,7 +250,7 @@ where
                 assert_eq!(version, new_version as i32);
             }
             Ok(None) => {
-                transaction.rollback().await.map_err(DBError::from)?;
+                transaction.rollback().await.map_err(PGDBError::from)?;
                 // Check of the stream exists and return an error accordingly
                 return match self.get_stream_version(aggregate_id).await? {
                     Some(_) => Err(EventSourceError::Conflict),
@@ -259,8 +258,8 @@ where
                 };
             }
             Err(err) => {
-                transaction.rollback().await.map_err(DBError::from)?;
-                return Err(DBError::from(err).into());
+                transaction.rollback().await.map_err(PGDBError::from)?;
+                return Err(PGDBError::from(err).into());
             }
         }
 
@@ -282,16 +281,16 @@ where
                     &format!("es_events_{}", <E as Event>::NAME),
                     &format!("es_events_{}_pkey", <E as Event>::NAME),
                 ) {
-                    transaction.rollback().await.map_err(DBError::from)?;
+                    transaction.rollback().await.map_err(PGDBError::from)?;
                     return Err(EventSourceError::Conflict);
                 } else {
-                    transaction.rollback().await.map_err(DBError::from)?;
-                    return Err(DBError::from(err).into());
+                    transaction.rollback().await.map_err(PGDBError::from)?;
+                    return Err(PGDBError::from(err).into());
                 }
             }
         }
 
-        transaction.commit().await.map_err(DBError::from)?;
+        transaction.commit().await.map_err(PGDBError::from)?;
         Ok(new_version)
     }
 
@@ -313,7 +312,7 @@ where
                     &data.as_str(),
                 )
                 .await
-                .map_err(DBError::from)?
+                .map_err(PGDBError::from)?
                 .expect("Failed to store event without a DB error");
             version = Some(new_version as usize);
         }
@@ -327,7 +326,7 @@ where
                 .get_version
                 .query_opt(&self.client, &aggregate_id.to_string().as_str())
                 .await
-                .map_err(DBError::from)?
+                .map_err(PGDBError::from)?
             {
                 Some(version) => Ok(version as usize),
                 None => Ok(0),
@@ -355,7 +354,7 @@ where
             .get_events
             .query(&self.client, &aggregate_id.to_string().as_str(), &fv, &tv)
             .await
-            .map_err(DBError::from)?
+            .map_err(PGDBError::from)?
             .into_iter()
             .map(|row| row.try_into_stored_event())
             .collect::<Result<Vec<_>, _>>()?;

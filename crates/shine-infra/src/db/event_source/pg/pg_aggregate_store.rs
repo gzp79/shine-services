@@ -4,8 +4,7 @@ use crate::{
             pg::PgEventDbContext, Aggregate, AggregateInfo, AggregateStore, Event, EventSourceError, EventStore,
             StoredAggregate, StreamId,
         },
-        postgres::{PGClient, PGErrorChecks},
-        DBError,
+        postgres::{PGClient, PGDBError, PGErrorChecks},
     },
     pg_query,
 };
@@ -101,16 +100,16 @@ where
         Ok(Self {
             store_snapshot: StoreSnapshot::new_with_process(client, table_name_process)
                 .await
-                .map_err(DBError::from)?,
+                .map_err(PGDBError::from)?,
             get_snapshot: GetSnapshot::new_with_process(client, table_name_process)
                 .await
-                .map_err(DBError::from)?,
+                .map_err(PGDBError::from)?,
             list_snapshots: ListSnapshots::new_with_process(client, table_name_process)
                 .await
-                .map_err(DBError::from)?,
+                .map_err(PGDBError::from)?,
             prune_snapshot: PruneSnapshot::new_with_process(client, table_name_process)
                 .await
-                .map_err(DBError::from)?,
+                .map_err(PGDBError::from)?,
             _ph: PhantomData,
         })
     }
@@ -184,7 +183,7 @@ where
                     Err(EventSourceError::InvalidAggregateVersion(start_version, version))
                 } else {
                     log::info!("Insert snapshot error: {err:#?}");
-                    Err(DBError::from(err).into())
+                    Err(PGDBError::from(err).into())
                 }
             }
         }
@@ -213,7 +212,7 @@ where
                 &(version.map(|v| v as i32)),
             )
             .await
-            .map_err(DBError::from)?
+            .map_err(PGDBError::from)?
         {
             Ok(Some(StoredAggregate::from_json(
                 stream_id.clone(),
@@ -242,7 +241,7 @@ where
             .list_snapshots
             .query(&self.client, &stream_id.to_string().as_str(), &aggregate_id)
             .await
-            .map_err(DBError::from)?;
+            .map_err(PGDBError::from)?;
 
         let infos = rows
             .into_iter()
@@ -270,7 +269,7 @@ where
             .prune_snapshot
             .execute(&self.client, &id.as_str(), &aggregate_id, &(version as i32))
             .await
-            .map_err(DBError::from)?;
+            .map_err(PGDBError::from)?;
 
         Ok(())
     }

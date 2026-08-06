@@ -1,8 +1,7 @@
 use rustls::crypto::ring;
 use shine_infra::db::{
     create_postgres_pool,
-    postgres::{PGConfig, PGListener},
-    DBError,
+    postgres::{PGConfig, PGDBError, PGListener},
 };
 use shine_test::test;
 use std::{collections::HashSet, env, str::FromStr, sync::Arc, time::Duration};
@@ -643,8 +642,8 @@ async fn test_pg_listener_listen_after_close_is_rejected() {
 
     let err = listener.listen("shine-test-after-close", |_| {}).await.unwrap_err();
     assert!(
-        matches!(err, DBError::ListenerClosed),
-        "expected DBError::ListenerClosed, got {err:?}"
+        matches!(err, PGDBError::ListenerClosed),
+        "expected PGDBError::ListenerClosed, got {err:?}"
     );
 }
 
@@ -676,7 +675,7 @@ async fn test_pg_listener_listen_times_out_when_unreachable() {
     .expect("listen() hung past the connect timeout")
     .unwrap_err();
     assert!(
-        matches!(err, DBError::ListenerConnectTimeout | DBError::PGError(_)),
+        matches!(err, PGDBError::ListenerConnectTimeout | PGDBError::PGError(_)),
         "expected a connect timeout error, got {err:?}"
     );
     assert!(
@@ -705,8 +704,8 @@ async fn test_pg_listener_duplicate_listen_is_rejected() {
             conn.listen("shine-test-duplicate", |_| {}).await.unwrap();
             let err = conn.listen("shine-test-duplicate", |_| {}).await.unwrap_err();
             assert!(
-                matches!(err, DBError::AlreadyListening(ref channel) if channel == "shine-test-duplicate"),
-                "expected DBError::AlreadyListening, got {err:?}"
+                matches!(err, PGDBError::AlreadyListening(ref channel) if channel == "shine-test-duplicate"),
+                "expected PGDBError::AlreadyListening, got {err:?}"
             );
         }
 

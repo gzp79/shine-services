@@ -1,11 +1,13 @@
-use crate::sync::{ExponentialBackoff, KeepAlive};
+use crate::{
+    db::redis::RedisDBError,
+    sync::{ExponentialBackoff, KeepAlive},
+};
 use futures::StreamExt;
 use redis::{
     aio::{PubSubSink, PubSubStream},
     Client, ErrorKind, RedisError,
 };
 use std::{collections::HashMap, sync::Arc};
-use thiserror::Error as ThisError;
 use tokio::{
     sync::{RwLock, Semaphore},
     task::JoinHandle,
@@ -16,16 +18,6 @@ type BoxedHandler = Box<dyn Fn(Option<&str>) + Send + Sync + 'static>;
 
 /// A handler blocking the dispatch task longer than this is logged as a warning.
 const SLOW_HANDLER: Duration = Duration::from_millis(100);
-
-#[derive(Debug, ThisError)]
-pub enum RedisListenerError {
-    #[error(transparent)]
-    Redis(#[from] RedisError),
-    #[error("The listener has been closed")]
-    Closed,
-    #[error("A handler is already registered for channel {0:?}")]
-    AlreadyListening(String),
-}
 
 /// The dedicated pub/sub connection — a `PubSubSink` (subscribe half) plus the streaming task
 /// draining its `PubSubStream` — and the channel→handler map it serves.
@@ -265,7 +257,7 @@ impl RedisListener {
     }
 
     /// Registers `handler` for `channel`, opening the shared connection on first use.
-    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), RedisListenerError>
+    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), RedisDBError>
     where
         F: Fn(Option<&str>) + Send + Sync + 'static,
     {
@@ -274,10 +266,10 @@ impl RedisListener {
         // Re-check the stopped flag under the permit so a concurrent close() can't leave an
         // unmanaged connection behind.
         if !self.inner.keep_alive.is_running() {
-            return Err(RedisListenerError::Closed);
+            return Err(RedisDBError::ListenerClosed);
         }
         if self.inner.state.read().await.handlers.contains_key(channel) {
-            return Err(RedisListenerError::AlreadyListening(channel.to_string()));
+            return Err(RedisDBError::AlreadyListening(channel.to_string()));
         }
 
         Self::connect_and_subscribe(
@@ -306,7 +298,7 @@ impl RedisListener {
     }
 
     /// Removes `channel`'s handler and unsubscribes on the shared connection, if connected.
-    pub async fn unlisten(&self, channel: &str) -> Result<(), RedisListenerError> {
+    pub async fn unlisten(&self, channel: &str) -> Result<(), RedisDBError> {
         let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
         let sink = {
             let mut state = self.inner.state.write().await;
@@ -323,7 +315,7 @@ impl RedisListener {
     }
 
     /// Removes all handlers and unsubscribes from every channel on the shared connection.
-    pub async fn unlisten_all(&self) -> Result<(), RedisListenerError> {
+    pub async fn unlisten_all(&self) -> Result<(), RedisDBError> {
         let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
         let (channels, sink) = {
             let mut state = self.inner.state.write().await;

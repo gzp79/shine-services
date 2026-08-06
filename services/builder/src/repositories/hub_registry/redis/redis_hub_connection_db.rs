@@ -3,8 +3,8 @@ use crate::repositories::hub_registry::{
     HubConnectionDb, HubConnectionDbContext, HubConnectionError,
 };
 use shine_infra::db::{
-    redis::{RedisConnectionPool, RedisListenerError, RedisPooledConnection},
-    DBError,
+    redis::{RedisConnectionPool, RedisPooledConnection},
+    RedisDBError,
 };
 use uuid::Uuid;
 
@@ -28,7 +28,7 @@ pub struct RedisHubConnectionDb {
 
 impl RedisHubConnectionDb {
     pub async fn new(redis: &RedisConnectionPool, ttl_seconds: u64) -> Result<Self, RedisHubRegistryBuildError> {
-        let _client = redis.get().await.map_err(DBError::RedisPoolError)?;
+        let _client = redis.get().await.map_err(RedisDBError::PoolError)?;
 
         Ok(Self {
             client: redis.clone(),
@@ -43,7 +43,7 @@ impl RedisHubConnectionDb {
         F: Fn(Uuid) + Send + Sync + 'static,
     {
         let self_id = self.instance_id.to_string();
-        let client = self.client.get().await.map_err(DBError::RedisPoolError)?;
+        let client = self.client.get().await.map_err(RedisDBError::PoolError)?;
         client
             .listen(HUB_REGISTRY_CHANGED_CHANNEL, move |payload| {
                 let Some(payload) = payload else {
@@ -70,19 +70,14 @@ impl RedisHubConnectionDb {
                     Err(err) => log::error!("Failed to parse hub registry user id {raw_user_id:?}: {err:#?}"),
                 }
             })
-            .await
-            .map_err(|err| match err {
-                RedisListenerError::Redis(err) => DBError::RedisError(err),
-                RedisListenerError::Closed => DBError::ListenerClosed,
-                RedisListenerError::AlreadyListening(channel) => DBError::AlreadyListening(channel),
-            })?;
+            .await?;
         Ok(())
     }
 }
 
 impl HubConnectionDb for RedisHubConnectionDb {
     async fn create_context(&self) -> Result<impl HubConnectionDbContext<'_>, HubConnectionError> {
-        let client = self.client.get().await.map_err(DBError::RedisPoolError)?;
+        let client = self.client.get().await.map_err(RedisDBError::PoolError)?;
 
         Ok(RedisHubConnectionDbContext {
             client,

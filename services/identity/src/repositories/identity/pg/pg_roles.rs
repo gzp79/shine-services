@@ -9,7 +9,7 @@ use postgres_from_row::FromRow;
 use shine_infra::{
     db::{
         postgres::{PGClient, PGErrorChecks},
-        DBError,
+        PGDBError,
     },
     pg_query,
 };
@@ -64,9 +64,9 @@ pub struct PgRolesStatements {
 impl PgRolesStatements {
     pub async fn new(client: &PGClient) -> Result<Self, PgIdentityBuildError> {
         Ok(Self {
-            add: AddUserRole::new(client).await.map_err(DBError::from)?,
-            get: GetUserRoles::new(client).await.map_err(DBError::from)?,
-            delete: DeleteUserRole::new(client).await.map_err(DBError::from)?,
+            add: AddUserRole::new(client).await.map_err(PGDBError::from)?,
+            get: GetUserRoles::new(client).await.map_err(PGDBError::from)?,
+            delete: DeleteUserRole::new(client).await.map_err(PGDBError::from)?,
         })
     }
 }
@@ -81,7 +81,7 @@ impl Roles for PgIdentityDbContext<'_> {
                 // user not found, deleted meanwhile
                 return Ok(None);
             }
-            Err(err) => return Err(DBError::from(err).into()),
+            Err(err) => return Err(PGDBError::from(err).into()),
         };
         self.get_roles(user_id).await
     }
@@ -93,7 +93,7 @@ impl Roles for PgIdentityDbContext<'_> {
             .get
             .query_opt(&self.client, &user_id)
             .await
-            .map_err(DBError::from)?;
+            .map_err(PGDBError::from)?;
         if let Some(roles) = row {
             Ok(Some(roles.roles))
         } else {
@@ -107,7 +107,7 @@ impl Roles for PgIdentityDbContext<'_> {
             .delete
             .execute(&self.client, &user_id, &role)
             .await
-            .map_err(DBError::from)?;
+            .map_err(PGDBError::from)?;
 
         self.get_roles(user_id).await
     }

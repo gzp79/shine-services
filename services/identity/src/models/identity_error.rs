@@ -1,6 +1,6 @@
 use shine_infra::{
     crypto::{DataProtectionError, IdEncoderError},
-    db::DBError,
+    db::PGDBError,
     web::responses::Problem,
 };
 use thiserror::Error as ThisError;
@@ -41,7 +41,7 @@ pub enum IdentityError {
     #[error(transparent)]
     IdEncoder(#[from] IdEncoderError),
     #[error(transparent)]
-    DBError(#[from] DBError),
+    DBError(#[from] PGDBError),
     #[error(transparent)]
     DataProtectionError(#[from] DataProtectionError),
 }

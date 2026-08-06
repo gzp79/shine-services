@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use shine_infra::db::{postgres::PGConnectionPool, redis::RedisConnectionPool, DBError};
+use shine_infra::db::{postgres::PGConnectionPool, redis::RedisConnectionPool, PGDBError, RedisDBError};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,23 +21,23 @@ mod embedded {
     embed_migrations!("./sql_migrations");
 }
 
-pub async fn create_postgres_pool(config: &DBConfig) -> Result<PGConnectionPool, DBError> {
+pub async fn create_postgres_pool(config: &DBConfig) -> Result<PGConnectionPool, PGDBError> {
     let postgres = shine_infra::db::create_postgres_pool(config.sql_cns.as_str())
         .await
-        .map_err(DBError::PGCreatePoolError)?;
+        .map_err(PGDBError::CreatePoolError)?;
 
     migrate_postgres(&postgres).await?;
     Ok(postgres)
 }
 
-pub async fn create_redis_pool(config: &DBConfig) -> Result<RedisConnectionPool, DBError> {
+pub async fn create_redis_pool(config: &DBConfig) -> Result<RedisConnectionPool, RedisDBError> {
     shine_infra::db::create_redis_pool(config.redis_cns.as_str())
         .await
-        .map_err(DBError::RedisPoolError)
+        .map_err(RedisDBError::PoolError)
 }
 
-async fn migrate_postgres(postgres: &PGConnectionPool) -> Result<(), DBError> {
-    let mut backend = postgres.get().await.map_err(DBError::PGPoolError)?;
+async fn migrate_postgres(postgres: &PGConnectionPool) -> Result<(), PGDBError> {
+    let mut backend = postgres.get().await.map_err(PGDBError::PoolError)?;
     log::debug!("migrations: {:#?}", embedded::migrations::runner().get_migrations());
     let client = &mut **backend;
     embedded::migrations::runner().run_async(client).await?;

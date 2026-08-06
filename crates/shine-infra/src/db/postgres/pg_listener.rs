@@ -1,5 +1,5 @@
 use crate::{
-    db::DBError,
+    db::postgres::PGDBError,
     sync::{ExponentialBackoff, KeepAlive},
 };
 use futures::{stream, StreamExt};
@@ -161,7 +161,7 @@ impl PGListener {
         connect_timeout: Duration,
         state: &Arc<RwLock<ListenState>>,
         keep_alive: &Arc<KeepAlive>,
-    ) -> Result<bool, DBError> {
+    ) -> Result<bool, PGDBError> {
         if state.read().await.client.is_some() {
             return Ok(false);
         }
@@ -171,7 +171,7 @@ impl PGListener {
         log::trace!("PGListener connecting to PostgreSQL...");
         let (client, connection) = match tokio::time::timeout(connect_timeout, config.connect(tls.clone())).await {
             Ok(result) => result?,
-            Err(_) => return Err(DBError::ListenerConnectTimeout),
+            Err(_) => return Err(PGDBError::ListenerConnectTimeout),
         };
         let client = Arc::new(client);
 
@@ -272,7 +272,7 @@ impl PGListener {
     }
 
     /// Registers `handler` for `channel`, opening the shared connection on first use.
-    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), DBError>
+    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), PGDBError>
     where
         F: Fn(Option<&str>) + Send + Sync + 'static,
     {
@@ -281,12 +281,12 @@ impl PGListener {
         // Re-check the stopped flag under the permit so a concurrent close() can't leave an
         // unmanaged connection behind.
         if !self.inner.keep_alive.is_running() {
-            return Err(DBError::ListenerClosed);
+            return Err(PGDBError::ListenerClosed);
         }
 
         let channel = channel_name(channel);
         if self.inner.state.read().await.handlers.contains_key(&channel) {
-            return Err(DBError::AlreadyListening(channel));
+            return Err(PGDBError::AlreadyListening(channel));
         }
 
         Self::connect_and_subscribe(
@@ -318,7 +318,7 @@ impl PGListener {
     }
 
     /// Removes `channel`'s handler and unsubscribes on the shared connection, if connected.
-    pub async fn unlisten(&self, channel: &str) -> Result<(), DBError> {
+    pub async fn unlisten(&self, channel: &str) -> Result<(), PGDBError> {
         let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
         let channel = channel_name(channel);
 
@@ -336,7 +336,7 @@ impl PGListener {
     }
 
     /// Removes all handlers and unsubscribes from every channel on the shared connection.
-    pub async fn unlisten_all(&self) -> Result<(), DBError> {
+    pub async fn unlisten_all(&self) -> Result<(), PGDBError> {
         let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
         let client = {
             let mut state = self.inner.state.write().await;
@@ -359,7 +359,7 @@ impl PGListener {
             .map(|row| row.get(0))
     }
 
-    async fn pg_listen(client: &PGRawClient, channel: &str) -> Result<(), DBError> {
+    async fn pg_listen(client: &PGRawClient, channel: &str) -> Result<(), PGDBError> {
         log::info!("PGListener start listening to channel {channel:?}...");
         client
             .execute(&format!(r#"LISTEN "{}""#, quote_ident(channel)), &[])
@@ -367,7 +367,7 @@ impl PGListener {
         Ok(())
     }
 
-    async fn pg_unlisten(client: &PGRawClient, channel: &str) -> Result<(), DBError> {
+    async fn pg_unlisten(client: &PGRawClient, channel: &str) -> Result<(), PGDBError> {
         log::info!("PGListener stop listening to channel {channel:?}...");
         client
             .execute(&format!(r#"UNLISTEN "{}""#, quote_ident(channel)), &[])

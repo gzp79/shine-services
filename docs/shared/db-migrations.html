@@ -85,7 +85,7 @@
 </div>
 
 <p>
-  If any migration fails, <code>DBPool::new</code> returns <code>DBError::SqlMigration</code>, which
+  If any migration fails, <code>DBPool::new</code> returns <code>PGDBError::SqlMigration</code>, which
   propagates to a service startup failure. There is no partial-start: either all migrations succeed
   or the service refuses to run.
 </p>
@@ -155,7 +155,7 @@
   <tr><td><code>services/identity/src/repositories/db.rs</code></td><td>Embeds migrations and runs them inside <code>DBPool::new</code>.</td></tr>
   <tr><td><code>services/identity/sql_migrations/</code></td><td>Identity service SQL migration files (<code>V1</code>–<code>V6</code>).</td></tr>
   <tr><td><code>services/builder/sql_migrations/</code></td><td>Builder service SQL migration files (<code>V1</code>).</td></tr>
-  <tr><td><code>crates/shine-infra/src/db/db_error.rs</code></td><td><code>DBError::SqlMigration</code> variant wrapping <code>refinery::Error</code>.</td></tr>
+  <tr><td><code>crates/shine-infra/src/db/db_error.rs</code></td><td><code>PGDBError::SqlMigration</code> variant wrapping <code>refinery::Error</code>.</td></tr>
   <tr><td><code>crates/Cargo.toml</code></td><td>Workspace dependency: <code>refinery = { version = "0.9", features = ["tokio-postgres"] }</code>.</td></tr>
 </table>
 

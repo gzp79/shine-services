@@ -7,8 +7,7 @@ use shine_infra::db::{
         pg::PgEventDb, Aggregate, AggregateInfo, AggregateStore, Event, EventDb, EventNotification, EventSourceError,
         EventStore, Snapshot,
     },
-    postgres::PGConnectionPool,
-    DBError,
+    postgres::{PGConnectionPool, PGDBError},
 };
 use shine_test::test;
 use std::{
@@ -19,11 +18,11 @@ use std::{
 use tokio::sync::{Barrier, Mutex, OnceCell};
 use uuid::Uuid;
 
-pub async fn create_pg_pool(cns: &str) -> Result<PGConnectionPool, DBError> {
+pub async fn create_pg_pool(cns: &str) -> Result<PGConnectionPool, PGDBError> {
     log::info!("Creating postgres pool...");
     let postgres = db::create_postgres_pool(cns)
         .await
-        .map_err(DBError::PGCreatePoolError)?;
+        .map_err(PGDBError::CreatePoolError)?;
     Ok(postgres)
 }
 

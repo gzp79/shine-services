@@ -1,6 +1,10 @@
-use crate::db::cacerts::{get_root_cert_store, CertError};
-use crate::db::DBError;
-use crate::health::StatusProvider;
+use crate::{
+    db::{
+        cacerts::{get_root_cert_store, CertError},
+        postgres::PGDBError,
+    },
+    health::StatusProvider,
+};
 use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use bb8_postgres::PostgresConnectionManager;
@@ -84,7 +88,7 @@ impl<T: PGRawConnection> PGConnection<T> {
     }
 
     #[inline]
-    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), DBError>
+    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), PGDBError>
     where
         F: Fn(Option<&str>) + Send + Sync + 'static,
     {
@@ -92,12 +96,12 @@ impl<T: PGRawConnection> PGConnection<T> {
     }
 
     #[inline]
-    pub async fn unlisten(&self, channel: &str) -> Result<(), DBError> {
+    pub async fn unlisten(&self, channel: &str) -> Result<(), PGDBError> {
         self.listener.unlisten(channel).await
     }
 
     #[inline]
-    pub async fn unlisten_all(&self) -> Result<(), DBError> {
+    pub async fn unlisten_all(&self) -> Result<(), PGDBError> {
         self.listener.unlisten_all().await
     }
 
@@ -125,7 +129,7 @@ impl PGConnection<PGRawClient> {
 
     /// Handle migration manually. Allows to keep multiple (independent) migration in a single
     /// database.
-    pub async fn migrate(&mut self, name: &str, migrations: &[String]) -> Result<(), DBError> {
+    pub async fn migrate(&mut self, name: &str, migrations: &[String]) -> Result<(), PGDBError> {
         let migrations = migrations
             .iter()
             .inspect(|m| log::debug!("Migration: {m}"))
@@ -139,7 +143,7 @@ impl PGConnection<PGRawClient> {
         runner
             .run_async(&mut self.client)
             .await
-            .map_err(DBError::SqlMigration)?;
+            .map_err(PGDBError::SqlMigration)?;
         Ok(())
     }
 

@@ -1,4 +1,4 @@
-use shine_infra::{db::DBError, session::SessionKeyError, web::responses::Problem};
+use shine_infra::{db::RedisDBError, session::SessionKeyError, web::responses::Problem};
 use thiserror::Error as ThisError;
 
 mod pr {
@@ -15,7 +15,7 @@ pub enum SessionError {
     #[error(transparent)]
     SessionKeyError(#[from] SessionKeyError),
     #[error(transparent)]
-    DBError(#[from] DBError),
+    DBError(#[from] RedisDBError),
 }
 
 impl From<SessionError> for Problem {

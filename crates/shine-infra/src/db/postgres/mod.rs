@@ -1,14 +1,26 @@
 mod query_builder;
-
-pub use self::query_builder::*;
+mod pg_error;
 mod error_check;
-pub use self::error_check::*;
 mod pg_connection;
-pub use self::pg_connection::*;
 mod pg_type;
-pub use self::pg_type::*;
 mod pg_listener;
-pub use self::pg_listener::*;
+
+pub use self::{
+    error_check::PGErrorChecks,
+    pg_connection::{
+        create_postgres_pool, PGClient, PGConfig, PGConnection, PGConnectionError, PGConnectionManager,
+        PGConnectionPool, PGConvertError, PGCreatePoolError, PGError, PGPooledConnection, PGRawClient,
+        PGRawConnection, PGRawSocketConnection, PGRawTransaction, PGStatement, PGStatementId, PGTransaction,
+        PGType, PostgresPoolStatus,
+    },
+    pg_error::PGDBError,
+    pg_listener::{PGListener, PGNotification},
+    pg_type::{
+        PGValue, PGValueTypeBOOL, PGValueTypeINT2, PGValueTypeINT2_ARRAY, PGValueTypeINT4, PGValueTypeINT8,
+        PGValueTypeTIMESTAMPTZ, PGValueTypeUUID, PGValueTypeVARCHAR, PGValueTypeVARCHAR_ARRAY, ToPGType,
+    },
+    query_builder::{AndWhere, QueryBuilder},
+};
 
 /// Create a prepared SQL statements
 #[macro_export]

@@ -2,7 +2,7 @@ use crate::repositories::hub_registry::{
     redis::RedisHubConnectionDbContext, HubConnection, HubConnectionError, HubRegistry,
 };
 use redis::{aio::transaction_async, AsyncCommands};
-use shine_infra::db::DBError;
+use shine_infra::db::RedisDBError;
 use uuid::Uuid;
 
 const HUB_CONNECTION_KEYSPACE: &str = "hub-connection:";
@@ -34,10 +34,10 @@ impl RedisHubConnectionDbContext<'_> {
             .client
             .scan_match::<String, _>(pattern)
             .await
-            .map_err(DBError::RedisError)?;
+            .map_err(RedisDBError::RedisError)?;
 
         while let Some(key) = iter.next_item().await {
-            keys.push(key.map_err(DBError::RedisError)?);
+            keys.push(key.map_err(RedisDBError::RedisError)?);
         }
 
         Ok(keys)
@@ -64,7 +64,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
             .arg(change_payload)
             .query_async(client)
             .await
-            .map_err(DBError::RedisError)?;
+            .map_err(RedisDBError::RedisError)?;
 
         Ok(())
     }
@@ -94,7 +94,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
             }
         })
         .await
-        .map_err(DBError::RedisError)?;
+        .map_err(RedisDBError::RedisError)?;
 
         Ok(updated)
     }
@@ -109,7 +109,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
 
         // Read every tracked user's current registry entry in one round trip.
         let keys: Vec<String> = connections.iter().map(|c| self.to_redis_key(c.user_id)).collect();
-        let current: Vec<Option<String>> = self.client.mget(&keys).await.map_err(DBError::RedisError)?;
+        let current: Vec<Option<String>> = self.client.mget(&keys).await.map_err(RedisDBError::RedisError)?;
 
         // Compare in memory: entries that still hold our connection id get their TTL refreshed;
         // the rest are reported back so the caller can disconnect them. There is no per-key CAS —
@@ -136,7 +136,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
         if refreshed > 0 {
             pipe.query_async::<()>(&mut *self.client)
                 .await
-                .map_err(DBError::RedisError)?;
+                .map_err(RedisDBError::RedisError)?;
         }
 
         Ok(stale)
@@ -148,7 +148,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
             return Ok(Vec::new());
         }
 
-        let values: Vec<Option<String>> = self.client.mget(keys.clone()).await.map_err(DBError::RedisError)?;
+        let values: Vec<Option<String>> = self.client.mget(keys.clone()).await.map_err(RedisDBError::RedisError)?;
         let mut connections = Vec::with_capacity(values.len());
 
         for (key, value) in keys.into_iter().zip(values) {
@@ -167,7 +167,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
 
     async fn find_connection_by_user(&mut self, user_id: Uuid) -> Result<Option<HubConnection>, HubConnectionError> {
         let key = self.to_redis_key(user_id);
-        let connection: Option<String> = self.client.get(&key).await.map_err(DBError::RedisError)?;
+        let connection: Option<String> = self.client.get(&key).await.map_err(RedisDBError::RedisError)?;
         let connection_id = self.parse_connection_id(connection);
 
         Ok(connection_id.map(|connection_id| HubConnection { user_id, connection_id }))
@@ -201,7 +201,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
             }
         })
         .await
-        .map_err(DBError::RedisError)?;
+        .map_err(RedisDBError::RedisError)?;
 
         if removed {
             let change_payload = self.to_change_payload(user_id);
@@ -209,7 +209,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
                 .client
                 .publish(HUB_REGISTRY_CHANGED_CHANNEL, change_payload)
                 .await
-                .map_err(DBError::RedisError)?;
+                .map_err(RedisDBError::RedisError)?;
         }
 
         Ok(removed)

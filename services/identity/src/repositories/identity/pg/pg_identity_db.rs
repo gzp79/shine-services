@@ -10,7 +10,7 @@ use shine_infra::{
     crypto::DataProtectionUtils,
     db::{
         postgres::{PGConnectionPool, PGPooledConnection},
-        DBError,
+        PGDBError,
     },
 };
 use std::sync::Arc;
@@ -50,7 +50,7 @@ impl PgIdentityDb {
         postgres: &PGConnectionPool,
         config: &EmailProtectionConfig,
     ) -> Result<Self, PgIdentityBuildError> {
-        let client = postgres.get().await.map_err(DBError::PGPoolError)?;
+        let client = postgres.get().await.map_err(PGDBError::PoolError)?;
 
         let encryption_key = B64.decode(config.encryption_key.as_bytes())?;
         let hash_key = B64.decode(config.hash_key.as_bytes())?;
@@ -70,7 +70,7 @@ impl PgIdentityDb {
 
 impl IdentityDb for PgIdentityDb {
     async fn create_context(&self) -> Result<impl IdentityDbContext<'_>, IdentityError> {
-        let client = self.0.client.get().await.map_err(DBError::PGPoolError)?;
+        let client = self.0.client.get().await.map_err(PGDBError::PoolError)?;
         Ok(PgIdentityDbContext {
             client,
             email_protection: &self.0.email_protection,

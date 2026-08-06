@@ -1,5 +1,8 @@
-use super::{RedisListener, RedisListenerError};
-use crate::{db::CnsParamError, health::StatusProvider};
+use super::RedisListener;
+use crate::{
+    db::{redis::RedisDBError, CnsParamError},
+    health::StatusProvider,
+};
 use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use redis::{
@@ -22,7 +25,7 @@ pub struct RedisConnection {
 
 impl RedisConnection {
     #[inline]
-    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), RedisListenerError>
+    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), RedisDBError>
     where
         F: Fn(Option<&str>) + Send + Sync + 'static,
     {
@@ -30,12 +33,12 @@ impl RedisConnection {
     }
 
     #[inline]
-    pub async fn unlisten(&self, channel: &str) -> Result<(), RedisListenerError> {
+    pub async fn unlisten(&self, channel: &str) -> Result<(), RedisDBError> {
         self.listener.unlisten(channel).await
     }
 
     #[inline]
-    pub async fn unlisten_all(&self) -> Result<(), RedisListenerError> {
+    pub async fn unlisten_all(&self) -> Result<(), RedisDBError> {
         self.listener.unlisten_all().await
     }
 }

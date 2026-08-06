@@ -1,4 +1,4 @@
-use crate::db::DBError;
+use crate::db::postgres::PGDBError;
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
@@ -19,5 +19,5 @@ pub enum EventSourceError {
     #[error(transparent)]
     EventSerialization(#[from] serde_json::Error),
     #[error(transparent)]
-    DbError(#[from] DBError),
+    DbError(#[from] PGDBError),
 }

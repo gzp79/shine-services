@@ -5,7 +5,7 @@ use crate::{
 use chrono::Duration;
 use shine_infra::db::{
     redis::{RedisConnectionPool, RedisPooledConnection},
-    DBError,
+    RedisDBError,
 };
 
 pub struct RedisSessionDbContext<'c> {
@@ -29,7 +29,7 @@ impl RedisSessionDb {
         key_prefix: String,
         ttl_session: Duration,
     ) -> Result<Self, RedisSessionBuildError> {
-        let _client = redis.get().await.map_err(DBError::RedisPoolError)?;
+        let _client = redis.get().await.map_err(RedisDBError::PoolError)?;
         Ok(Self {
             client: redis.clone(),
             key_prefix,
@@ -40,7 +40,7 @@ impl RedisSessionDb {
 
 impl SessionDb for RedisSessionDb {
     async fn create_context(&self) -> Result<impl SessionDbContext<'_>, SessionError> {
-        let client = self.client.get().await.map_err(DBError::RedisPoolError)?;
+        let client = self.client.get().await.map_err(RedisDBError::PoolError)?;
 
         Ok(RedisSessionDbContext {
             client,
