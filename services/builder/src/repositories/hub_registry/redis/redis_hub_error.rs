@@ -12,10 +12,10 @@ impl From<RedisDBError> for HubError {
     fn from(err: RedisDBError) -> Self {
         match err {
             RedisDBError::PoolError(_) | RedisDBError::RedisError(_) => {
-                HubError::StoreUnavailable { source: Box::new(err) }
+                HubError::registry_db(err)
             }
             RedisDBError::ListenerClosed | RedisDBError::AlreadyListening(_) => {
-                HubError::Internal { source: Box::new(err) }
+                HubError::internal(err)
             }
         }
     }
