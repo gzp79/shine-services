@@ -290,7 +290,7 @@ impl Tokens for PgIdentityDbContext<'_> {
                 return Err(IdentityError::TokenMissingEmail);
             }
             Err(err) => {
-                return Err(IdentityError::DBError(err.into()));
+                return Err(PGDBError::from(err).into());
             }
         };
 

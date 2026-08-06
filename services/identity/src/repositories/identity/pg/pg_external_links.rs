@@ -137,7 +137,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
                 if err.is_constraint("external_logins", "idx_provider_provider_id") {
                     Err(IdentityError::ExternalIdConflict)
                 } else {
-                    Err(IdentityError::DBError(err.into()))
+                    Err(PGDBError::from(err).into())
                 }
             }
         }

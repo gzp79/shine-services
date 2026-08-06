@@ -236,7 +236,7 @@ impl Identities for PgIdentityDbContext<'_> {
                 return Err(IdentityError::EmailConflict);
             }
             Err(err) => {
-                return Err(IdentityError::DBError(err.into()));
+                return Err(PGDBError::from(err).into());
             }
         };
 

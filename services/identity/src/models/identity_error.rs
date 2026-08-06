@@ -3,6 +3,7 @@ use shine_infra::{
     db::postgres::PGDBError,
     web::responses::Problem,
 };
+use std::{backtrace::Backtrace as StdBacktrace, error::Error as StdError, panic::Location};
 use thiserror::Error as ThisError;
 
 mod pr {
@@ -37,13 +38,41 @@ pub enum IdentityError {
     TokenMissingEmail,
     #[error("User was removed during the operation")]
     UserDeleted,
-
     #[error(transparent)]
     IdEncoder(#[from] IdEncoderError),
     #[error(transparent)]
-    DBError(#[from] PGDBError),
-    #[error(transparent)]
     DataProtectionError(#[from] DataProtectionError),
+
+    #[error("Internal error")]
+    InternalError {
+        #[source]
+        source: Box<dyn StdError + Send + Sync>,
+        location: &'static Location<'static>,
+        backtrace: StdBacktrace,
+        unavailable: bool,
+    },
+}
+
+impl IdentityError {
+    #[track_caller]
+    fn internal_error(source: impl StdError + Send + Sync + 'static, unavailable: bool) -> Self {
+        Self::InternalError {
+            source: Box::new(source),
+            location: Location::caller(),
+            backtrace: StdBacktrace::capture(),
+            unavailable,
+        }
+    }
+}
+
+impl From<PGDBError> for IdentityError {
+    #[track_caller]
+    fn from(err: PGDBError) -> Self {
+        match err {
+            PGDBError::CreatePoolError(_) | PGDBError::PoolError(_) => Self::internal_error(err, true),
+            _ => Self::internal_error(err, false),
+        }
+    }
 }
 
 impl From<IdentityError> for Problem {
@@ -56,7 +85,12 @@ impl From<IdentityError> for Problem {
             IdentityError::ExternalIdConflict => Problem::conflict(pr::EXTERNAL_ID_CONFLICT).with_detail(err),
             IdentityError::MissingEmail => Problem::precondition_failed(pr::MISSING_EMAIL).with_detail(err),
             IdentityError::UserDeleted => Problem::conflict(pr::DELETE_CONFLICT).with_detail(err),
-            IdentityError::DBError(err) => err.into(),
+            err @ IdentityError::InternalError { unavailable: true, .. } => Problem::service_unavailable()
+                .with_detail(err.to_string())
+                .with_sensitive_dbg(err),
+            err @ IdentityError::InternalError { .. } => Problem::internal_error()
+                .with_detail(err.to_string())
+                .with_sensitive_dbg(err),
             err => Problem::internal_error().with_detail(&err).with_sensitive_dbg(err),
         }
     }
