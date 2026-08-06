@@ -11,12 +11,8 @@ pub enum RedisHubRegistryBuildError {
 impl From<RedisDBError> for HubError {
     fn from(err: RedisDBError) -> Self {
         match err {
-            RedisDBError::PoolError(_) | RedisDBError::RedisError(_) => {
-                HubError::registry_db(err)
-            }
-            RedisDBError::ListenerClosed | RedisDBError::AlreadyListening(_) => {
-                HubError::internal(err)
-            }
+            RedisDBError::PoolError(_) | RedisDBError::RedisError(_) => HubError::registry_db(err),
+            RedisDBError::ListenerClosed | RedisDBError::AlreadyListening(_) => HubError::internal(err),
         }
     }
 }
