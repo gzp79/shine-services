@@ -103,7 +103,7 @@ EXPOSE 80 443
 
 USER nginx
 
-CMD ["/usr/bin/supervisord"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisor.conf"]
 
 #######################################################
 FROM base AS test
