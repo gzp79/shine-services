@@ -1,5 +1,6 @@
 use glam::IVec2;
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OrientationType {
     CW,

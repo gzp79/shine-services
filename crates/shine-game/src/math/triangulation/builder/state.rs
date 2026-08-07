@@ -60,7 +60,7 @@ impl BuilderState {
                 "stroke: #9b59b6; stroke-width: 2.5px; stroke-linecap: round; vector-effect: non-scaling-stroke;",
             );
 
-            f(&mut *scope);
+            f(&mut scope);
         };
     }
 

@@ -139,7 +139,7 @@ mod tests {
     fn range() {
         let range = TestIdx::range(TestIdx::new(5), TestIdx::new(10));
         let collected: Vec<_> = range.collect();
-        let expected: Vec<_> = (5..10).map(|i| TestIdx::new(i)).collect();
+        let expected: Vec<_> = (5..10).map(TestIdx::new).collect();
         assert_eq!(collected, expected);
     }
 }

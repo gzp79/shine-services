@@ -8,7 +8,7 @@ use crate::{
 use chrono::{DateTime, Utc};
 use postgres_from_row::FromRow;
 use shine_infra::{
-    db::{DBError, PGClient, PGErrorChecks},
+    db::postgres::{PgClient, PgError, PgErrorChecks},
     email::{Email, NORM_EMAIL_VERSION},
     pg_query,
 };
@@ -99,13 +99,13 @@ pub struct PgExternalLinksStatements {
 }
 
 impl PgExternalLinksStatements {
-    pub async fn new(client: &PGClient) -> Result<Self, PgIdentityBuildError> {
+    pub async fn new(client: &PgClient) -> Result<Self, PgIdentityBuildError> {
         Ok(Self {
-            insert: InsertExternalLogin::new(client).await.map_err(DBError::from)?,
-            find_by_provider_id: FindByProviderId::new(client).await.map_err(DBError::from)?,
-            list_by_user_id: ListByUserId::new(client).await.map_err(DBError::from)?,
-            exists_by_user_id: ExistsByUserId::new(client).await.map_err(DBError::from)?,
-            delete_link: DeleteLink::new(client).await.map_err(DBError::from)?,
+            insert: InsertExternalLogin::new(client).await.map_err(PgError::from)?,
+            find_by_provider_id: FindByProviderId::new(client).await.map_err(PgError::from)?,
+            list_by_user_id: ListByUserId::new(client).await.map_err(PgError::from)?,
+            exists_by_user_id: ExistsByUserId::new(client).await.map_err(PgError::from)?,
+            delete_link: DeleteLink::new(client).await.map_err(PgError::from)?,
         })
     }
 }
@@ -137,7 +137,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
                 if err.is_constraint("external_logins", "idx_provider_provider_id") {
                     Err(IdentityError::ExternalIdConflict)
                 } else {
-                    Err(IdentityError::DBError(err.into()))
+                    Err(PgError::from(err).into())
                 }
             }
         }
@@ -150,7 +150,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
             .list_by_user_id
             .query(&self.client, &user_id)
             .await
-            .map_err(DBError::from)?
+            .map_err(PgError::from)?
             .into_iter()
             .map(|row| {
                 let email = if let Some(encrypted_email) = &row.encrypted_email {
@@ -180,7 +180,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
             .exists_by_user_id
             .query_one(&self.client, &user_id)
             .await
-            .map_err(DBError::from)?;
+            .map_err(PgError::from)?;
 
         Ok(is_linked)
     }
@@ -196,7 +196,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
             .find_by_provider_id
             .query_opt(&self.client, &provider, &provider_id)
             .await
-            .map_err(DBError::from)?;
+            .map_err(PgError::from)?;
 
         if let Some(row) = row {
             let email = match (row.encrypted_email, row.encrypted_normalized_email) {
@@ -232,7 +232,7 @@ impl ExternalLinks for PgIdentityDbContext<'_> {
             .delete_link
             .execute(&self.client, &user_id, &provider, &provider_id)
             .await
-            .map_err(DBError::from)?;
+            .map_err(PgError::from)?;
 
         if count == 1 {
             Ok(Some(()))

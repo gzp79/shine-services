@@ -14,10 +14,10 @@ use shine_test::test;
 use std::env;
 use uuid::Uuid;
 
-async fn create_db(scope: &str) -> Option<impl SessionDb + Clone> {
+async fn create_db(scope: &str) -> Option<impl SessionDb> {
     match env::var("SHINE_TEST_REDIS_CNS") {
         Ok(cns) => {
-            let redis = db::create_redis_pool(cns.as_str()).await.unwrap();
+            let redis = db::redis::create_redis_pool(cns.as_str()).await.unwrap();
             let db = RedisSessionDb::new(&redis, format!("{scope}_"), Duration::seconds(1000))
                 .await
                 .unwrap();

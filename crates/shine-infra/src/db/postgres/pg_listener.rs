@@ -1,27 +1,32 @@
-use crate::db::DBError;
-use futures::{stream, StreamExt};
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+use crate::{
+    db::postgres::PgError,
+    sync::{ExponentialBackoff, KeepAlive},
 };
-use tokio::sync::{Notify, RwLock};
+use futures::{stream, StreamExt};
+use std::{collections::HashMap, sync::Arc};
+use tokio::{
+    sync::{RwLock, Semaphore},
+    time::{Duration, Instant},
+};
 use tokio_postgres::{AsyncMessage, Notification};
 use tokio_postgres_rustls::MakeRustlsConnect;
 
-use super::{PGConfig, PGRawClient, PGRawSocketConnection};
+use super::{PgConfig, PgRawClient, PgRawSocketConnection};
 
-pub type PGNotification = Notification;
-type BoxedHandler = Box<dyn Fn(&str) + Send + Sync + 'static>;
+pub type PgNotification = Notification;
+type BoxedHandler = Box<dyn Fn(Option<&str>) + Send + Sync + 'static>;
 
-struct ListenClient {
-    client: Option<PGRawClient>,
+/// A handler blocking the dispatch task longer than this is logged as a warning.
+const SLOW_HANDLER: Duration = Duration::from_millis(100);
+
+/// The dedicated `LISTEN` connection (behind an `Arc` so commands can run without the state lock)
+/// and the channel→handler map it serves.
+struct ListenState {
+    client: Option<Arc<PgRawClient>>,
     handlers: HashMap<String, BoxedHandler>,
 }
 
-impl ListenClient {
+impl ListenState {
     fn new() -> Self {
         Self {
             client: None,
@@ -29,224 +34,370 @@ impl ListenClient {
         }
     }
 
-    async fn connect(&mut self, config: PGConfig, tls: MakeRustlsConnect) -> Result<PGRawSocketConnection, DBError> {
-        assert!(self.client.is_none(), "PGListener already connected");
-
-        log::trace!("PGListener connecting to PostgreSQL...");
-        let (client, connection) = config.connect(tls).await?;
-        log::trace!("PGListener client connected...");
-
-        for channel in self.handlers.keys() {
-            log::info!("PGListener start listening to channels {channel:?}...");
-            let cmd = format!(r#"LISTEN "{channel}""#);
-            client.execute(&cmd, &[]).await?;
-            log::info!("PGListener start listening done.");
-        }
+    fn set_client(&mut self, client: Arc<PgRawClient>) {
         self.client = Some(client);
-
-        Ok(connection)
     }
 
+    /// Drops the client; its connection driver then ends and the streaming task stops.
     fn disconnect(&mut self) {
         log::info!("PGListener disconnecting from PostgreSQL...");
         self.client = None;
     }
 
-    pub fn is_connected(&self) -> bool {
-        self.client.is_some()
-    }
-
-    pub async fn listen<F>(&mut self, channel: &str, handler: F) -> Result<(), DBError>
-    where
-        F: Fn(&str) + Send + Sync + 'static,
-    {
-        let channel = ident(channel);
-
-        if self.handlers.insert(channel.clone(), Box::new(handler)).is_none() {
-            if let Some(client) = self.client.as_ref() {
-                log::info!("PGListener start listening to channels {channel:?}...");
-                let cmd = format!(r#"LISTEN "{channel}""#);
-                client.execute(&cmd, &[]).await?;
-                log::info!("PGListener start listening done.");
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn unlisten(&mut self, channel: &str) -> Result<(), DBError> {
-        let channel = ident(channel);
-
-        if self.handlers.remove(&channel).is_some() {
-            if let Some(client) = self.client.as_ref() {
-                log::info!("PGListener stopping listening to channel {channel}...");
-                let cmd = format!(r#"UNLISTEN "{channel}""#);
-                client.execute(&cmd, &[]).await?;
-                log::info!("PGListener stopped listening");
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn unlisten_all(&mut self) -> Result<(), DBError> {
-        self.handlers.clear();
-        if let Some(client) = self.client.as_ref() {
-            let cmd = "UNLISTEN *".to_string();
-            client.execute(&cmd, &[]).await?;
-            log::info!("PGListener stopped listening to all channels");
-        }
-        Ok(())
-    }
-
-    pub fn handle(&self, channel: &str, payload: &str) {
+    fn handle(&self, channel: &str, payload: Option<&str>) {
         if let Some(handler) = self.handlers.get(channel) {
-            handler(payload);
+            Self::invoke(channel, handler, payload);
         }
+    }
+
+    fn handle_reconnect(&self) {
+        for (channel, handler) in &self.handlers {
+            Self::invoke(channel, handler, None);
+        }
+    }
+
+    fn invoke(channel: &str, handler: &BoxedHandler, payload: Option<&str>) {
+        let started = Instant::now();
+        handler(payload);
+        let elapsed = started.elapsed();
+        if elapsed >= SLOW_HANDLER {
+            log::warn!("PGListener handler for channel {channel:?} took {elapsed:?}, blocking dispatch");
+        }
+    }
+}
+
+struct Inner {
+    config: PgConfig,
+    tls: MakeRustlsConnect,
+    connect_timeout: Duration,
+    keep_alive: Arc<KeepAlive>,
+    /// Serializes every subscription/lifecycle change; see the design doc, "Concurrency model".
+    op_lock: Arc<Semaphore>,
+    /// Guards the client handle + handler map. Never held across a network command.
+    state: Arc<RwLock<ListenState>>,
+}
+
+impl Drop for Inner {
+    fn drop(&mut self) {
+        // Last handle gone: stop the keep-alive task so it tears the connection down.
+        self.keep_alive.stop();
     }
 }
 
 #[derive(Clone)]
-pub struct PGListener {
-    config: PGConfig,
-    tls: MakeRustlsConnect,
-    notify_keep_alive: Arc<(Notify, AtomicBool)>,
-    client: Arc<RwLock<ListenClient>>,
+pub struct PgListener {
+    inner: Arc<Inner>,
 }
 
-impl PGListener {
-    fn start_keep_alive_thread(
-        config: PGConfig,
-        tls: MakeRustlsConnect,
-        client: Arc<RwLock<ListenClient>>,
-        notify_keep_alive: Arc<(Notify, AtomicBool)>,
-    ) {
-        // Task to keep the listener connected using notifications. Whenever the connection is (maybe) lost,
-        // we will trigger a reconnect as long as the Pool is not dropped.
-        // As the messages are processed using another task, we have no loop on the main "thread" to check for connection lost. When the messaging task
-        // detects a connection lost, it will notify the reconnect task to reconnect. As long as the Pool is not dropped, the reconnect task will keep
-        // trying to reconnect for each channel.
+impl PgListener {
+    /// Bound for the listener's connect when the connection string sets no `connect_timeout`.
+    /// `tokio_postgres`'s own `connect_timeout` covers only the socket connect, not the TLS
+    /// handshake/startup, and the keep-alive holds the op permit across the whole connect — so
+    /// without this a stalled connect would block `listen`/`unlisten`/`close` on `op_lock.acquire()`.
+    pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
+    fn start_keep_alive_task(
+        config: PgConfig,
+        tls: MakeRustlsConnect,
+        connect_timeout: Duration,
+        op_lock: Arc<Semaphore>,
+        state: Arc<RwLock<ListenState>>,
+        keep_alive: Arc<KeepAlive>,
+        max_reconnect_backoff: Duration,
+    ) {
         tokio::spawn(async move {
-            const RETRY: u64 = 500;
-            notify_keep_alive.0.notified().await;
-            while notify_keep_alive.1.load(Ordering::Relaxed) {
+            const MIN_BACKOFF: Duration = Duration::from_millis(500);
+            // A connection that stayed up at least this long is considered healthy and resets the backoff.
+            const STABLE: Duration = Duration::from_secs(10);
+            let mut backoff = ExponentialBackoff::new(MIN_BACKOFF, max_reconnect_backoff);
+
+            keep_alive.wait().await;
+            while keep_alive.is_running() {
                 log::info!("PGListener reconnection triggered...");
 
-                let connection = client.write().await.connect(config.clone(), tls.clone()).await;
-                match connection {
-                    Ok(connection) => {
-                        log::info!("PGListener reconnected to PostgreSQL.");
+                // Reconnect under the op permit so a concurrent listen() cannot open a second connection.
+                let established = {
+                    let _permit = op_lock.acquire().await.expect("op_lock is never closed");
+                    if !keep_alive.is_running() {
+                        break;
+                    }
+                    Self::connect_and_subscribe(&config, &tls, connect_timeout, &state, &keep_alive).await
+                };
 
-                        Self::start_streaming_thread(client.clone(), connection, notify_keep_alive.clone());
-                        notify_keep_alive.0.notified().await;
+                match established {
+                    Ok(true) => {
+                        log::info!("PGListener reconnected to PostgreSQL.");
+                        let connected_at = Instant::now();
+                        keep_alive.wait().await;
+                        if connected_at.elapsed() >= STABLE {
+                            backoff.reset();
+                        }
+                        if keep_alive.is_running() {
+                            backoff.delay().await;
+                        }
+                    }
+                    Ok(false) => {
+                        // Already connected (listen won the race); park for the next trigger.
+                        keep_alive.wait().await;
                     }
                     Err(e) => {
                         log::error!("PGListener reconnection error: {e:#?}");
-                        tokio::time::sleep(tokio::time::Duration::from_millis(RETRY)).await;
+                        state.write().await.disconnect();
+                        backoff.delay().await;
                     }
                 }
             }
+            state.write().await.disconnect();
             log::info!("PGListener keep alive is closed");
         });
     }
 
-    fn start_streaming_thread(
-        client: Arc<RwLock<ListenClient>>,
-        mut connection: PGRawSocketConnection,
-        notify_keep_alive: Arc<(Notify, AtomicBool)>,
-    ) {
-        log::trace!("PGListener starting streaming thread...");
+    /// Opens the shared connection if absent, spawns its streaming task, re-subscribes every
+    /// registered channel, and nudges their handlers. Returns whether a new connection was opened.
+    /// Caller must hold the op permit.
+    async fn connect_and_subscribe(
+        config: &PgConfig,
+        tls: &MakeRustlsConnect,
+        connect_timeout: Duration,
+        state: &Arc<RwLock<ListenState>>,
+        keep_alive: &Arc<KeepAlive>,
+    ) -> Result<bool, PgError> {
+        if state.read().await.client.is_some() {
+            return Ok(false);
+        }
 
-        let messages = stream::poll_fn(move |cx| connection.poll_message(cx)).map(|msg| match msg {
-            Ok(AsyncMessage::Notification(notification)) => {
-                log::trace!("PGListener received notification: {notification:?}");
-                Some(notification)
-            }
-            Ok(_) => {
-                log::trace!("PGListener received no notification");
-                None
-            }
-            Err(e) => {
-                log::error!("PGListener notification error: {e:#?}");
-                None
-            }
-        });
+        // Bound the whole connect: tokio_postgres's connect_timeout covers only the socket, so a
+        // stall in the TLS handshake or startup would otherwise hold the op permit indefinitely.
+        log::trace!("PGListener connecting to PostgreSQL...");
+        let (client, connection) = match tokio::time::timeout(connect_timeout, config.connect(tls.clone())).await {
+            Ok(result) => result?,
+            Err(_) => return Err(PgError::ListenerConnectTimeout),
+        };
+        let client = Arc::new(client);
+
+        // Publish the client and snapshot the channels under one write lock, before any LISTEN: the
+        // commands only complete while the driver-polling task polls the connection.
+        let channels = {
+            let mut state = state.write().await;
+            state.set_client(client.clone());
+            state.handlers.keys().cloned().collect::<Vec<_>>()
+        };
+        Self::start_streaming_task(state.clone(), connection, keep_alive.clone());
+
+        for channel in &channels {
+            Self::pg_listen(&client, channel).await?;
+        }
+        state.read().await.handle_reconnect();
+
+        Ok(true)
+    }
+
+    fn start_streaming_task(
+        state: Arc<RwLock<ListenState>>,
+        mut connection: PgRawSocketConnection,
+        keep_alive: Arc<KeepAlive>,
+    ) {
+        // Raw poll result so the loop can tell a notification (dispatch) from a non-notification
+        // async message such as a server NOTICE (skip, keep polling) from an error (stop, reconnect).
+        let messages = stream::poll_fn(move |cx| connection.poll_message(cx));
 
         tokio::spawn(async move {
             let mut stream = Box::pin(messages);
-            while let Some(Some(msg)) = stream.next().await {
-                let client = client.read().await;
-                client.handle(msg.channel(), msg.payload());
+            while let Some(msg) = stream.next().await {
+                match msg {
+                    Ok(AsyncMessage::Notification(notification)) => {
+                        state
+                            .read()
+                            .await
+                            .handle(notification.channel(), Some(notification.payload()));
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::error!("PGListener notification error: {e:#?}");
+                        break;
+                    }
+                }
             }
 
-            log::trace!("PGListener streaming stopped.");
-            client.write().await.disconnect();
+            // End the driver before clearing the client. This runs before the reconnect notify, so
+            // the keep-alive task cannot have opened a replacement yet.
+            drop(stream);
+            state.write().await.disconnect();
 
-            if notify_keep_alive.1.load(Ordering::Relaxed) {
+            if keep_alive.is_running() {
                 log::info!("PGListener triggering a reconnection for connection lost...");
-                notify_keep_alive.0.notify_one();
-            } else {
-                log::info!("PGListener is closed, not triggering a reconnect");
+                keep_alive.wake();
             }
         });
-
-        log::trace!("PGListener streaming thread is ready.");
     }
 
-    pub fn new(config: PGConfig, tls: MakeRustlsConnect) -> Self {
-        let notify_keep_alive = Arc::new((Notify::new(), AtomicBool::new(true)));
-        let client = Arc::new(RwLock::new(ListenClient::new()));
-
-        Self::start_keep_alive_thread(config.clone(), tls.clone(), client.clone(), notify_keep_alive.clone());
+    pub fn new(
+        config: PgConfig,
+        tls: MakeRustlsConnect,
+        connect_timeout: Duration,
+        max_reconnect_backoff: Duration,
+    ) -> Self {
+        let keep_alive = Arc::new(KeepAlive::new());
+        let op_lock = Arc::new(Semaphore::new(1));
+        let state = Arc::new(RwLock::new(ListenState::new()));
+        Self::start_keep_alive_task(
+            config.clone(),
+            tls.clone(),
+            connect_timeout,
+            op_lock.clone(),
+            state.clone(),
+            keep_alive.clone(),
+            max_reconnect_backoff,
+        );
 
         Self {
-            config,
-            tls,
-            notify_keep_alive,
-            client,
+            inner: Arc::new(Inner {
+                config,
+                tls,
+                connect_timeout,
+                keep_alive,
+                op_lock,
+                state,
+            }),
         }
     }
 
+    /// Stops the keep-alive task and tears down the shared connection. Sets the stopped flag under
+    /// the op permit so a concurrent listen() (which re-checks it under the same permit) can never
+    /// leave an unmanaged connection behind.
     pub async fn close(&self) {
-        self.notify_keep_alive.1.store(false, Ordering::Relaxed);
-        self.client.write().await.disconnect();
+        let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
+        self.inner.state.write().await.disconnect();
+        self.inner.keep_alive.stop();
     }
 
-    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), DBError>
+    /// Registers `handler` for `channel`, opening the shared connection on first use.
+    pub async fn listen<F>(&self, channel: &str, handler: F) -> Result<(), PgError>
     where
-        F: Fn(&str) + Send + Sync + 'static,
+        F: Fn(Option<&str>) + Send + Sync + 'static,
     {
-        let mut client = self.client.write().await;
+        let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
 
-        if !client.is_connected() {
-            let connection = client.connect(self.config.clone(), self.tls.clone()).await?;
-            Self::start_streaming_thread(self.client.clone(), connection, self.notify_keep_alive.clone());
+        // Re-check the stopped flag under the permit so a concurrent close() can't leave an
+        // unmanaged connection behind.
+        if !self.inner.keep_alive.is_running() {
+            return Err(PgError::ListenerClosed);
         }
 
-        client.listen(channel, handler).await?;
+        let channel = channel_name(channel);
+        if self.inner.state.read().await.handlers.contains_key(&channel) {
+            return Err(PgError::AlreadyListening(channel));
+        }
+
+        Self::connect_and_subscribe(
+            &self.inner.config,
+            &self.inner.tls,
+            self.inner.connect_timeout,
+            &self.inner.state,
+            &self.inner.keep_alive,
+        )
+        .await?;
+
+        // Register the handler before returning so the reconnect always re-subscribes it. The LISTEN
+        // itself is best-effort: `connect_and_subscribe` reports a client as live via `is_some()`,
+        // but the streaming task drops a dead client only just before signalling reconnect, so the
+        // snapshot here can be a client whose connection has already died. A failed LISTEN in that
+        // window is not the caller's error — the keep-alive reconnect re-subscribes the handler.
+        if let Some(client) = self.inner.state.read().await.client.clone() {
+            if let Err(e) = Self::pg_listen(&client, &channel).await {
+                log::warn!("PGListener LISTEN {channel:?} failed ({e:#?}); reconnect will re-subscribe it");
+            }
+        }
+        self.inner
+            .state
+            .write()
+            .await
+            .handlers
+            .insert(channel, Box::new(handler));
         Ok(())
     }
 
-    pub async fn unlisten(&self, channel: &str) -> Result<(), DBError> {
-        self.client.write().await.unlisten(channel).await?;
+    /// Removes `channel`'s handler and unsubscribes on the shared connection, if connected.
+    pub async fn unlisten(&self, channel: &str) -> Result<(), PgError> {
+        let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
+        let channel = channel_name(channel);
+
+        let client = {
+            let mut state = self.inner.state.write().await;
+            if state.handlers.remove(&channel).is_none() {
+                return Ok(());
+            }
+            state.client.clone()
+        };
+        if let Some(client) = client {
+            Self::pg_unlisten(&client, &channel).await?;
+        }
         Ok(())
     }
 
-    /// Stops listening for notifications on all channels.
-    pub async fn unlisten_all(&mut self) -> Result<(), DBError> {
-        self.client.write().await.unlisten_all().await?;
+    /// Removes all handlers and unsubscribes from every channel on the shared connection.
+    pub async fn unlisten_all(&self) -> Result<(), PgError> {
+        let _permit = self.inner.op_lock.acquire().await.expect("op_lock is never closed");
+        let client = {
+            let mut state = self.inner.state.write().await;
+            state.handlers.clear();
+            state.client.clone()
+        };
+        if let Some(client) = client {
+            log::info!("PGListener stop listening to all channels...");
+            client.execute("UNLISTEN *", &[]).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn backend_pid(&self) -> Option<i32> {
+        let client = self.inner.state.read().await.client.clone()?;
+        client
+            .query_one("SELECT pg_backend_pid()::int4", &[])
+            .await
+            .ok()
+            .map(|row| row.get(0))
+    }
+
+    async fn pg_listen(client: &PgRawClient, channel: &str) -> Result<(), PgError> {
+        log::info!("PGListener start listening to channel {channel:?}...");
+        client
+            .execute(&format!(r#"LISTEN "{}""#, quote_ident(channel)), &[])
+            .await?;
+        Ok(())
+    }
+
+    async fn pg_unlisten(client: &PgRawClient, channel: &str) -> Result<(), PgError> {
+        log::info!("PGListener stop listening to channel {channel:?}...");
+        client
+            .execute(&format!(r#"UNLISTEN "{}""#, quote_ident(channel)), &[])
+            .await?;
         Ok(())
     }
 }
 
-fn ident(mut name: &str) -> String {
-    // If the input string contains a NUL byte, we should truncate the
-    // identifier.
+/// PostgreSQL identifier length limit (NAMEDATALEN - 1). Channel names longer than this are
+/// truncated by the server, so `msg.channel()` reports the truncated form.
+const PG_NAMEDATALEN: usize = 63;
+
+/// Canonicalize a channel name to exactly what PostgreSQL will report back in a notification.
+fn channel_name(mut name: &str) -> String {
     if let Some(index) = name.find('\0') {
         name = &name[..index];
     }
 
-    // Any double quotes must be escaped
+    if name.len() > PG_NAMEDATALEN {
+        let mut end = PG_NAMEDATALEN;
+        while !name.is_char_boundary(end) {
+            end -= 1;
+        }
+        name = &name[..end];
+    }
+
+    name.to_string()
+}
+
+/// Escape a canonical channel name for use inside a double-quoted SQL identifier.
+fn quote_ident(name: &str) -> String {
     name.replace('"', "\"\"")
 }

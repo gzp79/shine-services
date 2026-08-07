@@ -3,7 +3,7 @@ use crate::{
     repositories::session::{SessionDb, Sessions},
 };
 use chrono::Utc;
-use ring::{digest, rand::SystemRandom};
+use ring::rand::SystemRandom;
 use shine_infra::{
     session::SessionKey,
     web::extracts::{ClientFingerprint, SiteInfo},
@@ -117,8 +117,7 @@ where
 fn hash_key(key: &SessionKey) -> String {
     // there is no need for a complex hash as key has a big entropy already
     // and it'd be too expensive to invert the hashing.
-    let hash = digest::digest(&digest::SHA256, key.as_bytes());
-    let hash = hex::encode(hash);
+    let hash = key.key_hash();
     log::debug!("Hashing session key: {key:?} -> [{hash}]");
     hash
 }

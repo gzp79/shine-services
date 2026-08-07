@@ -27,7 +27,7 @@ fn cdt_simple() {
 #[test]
 fn cdt_concave() {
     let transforms: Vec<(&str, Box<dyn Fn(i32, i32) -> IVec2>)> = vec![
-        ("(x, y)", Box::new(|x, y| IVec2::new(x, y))),
+        ("(x, y)", Box::new(IVec2::new)),
         ("(-x, y)", Box::new(|x, y| IVec2::new(-x, y))),
         ("(-x, -y)", Box::new(|x, y| IVec2::new(-x, -y))),
         ("(x, -y)", Box::new(|x, y| IVec2::new(x, -y))),

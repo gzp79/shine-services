@@ -1,7 +1,7 @@
 use crate::{
     app_state::AppState,
-    models::{IdentityKind, SearchIdentity, MAX_SEARCH_RESULT_COUNT},
-    services::{permissions, IdentityPermissions},
+    handlers::{IdentitySearchQuery, MAX_SEARCH_RESULT_COUNT},
+    models::{permissions, IdentityKind, IdentityPermissions},
 };
 use axum::{extract::State, Extension, Json};
 use chrono::{DateTime, Utc};
@@ -74,16 +74,10 @@ pub async fn search_identity(
         .check(permissions::READ_ANY_IDENTITY)
         .map_err(|err| err.into_response(&problem_config))?;
 
-    let count = query
-        .count
-        .unwrap_or(MAX_SEARCH_RESULT_COUNT)
-        .min(MAX_SEARCH_RESULT_COUNT);
-
-    // Fetch one extra to detect whether results were truncated
-    let mut identities = state
-        .user_service()
-        .search(SearchIdentity {
-            count: Some(count + 1),
+    let result = state
+        .identity_search_handler()
+        .search_identities(IdentitySearchQuery {
+            count: query.count,
             user_ids: query.user_id.as_deref(),
             emails: query.email.as_deref(),
             names: query.name.as_deref(),
@@ -91,10 +85,8 @@ pub async fn search_identity(
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 
-    let is_partial = identities.len() > count;
-    identities.truncate(count);
-
-    let identities = identities
+    let identities = result
+        .identities
         .into_iter()
         .map(|x| IdentityInfo {
             id: x.id,
@@ -109,5 +101,8 @@ pub async fn search_identity(
         })
         .collect();
 
-    Ok(Json(IdentitySearchPage { identities, is_partial }))
+    Ok(Json(IdentitySearchPage {
+        identities,
+        is_partial: result.is_partial,
+    }))
 }

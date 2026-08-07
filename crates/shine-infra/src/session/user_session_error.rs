@@ -1,5 +1,5 @@
 use crate::{
-    db::RedisConnectionError,
+    db::redis::RedisConnectionError,
     web::{extracts::ClientFingerprintError, responses::Problem},
 };
 use thiserror::Error as ThisError;

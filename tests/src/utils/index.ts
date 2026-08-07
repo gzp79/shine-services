@@ -15,3 +15,4 @@ export * from './_common';
 export * from './_test_helpers';
 export * from './_string';
 export * from './_schema';
+export * from './_service';

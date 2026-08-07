@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hub Communication &amp; Connection Lifecycle</title>
+<link rel="stylesheet" href="../../doc.css">
+</head>
+<body>
+
+<header class="doc-header">
+  <h1 class="doc-title">Hub Communication &amp; Connection Lifecycle</h1>
+  <div class="doc-meta">
+    <span>How the builder hub routes messages and keeps at most one live connection per user, in sync with its session.</span>
+  </div>
+</header>
+
+<h2>Problem</h2>
+<p>The builder hub is a transport-agnostic fan-out point for connected clients:
+it accepts payloads from any subscriber channel, broadcasts hub-wide messages,
+and tracks who is connected. Subscribers are addressed by topic rather than by
+transport, so a WebSocket socket is only the current client channel, not a
+built-in assumption. A client's connection must never outlive its session, and a
+user must never end up with two live connections. The hub achieves this with a single serial command loop, a
+split-by-class channel design so lifecycle signals are never lost, and a
+connection identity (<code>connection_id</code>) that lets both the in-memory
+state and the cross-instance Redis registry safely resolve "which connection is
+current".</p>
+
+<h2>Invariants</h2>
+<p>Every mechanism below exists to uphold these properties. They must <em>all</em>
+hold simultaneously, across restarts and across multiple service instances.</p>
+
+<table>
+  <tr><th>#</th><th>Invariant</th><th>Upheld by</th></tr>
+  <tr>
+    <td>1</td>
+    <td>A user may have multiple sessions.</td>
+    <td>Connection identity is <code>(connection_id, session_key)</code>; the hub never assumes a user has a single session.</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>A user has at most one live connection; a new connection kills the previous.</td>
+    <td><code>process(ConnectUser)</code> publishes <code>UserDisconnected</code> for the old <code>connection_id</code> before recording the new one — see <a href="#last-connection-wins">Last connection wins</a>.</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>The same session may renew the connection at any time.</td>
+    <td>Each <code>connect</code> mints a fresh <code>connection_id</code>; renewing simply replaces the prior connection via the same last-wins path.</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>A user may switch the connection to any of their sessions.</td>
+    <td><code>ConnectUser</code> carries the new <code>session_key</code>; the 1:1 bind of connection to session lets any session take over the single slot.</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td>There can be multiple instances of the service.</td>
+    <td>The Redis registry (<code>hub-connection:{user}</code>) + <code>hub-registry-changed</code> pub/sub reconcile connections held by other nodes — see <a href="#cross-instance">Cross-instance</a>.</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td>When a session expires, all its connections must be closed.</td>
+    <td>The <code>SessionChecker</code> validates every tracked session each tick and issues a targeted <code>disconnect(user_id, connection_id)</code> on failure.</td>
+  </tr>
+  <tr>
+    <td>7</td>
+    <td>On a server crash, Redis is cleaned up.</td>
+    <td>Every registry key carries a TTL; a crashed node's entries expire, and the <code>HeartbeatTask</code> only refreshes TTLs for connections it still holds.</td>
+  </tr>
+</table>
+
+<details data-agent="security">
+  <summary>Why compare-and-remove on <code>connection_id</code> is load-bearing for #2, #3, #6</summary>
+  <div class="details-body">
+    Invariants 2, 3, and 6 all reduce to the same race: a disconnect intended for
+    one connection must never tear down a fresher one that has since replaced it.
+    Every removal path (session expiry, heartbeat miss, lagging socket, explicit
+    disconnect) is a compare-and-remove keyed on <code>connection_id</code>,
+    enforced identically in memory and in Redis. A stale
+    <code>disconnect(C_A)</code> arriving after <code>C_B</code> has taken the slot
+    is a no-op. Without this CAS, a renew (#3) or session switch (#4) would race
+    the cleanup of the connection it replaced.
+  </div>
+</details>
+
+<h2>Architecture — message flow</h2>
+<p>A client feeds the hub over two inbound channels of different classes; the
+hub's serial loop processes them and calls <code>publish</code>, which fans each
+message out to every subscriber whose topic set matches. Each subscriber owns an
+unbounded outbound channel drained by its WebSocket send task.</p>
+
+<div class="canvas">
+  <div class="layer-row">
+    <div class="layer-label">Client / route</div>
+    <div class="layer-body">
+      <div class="box box-indigo" style="flex:1">
+        <div class="bname">HubSender</div>
+        <div class="bdetail">connect / disconnect / shutdown /<br>notify_registry_changed / send_workload</div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow-row" style="min-height:44px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-teal" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">control (unbounded)<br>never lost to back-pressure</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+      <div class="arrow-item arr-orange" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">payload (bounded, 128)<br>try_send → error when full</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-label">Inbound channels</div>
+    <div class="layer-body">
+      <div class="box box-teal" style="flex:1">
+        <div class="bname">control_tx → control_rx</div>
+        <div class="bdetail">ControlCommand</div>
+      </div>
+      <div class="box box-orange" style="flex:1">
+        <div class="bname">payload_tx → payload_rx</div>
+        <div class="bdetail">Workload</div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow-row" style="min-height:44px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-blue" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">biased select! — control drained first</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-label">Hub loop</div>
+    <div class="layer-body">
+      <div class="box box-blue" style="flex:1">
+        <div class="bname">HubService</div>
+        <div class="bdetail">process(ControlCommand) — mutates connection state<br>Workload → publish() verbatim</div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow-row" style="min-height:32px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-pink" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">publish(HubMessage) — topic-filtered fan-out</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-label">Outbound</div>
+    <div class="layer-body">
+      <div class="box box-pink" style="flex:1">
+        <div class="bname">Subscriber channels (unbounded)</div>
+        <div class="bdetail">one per subscription; drained by WS send task<br>pruned only when the receiver is closed</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>The split is deliberate. <strong>Payload</strong> (chat and other
+<code>Workload</code>s) is driven at the client's own rate, so it uses a bounded
+channel and errors when full — a slow or abusive client throttles only itself.
+<strong>Control</strong> (connect / disconnect / registry-change / shutdown) is
+bounded by the number of connections, not client traffic, so it uses an
+unbounded channel and is never dropped for back-pressure — lifecycle correctness
+must not depend on queue depth. Outbound is unbounded as well: once the hub
+accepts a message it is guaranteed delivered, and the only reason to drop a
+subscriber is a closed receiver. See <code>services/hub/hub_service.rs ·
+start</code> for the <code>biased</code> loop and
+<code>services/hub/connected_users.rs · publish</code> for the fan-out.</p>
+
+<details data-agent="performance">
+  <summary>Accepted residual risk: unbounded outbound can grow if a client stalls</summary>
+  <div class="details-body">
+    Because the outbound per-subscriber channel is unbounded, a client that
+    stops reading its socket while the hub keeps publishing will accumulate an
+    unbounded queue in memory. This is accepted for now — lifecycle reliability
+    is worth more than the bound. The intended mitigation is a read-idle /
+    keepalive close that drops a subscriber that stops draining, rather than
+    reintroducing a lossy bound on outbound.
+  </div>
+</details>
+
+<h2>Messages</h2>
+<p>Everything the hub broadcasts is a <code>HubMessage</code>, tagged by
+<code>TopicKey</code> so subscribers receive only the topics they asked for.
+Inbound, the two channels carry disjoint types: <code>ControlCommand</code> on
+the control channel and <code>Workload</code> on the payload channel.</p>
+
+<table>
+  <tr><th>Type</th><th>Variants</th><th>Role</th></tr>
+  <tr>
+    <td><code>ControlCommand</code></td>
+    <td><code>ConnectUser</code>, <code>DisconnectUser</code>, <code>HubRegistryChanged</code>, <code>Shutdown</code></td>
+    <td>Inbound control; drives connection-state changes in the serial loop. Carries <code>session_key</code> on <code>ConnectUser</code> only.</td>
+  </tr>
+  <tr>
+    <td><code>Workload</code></td>
+    <td><code>Chat</code></td>
+    <td>Inbound payload; forwarded to <code>publish</code> verbatim (a pure move into <code>HubMessage</code>), no hub processing.</td>
+  </tr>
+  <tr>
+    <td><code>HubMessage</code></td>
+    <td><code>Hub(HubEvent)</code>, <code>Chat(ChatMessage)</code></td>
+    <td>Outbound envelope delivered to subscribers, filtered by <code>topic()</code>.</td>
+  </tr>
+  <tr>
+    <td><code>HubEvent</code></td>
+    <td><code>UserConnected</code>, <code>UserDisconnected</code>, <code>Shutdown</code></td>
+    <td>Lifecycle events on topic <code>Hub</code>. <code>UserConnected</code> carries <code>session_key</code> for in-memory consumers; <code>UserDisconnected</code> carries only <code>connection_id</code>.</td>
+  </tr>
+</table>
+
+<h2>Session &amp; connection checking</h2>
+<p>Connection health is enforced at two scopes. <strong>In-memory</strong>, a
+single instance detects sessions that have expired and disconnects exactly the
+affected connection. <strong>Cross-instance</strong>, the Redis registry plus a
+periodic heartbeat reconcile connections a node no longer holds. Both scopes are
+fed by lifecycle events and both resolve identity by <code>connection_id</code>,
+so neither can tear down a fresher connection.</p>
+
+<h3>In-memory</h3>
+<p>Each periodic consumer runs a self-contained <code>run_connection_loop</code>: it
+takes its <em>own</em> <code>Hub</code>-topic subscription and owns a private
+<code>ConnectionTracker</code> that event-sources a
+<code>user_id → (connection_id, session_key)</code> map from
+<code>UserConnected</code> / <code>UserDisconnected</code>. The loop is a
+<code>select!</code> between the subscription (each message is applied to the owned
+map) and an interval ticker (each tick invokes the consumer's <code>on_tick</code>
+with the current map). Because every consumer owns its tracker, there is no shared
+state and no lock between them. The <code>SessionChecker</code> is one such consumer:
+on each tick it validates every tracked session against
+<code>CurrentUserService</code> and, on failure, issues a <strong>targeted</strong>
+<code>disconnect(user_id, connection_id)</code>.</p>
+
+<div class="fanout">
+  <div class="fanout-source">
+    <div class="box box-orange">
+      <div class="bname">HubEvent (Hub topic)</div>
+      <div class="bdetail">UserConnected / UserDisconnected</div>
+    </div>
+  </div>
+  <div class="fanout-trunk"></div>
+  <div class="fanout-branches">
+    <div class="fanout-branch">
+      <div class="fanout-branch-label">event-sources user → (conn, key) map</div>
+      <div class="box box-green"><div class="bname">ConnectionTracker</div></div>
+    </div>
+    <div class="fanout-branch">
+      <div class="fanout-branch-label">validates sessions, targeted disconnect</div>
+      <div class="box box-green"><div class="bname">SessionChecker</div></div>
+    </div>
+    <div class="fanout-branch">
+      <div class="fanout-branch-label">refreshes TTL, reaps inactive</div>
+      <div class="box box-green"><div class="bname">HeartbeatTask</div></div>
+    </div>
+  </div>
+</div>
+<p>The loop ends cleanly on a <code>Shutdown</code> event or a closed subscription
+(recv returns <code>None</code>), so consumers stop instead of busy-looping over a
+stale snapshot. A <code>UserDisconnected</code> is applied only when it matches the
+tracked <code>connection_id</code>, so a stale disconnect never drops a fresh
+reconnect. Expiry handling in full:</p>
+
+<div class="hflow">
+  <div class="box box-green"><div class="bname">SessionChecker tick</div></div>
+  <div class="hconn"><div class="hconn-label">get_current_user fails</div></div>
+  <div class="box box-blue"><div class="bname">disconnect(user, C)</div></div>
+  <div class="hconn"><div class="hconn-label">CAS on connection_id</div></div>
+  <div class="box box-blue"><div class="bname">remove (memory + registry)</div></div>
+  <div class="hconn"><div class="hconn-label">UserDisconnected&#123;C&#125;</div></div>
+  <div class="box box-pink"><div class="bname">WS close</div></div>
+</div>
+
+<h3 id="cross-instance">Cross-instance</h3>
+<p>The Redis registry holds one key per user, <code>hub-connection:{user_id}</code>
+→ <code>connection_id</code>, with a TTL. Creating a connection <code>SET</code>s
+the key (replacing any prior value) and <code>PUBLISH</code>es the user id on the
+<code>hub-registry-changed</code> channel; removal <code>DEL</code>s and
+publishes only when the connection id still matches. Every hub subscribes to that
+channel and re-checks the affected user. The <code>HeartbeatTask</code> walks the
+tracker's snapshot each interval and calls <code>heartbeat_connection</code>,
+which extends the TTL only when the stored id matches; a
+<code>false</code> result means the registry no longer holds this connection, so
+the task funnels a <code>disconnect</code> through the same CAS'd command path.
+<span class="tag warn">invariant</span> <code>session_key</code> is never written
+to Redis, logged, or placed in any broadcast payload — it stays in-memory only.</p>
+
+<h2 id="last-connection-wins">Last connection wins</h2>
+<p>Each user has at most one live connection. Every <code>connect</code> mints a
+fresh <code>connection_id</code> bound 1:1 to the session key that opened it, so
+identity is unambiguous. When a new connection arrives for a user who already has
+one, <code>process(ConnectUser)</code> publishes <code>UserDisconnected</code> for
+the <em>old</em> connection before recording the new one — the old socket sees
+its own id in the event and closes itself.</p>
+
+<div class="hflow">
+  <div class="box box-violet"><div class="bname">(C_A, S_A) active</div></div>
+  <div class="hconn"><div class="hconn-label">ConnectUser&#123;C_B, S_B&#125;</div></div>
+  <div class="box box-orange"><div class="bname">UserDisconnected&#123;C_A&#125;</div></div>
+  <div class="hconn"><div class="hconn-label">then record</div></div>
+  <div class="box box-violet"><div class="bname">(C_B, S_B) active</div></div>
+</div>
+
+<p>The safety property is the compare-and-remove on <code>connection_id</code>,
+enforced identically in memory (<code>ConnectedUsers::disconnect</code> with
+<code>Some(id)</code>) and in Redis (<code>remove_connection_if_active</code>,
+<code>heartbeat_connection</code>). A disconnect request — whether from a session
+expiry, a heartbeat miss, or a lagging socket — only removes the entry if the id
+still matches the active connection. So a stale <code>disconnect(C_A)</code>
+arriving after <code>C_B</code> has replaced it is a no-op, and the fresh
+connection is never dropped by an older session's cleanup.</p>
+
+<h2>File map</h2>
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>services/builder/src/services/hub/hub_service.rs</code></td><td>Serial command loop (biased <code>select!</code>), <code>process</code>, registry create/remove/heartbeat, disconnect-on-replace, <code>spawn_heartbeat</code>.</td></tr>
+  <tr><td><code>services/builder/src/services/hub/hub_command.rs</code></td><td><code>ControlCommand</code> enum — inbound control messages.</td></tr>
+  <tr><td><code>services/builder/src/services/hub/hub_connection.rs</code></td><td><code>HubSender</code> (control + payload senders) and <code>HubReceiver</code> (unbounded outbound).</td></tr>
+  <tr><td><code>services/builder/src/services/hub/connected_users.rs</code></td><td>In-loop connection map + subscriber list; <code>publish</code> fan-out with prune-on-closed; <code>disconnect</code> CAS.</td></tr>
+  <tr><td><code>services/builder/src/services/hub/heartbeat.rs</code></td><td><code>HeartbeatTask</code>: periodic TTL refresh + reap of registry-inactive connections.</td></tr>
+  <tr><td><code>services/builder/src/services/connection_tracker.rs</code></td><td><code>ConnectionTracker</code>: shared event-sourced map, generation counter, closed-channel-as-shutdown.</td></tr>
+  <tr><td><code>services/builder/src/services/session_checker.rs</code></td><td><code>SessionChecker</code>: periodic in-memory session validation → targeted disconnect.</td></tr>
+  <tr><td><code>services/builder/src/models/messages/</code></td><td><code>HubMessage</code>, <code>HubEvent</code>, <code>Workload</code>, <code>ChatMessage</code>, <code>TopicKey</code> / <code>ToTopic</code>.</td></tr>
+  <tr><td><code>services/builder/src/repositories/hub_registry/</code></td><td>Redis registry: <code>hub-connection:{user}</code> keys, CAS create/remove/heartbeat, <code>hub-registry-changed</code> pub/sub.</td></tr>
+  <tr><td><code>services/builder/src/routes/ws/connect.rs</code></td><td>WS upgrade: subscribes, connects, and runs the send/recv tasks that bridge the socket to the hub.</td></tr>
+  <tr><td><code>services/builder/src/app_state.rs</code></td><td>Wires the hub, the shared tracker, the session checker, and the heartbeat task.</td></tr>
+</table>
+
+</body>
+</html>

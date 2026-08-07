@@ -251,7 +251,7 @@ impl<const DELAUNAY: bool> Triangulation<DELAUNAY> {
             self[cur].tag = *tag;
             let from = self[cur].find_neighbor(prev);
 
-            let test_result = match from.map(|r| u8::from(r)) {
+            let test_result = match from.map(u8::from) {
                 None => self.test_containment_face(p, cur),
                 Some(0) => self.test_containment(p, cur, Rot3Idx::new(2), Rot3Idx::new(0), Rot3Idx::new(1), *tag),
                 Some(1) => self.test_containment(p, cur, Rot3Idx::new(0), Rot3Idx::new(1), Rot3Idx::new(2), *tag),

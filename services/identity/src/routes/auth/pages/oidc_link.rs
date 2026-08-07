@@ -1,8 +1,7 @@
 use crate::{
     app_state::AppState,
-    routes::auth::{
-        AuthError, AuthPage, AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient,
-    },
+    handlers::AuthPage,
+    routes::auth::{AuthError, AuthPageRequest, AuthSession, ExternalLoginCookie, ExternalLoginError, OIDCClient},
 };
 use axum::{extract::State, Extension};
 use chrono::Duration;

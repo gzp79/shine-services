@@ -1,12 +1,9 @@
-mod user_info;
-pub use self::user_info::*;
-mod external_providers;
-pub use self::external_providers::*;
 mod external_links;
-pub use self::external_links::*;
+mod external_providers;
+mod router;
 mod sessions;
-pub use self::sessions::*;
 mod tokens;
-pub use self::tokens::*;
 mod user_email_confirm;
-pub use self::user_email_confirm::*;
+mod user_info;
+
+pub use self::router::api_routes;

@@ -17,7 +17,7 @@ pub struct ChunkRngStreams {
 
 impl ChunkRngStreams {
     pub fn new(mut seed: SplitMix64) -> Self {
-        let mesh = Rc::new(RefCell::new(seed.next_stream()));
+        let mesh = Rc::new(RefCell::new(seed.generate_stream()));
         Self { mesh }
     }
 }

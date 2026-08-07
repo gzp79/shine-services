@@ -1,7 +1,7 @@
 use crate::{
     app_state::AppState,
     routes::auth::{AuthError, AuthSession},
-    services::SettingsService,
+    settings::IdentitySettings,
 };
 use axum::response::{Html, IntoResponse, Response};
 use shine_infra::web::responses::{Problem, ProblemConfig};
@@ -20,13 +20,13 @@ impl IntoResponse for AuthPage {
 }
 
 pub struct AuthPageHandler<'a> {
-    settings: &'a SettingsService,
+    settings: &'a IdentitySettings,
     problem_config: &'a ProblemConfig,
     tera: &'a Tera,
 }
 
 impl<'a> AuthPageHandler<'a> {
-    pub fn new(settings: &'a SettingsService, problem_config: &'a ProblemConfig, tera: &'a Tera) -> Self {
+    pub fn new(settings: &'a IdentitySettings, problem_config: &'a ProblemConfig, tera: &'a Tera) -> Self {
         Self { settings, problem_config, tera }
     }
 

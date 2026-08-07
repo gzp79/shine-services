@@ -9,7 +9,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Duration, Utc};
 use postgres_from_row::FromRow;
 use shine_infra::{
-    db::{DBError, PGClient, PGConvertError, PGErrorChecks, PGValueTypeINT2, ToPGType},
+    db::postgres::{PgClient, PgConvertError, PgError, PgErrorChecks, PgValueTypeInt2, ToPgType},
     email::{Email, NORM_EMAIL_VERSION},
     pg_query,
     web::extracts::{ClientFingerprint, SiteInfo},
@@ -19,7 +19,7 @@ use tracing::instrument;
 use uuid::Uuid;
 
 impl ToSql for TokenKind {
-    fn to_sql(&self, ty: &PGType, out: &mut BytesMut) -> Result<IsNull, PGConvertError> {
+    fn to_sql(&self, ty: &PGType, out: &mut BytesMut) -> Result<IsNull, PgConvertError> {
         let value: i16 = match self {
             TokenKind::SingleAccess => 1,
             TokenKind::Persistent => 2,
@@ -34,22 +34,22 @@ impl ToSql for TokenKind {
 }
 
 impl FromSql<'_> for TokenKind {
-    fn from_sql(ty: &PGType, raw: &[u8]) -> Result<TokenKind, PGConvertError> {
+    fn from_sql(ty: &PGType, raw: &[u8]) -> Result<TokenKind, PgConvertError> {
         let value = i16::from_sql(ty, raw)?;
         match value {
             1 => Ok(TokenKind::SingleAccess),
             2 => Ok(TokenKind::Persistent),
             3 => Ok(TokenKind::Access),
             4 => Ok(TokenKind::EmailAccess),
-            _ => Err(PGConvertError::from("Invalid value for TokenKind")),
+            _ => Err(PgConvertError::from("Invalid value for TokenKind")),
         }
     }
 
     accepts!(INT2);
 }
 
-impl ToPGType for TokenKind {
-    type PGValueType = PGValueTypeINT2;
+impl ToPgType for TokenKind {
+    type PgValueType = PgValueTypeInt2;
 }
 
 #[derive(FromRow)]
@@ -225,16 +225,16 @@ pub struct PgTokensStatements {
 }
 
 impl PgTokensStatements {
-    pub async fn new(client: &PGClient) -> Result<Self, PgIdentityBuildError> {
+    pub async fn new(client: &PgClient) -> Result<Self, PgIdentityBuildError> {
         Ok(Self {
-            insert: InsertToken::new(client).await.map_err(DBError::from)?,
-            find_by_hash: FindByHashToken::new(client).await.map_err(DBError::from)?,
-            list_by_user: ListByUser::new(client).await.map_err(DBError::from)?,
-            delete: DeleteToken::new(client).await.map_err(DBError::from)?,
-            delete_by_user: DeleteByUser::new(client).await.map_err(DBError::from)?,
-            delete_all_by_user: DeleteAllByUser::new(client).await.map_err(DBError::from)?,
-            test: TestToken::new(client).await.map_err(DBError::from)?,
-            take: TakeToken::new(client).await.map_err(DBError::from)?,
+            insert: InsertToken::new(client).await.map_err(PgError::from)?,
+            find_by_hash: FindByHashToken::new(client).await.map_err(PgError::from)?,
+            list_by_user: ListByUser::new(client).await.map_err(PgError::from)?,
+            delete: DeleteToken::new(client).await.map_err(PgError::from)?,
+            delete_by_user: DeleteByUser::new(client).await.map_err(PgError::from)?,
+            delete_all_by_user: DeleteAllByUser::new(client).await.map_err(PgError::from)?,
+            test: TestToken::new(client).await.map_err(PgError::from)?,
+            take: TakeToken::new(client).await.map_err(PgError::from)?,
         })
     }
 }
@@ -290,7 +290,7 @@ impl Tokens for PgIdentityDbContext<'_> {
                 return Err(IdentityError::TokenMissingEmail);
             }
             Err(err) => {
-                return Err(IdentityError::DBError(err.into()));
+                return Err(PgError::from(err).into());
             }
         };
 
@@ -316,7 +316,7 @@ impl Tokens for PgIdentityDbContext<'_> {
             .find_by_hash
             .query_opt(&self.client, &token_hash)
             .await
-            .map_err(DBError::from)?
+            .map_err(PgError::from)?
             .map(|row| {
                 let email = row
                     .encrypted_email
@@ -355,7 +355,7 @@ impl Tokens for PgIdentityDbContext<'_> {
             .list_by_user
             .query(&self.client, user_id)
             .await
-            .map_err(DBError::from)?
+            .map_err(PgError::from)?
             .into_iter()
             .map(|row| {
                 let email = row
@@ -396,7 +396,7 @@ impl Tokens for PgIdentityDbContext<'_> {
             .delete
             .execute(&self.client, &token_hash, &kind)
             .await
-            .map_err(DBError::from)?;
+            .map_err(PgError::from)?;
         if count == 1 {
             Ok(Some(()))
         } else {
@@ -411,7 +411,7 @@ impl Tokens for PgIdentityDbContext<'_> {
             .delete_by_user
             .execute(&self.client, &user_id, &token_hash)
             .await
-            .map_err(DBError::from)?;
+            .map_err(PgError::from)?;
         if count == 1 {
             Ok(Some(()))
         } else {
@@ -426,7 +426,7 @@ impl Tokens for PgIdentityDbContext<'_> {
                 .delete_all_by_user
                 .execute(&self.client, &user_id, kind)
                 .await
-                .map_err(DBError::from)?;
+                .map_err(PgError::from)?;
         }
         Ok(())
     }
@@ -443,7 +443,7 @@ impl Tokens for PgIdentityDbContext<'_> {
             .test
             .query_opt(&self.client, &token_hash, &allowed_kind)
             .await
-            .map_err(DBError::from)?;
+            .map_err(PgError::from)?;
         row.map(|row| {
             let bound_email = row
                 .token_encrypted_email
@@ -505,7 +505,7 @@ impl Tokens for PgIdentityDbContext<'_> {
             .take
             .query_opt(&self.client, &token_hash, &allowed_kind)
             .await
-            .map_err(DBError::from)?;
+            .map_err(PgError::from)?;
         row.map(|row| {
             let bound_email = row
                 .token_encrypted_email

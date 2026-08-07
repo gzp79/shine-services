@@ -11,6 +11,7 @@ impl<const N: usize> Default for RotNIdx<N> {
 }
 
 impl<const N: usize> RotNIdx<N> {
+    #[allow(clippy::should_implement_trait)]
     pub fn add(self, value: usize) -> Self {
         assert!(!self.is_none());
         Self::new((self.0 as usize + value) % N)
@@ -21,6 +22,7 @@ impl<const N: usize> RotNIdx<N> {
         Self::new((self.0 as usize + 1) % N)
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn sub(self, value: usize) -> Self {
         assert!(!self.is_none());
         Self::new((self.0 as usize + value + N - 1) % N)

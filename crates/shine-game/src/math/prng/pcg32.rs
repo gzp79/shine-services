@@ -8,13 +8,13 @@ pub struct Pcg32 {
 impl Pcg32 {
     pub fn new(seed: u64, seq: u64) -> Self {
         let mut pcg = Self { state: 0, inc: (seq << 1) | 1 };
-        pcg.next();
+        pcg.generate();
         pcg.state = pcg.state.wrapping_add(seed);
-        pcg.next();
+        pcg.generate();
         pcg
     }
 
-    pub fn next(&mut self) -> u32 {
+    pub fn generate(&mut self) -> u32 {
         let oldstate = self.state;
         self.state = oldstate.wrapping_mul(0x5851f42d4c957f2d).wrapping_add(self.inc);
         let xorshifted = (((oldstate >> 18) ^ oldstate) >> 27) as u32;
@@ -48,7 +48,7 @@ impl Pcg32 {
 
 impl StableRng for Pcg32 {
     fn next_u32(&mut self) -> u32 {
-        self.next()
+        self.generate()
     }
 }
 
@@ -62,7 +62,7 @@ mod test {
         let mut rng = Pcg32::new(42, 54);
         let expected = [0xa15c02b7, 0x7b47f409, 0xba1d3330, 0x83d2f293, 0xbfa4784b, 0xcbed606e];
         for &exp in &expected {
-            assert_eq!(rng.next(), exp);
+            assert_eq!(rng.generate(), exp);
         }
     }
 
@@ -71,46 +71,46 @@ mod test {
         {
             let mut rng = Pcg32::new(42, 54);
             rng.advance(5);
-            assert_eq!(rng.next(), 0xcbed606e);
+            assert_eq!(rng.generate(), 0xcbed606e);
             rng.advance(-3);
-            assert_eq!(rng.next(), 0x83d2f293);
+            assert_eq!(rng.generate(), 0x83d2f293);
         }
 
         {
             let mut rng = Pcg32::new(42, 54);
             let mut rng2 = Pcg32::new(42, 54);
-            let _r0 = rng.next(); // 0xa15c02b7
-            let r1 = rng.next(); // 0x7b47f409
-            let r2 = rng.next(); // 0xba1d3330
-            let r3 = rng.next(); // 0x83d2f293
+            let _r0 = rng.generate(); // 0xa15c02b7
+            let r1 = rng.generate(); // 0x7b47f409
+            let r2 = rng.generate(); // 0xba1d3330
+            let r3 = rng.generate(); // 0x83d2f293
             rng2.advance(3);
-            assert_eq!(r3, rng2.next());
+            assert_eq!(r3, rng2.generate());
 
             // repeat last random
             rng2.advance(-1);
-            assert_eq!(r3, rng2.next());
+            assert_eq!(r3, rng2.generate());
             rng2.advance(-1);
-            assert_eq!(r3, rng2.next());
+            assert_eq!(r3, rng2.generate());
 
             rng2.advance(-2);
-            assert_eq!(rng2.next(), r2);
+            assert_eq!(rng2.generate(), r2);
             rng2.advance(-2);
-            assert_eq!(rng2.next(), r1);
+            assert_eq!(rng2.generate(), r1);
         }
 
         for test in [7, 13, 57, 1001] {
             let mut rng = Pcg32::new(42, 54);
             for _ in 0..test {
-                rng.next();
+                rng.generate();
             }
             let mut rng2 = Pcg32::new(42, 54);
             rng2.advance(test);
-            assert_eq!(rng.next(), rng2.next()); // (test + 1). in the sequence
+            assert_eq!(rng.generate(), rng2.generate()); // (test + 1). in the sequence
 
             // go back the the 1th random
             // test+1 backward step is required to reset the stream
             rng2.advance(-test);
-            assert_eq!(rng2.next(), 0x7b47f409);
+            assert_eq!(rng2.generate(), 0x7b47f409);
         }
     }
 }

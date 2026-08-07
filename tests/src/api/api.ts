@@ -1,4 +1,4 @@
-import { OptionalSchema, convertKeysToLowerCase, removeUndefinedValues } from '$lib/utils';
+import { DEFAULT_USER_AGENT, OptionalSchema, convertKeysToLowerCase, removeUndefinedValues } from '$lib/utils';
 import { randomUUID } from 'crypto';
 import debug from 'debug';
 import { APIRequestContext, APIResponse, request } from 'playwright';
@@ -177,7 +177,7 @@ export class ApiRequest<Q = void> {
         params: ApiParams = {},
         body: Payload<Q> | undefined = undefined
     ) {
-        this.headers = headers;
+        this.headers = { 'user-agent': DEFAULT_USER_AGENT, ...convertKeysToLowerCase(headers) };
         this.params = params;
         this.body = body;
     }

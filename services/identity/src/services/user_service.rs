@@ -1,7 +1,9 @@
 use crate::{
-    models::{ExternalUserInfo, Identity, IdentityError, SearchIdentity},
-    repositories::identity::{ExternalLinks, IdSequences, Identities, IdentityDb, IdentitySearch},
-    services::{IdentityTopic, UserEvent, UserLinkEvent},
+    models::{
+        events::identity::{IdentityTopic, UserEvent, UserLinkEvent},
+        ExternalUserInfo, Identity, IdentityError,
+    },
+    repositories::identity::{ExternalLinks, IdSequences, Identities, IdentityDb, IdentitySearch, SearchIdentityQuery},
 };
 use chrono::{DateTime, Utc};
 use shine_infra::{crypto::IdEncoder, email::Email, sync::TopicBus, web::responses::Problem};
@@ -48,6 +50,7 @@ impl<DB: IdentityDb> UserService<DB> {
         let identity = ctx.create_user(id, name, email).await?;
         drop(ctx);
 
+        // Notify listeners that a new identity is now available.
         self.events.publish(&UserEvent::Created(identity.id)).await;
         Ok(identity)
     }
@@ -71,6 +74,7 @@ impl<DB: IdentityDb> UserService<DB> {
         let mut ctx = self.db.create_context().await?;
         match ctx.update(id, name, email).await? {
             Some(identity) => {
+                // Notify listeners that core identity profile data changed.
                 self.events.publish(&UserEvent::Updated(id)).await;
                 Ok(Some(identity))
             }
@@ -86,13 +90,21 @@ impl<DB: IdentityDb> UserService<DB> {
     pub async fn delete(&self, id: Uuid) -> Result<(), IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.cascaded_delete(id).await?;
+        // Notify listeners that this identity was deleted.
         self.events.publish(&UserEvent::Deleted(id)).await;
         Ok(())
     }
 
-    pub async fn search(&self, search: SearchIdentity<'_>) -> Result<Vec<Identity>, IdentityError> {
+    pub async fn search(
+        &self,
+        user_ids: Option<&[Uuid]>,
+        emails: Option<&[String]>,
+        names: Option<&[String]>,
+        count: Option<usize>,
+    ) -> Result<Vec<Identity>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
-        ctx.search_identity(search).await
+        ctx.search_identity(SearchIdentityQuery { user_ids, emails, names, count })
+            .await
     }
 
     pub async fn generate_name(&self) -> Result<String, IdentityError> {
@@ -182,7 +194,9 @@ impl<DB: IdentityDb> UserService<DB> {
 
             drop(ctx);
 
+            // Notify listeners that the linked user identity was created.
             self.events.publish(&UserEvent::Created(user_id)).await;
+            // Notify listeners that an external account link was established.
             self.events.publish(&UserLinkEvent::Linked(user_id)).await;
 
             return Ok(identity);

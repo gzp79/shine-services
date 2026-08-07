@@ -1,4 +1,4 @@
-use ring::rand::SecureRandom;
+use ring::{digest, rand::SecureRandom};
 use thiserror::Error as ThisError;
 
 #[derive(Debug, ThisError)]
@@ -14,7 +14,7 @@ pub struct SessionKey([u8; 16]);
 
 impl std::fmt::Debug for SessionKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("SessionKey").field(&self.to_hex()).finish()
+        f.debug_tuple("SessionKey").field(&self.fingerprint()).finish()
     }
 }
 
@@ -37,6 +37,20 @@ impl SessionKey {
     /// Generate a unique session key.
     pub fn to_hex(self) -> String {
         hex::encode(self.0)
+    }
+
+    /// Canonical one-way hash of the key: full SHA-256, hex-encoded. This is the identifier used to
+    /// key sessions in storage — never store or transmit the raw key, only this hash.
+    pub fn key_hash(&self) -> String {
+        hex::encode(digest::digest(&digest::SHA256, &self.0))
+    }
+
+    /// Short prefix of [`key_hash`] for log correlation: enough to identify a key across log lines
+    /// (and to match it against the stored session hash) without revealing any secret bytes.
+    pub fn fingerprint(&self) -> String {
+        let mut hash = self.key_hash();
+        hash.truncate(8);
+        hash
     }
 
     /// Return the raw key as bytes

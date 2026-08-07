@@ -3,10 +3,10 @@ use crate::{
     repositories::session::{redis::RedisSessionDbContext, Sessions},
 };
 use chrono::{DateTime, Duration, Utc};
-use redis::AsyncCommands;
+use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 use serde::{Deserialize, Serialize};
 use shine_infra::{
-    db::{DBError, RedisJsonValue},
+    db::redis::{RedisError, RedisJsonValue},
     web::extracts::SiteInfo,
 };
 use uuid::Uuid;
@@ -109,9 +109,9 @@ impl RedisSessionDbContext<'_> {
             .client
             .scan_match::<String, _>(pattern)
             .await
-            .map_err(DBError::RedisError)?;
+            .map_err(RedisError::RawError)?;
         while let Some(key) = iter.next_item().await {
-            let key = key.map_err(DBError::RedisError)?;
+            let key = key.map_err(RedisError::RawError)?;
             keys.push(key);
         }
         Ok(keys)
@@ -159,12 +159,18 @@ impl Sessions for RedisSessionDbContext<'_> {
         };
 
         log::debug!("sentinel:{sentinel:#?}");
-        let created = self
-            .client
-            .set_nx(&sentinel_key, &sentinel)
-            .await
-            .map_err(DBError::RedisError)?;
-        if created {
+
+        let created: Option<()> = {
+            let options = SetOptions::default()
+                .conditional_set(ExistenceCheck::NX)
+                .with_expiration(SetExpiry::EX(self.ttl_session as u64));
+
+            self.client
+                .set_options(&sentinel_key, &sentinel, options)
+                .await
+                .map_err(RedisError::RawError)?
+        };
+        if created.is_some() {
             let data = RedisSessionUser {
                 name: identity.name.clone(),
                 is_email_confirmed: identity.is_email_confirmed,
@@ -172,13 +178,14 @@ impl Sessions for RedisSessionDbContext<'_> {
                 roles,
             };
             log::debug!("data:{sentinel:#?}");
-            redis::pipe()
-                .expire(&sentinel_key, self.ttl_session)
-                .set(&key, &data)
-                .expire(&key, self.ttl_session)
-                .query_async::<()>(&mut *self.client)
-                .await
-                .map_err(DBError::RedisError)?;
+            let _: Option<()> = {
+                let options = SetOptions::default().with_expiration(SetExpiry::EX(self.ttl_session as u64));
+
+                self.client
+                    .set_options(&key, &data, options)
+                    .await
+                    .map_err(RedisError::RawError)?
+            };
 
             Ok(Session {
                 info: SessionInfo {
@@ -258,7 +265,7 @@ impl Sessions for RedisSessionDbContext<'_> {
             .ttl(&key)
             .query_async(&mut *self.client)
             .await
-            .map_err(DBError::RedisError)?;
+            .map_err(RedisError::RawError)?;
 
         let (sentinel, sentinel_ttl) = match (sentinel, sentinel_ttl) {
             (Some(sentinel), Some(sentinel_ttl)) => (sentinel, sentinel_ttl),
@@ -294,7 +301,7 @@ impl Sessions for RedisSessionDbContext<'_> {
             identity.id
         );
 
-        let is_open = self.client.exists(sentinel_key).await.map_err(DBError::RedisError)?;
+        let is_open = self.client.exists(sentinel_key).await.map_err(RedisError::RawError)?;
         if is_open {
             // an update on the session extends the expiration time
             let data = RedisSessionUser {
@@ -310,7 +317,7 @@ impl Sessions for RedisSessionDbContext<'_> {
                 .ignore()
                 .query_async::<()>(&mut *self.client)
                 .await
-                .map_err(DBError::RedisError)?;
+                .map_err(RedisError::RawError)?;
             self.find_session_by_hash(identity.id, session_key_hash).await
         } else {
             // sentinel is gone, session is closed.
@@ -327,7 +334,7 @@ impl Sessions for RedisSessionDbContext<'_> {
             .client
             .del(&[sentinel_key, key])
             .await
-            .map_err(DBError::RedisError)?;
+            .map_err(RedisError::RawError)?;
         Ok(())
     }
 
@@ -337,7 +344,7 @@ impl Sessions for RedisSessionDbContext<'_> {
         if !keys.is_empty() {
             log::debug!("Removing session, user:[{user_id}], keys: {keys:?}");
             // todo: https://github.com/redis-rs/redis-rs/issues/1228, https://github.com/redis-rs/redis-rs/issues/1322
-            () = self.client.del(keys).await.map_err(DBError::RedisError)?;
+            () = self.client.del(keys).await.map_err(RedisError::RawError)?;
         }
 
         Ok(())

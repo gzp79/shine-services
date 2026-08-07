@@ -1,12 +1,11 @@
 use crate::{
     app_state::AppState,
-    models::PurgeGuestsResult,
-    services::{permissions, IdentityPermissions},
+    models::{permissions, IdentityPermissions},
 };
 use axum::{extract::State, Extension, Json};
 use chrono::Utc;
 use iso8601_duration::Duration as IsoDuration;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use shine_infra::{
     session::CheckedCurrentUser,
     web::{
@@ -14,7 +13,7 @@ use shine_infra::{
         responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
     },
 };
-use utoipa::IntoParams;
+use utoipa::{IntoParams, ToSchema};
 use validator::Validate;
 
 #[derive(Deserialize, Validate, IntoParams)]
@@ -28,6 +27,13 @@ pub struct QueryParams {
     limit: Option<u32>,
 }
 
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PurgeGuestsResponse {
+    pub deleted: usize,
+    pub has_more: bool,
+}
+
 /// Purge old guest users (no confirmed email, no external links) in batches.
 ///
 /// Requires SuperAdmin role. Deletes at most `limit` guests per call.
@@ -38,7 +44,7 @@ pub struct QueryParams {
     tag = "identity",
     params(QueryParams),
     responses(
-        (status = OK, body = PurgeGuestsResult)
+        (status = OK, body = PurgeGuestsResponse)
     )
 )]
 pub async fn purge_guests(
@@ -46,7 +52,7 @@ pub async fn purge_guests(
     Extension(problem_config): Extension<ProblemConfig>,
     ValidatedQuery(query): ValidatedQuery<QueryParams>,
     user: CheckedCurrentUser,
-) -> Result<Json<PurgeGuestsResult>, ProblemResponse> {
+) -> Result<Json<PurgeGuestsResponse>, ProblemResponse> {
     user.identity_permissions()
         .check(permissions::PURGE_GUEST_USERS)
         .map_err(|err| err.into_response(&problem_config))?;
@@ -73,5 +79,8 @@ pub async fn purge_guests(
         .await
         .map_err(|err| err.into_response(&problem_config))?;
 
-    Ok(Json(result))
+    Ok(Json(PurgeGuestsResponse {
+        deleted: result.deleted,
+        has_more: result.has_more,
+    }))
 }

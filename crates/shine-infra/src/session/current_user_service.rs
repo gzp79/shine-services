@@ -1,5 +1,5 @@
 use crate::{
-    db::RedisConnectionPool,
+    db::redis::RedisConnectionPool,
     session::{CurrentUser, SessionKey, UserSessionError},
     web::ServiceConfig,
 };
@@ -8,7 +8,6 @@ use axum_extra::extract::cookie::Key;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine};
 use chrono::{DateTime, Duration, Utc};
 use redis::AsyncCommands;
-use ring::digest;
 use serde::{Deserialize, Serialize};
 use shine_infra_macros::RedisJsonValue;
 use std::sync::Arc;
@@ -60,7 +59,7 @@ impl CurrentUserService {
     }
 
     pub async fn from_config(config: &ServiceConfig) -> Result<Self, UserSessionError> {
-        let redis = crate::db::create_redis_pool(config.session_redis_cns.as_str())
+        let redis = crate::db::redis::create_redis_pool(config.session_redis_cns.as_str())
             .await
             .map_err(UserSessionError::RedisPoolError)?;
         Self::new(None, &config.session_secret, "", config.session_ttl, redis)
@@ -94,8 +93,7 @@ impl CurrentUserService {
         }
 
         let (sentinel_key, key) = {
-            let key_hash = digest::digest(&digest::SHA256, session_key.as_bytes());
-            let key_hash = hex::encode(key_hash);
+            let key_hash = session_key.key_hash();
 
             let prefix = format!("{}session:{}:{}", self.key_prefix, user_id.as_simple(), key_hash);
             let sentinel_key = format!("{prefix}:sentinel");

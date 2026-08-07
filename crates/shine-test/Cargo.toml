@@ -19,6 +19,7 @@ shine-test-macros = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true, features = ["macros"] }
+serial_test = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-logger = { workspace = true }

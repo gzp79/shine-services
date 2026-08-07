@@ -1,11 +1,11 @@
 use crate::{
     app_state::AppState,
+    handlers::AuthMailHandler,
+    integration::mailer::{EmailSender, EmailSenderError},
     models::{Identity, IdentityError, TokenKind},
-    repositories::{
-        identity::IdentityDb,
-        mailer::{EmailSender, EmailSenderError},
-    },
-    services::{CreateUserError, MailerService, SettingsService, TokenError, TokenService, UserService},
+    repositories::identity::IdentityDb,
+    services::{CreateUserError, TokenError, TokenService, UserService},
+    settings::IdentitySettings,
 };
 use shine_infra::{
     email::Email,
@@ -71,10 +71,10 @@ where
     IDB: IdentityDb,
     EMS: EmailSender,
 {
-    settings: &'a SettingsService,
+    settings: &'a IdentitySettings,
     user_service: &'a UserService<IDB>,
     token_service: &'a TokenService<IDB>,
-    mailer_service: MailerService<'a, EMS>,
+    auth_mail_handler: AuthMailHandler<'a, EMS>,
 }
 
 impl<'a, IDB, EMS> EmailAuthHandler<'a, IDB, EMS>
@@ -83,16 +83,16 @@ where
     EMS: EmailSender,
 {
     pub fn new(
-        settings: &'a SettingsService,
+        settings: &'a IdentitySettings,
         user_service: &'a UserService<IDB>,
         token_service: &'a TokenService<IDB>,
-        mailer_service: MailerService<'a, EMS>,
+        auth_mail_handler: AuthMailHandler<'a, EMS>,
     ) -> Self {
         Self {
             settings,
             user_service,
             token_service,
-            mailer_service,
+            auth_mail_handler,
         }
     }
 
@@ -166,11 +166,11 @@ where
         }
 
         if is_registration {
-            self.mailer_service
+            self.auth_mail_handler
                 .send_email_register(email.raw(), link_url, &identity.name, lang)
                 .await?;
         } else {
-            self.mailer_service
+            self.auth_mail_handler
                 .send_email_login(email.raw(), link_url, &identity.name, lang)
                 .await?;
         }
@@ -207,7 +207,7 @@ where
             )
             .await?;
 
-        self.mailer_service
+        self.auth_mail_handler
             .send_email_confirmation(email.raw(), &token, &user.name, lang)
             .await?;
 
@@ -243,7 +243,7 @@ where
             )
             .await?;
 
-        self.mailer_service
+        self.auth_mail_handler
             .send_email_change(new_email.raw(), &token, lang, &user.name)
             .await?;
 
@@ -296,7 +296,7 @@ impl AppState {
             self.settings(),
             self.user_service(),
             self.token_service(),
-            self.mailer_service(),
+            self.auth_mail_handler(),
         )
     }
 }

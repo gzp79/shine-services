@@ -7,6 +7,7 @@ edition.workspace = true
 log = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -14,6 +15,7 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 rand = { workspace = true }
 ring = { workspace = true }
+regex = { workspace = true }
 
 ############################# RUNTIME #############################
 futures = { workspace = true }
@@ -22,7 +24,6 @@ tokio = { workspace = true }
 
 ############################# DB #############################
 bb8 = { workspace = true }
-bb8-redis = { workspace = true }
 redis = { workspace = true, features = [
     "tokio-comp",
     "tokio-rustls-comp",

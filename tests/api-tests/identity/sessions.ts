@@ -14,6 +14,27 @@ test.describe('Sessions', () => {
     test('Session shall keep the site info', async ({ api }) => {
         const extraHeaders = {
             'user-agent': 'agent',
+            'cf-ipcountry': 'fi',
+            'cf-region': 'region',
+            'cf-ipcity': 'city'
+        };
+
+        const user = await api.testUsers.createGuest({}, extraHeaders);
+
+        const sessions = await api.session.getSessions(user.sid, extraHeaders);
+        expect(sessions).toHaveLength(1);
+        const session = sessions[0];
+        expect(session.agent).toEqual('agent');
+        expect(session.country).toEqual('FI');
+        expect(session.region).toEqual('region');
+        expect(session.city).toEqual('city');
+        expect(session.createdAt).toBeAfter(createdRange[0]);
+        expect(session.createdAt).toBeBefore(createdRange[1]);
+    });
+
+    test('Session shall clear invalid country while keeping other site info', async ({ api }) => {
+        const extraHeaders = {
+            'user-agent': 'agent',
             'cf-ipcountry': 'country',
             'cf-region': 'region',
             'cf-ipcity': 'city'
@@ -25,11 +46,9 @@ test.describe('Sessions', () => {
         expect(sessions).toHaveLength(1);
         const session = sessions[0];
         expect(session.agent).toEqual('agent');
-        expect(session.country).toEqual('country');
+        expect(session.country).toBeUndefined();
         expect(session.region).toEqual('region');
         expect(session.city).toEqual('city');
-        expect(session.createdAt).toBeAfter(createdRange[0]);
-        expect(session.createdAt).toBeBefore(createdRange[1]);
     });
 
     test('Create multiple session and logout from a single session shall invalidate that single session', async ({

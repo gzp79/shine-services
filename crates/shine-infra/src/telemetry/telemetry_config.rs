@@ -28,10 +28,6 @@ pub enum Tracing {
     #[serde(rename = "otlp")]
     OpenTelemetryProtocol { endpoint: String },
 
-    /// Enable Zipkin tracing (https://zipkin.io/)
-    #[cfg(feature = "ot_zipkin")]
-    Zipkin,
-
     /// Enable AppInsight tracing
     #[cfg(feature = "ot_app_insight")]
     AppInsight { connection_string: String },

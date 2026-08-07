@@ -1,116 +1,116 @@
 use chrono::{DateTime, Utc};
-use tokio_postgres::types::Type as PGType;
+use tokio_postgres::types::Type as PgType;
 use uuid::Uuid;
 
-pub trait PGValue: 'static {
-    const PG_TYPE: PGType;
+pub trait PgValue: 'static {
+    const PG_TYPE: PgType;
 }
 
 #[derive(Debug)]
-pub struct PGValueTypeBOOL;
-impl PGValue for PGValueTypeBOOL {
-    const PG_TYPE: PGType = PGType::BOOL;
+pub struct PgValueTypeBool;
+impl PgValue for PgValueTypeBool {
+    const PG_TYPE: PgType = PgType::BOOL;
 }
 
 #[derive(Debug)]
-pub struct PGValueTypeINT2;
-impl PGValue for PGValueTypeINT2 {
-    const PG_TYPE: PGType = PGType::INT2;
+pub struct PgValueTypeInt2;
+impl PgValue for PgValueTypeInt2 {
+    const PG_TYPE: PgType = PgType::INT2;
 }
 
 #[derive(Debug)]
-pub struct PGValueTypeINT4;
-impl PGValue for PGValueTypeINT4 {
-    const PG_TYPE: PGType = PGType::INT4;
+pub struct PgValueTypeInt4;
+impl PgValue for PgValueTypeInt4 {
+    const PG_TYPE: PgType = PgType::INT4;
 }
 
 #[derive(Debug)]
-pub struct PGValueTypeINT8;
-impl PGValue for PGValueTypeINT8 {
-    const PG_TYPE: PGType = PGType::INT8;
+pub struct PgValueTypeInt8;
+impl PgValue for PgValueTypeInt8 {
+    const PG_TYPE: PgType = PgType::INT8;
 }
 
 #[derive(Debug)]
-pub struct PGValueTypeTIMESTAMPTZ;
-impl PGValue for PGValueTypeTIMESTAMPTZ {
-    const PG_TYPE: PGType = PGType::TIMESTAMPTZ;
+pub struct PgValueTypeTimestamptz;
+impl PgValue for PgValueTypeTimestamptz {
+    const PG_TYPE: PgType = PgType::TIMESTAMPTZ;
 }
 
 #[derive(Debug)]
-pub struct PGValueTypeUUID;
-impl PGValue for PGValueTypeUUID {
-    const PG_TYPE: PGType = PGType::UUID;
+pub struct PgValueTypeUuid;
+impl PgValue for PgValueTypeUuid {
+    const PG_TYPE: PgType = PgType::UUID;
 }
 
 #[derive(Debug)]
-pub struct PGValueTypeVARCHAR;
-impl PGValue for PGValueTypeVARCHAR {
-    const PG_TYPE: PGType = PGType::VARCHAR;
+pub struct PgValueTypeVarchar;
+impl PgValue for PgValueTypeVarchar {
+    const PG_TYPE: PgType = PgType::VARCHAR;
 }
 
 #[derive(Debug)]
 #[allow(non_camel_case_types)]
-pub struct PGValueTypeVARCHAR_ARRAY;
-impl PGValue for PGValueTypeVARCHAR_ARRAY {
-    const PG_TYPE: PGType = PGType::VARCHAR_ARRAY;
+pub struct PgValueTypeVarcharArray;
+impl PgValue for PgValueTypeVarcharArray {
+    const PG_TYPE: PgType = PgType::VARCHAR_ARRAY;
 }
-impl PGValue for &'static [PGValueTypeVARCHAR] {
-    const PG_TYPE: PGType = PGType::VARCHAR_ARRAY;
+impl PgValue for &'static [PgValueTypeVarchar] {
+    const PG_TYPE: PgType = PgType::VARCHAR_ARRAY;
 }
 
 #[allow(non_camel_case_types)]
-pub struct PGValueTypeINT2_ARRAY;
-impl PGValue for PGValueTypeINT2_ARRAY {
-    const PG_TYPE: PGType = PGType::INT2_ARRAY;
+pub struct PgValueTypeInt2Array;
+impl PgValue for PgValueTypeInt2Array {
+    const PG_TYPE: PgType = PgType::INT2_ARRAY;
 }
-impl PGValue for &'static [PGValueTypeINT2] {
-    const PG_TYPE: PGType = PGType::INT2_ARRAY;
-}
-
-pub trait ToPGType {
-    type PGValueType: PGValue;
-    const PG_TYPE: PGType = <Self::PGValueType as PGValue>::PG_TYPE;
+impl PgValue for &'static [PgValueTypeInt2] {
+    const PG_TYPE: PgType = PgType::INT2_ARRAY;
 }
 
-impl<T> ToPGType for Option<T>
+pub trait ToPgType {
+    type PgValueType: PgValue;
+    const PG_TYPE: PgType = <Self::PgValueType as PgValue>::PG_TYPE;
+}
+
+impl<T> ToPgType for Option<T>
 where
-    T: ToPGType,
+    T: ToPgType,
 {
-    type PGValueType = T::PGValueType;
+    type PgValueType = T::PgValueType;
 }
 
-impl ToPGType for bool {
-    type PGValueType = PGValueTypeBOOL;
+impl ToPgType for bool {
+    type PgValueType = PgValueTypeBool;
 }
 
-impl ToPGType for i16 {
-    type PGValueType = PGValueTypeINT2;
+impl ToPgType for i16 {
+    type PgValueType = PgValueTypeInt2;
 }
 
-impl ToPGType for i32 {
-    type PGValueType = PGValueTypeINT4;
+impl ToPgType for i32 {
+    type PgValueType = PgValueTypeInt4;
 }
 
-impl ToPGType for i64 {
-    type PGValueType = PGValueTypeINT8;
+impl ToPgType for i64 {
+    type PgValueType = PgValueTypeInt8;
 }
 
-impl ToPGType for DateTime<Utc> {
-    type PGValueType = PGValueTypeTIMESTAMPTZ;
+impl ToPgType for DateTime<Utc> {
+    type PgValueType = PgValueTypeTimestamptz;
 }
 
-impl ToPGType for Uuid {
-    type PGValueType = PGValueTypeUUID;
+impl ToPgType for Uuid {
+    type PgValueType = PgValueTypeUuid;
 }
 
-impl ToPGType for &str {
-    type PGValueType = PGValueTypeVARCHAR;
+impl ToPgType for &str {
+    type PgValueType = PgValueTypeVarchar;
 }
 
-impl<T> ToPGType for &[T]
+impl<T> ToPgType for &[T]
 where
-    T: ToPGType,
-    &'static [T::PGValueType]: PGValue,
+    T: ToPgType,
+    &'static [T::PgValueType]: PgValue,
 {
-    type PGValueType = &'static [T::PGValueType];
+    type PgValueType = &'static [T::PgValueType];
 }

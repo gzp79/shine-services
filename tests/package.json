@@ -38,6 +38,7 @@
         "@types/node": "^24.13.2",
         "@types/nodemailer": "^7.0.12",
         "@types/smtp-server": "^3.5.13",
+        "@types/ws": "^8.5.13",
         "@types/uuid-validate": "^0.0.3",
         "eslint": "^9.39.4",
         "eslint-config-prettier": "^10.1.8",
@@ -63,7 +64,9 @@
         "lodash": "^4.18.1",
         "mailparser": "^3.9.11",
         "playwright": "^1.61.1",
+        "redis": "^5.9.0",
         "smtp-server": "^3.19.1",
+        "ws": "^8.18.0",
         "ts-jose": "^6.2.3",
         "uuid-validate": "^0.0.3",
         "zod": "^4.4.3"

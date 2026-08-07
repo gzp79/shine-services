@@ -1,3 +1,5 @@
+#![allow(clippy::module_inception)]
+
 mod cell_data;
 mod chunk;
 mod chunk_id;

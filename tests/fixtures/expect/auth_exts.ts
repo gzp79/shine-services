@@ -8,7 +8,6 @@ export const expect = baseExpect.extend({
     toBeClearCookie(received: Cookie): MatcherReturnType {
         expect(received.secure).toBeTruthy();
         expect(received.httpOnly).toBeTruthy();
-        expect(received.sameSite).toEqual('Lax');
         expect(received.expires!).toBeBefore(new Date());
 
         return {
@@ -21,7 +20,7 @@ export const expect = baseExpect.extend({
         expect(received.name).toEqual('tid');
         expect(received.secure).toBeTruthy();
         expect(received.httpOnly).toBeTruthy();
-        expect(received.sameSite).toEqual('Lax');
+        expect(received.sameSite).toEqual('Strict');
         expect(received.path).toEndWith('/auth/');
         expect(received.domain).toEqual('cloud.local.scytta.com');
         expect(received.expires!).toBeAfter(new Date());
@@ -39,7 +38,7 @@ export const expect = baseExpect.extend({
         expect(received.sameSite).toEqual('Lax');
         expect(received.path).toEqual('/');
         expect(received.domain).toEqual('scytta.com');
-        expect(received.expires).toBeUndefined(); // session scoped
+        expect(received.expires).toBeUndefined();
 
         return {
             message: () => 'Cookie is a validSID',

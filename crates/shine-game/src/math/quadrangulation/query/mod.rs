@@ -1,3 +1,5 @@
+#![allow(clippy::module_inception)]
+
 mod edge_circulator;
 mod query;
 

@@ -63,9 +63,9 @@ Project skills live in `.claude/skills/`. Invoke before working in a domain.
 | `client-web-architecture` | any file under `client/web/src/` |
 | `service-architecture` | adding/reviewing routes, handlers, services, or repositories |
 | `mesh-topology` | world/chunk/hex geometry |
-| `sdp-doc` | **any new feature or non-trivial change** — create/update/sync design doc first; do not write code without a doc |
-| `sdp-code` | implementing a feature — reads the design doc and drives code from it; invoke after `sdp-doc` |
+| `sdp` | **any new feature or non-trivial change** — keeps the design doc and code in agreement; detects which side is ahead (write doc / write code from doc / sync doc from code). Do not write code without a doc |
 | `local-development` | run services locally |
+| `api-test-writing` | writing or modifying tests under `tests/api-tests/` or `tests/mock-tests/` |
 
 ### Design docs
 HTML files under `docs/<domain>/`. Domain subfolders:
@@ -77,7 +77,7 @@ HTML files under `docs/<domain>/`. Domain subfolders:
 | core game | `docs/core/game/` |
 | cross-cutting | `docs/shared/` |
 
-Docs are human-readable HTML + agentic extensions: `<details data-agent="implementation|test|security|…">` blocks (collapsed by default) carry implementation notes, test plans, and other detail targeted at agents. CSS: `docs/doc.css` (shared, GitHub-raw-friendly via relative path). Conventions: `.claude/skills/sdp-plan/references/conventions.md`.
+Docs are human-readable HTML + agentic extensions: `<details data-agent="implementation|test|security|…">` blocks (collapsed by default) carry implementation notes, test plans, and other detail targeted at agents. CSS: `docs/doc.css` (shared, GitHub-raw-friendly via relative path). Conventions: `.claude/skills/sdp/references/conventions.md`.
 
 ## Type-Level Flow Control
 **Goal**: Use Rust's type system to encode "continue vs error" and "success vs failure" in function signatures

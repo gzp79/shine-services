@@ -50,7 +50,7 @@ test.describe('Access token (TID)', () => {
     test('Token shall keep the site info', async ({ api }) => {
         const extraHeaders = {
             'user-agent': 'agent',
-            'cf-ipcountry': 'country',
+            'cf-ipcountry': 'fi',
             'cf-region': 'region',
             'cf-ipcity': 'city'
         };
@@ -63,13 +63,37 @@ test.describe('Access token (TID)', () => {
         const token = tokens[0];
         expect(token.userId).toEqual(user.userId);
         expect(token.agent).toEqual('agent');
-        expect(token.country).toEqual('country');
+        expect(token.country).toEqual('FI');
         expect(token.region).toEqual('region');
         expect(token.city).toEqual('city');
         expect(token.createdAt).toBeAfter(createRange[0]);
         expect(token.createdAt).toBeBefore(createRange[1]);
         expect(token.expireAt).toBeAfter(expireRange[0]);
         expect(token.expireAt).toBeBefore(expireRange[1]);
+    });
+
+    test('Token cookie Max-Age shall match configured TTL for rememberMe', async ({ api }) => {
+        const response = await api.auth.loginWithGuestRequest(null, null, null);
+        expect(response).toHaveStatus(200);
+        const text = await response.text();
+        expect(getPageRedirectUrl(text)).toEqual(api.auth.defaultRedirects.redirectUrl);
+
+        const cookies = response.cookies();
+
+        if (cookies.tid?.value) {
+            // RememberMe token should have long TTL (14 days = 1209600 seconds)
+            // Calculate from either Max-Age or Expires header
+            let ttlSeconds: number;
+
+            if (cookies.tid.expires) {
+                ttlSeconds = Math.floor((cookies.tid.expires.getTime() - Date.now()) / 1000);
+            } else {
+                throw new Error('Token cookie has neither Max-Age nor Expires');
+            }
+
+            expect(ttlSeconds).toBeGreaterThan(1000000); // At least ~11 days
+            expect(ttlSeconds).toBeLessThan(1500000); // At most ~17 days
+        }
     });
 
     test('A failed login with invalid authorization shall not change the current user', async ({ api }) => {

@@ -48,6 +48,7 @@ cd tests && ENABLE_REQUEST_LOGGING=1 pnpm test:local --grep "test name"
 - Use `--grep` to scope runs to relevant tests when possible
 - Set `ENABLE_REQUEST_LOGGING=1` when debugging failures to see HTTP request/response details
 - Read full output directly; the `list` reporter shows pass/fail per test
+- **Writing a new test or mock?** Use the `api-test-writing` skill first — covers folder layout, available mocks, session minting vs a real user, and service isolation rules.
 
 **Verify service is ready:**
 

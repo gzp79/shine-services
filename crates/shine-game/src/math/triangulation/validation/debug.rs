@@ -112,7 +112,7 @@ pub fn reduce_test_case_incremental<const DELAUNAY: bool>(
                 return true;
             }
         }
-        return false;
+        false
     })
 }
 

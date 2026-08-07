@@ -3,6 +3,7 @@ use std::future::Future;
 
 pub trait SessionDbContext<'c>: Sessions + Send {}
 
-pub trait SessionDb: Send + Sync {
+/// Access to the session data store.
+pub trait SessionDb: Clone + Send + Sync {
     fn create_context(&self) -> impl Future<Output = Result<impl SessionDbContext<'_>, SessionError>> + Send;
 }

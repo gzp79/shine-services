@@ -9,6 +9,7 @@ pub trait IdentityDbContext<'c>:
 {
 }
 
-pub trait IdentityDb: Send + Sync {
+/// Access to the identity data store.
+pub trait IdentityDb: Clone + Send + Sync {
     fn create_context(&self) -> impl Future<Output = Result<impl IdentityDbContext<'_>, IdentityError>> + Send;
 }

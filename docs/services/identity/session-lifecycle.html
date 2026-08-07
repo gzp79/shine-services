@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Session Lifecycle &amp; Access Control</title>
+<link rel="stylesheet" href="../../doc.css">
+</head>
+<body>
+
+<header class="doc-header">
+  <h1 class="doc-title">Session Lifecycle &amp; Access Control</h1>
+  <div class="doc-meta">
+    <span>Only identity may create, extend, or destroy a session; every other caller may confirm it's alive and keep it alive, nothing more.</span>
+  </div>
+</header>
+
+<h2>Problem</h2>
+<p>
+  Identity and shine (builder) both need to know whether a user's session is still valid — but with very different
+  needs. Identity creates, extends, and deletes sessions on login/logout. Every service — including identity's own
+  request middleware — only needs to confirm a session is alive and keep its TTL alive on each check. Today both paths
+  reach the session store with the same unrestricted credentials, so a bug or compromise in any service can forge,
+  delete, or read any user's session. Splitting session storage access into two credentials — one that can write, one
+  that can only read and keep-alive — bounds the blast radius of either side to what it actually needs.
+</p>
+
+<h2>Architecture</h2>
+
+<div class="canvas">
+  <div class="layer-row">
+    <div class="layer-label">Client</div>
+    <div class="layer-body">
+      <div class="box box-indigo" style="flex:1">
+        <div class="bname">Login</div>
+        <div class="bdetail">username / password, OAuth2, OIDC — out of scope here</div>
+      </div>
+      <div class="box box-indigo" style="flex:1">
+        <div class="bname">Authenticated request</div>
+        <div class="bdetail">session cookie: user id + key hash</div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow-row" style="min-height:32px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-blue" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">credentials</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+      <div class="arrow-item arr-green" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">cookie</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-label">Services</div>
+    <div class="layer-body">
+      <div class="box box-blue" style="flex:1">
+        <div class="bname">identity</div>
+        <div class="bdetail">credentials → session (login internals out of scope)</div>
+      </div>
+      <div class="box box-blue" style="flex:1">
+        <div class="bname">shine</div>
+        <div class="bdetail">cookie → session check, every service including identity itself</div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow-row" style="min-height:32px">
+    <div class="arrow-spacer"></div>
+    <div class="arrow-body">
+      <div class="arrow-item arr-blue" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">create / extend / delete</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+      <div class="arrow-item arr-green" style="flex:1">
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-label">read + keep-alive (TTL refresh)</div>
+        <div class="arrow-stem" style="height:8px"></div>
+        <div class="arrow-head"></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-row">
+    <div class="layer-label">Session store</div>
+    <div class="layer-body">
+      <div class="box box-green" style="flex:1">
+        <div class="bname">session:&lt;user_id&gt;:&lt;hash&gt;:{sentinel,data}</div>
+        <div class="bdetail">sentinel: immutable, TTL-bound<br>data: rewritten on update, TTL-bound</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>
+  Login creates the session: identity turns a validated credential into a stored session and hands the client a
+  cookie carrying the user id and a key hash — the credential check itself is a black box here. Every later request
+  goes the other way: the client presents that cookie, and whichever service is handling the request (including
+  identity's own middleware) checks it against the session store and refreshes its TTL, without ever creating,
+  modifying, or deleting a session. Identity opens two connections to the store to keep these paths separate —
+  one as <code>identity</code> for its session repository
+  (<code>services/identity/src/repositories/session/redis/redis_sessions.rs</code>), one as <code>shine</code> for the
+  shared current-user check. Builder opens only the <code>shine</code> connection — it has no session-writing code path.
+  The store is Redis; the split applies at the credential/ACL level, not in application code — the connection string
+  alone determines what a caller can do.
+</p>
+
+<details data-agent="implementation">
+  <summary>Session key layout</summary>
+  <div class="details-body">
+    <p>
+      Each session occupies two keys under one prefix, built from the user id and a hash of the client's raw
+      session key (never the raw key itself — see the security note below):
+    </p>
+    <pre><code>session:&lt;user_id&gt;:&lt;key_hash&gt;:sentinel
+session:&lt;user_id&gt;:&lt;key_hash&gt;:data</code></pre>
+    <table>
+      <tr><th>Key</th><th>Written by</th><th>Mutability</th><th>Contents</th></tr>
+      <tr>
+        <td><code>:sentinel</code></td>
+        <td><code>identity</code> only, once at creation (<code>SETNX</code>)</td>
+        <td>Immutable — TTL-refreshed, never rewritten</td>
+        <td>created-at, fingerprint, agent/site info</td>
+      </tr>
+      <tr>
+        <td><code>:data</code></td>
+        <td><code>identity</code> only, at creation and on user-info update</td>
+        <td>Rewritten on update; TTL-refreshed</td>
+        <td>name, email-confirmed flag, linked flag, roles</td>
+      </tr>
+    </table>
+    <p>
+      A session counts as alive only if <em>both</em> keys exist. Splitting sentinel from data lets a concurrent
+      update on <code>:data</code> during a logout not resurrect a session whose <code>:sentinel</code> was just
+      deleted — the missing sentinel forces expiry regardless of a lingering or freshly-written <code>:data</code> key.
+      See <code>services/identity/src/repositories/session/redis/redis_sessions.rs</code>.
+    </p>
+  </div>
+</details>
+
+<h2>Key rules</h2>
+<table>
+  <tr><th>Rule</th><th>Details</th></tr>
+  <tr>
+    <td><code>shine</code> gets TTL refresh too, not just reads</td>
+    <td>The shared current-user check (<code>CurrentUserService::get_current_user</code>) refreshes both keys' TTL on
+        every call, so a strictly read-only credential would break session keep-alive for every service. <code>shine</code>
+        can extend a session's life but never create, modify, or destroy one.</td>
+  </tr>
+  <tr>
+    <td>Only <code>identity</code> can create or delete sessions</td>
+    <td>Session creation (on login), data rewrite (on role/profile change), and deletion (logout, purge) are reachable
+        only through the <code>identity</code> credential.</td>
+  </tr>
+  <tr>
+    <td>Both credentials are scoped to the session keyspace</td>
+    <td>Neither can touch keys outside session storage, even though they share the same store instance.</td>
+  </tr>
+  <tr>
+    <td>No caller keeps the old unrestricted access</td>
+    <td>The previous single shared credential is retired — every consumer moves to either <code>identity</code> or
+        <code>shine</code>.</td>
+  </tr>
+  <tr>
+    <td>Store contents never reveal a usable session key</td>
+    <td>The client only ever holds the raw key; the store only ever holds <code>SHA-256(raw key)</code>, both as the
+        key name and inside the stored records. Reading the store — with either credential — yields no value an
+        attacker could replay as a session cookie. See the security note below.</td>
+  </tr>
+</table>
+
+<h2>Config values to update</h2>
+<table>
+  <tr><th>Config key</th><th>Consumer</th><th>Credential</th></tr>
+  <tr>
+    <td><code>identity.db.redisCns</code></td>
+    <td>Identity's own session repository (create/extend/delete)</td>
+    <td><code>identity</code></td>
+  </tr>
+  <tr>
+    <td><code>service.sessionRedisCns</code></td>
+    <td>Shared current-user check — read by identity <em>and</em> builder</td>
+    <td><code>shine</code></td>
+  </tr>
+</table>
+<p>
+  <code>service.sessionRedisCns</code> is a top-level <code>service</code> config key, so it applies to every service
+  that loads <code>ServiceConfig</code> — one <code>shine</code> credential covers all of them. <code>identity.db.redisCns</code>
+  is identity-specific; builder's <code>DBConfig</code> has no session-store field at all, since builder never writes
+  session data directly. Local dev env vars currently derive both connection strings from a single source variable —
+  that has to become two distinct variables, one per credential.
+</p>
+
+<h2>File map</h2>
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>services/docker/redis/users.acl</code></td><td>Redis ACL file defining the <code>identity</code> and <code>shine</code> credentials and their command/key scope (target-state — not yet created).</td></tr>
+  <tr><td><code>services/docker-compose.yml</code></td><td>Redis service definition; needs the ACL file mounted and passed via <code>--aclfile</code>.</td></tr>
+  <tr><td><code>crates/shine-infra/src/db/redis.rs</code></td><td><code>create_redis_pool</code> — parses the connection string (including embedded credentials) and opens the pool; no code change needed, credentials travel in the URL.</td></tr>
+  <tr><td><code>crates/shine-infra/src/web/service_config.rs</code></td><td>Declares <code>session_redis_cns</code> — the <code>shine</code>-credential connection string, shared by every service.</td></tr>
+  <tr><td><code>crates/shine-infra/src/session/current_user_service.rs</code></td><td><code>CurrentUserService::get_current_user</code> — the read/keep-alive path that runs as <code>shine</code>.</td></tr>
+  <tr><td><code>services/identity/src/repositories/db.rs</code></td><td>Declares <code>redis_cns</code> on <code>DBConfig</code> — the <code>identity</code>-credential connection string, identity-only.</td></tr>
+  <tr><td><code>services/identity/src/repositories/session/redis/redis_sessions.rs</code></td><td>Session create/extend/delete — the write path that runs as <code>identity</code>.</td></tr>
+  <tr><td><code>services/identity/server_config.test.json</code></td><td><code>identity.db.redisCns</code> value.</td></tr>
+  <tr><td><code>services/server_config_test.json</code></td><td><code>service.sessionRedisCns</code> value, shared by identity and builder test configs via <code>beforeLayers</code>.</td></tr>
+  <tr><td><code>.vscode/tasks.json</code></td><td>Local dev env vars for both connection strings — currently sourced from a single variable; needs two distinct source variables.</td></tr>
+</table>
+
+<details data-agent="security">
+  <summary>Why read access to the store doesn't leak a usable session key</summary>
+  <div class="details-body">
+    <p>
+      The raw session key is 16 random bytes generated once, server-side, when a session is created
+      (<code>SessionKey::new_random</code>, <code>services/identity/src/services/session_service.rs</code>). It is
+      handed to the client in the signed session cookie and is never written to the store — the store only ever sees
+      <code>SHA-256(raw key)</code>, computed by <code>hash_key()</code> in the same file. That hash is used both as
+      the key name (<code>session:&lt;user_id&gt;:&lt;hash&gt;:{sentinel,data}</code>) and nowhere else; the stored
+      sentinel/data records themselves don't embed the raw key or the hash again.
+    </p>
+    <p>
+      So a read of the session store — whether through the <code>identity</code> credential or the read-only
+      <code>shine</code> credential, or via broader access such as a database dump or backup — exposes at most a
+      user id and a SHA-256 hash. With 128 bits of entropy in the original key, that hash cannot practically be
+      inverted or brute-forced back into a value that would authenticate as that session. Compare this to the
+      fingerprint/cookie-signing key, which if exposed would let an attacker forge a session cookie — the session
+      store itself carries no equivalent secret.
+    </p>
+  </div>
+</details>
+
+<details data-agent="security" data-transient="true">
+  <summary>Redis ACL setup for the two credentials (Upstash-managed instance)</summary>
+  <div class="details-body">
+    <p>
+      The session store runs on Upstash (via Fly.io), which manages ACL user passwords itself rather than accepting
+      an arbitrary <code>ACL SETUSER … &gt;password</code>. Creating a user is two steps: generate a token with
+      <code>ACL GENTOKEN</code>, then create the user with <code>ACL SETUSER</code> using that token as the password.
+      The default user's own password/admin rights are managed by Upstash and are not touched here — there is no
+      <code>aclfile</code> or <code>redis.conf</code> to mount on a managed instance.
+    </p>
+    <pre><code>ACL GENTOKEN
+&gt; "&lt;identity_token&gt;"
+ACL SETUSER identity on &gt;&lt;identity_token&gt; ~session:* \
+  +ping +get +set +setnx +expire +del +scan +ttl
+
+ACL GENTOKEN
+&gt; "&lt;shine_token&gt;"
+ACL SETUSER shine on &gt;&lt;shine_token&gt; ~session:* \
+  +ping +get +exists +scan +ttl +expire</code></pre>
+    <p>
+      Connection strings then carry the credential inline:
+      <code>redis://identity:&lt;identity_token&gt;@&lt;host&gt;:6379?timeout=3000&amp;pool_timeout=5000</code> and
+      <code>redis://shine:&lt;shine_token&gt;@&lt;host&gt;:6379?timeout=3000&amp;pool_timeout=5000</code>.
+    </p>
+  </div>
+</details>
+
+</body>
+</html>

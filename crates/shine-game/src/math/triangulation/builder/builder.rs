@@ -120,7 +120,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
             .dump(1, &format!("after_add_vertex_{}", vi.into_index()), |dump| {
                 let delaunay_stack = self.state.delaunay_stack();
                 let delaunay_edges = delaunay_stack.map(|stack| stack.as_slice()).unwrap_or(&[]);
-                dump.add_tri(&self.tri, [(delaunay_edges, "edge-delaunay", false)]);
+                dump.add_tri(self.tri, [(delaunay_edges, "edge-delaunay", false)]);
             });
         vi
     }
@@ -144,7 +144,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
         self.state.dump(1, "after_add_constraint", |dump| {
             let delaunay_stack = self.state.delaunay_stack();
             let delaunay_edges = delaunay_stack.map(|stack| stack.as_slice()).unwrap_or(&[]);
-            dump.add_tri(&self.tri, [(delaunay_edges, "edge-delaunay", false)]);
+            dump.add_tri(self.tri, [(delaunay_edges, "edge-delaunay", false)]);
         });
     }
 
@@ -276,7 +276,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                     let delaunay_stack = self.state.delaunay_stack();
                     let delaunay_edges = delaunay_stack.map(|stack| stack.as_slice()).unwrap_or(&[]);
                     dump.add_tri(
-                        &self.tri,
+                        self.tri,
                         [
                             (top_chain.as_slice(), "edge-0", true),
                             (bottom_chain.as_slice(), "edge-1", true),
@@ -318,7 +318,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                     let delaunay_stack = self.state.delaunay_stack();
                     let delaunay_edges = delaunay_stack.map(|stack| stack.as_slice()).unwrap_or(&[]);
                     dump.add_tri(
-                        &self.tri,
+                        self.tri,
                         [
                             (top_chain.as_slice(), "edge-0", true),
                             (bottom_chain.as_slice(), "edge-1", true),
@@ -396,10 +396,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                     self.delaunay_push_edge(next_edge);
                 }
 
-                if cur > 0 {
-                    // step back
-                    cur -= 1;
-                }
+                cur = cur.saturating_sub(1);
             } else {
                 // remove cur from the list and make it the clipped ear
                 assert!(cur > 0);
@@ -440,7 +437,7 @@ impl<'a, const DELAUNAY: bool> TriangulationBuilder<'a, DELAUNAY> {
                     let delaunay_stack = self.state.delaunay_stack();
                     let delaunay_edges = delaunay_stack.map(|stack| stack.as_slice()).unwrap_or(&[]);
                     dump.add_tri(
-                        &self.tri,
+                        self.tri,
                         [
                             (chain.as_slice(), "edge-0", true),
                             (delaunay_edges, "edge-delaunay", false),

@@ -39,7 +39,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 ############################# DB #############################
 bb8 = { workspace = true }
-bb8-redis = { workspace = true }
 redis = { workspace = true, features = [
     "tokio-comp",
     "tokio-rustls-comp",
@@ -64,8 +63,9 @@ tokio-rustls = { workspace = true }
 rustls = { workspace = true }
 reqwest = { workspace = true }
 
-oauth2 = "5.0"
-openidconnect = "4.0"
+oauth2 = { version = "5.0", default-features = false }
+openidconnect = { version = "4.0", default-features = false }
+oauth2-reqwest = "0.1.0-alpha.3"
 
 ############################# WEB #############################
 tera = { workspace = true }
