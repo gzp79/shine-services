@@ -17,9 +17,7 @@ impl RedisChatCommentDbContext<'_> {
     }
 
     fn parse_entry(&self, entry: StreamId) -> Option<StoredChatComment> {
-        let user_id = entry
-            .get::<String>("user")
-            .and_then(|raw| Uuid::parse_str(&raw).ok())?;
+        let user_id = entry.get::<String>("user").and_then(|raw| Uuid::parse_str(&raw).ok())?;
         let text = entry.get::<String>("text")?;
 
         Some(StoredChatComment {
@@ -141,6 +139,7 @@ impl ChatCommentStore for RedisChatCommentDbContext<'_> {
             .map_err(RedisError::RawError)
             .map_err(ChatError::internal)?;
 
-        Ok(reply.ids.drain(..).next().and_then(|entry| self.parse_entry(entry)))
+        let entry = reply.ids.drain(..).next();
+        Ok(entry.and_then(|entry| self.parse_entry(entry)))
     }
 }

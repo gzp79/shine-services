@@ -20,6 +20,7 @@ use shine_infra::{
         responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
     },
 };
+use tokio::sync::mpsc;
 
 /// Per-WS-client egress buffer capacity. A client that lets this many broadcast messages queue
 /// without draining them is considered too slow, and the hub drops its subscription — closing the
@@ -73,35 +74,34 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubSer
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let current_user_id = user.user_id;
 
-    // Subscribe only after the upgrade completes: an aborted upgrade would otherwise leave the
-    // subscriber registered until the next publish lazily prunes it.
-    let sender = hub_service.sender();
-    let mut subscription = hub_service
-        .subscribe_bounded(vec![TopicKey::Chat, TopicKey::Hub], WS_CLIENT_CHANNEL_CAPACITY)
-        .await;
+    let (tx, mut rx) = mpsc::channel::<HubMessage>(WS_CLIENT_CHANNEL_CAPACITY);
 
     // Register the connection now that the upgrade has completed. If registration fails there is no
     // live connection to keep, so close the socket without emitting a disconnect for it.
-    let connection_id = match sender.connect(current_user_id, user.key) {
-        Ok(connection_id) => connection_id,
-        Err(err) => {
-            log::error!("[{current_user_id}] Failed to register connection: {err:#?}");
-            if let Err(err) = ws_sender.close().await {
-                log::error!("[{current_user_id}] Failed to close websocket after failed registration: {err:#?}");
+    let connection_id =
+        match hub_service.request_connection(current_user_id, user.key, tx, vec![TopicKey::Chat, TopicKey::Hub]) {
+            Ok(connection_id) => connection_id,
+            Err(err) => {
+                log::error!("[{current_user_id}] Failed to register connection: {err:#?}");
+                if let Err(err) = ws_sender.close().await {
+                    log::error!("[{current_user_id}] Failed to close websocket after failed registration: {err:#?}");
+                }
+                return;
             }
-            return;
-        }
-    };
+        };
 
     log::info!("[{current_user_id}] Connected to the hub");
 
     let mut recv_task = {
-        let sender = sender.clone();
+        let hub_service = hub_service.clone();
         tokio::spawn(async move {
-            if let Err(err) = sender.send_workload(ChatMessage {
-                user_id: current_user_id,
-                text: "${tr: Connected}".to_string(),
-            }) {
+            if let Err(err) = hub_service
+                .broadcast(HubMessage::Chat(ChatMessage {
+                    user_id: current_user_id,
+                    text: "${tr: Connected}".to_string(),
+                }))
+                .await
+            {
                 log::error!("[{current_user_id}] Failed to send initial message: {err:#?}");
             }
 
@@ -117,7 +117,10 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubSer
                     };
 
                     if let Some(text) = msg {
-                        if let Err(err) = sender.send_workload(ChatMessage { user_id: current_user_id, text }) {
+                        if let Err(err) = hub_service
+                            .broadcast(HubMessage::Chat(ChatMessage { user_id: current_user_id, text }))
+                            .await
+                        {
                             log::error!("[{current_user_id}] Failed to send message: {err:#?}");
                         }
                     }
@@ -127,7 +130,7 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubSer
     };
 
     let mut send_task = tokio::spawn(async move {
-        while let Some(message) = subscription.recv().await {
+        while let Some(message) = rx.recv().await {
             log::info!("[{current_user_id}] Bus message received");
             if matches!(message, HubMessage::Hub(HubEvent::UserDisconnected { connection_id: disconnected, .. }) if disconnected == connection_id)
             {
@@ -165,7 +168,7 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubSer
     }
 
     log::info!("{current_user_id}] Disconnecting from hub");
-    if let Err(err) = sender.disconnect(current_user_id, connection_id) {
+    if let Err(err) = hub_service.request_disconnection(current_user_id, connection_id) {
         log::error!("[{current_user_id}] Failed to send disconnect command: {err:#?}");
     }
 }

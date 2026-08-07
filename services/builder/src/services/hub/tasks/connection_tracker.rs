@@ -1,10 +1,7 @@
-use crate::{
-    models::messages::{HubEvent, HubMessage},
-    services::HubReceiver,
-};
+use crate::models::messages::{HubEvent, HubMessage};
 use shine_infra::session::SessionKey;
 use std::{collections::HashMap, future::Future, time::Duration};
-use tokio::time;
+use tokio::{sync::mpsc, time};
 use uuid::Uuid;
 
 pub type TrackedConnection = (Uuid, SessionKey);
@@ -62,7 +59,7 @@ pub trait ConnectionConsumer: Send + 'static {
 /// loop, there is no shared state and no lock between consumers. Runs until the loop ends; use
 /// [`spawn_connection_loop`] to detach it, or await it directly after an async setup step.
 pub async fn run_connection_loop<C: ConnectionConsumer>(
-    mut subscription: HubReceiver,
+    mut subscription: mpsc::UnboundedReceiver<HubMessage>,
     interval: Duration,
     consumer: C,
 ) {
@@ -97,6 +94,7 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
 mod tests {
     use super::*;
     use ring::rand::SystemRandom;
+    use shine_test::test;
     use tokio::sync::mpsc;
 
     fn connected(user_id: Uuid, connection_id: Uuid) -> HubMessage {
@@ -107,7 +105,11 @@ mod tests {
         })
     }
 
-    fn spawn_connection_loop<C: ConnectionConsumer>(subscription: HubReceiver, interval: Duration, consumer: C) {
+    fn spawn_connection_loop<C: ConnectionConsumer>(
+        subscription: mpsc::UnboundedReceiver<HubMessage>,
+        interval: Duration,
+        consumer: C,
+    ) {
         tokio::spawn(run_connection_loop(subscription, interval, consumer));
     }
 
@@ -121,15 +123,11 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[test]
     async fn loop_feeds_current_connections_to_consumer() {
         let (sub_tx, sub_rx) = mpsc::unbounded_channel();
         let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
-        spawn_connection_loop(
-            HubReceiver::new(sub_rx),
-            Duration::from_millis(5),
-            Probe { tx: probe_tx },
-        );
+        spawn_connection_loop(sub_rx, Duration::from_millis(5), Probe { tx: probe_tx });
 
         sub_tx.send(connected(Uuid::new_v4(), Uuid::new_v4())).unwrap();
 

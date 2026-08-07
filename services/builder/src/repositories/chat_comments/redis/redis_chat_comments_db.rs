@@ -1,10 +1,6 @@
 use crate::{
     models::ChatError,
-    repositories::chat_comments::{
-        redis::RedisChatCommentsBuildError,
-        ChatCommentDb,
-        ChatCommentDbContext,
-    },
+    repositories::chat_comments::{redis::RedisChatCommentsBuildError, ChatCommentDb, ChatCommentDbContext},
 };
 use shine_infra::db::redis::{RedisConnectionPool, RedisError, RedisPooledConnection};
 
@@ -30,11 +26,15 @@ impl RedisChatCommentsDb {
         ttl_seconds: u64,
     ) -> Result<Self, RedisChatCommentsBuildError> {
         if max_messages == 0 {
-            return Err(RedisChatCommentsBuildError::InvalidConfig("Chat stream max_messages must be > 0"));
+            return Err(RedisChatCommentsBuildError::InvalidConfig(
+                "Chat stream max_messages must be > 0",
+            ));
         }
 
         if ttl_seconds == 0 {
-            return Err(RedisChatCommentsBuildError::InvalidConfig("Chat stream ttl_seconds must be > 0"));
+            return Err(RedisChatCommentsBuildError::InvalidConfig(
+                "Chat stream ttl_seconds must be > 0",
+            ));
         }
 
         let _client = redis.get().await.map_err(RedisError::PoolError)?;

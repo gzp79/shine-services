@@ -1,4 +1,5 @@
-use crate::services::{ConnectionConsumer, ConnectionTracker, HubSender, HubService};
+use super::connection_tracker::{ConnectionConsumer, ConnectionTracker};
+use crate::services::HubService;
 use shine_infra::session::{CurrentUserService, UserSessionError};
 use std::sync::Arc;
 
@@ -6,14 +7,14 @@ use std::sync::Arc;
 /// CurrentUserService and requests a targeted disconnect on expiry. Read-only w.r.t. hub state.
 pub struct SessionChecker {
     session_service: Arc<CurrentUserService>,
-    sender: HubSender,
+    hub_service: HubService,
 }
 
 impl SessionChecker {
     pub fn new(session_service: Arc<CurrentUserService>, hub_service: &HubService) -> Self {
         Self {
             session_service,
-            sender: hub_service.sender(),
+            hub_service: hub_service.clone(),
         }
     }
 }
@@ -29,7 +30,7 @@ impl ConnectionConsumer for SessionChecker {
                     log::info!("[{user_id}] session-invalid ({err}); requesting hub disconnect");
                     // Target the exact connection we validated. If the user reconnected with a new
                     // connection meanwhile, the hub ignores this stale id and keeps the fresh session.
-                    if let Err(err) = self.sender.disconnect(user_id, connection_id) {
+                    if let Err(err) = self.hub_service.request_disconnection(user_id, connection_id) {
                         log::error!("[{user_id}] Failed to send expiry disconnect command: {err:#?}");
                     }
                 }

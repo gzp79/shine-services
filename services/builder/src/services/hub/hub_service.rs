@@ -1,21 +1,18 @@
 use crate::{
     models::{
-        messages::{HubEvent, HubMessage, TopicKey, Workload},
+        messages::{HubEvent, HubMessage, TopicKey},
         HubError,
     },
     repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
-    services::{
-        hub::{
-            connected_users::ConnectedUsers,
-            heartbeat::HeartbeatTask,
-            hub_command::ControlCommand,
-            hub_connection::{HubReceiver, HubSender},
-        },
-        run_connection_loop,
-        session_checker::SessionChecker,
+    services::hub::{
+        hub_command::ControlCommand,
+        hub_connections::Connections,
+        hub_subscribers::Subscribers,
+        tasks::{run_connection_loop, Heartbeat, SessionChecker},
     },
 };
-use shine_infra::session::CurrentUserService;
+use shine_infra::session::{CurrentUserService, SessionKey};
+use std::collections::VecDeque;
 use std::{sync::Arc, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
 use uuid::Uuid;
@@ -35,14 +32,12 @@ pub struct HubStats {
 
 struct Inner {
     control_tx: mpsc::UnboundedSender<ControlCommand>,
-    payload_tx: mpsc::Sender<Workload>,
-    users: ConnectedUsers,
+    connections: Connections,
+    subscribers: Subscribers,
     hub_registry: RedisHubConnectionDb,
 }
 
-/// Messaging service for connected users and processes.
-/// Commands are submitted through a HubSender; subscribers receive events
-/// through a topic-filtered BusSubscription.
+/// Messaging service for the connected users.
 #[derive(Clone)]
 pub struct HubService {
     inner: Arc<Inner>,
@@ -55,13 +50,12 @@ impl HubService {
         intervals: HubIntervals,
     ) -> Self {
         let (control_tx, control_rx) = mpsc::unbounded_channel();
-        let (payload_tx, payload_rx) = mpsc::channel(128);
 
         let service = Self {
             inner: Arc::new(Inner {
                 control_tx,
-                payload_tx,
-                users: ConnectedUsers::new(),
+                connections: Connections::new(),
+                subscribers: Subscribers::new(),
                 hub_registry,
             }),
         };
@@ -76,35 +70,103 @@ impl HubService {
             Self::start_heartbeat(service.clone(), intervals.heartbeat).await,
             Self::start_session_checker(service.clone(), session_service, intervals.session_check).await,
         ];
-        Self::start_dispatcher(service.clone(), control_rx, payload_rx, background_tasks);
+        Self::start_dispatcher(service.clone(), control_rx, background_tasks);
         service
     }
 
-    pub fn sender(&self) -> HubSender {
-        HubSender::new(self.inner.control_tx.clone(), self.inner.payload_tx.clone())
+    fn send_control(&self, command: ControlCommand) -> Result<(), HubError> {
+        self.inner
+            .control_tx
+            .send(command)
+            .map_err(|_| HubError::SendCommandFailed)
+    }
+
+    /// Prunes any connection found dead during an egress send.
+    fn drop_dead(&self, dead: impl IntoIterator<Item = Uuid>) -> Result<(), HubError> {
+        for connection_id in dead {
+            self.send_control(ControlCommand::DropConnection { connection_id })?;
+        }
+        Ok(())
+    }
+
+    /// Requests a new connection for a user, returning its connection id. Supersedes any prior
+    /// connection for that user.
+    pub fn request_connection(
+        &self,
+        user_id: Uuid,
+        session_key: SessionKey,
+        tx: mpsc::Sender<HubMessage>,
+        topics: Vec<TopicKey>,
+    ) -> Result<Uuid, HubError> {
+        let connection_id = Uuid::new_v4();
+        self.send_control(ControlCommand::ConnectUser {
+            user_id,
+            connection_id,
+            session_key,
+            tx,
+            topics,
+        })?;
+        Ok(connection_id)
+    }
+
+    /// Requests removal of a connection, but only if `connection_id` still matches the user's active
+    /// one, so a stale request cannot tear down a fresh reconnect.
+    pub fn request_disconnection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
+        self.send_control(ControlCommand::DisconnectUser { user_id, connection_id })
+    }
+
+    /// Requests hub shutdown.
+    pub fn request_shutdown(&self) -> Result<(), HubError> {
+        self.send_control(ControlCommand::Shutdown)
+    }
+
+    /// Notifies the hub that a user's registry entry changed, prompting an active-connection recheck.
+    pub fn notify_registry_changed(&self, user_id: Uuid) -> Result<(), HubError> {
+        self.send_control(ControlCommand::HubRegistryChanged { user_id })
+    }
+
+    /// Sends an egress message to a specific connection.
+    pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<(), HubError> {
+        self.drop_dead(
+            self.inner
+                .connections
+                .send_to_connection(connection_id, message)
+                .await
+                .err(),
+        )
+    }
+
+    /// Sends an egress message to a user's active connection.
+    pub async fn send_to_user(&self, user_id: Uuid, message: HubMessage) -> Result<(), HubError> {
+        self.drop_dead(self.inner.connections.send_to_user(user_id, message).await.err())
+    }
+
+    /// Broadcasts an egress message to every connection subscribed to its topic.
+    pub async fn broadcast(&self, message: HubMessage) -> Result<(), HubError> {
+        self.drop_dead(
+            self.inner
+                .connections
+                .broadcast(message)
+                .await
+                .err()
+                .unwrap_or_default(),
+        )
     }
 
     /// Subscribe to a set of topics on an unbounded, lossless channel. For internal consumers
-    /// only — a dropped lifecycle event would corrupt a consumer's connection tracker.
-    pub async fn subscribe(&self, topics: Vec<TopicKey>) -> HubReceiver {
+    /// only — a dropped lifecycle event would corrupt a consumer's connection tracker. Addressable
+    /// connections do not subscribe; they hand the hub their own bounded egress channel at connect
+    /// time.
+    pub async fn subscribe(&self, topics: Vec<TopicKey>) -> mpsc::UnboundedReceiver<HubMessage> {
         let (tx, rx) = mpsc::unbounded_channel();
-        self.inner.users.subscribe(topics, tx).await;
-        HubReceiver::new(rx)
-    }
-
-    /// Subscribe to a set of topics on a bounded channel of the given `capacity`. A subscriber too
-    /// slow to drain the broadcast has its subscription dropped once the buffer fills, which closes
-    /// the receiver, rather than letting the hub buffer without limit. Callers choose a capacity
-    /// appropriate to their consumer; the hub itself is transport-agnostic.
-    pub async fn subscribe_bounded(&self, topics: Vec<TopicKey>, capacity: usize) -> HubReceiver {
-        let (tx, rx) = mpsc::channel(capacity);
-        self.inner.users.subscribe_bounded(topics, tx).await;
-        HubReceiver::new_bounded(rx)
+        self.inner.subscribers.subscribe(topics, tx).await;
+        rx
     }
 
     /// Live connection and subscriber counts for status reporting.
     pub async fn stats(&self) -> HubStats {
-        let (connections, subscribers) = self.inner.users.stats().await;
+        let connections = self.inner.connections.len().await;
+        let subscribers = self.inner.subscribers.len().await;
         HubStats { connections, subscribers }
     }
 
@@ -113,7 +175,7 @@ impl HubService {
     async fn start_heartbeat(service: HubService, interval: Duration) -> JoinHandle<()> {
         let subscription = service.subscribe(vec![TopicKey::Hub]).await;
         tokio::spawn(async move {
-            let task = HeartbeatTask::new(service);
+            let task = Heartbeat::new(service);
             run_connection_loop(subscription, interval, task).await;
         })
     }
@@ -132,28 +194,16 @@ impl HubService {
         })
     }
 
-    /// Starts the central dispatch loop that drains the control and payload channels, biased so
-    /// lifecycle signals are handled ahead of broadcast payloads.
+    /// Starts the command loop, the sole writer of connection state.
     fn start_dispatcher(
         service: HubService,
         mut control_rx: mpsc::UnboundedReceiver<ControlCommand>,
-        mut payload_rx: mpsc::Receiver<Workload>,
         background_tasks: Vec<JoinHandle<()>>,
     ) {
         tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    // Control is prioritized so lifecycle signals are handled promptly.
-                    biased;
-                    control = control_rx.recv() => match control {
-                        Some(command) => if !service.process(command).await { break },
-                        None => break,
-                    },
-                    payload = payload_rx.recv() => match payload {
-                        // Broadcast verbatim; conversion is a pure move with no hub processing.
-                        Some(workload) => service.publish(workload.into()).await,
-                        None => break,
-                    },
+            while let Some(command) = control_rx.recv().await {
+                if !service.process(command).await {
+                    break;
                 }
             }
             for task in background_tasks {
@@ -164,12 +214,12 @@ impl HubService {
 
     fn start_registry_listener(service: HubService) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let sender = service.sender();
+            let notifier = service.clone();
             if let Err(err) = service
                 .inner
                 .hub_registry
                 .listen_to_registry_changes(move |user_id| {
-                    if let Err(err) = sender.notify_registry_changed(user_id) {
+                    if let Err(err) = notifier.notify_registry_changed(user_id) {
                         log::error!("[{user_id}] Failed to enqueue hub registry change command: {err:#?}");
                     }
                 })
@@ -188,6 +238,8 @@ impl HubService {
                 user_id,
                 connection_id,
                 session_key,
+                tx,
+                topics,
             } => {
                 // Record the replacement in the registry first. If this fails, the previously
                 // active connection must stay intact and tracked, so return before tearing it down
@@ -201,8 +253,12 @@ impl HubService {
                 // Now that the new connection is durably registered, tear down any different
                 // connection that was active for this user, so the old socket closes and the
                 // connection tracker drops it. Same-id re-registration is not a replacement.
-                if let Some((old_connection_id, _)) = self.inner.users.find_connection(user_id).await {
+                if let Some((old_connection_id, _)) = self.inner.connections.find_active(user_id).await {
                     if old_connection_id != connection_id {
+                        self.inner
+                            .connections
+                            .remove_connection(user_id, Some(old_connection_id))
+                            .await;
                         self.publish(HubMessage::Hub(HubEvent::UserDisconnected {
                             user_id,
                             connection_id: old_connection_id,
@@ -211,7 +267,10 @@ impl HubService {
                     }
                 }
 
-                self.inner.users.connect(user_id, connection_id, session_key).await;
+                self.inner
+                    .connections
+                    .register_connection(user_id, connection_id, session_key, tx, topics)
+                    .await;
                 self.publish(HubMessage::Hub(HubEvent::UserConnected {
                     user_id,
                     connection_id,
@@ -223,7 +282,11 @@ impl HubService {
             ControlCommand::DisconnectUser { user_id, connection_id } => {
                 // Only removes the entry when `connection_id` still matches the active
                 // connection, so a stale disconnect can never tear down a fresh reconnect.
-                let Some(removed_connection_id) = self.inner.users.disconnect(user_id, Some(connection_id)).await
+                let Some(removed_connection_id) = self
+                    .inner
+                    .connections
+                    .remove_connection(user_id, Some(connection_id))
+                    .await
                 else {
                     return true;
                 };
@@ -239,6 +302,19 @@ impl HubService {
                     connection_id: removed_connection_id,
                 }))
                 .await;
+                true
+            }
+            ControlCommand::DropConnection { connection_id } => {
+                // A producer found this connection's channel dead during an off-loop send. Prune it
+                // here so all mutation stays on the loop. Force-remove by id (a fresh reconnect that
+                // replaced it has a different id and its channel would not be dead).
+                if let Some((user_id, _)) = self.inner.connections.remove_connection_by_id(connection_id).await {
+                    if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
+                        log::error!("[{user_id}] Failed to remove dropped connection from registry (TTL will clean up): {err:#?}");
+                    }
+                    self.publish(HubMessage::Hub(HubEvent::UserDisconnected { user_id, connection_id }))
+                        .await;
+                }
                 true
             }
             ControlCommand::HubRegistryChanged { user_id } => {
@@ -284,7 +360,7 @@ impl HubService {
     }
 
     async fn process_registry_change(&self, user_id: Uuid) {
-        let Some((connection_id, _session_key)) = self.inner.users.find_connection(user_id).await else {
+        let Some((connection_id, _session_key)) = self.inner.connections.find_active(user_id).await else {
             return;
         };
 
@@ -303,7 +379,12 @@ impl HubService {
         // Force removal of the connection we just found to be inactive in the registry. If a
         // fresh reconnect replaced it in the meantime, the connection ids differ and we leave
         // the new connection untouched.
-        let Some(removed_connection_id) = self.inner.users.disconnect(user_id, Some(connection_id)).await else {
+        let Some(removed_connection_id) = self
+            .inner
+            .connections
+            .remove_connection(user_id, Some(connection_id))
+            .await
+        else {
             return;
         };
 
@@ -314,7 +395,30 @@ impl HubService {
         .await;
     }
 
+    /// Loop-side broadcast: fans a message out to every topic-matching connection *and* every
+    /// internal subscriber (heartbeat, session checker), pruning any connection whose channel is
+    /// found dead. Because it touches the subscriber list, this runs only on the command loop, so
+    /// subscriber mutation stays single-writer. Pruning emits a `UserDisconnected`, which is itself
+    /// broadcast — handled iteratively via a work queue rather than recursion so this stays a plain
+    /// `async fn` (async recursion would require boxing).
     async fn publish(&self, message: HubMessage) {
-        self.inner.users.publish(message).await;
+        let mut pending = VecDeque::from([message]);
+        while let Some(message) = pending.pop_front() {
+            // Internal subscribers first: only the loop delivers to them.
+            self.inner.subscribers.publish(message.clone()).await;
+
+            if let Err(dead) = self.inner.connections.broadcast(message).await {
+                for connection_id in dead {
+                    if let Some((user_id, _)) = self.inner.connections.remove_connection_by_id(connection_id).await {
+                        if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
+                            log::error!(
+                                "[{user_id}] Failed to remove dead connection from registry (TTL will clean up): {err:#?}"
+                            );
+                        }
+                        pending.push_back(HubMessage::Hub(HubEvent::UserDisconnected { user_id, connection_id }));
+                    }
+                }
+            }
+        }
     }
 }

@@ -11,8 +11,7 @@ pub trait ToTopic {
     fn topic(&self) -> TopicKey;
 }
 
-/// Wrapper for messages received from the hub bus. Carries both hub-generated lifecycle
-/// events and workloads that are broadcast verbatim (see [`Workload`]).
+/// A message flowing through the hub: a hub-generated lifecycle event or a domain payload.
 #[derive(Clone, Debug)]
 pub enum HubMessage {
     Hub(HubEvent),
