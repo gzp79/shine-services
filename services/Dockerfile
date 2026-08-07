@@ -65,8 +65,11 @@ FROM nginx:bookworm AS base
 
 # add ca-certs required for many tools
 RUN apt update \
-    && apt install -y --no-install-recommends ca-certificates supervisor \
-    && mkdir -p /var/log/supervisor
+    && apt install -y --no-install-recommends ca-certificates supervisor libcap2-bin \
+    && rm -rf /var/lib/apt/lists/*
+
+# allow the unprivileged nginx user to bind ports 80/443 without running as root
+RUN setcap 'cap_net_bind_service=+ep' /usr/sbin/nginx
 
 # --- install otelcol ---
 RUN curl -L https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.108.0/otelcol_0.108.0_linux_amd64.tar.gz \
@@ -92,7 +95,13 @@ WORKDIR /app/services/builder
 COPY --from=build /shine/target/release/shine-builder ./
 COPY ./services/server_version.json ./
 
+# run the whole process tree (supervisord, nginx, otelcol, both services) as the unprivileged nginx user
+RUN mkdir -p /var/cache/nginx /var/log/nginx \
+    && chown -R nginx:nginx /var/cache/nginx /var/log/nginx /app /etc/otelcol
+
 EXPOSE 80 443
+
+USER nginx
 
 CMD ["/usr/bin/supervisord"]
 
