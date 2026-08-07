@@ -2,18 +2,22 @@ import { PlaywrightTestConfig } from '@playwright/test';
 import { ServiceOptions } from '$fixtures/setup';
 import { suppress_tls_certificate_warning } from '$lib/suppress_tls_certificate_warning';
 
-const isBuildRun: boolean = !!process.env.CI;
+const isCiPipeline: boolean = !!process.env.CI;
 const enableLogging: boolean = !!process.env.ENABLE_REQUEST_LOGGING;
 
 // Allow self-signed certificates
 suppress_tls_certificate_warning();
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
-if (isBuildRun) {
+if (isCiPipeline) {
     console.log('Running in CI mode');
 } else {
     console.log('Running in DEV mode');
 }
+
+const builderUrl = isCiPipeline
+    ? 'https://cloud.local.scytta.com:8443/builder'
+    : 'https://cloud.local.scytta.com:8444/builder';
 
 if (enableLogging) {
     process.env.DEBUG = 'test:*';
@@ -22,13 +26,13 @@ if (enableLogging) {
 const config: PlaywrightTestConfig<ServiceOptions> = {
     testDir: './',
     fullyParallel: true,
-    forbidOnly: isBuildRun,
-    retries: isBuildRun ? 2 : 0,
+    forbidOnly: isCiPipeline,
+    retries: isCiPipeline ? 2 : 0,
 
     // due to the mock-server's port usage we can't run more than one worker
     workers: 1,
 
-    reporter: isBuildRun ? [['github']] : [['list']],
+    reporter: isCiPipeline ? [['github']] : [['list']],
 
     use: {
         trace: 'on-first-retry'
@@ -47,7 +51,7 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
                 homeUrl: 'https://local.scytta.com:4443',
                 linkUrl: 'https://local.scytta.com:4443/link',
                 identityUrl: 'https://cloud.local.scytta.com:8443/identity',
-                builderUrl: 'https://cloud.local.scytta.com:8444/builder',
+                builderUrl,
 
                 // skipMockService: true, // to run mock services manually
 
