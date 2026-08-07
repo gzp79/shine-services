@@ -325,6 +325,29 @@ details summary:hover { color: #e2e8f0; }
 }
 .cycle-return::before { content: '\21ba'; font-size: 15px; color: #94a3b8; }
 
+/* ── Sequence diagram (actors over time) ───────────────── */
+/* For a temporal flow: N actors as vertical lifelines, time running downward,
+   messages as horizontal arrows between them. The one layout that shows
+   ordering and a feedback edge (a later message returning to an earlier actor)
+   — a thing no box arrangement can express, since its meaning IS the time axis.
+   Geometry (x/y/points) is inline like any SVG; colours live in the classes. */
+.seq-diagram { display: block; max-width: 100%; margin: 12px auto 8px; }
+.seq-diagram text { fill: #94a3b8; font-family: 'Inter', system-ui, sans-serif; font-size: 11px; }
+.seq-lane { stroke: rgba(255,255,255,0.12); stroke-width: 1.5; stroke-dasharray: 4 5; }
+.seq-actor { stroke-width: 1; }
+.seq-actor-indigo { fill: rgba(99,102,241,0.14);  stroke: rgba(99,102,241,0.4); }
+.seq-actor-teal   { fill: rgba(20,184,166,0.14);  stroke: rgba(20,184,166,0.4); }
+.seq-actor-blue   { fill: rgba(14,165,233,0.14);  stroke: rgba(14,165,233,0.4); }
+.seq-actor-green  { fill: rgba(34,197,94,0.12);   stroke: rgba(34,197,94,0.35); }
+.seq-actor-orange { fill: rgba(251,146,60,0.12);  stroke: rgba(251,146,60,0.35); }
+.seq-actor-label  { fill: #e2e8f0; font-weight: 700; font-size: 11px; }
+.seq-msg        { stroke: rgba(148,163,184,0.55); stroke-width: 1.5; fill: none; }
+.seq-msg-return { stroke: rgba(251,146,60,0.6);   stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+.seq-arrowhead        { fill: rgba(148,163,184,0.8); }
+.seq-arrowhead-return { fill: rgba(251,146,60,0.85); }
+.seq-msg-label { fill: #cbd5e1; font-size: 10px; }
+.seq-note      { fill: #64748b; font-size: 10px; }
+
 /* ── Spatial diagrams (SVG) ────────────────────────────── */
 /* For intrinsically geometric relationships — grid ownership, adjacency,
    coordinate frames — that no box layout can express. Colours live here in

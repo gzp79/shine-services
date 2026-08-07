@@ -163,7 +163,14 @@ function openAndWaitClose(url: string, options: WsHoldOptions): WsHoldResult {
 type WsChatSession = {
     // Resolves with the next chat comment whose predicate matches, or rejects on timeout/close.
     waitComment: (predicate: (comment: WsChatComment) => boolean, timeoutMs?: number) => Promise<WsChatComment>;
+    // Resolves once `count` comments matching the predicate have arrived, in arrival order.
+    waitComments: (
+        predicate: (comment: WsChatComment) => boolean,
+        count: number,
+        timeoutMs?: number
+    ) => Promise<WsChatComment[]>;
     send: (text: string) => void;
+    sendRaw: (frame: string) => void;
     close: () => void;
 };
 
@@ -207,27 +214,37 @@ async function openChatSession(url: string, options: WsConnectOptions): Promise<
         ws.once('error', (err: Error) => reject(err));
     });
 
-    return {
-        waitComment: (predicate, timeoutMs = 5000) =>
-            new Promise<WsChatComment>((resolve, reject) => {
-                const idx = buffered.findIndex(predicate);
-                if (idx >= 0) {
-                    resolve(buffered.splice(idx, 1)[0]);
-                    return;
+    const waitComment = (predicate: (comment: WsChatComment) => boolean, timeoutMs = 5000) =>
+        new Promise<WsChatComment>((resolve, reject) => {
+            const idx = buffered.findIndex(predicate);
+            if (idx >= 0) {
+                resolve(buffered.splice(idx, 1)[0]);
+                return;
+            }
+            const timer = setTimeout(
+                () => reject(new Error(`no matching chat comment after ${timeoutMs}ms`)),
+                timeoutMs
+            );
+            waiters.push({
+                predicate,
+                resolve: (comment) => {
+                    clearTimeout(timer);
+                    resolve(comment);
                 }
-                const timer = setTimeout(
-                    () => reject(new Error(`no matching chat comment after ${timeoutMs}ms`)),
-                    timeoutMs
-                );
-                waiters.push({
-                    predicate,
-                    resolve: (comment) => {
-                        clearTimeout(timer);
-                        resolve(comment);
-                    }
-                });
-            }),
+            });
+        });
+
+    return {
+        waitComment,
+        waitComments: async (predicate, count, timeoutMs = 5000) => {
+            const collected: WsChatComment[] = [];
+            for (let i = 0; i < count; i++) {
+                collected.push(await waitComment(predicate, timeoutMs));
+            }
+            return collected;
+        },
         send: (text: string) => ws.send(JSON.stringify({ type: 'chat', text })),
+        sendRaw: (frame: string) => ws.send(frame),
         close: () => ws.close()
     };
 }
@@ -337,24 +354,114 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         }
     });
 
-    test('WS chat message shall be fanned out to another connected user', async ({ builderUrl }) => {
+    test('WS chat messages shall be delivered in order without duplicates', async ({ builderUrl }) => {
+        const session = await openChatSession(wsConnectUrl(builderUrl), {
+            sid: user.sessionCookie,
+            ...allowedWsHeaders
+        });
+
+        try {
+            // A single tag isolates this test's comments from retained room history. Several messages
+            // sent back to back must come back in send order and each exactly once — the dispatcher
+            // advances a per-connection stream cursor so a comment is never redelivered.
+            const tag = randomUUID();
+            const texts = [0, 1, 2, 3, 4].map((n) => `${tag} msg-${n}`);
+            for (const text of texts) {
+                session.send(text);
+            }
+
+            const received = await session.waitComments((c) => c.text.startsWith(tag), texts.length);
+            expect(received.map((c) => c.text)).toEqual(texts);
+            // Stream ids are strictly increasing, matching send order.
+            const ids = received.map((c) => c.id);
+            expect([...ids].sort()).toEqual(ids);
+            expect(new Set(ids).size).toBe(ids.length);
+
+            // Nothing more with this tag should arrive after the expected batch (no duplicate fan-out).
+            await expect(session.waitComment((c) => c.text.startsWith(tag), 1500)).rejects.toThrow();
+        } finally {
+            session.close();
+        }
+    });
+
+    test('WS chat shall fan out between two connected users in both directions', async ({ builderUrl }) => {
         const url = wsConnectUrl(builderUrl);
         const other = await mint.createUserSession({ userId: randomUUID() });
 
-        const sender = await openChatSession(url, { sid: user.sessionCookie, ...allowedWsHeaders });
-        const receiver = await openChatSession(url, { sid: other.sessionCookie, ...allowedWsHeaders });
+        const alice = await openChatSession(url, { sid: user.sessionCookie, ...allowedWsHeaders });
+        const bob = await openChatSession(url, { sid: other.sessionCookie, ...allowedWsHeaders });
 
         try {
-            // Chat is a single global room: a comment one user sends is fanned out by the dispatcher
-            // to every connected user, tagged with the sender's id.
-            const text = `broadcast ${randomUUID()}`;
-            sender.send(text);
+            // Chat is a single global room: each user's comment is fanned out by the dispatcher to
+            // every connected user (sender included), tagged with the author's id.
+            const fromAlice = `alice ${randomUUID()}`;
+            const fromBob = `bob ${randomUUID()}`;
+            alice.send(fromAlice);
+            bob.send(fromBob);
 
-            const seen = await receiver.waitComment((c) => c.text === text);
-            expect(seen).toMatchObject({ from: user.userId, text });
+            // Bob receives Alice's message and vice versa, each attributed to its author.
+            expect(await bob.waitComment((c) => c.text === fromAlice)).toMatchObject({ from: user.userId });
+            expect(await alice.waitComment((c) => c.text === fromBob)).toMatchObject({ from: other.userId });
+            // Each author also sees their own message fanned back.
+            expect(await alice.waitComment((c) => c.text === fromAlice)).toMatchObject({ from: user.userId });
+            expect(await bob.waitComment((c) => c.text === fromBob)).toMatchObject({ from: other.userId });
         } finally {
-            sender.close();
-            receiver.close();
+            alice.close();
+            bob.close();
+        }
+    });
+
+    test('WS chat shall replay recent history to a newly connected user', async ({ builderUrl }) => {
+        const url = wsConnectUrl(builderUrl);
+
+        // A user sends messages, then a second user connects fresh. Because a new connection starts
+        // from cursor "0", the dispatcher replays the retained room history to it.
+        const tag = randomUUID();
+        const texts = [`${tag} past-0`, `${tag} past-1`];
+
+        const author = await openChatSession(url, { sid: user.sessionCookie, ...allowedWsHeaders });
+        try {
+            for (const text of texts) {
+                author.send(text);
+            }
+            // Ensure the messages are persisted (author sees them) before the latecomer connects.
+            await author.waitComments((c) => c.text.startsWith(tag), texts.length);
+
+            const latecomer = await mint.createUserSession({ userId: randomUUID() });
+            const late = await openChatSession(url, { sid: latecomer.sessionCookie, ...allowedWsHeaders });
+            try {
+                const replayed = await late.waitComments((c) => c.text.startsWith(tag), texts.length);
+                expect(replayed.map((c) => c.text)).toEqual(texts);
+                expect(replayed.every((c) => c.from === user.userId)).toBe(true);
+            } finally {
+                late.close();
+            }
+        } finally {
+            author.close();
+        }
+    });
+
+    test('WS malformed chat frame shall be ignored without dropping the connection', async ({ builderUrl }) => {
+        const session = await openChatSession(wsConnectUrl(builderUrl), {
+            sid: user.sessionCookie,
+            ...allowedWsHeaders
+        });
+
+        try {
+            // The service logs and skips frames it cannot parse (bad JSON, unknown type, missing
+            // field) rather than tearing down the socket. A valid chat sent afterwards must still
+            // round-trip, proving the connection survived.
+            session.sendRaw('this is not json');
+            session.sendRaw(JSON.stringify({ type: 'unknown', text: 'x' }));
+            session.sendRaw(JSON.stringify({ type: 'chat' }));
+
+            const text = `after-garbage ${randomUUID()}`;
+            session.send(text);
+
+            const comment = await session.waitComment((c) => c.text === text);
+            expect(comment).toMatchObject({ from: user.userId, text });
+        } finally {
+            session.close();
         }
     });
 
