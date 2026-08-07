@@ -140,16 +140,19 @@ impl Connections {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::messages::ChatMessage;
+    use crate::models::messages::{ChatBatch, ChatComment};
     use ring::rand::SystemRandom;
     use shine_infra::session::SessionKey;
     use shine_test::test;
     use tokio::sync::mpsc;
 
     fn chat(text: &str) -> HubMessage {
-        HubMessage::Chat(ChatMessage {
-            user_id: Uuid::new_v4(),
-            text: text.to_string(),
+        HubMessage::Chat(ChatBatch {
+            comments: vec![ChatComment {
+                id: "0-0".to_string(),
+                user_id: Uuid::new_v4(),
+                text: text.to_string(),
+            }],
         })
     }
 
@@ -169,8 +172,8 @@ mod tests {
         assert!(users.send_to_connection(conn_id, chat("hi")).await.is_ok());
         assert!(users.send_to_user(user_id, chat("yo")).await.is_ok());
 
-        assert!(matches!(rx.recv().await, Some(HubMessage::Chat(m)) if m.text == "hi"));
-        assert!(matches!(rx.recv().await, Some(HubMessage::Chat(m)) if m.text == "yo"));
+        assert!(matches!(rx.recv().await, Some(HubMessage::Chat(m)) if m.comments[0].text == "hi"));
+        assert!(matches!(rx.recv().await, Some(HubMessage::Chat(m)) if m.comments[0].text == "yo"));
     }
 
     #[test]

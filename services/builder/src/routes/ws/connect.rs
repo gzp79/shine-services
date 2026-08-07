@@ -1,8 +1,8 @@
 use crate::{
     app_state::AppState,
-    models::messages::{ChatMessage, HubEvent, HubMessage, TopicKey},
-    routes::ws::message::{WSMessageRequest, WSMessageResponse},
-    services::HubService,
+    models::messages::{HubEvent, HubMessage, TopicKey},
+    routes::ws::message::{ChatWireComment, WSMessageRequest, WSMessageResponse},
+    services::{ChatService, HubService},
 };
 use axum::{
     extract::{
@@ -60,17 +60,29 @@ pub async fn connect(
     log::info!("User {} requesting a connection...", user.user_id);
 
     let hub_service = state.hub_service().clone();
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, hub_service)))
+    let chat_service = state.chat_service().clone();
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, hub_service, chat_service)))
 }
 
 fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
     match message {
-        HubMessage::Chat(ChatMessage { user_id, text }) => Some(WSMessageResponse::Chat { from: user_id, text }),
+        HubMessage::Chat(batch) => {
+            let messages = batch
+                .comments
+                .into_iter()
+                .map(|comment| ChatWireComment {
+                    id: comment.id,
+                    from: comment.user_id,
+                    text: comment.text,
+                })
+                .collect();
+            Some(WSMessageResponse::Chat { messages })
+        }
         _ => None,
     }
 }
 
-async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubService) {
+async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubService, chat_service: ChatService) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let current_user_id = user.user_id;
 
@@ -78,33 +90,21 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubSer
 
     // Register the connection now that the upgrade has completed. If registration fails there is no
     // live connection to keep, so close the socket without emitting a disconnect for it.
-    let connection_id =
-        match hub_service.request_connection(current_user_id, user.key, tx, vec![TopicKey::Chat, TopicKey::Hub]) {
-            Ok(connection_id) => connection_id,
-            Err(err) => {
-                log::error!("[{current_user_id}] Failed to register connection: {err:#?}");
-                if let Err(err) = ws_sender.close().await {
-                    log::error!("[{current_user_id}] Failed to close websocket after failed registration: {err:#?}");
-                }
-                return;
+    let connection_id = match hub_service.request_connection(current_user_id, user.key, tx, vec![TopicKey::Hub]) {
+        Ok(connection_id) => connection_id,
+        Err(err) => {
+            log::error!("[{current_user_id}] Failed to register connection: {err:#?}");
+            if let Err(err) = ws_sender.close().await {
+                log::error!("[{current_user_id}] Failed to close websocket after failed registration: {err:#?}");
             }
-        };
+            return;
+        }
+    };
 
     log::info!("[{current_user_id}] Connected to the hub");
 
     let mut recv_task = {
-        let hub_service = hub_service.clone();
         tokio::spawn(async move {
-            if let Err(err) = hub_service
-                .broadcast(HubMessage::Chat(ChatMessage {
-                    user_id: current_user_id,
-                    text: "${tr: Connected}".to_string(),
-                }))
-                .await
-            {
-                log::error!("[{current_user_id}] Failed to send initial message: {err:#?}");
-            }
-
             while let Some(Ok(message)) = ws_receiver.next().await {
                 log::info!("[{current_user_id}] WsMessage received");
                 if let WsMessage::Text(text) = message {
@@ -117,11 +117,8 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubSer
                     };
 
                     if let Some(text) = msg {
-                        if let Err(err) = hub_service
-                            .broadcast(HubMessage::Chat(ChatMessage { user_id: current_user_id, text }))
-                            .await
-                        {
-                            log::error!("[{current_user_id}] Failed to send message: {err:#?}");
+                        if let Err(err) = chat_service.append_comment(current_user_id, &text).await {
+                            log::error!("[{current_user_id}] Failed to append chat message: {err:#?}");
                         }
                     }
                 }
@@ -132,9 +129,18 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubSer
     let mut send_task = tokio::spawn(async move {
         while let Some(message) = rx.recv().await {
             log::info!("[{current_user_id}] Bus message received");
-            if matches!(message, HubMessage::Hub(HubEvent::UserDisconnected { connection_id: disconnected, .. }) if disconnected == connection_id)
-            {
-                log::info!("[{current_user_id}] ws-close-triggered-by-hub-event: UserDisconnected");
+            // Close the socket on a disconnect targeting this connection, or on hub shutdown.
+            // Without the Shutdown arm the task would block on rx.recv() forever during a graceful
+            // drain, since the hub keeps this connection's tx alive.
+            let close_reason = match &message {
+                HubMessage::Hub(HubEvent::UserDisconnected {
+                    connection_id: disconnected, ..
+                }) if *disconnected == connection_id => Some("UserDisconnected"),
+                HubMessage::Hub(HubEvent::Shutdown) => Some("Shutdown"),
+                _ => None,
+            };
+            if let Some(reason) = close_reason {
+                log::info!("[{current_user_id}] ws-close-triggered-by-hub-event: {reason}");
                 if let Err(err) = ws_sender.close().await {
                     log::error!("[{current_user_id}] Failed to close websocket on hub event: {err:#?}");
                 }

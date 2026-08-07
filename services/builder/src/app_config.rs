@@ -22,6 +22,9 @@ pub struct ChatConfig {
     /// Room stream inactivity TTL in seconds.
     #[serde(default = "ChatConfig::default_stream_ttl_seconds")]
     pub stream_ttl_seconds: u64,
+    /// Interval in seconds between chat dispatcher sync ticks.
+    #[serde(default = "ChatConfig::default_sync_interval_seconds")]
+    pub sync_interval_seconds: u64,
 }
 
 impl ChatConfig {
@@ -31,6 +34,10 @@ impl ChatConfig {
 
     fn default_stream_ttl_seconds() -> u64 {
         60 * 60
+    }
+
+    fn default_sync_interval_seconds() -> u64 {
+        1
     }
 }
 
@@ -65,6 +72,7 @@ impl Default for ChatConfig {
         Self {
             stream_max_messages: Self::default_stream_max_messages(),
             stream_ttl_seconds: Self::default_stream_ttl_seconds(),
+            sync_interval_seconds: Self::default_sync_interval_seconds(),
         }
     }
 }

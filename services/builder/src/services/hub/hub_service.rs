@@ -4,11 +4,14 @@ use crate::{
         HubError,
     },
     repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
-    services::hub::{
-        hub_command::ControlCommand,
-        hub_connections::Connections,
-        hub_subscribers::Subscribers,
-        tasks::{run_connection_loop, Heartbeat, SessionChecker},
+    services::{
+        hub::{
+            hub_command::ControlCommand,
+            hub_connections::Connections,
+            hub_subscribers::Subscribers,
+            tasks::{ChatDispatcher, Heartbeat, SessionChecker},
+        },
+        ChatService,
     },
 };
 use shine_infra::session::{CurrentUserService, SessionKey};
@@ -21,6 +24,7 @@ use uuid::Uuid;
 pub struct HubIntervals {
     pub heartbeat: Duration,
     pub session_check: Duration,
+    pub chat: Duration,
 }
 
 /// Point-in-time counts of hub state, for status reporting.
@@ -47,6 +51,7 @@ impl HubService {
     pub async fn new(
         hub_registry: RedisHubConnectionDb,
         session_service: Arc<CurrentUserService>,
+        chat_service: ChatService,
         intervals: HubIntervals,
     ) -> Self {
         let (control_tx, control_rx) = mpsc::unbounded_channel();
@@ -67,8 +72,9 @@ impl HubService {
         // place.
         let background_tasks = vec![
             Self::start_registry_listener(service.clone()),
-            Self::start_heartbeat(service.clone(), intervals.heartbeat).await,
-            Self::start_session_checker(service.clone(), session_service, intervals.session_check).await,
+            Heartbeat::start(service.clone(), intervals.heartbeat).await,
+            SessionChecker::start(service.clone(), session_service, intervals.session_check).await,
+            ChatDispatcher::start(service.clone(), chat_service, intervals.chat).await,
         ];
         Self::start_dispatcher(service.clone(), control_rx, background_tasks);
         service
@@ -168,30 +174,6 @@ impl HubService {
         let connections = self.inner.connections.len().await;
         let subscribers = self.inner.subscribers.len().await;
         HubStats { connections, subscribers }
-    }
-
-    /// Starts the periodic registry heartbeat on its own connection loop, refreshing TTLs for
-    /// locally-tracked connections and disconnecting any the registry no longer holds as active.
-    async fn start_heartbeat(service: HubService, interval: Duration) -> JoinHandle<()> {
-        let subscription = service.subscribe(vec![TopicKey::Hub]).await;
-        tokio::spawn(async move {
-            let task = Heartbeat::new(service);
-            run_connection_loop(subscription, interval, task).await;
-        })
-    }
-
-    /// Starts the periodic session checker on its own connection loop, validating each tracked
-    /// session and issuing a targeted disconnect on expiry.
-    async fn start_session_checker(
-        service: HubService,
-        session_service: Arc<CurrentUserService>,
-        interval: Duration,
-    ) -> JoinHandle<()> {
-        let subscription = service.subscribe(vec![TopicKey::Hub]).await;
-        tokio::spawn(async move {
-            let checker = SessionChecker::new(session_service, &service);
-            run_connection_loop(subscription, interval, checker).await;
-        })
     }
 
     /// Starts the command loop, the sole writer of connection state.

@@ -50,7 +50,7 @@ impl ConnectionTracker {
 /// A periodic consumer of the connection view. The driver owns the tracker and the loop;
 /// implementors provide only the per-tick work.
 pub trait ConnectionConsumer: Send + 'static {
-    fn on_tick(&self, tracker: &ConnectionTracker) -> impl Future<Output = ()> + Send;
+    fn on_tick(&mut self, tracker: &ConnectionTracker) -> impl Future<Output = ()> + Send;
 }
 
 /// Drives a self-contained loop that event-sources its own [`ConnectionTracker`] from
@@ -61,7 +61,7 @@ pub trait ConnectionConsumer: Send + 'static {
 pub async fn run_connection_loop<C: ConnectionConsumer>(
     mut subscription: mpsc::UnboundedReceiver<HubMessage>,
     interval: Duration,
-    consumer: C,
+    mut consumer: C,
 ) {
     let mut tracker = ConnectionTracker::new();
     let mut ticker = time::interval(interval);
@@ -118,7 +118,7 @@ mod tests {
     }
 
     impl ConnectionConsumer for Probe {
-        async fn on_tick(&self, tracker: &ConnectionTracker) {
+        async fn on_tick(&mut self, tracker: &ConnectionTracker) {
             let _ = self.tx.send(tracker.connections().len());
         }
     }

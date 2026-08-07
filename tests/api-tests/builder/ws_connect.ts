@@ -26,8 +26,10 @@ type WsConnectOptions = {
 };
 
 // The wire protocol mirrors WSMessageRequest/WSMessageResponse in the service (internally tagged,
-// camelCased): client sends {type:'chat', text}, server pushes {type:'chat', from, text}.
-type WsChatIn = { type: 'chat'; from: string; text: string };
+// camelCased): client sends {type:'chat', text}; the server persists it to the room stream and the
+// chat dispatcher later pushes a batch {type:'chat', messages:[{id, from, text}]}.
+type WsChatComment = { id: string; from: string; text: string };
+type WsChatBatch = { type: 'chat'; messages: WsChatComment[] };
 
 function buildHeaders(options: WsConnectOptions): Record<string, string> {
     const headers: Record<string, string> = {
@@ -159,14 +161,15 @@ function openAndWaitClose(url: string, options: WsHoldOptions): WsHoldResult {
 }
 
 type WsChatSession = {
-    // Resolves with the next chat message whose predicate matches, or rejects on timeout/close.
-    waitChat: (predicate: (msg: WsChatIn) => boolean, timeoutMs?: number) => Promise<WsChatIn>;
+    // Resolves with the next chat comment whose predicate matches, or rejects on timeout/close.
+    waitComment: (predicate: (comment: WsChatComment) => boolean, timeoutMs?: number) => Promise<WsChatComment>;
     send: (text: string) => void;
     close: () => void;
 };
 
-// Opens an authenticated socket and keeps it live, buffering inbound chat messages so a caller can
-// send a frame and await the server's echo. Used by the message round-trip test.
+// Opens an authenticated socket and keeps it live. The server pushes chat as batches; we flatten
+// each batch into its comments so a caller can send a frame and await the specific comment the chat
+// dispatcher later fans back in. Used by the message round-trip test.
 async function openChatSession(url: string, options: WsConnectOptions): Promise<WsChatSession> {
     const ws = new WebSocket(url, {
         origin: options.origin,
@@ -174,16 +177,25 @@ async function openChatSession(url: string, options: WsConnectOptions): Promise<
         rejectUnauthorized: false
     });
 
-    const buffered: WsChatIn[] = [];
-    const waiters: Array<{ predicate: (msg: WsChatIn) => boolean; resolve: (msg: WsChatIn) => void }> = [];
+    const buffered: WsChatComment[] = [];
+    const waiters: Array<{
+        predicate: (comment: WsChatComment) => boolean;
+        resolve: (comment: WsChatComment) => void;
+    }> = [];
+
+    const offer = (comment: WsChatComment) => {
+        const idx = waiters.findIndex((w) => w.predicate(comment));
+        if (idx >= 0) {
+            waiters.splice(idx, 1)[0].resolve(comment);
+        } else {
+            buffered.push(comment);
+        }
+    };
 
     ws.on('message', (data: Buffer) => {
-        const msg = JSON.parse(data.toString()) as WsChatIn;
-        const idx = waiters.findIndex((w) => w.predicate(msg));
-        if (idx >= 0) {
-            waiters.splice(idx, 1)[0].resolve(msg);
-        } else {
-            buffered.push(msg);
+        const batch = JSON.parse(data.toString()) as WsChatBatch;
+        for (const comment of batch.messages) {
+            offer(comment);
         }
     });
 
@@ -196,22 +208,22 @@ async function openChatSession(url: string, options: WsConnectOptions): Promise<
     });
 
     return {
-        waitChat: (predicate, timeoutMs = 5000) =>
-            new Promise<WsChatIn>((resolve, reject) => {
+        waitComment: (predicate, timeoutMs = 5000) =>
+            new Promise<WsChatComment>((resolve, reject) => {
                 const idx = buffered.findIndex(predicate);
                 if (idx >= 0) {
                     resolve(buffered.splice(idx, 1)[0]);
                     return;
                 }
                 const timer = setTimeout(
-                    () => reject(new Error(`no matching chat message after ${timeoutMs}ms`)),
+                    () => reject(new Error(`no matching chat comment after ${timeoutMs}ms`)),
                     timeoutMs
                 );
                 waiters.push({
                     predicate,
-                    resolve: (msg) => {
+                    resolve: (comment) => {
                         clearTimeout(timer);
-                        resolve(msg);
+                        resolve(comment);
                     }
                 });
             }),
@@ -301,25 +313,48 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         });
     }
 
-    test('WS chat message shall be echoed back to the sender', async ({ builderUrl }) => {
+    test('WS chat message shall be persisted and fanned back to the sender', async ({ builderUrl }) => {
         const session = await openChatSession(wsConnectUrl(builderUrl), {
             sid: user.sessionCookie,
             ...allowedWsHeaders
         });
 
         try {
-            // The hub pushes a localized "Connected" greeting on connect; the echo path is the same
-            // one a client-sent chat travels, so seeing it confirms the send_task/serialization path.
-            const greeting = await session.waitChat((msg) => msg.from === user.userId);
-            expect(greeting.type).toBe('chat');
-
+            // A sent chat is persisted to the room stream and then delivered by the chat dispatcher
+            // on its next tick (syncIntervalSeconds=1 in test config), not echoed synchronously. The
+            // unique text distinguishes our comment from any retained room history the dispatcher
+            // replays to a freshly connected client.
             const text = `hello ${randomUUID()}`;
             session.send(text);
 
-            const echo = await session.waitChat((msg) => msg.text === text);
-            expect(echo).toMatchObject({ type: 'chat', from: user.userId, text });
+            const comment = await session.waitComment((c) => c.text === text);
+            expect(comment).toMatchObject({ from: user.userId, text });
+            // The dispatcher tags each comment with its ordered Redis stream id (`<ms>-<seq>`) so the
+            // client can order and deduplicate under at-least-once delivery.
+            expect(comment.id).toMatch(/^\d+-\d+$/);
         } finally {
             session.close();
+        }
+    });
+
+    test('WS chat message shall be fanned out to another connected user', async ({ builderUrl }) => {
+        const url = wsConnectUrl(builderUrl);
+        const other = await mint.createUserSession({ userId: randomUUID() });
+
+        const sender = await openChatSession(url, { sid: user.sessionCookie, ...allowedWsHeaders });
+        const receiver = await openChatSession(url, { sid: other.sessionCookie, ...allowedWsHeaders });
+
+        try {
+            // Chat is a single global room: a comment one user sends is fanned out by the dispatcher
+            // to every connected user, tagged with the sender's id.
+            const text = `broadcast ${randomUUID()}`;
+            sender.send(text);
+
+            const seen = await receiver.waitComment((c) => c.text === text);
+            expect(seen).toMatchObject({ from: user.userId, text });
+        } finally {
+            sender.close();
+            receiver.close();
         }
     });
 

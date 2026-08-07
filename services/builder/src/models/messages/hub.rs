@@ -1,4 +1,4 @@
-use crate::models::messages::{ChatMessage, HubEvent};
+use crate::models::messages::{ChatBatch, HubEvent};
 
 /// High level filter for messages sent to the hub bus.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -15,14 +15,14 @@ pub trait ToTopic {
 #[derive(Clone, Debug)]
 pub enum HubMessage {
     Hub(HubEvent),
-    Chat(ChatMessage),
+    Chat(ChatBatch),
 }
 
 impl ToTopic for HubMessage {
     fn topic(&self) -> TopicKey {
         match self {
             HubMessage::Hub(event) => event.topic(),
-            HubMessage::Chat(msg) => msg.topic(),
+            HubMessage::Chat(batch) => batch.topic(),
         }
     }
 }

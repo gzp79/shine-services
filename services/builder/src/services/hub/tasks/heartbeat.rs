@@ -1,5 +1,7 @@
-use super::connection_tracker::{ConnectionConsumer, ConnectionTracker};
-use crate::{repositories::hub_registry::HubConnection, services::HubService};
+use super::connection_tracker::{run_connection_loop, ConnectionConsumer, ConnectionTracker};
+use crate::{models::messages::TopicKey, repositories::hub_registry::HubConnection, services::HubService};
+use std::time::Duration;
+use tokio::task::JoinHandle;
 
 /// Periodic consumer of a connection view. Refreshes the Redis TTL of every locally-tracked
 /// connection in a single batched round trip; a connection the registry no longer holds as active
@@ -10,13 +12,20 @@ pub struct Heartbeat {
 }
 
 impl Heartbeat {
-    pub fn new(hub_service: HubService) -> Self {
-        Self { hub_service }
+    /// Starts the heartbeat on its own connection loop, refreshing TTLs for locally-tracked
+    /// connections and disconnecting any the registry no longer holds as active. Subscribes
+    /// synchronously (awaited) before spawning so the subscription is in place before the command
+    /// loop starts dispatching.
+    pub async fn start(service: HubService, interval: Duration) -> JoinHandle<()> {
+        let subscription = service.subscribe(vec![TopicKey::Hub]).await;
+        tokio::spawn(async move {
+            run_connection_loop(subscription, interval, Heartbeat { hub_service: service }).await;
+        })
     }
 }
 
 impl ConnectionConsumer for Heartbeat {
-    async fn on_tick(&self, tracker: &ConnectionTracker) {
+    async fn on_tick(&mut self, tracker: &ConnectionTracker) {
         let connections: Vec<HubConnection> = tracker
             .connections()
             .iter()

@@ -2,10 +2,7 @@ use crate::{
     models::ChatError,
     repositories::chat_comments::{ChatCommentStore, StoredChatComment},
 };
-use redis::{
-    streams::{StreamId, StreamRangeReply},
-    AsyncCommands,
-};
+use redis::streams::{StreamId, StreamRangeReply};
 use shine_infra::db::redis::RedisError;
 use uuid::Uuid;
 

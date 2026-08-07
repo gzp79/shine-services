@@ -1,7 +1,11 @@
 use super::{HubIntervals, HubService};
 use crate::{
-    models::messages::{ChatMessage, HubEvent, HubMessage, TopicKey},
-    repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
+    models::messages::{ChatBatch, ChatComment, HubEvent, HubMessage, TopicKey},
+    repositories::{
+        chat_comments::redis::RedisChatCommentsDb,
+        hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
+    },
+    services::ChatService,
 };
 use ring::rand::SystemRandom;
 use shine_infra::{
@@ -33,17 +37,20 @@ async fn create_test_hub_service() -> Option<(HubService, RedisHubConnectionDb)>
 
     let redis_pool = db::redis::create_redis_pool(redis_cns.as_str()).await.unwrap();
     let hub_registry = RedisHubConnectionDb::new(&redis_pool, 120).await.unwrap();
+    let chat_db = RedisChatCommentsDb::new(&redis_pool, 200, 3600).await.unwrap();
+    let chat_service = ChatService::new(chat_db);
 
     // URL_SAFE_NO_PAD: 86 'A' chars decode to 64 zero bytes, a valid cookie key for tests.
     let cookie_secret = "A".repeat(86);
     let session_service = Arc::new(CurrentUserService::new(None, &cookie_secret, "", 120, redis_pool.clone()).unwrap());
 
-    // Long consumer intervals so neither internal loop fires during these tests.
+    // Long consumer intervals so no internal loop fires during these tests.
     let intervals = HubIntervals {
         heartbeat: Duration::from_secs(3600),
         session_check: Duration::from_secs(3600),
+        chat: Duration::from_secs(3600),
     };
-    let hub_service = HubService::new(hub_registry.clone(), session_service, intervals).await;
+    let hub_service = HubService::new(hub_registry.clone(), session_service, chat_service, intervals).await;
 
     Some((hub_service, hub_registry))
 }
@@ -341,9 +348,12 @@ async fn chat_payload_is_delivered_and_topic_filtered() {
 
     let author = Uuid::new_v4();
     sender
-        .broadcast(HubMessage::Chat(ChatMessage {
-            user_id: author,
-            text: "hello".to_string(),
+        .broadcast(HubMessage::Chat(ChatBatch {
+            comments: vec![ChatComment {
+                id: "1-0".to_string(),
+                user_id: author,
+                text: "hello".to_string(),
+            }],
         }))
         .await
         .unwrap();
@@ -353,18 +363,19 @@ async fn chat_payload_is_delivered_and_topic_filtered() {
     let mut delivered = None;
     while Instant::now() < deadline {
         match timeout(deadline.saturating_duration_since(Instant::now()), chat_rx.recv()).await {
-            Ok(Some(HubMessage::Chat(message))) => {
-                delivered = Some(message);
+            Ok(Some(HubMessage::Chat(batch))) => {
+                delivered = Some(batch);
                 break;
             }
             Ok(Some(_)) => {}
             _ => break,
         }
     }
-    let message = delivered.expect("chat connection should receive the chat payload");
-    assert_eq!(message.user_id, author, "delivered chat should carry the author id");
+    let batch = delivered.expect("chat connection should receive the chat payload");
+    let comment = batch.comments.first().expect("batch should carry the comment");
+    assert_eq!(comment.user_id, author, "delivered chat should carry the author id");
     assert_eq!(
-        message.text, "hello",
+        comment.text, "hello",
         "delivered chat should carry the payload verbatim"
     );
 
@@ -421,21 +432,24 @@ async fn direct_send_to_connection_moves_to_that_connection_only() {
     sender
         .send_to_connection(
             conn_a,
-            HubMessage::Chat(ChatMessage {
-                user_id: user_a,
-                text: "just-a".into(),
+            HubMessage::Chat(ChatBatch {
+                comments: vec![ChatComment {
+                    id: "1-0".to_string(),
+                    user_id: user_a,
+                    text: "just-a".into(),
+                }],
             }),
         )
         .await
         .unwrap();
 
     let got_a = timeout(Duration::from_millis(500), rx_a.recv()).await;
-    assert!(matches!(got_a, Ok(Some(HubMessage::Chat(m))) if m.text == "just-a"));
+    assert!(matches!(got_a, Ok(Some(HubMessage::Chat(b))) if b.comments.first().is_some_and(|c| c.text == "just-a")));
 
     // B must not receive the directed message (allow lifecycle events through, then assert no chat).
     let mut saw_chat_on_b = false;
     while let Ok(Some(msg)) = timeout(Duration::from_millis(150), rx_b.recv()).await {
-        if matches!(msg, HubMessage::Chat(m) if m.text == "just-a") {
+        if matches!(msg, HubMessage::Chat(b) if b.comments.first().is_some_and(|c| c.text == "just-a")) {
             saw_chat_on_b = true;
         }
     }
@@ -622,9 +636,12 @@ async fn slow_connection_is_auto_dropped_when_it_falls_behind() {
     let chatter = Uuid::new_v4();
     for idx in 0..32 {
         sender
-            .broadcast(HubMessage::Chat(ChatMessage {
-                user_id: chatter,
-                text: format!("msg {idx}"),
+            .broadcast(HubMessage::Chat(ChatBatch {
+                comments: vec![ChatComment {
+                    id: format!("{idx}-0"),
+                    user_id: chatter,
+                    text: format!("msg {idx}"),
+                }],
             }))
             .await
             .unwrap();

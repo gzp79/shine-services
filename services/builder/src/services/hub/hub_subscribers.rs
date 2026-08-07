@@ -55,15 +55,18 @@ impl Subscribers {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::messages::ChatMessage;
+    use crate::models::messages::{ChatBatch, ChatComment};
     use shine_test::test;
     use tokio::sync::mpsc;
     use uuid::Uuid;
 
     fn chat(text: &str) -> HubMessage {
-        HubMessage::Chat(ChatMessage {
-            user_id: Uuid::new_v4(),
-            text: text.to_string(),
+        HubMessage::Chat(ChatBatch {
+            comments: vec![ChatComment {
+                id: "0-0".to_string(),
+                user_id: Uuid::new_v4(),
+                text: text.to_string(),
+            }],
         })
     }
 
@@ -77,7 +80,7 @@ mod tests {
 
         subscribers.publish(chat("hi")).await;
 
-        assert!(matches!(rx_chat.recv().await, Some(HubMessage::Chat(m)) if m.text == "hi"));
+        assert!(matches!(rx_chat.recv().await, Some(HubMessage::Chat(m)) if m.comments[0].text == "hi"));
         // Hub-topic subscriber must not receive a Chat message.
         assert!(rx_hub.try_recv().is_err());
     }
