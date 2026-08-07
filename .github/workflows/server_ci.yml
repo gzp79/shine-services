@@ -100,6 +100,30 @@ jobs:
         run: |
           echo "::group::Starting service in the test environment"
           docker compose -f ../services/docker-compose.yml -p shine --profile test up -d
+
+          ready_urls=(
+            "https://cloud.local.scytta.com:8443/identity/info/ready"
+            "https://cloud.local.scytta.com:8443/builder/info/ready"
+          )
+
+          for url in "${ready_urls[@]}"; do
+            echo "Waiting for $url"
+            ready=false
+            for _ in {1..60}; do
+              if curl --silent --show-error --fail --insecure "$url" >/dev/null; then
+                ready=true
+                break
+              fi
+              sleep 1
+            done
+
+            if [ "$ready" != true ]; then
+              echo "Service did not become ready: $url"
+              docker compose -f ../services/docker-compose.yml -p shine ps
+              docker compose -f ../services/docker-compose.yml -p shine logs shine
+              exit 1
+            fi
+          done
           echo "::endgroup::"
 
           echo "::group::Running test"
