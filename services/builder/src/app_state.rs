@@ -1,7 +1,8 @@
 use crate::{
     app_config::AppConfig,
+    repositories::chat_comments::redis::RedisChatCommentsDb,
     repositories::hub_registry::redis::RedisHubConnectionDb,
-    services::{HubIntervals, HubService},
+    services::{ChatService, HubIntervals, HubService},
     settings::{BuilderSettings, WsSettings},
 };
 use anyhow::{anyhow, Error as AnyError};
@@ -13,6 +14,7 @@ use std::{sync::Arc, time::Duration};
 
 struct Inner {
     hub_service: HubService,
+    chat_service: ChatService,
     settings: BuilderSettings,
 }
 
@@ -50,6 +52,13 @@ impl AppState {
         // live connection's registry entry expires and it is wrongly reaped as stale.
         let hub_connection_ttl_seconds = hub_heartbeat_seconds.saturating_mul(3);
         let hub_registry = RedisHubConnectionDb::new(redis_pool, hub_connection_ttl_seconds).await?;
+        let chat_comment_db = RedisChatCommentsDb::new(
+            redis_pool,
+            config.feature.chat.stream_max_messages,
+            config.feature.chat.stream_ttl_seconds,
+        )
+        .await?;
+        let chat_service = ChatService::new(chat_comment_db);
 
         // The hub owns its periodic connection consumers (heartbeat + session checker), each on
         // its own loop event-sourced from a Hub subscription.
@@ -59,11 +68,19 @@ impl AppState {
         };
         let hub_service = HubService::new(hub_registry, core_services.current_user_service.clone(), intervals).await;
 
-        Ok(Self(Arc::new(Inner { hub_service, settings })))
+        Ok(Self(Arc::new(Inner {
+            hub_service,
+            chat_service,
+            settings,
+        })))
     }
 
     pub fn hub_service(&self) -> &HubService {
         &self.0.hub_service
+    }
+
+    pub fn chat_service(&self) -> &ChatService {
+        &self.0.chat_service
     }
 
     pub fn settings(&self) -> &BuilderSettings {
