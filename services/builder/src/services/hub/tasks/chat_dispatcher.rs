@@ -1,10 +1,13 @@
-use super::connection_tracker::{run_connection_loop, ConnectionConsumer, ConnectionTracker};
+use super::connection_tracker::{spawn_connection_loop, ConnectionConsumer, ConnectionTracker};
 use crate::{
-    models::messages::{ChatBatch, ChatComment, HubMessage, TopicKey},
+    models::messages::{ChatBatch, ChatComment, HubMessage},
     repositories::chat_comments::StoredChatComment,
     services::{ChatService, HubService},
 };
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
@@ -25,31 +28,30 @@ pub struct ChatDispatcher {
 
 impl ChatDispatcher {
     /// Starts the chat dispatcher on its own connection loop, reading the room stream once per tick
-    /// and delivering per-connection, id-targeted chat batches. Subscribes synchronously (awaited)
-    /// before spawning so the subscription is in place before the command loop starts dispatching.
+    /// and delivering per-connection, id-targeted chat batches.
     pub async fn start(service: HubService, chat_service: ChatService, interval: Duration) -> JoinHandle<()> {
-        let subscription = service.subscribe(vec![TopicKey::Hub]).await;
-        tokio::spawn(async move {
-            let dispatcher = ChatDispatcher {
-                hub_service: service,
-                chat_service,
-                cursors: HashMap::new(),
-            };
-            run_connection_loop(subscription, interval, dispatcher).await;
-        })
+        let consumer = ChatDispatcher {
+            hub_service: service.clone(),
+            chat_service,
+            cursors: HashMap::new(),
+        };
+        spawn_connection_loop(&service, interval, consumer).await
     }
 
     /// Adds cursors for newly seen connections (starting from history) and drops cursors for
     /// connections that are gone.
     fn reconcile(&mut self, tracker: &ConnectionTracker) {
-        let live = tracker.connections();
-        for connection_id in live.values().map(|(connection_id, _)| *connection_id) {
+        let live: HashSet<Uuid> = tracker
+            .connections()
+            .values()
+            .map(|(connection_id, _)| *connection_id)
+            .collect();
+        for connection_id in &live {
             self.cursors
-                .entry(connection_id)
+                .entry(*connection_id)
                 .or_insert_with(|| INITIAL_CURSOR.to_string());
         }
-        self.cursors
-            .retain(|connection_id, _| live.values().any(|(live_id, _)| live_id == connection_id));
+        self.cursors.retain(|connection_id, _| live.contains(connection_id));
     }
 }
 
@@ -59,7 +61,7 @@ impl ConnectionConsumer for ChatDispatcher {
 
         // Oldest cursor across all connections: one query serves everyone, each connection then
         // filtered to the slice newer than its own cursor.
-        let Some(oldest) = self.cursors.values().min_by(|a, b| cmp_stream_id(a, b)).cloned() else {
+        let Some(oldest) = self.cursors.values().min_by_key(|id| parse_stream_id(id)).cloned() else {
             return;
         };
 
@@ -74,23 +76,30 @@ impl ConnectionConsumer for ChatDispatcher {
             return;
         }
 
-        for (connection_id, cursor) in self.cursors.iter_mut() {
-            let fresh: Vec<&StoredChatComment> = batch
-                .iter()
-                .filter(|entry| cmp_stream_id(&entry.stream_id, cursor).is_gt())
-                .collect();
-            let Some(last_id) = fresh.last().map(|entry| entry.stream_id.clone()) else {
-                continue;
-            };
+        // Parse each entry's stream id once, not once per connection.
+        let batch: Vec<(StreamId, &StoredChatComment)> = batch
+            .iter()
+            .map(|entry| (parse_stream_id(&entry.stream_id), entry))
+            .collect();
 
-            let comments = fresh
-                .into_iter()
-                .map(|entry| ChatComment {
-                    id: entry.stream_id.clone(),
-                    user_id: entry.user_id,
-                    text: entry.text.clone(),
+        for (connection_id, cursor) in self.cursors.iter_mut() {
+            let cursor_id = parse_stream_id(cursor);
+            let fresh = batch.iter().filter(|(id, _)| *id > cursor_id);
+
+            let mut last_id = None;
+            let comments: Vec<ChatComment> = fresh
+                .map(|(_, entry)| {
+                    last_id = Some(entry.stream_id.clone());
+                    ChatComment {
+                        id: entry.stream_id.clone(),
+                        user_id: entry.user_id,
+                        text: entry.text.clone(),
+                    }
                 })
                 .collect();
+            let Some(last_id) = last_id else {
+                continue;
+            };
 
             if let Err(err) = self
                 .hub_service
@@ -105,17 +114,18 @@ impl ConnectionConsumer for ChatDispatcher {
     }
 }
 
-/// Orders Redis stream ids by their `<ms>-<seq>` parts numerically. An unparsable part sorts as 0,
-/// which is harmless for the cursor `"0"` sentinel and keeps a malformed id from ever comparing
-/// greater than a real one.
-fn cmp_stream_id(a: &str, b: &str) -> std::cmp::Ordering {
-    fn parse(id: &str) -> (u64, u64) {
-        let mut parts = id.splitn(2, '-');
-        let ms = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
-        let seq = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
-        (ms, seq)
-    }
-    parse(a).cmp(&parse(b))
+/// A Redis stream id `<ms>-<seq>` parsed into its numeric parts for ordering. An unparsable part
+/// parses as 0, which is harmless for the cursor `"0"` sentinel and keeps a malformed id from ever
+/// ordering greater than a real one.
+type StreamId = (u64, u64);
+
+/// Parses a Redis stream id `<ms>-<seq>` into [`StreamId`]. Ordering the tuples matches Redis'
+/// numeric id order, which lexical string order would not (`"10-0"` vs `"9-0"`).
+fn parse_stream_id(id: &str) -> StreamId {
+    let mut parts = id.splitn(2, '-');
+    let ms = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+    let seq = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+    (ms, seq)
 }
 
 #[cfg(test)]
@@ -126,10 +136,10 @@ mod tests {
     #[test]
     fn stream_ids_order_numerically_not_lexically() {
         // Lexical order would rank "10-0" before "9-0"; numeric order must not.
-        assert!(cmp_stream_id("10-0", "9-0").is_gt());
-        assert!(cmp_stream_id("100-5", "100-10").is_lt());
-        assert!(cmp_stream_id("5-0", "5-0").is_eq());
+        assert!(parse_stream_id("10-0") > parse_stream_id("9-0"));
+        assert!(parse_stream_id("100-5") < parse_stream_id("100-10"));
+        assert!(parse_stream_id("5-0") == parse_stream_id("5-0"));
         // The initial sentinel is the smallest possible cursor.
-        assert!(cmp_stream_id(INITIAL_CURSOR, "1-0").is_lt());
+        assert!(parse_stream_id(INITIAL_CURSOR) < parse_stream_id("1-0"));
     }
 }

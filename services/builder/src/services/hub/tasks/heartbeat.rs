@@ -1,5 +1,5 @@
-use super::connection_tracker::{run_connection_loop, ConnectionConsumer, ConnectionTracker};
-use crate::{models::messages::TopicKey, repositories::hub_registry::HubConnection, services::HubService};
+use super::connection_tracker::{spawn_connection_loop, ConnectionConsumer, ConnectionTracker};
+use crate::{repositories::hub_registry::HubConnection, services::HubService};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
@@ -13,14 +13,10 @@ pub struct Heartbeat {
 
 impl Heartbeat {
     /// Starts the heartbeat on its own connection loop, refreshing TTLs for locally-tracked
-    /// connections and disconnecting any the registry no longer holds as active. Subscribes
-    /// synchronously (awaited) before spawning so the subscription is in place before the command
-    /// loop starts dispatching.
+    /// connections and disconnecting any the registry no longer holds as active.
     pub async fn start(service: HubService, interval: Duration) -> JoinHandle<()> {
-        let subscription = service.subscribe(vec![TopicKey::Hub]).await;
-        tokio::spawn(async move {
-            run_connection_loop(subscription, interval, Heartbeat { hub_service: service }).await;
-        })
+        let consumer = Heartbeat { hub_service: service.clone() };
+        spawn_connection_loop(&service, interval, consumer).await
     }
 }
 

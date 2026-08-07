@@ -22,18 +22,8 @@ impl ChatService {
         context.append_comment(GLOBAL_ROOM_ID, user_id, text).await
     }
 
-    pub async fn list_recent(&self, limit: usize) -> Result<Vec<StoredChatComment>, ChatError> {
-        let mut context = self.chat_db.create_context().await?;
-        context.list_recent(GLOBAL_ROOM_ID, limit).await
-    }
-
     pub async fn list_after(&self, last_stream_id: &str, limit: usize) -> Result<Vec<StoredChatComment>, ChatError> {
         let mut context = self.chat_db.create_context().await?;
         context.list_after(GLOBAL_ROOM_ID, last_stream_id, limit).await
-    }
-
-    pub async fn find_by_stream_id(&self, stream_id: &str) -> Result<Option<StoredChatComment>, ChatError> {
-        let mut context = self.chat_db.create_context().await?;
-        context.find_by_stream_id(GLOBAL_ROOM_ID, stream_id).await
     }
 }

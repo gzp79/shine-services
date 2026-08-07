@@ -63,32 +63,6 @@ impl ChatCommentStore for RedisChatCommentDbContext<'_> {
         Ok(stream_id)
     }
 
-    async fn list_recent(&mut self, room_id: &str, limit: usize) -> Result<Vec<StoredChatComment>, ChatError> {
-        if limit == 0 {
-            return Ok(Vec::new());
-        }
-
-        let stream_key = self.to_stream_key(room_id);
-        let mut reply: StreamRangeReply = redis::cmd("XREVRANGE")
-            .arg(&stream_key)
-            .arg("+")
-            .arg("-")
-            .arg("COUNT")
-            .arg(limit)
-            .query_async(&mut *self.client)
-            .await
-            .map_err(RedisError::RawError)
-            .map_err(ChatError::internal)?;
-
-        let mut comments: Vec<StoredChatComment> = reply
-            .ids
-            .drain(..)
-            .filter_map(|entry| self.parse_entry(entry))
-            .collect();
-        comments.reverse();
-        Ok(comments)
-    }
-
     async fn list_after(
         &mut self,
         room_id: &str,
@@ -117,26 +91,5 @@ impl ChatCommentStore for RedisChatCommentDbContext<'_> {
             .drain(..)
             .filter_map(|entry| self.parse_entry(entry))
             .collect())
-    }
-
-    async fn find_by_stream_id(
-        &mut self,
-        room_id: &str,
-        stream_id: &str,
-    ) -> Result<Option<StoredChatComment>, ChatError> {
-        let stream_key = self.to_stream_key(room_id);
-        let mut reply: StreamRangeReply = redis::cmd("XRANGE")
-            .arg(&stream_key)
-            .arg(stream_id)
-            .arg(stream_id)
-            .arg("COUNT")
-            .arg(1)
-            .query_async(&mut *self.client)
-            .await
-            .map_err(RedisError::RawError)
-            .map_err(ChatError::internal)?;
-
-        let entry = reply.ids.drain(..).next();
-        Ok(entry.and_then(|entry| self.parse_entry(entry)))
     }
 }

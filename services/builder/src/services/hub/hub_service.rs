@@ -241,10 +241,10 @@ impl HubService {
                             .connections
                             .remove_connection(user_id, Some(old_connection_id))
                             .await;
-                        self.publish(HubMessage::Hub(HubEvent::UserDisconnected {
+                        self.publish(HubEvent::UserDisconnected {
                             user_id,
                             connection_id: old_connection_id,
-                        }))
+                        })
                         .await;
                     }
                 }
@@ -253,11 +253,11 @@ impl HubService {
                     .connections
                     .register_connection(user_id, connection_id, session_key, tx, topics)
                     .await;
-                self.publish(HubMessage::Hub(HubEvent::UserConnected {
+                self.publish(HubEvent::UserConnected {
                     user_id,
                     connection_id,
                     session_key,
-                }))
+                })
                 .await;
                 true
             }
@@ -279,10 +279,10 @@ impl HubService {
                     log::error!("[{user_id}] Failed to remove hub connection (relying on TTL cleanup): {err:#?}");
                 }
 
-                self.publish(HubMessage::Hub(HubEvent::UserDisconnected {
+                self.publish(HubEvent::UserDisconnected {
                     user_id,
                     connection_id: removed_connection_id,
-                }))
+                })
                 .await;
                 true
             }
@@ -294,7 +294,7 @@ impl HubService {
                     if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
                         log::error!("[{user_id}] Failed to remove dropped connection from registry (TTL will clean up): {err:#?}");
                     }
-                    self.publish(HubMessage::Hub(HubEvent::UserDisconnected { user_id, connection_id }))
+                    self.publish(HubEvent::UserDisconnected { user_id, connection_id })
                         .await;
                 }
                 true
@@ -304,7 +304,7 @@ impl HubService {
                 true
             }
             ControlCommand::Shutdown => {
-                self.publish(HubMessage::Hub(HubEvent::Shutdown)).await;
+                self.publish(HubEvent::Shutdown).await;
                 false
             }
         }
@@ -370,22 +370,19 @@ impl HubService {
             return;
         };
 
-        self.publish(HubMessage::Hub(HubEvent::UserDisconnected {
+        self.publish(HubEvent::UserDisconnected {
             user_id,
             connection_id: removed_connection_id,
-        }))
+        })
         .await;
     }
 
-    /// Loop-side broadcast: fans a message out to every topic-matching connection *and* every
-    /// internal subscriber (heartbeat, session checker), pruning any connection whose channel is
-    /// found dead. Because it touches the subscriber list, this runs only on the command loop, so
-    /// subscriber mutation stays single-writer. Pruning emits a `UserDisconnected`, which is itself
-    /// broadcast — handled iteratively via a work queue rather than recursion so this stays a plain
-    /// `async fn` (async recursion would require boxing).
-    async fn publish(&self, message: HubMessage) {
-        let mut pending = VecDeque::from([message]);
-        while let Some(message) = pending.pop_front() {
+    /// Delivers a lifecycle `HubEvent` to every internal subscriber and every topic-matching
+    /// connection, pruning any connection found dead.
+    async fn publish(&self, event: HubEvent) {
+        let mut pending = VecDeque::from([event]);
+        while let Some(event) = pending.pop_front() {
+            let message = HubMessage::Hub(event);
             // Internal subscribers first: only the loop delivers to them.
             self.inner.subscribers.publish(message.clone()).await;
 
@@ -397,7 +394,7 @@ impl HubService {
                                 "[{user_id}] Failed to remove dead connection from registry (TTL will clean up): {err:#?}"
                             );
                         }
-                        pending.push_back(HubMessage::Hub(HubEvent::UserDisconnected { user_id, connection_id }));
+                        pending.push_back(HubEvent::UserDisconnected { user_id, connection_id });
                     }
                 }
             }

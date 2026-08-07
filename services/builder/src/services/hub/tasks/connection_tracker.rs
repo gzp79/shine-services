@@ -1,7 +1,10 @@
-use crate::models::messages::{HubEvent, HubMessage};
+use crate::{
+    models::messages::{HubEvent, HubMessage, TopicKey},
+    services::HubService,
+};
 use shine_infra::session::SessionKey;
 use std::{collections::HashMap, future::Future, time::Duration};
-use tokio::{sync::mpsc, time};
+use tokio::{sync::mpsc, task::JoinHandle, time};
 use uuid::Uuid;
 
 pub type TrackedConnection = (Uuid, SessionKey);
@@ -51,6 +54,19 @@ impl ConnectionTracker {
 /// implementors provide only the per-tick work.
 pub trait ConnectionConsumer: Send + 'static {
     fn on_tick(&mut self, tracker: &ConnectionTracker) -> impl Future<Output = ()> + Send;
+}
+
+/// Subscribes a consumer to the hub lifecycle bus and spawns its [`run_connection_loop`], returning
+/// the loop's handle. The subscription is registered synchronously (awaited) before the loop is
+/// spawned, so the caller can guarantee every consumer is subscribed before the command loop starts
+/// dispatching — an event dispatched before a consumer subscribes is lost to it forever.
+pub async fn spawn_connection_loop<C: ConnectionConsumer>(
+    service: &HubService,
+    interval: Duration,
+    consumer: C,
+) -> JoinHandle<()> {
+    let subscription = service.subscribe(vec![TopicKey::Hub]).await;
+    tokio::spawn(run_connection_loop(subscription, interval, consumer))
 }
 
 /// Drives a self-contained loop that event-sources its own [`ConnectionTracker`] from
@@ -105,14 +121,6 @@ mod tests {
         })
     }
 
-    fn spawn_connection_loop<C: ConnectionConsumer>(
-        subscription: mpsc::UnboundedReceiver<HubMessage>,
-        interval: Duration,
-        consumer: C,
-    ) {
-        tokio::spawn(run_connection_loop(subscription, interval, consumer));
-    }
-
     struct Probe {
         tx: mpsc::UnboundedSender<usize>,
     }
@@ -127,7 +135,11 @@ mod tests {
     async fn loop_feeds_current_connections_to_consumer() {
         let (sub_tx, sub_rx) = mpsc::unbounded_channel();
         let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
-        spawn_connection_loop(sub_rx, Duration::from_millis(5), Probe { tx: probe_tx });
+        tokio::spawn(run_connection_loop(
+            sub_rx,
+            Duration::from_millis(5),
+            Probe { tx: probe_tx },
+        ));
 
         sub_tx.send(connected(Uuid::new_v4(), Uuid::new_v4())).unwrap();
 

@@ -18,13 +18,6 @@ pub trait ChatCommentStore {
         text: &str,
     ) -> impl Future<Output = Result<String, ChatError>> + Send;
 
-    /// Returns the most recent messages for a room in chronological order.
-    fn list_recent(
-        &mut self,
-        room_id: &str,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<StoredChatComment>, ChatError>> + Send;
-
     /// Returns messages strictly after `last_stream_id`.
     fn list_after(
         &mut self,
@@ -32,11 +25,4 @@ pub trait ChatCommentStore {
         last_stream_id: &str,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<StoredChatComment>, ChatError>> + Send;
-
-    /// Fetches one message by stream id.
-    fn find_by_stream_id(
-        &mut self,
-        room_id: &str,
-        stream_id: &str,
-    ) -> impl Future<Output = Result<Option<StoredChatComment>, ChatError>> + Send;
 }

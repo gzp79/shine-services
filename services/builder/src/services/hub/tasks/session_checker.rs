@@ -1,5 +1,5 @@
-use super::connection_tracker::{run_connection_loop, ConnectionConsumer, ConnectionTracker};
-use crate::{models::messages::TopicKey, services::HubService};
+use super::connection_tracker::{spawn_connection_loop, ConnectionConsumer, ConnectionTracker};
+use crate::services::HubService;
 use shine_infra::session::{CurrentUserService, UserSessionError};
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
@@ -13,21 +13,17 @@ pub struct SessionChecker {
 
 impl SessionChecker {
     /// Starts the session checker on its own connection loop, validating each tracked session and
-    /// issuing a targeted disconnect on expiry. Subscribes synchronously (awaited) before spawning
-    /// so the subscription is in place before the command loop starts dispatching.
+    /// issuing a targeted disconnect on expiry.
     pub async fn start(
         service: HubService,
         session_service: Arc<CurrentUserService>,
         interval: Duration,
     ) -> JoinHandle<()> {
-        let subscription = service.subscribe(vec![TopicKey::Hub]).await;
-        tokio::spawn(async move {
-            let checker = SessionChecker {
-                session_service,
-                hub_service: service,
-            };
-            run_connection_loop(subscription, interval, checker).await;
-        })
+        let consumer = SessionChecker {
+            session_service,
+            hub_service: service.clone(),
+        };
+        spawn_connection_loop(&service, interval, consumer).await
     }
 }
 
