@@ -45,6 +45,33 @@ impl RedisChatCommentsDb {
             ttl_seconds,
         })
     }
+
+    fn to_stream_key(room_id: &str) -> String {
+        format!("chat:{room_id}")
+    }
+
+    /// Listens for appends to a room's stream. `append_comment` publishes the new stream id on the
+    /// room's stream key; every notification is a plain wake — the payload is ignored because the
+    /// consumer reads from its own cursor, so it only needs to know that something changed. A `None`
+    /// payload (listener reconnect) also fires: appends published during the outage were lost to
+    /// pub/sub, so the wake lets the consumer pick them up ahead of its next periodic pass.
+    pub async fn listen_to_room_changes<F>(&self, room_id: &str, handler: F) -> Result<(), ChatError>
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        let stream_key = Self::to_stream_key(room_id);
+        let client = self
+            .client
+            .get()
+            .await
+            .map_err(RedisError::PoolError)
+            .map_err(ChatError::internal)?;
+        client
+            .listen(&stream_key, move |_payload| handler())
+            .await
+            .map_err(ChatError::internal)?;
+        Ok(())
+    }
 }
 
 impl ChatCommentDb for RedisChatCommentsDb {

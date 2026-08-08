@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chat Data Flow</title>
+<link rel="stylesheet" href="../../doc.css">
+</head>
+<body>
+
+<header class="doc-header">
+  <h1 class="doc-title">Chat Data Flow</h1>
+  <div class="doc-meta">
+    <span>How a WebSocket client connects, how chat is stored once and fanned out per connection, and how a Redis pub/sub notification drives low-latency delivery on top of a periodic safety net.</span>
+  </div>
+</header>
+
+<h2>Problem</h2>
+<p>Chat is a single global room persisted as a Redis stream. Many clients connect
+over WebSockets and each must receive every message once, in order, starting from
+whatever history is retained when they join and continuing incrementally
+thereafter. Delivery must be prompt when a message arrives, cheap when nothing
+happens, and correct across a Redis reconnect. The hub already stores each
+message and publishes a notification on append; the chat dispatcher turns that
+into per-connection delivery — woken by the notification for latency, and backed
+by a periodic tick so a missed notification never strands a message.</p>
+
+<h2>Roles</h2>
+<p>Chat rides on the hub's connection machinery (see
+<a href="hub-connection-lifecycle.html">Hub Connection Lifecycle</a>) but owns
+the storage and fan-out described here.</p>
+<table>
+  <tr><th>Component</th><th>Responsibility</th></tr>
+  <tr><td><code>connect</code> (WS route)</td><td>Upgrades the socket, registers the connection with the hub, relays inbound text to <code>ChatService</code> and hub egress to the socket.</td></tr>
+  <tr><td><code>ChatService</code></td><td>Appends a comment to the room stream; exposes a pub/sub subscription for append notifications.</td></tr>
+  <tr><td><code>ChatDispatcher</code></td><td>Per-connection cursor tracking and delivery. Woken by a notification or the periodic tick; reads the stream once per pass and sends each connection only its unseen slice.</td></tr>
+  <tr><td><code>RedisChatCommentsDb</code></td><td>Stream storage: <code>XADD</code>/<code>XRANGE</code>, trimming, TTL, and the append <code>PUBLISH</code> and its listener.</td></tr>
+</table>
+
+<h2>Connecting &amp; initial sync</h2>
+<p>A new connection is registered on the <code>Hub</code> topic so it receives
+hub lifecycle events. The dispatcher event-sources <code>UserConnected</code> into
+its own tracker and seeds the connection's cursor at <code>"0"</code> — the
+exclusive sentinel that yields all currently retained history on the next
+delivery pass.</p>
+
+<svg class="seq-diagram" viewBox="0 0 780 380" width="780">
+  <rect class="seq-actor seq-actor-indigo" x="18"  y="8" width="120" height="40" rx="6"/>
+  <text class="seq-actor-label" x="78"  y="25" text-anchor="middle">WS client</text>
+  <text class="seq-note"        x="78"  y="39" text-anchor="middle">browser socket</text>
+
+  <rect class="seq-actor seq-actor-teal" x="174" y="8" width="120" height="40" rx="6"/>
+  <text class="seq-actor-label" x="234" y="25" text-anchor="middle">connect</text>
+  <text class="seq-note"        x="234" y="39" text-anchor="middle">WS route</text>
+
+  <rect class="seq-actor seq-actor-blue" x="330" y="8" width="120" height="40" rx="6"/>
+  <text class="seq-actor-label" x="390" y="25" text-anchor="middle">Hub loop</text>
+  <text class="seq-note"        x="390" y="39" text-anchor="middle">sole writer</text>
+
+  <rect class="seq-actor seq-actor-green" x="486" y="8" width="120" height="40" rx="6"/>
+  <text class="seq-actor-label" x="546" y="25" text-anchor="middle">ChatDispatcher</text>
+  <text class="seq-note"        x="546" y="39" text-anchor="middle">cursor per conn</text>
+
+  <rect class="seq-actor seq-actor-orange" x="642" y="8" width="120" height="40" rx="6"/>
+  <text class="seq-actor-label" x="702" y="25" text-anchor="middle">Redis stream</text>
+  <text class="seq-note"        x="702" y="39" text-anchor="middle">chat:global</text>
+
+  <line class="seq-lane" x1="78"  y1="48" x2="78"  y2="364"/>
+  <line class="seq-lane" x1="234" y1="48" x2="234" y2="364"/>
+  <line class="seq-lane" x1="390" y1="48" x2="390" y2="364"/>
+  <line class="seq-lane" x1="546" y1="48" x2="546" y2="364"/>
+  <line class="seq-lane" x1="702" y1="48" x2="702" y2="364"/>
+
+  <text class="seq-note" x="6" y="70">time</text>
+  <text class="seq-note" x="6" y="82">↓</text>
+
+  <text class="seq-msg-label" x="156" y="94" text-anchor="middle">1 · WS upgrade (auth ok)</text>
+  <line class="seq-msg" x1="78" y1="102" x2="234" y2="102"/>
+  <polygon class="seq-arrowhead" points="234,102 226,98 226,106"/>
+
+  <text class="seq-msg-label" x="312" y="144" text-anchor="middle">2 · request_connection — mint id, topic Hub</text>
+  <line class="seq-msg" x1="234" y1="152" x2="390" y2="152"/>
+  <polygon class="seq-arrowhead" points="390,152 382,148 382,156"/>
+
+  <text class="seq-msg-label" x="468" y="194" text-anchor="middle">3 · UserConnected (event-sourced) → cursor = "0"</text>
+  <line class="seq-msg" x1="390" y1="202" x2="546" y2="202"/>
+  <polygon class="seq-arrowhead" points="546,202 538,198 538,206"/>
+
+  <text class="seq-msg-label" x="624" y="244" text-anchor="middle">4 · XRANGE after "0" (next pass)</text>
+  <line class="seq-msg" x1="546" y1="252" x2="702" y2="252"/>
+  <polygon class="seq-arrowhead" points="702,252 694,248 694,256"/>
+
+  <text class="seq-msg-label" x="624" y="294" text-anchor="middle">5 · retained history</text>
+  <line class="seq-msg" x1="702" y1="302" x2="546" y2="302"/>
+  <polygon class="seq-arrowhead" points="546,302 554,298 554,306"/>
+
+  <text class="seq-msg-label" x="312" y="344" text-anchor="middle">6 · ChatBatch (full history) → advance cursor</text>
+  <line class="seq-msg" x1="546" y1="352" x2="78" y2="352"/>
+  <polygon class="seq-arrowhead" points="78,352 86,348 86,356"/>
+</svg>
+
+<h2>Distributing a message</h2>
+<p>An inbound message is appended once and delivered by the dispatcher. Append is
+<code>XADD</code> + a <code>PUBLISH</code> on the room's stream key; the
+dispatcher subscribes to that key through <code>ChatService</code> and treats any
+notification as a wake. The wake is coalesced — a burst of appends collapses into
+a single delivery pass, since one <code>XRANGE</code> from the oldest cursor
+already serves every connection. Message&nbsp;3 (dashed) is the push that makes
+delivery prompt; the periodic tick fires the same pass as a fallback.</p>
+
+<svg class="seq-diagram" viewBox="0 0 780 380" width="780">
+  <rect class="seq-actor seq-actor-indigo" x="18"  y="8" width="120" height="40" rx="6"/>
+  <text class="seq-actor-label" x="78"  y="25" text-anchor="middle">Author client</text>
+  <text class="seq-note"        x="78"  y="39" text-anchor="middle">sends text</text>
+
+  <rect class="seq-actor seq-actor-teal" x="174" y="8" width="120" height="40" rx="6"/>
+  <text class="seq-actor-label" x="234" y="25" text-anchor="middle">connect</text>
+  <text class="seq-note"        x="234" y="39" text-anchor="middle">WS route</text>
+
+  <rect class="seq-actor seq-actor-orange" x="330" y="8" width="120" height="40" rx="6"/>
+  <text class="seq-actor-label" x="390" y="25" text-anchor="middle">Redis</text>
+  <text class="seq-note"        x="390" y="39" text-anchor="middle">stream + pub/sub</text>
+
+  <rect class="seq-actor seq-actor-green" x="486" y="8" width="120" height="40" rx="6"/>
+  <text class="seq-actor-label" x="546" y="25" text-anchor="middle">ChatDispatcher</text>
+  <text class="seq-note"        x="546" y="39" text-anchor="middle">woken / ticked</text>
+
+  <rect class="seq-actor seq-actor-indigo" x="642" y="8" width="120" height="40" rx="6"/>
+  <text class="seq-actor-label" x="702" y="25" text-anchor="middle">Recipients</text>
+  <text class="seq-note"        x="702" y="39" text-anchor="middle">live connections</text>
+
+  <line class="seq-lane" x1="78"  y1="48" x2="78"  y2="364"/>
+  <line class="seq-lane" x1="234" y1="48" x2="234" y2="364"/>
+  <line class="seq-lane" x1="390" y1="48" x2="390" y2="364"/>
+  <line class="seq-lane" x1="546" y1="48" x2="546" y2="364"/>
+  <line class="seq-lane" x1="702" y1="48" x2="702" y2="364"/>
+
+  <text class="seq-note" x="6" y="70">time</text>
+  <text class="seq-note" x="6" y="82">↓</text>
+
+  <text class="seq-msg-label" x="156" y="94" text-anchor="middle">1 · { chat, text }</text>
+  <line class="seq-msg" x1="78" y1="102" x2="234" y2="102"/>
+  <polygon class="seq-arrowhead" points="234,102 226,98 226,106"/>
+
+  <text class="seq-msg-label" x="312" y="144" text-anchor="middle">2 · append_comment — XADD + PUBLISH</text>
+  <line class="seq-msg" x1="234" y1="152" x2="390" y2="152"/>
+  <polygon class="seq-arrowhead" points="390,152 382,148 382,156"/>
+
+  <text class="seq-msg-label" x="468" y="194" text-anchor="middle">3 · notify (wake, coalesced) — via ChatService listener</text>
+  <line class="seq-msg-return" x1="390" y1="202" x2="546" y2="202"/>
+  <polygon class="seq-arrowhead-return" points="546,202 538,198 538,206"/>
+
+  <text class="seq-msg-label" x="468" y="244" text-anchor="middle">4 · XRANGE after oldest cursor</text>
+  <line class="seq-msg" x1="546" y1="252" x2="390" y2="252"/>
+  <polygon class="seq-arrowhead" points="390,252 398,248 398,256"/>
+
+  <text class="seq-msg-label" x="468" y="294" text-anchor="middle">5 · new comments</text>
+  <line class="seq-msg" x1="390" y1="302" x2="546" y2="302"/>
+  <polygon class="seq-arrowhead" points="546,302 538,298 538,306"/>
+
+  <text class="seq-msg-label" x="624" y="344" text-anchor="middle">6 · per-connection ChatBatch (slice &gt; cursor)</text>
+  <line class="seq-msg" x1="546" y1="352" x2="702" y2="352"/>
+  <polygon class="seq-arrowhead" points="702,352 694,348 694,356"/>
+</svg>
+
+<h2>Per-connection cursor &amp; sync model</h2>
+<p>One stream read per pass serves everyone: the dispatcher queries from the
+<em>oldest</em> cursor across all connections, then slices each connection to the
+entries strictly newer than its own cursor. A connection's cursor advances only
+when a batch is actually sent to it, so at-least-once delivery holds and the
+client deduplicates on the stream id it carries in each comment.</p>
+
+<table>
+  <tr><th>Connection state</th><th>Cursor</th><th>Delivered on a pass</th></tr>
+  <tr><td>New (just connected)</td><td><code>"0"</code></td><td>All retained history (bounded by <code>BATCH_LIMIT</code>; the rest catches up over later passes).</td></tr>
+  <tr><td>Existing</td><td>Last delivered stream id</td><td>Only entries strictly newer than the cursor.</td></tr>
+  <tr><td>Caught up</td><td>Latest stream id</td><td>Nothing — no batch is built or sent.</td></tr>
+</table>
+
+<h2>Empty delivery is suppressed</h2>
+<p>A pass that finds nothing new sends nothing — no empty <code>ChatBatch</code>
+ever reaches a client. Two guards enforce this, so a bare timer tick or a
+spurious wake is silent:</p>
+<table>
+  <tr><th>Level</th><th>Guard</th></tr>
+  <tr><td>Whole pass</td><td>If the stream read from the oldest cursor is empty, the pass returns before touching any connection.</td></tr>
+  <tr><td>Per connection</td><td>If a connection's fresh slice is empty, it is skipped — no send, cursor unchanged.</td></tr>
+</table>
+
+<h2>Delivery triggers</h2>
+<table>
+  <tr><th>Trigger</th><th>Source</th><th>Role</th></tr>
+  <tr><td>Notification wake</td><td>Redis pub/sub on the room stream key, via the <code>ChatService</code> listener.</td><td>Primary — makes delivery prompt after an append. Coalesced so a burst is one pass.</td></tr>
+  <tr><td>Periodic tick</td><td>The dispatcher's interval timer.</td><td>Safety net — delivers anything missed while pub/sub was disconnected, and reconnects cursors after a Redis outage.</td></tr>
+</table>
+<p>The two converge on the same delivery pass, which is idempotent against the
+cursors: firing it with nothing new is a cheap no-op (see <em>Empty delivery is
+suppressed</em>). A pub/sub reconnect (a <code>None</code> notification) also wakes
+a pass, so any appends missed during the outage are picked up immediately rather
+than waiting for the next tick.</p>
+
+<h2>File map</h2>
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>routes/ws/connect.rs</code></td><td>WS upgrade, connection registration, inbound text → <code>append_comment</code>, hub egress → socket.</td></tr>
+  <tr><td><code>routes/ws/message.rs</code></td><td>Wire request/response shapes (<code>WSMessageRequest</code>, <code>WSMessageResponse</code>, <code>ChatWireComment</code>).</td></tr>
+  <tr><td><code>services/chat_service.rs</code></td><td>Append a comment; subscribe to append notifications for the room.</td></tr>
+  <tr><td><code>services/hub/tasks/chat_dispatcher.rs</code></td><td>Per-connection cursors, oldest-cursor read, per-connection slicing, notification-driven wake.</td></tr>
+  <tr><td><code>services/hub/tasks/connection_tracker.rs</code></td><td>Periodic loop driver; selects timer tick, lifecycle events, and (for chat) the wake signal.</td></tr>
+  <tr><td><code>models/messages/chat.rs</code></td><td><code>ChatComment</code> / <code>ChatBatch</code> egress payloads.</td></tr>
+  <tr><td><code>repositories/chat_comments/chat_comment_store.rs</code></td><td><code>ChatCommentStore</code> trait — <code>append_comment</code>, <code>list_after</code>.</td></tr>
+  <tr><td><code>repositories/chat_comments/redis/redis_chat_comments_store.rs</code></td><td><code>XADD</code> + trim/TTL/<code>PUBLISH</code>; <code>XRANGE</code> read.</td></tr>
+  <tr><td><code>repositories/chat_comments/redis/redis_chat_comments_db.rs</code></td><td>Pooled context factory; the append-notification listener (mirrors the hub registry listener).</td></tr>
+</table>
+
+<details data-agent="implementation">
+  <summary>The append PUBLISH already exists; the listener is the new half</summary>
+  <div class="details-body">
+    <p><code>append_comment</code> already issues <code>PUBLISH chat:&lt;room&gt;
+    &lt;stream_id&gt;</code> alongside the <code>XADD</code>. Until now nothing
+    subscribed, so delivery was timer-only. The feature adds the subscriber side:
+    <code>RedisChatCommentsDb</code> gains a <code>listen</code> that mirrors
+    <code>RedisHubConnectionDb::listen_to_registry_changes</code> (pooled
+    connection, reconnect-aware), <code>ChatService</code> exposes it for the
+    global room, and <code>ChatDispatcher::start</code> registers a handler that
+    signals the loop's wake channel. The payload (the stream id) is ignored — the
+    dispatcher reads from its own cursors, so a wake only needs to say "something
+    changed", which is what makes burst coalescing and reconnect (<code>None</code>)
+    wakes safe.</p>
+  </div>
+</details>
+
+<details data-agent="implementation">
+  <summary>Why the timer stays after adding push</summary>
+  <div class="details-body">
+    <p>Pub/sub is best-effort: notifications published during a listener
+    disconnect are lost, exactly as in the hub registry. Rather than resync on
+    reconnect, the periodic tick is retained as the reconciler — it runs the same
+    idempotent delivery pass, so any gap is closed within one interval regardless
+    of pub/sub health. The push path only shortens latency in the common case; it
+    is never the sole guarantee of delivery.</p>
+  </div>
+</details>
+
+</body>
+</html>

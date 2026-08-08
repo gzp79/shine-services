@@ -4,16 +4,15 @@ use shine_infra::session::{CurrentUserService, UserSessionError};
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
 
-/// Periodic consumer: validates each locally-tracked connection's session against
-/// CurrentUserService and requests a targeted disconnect on expiry. Read-only w.r.t. hub state.
+/// Periodic consumer that validates each locally-tracked connection's session and requests a
+/// targeted disconnect on expiry.
 pub struct SessionChecker {
     session_service: Arc<CurrentUserService>,
     hub_service: HubService,
 }
 
 impl SessionChecker {
-    /// Starts the session checker on its own connection loop, validating each tracked session and
-    /// issuing a targeted disconnect on expiry.
+    /// Starts the session checker on its own connection loop.
     pub async fn start(
         service: HubService,
         session_service: Arc<CurrentUserService>,

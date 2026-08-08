@@ -41,7 +41,7 @@ struct Inner {
     hub_registry: RedisHubConnectionDb,
 }
 
-/// Messaging service for the connected users.
+/// Messaging service for connected users.
 #[derive(Clone)]
 pub struct HubService {
     inner: Arc<Inner>,
@@ -95,8 +95,7 @@ impl HubService {
         Ok(())
     }
 
-    /// Requests a new connection for a user, returning its connection id. Supersedes any prior
-    /// connection for that user.
+    /// Requests a new connection for a user, superseding any prior one, and returns its id.
     pub fn request_connection(
         &self,
         user_id: Uuid,
@@ -115,8 +114,7 @@ impl HubService {
         Ok(connection_id)
     }
 
-    /// Requests removal of a connection, but only if `connection_id` still matches the user's active
-    /// one, so a stale request cannot tear down a fresh reconnect.
+    /// Requests removal of a connection, only if `connection_id` still matches the user's active one.
     pub fn request_disconnection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
         self.send_control(ControlCommand::DisconnectUser { user_id, connection_id })
     }
@@ -143,11 +141,13 @@ impl HubService {
     }
 
     /// Sends an egress message to a user's active connection.
+    #[allow(dead_code)] // part of the hub egress API; not yet wired to a caller
     pub async fn send_to_user(&self, user_id: Uuid, message: HubMessage) -> Result<(), HubError> {
         self.drop_dead(self.inner.connections.send_to_user(user_id, message).await.err())
     }
 
     /// Broadcasts an egress message to every connection subscribed to its topic.
+    #[allow(dead_code)] // part of the hub egress API; not yet wired to a caller
     pub async fn broadcast(&self, message: HubMessage) -> Result<(), HubError> {
         self.drop_dead(
             self.inner
@@ -159,10 +159,7 @@ impl HubService {
         )
     }
 
-    /// Subscribe to a set of topics on an unbounded, lossless channel. For internal consumers
-    /// only — a dropped lifecycle event would corrupt a consumer's connection tracker. Addressable
-    /// connections do not subscribe; they hand the hub their own bounded egress channel at connect
-    /// time.
+    /// Subscribes to a set of topics on an unbounded, lossless channel.
     pub async fn subscribe(&self, topics: Vec<TopicKey>) -> mpsc::UnboundedReceiver<HubMessage> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.inner.subscribers.subscribe(topics, tx).await;
@@ -330,9 +327,8 @@ impl HubService {
         context.heartbeat_connection(user_id, connection_id).await
     }
 
-    /// Batched heartbeat over all locally-tracked connections on a single pooled connection.
-    /// Returns the connections the registry no longer holds as active, which the caller should
-    /// disconnect. See [`HubRegistry::heartbeat_connections`] for the reconciliation semantics.
+    /// Batched heartbeat over the given connections, returning the ones the registry no longer holds
+    /// as active. See [`HubRegistry::heartbeat_connections`] for the reconciliation semantics.
     pub(crate) async fn heartbeat_registry_connections(
         &self,
         connections: &[HubConnection],

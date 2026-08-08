@@ -4,14 +4,12 @@ use std::collections::HashMap;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
-/// A single user connection.
 struct Connection {
     session_key: SessionKey,
     tx: mpsc::Sender<HubMessage>,
     topics: Vec<TopicKey>,
 }
 
-/// The live connection registry.
 #[derive(Default)]
 struct Registry {
     /// user_id → its current connection_id.
@@ -20,8 +18,7 @@ struct Registry {
     connections: HashMap<Uuid, Connection>,
 }
 
-/// The registry of addressable, live user connections. Each connection holds a bounded egress
-/// channel; a full or closed channel is reported dead so the caller can prune it.
+/// The registry of addressable, live user connections.
 #[derive(Default)]
 pub struct Connections {
     registry: RwLock<Registry>,
@@ -32,7 +29,7 @@ impl Connections {
         Self::default()
     }
 
-    /// Registers a connection for a user.
+    /// Registers a bounded egress channel as a user's connection.
     pub async fn register_connection(
         &self,
         user_id: Uuid,
@@ -82,7 +79,7 @@ impl Connections {
         Some((connection_id, data.session_key))
     }
 
-    /// Sends a message to one connection. On error returns the connection id, which is dead and should be pruned.
+    /// Sends a message to one connection. `Err` carries the id of a dead connection to prune.
     pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<(), Uuid> {
         let registry = self.registry.read().await;
         let Some(data) = registry.connections.get(&connection_id) else {
@@ -94,7 +91,8 @@ impl Connections {
         }
     }
 
-    /// Sends a message to the user's active connection. On error returns the connection id, which is dead and should be pruned.
+    /// Sends a message to the user's active connection. `Err` carries the id of a dead connection to prune.
+    #[allow(dead_code)]
     pub async fn send_to_user(&self, user_id: Uuid, message: HubMessage) -> Result<(), Uuid> {
         let registry = self.registry.read().await;
         let Some(&connection_id) = registry.users.get(&user_id) else {
@@ -109,7 +107,7 @@ impl Connections {
         }
     }
 
-    /// Broadcasts a message to every topic-matching connection. On error returns the connection ids of dead channels, which should be pruned.
+    /// Broadcasts a message to every topic-matching connection. `Err` carries the ids of dead connections to prune.
     pub async fn broadcast(&self, message: HubMessage) -> Result<(), Vec<Uuid>> {
         let topic = message.topic();
         let mut dead = Vec::new();

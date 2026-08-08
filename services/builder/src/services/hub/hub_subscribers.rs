@@ -1,16 +1,13 @@
 use crate::models::messages::{HubMessage, ToTopic, TopicKey};
 use tokio::sync::{mpsc, RwLock};
 
-/// An internal consumer subscribed to a set of topics on an unbounded, lossless channel.
 struct Subscriber {
     topics: Vec<TopicKey>,
     tx: mpsc::UnboundedSender<HubMessage>,
 }
 
 /// The internal, lossless fan-out subscribers (heartbeat, session checker). Each receives every
-/// message whose topic it subscribed to. Distinct from addressable [`Connections`](super::hub_connections::Connections):
-/// subscribers are unbounded and never dropped for lag, because a lost lifecycle event would
-/// corrupt a consumer's connection tracker.
+/// message whose topic it subscribed to.
 #[derive(Default)]
 pub struct Subscribers {
     subscribers: RwLock<Vec<Subscriber>>,
@@ -21,15 +18,13 @@ impl Subscribers {
         Self::default()
     }
 
-    /// Registers a new subscriber.
     pub async fn subscribe(&self, topics: Vec<TopicKey>, tx: mpsc::UnboundedSender<HubMessage>) {
         let mut subscribers = self.subscribers.write().await;
         subscribers.push(Subscriber { topics, tx });
     }
 
     /// Delivers to every subscriber whose topic set includes this message's topic, pruning any
-    /// whose receiver has closed. Called only from the command loop (via [`HubService::publish`]),
-    /// so subscriber mutation stays single-writer.
+    /// whose receiver has closed.
     pub async fn publish(&self, message: HubMessage) {
         let mut subscribers = self.subscribers.write().await;
         subscribers.retain(|subscriber| {

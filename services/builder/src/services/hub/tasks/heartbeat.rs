@@ -3,17 +3,14 @@ use crate::{repositories::hub_registry::HubConnection, services::HubService};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
-/// Periodic consumer of a connection view. Refreshes the Redis TTL of every locally-tracked
-/// connection in a single batched round trip; a connection the registry no longer holds as active
-/// is disconnected through the CAS'd command path (so a fresher local connection is never torn
-/// down).
+/// Periodic consumer that refreshes the Redis TTL of every locally-tracked connection and
+/// disconnects any the registry no longer holds as active.
 pub struct Heartbeat {
     hub_service: HubService,
 }
 
 impl Heartbeat {
-    /// Starts the heartbeat on its own connection loop, refreshing TTLs for locally-tracked
-    /// connections and disconnecting any the registry no longer holds as active.
+    /// Starts the heartbeat on its own connection loop.
     pub async fn start(service: HubService, interval: Duration) -> JoinHandle<()> {
         let consumer = Heartbeat { hub_service: service.clone() };
         spawn_connection_loop(&service, interval, consumer).await

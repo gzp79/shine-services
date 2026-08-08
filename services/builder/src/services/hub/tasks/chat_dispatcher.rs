@@ -1,4 +1,4 @@
-use super::connection_tracker::{spawn_connection_loop, ConnectionConsumer, ConnectionTracker};
+use super::connection_tracker::{spawn_connection_loop_with_wake, ConnectionConsumer, ConnectionTracker};
 use crate::{
     models::messages::{ChatBatch, ChatComment, HubMessage},
     repositories::chat_comments::StoredChatComment,
@@ -6,9 +6,10 @@ use crate::{
 };
 use std::{
     collections::{HashMap, HashSet},
+    sync::Arc,
     time::Duration,
 };
-use tokio::task::JoinHandle;
+use tokio::{sync::Notify, task::JoinHandle};
 use uuid::Uuid;
 
 /// Max entries read from the stream in a single tick. Bounds the per-tick query and fan-out; a
@@ -19,7 +20,7 @@ const BATCH_LIMIT: usize = 128;
 /// yields all currently retained history.
 const INITIAL_CURSOR: &str = "0";
 
-/// Periodic consumer that pushes chat to connected users.
+/// Consumer that pushes per-connection chat batches to connected users.
 pub struct ChatDispatcher {
     hub_service: HubService,
     chat_service: ChatService,
@@ -27,19 +28,27 @@ pub struct ChatDispatcher {
 }
 
 impl ChatDispatcher {
-    /// Starts the chat dispatcher on its own connection loop, reading the room stream once per tick
-    /// and delivering per-connection, id-targeted chat batches.
+    /// Starts the chat dispatcher on its own connection loop, delivering on each periodic tick and,
+    /// ahead of it, whenever a Redis pub/sub append notification wakes the loop.
     pub async fn start(service: HubService, chat_service: ChatService, interval: Duration) -> JoinHandle<()> {
+        let wake = Arc::new(Notify::new());
+
+        // Register the append listener before the loop starts so no notification is missed. A failure
+        // here is non-fatal: the periodic tick still delivers, only without the push latency.
+        let notify = wake.clone();
+        if let Err(err) = chat_service.listen_to_comments(move || notify.notify_one()).await {
+            log::error!("Failed to listen for chat appends; falling back to periodic delivery only: {err:#?}");
+        }
+
         let consumer = ChatDispatcher {
             hub_service: service.clone(),
             chat_service,
             cursors: HashMap::new(),
         };
-        spawn_connection_loop(&service, interval, consumer).await
+        spawn_connection_loop_with_wake(&service, interval, wake, consumer).await
     }
 
-    /// Adds cursors for newly seen connections (starting from history) and drops cursors for
-    /// connections that are gone.
+    /// Adds cursors for newly seen connections and drops cursors for connections that are gone.
     fn reconcile(&mut self, tracker: &ConnectionTracker) {
         let live: HashSet<Uuid> = tracker
             .connections()
