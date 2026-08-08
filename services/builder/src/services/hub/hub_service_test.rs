@@ -1,7 +1,11 @@
 use super::{HubIntervals, HubService};
 use crate::{
-    models::messages::{ChatMessage, HubEvent, HubMessage, TopicKey},
-    repositories::hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
+    models::messages::{ChatBatch, ChatComment, HubEvent, HubMessage, TopicKey},
+    repositories::{
+        chat_comments::redis::RedisChatCommentsDb,
+        hub_registry::{redis::RedisHubConnectionDb, HubConnection, HubConnectionDb, HubRegistry},
+    },
+    services::ChatService,
 };
 use ring::rand::SystemRandom;
 use shine_infra::{
@@ -21,7 +25,22 @@ use tokio::{
 };
 use uuid::Uuid;
 
+fn test_redis_cns() -> Option<String> {
+    env::var("SHINE_TEST_REDIS_CNS")
+        .or_else(|_| env::var("SHINE_REDIS_CNS"))
+        .ok()
+}
+
 async fn create_test_hub_service() -> Option<(HubService, RedisHubConnectionDb)> {
+    // Default: long chat interval and the production room, so the chat dispatcher stays idle for
+    // tests that don't exercise it.
+    create_test_hub_service_with_chat(Duration::from_secs(3600), "global").await
+}
+
+async fn create_test_hub_service_with_chat(
+    chat_interval: Duration,
+    chat_room: &str,
+) -> Option<(HubService, RedisHubConnectionDb)> {
     let redis_cns = env::var("SHINE_TEST_REDIS_CNS")
         .or_else(|_| env::var("SHINE_REDIS_CNS"))
         .ok();
@@ -33,19 +52,79 @@ async fn create_test_hub_service() -> Option<(HubService, RedisHubConnectionDb)>
 
     let redis_pool = db::redis::create_redis_pool(redis_cns.as_str()).await.unwrap();
     let hub_registry = RedisHubConnectionDb::new(&redis_pool, 120).await.unwrap();
+    let chat_db = RedisChatCommentsDb::new(&redis_pool, 200, 3600).await.unwrap();
+    let chat_service = ChatService::with_room(chat_db, chat_room);
 
     // URL_SAFE_NO_PAD: 86 'A' chars decode to 64 zero bytes, a valid cookie key for tests.
     let cookie_secret = "A".repeat(86);
     let session_service = Arc::new(CurrentUserService::new(None, &cookie_secret, "", 120, redis_pool.clone()).unwrap());
 
-    // Long consumer intervals so neither internal loop fires during these tests.
+    // Long heartbeat/session intervals so those loops don't fire during these tests; the chat
+    // cadence is supplied by the caller.
     let intervals = HubIntervals {
         heartbeat: Duration::from_secs(3600),
         session_check: Duration::from_secs(3600),
+        chat: chat_interval,
     };
-    let hub_service = HubService::new(hub_registry.clone(), session_service, intervals).await;
+    let hub_service = HubService::new(hub_registry.clone(), session_service, chat_service, intervals).await;
 
     Some((hub_service, hub_registry))
+}
+
+/// Appends directly to a room's Redis stream, mirroring what `ChatService::append_comment` does
+/// (`XADD` + a `PUBLISH` of the new id on the stream key). Tests use this to drive the dispatcher's
+/// pub/sub wake without going through a full WS round trip.
+async fn append_to_room(redis_pool: &db::redis::RedisConnectionPool, room_id: &str, user_id: Uuid, text: &str) {
+    let stream_key = format!("chat:{room_id}");
+    let mut conn = redis_pool.get().await.unwrap();
+    let stream_id: String = redis::cmd("XADD")
+        .arg(&stream_key)
+        .arg("*")
+        .arg("user")
+        .arg(user_id.to_string())
+        .arg("text")
+        .arg(text)
+        .query_async(&mut *conn)
+        .await
+        .unwrap();
+    let _: () = redis::cmd("PUBLISH")
+        .arg(&stream_key)
+        .arg(&stream_id)
+        .query_async(&mut *conn)
+        .await
+        .unwrap();
+}
+
+/// Waits for the next `ChatBatch` on a connection's egress, skipping lifecycle events. Returns
+/// `None` if nothing arrives within `window`.
+async fn next_chat_batch(
+    receiver: &mut tokio::sync::mpsc::Receiver<HubMessage>,
+    window: Duration,
+) -> Option<ChatBatch> {
+    let deadline = Instant::now() + window;
+    while Instant::now() < deadline {
+        match timeout(deadline.saturating_duration_since(Instant::now()), receiver.recv()).await {
+            Ok(Some(HubMessage::Chat(batch))) => return Some(batch),
+            Ok(Some(_)) => {}
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// Connects a user with a live egress channel and returns its connection id alongside the
+/// receiver. The receiver must be kept alive: a connection whose channel has closed is pruned the
+/// next time the hub broadcasts to it.
+async fn connect_live(
+    hub_service: &super::HubService,
+    user_id: Uuid,
+    session_key: SessionKey,
+) -> (Uuid, tokio::sync::mpsc::Receiver<HubMessage>) {
+    let (tx, rx) = tokio::sync::mpsc::channel(64);
+    let connection_id = hub_service
+        .request_connection(user_id, session_key, tx, vec![TopicKey::Chat, TopicKey::Hub])
+        .unwrap();
+    (connection_id, rx)
 }
 
 async fn find_registry_connection(hub_registry: &RedisHubConnectionDb, user_id: Uuid) -> Option<Uuid> {
@@ -73,7 +152,10 @@ async fn wait_for_registry_connection_state(hub_registry: &RedisHubConnectionDb,
     }
 }
 
-async fn collect_hub_events(receiver: &mut crate::services::HubReceiver, window: Duration) -> Vec<HubEvent> {
+async fn collect_hub_events(
+    receiver: &mut tokio::sync::mpsc::UnboundedReceiver<HubMessage>,
+    window: Duration,
+) -> Vec<HubEvent> {
     let deadline = Instant::now() + window;
     let mut events = vec![];
 
@@ -102,17 +184,17 @@ async fn reconnect_and_idempotent_disconnect_edge_cases() {
     let session_key_1 = SessionKey::new_random(&random).unwrap();
     let session_key_2 = SessionKey::new_random(&random).unwrap();
 
-    let sender = hub_service.sender();
+    let sender = hub_service.clone();
     let mut receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
 
     // Edge case: disconnecting a never-connected user is a no-op.
-    sender.disconnect(user_id, Uuid::new_v4()).unwrap();
+    sender.request_disconnection(user_id, Uuid::new_v4()).unwrap();
     assert!(
         timeout(Duration::from_millis(120), receiver.recv()).await.is_err(),
         "disconnecting an unknown user should not produce an event"
     );
 
-    let first_connection_id = sender.connect(user_id, session_key_1).unwrap();
+    let (first_connection_id, _rx_1) = connect_live(&sender, user_id, session_key_1).await;
     wait_for_registry_connection_state(&hub_registry, user_id, true).await;
     assert_eq!(
         find_registry_connection(&hub_registry, user_id).await,
@@ -123,7 +205,7 @@ async fn reconnect_and_idempotent_disconnect_edge_cases() {
     // Late subscriber should only observe events published after this point.
     let mut late_receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
 
-    let second_connection_id = sender.connect(user_id, session_key_2).unwrap();
+    let (second_connection_id, _rx_2) = connect_live(&sender, user_id, session_key_2).await;
     wait_for_registry_connection_state(&hub_registry, user_id, true).await;
     assert_eq!(
         find_registry_connection(&hub_registry, user_id).await,
@@ -137,8 +219,8 @@ async fn reconnect_and_idempotent_disconnect_edge_cases() {
 
     // Edge case: a stale disconnect for the replaced connection is ignored; only the
     // current connection can be disconnected.
-    sender.disconnect(user_id, first_connection_id).unwrap();
-    sender.disconnect(user_id, second_connection_id).unwrap();
+    sender.request_disconnection(user_id, first_connection_id).unwrap();
+    sender.request_disconnection(user_id, second_connection_id).unwrap();
     wait_for_registry_connection_state(&hub_registry, user_id, false).await;
 
     let events = collect_hub_events(&mut receiver, Duration::from_millis(500)).await;
@@ -221,15 +303,15 @@ async fn reconnect_replace_emits_disconnect_for_old_connection() {
     let session_key_1 = SessionKey::new_random(&random).unwrap();
     let session_key_2 = SessionKey::new_random(&random).unwrap();
 
-    let sender = hub_service.sender();
+    let sender = hub_service.clone();
     let mut receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
 
-    let first_connection_id = sender.connect(user_id, session_key_1).unwrap();
+    let (first_connection_id, _rx_1) = connect_live(&sender, user_id, session_key_1).await;
     wait_for_registry_connection_state(&hub_registry, user_id, true).await;
 
     // Reconnect WITHOUT an explicit disconnect: the replace itself must emit
     // UserDisconnected for the old connection.
-    let second_connection_id = sender.connect(user_id, session_key_2).unwrap();
+    let (second_connection_id, _rx_2) = connect_live(&sender, user_id, session_key_2).await;
     wait_for_registry_connection_state(&hub_registry, user_id, true).await;
 
     let events = collect_hub_events(&mut receiver, Duration::from_millis(500)).await;
@@ -245,7 +327,7 @@ async fn reconnect_replace_emits_disconnect_for_old_connection() {
     assert_ne!(first_connection_id, second_connection_id);
 
     // cleanup
-    sender.disconnect(user_id, second_connection_id).unwrap();
+    sender.request_disconnection(user_id, second_connection_id).unwrap();
     wait_for_registry_connection_state(&hub_registry, user_id, false).await;
 }
 
@@ -260,13 +342,13 @@ async fn shutdown_publishes_event_and_stops_dispatcher() {
     let user_id = Uuid::new_v4();
     let session_key = SessionKey::new_random(&random).unwrap();
 
-    let sender = hub_service.sender();
+    let sender = hub_service.clone();
     let mut receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
 
     // Shut down, then enqueue a connect. The control channel is a single FIFO drained biased-first,
     // so the dispatcher processes Shutdown (and breaks) before ever reaching this connect.
-    sender.shutdown().unwrap();
-    sender.connect(user_id, session_key).unwrap();
+    sender.request_shutdown().unwrap();
+    let _ = connect_live(&sender, user_id, session_key).await;
 
     let events = collect_hub_events(&mut receiver, Duration::from_millis(500)).await;
     assert!(
@@ -287,41 +369,159 @@ async fn shutdown_publishes_event_and_stops_dispatcher() {
 
 #[test]
 async fn chat_payload_is_delivered_and_topic_filtered() {
-    let (hub_service, _hub_registry) = match create_test_hub_service().await {
+    let (hub_service, hub_registry) = match create_test_hub_service().await {
         Some(data) => data,
         None => return,
     };
 
-    let sender = hub_service.sender();
-    // One subscriber on Chat, one on Hub only. The Chat payload must reach the first and never
-    // the second — the hub's core fan-out and topic-filtering contract.
-    let mut chat_receiver = hub_service.subscribe(vec![TopicKey::Chat]).await;
-    let mut hub_receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
+    let random = SystemRandom::new();
+    let sender = hub_service.clone();
+    // A broadcast payload is delivered to addressable connections, topic-filtered: a connection
+    // subscribed to Chat receives it; one subscribed to Hub only must not. Inbound payloads go to
+    // connections, not to the internal subscriber list.
+    let chat_user = Uuid::new_v4();
+    let (tx_chat, mut chat_rx) = tokio::sync::mpsc::channel(8);
+    let chat_conn = sender
+        .request_connection(
+            chat_user,
+            SessionKey::new_random(&random).unwrap(),
+            tx_chat,
+            vec![TopicKey::Chat],
+        )
+        .unwrap();
+    wait_for_registry_connection_state(&hub_registry, chat_user, true).await;
+
+    let hub_user = Uuid::new_v4();
+    let (tx_hub, mut hub_rx) = tokio::sync::mpsc::channel(8);
+    let hub_conn = sender
+        .request_connection(
+            hub_user,
+            SessionKey::new_random(&random).unwrap(),
+            tx_hub,
+            vec![TopicKey::Hub],
+        )
+        .unwrap();
+    wait_for_registry_connection_state(&hub_registry, hub_user, true).await;
 
     let author = Uuid::new_v4();
     sender
-        .send_workload(ChatMessage {
-            user_id: author,
-            text: "hello".to_string(),
-        })
+        .broadcast(HubMessage::Chat(ChatBatch {
+            comments: vec![ChatComment {
+                id: "1-0".to_string(),
+                user_id: author,
+                text: "hello".to_string(),
+            }],
+        }))
+        .await
         .unwrap();
 
-    let delivered = timeout(Duration::from_millis(500), chat_receiver.recv()).await;
-    match delivered {
-        Ok(Some(HubMessage::Chat(message))) => {
-            assert_eq!(message.user_id, author, "delivered chat should carry the author id");
-            assert_eq!(
-                message.text, "hello",
-                "delivered chat should carry the payload verbatim"
-            );
+    // The Chat connection receives the payload (skip any lifecycle events that arrive first).
+    let deadline = Instant::now() + Duration::from_millis(500);
+    let mut delivered = None;
+    while Instant::now() < deadline {
+        match timeout(deadline.saturating_duration_since(Instant::now()), chat_rx.recv()).await {
+            Ok(Some(HubMessage::Chat(batch))) => {
+                delivered = Some(batch);
+                break;
+            }
+            Ok(Some(_)) => {}
+            _ => break,
         }
-        other => panic!("chat subscriber should receive the chat message, got {other:?}"),
     }
-
-    assert!(
-        timeout(Duration::from_millis(200), hub_receiver.recv()).await.is_err(),
-        "a Hub-only subscriber must not receive Chat payloads"
+    let batch = delivered.expect("chat connection should receive the chat payload");
+    let comment = batch.comments.first().expect("batch should carry the comment");
+    assert_eq!(comment.user_id, author, "delivered chat should carry the author id");
+    assert_eq!(
+        comment.text, "hello",
+        "delivered chat should carry the payload verbatim"
     );
+
+    // The Hub-only connection must never receive a Chat payload (lifecycle events are fine).
+    let mut saw_chat = false;
+    while let Ok(Some(msg)) = timeout(Duration::from_millis(150), hub_rx.recv()).await {
+        if matches!(msg, HubMessage::Chat(_)) {
+            saw_chat = true;
+        }
+    }
+    assert!(!saw_chat, "a Hub-only connection must not receive Chat payloads");
+
+    sender.request_disconnection(chat_user, chat_conn).unwrap();
+    sender.request_disconnection(hub_user, hub_conn).unwrap();
+    wait_for_registry_connection_state(&hub_registry, chat_user, false).await;
+    wait_for_registry_connection_state(&hub_registry, hub_user, false).await;
+}
+
+#[test]
+async fn direct_send_to_connection_moves_to_that_connection_only() {
+    let (hub_service, hub_registry) = match create_test_hub_service().await {
+        Some(data) => data,
+        None => return,
+    };
+    let random = SystemRandom::new();
+    let sender = hub_service.clone();
+
+    // Two connected users, each with its own egress channel handed to the hub.
+    let user_a = Uuid::new_v4();
+    let (tx_a, mut rx_a) = tokio::sync::mpsc::channel(8);
+    let conn_a = sender
+        .request_connection(
+            user_a,
+            SessionKey::new_random(&random).unwrap(),
+            tx_a,
+            vec![TopicKey::Chat, TopicKey::Hub],
+        )
+        .unwrap();
+    wait_for_registry_connection_state(&hub_registry, user_a, true).await;
+
+    let user_b = Uuid::new_v4();
+    let (tx_b, mut rx_b) = tokio::sync::mpsc::channel(8);
+    let conn_b = sender
+        .request_connection(
+            user_b,
+            SessionKey::new_random(&random).unwrap(),
+            tx_b,
+            vec![TopicKey::Chat, TopicKey::Hub],
+        )
+        .unwrap();
+    wait_for_registry_connection_state(&hub_registry, user_b, true).await;
+
+    // Directed send to conn_a: only A's channel receives it.
+    sender
+        .send_to_connection(
+            conn_a,
+            HubMessage::Chat(ChatBatch {
+                comments: vec![ChatComment {
+                    id: "1-0".to_string(),
+                    user_id: user_a,
+                    text: "just-a".into(),
+                }],
+            }),
+        )
+        .await
+        .unwrap();
+
+    // Skip any lifecycle events queued ahead of the directed chat (conn_a is on the Hub topic too).
+    let batch = next_chat_batch(&mut rx_a, Duration::from_millis(500))
+        .await
+        .expect("the directed connection should receive the chat payload");
+    assert!(
+        batch.comments.first().is_some_and(|c| c.text == "just-a"),
+        "the directed connection should receive the directed payload"
+    );
+
+    // B must not receive the directed message (allow lifecycle events through, then assert no chat).
+    let mut saw_chat_on_b = false;
+    while let Ok(Some(msg)) = timeout(Duration::from_millis(150), rx_b.recv()).await {
+        if matches!(msg, HubMessage::Chat(b) if b.comments.first().is_some_and(|c| c.text == "just-a")) {
+            saw_chat_on_b = true;
+        }
+    }
+    assert!(!saw_chat_on_b, "directed send must not reach other connections");
+
+    sender.request_disconnection(user_a, conn_a).unwrap();
+    sender.request_disconnection(user_b, conn_b).unwrap();
+    wait_for_registry_connection_state(&hub_registry, user_a, false).await;
+    wait_for_registry_connection_state(&hub_registry, user_b, false).await;
 }
 
 #[test]
@@ -335,10 +535,10 @@ async fn registry_change_disconnects_stale_local_connection() {
     let user_id = Uuid::new_v4();
     let session_key = SessionKey::new_random(&random).unwrap();
 
-    let sender = hub_service.sender();
+    let sender = hub_service.clone();
     let mut receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
 
-    let local_connection_id = sender.connect(user_id, session_key).unwrap();
+    let (local_connection_id, _rx) = connect_live(&sender, user_id, session_key).await;
     wait_for_registry_connection_state(&hub_registry, user_id, true).await;
 
     // Simulate another service instance taking over the user's single connection slot: overwrite
@@ -391,19 +591,15 @@ async fn batched_heartbeat_refreshes_active_and_reports_stale() {
     };
 
     let random = SystemRandom::new();
-    let sender = hub_service.sender();
+    let sender = hub_service.clone();
 
     // Two active connections and one that was never registered.
     let active_a = Uuid::new_v4();
     let active_b = Uuid::new_v4();
     let never_registered = Uuid::new_v4();
 
-    let conn_a = sender
-        .connect(active_a, SessionKey::new_random(&random).unwrap())
-        .unwrap();
-    let conn_b = sender
-        .connect(active_b, SessionKey::new_random(&random).unwrap())
-        .unwrap();
+    let (conn_a, _rx_a) = connect_live(&sender, active_a, SessionKey::new_random(&random).unwrap()).await;
+    let (conn_b, _rx_b) = connect_live(&sender, active_b, SessionKey::new_random(&random).unwrap()).await;
     wait_for_registry_connection_state(&hub_registry, active_a, true).await;
     wait_for_registry_connection_state(&hub_registry, active_b, true).await;
 
@@ -459,70 +655,72 @@ async fn batched_heartbeat_refreshes_active_and_reports_stale() {
     );
 
     // cleanup
-    sender.disconnect(active_a, conn_a).unwrap();
-    sender.disconnect(active_b, conn_b).unwrap();
+    sender.request_disconnection(active_a, conn_a).unwrap();
+    sender.request_disconnection(active_b, conn_b).unwrap();
     wait_for_registry_connection_state(&hub_registry, active_a, false).await;
     wait_for_registry_connection_state(&hub_registry, active_b, false).await;
 }
 
 #[test]
-async fn bounded_subscriber_is_auto_disconnected_when_it_falls_behind() {
-    let (hub_service, _hub_registry) = match create_test_hub_service().await {
+async fn slow_connection_is_auto_dropped_when_it_falls_behind() {
+    let (hub_service, hub_registry) = match create_test_hub_service().await {
         Some(data) => data,
         None => return,
     };
 
-    let sender = hub_service.sender();
+    let random = SystemRandom::new();
+    let sender = hub_service.clone();
 
-    // Let the internal consumers (heartbeat, session checker) finish subscribing so the subscriber
-    // count is stable before we add ours; they subscribe from their own spawned tasks.
+    // Let the internal consumers (heartbeat, session checker) finish subscribing so the connection
+    // count is stable before we add ours.
     sleep(Duration::from_millis(100)).await;
-    let baseline_subscribers = hub_service.stats().await.subscribers;
+    let baseline_connections = hub_service.stats().await.connections;
 
-    // A slow client: a bounded subscriber of capacity 1 that never drains its channel.
-    let mut slow = hub_service.subscribe_bounded(vec![TopicKey::Chat], 1).await;
+    // A slow client: a capacity-1 connection whose egress channel is never drained.
+    let user_id = Uuid::new_v4();
+    let (tx, _rx) = tokio::sync::mpsc::channel(1);
+    let connection_id = sender
+        .request_connection(
+            user_id,
+            SessionKey::new_random(&random).unwrap(),
+            tx,
+            vec![TopicKey::Chat],
+        )
+        .unwrap();
+    wait_for_registry_connection_state(&hub_registry, user_id, true).await;
     assert_eq!(
-        hub_service.stats().await.subscribers,
-        baseline_subscribers + 1,
-        "the bounded subscriber should be registered"
+        hub_service.stats().await.connections,
+        baseline_connections + 1,
+        "the slow connection should be registered"
     );
 
-    // Flood the Chat topic without ever calling `slow.recv()`. The first message fills the
-    // capacity-1 buffer; a subsequent one overflows it, and `publish` drops the subscriber.
+    // Flood the Chat topic without ever draining `_rx`. The first broadcast fills the capacity-1
+    // buffer; the next finds it full, marks the connection dead, and enqueues DropConnection.
     let chatter = Uuid::new_v4();
     for idx in 0..32 {
         sender
-            .send_workload(ChatMessage {
-                user_id: chatter,
-                text: format!("msg {idx}"),
-            })
+            .broadcast(HubMessage::Chat(ChatBatch {
+                comments: vec![ChatComment {
+                    id: format!("{idx}-0"),
+                    user_id: chatter,
+                    text: format!("msg {idx}"),
+                }],
+            }))
+            .await
             .unwrap();
     }
 
-    // Once pruned, the sending half is dropped and the receiver closes: after draining whatever
-    // was buffered, `recv()` returns None. Poll until the channel is observed closed.
+    // The hub must prune the lagging connection: its registry entry is removed and the local
+    // connection count returns to baseline.
+    wait_for_registry_connection_state(&hub_registry, user_id, false).await;
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
-        match timeout(Duration::from_millis(100), slow.recv()).await {
-            Ok(None) => break, // channel closed => subscriber was dropped by the hub
-            Ok(Some(_)) => {}  // drain the single buffered message, keep waiting for close
-            Err(_) => {}       // timed out waiting for a message; retry until deadline
-        }
-        assert!(
-            Instant::now() < deadline,
-            "slow bounded subscriber was never auto-disconnected"
-        );
-    }
-
-    // The hub must have pruned the lagging subscriber from its registry, back to baseline.
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        if hub_service.stats().await.subscribers == baseline_subscribers {
+        if hub_service.stats().await.connections == baseline_connections {
             break;
         }
         assert!(
             Instant::now() < deadline,
-            "lagging subscriber was not removed from the hub subscriber set"
+            "lagging connection {connection_id} was not removed from the hub connection set"
         );
         sleep(Duration::from_millis(20)).await;
     }
@@ -537,7 +735,7 @@ async fn concurrent_connect_disconnect_churn_keeps_consistent_registry_state() {
 
     let users = [Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
 
-    let sender = hub_service.sender();
+    let sender = hub_service.clone();
     let mut receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
 
     // Drain events while churn is running to avoid artificial subscriber backpressure in test code.
@@ -567,14 +765,21 @@ async fn concurrent_connect_disconnect_churn_keeps_consistent_registry_state() {
     for user_id in users {
         let task_sender = sender.clone();
         tasks.push(tokio::spawn(async move {
-            // Track the last connection id created so cleanup can target the active one.
+            // Track the last connection id created so cleanup can target the active one. Keep the
+            // egress receivers alive for the task's duration so broadcasts don't prune connections
+            // out from under the churn (a closed channel would inject extra disconnect events).
             let mut last_connection_id = Uuid::new_v4();
+            let mut receivers = vec![];
             for idx in 0..8 {
                 let key = SessionKey::new_random(&SystemRandom::new()).unwrap();
-                let connection_id = task_sender.connect(user_id, key).unwrap();
+                let (tx, rx) = tokio::sync::mpsc::channel(64);
+                let connection_id = task_sender
+                    .request_connection(user_id, key, tx, vec![TopicKey::Chat, TopicKey::Hub])
+                    .unwrap();
+                receivers.push(rx);
                 last_connection_id = connection_id;
                 if idx % 2 == 0 {
-                    task_sender.disconnect(user_id, connection_id).unwrap();
+                    task_sender.request_disconnection(user_id, connection_id).unwrap();
                 }
                 tokio::task::yield_now().await;
             }
@@ -589,7 +794,9 @@ async fn concurrent_connect_disconnect_churn_keeps_consistent_registry_state() {
     }
 
     for user_id in users {
-        sender.disconnect(user_id, last_connection_ids[&user_id]).unwrap();
+        sender
+            .request_disconnection(user_id, last_connection_ids[&user_id])
+            .unwrap();
         wait_for_registry_connection_state(&hub_registry, user_id, false).await;
     }
 
@@ -636,4 +843,84 @@ async fn concurrent_connect_disconnect_churn_keeps_consistent_registry_state() {
         total_disconnected > 0,
         "expected disconnect events under concurrent churn"
     );
+}
+
+#[test]
+async fn chat_append_notification_wakes_delivery_ahead_of_the_timer() {
+    let Some(redis_cns) = test_redis_cns() else {
+        log::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
+        return;
+    };
+    let redis_pool = db::redis::create_redis_pool(redis_cns.as_str()).await.unwrap();
+
+    // An isolated room so a parallel test's dispatcher never wakes on our appends, and a very long
+    // chat interval so the ONLY thing that can deliver within the test window is the pub/sub wake —
+    // if the notification did nothing, the assertion below would time out.
+    let room = format!("test-wake-{}", Uuid::new_v4());
+    let (hub_service, hub_registry) = match create_test_hub_service_with_chat(Duration::from_secs(3600), &room).await {
+        Some(data) => data,
+        None => return,
+    };
+
+    let random = SystemRandom::new();
+    let user_id = Uuid::new_v4();
+    let (connection_id, mut rx) = connect_live(&hub_service, user_id, SessionKey::new_random(&random).unwrap()).await;
+    wait_for_registry_connection_state(&hub_registry, user_id, true).await;
+
+    let author = Uuid::new_v4();
+    append_to_room(&redis_pool, &room, author, "woken-up").await;
+
+    let batch = next_chat_batch(&mut rx, Duration::from_secs(2))
+        .await
+        .expect("a pub/sub append notification should wake the dispatcher and deliver the message");
+    let comment = batch.comments.first().expect("batch should carry the appended comment");
+    assert_eq!(comment.user_id, author);
+    assert_eq!(comment.text, "woken-up");
+
+    hub_service.request_disconnection(user_id, connection_id).unwrap();
+    wait_for_registry_connection_state(&hub_registry, user_id, false).await;
+}
+
+#[test]
+async fn chat_wake_with_no_new_messages_delivers_nothing() {
+    let Some(redis_cns) = test_redis_cns() else {
+        log::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
+        return;
+    };
+    let redis_pool = db::redis::create_redis_pool(redis_cns.as_str()).await.unwrap();
+
+    // Short chat interval so several timer-driven passes run within the window; a spurious PUBLISH
+    // with no matching XADD also wakes the loop. Neither must produce a ChatBatch, since the
+    // connection has already seen everything in the (empty) room.
+    let room = format!("test-empty-{}", Uuid::new_v4());
+    let (hub_service, hub_registry) = match create_test_hub_service_with_chat(Duration::from_millis(50), &room).await {
+        Some(data) => data,
+        None => return,
+    };
+
+    let random = SystemRandom::new();
+    let user_id = Uuid::new_v4();
+    let (connection_id, mut rx) = connect_live(&hub_service, user_id, SessionKey::new_random(&random).unwrap()).await;
+    wait_for_registry_connection_state(&hub_registry, user_id, true).await;
+
+    // Wake the dispatcher with a notification that has no corresponding new stream entry.
+    let stream_key = format!("chat:{room}");
+    {
+        let mut conn = redis_pool.get().await.unwrap();
+        let _: () = redis::cmd("PUBLISH")
+            .arg(&stream_key)
+            .arg("0-0")
+            .query_async(&mut *conn)
+            .await
+            .unwrap();
+    }
+
+    // Over a window spanning multiple timer passes and the spurious wake, no ChatBatch may arrive.
+    assert!(
+        next_chat_batch(&mut rx, Duration::from_millis(400)).await.is_none(),
+        "an empty room must never produce a ChatBatch, whether woken by the timer or a spurious notification"
+    );
+
+    hub_service.request_disconnection(user_id, connection_id).unwrap();
+    wait_for_registry_connection_state(&hub_registry, user_id, false).await;
 }

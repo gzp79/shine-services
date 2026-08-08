@@ -1,25 +1,33 @@
-use crate::services::{ConnectionConsumer, ConnectionTracker, HubSender, HubService};
+use super::connection_tracker::{spawn_connection_loop, ConnectionConsumer, ConnectionTracker};
+use crate::services::HubService;
 use shine_infra::session::{CurrentUserService, UserSessionError};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
+use tokio::task::JoinHandle;
 
-/// Periodic consumer: validates each locally-tracked connection's session against
-/// CurrentUserService and requests a targeted disconnect on expiry. Read-only w.r.t. hub state.
+/// Periodic consumer that validates each locally-tracked connection's session and requests a
+/// targeted disconnect on expiry.
 pub struct SessionChecker {
     session_service: Arc<CurrentUserService>,
-    sender: HubSender,
+    hub_service: HubService,
 }
 
 impl SessionChecker {
-    pub fn new(session_service: Arc<CurrentUserService>, hub_service: &HubService) -> Self {
-        Self {
+    /// Starts the session checker on its own connection loop.
+    pub async fn start(
+        service: HubService,
+        session_service: Arc<CurrentUserService>,
+        interval: Duration,
+    ) -> JoinHandle<()> {
+        let consumer = SessionChecker {
             session_service,
-            sender: hub_service.sender(),
-        }
+            hub_service: service.clone(),
+        };
+        spawn_connection_loop(&service, interval, consumer).await
     }
 }
 
 impl ConnectionConsumer for SessionChecker {
-    async fn on_tick(&self, tracker: &ConnectionTracker) {
+    async fn on_tick(&mut self, tracker: &ConnectionTracker) {
         for (user_id, (connection_id, session_key)) in tracker.connections().iter().map(|(u, c)| (*u, *c)) {
             match self.session_service.get_current_user(user_id, session_key).await {
                 // Session is valid; keep the connection.
@@ -29,7 +37,7 @@ impl ConnectionConsumer for SessionChecker {
                     log::info!("[{user_id}] session-invalid ({err}); requesting hub disconnect");
                     // Target the exact connection we validated. If the user reconnected with a new
                     // connection meanwhile, the hub ignores this stale id and keeps the fresh session.
-                    if let Err(err) = self.sender.disconnect(user_id, connection_id) {
+                    if let Err(err) = self.hub_service.request_disconnection(user_id, connection_id) {
                         log::error!("[{user_id}] Failed to send expiry disconnect command: {err:#?}");
                     }
                 }

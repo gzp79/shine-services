@@ -10,7 +10,15 @@ pub enum WSMessageRequest {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ChatWireComment {
+    pub id: String,
+    pub from: Uuid,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 #[serde(tag = "type")]
 pub enum WSMessageResponse {
-    Chat { from: Uuid, text: String },
+    Chat { messages: Vec<ChatWireComment> },
 }

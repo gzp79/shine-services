@@ -30,9 +30,9 @@ impl WebApplication for Application {
 
         context.add_health_provider(HubStatus::new(state.hub_service().clone()));
 
-        let shutdown_sender = state.hub_service().sender();
+        let hub_service = state.hub_service().clone();
         context.add_shutdown_hook(move || {
-            if let Err(err) = shutdown_sender.shutdown() {
+            if let Err(err) = hub_service.request_shutdown() {
                 log::warn!("Failed to send hub shutdown command from shutdown hook: {err:#?}");
             }
         });

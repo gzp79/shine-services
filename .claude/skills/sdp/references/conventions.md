@@ -113,6 +113,7 @@ the skeleton omits**, especially not change-log or history sections.
 | Short linear chain | **Horizontal flow** (`.hflow`) | A → B → C cause/effect or request/response that reads naturally left-to-right and has no layer grouping. |
 | One source, many reactors | **Fan-out** (`.fanout`) | An emitter (event/signal) feeds N peers that each react independently — observer/event-bus flows. Makes "each subscribes on its own" visible. |
 | State chain that loops back | **Lifecycle** (`.lifecycle`) | States advance A→B→C then *recycle* to the start — load/unload, allocate→use→reclaim, pooled resources. The recycle edge is the point; a plain chain can't draw it without duplicating a state. |
+| Ordered exchange between actors | **Sequence** (`.seq-diagram`) | The meaning *is* the time axis — N actors as lifelines, messages as arrows in order, including a feedback edge that returns to an earlier actor. Use when ordering / round-trips / a closed loop are the point and a box layout can't show *when*. |
 | Intrinsically geometric | **Spatial SVG** (`.svg-diagram`) | The relationship *is* geometry — grid-cell ownership, adjacency, coordinate frames. No arrangement of boxes can show it; only a true drawing can. The rarest layout — reach for it only when a box diagram would lie. |
 
 A doc can use more than one (e.g. a fan-out for the event, a small table for
@@ -263,7 +264,34 @@ rather than terminates:
 </div>
 ```
 
-#### Layout 5 — Spatial SVG (`.svg-diagram`)
+#### Layout 5 — Sequence (`.seq-diagram`)
+
+For an ordered exchange between actors, an inline `<svg class="seq-diagram">`
+draws lifelines (vertical) with time running downward and messages as horizontal
+arrows. Reach for it only when *when* matters — ordering, a round-trip, or a
+feedback edge that returns to an earlier actor (which a box layout cannot show).
+Same SVG rules as Layout 6: geometry (`x`/`y`/`points`) is inline; colours come
+from the `.seq-*` classes in `doc.css`, never hard-coded. `.seq-msg-return`
+(dashed) is the back-edge; number the messages so the order is unambiguous.
+
+```html
+<svg class="seq-diagram" viewBox="0 0 460 200" width="460">
+  <rect class="seq-actor seq-actor-indigo" x="18" y="8" width="120" height="40" rx="6"/>
+  <text class="seq-actor-label" x="78" y="30" text-anchor="middle">Producer</text>
+  <rect class="seq-actor seq-actor-blue" x="322" y="8" width="120" height="40" rx="6"/>
+  <text class="seq-actor-label" x="382" y="30" text-anchor="middle">Loop</text>
+  <line class="seq-lane" x1="78"  y1="48" x2="78"  y2="184"/>
+  <line class="seq-lane" x1="382" y1="48" x2="382" y2="184"/>
+  <text class="seq-msg-label" x="230" y="86" text-anchor="middle">1 · enqueue</text>
+  <line class="seq-msg" x1="78" y1="94" x2="382" y2="94"/>
+  <polygon class="seq-arrowhead" points="382,94 374,90 374,98"/>
+  <text class="seq-msg-label" x="230" y="150" text-anchor="middle">2 · feedback</text>
+  <line class="seq-msg-return" x1="382" y1="158" x2="78" y2="158"/>
+  <polygon class="seq-arrowhead-return" points="78,158 86,154 86,162"/>
+</svg>
+```
+
+#### Layout 6 — Spatial SVG (`.svg-diagram`)
 
 For a relationship that *is* geometry, an inline `<svg class="svg-diagram">` is
 the diagram. This is the one place hand-authored SVG is allowed — and only

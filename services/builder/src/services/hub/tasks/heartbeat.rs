@@ -1,26 +1,24 @@
-use crate::{
-    repositories::hub_registry::HubConnection,
-    services::{ConnectionConsumer, ConnectionTracker, HubSender, HubService},
-};
+use super::connection_tracker::{spawn_connection_loop, ConnectionConsumer, ConnectionTracker};
+use crate::{repositories::hub_registry::HubConnection, services::HubService};
+use std::time::Duration;
+use tokio::task::JoinHandle;
 
-/// Periodic consumer of a connection view. Refreshes the Redis TTL of every locally-tracked
-/// connection in a single batched round trip; a connection the registry no longer holds as active
-/// is disconnected through the CAS'd command path (so a fresher local connection is never torn
-/// down).
-pub struct HeartbeatTask {
+/// Periodic consumer that refreshes the Redis TTL of every locally-tracked connection and
+/// disconnects any the registry no longer holds as active.
+pub struct Heartbeat {
     hub_service: HubService,
-    sender: HubSender,
 }
 
-impl HeartbeatTask {
-    pub fn new(hub_service: HubService) -> Self {
-        let sender = hub_service.sender();
-        Self { hub_service, sender }
+impl Heartbeat {
+    /// Starts the heartbeat on its own connection loop.
+    pub async fn start(service: HubService, interval: Duration) -> JoinHandle<()> {
+        let consumer = Heartbeat { hub_service: service.clone() };
+        spawn_connection_loop(&service, interval, consumer).await
     }
 }
 
-impl ConnectionConsumer for HeartbeatTask {
-    async fn on_tick(&self, tracker: &ConnectionTracker) {
+impl ConnectionConsumer for Heartbeat {
+    async fn on_tick(&mut self, tracker: &ConnectionTracker) {
         let connections: Vec<HubConnection> = tracker
             .connections()
             .iter()
@@ -46,7 +44,7 @@ impl ConnectionConsumer for HeartbeatTask {
 
         for HubConnection { user_id, connection_id } in stale {
             log::info!("[{user_id}] heartbeat-found-inactive; requesting hub disconnect");
-            if let Err(err) = self.sender.disconnect(user_id, connection_id) {
+            if let Err(err) = self.hub_service.request_disconnection(user_id, connection_id) {
                 log::error!("[{user_id}] Failed to send heartbeat disconnect command: {err:#?}");
             }
         }

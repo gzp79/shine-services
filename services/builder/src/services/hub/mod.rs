@@ -1,15 +1,14 @@
-mod connected_users;
-mod heartbeat;
 mod hub_command;
-mod hub_connection;
+mod hub_connections;
 mod hub_service;
 mod hub_status;
+mod hub_subscribers;
+mod tasks;
 
 #[cfg(test)]
 mod hub_service_test;
 
 pub use self::{
-    hub_connection::{HubReceiver, HubSender},
     hub_service::{HubIntervals, HubService},
     hub_status::HubStatus,
 };
