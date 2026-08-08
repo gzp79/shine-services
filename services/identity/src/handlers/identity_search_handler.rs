@@ -1,4 +1,10 @@
-use crate::{app_state::AppState, models::Identity, repositories::identity::IdentityDb, services::UserService};
+use crate::{
+    app_state::AppState,
+    models::{Identity, PublicUserInfo},
+    repositories::identity::IdentityDb,
+    services::UserService,
+};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 pub const MAX_SEARCH_RESULT_COUNT: usize = 100;
@@ -49,6 +55,26 @@ where
         identities.truncate(count);
 
         Ok(IdentitySearchResult { identities, is_partial })
+    }
+
+    /// Look up the public info for a set of users. Every requested id is present in the
+    /// result; ids without a matching identity resolve to an anonymous placeholder.
+    pub async fn get_public_infos(
+        &self,
+        ids: &[Uuid],
+    ) -> Result<HashMap<Uuid, PublicUserInfo>, crate::models::IdentityError> {
+        let identities = self.user_service.search(Some(ids), None, None, Some(ids.len())).await?;
+
+        let mut infos: HashMap<Uuid, PublicUserInfo> = identities
+            .into_iter()
+            .map(|identity| (identity.id, PublicUserInfo { name: identity.name }))
+            .collect();
+
+        for &id in ids {
+            infos.entry(id).or_insert_with(PublicUserInfo::anonymous);
+        }
+
+        Ok(infos)
     }
 }
 

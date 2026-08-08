@@ -3,6 +3,7 @@ mod external_user_info;
 mod identity;
 mod identity_error;
 mod permission;
+mod public_user_info;
 mod session;
 mod session_error;
 mod token_info;
@@ -16,6 +17,7 @@ pub use self::{
     identity::{Identity, IdentityKind},
     identity_error::IdentityError,
     permission::{permissions, IdentityPermissions},
+    public_user_info::PublicUserInfo,
     session::{Session, SessionInfo, SessionUser},
     session_error::SessionError,
     token_info::TokenInfo,
