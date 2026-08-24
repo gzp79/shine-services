@@ -42,6 +42,26 @@ cd tests && pnpm exec playwright test api-tests/identity/purge_guests.ts
 cd tests && ENABLE_REQUEST_LOGGING=1 pnpm test:local --grep "test name"
 ```
 
+**Run Rust crate tests** (unit/integration tests inside the workspace):
+
+Tests that touch Redis/Postgres **skip themselves** unless the `SHINE_TEST_*_CNS`
+env vars are set (you'll see `Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test`
+warnings). This mirrors the Docker build (`services/Dockerfile`). To run them locally,
+start the Docker dev environment (above) and point the CNS vars at the toxiproxy ports
+it exposes on the host:
+
+```bash
+# toxiproxy exposes redis on host :6379 and postgres on host :5432 (see services/docker-compose.yml)
+export SHINE_TEST_REDIS_CNS="redis://localhost:6379"
+export SHINE_TEST_PG_CNS="postgres://username:password@localhost:5432/database-test?sslmode=disable"
+
+cargo test -p shine-builder    # or -p shine-identity, or the whole workspace
+```
+
+- Direct (un-proxied) DBs are also available: redis `:26379`, postgres `:25432`.
+- Without these vars the tests still "pass" but only because they skip — always set them
+  when validating DB-backed code, otherwise you're testing nothing.
+
 **Agent test guidelines:**
 
 - NEVER pipe test output through `tail`, `head`, or other truncation — full output is needed for analysis

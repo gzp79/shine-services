@@ -11,7 +11,10 @@ async function main() {
 
     const mock_game = new StaticFileServer('game', {
         url: new URL('https://game.local.scytta.com:8092'),
-        staticFilesPath: path.join(__dirname, '../..', 'dist')
+        // Serve the web client build directly; the manifest and version prefix are
+        // synthesized in memory to emulate the deployed bucket.
+        staticFilesPath: path.join(__dirname, '../..', 'client/web/dist'),
+        latestVersion: 'custom'
     });
     await mock_game.start();
 

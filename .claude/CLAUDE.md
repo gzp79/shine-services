@@ -4,7 +4,8 @@ Rust workspace with identity/builder services. Stack: Axum, PostgreSQL, Redis, T
 
 ## Local Development Quick Start
 - **Run**: `/local-development` skill OR VSCode task "identity: local"
-- **Test**: `cd tests && pnpm test:local` (requires service on port 8443)
+- **Test (API)**: `cd tests && pnpm test:local` (requires service on port 8443)
+- **Test (Rust crate)**: DB-backed tests skip unless `SHINE_TEST_REDIS_CNS`/`SHINE_TEST_PG_CNS` are set — see `/local-development` skill "Run Rust crate tests"
 - **URL**: `https://cloud.local.scytta.com:8443/identity`
 - **Windows**: Use PowerShell for env vars with `--` (bash unsupported)
 
