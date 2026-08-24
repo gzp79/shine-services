@@ -5,8 +5,8 @@
     "main": "test.js",
     "scripts": {
         "prepare": "cd .. && husky tests/.husky",
-        "mkcert:ca": "mkcert create-ca --cert ../certs/ca.crt --key ../certs/ca.key",
-        "mkcert": "pnpm run mkcert:ca && mkcert create-cert --ca-cert ../certs/ca.crt --ca-key ../certs/ca.key --cert ../certs/scytta.crt --key ../certs/scytta.key --domain cloud.local.scytta.com game.local.scytta.com mockbox.foo",
+        "mkcert:ca": "mkcert create-ca --organization \"Shine Service Test CA\" --cert ../certificates/ca.crt --key ../certificates/ca.key",
+        "mkcert": "pnpm run mkcert:ca && mkcert create-cert --ca-cert ../certificates/ca.crt --ca-key ../certificates/ca.key --cert ../certificates/scytta.crt --key ../certificates/scytta.key --domain cloud.local.scytta.com ws.local.scytta.com game.local.scytta.com mockbox.foo",
         "build_service": "docker build --target test -t gzp79/shine-identity:test --progress=plain ..",
         "format": "prettier --write .",
         "lint": "pnpm run lint:format && pnpm run lint:eslint && pnpm run lint:build",

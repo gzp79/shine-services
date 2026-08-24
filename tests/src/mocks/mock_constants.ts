@@ -4,7 +4,7 @@ import { JWKObject } from 'ts-jose';
 export const DEFAULT_URL = 'https://mockbox.foo';
 
 function findCertLocation(): string {
-    const certPath = ['./certs/scytta.crt', '../certs/scytta.crt'];
+    const certPath = ['./certificates/scytta.crt', '../certificates/scytta.crt'];
     for (const path of certPath) {
         if (fs.existsSync(path)) {
             return path.replace('scytta.crt', '');

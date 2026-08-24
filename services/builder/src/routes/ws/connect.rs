@@ -47,12 +47,14 @@ pub async fn connect(
     if !state.settings().ws.is_allowed_host(target_host.as_str()) {
         return Err(Problem::forbidden()
             .with_detail("host is not allowed")
+            .with_sensitive_str(target_host)
             .into_response(&problem_config));
     }
 
     if !state.settings().ws.is_allowed_origin(origin.as_str()) {
         return Err(Problem::forbidden()
             .with_detail("origin is not allowed")
+            .with_sensitive_str(origin)
             .into_response(&problem_config));
     }
 

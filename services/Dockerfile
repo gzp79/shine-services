@@ -109,8 +109,8 @@ CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisor.conf"]
 FROM base AS test
 
 WORKDIR /app
-COPY ./certs/scytta.crt ./certs/scytta.crt
-COPY ./certs/scytta.key ./certs/scytta.key
+COPY ./certificates/scytta.crt ./certificates/scytta.crt
+COPY ./certificates/scytta.key ./certificates/scytta.key
 COPY ./services/docker/nginx.test.conf /etc/nginx/nginx-shine-server.conf
 
 WORKDIR /app/services

@@ -80,7 +80,7 @@ curl -k https://localhost:8443/identity/info/ready  # Should return "Ok"
 
 **Service requirements:**
 
-- Port 8443 (HTTPS), config `server_config.test.json`, certs at `../../certs/scytta.{crt,key}`
+- Port 8443 (HTTPS), config `server_config.test.json`, certificates at `../../certificates/scytta.{crt,key}`
 - URL: `https://cloud.local.scytta.com:8443/identity`
 
 **Test requirements:**
@@ -107,7 +107,7 @@ curl -k https://localhost:8443/identity/info/ready  # Should return "Ok"
 **Service won't start:**
 
 - Wrong directory? `pwd` must show `services/identity` (config file location)
-- Missing certs? Check `ls ../../certs/scytta.{crt,key}` from services/identity
+- Missing certificates? Check `ls ../../certificates/scytta.{crt,key}` from services/identity
 - Port conflict? `netstat -ano | findstr :8443` (Windows) or `lsof -ti:8443` (Linux/Mac)
 
 **Tests failing:**
