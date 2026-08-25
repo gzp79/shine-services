@@ -51,12 +51,13 @@ test.describe('Public user info', () => {
         expect(Object.keys(result.users[userA.userId])).toEqual(['name']);
     });
 
-    test('Unknown ids shall resolve to Anonymous', async ({ api }) => {
+    test('Unknown ids shall be omitted from the response', async ({ api }) => {
         const guest = await api.testUsers.createGuest();
         const unknownId = randomUUID();
         const result = await api.user.getPublicUserInfo(guest.sid, [unknownId]);
 
-        expect(result.users[unknownId]).toEqual({ name: 'Anonymous' });
+        expect(result.users[unknownId]).toBeUndefined();
+        expect(Object.keys(result.users)).toEqual([]);
     });
 
     test('Mixed known and unknown ids shall each resolve correctly', async ({ api }) => {
@@ -65,7 +66,8 @@ test.describe('Public user info', () => {
         const result = await api.user.getPublicUserInfo(guest.sid, [userA.userId, unknownId]);
 
         expect(result.users[userA.userId]).toEqual({ name: userA.name });
-        expect(result.users[unknownId]).toEqual({ name: 'Anonymous' });
+        expect(result.users[unknownId]).toBeUndefined();
+        expect(Object.keys(result.users)).toEqual([userA.userId]);
     });
 
     test('Duplicate ids shall be deduplicated in the response', async ({ api }) => {

@@ -6,9 +6,3 @@ use utoipa::ToSchema;
 pub struct PublicUserInfo {
     pub name: String,
 }
-
-impl PublicUserInfo {
-    pub fn anonymous() -> Self {
-        Self { name: "Anonymous".to_string() }
-    }
-}

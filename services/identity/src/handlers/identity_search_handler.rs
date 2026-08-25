@@ -57,22 +57,18 @@ where
         Ok(IdentitySearchResult { identities, is_partial })
     }
 
-    /// Look up the public info for a set of users. Every requested id is present in the
-    /// result; ids without a matching identity resolve to an anonymous placeholder.
+    /// Look up the public info for a set of users. Only known users are present in the
+    /// result; ids without a matching identity are omitted.
     pub async fn get_public_infos(
         &self,
         ids: &[Uuid],
     ) -> Result<HashMap<Uuid, PublicUserInfo>, crate::models::IdentityError> {
         let identities = self.user_service.search(Some(ids), None, None, Some(ids.len())).await?;
 
-        let mut infos: HashMap<Uuid, PublicUserInfo> = identities
+        let infos: HashMap<Uuid, PublicUserInfo> = identities
             .into_iter()
             .map(|identity| (identity.id, PublicUserInfo { name: identity.name }))
             .collect();
-
-        for &id in ids {
-            infos.entry(id).or_insert_with(PublicUserInfo::anonymous);
-        }
 
         Ok(infos)
     }

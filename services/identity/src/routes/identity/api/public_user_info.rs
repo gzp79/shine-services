@@ -29,13 +29,13 @@ pub struct PublicUserInfoRequest {
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicUserInfoResponse {
-    /// Public info keyed by user id. Every requested id is present; unknown users
-    /// resolve to an anonymous placeholder.
+    /// Public info keyed by user id. Only ids that match known users are present;
+    /// unknown users are omitted.
     users: HashMap<Uuid, PublicUserInfo>,
 }
 
 /// Resolve the public info (name) for a batch of users. Any id that does not match
-/// a known user is returned as an anonymous placeholder.
+/// a known user is omitted from the response.
 #[utoipa::path(
     post,
     path = "/api/identities/users/info",
