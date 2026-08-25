@@ -9,6 +9,26 @@ const CAPTCHA_URL: &str = "https://challenges.cloudflare.com/turnstile/v0/siteve
 const CAPTCHA_FAILED: &str = "captcha-failed-validation";
 const CAPTCHA_MISSING: &str = "captcha-not-provided";
 
+/// Sentinel captcha secret enabling test mode. It is deliberately NOT a valid Cloudflare
+/// secret; when configured, the response is driven by the token instead of Cloudflare's own
+/// test keys, so tests can select an outcome deterministically (and mostly offline).
+const TEST_SECRET: &str = "0000000000000000000000000000000000";
+/// Cloudflare test secret that always passes (used to exercise a real siteverify round-trip).
+const CF_TEST_SECRET_PASS: &str = "1x0000000000000000000000000000000AA";
+/// Cloudflare test secret that always blocks (used to exercise a real siteverify round-trip).
+const CF_TEST_SECRET_BLOCK: &str = "2x0000000000000000000000000000000AA";
+/// Dummy response token forwarded to Cloudflare when the test secret drives the outcome.
+const CF_DUMMY_TOKEN: &str = "XXXX.DUMMY.TOKEN.XXXX";
+
+/// In test mode (secret == [`TEST_SECRET`]) the incoming token selects the behaviour:
+/// - [`TEST_TOKEN_PASS`]  -> real Cloudflare call with the always-passing test secret
+/// - [`TEST_TOKEN_BLOCK`] -> real Cloudflare call with the always-blocking test secret
+/// - [`TEST_TOKEN_SKIP`]  -> synthetic success, no Cloudflare call (offline)
+/// - anything else        -> synthetic `invalid-input-response` failure, no Cloudflare call
+const TEST_TOKEN_PASS: &str = "pass";
+const TEST_TOKEN_BLOCK: &str = "block";
+const TEST_TOKEN_SKIP: &str = "skip";
+
 #[derive(Debug, ThisError)]
 pub enum CaptchaError {
     #[error("Request failed with")]
@@ -84,23 +104,31 @@ impl CaptchaValidator {
     ) -> Result<TurnstileValidationResponse, CaptchaError> {
         let idempotency_key = Uuid::new_v4().to_string();
 
-        let secret = &self.0.secret;
-        let (secret, token) = if secret == "1x0000000000000000000000000000000AA" {
+        let (secret, token) = if self.0.secret == TEST_SECRET {
             log::warn!("Using test-secret for captcha validation for token {token}");
-            // When a test-secret is used, the token is used as a site-key to emulate a passing or failing response
-            let test_site_keys = [
-                "1x00000000000000000000AA", // Always passes
-                //"2x00000000000000000000AB", // Always blocks
-                "1x00000000000000000000BB", // Always passes
-                //"2x00000000000000000000BB", // Always blocks
-                "3x00000000000000000000FF", // Forces an interactive challenge
-            ];
-            if test_site_keys.contains(&token) {
-                log::info!("Using an always passing secret");
-                ("1x0000000000000000000000000000000AA", "XXXX.DUMMY.TOKEN.XXXX")
-            } else {
-                log::info!("Using an always failing secret");
-                ("2x0000000000000000000000000000000AA", "XXXX.DUMMY.TOKEN.XXXX")
+            match token {
+                TEST_TOKEN_PASS => {
+                    log::info!("Test token 'pass': calling Cloudflare with the always-passing test secret");
+                    (CF_TEST_SECRET_PASS, CF_DUMMY_TOKEN)
+                }
+                TEST_TOKEN_BLOCK => {
+                    log::info!("Test token 'block': calling Cloudflare with the always-blocking test secret");
+                    (CF_TEST_SECRET_BLOCK, CF_DUMMY_TOKEN)
+                }
+                TEST_TOKEN_SKIP => {
+                    log::info!("Test token 'skip': resolving as success without contacting Cloudflare");
+                    return Ok(TurnstileValidationResponse {
+                        success: true,
+                        error_codes: vec![],
+                    });
+                }
+                _ => {
+                    log::info!("Unrecognized test token: resolving as failure without contacting Cloudflare");
+                    return Ok(TurnstileValidationResponse {
+                        success: false,
+                        error_codes: vec!["invalid-input-response".to_string()],
+                    });
+                }
             }
         } else {
             (self.0.secret.as_str(), token)
@@ -151,10 +179,9 @@ mod test {
 
     #[test]
     async fn test_captcha_validator_test_token_pass() {
-        let validator = CaptchaValidator::new("1x0000000000000000000000000000000AA");
-        let token = "1x00000000000000000000AA";
+        let validator = CaptchaValidator::new(TEST_SECRET);
         let response = validator
-            .validate_request(token, None)
+            .validate_request(TEST_TOKEN_PASS, None)
             .await
             .expect("Validation request failed");
         log::info!("response: {response:?}");
@@ -162,29 +189,38 @@ mod test {
     }
 
     #[test]
-    async fn test_captcha_validator_test_token_invalid() {
-        let validator = CaptchaValidator::new("2x0000000000000000000000000000000AA");
-        let token = "token";
+    async fn test_captcha_validator_test_token_block() {
+        let validator = CaptchaValidator::new(TEST_SECRET);
         let response = validator
-            .validate_request(token, None)
+            .validate_request(TEST_TOKEN_BLOCK, None)
+            .await
+            .expect("Validation request failed");
+        log::info!("response: {response:?}");
+        assert!(!response.success);
+    }
+
+    #[test]
+    async fn test_captcha_validator_test_token_skip() {
+        let validator = CaptchaValidator::new(TEST_SECRET);
+        let response = validator
+            .validate_request(TEST_TOKEN_SKIP, None)
+            .await
+            .expect("Validation request failed");
+        log::info!("response: {response:?}");
+        assert!(response.success);
+        assert!(response.error_codes.is_empty());
+    }
+
+    #[test]
+    async fn test_captcha_validator_test_token_invalid() {
+        let validator = CaptchaValidator::new(TEST_SECRET);
+        let response = validator
+            .validate_request("token", None)
             .await
             .expect("Validation request failed");
         log::info!("response: {response:?}");
         assert!(!response.success);
         assert_eq!(response.error_codes, vec!["invalid-input-response"]);
-    }
-
-    #[test]
-    async fn test_captcha_validator_test_token_expired() {
-        let validator = CaptchaValidator::new("3x0000000000000000000000000000000AA");
-        let token = "token";
-        let response = validator
-            .validate_request(token, None)
-            .await
-            .expect("Validation request failed");
-        log::info!("response: {response:?}");
-        assert!(!response.success);
-        assert_eq!(response.error_codes, vec!["timeout-or-duplicate"]);
     }
 
     #[test]

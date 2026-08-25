@@ -7,7 +7,7 @@ GET {{url}}/api/auth/providers
 
 ##########################################################
 // Login, logout
-GET {{url}}/auth/token/login?rememberMe=true&captcha=1x00000000000000000000AA
+GET {{url}}/auth/token/login?rememberMe=true&captcha=skip
 ###
 
 GET {{url}}/auth/token/login

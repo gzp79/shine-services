@@ -136,6 +136,25 @@ async fn find_registry_connection(hub_registry: &RedisHubConnectionDb, user_id: 
         .map(|connection| connection.connection_id)
 }
 
+/// Polls the hub's local connection count until it reaches `expected`. `ConnectUser` writes the
+/// registry (Redis) before it updates local state, so waiting on the registry and then asserting on
+/// `stats()` in the same breath races the local update; wait on the count itself instead.
+async fn wait_for_connection_count(hub_service: &super::HubService, expected: usize) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if hub_service.stats().await.connections == expected {
+            return;
+        }
+        if Instant::now() >= deadline {
+            panic!(
+                "Timed out waiting for hub connection count to reach {expected}, last was {}",
+                hub_service.stats().await.connections
+            );
+        }
+        sleep(Duration::from_millis(20)).await;
+    }
+}
+
 async fn wait_for_registry_connection_state(hub_registry: &RedisHubConnectionDb, user_id: Uuid, should_exist: bool) {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
@@ -147,6 +166,22 @@ async fn wait_for_registry_connection_state(hub_registry: &RedisHubConnectionDb,
             panic!(
                 "Timed out waiting for registry connection state for user {user_id}, expected exists={should_exist}"
             );
+        }
+        sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// Waits until the registry's active connection for `user_id` is exactly `expected`. Unlike
+/// [`wait_for_registry_connection_state`], a specific id can't be matched by a transient mid-churn
+/// state, so it is a reliable "the dispatcher has drained up to this connection" barrier.
+async fn wait_for_registry_connection_id(hub_registry: &RedisHubConnectionDb, user_id: Uuid, expected: Uuid) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if find_registry_connection(hub_registry, user_id).await == Some(expected) {
+            return;
+        }
+        if Instant::now() >= deadline {
+            panic!("Timed out waiting for registry to show connection {expected} for user {user_id}");
         }
         sleep(Duration::from_millis(20)).await;
     }
@@ -172,7 +207,7 @@ async fn collect_hub_events(
     events
 }
 
-#[test]
+#[test(serial = "hub-service")]
 async fn reconnect_and_idempotent_disconnect_edge_cases() {
     let (hub_service, hub_registry) = match create_test_hub_service().await {
         Some(data) => data,
@@ -291,7 +326,7 @@ async fn reconnect_and_idempotent_disconnect_edge_cases() {
     );
 }
 
-#[test]
+#[test(serial = "hub-service")]
 async fn reconnect_replace_emits_disconnect_for_old_connection() {
     let (hub_service, hub_registry) = match create_test_hub_service().await {
         Some(data) => data,
@@ -331,7 +366,7 @@ async fn reconnect_replace_emits_disconnect_for_old_connection() {
     wait_for_registry_connection_state(&hub_registry, user_id, false).await;
 }
 
-#[test]
+#[test(serial = "hub-service")]
 async fn shutdown_publishes_event_and_stops_dispatcher() {
     let (hub_service, hub_registry) = match create_test_hub_service().await {
         Some(data) => data,
@@ -345,10 +380,14 @@ async fn shutdown_publishes_event_and_stops_dispatcher() {
     let sender = hub_service.clone();
     let mut receiver = hub_service.subscribe(vec![TopicKey::Hub]).await;
 
-    // Shut down, then enqueue a connect. The control channel is a single FIFO drained biased-first,
-    // so the dispatcher processes Shutdown (and breaks) before ever reaching this connect.
+    // Shut down, then try to enqueue a connect. Both possible outcomes prove the connect is never
+    // processed: either the dispatcher drains Shutdown (FIFO, ahead of the connect) and breaks
+    // before running it, or it has already broken and dropped the control receiver so the send
+    // itself fails. Ignore that send result rather than unwrapping it (which would race the
+    // dispatcher tearing the channel down).
     sender.request_shutdown().unwrap();
-    let _ = connect_live(&sender, user_id, session_key).await;
+    let (tx, _rx) = tokio::sync::mpsc::channel(64);
+    let _ = sender.request_connection(user_id, session_key, tx, vec![TopicKey::Chat, TopicKey::Hub]);
 
     let events = collect_hub_events(&mut receiver, Duration::from_millis(500)).await;
     assert!(
@@ -367,7 +406,7 @@ async fn shutdown_publishes_event_and_stops_dispatcher() {
     );
 }
 
-#[test]
+#[test(serial = "hub-service")]
 async fn chat_payload_is_delivered_and_topic_filtered() {
     let (hub_service, hub_registry) = match create_test_hub_service().await {
         Some(data) => data,
@@ -451,7 +490,7 @@ async fn chat_payload_is_delivered_and_topic_filtered() {
     wait_for_registry_connection_state(&hub_registry, hub_user, false).await;
 }
 
-#[test]
+#[test(serial = "hub-service")]
 async fn direct_send_to_connection_moves_to_that_connection_only() {
     let (hub_service, hub_registry) = match create_test_hub_service().await {
         Some(data) => data,
@@ -524,7 +563,7 @@ async fn direct_send_to_connection_moves_to_that_connection_only() {
     wait_for_registry_connection_state(&hub_registry, user_b, false).await;
 }
 
-#[test]
+#[test(serial = "hub-service")]
 async fn registry_change_disconnects_stale_local_connection() {
     let (hub_service, hub_registry) = match create_test_hub_service().await {
         Some(data) => data,
@@ -583,7 +622,7 @@ async fn registry_change_disconnects_stale_local_connection() {
     wait_for_registry_connection_state(&hub_registry, user_id, false).await;
 }
 
-#[test]
+#[test(serial = "hub-service")]
 async fn batched_heartbeat_refreshes_active_and_reports_stale() {
     let (hub_service, hub_registry) = match create_test_hub_service().await {
         Some(data) => data,
@@ -661,7 +700,7 @@ async fn batched_heartbeat_refreshes_active_and_reports_stale() {
     wait_for_registry_connection_state(&hub_registry, active_b, false).await;
 }
 
-#[test]
+#[test(serial = "hub-service")]
 async fn slow_connection_is_auto_dropped_when_it_falls_behind() {
     let (hub_service, hub_registry) = match create_test_hub_service().await {
         Some(data) => data,
@@ -688,11 +727,9 @@ async fn slow_connection_is_auto_dropped_when_it_falls_behind() {
         )
         .unwrap();
     wait_for_registry_connection_state(&hub_registry, user_id, true).await;
-    assert_eq!(
-        hub_service.stats().await.connections,
-        baseline_connections + 1,
-        "the slow connection should be registered"
-    );
+    // The connection is registered locally slightly after the registry write, so poll the local
+    // count rather than asserting it the instant the registry shows the connection.
+    wait_for_connection_count(&hub_service, baseline_connections + 1).await;
 
     // Flood the Chat topic without ever draining `_rx`. The first broadcast fills the capacity-1
     // buffer; the next finds it full, marks the connection dead, and enqueues DropConnection.
@@ -726,7 +763,7 @@ async fn slow_connection_is_auto_dropped_when_it_falls_behind() {
     }
 }
 
-#[test]
+#[test(serial = "hub-service")]
 async fn concurrent_connect_disconnect_churn_keeps_consistent_registry_state() {
     let (hub_service, hub_registry) = match create_test_hub_service().await {
         Some(data) => data,
@@ -765,9 +802,10 @@ async fn concurrent_connect_disconnect_churn_keeps_consistent_registry_state() {
     for user_id in users {
         let task_sender = sender.clone();
         tasks.push(tokio::spawn(async move {
-            // Track the last connection id created so cleanup can target the active one. Keep the
-            // egress receivers alive for the task's duration so broadcasts don't prune connections
-            // out from under the churn (a closed channel would inject extra disconnect events).
+            // Track the last connection id created so cleanup can target the active one. The egress
+            // receivers are returned to the caller and held until after the assertions: a dropped
+            // receiver closes its channel, which turns the next lifecycle broadcast into a
+            // DropConnection and makes the registry churn under the test's feet.
             let mut last_connection_id = Uuid::new_v4();
             let mut receivers = vec![];
             for idx in 0..8 {
@@ -783,24 +821,32 @@ async fn concurrent_connect_disconnect_churn_keeps_consistent_registry_state() {
                 }
                 tokio::task::yield_now().await;
             }
-            (user_id, last_connection_id)
+            (user_id, last_connection_id, receivers)
         }));
     }
 
     let mut last_connection_ids = HashMap::<Uuid, Uuid>::new();
+    let mut kept_receivers = vec![];
     for task in tasks {
-        let (user_id, connection_id) = task.await.unwrap();
+        let (user_id, connection_id, receivers) = task.await.unwrap();
         last_connection_ids.insert(user_id, connection_id);
+        kept_receivers.push(receivers);
     }
 
     for user_id in users {
-        sender
-            .request_disconnection(user_id, last_connection_ids[&user_id])
-            .unwrap();
+        // Commands are enqueued from the churn tasks and drained by the single dispatcher FIFO, so
+        // the backlog may still be replaying when the tasks join. Wait for the registry to show this
+        // user's final connection before disconnecting it: matching that specific id (rather than
+        // "any"/"none") is a state the drain passes through exactly once, so it can't be satisfied by
+        // a transient mid-churn gap the way `exists == false` could.
+        let final_connection_id = last_connection_ids[&user_id];
+        wait_for_registry_connection_id(&hub_registry, user_id, final_connection_id).await;
+        sender.request_disconnection(user_id, final_connection_id).unwrap();
         wait_for_registry_connection_state(&hub_registry, user_id, false).await;
     }
 
-    sleep(Duration::from_millis(120)).await;
+    // The egress receivers can be released now that every connection is torn down.
+    drop(kept_receivers);
     let _ = stop_tx.send(true);
     let events = collector.await.unwrap();
 
@@ -845,7 +891,7 @@ async fn concurrent_connect_disconnect_churn_keeps_consistent_registry_state() {
     );
 }
 
-#[test]
+#[test(serial = "hub-service")]
 async fn chat_append_notification_wakes_delivery_ahead_of_the_timer() {
     let Some(redis_cns) = test_redis_cns() else {
         log::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");
@@ -881,7 +927,7 @@ async fn chat_append_notification_wakes_delivery_ahead_of_the_timer() {
     wait_for_registry_connection_state(&hub_registry, user_id, false).await;
 }
 
-#[test]
+#[test(serial = "hub-service")]
 async fn chat_wake_with_no_new_messages_delivers_nothing() {
     let Some(redis_cns) = test_redis_cns() else {
         log::warn!("Missing SHINE_TEST_REDIS_CNS/SHINE_REDIS_CNS, skipping test");

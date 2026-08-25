@@ -75,6 +75,18 @@ export type SearchIdentityParams = {
     name?: string | string[];
 };
 
+export const PublicUserInfoSchema = z.object({
+    name: z.string()
+});
+export type PublicUserInfo = z.infer<typeof PublicUserInfoSchema>;
+
+export const PublicUserInfoResponseSchema = z.object({
+    users: z.record(z.string(), PublicUserInfoSchema)
+});
+export type PublicUserInfoResponse = z.infer<typeof PublicUserInfoResponseSchema>;
+
+type PublicUserInfoBody = { userIds: string[] };
+
 export class UserAPI {
     private readonly client: ApiClient;
 
@@ -220,6 +232,20 @@ export class UserAPI {
         const response = await this.searchIdentitiesRequest(sid, params);
         expect(response).toHaveStatus(200);
         return await response.parse(IdentitySearchPageSchema);
+    }
+
+    getPublicUserInfoRequest(sid: string | null, userIds: string[]): ApiRequest<PublicUserInfoBody> {
+        const cs = sid && { sid };
+
+        return this.client
+            .post<PublicUserInfoBody>(this.urlFor('/api/identities/users/info'), { userIds })
+            .withCookies({ ...cs });
+    }
+
+    async getPublicUserInfo(sid: string | null, userIds: string[]): Promise<PublicUserInfoResponse> {
+        const response = await this.getPublicUserInfoRequest(sid, userIds);
+        expect(response).toHaveStatus(200);
+        return await response.parse(PublicUserInfoResponseSchema);
     }
 
     startConfirmEmailRequest(sid: string | null, lang?: string): ApiRequest {

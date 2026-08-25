@@ -8,16 +8,28 @@ export interface ServerConfig {
     url: URL;
     staticFilesPath: string;
     tls?: Certificates;
+    /**
+     * When set, the server emulates the deployed game/asset bucket: `GET /latest.json`
+     * returns `{ version }` synthesized in memory, and the static files are mounted under
+     * `/<version>/...`. This lets the local build output (e.g. `client/web/dist`) be served
+     * as-is, without assembling a versioned folder and manifest on disk.
+     */
+    latestVersion?: string;
 }
 
 export class StaticFileServer extends MockServer {
     private staticFilesPath: string;
+    private latestVersion?: string;
 
     constructor(name: string, config: ServerConfig) {
         super(name, config.url, config.tls ?? CERTIFICATES);
         this.staticFilesPath = config.staticFilesPath ?? 'dist';
+        this.latestVersion = config.latestVersion;
 
         this.log(`folder: ${this.staticFilesPath}`);
+        if (this.latestVersion) {
+            this.log(`latest version: ${this.latestVersion}`);
+        }
     }
 
     protected init() {
@@ -40,7 +52,17 @@ export class StaticFileServer extends MockServer {
             next();
         }) as any);
 
-        // Serve static files
-        app.use(express.static(this.staticFilesPath) as any);
+        // Emulate the deployed bucket: synthesize the manifest and mount the build under
+        // a version prefix, so the on-disk build output can be served without repackaging.
+        if (this.latestVersion) {
+            const version = this.latestVersion;
+            app.get('/latest.json', ((_req: Request, res: Response) => {
+                res.json({ version });
+            }) as any);
+            app.use(`/${version}`, express.static(this.staticFilesPath) as any);
+        } else {
+            // Serve static files
+            app.use(express.static(this.staticFilesPath) as any);
+        }
     }
 }

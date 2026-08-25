@@ -44,8 +44,8 @@ export type LinkedIdentities = z.infer<typeof LinkedIdentitiesSchema>;
 
 function getCaptchaQuery(captcha: string | null | undefined): Record<string, string> {
     if (captcha === null) {
-        // use the "always pass" token
-        return { captcha: '1x00000000000000000000AA' };
+        // resolve offline as a pass, without contacting Cloudflare
+        return { captcha: 'skip' };
     } else if (captcha) {
         // use provided captcha
         return { captcha };

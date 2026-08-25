@@ -10,7 +10,28 @@ use axum::{
 use serde::{de::DeserializeOwned, Serialize};
 use std::borrow::Cow;
 use thiserror::Error as ThisError;
-use validator::{Validate, ValidationError, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
+
+/// Drop the `value` param the validator derive injects into every failing rule. It echoes
+/// the whole offending field (potentially large user input) back in the error response,
+/// which wastes bandwidth and leaks the input without adding diagnostic value.
+fn strip_value_params(errors: &mut ValidationErrors) {
+    for kind in errors.errors_mut().values_mut() {
+        match kind {
+            ValidationErrorsKind::Field(field_errors) => {
+                for error in field_errors {
+                    error.params.remove("value");
+                }
+            }
+            ValidationErrorsKind::Struct(nested) => strip_value_params(nested),
+            ValidationErrorsKind::List(items) => {
+                for nested in items.values_mut() {
+                    strip_value_params(nested);
+                }
+            }
+        }
+    }
+}
 
 pub trait ValidationErrorEx {
     fn with_message<N>(self, message: N) -> Self
@@ -85,9 +106,12 @@ impl From<InputError> for Problem {
                 //todo: convert it into validation error
                 Problem::bad_request(problems::INPUT_BODY).with_detail(err.body_text())
             }
-            InputError::Constraint(detail) => Problem::bad_request(problems::INPUT_VALIDATION)
-                .with_detail("Input validation failed")
-                .with_extension(detail),
+            InputError::Constraint(mut detail) => {
+                strip_value_params(&mut detail);
+                Problem::bad_request(problems::INPUT_VALIDATION)
+                    .with_detail("Input validation failed")
+                    .with_extension(detail)
+            }
             err => Problem::internal_error()
                 .with_detail(err.to_string())
                 .with_sensitive_dbg(err),
@@ -172,5 +196,72 @@ where
         data.validate()
             .map_err(|err| ErrorResponse::new(&problem_config, InputError::Constraint(err)))?;
         Ok(Self(data))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_value_params;
+    use std::collections::BTreeMap;
+    use validator::{ValidationError, ValidationErrors, ValidationErrorsKind};
+
+    fn error_with_value(code: &'static str) -> ValidationError {
+        let mut error = ValidationError::new(code);
+        error.add_param("value".into(), &vec!["a", "b", "c"]);
+        error.add_param("max".into(), &100);
+        error
+    }
+
+    fn params_of<'a>(errors: &'a ValidationErrors, field: &str) -> &'a ValidationError {
+        match errors.errors().get(field).unwrap() {
+            ValidationErrorsKind::Field(list) => &list[0],
+            _ => panic!("expected field errors"),
+        }
+    }
+
+    #[test]
+    fn strips_value_keeps_other_params_on_field_errors() {
+        let mut errors = ValidationErrors::new();
+        errors.add("user_ids", error_with_value("length"));
+
+        strip_value_params(&mut errors);
+
+        let error = params_of(&errors, "user_ids");
+        assert!(!error.params.contains_key("value"), "value must be removed");
+        assert!(error.params.contains_key("max"), "other params must be kept");
+    }
+
+    #[test]
+    fn strips_value_in_nested_struct_and_list() {
+        let mut nested = ValidationErrors::new();
+        nested.add("inner", error_with_value("length"));
+
+        let mut list_item = ValidationErrors::new();
+        list_item.add("elem", error_with_value("range"));
+        let mut list = BTreeMap::new();
+        list.insert(0usize, Box::new(list_item));
+
+        let mut errors = ValidationErrors::new();
+        errors
+            .errors_mut()
+            .insert("child".into(), ValidationErrorsKind::Struct(Box::new(nested)));
+        errors
+            .errors_mut()
+            .insert("items".into(), ValidationErrorsKind::List(list));
+
+        strip_value_params(&mut errors);
+
+        match errors.errors().get("child").unwrap() {
+            ValidationErrorsKind::Struct(nested) => {
+                assert!(!params_of(nested, "inner").params.contains_key("value"));
+            }
+            _ => panic!("expected struct"),
+        }
+        match errors.errors().get("items").unwrap() {
+            ValidationErrorsKind::List(list) => {
+                assert!(!params_of(list.get(&0).unwrap(), "elem").params.contains_key("value"));
+            }
+            _ => panic!("expected list"),
+        }
     }
 }
