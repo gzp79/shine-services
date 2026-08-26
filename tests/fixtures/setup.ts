@@ -16,13 +16,11 @@ export const expect = mergeExpects(commonExpect, responseExpect, authExpect, mai
 
 export type ServiceOptions = {
     enableRequestLogging: boolean;
-    appDomain: string;
-    serviceDomain: string;
 
     homeUrl: string;
-    linkUrl: string;
     identityUrl: string;
     builderUrl: string;
+    builderWSUrl: string;
 
     skipMockService?: boolean;
 
@@ -47,12 +45,10 @@ export type ServiceTestFixture = {
 };
 
 export const test = base.extend<ServiceTestFixture, ServiceOptions>({
-    appDomain: [undefined!, { scope: 'worker', option: true }],
-    serviceDomain: [undefined!, { scope: 'worker', option: true }],
     homeUrl: [undefined!, { scope: 'worker', option: true }],
-    linkUrl: [undefined!, { scope: 'worker', option: true }],
     identityUrl: [undefined!, { scope: 'worker', option: true }],
     builderUrl: [undefined!, { scope: 'worker', option: true }],
+    builderWSUrl: [undefined!, { scope: 'worker', option: true }],
     masterAdminKey: [undefined!, { scope: 'worker', option: true }],
     defaultRedirects: [undefined!, { scope: 'worker', option: true }],
     skipMockService: [false, { scope: 'worker', option: true }],

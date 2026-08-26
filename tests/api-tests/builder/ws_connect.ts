@@ -91,6 +91,15 @@ function wsConnectUrl(builderUrl: string): string {
     return wsUrl.toString();
 }
 
+// x-forwarded-host mirrors the endpoint authority so the builder resolves the same host whether it
+// reads the header directly (bare service) or the proxy rewrites it from the connected host.
+function wsHeaders(homeUrl: string, endpointUrl: string): WsConnectOptions {
+    return {
+        origin: new URL(homeUrl).origin,
+        extraHeaders: { 'x-forwarded-host': new URL(endpointUrl).host }
+    };
+}
+
 type WsHoldOptions = WsConnectOptions & { holdTimeoutMs?: number };
 
 function openAndWaitClose(url: string, options: WsHoldOptions): WsHoldResult {
@@ -262,57 +271,42 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         await mint.teardownCreatedSessions();
     });
 
-    test('WS connect shall reject missing Origin header', async ({ builderUrl }) => {
-        const result = await connectWs(wsConnectUrl(builderUrl), {
+    test('WS connect shall reject missing Origin header', async ({ builderWSUrl }) => {
+        const result = await connectWs(wsConnectUrl(builderWSUrl), {
             sid: user.sessionCookie,
-            extraHeaders: {
-                'x-forwarded-host': 'ws.local.scytta.com:8444'
-            }
+            extraHeaders: { 'x-forwarded-host': new URL(builderWSUrl).host }
         });
 
         expect(result).toEqual({ kind: 'http_error', status: 400 });
     });
 
-    test('WS connect shall reject disallowed Origin header', async ({ builderUrl }) => {
-        const result = await connectWs(wsConnectUrl(builderUrl), {
+    test('WS connect shall reject disallowed Origin header', async ({ builderWSUrl }) => {
+        const result = await connectWs(wsConnectUrl(builderWSUrl), {
             sid: user.sessionCookie,
             origin: 'https://example.com',
-            extraHeaders: {
-                'x-forwarded-host': 'ws.local.scytta.com:8444'
-            }
+            extraHeaders: { 'x-forwarded-host': new URL(builderWSUrl).host }
         });
 
         expect(result).toEqual({ kind: 'http_error', status: 403 });
     });
 
-    test('WS connect shall reject non-ws host even with allowed origin', async ({ builderUrl }) => {
+    test('WS connect shall reject non-ws host even with allowed origin', async ({ homeUrl, builderUrl }) => {
         const result = await connectWs(wsConnectUrl(builderUrl), {
             sid: user.sessionCookie,
-            origin: 'https://cloud.local.scytta.com:8443',
-            extraHeaders: {
-                'x-forwarded-host': 'cloud.local.scytta.com:8444'
-            }
+            ...wsHeaders(homeUrl, builderUrl)
         });
 
         expect(result).toEqual({ kind: 'http_error', status: 403 });
     });
 
-    test('WS connect shall allow configured Origin header', async ({ builderUrl }) => {
-        const result = await connectWs(wsConnectUrl(builderUrl), {
+    test('WS connect shall allow configured Origin header', async ({ homeUrl, builderWSUrl }) => {
+        const result = await connectWs(wsConnectUrl(builderWSUrl), {
             sid: user.sessionCookie,
-            origin: 'https://cloud.local.scytta.com:8443',
-            extraHeaders: {
-                'x-forwarded-host': 'ws.local.scytta.com:8444'
-            }
+            ...wsHeaders(homeUrl, builderWSUrl)
         });
 
         expect(result).toEqual({ kind: 'open' });
     });
-
-    const allowedWsHeaders = {
-        origin: 'https://cloud.local.scytta.com:8443',
-        extraHeaders: { 'x-forwarded-host': 'ws.local.scytta.com:8444' }
-    };
 
     // Auth is the primary gate: with a valid origin/host, a missing or tampered session must still
     // be rejected with 401 before any socket opens.
@@ -320,20 +314,20 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         { title: 'missing session cookie', sid: undefined },
         { title: 'tampered session cookie', sid: 'not-a-valid-signed-sid' }
     ]) {
-        test(`WS connect with ${authCase.title} shall be rejected`, async ({ builderUrl }) => {
-            const result = await connectWs(wsConnectUrl(builderUrl), {
+        test(`WS connect with ${authCase.title} shall be rejected`, async ({ homeUrl, builderWSUrl }) => {
+            const result = await connectWs(wsConnectUrl(builderWSUrl), {
                 sid: authCase.sid,
-                ...allowedWsHeaders
+                ...wsHeaders(homeUrl, builderWSUrl)
             });
 
             expect(result).toEqual({ kind: 'http_error', status: 401 });
         });
     }
 
-    test('WS chat message shall be persisted and fanned back to the sender', async ({ builderUrl }) => {
-        const session = await openChatSession(wsConnectUrl(builderUrl), {
+    test('WS chat message shall be persisted and fanned back to the sender', async ({ homeUrl, builderWSUrl }) => {
+        const session = await openChatSession(wsConnectUrl(builderWSUrl), {
             sid: user.sessionCookie,
-            ...allowedWsHeaders
+            ...wsHeaders(homeUrl, builderWSUrl)
         });
 
         try {
@@ -354,10 +348,10 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         }
     });
 
-    test('WS chat messages shall be delivered in order without duplicates', async ({ builderUrl }) => {
-        const session = await openChatSession(wsConnectUrl(builderUrl), {
+    test('WS chat messages shall be delivered in order without duplicates', async ({ homeUrl, builderWSUrl }) => {
+        const session = await openChatSession(wsConnectUrl(builderWSUrl), {
             sid: user.sessionCookie,
-            ...allowedWsHeaders
+            ...wsHeaders(homeUrl, builderWSUrl)
         });
 
         try {
@@ -384,12 +378,13 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         }
     });
 
-    test('WS chat shall fan out between two connected users in both directions', async ({ builderUrl }) => {
-        const url = wsConnectUrl(builderUrl);
+    test('WS chat shall fan out between two connected users in both directions', async ({ homeUrl, builderWSUrl }) => {
+        const url = wsConnectUrl(builderWSUrl);
+        const headers = wsHeaders(homeUrl, builderWSUrl);
         const other = await mint.createUserSession({ userId: randomUUID() });
 
-        const alice = await openChatSession(url, { sid: user.sessionCookie, ...allowedWsHeaders });
-        const bob = await openChatSession(url, { sid: other.sessionCookie, ...allowedWsHeaders });
+        const alice = await openChatSession(url, { sid: user.sessionCookie, ...headers });
+        const bob = await openChatSession(url, { sid: other.sessionCookie, ...headers });
 
         try {
             // Chat is a single global room: each user's comment is fanned out by the dispatcher to
@@ -411,15 +406,16 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         }
     });
 
-    test('WS chat shall replay recent history to a newly connected user', async ({ builderUrl }) => {
-        const url = wsConnectUrl(builderUrl);
+    test('WS chat shall replay recent history to a newly connected user', async ({ homeUrl, builderWSUrl }) => {
+        const url = wsConnectUrl(builderWSUrl);
+        const headers = wsHeaders(homeUrl, builderWSUrl);
 
         // A user sends messages, then a second user connects fresh. Because a new connection starts
         // from cursor "0", the dispatcher replays the retained room history to it.
         const tag = randomUUID();
         const texts = [`${tag} past-0`, `${tag} past-1`];
 
-        const author = await openChatSession(url, { sid: user.sessionCookie, ...allowedWsHeaders });
+        const author = await openChatSession(url, { sid: user.sessionCookie, ...headers });
         try {
             for (const text of texts) {
                 author.send(text);
@@ -428,7 +424,7 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
             await author.waitComments((c) => c.text.startsWith(tag), texts.length);
 
             const latecomer = await mint.createUserSession({ userId: randomUUID() });
-            const late = await openChatSession(url, { sid: latecomer.sessionCookie, ...allowedWsHeaders });
+            const late = await openChatSession(url, { sid: latecomer.sessionCookie, ...headers });
             try {
                 const replayed = await late.waitComments((c) => c.text.startsWith(tag), texts.length);
                 expect(replayed.map((c) => c.text)).toEqual(texts);
@@ -441,10 +437,13 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         }
     });
 
-    test('WS malformed chat frame shall be ignored without dropping the connection', async ({ builderUrl }) => {
-        const session = await openChatSession(wsConnectUrl(builderUrl), {
+    test('WS malformed chat frame shall be ignored without dropping the connection', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
+        const session = await openChatSession(wsConnectUrl(builderWSUrl), {
             sid: user.sessionCookie,
-            ...allowedWsHeaders
+            ...wsHeaders(homeUrl, builderWSUrl)
         });
 
         try {
@@ -465,21 +464,25 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         }
     });
 
-    test('WS second connection for a user shall drop the first (last connection wins)', async ({ builderUrl }) => {
-        const url = wsConnectUrl(builderUrl);
+    test('WS second connection for a user shall drop the first (last connection wins)', async ({
+        homeUrl,
+        builderWSUrl
+    }) => {
+        const url = wsConnectUrl(builderWSUrl);
+        const headers = wsHeaders(homeUrl, builderWSUrl);
 
         // Invariant 2: a user has at most one connection; a new one kills the previous. This is
         // driven by the ConnectUser command, so no interval wait is needed.
         const first = openAndWaitClose(url, {
             sid: user.sessionCookie,
-            ...allowedWsHeaders,
+            ...headers,
             holdTimeoutMs: 10_000
         });
         expect(await first.opened).toBe(true);
 
         const second = openAndWaitClose(url, {
             sid: user.sessionCookie,
-            ...allowedWsHeaders,
+            ...headers,
             holdTimeoutMs: 10_000
         });
         expect(await second.opened).toBe(true);
@@ -489,15 +492,15 @@ test.describe('Builder websocket', { tag: ['@regression'] }, () => {
         expect(firstResult.kind).toBe('closed');
     });
 
-    test('WS connection shall be dropped when session is deleted', async ({ builderUrl }) => {
-        const url = wsConnectUrl(builderUrl);
+    test('WS connection shall be dropped when session is deleted', async ({ homeUrl, builderWSUrl }) => {
+        const url = wsConnectUrl(builderWSUrl);
         const authCheckIntervalMs = 2_000;
 
         // SessionChecker runs every 2s in test config; allow several intervals
         // for detection, hub command processing, and websocket teardown.
         const closeCtx = openAndWaitClose(url, {
             sid: user.sessionCookie,
-            ...allowedWsHeaders,
+            ...wsHeaders(homeUrl, builderWSUrl),
             holdTimeoutMs: authCheckIntervalMs * 4
         });
 
