@@ -106,7 +106,7 @@ test.describe('Login with email for guest', () => {
         for (const rememberMe of [true, false, null]) {
             test(`Login (lang: ${lang}, rememberMe: ${rememberMe}) shall create a new user `, async ({
                 api,
-                appDomain,
+                homeUrl,
                 identityUrl
             }) => {
                 const targetEmailAddress = `${randomUUID()}@example.com`;
@@ -121,7 +121,7 @@ test.describe('Login with email for guest', () => {
                 await checkLoginResponse(response, api);
 
                 expect(mail).toHaveMailTo(targetEmailAddress);
-                expect(mail).toHaveMailFrom(`no-replay@${appDomain}`);
+                expect(mail).toHaveMailFrom(`no-replay@${new URL(homeUrl).hostname}`);
                 let content;
                 switch (lang) {
                     case 'hu':
@@ -570,7 +570,7 @@ test.describe('Login with email for returning user', () => {
         for (const rememberMe of [true, false, null]) {
             test(`Login (lang: ${lang}, rememberMe: ${rememberMe}) shall login the returning user`, async ({
                 api,
-                appDomain,
+                homeUrl,
                 identityUrl
             }) => {
                 const targetEmailAddress = `${randomUUID()}@example.com`;
@@ -588,7 +588,7 @@ test.describe('Login with email for returning user', () => {
                 await checkLoginResponse(response, api);
 
                 expect(mail).toHaveMailTo(targetEmailAddress);
-                expect(mail).toHaveMailFrom(`no-replay@${appDomain}`);
+                expect(mail).toHaveMailFrom(`no-replay@${new URL(homeUrl).hostname}`);
                 let content;
                 switch (lang) {
                     case 'hu':

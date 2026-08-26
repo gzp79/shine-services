@@ -52,6 +52,7 @@ services:
       - mockbox.foo:host-gateway
       - local.scytta.com:127.0.0.1
       - cloud.local.scytta.com:127.0.0.1
+      - ws.local.scytta.com:127.0.0.1
     networks:
       - shine
 

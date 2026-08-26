@@ -18,6 +18,9 @@ if (isCiPipeline) {
 const builderUrl = isCiPipeline
     ? 'https://cloud.local.scytta.com:8443/builder'
     : 'https://cloud.local.scytta.com:8444/builder';
+const builderWSUrl = isCiPipeline
+    ? 'https://ws.local.scytta.com:8443/builder'
+    : 'https://ws.local.scytta.com:8444/builder';
 
 if (enableLogging) {
     process.env.DEBUG = 'test:*';
@@ -45,13 +48,10 @@ const config: PlaywrightTestConfig<ServiceOptions> = {
             use: {
                 enableRequestLogging: enableLogging,
 
-                appDomain: 'local.scytta.com',
-                serviceDomain: 'cloud.local.scytta.com',
-
                 homeUrl: 'https://local.scytta.com:4443',
-                linkUrl: 'https://local.scytta.com:4443/link',
                 identityUrl: 'https://cloud.local.scytta.com:8443/identity',
                 builderUrl,
+                builderWSUrl,
 
                 // skipMockService: true, // to run mock services manually
 

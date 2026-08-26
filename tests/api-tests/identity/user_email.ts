@@ -3,6 +3,7 @@ import { ProblemSchema } from '$lib/api/api';
 import { getEmailLink, getEmailLinkToken } from '$lib/api/utils';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
+import { joinURL } from '$lib/utils';
 import { randomUUID } from 'crypto';
 
 async function ensureSmtpStarted(mock: MockSmtp | undefined): Promise<MockSmtp> {
@@ -61,7 +62,7 @@ test.describe('Email confirmation', () => {
         );
     });
 
-    test('Requesting email confirmation with email address shall succeed', async ({ linkUrl, api }) => {
+    test('Requesting email confirmation with email address shall succeed', async ({ homeUrl, api }) => {
         const email = randomUUID() + '@example.com';
         const user = await api.testUsers.createLinked(mockAuth, { email });
 
@@ -75,7 +76,7 @@ test.describe('Email confirmation', () => {
         expect(mail).toContainMailBody('<p>Best regards,<br/>Scytta</p>');
 
         const confirmUrl = getEmailLink(mail);
-        expect(confirmUrl).toStartWith(linkUrl);
+        expect(confirmUrl).toStartWith(joinURL(homeUrl, '/link'));
         const confirmParams = new URL(confirmUrl).searchParams;
         expect(confirmParams.get('token')).toBeString();
     });

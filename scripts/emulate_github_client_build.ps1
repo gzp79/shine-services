@@ -1,43 +1,52 @@
 $ErrorActionPreference = "Stop"
 
-$profile="release"
-#$exampleWasmFiles = "camera_follow camera_free camera_look_at camera_orbit input_drivers input_process input_multiplayer input_gesture pinch_zoom curve" -split ' '
-$exampleWasmFiles = "asset" -split ' '
-$bindgen=$true
-$opt=$false
+# Resolve the repo root from the script location so the script works regardless of the caller's cwd.
+$repoRoot = Split-Path -Parent $PSScriptRoot
 
-Write-Host "Build"
-cargo build --target=wasm32-unknown-unknown -p shine-client --profile ${profile}
+# Push-Location records the caller's directory; the finally block restores it even on error/exit.
+Push-Location $repoRoot
+try {
+    $profile="release"
+    #$exampleWasmFiles = "camera_follow camera_free camera_look_at camera_orbit input_drivers input_process input_multiplayer input_gesture pinch_zoom curve" -split ' '
+    $exampleWasmFiles = "asset" -split ' '
+    $bindgen=$true
+    $opt=$false
 
-Write-Host "Build examples"
-cargo build --target=wasm32-unknown-unknown -p shine-client --profile ${profile} --examples
+    Write-Host "Build"
+    cargo build --target=wasm32-unknown-unknown -p shine-client --profile ${profile}
 
-Write-Host "Creating latest.json"
-echo "{ ""version"": ""custom"" }" > ./dist/latest.json
-New-Item -ItemType Directory -Force -Path ./dist/custom | Out-Null
+    Write-Host "Build examples"
+    cargo build --target=wasm32-unknown-unknown -p shine-client --profile ${profile} --examples
 
-$wasmFiles = @("shine-client") + $exampleWasmFiles
-foreach ($wasmFile in $wasmFiles) {
-    Write-Host "${wasmFile}.html"
-    # replace shine-client to example.js in index.html
-    (Get-Content ./client/index.html) -replace "shine-client", "${wasmFile}" | Set-Content ./dist/custom/${wasmFile}.html
-}
+    Write-Host "Creating latest.json"
+    echo "{ ""version"": ""custom"" }" > ./dist/latest.json
+    New-Item -ItemType Directory -Force -Path ./dist/custom | Out-Null
 
-if ($bindgen) {
-    Write-Host "Pack client"
-    wasm-bindgen --no-typescript --target web --out-dir ./dist/custom .\target\wasm32-unknown-unknown\${profile}\shine-client.wasm
-    foreach ($exampleWasmFile in $exampleWasmFiles) {
-        Write-Host "Pack example" $exampleWasmFile
-        wasm-bindgen --no-typescript --target web --out-name ${exampleWasmFile} --out-dir ./dist/custom .\target\wasm32-unknown-unknown\${profile}\examples\${exampleWasmFile}.wasm
-    }
-}
-
-if ($opt) {    
+    $wasmFiles = @("shine-client") + $exampleWasmFiles
     foreach ($wasmFile in $wasmFiles) {
-        Write-Host "Opt $wasmFile"
-        wasm-opt -Oz --strip-debug -o ./dist/custom/${wasmFile}_opt.wasm ./dist/custom/${wasmFile}_bg.wasm
-        del ./dist/custom/${wasmFile}_bg.wasm
-        move ./dist/custom/${wasmFile}_opt.wasm ./dist/custom/${wasmFile}_bg.wasm
+        Write-Host "${wasmFile}.html"
+        # replace shine-client to example.js in index.html
+        (Get-Content ./client/index.html) -replace "shine-client", "${wasmFile}" | Set-Content ./dist/custom/${wasmFile}.html
+    }
+
+    if ($bindgen) {
+        Write-Host "Pack client"
+        wasm-bindgen --no-typescript --target web --out-dir ./dist/custom .\target\wasm32-unknown-unknown\${profile}\shine-client.wasm
+        foreach ($exampleWasmFile in $exampleWasmFiles) {
+            Write-Host "Pack example" $exampleWasmFile
+            wasm-bindgen --no-typescript --target web --out-name ${exampleWasmFile} --out-dir ./dist/custom .\target\wasm32-unknown-unknown\${profile}\examples\${exampleWasmFile}.wasm
+        }
+    }
+
+    if ($opt) {
+        foreach ($wasmFile in $wasmFiles) {
+            Write-Host "Opt $wasmFile"
+            wasm-opt -Oz --strip-debug -o ./dist/custom/${wasmFile}_opt.wasm ./dist/custom/${wasmFile}_bg.wasm
+            del ./dist/custom/${wasmFile}_bg.wasm
+            move ./dist/custom/${wasmFile}_opt.wasm ./dist/custom/${wasmFile}_bg.wasm
+        }
     }
 }
-
+finally {
+    Pop-Location
+}

@@ -16,11 +16,15 @@
       "Bash(pnpm lint:build)"
     ]
   },
+  "extraKnownMarketplaces": {
+    "ai-tools": { "source": { "source": "github", "repo": "gzp79/ai-tools" } }
+  },
   "enableAllProjectMcpServers": true,
   "enabledPlugins": {
     "superpowers@claude-plugins-official": true,
     "rust-analyzer-lsp@claude-plugins-official": true,
-    "skill-creator@claude-plugins-official": true
+    "skill-creator@claude-plugins-official": true,
+    "shine-skills@ai-tools": true
   },
   "hooks": {
     "PreToolUse": [

@@ -122,6 +122,9 @@ COPY ./services/identity/server_config.test.json ./
 WORKDIR /app/services/builder
 COPY ./services/builder/server_config.test.json ./
 
+# Some build time validation 
+RUN nginx -t -c /etc/nginx/nginx.conf
+
 ARG ENVIRONMENT=test
 ENV ENVIRONMENT=$ENVIRONMENT
 
@@ -139,6 +142,9 @@ COPY ./services/identity/server_config.prod.json ./
 
 WORKDIR /app/services/builder
 COPY ./services/builder/server_config.prod.json ./
+
+# Some build time validation 
+RUN nginx -t -c /etc/nginx/nginx.conf
 
 ARG ENVIRONMENT=prod
 ENV ENVIRONMENT=$ENVIRONMENT
