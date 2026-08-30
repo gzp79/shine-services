@@ -1,5 +1,16 @@
 import GUI from 'lil-gui';
 
+// lil-gui renders dropdowns as native <select>; their option popup inherits a dim gray that is
+// unreadable on the dark panel. Force a readable option foreground/background once per document.
+let optionStylesInjected = false;
+function injectSelectOptionStyles(): void {
+    if (optionStylesInjected) return;
+    optionStylesInjected = true;
+    const style = document.createElement('style');
+    style.textContent = '.lil-gui select option { background: #1a1a1a; color: #ebebeb; }';
+    document.head.appendChild(style);
+}
+
 export class DebugPanel {
     private readonly gui: GUI;
     private readonly scopes = new Map<string, GUI>();
@@ -7,6 +18,7 @@ export class DebugPanel {
     private readonly gameContainer: HTMLElement;
 
     constructor(container: HTMLElement, title = 'Debug') {
+        injectSelectOptionStyles();
         this.gameContainer = container;
         this.gui = new GUI({ title });
         this.gui.domElement.style.position = 'absolute';
@@ -91,11 +103,17 @@ export class DebugPanel {
         this.scopeValues.clear();
     }
 
-    private handleMouseDown = (_ev: MouseEvent): void => {
+    private static isEditable(target: EventTarget | null): boolean {
+        return target instanceof Element && !!target.closest('input, select, textarea, [contenteditable]');
+    }
+
+    private handleMouseDown = (ev: MouseEvent): void => {
+        if (DebugPanel.isEditable(ev.target)) return;
         setTimeout(() => this.gameContainer.focus(), 0);
     };
 
-    private handleClick = (): void => {
+    private handleClick = (ev: MouseEvent): void => {
+        if (DebugPanel.isEditable(ev.target)) return;
         this.gameContainer.focus();
     };
 }
