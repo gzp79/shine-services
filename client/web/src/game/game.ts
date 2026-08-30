@@ -83,6 +83,10 @@ export class Game implements Application {
         tick();
     }
 
+    setInputEnabled(enabled: boolean): void {
+        this.inputManager.enabled = enabled;
+    }
+
     dispose(): void {
         cancelAnimationFrame(this.animationId);
         this.inputManager.dispose();

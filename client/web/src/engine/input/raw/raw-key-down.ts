@@ -4,11 +4,20 @@
 export class RawKeyDown {
     onDown?: () => void;
 
+    private _enabled = true;
+
     constructor(
         private readonly key: string,
         private readonly target: EventTarget = window
     ) {
         this.target.addEventListener('keydown', this.handleKeyDown);
+    }
+
+    get enabled(): boolean {
+        return this._enabled;
+    }
+    set enabled(value: boolean) {
+        this._enabled = value;
     }
 
     dispose(): void {
@@ -17,6 +26,7 @@ export class RawKeyDown {
 
     private handleKeyDown = (ev: Event): void => {
         if (!(ev instanceof KeyboardEvent)) return;
+        if (!this._enabled) return;
         if (ev.repeat) return;
         if (ev.key.toLowerCase() === this.key.toLowerCase()) {
             ev.preventDefault();

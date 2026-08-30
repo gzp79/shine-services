@@ -30,6 +30,10 @@ export class DebugSchema extends InputSchema {
         this._isIdle = true;
     }
 
+    protected applyEnabled(value: boolean): void {
+        this.tab.enabled = value;
+    }
+
     dispose(): void {
         this.tab.dispose();
     }

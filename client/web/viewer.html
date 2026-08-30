@@ -44,23 +44,21 @@
     </head>
     <body>
         <div id="nav">
-            <select id="scene-select">
-                <option value="">Game</option>
-                <option value="hex-mesh">Hex Mesh</option>
-                <option value="cdt">CDT</option>
-                <option value="input-events">Input Events</option>
-                <option value="trilinear">Trilinear</option>
-                <option value="world-neighbors">World Neighbors</option>
-                <option value="tile-chunk">Tile Chunk</option>
-                <option value="instanced-color-mesh">Instanced Color Mesh</option>
-                <option value="asset-viewer">Asset Viewer</option>
-            </select>
+            <select id="scene-select"></select>
         </div>
         <div id="app"></div>
         <script type="module">
-            import { createRoutedScene } from './shine-web.js';
+            import { createRoutedScene, listScenes } from './shine-web.js';
 
             const select = document.getElementById('scene-select');
+
+            // Build the scene list from the bundle so new experiments need no HTML edits
+            for (const { id, title } of listScenes()) {
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = title;
+                select.appendChild(option);
+            }
 
             // Update select based on hash
             function updateSelect() {

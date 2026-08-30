@@ -485,4 +485,40 @@ describe('DesktopSchema', () => {
             expect(lastCall[0]).toBe(0);
         });
     });
+
+    describe('Suspend gate', () => {
+        it('disabled → w keydown neither emits onMoveRate nor calls preventDefault', () => {
+            schema.enabled = false;
+
+            const keyDownW = new KeyboardEvent('keydown', { key: 'w', cancelable: true });
+            window.dispatchEvent(keyDownW);
+
+            expect(handler.onMoveRate).not.toHaveBeenCalled();
+            expect(keyDownW.defaultPrevented).toBe(false);
+        });
+
+        it('keyup for a key held before disabling still clears movement', () => {
+            const keyDownW = new KeyboardEvent('keydown', { key: 'w' });
+            window.dispatchEvent(keyDownW);
+            expect(handler.onMoveRate).toHaveBeenLastCalledWith(0, 1, false);
+
+            // Disabling cancels the held axis (movement cleared to 0).
+            schema.enabled = false;
+            expect(handler.onMoveRate).toHaveBeenLastCalledWith(0, 0, false);
+
+            // The eventual keyup must still be processed so nothing gets stuck.
+            const keyUpW = new KeyboardEvent('keyup', { key: 'w' });
+            expect(() => window.dispatchEvent(keyUpW)).not.toThrow();
+        });
+
+        it('re-enabling restores normal handling', () => {
+            schema.enabled = false;
+            schema.enabled = true;
+
+            const keyDownW = new KeyboardEvent('keydown', { key: 'w' });
+            window.dispatchEvent(keyDownW);
+
+            expect(handler.onMoveRate).toHaveBeenCalledWith(0, 1, false);
+        });
+    });
 });

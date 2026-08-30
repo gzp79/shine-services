@@ -124,6 +124,12 @@ export class GestureSchema extends InputSchema {
         this.cancelGesture();
     }
 
+    protected applyEnabled(value: boolean): void {
+        this.toggle.enabled = value;
+        this.pointer.enabled = value;
+        this.touch.enabled = value;
+    }
+
     dispose(): void {
         this.toggle.dispose();
         this.pointer.dispose();

@@ -112,6 +112,10 @@ export class InputControl extends Experiment {
         this.renderContext.addOverlay(this.strokeLine);
     }
 
+    setInputEnabled(enabled: boolean): void {
+        this.inputManager.enabled = enabled;
+    }
+
     private addLogEntry(eventName: string, data: string) {
         this.eventLog.unshift({ timestamp: performance.now(), eventName, data });
         if (this.eventLog.length > this.maxLogEntries) this.eventLog.pop();

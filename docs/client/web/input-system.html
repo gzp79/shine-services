@@ -288,6 +288,18 @@
 <hr>
 
 <!-- ══════════════════════════════════════════ -->
+<h2>Suspend gate</h2>
+<p>An overlay (e.g. a chat dialog) rendered over the running canvas must reclaim keyboard input — otherwise game keys (<code>w a s d q e r f</code>, Shift) bubble to <code>window</code>, the raw key handlers <code>preventDefault()</code>, and typed characters never reach the overlay's <code>&lt;input&gt;</code>. The host suspends the game while an overlay is open.</p>
+
+<p>Every <code>InputSchema</code> exposes an <code>enabled</code> setter. Setting it <code>false</code> (1) calls <code>cancel()</code> to gracefully terminate in-progress actions (held WASD axis, in-progress drag) — no stuck camera movement or <code>pointerId</code> — and (2) fans <code>enabled=false</code> out to every raw input it owns via <code>applyEnabled()</code>. Each raw input's <code>keydown</code> early-returns <strong>before</strong> <code>preventDefault()</code>, so keystrokes reach the overlay again. <code>InputManager.enabled</code> fans out to <em>all</em> schemas (not just the active one) so touch/gesture stop too. The setter is idempotent; default is enabled.</p>
+
+<p><strong>keyup is never gated.</strong> A key held before suspend must still clear its state on release — suspend-time cleanup is <code>cancel()</code>'s job; the raw <code>enabled=false</code> only short-circuits <code>keydown</code>. <code>RawKeyDown</code> (schema mode toggles: Tab, Space) also carries an <code>enabled</code> flag so mode toggles are gated.</p>
+
+<p>The gate is threaded <code>createScene → Game.setInputEnabled → InputManager.enabled → schema.enabled → raw.enabled</code>. <code>createScene</code> returns an optional <code>setInputEnabled?(enabled)</code>; hosts call it defensively, so an older bundle without the method still runs (just ungated).</p>
+
+<hr>
+
+<!-- ══════════════════════════════════════════ -->
 <h2>File map</h2>
 
 <table>
@@ -435,6 +447,31 @@
         <li><span class="test-num">42</span>Touch input while desktop is mid-gesture → blocked (not routed) <span class="tag t-block">block</span></li>
         <li><span class="test-num">43</span>Touch input after desktop goes idle → routed, onSchemaChanged('touch') emitted <span class="tag t-allow">allow</span></li>
         <li><span class="test-num">44</span>Active schema still routed after blocked input from other schema <span class="tag t-allow">allow</span></li>
+      </ul>
+    </div>
+
+  </div>
+</details>
+
+<details data-agent="test">
+  <summary>Suspend Gate Tests</summary>
+  <div class="details-body">
+
+    <div class="test-section">
+      <h3>InputManager</h3>
+      <ul class="test-list">
+        <li><span class="test-num">45</span>enabled = false cancels the active schema (held WASD → onMoveRate(0,0)) <span class="tag t-state">state</span></li>
+        <li><span class="test-num">46</span>keydown while disabled → no callback and defaultPrevented stays false <span class="tag t-block">block</span></li>
+        <li><span class="test-num">47</span>enabled = true restores raw callbacks <span class="tag t-allow">allow</span></li>
+      </ul>
+    </div>
+
+    <div class="test-section">
+      <h3>DesktopSchema</h3>
+      <ul class="test-list">
+        <li><span class="test-num">48</span>disabled → w keydown neither emits onMoveRate nor calls preventDefault <span class="tag t-block">block</span></li>
+        <li><span class="test-num">49</span>keyup for a key held before disabling still clears movement <span class="tag t-state">state</span></li>
+        <li><span class="test-num">50</span>re-enabling restores normal handling <span class="tag t-allow">allow</span></li>
       </ul>
     </div>
 
