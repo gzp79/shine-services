@@ -229,4 +229,36 @@ describe('InputManager', () => {
             expect(handler.onMoveTo).toHaveBeenCalled();
         });
     });
+
+    describe('Suspend gate', () => {
+        it('enabled = false cancels the active schema (held WASD movement stops)', () => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w' }));
+            expect(handler.onMoveRate).toHaveBeenLastCalledWith(0, 1, false);
+
+            manager.enabled = false;
+
+            expect(handler.onMoveRate).toHaveBeenLastCalledWith(0, 0, false);
+        });
+
+        it('a game keydown while disabled does not call preventDefault', () => {
+            manager.enabled = false;
+            vi.clearAllMocks();
+
+            const keyDownW = new KeyboardEvent('keydown', { key: 'w', cancelable: true });
+            window.dispatchEvent(keyDownW);
+
+            expect(handler.onMoveRate).not.toHaveBeenCalled();
+            expect(keyDownW.defaultPrevented).toBe(false);
+        });
+
+        it('enabled = true restores raw callbacks', () => {
+            manager.enabled = false;
+            manager.enabled = true;
+            vi.clearAllMocks();
+
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w' }));
+
+            expect(handler.onMoveRate).toHaveBeenCalledWith(0, 1, false);
+        });
+    });
 });

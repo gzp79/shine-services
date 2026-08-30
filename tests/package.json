@@ -38,8 +38,8 @@
         "@types/node": "^24.13.2",
         "@types/nodemailer": "^7.0.12",
         "@types/smtp-server": "^3.5.13",
-        "@types/ws": "^8.5.13",
         "@types/uuid-validate": "^0.0.3",
+        "@types/ws": "^8.5.13",
         "eslint": "^9.39.4",
         "eslint-config-prettier": "^10.1.8",
         "husky": "^9.1.7",
@@ -57,6 +57,7 @@
         "body-parser": "^2.3.0",
         "cors": "^2.8.6",
         "debug": "^4.4.3",
+        "dns2": "^3.1.1",
         "express": "5.1.0",
         "express-serve-static-core": "^0.1.1",
         "express-validator": "^7.3.2",
@@ -66,9 +67,9 @@
         "playwright": "^1.61.1",
         "redis": "^5.9.0",
         "smtp-server": "^3.19.1",
-        "ws": "^8.18.0",
         "ts-jose": "^6.2.3",
         "uuid-validate": "^0.0.3",
+        "ws": "^8.18.0",
         "zod": "^4.4.3"
     }
 }

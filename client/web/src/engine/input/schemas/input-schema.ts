@@ -4,12 +4,23 @@ export abstract class InputSchema {
     onActivated?: (schema: InputSchema) => void;
 
     private _handler?: InputHandler;
+    private _enabled = true;
 
     constructor(
         readonly name: string,
         handler?: InputHandler
     ) {
         this._handler = handler;
+    }
+
+    get enabled(): boolean {
+        return this._enabled;
+    }
+    set enabled(value: boolean) {
+        if (this._enabled === value) return;
+        this._enabled = value;
+        if (!value) this.cancel();
+        this.applyEnabled(value);
     }
 
     get handler(): InputHandler | undefined {
@@ -34,4 +45,7 @@ export abstract class InputSchema {
     abstract state(): Record<string, string>;
     abstract cancel(): void;
     abstract dispose(): void;
+
+    // Fan the enabled state out to every raw input the schema owns.
+    protected abstract applyEnabled(value: boolean): void;
 }

@@ -31,6 +31,10 @@ export class InputManager {
         return this._activeSchema;
     }
 
+    set enabled(value: boolean) {
+        for (const schema of this.schemas) schema.enabled = value;
+    }
+
     private onActivated(schema: InputSchema): void {
         if (this._activeSchema && !this._activeSchema.isIdle) return;
 

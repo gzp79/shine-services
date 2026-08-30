@@ -1,4 +1,5 @@
 import { getEmailLink } from '$lib/api/utils';
+import { DnsServer } from '$lib/mocks/dns_server';
 import MockSmtp from '$lib/mocks/mock_smtp';
 import OAuth2MockServer from '$lib/mocks/oauth2';
 import OpenIDMockServer from '$lib/mocks/openid';
@@ -42,6 +43,13 @@ async function main() {
 
     const mock_oidc = new OpenIDMockServer();
     await mock_oidc.start();
+
+    const mock_dns = new DnsServer({
+        zone: 'local.scytta.com',
+        upstream: '8.8.8.8',
+        port: 53
+    });
+    await mock_dns.start();
 }
 
 main()
@@ -50,4 +58,5 @@ main()
     })
     .catch((e) => {
         console.error(e);
+        process.exit(1);
     });

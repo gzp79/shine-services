@@ -86,6 +86,11 @@ export class TouchSchema extends InputSchema {
         this.twoFingerGesture.cancel();
     }
 
+    protected applyEnabled(value: boolean): void {
+        this.singleTouch.enabled = value;
+        this.twoFingerGesture.enabled = value;
+    }
+
     dispose(): void {
         this.singleTouch.dispose();
         this.twoFingerGesture.dispose();

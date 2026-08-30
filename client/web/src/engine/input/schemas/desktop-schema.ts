@@ -181,6 +181,16 @@ export class DesktopSchema extends InputSchema {
         this.rightPointer.cancel();
     }
 
+    protected applyEnabled(value: boolean): void {
+        this.wasd.enabled = value;
+        this.qe.enabled = value;
+        this.rf.enabled = value;
+        this.leftPointer.enabled = value;
+        this.rightPointer.enabled = value;
+        this.wheel.enabled = value;
+        this.pointerTracker.enabled = value;
+    }
+
     dispose(): void {
         this.container.removeEventListener('contextmenu', this.handleContextMenu);
         this.wasd.dispose();

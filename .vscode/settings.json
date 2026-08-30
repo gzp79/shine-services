@@ -12,7 +12,7 @@
   "rust-analyzer.cargo.buildScripts.enable": false,
   "rust-analyzer.procMacro.enable": false,
   "playwright.env": {
-    "CI": "true"
+    "CI": "false"
   },
   "cSpell.customDictionaries": {
     "project-words": {
