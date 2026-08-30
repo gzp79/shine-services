@@ -89,11 +89,14 @@ export class DnsServer {
             };
 
             server.on('error', (error, transport) => {
+                const wasSettled = settled;
                 settle(() => {
                     void server.close().catch(() => {});
                     reject(new Error(`DNS ${transport} bind failed on port ${this.port}: ${error.message}`));
                 });
-                if (settled) this.log(`runtime error (${transport}): ${error.message}`);
+                // Only errors arriving after startup settled are genuine runtime errors; the first
+                // error is the bind failure already reported via reject().
+                if (wasSettled) this.log(`runtime error (${transport}): ${error.message}`);
             });
 
             server
@@ -117,6 +120,12 @@ export class DnsServer {
         this.log('Server stopped.');
     }
 
+    /** Dispatches a response, swallowing send rejections (e.g. a client that closed mid-reply) so
+     *  they never surface as an unhandled rejection in this long-lived server. */
+    private reply(send: (response: dns2.Packet | Buffer) => Promise<Buffer>, response: dns2.Packet | Buffer): void {
+        void send(response).catch((error: Error) => this.log(`send failed: ${error.message}`));
+    }
+
     private inZone(name: string): boolean {
         const lower = name.toLowerCase();
         return lower === this.zone || lower.endsWith(`.${this.zone}`);
@@ -128,7 +137,7 @@ export class DnsServer {
     ): Promise<void> {
         const [question] = request.questions;
         if (!question) {
-            void send(Packet.createResponseFromRequest(request));
+            this.reply(send, Packet.createResponseFromRequest(request));
             return;
         }
 
@@ -154,24 +163,26 @@ export class DnsServer {
                 // zone upstream, where it would resolve to the wrong address.
                 this.log(`${name} ${typeName} -> NOERROR (empty)`);
             }
-            void send(response);
+            this.reply(send, response);
             return;
         }
 
         try {
             const answer = await this.forward(request);
             this.log(`${name} ${typeName} -> upstream (${this.upstream})`);
-            void send(answer);
+            this.reply(send, answer);
         } catch (error) {
             const response = Packet.createResponseFromRequest(request);
             response.header.rcode = Packet.RCODE.SERVFAIL;
             this.log(`${name} ${typeName} -> upstream failed: ${(error as Error).message}`);
-            void send(response);
+            this.reply(send, response);
         }
     }
 
-    /** Relays the raw query bytes to upstream and returns the raw response, preserving every
-     *  record type (HTTPS/SVCB, EDNS, ...) exactly as the upstream produced them. */
+    /** Re-serializes the parsed query to upstream and returns the raw upstream response bytes
+     *  untouched, so every record type in the answer (HTTPS/SVCB, EDNS, ...) reaches the client
+     *  exactly as upstream produced it. Note: the re-serialized outbound query may drop EDNS/OPT
+     *  options the client sent (dns2 does not round-trip them) — acceptable for a dev resolver. */
     private forward(request: dns2.Packet): Promise<Buffer> {
         return new Promise<Buffer>((resolve, reject) => {
             const socket = dgram.createSocket('udp4');

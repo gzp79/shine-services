@@ -68,6 +68,10 @@ export abstract class Experiment implements Application {
 
     protected onUpdate(_deltaTime: number): void {}
 
+    setInputEnabled(enabled: boolean): void {
+        if (this.controls) this.controls.enabled = enabled;
+    }
+
     start(): void {
         this.lastTime = performance.now();
         const tick = () => {

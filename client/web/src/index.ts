@@ -6,6 +6,11 @@ import { createContent, scenes } from './scene-registry';
 
 export type { Application } from './engine/application';
 
+export interface SceneHandle {
+    dispose(): void;
+    setInputEnabled(enabled: boolean): void;
+}
+
 /** Scenes available in this bundle, for consumers to build navigation. */
 export function listScenes(): { id: string; title: string }[] {
     return scenes.map(({ id, title }) => ({ id, title }));
@@ -18,10 +23,7 @@ async function createSharedRenderer(): Promise<WebGPURenderer> {
     return renderer;
 }
 
-export async function createScene(
-    container: HTMLElement,
-    id: string
-): Promise<{ dispose(): void; setInputEnabled?: (enabled: boolean) => void }> {
+export async function createScene(container: HTMLElement, id: string): Promise<SceneHandle> {
     const renderer = await createSharedRenderer();
     container.appendChild(renderer.domElement);
     const content = createContent(id, container, renderer);
@@ -37,7 +39,7 @@ export async function createScene(
     };
 }
 
-export async function createRoutedScene(container: HTMLElement): Promise<{ dispose(): void }> {
+export async function createRoutedScene(container: HTMLElement): Promise<SceneHandle> {
     const renderer = await createSharedRenderer();
     container.appendChild(renderer.domElement);
 
@@ -59,6 +61,7 @@ export async function createRoutedScene(container: HTMLElement): Promise<{ dispo
             current?.dispose();
             renderer.dispose();
             renderer.domElement.remove();
-        }
+        },
+        setInputEnabled: (enabled) => current?.setInputEnabled?.(enabled)
     };
 }
