@@ -72,10 +72,6 @@ jobs:
         working-directory: client/web
         run: pnpm test
 
-      - name: Copy viewer
-        working-directory: client/web
-        run: cp viewer.html dist/viewer.html
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -107,9 +103,6 @@ jobs:
             --endpoint-url=${S3_BUCKET_LINK} \
             --cache-control "public, max-age=31536000, immutable" \
             --checksum-algorithm CRC32
-
-      - name: Viewer URL
-        run: echo "[viewer.html](https://game.scytta.com/${{ github.sha }}/viewer.html)" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload latest.json
         env:

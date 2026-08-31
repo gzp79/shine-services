@@ -1,5 +1,6 @@
 import { generate_cdt } from '#wasm';
 import { WebGPURenderer } from 'three/webgpu';
+import type { AssetCatalogBuilder } from '../../engine/assets/catalog';
 import { span } from '../../engine/utils';
 import type { WasmCdtMesh } from '../../wasm-types/shine_game';
 import { Experiment } from '../experiment';
@@ -14,8 +15,8 @@ export class Cdt extends Experiment {
     private activeTriangleIndex = -1;
     private readonly onKeyDown: (e: KeyboardEvent) => void;
 
-    constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer, { title: 'CDT' });
+    constructor(container: HTMLElement, renderer: WebGPURenderer, catalogBuilder: AssetCatalogBuilder) {
+        super(container, renderer, { title: 'CDT' }, catalogBuilder);
 
         this.camera.near = 1;
         this.camera.far = 50000;

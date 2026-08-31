@@ -1,4 +1,5 @@
 import { WebGPURenderer } from 'three/webgpu';
+import type { AssetCatalogBuilder } from '../../engine/assets/catalog';
 import { StrokeLineOverlay } from '../../engine/compositor/stroke-line-overlay';
 import type { InputHandler, Point } from '../../engine/input/input-handler';
 import { InputManager } from '../../engine/input/input-manager';
@@ -26,8 +27,8 @@ export class InputControl extends Experiment {
     private _interact = 'idle';
     private _pinch = 'idle';
 
-    constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer, { title: 'Input Control', addOrbitCamera: false });
+    constructor(container: HTMLElement, renderer: WebGPURenderer, catalogBuilder: AssetCatalogBuilder) {
+        super(container, renderer, { title: 'Input Control', addOrbitCamera: false }, catalogBuilder);
 
         this.logDiv = document.createElement('div');
         this.logDiv.style.cssText = `

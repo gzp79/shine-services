@@ -2,9 +2,8 @@ import init from '#wasm';
 import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
 import type { Application } from './engine/application';
+import type { AssetCatalogBuilder } from './engine/assets/catalog';
 import { createContent, scenes } from './scene-registry';
-
-export type { Application } from './engine/application';
 
 export interface SceneHandle {
     dispose(): void;
@@ -23,10 +22,14 @@ async function createSharedRenderer(): Promise<WebGPURenderer> {
     return renderer;
 }
 
-export async function createScene(container: HTMLElement, id: string): Promise<SceneHandle> {
+export async function createScene(
+    container: HTMLElement,
+    id: string,
+    catalogBuilder: AssetCatalogBuilder
+): Promise<SceneHandle> {
     const renderer = await createSharedRenderer();
     container.appendChild(renderer.domElement);
-    const content = createContent(id, container, renderer);
+    const content = createContent(id, container, renderer, catalogBuilder);
     content.start();
 
     return {
@@ -39,7 +42,10 @@ export async function createScene(container: HTMLElement, id: string): Promise<S
     };
 }
 
-export async function createRoutedScene(container: HTMLElement): Promise<SceneHandle> {
+export async function createRoutedScene(
+    container: HTMLElement,
+    catalogBuilder: AssetCatalogBuilder
+): Promise<SceneHandle> {
     const renderer = await createSharedRenderer();
     container.appendChild(renderer.domElement);
 
@@ -49,7 +55,7 @@ export async function createRoutedScene(container: HTMLElement): Promise<SceneHa
         const hash = window.location.hash.replace('#', '');
         current?.dispose();
         current = null;
-        current = createContent(hash, container, renderer);
+        current = createContent(hash, container, renderer, catalogBuilder);
         current.start();
     }
 

@@ -3,6 +3,7 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mix, positionLocal, uniform } from 'three/tsl';
 import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
+import type { AssetCatalogBuilder } from '../../engine/assets/catalog';
 import { ManagedMesh } from '../../engine/resources/managed-mesh';
 import { disposeObject3D } from '../../engine/resources/ownership';
 import { ControlBox } from '../../engine/utils';
@@ -14,8 +15,8 @@ export class Trilinear extends Experiment {
     private readonly controlBox: ControlBox;
     private readonly fileInput: HTMLInputElement;
 
-    constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer, { title: 'Trilinear' });
+    constructor(container: HTMLElement, renderer: WebGPURenderer, catalogBuilder: AssetCatalogBuilder) {
+        super(container, renderer, { title: 'Trilinear' }, catalogBuilder);
 
         this.fileInput = document.createElement('input');
         this.fileInput.type = 'file';

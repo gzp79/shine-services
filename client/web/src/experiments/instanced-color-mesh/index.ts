@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
+import type { AssetCatalogBuilder } from '../../engine/assets/catalog';
 import { own, share } from '../../engine/resources/ownership';
 import { InstancedColorMesh } from '../../engine/scene/instancing/instanced-color-mesh';
 import { Experiment } from '../experiment';
@@ -80,8 +81,8 @@ export class InstancedColorMeshExp extends Experiment {
     private readonly params = { a: 5, b: 5, c: 5 };
     private readonly counts = [0, 0, 0];
 
-    constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer, { title: 'Instanced Color Mesh' });
+    constructor(container: HTMLElement, renderer: WebGPURenderer, catalogBuilder: AssetCatalogBuilder) {
+        super(container, renderer, { title: 'Instanced Color Mesh' }, catalogBuilder);
 
         this.camera.position.set(0, -18, 12);
         this.camera.lookAt(0, 0, 0);

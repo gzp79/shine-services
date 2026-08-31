@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { WebGPURenderer } from 'three/webgpu';
 import type { Application } from '../engine/application';
+import { AssetStore } from '../engine/assets/asset-store';
+import type { AssetCatalogBuilder } from '../engine/assets/catalog';
 import { DebugPanel } from '../engine/compositor/debug-panel';
 import { RenderContext } from '../engine/compositor/render-context';
 import { disposeObject3D } from '../engine/resources/ownership';
@@ -16,6 +18,7 @@ export abstract class Experiment implements Application {
     readonly camera: THREE.PerspectiveCamera;
     readonly controls?: OrbitControls;
     readonly debugPanel: DebugPanel;
+    protected readonly assets: AssetStore;
 
     get scene(): THREE.Scene {
         return this.renderContext.scene;
@@ -29,9 +32,15 @@ export abstract class Experiment implements Application {
     private lastTime = 0;
     private readonly _resizeObserver: ResizeObserver;
 
-    constructor(container: HTMLElement, renderer: WebGPURenderer, options: ExperimentOption) {
+    constructor(
+        container: HTMLElement,
+        renderer: WebGPURenderer,
+        options: ExperimentOption,
+        catalogBuilder: AssetCatalogBuilder
+    ) {
         const addOrbitCamera = options.addOrbitCamera ?? true;
 
+        this.assets = new AssetStore(catalogBuilder);
         this.renderContext = new RenderContext(container, renderer, { setupScene: false, showMetrics: true });
         this.debugPanel = new DebugPanel(container, options.title);
 

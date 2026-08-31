@@ -1,6 +1,7 @@
 import { generate_mesh } from '#wasm';
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
+import type { AssetCatalogBuilder } from '../../engine/assets/catalog';
 import { ManagedMesh } from '../../engine/resources/managed-mesh';
 import { span } from '../../engine/utils';
 import { Experiment } from '../experiment';
@@ -13,8 +14,8 @@ export class HexMesh extends Experiment {
     private debugCircle: ManagedMesh | null = null;
     private axesGroup: THREE.Group | null = null;
 
-    constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer, { title: 'Hex Mesh' });
+    constructor(container: HTMLElement, renderer: WebGPURenderer, catalogBuilder: AssetCatalogBuilder) {
+        super(container, renderer, { title: 'Hex Mesh' }, catalogBuilder);
         createControls(
             this.debugPanel,
             this.params,

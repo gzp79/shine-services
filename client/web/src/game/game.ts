@@ -1,5 +1,7 @@
 import { WebGPURenderer } from 'three/webgpu';
 import type { Application } from '../engine/application';
+import { AssetStore } from '../engine/assets/asset-store';
+import type { AssetCatalogBuilder } from '../engine/assets/catalog';
 import { DebugPanel } from '../engine/compositor/debug-panel';
 import { RenderContext } from '../engine/compositor/render-context';
 import { InputManager } from '../engine/input/input-manager';
@@ -24,13 +26,15 @@ export class Game implements Application {
     private readonly worldCursor: WorldCursor;
     private readonly debugPanel: DebugPanel;
     private readonly world: World;
+    private readonly assets: AssetStore;
     private readonly systems: GameSystem[] = [];
     private animationId = 0;
     private lastTime = 0;
 
     constructor(
         private readonly container: HTMLElement,
-        renderer: WebGPURenderer
+        renderer: WebGPURenderer,
+        catalogBuilder: AssetCatalogBuilder
     ) {
         if (!container.hasAttribute('tabindex')) {
             container.tabIndex = 0;
@@ -46,6 +50,7 @@ export class Game implements Application {
         this.camera = new RtsCamera(this.events);
         this.worldCursor = new WorldCursor(this.renderContext.scene, this.events);
         this.world = new World(this.events, this.debugPanel);
+        this.assets = new AssetStore(catalogBuilder);
 
         this.inputState = new InputState();
         this.inputManager = new InputManager(this.inputState, container);
@@ -96,6 +101,7 @@ export class Game implements Application {
             system.dispose();
         }
         this.world.dispose();
+        this.assets.dispose();
         this.renderContext.dispose();
         this.debugPanel.dispose();
     }
