@@ -62,9 +62,14 @@ export class AssetSourcePicker {
     // Repopulates the dropdown options in place (OptionController.options keeps the controller and
     // its position); does not fire onChange.
     private refresh(): void {
-        const fileEntry = this.fileName ? [this.fileName] : [];
+        const fileEntry = this.fileName ? [this.fileLabel(this.fileName)] : [];
         this.proxy.asset = this.current;
         this.ctrl.options([NONE, FILE, ...fileEntry, ...this.names]);
+    }
+
+    // Displayed as "file: <name>" in the dropdown to distinguish it from catalog assets.
+    private fileLabel(name: string): string {
+        return `${FILE}: ${name}`;
     }
 
     private onChange(name: string): void {
@@ -75,7 +80,7 @@ export class AssetSourcePicker {
             return;
         }
         this.current = name;
-        if (name === this.fileName) {
+        if (this.fileName && name === this.fileLabel(this.fileName)) {
             this.handlers.onFile(this.fileUrl!, this.fileName);
             return;
         }
@@ -95,7 +100,7 @@ export class AssetSourcePicker {
         this.clearFile();
         this.fileUrl = URL.createObjectURL(file);
         this.fileName = file.name;
-        this.current = file.name;
+        this.current = this.fileLabel(file.name);
         this.refresh();
         this.handlers.onFile(this.fileUrl, this.fileName);
     }
