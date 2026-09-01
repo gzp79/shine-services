@@ -2,10 +2,11 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mix, positionLocal, uniform } from 'three/tsl';
-import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
+import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { ManagedMesh } from '../../engine/resources/managed-mesh';
 import { disposeObject3D } from '../../engine/resources/ownership';
-import { ControlBox } from '../../engine/utils';
+import type { SceneContext } from '../../engine/scene';
+import { ControlBox, fireAndForget } from '../../engine/utils';
 import { Experiment } from '../experiment';
 
 export class Trilinear extends Experiment {
@@ -14,18 +15,19 @@ export class Trilinear extends Experiment {
     private readonly controlBox: ControlBox;
     private readonly fileInput: HTMLInputElement;
 
-    constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer, { title: 'Trilinear' });
+    constructor(context: SceneContext) {
+        super(context, { title: 'Trilinear' });
+        const { container } = context;
 
         this.fileInput = document.createElement('input');
         this.fileInput.type = 'file';
         this.fileInput.accept = '.fbx, .glb';
         this.fileInput.style.display = 'none';
         container.appendChild(this.fileInput);
-        this.fileInput.addEventListener('change', async (e) => {
+        this.fileInput.addEventListener('change', (e) => {
             const file = (e.target as HTMLInputElement).files?.[0];
             if (!file) return;
-            await this.createMeshFromFile(file);
+            fireAndForget(this.createMeshFromFile(file));
         });
 
         const gui = this.debugPanel.root();

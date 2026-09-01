@@ -1,6 +1,6 @@
 import { generate_world_neighbors } from '#wasm';
 import * as THREE from 'three';
-import { WebGPURenderer } from 'three/webgpu';
+import type { SceneContext } from '../../engine/scene';
 import { Experiment } from '../experiment';
 import { createControls, defaultParams } from './controls';
 import { buildChunkHexagons, buildEdgeMeshes, buildInteriorMeshes, buildVertexMeshes } from './mesh-builder';
@@ -11,8 +11,8 @@ export class WorldNeighbors extends Experiment {
     private interiorGroup: ReturnType<typeof buildInteriorMeshes> | null = null;
     private edgeGroup: ReturnType<typeof buildEdgeMeshes> | null = null;
     private vertexGroup: ReturnType<typeof buildVertexMeshes> | null = null;
-    constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer, { title: 'World Neighbors' });
+    constructor(context: SceneContext) {
+        super(context, { title: 'World Neighbors' });
 
         this.camera.far = 10000;
         this.camera.updateProjectionMatrix();

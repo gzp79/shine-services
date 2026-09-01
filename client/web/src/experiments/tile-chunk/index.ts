@@ -1,14 +1,18 @@
 import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { color } from 'three/tsl';
-import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
+import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { own, share } from '../../engine/resources/ownership';
+import type { SceneContext } from '../../engine/scene';
 import { InstancedTileSet } from '../../engine/scene/instancing/instanced-tile-set';
 import type { TileDistortion } from '../../engine/scene/instancing/instanced-tile-set';
 import { WireMesh } from '../../engine/scene/wire-mesh';
+import { fireAndForget } from '../../engine/utils';
+import { AssetSourcePicker } from '../asset-source-picker';
 import { Experiment } from '../experiment';
 
 const TILE_HEIGHT = 80;
+const INSTANCE_COUNT_HINT = 2048;
 
 function buildProceduralTileSet(parent: THREE.Object3D, instanceCountHint: number): InstancedTileSet {
     const sphereGeo = new THREE.SphereGeometry(0.4, 16, 12);
@@ -91,7 +95,7 @@ export class TileChunk extends Experiment {
     private readonly world: WasmWorld;
     private tileNode: InstancedTileSet;
     private readonly cellsGroup: THREE.Group;
-    private readonly fileInput: HTMLInputElement;
+    private readonly assetPicker: AssetSourcePicker;
     private readonly params = { q: 0, r: 0 };
     private readonly displayParams = { showCells: true };
     private readonly fillParams = { variant: 0 };
@@ -107,8 +111,8 @@ export class TileChunk extends Experiment {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private variantVisibleFolder: any = null;
 
-    constructor(container: HTMLElement, renderer: WebGPURenderer) {
-        super(container, renderer, { title: 'Tile Chunk' });
+    constructor(context: SceneContext) {
+        super(context, { title: 'Tile Chunk' });
 
         this.camera.far = 8000;
         this.camera.updateProjectionMatrix();
@@ -117,16 +121,9 @@ export class TileChunk extends Experiment {
         if (this.controls) this.controls.update();
 
         this.world = new WasmWorld();
-        this.tileNode = buildProceduralTileSet(this.scene, 2048);
+        this.tileNode = buildProceduralTileSet(this.scene, INSTANCE_COUNT_HINT);
         this.cellsGroup = new THREE.Group();
         this.scene.add(this.cellsGroup);
-
-        this.fileInput = document.createElement('input');
-        this.fileInput.type = 'file';
-        this.fileInput.accept = '.glb';
-        this.fileInput.style.display = 'none';
-        container.appendChild(this.fileInput);
-        this.fileInput.addEventListener('change', (e) => void this.onGltfFileChange(e));
 
         const gui = this.debugPanel.root();
         const qCtrl = gui
@@ -157,16 +154,12 @@ export class TileChunk extends Experiment {
         gui.add(this.displayParams, 'showCells')
             .name('Show Cells')
             .onChange((v: boolean) => (v ? this.cellWire?.show() : this.cellWire?.hide()));
-        gui.add({ loadGltf: () => this.fileInput.click() }, 'loadGltf').name('Load glTF...');
-        gui.add(
-            {
-                clearGltf: () => {
-                    this.fileInput.value = '';
-                    this.replaceTileSet(buildProceduralTileSet(this.scene, 2048));
-                }
-            },
-            'clearGltf'
-        ).name('Clear glTF');
+
+        this.assetPicker = new AssetSourcePicker(gui, this.assets, {
+            onNone: () => this.replaceTileSet(buildProceduralTileSet(this.scene, INSTANCE_COUNT_HINT)),
+            onAsset: (name) => fireAndForget(this.loadAsset(name)),
+            onFile: (url) => fireAndForget(this.loadFile(url))
+        });
 
         this.fillVariantCtrl = gui
             .add(this.fillParams, 'variant')
@@ -181,16 +174,24 @@ export class TileChunk extends Experiment {
         this.regenerate();
     }
 
-    private async onGltfFileChange(e: Event): Promise<void> {
-        const file = (e.target as HTMLInputElement).files?.[0];
-        if (!file) {
-            this.replaceTileSet(buildProceduralTileSet(this.scene, 2048));
-            return;
-        }
+    init(): void {
+        this.context.runtime.spawn(this.assetPicker.populate());
+    }
+
+    private async loadAsset(name: string): Promise<void> {
         try {
-            const url = URL.createObjectURL(file);
-            const next = await InstancedTileSet.fromGltf(this.scene, url, { instanceCountHint: 2048 });
-            URL.revokeObjectURL(url);
+            const modelSet = await this.assets.loadModelSet(name);
+            this.replaceTileSet(
+                InstancedTileSet.fromModelSet(this.scene, modelSet, { instanceCountHint: INSTANCE_COUNT_HINT })
+            );
+        } catch (err) {
+            console.error(`[TileChunk] failed to load asset "${name}":`, err);
+        }
+    }
+
+    private async loadFile(url: string): Promise<void> {
+        try {
+            const next = await InstancedTileSet.fromGltf(this.scene, url, { instanceCountHint: INSTANCE_COUNT_HINT });
             this.replaceTileSet(next);
         } catch (err) {
             console.error('Failed to load glTF:', err);
@@ -330,7 +331,7 @@ export class TileChunk extends Experiment {
     }
 
     dispose(): void {
-        this.fileInput.remove();
+        this.assetPicker.dispose();
         if (this.loadedChunk) {
             this.world.remove_chunk(this.loadedChunk.q, this.loadedChunk.r);
         }

@@ -36,7 +36,8 @@ const config: ReturnType<typeof ts.config> = [
                 }
             ],
             '@stylistic/quotes': ['error', 'single', { avoidEscape: true }],
-            '@typescript-eslint/no-floating-promises': ['error']
+            '@typescript-eslint/no-floating-promises': ['error'],
+            '@typescript-eslint/no-misused-promises': ['error']
         }
     },
     {

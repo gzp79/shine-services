@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { float, mat4, mix, positionLocal, vec3, vec4 } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
+import { type ModelSet, toModelSet } from '../../assets/model-set';
 import { loadGltf } from '../../loaders/gltf-loader';
-import { own } from '../../resources/ownership';
 import {
     type InstanceBufferLayout,
     InstanceData,
@@ -24,6 +24,16 @@ export type TileDistortion = Float32Array; // 24 floats
 
 const CP_COUNT = 8;
 
+function toVariants(modelSet: ModelSet): VariantDef[] {
+    return modelSet.models.map((m) => ({
+        parts: m.parts.map((p) => ({
+            baseMaterial: p.material,
+            indexStart: p.indexStart,
+            indexEnd: p.indexEnd
+        }))
+    }));
+}
+
 export class InstancedTileSet extends InstancedMultiMesh {
     private readonly _scratch = new Float32Array(40);
 
@@ -36,15 +46,26 @@ export class InstancedTileSet extends InstancedMultiMesh {
         url: string,
         params?: Omit<InstancedMultiMeshParams, 'geometry' | 'variants'>
     ): Promise<InstancedTileSet> {
-        const asset = await loadGltf(url);
-        const variants: VariantDef[] = asset.meshes.map((m) => ({
-            parts: m.submeshes.map((s) => ({
-                baseMaterial: own(s.material),
-                indexStart: s.indexStart,
-                indexEnd: s.indexEnd
-            }))
-        }));
-        return new InstancedTileSet(parent, { geometry: own(asset.geometry), variants, ...params });
+        const modelSet = toModelSet(await loadGltf(url), 'owned');
+        return new InstancedTileSet(parent, {
+            geometry: modelSet.geometry,
+            variants: toVariants(modelSet),
+            ...params
+        });
+    }
+
+    // Builds from a store-loaded ModelSet. Its geometry and materials are already shared —
+    // the store owns them, so this tile set must not dispose them.
+    static fromModelSet(
+        parent: THREE.Object3D,
+        modelSet: ModelSet,
+        params?: Omit<InstancedMultiMeshParams, 'geometry' | 'variants'>
+    ): InstancedTileSet {
+        return new InstancedTileSet(parent, {
+            geometry: modelSet.geometry,
+            variants: toVariants(modelSet),
+            ...params
+        });
     }
 
     // Instance data: 40 floats = 10 texels
