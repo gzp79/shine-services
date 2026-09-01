@@ -1,13 +1,14 @@
 import { WebGPURenderer } from 'three/webgpu';
 import type { Scene } from './scene';
 
+type SceneFactory = (runtime: SceneRuntime) => Scene;
+
 function toError(value: unknown): Error {
     return value instanceof Error ? value : new Error(String(value));
 }
 
-// Owns the frame loop, the fatal-error boundary and teardown for a running Scene. A single owner
-// so the contract is uniform across game and experiments: init failures reject createScene (see
-// index.ts), runtime faults self-dispose then notify the host via onError.
+// Owns scene construction, the frame loop, the fatal-error boundary and teardown. Startup faults
+// self-dispose, notify the host and rethrow; live async and frame faults self-dispose and notify.
 export class SceneRuntime {
     private scene: Scene | null = null;
     private animationId = 0;
@@ -19,16 +20,22 @@ export class SceneRuntime {
         private readonly onError?: (error: Error) => void
     ) {}
 
-    // Drives a scene's frame loop, replacing any currently-running one (routed navigation). The
-    // first frame is scheduled async, so every loop fault is a runtime fault (onError), never a
-    // createScene rejection. A synchronous throw from init propagates to the caller instead.
-    run(scene: Scene): void {
+    // Constructs and drives a scene, replacing any currently-running one (routed navigation).
+    // Construction and init faults clean up through the fatal path and rethrow to reject startup.
+    run(createScene: SceneFactory): void {
         if (this.disposed) return;
         this.scene?.dispose();
-        this.scene = scene;
-        scene.init?.(this);
-        this.lastTime = performance.now();
-        this.animationId = requestAnimationFrame(this.loop);
+        this.scene = null;
+        try {
+            this.scene = createScene(this);
+            this.scene.init?.();
+            this.lastTime = performance.now();
+            this.animationId = requestAnimationFrame(this.loop);
+        } catch (error) {
+            const fatal = toError(error);
+            this.reportFatal(fatal);
+            throw fatal;
+        }
     }
 
     // Launches detached async work; a rejection becomes a fatal error. The single blessed way to

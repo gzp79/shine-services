@@ -1,9 +1,8 @@
-import { WebGPURenderer } from 'three/webgpu';
-import type { AssetCatalogBuilder } from '../../engine/assets/catalog';
 import { StrokeLineOverlay } from '../../engine/compositor/stroke-line-overlay';
 import type { InputHandler, Point } from '../../engine/input/input-handler';
 import { InputManager } from '../../engine/input/input-manager';
 import { GestureSchema } from '../../engine/input/schemas/gesture-schema';
+import type { SceneContext } from '../../engine/scene';
 import { Experiment } from '../experiment';
 
 interface EventLogEntry {
@@ -27,8 +26,9 @@ export class InputControl extends Experiment {
     private _interact = 'idle';
     private _pinch = 'idle';
 
-    constructor(container: HTMLElement, renderer: WebGPURenderer, catalogBuilder: AssetCatalogBuilder) {
-        super(container, renderer, { title: 'Input Control', addOrbitCamera: false }, catalogBuilder);
+    constructor(context: SceneContext) {
+        super(context, { title: 'Input Control', addOrbitCamera: false });
+        const { container } = context;
 
         this.logDiv = document.createElement('div');
         this.logDiv.style.cssText = `

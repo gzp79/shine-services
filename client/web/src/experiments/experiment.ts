@@ -2,11 +2,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { WebGPURenderer } from 'three/webgpu';
 import { AssetStore } from '../engine/assets/asset-store';
-import type { AssetCatalogBuilder } from '../engine/assets/catalog';
 import { DebugPanel } from '../engine/compositor/debug-panel';
 import { RenderContext } from '../engine/compositor/render-context';
 import { disposeObject3D } from '../engine/resources/ownership';
-import type { Scene } from '../engine/scene';
+import type { Scene, SceneContext } from '../engine/scene';
 
 export type ExperimentOption = {
     title: string;
@@ -31,11 +30,10 @@ export abstract class Experiment implements Scene {
     private readonly _resizeObserver: ResizeObserver;
 
     constructor(
-        container: HTMLElement,
-        renderer: WebGPURenderer,
-        options: ExperimentOption,
-        catalogBuilder: AssetCatalogBuilder
+        protected readonly context: SceneContext,
+        options: ExperimentOption
     ) {
+        const { container, renderer, catalogBuilder } = context;
         const addOrbitCamera = options.addOrbitCamera ?? true;
 
         this.assets = new AssetStore(catalogBuilder);

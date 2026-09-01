@@ -45,11 +45,7 @@ export class AssetSourcePicker {
     }
 
     async populate(): Promise<void> {
-        try {
-            this.names = (await this.store.list()).map((a) => a.name);
-        } catch (err) {
-            console.error('[AssetSourcePicker] failed to list assets:', err);
-        }
+        this.names = (await this.store.list()).map((a) => a.name);
         this.refresh();
     }
 

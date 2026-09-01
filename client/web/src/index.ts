@@ -10,8 +10,8 @@ export interface SceneHandle {
     setInputEnabled(enabled: boolean): void;
 }
 
-// Reports a fatal fault after the scene is live. The bundle has already released the scene by the
-// time this fires; the host swaps in its own error UI. Init failures reject createScene instead.
+// Reports a fatal fault after the bundle releases the scene. Synchronous startup faults also reject
+// createScene after invoking this callback; live async and frame faults only use the callback.
 export type SceneErrorHandler = (error: Error) => void;
 
 /** Scenes available in this bundle, for consumers to build navigation. */
@@ -41,7 +41,7 @@ export async function createScene(
     const runtime = new SceneRuntime(renderer, onError);
     try {
         container.appendChild(renderer.domElement);
-        runtime.run(createContent(id, container, renderer, catalogBuilder));
+        runtime.run((runtime) => createContent(id, { container, renderer, runtime, catalogBuilder }));
     } catch (error) {
         runtime.dispose();
         throw error;
@@ -59,7 +59,7 @@ export async function createRoutedScene(
 
     function navigate(): void {
         const hash = window.location.hash.replace('#', '');
-        runtime.run(createContent(hash, container, renderer, catalogBuilder));
+        runtime.run((runtime) => createContent(hash, { container, renderer, runtime, catalogBuilder }));
     }
 
     try {

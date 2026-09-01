@@ -1,11 +1,9 @@
-import { WebGPURenderer } from 'three/webgpu';
 import { AssetStore } from '../engine/assets/asset-store';
-import type { AssetCatalogBuilder } from '../engine/assets/catalog';
 import { DebugPanel } from '../engine/compositor/debug-panel';
 import { RenderContext } from '../engine/compositor/render-context';
 import { InputManager } from '../engine/input/input-manager';
 import { InputState } from '../engine/input/input-state';
-import type { Scene } from '../engine/scene';
+import type { Scene, SceneContext } from '../engine/scene';
 import { RtsCamera } from './avatar/rts-camera';
 import { WorldCursor } from './avatar/world-cursor';
 import type { GameSystem } from './game-system';
@@ -29,11 +27,8 @@ export class Game implements Scene {
     private readonly assets: AssetStore;
     private readonly systems: GameSystem[] = [];
 
-    constructor(
-        private readonly container: HTMLElement,
-        renderer: WebGPURenderer,
-        catalogBuilder: AssetCatalogBuilder
-    ) {
+    constructor(context: SceneContext) {
+        const { container, renderer, catalogBuilder } = context;
         if (!container.hasAttribute('tabindex')) {
             container.tabIndex = 0;
         }

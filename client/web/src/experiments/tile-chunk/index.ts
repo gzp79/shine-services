@@ -1,9 +1,9 @@
 import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { color } from 'three/tsl';
-import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
-import type { AssetCatalogBuilder } from '../../engine/assets/catalog';
+import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { own, share } from '../../engine/resources/ownership';
+import type { SceneContext } from '../../engine/scene';
 import { InstancedTileSet } from '../../engine/scene/instancing/instanced-tile-set';
 import type { TileDistortion } from '../../engine/scene/instancing/instanced-tile-set';
 import { WireMesh } from '../../engine/scene/wire-mesh';
@@ -111,8 +111,8 @@ export class TileChunk extends Experiment {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private variantVisibleFolder: any = null;
 
-    constructor(container: HTMLElement, renderer: WebGPURenderer, catalogBuilder: AssetCatalogBuilder) {
-        super(container, renderer, { title: 'Tile Chunk' }, catalogBuilder);
+    constructor(context: SceneContext) {
+        super(context, { title: 'Tile Chunk' });
 
         this.camera.far = 8000;
         this.camera.updateProjectionMatrix();
@@ -171,9 +171,11 @@ export class TileChunk extends Experiment {
 
         this.rebuildVariantVisibilityFolder();
 
-        void this.assetPicker.populate();
-
         this.regenerate();
+    }
+
+    init(): void {
+        this.context.runtime.spawn(this.assetPicker.populate());
     }
 
     private async loadAsset(name: string): Promise<void> {

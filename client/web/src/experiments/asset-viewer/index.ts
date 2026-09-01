@@ -1,7 +1,6 @@
 import * as THREE from 'three';
-import { WebGPURenderer } from 'three/webgpu';
-import type { AssetCatalogBuilder } from '../../engine/assets/catalog';
 import { type ModelSet } from '../../engine/assets/model-set';
+import type { SceneContext } from '../../engine/scene';
 import { fireAndForget } from '../../engine/utils';
 import { AssetSourcePicker } from '../asset-source-picker';
 import { Experiment } from '../experiment';
@@ -14,15 +13,18 @@ export class AssetViewer extends Experiment {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private meshCtrl: any = null;
 
-    constructor(container: HTMLElement, renderer: WebGPURenderer, catalogBuilder: AssetCatalogBuilder) {
-        super(container, renderer, { title: 'Asset Viewer' }, catalogBuilder);
+    constructor(context: SceneContext) {
+        super(context, { title: 'Asset Viewer' });
 
         this.assetPicker = new AssetSourcePicker(this.debugPanel.root(), this.assets, {
             onNone: () => this.clearModel(),
             onAsset: (name) => fireAndForget(this.loadAsset(name)),
             onFile: (url) => fireAndForget(this.loadFile(url))
         });
-        fireAndForget(this.assetPicker.populate());
+    }
+
+    init(): void {
+        this.context.runtime.spawn(this.assetPicker.populate());
     }
 
     private async loadFile(url: string): Promise<void> {
