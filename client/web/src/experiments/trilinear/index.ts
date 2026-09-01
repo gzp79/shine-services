@@ -6,7 +6,7 @@ import { MeshStandardNodeMaterial, WebGPURenderer } from 'three/webgpu';
 import type { AssetCatalogBuilder } from '../../engine/assets/catalog';
 import { ManagedMesh } from '../../engine/resources/managed-mesh';
 import { disposeObject3D } from '../../engine/resources/ownership';
-import { ControlBox } from '../../engine/utils';
+import { ControlBox, fireAndForget } from '../../engine/utils';
 import { Experiment } from '../experiment';
 
 export class Trilinear extends Experiment {
@@ -23,10 +23,10 @@ export class Trilinear extends Experiment {
         this.fileInput.accept = '.fbx, .glb';
         this.fileInput.style.display = 'none';
         container.appendChild(this.fileInput);
-        this.fileInput.addEventListener('change', async (e) => {
+        this.fileInput.addEventListener('change', (e) => {
             const file = (e.target as HTMLInputElement).files?.[0];
             if (!file) return;
-            await this.createMeshFromFile(file);
+            fireAndForget(this.createMeshFromFile(file));
         });
 
         const gui = this.debugPanel.root();

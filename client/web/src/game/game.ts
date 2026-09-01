@@ -1,11 +1,11 @@
 import { WebGPURenderer } from 'three/webgpu';
-import type { Application } from '../engine/application';
 import { AssetStore } from '../engine/assets/asset-store';
 import type { AssetCatalogBuilder } from '../engine/assets/catalog';
 import { DebugPanel } from '../engine/compositor/debug-panel';
 import { RenderContext } from '../engine/compositor/render-context';
 import { InputManager } from '../engine/input/input-manager';
 import { InputState } from '../engine/input/input-state';
+import type { Scene } from '../engine/scene';
 import { RtsCamera } from './avatar/rts-camera';
 import { WorldCursor } from './avatar/world-cursor';
 import type { GameSystem } from './game-system';
@@ -17,7 +17,7 @@ import { SelectionSystem } from './systems/selection-system';
 import { WorldReferenceSystem } from './systems/world-reference-system';
 import { World } from './world/world';
 
-export class Game implements Application {
+export class Game implements Scene {
     private readonly events: EventTarget;
     private readonly renderContext: RenderContext;
     private readonly inputManager: InputManager;
@@ -28,8 +28,6 @@ export class Game implements Application {
     private readonly world: World;
     private readonly assets: AssetStore;
     private readonly systems: GameSystem[] = [];
-    private animationId = 0;
-    private lastTime = 0;
 
     constructor(
         private readonly container: HTMLElement,
@@ -73,19 +71,11 @@ export class Game implements Application {
         this.renderContext.scene.add(this.world.group);
     }
 
-    start(): void {
-        this.lastTime = performance.now();
-        const tick = () => {
-            const now = performance.now();
-            const dt = (now - this.lastTime) / 1000;
-            this.lastTime = now;
-            for (const system of this.systems) {
-                system.update(dt);
-            }
-            this.renderContext.render(this.camera.camera, dt);
-            this.animationId = requestAnimationFrame(tick);
-        };
-        tick();
+    frame(dt: number): void {
+        for (const system of this.systems) {
+            system.update(dt);
+        }
+        this.renderContext.render(this.camera.camera, dt);
     }
 
     setInputEnabled(enabled: boolean): void {
@@ -93,7 +83,6 @@ export class Game implements Application {
     }
 
     dispose(): void {
-        cancelAnimationFrame(this.animationId);
         this.inputManager.dispose();
         this.camera.dispose();
         this.worldCursor.dispose();

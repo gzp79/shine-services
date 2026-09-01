@@ -1,6 +1,6 @@
 import { WebGPURenderer } from 'three/webgpu';
-import type { Application } from './engine/application';
 import type { AssetCatalogBuilder } from './engine/assets/catalog';
+import type { Scene } from './engine/scene';
 import { AssetViewer } from './experiments/asset-viewer/index';
 import { Cdt } from './experiments/cdt/index';
 import { HexMesh } from './experiments/hex-mesh/index';
@@ -14,7 +14,7 @@ import { Game } from './game/game';
 export interface SceneEntry {
     id: string; // '' = the shipped game
     title: string;
-    create: (container: HTMLElement, renderer: WebGPURenderer, catalogBuilder: AssetCatalogBuilder) => Application;
+    create: (container: HTMLElement, renderer: WebGPURenderer, catalogBuilder: AssetCatalogBuilder) => Scene;
 }
 
 // Single source of truth for selectable scenes. Add an experiment with one entry.
@@ -41,7 +41,7 @@ export function createContent(
     container: HTMLElement,
     renderer: WebGPURenderer,
     catalogBuilder: AssetCatalogBuilder
-): Application {
+): Scene {
     const entry = sceneById.get(id) ?? sceneById.get('')!;
     return entry.create(container, renderer, catalogBuilder);
 }

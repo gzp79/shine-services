@@ -1,19 +1,19 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { WebGPURenderer } from 'three/webgpu';
-import type { Application } from '../engine/application';
 import { AssetStore } from '../engine/assets/asset-store';
 import type { AssetCatalogBuilder } from '../engine/assets/catalog';
 import { DebugPanel } from '../engine/compositor/debug-panel';
 import { RenderContext } from '../engine/compositor/render-context';
 import { disposeObject3D } from '../engine/resources/ownership';
+import type { Scene } from '../engine/scene';
 
 export type ExperimentOption = {
     title: string;
     addOrbitCamera?: boolean;
 };
 
-export abstract class Experiment implements Application {
+export abstract class Experiment implements Scene {
     readonly renderContext: RenderContext;
     readonly camera: THREE.PerspectiveCamera;
     readonly controls?: OrbitControls;
@@ -28,8 +28,6 @@ export abstract class Experiment implements Application {
         return this.renderContext.renderer;
     }
 
-    private animationId = 0;
-    private lastTime = 0;
     private readonly _resizeObserver: ResizeObserver;
 
     constructor(
@@ -81,22 +79,13 @@ export abstract class Experiment implements Application {
         if (this.controls) this.controls.enabled = enabled;
     }
 
-    start(): void {
-        this.lastTime = performance.now();
-        const tick = () => {
-            const now = performance.now();
-            const dt = (now - this.lastTime) / 1000;
-            this.lastTime = now;
-            this.onUpdate(dt);
-            this.controls?.update();
-            this.renderContext.render(this.camera, dt);
-            this.animationId = requestAnimationFrame(tick);
-        };
-        tick();
+    frame(dt: number): void {
+        this.onUpdate(dt);
+        this.controls?.update();
+        this.renderContext.render(this.camera, dt);
     }
 
     dispose(): void {
-        cancelAnimationFrame(this.animationId);
         this._resizeObserver.disconnect();
         this.debugPanel.dispose();
         this.controls?.dispose();

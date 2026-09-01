@@ -7,6 +7,7 @@ import { own, share } from '../../engine/resources/ownership';
 import { InstancedTileSet } from '../../engine/scene/instancing/instanced-tile-set';
 import type { TileDistortion } from '../../engine/scene/instancing/instanced-tile-set';
 import { WireMesh } from '../../engine/scene/wire-mesh';
+import { fireAndForget } from '../../engine/utils';
 import { AssetSourcePicker } from '../asset-source-picker';
 import { Experiment } from '../experiment';
 
@@ -156,8 +157,8 @@ export class TileChunk extends Experiment {
 
         this.assetPicker = new AssetSourcePicker(gui, this.assets, {
             onNone: () => this.replaceTileSet(buildProceduralTileSet(this.scene, INSTANCE_COUNT_HINT)),
-            onAsset: (name) => void this.loadAsset(name),
-            onFile: (url) => void this.loadFile(url)
+            onAsset: (name) => fireAndForget(this.loadAsset(name)),
+            onFile: (url) => fireAndForget(this.loadFile(url))
         });
 
         this.fillVariantCtrl = gui

@@ -35,4 +35,17 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 const container = document.getElementById('app')!;
-void createRoutedScene(container, buildDefaultCatalog);
+
+// Standalone dev host, standing in for a real embedder: a rejection means the scene failed to
+// start, onError means it died after starting. Both land here; a real host would render its own UI.
+function showFatal(error: unknown): void {
+    console.error('[shine-web] scene error:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    container.replaceChildren();
+    const box = document.createElement('div');
+    box.textContent = `Something went wrong: ${message}`;
+    box.style.padding = '1rem';
+    container.appendChild(box);
+}
+
+void createRoutedScene(container, buildDefaultCatalog, showFatal).catch(showFatal);
