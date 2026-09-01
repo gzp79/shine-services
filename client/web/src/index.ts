@@ -2,6 +2,7 @@ import init from '#wasm';
 import wasmUrl from '#wasm-bin';
 import { WebGPURenderer } from 'three/webgpu';
 import type { AssetCatalogBuilder } from './engine/assets/catalog';
+import { RendererUnavailableError, hasRenderBackend } from './engine/compositor/render-backend';
 import { SceneRuntime } from './engine/scene-runtime';
 import { createContent, scenes } from './scene-registry';
 
@@ -20,6 +21,7 @@ export function listScenes(): { id: string; title: string }[] {
 }
 
 async function createSharedRenderer(): Promise<WebGPURenderer> {
+    if (!(await hasRenderBackend())) throw new RendererUnavailableError();
     const renderer = new WebGPURenderer({ antialias: true, forceWebGL: false, powerPreference: 'high-performance' });
     try {
         await renderer.init();

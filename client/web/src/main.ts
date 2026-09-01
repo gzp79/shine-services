@@ -45,6 +45,7 @@ function showFatal(error: unknown): void {
     const box = document.createElement('div');
     box.textContent = `Something went wrong: ${message}`;
     box.style.padding = '1rem';
+    box.style.whiteSpace = 'pre-line';
     container.appendChild(box);
 }
 
