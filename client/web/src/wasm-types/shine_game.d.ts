@@ -15,11 +15,11 @@ export class CornerCellsHandle {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
+    readonly cell_ids: Uint32Array;
     readonly indices: Uint32Array;
     readonly ranges: Uint32Array;
-    readonly sites: Uint32Array;
     readonly tile_distortions: Float32Array;
-    readonly tiles: Uint32Array;
+    readonly tile_ids: Uint32Array;
     readonly vertices: Float32Array;
 }
 
@@ -31,11 +31,11 @@ export class EdgeCellsHandle {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
+    readonly cell_ids: Uint32Array;
     readonly indices: Uint32Array;
     readonly ranges: Uint32Array;
-    readonly sites: Uint32Array;
     readonly tile_distortions: Float32Array;
-    readonly tiles: Uint32Array;
+    readonly tile_ids: Uint32Array;
     readonly vertices: Float32Array;
 }
 
@@ -47,11 +47,11 @@ export class InnerCellsHandle {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
+    readonly cell_ids: Uint32Array;
     readonly indices: Uint32Array;
     readonly ranges: Uint32Array;
-    readonly sites: Uint32Array;
     readonly tile_distortions: Float32Array;
-    readonly tiles: Uint32Array;
+    readonly tile_ids: Uint32Array;
     readonly vertices: Float32Array;
 }
 
@@ -238,24 +238,24 @@ export interface InitOutput {
     readonly wiredpolygonmeshhandle_wire_ranges: (a: number) => any;
     readonly __wbg_cornercellshandle_free: (a: number, b: number) => void;
     readonly __wbg_edgecellshandle_free: (a: number, b: number) => void;
+    readonly cornercellshandle_cell_ids: (a: number) => any;
     readonly cornercellshandle_indices: (a: number) => any;
     readonly cornercellshandle_ranges: (a: number) => any;
-    readonly cornercellshandle_sites: (a: number) => any;
     readonly cornercellshandle_tile_distortions: (a: number) => any;
-    readonly cornercellshandle_tiles: (a: number) => any;
+    readonly cornercellshandle_tile_ids: (a: number) => any;
     readonly cornercellshandle_vertices: (a: number) => any;
+    readonly edgecellshandle_cell_ids: (a: number) => any;
     readonly edgecellshandle_indices: (a: number) => any;
     readonly edgecellshandle_ranges: (a: number) => any;
-    readonly edgecellshandle_sites: (a: number) => any;
     readonly edgecellshandle_tile_distortions: (a: number) => any;
-    readonly edgecellshandle_tiles: (a: number) => any;
+    readonly edgecellshandle_tile_ids: (a: number) => any;
     readonly edgecellshandle_vertices: (a: number) => any;
     readonly innercellshandle_vertices: (a: number) => any;
-    readonly innercellshandle_tiles: (a: number) => any;
+    readonly innercellshandle_tile_ids: (a: number) => any;
     readonly innercellshandle_tile_distortions: (a: number) => any;
-    readonly innercellshandle_sites: (a: number) => any;
     readonly innercellshandle_ranges: (a: number) => any;
     readonly innercellshandle_indices: (a: number) => any;
+    readonly innercellshandle_cell_ids: (a: number) => any;
     readonly __wbg_innercellshandle_free: (a: number, b: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_exn_store: (a: number) => void;

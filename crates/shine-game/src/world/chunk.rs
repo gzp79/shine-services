@@ -80,8 +80,8 @@ impl Chunk {
 
         let mut indices = Vec::with_capacity(site_count * 4); // 4 quads per vertex on average
         let mut ranges = Vec::with_capacity(site_count * 2);
-        let mut sites = Vec::with_capacity(site_count);
-        let mut tiles = Vec::with_capacity(tile_count);
+        let mut cell_ids = Vec::with_capacity(site_count);
+        let mut tile_ids = Vec::with_capacity(tile_count);
         let mut tile_distortions = Vec::with_capacity(tile_count * 8);
 
         let mut vertices = Vec::with_capacity(tile_count * 2);
@@ -92,7 +92,7 @@ impl Chunk {
                 quad_map.insert(qi, (vertices.len() / 2) as u32);
                 vertices.push(center.x);
                 vertices.push(center.y);
-                tiles.push(qi.into_index() as u32);
+                tile_ids.push(qi.into_index() as u32);
                 for &qv in self.mesh.quad_vertices(qi) {
                     tile_distortions.push(self.mesh[qv].position.x);
                     tile_distortions.push(self.mesh[qv].position.y);
@@ -106,7 +106,7 @@ impl Chunk {
             }
 
             ranges.push(indices.len() as u32);
-            sites.push(vi.into_index() as u32);
+            cell_ids.push(vi.into_index() as u32);
 
             for qv in self.mesh.vertex_ring_ccw(vi) {
                 indices.push(*quad_map.get(&qv.quad).unwrap());
@@ -119,8 +119,8 @@ impl Chunk {
             vertices,
             indices,
             ranges,
-            sites,
-            tiles,
+            cell_ids,
+            tile_ids,
             tile_distortions,
         }
     }

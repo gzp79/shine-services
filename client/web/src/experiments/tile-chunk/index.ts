@@ -246,7 +246,7 @@ export class TileChunk extends Experiment {
         this.loadedChunk = { q, r };
 
         const cells = this.world.inner_cells(q, r)!;
-        const tileCount = cells.tiles.length;
+        const tileCount = cells.tile_ids.length;
         const tileDistortions = new Float32Array(cells.tile_distortions);
         const cellVertices = new Float32Array(cells.vertices);
         const cellIndices = new Uint32Array(cells.indices);
