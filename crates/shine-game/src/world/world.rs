@@ -101,6 +101,7 @@ impl World {
         let mut cell_ids = Vec::with_capacity(site_count * 2);
         let mut tile_ids = Vec::new();
         let mut tile_distortions = Vec::new();
+        let mut tile_corners = Vec::new();
 
         // map from QuadIndex to index in vertices
         let mut index_map = HashMap::new();
@@ -126,6 +127,7 @@ impl World {
                     idx
                 });
                 indices.push(index);
+                tile_corners.push(owner.mesh.quad_local_vertex(qi, vi_owner).unwrap().into());
             }
             for qi in neighbor.mesh.boundary_dual_vertices(vi_neighbor) {
                 let index = *neighbor_index_map.entry(qi).or_insert_with(|| {
@@ -142,6 +144,7 @@ impl World {
                     idx
                 });
                 indices.push(index);
+                tile_corners.push(neighbor.mesh.quad_local_vertex(qi, vi_neighbor).unwrap().into());
             }
             ranges.push(indices.len() as u32);
         }
@@ -152,6 +155,7 @@ impl World {
             ranges,
             cell_ids,
             tile_ids,
+            tile_corners,
             tile_distortions,
         })
     }
@@ -181,6 +185,7 @@ impl World {
         let mut cell_ids = Vec::with_capacity(3);
         let mut tile_ids = Vec::new();
         let mut tile_distortions = Vec::new();
+        let mut tile_corners = Vec::new();
 
         for (cid, id, chunk, corner) in [(0, id0, chunk0, v0), (1, id1, chunk1, v1), (2, id2, chunk2, v2)] {
             let offset = id0.relative_world_position(id);
@@ -192,6 +197,7 @@ impl World {
                 vertices.push(pos.y);
                 tile_ids.push(cid);
                 tile_ids.push(qi.into_index() as u32);
+                tile_corners.push(chunk.mesh.quad_local_vertex(qi, vi).unwrap().into());
                 for &qv in chunk.mesh.quad_vertices(qi) {
                     tile_distortions.push(chunk.mesh[qv].position.x);
                     tile_distortions.push(chunk.mesh[qv].position.y);
@@ -206,6 +212,7 @@ impl World {
             ranges: [0, vertex_count],
             cell_ids,
             tile_ids,
+            tile_corners,
             tile_distortions,
         })
     }

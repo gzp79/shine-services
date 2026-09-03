@@ -83,6 +83,7 @@ impl Chunk {
         let mut cell_ids = Vec::with_capacity(site_count);
         let mut tile_ids = Vec::with_capacity(tile_count);
         let mut tile_distortions = Vec::with_capacity(tile_count * 8);
+        let mut tile_corners = Vec::with_capacity(site_count * 4);
 
         let mut vertices = Vec::with_capacity(tile_count * 2);
         let mut quad_map: std::collections::HashMap<crate::math::quadrangulation::QuadIndex, u32> =
@@ -110,10 +111,14 @@ impl Chunk {
 
             for qv in self.mesh.vertex_ring_ccw(vi) {
                 indices.push(*quad_map.get(&qv.quad).unwrap());
+                tile_corners.push(qv.local.into());
             }
 
             ranges.push(indices.len() as u32);
         }
+
+        // cell_tiles() binary-searches cell_ids, relying on this ascending order
+        debug_assert!(cell_ids.is_sorted());
 
         InnerCells {
             vertices,
@@ -121,6 +126,7 @@ impl Chunk {
             ranges,
             cell_ids,
             tile_ids,
+            tile_corners,
             tile_distortions,
         }
     }

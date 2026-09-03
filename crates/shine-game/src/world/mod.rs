@@ -6,7 +6,7 @@ mod chunk_id;
 mod world;
 
 pub use self::{
-    cell_data::{CornerCells, EdgeCells, InnerCells},
+    cell_data::{CornerCells, CornerSide, EdgeCells, EdgeSide, InnerCells},
     chunk::Chunk,
     chunk_id::ChunkId,
     world::{World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE, SUBDIVISION_BASE, SUBDIVISION_COUNT},

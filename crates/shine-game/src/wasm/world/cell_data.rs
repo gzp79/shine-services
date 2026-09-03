@@ -1,9 +1,38 @@
 use crate::{
     mesh::AsPolygonMesh,
-    world::{CornerCells, EdgeCells, InnerCells},
+    world::{CornerCells, CornerSide as CoreCornerSide, EdgeCells, EdgeSide as CoreEdgeSide, InnerCells},
 };
-use js_sys::{Float32Array, Uint32Array};
+use js_sys::{Float32Array, Uint32Array, Uint8Array};
 use wasm_bindgen::prelude::*;
+
+/// Which side of an EdgeCells polygon a tile belongs to. Matches Rust EdgeSide indices exactly.
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeSide {
+    Owner = 0,
+    Neighbor = 1,
+}
+
+impl From<EdgeSide> for CoreEdgeSide {
+    fn from(side: EdgeSide) -> Self {
+        CoreEdgeSide::from_index(side as usize)
+    }
+}
+
+/// Which side of a CornerCells polygon a tile belongs to. Matches Rust CornerSide indices exactly.
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CornerSide {
+    Owner = 0,
+    CcwNeighbor = 1,
+    CwNeighbor = 2,
+}
+
+impl From<CornerSide> for CoreCornerSide {
+    fn from(side: CornerSide) -> Self {
+        CoreCornerSide::from_index(side as usize)
+    }
+}
 
 /// Zero-copy WASM view over InnerCells.
 /// All accessors return views into Wasm linear memory — clone on the JS side
@@ -38,8 +67,23 @@ impl InnerCellsHandle {
     }
 
     #[wasm_bindgen(getter)]
+    pub fn tile_corners(&self) -> Uint8Array {
+        unsafe { Uint8Array::view(&self.0.tile_corners) }
+    }
+
+    #[wasm_bindgen(getter)]
     pub fn tile_distortions(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.tile_distortions) }
+    }
+
+    /// Packed [tile_id, corner, tile_id, corner, ...] pairs of every quad bordering `cell_id`.
+    pub fn cell_tiles(&self, cell_id: u32) -> Uint32Array {
+        let flat: Vec<u32> = self
+            .0
+            .cell_tiles(cell_id)
+            .flat_map(|(tile_id, corner)| [tile_id, corner as u32])
+            .collect();
+        Uint32Array::from(flat.as_slice())
     }
 }
 
@@ -82,8 +126,23 @@ impl EdgeCellsHandle {
     }
 
     #[wasm_bindgen(getter)]
+    pub fn tile_corners(&self) -> Uint8Array {
+        unsafe { Uint8Array::view(&self.0.tile_corners) }
+    }
+
+    #[wasm_bindgen(getter)]
     pub fn tile_distortions(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.tile_distortions) }
+    }
+
+    /// Packed [tile_id, corner, tile_id, corner, ...] pairs of every quad bordering `cell_id` on the given `side`.
+    pub fn cell_tiles(&self, side: EdgeSide, cell_id: u32) -> Uint32Array {
+        let flat: Vec<u32> = self
+            .0
+            .cell_tiles(side.into(), cell_id)
+            .flat_map(|(tile_id, corner)| [tile_id, corner as u32])
+            .collect();
+        Uint32Array::from(flat.as_slice())
     }
 }
 
@@ -126,8 +185,23 @@ impl CornerCellsHandle {
     }
 
     #[wasm_bindgen(getter)]
+    pub fn tile_corners(&self) -> Uint8Array {
+        unsafe { Uint8Array::view(&self.0.tile_corners) }
+    }
+
+    #[wasm_bindgen(getter)]
     pub fn tile_distortions(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.tile_distortions) }
+    }
+
+    /// Packed [tile_id, corner, tile_id, corner, ...] pairs of every quad bordering `cell_id` on the given `side`.
+    pub fn cell_tiles(&self, side: CornerSide, cell_id: u32) -> Uint32Array {
+        let flat: Vec<u32> = self
+            .0
+            .cell_tiles(side.into(), cell_id)
+            .flat_map(|(tile_id, corner)| [tile_id, corner as u32])
+            .collect();
+        Uint32Array::from(flat.as_slice())
     }
 }
 

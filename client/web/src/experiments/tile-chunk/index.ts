@@ -1,4 +1,4 @@
-import { WasmWorld } from '#wasm';
+import { InnerCellsHandle, WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { color } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
@@ -104,6 +104,7 @@ export class TileChunk extends Experiment {
     private tileVariants = new Uint8Array(0);
     private distortions: TileDistortion[] = [];
     private loadedChunk: { q: number; r: number } | null = null;
+    private innerCells: InnerCellsHandle | null = null;
     private cellWire: WireMesh | null = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private fillVariantCtrl: any = null;
@@ -207,7 +208,7 @@ export class TileChunk extends Experiment {
         for (let i = 0; i < this.tileCount; i++) {
             const v = i % this.tileNode.variantCount;
             this.tileVariants[i] = v;
-            this.tileNode.setTile(v, i, new THREE.Matrix4(), this.distortions[i]);
+            this.tileNode.setTile(v, this.innerCells!.tile_ids[i], new THREE.Matrix4(), this.distortions[i]);
         }
         for (let i = 0; i < this.tileNode.variantCount; i++) {
             this.tileNode.setVariantVisible(i, this.variantVisible[i] ?? true);
@@ -219,8 +220,9 @@ export class TileChunk extends Experiment {
         const v = Math.min(this.fillParams.variant, this.tileNode.variantCount - 1);
         for (let i = 0; i < this.tileCount; i++) {
             if (this.tileVariants[i] !== v) {
-                this.tileNode.removeTile(this.tileVariants[i], i);
-                this.tileNode.setTile(v, i, new THREE.Matrix4(), this.distortions[i]);
+                const tileId = this.innerCells!.tile_ids[i];
+                this.tileNode.removeTile(this.tileVariants[i], tileId);
+                this.tileNode.setTile(v, tileId, new THREE.Matrix4(), this.distortions[i]);
                 this.tileVariants[i] = v;
             }
         }
@@ -229,7 +231,7 @@ export class TileChunk extends Experiment {
     private regenerate(): void {
         if (this.loadedChunk) {
             for (let i = 0; i < this.tileCount; i++) {
-                this.tileNode.removeTile(this.tileVariants[i], i);
+                this.tileNode.removeTile(this.tileVariants[i], this.innerCells!.tile_ids[i]);
             }
             this.world.remove_chunk(this.loadedChunk.q, this.loadedChunk.r);
             this.loadedChunk = null;
@@ -241,17 +243,17 @@ export class TileChunk extends Experiment {
         this.cellWire?.dispose();
         this.cellWire = null;
 
+        // drop the previous chunk's view before requesting the new one
+        this.innerCells?.free();
+        this.innerCells = null;
+
         const { q, r } = this.params;
         this.world.init_chunk(q, r);
         this.loadedChunk = { q, r };
 
-        const cells = this.world.inner_cells(q, r)!;
-        const tileCount = cells.tile_ids.length;
-        const tileDistortions = new Float32Array(cells.tile_distortions);
-        const cellVertices = new Float32Array(cells.vertices);
-        const cellIndices = new Uint32Array(cells.indices);
-        const cellRanges = new Uint32Array(cells.ranges);
-        cells.free();
+        this.innerCells = this.world.inner_cells(q, r)!;
+        const tileCount = this.innerCells.tile_ids.length;
+        const tileDistortions = this.innerCells.tile_distortions;
 
         this.tileCount = tileCount;
         this.tileVariants = new Uint8Array(tileCount).map((_, i) => i % this.tileNode.variantCount);
@@ -259,24 +261,25 @@ export class TileChunk extends Experiment {
         for (let i = 0; i < tileCount; i++) {
             const d = buildTileDistortion(tileDistortions, i);
             this.distortions.push(d);
-            this.tileNode.setTile(this.tileVariants[i], i, new THREE.Matrix4(), d);
+            this.tileNode.setTile(this.tileVariants[i], this.innerCells.tile_ids[i], new THREE.Matrix4(), d);
         }
         this.cellWire = WireMesh.fromPolygons(this.cellsGroup, {
-            vertices: cellVertices,
-            indices: cellIndices,
-            ranges: cellRanges
+            vertices: this.innerCells.vertices,
+            indices: this.innerCells.indices,
+            ranges: this.innerCells.ranges
         });
         if (this.displayParams.showCells) this.cellWire.show();
     }
 
     private switchRandomTile(): void {
         if (this.tileCount === 0) return;
-        const key = Math.floor(Math.random() * this.tileCount);
-        const currentVariant = this.tileVariants[key];
+        const idx = Math.floor(Math.random() * this.tileCount);
+        const tileId = this.innerCells!.tile_ids[idx];
+        const currentVariant = this.tileVariants[idx];
         const nextVariant = (currentVariant + 1) % this.tileNode.variantCount;
-        this.tileNode.removeTile(currentVariant, key);
-        this.tileNode.setTile(nextVariant, key, new THREE.Matrix4(), this.distortions[key]);
-        this.tileVariants[key] = nextVariant;
+        this.tileNode.removeTile(currentVariant, tileId);
+        this.tileNode.setTile(nextVariant, tileId, new THREE.Matrix4(), this.distortions[idx]);
+        this.tileVariants[idx] = nextVariant;
     }
 
     private rebuildVariantVisibilityFolder(): void {
@@ -335,6 +338,7 @@ export class TileChunk extends Experiment {
         if (this.loadedChunk) {
             this.world.remove_chunk(this.loadedChunk.q, this.loadedChunk.r);
         }
+        this.innerCells?.free();
         this.cellWire?.dispose();
         this.scene.remove(this.cellsGroup);
         this.tileNode.dispose();

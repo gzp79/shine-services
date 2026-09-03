@@ -1,4 +1,4 @@
-import { CornerCellsHandle, WasmWorld } from '#wasm';
+import { CornerCellsHandle, CornerSide, WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { EventSubscriptions } from '../../engine/events';
 import { SelectionMesh } from '../../engine/scene/selection-mesh';
@@ -6,6 +6,8 @@ import { WireMesh } from '../../engine/scene/wire-mesh';
 import { computeLocalCentroids } from '../../mesh/centroid';
 import { ChunkId, HexFlatDir, HexPointyDir } from './chunk-id';
 import { SELECTION_CHANGED, type SelectionChangedEvent } from './selection/selection-event';
+
+export { CornerSide };
 
 export class ChunkCornerId {
     constructor(
