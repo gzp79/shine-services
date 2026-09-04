@@ -17,7 +17,7 @@ const INSTANCE_COUNT_HINT = 2048;
 function buildProceduralTileSet(parent: THREE.Object3D, instanceCountHint: number): InstancedTileSet {
     const sphereGeo = new THREE.SphereGeometry(0.4, 16, 12);
     sphereGeo.translate(0.5, 0.5, 0.5);
-    const boxGeo = new THREE.BoxGeometry(0.7, 0.7, 0.7, 2, 2, 2);
+    const boxGeo = new THREE.BoxGeometry(1, 1, 1, 2, 2, 2);
     boxGeo.translate(0.5, 0.5, 0.5);
     const torusGeo = new THREE.TorusGeometry(0.3, 0.12, 12, 24);
     torusGeo.translate(0.5, 0.5, 0.5);
@@ -91,13 +91,25 @@ function buildTileDistortion(tileDistortions: Float32Array, tileIdx: number): Ti
     return d;
 }
 
+// Quad outlines of every tile, taken straight from the packed [x, y] × 4 corners of `tile_distortions`.
+function buildTileOutlines(tileDistortions: Float32Array, tileCount: number) {
+    const indices = new Uint32Array(tileCount * 4);
+    const ranges = new Uint32Array(tileCount * 2);
+    for (let i = 0; i < tileCount; i++) {
+        for (let c = 0; c < 4; c++) indices[i * 4 + c] = i * 4 + c;
+        ranges[i * 2] = i * 4;
+        ranges[i * 2 + 1] = i * 4 + 4;
+    }
+    return { vertices: tileDistortions.slice(0, tileCount * 8), indices, ranges };
+}
+
 export class TileChunk extends Experiment {
     private readonly world: WasmWorld;
     private tileNode: InstancedTileSet;
-    private readonly cellsGroup: THREE.Group;
+    private readonly chunkGroup: THREE.Group;
     private readonly assetPicker: AssetSourcePicker;
     private readonly params = { q: 0, r: 0 };
-    private readonly displayParams = { showCells: true };
+    private readonly displayParams = { showMeshes: true, showCells: true, showTiles: false };
     private readonly fillParams = { variant: 0 };
 
     private tileCount = 0;
@@ -106,6 +118,7 @@ export class TileChunk extends Experiment {
     private loadedChunk: { q: number; r: number } | null = null;
     private innerCells: InnerCellsHandle | null = null;
     private cellWire: WireMesh | null = null;
+    private tileWire: WireMesh | null = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private fillVariantCtrl: any = null;
     private variantVisible: boolean[] = [];
@@ -122,9 +135,10 @@ export class TileChunk extends Experiment {
         if (this.controls) this.controls.update();
 
         this.world = new WasmWorld();
-        this.tileNode = buildProceduralTileSet(this.scene, INSTANCE_COUNT_HINT);
-        this.cellsGroup = new THREE.Group();
-        this.scene.add(this.cellsGroup);
+        this.chunkGroup = new THREE.Group();
+        this.scene.add(this.chunkGroup);
+        this.tileNode = buildProceduralTileSet(this.chunkGroup, INSTANCE_COUNT_HINT);
+        this.tileNode.group.visible = this.displayParams.showMeshes;
 
         const gui = this.debugPanel.root();
         const qCtrl = gui
@@ -152,12 +166,18 @@ export class TileChunk extends Experiment {
         ).name('Random Chunk');
 
         gui.add({ switchRandom: () => this.switchRandomTile() }, 'switchRandom').name('Switch Random Tile');
+        gui.add(this.displayParams, 'showMeshes')
+            .name('Show Meshes')
+            .onChange((v: boolean) => (this.tileNode.group.visible = v));
         gui.add(this.displayParams, 'showCells')
             .name('Show Cells')
             .onChange((v: boolean) => (v ? this.cellWire?.show() : this.cellWire?.hide()));
+        gui.add(this.displayParams, 'showTiles')
+            .name('Show Tiles')
+            .onChange((v: boolean) => (v ? this.tileWire?.show() : this.tileWire?.hide()));
 
         this.assetPicker = new AssetSourcePicker(gui, this.assets, {
-            onNone: () => this.replaceTileSet(buildProceduralTileSet(this.scene, INSTANCE_COUNT_HINT)),
+            onNone: () => this.replaceTileSet(buildProceduralTileSet(this.chunkGroup, INSTANCE_COUNT_HINT)),
             onAsset: (name) => fireAndForget(this.loadAsset(name)),
             onFile: (url) => fireAndForget(this.loadFile(url))
         });
@@ -183,7 +203,7 @@ export class TileChunk extends Experiment {
         try {
             const modelSet = await this.assets.loadModelSet(name);
             this.replaceTileSet(
-                InstancedTileSet.fromModelSet(this.scene, modelSet, { instanceCountHint: INSTANCE_COUNT_HINT })
+                InstancedTileSet.fromModelSet(this.chunkGroup, modelSet, { instanceCountHint: INSTANCE_COUNT_HINT })
             );
         } catch (err) {
             console.error(`[TileChunk] failed to load asset "${name}":`, err);
@@ -192,7 +212,9 @@ export class TileChunk extends Experiment {
 
     private async loadFile(url: string): Promise<void> {
         try {
-            const next = await InstancedTileSet.fromGltf(this.scene, url, { instanceCountHint: INSTANCE_COUNT_HINT });
+            const next = await InstancedTileSet.fromGltf(this.chunkGroup, url, {
+                instanceCountHint: INSTANCE_COUNT_HINT
+            });
             this.replaceTileSet(next);
         } catch (err) {
             console.error('Failed to load glTF:', err);
@@ -202,6 +224,7 @@ export class TileChunk extends Experiment {
     private replaceTileSet(next: InstancedTileSet): void {
         this.tileNode.dispose();
         this.tileNode = next;
+        this.tileNode.group.visible = this.displayParams.showMeshes;
         this.fillParams.variant = 0;
         this.fillVariantCtrl?.max(next.variantCount - 1).updateDisplay();
         this.rebuildVariantVisibilityFolder();
@@ -242,6 +265,8 @@ export class TileChunk extends Experiment {
 
         this.cellWire?.dispose();
         this.cellWire = null;
+        this.tileWire?.dispose();
+        this.tileWire = null;
 
         // drop the previous chunk's view before requesting the new one
         this.innerCells?.free();
@@ -263,12 +288,17 @@ export class TileChunk extends Experiment {
             this.distortions.push(d);
             this.tileNode.setTile(this.tileVariants[i], this.innerCells.tile_ids[i], new THREE.Matrix4(), d);
         }
-        this.cellWire = WireMesh.fromPolygons(this.cellsGroup, {
+        this.cellWire = WireMesh.fromPolygons(this.chunkGroup, {
             vertices: this.innerCells.vertices,
             indices: this.innerCells.indices,
             ranges: this.innerCells.ranges
         });
         if (this.displayParams.showCells) this.cellWire.show();
+
+        this.tileWire = WireMesh.fromPolygons(this.chunkGroup, buildTileOutlines(tileDistortions, tileCount), {
+            color: 0xffaa00
+        });
+        if (this.displayParams.showTiles) this.tileWire.show();
     }
 
     private switchRandomTile(): void {
@@ -340,7 +370,8 @@ export class TileChunk extends Experiment {
         }
         this.innerCells?.free();
         this.cellWire?.dispose();
-        this.scene.remove(this.cellsGroup);
+        this.tileWire?.dispose();
+        this.scene.remove(this.chunkGroup);
         this.tileNode.dispose();
         this.world.free();
         super.dispose();

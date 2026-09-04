@@ -109,42 +109,42 @@ impl World {
 
         for (vi_owner, vi_neighbor) in owner_vis.zip(neighbor_vis) {
             ranges.push(indices.len() as u32);
-            cell_ids.push(vi_owner.into_index() as u32);
-            cell_ids.push(vi_neighbor.into_index() as u32);
+            cell_ids.push(owner.vert_to_cell()[vi_owner].into_index() as u32);
+            cell_ids.push(neighbor.vert_to_cell()[vi_neighbor].into_index() as u32);
 
-            for qi in owner.mesh.boundary_dual_vertices(vi_owner) {
+            for qi in owner.mesh().boundary_dual_vertices(vi_owner) {
                 let index = *index_map.entry(qi).or_insert_with(|| {
-                    let p = owner.mesh.dual_p(qi).unwrap();
+                    let p = owner.mesh().dual_p(qi).unwrap();
                     let idx = (vertices.len() / 2) as u32;
                     vertices.push(p.x);
                     vertices.push(p.y);
                     tile_ids.push(0); // owner tile id is always 0
-                    tile_ids.push(qi.into_index() as u32);
-                    for &qv in owner.mesh.quad_vertices(qi) {
-                        tile_distortions.push(owner.mesh[qv].position.x);
-                        tile_distortions.push(owner.mesh[qv].position.y);
+                    tile_ids.push(owner.quad_to_tile()[qi].into_index() as u32);
+                    for &qv in owner.mesh().quad_vertices(qi) {
+                        tile_distortions.push(owner.mesh()[qv].position.x);
+                        tile_distortions.push(owner.mesh()[qv].position.y);
                     }
                     idx
                 });
                 indices.push(index);
-                tile_corners.push(owner.mesh.quad_local_vertex(qi, vi_owner).unwrap().into());
+                tile_corners.push(owner.mesh().quad_local_vertex(qi, vi_owner).unwrap().into());
             }
-            for qi in neighbor.mesh.boundary_dual_vertices(vi_neighbor) {
+            for qi in neighbor.mesh().boundary_dual_vertices(vi_neighbor) {
                 let index = *neighbor_index_map.entry(qi).or_insert_with(|| {
-                    let p = neighbor.mesh.dual_p(qi).unwrap() + neighbor_offset;
+                    let p = neighbor.mesh().dual_p(qi).unwrap() + neighbor_offset;
                     let idx = (vertices.len() / 2) as u32;
                     vertices.push(p.x);
                     vertices.push(p.y);
                     tile_ids.push(1); // neighbor tile id is always 1
-                    tile_ids.push(qi.into_index() as u32);
-                    for &qv in neighbor.mesh.quad_vertices(qi) {
-                        tile_distortions.push(neighbor.mesh[qv].position.x);
-                        tile_distortions.push(neighbor.mesh[qv].position.y);
+                    tile_ids.push(neighbor.quad_to_tile()[qi].into_index() as u32);
+                    for &qv in neighbor.mesh().quad_vertices(qi) {
+                        tile_distortions.push(neighbor.mesh()[qv].position.x);
+                        tile_distortions.push(neighbor.mesh()[qv].position.y);
                     }
                     idx
                 });
                 indices.push(index);
-                tile_corners.push(neighbor.mesh.quad_local_vertex(qi, vi_neighbor).unwrap().into());
+                tile_corners.push(neighbor.mesh().quad_local_vertex(qi, vi_neighbor).unwrap().into());
             }
             ranges.push(indices.len() as u32);
         }
@@ -190,17 +190,17 @@ impl World {
         for (cid, id, chunk, corner) in [(0, id0, chunk0, v0), (1, id1, chunk1, v1), (2, id2, chunk2, v2)] {
             let offset = id0.relative_world_position(id);
             let vi = chunk.boundary_corner_vertex(corner);
-            cell_ids.push(vi.into_index() as u32);
-            for qi in chunk.mesh.boundary_dual_vertices(vi) {
-                let pos = chunk.mesh.dual_p(qi).unwrap() + offset;
+            cell_ids.push(chunk.vert_to_cell()[vi].into_index() as u32);
+            for qi in chunk.mesh().boundary_dual_vertices(vi) {
+                let pos = chunk.mesh().dual_p(qi).unwrap() + offset;
                 vertices.push(pos.x);
                 vertices.push(pos.y);
                 tile_ids.push(cid);
-                tile_ids.push(qi.into_index() as u32);
-                tile_corners.push(chunk.mesh.quad_local_vertex(qi, vi).unwrap().into());
-                for &qv in chunk.mesh.quad_vertices(qi) {
-                    tile_distortions.push(chunk.mesh[qv].position.x);
-                    tile_distortions.push(chunk.mesh[qv].position.y);
+                tile_ids.push(chunk.quad_to_tile()[qi].into_index() as u32);
+                tile_corners.push(chunk.mesh().quad_local_vertex(qi, vi).unwrap().into());
+                for &qv in chunk.mesh().quad_vertices(qi) {
+                    tile_distortions.push(chunk.mesh()[qv].position.x);
+                    tile_distortions.push(chunk.mesh()[qv].position.y);
                 }
             }
         }

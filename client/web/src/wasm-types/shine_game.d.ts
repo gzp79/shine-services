@@ -247,6 +247,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_wasmworld_free: (a: number, b: number) => void;
     readonly hex_distance: (a: number, b: number, c: number, d: number) => number;
     readonly hex_flat_from_position: (a: number, b: number, c: number) => [number, number];
     readonly hex_flat_neighbor: (a: number, b: number, c: number) => [number, number];
@@ -254,8 +255,6 @@ export interface InitOutput {
     readonly hex_pointy_from_position: (a: number, b: number, c: number) => [number, number];
     readonly hex_pointy_to_position: (a: number, b: number, c: number) => [number, number];
     readonly hex_ring: (a: number, b: number, c: number) => [number, number];
-    readonly hex_pointy_neighbor: (a: number, b: number, c: number) => [number, number];
-    readonly __wbg_wasmworld_free: (a: number, b: number) => void;
     readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly wasmworld_const_cell_world_size: (a: number) => number;
     readonly wasmworld_const_chunk_world_size: (a: number) => number;
@@ -265,7 +264,7 @@ export interface InitOutput {
     readonly wasmworld_inner_cells: (a: number, b: number, c: number) => number;
     readonly wasmworld_new: () => number;
     readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
-    readonly start: () => void;
+    readonly hex_pointy_neighbor: (a: number, b: number, c: number) => [number, number];
     readonly __wbg_cornercellshandle_free: (a: number, b: number) => void;
     readonly __wbg_edgecellshandle_free: (a: number, b: number) => void;
     readonly cornercellshandle_cell_ids: (a: number) => any;
@@ -293,13 +292,6 @@ export interface InitOutput {
     readonly innercellshandle_indices: (a: number) => any;
     readonly innercellshandle_cell_ids: (a: number) => any;
     readonly __wbg_innercellshandle_free: (a: number, b: number) => void;
-    readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
-    readonly wiredpolygonmeshhandle_has_wires: (a: number) => number;
-    readonly wiredpolygonmeshhandle_indices: (a: number) => any;
-    readonly wiredpolygonmeshhandle_ranges: (a: number) => any;
-    readonly wiredpolygonmeshhandle_vertices: (a: number) => any;
-    readonly wiredpolygonmeshhandle_wire_indices: (a: number) => any;
-    readonly wiredpolygonmeshhandle_wire_ranges: (a: number) => any;
     readonly __wbg_wasmcdtmesh_free: (a: number, b: number) => void;
     readonly __wbg_wasmhexmesh_free: (a: number, b: number) => void;
     readonly __wbg_wasmworldneighbors_free: (a: number, b: number) => void;
@@ -317,6 +309,14 @@ export interface InitOutput {
     readonly wasmworldneighbors_edge_mesh: (a: number, b: number) => number;
     readonly wasmworldneighbors_inner_mesh: (a: number, b: number) => number;
     readonly wasmworldneighbors_vertex_mesh: (a: number, b: number) => number;
+    readonly start: () => void;
+    readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
+    readonly wiredpolygonmeshhandle_has_wires: (a: number) => number;
+    readonly wiredpolygonmeshhandle_indices: (a: number) => any;
+    readonly wiredpolygonmeshhandle_ranges: (a: number) => any;
+    readonly wiredpolygonmeshhandle_vertices: (a: number) => any;
+    readonly wiredpolygonmeshhandle_wire_indices: (a: number) => any;
+    readonly wiredpolygonmeshhandle_wire_ranges: (a: number) => any;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;

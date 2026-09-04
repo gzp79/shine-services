@@ -48,8 +48,8 @@ impl WasmWorldNeighbors {
 
         let mut vertices = Vec::with_capacity(12);
         for i in 0..6 {
-            let vi = chunk.mesh.anchor_vertex(AnchorIndex::new(i));
-            let p = chunk.mesh.p(vi) + offset;
+            let vi = chunk.mesh().anchor_vertex(AnchorIndex::new(i));
+            let p = chunk.mesh().p(vi) + offset;
             vertices.push(p.x);
             vertices.push(p.y);
         }
