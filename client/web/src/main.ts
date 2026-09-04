@@ -40,13 +40,39 @@ const container = document.getElementById('app')!;
 // start, onError means it died after starting. Both land here; a real host would render its own UI.
 function showFatal(error: unknown): void {
     console.error('[shine-web] scene error:', error);
-    const message = error instanceof Error ? error.message : String(error);
     container.replaceChildren();
     const box = document.createElement('div');
-    box.textContent = `Something went wrong: ${message}`;
-    box.style.padding = '1rem';
-    box.style.whiteSpace = 'pre-line';
+    box.textContent = describe(error);
+    box.style.cssText = `
+        position: absolute; inset: 0; overflow: auto;
+        box-sizing: border-box; padding: 1.5rem;
+        background: #101014; color: #ff9a9a;
+        font: 13px/1.6 ui-monospace, Consolas, monospace;
+        white-space: pre-wrap; word-break: break-word;
+        user-select: text;
+    `;
     container.appendChild(box);
 }
+
+// Full stack plus the cause chain, so the actual throw site is visible without opening the console.
+function describe(error: unknown): string {
+    if (!(error instanceof Error)) return String(error);
+    let text = error.stack ?? `${error.name}: ${error.message}`;
+    let cause: unknown = error.cause;
+    while (cause !== undefined && cause !== null) {
+        text += `\n\nCaused by: ${cause instanceof Error ? (cause.stack ?? cause.message) : String(cause)}`;
+        cause = cause instanceof Error ? cause.cause : undefined;
+    }
+    return text;
+}
+
+// Anything escaping the runtime's error boundary (listeners, timers, foreign promises) would
+// otherwise only show up in the console; surface it in the page too.
+window.addEventListener('error', (event) => {
+    showFatal(event.error ?? event.message);
+});
+window.addEventListener('unhandledrejection', (event) => {
+    showFatal(event.reason);
+});
 
 void createRoutedScene(container, buildDefaultCatalog, showFatal).catch(showFatal);
