@@ -15,17 +15,17 @@ export class CornerCellsHandle {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
+    cell_ids(): Uint32Array;
     /**
      * Packed [tile_id, corner, tile_id, corner, ...] pairs of every quad bordering `cell_id` on the given `side`.
      */
     cell_tiles(side: CornerSide, cell_id: number): Uint32Array;
-    readonly cell_ids: Uint32Array;
-    readonly indices: Uint32Array;
-    readonly ranges: Uint32Array;
-    readonly tile_corners: Uint8Array;
-    readonly tile_distortions: Float32Array;
-    readonly tile_ids: Uint32Array;
-    readonly vertices: Float32Array;
+    indices(): Uint32Array;
+    ranges(): Uint32Array;
+    tile_corners(): Uint8Array;
+    tile_distortions(): Float32Array;
+    tile_ids(): Uint32Array;
+    vertices(): Float32Array;
 }
 
 /**
@@ -45,17 +45,17 @@ export class EdgeCellsHandle {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
+    cell_ids(): Uint32Array;
     /**
      * Packed [tile_id, corner, tile_id, corner, ...] pairs of every quad bordering `cell_id` on the given `side`.
      */
     cell_tiles(side: EdgeSide, cell_id: number): Uint32Array;
-    readonly cell_ids: Uint32Array;
-    readonly indices: Uint32Array;
-    readonly ranges: Uint32Array;
-    readonly tile_corners: Uint8Array;
-    readonly tile_distortions: Float32Array;
-    readonly tile_ids: Uint32Array;
-    readonly vertices: Float32Array;
+    indices(): Uint32Array;
+    ranges(): Uint32Array;
+    tile_corners(): Uint8Array;
+    tile_distortions(): Float32Array;
+    tile_ids(): Uint32Array;
+    vertices(): Float32Array;
 }
 
 /**
@@ -98,17 +98,17 @@ export class InnerCellsHandle {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
+    cell_ids(): Uint32Array;
     /**
      * Packed [tile_id, corner, tile_id, corner, ...] pairs of every quad bordering `cell_id`.
      */
     cell_tiles(cell_id: number): Uint32Array;
-    readonly cell_ids: Uint32Array;
-    readonly indices: Uint32Array;
-    readonly ranges: Uint32Array;
-    readonly tile_corners: Uint8Array;
-    readonly tile_distortions: Float32Array;
-    readonly tile_ids: Uint32Array;
-    readonly vertices: Float32Array;
+    indices(): Uint32Array;
+    ranges(): Uint32Array;
+    tile_corners(): Uint8Array;
+    tile_distortions(): Float32Array;
+    tile_ids(): Uint32Array;
+    vertices(): Float32Array;
 }
 
 export class WasmCdtMesh {
@@ -309,8 +309,8 @@ export interface InitOutput {
     readonly wasmworldneighbors_edge_mesh: (a: number, b: number) => number;
     readonly wasmworldneighbors_inner_mesh: (a: number, b: number) => number;
     readonly wasmworldneighbors_vertex_mesh: (a: number, b: number) => number;
-    readonly start: () => void;
     readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
+    readonly start: () => void;
     readonly wiredpolygonmeshhandle_has_wires: (a: number) => number;
     readonly wiredpolygonmeshhandle_indices: (a: number) => any;
     readonly wiredpolygonmeshhandle_ranges: (a: number) => any;

@@ -41,37 +41,30 @@ pub struct InnerCellsHandle(InnerCells);
 
 #[wasm_bindgen]
 impl InnerCellsHandle {
-    #[wasm_bindgen(getter)]
     pub fn vertices(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.vertices) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn indices(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.indices) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn ranges(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.ranges) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn cell_ids(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.cell_ids) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn tile_ids(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.tile_ids) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn tile_corners(&self) -> Uint8Array {
         unsafe { Uint8Array::view(&self.0.tile_corners) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn tile_distortions(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.tile_distortions) }
     }
@@ -100,37 +93,30 @@ pub struct EdgeCellsHandle(EdgeCells);
 
 #[wasm_bindgen]
 impl EdgeCellsHandle {
-    #[wasm_bindgen(getter)]
     pub fn vertices(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.vertices) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn indices(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.indices) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn ranges(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.ranges) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn cell_ids(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.cell_ids) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn tile_ids(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.tile_ids) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn tile_corners(&self) -> Uint8Array {
         unsafe { Uint8Array::view(&self.0.tile_corners) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn tile_distortions(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.tile_distortions) }
     }
@@ -159,37 +145,30 @@ pub struct CornerCellsHandle(CornerCells);
 
 #[wasm_bindgen]
 impl CornerCellsHandle {
-    #[wasm_bindgen(getter)]
     pub fn vertices(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.vertices) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn indices(&self) -> Uint32Array {
         unsafe { Uint32Array::view(self.0.indices()) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn ranges(&self) -> Uint32Array {
         unsafe { Uint32Array::view(self.0.ranges()) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn cell_ids(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.cell_ids) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn tile_ids(&self) -> Uint32Array {
         unsafe { Uint32Array::view(&self.0.tile_ids) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn tile_corners(&self) -> Uint8Array {
         unsafe { Uint8Array::view(&self.0.tile_corners) }
     }
 
-    #[wasm_bindgen(getter)]
     pub fn tile_distortions(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.tile_distortions) }
     }

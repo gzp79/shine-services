@@ -6,7 +6,7 @@ use crate::{
         prng::{Pcg32, SplitMix64},
         quadrangulation::{AnchorIndex, QuadIndex, Quadrangulation, VertexIndex},
     },
-    world::{ChunkId, InnerCells, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
+    world::{BaseLayer, ChunkId, InnerCells, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -36,6 +36,7 @@ pub struct Chunk {
     tile_to_quad: IdxVec<TileIndex, QuadIndex>,
     vert_to_cell: IdxVec<VertexIndex, CellIndex>,
     cell_to_vert: IdxVec<CellIndex, VertexIndex>,
+    base_layer: BaseLayer,
 }
 
 impl Chunk {
@@ -59,6 +60,8 @@ impl Chunk {
             vert_to_cell[vi] = ci;
         }
 
+        let base_layer = BaseLayer::new(tile_to_quad.len(), 0);
+
         Self {
             rng_streams,
             mesh: topology,
@@ -66,6 +69,7 @@ impl Chunk {
             tile_to_quad,
             vert_to_cell,
             cell_to_vert,
+            base_layer,
         }
     }
 
@@ -93,6 +97,14 @@ impl Chunk {
 
     pub fn cell_to_vert(&self) -> &IdxVec<CellIndex, VertexIndex> {
         &self.cell_to_vert
+    }
+
+    pub fn base_layer(&self) -> &BaseLayer {
+        &self.base_layer
+    }
+
+    pub fn base_layer_mut(&mut self) -> &mut BaseLayer {
+        &mut self.base_layer
     }
 
     /// Flat (real) quad vertex positions [x, y, x, y, ...]
