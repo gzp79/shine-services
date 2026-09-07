@@ -33,8 +33,8 @@ pub struct InnerCells {
     pub cell_ids: Vec<u32>,
     /// Tile id of each vertex in the same order as the vertex positions.
     pub tile_ids: Vec<u32>,
-    /// Tile-local corner (0..4) of each polygon index entry, in the same order as `indices`
-    pub tile_corners: Vec<u8>,
+    /// Tile-local vertex (0..4) of each polygon index entry, in the same order as `indices`
+    pub tile_vertices: Vec<u8>,
     /// Tile distortion in the same order as tile_ids packed as [x, y, ...], where each octet corresponds to a single tile
     pub tile_distortions: Vec<f32>,
 }
@@ -54,7 +54,7 @@ impl AsPolygonMesh for InnerCells {
 }
 
 impl InnerCells {
-    /// (tile_id, quad-local corner 0..4) pairs of every quad bordering `cell_id`.
+    /// (tile_id, quad-local vertex 0..4) pairs of every quad bordering `cell_id`.
     pub fn cell_tiles(&self, cell_id: u32) -> impl Iterator<Item = (u32, u8)> + '_ {
         // `cell_ids` is sorted ascending, so this is a binary search.
         let range = self
@@ -63,7 +63,7 @@ impl InnerCells {
             .ok()
             .map(|i| (self.ranges[2 * i] as usize, self.ranges[2 * i + 1] as usize));
         range.into_iter().flat_map(move |(s, e)| {
-            (s..e).map(move |k| (self.tile_ids[self.indices[k] as usize], self.tile_corners[k]))
+            (s..e).map(move |k| (self.tile_ids[self.indices[k] as usize], self.tile_vertices[k]))
         })
     }
 }
@@ -83,8 +83,8 @@ pub struct EdgeCells {
     /// Packed owner chunk and tile id pairs in the same order as the vertex positions [owner, tile_id, owner, tile_id, ...],
     /// where 0 means the owning chunk, 1 the neighbor chunk
     pub tile_ids: Vec<u32>,
-    /// Tile-local corner (0..4) of each polygon index entry, in the same order as `indices`
-    pub tile_corners: Vec<u8>,
+    /// Tile-local vertex (0..4) of each polygon index entry, in the same order as `indices`
+    pub tile_vertices: Vec<u8>,
     /// Tile distortion in the same order as tile_ids packed as [x, y, ...], where each octet corresponds to a single tile
     pub tile_distortions: Vec<f32>,
 }
@@ -104,7 +104,7 @@ impl AsPolygonMesh for EdgeCells {
 }
 
 impl EdgeCells {
-    /// (tile_id, quad-local corner 0..4) pairs of every quad bordering `cell_id` on the given `side`.    
+    /// (tile_id, quad-local vertex 0..4) pairs of every quad bordering `cell_id` on the given `side`.
     pub fn cell_tiles(&self, side: EdgeSide, cell_id: u32) -> impl Iterator<Item = (u32, u8)> + '_ {
         let side = side.into_index();
         let range = self
@@ -115,7 +115,7 @@ impl EdgeCells {
             .position(|&c| c == cell_id)
             .map(|i| (self.ranges[2 * i] as usize, self.ranges[2 * i + 1] as usize));
         range.into_iter().flat_map(move |(s, e)| {
-            (s..e).map(move |k| (self.tile_ids[self.indices[k] as usize], self.tile_corners[k]))
+            (s..e).map(move |k| (self.tile_ids[self.indices[k] as usize], self.tile_vertices[k]))
         })
     }
 }
@@ -136,8 +136,8 @@ pub struct CornerCells {
     /// Packed owner chunk and tile id pairs in the same order as the vertex positions [owner, tile_id, owner, tile_id, ...],
     /// where 0 means the owning chunk, 1 the ccw neighbor chunk, and 2 the cw (2*ccw) neighbor chunk
     pub tile_ids: Vec<u32>,
-    /// Tile-local corner (0..4) of each vertex in the same order as the vertex positions.
-    pub tile_corners: Vec<u8>,
+    /// Tile-local vertex (0..4) of each vertex in the same order as the vertex positions.
+    pub tile_vertices: Vec<u8>,
     /// Tile distortion in the same order as tile_ids packed as [x, y, ...], where each octet corresponds to a single tile
     pub tile_distortions: Vec<f32>,
 }
@@ -157,12 +157,12 @@ impl AsPolygonMesh for CornerCells {
 }
 
 impl CornerCells {
-    /// (tile_id, quad-local corner 0..4) pairs of every quad bordering `cell_id` on the given `side`.
+    /// (tile_id, quad-local vertex 0..4) pairs of every quad bordering `cell_id` on the given `side`.
     pub fn cell_tiles(&self, side: CornerSide, cell_id: u32) -> impl Iterator<Item = (u32, u8)> + '_ {
         let valid = self.cell_ids.get(side.into_index()) == Some(&cell_id);
         let side = side.into_index() as u32;
-        (0..self.tile_corners.len()).filter_map(move |k| {
-            (valid && self.tile_ids[2 * k] == side).then(|| (self.tile_ids[2 * k + 1], self.tile_corners[k]))
+        (0..self.tile_vertices.len()).filter_map(move |k| {
+            (valid && self.tile_ids[2 * k] == side).then(|| (self.tile_ids[2 * k + 1], self.tile_vertices[k]))
         })
     }
 }

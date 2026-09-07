@@ -17,14 +17,14 @@ export class CornerCellsHandle {
     [Symbol.dispose](): void;
     cell_ids(): Uint32Array;
     /**
-     * Packed [tile_id, corner, tile_id, corner, ...] pairs of every quad bordering `cell_id` on the given `side`.
+     * Packed [tile_id, vertex, tile_id, vertex, ...] pairs of every quad bordering `cell_id` on the given `side`.
      */
     cell_tiles(side: CornerSide, cell_id: number): Uint32Array;
     indices(): Uint32Array;
     ranges(): Uint32Array;
-    tile_corners(): Uint8Array;
     tile_distortions(): Float32Array;
     tile_ids(): Uint32Array;
+    tile_vertices(): Uint8Array;
     vertices(): Float32Array;
 }
 
@@ -47,14 +47,14 @@ export class EdgeCellsHandle {
     [Symbol.dispose](): void;
     cell_ids(): Uint32Array;
     /**
-     * Packed [tile_id, corner, tile_id, corner, ...] pairs of every quad bordering `cell_id` on the given `side`.
+     * Packed [tile_id, vertex, tile_id, vertex, ...] pairs of every quad bordering `cell_id` on the given `side`.
      */
     cell_tiles(side: EdgeSide, cell_id: number): Uint32Array;
     indices(): Uint32Array;
     ranges(): Uint32Array;
-    tile_corners(): Uint8Array;
     tile_distortions(): Float32Array;
     tile_ids(): Uint32Array;
+    tile_vertices(): Uint8Array;
     vertices(): Float32Array;
 }
 
@@ -100,14 +100,14 @@ export class InnerCellsHandle {
     [Symbol.dispose](): void;
     cell_ids(): Uint32Array;
     /**
-     * Packed [tile_id, corner, tile_id, corner, ...] pairs of every quad bordering `cell_id`.
+     * Packed [tile_id, vertex, tile_id, vertex, ...] pairs of every quad bordering `cell_id`.
      */
     cell_tiles(cell_id: number): Uint32Array;
     indices(): Uint32Array;
     ranges(): Uint32Array;
-    tile_corners(): Uint8Array;
     tile_distortions(): Float32Array;
     tile_ids(): Uint32Array;
+    tile_vertices(): Uint8Array;
     vertices(): Float32Array;
 }
 
@@ -135,7 +135,7 @@ export class WasmWorld {
     [Symbol.dispose](): void;
     const_cell_world_size(): number;
     const_chunk_world_size(): number;
-    corner_cells(q: number, r: number, vertex_idx: HexPointyDir): CornerCellsHandle | undefined;
+    corner_cells(q: number, r: number, corner_idx: HexPointyDir): CornerCellsHandle | undefined;
     edge_cells(q: number, r: number, edge_idx: HexFlatDir): EdgeCellsHandle | undefined;
     init_chunk(q: number, r: number): void;
     inner_cells(q: number, r: number): InnerCellsHandle | undefined;
@@ -152,6 +152,10 @@ export class WasmWorldNeighbors {
      */
     chunk_hex_vertices(chunk_idx: number): Float32Array;
     /**
+     * Get corner mesh for the given corner
+     */
+    corner_mesh(corner_idx: HexPointyDir): WiredPolygonMeshHandle | undefined;
+    /**
      * Get edge mesh for the given edge
      */
     edge_mesh(edge_idx: HexFlatDir): WiredPolygonMeshHandle | undefined;
@@ -159,10 +163,6 @@ export class WasmWorldNeighbors {
      * Get inner mesh for the given chunk
      */
     inner_mesh(chunk_idx: number): WiredPolygonMeshHandle | undefined;
-    /**
-     * Get vertex mesh for the given vertex
-     */
-    vertex_mesh(vertex_idx: HexPointyDir): WiredPolygonMeshHandle | undefined;
 }
 
 /**
@@ -271,23 +271,23 @@ export interface InitOutput {
     readonly cornercellshandle_cell_tiles: (a: number, b: number, c: number) => any;
     readonly cornercellshandle_indices: (a: number) => any;
     readonly cornercellshandle_ranges: (a: number) => any;
-    readonly cornercellshandle_tile_corners: (a: number) => any;
     readonly cornercellshandle_tile_distortions: (a: number) => any;
     readonly cornercellshandle_tile_ids: (a: number) => any;
+    readonly cornercellshandle_tile_vertices: (a: number) => any;
     readonly cornercellshandle_vertices: (a: number) => any;
     readonly edgecellshandle_cell_ids: (a: number) => any;
     readonly edgecellshandle_cell_tiles: (a: number, b: number, c: number) => any;
     readonly edgecellshandle_indices: (a: number) => any;
     readonly edgecellshandle_ranges: (a: number) => any;
-    readonly edgecellshandle_tile_corners: (a: number) => any;
     readonly edgecellshandle_tile_distortions: (a: number) => any;
     readonly edgecellshandle_tile_ids: (a: number) => any;
+    readonly edgecellshandle_tile_vertices: (a: number) => any;
     readonly edgecellshandle_vertices: (a: number) => any;
     readonly innercellshandle_cell_tiles: (a: number, b: number) => any;
     readonly innercellshandle_vertices: (a: number) => any;
+    readonly innercellshandle_tile_vertices: (a: number) => any;
     readonly innercellshandle_tile_ids: (a: number) => any;
     readonly innercellshandle_tile_distortions: (a: number) => any;
-    readonly innercellshandle_tile_corners: (a: number) => any;
     readonly innercellshandle_ranges: (a: number) => any;
     readonly innercellshandle_indices: (a: number) => any;
     readonly innercellshandle_cell_ids: (a: number) => any;
@@ -306,9 +306,9 @@ export interface InitOutput {
     readonly wasmhexmesh_primal: (a: number) => number;
     readonly wasmhexmesh_world_size: (a: number) => number;
     readonly wasmworldneighbors_chunk_hex_vertices: (a: number, b: number) => [number, number];
+    readonly wasmworldneighbors_corner_mesh: (a: number, b: number) => number;
     readonly wasmworldneighbors_edge_mesh: (a: number, b: number) => number;
     readonly wasmworldneighbors_inner_mesh: (a: number, b: number) => number;
-    readonly wasmworldneighbors_vertex_mesh: (a: number, b: number) => number;
     readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
     readonly start: () => void;
     readonly wiredpolygonmeshhandle_has_wires: (a: number) => number;

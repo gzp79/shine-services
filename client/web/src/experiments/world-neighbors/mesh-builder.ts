@@ -224,37 +224,37 @@ export function buildEdgeMeshes(data: WasmWorldNeighbors): ToggleableGroup {
     };
 }
 
-export function buildVertexMeshes(data: WasmWorldNeighbors): ToggleableGroup {
+export function buildCornerMeshes(data: WasmWorldNeighbors): ToggleableGroup {
     const group = new THREE.Group();
     const meshGroups: THREE.Group[] = [];
     const color = new THREE.Color();
 
-    for (let vertex_idx = 0; vertex_idx < 6; vertex_idx++) {
-        const meshData = data.vertex_mesh(vertex_idx);
-        const vertexGroup = new THREE.Group();
+    for (let corner_idx = 0; corner_idx < 6; corner_idx++) {
+        const meshData = data.corner_mesh(corner_idx);
+        const cornerGroup = new THREE.Group();
 
         if (meshData) {
             const { vertices, indices, ranges } = asWiredPolygonMesh(meshData);
 
             if (vertices.length > 0) {
                 // Color coding: HSL wheel
-                const hue = vertex_idx / 6;
+                const hue = corner_idx / 6;
                 color.setHSL(hue, 0.8, 0.4);
 
                 // Build polygon mesh (z = 0.4)
                 const mesh = buildPolygonMesh(vertices, indices, ranges, color, 0.4);
-                vertexGroup.add(mesh);
+                cornerGroup.add(mesh);
 
                 // Build wireframe (z = 1.4)
                 const wire = buildPolygonWireframe(vertices, indices, ranges, 1.4);
-                vertexGroup.add(wire);
+                cornerGroup.add(wire);
             }
 
             meshData.free();
         }
 
-        meshGroups.push(vertexGroup);
-        group.add(vertexGroup);
+        meshGroups.push(cornerGroup);
+        group.add(cornerGroup);
     }
 
     return {

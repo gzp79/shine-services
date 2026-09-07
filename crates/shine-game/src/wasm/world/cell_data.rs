@@ -61,20 +61,20 @@ impl InnerCellsHandle {
         unsafe { Uint32Array::view(&self.0.tile_ids) }
     }
 
-    pub fn tile_corners(&self) -> Uint8Array {
-        unsafe { Uint8Array::view(&self.0.tile_corners) }
+    pub fn tile_vertices(&self) -> Uint8Array {
+        unsafe { Uint8Array::view(&self.0.tile_vertices) }
     }
 
     pub fn tile_distortions(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.tile_distortions) }
     }
 
-    /// Packed [tile_id, corner, tile_id, corner, ...] pairs of every quad bordering `cell_id`.
+    /// Packed [tile_id, vertex, tile_id, vertex, ...] pairs of every quad bordering `cell_id`.
     pub fn cell_tiles(&self, cell_id: u32) -> Uint32Array {
         let flat: Vec<u32> = self
             .0
             .cell_tiles(cell_id)
-            .flat_map(|(tile_id, corner)| [tile_id, corner as u32])
+            .flat_map(|(tile_id, vertex)| [tile_id, vertex as u32])
             .collect();
         Uint32Array::from(flat.as_slice())
     }
@@ -113,20 +113,20 @@ impl EdgeCellsHandle {
         unsafe { Uint32Array::view(&self.0.tile_ids) }
     }
 
-    pub fn tile_corners(&self) -> Uint8Array {
-        unsafe { Uint8Array::view(&self.0.tile_corners) }
+    pub fn tile_vertices(&self) -> Uint8Array {
+        unsafe { Uint8Array::view(&self.0.tile_vertices) }
     }
 
     pub fn tile_distortions(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.tile_distortions) }
     }
 
-    /// Packed [tile_id, corner, tile_id, corner, ...] pairs of every quad bordering `cell_id` on the given `side`.
+    /// Packed [tile_id, vertex, tile_id, vertex, ...] pairs of every quad bordering `cell_id` on the given `side`.
     pub fn cell_tiles(&self, side: EdgeSide, cell_id: u32) -> Uint32Array {
         let flat: Vec<u32> = self
             .0
             .cell_tiles(side.into(), cell_id)
-            .flat_map(|(tile_id, corner)| [tile_id, corner as u32])
+            .flat_map(|(tile_id, vertex)| [tile_id, vertex as u32])
             .collect();
         Uint32Array::from(flat.as_slice())
     }
@@ -165,20 +165,20 @@ impl CornerCellsHandle {
         unsafe { Uint32Array::view(&self.0.tile_ids) }
     }
 
-    pub fn tile_corners(&self) -> Uint8Array {
-        unsafe { Uint8Array::view(&self.0.tile_corners) }
+    pub fn tile_vertices(&self) -> Uint8Array {
+        unsafe { Uint8Array::view(&self.0.tile_vertices) }
     }
 
     pub fn tile_distortions(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.0.tile_distortions) }
     }
 
-    /// Packed [tile_id, corner, tile_id, corner, ...] pairs of every quad bordering `cell_id` on the given `side`.
+    /// Packed [tile_id, vertex, tile_id, vertex, ...] pairs of every quad bordering `cell_id` on the given `side`.
     pub fn cell_tiles(&self, side: CornerSide, cell_id: u32) -> Uint32Array {
         let flat: Vec<u32> = self
             .0
             .cell_tiles(side.into(), cell_id)
-            .flat_map(|(tile_id, corner)| [tile_id, corner as u32])
+            .flat_map(|(tile_id, vertex)| [tile_id, vertex as u32])
             .collect();
         Uint32Array::from(flat.as_slice())
     }

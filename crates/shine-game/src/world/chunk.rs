@@ -153,7 +153,7 @@ impl Chunk {
         let mut cell_ids = Vec::with_capacity(site_count);
         let mut tile_ids = Vec::with_capacity(tile_count);
         let mut tile_distortions = Vec::with_capacity(tile_count * 8);
-        let mut tile_corners = Vec::with_capacity(site_count * 4);
+        let mut tile_vertices = Vec::with_capacity(site_count * 4);
 
         let mut vertices = Vec::with_capacity(tile_count * 2);
         for qi in self.mesh.finite_quad_index_iter() {
@@ -177,7 +177,7 @@ impl Chunk {
 
             for qv in self.mesh.vertex_ring_ccw(vi) {
                 indices.push(self.quad_to_tile[qv.quad].into_index() as u32);
-                tile_corners.push(qv.local.into());
+                tile_vertices.push(qv.local.into());
             }
 
             ranges.push(indices.len() as u32);
@@ -192,7 +192,7 @@ impl Chunk {
             ranges,
             cell_ids,
             tile_ids,
-            tile_corners,
+            tile_vertices,
             tile_distortions,
         }
     }

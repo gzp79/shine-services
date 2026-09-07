@@ -91,9 +91,9 @@ impl WasmWorldNeighbors {
         )
     }
 
-    /// Get vertex mesh for the given vertex
-    pub fn vertex_mesh(&self, vertex_idx: WasmHexPointyDir) -> Option<WiredPolygonMeshHandle> {
-        let cells = self.world.corner_cells(self.center, vertex_idx.into())?;
+    /// Get corner mesh for the given corner
+    pub fn corner_mesh(&self, corner_idx: WasmHexPointyDir) -> Option<WiredPolygonMeshHandle> {
+        let cells = self.world.corner_cells(self.center, corner_idx.into())?;
         Some(
             WiredPolygonMesh {
                 vertices: cells.vertices.clone(),

@@ -59,9 +59,9 @@ impl WasmWorld {
         self.world.edge_cells(ChunkId(q, r), edge_idx.into()).map(|c| c.into())
     }
 
-    pub fn corner_cells(&self, q: i32, r: i32, vertex_idx: HexPointyDir) -> Option<CornerCellsHandle> {
+    pub fn corner_cells(&self, q: i32, r: i32, corner_idx: HexPointyDir) -> Option<CornerCellsHandle> {
         self.world
-            .corner_cells(ChunkId(q, r), vertex_idx.into())
+            .corner_cells(ChunkId(q, r), corner_idx.into())
             .map(|c| c.into())
     }
 }
