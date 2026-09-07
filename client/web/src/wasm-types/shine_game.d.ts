@@ -174,12 +174,12 @@ export class WiredPolygonMeshHandle {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
-    readonly has_wires: boolean;
-    readonly indices: Uint32Array;
-    readonly ranges: Uint32Array;
-    readonly vertices: Float32Array;
-    readonly wire_indices: Uint32Array;
-    readonly wire_ranges: Uint32Array;
+    has_wires(): boolean;
+    indices(): Uint32Array;
+    ranges(): Uint32Array;
+    vertices(): Float32Array;
+    wire_indices(): Uint32Array;
+    wire_ranges(): Uint32Array;
 }
 
 /**

@@ -2,6 +2,7 @@ import { WasmWorldNeighbors } from '#wasm';
 import * as THREE from 'three';
 import { ManagedMesh } from '../../engine/resources/managed-mesh';
 import { disposeObject3D } from '../../engine/resources/ownership';
+import { asWiredPolygonMesh } from '../../mesh/polygon-mesh';
 
 const EDGE_COLOR = 0x222222;
 
@@ -135,9 +136,7 @@ export function buildInteriorMeshes(data: WasmWorldNeighbors): ToggleableGroup {
         const chunkGroup = new THREE.Group();
 
         if (meshData) {
-            const vertices = meshData.vertices;
-            const indices = meshData.indices;
-            const ranges = meshData.ranges;
+            const { vertices, indices, ranges } = asWiredPolygonMesh(meshData);
 
             if (vertices.length > 0) {
                 // Color coding: HSL wheel
@@ -186,9 +185,7 @@ export function buildEdgeMeshes(data: WasmWorldNeighbors): ToggleableGroup {
         const edgeGroup = new THREE.Group();
 
         if (meshData) {
-            const vertices = meshData.vertices;
-            const indices = meshData.indices;
-            const ranges = meshData.ranges;
+            const { vertices, indices, ranges } = asWiredPolygonMesh(meshData);
 
             if (vertices.length > 0) {
                 // Color coding: HSL wheel
@@ -237,9 +234,7 @@ export function buildVertexMeshes(data: WasmWorldNeighbors): ToggleableGroup {
         const vertexGroup = new THREE.Group();
 
         if (meshData) {
-            const vertices = meshData.vertices;
-            const indices = meshData.indices;
-            const ranges = meshData.ranges;
+            const { vertices, indices, ranges } = asWiredPolygonMesh(meshData);
 
             if (vertices.length > 0) {
                 // Color coding: HSL wheel

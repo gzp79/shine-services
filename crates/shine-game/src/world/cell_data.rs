@@ -19,7 +19,8 @@ crate::define_enum_index! {
     }
 }
 
-/// Cell data of the internal cells of a chunk
+/// Standalone geometry snapshot of a chunk's internal cells: owned data, safe to hold and
+/// marshal independently of the chunk. Rebuild to refresh. Mutable state lives in the layer.
 #[derive(Debug, Clone, Default)]
 pub struct InnerCells {
     /// Vertex positions packed as [x, y, x, y, ...]
@@ -67,7 +68,8 @@ impl InnerCells {
     }
 }
 
-/// Cell data of the edge cells of a chunk
+/// Standalone geometry snapshot of a chunk's edge cells: owned data, safe to hold and
+/// marshal independently of the chunk. Rebuild to refresh. Mutable state lives in the layer.
 #[derive(Debug, Clone, Default)]
 pub struct EdgeCells {
     /// Vertex positions packed as [x, y, x, y, ...]
@@ -118,7 +120,9 @@ impl EdgeCells {
     }
 }
 
-/// Cell data of the corner cells of a chunk (single polygon, at most ~10 vertices)
+/// Standalone geometry snapshot of a chunk's corner cells (single polygon, at most ~10 vertices):
+/// owned data, safe to hold and marshal independently of the chunk. Rebuild to refresh.
+/// Mutable state lives in the layer.
 #[derive(Debug, Clone, Default)]
 pub struct CornerCells {
     /// Vertex positions packed as [x, y, x, y, ...]

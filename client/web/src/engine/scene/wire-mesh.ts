@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { PolygonMesh, WiredPolygonMesh } from '../../mesh/polygon-mesh';
+import type { PolygonMeshLike, WiredPolygonMeshLike } from '../../mesh/polygon-mesh';
 import { buildGeometryFromPolygons, buildGeometryFromWires } from '../geometry/polygon-geometry';
 
 const DEFAULT_COLOR = 0x00ffff;
@@ -17,11 +17,11 @@ export class WireMesh {
         private readonly color: number
     ) {}
 
-    static fromPolygons(parent: THREE.Group, mesh: PolygonMesh, options?: WireMeshOptions): WireMesh {
+    static fromPolygons(parent: THREE.Group, mesh: PolygonMeshLike, options?: WireMeshOptions): WireMesh {
         return new WireMesh(parent, () => buildGeometryFromPolygons(mesh), options?.color ?? DEFAULT_COLOR);
     }
 
-    static fromWires(parent: THREE.Group, mesh: WiredPolygonMesh, options?: WireMeshOptions): WireMesh {
+    static fromWires(parent: THREE.Group, mesh: WiredPolygonMeshLike, options?: WireMeshOptions): WireMesh {
         return new WireMesh(parent, () => buildGeometryFromWires(mesh), options?.color ?? DEFAULT_COLOR);
     }
 
