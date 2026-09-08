@@ -292,6 +292,7 @@ export interface InitOutput {
     readonly innercellshandle_indices: (a: number) => any;
     readonly innercellshandle_cell_ids: (a: number) => any;
     readonly __wbg_innercellshandle_free: (a: number, b: number) => void;
+    readonly start: () => void;
     readonly __wbg_wasmcdtmesh_free: (a: number, b: number) => void;
     readonly __wbg_wasmhexmesh_free: (a: number, b: number) => void;
     readonly __wbg_wasmworldneighbors_free: (a: number, b: number) => void;
@@ -310,7 +311,6 @@ export interface InitOutput {
     readonly wasmworldneighbors_edge_mesh: (a: number, b: number) => number;
     readonly wasmworldneighbors_inner_mesh: (a: number, b: number) => number;
     readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
-    readonly start: () => void;
     readonly wiredpolygonmeshhandle_has_wires: (a: number) => number;
     readonly wiredpolygonmeshhandle_indices: (a: number) => any;
     readonly wiredpolygonmeshhandle_ranges: (a: number) => any;

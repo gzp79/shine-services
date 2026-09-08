@@ -114,8 +114,12 @@ impl EdgeCells {
             .step_by(2)
             .position(|&c| c == cell_id)
             .map(|i| (self.ranges[2 * i] as usize, self.ranges[2 * i + 1] as usize));
+        let side = side as u32;
         range.into_iter().flat_map(move |(s, e)| {
-            (s..e).map(move |k| (self.tile_ids[self.indices[k] as usize], self.tile_vertices[k]))
+            (s..e).filter_map(move |k| {
+                let p = self.indices[k] as usize;
+                (self.tile_ids[2 * p] == side).then(|| (self.tile_ids[2 * p + 1], self.tile_vertices[k]))
+            })
         })
     }
 }
@@ -161,8 +165,8 @@ impl CornerCells {
     pub fn cell_tiles(&self, side: CornerSide, cell_id: u32) -> impl Iterator<Item = (u32, u8)> + '_ {
         let valid = self.cell_ids.get(side.into_index()) == Some(&cell_id);
         let side = side.into_index() as u32;
-        (0..self.tile_vertices.len()).filter_map(move |k| {
-            (valid && self.tile_ids[2 * k] == side).then(|| (self.tile_ids[2 * k + 1], self.tile_vertices[k]))
-        })
+        (0..self.tile_vertices.len())
+            .filter(move |&k| valid && self.tile_ids[2 * k] == side)
+            .map(move |k| (self.tile_ids[2 * k + 1], self.tile_vertices[k]))
     }
 }
