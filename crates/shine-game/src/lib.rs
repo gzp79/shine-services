@@ -1,3 +1,5 @@
+#[cfg(feature = "heap-profiling")]
+pub mod heap;
 pub mod indexed;
 pub mod math;
 pub mod mesh;

@@ -1,3 +1,4 @@
+import * as wasm from '#wasm';
 import type { AssetCatalog } from './engine/assets/catalog';
 import { createRoutedScene } from './index';
 
@@ -32,6 +33,35 @@ async function fetchJson<T>(url: string): Promise<T> {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`[AssetCatalog] failed to fetch ${url}: ${res.status}`);
     return (await res.json()) as T;
+}
+
+// heap_* are exported only when the wasm is built with the `heap-profiling` feature.
+interface HeapMetrics {
+    heap_used?: () => number;
+    heap_peak?: () => number;
+    heap_reserved?: () => number;
+    heap_limit?: () => number;
+}
+
+// Fills the #heap-stats box in the collapsible nav overlay once a second. Skipped unless the wasm
+// was built with heap profiling, so the box stays hidden in production.
+function startHeapStats(): void {
+    if (!import.meta.env.VITE_HEAP_PROFILING) return;
+    const el = document.getElementById('heap-stats');
+    const heap: HeapMetrics = wasm;
+    if (!el || !heap.heap_used || !heap.heap_peak || !heap.heap_reserved || !heap.heap_limit) return;
+
+    const mib = (bytes: number): string => `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+    const update = (): void => {
+        el.textContent =
+            `used     ${mib(heap.heap_used!())}\n` +
+            `peak     ${mib(heap.heap_peak!())}\n` +
+            `reserved ${mib(heap.heap_reserved!())}\n` +
+            `limit    ${mib(heap.heap_limit!())}`;
+    };
+    update();
+    el.style.display = 'block';
+    window.setInterval(update, 1000);
 }
 
 const container = document.getElementById('app')!;
@@ -75,4 +105,4 @@ window.addEventListener('unhandledrejection', (event) => {
     showFatal(event.reason);
 });
 
-void createRoutedScene(container, buildDefaultCatalog, showFatal).catch(showFatal);
+void createRoutedScene(container, buildDefaultCatalog, showFatal).then(startHeapStats).catch(showFatal);

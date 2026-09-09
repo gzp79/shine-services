@@ -6,6 +6,9 @@ edition.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+heap-profiling = []
+
 [dependencies]
 log = { workspace = true }
 tracing = { workspace = true }

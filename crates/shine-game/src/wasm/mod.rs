@@ -1,4 +1,6 @@
 mod experiments;
+#[cfg(feature = "heap-profiling")]
+mod heap;
 mod math;
 mod mesh;
 mod world;
