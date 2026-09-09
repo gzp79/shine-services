@@ -13,7 +13,7 @@ const WASM_BIN_ID = '#wasm-bin';
 const WASM_BIN_RESOLVED = '\0wasm-bin';
 
 export interface WasmPackOptions {
-    // Build the wasm with the `heap-profiling` feature (counting allocator + heap_* exports).
+    // Build the wasm with the `heap-profile` feature (allocation metrics on top of the static heap).
     profiling: boolean;
 }
 
@@ -78,8 +78,9 @@ export function wasmPackPlugin(options: WasmPackOptions): Plugin {
 function buildWasm(profiling: boolean): boolean {
     try {
         console.log('[wasm-pack] Building...');
-        const features = profiling ? ' --features heap-profiling' : '';
-        execSync(`wasm-pack build --target web --out-dir ../../client/web/pkg${features}`, {
+        // static-heap on every build keeps wasm linear memory from growing; heap-profile adds metrics.
+        const features = profiling ? 'static-heap,heap-profile' : 'static-heap';
+        execSync(`wasm-pack build --target web --out-dir ../../client/web/pkg --features ${features}`, {
             cwd: crateDir,
             stdio: 'inherit'
         });

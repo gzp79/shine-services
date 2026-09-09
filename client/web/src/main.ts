@@ -35,12 +35,16 @@ async function fetchJson<T>(url: string): Promise<T> {
     return (await res.json()) as T;
 }
 
-// heap_* are exported only when the wasm is built with the `heap-profiling` feature.
-interface HeapMetrics {
-    heap_used?: () => number;
-    heap_peak?: () => number;
-    heap_reserved?: () => number;
-    heap_limit?: () => number;
+// memory_info() returns an allocator-agnostic array of entries, sorted by source then label; which
+// entries appear depends on the wasm feature set.
+interface MemoryMetric {
+    source: string;
+    label: string;
+    value: number;
+    unit: 'bytes' | 'count' | 'ratio' | string;
+}
+interface MemoryApi {
+    memory_info?: () => MemoryMetric[];
 }
 
 // Fills the #heap-stats box in the collapsible nav overlay once a second. Skipped unless the wasm
@@ -48,16 +52,23 @@ interface HeapMetrics {
 function startHeapStats(): void {
     if (!import.meta.env.VITE_HEAP_PROFILING) return;
     const el = document.getElementById('heap-stats');
-    const heap: HeapMetrics = wasm;
-    if (!el || !heap.heap_used || !heap.heap_peak || !heap.heap_reserved || !heap.heap_limit) return;
+    const api: MemoryApi = wasm;
+    if (!el || !api.memory_info) return;
 
-    const mib = (bytes: number): string => `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+    const format = ({ value, unit }: MemoryMetric): string => {
+        switch (unit) {
+            case 'bytes':
+                return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
+            case 'ratio':
+                return `${(value * 100).toFixed(1)} %`;
+            default:
+                return String(value);
+        }
+    };
     const update = (): void => {
-        el.textContent =
-            `used     ${mib(heap.heap_used!())}\n` +
-            `peak     ${mib(heap.heap_peak!())}\n` +
-            `reserved ${mib(heap.heap_reserved!())}\n` +
-            `limit    ${mib(heap.heap_limit!())}`;
+        const entries = api.memory_info!().map((m) => ({ key: `${m.source}.${m.label}`, text: format(m) }));
+        const width = entries.reduce((w, e) => Math.max(w, e.key.length), 0);
+        el.textContent = entries.map((e) => `${e.key.padEnd(width)}  ${e.text}`).join('\n');
     };
     update();
     el.style.display = 'block';

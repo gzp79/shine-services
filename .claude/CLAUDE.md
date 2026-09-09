@@ -56,6 +56,9 @@ Rust workspace with identity/builder services. Stack: Axum, PostgreSQL, Redis, T
 
 ## Agent Conventions
 
+### Rust crate docs
+Look up crate API, features, and versions on docs.rs (`https://docs.rs/<crate>/latest/<crate>/`) rather than guessing.
+
 ### Skills
 Project skills live in `.claude/skills/`. Invoke before working in a domain.
 

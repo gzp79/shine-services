@@ -1,29 +1,9 @@
-//! JS bindings for the heap metric (`crate::heap`) plus the wasm-only pinned-memory view.
+//! JS binding exposing the memory report (`crate::heap`) as a plain object keyed by metric label.
 
 use wasm_bindgen::prelude::*;
 
-mod config;
-
-/// Live allocated bytes.
 #[wasm_bindgen]
-pub fn heap_used() -> u32 {
-    crate::heap::current() as u32
-}
-
-/// Peak allocated bytes since boot.
-#[wasm_bindgen]
-pub fn heap_peak() -> u32 {
-    crate::heap::peak() as u32
-}
-
-/// Bytes committed to the linear memory (pages * 64 KiB); equals the ceiling once pinned.
-#[wasm_bindgen]
-pub fn heap_reserved() -> u32 {
-    (core::arch::wasm32::memory_size(0) as u32) * 65536
-}
-
-/// The pinned ceiling in bytes.
-#[wasm_bindgen]
-pub fn heap_limit() -> u32 {
-    config::HEAP_BYTES as u32
+pub fn memory_info() -> JsValue {
+    let json = serde_json::to_string(&crate::heap::memory_info()).unwrap_or_else(|_| "{}".into());
+    js_sys::JSON::parse(&json).unwrap_or(JsValue::NULL)
 }
