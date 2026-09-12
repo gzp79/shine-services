@@ -87,9 +87,9 @@ as an array of <code>{source, label, value, unit}</code>.
     <td><code>static-heap</code></td>
     <td><span class="tag good">all builds</span></td>
     <td>The web host runs the core as wasm and hands JavaScript zero-copy views
-    that point directly into linear memory. A growing wasm heap swaps the backing
-    <code>ArrayBuffer</code> and detaches those views mid-use; a non-growing heap
-    removes the hazard structurally.</td>
+    that point directly into linear memory (see <a href="engine-api.html">Engine API</a>).
+    A growing wasm heap swaps the backing <code>ArrayBuffer</code> and detaches
+    those views mid-use; a non-growing heap removes the hazard structurally.</td>
   </tr>
   <tr>
     <td><code>heap-profile</code></td>
