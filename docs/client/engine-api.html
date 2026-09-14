@@ -74,7 +74,7 @@ that satisfies the model's invariants; do not invent a per-model scheme.
   <tr><th>Tool</th><th>What it is</th><th>Reach for it when</th></tr>
   <tr>
     <td>Single strong root</td>
-    <td>One owning reference (<code>Rc&lt;RefCell&lt;WorldInner&gt;&gt;</code>) held only by the exported world. It, and nothing else, keeps engine data alive.</td>
+    <td>One owning reference (<code>Rc&lt;RefCell&lt;World&gt;&gt;</code>) held only by the exported world. It, and nothing else, keeps engine data alive.</td>
     <td>Always — it is the anchor every other tool references. Never clone it into a handle.</td>
   </tr>
   <tr>
@@ -122,7 +122,7 @@ tracks the engine world, what data it exposes, and where the host gets it.
   <tr><th>Model</th><th>Holds</th><th>Tracks world via</th><th>Data exposed</th><th>Acquired from</th></tr>
   <tr>
     <td><strong>World</strong></td>
-    <td>Strong <code>Rc&lt;RefCell&lt;WorldInner&gt;&gt;</code></td>
+    <td>Strong <code>Rc&lt;RefCell&lt;World&gt;&gt;</code></td>
     <td>It <em>is</em> the owner</td>
     <td>Chunk lookup / lifecycle</td>
     <td>Exported constructor</td>
@@ -252,7 +252,7 @@ the pattern itself prescribes no host language.
   <tr><th>File</th><th>Role</th></tr>
   <tr><td><code>crates/shine-game/src/wasm/world/world.rs</code></td><td>Exported world root; holds the single strong reference and vends chunk handles.</td></tr>
   <tr><td><code>crates/shine-game/src/wasm/world/cell_data.rs</code></td><td>CellData handle: owned snapshot exposed through zero-copy views, generation-checked.</td></tr>
-  <tr><td><code>crates/shine-game/src/world/world.rs</code></td><td>Core <code>WorldInner</code>: owns chunks and the generation source; free of host-reference concerns.</td></tr>
+  <tr><td><code>crates/shine-game/src/world/world.rs</code></td><td>Core <code>World</code>: owns chunks and the generation source; free of host-reference concerns.</td></tr>
   <tr><td><code>crates/shine-game/src/world/chunk.rs</code></td><td>Core chunk: owns its buffers and its generation cell; bumps it on structural change.</td></tr>
   <tr><td><code>crates/shine-game/src/world/layer.rs</code></td><td>Fixed-size layer buffer viewed zero-copy; in-place edits leave the generation untouched.</td></tr>
 </table>

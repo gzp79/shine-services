@@ -267,7 +267,8 @@ export class TileChunk extends Experiment {
         this.world.init_chunk(q, r);
         this.loadedChunk = { q, r };
 
-        this.innerCells = this.world.inner_cells(q, r)!;
+        using chunk = this.world.chunk(q, r)!;
+        this.innerCells = chunk.inner_cells()!;
         const tileCount = this.innerCells.tile_ids().length;
         const tileDistortions = this.innerCells.tile_distortions();
 

@@ -46,7 +46,8 @@ export class ChunkEdge {
         events: EventTarget
     ) {
         this.group.userData = { chunkEdgeId: id, chunkEdge: this };
-        this.cells = world.edge_cells(id.chunkId.q, id.chunkId.r, id.edgeIdx)!;
+        using chunk = world.chunk(id.chunkId.q, id.chunkId.r)!;
+        this.cells = chunk.edge_cells(id.edgeIdx)!;
         this.wireframe = WireMesh.fromPolygons(this.group, asPolygonMesh(this.cells));
         this.selectionMesh = new SelectionMesh(this.group, asPolygonMesh(this.cells));
         this.subscriptions = new EventSubscriptions(events);

@@ -42,24 +42,27 @@ impl WasmWorldNeighbors {
         let (Some(id), offset) = (self.chunk_id(chunk_idx), self.chunk_offset(chunk_idx)) else {
             return vec![];
         };
-        let Some(chunk) = self.world.chunk(id) else {
+        let Some(handle) = self.world.chunk(id) else {
             return vec![];
         };
 
-        let mut vertices = Vec::with_capacity(12);
-        for i in 0..6 {
-            let vi = chunk.mesh().anchor_vertex(AnchorIndex::new(i));
-            let p = chunk.mesh().p(vi) + offset;
-            vertices.push(p.x);
-            vertices.push(p.y);
-        }
-        vertices
+        handle
+            .with_chunk(|chunk| {
+                let mut vertices = Vec::with_capacity(12);
+                for i in 0..6 {
+                    let vi = chunk.mesh().anchor_vertex(AnchorIndex::new(i));
+                    let p = chunk.mesh().p(vi) + offset;
+                    vertices.push(p.x);
+                    vertices.push(p.y);
+                }
+                vertices
+            })
+            .unwrap_or_default()
     }
 
-    /// Get inner mesh for the given chunk
     pub fn inner_mesh(&self, chunk_idx: u32) -> Option<WiredPolygonMeshHandle> {
         let (id, offset) = (self.chunk_id(chunk_idx)?, self.chunk_offset(chunk_idx));
-        let mut cells = self.world.inner_cells(id)?;
+        let mut cells = self.world.chunk(id)?.inner_cells()?;
         for i in (0..cells.vertices.len()).step_by(2) {
             cells.vertices[i] += offset.x;
             cells.vertices[i + 1] += offset.y;
@@ -76,9 +79,8 @@ impl WasmWorldNeighbors {
         )
     }
 
-    /// Get edge mesh for the given edge
     pub fn edge_mesh(&self, edge_idx: WasmHexFlatDir) -> Option<WiredPolygonMeshHandle> {
-        let cells = self.world.edge_cells(self.center, edge_idx.into())?;
+        let cells = self.world.chunk(self.center)?.edge_cells(edge_idx.into())?;
         Some(
             WiredPolygonMesh {
                 vertices: cells.vertices,
@@ -91,9 +93,8 @@ impl WasmWorldNeighbors {
         )
     }
 
-    /// Get corner mesh for the given corner
     pub fn corner_mesh(&self, corner_idx: WasmHexPointyDir) -> Option<WiredPolygonMeshHandle> {
-        let cells = self.world.corner_cells(self.center, corner_idx.into())?;
+        let cells = self.world.chunk(self.center)?.corner_cells(corner_idx.into())?;
         Some(
             WiredPolygonMesh {
                 vertices: cells.vertices.clone(),
@@ -110,7 +111,7 @@ impl WasmWorldNeighbors {
 /// Generate world neighbors geometry for visualization
 #[wasm_bindgen]
 pub fn generate_world_neighbors(center_q: i32, center_r: i32) -> Result<WasmWorldNeighbors, JsValue> {
-    let mut world = World::new();
+    let world = World::new();
 
     let center = ChunkId(center_q, center_r);
     world.init_chunk(center);

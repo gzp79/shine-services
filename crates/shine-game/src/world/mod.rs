@@ -8,7 +8,7 @@ mod world;
 
 pub use self::{
     cell_data::{CornerCells, CornerSide, EdgeCells, EdgeSide, InnerCells},
-    chunk::{CellIndex, Chunk, TileIndex},
+    chunk::{CellIndex, Chunk, ChunkHandle, TileIndex},
     chunk_id::ChunkId,
     layer::{BaseLayer, Layer},
     world::{World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE, SUBDIVISION_BASE, SUBDIVISION_COUNT},

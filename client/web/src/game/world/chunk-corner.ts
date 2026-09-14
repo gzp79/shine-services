@@ -53,7 +53,8 @@ export class ChunkCorner {
         events: EventTarget
     ) {
         this.group.userData = { chunkCornerId: id, chunkCorner: this };
-        this.cells = world.corner_cells(id.chunkId.q, id.chunkId.r, id.cornerIdx)!;
+        using chunk = world.chunk(id.chunkId.q, id.chunkId.r)!;
+        this.cells = chunk.corner_cells(id.cornerIdx)!;
         this.wireframe = WireMesh.fromPolygons(this.group, asPolygonMesh(this.cells));
         this.selectionMesh = new SelectionMesh(this.group, asPolygonMesh(this.cells));
         this.subscriptions = new EventSubscriptions(events);

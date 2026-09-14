@@ -1,8 +1,5 @@
 use crate::{
-    wasm::{
-        math::{HexFlatDir, HexPointyDir},
-        world::{CornerCellsHandle, EdgeCellsHandle, InnerCellsHandle},
-    },
+    wasm::world::WasmChunk,
     world::{ChunkId, World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE},
 };
 use tracing::info_span;
@@ -15,6 +12,8 @@ interface WasmWorld {
 }
 "#;
 
+/// The exported world root. Wraps the core `World` handle; the `Rc<RefCell<..>>` graph and all
+/// staleness tracking live in core, so this layer only marshals ids and forwards calls.
 #[wasm_bindgen]
 pub struct WasmWorld {
     world: World,
@@ -27,12 +26,12 @@ impl WasmWorld {
         Self { world: World::new() }
     }
 
-    pub fn init_chunk(&mut self, q: i32, r: i32) {
+    pub fn init_chunk(&self, q: i32, r: i32) {
         let _span = info_span!("init_chunk", q, r).entered();
         self.world.init_chunk(ChunkId(q, r));
     }
 
-    pub fn remove_chunk(&mut self, q: i32, r: i32) {
+    pub fn remove_chunk(&self, q: i32, r: i32) {
         self.world.remove_chunk(ChunkId(q, r));
     }
 
@@ -51,17 +50,8 @@ impl WasmWorld {
         vec![pos.x, pos.y]
     }
 
-    pub fn inner_cells(&self, q: i32, r: i32) -> Option<InnerCellsHandle> {
-        self.world.inner_cells(ChunkId(q, r)).map(|c| c.into())
-    }
-
-    pub fn edge_cells(&self, q: i32, r: i32, edge_idx: HexFlatDir) -> Option<EdgeCellsHandle> {
-        self.world.edge_cells(ChunkId(q, r), edge_idx.into()).map(|c| c.into())
-    }
-
-    pub fn corner_cells(&self, q: i32, r: i32, corner_idx: HexPointyDir) -> Option<CornerCellsHandle> {
-        self.world
-            .corner_cells(ChunkId(q, r), corner_idx.into())
-            .map(|c| c.into())
+    /// Handle to a loaded chunk, or `undefined` if no chunk is loaded at `(q, r)`.
+    pub fn chunk(&self, q: i32, r: i32) -> Option<WasmChunk> {
+        self.world.chunk(ChunkId(q, r)).map(WasmChunk::new)
     }
 }

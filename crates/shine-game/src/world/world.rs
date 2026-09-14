@@ -5,9 +5,9 @@ use crate::{
         prng::SplitMix64,
         quadrangulation::VertexIndex,
     },
-    world::{Chunk, ChunkId, CornerCells, EdgeCells, InnerCells},
+    world::{Chunk, ChunkHandle, ChunkId, CornerCells, EdgeCells, InnerCells},
 };
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use tracing::info_span;
 
 /// The core subdivision depth to align chunks
@@ -20,38 +20,39 @@ pub const CHUNK_WORLD_SIZE: f32 = 1000.0;
 /// The "ideal" length of the side of a cell (in meter)
 pub const CELL_WORLD_SIZE: f32 = CHUNK_WORLD_SIZE / SUBDIVISION_COUNT as f32;
 
-pub struct World {
+/// The world data. `pub` so `ChunkHandle` (in `chunk.rs`) can name it, but deliberately not
+/// re-exported from the `world` module, so it stays private to this module: reached only through
+/// the `World` handle (mutation, chunk lookup) or a `ChunkHandle` (validated per-chunk reads).
+pub struct WorldInner {
     rng_seed: SplitMix64,
     chunks: HashMap<ChunkId, Chunk>,
+    next_chunk_generation: u64,
 }
 
-impl Default for World {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl World {
-    pub fn new() -> Self {
+impl WorldInner {
+    fn new() -> Self {
         Self {
             rng_seed: SplitMix64::new(),
             chunks: HashMap::new(),
+            next_chunk_generation: 0,
         }
     }
 
-    pub fn init_chunk(&mut self, id: ChunkId) {
-        self.chunks.insert(id, Chunk::new(&self.rng_seed, id));
+    fn init_chunk(&mut self, id: ChunkId) {
+        self.next_chunk_generation += 1;
+        let generation = self.next_chunk_generation;
+        self.chunks.insert(id, Chunk::new(&self.rng_seed, id, generation));
     }
 
     pub fn chunk(&self, id: ChunkId) -> Option<&Chunk> {
         self.chunks.get(&id)
     }
 
-    pub fn remove_chunk(&mut self, id: ChunkId) {
+    fn remove_chunk(&mut self, id: ChunkId) {
         self.chunks.remove(&id);
     }
 
-    pub fn chunk_world_offset(&self, reference: ChunkId, target: ChunkId) -> Vec<f32> {
+    fn chunk_world_offset(&self, reference: ChunkId, target: ChunkId) -> Vec<f32> {
         if self.chunk(reference).is_none() {
             return vec![];
         }
@@ -215,5 +216,46 @@ impl World {
             tile_vertices,
             tile_distortions,
         })
+    }
+}
+
+/// A cheaply clonable handle to a world. Every clone shares one backing store, so passing a
+/// `World` around never copies chunk data; it is the single owning root of the world graph.
+#[derive(Clone)]
+pub struct World {
+    inner: Rc<RefCell<WorldInner>>,
+}
+
+impl Default for World {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl World {
+    pub fn new() -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(WorldInner::new())),
+        }
+    }
+
+    pub fn init_chunk(&self, id: ChunkId) {
+        self.inner.borrow_mut().init_chunk(id);
+    }
+
+    pub fn remove_chunk(&self, id: ChunkId) {
+        self.inner.borrow_mut().remove_chunk(id);
+    }
+
+    pub fn chunk_world_offset(&self, reference: ChunkId, target: ChunkId) -> Vec<f32> {
+        self.inner.borrow().chunk_world_offset(reference, target)
+    }
+
+    /// A weak handle to the chunk at `id`, or `None` if none is loaded there. The handle keeps
+    /// no strong reference to the world, so holding it never pins chunk memory.
+    pub fn chunk(&self, id: ChunkId) -> Option<ChunkHandle> {
+        let inner = self.inner.borrow();
+        let generation = inner.chunk(id)?.generation();
+        Some(ChunkHandle::new(&self.inner, id, generation))
     }
 }

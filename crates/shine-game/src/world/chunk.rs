@@ -6,9 +6,14 @@ use crate::{
         prng::{Pcg32, SplitMix64},
         quadrangulation::{AnchorIndex, QuadIndex, Quadrangulation, VertexIndex},
     },
-    world::{BaseLayer, ChunkId, InnerCells, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
+    world::{BaseLayer, ChunkId, CornerCells, EdgeCells, InnerCells, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::{Rc, Weak},
+};
+
+use super::world::WorldInner;
 
 define_typed_index!(TileIndex, u32, "Dense, chunk-local tile id (finite quads only).");
 impl_typed_index_conversions!(TileIndex);
@@ -18,19 +23,21 @@ impl_typed_index_conversions!(CellIndex);
 
 /// Stable random streams for different aspects of chunk generation.
 /// Streams are cheap, create a new one for each aspect to ensure deterministic independence.
+/// Derived from the chunk id so generation is reproducible; consumed during construction only.
 pub struct ChunkRngStreams {
-    pub mesh: Rc<RefCell<Pcg32>>,
+    pub mesh: Pcg32,
 }
 
 impl ChunkRngStreams {
     pub fn new(mut seed: SplitMix64) -> Self {
-        let mesh = Rc::new(RefCell::new(seed.generate_stream()));
-        Self { mesh }
+        Self {
+            mesh: seed.generate_stream(),
+        }
     }
 }
 
 pub struct Chunk {
-    rng_streams: ChunkRngStreams,
+    generation: Rc<Cell<u64>>,
     mesh: Quadrangulation,
     quad_to_tile: IdxVec<QuadIndex, TileIndex>,
     tile_to_quad: IdxVec<TileIndex, QuadIndex>,
@@ -40,11 +47,11 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn new(parent_seed: &SplitMix64, id: ChunkId) -> Self {
-        let rng_streams = ChunkRngStreams::new(parent_seed.create_seed(id.id_64()));
-        let topology = LatticeMesher::new(SUBDIVISION_BASE, rng_streams.mesh.clone())
+    pub fn new(parent_seed: &SplitMix64, id: ChunkId, generation: u64) -> Self {
+        let mut rng_streams = ChunkRngStreams::new(parent_seed.create_seed(id.id_64()));
+        let topology = LatticeMesher::new(SUBDIVISION_BASE)
             .with_size(CHUNK_WORLD_SIZE)
-            .generate();
+            .generate(&mut rng_streams.mesh);
 
         let mut quad_to_tile = IdxVec::from_elem(TileIndex::NONE, topology.quad_count());
         let mut tile_to_quad = IdxVec::with_capacity(topology.finite_quad_count());
@@ -63,7 +70,7 @@ impl Chunk {
         let base_layer = BaseLayer::new(tile_to_quad.len(), 0);
 
         Self {
-            rng_streams,
+            generation: Rc::new(Cell::new(generation)),
             mesh: topology,
             quad_to_tile,
             tile_to_quad,
@@ -73,8 +80,8 @@ impl Chunk {
         }
     }
 
-    pub fn rng_streams(&self) -> &ChunkRngStreams {
-        &self.rng_streams
+    pub fn generation(&self) -> &Rc<Cell<u64>> {
+        &self.generation
     }
 
     pub fn mesh(&self) -> &Quadrangulation {
@@ -206,5 +213,71 @@ impl Chunk {
     pub fn boundary_corner_vertex(&self, corner_idx: HexPointyDir) -> VertexIndex {
         // assume anchor points are corresponding to hex corners in correct  order
         self.mesh.anchor_vertex(AnchorIndex::new(corner_idx as usize))
+    }
+}
+
+/// A weak handle to a chunk within a `World`. Holds only weak references back into the world (to
+/// resolve the chunk by id) and the chunk's structural generation (to detect that it was
+/// unloaded, reloaded, or rebuilt). Every accessor revalidates both before touching world memory
+/// and returns `None` on failure, so a stale handle never reads moved or freed data.
+pub struct ChunkHandle {
+    world: Weak<RefCell<WorldInner>>,
+    id: ChunkId,
+    generation: Weak<Cell<u64>>,
+    /// Structural version seen when this handle was created; a mismatch means the chunk was
+    /// rebuilt underneath it.
+    captured: u64,
+}
+
+impl ChunkHandle {
+    pub(crate) fn new(world: &Rc<RefCell<WorldInner>>, id: ChunkId, generation: &Rc<Cell<u64>>) -> Self {
+        Self {
+            world: Rc::downgrade(world),
+            id,
+            generation: Rc::downgrade(generation),
+            captured: generation.get(),
+        }
+    }
+
+    /// The live world, but only while this handle is still valid: the world must exist, the
+    /// chunk's generation cell must still be alive (it dies on unload / is replaced on reload),
+    /// and its value must match the one captured (unchanged since creation). `None` on any failure.
+    fn valid_world(&self) -> Option<Rc<RefCell<WorldInner>>> {
+        let world = self.world.upgrade()?;
+        let generation = self.generation.upgrade()?;
+        if generation.get() != self.captured {
+            return None;
+        }
+        Some(world)
+    }
+
+    pub fn id(&self) -> ChunkId {
+        self.id
+    }
+
+    /// Runs `f` with the live chunk while the handle is still valid, `None` otherwise.
+    pub fn with_chunk<R>(&self, f: impl FnOnce(&Chunk) -> R) -> Option<R> {
+        let world = self.valid_world()?;
+        let inner = world.borrow();
+        let chunk = inner.chunk(self.id)?;
+        Some(f(chunk))
+    }
+
+    pub fn inner_cells(&self) -> Option<InnerCells> {
+        let world = self.valid_world()?;
+        let inner = world.borrow();
+        inner.inner_cells(self.id)
+    }
+
+    pub fn edge_cells(&self, edge_idx: HexFlatDir) -> Option<EdgeCells> {
+        let world = self.valid_world()?;
+        let inner = world.borrow();
+        inner.edge_cells(self.id, edge_idx)
+    }
+
+    pub fn corner_cells(&self, corner_idx: HexPointyDir) -> Option<CornerCells> {
+        let world = self.valid_world()?;
+        let inner = world.borrow();
+        inner.corner_cells(self.id, corner_idx)
     }
 }

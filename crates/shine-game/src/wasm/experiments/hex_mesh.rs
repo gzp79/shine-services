@@ -1,7 +1,7 @@
 use crate::{
     math::{
         hex::{CdtMesher, LatticeMesher, PatchMesher, PatchOrientation},
-        prng::{StableRng, XorShift32},
+        prng::XorShift32,
         quadrangulation::{Jitter, LaplacianSmoother, QuadFilter, QuadRelax, Quadrangulation, VertexRepulsion},
     },
     wasm::mesh::WiredPolygonMeshHandle,
@@ -96,14 +96,14 @@ pub fn generate_mesh(config_json: &str) -> Result<WasmHexMesh, JsValue> {
             (mesher.generate_subdivision(), subdivision)
         }
         MesherConfig::Cdt { subdivision, interior_points } => {
-            let rng = XorShift32::new(config.seed).into_rc();
-            let mut mesher = CdtMesher::new(subdivision, interior_points, rng).with_size(world_size);
-            (mesher.generate(), subdivision)
+            let mut rng = XorShift32::new(config.seed);
+            let mut mesher = CdtMesher::new(subdivision, interior_points).with_size(world_size);
+            (mesher.generate(&mut rng), subdivision)
         }
         MesherConfig::Lattice { subdivision } => {
-            let rng = XorShift32::new(config.seed).into_rc();
-            let mut mesher = LatticeMesher::new(subdivision, rng).with_size(world_size);
-            (mesher.generate(), subdivision)
+            let mut rng = XorShift32::new(config.seed);
+            let mut mesher = LatticeMesher::new(subdivision).with_size(world_size);
+            (mesher.generate(&mut rng), subdivision)
         }
     };
 

@@ -121,6 +121,21 @@ export class WasmCdtMesh {
     vertices(): Float32Array;
 }
 
+/**
+ * Handle to a loaded chunk. Holds only weak references back into the engine — the world (to
+ * resolve the chunk by id) and the chunk's structural generation (to detect that it was
+ * unloaded, reloaded, or rebuilt). Every accessor validates both before touching engine memory
+ * and returns `undefined` on failure, so a stale handle never reads moved or freed data.
+ */
+export class WasmChunk {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    corner_cells(corner_idx: HexPointyDir): CornerCellsHandle | undefined;
+    edge_cells(edge_idx: HexFlatDir): EdgeCellsHandle | undefined;
+    inner_cells(): InnerCellsHandle | undefined;
+}
+
 export class WasmHexMesh {
     private constructor();
     free(): void;
@@ -130,15 +145,22 @@ export class WasmHexMesh {
     world_size(): number;
 }
 
+/**
+ * The exported world root. Holds the single strong reference to the engine world; every handle
+ * derived from it (see `WasmChunk`) points back weakly, so a stray handle can never keep the
+ * world alive and dropping this invalidates them all at once.
+ */
 export class WasmWorld {
     free(): void;
     [Symbol.dispose](): void;
+    /**
+     * Handle to a loaded chunk, or `undefined` if no chunk is loaded at `(q, r)`. Chunk queries
+     * go through the returned handle, not the world.
+     */
+    chunk(q: number, r: number): WasmChunk | undefined;
     const_cell_world_size(): number;
     const_chunk_world_size(): number;
-    corner_cells(q: number, r: number, corner_idx: HexPointyDir): CornerCellsHandle | undefined;
-    edge_cells(q: number, r: number, edge_idx: HexFlatDir): EdgeCellsHandle | undefined;
     init_chunk(q: number, r: number): void;
-    inner_cells(q: number, r: number): InnerCellsHandle | undefined;
     constructor();
     remove_chunk(q: number, r: number): void;
 }
@@ -249,18 +271,8 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly memory_info: () => any;
-    readonly hex_distance: (a: number, b: number, c: number, d: number) => number;
-    readonly hex_flat_from_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_flat_neighbor: (a: number, b: number, c: number) => [number, number];
-    readonly hex_flat_to_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_pointy_from_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_pointy_to_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_ring: (a: number, b: number, c: number) => [number, number];
-    readonly hex_pointy_neighbor: (a: number, b: number, c: number) => [number, number];
     readonly __wbg_cornercellshandle_free: (a: number, b: number) => void;
     readonly __wbg_edgecellshandle_free: (a: number, b: number) => void;
-    readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
     readonly cornercellshandle_cell_ids: (a: number) => any;
     readonly cornercellshandle_cell_tiles: (a: number, b: number, c: number) => any;
     readonly cornercellshandle_indices: (a: number) => any;
@@ -278,14 +290,6 @@ export interface InitOutput {
     readonly edgecellshandle_tile_vertices: (a: number) => any;
     readonly edgecellshandle_vertices: (a: number) => any;
     readonly innercellshandle_cell_tiles: (a: number, b: number) => any;
-    readonly start: () => void;
-    readonly wiredpolygonmeshhandle_has_wires: (a: number) => number;
-    readonly wiredpolygonmeshhandle_indices: (a: number) => any;
-    readonly wiredpolygonmeshhandle_ranges: (a: number) => any;
-    readonly wiredpolygonmeshhandle_vertices: (a: number) => any;
-    readonly wiredpolygonmeshhandle_wire_indices: (a: number) => any;
-    readonly wiredpolygonmeshhandle_wire_ranges: (a: number) => any;
-    readonly __wbg_innercellshandle_free: (a: number, b: number) => void;
     readonly innercellshandle_vertices: (a: number) => any;
     readonly innercellshandle_tile_vertices: (a: number) => any;
     readonly innercellshandle_tile_ids: (a: number) => any;
@@ -293,6 +297,25 @@ export interface InitOutput {
     readonly innercellshandle_ranges: (a: number) => any;
     readonly innercellshandle_indices: (a: number) => any;
     readonly innercellshandle_cell_ids: (a: number) => any;
+    readonly __wbg_innercellshandle_free: (a: number, b: number) => void;
+    readonly memory_info: () => any;
+    readonly hex_distance: (a: number, b: number, c: number, d: number) => number;
+    readonly hex_flat_from_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_flat_neighbor: (a: number, b: number, c: number) => [number, number];
+    readonly hex_flat_to_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_pointy_from_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_pointy_to_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_ring: (a: number, b: number, c: number) => [number, number];
+    readonly start: () => void;
+    readonly hex_pointy_neighbor: (a: number, b: number, c: number) => [number, number];
+    readonly __wbg_wasmworld_free: (a: number, b: number) => void;
+    readonly wasmworld_chunk: (a: number, b: number, c: number) => number;
+    readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly wasmworld_const_cell_world_size: (a: number) => number;
+    readonly wasmworld_const_chunk_world_size: (a: number) => number;
+    readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
+    readonly wasmworld_new: () => number;
+    readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
     readonly __wbg_wasmcdtmesh_free: (a: number, b: number) => void;
     readonly __wbg_wasmhexmesh_free: (a: number, b: number) => void;
     readonly __wbg_wasmworldneighbors_free: (a: number, b: number) => void;
@@ -310,16 +333,17 @@ export interface InitOutput {
     readonly wasmworldneighbors_corner_mesh: (a: number, b: number) => number;
     readonly wasmworldneighbors_edge_mesh: (a: number, b: number) => number;
     readonly wasmworldneighbors_inner_mesh: (a: number, b: number) => number;
-    readonly __wbg_wasmworld_free: (a: number, b: number) => void;
-    readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly wasmworld_const_cell_world_size: (a: number) => number;
-    readonly wasmworld_const_chunk_world_size: (a: number) => number;
-    readonly wasmworld_corner_cells: (a: number, b: number, c: number, d: number) => number;
-    readonly wasmworld_edge_cells: (a: number, b: number, c: number, d: number) => number;
-    readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
-    readonly wasmworld_inner_cells: (a: number, b: number, c: number) => number;
-    readonly wasmworld_new: () => number;
-    readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
+    readonly __wbg_wasmchunk_free: (a: number, b: number) => void;
+    readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
+    readonly wasmchunk_corner_cells: (a: number, b: number) => number;
+    readonly wasmchunk_edge_cells: (a: number, b: number) => number;
+    readonly wasmchunk_inner_cells: (a: number) => number;
+    readonly wiredpolygonmeshhandle_has_wires: (a: number) => number;
+    readonly wiredpolygonmeshhandle_indices: (a: number) => any;
+    readonly wiredpolygonmeshhandle_ranges: (a: number) => any;
+    readonly wiredpolygonmeshhandle_vertices: (a: number) => any;
+    readonly wiredpolygonmeshhandle_wire_indices: (a: number) => any;
+    readonly wiredpolygonmeshhandle_wire_ranges: (a: number) => any;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;

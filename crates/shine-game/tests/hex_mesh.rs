@@ -91,32 +91,34 @@ fn generate_subdiv_uniform() {
 
 #[test]
 fn generate_cdt_mesh() {
-    let mut mesher = CdtMesher::new(SUBDIVISION, INTERNAL_POINTS, SysRng::new().into_rc()).with_size(WORLD_SIZE);
-    let mesh = mesher.generate();
+    let mut rng = SysRng::new();
+    let mut mesher = CdtMesher::new(SUBDIVISION, INTERNAL_POINTS).with_size(WORLD_SIZE);
+    let mesh = mesher.generate(&mut rng);
     assert_valid_hexagon_mesh(&mesh);
 }
 
 #[test]
 fn test_cdt_determinism() {
     assert_mesher_deterministic("CDT", |seed| {
-        let rng = XorShift32::new(seed).into_rc();
-        let mut mesher = CdtMesher::new(SUBDIVISION, INTERNAL_POINTS, rng).with_size(WORLD_SIZE);
-        mesher.generate()
+        let mut rng = XorShift32::new(seed);
+        let mut mesher = CdtMesher::new(SUBDIVISION, INTERNAL_POINTS).with_size(WORLD_SIZE);
+        mesher.generate(&mut rng)
     });
 }
 
 #[test]
 fn generate_lattice() {
-    let mut mesher = LatticeMesher::new(SUBDIVISION, SysRng::new().into_rc()).with_size(WORLD_SIZE);
-    let mesh = mesher.generate();
+    let mut rng = SysRng::new();
+    let mut mesher = LatticeMesher::new(SUBDIVISION).with_size(WORLD_SIZE);
+    let mesh = mesher.generate(&mut rng);
     assert_valid_hexagon_mesh(&mesh);
 }
 
 #[test]
 fn test_lattice_determinism() {
     assert_mesher_deterministic("Lattice", |seed| {
-        let rng = XorShift32::new(seed).into_rc();
-        let mut mesher = LatticeMesher::new(2, rng).with_size(WORLD_SIZE);
-        mesher.generate()
+        let mut rng = XorShift32::new(seed);
+        let mut mesher = LatticeMesher::new(2).with_size(WORLD_SIZE);
+        mesher.generate(&mut rng)
     });
 }

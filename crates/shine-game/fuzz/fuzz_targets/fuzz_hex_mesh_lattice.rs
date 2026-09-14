@@ -2,10 +2,7 @@
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use shine_game::math::{
-    hex::LatticeMesher,
-    prng::{SequenceRng, StableRng},
-};
+use shine_game::math::{hex::LatticeMesher, prng::SequenceRng};
 use std::fmt;
 
 #[derive(Arbitrary)]
@@ -23,7 +20,7 @@ impl CdtMeshInput {
 impl fmt::Debug for CdtMeshInput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "let subdivision = {};", self.normalized_subdivision())?;
-        writeln!(f, "let rng = SequenceRng::new(vec!(&{:?})).into_rc();", self.rng_bytes)?;
+        writeln!(f, "let mut rng = SequenceRng::new(vec!(&{:?}));", self.rng_bytes)?;
 
         Ok(())
     }
@@ -32,8 +29,8 @@ impl fmt::Debug for CdtMeshInput {
 // CDT mesher: fuzzes interior point placement and the resulting quad mesh topology.
 fuzz_target!(|input: CdtMeshInput| {
     let subdivision = input.normalized_subdivision();
-    let rng = SequenceRng::new(input.rng_bytes).into_rc();
+    let mut rng = SequenceRng::new(input.rng_bytes);
 
-    let mesh = LatticeMesher::new(subdivision, rng).generate();
-    mesh.topology.validate().expect("CDT mesh topology should be valid");
+    let mesh = LatticeMesher::new(subdivision).generate(&mut rng);
+    mesh.validator().validate().expect("CDT mesh topology should be valid");
 });
