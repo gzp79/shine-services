@@ -8,12 +8,8 @@ use crate::{
     },
     world::{BaseLayer, ChunkId, CornerCells, EdgeCells, InnerCells, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
-use std::{
-    cell::{Cell, RefCell},
-    rc::{Rc, Weak},
-};
-
-use super::world::WorldInner;
+use super::generation::{Generation, WeakGeneration};
+use super::world::{WeakWorld, World};
 
 define_typed_index!(TileIndex, u32, "Dense, chunk-local tile id (finite quads only).");
 impl_typed_index_conversions!(TileIndex);
@@ -30,14 +26,12 @@ pub struct ChunkRngStreams {
 
 impl ChunkRngStreams {
     pub fn new(mut seed: SplitMix64) -> Self {
-        Self {
-            mesh: seed.generate_stream(),
-        }
+        Self { mesh: seed.generate_stream() }
     }
 }
 
 pub struct Chunk {
-    generation: Rc<Cell<u64>>,
+    generation: Generation,
     mesh: Quadrangulation,
     quad_to_tile: IdxVec<QuadIndex, TileIndex>,
     tile_to_quad: IdxVec<TileIndex, QuadIndex>,
@@ -70,7 +64,7 @@ impl Chunk {
         let base_layer = BaseLayer::new(tile_to_quad.len(), 0);
 
         Self {
-            generation: Rc::new(Cell::new(generation)),
+            generation: Generation::new(generation),
             mesh: topology,
             quad_to_tile,
             tile_to_quad,
@@ -80,7 +74,7 @@ impl Chunk {
         }
     }
 
-    pub fn generation(&self) -> &Rc<Cell<u64>> {
+    pub fn generation(&self) -> &Generation {
         &self.generation
     }
 
@@ -221,31 +215,28 @@ impl Chunk {
 /// unloaded, reloaded, or rebuilt). Every accessor revalidates both before touching world memory
 /// and returns `None` on failure, so a stale handle never reads moved or freed data.
 pub struct ChunkHandle {
-    world: Weak<RefCell<WorldInner>>,
+    world: WeakWorld,
     id: ChunkId,
-    generation: Weak<Cell<u64>>,
+    generation: WeakGeneration,
     /// Structural version seen when this handle was created; a mismatch means the chunk was
     /// rebuilt underneath it.
     captured: u64,
 }
 
 impl ChunkHandle {
-    pub(crate) fn new(world: &Rc<RefCell<WorldInner>>, id: ChunkId, generation: &Rc<Cell<u64>>) -> Self {
+    pub(super) fn new(world: WeakWorld, id: ChunkId, generation: &Generation) -> Self {
         Self {
-            world: Rc::downgrade(world),
+            world,
             id,
-            generation: Rc::downgrade(generation),
+            generation: generation.downgrade(),
             captured: generation.get(),
         }
     }
 
-    /// The live world, but only while this handle is still valid: the world must exist, the
-    /// chunk's generation cell must still be alive (it dies on unload / is replaced on reload),
-    /// and its value must match the one captured (unchanged since creation). `None` on any failure.
-    fn valid_world(&self) -> Option<Rc<RefCell<WorldInner>>> {
+    /// The live world, but only while this handle is still valid.
+    fn valid_world(&self) -> Option<World> {
         let world = self.world.upgrade()?;
-        let generation = self.generation.upgrade()?;
-        if generation.get() != self.captured {
+        if self.generation.get() != Some(self.captured) {
             return None;
         }
         Some(world)
@@ -257,27 +248,18 @@ impl ChunkHandle {
 
     /// Runs `f` with the live chunk while the handle is still valid, `None` otherwise.
     pub fn with_chunk<R>(&self, f: impl FnOnce(&Chunk) -> R) -> Option<R> {
-        let world = self.valid_world()?;
-        let inner = world.borrow();
-        let chunk = inner.chunk(self.id)?;
-        Some(f(chunk))
+        self.valid_world()?.with_chunk(self.id, f)
     }
 
     pub fn inner_cells(&self) -> Option<InnerCells> {
-        let world = self.valid_world()?;
-        let inner = world.borrow();
-        inner.inner_cells(self.id)
+        self.valid_world()?.inner_cells(self.id)
     }
 
     pub fn edge_cells(&self, edge_idx: HexFlatDir) -> Option<EdgeCells> {
-        let world = self.valid_world()?;
-        let inner = world.borrow();
-        inner.edge_cells(self.id, edge_idx)
+        self.valid_world()?.edge_cells(self.id, edge_idx)
     }
 
     pub fn corner_cells(&self, corner_idx: HexPointyDir) -> Option<CornerCells> {
-        let world = self.valid_world()?;
-        let inner = world.borrow();
-        inner.corner_cells(self.id, corner_idx)
+        self.valid_world()?.corner_cells(self.id, corner_idx)
     }
 }

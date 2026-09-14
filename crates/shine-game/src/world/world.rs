@@ -7,7 +7,7 @@ use crate::{
     },
     world::{Chunk, ChunkHandle, ChunkId, CornerCells, EdgeCells, InnerCells},
 };
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
 use tracing::info_span;
 
 /// The core subdivision depth to align chunks
@@ -20,10 +20,8 @@ pub const CHUNK_WORLD_SIZE: f32 = 1000.0;
 /// The "ideal" length of the side of a cell (in meter)
 pub const CELL_WORLD_SIZE: f32 = CHUNK_WORLD_SIZE / SUBDIVISION_COUNT as f32;
 
-/// The world data. `pub` so `ChunkHandle` (in `chunk.rs`) can name it, but deliberately not
-/// re-exported from the `world` module, so it stays private to this module: reached only through
-/// the `World` handle (mutation, chunk lookup) or a `ChunkHandle` (validated per-chunk reads).
-pub struct WorldInner {
+/// The world data.
+struct WorldInner {
     rng_seed: SplitMix64,
     chunks: HashMap<ChunkId, Chunk>,
     next_chunk_generation: u64,
@@ -44,7 +42,7 @@ impl WorldInner {
         self.chunks.insert(id, Chunk::new(&self.rng_seed, id, generation));
     }
 
-    pub fn chunk(&self, id: ChunkId) -> Option<&Chunk> {
+    fn chunk(&self, id: ChunkId) -> Option<&Chunk> {
         self.chunks.get(&id)
     }
 
@@ -60,12 +58,12 @@ impl WorldInner {
         vec![offset.x, offset.y]
     }
 
-    pub fn inner_cells(&self, id: ChunkId) -> Option<InnerCells> {
+    fn inner_cells(&self, id: ChunkId) -> Option<InnerCells> {
         let _span = info_span!("internal_cells", id = ?id).entered();
         self.chunk(id).map(|chunk| chunk.cell_data())
     }
 
-    pub fn edge_cells(&self, id: ChunkId, edge_idx: HexFlatDir) -> Option<EdgeCells> {
+    fn edge_cells(&self, id: ChunkId, edge_idx: HexFlatDir) -> Option<EdgeCells> {
         let _span = info_span!("edge_cells", id = ?id).entered();
 
         let (neighbor_dir, neighbor_edge) = match edge_idx {
@@ -161,7 +159,7 @@ impl WorldInner {
         })
     }
 
-    pub fn corner_cells(&self, id: ChunkId, corner_idx: HexPointyDir) -> Option<CornerCells> {
+    fn corner_cells(&self, id: ChunkId, corner_idx: HexPointyDir) -> Option<CornerCells> {
         let _span = info_span!("corner_cells", id = ?id).entered();
 
         let v0 = corner_idx;
@@ -256,6 +254,44 @@ impl World {
     pub fn chunk(&self, id: ChunkId) -> Option<ChunkHandle> {
         let inner = self.inner.borrow();
         let generation = inner.chunk(id)?.generation();
-        Some(ChunkHandle::new(&self.inner, id, generation))
+        Some(ChunkHandle::new(self.downgrade(), id, generation))
+    }
+
+    /// Runs `f` with the chunk at `id`, `None` if none is loaded there.
+    pub fn with_chunk<R>(&self, id: ChunkId, f: impl FnOnce(&Chunk) -> R) -> Option<R> {
+        let inner = self.inner.borrow();
+        let chunk = inner.chunk(id)?;
+        Some(f(chunk))
+    }
+
+    pub fn inner_cells(&self, id: ChunkId) -> Option<InnerCells> {
+        self.inner.borrow().inner_cells(id)
+    }
+
+    pub fn edge_cells(&self, id: ChunkId, edge_idx: HexFlatDir) -> Option<EdgeCells> {
+        self.inner.borrow().edge_cells(id, edge_idx)
+    }
+
+    pub fn corner_cells(&self, id: ChunkId, corner_idx: HexPointyDir) -> Option<CornerCells> {
+        self.inner.borrow().corner_cells(id, corner_idx)
+    }
+
+    pub fn downgrade(&self) -> WeakWorld {
+        WeakWorld {
+            inner: Rc::downgrade(&self.inner),
+        }
+    }
+}
+
+/// A weak reference to a `World`. `upgrade` returns a `World` handle while the backing store is
+/// alive, `None` otherwise.
+#[derive(Clone)]
+pub struct WeakWorld {
+    inner: Weak<RefCell<WorldInner>>,
+}
+
+impl WeakWorld {
+    pub fn upgrade(&self) -> Option<World> {
+        Some(World { inner: self.inner.upgrade()? })
     }
 }
