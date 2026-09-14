@@ -1,3 +1,5 @@
+use super::generation::{Generation, WeakGeneration};
+use super::world::{WeakWorld, World};
 use crate::{
     define_typed_index, impl_typed_index_conversions,
     indexed::{IdxVec, TypedIndex},
@@ -8,8 +10,6 @@ use crate::{
     },
     world::{BaseLayer, ChunkId, CornerCells, EdgeCells, InnerCells, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
 };
-use super::generation::{Generation, WeakGeneration};
-use super::world::{WeakWorld, World};
 
 define_typed_index!(TileIndex, u32, "Dense, chunk-local tile id (finite quads only).");
 impl_typed_index_conversions!(TileIndex);

@@ -7,7 +7,11 @@ use crate::{
     },
     world::{Chunk, ChunkHandle, ChunkId, CornerCells, EdgeCells, InnerCells},
 };
-use std::{cell::RefCell, collections::HashMap, rc::{Rc, Weak}};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    rc::{Rc, Weak},
+};
 use tracing::info_span;
 
 /// The core subdivision depth to align chunks

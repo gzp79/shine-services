@@ -1,4 +1,7 @@
-use std::{cell::Cell, rc::{Rc, Weak}};
+use std::{
+    cell::Cell,
+    rc::{Rc, Weak},
+};
 
 /// A shared, mutable version counter. Clones read the same value; a `WeakGeneration` observes it
 /// while any `Generation` is alive.
