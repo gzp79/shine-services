@@ -1,4 +1,4 @@
-import { InnerCellsHandle, WasmWorld } from '#wasm';
+import { WasmInnerCells, WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { EventSubscriptions } from '../../engine/events';
 import { SelectionMesh } from '../../engine/scene/selection-mesh';
@@ -20,7 +20,7 @@ export class InternalCell {
 
 export class Chunk {
     readonly group = new THREE.Group();
-    readonly innerCells: InnerCellsHandle;
+    readonly innerCells: WasmInnerCells;
 
     private label: THREE.Sprite | null = null;
     private cellWires: WireMesh | null = null;

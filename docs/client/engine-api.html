@@ -29,20 +29,22 @@ the invariants that keep it sound and how each is enforced.
 
 <h2>Architecture</h2>
 <p>
-Exactly one <strong>strong</strong> reference exists — the exported world root
-holds it, and it alone keeps engine data alive. Every handle the host derives
-from it points back <strong>weakly</strong> and carries just enough identity to
-re-resolve and to detect that its target has changed. A handle is acquired down
-a chain (<code>World → Chunk → {CellData, Layer}</code>), but each one tracks the
-engine independently through its own weak references, so a stray handle can never
-pin the world and a dead world degrades every handle cleanly.
+The single owning store lives in the engine core: an <code>Rc&lt;RefCell&lt;…&gt;&gt;</code>
+behind a cheaply-clonable <strong>World</strong> handle. Cloning a <code>World</code>
+shares that one store, so the strong side is the root and its clones and nothing else.
+Every handle the host derives points back <strong>weakly</strong> and carries just enough
+identity to re-resolve and to detect that its target has changed. A handle is acquired
+down a chain (<code>World → Chunk → {CellData, Layer}</code>), but each one tracks the
+engine independently through its own weak references, so a stray handle can never pin the
+store and a dropped world degrades every handle cleanly. The wasm layer only wraps these
+core handles; it holds no reference machinery of its own.
 </p>
 
 <div class="fanout">
   <div class="fanout-source">
     <div class="box box-green" style="flex:0 1 340px">
-      <div class="bname">World root (strong owner)</div>
-      <div class="bdetail">the only <code>Rc&lt;RefCell&lt;…&gt;&gt;</code>; owns chunks, buffers, generation cells</div>
+      <div class="bname">World handle (strong root)</div>
+      <div class="bdetail">cheaply-clonable handle over the one <code>Rc&lt;RefCell&lt;WorldInner&gt;&gt;</code>; owns chunks, buffers, generation stamps</div>
     </div>
   </div>
   <div class="fanout-trunk"></div>
@@ -73,9 +75,9 @@ that satisfies the model's invariants; do not invent a per-model scheme.
 <table>
   <tr><th>Tool</th><th>What it is</th><th>Reach for it when</th></tr>
   <tr>
-    <td>Single strong root</td>
-    <td>One owning reference (<code>Rc&lt;RefCell&lt;World&gt;&gt;</code>) held only by the exported world. It, and nothing else, keeps engine data alive.</td>
-    <td>Always — it is the anchor every other tool references. Never clone it into a handle.</td>
+    <td>Single owning store</td>
+    <td>One backing store (<code>Rc&lt;RefCell&lt;WorldInner&gt;&gt;</code>) behind a cheaply-clonable <code>World</code> handle. Its clones share the store and are the only strong side; nothing else keeps engine data alive.</td>
+    <td>Always — it is the anchor every other tool references. Downstream handles hold a weak link, never a strong clone.</td>
   </tr>
   <tr>
     <td>Weak back-reference</td>
@@ -106,7 +108,7 @@ that satisfies the model's invariants; do not invent a per-model scheme.
 
 <h3>Best practices</h3>
 <ul>
-  <li><strong>Strong at the root only.</strong> One owner; everything downstream is weak. A stray handle then can never leak the world, and shutting the world down invalidates all handles at once.</li>
+  <li><strong>Strong at the root only.</strong> The strong side is the <code>World</code> handle and its cheap clones (one shared store); everything downstream is weak. A stray handle then can never leak the world, and dropping every <code>World</code> invalidates all handles at once.</li>
   <li><strong>No borrow escapes a function.</strong> A borrow of the shared root is taken, used, and dropped within a single call — never held across a return to the host or a host callback. (Otherwise a re-entrant borrow is a runtime panic, not a clean error.)</li>
   <li><strong>Views are getters, fresh each call.</strong> Never return a cached view; rebuild it on access so the generation check runs every time and a moved buffer is caught on the next read.</li>
   <li><strong>Generation tracks layout, not contents.</strong> Bump it only when memory is reallocated or rebuilt. In-place value edits leave it untouched, so live views keep seeing the buffer and simply observe the new values.</li>
@@ -122,9 +124,9 @@ tracks the engine world, what data it exposes, and where the host gets it.
   <tr><th>Model</th><th>Holds</th><th>Tracks world via</th><th>Data exposed</th><th>Acquired from</th></tr>
   <tr>
     <td><strong>World</strong></td>
-    <td>Strong <code>Rc&lt;RefCell&lt;World&gt;&gt;</code></td>
-    <td>It <em>is</em> the owner</td>
-    <td>Chunk lookup / lifecycle</td>
+    <td>Cheaply-clonable handle over <code>Rc&lt;RefCell&lt;WorldInner&gt;&gt;</code></td>
+    <td>It <em>is</em> the owning store</td>
+    <td>Chunk lifecycle + by-id chunk / cell reads</td>
     <td>Exported constructor</td>
   </tr>
   <tr>
@@ -136,7 +138,7 @@ tracks the engine world, what data it exposes, and where the host gets it.
   </tr>
   <tr>
     <td><strong>CellData</strong></td>
-    <td>Owned snapshot buffers + weak generation</td>
+    <td>Owned snapshot buffers + generation guard (weak generation + captured value)</td>
     <td>Generation only (staleness of the snapshot)</td>
     <td>Owned, host-lifetime snapshot</td>
     <td>A Chunk function</td>
@@ -250,14 +252,17 @@ the pattern itself prescribes no host language.
 <h2>File map</h2>
 <table>
   <tr><th>File</th><th>Role</th></tr>
-  <tr><td><code>crates/shine-game/src/wasm/world/world.rs</code></td><td>Exported world root; holds the single strong reference and vends chunk handles.</td></tr>
-  <tr><td><code>crates/shine-game/src/wasm/world/cell_data.rs</code></td><td>CellData handle: owned snapshot exposed through zero-copy views, generation-checked.</td></tr>
-  <tr><td><code>crates/shine-game/src/world/world.rs</code></td><td>Core <code>World</code>: owns chunks and the generation source; free of host-reference concerns.</td></tr>
-  <tr><td><code>crates/shine-game/src/world/chunk.rs</code></td><td>Core chunk: owns its buffers and its generation cell; bumps it on structural change.</td></tr>
+  <tr><td><code>crates/shine-game/src/wasm/world/world.rs</code></td><td>Thin wasm wrapper over the core <code>World</code> handle; vends chunk handles across the boundary.</td></tr>
+  <tr><td><code>crates/shine-game/src/wasm/world/chunk.rs</code></td><td>Thin wasm wrapper over the core <code>ChunkHandle</code>; marshals derived-model requests to it.</td></tr>
+  <tr><td><code>crates/shine-game/src/wasm/world/cell_data.rs</code></td><td>Thin wasm views over core cell snapshots (<code>InnerCells</code> / <code>EdgeCells</code> / <code>CornerCells</code>); marshals their already-guarded accessors to zero-copy typed arrays.</td></tr>
+  <tr><td><code>crates/shine-game/src/world/world.rs</code></td><td>Core <code>World</code>: cheaply-clonable handle over the private <code>WorldInner</code> store; owns chunks, serves by-id reads, and vends <code>ChunkHandle</code> / <code>WeakWorld</code>.</td></tr>
+  <tr><td><code>crates/shine-game/src/world/chunk.rs</code></td><td>Core <code>Chunk</code> (owns its buffers and generation stamp) and <code>ChunkHandle</code>, the weak downstream handle that revalidates on every access.</td></tr>
+  <tr><td><code>crates/shine-game/src/world/generation.rs</code></td><td><code>Generation</code> / <code>WeakGeneration</code> version stamp and the <code>GenerationGuard</code> that captures a generation and rechecks its validity on demand.</td></tr>
+  <tr><td><code>crates/shine-game/src/world/{inner,edge,corner}_cells.rs</code></td><td>Per-kind snapshot structs <code>InnerCells</code> / <code>EdgeCells</code> / <code>CornerCells</code>, each wrapping private buffers behind 1 / 2 / 3 <code>GenerationGuard</code>s (one per contributing chunk), whose accessors return buffer slices only while every guard is valid; <code>edge_cells</code> and <code>corner_cells</code> also own their <code>EdgeSide</code> / <code>CornerSide</code> enums.</td></tr>
   <tr><td><code>crates/shine-game/src/world/layer.rs</code></td><td>Fixed-size layer buffer viewed zero-copy; in-place edits leave the generation untouched.</td></tr>
 </table>
 
-<details data-agent="implementation" data-transient="true">
+<details data-agent="implementation">
   <summary>What counts as a structural change (generation bump) vs an in-place edit</summary>
   <div class="details-body">
     The generation is a <em>structural</em> version, not a content version, and the
@@ -277,7 +282,7 @@ the pattern itself prescribes no host language.
   </div>
 </details>
 
-<details data-agent="implementation" data-transient="true">
+<details data-agent="implementation">
   <summary>Why weak-to-target beats a strong shared reference for the generation cell</summary>
   <div class="details-body">
     A handle holds a <code>Weak</code> to the generation cell, not a strong

@@ -1,4 +1,4 @@
-import { EdgeCellsHandle, WasmWorld } from '#wasm';
+import { WasmEdgeCells, WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { EventSubscriptions } from '../../engine/events';
 import { SelectionMesh } from '../../engine/scene/selection-mesh';
@@ -34,7 +34,7 @@ export class ChunkEdgeId {
 
 export class ChunkEdge {
     readonly group = new THREE.Group();
-    readonly cells: EdgeCellsHandle;
+    readonly cells: WasmEdgeCells;
     private wireframe: WireMesh;
     private selectionMesh: SelectionMesh;
     private _centroids: Float32Array | null = null;

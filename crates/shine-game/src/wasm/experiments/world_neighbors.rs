@@ -42,12 +42,9 @@ impl WasmWorldNeighbors {
         let (Some(id), offset) = (self.chunk_id(chunk_idx), self.chunk_offset(chunk_idx)) else {
             return vec![];
         };
-        let Some(handle) = self.world.chunk(id) else {
-            return vec![];
-        };
 
-        handle
-            .with_chunk(|chunk| {
+        self.world
+            .with_chunk(id, |chunk| {
                 let mut vertices = Vec::with_capacity(12);
                 for i in 0..6 {
                     let vi = chunk.mesh().anchor_vertex(AnchorIndex::new(i));
@@ -62,16 +59,17 @@ impl WasmWorldNeighbors {
 
     pub fn inner_mesh(&self, chunk_idx: u32) -> Option<WiredPolygonMeshHandle> {
         let (id, offset) = (self.chunk_id(chunk_idx)?, self.chunk_offset(chunk_idx));
-        let mut cells = self.world.chunk(id)?.inner_cells()?;
-        for i in (0..cells.vertices.len()).step_by(2) {
-            cells.vertices[i] += offset.x;
-            cells.vertices[i + 1] += offset.y;
+        let cells = self.world.chunk(id)?.inner_cells()?;
+        let mut vertices = cells.vertices()?.to_vec();
+        for i in (0..vertices.len()).step_by(2) {
+            vertices[i] += offset.x;
+            vertices[i + 1] += offset.y;
         }
         Some(
             WiredPolygonMesh {
-                vertices: cells.vertices,
-                indices: cells.indices,
-                ranges: cells.ranges,
+                vertices,
+                indices: cells.indices()?.to_vec(),
+                ranges: cells.ranges()?.to_vec(),
                 wire_indices: Vec::new(),
                 wire_ranges: Vec::new(),
             }
@@ -83,9 +81,9 @@ impl WasmWorldNeighbors {
         let cells = self.world.chunk(self.center)?.edge_cells(edge_idx.into())?;
         Some(
             WiredPolygonMesh {
-                vertices: cells.vertices,
-                indices: cells.indices,
-                ranges: cells.ranges,
+                vertices: cells.vertices()?.to_vec(),
+                indices: cells.indices()?.to_vec(),
+                ranges: cells.ranges()?.to_vec(),
                 wire_indices: Vec::new(),
                 wire_ranges: Vec::new(),
             }
@@ -97,9 +95,9 @@ impl WasmWorldNeighbors {
         let cells = self.world.chunk(self.center)?.corner_cells(corner_idx.into())?;
         Some(
             WiredPolygonMesh {
-                vertices: cells.vertices.clone(),
-                indices: cells.indices.clone(),
-                ranges: cells.ranges.to_vec(),
+                vertices: cells.vertices()?.to_vec(),
+                indices: cells.indices()?.to_vec(),
+                ranges: cells.ranges()?.to_vec(),
                 wire_indices: Vec::new(),
                 wire_ranges: Vec::new(),
             }

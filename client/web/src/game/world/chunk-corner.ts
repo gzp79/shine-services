@@ -1,4 +1,4 @@
-import { CornerCellsHandle, CornerSide, WasmWorld } from '#wasm';
+import { CornerSide, WasmCornerCells, WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { EventSubscriptions } from '../../engine/events';
 import { SelectionMesh } from '../../engine/scene/selection-mesh';
@@ -41,7 +41,7 @@ export class ChunkCornerId {
 
 export class ChunkCorner {
     readonly group = new THREE.Group();
-    readonly cells: CornerCellsHandle;
+    readonly cells: WasmCornerCells;
     private wireframe: WireMesh;
     private selectionMesh: SelectionMesh;
     private _centroids: Float32Array | null = null;

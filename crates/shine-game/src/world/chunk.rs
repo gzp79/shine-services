@@ -1,5 +1,3 @@
-use super::generation::{Generation, WeakGeneration};
-use super::world::{WeakWorld, World};
 use crate::{
     define_typed_index, impl_typed_index_conversions,
     indexed::{IdxVec, TypedIndex},
@@ -8,7 +6,10 @@ use crate::{
         prng::{Pcg32, SplitMix64},
         quadrangulation::{AnchorIndex, QuadIndex, Quadrangulation, VertexIndex},
     },
-    world::{BaseLayer, ChunkId, CornerCells, EdgeCells, InnerCells, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
+    world::{
+        generation::{Generation, GenerationGuard},
+        BaseLayer, ChunkId, CornerCells, EdgeCells, InnerCells, WeakWorld, World, CHUNK_WORLD_SIZE, SUBDIVISION_BASE,
+    },
 };
 
 define_typed_index!(TileIndex, u32, "Dense, chunk-local tile id (finite quads only).");
@@ -187,7 +188,7 @@ impl Chunk {
         // cell_tiles() binary-searches cell_ids, relying on this ascending order
         debug_assert!(cell_ids.is_sorted());
 
-        InnerCells {
+        InnerCells::new(
             vertices,
             indices,
             ranges,
@@ -195,7 +196,8 @@ impl Chunk {
             tile_ids,
             tile_vertices,
             tile_distortions,
-        }
+            self.generation(),
+        )
     }
 
     /// Returns VertexIndex values along specified hex edge (inclusive of both corners)
@@ -217,10 +219,7 @@ impl Chunk {
 pub struct ChunkHandle {
     world: WeakWorld,
     id: ChunkId,
-    generation: WeakGeneration,
-    /// Structural version seen when this handle was created; a mismatch means the chunk was
-    /// rebuilt underneath it.
-    captured: u64,
+    guard: GenerationGuard,
 }
 
 impl ChunkHandle {
@@ -228,18 +227,14 @@ impl ChunkHandle {
         Self {
             world,
             id,
-            generation: generation.downgrade(),
-            captured: generation.get(),
+            guard: GenerationGuard::new(generation),
         }
     }
 
     /// The live world, but only while this handle is still valid.
     fn valid_world(&self) -> Option<World> {
         let world = self.world.upgrade()?;
-        if self.generation.get() != Some(self.captured) {
-            return None;
-        }
-        Some(world)
+        self.guard.is_valid().then_some(world)
     }
 
     pub fn id(&self) -> ChunkId {

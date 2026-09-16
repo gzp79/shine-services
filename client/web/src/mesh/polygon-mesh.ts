@@ -11,22 +11,30 @@ export type WiredPolygonMeshLike = PolygonMeshLike & {
 };
 
 export type PolygonMeshSource = {
-    vertices(): Float32Array;
-    indices(): Uint32Array;
-    ranges(): Uint32Array;
+    vertices(): Float32Array | undefined;
+    indices(): Uint32Array | undefined;
+    ranges(): Uint32Array | undefined;
 };
+
+/** Unwraps a cell-view accessor, throwing when its source chunk changed and the view went stale. */
+function fresh<T>(value: T | undefined): T {
+    if (value === undefined) {
+        throw new Error('cell view is stale: its source chunk changed; re-acquire the handle');
+    }
+    return value;
+}
 
 /** Adapts a `PolygonMeshSource` to a `PolygonMeshLike`. */
 export function asPolygonMesh(source: PolygonMeshSource): PolygonMeshLike {
     return {
         get vertices() {
-            return source.vertices();
+            return fresh(source.vertices());
         },
         get indices() {
-            return source.indices();
+            return fresh(source.indices());
         },
         get ranges() {
-            return source.ranges();
+            return fresh(source.ranges());
         }
     };
 }
@@ -40,13 +48,13 @@ export type WiredPolygonMeshSource = PolygonMeshSource & {
 export function asWiredPolygonMesh(source: WiredPolygonMeshSource): WiredPolygonMeshLike {
     return {
         get vertices() {
-            return source.vertices();
+            return fresh(source.vertices());
         },
         get indices() {
-            return source.indices();
+            return fresh(source.indices());
         },
         get ranges() {
-            return source.ranges();
+            return fresh(source.ranges());
         },
         get wireIndices() {
             return source.wire_indices();
@@ -59,8 +67,8 @@ export function asWiredPolygonMesh(source: WiredPolygonMeshSource): WiredPolygon
 
 /** Source of the per-tile-quad corner positions `asTileOutlineMesh` is built from. */
 export type TileDistortionSource = {
-    tile_ids(): Uint32Array;
-    tile_distortions(): Float32Array;
+    tile_ids(): Uint32Array | undefined;
+    tile_distortions(): Float32Array | undefined;
 };
 
 /** Adapts a `TileDistortionSource` to a `PolygonMeshLike` of its tile quads. */
@@ -68,7 +76,7 @@ export function asTileOutlineMesh(source: TileDistortionSource): PolygonMeshLike
     let topology: { indices: Uint32Array; ranges: Uint32Array } | null = null;
 
     function computeTopology(): { indices: Uint32Array; ranges: Uint32Array } {
-        const tileCount = source.tile_ids().length;
+        const tileCount = fresh(source.tile_ids()).length;
         const indices = new Uint32Array(tileCount * 4);
         const ranges = new Uint32Array(tileCount * 2);
         for (let i = 0; i < tileCount; i++) {
@@ -81,7 +89,7 @@ export function asTileOutlineMesh(source: TileDistortionSource): PolygonMeshLike
 
     return {
         get vertices() {
-            return source.tile_distortions();
+            return fresh(source.tile_distortions());
         },
         get indices() {
             topology ??= computeTopology();

@@ -5,6 +5,6 @@ mod chunk;
 mod world;
 
 pub use self::{
-    cell_data::{CornerCellsHandle, EdgeCellsHandle, InnerCellsHandle},
+    cell_data::{WasmCornerCells, WasmEdgeCells, WasmInnerCells},
     chunk::WasmChunk,
 };

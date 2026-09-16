@@ -1,4 +1,4 @@
-import { InnerCellsHandle, WasmWorld } from '#wasm';
+import { WasmInnerCells, WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import { color } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
@@ -107,7 +107,7 @@ export class TileChunk extends Experiment {
     private tileVariants = new Uint8Array(0);
     private distortions: TileDistortion[] = [];
     private loadedChunk: { q: number; r: number } | null = null;
-    private innerCells: InnerCellsHandle | null = null;
+    private innerCells: WasmInnerCells | null = null;
     private cellWire: WireMesh | null = null;
     private tileWire: WireMesh | null = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -222,7 +222,7 @@ export class TileChunk extends Experiment {
         for (let i = 0; i < this.tileCount; i++) {
             const v = i % this.tileNode.variantCount;
             this.tileVariants[i] = v;
-            this.tileNode.setTile(v, this.innerCells!.tile_ids()[i], new THREE.Matrix4(), this.distortions[i]);
+            this.tileNode.setTile(v, this.innerCells!.tile_ids()![i], new THREE.Matrix4(), this.distortions[i]);
         }
         for (let i = 0; i < this.tileNode.variantCount; i++) {
             this.tileNode.setVariantVisible(i, this.variantVisible[i] ?? true);
@@ -234,7 +234,7 @@ export class TileChunk extends Experiment {
         const v = Math.min(this.fillParams.variant, this.tileNode.variantCount - 1);
         for (let i = 0; i < this.tileCount; i++) {
             if (this.tileVariants[i] !== v) {
-                const tileId = this.innerCells!.tile_ids()[i];
+                const tileId = this.innerCells!.tile_ids()![i];
                 this.tileNode.removeTile(this.tileVariants[i], tileId);
                 this.tileNode.setTile(v, tileId, new THREE.Matrix4(), this.distortions[i]);
                 this.tileVariants[i] = v;
@@ -245,7 +245,7 @@ export class TileChunk extends Experiment {
     private regenerate(): void {
         if (this.loadedChunk) {
             for (let i = 0; i < this.tileCount; i++) {
-                this.tileNode.removeTile(this.tileVariants[i], this.innerCells!.tile_ids()[i]);
+                this.tileNode.removeTile(this.tileVariants[i], this.innerCells!.tile_ids()![i]);
             }
             this.world.remove_chunk(this.loadedChunk.q, this.loadedChunk.r);
             this.loadedChunk = null;
@@ -269,8 +269,8 @@ export class TileChunk extends Experiment {
 
         using chunk = this.world.chunk(q, r)!;
         this.innerCells = chunk.inner_cells()!;
-        const tileCount = this.innerCells.tile_ids().length;
-        const tileDistortions = this.innerCells.tile_distortions();
+        const tileCount = this.innerCells.tile_ids()!.length;
+        const tileDistortions = this.innerCells.tile_distortions()!;
 
         this.tileCount = tileCount;
         this.tileVariants = new Uint8Array(tileCount).map((_, i) => i % this.tileNode.variantCount);
@@ -278,7 +278,7 @@ export class TileChunk extends Experiment {
         for (let i = 0; i < tileCount; i++) {
             const d = buildTileDistortion(tileDistortions, i);
             this.distortions.push(d);
-            this.tileNode.setTile(this.tileVariants[i], this.innerCells.tile_ids()[i], new THREE.Matrix4(), d);
+            this.tileNode.setTile(this.tileVariants[i], this.innerCells.tile_ids()![i], new THREE.Matrix4(), d);
         }
         this.cellWire = WireMesh.fromPolygons(this.chunkGroup, asPolygonMesh(this.innerCells));
         if (this.displayParams.showCells) this.cellWire.show();
@@ -292,7 +292,7 @@ export class TileChunk extends Experiment {
     private switchRandomTile(): void {
         if (this.tileCount === 0) return;
         const idx = Math.floor(Math.random() * this.tileCount);
-        const tileId = this.innerCells!.tile_ids()[idx];
+        const tileId = this.innerCells!.tile_ids()![idx];
         const currentVariant = this.tileVariants[idx];
         const nextVariant = (currentVariant + 1) % this.tileNode.variantCount;
         this.tileNode.removeTile(currentVariant, tileId);

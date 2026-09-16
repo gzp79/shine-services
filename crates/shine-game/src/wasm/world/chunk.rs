@@ -1,7 +1,7 @@
 use crate::{
     wasm::{
         math::{HexFlatDir, HexPointyDir},
-        world::{CornerCellsHandle, EdgeCellsHandle, InnerCellsHandle},
+        world::{WasmCornerCells, WasmEdgeCells, WasmInnerCells},
     },
     world::ChunkHandle,
 };
@@ -23,15 +23,15 @@ impl WasmChunk {
 
 #[wasm_bindgen]
 impl WasmChunk {
-    pub fn inner_cells(&self) -> Option<InnerCellsHandle> {
+    pub fn inner_cells(&self) -> Option<WasmInnerCells> {
         self.handle.inner_cells().map(Into::into)
     }
 
-    pub fn edge_cells(&self, edge_idx: HexFlatDir) -> Option<EdgeCellsHandle> {
+    pub fn edge_cells(&self, edge_idx: HexFlatDir) -> Option<WasmEdgeCells> {
         self.handle.edge_cells(edge_idx.into()).map(Into::into)
     }
 
-    pub fn corner_cells(&self, corner_idx: HexPointyDir) -> Option<CornerCellsHandle> {
+    pub fn corner_cells(&self, corner_idx: HexPointyDir) -> Option<WasmCornerCells> {
         self.handle.corner_cells(corner_idx.into()).map(Into::into)
     }
 }

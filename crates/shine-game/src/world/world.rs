@@ -152,7 +152,7 @@ impl WorldInner {
             ranges.push(indices.len() as u32);
         }
 
-        Some(EdgeCells {
+        Some(EdgeCells::new(
             vertices,
             indices,
             ranges,
@@ -160,7 +160,9 @@ impl WorldInner {
             tile_ids,
             tile_vertices,
             tile_distortions,
-        })
+            owner.generation(),
+            neighbor.generation(),
+        ))
     }
 
     fn corner_cells(&self, id: ChunkId, corner_idx: HexPointyDir) -> Option<CornerCells> {
@@ -209,15 +211,18 @@ impl WorldInner {
         }
 
         let vertex_count = (vertices.len() / 2) as u32;
-        Some(CornerCells {
+        Some(CornerCells::new(
             vertices,
-            indices: (0..vertex_count).collect(),
-            ranges: [0, vertex_count],
+            (0..vertex_count).collect(),
+            [0, vertex_count],
             cell_ids,
             tile_ids,
             tile_vertices,
             tile_distortions,
-        })
+            chunk0.generation(),
+            chunk1.generation(),
+            chunk2.generation(),
+        ))
     }
 }
 

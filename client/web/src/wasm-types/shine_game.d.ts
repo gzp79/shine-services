@@ -8,54 +8,12 @@ interface WasmWorld {
 
 
 /**
- * Zero-copy WASM view over CornerCells.
- * All accessors return views into Wasm linear memory — clone on the JS side
- */
-export class CornerCellsHandle {
-    private constructor();
-    free(): void;
-    [Symbol.dispose](): void;
-    cell_ids(): Uint32Array;
-    /**
-     * Packed [tile_id, vertex, tile_id, vertex, ...] pairs of every quad bordering `cell_id` on the given `side`.
-     */
-    cell_tiles(side: CornerSide, cell_id: number): Uint32Array;
-    indices(): Uint32Array;
-    ranges(): Uint32Array;
-    tile_distortions(): Float32Array;
-    tile_ids(): Uint32Array;
-    tile_vertices(): Uint8Array;
-    vertices(): Float32Array;
-}
-
-/**
  * Which side of a CornerCells polygon a tile belongs to. Matches Rust CornerSide indices exactly.
  */
 export enum CornerSide {
     Owner = 0,
     CcwNeighbor = 1,
     CwNeighbor = 2,
-}
-
-/**
- * Zero-copy WASM view over EdgeCells.
- * All accessors return views into Wasm linear memory — clone on the JS side
- */
-export class EdgeCellsHandle {
-    private constructor();
-    free(): void;
-    [Symbol.dispose](): void;
-    cell_ids(): Uint32Array;
-    /**
-     * Packed [tile_id, vertex, tile_id, vertex, ...] pairs of every quad bordering `cell_id` on the given `side`.
-     */
-    cell_tiles(side: EdgeSide, cell_id: number): Uint32Array;
-    indices(): Uint32Array;
-    ranges(): Uint32Array;
-    tile_distortions(): Float32Array;
-    tile_ids(): Uint32Array;
-    tile_vertices(): Uint8Array;
-    vertices(): Float32Array;
 }
 
 /**
@@ -90,27 +48,6 @@ export enum HexPointyDir {
     SE = 5,
 }
 
-/**
- * Zero-copy WASM view over InnerCells.
- * All accessors return views into Wasm linear memory — clone on the JS side
- */
-export class InnerCellsHandle {
-    private constructor();
-    free(): void;
-    [Symbol.dispose](): void;
-    cell_ids(): Uint32Array;
-    /**
-     * Packed [tile_id, vertex, tile_id, vertex, ...] pairs of every quad bordering `cell_id`.
-     */
-    cell_tiles(cell_id: number): Uint32Array;
-    indices(): Uint32Array;
-    ranges(): Uint32Array;
-    tile_distortions(): Float32Array;
-    tile_ids(): Uint32Array;
-    tile_vertices(): Uint8Array;
-    vertices(): Float32Array;
-}
-
 export class WasmCdtMesh {
     private constructor();
     free(): void;
@@ -122,18 +59,67 @@ export class WasmCdtMesh {
 }
 
 /**
- * Handle to a loaded chunk. Holds only weak references back into the engine — the world (to
- * resolve the chunk by id) and the chunk's structural generation (to detect that it was
- * unloaded, reloaded, or rebuilt). Every accessor validates both before touching engine memory
- * and returns `undefined` on failure, so a stale handle never reads moved or freed data.
+ * Handle to a loaded chunk. Wraps a core `ChunkHandle`, which holds only weak references into
+ * the world and revalidates on every access, so a stale handle returns `undefined` instead of
+ * reading moved or freed data.
  */
 export class WasmChunk {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
-    corner_cells(corner_idx: HexPointyDir): CornerCellsHandle | undefined;
-    edge_cells(edge_idx: HexFlatDir): EdgeCellsHandle | undefined;
-    inner_cells(): InnerCellsHandle | undefined;
+    corner_cells(corner_idx: HexPointyDir): WasmCornerCells | undefined;
+    edge_cells(edge_idx: HexFlatDir): WasmEdgeCells | undefined;
+    inner_cells(): WasmInnerCells | undefined;
+}
+
+/**
+ * Zero-copy WASM view over a CornerCells snapshot. Accessors return views into Wasm linear memory
+ * (clone on the JS side to outlive the next call), or `undefined` once the source chunk changed.
+ */
+export class WasmCornerCells {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    cell_ids(): Uint32Array | undefined;
+    /**
+     * Packed [tile_id, vertex, tile_id, vertex, ...] pairs of every quad bordering `cell_id` on the given `side`.
+     */
+    cell_tiles(side: CornerSide, cell_id: number): Uint32Array | undefined;
+    indices(): Uint32Array | undefined;
+    ranges(): Uint32Array | undefined;
+    tile_distortions(): Float32Array | undefined;
+    tile_ids(): Uint32Array | undefined;
+    tile_vertices(): Uint8Array | undefined;
+    /**
+     * Whether the source chunk is unchanged; `false` means every accessor returns `undefined`.
+     */
+    valid(): boolean;
+    vertices(): Float32Array | undefined;
+}
+
+/**
+ * Zero-copy WASM view over an EdgeCells snapshot. Accessors return views into Wasm linear memory
+ * (clone on the JS side to outlive the next call), or `undefined` once the source chunk changed.
+ */
+export class WasmEdgeCells {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    cell_ids(): Uint32Array | undefined;
+    /**
+     * Packed [tile_id, vertex, tile_id, vertex, ...] pairs of every quad bordering `cell_id` on the given `side`.
+     */
+    cell_tiles(side: EdgeSide, cell_id: number): Uint32Array | undefined;
+    indices(): Uint32Array | undefined;
+    ranges(): Uint32Array | undefined;
+    tile_distortions(): Float32Array | undefined;
+    tile_ids(): Uint32Array | undefined;
+    tile_vertices(): Uint8Array | undefined;
+    /**
+     * Whether the source chunk is unchanged; `false` means every accessor returns `undefined`.
+     */
+    valid(): boolean;
+    vertices(): Float32Array | undefined;
 }
 
 export class WasmHexMesh {
@@ -146,16 +132,39 @@ export class WasmHexMesh {
 }
 
 /**
- * The exported world root. Holds the single strong reference to the engine world; every handle
- * derived from it (see `WasmChunk`) points back weakly, so a stray handle can never keep the
- * world alive and dropping this invalidates them all at once.
+ * Zero-copy WASM view over an InnerCells snapshot. Accessors return views into Wasm linear memory
+ * (clone on the JS side to outlive the next call), or `undefined` once the source chunk changed.
+ */
+export class WasmInnerCells {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    cell_ids(): Uint32Array | undefined;
+    /**
+     * Packed [tile_id, vertex, tile_id, vertex, ...] pairs of every quad bordering `cell_id`.
+     */
+    cell_tiles(cell_id: number): Uint32Array | undefined;
+    indices(): Uint32Array | undefined;
+    ranges(): Uint32Array | undefined;
+    tile_distortions(): Float32Array | undefined;
+    tile_ids(): Uint32Array | undefined;
+    tile_vertices(): Uint8Array | undefined;
+    /**
+     * Whether the source chunk is unchanged; `false` means every accessor returns `undefined`.
+     */
+    valid(): boolean;
+    vertices(): Float32Array | undefined;
+}
+
+/**
+ * The exported world root. Wraps the core `World` handle; the `Rc<RefCell<..>>` graph and all
+ * staleness tracking live in core, so this layer only marshals ids and forwards calls.
  */
 export class WasmWorld {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Handle to a loaded chunk, or `undefined` if no chunk is loaded at `(q, r)`. Chunk queries
-     * go through the returned handle, not the world.
+     * Handle to a loaded chunk, or `undefined` if no chunk is loaded at `(q, r)`.
      */
     chunk(q: number, r: number): WasmChunk | undefined;
     const_cell_world_size(): number;
@@ -173,17 +182,8 @@ export class WasmWorldNeighbors {
      * Returns 12 floats (6 vertices * 2 coords) for the given chunk
      */
     chunk_hex_vertices(chunk_idx: number): Float32Array;
-    /**
-     * Get corner mesh for the given corner
-     */
     corner_mesh(corner_idx: HexPointyDir): WiredPolygonMeshHandle | undefined;
-    /**
-     * Get edge mesh for the given edge
-     */
     edge_mesh(edge_idx: HexFlatDir): WiredPolygonMeshHandle | undefined;
-    /**
-     * Get inner mesh for the given chunk
-     */
     inner_mesh(chunk_idx: number): WiredPolygonMeshHandle | undefined;
 }
 
@@ -271,44 +271,14 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_cornercellshandle_free: (a: number, b: number) => void;
-    readonly __wbg_edgecellshandle_free: (a: number, b: number) => void;
-    readonly cornercellshandle_cell_ids: (a: number) => any;
-    readonly cornercellshandle_cell_tiles: (a: number, b: number, c: number) => any;
-    readonly cornercellshandle_indices: (a: number) => any;
-    readonly cornercellshandle_ranges: (a: number) => any;
-    readonly cornercellshandle_tile_distortions: (a: number) => any;
-    readonly cornercellshandle_tile_ids: (a: number) => any;
-    readonly cornercellshandle_tile_vertices: (a: number) => any;
-    readonly cornercellshandle_vertices: (a: number) => any;
-    readonly edgecellshandle_cell_ids: (a: number) => any;
-    readonly edgecellshandle_cell_tiles: (a: number, b: number, c: number) => any;
-    readonly edgecellshandle_indices: (a: number) => any;
-    readonly edgecellshandle_ranges: (a: number) => any;
-    readonly edgecellshandle_tile_distortions: (a: number) => any;
-    readonly edgecellshandle_tile_ids: (a: number) => any;
-    readonly edgecellshandle_tile_vertices: (a: number) => any;
-    readonly edgecellshandle_vertices: (a: number) => any;
-    readonly innercellshandle_cell_tiles: (a: number, b: number) => any;
-    readonly innercellshandle_vertices: (a: number) => any;
-    readonly innercellshandle_tile_vertices: (a: number) => any;
-    readonly innercellshandle_tile_ids: (a: number) => any;
-    readonly innercellshandle_tile_distortions: (a: number) => any;
-    readonly innercellshandle_ranges: (a: number) => any;
-    readonly innercellshandle_indices: (a: number) => any;
-    readonly innercellshandle_cell_ids: (a: number) => any;
-    readonly __wbg_innercellshandle_free: (a: number, b: number) => void;
     readonly memory_info: () => any;
-    readonly hex_distance: (a: number, b: number, c: number, d: number) => number;
-    readonly hex_flat_from_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_flat_neighbor: (a: number, b: number, c: number) => [number, number];
-    readonly hex_flat_to_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_pointy_from_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_pointy_to_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_ring: (a: number, b: number, c: number) => [number, number];
     readonly start: () => void;
-    readonly hex_pointy_neighbor: (a: number, b: number, c: number) => [number, number];
+    readonly __wbg_wasmchunk_free: (a: number, b: number) => void;
     readonly __wbg_wasmworld_free: (a: number, b: number) => void;
+    readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
+    readonly wasmchunk_corner_cells: (a: number, b: number) => number;
+    readonly wasmchunk_edge_cells: (a: number, b: number) => number;
+    readonly wasmchunk_inner_cells: (a: number) => number;
     readonly wasmworld_chunk: (a: number, b: number, c: number) => number;
     readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly wasmworld_const_cell_world_size: (a: number) => number;
@@ -316,34 +286,67 @@ export interface InitOutput {
     readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
     readonly wasmworld_new: () => number;
     readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
-    readonly __wbg_wasmcdtmesh_free: (a: number, b: number) => void;
-    readonly __wbg_wasmhexmesh_free: (a: number, b: number) => void;
-    readonly __wbg_wasmworldneighbors_free: (a: number, b: number) => void;
-    readonly generate_cdt: (a: number, b: number) => number;
-    readonly generate_mesh: (a: number, b: number) => [number, number, number];
-    readonly generate_world_neighbors: (a: number, b: number) => [number, number, number];
-    readonly wasmcdtmesh_constraints: (a: number) => any;
-    readonly wasmcdtmesh_error_message: (a: number) => [number, number];
-    readonly wasmcdtmesh_triangles: (a: number) => any;
-    readonly wasmcdtmesh_vertices: (a: number) => any;
-    readonly wasmhexmesh_dual: (a: number) => number;
-    readonly wasmhexmesh_primal: (a: number) => number;
-    readonly wasmhexmesh_world_size: (a: number) => number;
-    readonly wasmworldneighbors_chunk_hex_vertices: (a: number, b: number) => [number, number];
-    readonly wasmworldneighbors_corner_mesh: (a: number, b: number) => number;
-    readonly wasmworldneighbors_edge_mesh: (a: number, b: number) => number;
-    readonly wasmworldneighbors_inner_mesh: (a: number, b: number) => number;
-    readonly __wbg_wasmchunk_free: (a: number, b: number) => void;
-    readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
-    readonly wasmchunk_corner_cells: (a: number, b: number) => number;
-    readonly wasmchunk_edge_cells: (a: number, b: number) => number;
-    readonly wasmchunk_inner_cells: (a: number) => number;
     readonly wiredpolygonmeshhandle_has_wires: (a: number) => number;
     readonly wiredpolygonmeshhandle_indices: (a: number) => any;
     readonly wiredpolygonmeshhandle_ranges: (a: number) => any;
     readonly wiredpolygonmeshhandle_vertices: (a: number) => any;
     readonly wiredpolygonmeshhandle_wire_indices: (a: number) => any;
     readonly wiredpolygonmeshhandle_wire_ranges: (a: number) => any;
+    readonly __wbg_wasmcdtmesh_free: (a: number, b: number) => void;
+    readonly __wbg_wasmcornercells_free: (a: number, b: number) => void;
+    readonly __wbg_wasmedgecells_free: (a: number, b: number) => void;
+    readonly __wbg_wasmhexmesh_free: (a: number, b: number) => void;
+    readonly __wbg_wasminnercells_free: (a: number, b: number) => void;
+    readonly generate_cdt: (a: number, b: number) => number;
+    readonly generate_mesh: (a: number, b: number) => [number, number, number];
+    readonly wasmcdtmesh_constraints: (a: number) => any;
+    readonly wasmcdtmesh_error_message: (a: number) => [number, number];
+    readonly wasmcdtmesh_triangles: (a: number) => any;
+    readonly wasmcdtmesh_vertices: (a: number) => any;
+    readonly wasmcornercells_cell_ids: (a: number) => any;
+    readonly wasmcornercells_cell_tiles: (a: number, b: number, c: number) => any;
+    readonly wasmcornercells_indices: (a: number) => any;
+    readonly wasmcornercells_ranges: (a: number) => any;
+    readonly wasmcornercells_tile_distortions: (a: number) => any;
+    readonly wasmcornercells_tile_ids: (a: number) => any;
+    readonly wasmcornercells_tile_vertices: (a: number) => any;
+    readonly wasmcornercells_valid: (a: number) => number;
+    readonly wasmcornercells_vertices: (a: number) => any;
+    readonly wasmedgecells_cell_ids: (a: number) => any;
+    readonly wasmedgecells_cell_tiles: (a: number, b: number, c: number) => any;
+    readonly wasmedgecells_indices: (a: number) => any;
+    readonly wasmedgecells_ranges: (a: number) => any;
+    readonly wasmedgecells_tile_distortions: (a: number) => any;
+    readonly wasmedgecells_tile_ids: (a: number) => any;
+    readonly wasmedgecells_tile_vertices: (a: number) => any;
+    readonly wasmedgecells_valid: (a: number) => number;
+    readonly wasmedgecells_vertices: (a: number) => any;
+    readonly wasmhexmesh_dual: (a: number) => number;
+    readonly wasmhexmesh_primal: (a: number) => number;
+    readonly wasmhexmesh_world_size: (a: number) => number;
+    readonly wasminnercells_cell_ids: (a: number) => any;
+    readonly wasminnercells_cell_tiles: (a: number, b: number) => any;
+    readonly wasminnercells_indices: (a: number) => any;
+    readonly wasminnercells_ranges: (a: number) => any;
+    readonly wasminnercells_tile_distortions: (a: number) => any;
+    readonly wasminnercells_tile_ids: (a: number) => any;
+    readonly wasminnercells_tile_vertices: (a: number) => any;
+    readonly wasminnercells_valid: (a: number) => number;
+    readonly wasminnercells_vertices: (a: number) => any;
+    readonly __wbg_wasmworldneighbors_free: (a: number, b: number) => void;
+    readonly generate_world_neighbors: (a: number, b: number) => [number, number, number];
+    readonly hex_distance: (a: number, b: number, c: number, d: number) => number;
+    readonly hex_flat_from_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_flat_neighbor: (a: number, b: number, c: number) => [number, number];
+    readonly hex_flat_to_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_pointy_from_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_pointy_to_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_ring: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworldneighbors_chunk_hex_vertices: (a: number, b: number) => [number, number];
+    readonly wasmworldneighbors_corner_mesh: (a: number, b: number) => number;
+    readonly wasmworldneighbors_edge_mesh: (a: number, b: number) => number;
+    readonly wasmworldneighbors_inner_mesh: (a: number, b: number) => number;
+    readonly hex_pointy_neighbor: (a: number, b: number, c: number) => [number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
