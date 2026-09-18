@@ -1,4 +1,6 @@
 use crate::{
+    indexed::TypedIndex,
+    math::quadrangulation::AnchorIndex,
     wasm::{
         math::{HexFlatDir, HexPointyDir},
         world::{WasmCornerCells, WasmEdgeCells, WasmInnerCells},
@@ -33,5 +35,20 @@ impl WasmChunk {
 
     pub fn corner_cells(&self, corner_idx: HexPointyDir) -> Option<WasmCornerCells> {
         self.handle.corner_cells(corner_idx.into()).map(Into::into)
+    }
+
+    /// The 6 hexagon boundary corners in chunk-local space as 12 floats `[x, y, ...]`, or
+    /// `undefined` if the handle is stale.
+    pub fn hex_vertices(&self) -> Option<Vec<f32>> {
+        self.handle.with_chunk(|chunk| {
+            let mut vertices = Vec::with_capacity(12);
+            for i in 0..6 {
+                let vi = chunk.mesh().anchor_vertex(AnchorIndex::new(i));
+                let p = chunk.mesh().p(vi);
+                vertices.push(p.x);
+                vertices.push(p.y);
+            }
+            vertices
+        })
     }
 }

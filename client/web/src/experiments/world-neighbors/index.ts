@@ -1,9 +1,15 @@
-import { generate_world_neighbors } from '#wasm';
+import { WasmWorld } from '#wasm';
 import * as THREE from 'three';
 import type { SceneContext } from '../../engine/scene';
 import { Experiment } from '../experiment';
 import { createControls, defaultParams } from './controls';
-import { buildChunkHexagons, buildCornerMeshes, buildEdgeMeshes, buildInteriorMeshes } from './mesh-builder';
+import {
+    buildChunkHexagons,
+    buildCornerMeshes,
+    buildEdgeMeshes,
+    buildInteriorMeshes,
+    neighborChunkIds
+} from './mesh-builder';
 
 export class WorldNeighbors extends Experiment {
     private params = defaultParams();
@@ -72,25 +78,28 @@ export class WorldNeighbors extends Experiment {
 
     private regenerate() {
         this.disposeScene();
+        const world = new WasmWorld();
         try {
-            const wasmData = generate_world_neighbors(this.params.centerQ, this.params.centerR);
+            const center = { q: this.params.centerQ, r: this.params.centerR };
+            for (const id of neighborChunkIds(center)) world.init_chunk(id.q, id.r);
 
-            this.hexagons = buildChunkHexagons(wasmData);
+            this.hexagons = buildChunkHexagons(world, center);
             this.scene.add(this.hexagons);
 
-            this.interiorGroup = buildInteriorMeshes(wasmData);
+            this.interiorGroup = buildInteriorMeshes(world, center);
             this.scene.add(this.interiorGroup.group);
 
-            this.edgeGroup = buildEdgeMeshes(wasmData);
+            this.edgeGroup = buildEdgeMeshes(world, center);
             this.scene.add(this.edgeGroup.group);
 
-            this.cornerGroup = buildCornerMeshes(wasmData);
+            this.cornerGroup = buildCornerMeshes(world, center);
             this.scene.add(this.cornerGroup.group);
 
-            wasmData.free();
             this.applyDisplay();
         } catch (e) {
             console.error('World neighbors generation failed:', e);
+        } finally {
+            world.free();
         }
     }
 
