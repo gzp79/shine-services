@@ -92,8 +92,6 @@ function buildTileDistortion(tileDistortions: Float32Array, tileIdx: number): Ti
     return d;
 }
 
-// Quad outlines of every tile, taken straight from the packed [x, y] × 4 corners of `tile_distortions`.
-
 export class TileChunk extends Experiment {
     private readonly world: WasmWorld;
     private tileNode: InstancedTileSet;
@@ -258,8 +256,6 @@ export class TileChunk extends Experiment {
         this.cellWire = null;
         this.tileWire?.dispose();
         this.tileWire = null;
-
-        // drop the previous chunk's view before requesting the new one
         this.innerCells?.free();
         this.innerCells = null;
 

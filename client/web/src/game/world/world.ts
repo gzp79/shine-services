@@ -13,7 +13,7 @@ import {
 import { Chunk } from './chunk';
 import { ChunkCorner, ChunkCornerId } from './chunk-corner';
 import { ChunkEdge, ChunkEdgeId } from './chunk-edge';
-import { ChunkId, HexFlatDir, HexPointyDir } from './chunk-id';
+import { ChunkId, WasmHexFlatDir, WasmHexPointyDir } from './chunk-id';
 import { SelectionManager } from './selection/selection-manager';
 
 type WorldConsts = {
@@ -113,18 +113,18 @@ export class World {
         chunk.showCellWires = this._showCellWires;
 
         this.updateChunkEdgesForChunk(id);
-        for (const dir of [HexFlatDir.SW, HexFlatDir.S, HexFlatDir.SE] as const) {
+        for (const dir of [WasmHexFlatDir.SW, WasmHexFlatDir.S, WasmHexFlatDir.SE] as const) {
             this.updateChunkEdgesForChunk(id.neighbor(dir));
         }
 
         this.updateChunkCornersForChunk(id);
         for (const dir of [
-            HexFlatDir.SW,
-            HexFlatDir.S,
-            HexFlatDir.SE,
-            HexFlatDir.NE,
-            HexFlatDir.N,
-            HexFlatDir.NW
+            WasmHexFlatDir.SW,
+            WasmHexFlatDir.S,
+            WasmHexFlatDir.SE,
+            WasmHexFlatDir.NE,
+            WasmHexFlatDir.N,
+            WasmHexFlatDir.NW
         ] as const) {
             this.updateChunkCornersForChunk(id.neighbor(dir));
         }
@@ -234,7 +234,7 @@ export class World {
             return;
         }
 
-        for (const edgeIdx of [HexFlatDir.NE, HexFlatDir.N, HexFlatDir.NW] as const) {
+        for (const edgeIdx of [WasmHexFlatDir.NE, WasmHexFlatDir.N, WasmHexFlatDir.NW] as const) {
             const edgeId = new ChunkEdgeId(chunkId, edgeIdx);
             if (this.chunkEdges.has(edgeId.key())) {
                 continue;
@@ -269,7 +269,7 @@ export class World {
             return;
         }
 
-        for (const cornerIdx of [HexPointyDir.E, HexPointyDir.NE, HexPointyDir.NW] as const) {
+        for (const cornerIdx of [WasmHexPointyDir.E, WasmHexPointyDir.NE, WasmHexPointyDir.NW] as const) {
             const cornerId = new ChunkCornerId(chunkId, cornerIdx);
             if (this.chunkCorners.has(cornerId.key())) {
                 continue;

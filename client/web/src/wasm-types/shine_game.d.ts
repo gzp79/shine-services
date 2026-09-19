@@ -24,30 +24,6 @@ export enum EdgeSide {
     Neighbor = 1,
 }
 
-/**
- * 6 neighbor direction for a flat-topped hex grid in CCW order. Matches Rust HexFlatDir indices exactly.
- */
-export enum HexFlatDir {
-    NE = 0,
-    N = 1,
-    NW = 2,
-    SW = 3,
-    S = 4,
-    SE = 5,
-}
-
-/**
- * 6 neighbor direction for a pointy-topped hex grid in CCW order. Matches Rust HexPointyDir indices exactly.
- */
-export enum HexPointyDir {
-    E = 0,
-    NE = 1,
-    NW = 2,
-    W = 3,
-    SW = 4,
-    SE = 5,
-}
-
 export class WasmCdtMesh {
     private constructor();
     free(): void;
@@ -67,8 +43,8 @@ export class WasmChunk {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
-    corner_cells(corner_idx: HexPointyDir): WasmCornerCells | undefined;
-    edge_cells(edge_idx: HexFlatDir): WasmEdgeCells | undefined;
+    corner_cells(corner_idx: WasmHexPointyDir): WasmCornerCells | undefined;
+    edge_cells(edge_idx: WasmHexFlatDir): WasmEdgeCells | undefined;
     /**
      * The 6 hexagon boundary corners in chunk-local space as 12 floats `[x, y, ...]`, or
      * `undefined` if the handle is stale.
@@ -78,8 +54,7 @@ export class WasmChunk {
 }
 
 /**
- * Zero-copy WASM view over a CornerCells snapshot. Accessors return views into Wasm linear memory
- * (clone on the JS side to outlive the next call), or `undefined` once the source chunk changed.
+ * Zero-copy WASM view over a CornerCells snapshot.
  */
 export class WasmCornerCells {
     private constructor();
@@ -103,8 +78,7 @@ export class WasmCornerCells {
 }
 
 /**
- * Zero-copy WASM view over an EdgeCells snapshot. Accessors return views into Wasm linear memory
- * (clone on the JS side to outlive the next call), or `undefined` once the source chunk changed.
+ * Zero-copy WASM view over an EdgeCells snapshot.
  */
 export class WasmEdgeCells {
     private constructor();
@@ -127,6 +101,18 @@ export class WasmEdgeCells {
     vertices(): Float32Array | undefined;
 }
 
+/**
+ * 6 neighbor direction for a flat-topped hex grid in CCW order.
+ */
+export enum WasmHexFlatDir {
+    NE = 0,
+    N = 1,
+    NW = 2,
+    SW = 3,
+    S = 4,
+    SE = 5,
+}
+
 export class WasmHexMesh {
     private constructor();
     free(): void;
@@ -137,8 +123,19 @@ export class WasmHexMesh {
 }
 
 /**
- * Zero-copy WASM view over an InnerCells snapshot. Accessors return views into Wasm linear memory
- * (clone on the JS side to outlive the next call), or `undefined` once the source chunk changed.
+ * 6 neighbor direction for a pointy-topped hex grid in CCW order.
+ */
+export enum WasmHexPointyDir {
+    E = 0,
+    NE = 1,
+    NW = 2,
+    W = 3,
+    SW = 4,
+    SE = 5,
+}
+
+/**
+ * Zero-copy WASM view over an InnerCells snapshot.
  */
 export class WasmInnerCells {
     private constructor();
@@ -161,10 +158,6 @@ export class WasmInnerCells {
     vertices(): Float32Array | undefined;
 }
 
-/**
- * The exported world root. Wraps the core `World` handle; the `Rc<RefCell<..>>` graph and all
- * staleness tracking live in core, so this layer only marshals ids and forwards calls.
- */
 export class WasmWorld {
     free(): void;
     [Symbol.dispose](): void;
@@ -221,7 +214,7 @@ export function hex_flat_from_position(x: number, y: number, size: number): Int3
 /**
  * Neighbor of (q, r) in the given flat-top direction. Returns [q, r].
  */
-export function hex_flat_neighbor(q: number, r: number, dir: HexFlatDir): Int32Array;
+export function hex_flat_neighbor(q: number, r: number, dir: WasmHexFlatDir): Int32Array;
 
 /**
  * World position [x, y] of the flat-top hex center at (q, r) with given circumradius size.
@@ -237,7 +230,7 @@ export function hex_pointy_from_position(x: number, y: number, size: number): In
 /**
  * Neighbor of (q, r) in the given pointy-top direction. Returns [q, r].
  */
-export function hex_pointy_neighbor(q: number, r: number, dir: HexPointyDir): Int32Array;
+export function hex_pointy_neighbor(q: number, r: number, dir: WasmHexPointyDir): Int32Array;
 
 /**
  * World position [x, y] of the pointy-top hex center at (q, r) with given circumradius size.
@@ -258,31 +251,11 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly __wbg_wasmchunk_free: (a: number, b: number) => void;
-    readonly __wbg_wasmworld_free: (a: number, b: number) => void;
-    readonly hex_distance: (a: number, b: number, c: number, d: number) => number;
-    readonly hex_flat_from_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_flat_neighbor: (a: number, b: number, c: number) => [number, number];
-    readonly hex_flat_to_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_pointy_from_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_pointy_to_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_ring: (a: number, b: number, c: number) => [number, number];
-    readonly wasmchunk_corner_cells: (a: number, b: number) => number;
-    readonly wasmchunk_edge_cells: (a: number, b: number) => number;
-    readonly wasmchunk_hex_vertices: (a: number) => [number, number];
-    readonly wasmchunk_inner_cells: (a: number) => number;
-    readonly wasmworld_chunk: (a: number, b: number, c: number) => number;
-    readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly wasmworld_const_cell_world_size: (a: number) => number;
-    readonly wasmworld_const_chunk_world_size: (a: number) => number;
-    readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
-    readonly wasmworld_new: () => number;
-    readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
-    readonly hex_pointy_neighbor: (a: number, b: number, c: number) => [number, number];
+    readonly memory_info: () => any;
+    readonly start: () => void;
     readonly __wbg_wasmcornercells_free: (a: number, b: number) => void;
     readonly __wbg_wasmedgecells_free: (a: number, b: number) => void;
     readonly __wbg_wasminnercells_free: (a: number, b: number) => void;
-    readonly start: () => void;
     readonly wasmcornercells_cell_ids: (a: number) => any;
     readonly wasmcornercells_cell_tiles: (a: number, b: number, c: number) => any;
     readonly wasmcornercells_indices: (a: number) => any;
@@ -310,7 +283,6 @@ export interface InitOutput {
     readonly wasminnercells_tile_vertices: (a: number) => any;
     readonly wasminnercells_valid: (a: number) => number;
     readonly wasminnercells_vertices: (a: number) => any;
-    readonly memory_info: () => any;
     readonly __wbg_wasmcdtmesh_free: (a: number, b: number) => void;
     readonly __wbg_wasmhexmesh_free: (a: number, b: number) => void;
     readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
@@ -329,6 +301,27 @@ export interface InitOutput {
     readonly wiredpolygonmeshhandle_vertices: (a: number) => any;
     readonly wiredpolygonmeshhandle_wire_indices: (a: number) => any;
     readonly wiredpolygonmeshhandle_wire_ranges: (a: number) => any;
+    readonly __wbg_wasmchunk_free: (a: number, b: number) => void;
+    readonly __wbg_wasmworld_free: (a: number, b: number) => void;
+    readonly hex_distance: (a: number, b: number, c: number, d: number) => number;
+    readonly hex_flat_from_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_flat_neighbor: (a: number, b: number, c: number) => [number, number];
+    readonly hex_flat_to_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_pointy_from_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_pointy_to_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_ring: (a: number, b: number, c: number) => [number, number];
+    readonly wasmchunk_corner_cells: (a: number, b: number) => number;
+    readonly wasmchunk_edge_cells: (a: number, b: number) => number;
+    readonly wasmchunk_hex_vertices: (a: number) => [number, number];
+    readonly wasmchunk_inner_cells: (a: number) => number;
+    readonly wasmworld_chunk: (a: number, b: number, c: number) => number;
+    readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly wasmworld_const_cell_world_size: (a: number) => number;
+    readonly wasmworld_const_chunk_world_size: (a: number) => number;
+    readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
+    readonly wasmworld_new: () => number;
+    readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
+    readonly hex_pointy_neighbor: (a: number, b: number, c: number) => [number, number];
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;

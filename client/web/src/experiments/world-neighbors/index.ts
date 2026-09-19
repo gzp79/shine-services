@@ -78,7 +78,7 @@ export class WorldNeighbors extends Experiment {
 
     private regenerate() {
         this.disposeScene();
-        const world = new WasmWorld();
+        using world = new WasmWorld();
         try {
             const center = { q: this.params.centerQ, r: this.params.centerR };
             for (const id of neighborChunkIds(center)) world.init_chunk(id.q, id.r);
@@ -98,8 +98,6 @@ export class WorldNeighbors extends Experiment {
             this.applyDisplay();
         } catch (e) {
             console.error('World neighbors generation failed:', e);
-        } finally {
-            world.free();
         }
     }
 

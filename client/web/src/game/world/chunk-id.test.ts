@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ChunkConst } from '../../constants';
-import { ChunkId, HexFlatDir } from './chunk-id';
+import { ChunkId, WasmHexFlatDir } from './chunk-id';
 
 beforeAll(async () => {
     const wasmPath = fileURLToPath(new URL('../../../pkg/shine_game_bg.wasm', import.meta.url));
@@ -12,14 +12,14 @@ beforeAll(async () => {
     await init(wasmModule);
 });
 
-describe('HexFlatDir indices vs WASM', () => {
+describe('WasmHexFlatDir indices vs WASM', () => {
     it.each([
-        [HexFlatDir.NE, 0, 'NE'],
-        [HexFlatDir.N, 1, 'N'],
-        [HexFlatDir.NW, 2, 'NW'],
-        [HexFlatDir.SW, 3, 'SW'],
-        [HexFlatDir.S, 4, 'S'],
-        [HexFlatDir.SE, 5, 'SE']
+        [WasmHexFlatDir.NE, 0, 'NE'],
+        [WasmHexFlatDir.N, 1, 'N'],
+        [WasmHexFlatDir.NW, 2, 'NW'],
+        [WasmHexFlatDir.SW, 3, 'SW'],
+        [WasmHexFlatDir.S, 4, 'S'],
+        [WasmHexFlatDir.SE, 5, 'SE']
     ] as const)('%s (%s) neighbor from origin matches WASM dir %i', (dir, wasmDir, _name) => {
         const js = ChunkId.ORIGIN.neighbor(dir);
         const wasm = hex_flat_neighbor(0, 0, wasmDir);

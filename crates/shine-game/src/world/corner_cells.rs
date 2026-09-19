@@ -10,8 +10,6 @@ crate::define_enum_index! {
     }
 }
 
-/// Geometry buffers of a chunk's corner cells (single polygon, at most ~10 vertices). Access goes
-/// through the guarded accessors on `CornerCells`.
 #[derive(Debug, Clone, Default)]
 struct CornerCellData {
     /// Vertex positions packed as [x, y, x, y, ...]

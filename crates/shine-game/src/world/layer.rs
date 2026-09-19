@@ -25,7 +25,7 @@ impl Packed for u32 {
     }
 }
 
-/// Per-tile data for a chunk, indexed by `TileIndex`. Fixed-size: backed by `Box<[T]>`, not `Vec<T>`.
+/// Per-tile data for a chunk, indexed by `TileIndex`.
 pub struct Layer<T> {
     data: Box<[T]>,
 }

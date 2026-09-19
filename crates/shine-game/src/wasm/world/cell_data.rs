@@ -31,8 +31,7 @@ impl From<CornerSide> for CoreCornerSide {
     }
 }
 
-/// Zero-copy WASM view over an InnerCells snapshot. Accessors return views into Wasm linear memory
-/// (clone on the JS side to outlive the next call), or `undefined` once the source chunk changed.
+/// Zero-copy WASM view over an InnerCells snapshot.
 #[wasm_bindgen]
 pub struct WasmInnerCells(InnerCells);
 
@@ -88,8 +87,7 @@ impl From<InnerCells> for WasmInnerCells {
     }
 }
 
-/// Zero-copy WASM view over an EdgeCells snapshot. Accessors return views into Wasm linear memory
-/// (clone on the JS side to outlive the next call), or `undefined` once the source chunk changed.
+/// Zero-copy WASM view over an EdgeCells snapshot.
 #[wasm_bindgen]
 pub struct WasmEdgeCells(EdgeCells);
 
@@ -145,8 +143,7 @@ impl From<EdgeCells> for WasmEdgeCells {
     }
 }
 
-/// Zero-copy WASM view over a CornerCells snapshot. Accessors return views into Wasm linear memory
-/// (clone on the JS side to outlive the next call), or `undefined` once the source chunk changed.
+/// Zero-copy WASM view over a CornerCells snapshot.
 #[wasm_bindgen]
 pub struct WasmCornerCells(CornerCells);
 

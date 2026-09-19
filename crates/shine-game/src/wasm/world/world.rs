@@ -12,8 +12,6 @@ interface WasmWorld {
 }
 "#;
 
-/// The exported world root. Wraps the core `World` handle; the `Rc<RefCell<..>>` graph and all
-/// staleness tracking live in core, so this layer only marshals ids and forwards calls.
 #[wasm_bindgen]
 pub struct WasmWorld {
     world: World,

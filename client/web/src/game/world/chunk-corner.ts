@@ -5,7 +5,7 @@ import { SelectionMesh } from '../../engine/scene/selection-mesh';
 import { WireMesh } from '../../engine/scene/wire-mesh';
 import { computeLocalCentroids } from '../../mesh/centroid';
 import { asPolygonMesh } from '../../mesh/polygon-mesh';
-import { ChunkId, HexFlatDir, HexPointyDir } from './chunk-id';
+import { ChunkId, WasmHexFlatDir, WasmHexPointyDir } from './chunk-id';
 import { SELECTION_CHANGED, type SelectionChangedEvent } from './selection/selection-event';
 
 export { CornerSide };
@@ -13,7 +13,7 @@ export { CornerSide };
 export class ChunkCornerId {
     constructor(
         public readonly chunkId: ChunkId,
-        public readonly cornerIdx: HexPointyDir.E | HexPointyDir.NE | HexPointyDir.NW
+        public readonly cornerIdx: WasmHexPointyDir.E | WasmHexPointyDir.NE | WasmHexPointyDir.NW
     ) {}
 
     key(): string {
@@ -25,10 +25,13 @@ export class ChunkCornerId {
     }
 
     involvedChunkIds(): [ChunkId, ChunkId, ChunkId] {
-        const CORNER_NEIGHBORS: Record<HexPointyDir.E | HexPointyDir.NE | HexPointyDir.NW, [HexFlatDir, HexFlatDir]> = {
-            [HexPointyDir.E]: [HexFlatDir.SE, HexFlatDir.NE],
-            [HexPointyDir.NE]: [HexFlatDir.NE, HexFlatDir.N],
-            [HexPointyDir.NW]: [HexFlatDir.N, HexFlatDir.NW]
+        const CORNER_NEIGHBORS: Record<
+            WasmHexPointyDir.E | WasmHexPointyDir.NE | WasmHexPointyDir.NW,
+            [WasmHexFlatDir, WasmHexFlatDir]
+        > = {
+            [WasmHexPointyDir.E]: [WasmHexFlatDir.SE, WasmHexFlatDir.NE],
+            [WasmHexPointyDir.NE]: [WasmHexFlatDir.NE, WasmHexFlatDir.N],
+            [WasmHexPointyDir.NW]: [WasmHexFlatDir.N, WasmHexFlatDir.NW]
         };
         const [n1, n2] = CORNER_NEIGHBORS[this.cornerIdx];
         return [this.chunkId, this.chunkId.neighbor(n1), this.chunkId.neighbor(n2)];

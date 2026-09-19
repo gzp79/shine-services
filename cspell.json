@@ -95,6 +95,7 @@
     "thiserror",
     "timestamptz",
     "timestampz",
+    "Toggleable",
     "toxiproxy",
     "tsflow",
     "unistroke",

@@ -9,7 +9,6 @@ crate::define_enum_index! {
     }
 }
 
-/// Geometry buffers of a chunk's edge cells. Access goes through the guarded accessors on `EdgeCells`.
 #[derive(Debug, Clone, Default)]
 struct EdgeCellData {
     /// Vertex positions packed as [x, y, x, y, ...]

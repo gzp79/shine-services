@@ -1,6 +1,5 @@
 use crate::world::generation::{Generation, GenerationGuard};
 
-/// Geometry buffers of a chunk's internal cells. Access goes through the guarded accessors on `InnerCells`.
 #[derive(Debug, Clone, Default)]
 struct InnerCellData {
     /// Vertex positions packed as [x, y, x, y, ...]

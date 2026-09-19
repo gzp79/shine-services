@@ -1,7 +1,7 @@
-import { HexFlatDir, HexPointyDir, WasmWorld, hex_flat_neighbor } from '#wasm';
+import { WasmHexFlatDir, WasmHexPointyDir, WasmWorld, hex_flat_neighbor } from '#wasm';
 import * as THREE from 'three';
 import { ManagedMesh } from '../../engine/resources/managed-mesh';
-import { disposeObject3D } from '../../engine/resources/ownership';
+import { type ToggleableGroup, createToggleableGroup } from '../../engine/scene/toggleable-group';
 import { type PolygonMeshSource, asPolygonMesh } from '../../mesh/polygon-mesh';
 
 const EDGE_COLOR = 0x222222;
@@ -11,18 +11,11 @@ export interface ChunkCoord {
     r: number;
 }
 
-export interface ToggleableGroup {
-    group: THREE.Group;
-    setVisible: (visible: boolean) => void;
-    setIndividualVisible: (index: number, visible: boolean) => void;
-    dispose: () => void;
-}
-
-/** Center chunk followed by its 6 flat-top neighbors, in HexFlatDir order (index 0 = center). */
+/** Center chunk followed by its 6 flat-top neighbors, in WasmHexFlatDir order (index 0 = center). */
 export function neighborChunkIds(center: ChunkCoord): ChunkCoord[] {
     const ids: ChunkCoord[] = [center];
     for (let dir = 0; dir < 6; dir++) {
-        const n = hex_flat_neighbor(center.q, center.r, dir as HexFlatDir);
+        const n = hex_flat_neighbor(center.q, center.r, dir as WasmHexFlatDir);
         ids.push({ q: n[0], r: n[1] });
     }
     return ids;
@@ -124,17 +117,6 @@ function buildCellGroup(source: PolygonMeshSource, color: THREE.Color, meshZ: nu
     return group;
 }
 
-function toggleable(group: THREE.Group, meshGroups: THREE.Group[]): ToggleableGroup {
-    return {
-        group,
-        setVisible: (visible: boolean) => meshGroups.forEach((g) => (g.visible = visible)),
-        setIndividualVisible: (index: number, visible: boolean) => {
-            if (index >= 0 && index < meshGroups.length) meshGroups[index].visible = visible;
-        },
-        dispose: () => meshGroups.forEach((g) => disposeObject3D(g))
-    };
-}
-
 export function buildChunkHexagons(world: WasmWorld, center: ChunkCoord): THREE.Group {
     const group = new THREE.Group();
     const color = new THREE.Color();
@@ -186,7 +168,7 @@ export function buildInteriorMeshes(world: WasmWorld, center: ChunkCoord): Toggl
         group.add(chunkGroup);
     });
 
-    return toggleable(group, meshGroups);
+    return createToggleableGroup(group, meshGroups);
 }
 
 export function buildEdgeMeshes(world: WasmWorld, center: ChunkCoord): ToggleableGroup {
@@ -198,7 +180,7 @@ export function buildEdgeMeshes(world: WasmWorld, center: ChunkCoord): Toggleabl
     for (let edgeIdx = 0; edgeIdx < 6; edgeIdx++) {
         const edgeGroup = new THREE.Group();
         if (chunk) {
-            using cells = chunk.edge_cells(edgeIdx as HexFlatDir);
+            using cells = chunk.edge_cells(edgeIdx as WasmHexFlatDir);
             if (cells) {
                 color.setHSL(edgeIdx / 6, 0.8, 0.5);
                 edgeGroup.add(buildCellGroup(cells, color, 0.2, 1.2));
@@ -208,7 +190,7 @@ export function buildEdgeMeshes(world: WasmWorld, center: ChunkCoord): Toggleabl
         group.add(edgeGroup);
     }
 
-    return toggleable(group, meshGroups);
+    return createToggleableGroup(group, meshGroups);
 }
 
 export function buildCornerMeshes(world: WasmWorld, center: ChunkCoord): ToggleableGroup {
@@ -220,7 +202,7 @@ export function buildCornerMeshes(world: WasmWorld, center: ChunkCoord): Togglea
     for (let cornerIdx = 0; cornerIdx < 6; cornerIdx++) {
         const cornerGroup = new THREE.Group();
         if (chunk) {
-            using cells = chunk.corner_cells(cornerIdx as HexPointyDir);
+            using cells = chunk.corner_cells(cornerIdx as WasmHexPointyDir);
             if (cells) {
                 color.setHSL(cornerIdx / 6, 0.8, 0.4);
                 cornerGroup.add(buildCellGroup(cells, color, 0.4, 1.4));
@@ -230,5 +212,5 @@ export function buildCornerMeshes(world: WasmWorld, center: ChunkCoord): Togglea
         group.add(cornerGroup);
     }
 
-    return toggleable(group, meshGroups);
+    return createToggleableGroup(group, meshGroups);
 }

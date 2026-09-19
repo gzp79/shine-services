@@ -2,7 +2,7 @@ use crate::{
     indexed::TypedIndex,
     math::quadrangulation::AnchorIndex,
     wasm::{
-        math::{HexFlatDir, HexPointyDir},
+        math::{WasmHexFlatDir, WasmHexPointyDir},
         world::{WasmCornerCells, WasmEdgeCells, WasmInnerCells},
     },
     world::ChunkHandle,
@@ -29,11 +29,11 @@ impl WasmChunk {
         self.handle.inner_cells().map(Into::into)
     }
 
-    pub fn edge_cells(&self, edge_idx: HexFlatDir) -> Option<WasmEdgeCells> {
+    pub fn edge_cells(&self, edge_idx: WasmHexFlatDir) -> Option<WasmEdgeCells> {
         self.handle.edge_cells(edge_idx.into()).map(Into::into)
     }
 
-    pub fn corner_cells(&self, corner_idx: HexPointyDir) -> Option<WasmCornerCells> {
+    pub fn corner_cells(&self, corner_idx: WasmHexPointyDir) -> Option<WasmCornerCells> {
         self.handle.corner_cells(corner_idx.into()).map(Into::into)
     }
 
