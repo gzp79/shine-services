@@ -1,4 +1,4 @@
-import { WasmHexFlatDir, WasmHexPointyDir, WasmWorld, hex_flat_neighbor } from '#wasm';
+import { HexFlatDir, HexPointyDir, World, hex_flat_neighbor } from '#wasm';
 import * as THREE from 'three';
 import { ManagedMesh } from '../../engine/resources/managed-mesh';
 import { type ToggleableGroup, createToggleableGroup } from '../../engine/scene/toggleable-group';
@@ -11,11 +11,11 @@ export interface ChunkCoord {
     r: number;
 }
 
-/** Center chunk followed by its 6 flat-top neighbors, in WasmHexFlatDir order (index 0 = center). */
+/** Center chunk followed by its 6 flat-top neighbors, in HexFlatDir order (index 0 = center). */
 export function neighborChunkIds(center: ChunkCoord): ChunkCoord[] {
     const ids: ChunkCoord[] = [center];
     for (let dir = 0; dir < 6; dir++) {
-        const n = hex_flat_neighbor(center.q, center.r, dir as WasmHexFlatDir);
+        const n = hex_flat_neighbor(center.q, center.r, dir as HexFlatDir);
         ids.push({ q: n[0], r: n[1] });
     }
     return ids;
@@ -117,7 +117,7 @@ function buildCellGroup(source: PolygonMeshSource, color: THREE.Color, meshZ: nu
     return group;
 }
 
-export function buildChunkHexagons(world: WasmWorld, center: ChunkCoord): THREE.Group {
+export function buildChunkHexagons(world: World, center: ChunkCoord): THREE.Group {
     const group = new THREE.Group();
     const color = new THREE.Color();
 
@@ -145,7 +145,7 @@ export function buildChunkHexagons(world: WasmWorld, center: ChunkCoord): THREE.
     return group;
 }
 
-export function buildInteriorMeshes(world: WasmWorld, center: ChunkCoord): ToggleableGroup {
+export function buildInteriorMeshes(world: World, center: ChunkCoord): ToggleableGroup {
     const group = new THREE.Group();
     const meshGroups: THREE.Group[] = [];
     const color = new THREE.Color();
@@ -171,7 +171,7 @@ export function buildInteriorMeshes(world: WasmWorld, center: ChunkCoord): Toggl
     return createToggleableGroup(group, meshGroups);
 }
 
-export function buildEdgeMeshes(world: WasmWorld, center: ChunkCoord): ToggleableGroup {
+export function buildEdgeMeshes(world: World, center: ChunkCoord): ToggleableGroup {
     const group = new THREE.Group();
     const meshGroups: THREE.Group[] = [];
     const color = new THREE.Color();
@@ -180,7 +180,7 @@ export function buildEdgeMeshes(world: WasmWorld, center: ChunkCoord): Toggleabl
     for (let edgeIdx = 0; edgeIdx < 6; edgeIdx++) {
         const edgeGroup = new THREE.Group();
         if (chunk) {
-            using cells = chunk.edge_cells(edgeIdx as WasmHexFlatDir);
+            using cells = chunk.edge_cells(edgeIdx as HexFlatDir);
             if (cells) {
                 color.setHSL(edgeIdx / 6, 0.8, 0.5);
                 edgeGroup.add(buildCellGroup(cells, color, 0.2, 1.2));
@@ -193,7 +193,7 @@ export function buildEdgeMeshes(world: WasmWorld, center: ChunkCoord): Toggleabl
     return createToggleableGroup(group, meshGroups);
 }
 
-export function buildCornerMeshes(world: WasmWorld, center: ChunkCoord): ToggleableGroup {
+export function buildCornerMeshes(world: World, center: ChunkCoord): ToggleableGroup {
     const group = new THREE.Group();
     const meshGroups: THREE.Group[] = [];
     const color = new THREE.Color();
@@ -202,7 +202,7 @@ export function buildCornerMeshes(world: WasmWorld, center: ChunkCoord): Togglea
     for (let cornerIdx = 0; cornerIdx < 6; cornerIdx++) {
         const cornerGroup = new THREE.Group();
         if (chunk) {
-            using cells = chunk.corner_cells(cornerIdx as WasmHexPointyDir);
+            using cells = chunk.corner_cells(cornerIdx as HexPointyDir);
             if (cells) {
                 color.setHSL(cornerIdx / 6, 0.8, 0.4);
                 cornerGroup.add(buildCellGroup(cells, color, 0.4, 1.4));

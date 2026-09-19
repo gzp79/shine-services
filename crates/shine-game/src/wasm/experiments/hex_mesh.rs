@@ -54,7 +54,7 @@ enum FilterConfig {
     },
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "HexMesh")]
 pub struct WasmHexMesh {
     world_size: f32,
     mesh: Quadrangulation,

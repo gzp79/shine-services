@@ -1,30 +1,13 @@
 /* tslint:disable */
 /* eslint-disable */
 
-interface WasmWorld {
+interface World {
     chunk_world_offset(ref_q: number, ref_r: number, q: number, r: number): [number, number];
 }
 
 
 
-/**
- * Which side of a CornerCells polygon a tile belongs to. Matches Rust CornerSide indices exactly.
- */
-export enum CornerSide {
-    Owner = 0,
-    CcwNeighbor = 1,
-    CwNeighbor = 2,
-}
-
-/**
- * Which side of an EdgeCells polygon a tile belongs to. Matches Rust EdgeSide indices exactly.
- */
-export enum EdgeSide {
-    Owner = 0,
-    Neighbor = 1,
-}
-
-export class WasmCdtMesh {
+export class CdtMesh {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
@@ -39,24 +22,24 @@ export class WasmCdtMesh {
  * the world and revalidates on every access, so a stale handle returns `undefined` instead of
  * reading moved or freed data.
  */
-export class WasmChunk {
+export class Chunk {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
-    corner_cells(corner_idx: WasmHexPointyDir): WasmCornerCells | undefined;
-    edge_cells(edge_idx: WasmHexFlatDir): WasmEdgeCells | undefined;
+    corner_cells(corner_idx: HexPointyDir): CornerCells | undefined;
+    edge_cells(edge_idx: HexFlatDir): EdgeCells | undefined;
     /**
      * The 6 hexagon boundary corners in chunk-local space as 12 floats `[x, y, ...]`, or
      * `undefined` if the handle is stale.
      */
     hex_vertices(): Float32Array | undefined;
-    inner_cells(): WasmInnerCells | undefined;
+    inner_cells(): InnerCells | undefined;
 }
 
 /**
  * Zero-copy WASM view over a CornerCells snapshot.
  */
-export class WasmCornerCells {
+export class CornerCells {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
@@ -78,9 +61,18 @@ export class WasmCornerCells {
 }
 
 /**
+ * Which side of a CornerCells polygon a tile belongs to. Matches Rust CornerSide indices exactly.
+ */
+export enum CornerSide {
+    Owner = 0,
+    CcwNeighbor = 1,
+    CwNeighbor = 2,
+}
+
+/**
  * Zero-copy WASM view over an EdgeCells snapshot.
  */
-export class WasmEdgeCells {
+export class EdgeCells {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
@@ -102,9 +94,17 @@ export class WasmEdgeCells {
 }
 
 /**
+ * Which side of an EdgeCells polygon a tile belongs to. Matches Rust EdgeSide indices exactly.
+ */
+export enum EdgeSide {
+    Owner = 0,
+    Neighbor = 1,
+}
+
+/**
  * 6 neighbor direction for a flat-topped hex grid in CCW order.
  */
-export enum WasmHexFlatDir {
+export enum HexFlatDir {
     NE = 0,
     N = 1,
     NW = 2,
@@ -113,7 +113,7 @@ export enum WasmHexFlatDir {
     SE = 5,
 }
 
-export class WasmHexMesh {
+export class HexMesh {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
@@ -125,7 +125,7 @@ export class WasmHexMesh {
 /**
  * 6 neighbor direction for a pointy-topped hex grid in CCW order.
  */
-export enum WasmHexPointyDir {
+export enum HexPointyDir {
     E = 0,
     NE = 1,
     NW = 2,
@@ -137,7 +137,7 @@ export enum WasmHexPointyDir {
 /**
  * Zero-copy WASM view over an InnerCells snapshot.
  */
-export class WasmInnerCells {
+export class InnerCells {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
@@ -158,20 +158,6 @@ export class WasmInnerCells {
     vertices(): Float32Array | undefined;
 }
 
-export class WasmWorld {
-    free(): void;
-    [Symbol.dispose](): void;
-    /**
-     * Handle to a loaded chunk, or `undefined` if no chunk is loaded at `(q, r)`.
-     */
-    chunk(q: number, r: number): WasmChunk | undefined;
-    const_cell_world_size(): number;
-    const_chunk_world_size(): number;
-    init_chunk(q: number, r: number): void;
-    constructor();
-    remove_chunk(q: number, r: number): void;
-}
-
 /**
  * Zero-copy WASM view over a WiredPolygonMesh.
  * All accessors return views into Wasm linear memory — clone on the JS side
@@ -189,16 +175,30 @@ export class WiredPolygonMeshHandle {
     wire_ranges(): Uint32Array;
 }
 
+export class World {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Handle to a loaded chunk, or `undefined` if no chunk is loaded at `(q, r)`.
+     */
+    chunk(q: number, r: number): Chunk | undefined;
+    const_cell_world_size(): number;
+    const_chunk_world_size(): number;
+    init_chunk(q: number, r: number): void;
+    constructor();
+    remove_chunk(q: number, r: number): void;
+}
+
 /**
  * Generate a CDT from random points and constraint edges.
  * `config_json`: { "n_points": u32, "n_edges": u32, "seed": u32, "bound": i32 }
  */
-export function generate_cdt(config_json: string): WasmCdtMesh;
+export function generate_cdt(config_json: string): CdtMesh;
 
 /**
  * Generate a hex quad mesh from a JSON config string.
  */
-export function generate_mesh(config_json: string): WasmHexMesh;
+export function generate_mesh(config_json: string): HexMesh;
 
 /**
  * Axial distance between two hex coordinates.
@@ -214,7 +214,7 @@ export function hex_flat_from_position(x: number, y: number, size: number): Int3
 /**
  * Neighbor of (q, r) in the given flat-top direction. Returns [q, r].
  */
-export function hex_flat_neighbor(q: number, r: number, dir: WasmHexFlatDir): Int32Array;
+export function hex_flat_neighbor(q: number, r: number, dir: HexFlatDir): Int32Array;
 
 /**
  * World position [x, y] of the flat-top hex center at (q, r) with given circumradius size.
@@ -230,7 +230,7 @@ export function hex_pointy_from_position(x: number, y: number, size: number): In
 /**
  * Neighbor of (q, r) in the given pointy-top direction. Returns [q, r].
  */
-export function hex_pointy_neighbor(q: number, r: number, dir: WasmHexPointyDir): Int32Array;
+export function hex_pointy_neighbor(q: number, r: number, dir: HexPointyDir): Int32Array;
 
 /**
  * World position [x, y] of the pointy-top hex center at (q, r) with given circumradius size.
@@ -252,10 +252,10 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly memory_info: () => any;
+    readonly __wbg_cornercells_free: (a: number, b: number) => void;
+    readonly __wbg_edgecells_free: (a: number, b: number) => void;
+    readonly __wbg_innercells_free: (a: number, b: number) => void;
     readonly start: () => void;
-    readonly __wbg_wasmcornercells_free: (a: number, b: number) => void;
-    readonly __wbg_wasmedgecells_free: (a: number, b: number) => void;
-    readonly __wbg_wasminnercells_free: (a: number, b: number) => void;
     readonly wasmcornercells_cell_ids: (a: number) => any;
     readonly wasmcornercells_cell_tiles: (a: number, b: number, c: number) => any;
     readonly wasmcornercells_indices: (a: number) => any;
@@ -283,26 +283,8 @@ export interface InitOutput {
     readonly wasminnercells_tile_vertices: (a: number) => any;
     readonly wasminnercells_valid: (a: number) => number;
     readonly wasminnercells_vertices: (a: number) => any;
-    readonly __wbg_wasmcdtmesh_free: (a: number, b: number) => void;
-    readonly __wbg_wasmhexmesh_free: (a: number, b: number) => void;
-    readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
-    readonly generate_cdt: (a: number, b: number) => number;
-    readonly generate_mesh: (a: number, b: number) => [number, number, number];
-    readonly wasmcdtmesh_constraints: (a: number) => any;
-    readonly wasmcdtmesh_error_message: (a: number) => [number, number];
-    readonly wasmcdtmesh_triangles: (a: number) => any;
-    readonly wasmcdtmesh_vertices: (a: number) => any;
-    readonly wasmhexmesh_dual: (a: number) => number;
-    readonly wasmhexmesh_primal: (a: number) => number;
-    readonly wasmhexmesh_world_size: (a: number) => number;
-    readonly wiredpolygonmeshhandle_has_wires: (a: number) => number;
-    readonly wiredpolygonmeshhandle_indices: (a: number) => any;
-    readonly wiredpolygonmeshhandle_ranges: (a: number) => any;
-    readonly wiredpolygonmeshhandle_vertices: (a: number) => any;
-    readonly wiredpolygonmeshhandle_wire_indices: (a: number) => any;
-    readonly wiredpolygonmeshhandle_wire_ranges: (a: number) => any;
-    readonly __wbg_wasmchunk_free: (a: number, b: number) => void;
-    readonly __wbg_wasmworld_free: (a: number, b: number) => void;
+    readonly __wbg_chunk_free: (a: number, b: number) => void;
+    readonly __wbg_world_free: (a: number, b: number) => void;
     readonly hex_distance: (a: number, b: number, c: number, d: number) => number;
     readonly hex_flat_from_position: (a: number, b: number, c: number) => [number, number];
     readonly hex_flat_neighbor: (a: number, b: number, c: number) => [number, number];
@@ -322,6 +304,24 @@ export interface InitOutput {
     readonly wasmworld_new: () => number;
     readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
     readonly hex_pointy_neighbor: (a: number, b: number, c: number) => [number, number];
+    readonly __wbg_cdtmesh_free: (a: number, b: number) => void;
+    readonly __wbg_hexmesh_free: (a: number, b: number) => void;
+    readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
+    readonly generate_cdt: (a: number, b: number) => number;
+    readonly generate_mesh: (a: number, b: number) => [number, number, number];
+    readonly wasmcdtmesh_constraints: (a: number) => any;
+    readonly wasmcdtmesh_error_message: (a: number) => [number, number];
+    readonly wasmcdtmesh_triangles: (a: number) => any;
+    readonly wasmcdtmesh_vertices: (a: number) => any;
+    readonly wasmhexmesh_dual: (a: number) => number;
+    readonly wasmhexmesh_primal: (a: number) => number;
+    readonly wasmhexmesh_world_size: (a: number) => number;
+    readonly wiredpolygonmeshhandle_has_wires: (a: number) => number;
+    readonly wiredpolygonmeshhandle_indices: (a: number) => any;
+    readonly wiredpolygonmeshhandle_ranges: (a: number) => any;
+    readonly wiredpolygonmeshhandle_vertices: (a: number) => any;
+    readonly wiredpolygonmeshhandle_wire_indices: (a: number) => any;
+    readonly wiredpolygonmeshhandle_wire_ranges: (a: number) => any;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;

@@ -3,7 +3,7 @@ use glam::Vec2;
 use wasm_bindgen::prelude::*;
 
 /// 6 neighbor direction for a flat-topped hex grid in CCW order.
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "HexFlatDir")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WasmHexFlatDir {
     NE = 0,
@@ -21,7 +21,7 @@ impl From<WasmHexFlatDir> for HexFlatDir {
 }
 
 /// 6 neighbor direction for a pointy-topped hex grid in CCW order.
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "HexPointyDir")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WasmHexPointyDir {
     E = 0,

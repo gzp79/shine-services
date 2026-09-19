@@ -12,7 +12,7 @@ use wasm_bindgen::prelude::*;
 /// Handle to a loaded chunk. Wraps a core `ChunkHandle`, which holds only weak references into
 /// the world and revalidates on every access, so a stale handle returns `undefined` instead of
 /// reading moved or freed data.
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "Chunk")]
 pub struct WasmChunk {
     handle: ChunkHandle,
 }

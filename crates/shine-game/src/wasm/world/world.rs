@@ -7,12 +7,12 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_WASM_WORLD: &str = r#"
-interface WasmWorld {
+interface World {
     chunk_world_offset(ref_q: number, ref_r: number, q: number, r: number): [number, number];
 }
 "#;
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "World")]
 pub struct WasmWorld {
     world: World,
 }

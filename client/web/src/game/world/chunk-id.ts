@@ -1,11 +1,11 @@
-import { WasmHexFlatDir, WasmHexPointyDir } from '#wasm';
+import { HexFlatDir, HexPointyDir } from '#wasm';
 import * as THREE from 'three';
 import { ChunkConst } from '../../constants';
 import { range } from '../../engine/utils';
 
-export { WasmHexFlatDir, WasmHexPointyDir };
+export { HexFlatDir, HexPointyDir };
 
-/** (dq, dr) deltas indexed by WasmHexFlatDir. */
+/** (dq, dr) deltas indexed by HexFlatDir. */
 const HEX_DIRECTIONS: ReadonlyArray<[number, number]> = [
     [1, -1], // NE
     [0, -1], // N
@@ -16,13 +16,13 @@ const HEX_DIRECTIONS: ReadonlyArray<[number, number]> = [
 ];
 
 /** Ring walk directions (NW→SW→S→SE→NE→N), matching Rust RingIterator. */
-const RING_WALK: ReadonlyArray<WasmHexFlatDir> = [
-    WasmHexFlatDir.NW,
-    WasmHexFlatDir.SW,
-    WasmHexFlatDir.S,
-    WasmHexFlatDir.SE,
-    WasmHexFlatDir.NE,
-    WasmHexFlatDir.N
+const RING_WALK: ReadonlyArray<HexFlatDir> = [
+    HexFlatDir.NW,
+    HexFlatDir.SW,
+    HexFlatDir.S,
+    HexFlatDir.SE,
+    HexFlatDir.NE,
+    HexFlatDir.N
 ];
 
 /** Chunk grid coordinate. */
@@ -59,13 +59,13 @@ export class ChunkId {
         return this.distanceTo(reference) <= ChunkConst.MAX_ACTIVE_DISTANCE;
     }
 
-    /** Return the 6 immediate hex neighbors in WasmHexFlatDir order. */
+    /** Return the 6 immediate hex neighbors in HexFlatDir order. */
     neighbors(): ChunkId[] {
         return HEX_DIRECTIONS.map(([dq, dr]) => new ChunkId(this.q + dq, this.r + dr));
     }
 
-    /** Get neighbor in the given WasmHexFlatDir direction. */
-    neighbor(direction: WasmHexFlatDir): ChunkId {
+    /** Get neighbor in the given HexFlatDir direction. */
+    neighbor(direction: HexFlatDir): ChunkId {
         const [dq, dr] = HEX_DIRECTIONS[direction];
         return new ChunkId(this.q + dq, this.r + dr);
     }
@@ -79,7 +79,7 @@ export class ChunkId {
 
         const results: ChunkId[] = [];
         // Start at NE corner: center + NE * radius
-        const [dq0, dr0] = HEX_DIRECTIONS[WasmHexFlatDir.NE];
+        const [dq0, dr0] = HEX_DIRECTIONS[HexFlatDir.NE];
         let q = this.q + dq0 * radius;
         let r = this.r + dr0 * radius;
 

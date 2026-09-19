@@ -1,4 +1,4 @@
-import { WasmWorld } from '#wasm';
+import { World } from '#wasm';
 import * as THREE from 'three';
 import { ChunkConst } from '../../constants';
 import type { DebugPanel } from '../../engine/compositor/debug-panel';
@@ -13,7 +13,7 @@ import {
 import { Chunk } from './chunk';
 import { ChunkCorner, ChunkCornerId } from './chunk-corner';
 import { ChunkEdge, ChunkEdgeId } from './chunk-edge';
-import { ChunkId, WasmHexFlatDir, WasmHexPointyDir } from './chunk-id';
+import { ChunkId, HexFlatDir, HexPointyDir } from './chunk-id';
 import { SelectionManager } from './selection/selection-manager';
 
 type WorldConsts = {
@@ -21,10 +21,10 @@ type WorldConsts = {
     cellWorldSize: number;
 };
 
-export class World {
+export class GameWorld {
     private readonly SCOPE = 'World';
     readonly group = new THREE.Group();
-    private readonly wasm: WasmWorld;
+    private readonly world: World;
     readonly chunks = new Map<string, Chunk>();
     readonly chunkEdges = new Map<string, ChunkEdge>();
     readonly chunkCorners = new Map<string, ChunkCorner>();
@@ -77,10 +77,10 @@ export class World {
     }
 
     constructor(events: EventTarget, debugPanel: DebugPanel | null) {
-        this.wasm = new WasmWorld();
+        this.world = new World();
         this.consts = {
-            chunkWorldSize: this.wasm.const_chunk_world_size(),
-            cellWorldSize: this.wasm.const_cell_world_size()
+            chunkWorldSize: this.world.const_chunk_world_size(),
+            cellWorldSize: this.world.const_cell_world_size()
         };
         this.subscriptions = new EventSubscriptions(events);
         this.selection = new SelectionManager(events, debugPanel);
@@ -101,9 +101,9 @@ export class World {
 
         using _s = span(`loadChunk(${id.q},${id.r})`);
 
-        this.wasm.init_chunk(id.q, id.r);
+        this.world.init_chunk(id.q, id.r);
 
-        const chunk = new Chunk(this.wasm, id, this.subscriptions.events);
+        const chunk = new Chunk(this.world, id, this.subscriptions.events);
         this.group.add(chunk.group);
         this.chunks.set(key, chunk);
         this.updateDebugPanel();
@@ -113,18 +113,18 @@ export class World {
         chunk.showCellWires = this._showCellWires;
 
         this.updateChunkEdgesForChunk(id);
-        for (const dir of [WasmHexFlatDir.SW, WasmHexFlatDir.S, WasmHexFlatDir.SE] as const) {
+        for (const dir of [HexFlatDir.SW, HexFlatDir.S, HexFlatDir.SE] as const) {
             this.updateChunkEdgesForChunk(id.neighbor(dir));
         }
 
         this.updateChunkCornersForChunk(id);
         for (const dir of [
-            WasmHexFlatDir.SW,
-            WasmHexFlatDir.S,
-            WasmHexFlatDir.SE,
-            WasmHexFlatDir.NE,
-            WasmHexFlatDir.N,
-            WasmHexFlatDir.NW
+            HexFlatDir.SW,
+            HexFlatDir.S,
+            HexFlatDir.SE,
+            HexFlatDir.NE,
+            HexFlatDir.N,
+            HexFlatDir.NW
         ] as const) {
             this.updateChunkCornersForChunk(id.neighbor(dir));
         }
@@ -145,7 +145,7 @@ export class World {
         this.group.remove(chunk.group);
         chunk.dispose();
         this.chunks.delete(key);
-        this.wasm.remove_chunk(id.q, id.r);
+        this.world.remove_chunk(id.q, id.r);
         this.updateDebugPanel();
     }
 
@@ -180,7 +180,7 @@ export class World {
         this.chunks.clear();
 
         this.debugPanel?.removeScope(this.SCOPE);
-        this.wasm.free();
+        this.world.free();
     }
 
     private handleWorldReferenceChanged = (event: WorldReferenceChangedEvent): void => {
@@ -234,7 +234,7 @@ export class World {
             return;
         }
 
-        for (const edgeIdx of [WasmHexFlatDir.NE, WasmHexFlatDir.N, WasmHexFlatDir.NW] as const) {
+        for (const edgeIdx of [HexFlatDir.NE, HexFlatDir.N, HexFlatDir.NW] as const) {
             const edgeId = new ChunkEdgeId(chunkId, edgeIdx);
             if (this.chunkEdges.has(edgeId.key())) {
                 continue;
@@ -244,7 +244,7 @@ export class World {
                 continue;
             }
 
-            const entity = new ChunkEdge(this.wasm, edgeId, this.subscriptions.events);
+            const entity = new ChunkEdge(this.world, edgeId, this.subscriptions.events);
             entity.init(this._referenceChunkId);
             entity.showCellWires = this._showCellWires;
             this.group.add(entity.group);
@@ -269,7 +269,7 @@ export class World {
             return;
         }
 
-        for (const cornerIdx of [WasmHexPointyDir.E, WasmHexPointyDir.NE, WasmHexPointyDir.NW] as const) {
+        for (const cornerIdx of [HexPointyDir.E, HexPointyDir.NE, HexPointyDir.NW] as const) {
             const cornerId = new ChunkCornerId(chunkId, cornerIdx);
             if (this.chunkCorners.has(cornerId.key())) {
                 continue;
@@ -279,7 +279,7 @@ export class World {
                 continue;
             }
 
-            const entity = new ChunkCorner(this.wasm, cornerId, this.subscriptions.events);
+            const entity = new ChunkCorner(this.world, cornerId, this.subscriptions.events);
             entity.init(this._referenceChunkId);
             entity.showCellWires = this._showCellWires;
             this.group.add(entity.group);

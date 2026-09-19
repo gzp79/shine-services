@@ -32,7 +32,7 @@ impl From<CornerSide> for CoreCornerSide {
 }
 
 /// Zero-copy WASM view over an InnerCells snapshot.
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "InnerCells")]
 pub struct WasmInnerCells(InnerCells);
 
 #[wasm_bindgen]
@@ -88,7 +88,7 @@ impl From<InnerCells> for WasmInnerCells {
 }
 
 /// Zero-copy WASM view over an EdgeCells snapshot.
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "EdgeCells")]
 pub struct WasmEdgeCells(EdgeCells);
 
 #[wasm_bindgen]
@@ -144,7 +144,7 @@ impl From<EdgeCells> for WasmEdgeCells {
 }
 
 /// Zero-copy WASM view over a CornerCells snapshot.
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "CornerCells")]
 pub struct WasmCornerCells(CornerCells);
 
 #[wasm_bindgen]

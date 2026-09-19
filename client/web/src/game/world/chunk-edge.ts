@@ -1,18 +1,18 @@
-import { WasmEdgeCells, WasmWorld } from '#wasm';
+import { EdgeCells, World } from '#wasm';
 import * as THREE from 'three';
 import { EventSubscriptions } from '../../engine/events';
 import { SelectionMesh } from '../../engine/scene/selection-mesh';
 import { WireMesh } from '../../engine/scene/wire-mesh';
 import { computeLocalCentroids } from '../../mesh/centroid';
 import { asPolygonMesh } from '../../mesh/polygon-mesh';
-import { ChunkId, WasmHexFlatDir } from './chunk-id';
+import { ChunkId, HexFlatDir } from './chunk-id';
 import { SELECTION_CHANGED, type SelectionChangedEvent } from './selection/selection-event';
 
 export class ChunkEdgeId {
     constructor(
         // The "owner" chunk id. Edge data is stored relative to this chunk.
         public readonly chunkId: ChunkId,
-        public readonly edgeIdx: WasmHexFlatDir.NE | WasmHexFlatDir.N | WasmHexFlatDir.NW
+        public readonly edgeIdx: HexFlatDir.NE | HexFlatDir.N | HexFlatDir.NW
     ) {}
 
     key(): string {
@@ -34,14 +34,14 @@ export class ChunkEdgeId {
 
 export class ChunkEdge {
     readonly group = new THREE.Group();
-    readonly cells: WasmEdgeCells;
+    readonly cells: EdgeCells;
     private wireframe: WireMesh;
     private selectionMesh: SelectionMesh;
     private _centroids: Float32Array | null = null;
     private readonly subscriptions: EventSubscriptions;
 
     constructor(
-        private readonly world: WasmWorld,
+        private readonly world: World,
         readonly id: ChunkEdgeId,
         events: EventTarget
     ) {

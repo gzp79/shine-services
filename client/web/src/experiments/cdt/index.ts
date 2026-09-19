@@ -1,14 +1,14 @@
 import { generate_cdt } from '#wasm';
 import type { SceneContext } from '../../engine/scene';
 import { span } from '../../engine/utils';
-import type { WasmCdtMesh } from '../../wasm-types/shine_game';
+import type { CdtMesh } from '../../wasm-types/shine_game';
 import { Experiment } from '../experiment';
 import { cdtParamsToJson, createCdtControls, defaultCdtParams } from './controls';
 import { CdtMeshGroup, buildCdtMesh, buildCircumcenterMesh } from './mesh-builder';
 
 export class Cdt extends Experiment {
     private params = defaultCdtParams();
-    private currentCdtHandle: WasmCdtMesh | null = null;
+    private currentCdtHandle: CdtMesh | null = null;
     private currentMesh: CdtMeshGroup | null = null;
     private circumcenterMesh: CdtMeshGroup | null = null;
     private activeTriangleIndex = -1;

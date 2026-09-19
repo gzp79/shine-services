@@ -1,4 +1,4 @@
-import { WasmInnerCells, WasmWorld } from '#wasm';
+import { InnerCells, World } from '#wasm';
 import * as THREE from 'three';
 import { color } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
@@ -93,7 +93,7 @@ function buildTileDistortion(tileDistortions: Float32Array, tileIdx: number): Ti
 }
 
 export class TileChunk extends Experiment {
-    private readonly world: WasmWorld;
+    private readonly world: World;
     private tileNode: InstancedTileSet;
     private readonly chunkGroup: THREE.Group;
     private readonly assetPicker: AssetSourcePicker;
@@ -105,7 +105,7 @@ export class TileChunk extends Experiment {
     private tileVariants = new Uint8Array(0);
     private distortions: TileDistortion[] = [];
     private loadedChunk: { q: number; r: number } | null = null;
-    private innerCells: WasmInnerCells | null = null;
+    private innerCells: InnerCells | null = null;
     private cellWire: WireMesh | null = null;
     private tileWire: WireMesh | null = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -123,7 +123,7 @@ export class TileChunk extends Experiment {
         this.camera.lookAt(0, 0, 0);
         if (this.controls) this.controls.update();
 
-        this.world = new WasmWorld();
+        this.world = new World();
         this.chunkGroup = new THREE.Group();
         this.scene.add(this.chunkGroup);
         this.tileNode = buildProceduralTileSet(this.chunkGroup, INSTANCE_COUNT_HINT);

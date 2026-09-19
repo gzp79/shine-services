@@ -1,4 +1,4 @@
-import { WasmWorld } from '#wasm';
+import { World } from '#wasm';
 import * as THREE from 'three';
 import type { SceneContext } from '../../engine/scene';
 import { Experiment } from '../experiment';
@@ -78,7 +78,7 @@ export class WorldNeighbors extends Experiment {
 
     private regenerate() {
         this.disposeScene();
-        using world = new WasmWorld();
+        using world = new World();
         try {
             const center = { q: this.params.centerQ, r: this.params.centerR };
             for (const id of neighborChunkIds(center)) world.init_chunk(id.q, id.r);

@@ -13,7 +13,7 @@ import { ClearInputStateSystem } from './systems/clear-input-state-system';
 import { CursorDriveSystem } from './systems/cursor-drive-system';
 import { SelectionSystem } from './systems/selection-system';
 import { WorldReferenceSystem } from './systems/world-reference-system';
-import { World } from './world/world';
+import { GameWorld } from './world/world';
 
 export class Game implements Scene {
     private readonly events: EventTarget;
@@ -23,7 +23,7 @@ export class Game implements Scene {
     private readonly camera: RtsCamera;
     private readonly worldCursor: WorldCursor;
     private readonly debugPanel: DebugPanel;
-    private readonly world: World;
+    private readonly world: GameWorld;
     private readonly assets: AssetStore;
     private readonly systems: GameSystem[] = [];
 
@@ -42,7 +42,7 @@ export class Game implements Scene {
 
         this.camera = new RtsCamera(this.events);
         this.worldCursor = new WorldCursor(this.renderContext.scene, this.events);
-        this.world = new World(this.events, this.debugPanel);
+        this.world = new GameWorld(this.events, this.debugPanel);
         this.assets = new AssetStore(catalogBuilder);
 
         this.inputState = new InputState();
