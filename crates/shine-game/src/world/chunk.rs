@@ -8,8 +8,7 @@ use crate::{
     },
     world::{
         generation::{Generation, GenerationGuard},
-        BaseLayer, ChangeLog, ChunkId, CornerCells, EdgeCells, InnerCells, WeakWorld, World, CHUNK_WORLD_SIZE,
-        SUBDIVISION_BASE,
+        BaseLayer, ChangeLog, ChunkId, InnerCells, Layer, CHUNK_WORLD_SIZE, SUBDIVISION_BASE,
     },
 };
 
@@ -113,6 +112,45 @@ impl Chunk {
         flat
     }
 
+    pub fn hex_vertices(&self) -> Vec<f32> {
+        let mut vertices = Vec::with_capacity(12);
+        for i in 0..6 {
+            let vi = self.mesh.anchor_vertex(AnchorIndex::new(i));
+            let p = self.mesh.p(vi);
+            vertices.push(p.x);
+            vertices.push(p.y);
+        }
+        vertices
+    }
+
+    /// Takes `field` and wraps it in a `ChangeLog` guarded by this chunk's generation.
+    #[must_use = "the returned ChangeLog owns the locked update and releases it when dropped"]
+    fn lock_layer<T, F>(field: &mut Option<Layer<T>>, generation: &Generation, restore: F) -> Option<ChangeLog<T>>
+    where
+        F: FnOnce(Layer<T>) + 'static,
+    {
+        let layer = field.take()?;
+        let guard = GenerationGuard::new(generation);
+        Some(ChangeLog::new(layer, move |mut layer| {
+            if guard.is_valid() {
+                layer.clear_log();
+                restore(layer);
+            }
+        }))
+    }
+
+    #[must_use = "the returned ChangeLog owns the locked update and releases it when dropped"]
+    pub(super) fn lock_base_layer<F>(&mut self, restore: F) -> Option<ChangeLog<u32>>
+    where
+        F: FnOnce(BaseLayer) + 'static,
+    {
+        Self::lock_layer(&mut self.base_layer, &self.generation, restore)
+    }
+
+    pub(super) fn release_base_layer(&mut self, layer: BaseLayer) {
+        self.base_layer = Some(layer);
+    }
+
     /// Flat (real) quad indices [a, b, c, d, ...].
     pub fn quad_indices(&self) -> Vec<u32> {
         let mut indices = Vec::with_capacity(self.mesh.finite_quad_count() * 4);
@@ -202,73 +240,5 @@ impl Chunk {
     pub fn boundary_corner_vertex(&self, corner_idx: HexPointyDir) -> VertexIndex {
         // assume anchor points are corresponding to hex corners in correct  order
         self.mesh.anchor_vertex(AnchorIndex::new(corner_idx as usize))
-    }
-}
-
-/// A weak handle to a chunk within a `World`. Holds only weak references back into the world (to
-/// resolve the chunk by id) and the chunk's structural generation (to detect that it was
-/// unloaded, reloaded, or rebuilt). Every accessor revalidates both before touching world memory
-/// and returns `None` on failure, so a stale handle never reads moved or freed data.
-pub struct ChunkHandle {
-    world: WeakWorld,
-    id: ChunkId,
-    guard: GenerationGuard,
-}
-
-impl ChunkHandle {
-    pub(super) fn new(world: WeakWorld, id: ChunkId, generation: &Generation) -> Self {
-        Self {
-            world,
-            id,
-            guard: GenerationGuard::new(generation),
-        }
-    }
-
-    /// The live world, but only while this handle is still valid.
-    fn valid_world(&self) -> Option<World> {
-        let world = self.world.upgrade()?;
-        self.guard.is_valid().then_some(world)
-    }
-
-    pub fn id(&self) -> ChunkId {
-        self.id
-    }
-
-    /// Runs `f` with the live chunk while the handle is still valid, `None` otherwise.
-    pub fn with_chunk<R>(&self, f: impl FnOnce(&Chunk) -> R) -> Option<R> {
-        self.valid_world()?.with_chunk(self.id, f)
-    }
-
-    pub fn inner_cells(&self) -> Option<InnerCells> {
-        self.valid_world()?.inner_cells(self.id)
-    }
-
-    pub fn edge_cells(&self, edge_idx: HexFlatDir) -> Option<EdgeCells> {
-        self.valid_world()?.edge_cells(self.id, edge_idx)
-    }
-
-    pub fn corner_cells(&self, corner_idx: HexPointyDir) -> Option<CornerCells> {
-        self.valid_world()?.corner_cells(self.id, corner_idx)
-    }
-
-    /// Applies `f` to the base layer, and hands back a read-only
-    /// `ChangeLog` over the result. While the change log exists, the base layer is temporarily locked.
-    pub fn update(&self, f: impl FnOnce(&mut BaseLayer)) -> Option<ChangeLog<u32>> {
-        let world = self.valid_world()?;
-        let mut layer = world.with_chunk_mut(self.id, |chunk| chunk.base_layer.take())??;
-        f(&mut layer);
-
-        let world = self.world.clone();
-        let id = self.id;
-        let guard = self.guard.clone();
-        Some(ChangeLog::new(layer, move |mut layer| {
-            if !guard.is_valid() {
-                return; // chunk was unloaded/reloaded while locked; discard
-            }
-            if let Some(world) = world.upgrade() {
-                layer.clear_log();
-                world.with_chunk_mut(id, |chunk| chunk.base_layer = Some(layer));
-            }
-        }))
     }
 }

@@ -12,7 +12,7 @@ mod world;
 
 pub use self::{
     change_log::ChangeLog,
-    chunk::{CellIndex, Chunk, ChunkHandle, TileIndex},
+    chunk::{CellIndex, Chunk, TileIndex},
     chunk_id::ChunkId,
     corner_cells::{CornerCells, CornerSide},
     edge_cells::{EdgeCells, EdgeSide},

@@ -1,5 +1,8 @@
 use crate::{
-    wasm::world::WasmChunk,
+    wasm::{
+        math::{WasmHexFlatDir, WasmHexPointyDir},
+        world::{WasmChangeLog, WasmCornerCells, WasmEdgeCells, WasmInnerCells},
+    },
     world::{ChunkId, World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE},
 };
 use tracing::info_span;
@@ -48,8 +51,29 @@ impl WasmWorld {
         vec![pos.x, pos.y]
     }
 
-    /// Handle to a loaded chunk, or `undefined` if no chunk is loaded at `(q, r)`.
-    pub fn chunk(&self, q: i32, r: i32) -> Option<WasmChunk> {
-        self.world.chunk(ChunkId(q, r)).map(WasmChunk::new)
+    pub fn inner_cells(&self, q: i32, r: i32) -> Option<WasmInnerCells> {
+        self.world.inner_cells(ChunkId(q, r)).map(Into::into)
+    }
+
+    pub fn edge_cells(&self, q: i32, r: i32, edge_idx: WasmHexFlatDir) -> Option<WasmEdgeCells> {
+        self.world.edge_cells(ChunkId(q, r), edge_idx.into()).map(Into::into)
+    }
+
+    pub fn corner_cells(&self, q: i32, r: i32, corner_idx: WasmHexPointyDir) -> Option<WasmCornerCells> {
+        self.world
+            .corner_cells(ChunkId(q, r), corner_idx.into())
+            .map(Into::into)
+    }
+
+    pub fn hex_vertices(&self, q: i32, r: i32) -> Option<Vec<f32>> {
+        self.world.hex_vertices(ChunkId(q, r))
+    }
+
+    pub fn update_base_layer(&self, q: i32, r: i32) -> Option<WasmChangeLog> {
+        self.world.update_base_layer(ChunkId(q, r)).map(Into::into)
+    }
+
+    pub fn sync_base_layer(&self, q: i32, r: i32) -> Option<WasmChangeLog> {
+        self.update_base_layer(q, r)
     }
 }

@@ -5,7 +5,7 @@ use crate::{
         prng::SplitMix64,
         quadrangulation::VertexIndex,
     },
-    world::{Chunk, ChunkHandle, ChunkId, CornerCells, EdgeCells, InnerCells},
+    world::{ChangeLog, Chunk, ChunkId, CornerCells, EdgeCells, InnerCells, Layer},
 };
 use std::{
     cell::RefCell,
@@ -262,14 +262,6 @@ impl World {
         self.inner.borrow().chunk_world_offset(reference, target)
     }
 
-    /// A weak handle to the chunk at `id`, or `None` if none is loaded there. The handle keeps
-    /// no strong reference to the world, so holding it never pins chunk memory.
-    pub fn chunk(&self, id: ChunkId) -> Option<ChunkHandle> {
-        let inner = self.inner.borrow();
-        let generation = inner.chunk(id)?.generation();
-        Some(ChunkHandle::new(self.downgrade(), id, generation))
-    }
-
     /// Runs `f` with the chunk at `id`, `None` if none is loaded there.
     pub fn with_chunk<R>(&self, id: ChunkId, f: impl FnOnce(&Chunk) -> R) -> Option<R> {
         let inner = self.inner.borrow();
@@ -294,6 +286,37 @@ impl World {
 
     pub fn corner_cells(&self, id: ChunkId, corner_idx: HexPointyDir) -> Option<CornerCells> {
         self.inner.borrow().corner_cells(id, corner_idx)
+    }
+
+    pub fn hex_vertices(&self, id: ChunkId) -> Option<Vec<f32>> {
+        self.with_chunk(id, |chunk| chunk.hex_vertices())
+    }
+
+    /// Locks a chunk's layer via `lock` and wires `release` to run on drop of the returned
+    /// `ChangeLog`, once this world (and the chunk) are still alive. Shared by every per-layer
+    /// `update_*` method so adding a new layer needs no new borrow/upgrade plumbing.
+    fn update_layer<T: 'static>(
+        &self,
+        id: ChunkId,
+        lock: impl FnOnce(&mut Chunk, Box<dyn FnOnce(Layer<T>)>) -> Option<ChangeLog<T>>,
+        release: fn(&mut Chunk, Layer<T>),
+    ) -> Option<ChangeLog<T>> {
+        let world = self.downgrade();
+        let restore = move |layer: Layer<T>| {
+            if let Some(world) = world.upgrade() {
+                if let Some(chunk) = world.inner.borrow_mut().chunk_mut(id) {
+                    release(chunk, layer);
+                }
+            }
+        };
+        let mut inner = self.inner.borrow_mut();
+        let chunk = inner.chunk_mut(id)?;
+        lock(chunk, Box::new(restore))
+    }
+
+    /// Applies an update to the chunk's base layer and returns a read-only change log.
+    pub fn update_base_layer(&self, id: ChunkId) -> Option<ChangeLog<u32>> {
+        self.update_layer(id, |c, r| c.lock_base_layer(r), Chunk::release_base_layer)
     }
 
     pub fn downgrade(&self) -> WeakWorld {

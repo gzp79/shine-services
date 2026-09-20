@@ -122,8 +122,7 @@ export function buildChunkHexagons(world: World, center: ChunkCoord): THREE.Grou
     const color = new THREE.Color();
 
     neighborChunkIds(center).forEach((id, chunkIdx) => {
-        using chunk = world.chunk(id.q, id.r);
-        const hexVerts = chunk?.hex_vertices();
+        const hexVerts = world.hex_vertices(id.q, id.r);
         if (!hexVerts || hexVerts.length !== 12) return;
 
         const offset = world.chunk_world_offset(center.q, center.r, id.q, id.r);
@@ -152,14 +151,11 @@ export function buildInteriorMeshes(world: World, center: ChunkCoord): Toggleabl
 
     neighborChunkIds(center).forEach((id, chunkIdx) => {
         const chunkGroup = new THREE.Group();
-        using chunk = world.chunk(id.q, id.r);
+        using cells = world.inner_cells(id.q, id.r);
 
-        if (chunk) {
-            using cells = chunk.inner_cells();
-            if (cells) {
-                color.setHSL(chunkIdx / 7, 0.7, 0.5);
-                chunkGroup.add(buildCellGroup(cells, color, 0.0, 1.0));
-            }
+        if (cells) {
+            color.setHSL(chunkIdx / 7, 0.7, 0.5);
+            chunkGroup.add(buildCellGroup(cells, color, 0.0, 1.0));
             const offset = world.chunk_world_offset(center.q, center.r, id.q, id.r);
             chunkGroup.position.set(offset[0], offset[1], 0);
         }
@@ -175,16 +171,12 @@ export function buildEdgeMeshes(world: World, center: ChunkCoord): ToggleableGro
     const group = new THREE.Group();
     const meshGroups: THREE.Group[] = [];
     const color = new THREE.Color();
-    using chunk = world.chunk(center.q, center.r);
-
     for (let edgeIdx = 0; edgeIdx < 6; edgeIdx++) {
         const edgeGroup = new THREE.Group();
-        if (chunk) {
-            using cells = chunk.edge_cells(edgeIdx as HexFlatDir);
-            if (cells) {
-                color.setHSL(edgeIdx / 6, 0.8, 0.5);
-                edgeGroup.add(buildCellGroup(cells, color, 0.2, 1.2));
-            }
+        using cells = world.edge_cells(center.q, center.r, edgeIdx as HexFlatDir);
+        if (cells) {
+            color.setHSL(edgeIdx / 6, 0.8, 0.5);
+            edgeGroup.add(buildCellGroup(cells, color, 0.2, 1.2));
         }
         meshGroups.push(edgeGroup);
         group.add(edgeGroup);
@@ -197,16 +189,12 @@ export function buildCornerMeshes(world: World, center: ChunkCoord): ToggleableG
     const group = new THREE.Group();
     const meshGroups: THREE.Group[] = [];
     const color = new THREE.Color();
-    using chunk = world.chunk(center.q, center.r);
-
     for (let cornerIdx = 0; cornerIdx < 6; cornerIdx++) {
         const cornerGroup = new THREE.Group();
-        if (chunk) {
-            using cells = chunk.corner_cells(cornerIdx as HexPointyDir);
-            if (cells) {
-                color.setHSL(cornerIdx / 6, 0.8, 0.4);
-                cornerGroup.add(buildCellGroup(cells, color, 0.4, 1.4));
-            }
+        using cells = world.corner_cells(center.q, center.r, cornerIdx as HexPointyDir);
+        if (cells) {
+            color.setHSL(cornerIdx / 6, 0.8, 0.4);
+            cornerGroup.add(buildCellGroup(cells, color, 0.4, 1.4));
         }
         meshGroups.push(cornerGroup);
         group.add(cornerGroup);

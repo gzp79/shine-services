@@ -34,8 +34,7 @@ export class Chunk {
         events: EventTarget
     ) {
         this.group.userData = { chunkId: { q: id.q, r: id.r }, chunk: this };
-        using chunk = world.chunk(id.q, id.r)!;
-        this.innerCells = chunk.inner_cells()!;
+        this.innerCells = world.inner_cells(id.q, id.r)!;
         this.selectionMesh = new SelectionMesh(this.group, asPolygonMesh(this.innerCells));
         this.subscriptions = new EventSubscriptions(events);
         this.subscriptions.on<SelectionChangedEvent>(SELECTION_CHANGED, this.handleSelectionChanged);
