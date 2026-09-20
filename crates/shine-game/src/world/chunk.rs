@@ -8,7 +8,8 @@ use crate::{
     },
     world::{
         generation::{Generation, GenerationGuard},
-        BaseLayer, ChunkId, CornerCells, EdgeCells, InnerCells, WeakWorld, World, CHUNK_WORLD_SIZE, SUBDIVISION_BASE,
+        BaseLayer, ChangeLog, ChunkId, CornerCells, EdgeCells, InnerCells, WeakWorld, World, CHUNK_WORLD_SIZE,
+        SUBDIVISION_BASE,
     },
 };
 
@@ -38,7 +39,7 @@ pub struct Chunk {
     tile_to_quad: IdxVec<TileIndex, QuadIndex>,
     vert_to_cell: IdxVec<VertexIndex, CellIndex>,
     cell_to_vert: IdxVec<CellIndex, VertexIndex>,
-    base_layer: BaseLayer,
+    base_layer: Option<BaseLayer>,
 }
 
 impl Chunk {
@@ -71,7 +72,7 @@ impl Chunk {
             tile_to_quad,
             vert_to_cell,
             cell_to_vert,
-            base_layer,
+            base_layer: Some(base_layer),
         }
     }
 
@@ -99,14 +100,6 @@ impl Chunk {
 
     pub fn cell_to_vert(&self) -> &IdxVec<CellIndex, VertexIndex> {
         &self.cell_to_vert
-    }
-
-    pub fn base_layer(&self) -> &BaseLayer {
-        &self.base_layer
-    }
-
-    pub fn base_layer_mut(&mut self) -> &mut BaseLayer {
-        &mut self.base_layer
     }
 
     /// Flat (real) quad vertex positions [x, y, x, y, ...]
@@ -256,5 +249,26 @@ impl ChunkHandle {
 
     pub fn corner_cells(&self, corner_idx: HexPointyDir) -> Option<CornerCells> {
         self.valid_world()?.corner_cells(self.id, corner_idx)
+    }
+
+    /// Applies `f` to the base layer, and hands back a read-only
+    /// `ChangeLog` over the result. While the change log exists, the base layer is temporarily locked.
+    pub fn update(&self, f: impl FnOnce(&mut BaseLayer)) -> Option<ChangeLog<u32>> {
+        let world = self.valid_world()?;
+        let mut layer = world.with_chunk_mut(self.id, |chunk| chunk.base_layer.take())??;
+        f(&mut layer);
+
+        let world = self.world.clone();
+        let id = self.id;
+        let guard = self.guard.clone();
+        Some(ChangeLog::new(layer, move |mut layer| {
+            if !guard.is_valid() {
+                return; // chunk was unloaded/reloaded while locked; discard
+            }
+            if let Some(world) = world.upgrade() {
+                layer.clear_log();
+                world.with_chunk_mut(id, |chunk| chunk.base_layer = Some(layer));
+            }
+        }))
     }
 }

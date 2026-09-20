@@ -1,15 +1,21 @@
-use crate::{indexed::TypedIndex, math::quadrangulation::Rot4Idx, world::TileIndex};
-use std::ops::{Index, IndexMut};
+use crate::{
+    indexed::{BitSet, TypedIndex},
+    math::quadrangulation::Rot4Idx,
+    world::TileIndex,
+};
+use std::ops::Index;
 
 /// A container type that packs one `Component` per tile cell (`Rot4Idx`-indexed dual vertex).
-pub trait Packed {
+pub trait Tile {
     type Component;
 
     fn get(&self, cell: Rot4Idx) -> Self::Component;
-    fn set(&mut self, cell: Rot4Idx, value: Self::Component);
+
+    /// Updates the value of the specified cell and returns `true` if the value changed.
+    fn set(&mut self, cell: Rot4Idx, value: Self::Component) -> bool;
 }
 
-impl Packed for u32 {
+impl Tile for u32 {
     type Component = u8;
 
     #[inline]
@@ -18,22 +24,29 @@ impl Packed for u32 {
     }
 
     #[inline]
-    fn set(&mut self, cell: Rot4Idx, value: u8) {
+    fn set(&mut self, cell: Rot4Idx, value: u8) -> bool {
         let mut bytes = self.to_le_bytes();
-        bytes[cell.into_index()] = value;
+        let idx = cell.into_index();
+        if bytes[idx] == value {
+            return false;
+        }
+        bytes[idx] = value;
         *self = u32::from_le_bytes(bytes);
+        true
     }
 }
 
 /// Per-tile data for a chunk, indexed by `TileIndex`.
 pub struct Layer<T> {
     data: Box<[T]>,
+    change_log: BitSet,
 }
 
 impl<T: Clone> Layer<T> {
     pub fn new(tile_count: usize, value: T) -> Self {
         Self {
             data: vec![value; tile_count].into_boxed_slice(),
+            change_log: BitSet::new(tile_count),
         }
     }
 }
@@ -43,8 +56,12 @@ impl<T> Layer<T> {
         &self.data
     }
 
-    pub fn as_mut_slice(&mut self) -> &mut [T] {
-        &mut self.data
+    pub fn log(&self) -> &BitSet {
+        &self.change_log
+    }
+
+    pub fn clear_log(&mut self) {
+        self.change_log.clear();
     }
 }
 
@@ -57,14 +74,7 @@ impl<T> Index<TileIndex> for Layer<T> {
     }
 }
 
-impl<T> IndexMut<TileIndex> for Layer<T> {
-    #[inline]
-    fn index_mut(&mut self, index: TileIndex) -> &mut T {
-        &mut self.data[index.into_index()]
-    }
-}
-
-impl<T: Packed> Layer<T> {
+impl<T: Tile> Layer<T> {
     #[inline]
     pub fn get_tile(&self, tile: TileIndex, cell: Rot4Idx) -> T::Component {
         self[tile].get(cell)
@@ -72,7 +82,9 @@ impl<T: Packed> Layer<T> {
 
     #[inline]
     pub fn set_tile(&mut self, tile: TileIndex, cell: Rot4Idx, value: T::Component) {
-        self[tile].set(cell, value);
+        if self.data[tile.into_index()].set(cell, value) {
+            self.change_log.set(tile.into_index(), true);
+        }
     }
 }
 

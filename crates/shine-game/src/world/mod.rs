@@ -1,5 +1,6 @@
 #![allow(clippy::module_inception)]
 
+mod change_log;
 mod chunk;
 mod chunk_id;
 mod corner_cells;
@@ -10,6 +11,7 @@ mod layer;
 mod world;
 
 pub use self::{
+    change_log::ChangeLog,
     chunk::{CellIndex, Chunk, ChunkHandle, TileIndex},
     chunk_id::ChunkId,
     corner_cells::{CornerCells, CornerSide},

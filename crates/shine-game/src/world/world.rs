@@ -50,6 +50,10 @@ impl WorldInner {
         self.chunks.get(&id)
     }
 
+    fn chunk_mut(&mut self, id: ChunkId) -> Option<&mut Chunk> {
+        self.chunks.get_mut(&id)
+    }
+
     fn remove_chunk(&mut self, id: ChunkId) {
         self.chunks.remove(&id);
     }
@@ -270,6 +274,13 @@ impl World {
     pub fn with_chunk<R>(&self, id: ChunkId, f: impl FnOnce(&Chunk) -> R) -> Option<R> {
         let inner = self.inner.borrow();
         let chunk = inner.chunk(id)?;
+        Some(f(chunk))
+    }
+
+    /// Runs `f` with the chunk at `id` mutably, `None` if none is loaded there.
+    pub fn with_chunk_mut<R>(&self, id: ChunkId, f: impl FnOnce(&mut Chunk) -> R) -> Option<R> {
+        let mut inner = self.inner.borrow_mut();
+        let chunk = inner.chunk_mut(id)?;
         Some(f(chunk))
     }
 

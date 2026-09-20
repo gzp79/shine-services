@@ -3,7 +3,7 @@ use crate::{
     math::quadrangulation::AnchorIndex,
     wasm::{
         math::{WasmHexFlatDir, WasmHexPointyDir},
-        world::{WasmCornerCells, WasmEdgeCells, WasmInnerCells},
+        world::{WasmChangeLog, WasmCornerCells, WasmEdgeCells, WasmInnerCells},
     },
     world::ChunkHandle,
 };
@@ -35,6 +35,21 @@ impl WasmChunk {
 
     pub fn corner_cells(&self, corner_idx: WasmHexPointyDir) -> Option<WasmCornerCells> {
         self.handle.corner_cells(corner_idx.into()).map(Into::into)
+    }
+
+    /// Applies the update operation to the chunk's base layer and returns a
+    /// read-only `ChangeLog` over the result immediately. The base layer is locked for any other
+    /// consumer until the returned handle is dropped, which unlocks
+    /// it. Returns `undefined` if the handle is stale or the layer is already locked.
+    pub fn update(&self /*, update: TBD */) -> Option<WasmChangeLog> {
+        self.handle.update(|_| {}).map(Into::into)
+    }
+
+    /// Get changes since the last update to the chunk's base layer and returns a
+    /// read-only `ChangeLog` over the result immediately. The base layer is locked for any other
+    /// consumer until the returned handle is dropped.
+    pub fn changes(&self) -> Option<WasmChangeLog> {
+        self.handle.update(|_| {}).map(Into::into)
     }
 
     /// The 6 hexagon boundary corners in chunk-local space as 12 floats `[x, y, ...]`, or
