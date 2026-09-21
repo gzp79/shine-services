@@ -3,7 +3,7 @@ use crate::{
         math::{WasmHexFlatDir, WasmHexPointyDir},
         world::{WasmChangeLog, WasmCornerCells, WasmEdgeCells, WasmInnerCells},
     },
-    world::{ChunkId, World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE},
+    world::{base_layer::Base, ChunkId, World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE},
 };
 use tracing::info_span;
 use wasm_bindgen::prelude::*;
@@ -70,7 +70,7 @@ impl WasmWorld {
     }
 
     pub fn update_base_layer(&self, q: i32, r: i32) -> Option<WasmChangeLog> {
-        self.world.update_base_layer(ChunkId(q, r)).map(Into::into)
+        self.world.update_layer(ChunkId(q, r), Base).map(Into::into)
     }
 
     pub fn sync_base_layer(&self, q: i32, r: i32) -> Option<WasmChangeLog> {

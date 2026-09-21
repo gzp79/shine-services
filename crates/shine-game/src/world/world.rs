@@ -5,7 +5,10 @@ use crate::{
         prng::SplitMix64,
         quadrangulation::VertexIndex,
     },
-    world::{ChangeLog, Chunk, ChunkId, CornerCells, EdgeCells, InnerCells, Layer},
+    world::{
+        generation::GenerationGuard, ChangeLog, Chunk, ChunkId, CornerCells, EdgeCells, InnerCells, LayerKind,
+        LayerUpdate,
+    },
 };
 use std::{
     cell::RefCell,
@@ -16,7 +19,7 @@ use tracing::info_span;
 
 /// The core subdivision depth to align chunks
 pub const SUBDIVISION_BASE: u32 = 4;
-/// The numbe of cells on the edge of a chunk
+/// The number of cells on the edge of a chunk
 pub const SUBDIVISION_COUNT: u32 = 2u32.pow(SUBDIVISION_BASE);
 
 /// The world size (circumcenter) of a chunk (in meter)
@@ -292,31 +295,33 @@ impl World {
         self.with_chunk(id, |chunk| chunk.hex_vertices())
     }
 
-    /// Locks a chunk's layer via `lock` and wires `release` to run on drop of the returned
-    /// `ChangeLog`, once this world (and the chunk) are still alive. Shared by every per-layer
-    /// `update_*` method so adding a new layer needs no new borrow/upgrade plumbing.
-    fn update_layer<T: 'static>(
+    /// Locks the chunk layer selected by `U::Kind`, applies `update`, and returns a read-only change
+    /// log. The lock is released and the layer restored when the `ChangeLog` is dropped.
+    pub fn update_layer<U: LayerUpdate>(
         &self,
         id: ChunkId,
-        lock: impl FnOnce(&mut Chunk, Box<dyn FnOnce(Layer<T>)>) -> Option<ChangeLog<T>>,
-        release: fn(&mut Chunk, Layer<T>),
-    ) -> Option<ChangeLog<T>> {
+        update: U,
+    ) -> Option<ChangeLog<<U::Kind as LayerKind>::Component>> {
         let world = self.downgrade();
-        let restore = move |layer: Layer<T>| {
+        let restore = move |layer| {
             if let Some(world) = world.upgrade() {
                 if let Some(chunk) = world.inner.borrow_mut().chunk_mut(id) {
-                    release(chunk, layer);
+                    *<U::Kind as LayerKind>::field(chunk) = Some(layer);
                 }
             }
         };
+
         let mut inner = self.inner.borrow_mut();
         let chunk = inner.chunk_mut(id)?;
-        lock(chunk, Box::new(restore))
-    }
-
-    /// Applies an update to the chunk's base layer and returns a read-only change log.
-    pub fn update_base_layer(&self, id: ChunkId) -> Option<ChangeLog<u32>> {
-        self.update_layer(id, |c, r| c.lock_base_layer(r), Chunk::release_base_layer)
+        let guard = GenerationGuard::new(chunk.generation());
+        let mut layer = <U::Kind as LayerKind>::field(chunk).take()?;
+        update.update(&mut layer);
+        Some(ChangeLog::new(layer, move |mut layer| {
+            if guard.is_valid() {
+                layer.clear_log();
+                restore(layer);
+            }
+        }))
     }
 
     pub fn downgrade(&self) -> WeakWorld {

@@ -10,6 +10,8 @@ mod inner_cells;
 mod layer;
 mod world;
 
+pub mod base_layer;
+
 pub use self::{
     change_log::ChangeLog,
     chunk::{CellIndex, Chunk, TileIndex},
@@ -18,6 +20,6 @@ pub use self::{
     edge_cells::{EdgeCells, EdgeSide},
     generation::{Generation, WeakGeneration},
     inner_cells::InnerCells,
-    layer::{BaseLayer, Layer},
+    layer::{Layer, LayerKind, LayerUpdate},
     world::{WeakWorld, World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE, SUBDIVISION_BASE, SUBDIVISION_COUNT},
 };

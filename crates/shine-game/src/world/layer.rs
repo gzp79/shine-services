@@ -1,9 +1,30 @@
 use crate::{
     indexed::{BitSet, TypedIndex},
     math::quadrangulation::Rot4Idx,
-    world::TileIndex,
+    world::{Chunk, TileIndex},
 };
 use std::ops::Index;
+
+/// Selects one of a chunk's layers, exposing its component type and storage slot.
+pub trait LayerKind {
+    type Component: 'static;
+
+    fn field(chunk: &mut Chunk) -> &mut Option<Layer<Self::Component>>;
+}
+
+/// A mutation applied to the layer selected by its `Kind` while the layer is locked.
+pub trait LayerUpdate {
+    type Kind: LayerKind;
+
+    fn update(&self, layer: &mut Layer<<Self::Kind as LayerKind>::Component>);
+}
+
+/// A layer kind is itself a no-op update, locking its layer for a read-only sync.
+impl<K: LayerKind> LayerUpdate for K {
+    type Kind = K;
+
+    fn update(&self, _layer: &mut Layer<K::Component>) {}
+}
 
 /// A container type that packs one `Component` per tile cell (`Rot4Idx`-indexed dual vertex).
 pub trait Tile {
@@ -87,5 +108,3 @@ impl<T: Tile> Layer<T> {
         }
     }
 }
-
-pub type BaseLayer = Layer<u32>;

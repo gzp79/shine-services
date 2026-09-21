@@ -7,8 +7,9 @@ use crate::{
         quadrangulation::{AnchorIndex, QuadIndex, Quadrangulation, VertexIndex},
     },
     world::{
-        generation::{Generation, GenerationGuard},
-        BaseLayer, ChangeLog, ChunkId, InnerCells, Layer, CHUNK_WORLD_SIZE, SUBDIVISION_BASE,
+        base_layer::{Base, BaseLayer},
+        generation::Generation,
+        ChunkId, InnerCells, Layer, LayerKind, CHUNK_WORLD_SIZE, SUBDIVISION_BASE,
     },
 };
 
@@ -123,34 +124,6 @@ impl Chunk {
         vertices
     }
 
-    /// Takes `field` and wraps it in a `ChangeLog` guarded by this chunk's generation.
-    #[must_use = "the returned ChangeLog owns the locked update and releases it when dropped"]
-    fn lock_layer<T, F>(field: &mut Option<Layer<T>>, generation: &Generation, restore: F) -> Option<ChangeLog<T>>
-    where
-        F: FnOnce(Layer<T>) + 'static,
-    {
-        let layer = field.take()?;
-        let guard = GenerationGuard::new(generation);
-        Some(ChangeLog::new(layer, move |mut layer| {
-            if guard.is_valid() {
-                layer.clear_log();
-                restore(layer);
-            }
-        }))
-    }
-
-    #[must_use = "the returned ChangeLog owns the locked update and releases it when dropped"]
-    pub(super) fn lock_base_layer<F>(&mut self, restore: F) -> Option<ChangeLog<u32>>
-    where
-        F: FnOnce(BaseLayer) + 'static,
-    {
-        Self::lock_layer(&mut self.base_layer, &self.generation, restore)
-    }
-
-    pub(super) fn release_base_layer(&mut self, layer: BaseLayer) {
-        self.base_layer = Some(layer);
-    }
-
     /// Flat (real) quad indices [a, b, c, d, ...].
     pub fn quad_indices(&self) -> Vec<u32> {
         let mut indices = Vec::with_capacity(self.mesh.finite_quad_count() * 4);
@@ -240,5 +213,13 @@ impl Chunk {
     pub fn boundary_corner_vertex(&self, corner_idx: HexPointyDir) -> VertexIndex {
         // assume anchor points are corresponding to hex corners in correct  order
         self.mesh.anchor_vertex(AnchorIndex::new(corner_idx as usize))
+    }
+}
+
+impl LayerKind for Base {
+    type Component = u32;
+
+    fn field(chunk: &mut Chunk) -> &mut Option<Layer<u32>> {
+        &mut chunk.base_layer
     }
 }
