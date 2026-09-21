@@ -2,7 +2,8 @@ import { World } from '#wasm';
 import * as THREE from 'three';
 import { ChunkConst } from '../../constants';
 import type { DebugPanel } from '../../engine/compositor/debug-panel';
-import { EventSubscriptions } from '../../engine/events';
+import { EventDispatcher, EventSubscriptions } from '../../engine/events';
+import type { TextSpriteFactory } from '../../engine/resources/text-sprite';
 import { span } from '../../engine/utils';
 import {
     WORLD_FOCUS_CHANGED,
@@ -14,7 +15,12 @@ import { Chunk } from './chunk';
 import { ChunkCorner, ChunkCornerId } from './chunk-corner';
 import { ChunkEdge, ChunkEdgeId } from './chunk-edge';
 import { ChunkId, HexFlatDir, HexPointyDir } from './chunk-id';
+import { CellWires } from './diagnostics/cell-wires';
+import { ChunkLabels } from './diagnostics/chunk-labels';
+import type { Diagnostic } from './diagnostics/diagnostic';
 import { SelectionManager } from './selection/selection-manager';
+import type { WorldEntity, WorldEntityId } from './world-entity';
+import { ENTITY_LOADED, ENTITY_UNLOADED, type EntityLoadedEvent, type EntityUnloadedEvent } from './world-events';
 
 type WorldConsts = {
     chunkWorldSize: number;
@@ -31,10 +37,10 @@ export class GameWorld {
     private _referenceChunkId = ChunkId.ORIGIN;
     private _focusedChunkId = ChunkId.ORIGIN;
     private readonly subscriptions: EventSubscriptions;
+    private readonly dispatcher: EventDispatcher;
     readonly selection: SelectionManager;
+    private readonly diagnostics: Diagnostic[] = [];
     private readonly debugPanel: DebugPanel | null;
-    private _showChunkLabels = false;
-    private _showCellWires = false;
     private pendingChunkUpdate: number | null = null;
     private loadQueue: ChunkId[] = [];
 
@@ -48,43 +54,20 @@ export class GameWorld {
         return this._focusedChunkId;
     }
 
-    get showChunkLabels(): boolean {
-        return this._showChunkLabels;
-    }
-
-    set showChunkLabels(value: boolean) {
-        this._showChunkLabels = value;
-        for (const chunk of this.chunks.values()) {
-            chunk.showLabel = value;
-        }
-    }
-
-    get showCellWires(): boolean {
-        return this._showCellWires;
-    }
-
-    set showCellWires(value: boolean) {
-        this._showCellWires = value;
-        for (const chunk of this.chunks.values()) {
-            chunk.showCellWires = value;
-        }
-        for (const edge of this.chunkEdges.values()) {
-            edge.showCellWires = value;
-        }
-        for (const corner of this.chunkCorners.values()) {
-            corner.showCellWires = value;
-        }
-    }
-
-    constructor(events: EventTarget, debugPanel: DebugPanel | null) {
+    constructor(textSprites: TextSpriteFactory, events: EventTarget, debugPanel: DebugPanel | null) {
         this.world = new World();
         this.consts = {
             chunkWorldSize: this.world.const_chunk_world_size(),
             cellWorldSize: this.world.const_cell_world_size()
         };
         this.subscriptions = new EventSubscriptions(events);
+        this.dispatcher = new EventDispatcher(events);
         this.selection = new SelectionManager(events, debugPanel);
         this.debugPanel = debugPanel;
+
+        // Register diagnostics
+        this.diagnostics.push(new ChunkLabels(this, textSprites, events, debugPanel));
+        this.diagnostics.push(new CellWires(this, events, debugPanel));
 
         // Subscribe to world reference changed
         this.subscriptions.on<WorldReferenceChangedEvent>(WORLD_REFERENCE_CHANGED, this.handleWorldReferenceChanged);
@@ -92,6 +75,23 @@ export class GameWorld {
 
         this.loadQueue = Array.from(this._focusedChunkId.spiral(ChunkConst.MAX_LOADED_DISTANCE));
         this.scheduleLoadQueue();
+    }
+
+    getEntity(id: WorldEntityId): WorldEntity | undefined {
+        switch (id.kind) {
+            case 'chunk':
+                return this.chunks.get(id.key());
+            case 'edge':
+                return this.chunkEdges.get(id.key());
+            case 'corner':
+                return this.chunkCorners.get(id.key());
+        }
+    }
+
+    *entities(): Iterable<WorldEntity> {
+        yield* this.chunks.values();
+        yield* this.chunkEdges.values();
+        yield* this.chunkCorners.values();
     }
 
     loadChunk(id: ChunkId): Chunk {
@@ -109,8 +109,7 @@ export class GameWorld {
         this.updateDebugPanel();
 
         chunk.init(this._referenceChunkId);
-        chunk.showLabel = this._showChunkLabels;
-        chunk.showCellWires = this._showCellWires;
+        this.dispatcher.dispatch<EntityLoadedEvent>(ENTITY_LOADED, { id: chunk.id });
 
         this.updateChunkEdgesForChunk(id);
         for (const dir of [HexFlatDir.SW, HexFlatDir.S, HexFlatDir.SE] as const) {
@@ -142,6 +141,7 @@ export class GameWorld {
         this.removeChunkEdgesForChunk(id);
         this.removeChunkCornersForChunk(id);
 
+        this.dispatcher.dispatch<EntityUnloadedEvent>(ENTITY_UNLOADED, { id: chunk.id });
         this.group.remove(chunk.group);
         chunk.dispose();
         this.chunks.delete(key);
@@ -158,6 +158,10 @@ export class GameWorld {
 
         // Cleanup event listeners
         this.subscriptions.dispose();
+
+        for (let i = this.diagnostics.length - 1; i >= 0; i--) {
+            this.diagnostics[i].dispose();
+        }
 
         // Dispose boundary entities
         for (const edge of this.chunkEdges.values()) {
@@ -246,9 +250,9 @@ export class GameWorld {
 
             const entity = new ChunkEdge(this.world, edgeId, this.subscriptions.events);
             entity.init(this._referenceChunkId);
-            entity.showCellWires = this._showCellWires;
             this.group.add(entity.group);
             this.chunkEdges.set(edgeId.key(), entity);
+            this.dispatcher.dispatch<EntityLoadedEvent>(ENTITY_LOADED, { id: entity.id });
         }
     }
 
@@ -257,6 +261,7 @@ export class GameWorld {
             if (edge.id.involvedChunkIds().some((id) => id.equals(chunkId))) {
                 this.selection.clearIfOwner(edge);
 
+                this.dispatcher.dispatch<EntityUnloadedEvent>(ENTITY_UNLOADED, { id: edge.id });
                 this.group.remove(edge.group);
                 edge.dispose();
                 this.chunkEdges.delete(key);
@@ -281,9 +286,9 @@ export class GameWorld {
 
             const entity = new ChunkCorner(this.world, cornerId, this.subscriptions.events);
             entity.init(this._referenceChunkId);
-            entity.showCellWires = this._showCellWires;
             this.group.add(entity.group);
             this.chunkCorners.set(cornerId.key(), entity);
+            this.dispatcher.dispatch<EntityLoadedEvent>(ENTITY_LOADED, { id: entity.id });
         }
     }
 
@@ -291,6 +296,7 @@ export class GameWorld {
         for (const [key, corner] of this.chunkCorners.entries()) {
             if (corner.id.involvedChunkIds().some((id) => id.equals(chunkId))) {
                 this.selection.clearIfOwner(corner);
+                this.dispatcher.dispatch<EntityUnloadedEvent>(ENTITY_UNLOADED, { id: corner.id });
                 this.group.remove(corner.group);
                 corner.dispose();
                 this.chunkCorners.delete(key);

@@ -19,9 +19,3 @@ export function isSelectionInteractable(sel: Selection, reference: ChunkId): boo
           ? sel.edge.id.isInteractable(reference)
           : sel.corner.id.isInteractable(reference);
 }
-
-export const SELECTION_CHANGED = 'selectionchanged';
-
-export type SelectionChangedEvent = {
-    selection: Selection | null;
-};

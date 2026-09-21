@@ -2,6 +2,7 @@ import { HexFlatDir, HexPointyDir } from '#wasm';
 import * as THREE from 'three';
 import { ChunkConst } from '../../constants';
 import { range } from '../../engine/utils';
+import type { WorldEntityKind } from './world-entity';
 
 export { HexFlatDir, HexPointyDir };
 
@@ -33,6 +34,10 @@ export class ChunkId {
         readonly q: number,
         readonly r: number
     ) {}
+
+    get kind(): WorldEntityKind {
+        return 'chunk';
+    }
 
     key(): string {
         return `${this.q},${this.r}`;

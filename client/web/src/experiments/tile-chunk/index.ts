@@ -11,6 +11,7 @@ import { fireAndForget } from '../../engine/utils';
 import { asPolygonMesh, asTileOutlineMesh } from '../../mesh/polygon-mesh';
 import { AssetSourcePicker } from '../asset-source-picker';
 import { Experiment } from '../experiment';
+import { QuadrantLabels } from './quadrant-labels';
 
 const TILE_HEIGHT = 80;
 const INSTANCE_COUNT_HINT = 2048;
@@ -98,7 +99,7 @@ export class TileChunk extends Experiment {
     private readonly chunkGroup: THREE.Group;
     private readonly assetPicker: AssetSourcePicker;
     private readonly params = { q: 0, r: 0 };
-    private readonly displayParams = { showMeshes: true, showCells: true, showTiles: false };
+    private readonly displayParams = { showMeshes: true, showCells: true, showTiles: false, showQuadrants: false };
     private readonly fillParams = { variant: 0 };
 
     private tileCount = 0;
@@ -108,6 +109,7 @@ export class TileChunk extends Experiment {
     private innerCells: InnerCells | null = null;
     private cellWire: WireMesh | null = null;
     private tileWire: WireMesh | null = null;
+    private quadrantLabels: QuadrantLabels | null = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private fillVariantCtrl: any = null;
     private variantVisible: boolean[] = [];
@@ -164,6 +166,9 @@ export class TileChunk extends Experiment {
         gui.add(this.displayParams, 'showTiles')
             .name('Show Tiles')
             .onChange((v: boolean) => (v ? this.tileWire?.show() : this.tileWire?.hide()));
+        gui.add(this.displayParams, 'showQuadrants')
+            .name('Show Quadrants')
+            .onChange(() => this.updateQuadrantLabels());
 
         this.assetPicker = new AssetSourcePicker(gui, this.assets, {
             onNone: () => this.replaceTileSet(buildProceduralTileSet(this.chunkGroup, INSTANCE_COUNT_HINT)),
@@ -256,6 +261,8 @@ export class TileChunk extends Experiment {
         this.cellWire = null;
         this.tileWire?.dispose();
         this.tileWire = null;
+        this.quadrantLabels?.dispose();
+        this.quadrantLabels = null;
         this.innerCells?.free();
         this.innerCells = null;
 
@@ -282,6 +289,16 @@ export class TileChunk extends Experiment {
             color: 0xffaa00
         });
         if (this.displayParams.showTiles) this.tileWire.show();
+
+        this.updateQuadrantLabels();
+    }
+
+    private updateQuadrantLabels(): void {
+        this.quadrantLabels?.dispose();
+        this.quadrantLabels = null;
+        if (this.displayParams.showQuadrants && this.innerCells) {
+            this.quadrantLabels = new QuadrantLabels(this.chunkGroup, this.innerCells);
+        }
     }
 
     private switchRandomTile(): void {
@@ -354,6 +371,7 @@ export class TileChunk extends Experiment {
         this.innerCells?.free();
         this.cellWire?.dispose();
         this.tileWire?.dispose();
+        this.quadrantLabels?.dispose();
         this.scene.remove(this.chunkGroup);
         this.tileNode.dispose();
         this.world.free();

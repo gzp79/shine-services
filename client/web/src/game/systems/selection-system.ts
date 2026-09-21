@@ -5,7 +5,7 @@ import type { IInputState } from '../../engine/input/input-state';
 import type { IRtsCamera } from '../avatar/rts-camera';
 import { GameSystem } from '../game-system';
 import { ChunkId } from '../world/chunk-id';
-import { type Selection, isSelectionInteractable, selectionOwner } from '../world/selection/selection-event';
+import { type Selection, isSelectionInteractable, selectionOwner } from '../world/selection/selection';
 import { GameWorld } from '../world/world';
 
 // Only switch to a new cell when its centroid is closer than this fraction
