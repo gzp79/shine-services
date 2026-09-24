@@ -99,13 +99,13 @@ export class InstancedTileSet extends InstancedMultiMesh {
         return mat;
     }
 
-    setTile(variantIndex: number, key: number, matrix: THREE.Matrix4, distortion: TileDistortion): boolean {
+    setTile(key: number, variantIndex: number, matrix: THREE.Matrix4, distortion: TileDistortion): boolean {
         this._scratch.set(matrix.elements, 0);
         this._scratch.set(distortion, 16);
-        return super.setInstance(variantIndex, key, 0, this._scratch);
+        return super.setInstance(key, variantIndex, 0, this._scratch);
     }
 
-    removeTile(variantIndex: number, key: number): boolean {
-        return super.removeInstance(variantIndex, key);
+    removeTile(key: number): boolean {
+        return super.removeInstance(key);
     }
 }

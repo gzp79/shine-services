@@ -1,5 +1,6 @@
 import * as wasm from '#wasm';
 import type { AssetCatalog } from './engine/assets/catalog';
+import { PROCEDURAL_ASSETS } from './engine/assets/procedural';
 import { createRoutedScene } from './index';
 
 // Local-dev catalog for the shine-assets bucket. Lives only in the standalone entry, so
@@ -14,18 +15,27 @@ type Manifest = Record<string, string>;
 // Resolves the shine-assets manifest up front so url() is synchronous afterwards.
 // Protocol: latest.json -> version, {version}/{platform}/{module}/assets.json ->
 // name -> relative blob path, blob at {baseUrl}/{relativeBlobPath}.
+// The asset service is dev infra, not core to an experiment: if it's unreachable, degrade to a
+// procedural-only catalog with a console warning rather than taking the whole page down.
 async function buildDefaultCatalog(): Promise<AssetCatalog> {
     const base = ASSET_URL.replace(/\/$/, '');
-    const version = (await fetchJson<{ version: string }>(`${base}/latest.json`)).version;
-    const manifest = await fetchJson<Manifest>(`${base}/${version}/${ASSET_PLATFORM}/${ASSET_MODULE}/assets.json`);
+    let manifest: Manifest;
+    try {
+        const version = (await fetchJson<{ version: string }>(`${base}/latest.json`)).version;
+        manifest = await fetchJson<Manifest>(`${base}/${version}/${ASSET_PLATFORM}/${ASSET_MODULE}/assets.json`);
+    } catch (err) {
+        console.warn('[AssetCatalog] asset service unreachable, falling back to procedural-only assets:', err);
+        manifest = {};
+    }
 
     return {
-        list: () => Object.keys(manifest).map((name) => ({ name })),
+        list: () => [...Object.keys(PROCEDURAL_ASSETS), ...Object.keys(manifest)].map((name) => ({ name })),
         url: (name) => {
             const path = manifest[name];
             if (path === undefined) throw new Error(`[AssetCatalog] unknown asset "${name}"`);
             return `${base}/${path}`;
-        }
+        },
+        generate: async (name) => PROCEDURAL_ASSETS[name]?.()
     };
 }
 

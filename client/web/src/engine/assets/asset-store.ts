@@ -45,6 +45,7 @@ export class AssetStore {
 
     private async decodeModelSet(name: string): Promise<ModelSet> {
         const catalog = await this.getCatalog();
-        return toModelSet(await loadGltf(catalog.url(name)), 'shared');
+        const generated = await catalog.generate?.(name);
+        return generated ?? toModelSet(await loadGltf(catalog.url(name)), 'shared');
     }
 }

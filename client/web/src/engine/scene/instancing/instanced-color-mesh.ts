@@ -41,16 +41,16 @@ export class InstancedColorMesh extends InstancedMultiMesh {
         return mat;
     }
 
-    setObject(variantIndex: number, key: number, matrix: THREE.Matrix4, color: THREE.Color): boolean {
+    setObject(key: number, variantIndex: number, matrix: THREE.Matrix4, color: THREE.Color): boolean {
         this._scratch.set(matrix.elements, 0);
         this._scratch[16] = color.r;
         this._scratch[17] = color.g;
         this._scratch[18] = color.b;
         this._scratch[19] = 1.0;
-        return this.setInstance(variantIndex, key, 0, this._scratch);
+        return this.setInstance(key, variantIndex, 0, this._scratch);
     }
 
-    removeObject(variantIndex: number, key: number): boolean {
-        return this.removeInstance(variantIndex, key);
+    removeObject(key: number): boolean {
+        return this.removeInstance(key);
     }
 }

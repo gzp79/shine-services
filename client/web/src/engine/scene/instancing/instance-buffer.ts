@@ -161,6 +161,16 @@ export class InstanceBuffer {
         return true;
     }
 
+    /** Removes every instance, keeping the allocated textures/CPU buffers for reuse. */
+    clear(): void {
+        this.keyToSlot.clear();
+        this.live.fill(0);
+        this.freeList = [];
+        this.tail = 0;
+        this.count = 0;
+        this.slotsDirty = false;
+    }
+
     /**
      * Compact live slots to [0, count). Grows DataTextures if CPU capacity exceeded.
      * Returns true if DataTextures were recreated (callers must recreate materials).

@@ -157,13 +157,13 @@ export class InstancedColorMeshExp extends Experiment {
     private update(variantIndex: number, newCount: number): void {
         const current = this.counts[variantIndex];
         for (let i = newCount; i < current; i++) {
-            this.mesh.removeObject(variantIndex, variantIndex * 100_000 + i);
+            this.mesh.removeObject(variantIndex * 100_000 + i);
         }
         for (let i = current; i < newCount; i++) {
             const key = variantIndex * 100_000 + i;
             const matrix = randomTransform();
             const color = PALETTE[i % PALETTE.length];
-            this.mesh.setObject(variantIndex, key, matrix, color);
+            this.mesh.setObject(key, variantIndex, matrix, color);
         }
         this.counts[variantIndex] = newCount;
     }

@@ -152,6 +152,7 @@ export abstract class InstancedMultiMesh {
     protected readonly sourceGeo: Shareable<THREE.BufferGeometry>;
     private readonly variants: VariantEntry[] = [];
     private readonly stripHeight: number;
+    private readonly keyVariant = new Map<number, number>();
 
     protected constructor(parent: THREE.Object3D, params: InstancedMultiMeshParams) {
         parent.add(this.group);
@@ -227,16 +228,30 @@ export abstract class InstancedMultiMesh {
         }
     }
 
-    protected setInstance(variantIndex: number, key: number, bufIndex: number, values: Float32Array): boolean {
+    protected setInstance(key: number, variantIndex: number, bufIndex: number, values: Float32Array): boolean {
         const entry = this.variants[variantIndex];
         if (!entry) return false;
-        return entry.instanceBuffer.setBuffer(key, bufIndex, values);
+
+        const prevVariant = this.keyVariant.get(key);
+        if (prevVariant !== undefined && prevVariant !== variantIndex) {
+            this.variants[prevVariant]?.instanceBuffer.remove(key);
+        }
+
+        const ok = entry.instanceBuffer.setBuffer(key, bufIndex, values);
+        if (ok) this.keyVariant.set(key, variantIndex);
+        return ok;
     }
 
-    removeInstance(variantIndex: number, key: number): boolean {
-        const entry = this.variants[variantIndex];
-        if (!entry) return false;
-        return entry.instanceBuffer.remove(key);
+    removeInstance(key: number): boolean {
+        const variantIndex = this.keyVariant.get(key);
+        if (variantIndex === undefined) return false;
+        this.keyVariant.delete(key);
+        return this.variants[variantIndex]?.instanceBuffer.remove(key) ?? false;
+    }
+
+    removeAll(): void {
+        this.keyVariant.clear();
+        for (const entry of this.variants) entry.instanceBuffer.clear();
     }
 
     get variantCount(): number {
