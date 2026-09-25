@@ -1,47 +1,21 @@
 import { BaseLayerOp, InnerCells, TileGeometries, World } from '#wasm';
 import * as THREE from 'three';
 import { ReadonlyBitSet, asBitSet } from '../../bit-set';
+import { toModelSet } from '../../engine/assets/model-set';
+import { loadGltf } from '../../engine/loaders/gltf-loader';
 import type { SceneContext } from '../../engine/scene';
 import { InstancedNormalLineAttachment } from '../../engine/scene/instancing/instanced-normal-line-attachment';
 import { InstancedTileSet } from '../../engine/scene/instancing/instanced-tile-set';
-import type { TileDistortion } from '../../engine/scene/instancing/instanced-tile-set';
 import { WireMesh } from '../../engine/scene/wire-mesh';
 import { fireAndForget } from '../../engine/utils';
-import { asPolygonMesh, asTileOutlineMesh } from '../../mesh/polygon-mesh';
+import { asPolygonMesh, asTileDistortion, asTileOutlineMesh } from '../../mesh/polygon-mesh';
 import { AssetSourcePicker } from '../asset-source-picker';
 import { Experiment } from '../experiment';
 import { QuadrantLabels } from './quadrant-labels';
 
 const TILE_HEIGHT = 80;
 const INSTANCE_COUNT_HINT = 2048;
-const INITIAL_ASSET = 'generated-shapes';
-
-// CCW quad corners [BL, BR, TR, TL] → trilinear cp indices [0, 1, 3, 2]
-// cp layout: (0,0)=cp0, (1,0)=cp1, (0,1)=cp2, (1,1)=cp3  (bottom face, z=0)
-//            (0,0)=cp4, (1,0)=cp5, (0,1)=cp6, (1,1)=cp7  (top face,    z=1)
-const CCW_TO_CP = [0, 1, 3, 2];
-
-/** Maps a tile's base-layer value to which variant of the loaded tile set should render it. */
-function tileVariant(value: number, variantCount: number): number {
-    return value % variantCount;
-}
-
-function buildTileDistortion(tileDistortions: Float32Array, tileIdx: number): TileDistortion {
-    const d = new Float32Array(24);
-    const base = tileIdx * 8; // 4 corners × 2 coords
-    for (let c = 0; c < 4; c++) {
-        const x = tileDistortions[base + c * 2];
-        const y = tileDistortions[base + c * 2 + 1];
-        const cp = CCW_TO_CP[c];
-        d[cp * 3] = x;
-        d[cp * 3 + 1] = y;
-        d[cp * 3 + 2] = 0;
-        d[(cp + 4) * 3] = x;
-        d[(cp + 4) * 3 + 1] = y;
-        d[(cp + 4) * 3 + 2] = TILE_HEIGHT;
-    }
-    return d;
-}
+const INITIAL_ASSET = 'generated-tile';
 
 export class TileChunk extends Experiment {
     private readonly world: World;
@@ -58,7 +32,6 @@ export class TileChunk extends Experiment {
     };
 
     private tileCount = 0;
-    private distortions: TileDistortion[] = [];
     private loadedChunk: { q: number; r: number } | null = null;
     private innerCells: InnerCells | null = null;
     private tileGeometries: TileGeometries | null = null;
@@ -151,7 +124,8 @@ export class TileChunk extends Experiment {
         try {
             const modelSet = await this.assets.loadModelSet(name);
             const next = InstancedTileSet.fromModelSet(this.chunkGroup, modelSet, {
-                instanceCountHint: INSTANCE_COUNT_HINT
+                instanceCountHint: INSTANCE_COUNT_HINT,
+                height: TILE_HEIGHT
             });
             this.replaceTileSet(next);
         } catch (err) {
@@ -161,8 +135,10 @@ export class TileChunk extends Experiment {
 
     private async loadFile(url: string): Promise<void> {
         try {
-            const next = await InstancedTileSet.fromGltf(this.chunkGroup, url, {
-                instanceCountHint: INSTANCE_COUNT_HINT
+            const modelSet = toModelSet(await loadGltf(url), 'owned');
+            const next = InstancedTileSet.fromModelSet(this.chunkGroup, modelSet, {
+                instanceCountHint: INSTANCE_COUNT_HINT,
+                height: TILE_HEIGHT
             });
             this.replaceTileSet(next);
         } catch (err) {
@@ -193,7 +169,6 @@ export class TileChunk extends Experiment {
             this.loadedChunk = null;
         }
         this.tileCount = 0;
-        this.distortions = [];
 
         this.cellWire?.dispose();
         this.cellWire = null;
@@ -212,15 +187,10 @@ export class TileChunk extends Experiment {
 
         this.innerCells = this.world.inner_cells(q, r)!;
         this.tileGeometries = this.world.tile_geometries(q, r)!;
-        const tileDistortions = this.tileGeometries.tile_distortions()!;
         const tileCount = this.tileGeometries.tile_count()!;
 
         this.tileCount = tileCount;
 
-        // Distortions are kept regardless so a later asset load can bind tiles; render state comes from the sync below.
-        for (let i = 0; i < tileCount; i++) {
-            this.distortions.push(buildTileDistortion(tileDistortions, i));
-        }
         this.cellWire = WireMesh.fromPolygons(this.chunkGroup, asPolygonMesh(this.innerCells));
         if (this.displayParams.showCells) this.cellWire.show();
 
@@ -244,12 +214,10 @@ export class TileChunk extends Experiment {
         if (!changeLog) return;
 
         const values = changeLog.values();
+        const tiles = this.tileGeometries ? asTileDistortion(this.tileGeometries) : null;
         const apply = (tileIdx: number): void => {
             const value = values[tileIdx]!;
-            if (this.tileNode) {
-                const variant = tileVariant(value, this.tileNode.variantCount);
-                this.tileNode.setTile(tileIdx, variant, new THREE.Matrix4(), this.distortions[tileIdx]!);
-            }
+            if (tiles) this.tileNode?.setTile(tileIdx, value, tiles, new THREE.Matrix4());
             this.quadrantLabels?.updateTileValue(tileIdx, value);
         };
 
@@ -262,12 +230,14 @@ export class TileChunk extends Experiment {
 
     private switchRandomCell(): void {
         if (!this.innerCells) return;
-        const cellIds = this.innerCells.cell_ids();
-        if (!cellIds || cellIds.length === 0) return;
+        for (let i = 0; i < 5; i++) {
+            const cellIds = this.innerCells.cell_ids();
+            if (!cellIds || cellIds.length === 0) continue;
 
-        const cell = cellIds[Math.floor(Math.random() * cellIds.length)]!;
-        const value = Math.round(Math.random());
-        this.updateBaseLayer({ op: 'setCell', cell, value });
+            const cell = cellIds[Math.floor(Math.random() * cellIds.length)]!;
+            const value = 1;//Math.round(Math.random());
+            this.updateBaseLayer({ op: 'setCell', cell, value });
+        }
     }
 
     private rebuildVariantVisibilityFolder(): void {

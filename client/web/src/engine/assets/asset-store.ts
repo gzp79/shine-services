@@ -9,7 +9,7 @@ export class AssetStore {
     private readonly cache = new Map<string, Promise<ModelSet>>();
 
     // Takes a builder so construction is free — the catalog manifest is fetched on first use.
-    constructor(private readonly catalogBuilder: AssetCatalogBuilder) {}
+    constructor(private readonly catalogBuilder: AssetCatalogBuilder) { }
 
     async list(): Promise<AssetInfo[]> {
         return (await this.getCatalog()).list();
@@ -36,6 +36,17 @@ export class AssetStore {
     }
 
     dispose(): void {
+        for (const pending of this.cache.values()) {
+            pending
+                .then((modelSet) => {
+                    // The store owns every cached ModelSet, hence it is responsible for disposing their GPU resources.
+                    modelSet.geometry.dispose();
+                    for (const model of modelSet.models) {
+                        for (const part of model.parts) part.material.dispose();
+                    }
+                })
+                .catch(() => { });
+        }
         this.cache.clear();
     }
 

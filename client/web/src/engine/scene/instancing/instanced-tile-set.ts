@@ -14,8 +14,8 @@ import {
     vec4
 } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
-import { type ModelSet, toModelSet } from '../../assets/model-set';
-import { loadGltf } from '../../loaders/gltf-loader';
+import type { TileDistortionLike } from '../../../mesh/polygon-mesh';
+import type { ModelSet } from '../../assets/model-set';
 import {
     type InstanceBufferLayout,
     InstanceData,
@@ -23,6 +23,7 @@ import {
     type InstancedMultiMeshParams,
     type VariantDef
 } from './instanced-multi-mesh';
+import { TileInstanceResolver } from './tile-instance-resolver';
 
 export type { SubMeshDef, VariantDef, InstancedMultiMeshParams } from './instanced-multi-mesh';
 
@@ -54,38 +55,22 @@ function toVariants(modelSet: ModelSet): VariantDef[] {
     }));
 }
 
+export type InstancedTileSetParams = Omit<InstancedMultiMeshParams, 'geometry' | 'variants'> & {
+    // Extrusion height for the top control points, in the same units as the tile geometry.
+    height: number;
+};
+
 export class InstancedTileSet extends InstancedMultiMesh {
     private readonly _scratch = new Float32Array(40);
+    private readonly resolver: TileInstanceResolver;
 
-    constructor(parent: THREE.Object3D, params: InstancedMultiMeshParams) {
-        super(parent, params);
+    private constructor(parent: THREE.Object3D, modelSet: ModelSet, params: InstancedTileSetParams) {
+        super(parent, { geometry: modelSet.geometry, variants: toVariants(modelSet), ...params });
+        this.resolver = new TileInstanceResolver(modelSet, params.height);
     }
 
-    static async fromGltf(
-        parent: THREE.Object3D,
-        url: string,
-        params?: Omit<InstancedMultiMeshParams, 'geometry' | 'variants'>
-    ): Promise<InstancedTileSet> {
-        const modelSet = toModelSet(await loadGltf(url), 'owned');
-        return new InstancedTileSet(parent, {
-            geometry: modelSet.geometry,
-            variants: toVariants(modelSet),
-            ...params
-        });
-    }
-
-    // Builds from a store-loaded ModelSet. Its geometry and materials are already shared —
-    // the store owns them, so this tile set must not dispose them.
-    static fromModelSet(
-        parent: THREE.Object3D,
-        modelSet: ModelSet,
-        params?: Omit<InstancedMultiMeshParams, 'geometry' | 'variants'>
-    ): InstancedTileSet {
-        return new InstancedTileSet(parent, {
-            geometry: modelSet.geometry,
-            variants: toVariants(modelSet),
-            ...params
-        });
+    static fromModelSet(parent: THREE.Object3D, modelSet: ModelSet, params: InstancedTileSetParams): InstancedTileSet {
+        return new InstancedTileSet(parent, modelSet, params);
     }
 
     protected instanceBufferLayout(): InstanceBufferLayout {
@@ -149,10 +134,14 @@ export class InstancedTileSet extends InstancedMultiMesh {
         return mat;
     }
 
-    setTile(key: number, variantIndex: number, matrix: THREE.Matrix4, distortion: TileDistortion): boolean {
+    // `undefined` result from the resolver (no variant for this value's canonical shape) means no
+    // instance is written; any previously set instance at `key` is left untouched.
+    setTile(key: number, tileValue: number, tiles: TileDistortionLike, matrix: THREE.Matrix4): boolean {
+        const resolved = this.resolver.resolve(tiles, key, tileValue);
+        if (!resolved) return false;
         this._scratch.set(matrix.elements, 0);
-        this._scratch.set(distortion, 16);
-        return super.setInstance(key, variantIndex, 0, this._scratch);
+        this._scratch.set(resolved.distortion, 16);
+        return super.setInstance(key, resolved.variantIndex, 0, this._scratch);
     }
 
     removeTile(key: number): boolean {

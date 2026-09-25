@@ -1,13 +1,7 @@
-/** Structural shape of polygon mesh data. A borrowed instance is valid only while its owner is unchanged. */
 export type PolygonMeshLike = {
     readonly vertices: Float32Array;
     readonly indices: Uint32Array;
     readonly ranges: Uint32Array;
-};
-
-export type WiredPolygonMeshLike = PolygonMeshLike & {
-    readonly wireIndices: Uint32Array;
-    readonly wireRanges: Uint32Array;
 };
 
 export type PolygonMeshSource = {
@@ -16,15 +10,6 @@ export type PolygonMeshSource = {
     ranges(): Uint32Array | undefined;
 };
 
-/** Unwraps a cell-view accessor, throwing when its source chunk changed and the view went stale. */
-function fresh<T>(value: T | undefined): T {
-    if (value === undefined) {
-        throw new Error('cell view is stale: its source chunk changed; re-acquire the handle');
-    }
-    return value;
-}
-
-/** Adapts a `PolygonMeshSource` to a `PolygonMeshLike`. */
 export function asPolygonMesh(source: PolygonMeshSource): PolygonMeshLike {
     return {
         get vertices() {
@@ -39,12 +24,16 @@ export function asPolygonMesh(source: PolygonMeshSource): PolygonMeshLike {
     };
 }
 
+export type WiredPolygonMeshLike = PolygonMeshLike & {
+    readonly wireIndices: Uint32Array;
+    readonly wireRanges: Uint32Array;
+};
+
 export type WiredPolygonMeshSource = PolygonMeshSource & {
     wire_indices(): Uint32Array;
     wire_ranges(): Uint32Array;
 };
 
-/** Adapts a `WiredPolygonMeshSource` to a `WiredPolygonMeshLike`. */
 export function asWiredPolygonMesh(source: WiredPolygonMeshSource): WiredPolygonMeshLike {
     return {
         get vertices() {
@@ -65,17 +54,28 @@ export function asWiredPolygonMesh(source: WiredPolygonMeshSource): WiredPolygon
     };
 }
 
-/** Source of the per-tile-quad corner positions `asTileOutlineMesh` is built from. */
 export type TileDistortionSource = {
     tile_distortions(): Float32Array | undefined;
 };
 
-/** Adapts a `TileDistortionSource` to a `PolygonMeshLike` of its tile quads. */
+
+export type TileDistortionLike = {
+    readonly distortions: Float32Array;
+};
+
+export function asTileDistortion(source: TileDistortionSource): TileDistortionLike {
+    return {
+        get distortions() {
+            return fresh(source.tile_distortions());
+        }
+    };
+}
+
 export function asTileOutlineMesh(source: TileDistortionSource): PolygonMeshLike {
     let topology: { indices: Uint32Array; ranges: Uint32Array } | null = null;
 
-    function computeTopology(): { indices: Uint32Array; ranges: Uint32Array } {
-        const tileCount = fresh(source.tile_distortions()).length / 8;
+    function computeTopology(distortion: Float32Array): { indices: Uint32Array; ranges: Uint32Array } {
+        const tileCount = distortion.length / 8;
         const indices = new Uint32Array(tileCount * 4);
         const ranges = new Uint32Array(tileCount * 2);
         for (let i = 0; i < tileCount; i++) {
@@ -91,12 +91,21 @@ export function asTileOutlineMesh(source: TileDistortionSource): PolygonMeshLike
             return fresh(source.tile_distortions());
         },
         get indices() {
-            topology ??= computeTopology();
+            const distortion = fresh(source.tile_distortions());
+            topology ??= computeTopology(distortion);
             return topology.indices;
         },
         get ranges() {
-            topology ??= computeTopology();
+            const distortion = fresh(source.tile_distortions());
+            topology ??= computeTopology(distortion);
             return topology.ranges;
         }
     };
+}
+
+function fresh<T>(value: T | undefined): T {
+    if (value === undefined) {
+        throw new Error('cell view is stale: its source chunk changed; re-acquire the handle');
+    }
+    return value;
 }

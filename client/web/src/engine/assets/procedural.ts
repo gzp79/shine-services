@@ -100,17 +100,21 @@ function buildShapes(): ModelSet {
 // picks a height per quarter: 'x' = down (low), '_' = up (high). Read top row then bottom row; the
 // top text row is the far (higher y) edge. Colored by height, not by shape, so the same low/high
 // color pair reads consistently across every variant.
+//
+// Names follow the tile-set contract (see engine/scene/instancing/tile-set.ts): each name's digits
+// are its up corners in row-major order [TL, TR, BL, BR] — e.g. 'q1000' has only its top-left (far,
+// left) corner high, matching the far row 'far-left' cell below.
 const LOW = 0.5;
 const HIGH = 1.0;
 const LOW_COLOR = 0x3366cc; // blue
 const HIGH_COLOR = 0x44aa55; // green
 const HEIGHT_SHAPES: { name: string; rows: [string, string] }[] = [
-    { name: 'flat-low', rows: ['xx', 'xx'] },
-    { name: 'corner', rows: ['x_', '__'] },
-    { name: 'diagonal', rows: ['x_', '_x'] },
-    { name: 'left-step', rows: ['x_', 'x_'] },
-    { name: 'flat-high', rows: ['__', '__'] },
-    { name: 'notch', rows: ['x_', 'xx'] }
+    { name: 'q0000', rows: ['xx', 'xx'] },
+    { name: 'q1000', rows: ['_x', 'xx'] },
+    { name: 'q1100', rows: ['__', 'xx'] },
+    { name: 'q1001', rows: ['_x', 'x_'] },
+    { name: 'q1110', rows: ['__', '_x'] },
+    { name: 'q1111', rows: ['__', '__'] }
 ];
 
 // One geometry per height present in the shape (at most two: low and high), each merging the

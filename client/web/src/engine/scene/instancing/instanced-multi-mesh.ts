@@ -324,6 +324,7 @@ export abstract class InstancedMultiMesh {
         for (const entry of this.variants) {
             entry.instanceBuffer.dispose();
             for (const mesh of entry.subMeshes) mesh.dispose();
+            for (const part of entry.parts) disposeIfOwned(part.baseMaterial);
         }
         this.variants.length = 0;
         disposeIfOwned(this.sourceGeo);

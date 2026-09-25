@@ -90,5 +90,6 @@ export abstract class Experiment implements Scene {
         this.renderContext.dispose();
         disposeObject3D(this.renderContext.scene);
         this.renderContext.scene.clear();
+        this.assets.dispose();
     }
 }
