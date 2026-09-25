@@ -7,7 +7,6 @@ const LABEL_Z = 5;
 const LABEL_SCALE_FACTOR = 0.7;
 const LABEL_STYLE: TextSpriteStyle = {
     font: 'bold 48px monospace',
-    color: '#ffdd55',
     canvasWidth: 64,
     canvasHeight: 64
 };
@@ -31,7 +30,7 @@ function quadrantByte(tileValue: number, quadrant: number): number {
 
 /** Value 1 highlights the quadrant green; anything else (0 included) keeps the default label color. */
 function quadrantColor(value: number): string {
-    return value === 1 ? 'green' : LABEL_STYLE.color!;
+    return value === 1 ? 'green' : '#ffdd55';
 }
 
 /**
