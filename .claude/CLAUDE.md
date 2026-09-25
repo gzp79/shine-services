@@ -67,7 +67,7 @@ Project skills live in `.claude/skills/`. Invoke before working in a domain.
 | `client-web-architecture` | any file under `client/web/src/` |
 | `service-architecture` | adding/reviewing routes, handlers, services, or repositories |
 | `mesh-topology` | world/chunk/hex geometry |
-| `sdp` | **any new feature or non-trivial change** — keeps the design doc and code in agreement; detects which side is ahead (write doc / write code from doc / sync doc from code). Do not write code without a doc |
+| `sdp` | **larger features or architectural changes**, or when explicitly asked to write/sync/update a design doc — keeps the design doc and code in agreement; detects which side is ahead (write doc / write code from doc / sync doc from code). Skip for small additions, helpers, or narrow changes to existing code; not required before writing code |
 | `local-development` | run services locally |
 | `api-test-writing` | writing or modifying tests under `tests/api-tests/` or `tests/mock-tests/` |
 

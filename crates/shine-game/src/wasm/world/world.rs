@@ -1,19 +1,42 @@
 use crate::{
+    indexed::TypedIndex,
+    math::quadrangulation::Rot4Idx,
     wasm::{
         math::{WasmHexFlatDir, WasmHexPointyDir},
         world::{WasmChangeLog, WasmCornerCells, WasmEdgeCells, WasmInnerCells},
     },
-    world::{base_layer::Base, ChunkId, World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE},
+    world::{
+        base_layer::{Base, Clear, SetCell, SetQuadrant},
+        CellIndex, ChunkId, TileIndex, World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE,
+    },
 };
+use serde::Deserialize;
 use tracing::info_span;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_WASM_WORLD: &str = r#"
+export type BaseLayerOp =
+    | { op: "sync" }
+    | { op: "clear"; value: number }
+    | { op: "setQuadrant"; tile: number; quadrant: number; value: number }
+    | { op: "setCell"; cell: number; value: number };
+
 interface World {
     chunk_world_offset(ref_q: number, ref_r: number, q: number, r: number): [number, number];
+    update_base_layer(q: number, r: number, op: BaseLayerOp): ChangeLog | undefined;
 }
 "#;
+
+/// Mirrors the `BaseLayerOp` TS union declared above; `serde`'s tag/rename match the JS field names.
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+enum WasmBaseLayerOp {
+    Sync,
+    Clear { value: u8 },
+    SetQuadrant { tile: u32, quadrant: u8, value: u8 },
+    SetCell { cell: u32, value: u8 },
+}
 
 #[wasm_bindgen(js_name = "World")]
 pub struct WasmWorld {
@@ -69,11 +92,29 @@ impl WasmWorld {
         self.world.hex_vertices(ChunkId(q, r))
     }
 
-    pub fn update_base_layer(&self, q: i32, r: i32) -> Option<WasmChangeLog> {
-        self.world.update_layer(ChunkId(q, r), Base).map(Into::into)
-    }
-
-    pub fn sync_base_layer(&self, q: i32, r: i32) -> Option<WasmChangeLog> {
-        self.update_base_layer(q, r)
+    #[wasm_bindgen(skip_typescript)]
+    pub fn update_base_layer(&self, q: i32, r: i32, op: JsValue) -> Result<Option<WasmChangeLog>, JsValue> {
+        let op: WasmBaseLayerOp = serde_wasm_bindgen::from_value(op)?;
+        let id = ChunkId(q, r);
+        let change_log = match op {
+            WasmBaseLayerOp::Sync => self.world.update_layer(id, Base),
+            WasmBaseLayerOp::Clear { value } => self.world.update_layer(id, Clear { value }),
+            WasmBaseLayerOp::SetQuadrant { tile, quadrant, value } => self.world.update_layer(
+                id,
+                SetQuadrant {
+                    tile: TileIndex::new(tile as usize),
+                    quadrant: Rot4Idx::new(quadrant as usize),
+                    value,
+                },
+            ),
+            WasmBaseLayerOp::SetCell { cell, value } => self.world.update_layer(
+                id,
+                SetCell {
+                    cell: CellIndex::new(cell as usize),
+                    value,
+                },
+            ),
+        };
+        Ok(change_log.map(Into::into))
     }
 }

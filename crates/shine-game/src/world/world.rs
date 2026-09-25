@@ -315,7 +315,7 @@ impl World {
         let chunk = inner.chunk_mut(id)?;
         let guard = GenerationGuard::new(chunk.generation());
         let mut layer = <U::Kind as LayerKind>::field(chunk).take()?;
-        update.update(&mut layer);
+        update.update(&mut layer.builder(chunk));
         Some(ChangeLog::new(layer, move |mut layer| {
             if guard.is_valid() {
                 layer.clear_log();

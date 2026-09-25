@@ -29,6 +29,11 @@ function quadrantByte(tileValue: number, quadrant: number): number {
     return (tileValue >>> (quadrant * 8)) & 0xff;
 }
 
+/** Value 1 highlights the quadrant green; anything else (0 included) keeps the default label color. */
+function quadrantColor(value: number): string {
+    return value === 1 ? 'green' : LABEL_STYLE.color!;
+}
+
 /**
  * Toggleable overlay: the per-quadrant base-layer byte, drawn midway between each tile's center
  * and that quadrant's corner. Text reflects the tile's synced base-layer value, not a fixed index.
@@ -74,7 +79,7 @@ export class QuadrantLabels {
             const vy = corners[tile * 8 + quadrant * 2 + 1];
 
             const value = quadrantByte(tileValues[tile] ?? 0, quadrant);
-            const sprite = this.sprites.create(String(value), LABEL_STYLE);
+            const sprite = this.sprites.create(String(value), { ...LABEL_STYLE, color: quadrantColor(value) });
             sprite.position.set((cx + vx) / 2, (cy + vy) / 2, LABEL_Z);
             sprite.scale.set(size, size, 1);
             sprite.renderOrder = 999;
@@ -94,7 +99,11 @@ export class QuadrantLabels {
         const entries = this.entriesByTile.get(tileIdx);
         if (!entries) return;
         for (const { sprite, quadrant } of entries) {
-            sprite.material = this.sprites.create(String(quadrantByte(tileValue, quadrant)), LABEL_STYLE).material;
+            const value = quadrantByte(tileValue, quadrant);
+            sprite.material = this.sprites.create(String(value), {
+                ...LABEL_STYLE,
+                color: quadrantColor(value)
+            }).material;
         }
     }
 

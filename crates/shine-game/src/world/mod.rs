@@ -20,6 +20,6 @@ pub use self::{
     edge_cells::{EdgeCells, EdgeSide},
     generation::{Generation, WeakGeneration},
     inner_cells::InnerCells,
-    layer::{Layer, LayerKind, LayerUpdate},
+    layer::{Layer, LayerBuilder, LayerKind, LayerUpdate, Tile},
     world::{WeakWorld, World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE, SUBDIVISION_BASE, SUBDIVISION_COUNT},
 };

@@ -1,4 +1,4 @@
-import { ChangeLog, InnerCells, World } from '#wasm';
+import { BaseLayerOp, InnerCells, World } from '#wasm';
 import * as THREE from 'three';
 import { ReadonlyBitSet, asBitSet } from '../../bit-set';
 import type { SceneContext } from '../../engine/scene';
@@ -99,8 +99,10 @@ export class TileChunk extends Experiment {
             'randomize'
         ).name('Random Chunk');
 
-        gui.add({ switchRandom: () => this.switchRandomCell() }, 'switchRandom').name('Switch Random Cell');
-        gui.add({ sync: () => this.syncBaseLayer() }, 'sync').name('Sync Base Layer');
+        gui.add({ random: () => this.switchRandomCell() }, 'random').name('Switch Random Cell');
+        gui.add({ clear: () => this.updateBaseLayer({ op: 'clear', value: 0 }) }, 'clear').name('Clear');
+        gui.add({ fill: () => this.updateBaseLayer({ op: 'clear', value: 1 }) }, 'fill').name('Fill');
+        gui.add({ sync: () => this.updateBaseLayer({ op: 'sync' }) }, 'sync').name('Sync Base Layer');
         gui.add(this.displayParams, 'showMeshes')
             .name('Show Meshes')
             .onChange((v: boolean) => {
@@ -161,7 +163,7 @@ export class TileChunk extends Experiment {
         this.rebuildVariantVisibilityFolder();
         if (this.tileNode) {
             this.tileNode.group.visible = this.displayParams.showMeshes;
-            this.syncBaseLayer(true);
+            this.updateBaseLayer({ op: 'sync' }, true);
         }
     }
 
@@ -211,17 +213,14 @@ export class TileChunk extends Experiment {
         if (this.displayParams.showQuadrants) this.quadrantLabels.show();
         else this.quadrantLabels.hide();
 
-        this.syncBaseLayer(true);
+        this.updateBaseLayer({ op: 'sync' }, true);
     }
 
-    private syncBaseLayer(forced = false): void {
+    private updateBaseLayer(op: BaseLayerOp, forcedRefresh = false): void {
         if (!this.loadedChunk) return;
-        using changeLog = this.world.sync_base_layer(this.loadedChunk.q, this.loadedChunk.r);
+        using changeLog = this.world.update_base_layer(this.loadedChunk.q, this.loadedChunk.r, op);
         if (!changeLog) return;
-        this.consumeLog(changeLog, forced);
-    }
 
-    private consumeLog(changeLog: ChangeLog, forced: boolean): void {
         const values = changeLog.values();
         const apply = (tileIdx: number): void => {
             const value = values[tileIdx]!;
@@ -232,14 +231,22 @@ export class TileChunk extends Experiment {
             this.quadrantLabels?.updateTileValue(tileIdx, value);
         };
 
-        if (forced) {
+        if (forcedRefresh) {
             for (let i = 0; i < this.tileCount; i++) apply(i);
         } else {
             new ReadonlyBitSet(asBitSet(changeLog)).forEachSet(apply);
         }
     }
 
-    private switchRandomCell(): void {}
+    private switchRandomCell(): void {
+        if (!this.innerCells) return;
+        const cellIds = this.innerCells.cell_ids();
+        if (!cellIds || cellIds.length === 0) return;
+
+        const cell = cellIds[Math.floor(Math.random() * cellIds.length)]!;
+        const value = Math.round(Math.random());
+        this.updateBaseLayer({ op: 'setCell', cell, value });
+    }
 
     private rebuildVariantVisibilityFolder(): void {
         const gui = this.debugPanel.root();
