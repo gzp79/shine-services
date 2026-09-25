@@ -3,7 +3,7 @@ use crate::{
     math::quadrangulation::Rot4Idx,
     wasm::{
         math::{WasmHexFlatDir, WasmHexPointyDir},
-        world::{WasmChangeLog, WasmCornerCells, WasmEdgeCells, WasmInnerCells},
+        world::{WasmChangeLog, WasmCornerCells, WasmEdgeCells, WasmInnerCells, WasmTileGeometries},
     },
     world::{
         base_layer::{Base, Clear, SetCell, SetQuadrant},
@@ -76,6 +76,10 @@ impl WasmWorld {
 
     pub fn inner_cells(&self, q: i32, r: i32) -> Option<WasmInnerCells> {
         self.world.inner_cells(ChunkId(q, r)).map(Into::into)
+    }
+
+    pub fn tile_geometries(&self, q: i32, r: i32) -> Option<WasmTileGeometries> {
+        self.world.tile_geometries(ChunkId(q, r)).map(Into::into)
     }
 
     pub fn edge_cells(&self, q: i32, r: i32, edge_idx: WasmHexFlatDir) -> Option<WasmEdgeCells> {

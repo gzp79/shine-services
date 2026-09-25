@@ -67,7 +67,6 @@ export function asWiredPolygonMesh(source: WiredPolygonMeshSource): WiredPolygon
 
 /** Source of the per-tile-quad corner positions `asTileOutlineMesh` is built from. */
 export type TileDistortionSource = {
-    tile_ids(): Uint32Array | undefined;
     tile_distortions(): Float32Array | undefined;
 };
 
@@ -76,7 +75,7 @@ export function asTileOutlineMesh(source: TileDistortionSource): PolygonMeshLike
     let topology: { indices: Uint32Array; ranges: Uint32Array } | null = null;
 
     function computeTopology(): { indices: Uint32Array; ranges: Uint32Array } {
-        const tileCount = fresh(source.tile_ids()).length;
+        const tileCount = fresh(source.tile_distortions()).length / 8;
         const indices = new Uint32Array(tileCount * 4);
         const ranges = new Uint32Array(tileCount * 2);
         for (let i = 0; i < tileCount; i++) {

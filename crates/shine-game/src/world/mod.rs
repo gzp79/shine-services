@@ -8,6 +8,7 @@ mod edge_cells;
 mod generation;
 mod inner_cells;
 mod layer;
+mod tile_geometries;
 mod world;
 
 pub mod base_layer;
@@ -21,5 +22,6 @@ pub use self::{
     generation::{Generation, WeakGeneration},
     inner_cells::InnerCells,
     layer::{Layer, LayerBuilder, LayerKind, LayerUpdate, Tile},
+    tile_geometries::TileGeometries,
     world::{WeakWorld, World, CELL_WORLD_SIZE, CHUNK_WORLD_SIZE, SUBDIVISION_BASE, SUBDIVISION_COUNT},
 };

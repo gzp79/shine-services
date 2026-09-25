@@ -7,7 +7,7 @@ use crate::{
     },
     world::{
         generation::GenerationGuard, ChangeLog, Chunk, ChunkId, CornerCells, EdgeCells, InnerCells, LayerKind,
-        LayerUpdate,
+        LayerUpdate, TileGeometries,
     },
 };
 use std::{
@@ -74,6 +74,11 @@ impl WorldInner {
         self.chunk(id).map(|chunk| chunk.cell_data())
     }
 
+    fn tile_geometries(&self, id: ChunkId) -> Option<TileGeometries> {
+        let _span = info_span!("tile_geometries", id = ?id).entered();
+        self.chunk(id).map(|chunk| chunk.tile_geometries())
+    }
+
     fn edge_cells(&self, id: ChunkId, edge_idx: HexFlatDir) -> Option<EdgeCells> {
         let _span = info_span!("edge_cells", id = ?id).entered();
 
@@ -109,9 +114,6 @@ impl WorldInner {
         let mut indices = Vec::new();
         let mut ranges = Vec::with_capacity(site_count * 2);
         let mut cell_ids = Vec::with_capacity(site_count * 2);
-        let mut tile_ids = Vec::new();
-        let mut tile_distortions = Vec::new();
-        let mut tile_vertices = Vec::new();
 
         // map from QuadIndex to index in vertices
         let mut index_map = HashMap::new();
@@ -128,16 +130,9 @@ impl WorldInner {
                     let idx = (vertices.len() / 2) as u32;
                     vertices.push(p.x);
                     vertices.push(p.y);
-                    tile_ids.push(0); // owner tile id is always 0
-                    tile_ids.push(owner.quad_to_tile()[qi].into_index() as u32);
-                    for &qv in owner.mesh().quad_vertices(qi) {
-                        tile_distortions.push(owner.mesh()[qv].position.x);
-                        tile_distortions.push(owner.mesh()[qv].position.y);
-                    }
                     idx
                 });
                 indices.push(index);
-                tile_vertices.push(owner.mesh().quad_local_vertex(qi, vi_owner).unwrap().into());
             }
             for qi in neighbor.mesh().boundary_dual_vertices(vi_neighbor) {
                 let index = *neighbor_index_map.entry(qi).or_insert_with(|| {
@@ -145,16 +140,9 @@ impl WorldInner {
                     let idx = (vertices.len() / 2) as u32;
                     vertices.push(p.x);
                     vertices.push(p.y);
-                    tile_ids.push(1); // neighbor tile id is always 1
-                    tile_ids.push(neighbor.quad_to_tile()[qi].into_index() as u32);
-                    for &qv in neighbor.mesh().quad_vertices(qi) {
-                        tile_distortions.push(neighbor.mesh()[qv].position.x);
-                        tile_distortions.push(neighbor.mesh()[qv].position.y);
-                    }
                     idx
                 });
                 indices.push(index);
-                tile_vertices.push(neighbor.mesh().quad_local_vertex(qi, vi_neighbor).unwrap().into());
             }
             ranges.push(indices.len() as u32);
         }
@@ -164,9 +152,6 @@ impl WorldInner {
             indices,
             ranges,
             cell_ids,
-            tile_ids,
-            tile_vertices,
-            tile_distortions,
             owner.generation(),
             neighbor.generation(),
         ))
@@ -195,11 +180,8 @@ impl WorldInner {
 
         let mut vertices = Vec::new();
         let mut cell_ids = Vec::with_capacity(3);
-        let mut tile_ids = Vec::new();
-        let mut tile_distortions = Vec::new();
-        let mut tile_vertices = Vec::new();
 
-        for (cid, id, chunk, corner) in [(0, id0, chunk0, v0), (1, id1, chunk1, v1), (2, id2, chunk2, v2)] {
+        for (id, chunk, corner) in [(id0, chunk0, v0), (id1, chunk1, v1), (id2, chunk2, v2)] {
             let offset = id0.relative_world_position(id);
             let vi = chunk.boundary_corner_vertex(corner);
             cell_ids.push(chunk.vert_to_cell()[vi].into_index() as u32);
@@ -207,13 +189,6 @@ impl WorldInner {
                 let pos = chunk.mesh().dual_p(qi).unwrap() + offset;
                 vertices.push(pos.x);
                 vertices.push(pos.y);
-                tile_ids.push(cid);
-                tile_ids.push(chunk.quad_to_tile()[qi].into_index() as u32);
-                tile_vertices.push(chunk.mesh().quad_local_vertex(qi, vi).unwrap().into());
-                for &qv in chunk.mesh().quad_vertices(qi) {
-                    tile_distortions.push(chunk.mesh()[qv].position.x);
-                    tile_distortions.push(chunk.mesh()[qv].position.y);
-                }
             }
         }
 
@@ -223,9 +198,6 @@ impl WorldInner {
             (0..vertex_count).collect(),
             [0, vertex_count],
             cell_ids,
-            tile_ids,
-            tile_vertices,
-            tile_distortions,
             chunk0.generation(),
             chunk1.generation(),
             chunk2.generation(),
@@ -281,6 +253,10 @@ impl World {
 
     pub fn inner_cells(&self, id: ChunkId) -> Option<InnerCells> {
         self.inner.borrow().inner_cells(id)
+    }
+
+    pub fn tile_geometries(&self, id: ChunkId) -> Option<TileGeometries> {
+        self.inner.borrow().tile_geometries(id)
     }
 
     pub fn edge_cells(&self, id: ChunkId, edge_idx: HexFlatDir) -> Option<EdgeCells> {

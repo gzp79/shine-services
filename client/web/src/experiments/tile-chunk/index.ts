@@ -1,4 +1,4 @@
-import { BaseLayerOp, InnerCells, World } from '#wasm';
+import { BaseLayerOp, InnerCells, TileGeometries, World } from '#wasm';
 import * as THREE from 'three';
 import { ReadonlyBitSet, asBitSet } from '../../bit-set';
 import type { SceneContext } from '../../engine/scene';
@@ -61,6 +61,7 @@ export class TileChunk extends Experiment {
     private distortions: TileDistortion[] = [];
     private loadedChunk: { q: number; r: number } | null = null;
     private innerCells: InnerCells | null = null;
+    private tileGeometries: TileGeometries | null = null;
     private cellWire: WireMesh | null = null;
     private tileWire: WireMesh | null = null;
     private quadrantLabels: QuadrantLabels | null = null;
@@ -202,14 +203,17 @@ export class TileChunk extends Experiment {
         this.quadrantLabels = null;
         this.innerCells?.free();
         this.innerCells = null;
+        this.tileGeometries?.free();
+        this.tileGeometries = null;
 
         const { q, r } = this.params;
         this.world.init_chunk(q, r);
         this.loadedChunk = { q, r };
 
         this.innerCells = this.world.inner_cells(q, r)!;
-        const tileCount = this.innerCells.tile_ids()!.length;
-        const tileDistortions = this.innerCells.tile_distortions()!;
+        this.tileGeometries = this.world.tile_geometries(q, r)!;
+        const tileDistortions = this.tileGeometries.tile_distortions()!;
+        const tileCount = this.tileGeometries.tile_count()!;
 
         this.tileCount = tileCount;
 
@@ -220,14 +224,14 @@ export class TileChunk extends Experiment {
         this.cellWire = WireMesh.fromPolygons(this.chunkGroup, asPolygonMesh(this.innerCells));
         if (this.displayParams.showCells) this.cellWire.show();
 
-        this.tileWire = WireMesh.fromPolygons(this.chunkGroup, asTileOutlineMesh(this.innerCells), {
+        this.tileWire = WireMesh.fromPolygons(this.chunkGroup, asTileOutlineMesh(this.tileGeometries), {
             color: 0xffaa00
         });
         if (this.displayParams.showTiles) this.tileWire.show();
 
         // A fresh chunk's base layer is all zero, so labels start zeroed too; created once, like the wires,
         // and merely shown/hidden afterwards rather than rebuilt. The sync below corrects the text either way.
-        this.quadrantLabels = new QuadrantLabels(this.chunkGroup, this.innerCells, new Uint32Array(tileCount));
+        this.quadrantLabels = new QuadrantLabels(this.chunkGroup, this.tileGeometries, new Uint32Array(tileCount));
         if (this.displayParams.showQuadrants) this.quadrantLabels.show();
         else this.quadrantLabels.hide();
 
@@ -323,6 +327,7 @@ export class TileChunk extends Experiment {
             this.world.remove_chunk(this.loadedChunk.q, this.loadedChunk.r);
         }
         this.innerCells?.free();
+        this.tileGeometries?.free();
         this.cellWire?.dispose();
         this.tileWire?.dispose();
         this.quadrantLabels?.dispose();

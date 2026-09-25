@@ -5,6 +5,6 @@ mod change_log;
 mod world;
 
 pub use self::{
-    cell_data::{WasmCornerCells, WasmEdgeCells, WasmInnerCells},
+    cell_data::{WasmCornerCells, WasmEdgeCells, WasmInnerCells, WasmTileGeometries},
     change_log::WasmChangeLog,
 };

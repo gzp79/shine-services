@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import {
+    Fn,
     cross,
     float,
-    Fn,
     mat4,
     mix,
     normalLocal,
@@ -122,15 +122,16 @@ export class InstancedTileSet extends InstancedMultiMesh {
 
         const n = normalLocal;
         // Jacobian of the trilinear warp (columns d(distorted)/dx,dy,dz), from the same mixes above.
-        const dDdx = mix(mix(cp[1].sub(cp[0]), cp[3].sub(cp[2]), p.y), mix(cp[5].sub(cp[4]), cp[7].sub(cp[6]), p.y), p.z);
+        const dDdx = mix(
+            mix(cp[1].sub(cp[0]), cp[3].sub(cp[2]), p.y),
+            mix(cp[5].sub(cp[4]), cp[7].sub(cp[6]), p.y),
+            p.z
+        );
         const dDdy = mix(c01.sub(c00), c11.sub(c10), p.z);
         const dDdz = c1.sub(c0);
         // Inverse-transpose of the Jacobian applied to the normal, via the cofactor identity
         // (columns b×c, c×a, a×b) — avoids an explicit 3x3 inverse; normalize() below absorbs the determinant.
-        const warpedNormal = cross(dDdy, dDdz)
-            .mul(n.x)
-            .add(cross(dDdz, dDdx).mul(n.y))
-            .add(cross(dDdx, dDdy).mul(n.z));
+        const warpedNormal = cross(dDdy, dDdz).mul(n.x).add(cross(dDdz, dDdx).mul(n.y)).add(cross(dDdx, dDdy).mul(n.z));
         const instanceNormal = instanceMatrix.toMat3().mul(warpedNormal);
         const normal = normalize(instanceNormal);
 

@@ -9,7 +9,7 @@ use crate::{
     world::{
         base_layer::{Base, BaseLayer},
         generation::Generation,
-        ChunkId, InnerCells, Layer, LayerKind, CHUNK_WORLD_SIZE, SUBDIVISION_BASE,
+        ChunkId, InnerCells, Layer, LayerKind, TileGeometries, CHUNK_WORLD_SIZE, SUBDIVISION_BASE,
     },
 };
 
@@ -157,20 +157,12 @@ impl Chunk {
         let mut indices = Vec::with_capacity(site_count * 4); // 4 quads per vertex on average
         let mut ranges = Vec::with_capacity(site_count * 2);
         let mut cell_ids = Vec::with_capacity(site_count);
-        let mut tile_ids = Vec::with_capacity(tile_count);
-        let mut tile_distortions = Vec::with_capacity(tile_count * 8);
-        let mut tile_vertices = Vec::with_capacity(site_count * 4);
 
         let mut vertices = Vec::with_capacity(tile_count * 2);
         for qi in self.mesh.finite_quad_index_iter() {
             let center = self.mesh.dual_p(qi).expect("finite quad must have a dual point");
             vertices.push(center.x);
             vertices.push(center.y);
-            tile_ids.push(self.quad_to_tile[qi].into_index() as u32);
-            for &qv in self.mesh.quad_vertices(qi) {
-                tile_distortions.push(self.mesh[qv].position.x);
-                tile_distortions.push(self.mesh[qv].position.y);
-            }
         }
 
         for vi in self.mesh.finite_vertex_index_iter() {
@@ -183,25 +175,24 @@ impl Chunk {
 
             for qv in self.mesh.vertex_ring_ccw(vi) {
                 indices.push(self.quad_to_tile[qv.quad].into_index() as u32);
-                tile_vertices.push(qv.local.into());
             }
 
             ranges.push(indices.len() as u32);
         }
 
-        // cell_tiles() binary-searches cell_ids, relying on this ascending order
-        debug_assert!(cell_ids.is_sorted());
+        InnerCells::new(vertices, indices, ranges, cell_ids, self.generation())
+    }
 
-        InnerCells::new(
-            vertices,
-            indices,
-            ranges,
-            cell_ids,
-            tile_ids,
-            tile_vertices,
-            tile_distortions,
-            self.generation(),
-        )
+    pub fn tile_geometries(&self) -> TileGeometries {
+        let tile_count = self.mesh.finite_quad_count();
+        let mut tile_distortions = Vec::with_capacity(tile_count * 8);
+        for qi in self.mesh.finite_quad_index_iter() {
+            for &qv in self.mesh.quad_vertices(qi) {
+                tile_distortions.push(self.mesh[qv].position.x);
+                tile_distortions.push(self.mesh[qv].position.y);
+            }
+        }
+        TileGeometries::new(tile_distortions, self.generation())
     }
 
     /// Returns VertexIndex values along specified hex edge (inclusive of both corners)
