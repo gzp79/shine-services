@@ -1,11 +1,12 @@
-import { EdgeCellsHandle, WasmWorld } from '#wasm';
+import { EdgeCells, World } from '#wasm';
 import * as THREE from 'three';
 import { EventSubscriptions } from '../../engine/events';
 import { SelectionMesh } from '../../engine/scene/selection-mesh';
-import { WireMesh } from '../../engine/scene/wire-mesh';
 import { computeLocalCentroids } from '../../mesh/centroid';
+import { asPolygonMesh } from '../../mesh/polygon-mesh';
 import { ChunkId, HexFlatDir } from './chunk-id';
-import { SELECTION_CHANGED, type SelectionChangedEvent } from './selection/selection-event';
+import type { WorldEntity, WorldEntityKind } from './world-entity';
+import { SELECTION_CHANGED, type SelectionChangedEvent } from './world-events';
 
 export class ChunkEdgeId {
     constructor(
@@ -13,6 +14,10 @@ export class ChunkEdgeId {
         public readonly chunkId: ChunkId,
         public readonly edgeIdx: HexFlatDir.NE | HexFlatDir.N | HexFlatDir.NW
     ) {}
+
+    get kind(): WorldEntityKind {
+        return 'edge';
+    }
 
     key(): string {
         return `${this.chunkId.key()}-e${this.edgeIdx}`;
@@ -31,23 +36,21 @@ export class ChunkEdgeId {
     }
 }
 
-export class ChunkEdge {
+export class ChunkEdge implements WorldEntity {
     readonly group = new THREE.Group();
-    readonly cells: EdgeCellsHandle;
-    private wireframe: WireMesh;
+    readonly cells: EdgeCells;
     private selectionMesh: SelectionMesh;
     private _centroids: Float32Array | null = null;
     private readonly subscriptions: EventSubscriptions;
 
     constructor(
-        private readonly world: WasmWorld,
+        private readonly world: World,
         readonly id: ChunkEdgeId,
         events: EventTarget
     ) {
         this.group.userData = { chunkEdgeId: id, chunkEdge: this };
         this.cells = world.edge_cells(id.chunkId.q, id.chunkId.r, id.edgeIdx)!;
-        this.wireframe = WireMesh.fromPolygons(this.group, this.cells);
-        this.selectionMesh = new SelectionMesh(this.group, this.cells);
+        this.selectionMesh = new SelectionMesh(this.group, asPolygonMesh(this.cells));
         this.subscriptions = new EventSubscriptions(events);
         this.subscriptions.on<SelectionChangedEvent>(SELECTION_CHANGED, this.handleSelectionChanged);
     }
@@ -63,24 +66,14 @@ export class ChunkEdge {
 
     get centroids(): Float32Array {
         if (!this._centroids) {
-            this._centroids = computeLocalCentroids(this.cells)!;
+            this._centroids = computeLocalCentroids(asPolygonMesh(this.cells))!;
         }
         return this._centroids;
-    }
-
-    get showCellWires(): boolean {
-        return this.wireframe.isVisible();
-    }
-
-    set showCellWires(value: boolean) {
-        if (value) this.wireframe.show();
-        else this.wireframe.hide();
     }
 
     dispose(): void {
         this.subscriptions.dispose();
         this.selectionMesh.dispose();
-        this.wireframe.dispose();
         this.cells.free();
     }
 

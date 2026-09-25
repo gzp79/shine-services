@@ -5,8 +5,8 @@ import type { IInputState } from '../../engine/input/input-state';
 import type { IRtsCamera } from '../avatar/rts-camera';
 import { GameSystem } from '../game-system';
 import { ChunkId } from '../world/chunk-id';
-import { type Selection, isSelectionInteractable, selectionOwner } from '../world/selection/selection-event';
-import { World } from '../world/world';
+import { type Selection, isSelectionInteractable, selectionOwner } from '../world/selection/selection';
+import { GameWorld } from '../world/world';
 
 // Only switch to a new cell when its centroid is closer than this fraction
 // of the current centroid's distance — creates a sticky hysteresis band.
@@ -26,7 +26,7 @@ export class SelectionSystem implements GameSystem {
     private readonly debugPanel: DebugPanel | null;
 
     constructor(
-        private readonly world: World,
+        private readonly world: GameWorld,
         private readonly input: IInputState,
         private readonly camera: IRtsCamera,
         debugPanel: DebugPanel | null

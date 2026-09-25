@@ -1,5 +1,18 @@
 import * as THREE from 'three';
-import { float, mat4, mix, positionLocal, vec3, vec4 } from 'three/tsl';
+import {
+    Fn,
+    cross,
+    float,
+    mat4,
+    mix,
+    normalLocal,
+    normalize,
+    positionLocal,
+    transformNormalToView,
+    varyingProperty,
+    vec3,
+    vec4
+} from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { type ModelSet, toModelSet } from '../../assets/model-set';
 import { loadGltf } from '../../loaders/gltf-loader';
@@ -22,7 +35,14 @@ export type { SubMeshDef, VariantDef, InstancedMultiMeshParams } from './instanc
  */
 export type TileDistortion = Float32Array; // 24 floats
 
+/** Buffer layout (single buffer, 40 floats = 10 texels):
+ *   floats  0-15: mat4 instance transform, column-major
+ *   floats 16-39: cp[0..7] as 8×vec3, the TileDistortion control points
+ */
+export const TILE_INSTANCE_SCHEMA = Symbol('InstancedTileSet.instanceData');
+
 const CP_COUNT = 8;
+const NORMAL_VARYING = 'vTileNormal';
 
 function toVariants(modelSet: ModelSet): VariantDef[] {
     return modelSet.models.map((m) => ({
@@ -68,14 +88,19 @@ export class InstancedTileSet extends InstancedMultiMesh {
         });
     }
 
-    // Instance data: 40 floats = 10 texels
-    //   floats  0-15: mat4 transform, column-major
-    //   floats 16-39: cp[0..7] as 8×vec3
     protected instanceBufferLayout(): InstanceBufferLayout {
-        return { buffers: [{ floatsPerInstance: 40 }] };
+        return { schema: TILE_INSTANCE_SCHEMA, buffers: [{ floatsPerInstance: 40 }] };
     }
 
-    protected createMaterial(mat: MeshStandardNodeMaterial, instanceData: InstanceData): MeshStandardNodeMaterial {
+    // Position and unit normal after the trilinear warp + instance transform, both in the same
+    // pre-modelMatrix space as positionLocal. Static and public: it's a pure function of
+    // `instanceData` (no instance state), so it can be passed by reference — e.g. as the NormalWarp
+    // an InstancedNormalLineAttachment reuses to draw the exact same math as createMaterial.
+    static computeWarp(instanceData: InstanceData) {
+        if (instanceData.schema !== TILE_INSTANCE_SCHEMA) {
+            throw new Error('InstancedTileSet.computeWarp: instanceData is not from an InstancedTileSet');
+        }
+
         const col0 = instanceData.vec4(0, 0);
         const col1 = instanceData.vec4(0, 1);
         const col2 = instanceData.vec4(0, 2);
@@ -83,6 +108,7 @@ export class InstancedTileSet extends InstancedMultiMesh {
         const cp = Array.from({ length: CP_COUNT }, (_, i) => instanceData.vec3At(0, 16 + i * 3));
 
         const instanceMatrix = mat4(col0, col1, col2, col3);
+
         const p = positionLocal;
         const c00 = mix(cp[0], cp[1], p.x);
         const c01 = mix(cp[2], cp[3], p.x);
@@ -90,22 +116,46 @@ export class InstancedTileSet extends InstancedMultiMesh {
         const c11 = mix(cp[6], cp[7], p.x);
         const c0 = mix(c00, c01, p.y);
         const c1 = mix(c10, c11, p.y);
-        const distorted = mix(c0, c1, p.z);
+        const warpedPosition = mix(c0, c1, p.z);
+        const instancePosition = instanceMatrix.mul(vec4(warpedPosition, float(1.0)));
+        const position = vec3(instancePosition.x, instancePosition.y, instancePosition.z);
 
-        const localPos = vec4(distorted, float(1.0));
-        const transformed = instanceMatrix.mul(localPos);
+        const n = normalLocal;
+        // Jacobian of the trilinear warp (columns d(distorted)/dx,dy,dz), from the same mixes above.
+        const dDdx = mix(
+            mix(cp[1].sub(cp[0]), cp[3].sub(cp[2]), p.y),
+            mix(cp[5].sub(cp[4]), cp[7].sub(cp[6]), p.y),
+            p.z
+        );
+        const dDdy = mix(c01.sub(c00), c11.sub(c10), p.z);
+        const dDdz = c1.sub(c0);
+        // Inverse-transpose of the Jacobian applied to the normal, via the cofactor identity
+        // (columns b×c, c×a, a×b) — avoids an explicit 3x3 inverse; normalize() below absorbs the determinant.
+        const warpedNormal = cross(dDdy, dDdz).mul(n.x).add(cross(dDdz, dDdx).mul(n.y)).add(cross(dDdx, dDdy).mul(n.z));
+        const instanceNormal = instanceMatrix.toMat3().mul(warpedNormal);
+        const normal = normalize(instanceNormal);
 
-        mat.positionNode = vec3(transformed.x, transformed.y, transformed.z);
+        return { position, normal };
+    }
+
+    protected createMaterial(mat: MeshStandardNodeMaterial, instanceData: InstanceData): MeshStandardNodeMaterial {
+        const normalVarying = varyingProperty('vec3', NORMAL_VARYING);
+        mat.positionNode = Fn(() => {
+            const { position, normal } = InstancedTileSet.computeWarp(instanceData);
+            normalVarying.assign(normal);
+            return position;
+        })();
+        mat.normalNode = transformNormalToView(normalVarying);
         return mat;
     }
 
-    setTile(variantIndex: number, key: number, matrix: THREE.Matrix4, distortion: TileDistortion): boolean {
+    setTile(key: number, variantIndex: number, matrix: THREE.Matrix4, distortion: TileDistortion): boolean {
         this._scratch.set(matrix.elements, 0);
         this._scratch.set(distortion, 16);
-        return super.setInstance(variantIndex, key, 0, this._scratch);
+        return super.setInstance(key, variantIndex, 0, this._scratch);
     }
 
-    removeTile(variantIndex: number, key: number): boolean {
-        return super.removeInstance(variantIndex, key);
+    removeTile(key: number): boolean {
+        return super.removeInstance(key);
     }
 }

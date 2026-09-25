@@ -3,6 +3,7 @@ import { DebugPanel } from '../engine/compositor/debug-panel';
 import { RenderContext } from '../engine/compositor/render-context';
 import { InputManager } from '../engine/input/input-manager';
 import { InputState } from '../engine/input/input-state';
+import { TextSpriteFactory } from '../engine/resources/text-sprite';
 import type { Scene, SceneContext } from '../engine/scene';
 import { RtsCamera } from './avatar/rts-camera';
 import { WorldCursor } from './avatar/world-cursor';
@@ -13,7 +14,7 @@ import { ClearInputStateSystem } from './systems/clear-input-state-system';
 import { CursorDriveSystem } from './systems/cursor-drive-system';
 import { SelectionSystem } from './systems/selection-system';
 import { WorldReferenceSystem } from './systems/world-reference-system';
-import { World } from './world/world';
+import { GameWorld } from './world/world';
 
 export class Game implements Scene {
     private readonly events: EventTarget;
@@ -23,8 +24,9 @@ export class Game implements Scene {
     private readonly camera: RtsCamera;
     private readonly worldCursor: WorldCursor;
     private readonly debugPanel: DebugPanel;
-    private readonly world: World;
+    private readonly world: GameWorld;
     private readonly assets: AssetStore;
+    private readonly textSprites: TextSpriteFactory;
     private readonly systems: GameSystem[] = [];
 
     constructor(context: SceneContext) {
@@ -42,7 +44,8 @@ export class Game implements Scene {
 
         this.camera = new RtsCamera(this.events);
         this.worldCursor = new WorldCursor(this.renderContext.scene, this.events);
-        this.world = new World(this.events, this.debugPanel);
+        this.textSprites = new TextSpriteFactory();
+        this.world = new GameWorld(this.textSprites, this.events, this.debugPanel);
         this.assets = new AssetStore(catalogBuilder);
 
         this.inputState = new InputState();
@@ -51,8 +54,6 @@ export class Game implements Scene {
         this.worldCursor.showMesh = true;
         const controls = this.debugPanel.scope('Controls');
         controls.add(this.worldCursor, 'showMesh').name('Show World Cursor');
-        controls.add(this.world, 'showChunkLabels').name('Show Chunk Labels');
-        controls.add(this.world, 'showCellWires').name('Show Cell Wires');
 
         // Register systems in execution order
         this.systems.push(new CameraViewportSystem(this.camera, this.renderContext));
@@ -86,6 +87,7 @@ export class Game implements Scene {
         }
         this.world.dispose();
         this.assets.dispose();
+        this.textSprites.dispose();
         this.renderContext.dispose();
         this.debugPanel.dispose();
     }

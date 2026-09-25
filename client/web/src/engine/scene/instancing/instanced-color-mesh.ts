@@ -1,5 +1,16 @@
 import * as THREE from 'three';
-import { float, mat4, positionLocal, vec3, vec4 } from 'three/tsl';
+import {
+    Fn,
+    float,
+    mat4,
+    normalLocal,
+    normalize,
+    positionLocal,
+    transformNormalToView,
+    varyingProperty,
+    vec3,
+    vec4
+} from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import {
     type InstanceBufferLayout,
@@ -10,9 +21,12 @@ import {
 
 export type { VariantDef, SubMeshDef, InstancedMultiMeshParams } from './instanced-multi-mesh';
 
-// Buffer layout (single buffer, 20 floats = 5 texels):
-//   texels 0-3: mat4 transform, column-major (col0..col3 each as vec4)
-//   texel  4:   vec4 color (RGBA)
+/** Buffer layout (single buffer, 20 floats = 5 texels):
+ *   floats  0-15: mat4 instance transform, column-major
+ *   floats 16-19: vec4 color (RGBA)
+ */
+export const COLOR_INSTANCE_SCHEMA = Symbol('InstancedColorMesh.instanceData');
+const NORMAL_VARYING = 'vColorNormal';
 
 export class InstancedColorMesh extends InstancedMultiMesh {
     private readonly _scratch = new Float32Array(20);
@@ -22,35 +36,56 @@ export class InstancedColorMesh extends InstancedMultiMesh {
     }
 
     protected instanceBufferLayout(): InstanceBufferLayout {
-        return { buffers: [{ floatsPerInstance: 20 }] };
+        return { schema: COLOR_INSTANCE_SCHEMA, buffers: [{ floatsPerInstance: 20 }] };
     }
 
-    protected createMaterial(mat: MeshStandardNodeMaterial, instanceData: InstanceData): MeshStandardNodeMaterial {
+    // Position and unit normal after the rigid instance transform.
+    static computeWarp(instanceData: InstanceData) {
+        if (instanceData.schema !== COLOR_INSTANCE_SCHEMA) {
+            throw new Error('InstancedColorMesh.computeWarp: instanceData is not from an InstancedColorMesh');
+        }
+
         const col0 = instanceData.vec4(0, 0);
         const col1 = instanceData.vec4(0, 1);
         const col2 = instanceData.vec4(0, 2);
         const col3 = instanceData.vec4(0, 3);
+        const instanceMatrix = mat4(col0, col1, col2, col3);
+
+        const transformed = instanceMatrix.mul(vec4(positionLocal, float(1.0)));
+        const position = vec3(transformed.x, transformed.y, transformed.z);
+
+        // Instance matrix is assumed rotation + uniform scale (no shear), so its linear part can be
+        // applied directly rather than its inverse-transpose — same assumption InstancedTileSet makes
+        // (and how three.js's own InstancedMesh handles normals).
+        const normal = normalize(instanceMatrix.toMat3().mul(normalLocal));
+
+        return { position, normal };
+    }
+
+    protected createMaterial(mat: MeshStandardNodeMaterial, instanceData: InstanceData): MeshStandardNodeMaterial {
         const color = instanceData.vec4(0, 4);
 
-        const instanceMatrix = mat4(col0, col1, col2, col3);
-        const localPos = vec4(positionLocal, float(1.0));
-        const transformed = instanceMatrix.mul(localPos);
-
-        mat.positionNode = vec3(transformed.x, transformed.y, transformed.z);
+        const normalVarying = varyingProperty('vec3', NORMAL_VARYING);
+        mat.positionNode = Fn(() => {
+            const { position, normal } = InstancedColorMesh.computeWarp(instanceData);
+            normalVarying.assign(normal);
+            return position;
+        })();
+        mat.normalNode = transformNormalToView(normalVarying);
         mat.colorNode = vec3(color.x, color.y, color.z);
         return mat;
     }
 
-    setObject(variantIndex: number, key: number, matrix: THREE.Matrix4, color: THREE.Color): boolean {
+    setObject(key: number, variantIndex: number, matrix: THREE.Matrix4, color: THREE.Color): boolean {
         this._scratch.set(matrix.elements, 0);
         this._scratch[16] = color.r;
         this._scratch[17] = color.g;
         this._scratch[18] = color.b;
         this._scratch[19] = 1.0;
-        return this.setInstance(variantIndex, key, 0, this._scratch);
+        return this.setInstance(key, variantIndex, 0, this._scratch);
     }
 
-    removeObject(variantIndex: number, key: number): boolean {
-        return this.removeInstance(variantIndex, key);
+    removeObject(key: number): boolean {
+        return this.removeInstance(key);
     }
 }

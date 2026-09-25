@@ -1,15 +1,24 @@
-import { WasmWorldNeighbors } from '#wasm';
+import { HexFlatDir, HexPointyDir, World, hex_flat_neighbor } from '#wasm';
 import * as THREE from 'three';
 import { ManagedMesh } from '../../engine/resources/managed-mesh';
-import { disposeObject3D } from '../../engine/resources/ownership';
+import { type ToggleableGroup, createToggleableGroup } from '../../engine/scene/toggleable-group';
+import { type PolygonMeshSource, asPolygonMesh } from '../../mesh/polygon-mesh';
 
 const EDGE_COLOR = 0x222222;
 
-export interface ToggleableGroup {
-    group: THREE.Group;
-    setVisible: (visible: boolean) => void;
-    setIndividualVisible: (index: number, visible: boolean) => void;
-    dispose: () => void;
+export interface ChunkCoord {
+    q: number;
+    r: number;
+}
+
+/** Center chunk followed by its 6 flat-top neighbors, in HexFlatDir order (index 0 = center). */
+export function neighborChunkIds(center: ChunkCoord): ChunkCoord[] {
+    const ids: ChunkCoord[] = [center];
+    for (let dir = 0; dir < 6; dir++) {
+        const n = hex_flat_neighbor(center.q, center.r, dir as HexFlatDir);
+        ids.push({ q: n[0], r: n[1] });
+    }
+    return ids;
 }
 
 // Build a colored polygon mesh from vertices/indices/ranges with z-offset
@@ -94,186 +103,102 @@ function buildPolygonWireframe(
     return new THREE.LineSegments(geom, mat);
 }
 
-export function buildChunkHexagons(data: WasmWorldNeighbors): THREE.Group {
+// Filled mesh + wireframe for one cell polygon set, taken straight from a cell handle.
+function buildCellGroup(source: PolygonMeshSource, color: THREE.Color, meshZ: number, wireZ: number): THREE.Group {
     const group = new THREE.Group();
-    const color = new THREE.Color();
+    const mesh = asPolygonMesh(source);
+    const { vertices, indices, ranges } = mesh;
 
-    for (let chunk_idx = 0; chunk_idx < 7; chunk_idx++) {
-        const hexVerts = data.chunk_hex_vertices(chunk_idx);
-        if (hexVerts.length !== 12) continue;
-
-        // Color coding: HSL wheel
-        const hue = chunk_idx / 7;
-        color.setHSL(hue, 0.5, 0.6);
-
-        // Build line loop from 6 vertices
-        const positions: number[] = [];
-        for (let i = 0; i < 6; i++) {
-            positions.push(hexVerts[i * 2], hexVerts[i * 2 + 1], 2.0);
-        }
-        // Close the loop
-        positions.push(hexVerts[0], hexVerts[1], 2.0);
-
-        const geom = new THREE.BufferGeometry();
-        geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        const mat = new THREE.LineBasicMaterial({ color: color.getHex() });
-        const line = new THREE.Line(geom, mat);
-
-        group.add(line);
+    if (vertices.length > 0) {
+        group.add(buildPolygonMesh(vertices, indices, ranges, color, meshZ));
+        group.add(buildPolygonWireframe(vertices, indices, ranges, wireZ));
     }
 
     return group;
 }
 
-export function buildInteriorMeshes(data: WasmWorldNeighbors): ToggleableGroup {
+export function buildChunkHexagons(world: World, center: ChunkCoord): THREE.Group {
+    const group = new THREE.Group();
+    const color = new THREE.Color();
+
+    neighborChunkIds(center).forEach((id, chunkIdx) => {
+        const hexVerts = world.hex_vertices(id.q, id.r);
+        if (!hexVerts || hexVerts.length !== 12) return;
+
+        const offset = world.chunk_world_offset(center.q, center.r, id.q, id.r);
+        color.setHSL(chunkIdx / 7, 0.5, 0.6);
+
+        // Line loop over the 6 corners, offset into world space and closed back to the first.
+        const positions: number[] = [];
+        for (let i = 0; i <= 6; i++) {
+            const c = i % 6;
+            positions.push(hexVerts[c * 2] + offset[0], hexVerts[c * 2 + 1] + offset[1], 2.0);
+        }
+
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        const mat = new THREE.LineBasicMaterial({ color: color.getHex() });
+        group.add(new THREE.Line(geom, mat));
+    });
+
+    return group;
+}
+
+export function buildInteriorMeshes(world: World, center: ChunkCoord): ToggleableGroup {
     const group = new THREE.Group();
     const meshGroups: THREE.Group[] = [];
     const color = new THREE.Color();
 
-    for (let chunk_idx = 0; chunk_idx < 7; chunk_idx++) {
-        const meshData = data.inner_mesh(chunk_idx);
+    neighborChunkIds(center).forEach((id, chunkIdx) => {
         const chunkGroup = new THREE.Group();
+        using cells = world.inner_cells(id.q, id.r);
 
-        if (meshData) {
-            const vertices = meshData.vertices;
-            const indices = meshData.indices;
-            const ranges = meshData.ranges;
-
-            if (vertices.length > 0) {
-                // Color coding: HSL wheel
-                const hue = chunk_idx / 7;
-                color.setHSL(hue, 0.7, 0.5);
-
-                // Build polygon mesh (z = 0.0)
-                const mesh = buildPolygonMesh(vertices, indices, ranges, color, 0.0);
-                chunkGroup.add(mesh);
-
-                // Build wireframe (z = 1.0)
-                const wire = buildPolygonWireframe(vertices, indices, ranges, 1.0);
-                chunkGroup.add(wire);
-            }
-
-            meshData.free();
+        if (cells) {
+            color.setHSL(chunkIdx / 7, 0.7, 0.5);
+            chunkGroup.add(buildCellGroup(cells, color, 0.0, 1.0));
+            const offset = world.chunk_world_offset(center.q, center.r, id.q, id.r);
+            chunkGroup.position.set(offset[0], offset[1], 0);
         }
 
         meshGroups.push(chunkGroup);
         group.add(chunkGroup);
-    }
+    });
 
-    return {
-        group,
-        setVisible: (visible: boolean) => {
-            meshGroups.forEach((g) => (g.visible = visible));
-        },
-        setIndividualVisible: (index: number, visible: boolean) => {
-            if (index >= 0 && index < meshGroups.length) {
-                meshGroups[index].visible = visible;
-            }
-        },
-        dispose: () => {
-            meshGroups.forEach((g) => disposeObject3D(g));
-        }
-    };
+    return createToggleableGroup(group, meshGroups);
 }
 
-export function buildEdgeMeshes(data: WasmWorldNeighbors): ToggleableGroup {
+export function buildEdgeMeshes(world: World, center: ChunkCoord): ToggleableGroup {
     const group = new THREE.Group();
     const meshGroups: THREE.Group[] = [];
     const color = new THREE.Color();
-
-    for (let edge_idx = 0; edge_idx < 6; edge_idx++) {
-        const meshData = data.edge_mesh(edge_idx);
+    for (let edgeIdx = 0; edgeIdx < 6; edgeIdx++) {
         const edgeGroup = new THREE.Group();
-
-        if (meshData) {
-            const vertices = meshData.vertices;
-            const indices = meshData.indices;
-            const ranges = meshData.ranges;
-
-            if (vertices.length > 0) {
-                // Color coding: HSL wheel
-                const hue = edge_idx / 6;
-                color.setHSL(hue, 0.8, 0.5);
-
-                // Build polygon mesh (z = 0.2)
-                const mesh = buildPolygonMesh(vertices, indices, ranges, color, 0.2);
-                edgeGroup.add(mesh);
-
-                // Build wireframe (z = 1.2)
-                const wire = buildPolygonWireframe(vertices, indices, ranges, 1.2);
-                edgeGroup.add(wire);
-            }
-
-            meshData.free();
+        using cells = world.edge_cells(center.q, center.r, edgeIdx as HexFlatDir);
+        if (cells) {
+            color.setHSL(edgeIdx / 6, 0.8, 0.5);
+            edgeGroup.add(buildCellGroup(cells, color, 0.2, 1.2));
         }
-
         meshGroups.push(edgeGroup);
         group.add(edgeGroup);
     }
 
-    return {
-        group,
-        setVisible: (visible: boolean) => {
-            meshGroups.forEach((g) => (g.visible = visible));
-        },
-        setIndividualVisible: (index: number, visible: boolean) => {
-            if (index >= 0 && index < meshGroups.length) {
-                meshGroups[index].visible = visible;
-            }
-        },
-        dispose: () => {
-            meshGroups.forEach((g) => disposeObject3D(g));
-        }
-    };
+    return createToggleableGroup(group, meshGroups);
 }
 
-export function buildVertexMeshes(data: WasmWorldNeighbors): ToggleableGroup {
+export function buildCornerMeshes(world: World, center: ChunkCoord): ToggleableGroup {
     const group = new THREE.Group();
     const meshGroups: THREE.Group[] = [];
     const color = new THREE.Color();
-
-    for (let vertex_idx = 0; vertex_idx < 6; vertex_idx++) {
-        const meshData = data.vertex_mesh(vertex_idx);
-        const vertexGroup = new THREE.Group();
-
-        if (meshData) {
-            const vertices = meshData.vertices;
-            const indices = meshData.indices;
-            const ranges = meshData.ranges;
-
-            if (vertices.length > 0) {
-                // Color coding: HSL wheel
-                const hue = vertex_idx / 6;
-                color.setHSL(hue, 0.8, 0.4);
-
-                // Build polygon mesh (z = 0.4)
-                const mesh = buildPolygonMesh(vertices, indices, ranges, color, 0.4);
-                vertexGroup.add(mesh);
-
-                // Build wireframe (z = 1.4)
-                const wire = buildPolygonWireframe(vertices, indices, ranges, 1.4);
-                vertexGroup.add(wire);
-            }
-
-            meshData.free();
+    for (let cornerIdx = 0; cornerIdx < 6; cornerIdx++) {
+        const cornerGroup = new THREE.Group();
+        using cells = world.corner_cells(center.q, center.r, cornerIdx as HexPointyDir);
+        if (cells) {
+            color.setHSL(cornerIdx / 6, 0.8, 0.4);
+            cornerGroup.add(buildCellGroup(cells, color, 0.4, 1.4));
         }
-
-        meshGroups.push(vertexGroup);
-        group.add(vertexGroup);
+        meshGroups.push(cornerGroup);
+        group.add(cornerGroup);
     }
 
-    return {
-        group,
-        setVisible: (visible: boolean) => {
-            meshGroups.forEach((g) => (g.visible = visible));
-        },
-        setIndividualVisible: (index: number, visible: boolean) => {
-            if (index >= 0 && index < meshGroups.length) {
-                meshGroups[index].visible = visible;
-            }
-        },
-        dispose: () => {
-            meshGroups.forEach((g) => disposeObject3D(g));
-        }
-    };
+    return createToggleableGroup(group, meshGroups);
 }

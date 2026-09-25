@@ -5,14 +5,21 @@ use crate::{
         prng::SplitMix64,
         quadrangulation::VertexIndex,
     },
-    world::{Chunk, ChunkId, CornerCells, EdgeCells, InnerCells},
+    world::{
+        generation::GenerationGuard, ChangeLog, Chunk, ChunkId, CornerCells, EdgeCells, InnerCells, LayerKind,
+        LayerUpdate, TileGeometries,
+    },
 };
-use std::collections::HashMap;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    rc::{Rc, Weak},
+};
 use tracing::info_span;
 
 /// The core subdivision depth to align chunks
 pub const SUBDIVISION_BASE: u32 = 4;
-/// The numbe of cells on the edge of a chunk
+/// The number of cells on the edge of a chunk
 pub const SUBDIVISION_COUNT: u32 = 2u32.pow(SUBDIVISION_BASE);
 
 /// The world size (circumcenter) of a chunk (in meter)
@@ -20,38 +27,41 @@ pub const CHUNK_WORLD_SIZE: f32 = 1000.0;
 /// The "ideal" length of the side of a cell (in meter)
 pub const CELL_WORLD_SIZE: f32 = CHUNK_WORLD_SIZE / SUBDIVISION_COUNT as f32;
 
-pub struct World {
+/// The world data.
+struct WorldInner {
     rng_seed: SplitMix64,
     chunks: HashMap<ChunkId, Chunk>,
+    next_chunk_generation: u64,
 }
 
-impl Default for World {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl World {
-    pub fn new() -> Self {
+impl WorldInner {
+    fn new() -> Self {
         Self {
             rng_seed: SplitMix64::new(),
             chunks: HashMap::new(),
+            next_chunk_generation: 0,
         }
     }
 
-    pub fn init_chunk(&mut self, id: ChunkId) {
-        self.chunks.insert(id, Chunk::new(&self.rng_seed, id));
+    fn init_chunk(&mut self, id: ChunkId) {
+        self.next_chunk_generation += 1;
+        let generation = self.next_chunk_generation;
+        self.chunks.insert(id, Chunk::new(&self.rng_seed, id, generation));
     }
 
-    pub fn chunk(&self, id: ChunkId) -> Option<&Chunk> {
+    fn chunk(&self, id: ChunkId) -> Option<&Chunk> {
         self.chunks.get(&id)
     }
 
-    pub fn remove_chunk(&mut self, id: ChunkId) {
+    fn chunk_mut(&mut self, id: ChunkId) -> Option<&mut Chunk> {
+        self.chunks.get_mut(&id)
+    }
+
+    fn remove_chunk(&mut self, id: ChunkId) {
         self.chunks.remove(&id);
     }
 
-    pub fn chunk_world_offset(&self, reference: ChunkId, target: ChunkId) -> Vec<f32> {
+    fn chunk_world_offset(&self, reference: ChunkId, target: ChunkId) -> Vec<f32> {
         if self.chunk(reference).is_none() {
             return vec![];
         }
@@ -59,12 +69,17 @@ impl World {
         vec![offset.x, offset.y]
     }
 
-    pub fn inner_cells(&self, id: ChunkId) -> Option<InnerCells> {
+    fn inner_cells(&self, id: ChunkId) -> Option<InnerCells> {
         let _span = info_span!("internal_cells", id = ?id).entered();
         self.chunk(id).map(|chunk| chunk.cell_data())
     }
 
-    pub fn edge_cells(&self, id: ChunkId, edge_idx: HexFlatDir) -> Option<EdgeCells> {
+    fn tile_geometries(&self, id: ChunkId) -> Option<TileGeometries> {
+        let _span = info_span!("tile_geometries", id = ?id).entered();
+        self.chunk(id).map(|chunk| chunk.tile_geometries())
+    }
+
+    fn edge_cells(&self, id: ChunkId, edge_idx: HexFlatDir) -> Option<EdgeCells> {
         let _span = info_span!("edge_cells", id = ?id).entered();
 
         let (neighbor_dir, neighbor_edge) = match edge_idx {
@@ -98,9 +113,7 @@ impl World {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
         let mut ranges = Vec::with_capacity(site_count * 2);
-        let mut sites = Vec::with_capacity(site_count * 2);
-        let mut tiles = Vec::new();
-        let mut tile_distortions = Vec::new();
+        let mut cell_ids = Vec::with_capacity(site_count * 2);
 
         // map from QuadIndex to index in vertices
         let mut index_map = HashMap::new();
@@ -108,37 +121,25 @@ impl World {
 
         for (vi_owner, vi_neighbor) in owner_vis.zip(neighbor_vis) {
             ranges.push(indices.len() as u32);
-            sites.push(vi_owner.into_index() as u32);
-            sites.push(vi_neighbor.into_index() as u32);
+            cell_ids.push(owner.vert_to_cell()[vi_owner].into_index() as u32);
+            cell_ids.push(neighbor.vert_to_cell()[vi_neighbor].into_index() as u32);
 
-            for qi in owner.mesh.boundary_dual_vertices(vi_owner) {
+            for qi in owner.mesh().boundary_dual_vertices(vi_owner) {
                 let index = *index_map.entry(qi).or_insert_with(|| {
-                    let p = owner.mesh.dual_p(qi).unwrap();
+                    let p = owner.mesh().dual_p(qi).unwrap();
                     let idx = (vertices.len() / 2) as u32;
                     vertices.push(p.x);
                     vertices.push(p.y);
-                    tiles.push(0); // owner tile id is always 0
-                    tiles.push(qi.into_index() as u32);
-                    for &qv in owner.mesh.quad_vertices(qi) {
-                        tile_distortions.push(owner.mesh[qv].position.x);
-                        tile_distortions.push(owner.mesh[qv].position.y);
-                    }
                     idx
                 });
                 indices.push(index);
             }
-            for qi in neighbor.mesh.boundary_dual_vertices(vi_neighbor) {
+            for qi in neighbor.mesh().boundary_dual_vertices(vi_neighbor) {
                 let index = *neighbor_index_map.entry(qi).or_insert_with(|| {
-                    let p = neighbor.mesh.dual_p(qi).unwrap() + neighbor_offset;
+                    let p = neighbor.mesh().dual_p(qi).unwrap() + neighbor_offset;
                     let idx = (vertices.len() / 2) as u32;
                     vertices.push(p.x);
                     vertices.push(p.y);
-                    tiles.push(1); // neighbor tile id is always 1
-                    tiles.push(qi.into_index() as u32);
-                    for &qv in neighbor.mesh.quad_vertices(qi) {
-                        tile_distortions.push(neighbor.mesh[qv].position.x);
-                        tile_distortions.push(neighbor.mesh[qv].position.y);
-                    }
                     idx
                 });
                 indices.push(index);
@@ -146,21 +147,21 @@ impl World {
             ranges.push(indices.len() as u32);
         }
 
-        Some(EdgeCells {
+        Some(EdgeCells::new(
             vertices,
             indices,
             ranges,
-            sites,
-            tiles,
-            tile_distortions,
-        })
+            cell_ids,
+            owner.generation(),
+            neighbor.generation(),
+        ))
     }
 
-    pub fn corner_cells(&self, id: ChunkId, vertex_idx: HexPointyDir) -> Option<CornerCells> {
+    fn corner_cells(&self, id: ChunkId, corner_idx: HexPointyDir) -> Option<CornerCells> {
         let _span = info_span!("corner_cells", id = ?id).entered();
 
-        let v0 = vertex_idx;
-        let (n1, v1, n2, v2) = match vertex_idx {
+        let v0 = corner_idx;
+        let (n1, v1, n2, v2) = match corner_idx {
             HexPointyDir::E => (HexFlatDir::SE, HexPointyDir::NW, HexFlatDir::NE, HexPointyDir::SW),
             HexPointyDir::NE => (HexFlatDir::NE, HexPointyDir::W, HexFlatDir::N, HexPointyDir::SE),
             HexPointyDir::NW => (HexFlatDir::N, HexPointyDir::SW, HexFlatDir::NW, HexPointyDir::E),
@@ -178,35 +179,143 @@ impl World {
         let chunk2 = self.chunk(id2)?;
 
         let mut vertices = Vec::new();
-        let mut sites = Vec::with_capacity(3);
-        let mut tiles = Vec::new();
-        let mut tile_distortions = Vec::new();
+        let mut cell_ids = Vec::with_capacity(3);
 
-        for (cid, id, chunk, corner) in [(0, id0, chunk0, v0), (1, id1, chunk1, v1), (2, id2, chunk2, v2)] {
+        for (id, chunk, corner) in [(id0, chunk0, v0), (id1, chunk1, v1), (id2, chunk2, v2)] {
             let offset = id0.relative_world_position(id);
             let vi = chunk.boundary_corner_vertex(corner);
-            sites.push(vi.into_index() as u32);
-            for qi in chunk.mesh.boundary_dual_vertices(vi) {
-                let pos = chunk.mesh.dual_p(qi).unwrap() + offset;
+            cell_ids.push(chunk.vert_to_cell()[vi].into_index() as u32);
+            for qi in chunk.mesh().boundary_dual_vertices(vi) {
+                let pos = chunk.mesh().dual_p(qi).unwrap() + offset;
                 vertices.push(pos.x);
                 vertices.push(pos.y);
-                tiles.push(cid);
-                tiles.push(qi.into_index() as u32);
-                for &qv in chunk.mesh.quad_vertices(qi) {
-                    tile_distortions.push(chunk.mesh[qv].position.x);
-                    tile_distortions.push(chunk.mesh[qv].position.y);
-                }
             }
         }
 
         let vertex_count = (vertices.len() / 2) as u32;
-        Some(CornerCells {
+        Some(CornerCells::new(
             vertices,
-            indices: (0..vertex_count).collect(),
-            ranges: [0, vertex_count],
-            sites,
-            tiles,
-            tile_distortions,
-        })
+            (0..vertex_count).collect(),
+            [0, vertex_count],
+            cell_ids,
+            chunk0.generation(),
+            chunk1.generation(),
+            chunk2.generation(),
+        ))
+    }
+}
+
+/// A cheaply clonable handle to a world. Every clone shares one backing store, so passing a
+/// `World` around never copies chunk data; it is the single owning root of the world graph.
+#[derive(Clone)]
+pub struct World {
+    inner: Rc<RefCell<WorldInner>>,
+}
+
+impl Default for World {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl World {
+    pub fn new() -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(WorldInner::new())),
+        }
+    }
+
+    pub fn init_chunk(&self, id: ChunkId) {
+        self.inner.borrow_mut().init_chunk(id);
+    }
+
+    pub fn remove_chunk(&self, id: ChunkId) {
+        self.inner.borrow_mut().remove_chunk(id);
+    }
+
+    pub fn chunk_world_offset(&self, reference: ChunkId, target: ChunkId) -> Vec<f32> {
+        self.inner.borrow().chunk_world_offset(reference, target)
+    }
+
+    /// Runs `f` with the chunk at `id`, `None` if none is loaded there.
+    pub fn with_chunk<R>(&self, id: ChunkId, f: impl FnOnce(&Chunk) -> R) -> Option<R> {
+        let inner = self.inner.borrow();
+        let chunk = inner.chunk(id)?;
+        Some(f(chunk))
+    }
+
+    /// Runs `f` with the chunk at `id` mutably, `None` if none is loaded there.
+    pub fn with_chunk_mut<R>(&self, id: ChunkId, f: impl FnOnce(&mut Chunk) -> R) -> Option<R> {
+        let mut inner = self.inner.borrow_mut();
+        let chunk = inner.chunk_mut(id)?;
+        Some(f(chunk))
+    }
+
+    pub fn inner_cells(&self, id: ChunkId) -> Option<InnerCells> {
+        self.inner.borrow().inner_cells(id)
+    }
+
+    pub fn tile_geometries(&self, id: ChunkId) -> Option<TileGeometries> {
+        self.inner.borrow().tile_geometries(id)
+    }
+
+    pub fn edge_cells(&self, id: ChunkId, edge_idx: HexFlatDir) -> Option<EdgeCells> {
+        self.inner.borrow().edge_cells(id, edge_idx)
+    }
+
+    pub fn corner_cells(&self, id: ChunkId, corner_idx: HexPointyDir) -> Option<CornerCells> {
+        self.inner.borrow().corner_cells(id, corner_idx)
+    }
+
+    pub fn hex_vertices(&self, id: ChunkId) -> Option<Vec<f32>> {
+        self.with_chunk(id, |chunk| chunk.hex_vertices())
+    }
+
+    /// Locks the chunk layer selected by `U::Kind`, applies `update`, and returns a read-only change
+    /// log. The lock is released and the layer restored when the `ChangeLog` is dropped.
+    pub fn update_layer<U: LayerUpdate>(
+        &self,
+        id: ChunkId,
+        update: U,
+    ) -> Option<ChangeLog<<U::Kind as LayerKind>::Component>> {
+        let world = self.downgrade();
+        let restore = move |layer| {
+            if let Some(world) = world.upgrade() {
+                if let Some(chunk) = world.inner.borrow_mut().chunk_mut(id) {
+                    *<U::Kind as LayerKind>::field(chunk) = Some(layer);
+                }
+            }
+        };
+
+        let mut inner = self.inner.borrow_mut();
+        let chunk = inner.chunk_mut(id)?;
+        let guard = GenerationGuard::new(chunk.generation());
+        let mut layer = <U::Kind as LayerKind>::field(chunk).take()?;
+        update.update(&mut layer.builder(chunk));
+        Some(ChangeLog::new(layer, move |mut layer| {
+            if guard.is_valid() {
+                layer.clear_log();
+                restore(layer);
+            }
+        }))
+    }
+
+    pub fn downgrade(&self) -> WeakWorld {
+        WeakWorld {
+            inner: Rc::downgrade(&self.inner),
+        }
+    }
+}
+
+/// A weak reference to a `World`. `upgrade` returns a `World` handle while the backing store is
+/// alive, `None` otherwise.
+#[derive(Clone)]
+pub struct WeakWorld {
+    inner: Weak<RefCell<WorldInner>>,
+}
+
+impl WeakWorld {
+    pub fn upgrade(&self) -> Option<World> {
+        Some(World { inner: self.inner.upgrade()? })
     }
 }

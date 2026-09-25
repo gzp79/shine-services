@@ -8,18 +8,24 @@ import { InstanceBuffer } from './instance-buffer';
 const SWIZZLE = ['x', 'y', 'z', 'w'] as const;
 
 export class InstanceData {
+    readonly schema: symbol;
+
     private textures: readonly THREE.DataTexture[];
     private readonly cache = new Map<string, ReturnType<typeof textureLoad>>();
     private readonly iIdx = instanceIndex.toInt();
-    // In strip mode: number of texels per instance per buffer (baked into shader at material time).
-    // Null in tall-texture mode.
     private readonly texelsPerBuf: readonly number[] | null;
     private readonly stripHeight: number;
 
-    constructor(textures: readonly THREE.DataTexture[], stripHeight: number, texelsPerBuf: readonly number[] | null) {
+    constructor(
+        textures: readonly THREE.DataTexture[],
+        stripHeight: number,
+        texelsPerBuf: readonly number[] | null,
+        schema: symbol
+    ) {
         this.textures = textures;
         this.stripHeight = stripHeight;
         this.texelsPerBuf = texelsPerBuf;
+        this.schema = schema;
     }
 
     replaceTextures(newTextures: readonly THREE.DataTexture[]): void {
@@ -104,8 +110,16 @@ export type InstancedMultiMeshParams = {
 };
 
 export type InstanceBufferLayout = {
+    schema: symbol;
     buffers: Array<{ floatsPerInstance: number }>;
 };
+
+// Minimal lifecycle contract for an opt-in add-on (e.g. InstancedNormalLineAttachment) — see attach()/detach() below.
+export interface InstancedMeshAttachment {
+    attach(target: InstancedMultiMesh): void;
+    instanceDataChanged(target: InstancedMultiMesh, variantIndex: number): void;
+    dispose(): void;
+}
 
 const DEFAULT_INSTANCE_HINT = 1024;
 
@@ -152,6 +166,8 @@ export abstract class InstancedMultiMesh {
     protected readonly sourceGeo: Shareable<THREE.BufferGeometry>;
     private readonly variants: VariantEntry[] = [];
     private readonly stripHeight: number;
+    private readonly keyVariant = new Map<number, number>();
+    private readonly attachments = new Map<string, InstancedMeshAttachment>();
 
     protected constructor(parent: THREE.Object3D, params: InstancedMultiMeshParams) {
         parent.add(this.group);
@@ -166,9 +182,9 @@ export abstract class InstancedMultiMesh {
             return b.floatsPerInstance / 4;
         });
 
-        for (const variantDef of params.variants) {
+        params.variants.forEach((variantDef, variantIndex) => {
             const instanceBuffer = new InstanceBuffer(hint, texelsPerBuffer, this.stripHeight);
-            const instanceData = this._makeInstanceData(instanceBuffer.textures, texelsPerBuffer);
+            const instanceData = this._makeInstanceData(instanceBuffer.textures, texelsPerBuffer, layout.schema);
             const subMeshes: SubMesh[] = [];
             const entry: VariantEntry = {
                 instanceBuffer,
@@ -188,7 +204,7 @@ export abstract class InstancedMultiMesh {
                 const isPrimary = pi === 0;
                 mesh.onBeforeRender = (_renderer, _scene, _camera, geometry) => {
                     if (isPrimary) {
-                        if (entry.instanceBuffer.compact()) this._onGrow(entry);
+                        if (entry.instanceBuffer.compact()) this._onGrow(entry, variantIndex);
                         for (let i = 0; i < entry.instanceBuffer.textures.length; i++) {
                             if (entry.instanceBuffer.isDirty(i)) {
                                 entry.instanceBuffer.textures[i].needsUpdate = true;
@@ -199,14 +215,15 @@ export abstract class InstancedMultiMesh {
                     (geometry as THREE.InstancedBufferGeometry).instanceCount = entry.instanceBuffer.length;
                 };
             }
-        }
+        });
     }
 
     private _makeInstanceData(
         textures: readonly THREE.DataTexture[],
-        texelsPerBuffer: readonly number[]
+        texelsPerBuffer: readonly number[],
+        schema: symbol
     ): InstanceData {
-        return new InstanceData(textures, this.stripHeight, this.stripHeight > 0 ? texelsPerBuffer : null);
+        return new InstanceData(textures, this.stripHeight, this.stripHeight > 0 ? texelsPerBuffer : null, schema);
     }
 
     protected abstract instanceBufferLayout(): InstanceBufferLayout;
@@ -215,7 +232,7 @@ export abstract class InstancedMultiMesh {
         instanceData: InstanceData
     ): MeshStandardNodeMaterial;
 
-    private _onGrow(entry: VariantEntry): void {
+    private _onGrow(entry: VariantEntry, variantIndex: number): void {
         console.log(`[InstancedMultiMesh] grow → capacity=${entry.instanceBuffer.maxInstances}`);
         entry.instanceData.replaceTextures(entry.instanceBuffer.textures);
         for (let pi = 0; pi < entry.subMeshes.length; pi++) {
@@ -225,22 +242,45 @@ export abstract class InstancedMultiMesh {
             );
             mesh.replaceMaterial(mat);
         }
+        for (const attachment of this.attachments.values()) attachment.instanceDataChanged(this, variantIndex);
     }
 
-    protected setInstance(variantIndex: number, key: number, bufIndex: number, values: Float32Array): boolean {
+    protected setInstance(key: number, variantIndex: number, bufIndex: number, values: Float32Array): boolean {
         const entry = this.variants[variantIndex];
         if (!entry) return false;
-        return entry.instanceBuffer.setBuffer(key, bufIndex, values);
+
+        const prevVariant = this.keyVariant.get(key);
+        if (prevVariant !== undefined && prevVariant !== variantIndex) {
+            this.variants[prevVariant]?.instanceBuffer.remove(key);
+        }
+
+        const ok = entry.instanceBuffer.copyToBuffer(key, bufIndex, values);
+        if (ok) this.keyVariant.set(key, variantIndex);
+        return ok;
     }
 
-    removeInstance(variantIndex: number, key: number): boolean {
-        const entry = this.variants[variantIndex];
-        if (!entry) return false;
-        return entry.instanceBuffer.remove(key);
+    get geometry(): THREE.BufferGeometry {
+        return this.sourceGeo;
+    }
+
+    removeInstance(key: number): boolean {
+        const variantIndex = this.keyVariant.get(key);
+        if (variantIndex === undefined) return false;
+        this.keyVariant.delete(key);
+        return this.variants[variantIndex]?.instanceBuffer.remove(key) ?? false;
+    }
+
+    removeAll(): void {
+        this.keyVariant.clear();
+        for (const entry of this.variants) entry.instanceBuffer.clear();
     }
 
     get variantCount(): number {
         return this.variants.length;
+    }
+
+    getVariantParts(variantIndex: number): readonly SubMeshDef[] | undefined {
+        return this.variants[variantIndex]?.parts;
     }
 
     instanceCount(variantIndex: number): number {
@@ -257,7 +297,30 @@ export abstract class InstancedMultiMesh {
         return this.variants[variantIndex]?.instanceBuffer.keys ?? [][Symbol.iterator]();
     }
 
+    getInstanceData(variantIndex: number): InstanceData | undefined {
+        return this.variants[variantIndex]?.instanceData;
+    }
+
+    // Attaches a named add-on, e.g. `tile.attach('normals', new InstancedNormalLineAttachment(...))`.
+    // Calls attachment.attach(this) to do the actual wiring — the attachment's constructor takes no
+    // target reference, so there's nothing to mismatch. Replacing an existing name disposes the old
+    // one first. Returns `attachment` so the call site can keep a typed reference if it needs one.
+    attach<T extends InstancedMeshAttachment>(name: string, attachment: T): T {
+        this.attachments.get(name)?.dispose();
+        attachment.attach(this);
+        this.attachments.set(name, attachment);
+        return attachment;
+    }
+
+    // Disposes and removes the named attachment, if any.
+    detach(name: string): void {
+        this.attachments.get(name)?.dispose();
+        this.attachments.delete(name);
+    }
+
     dispose(): void {
+        for (const attachment of this.attachments.values()) attachment.dispose();
+        this.attachments.clear();
         for (const entry of this.variants) {
             entry.instanceBuffer.dispose();
             for (const mesh of entry.subMeshes) mesh.dispose();

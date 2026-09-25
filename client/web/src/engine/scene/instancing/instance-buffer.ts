@@ -124,10 +124,10 @@ export class InstanceBuffer {
         return newTextures;
     }
 
-    setBuffer(key: number, bufIndex: number, values: Float32Array): boolean {
+    copyToBuffer(key: number, bufIndex: number, values: Float32Array): boolean {
         const existing = this.keyToSlot.get(key);
         if (existing !== undefined) {
-            this.writeBuffer(existing, bufIndex, values);
+            this.copyBuffer(existing, bufIndex, values);
             this.bufferDirty[bufIndex] = true;
             return true;
         }
@@ -145,7 +145,7 @@ export class InstanceBuffer {
         this.keyToSlot.set(key, slot);
         this.count++;
         if (slot < this.tail - 1) this.slotsDirty = true;
-        this.writeBuffer(slot, bufIndex, values);
+        this.copyBuffer(slot, bufIndex, values);
         this.bufferDirty[bufIndex] = true;
         return true;
     }
@@ -159,6 +159,16 @@ export class InstanceBuffer {
         this.count--;
         this.slotsDirty = true;
         return true;
+    }
+
+    /** Removes every instance, keeping the allocated textures/CPU buffers for reuse. */
+    clear(): void {
+        this.keyToSlot.clear();
+        this.live.fill(0);
+        this.freeList = [];
+        this.tail = 0;
+        this.count = 0;
+        this.slotsDirty = false;
     }
 
     /**
@@ -265,7 +275,7 @@ export class InstanceBuffer {
         this.live = newLive;
     }
 
-    private writeBuffer(slot: number, bufIndex: number, values: Float32Array): void {
+    private copyBuffer(slot: number, bufIndex: number, values: Float32Array): void {
         const T = this.texelsPerBuffer[bufIndex];
         const floats = T * 4;
         const data = this.cpuData[bufIndex];

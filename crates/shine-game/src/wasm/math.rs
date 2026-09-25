@@ -2,6 +2,42 @@ use crate::math::hex::{AxialCoord, FlatAxialCoord, HexFlatDir, HexPointyDir, Poi
 use glam::Vec2;
 use wasm_bindgen::prelude::*;
 
+/// 6 neighbor direction for a flat-topped hex grid in CCW order.
+#[wasm_bindgen(js_name = "HexFlatDir")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WasmHexFlatDir {
+    NE = 0,
+    N = 1,
+    NW = 2,
+    SW = 3,
+    S = 4,
+    SE = 5,
+}
+
+impl From<WasmHexFlatDir> for HexFlatDir {
+    fn from(dir: WasmHexFlatDir) -> Self {
+        HexFlatDir::from_index(dir as usize)
+    }
+}
+
+/// 6 neighbor direction for a pointy-topped hex grid in CCW order.
+#[wasm_bindgen(js_name = "HexPointyDir")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WasmHexPointyDir {
+    E = 0,
+    NE = 1,
+    NW = 2,
+    W = 3,
+    SW = 4,
+    SE = 5,
+}
+
+impl From<WasmHexPointyDir> for HexPointyDir {
+    fn from(dir: WasmHexPointyDir) -> Self {
+        HexPointyDir::from_index(dir as usize)
+    }
+}
+
 /// Axial distance between two hex coordinates.
 #[wasm_bindgen]
 pub fn hex_distance(aq: i32, ar: i32, bq: i32, br: i32) -> i32 {
@@ -15,13 +51,10 @@ pub fn hex_ring(q: i32, r: i32, radius: u32) -> Vec<i32> {
     AxialCoord::new(q, r).ring(radius).flat_map(|c| [c.q, c.r]).collect()
 }
 
-/// Neighbor of (q, r) in flat-top direction dir (0=NE, 1=N, 2=NW, 3=SW, 4=S, 5=SE).
-/// Returns [q, r].
+/// Neighbor of (q, r) in the given flat-top direction. Returns [q, r].
 #[wasm_bindgen]
-pub fn hex_flat_neighbor(q: i32, r: i32, dir: u32) -> Vec<i32> {
-    let n = AxialCoord::new(q, r)
-        .flat()
-        .neighbor(HexFlatDir::from_index(dir as usize));
+pub fn hex_flat_neighbor(q: i32, r: i32, dir: WasmHexFlatDir) -> Vec<i32> {
+    let n = AxialCoord::new(q, r).flat().neighbor(dir.into());
     vec![n.q, n.r]
 }
 
@@ -40,13 +73,10 @@ pub fn hex_flat_from_position(x: f32, y: f32, size: f32) -> Vec<i32> {
     vec![c.q, c.r]
 }
 
-/// Neighbor of (q, r) in pointy-top direction dir (0=E, 1=NE, 2=NW, 3=W, 4=SW, 5=SE).
-/// Returns [q, r].
+/// Neighbor of (q, r) in the given pointy-top direction. Returns [q, r].
 #[wasm_bindgen]
-pub fn hex_pointy_neighbor(q: i32, r: i32, dir: u32) -> Vec<i32> {
-    let n = AxialCoord::new(q, r)
-        .pointy()
-        .neighbor(HexPointyDir::from_index(dir as usize));
+pub fn hex_pointy_neighbor(q: i32, r: i32, dir: WasmHexPointyDir) -> Vec<i32> {
+    let n = AxialCoord::new(q, r).pointy().neighbor(dir.into());
     vec![n.q, n.r]
 }
 

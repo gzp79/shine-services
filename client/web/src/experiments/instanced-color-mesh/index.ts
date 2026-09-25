@@ -3,6 +3,7 @@ import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { own, share } from '../../engine/resources/ownership';
 import type { SceneContext } from '../../engine/scene';
 import { InstancedColorMesh } from '../../engine/scene/instancing/instanced-color-mesh';
+import { InstancedNormalLineAttachment } from '../../engine/scene/instancing/instanced-normal-line-attachment';
 import { Experiment } from '../experiment';
 
 const PALETTE = [
@@ -22,7 +23,10 @@ function randomTransform(): THREE.Matrix4 {
     const x = (Math.random() * 2 - 1) * BOX_HALF;
     const y = (Math.random() * 2 - 1) * BOX_HALF;
     const z = (Math.random() * 2 - 1) * BOX_HALF;
-    return new THREE.Matrix4().makeTranslation(x, y, z);
+    const rotation = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2)
+    );
+    return new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), rotation, new THREE.Vector3(1, 1, 1));
 }
 
 function buildGeometry(): { geometry: THREE.BufferGeometry; ranges: number[] } {
@@ -79,6 +83,7 @@ function buildGeometry(): { geometry: THREE.BufferGeometry; ranges: number[] } {
 export class InstancedColorMeshExp extends Experiment {
     private readonly mesh: InstancedColorMesh;
     private readonly params = { a: 5, b: 5, c: 5 };
+    private readonly displayParams = { showNormals: false };
     private readonly counts = [0, 0, 0];
 
     constructor(context: SceneContext) {
@@ -148,6 +153,12 @@ export class InstancedColorMeshExp extends Experiment {
             .min(0)
             .step(1)
             .onChange((v: number) => this.update(2, v));
+        gui.add(this.displayParams, 'showNormals')
+            .name('Show Normals')
+            .onChange((v: boolean) => {
+                if (v) this.mesh.attach('normals', new InstancedNormalLineAttachment({ lineLength: 0.1 }));
+                else this.mesh.detach('normals');
+            });
 
         this.update(0, this.params.a);
         this.update(1, this.params.b);
@@ -157,13 +168,13 @@ export class InstancedColorMeshExp extends Experiment {
     private update(variantIndex: number, newCount: number): void {
         const current = this.counts[variantIndex];
         for (let i = newCount; i < current; i++) {
-            this.mesh.removeObject(variantIndex, variantIndex * 100_000 + i);
+            this.mesh.removeObject(variantIndex * 100_000 + i);
         }
         for (let i = current; i < newCount; i++) {
             const key = variantIndex * 100_000 + i;
             const matrix = randomTransform();
             const color = PALETTE[i % PALETTE.length];
-            this.mesh.setObject(variantIndex, key, matrix, color);
+            this.mesh.setObject(key, variantIndex, matrix, color);
         }
         this.counts[variantIndex] = newCount;
     }
