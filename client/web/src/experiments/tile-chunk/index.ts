@@ -2,6 +2,7 @@ import { BaseLayerOp, InnerCells, World } from '#wasm';
 import * as THREE from 'three';
 import { ReadonlyBitSet, asBitSet } from '../../bit-set';
 import type { SceneContext } from '../../engine/scene';
+import { InstancedNormalLineAttachment } from '../../engine/scene/instancing/instanced-normal-line-attachment';
 import { InstancedTileSet } from '../../engine/scene/instancing/instanced-tile-set';
 import type { TileDistortion } from '../../engine/scene/instancing/instanced-tile-set';
 import { WireMesh } from '../../engine/scene/wire-mesh';
@@ -48,7 +49,13 @@ export class TileChunk extends Experiment {
     private readonly chunkGroup: THREE.Group;
     private readonly assetPicker: AssetSourcePicker;
     private readonly params = { q: 0, r: 0 };
-    private readonly displayParams = { showMeshes: true, showCells: true, showTiles: false, showQuadrants: false };
+    private readonly displayParams = {
+        showMeshes: true,
+        showCells: true,
+        showTiles: false,
+        showQuadrants: false,
+        showNormals: false
+    };
 
     private tileCount = 0;
     private distortions: TileDistortion[] = [];
@@ -117,6 +124,12 @@ export class TileChunk extends Experiment {
         gui.add(this.displayParams, 'showQuadrants')
             .name('Show Quadrants')
             .onChange((v: boolean) => (v ? this.quadrantLabels?.show() : this.quadrantLabels?.hide()));
+        gui.add(this.displayParams, 'showNormals')
+            .name('Show Normals')
+            .onChange((v: boolean) => {
+                if (v) this.attachNormalsDebug();
+                else this.tileNode?.detach('normals');
+            });
 
         this.assetPicker = new AssetSourcePicker(gui, this.assets, {
             onNone: () => this.replaceTileSet(undefined),
@@ -158,13 +171,18 @@ export class TileChunk extends Experiment {
 
     // `undefined` drops the current tile set: the chunk keeps its cells/wires but renders no tiles.
     private replaceTileSet(next: InstancedTileSet | undefined): void {
-        this.tileNode?.dispose();
+        this.tileNode?.dispose(); // cascades to the attached 'normals' debug helper, if any
         this.tileNode = next ?? null;
         this.rebuildVariantVisibilityFolder();
         if (this.tileNode) {
             this.tileNode.group.visible = this.displayParams.showMeshes;
+            if (this.displayParams.showNormals) this.attachNormalsDebug();
             this.updateBaseLayer({ op: 'sync' }, true);
         }
+    }
+
+    private attachNormalsDebug(): void {
+        this.tileNode?.attach('normals', new InstancedNormalLineAttachment());
     }
 
     private regenerate(): void {
@@ -309,7 +327,7 @@ export class TileChunk extends Experiment {
         this.tileWire?.dispose();
         this.quadrantLabels?.dispose();
         this.scene.remove(this.chunkGroup);
-        this.tileNode?.dispose();
+        this.tileNode?.dispose(); // cascades to the attached 'normals' debug helper, if any
         this.world.free();
         super.dispose();
     }
