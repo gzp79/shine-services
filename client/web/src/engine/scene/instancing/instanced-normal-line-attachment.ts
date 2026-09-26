@@ -8,7 +8,7 @@ import {
     type InstancedMultiMesh,
     type SubMeshDef
 } from './instanced-multi-mesh';
-import { InstancedTileSet, TILE_INSTANCE_SCHEMA } from './instanced-tile-set';
+import { InstancedTileSet } from './instanced-tile-set';
 
 const DEFAULT_LINE_LENGTH = 10;
 const DEFAULT_LINE_COLOR = 0xff00ff;
@@ -50,7 +50,7 @@ export class InstancedNormalLineAttachment implements InstancedMeshAttachment {
         const geometry = this._buildLineGeometry(target, parts);
         if (!geometry) return;
 
-        const mesh = new THREE.LineSegments(geometry, this._buildMaterial(instanceData));
+        const mesh = new THREE.LineSegments(geometry, this._buildMaterial(target, instanceData));
         mesh.frustumCulled = false;
         mesh.onBeforeRender = () => {
             geometry.instanceCount = target.instanceCount(variantIndex);
@@ -66,23 +66,24 @@ export class InstancedNormalLineAttachment implements InstancedMeshAttachment {
         const instanceData = target.getInstanceData(variantIndex);
         if (!mesh || !instanceData) return;
         (mesh.material as THREE.Material).dispose();
-        mesh.material = this._buildMaterial(instanceData);
+        mesh.material = this._buildMaterial(target, instanceData);
     }
 
-    // Position and normal after whatever per-instance warp the target mesh applies, dispatched by
-    // InstanceData.schema so this attachment works with any InstancedMultiMesh subclass.
-    private _buildMaterial(instanceData: InstanceData): LineBasicNodeMaterial {
+    // Position and normal after whatever per-instance warp the target mesh applies. An InstancedTileSet
+    // knows its own method-specific warp; other targets are dispatched by InstanceData.schema.
+    private _buildMaterial(target: InstancedMultiMesh, instanceData: InstanceData): LineBasicNodeMaterial {
         let position: Node<'vec3'>;
         let normal: Node<'vec3'>;
-        switch (instanceData.schema) {
-            case COLOR_INSTANCE_SCHEMA:
-                ({ position, normal } = InstancedColorMesh.computeWarp(instanceData));
-                break;
-            case TILE_INSTANCE_SCHEMA:
-                ({ position, normal } = InstancedTileSet.computeWarp(instanceData));
-                break;
-            default:
-                throw new Error('InstancedNormalLineAttachment: unsupported InstanceData.schema');
+        if (target instanceof InstancedTileSet) {
+            ({ position, normal } = target.computeWarp(instanceData));
+        } else {
+            switch (instanceData.schema) {
+                case COLOR_INSTANCE_SCHEMA:
+                    ({ position, normal } = InstancedColorMesh.computeWarp(instanceData));
+                    break;
+                default:
+                    throw new Error('InstancedNormalLineAttachment: unsupported InstanceData.schema');
+            }
         }
 
         const lineEnd = attribute<'float'>('lineEnd', 'float');

@@ -4,6 +4,9 @@ use crate::world::generation::{Generation, GenerationGuard};
 struct TileGeometryData {
     /// Tile distortion in tile-array order, packed as [x, y, ...] where each octet corresponds to a single tile
     tile_distortions: Vec<f32>,
+    /// Per-tile-edge blend factor `a` such that `mid = a * start + (1 - a) * end`, packed as 4 floats per tile
+    /// (one per edge, same winding as `tile_distortions`' 4 corners).
+    tile_edge_blends: Vec<f32>,
 }
 
 /// Standalone geometry snapshot of a chunk's tiles guarded by the chunk's generation.
@@ -13,9 +16,12 @@ pub struct TileGeometries {
 }
 
 impl TileGeometries {
-    pub fn new(tile_distortions: Vec<f32>, generation: &Generation) -> Self {
+    pub fn new(tile_distortions: Vec<f32>, tile_edge_blends: Vec<f32>, generation: &Generation) -> Self {
         Self {
-            data: TileGeometryData { tile_distortions },
+            data: TileGeometryData {
+                tile_distortions,
+                tile_edge_blends,
+            },
             guard: GenerationGuard::new(generation),
         }
     }
@@ -32,6 +38,10 @@ impl TileGeometries {
 
     pub fn tile_distortions(&self) -> Option<&[f32]> {
         self.get().map(|d| d.tile_distortions.as_slice())
+    }
+
+    pub fn tile_edge_blends(&self) -> Option<&[f32]> {
+        self.get().map(|d| d.tile_edge_blends.as_slice())
     }
 
     /// Number of tiles (each tile is an octet: 4 corners × [x, y]).

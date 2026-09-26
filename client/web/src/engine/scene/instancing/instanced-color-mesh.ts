@@ -12,11 +12,13 @@ import {
     vec4
 } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
+import type { Shareable } from '../../resources/ownership';
 import {
     type InstanceBufferLayout,
     InstanceData,
     InstancedMultiMesh,
-    type InstancedMultiMeshParams
+    type InstancedMultiMeshParams,
+    type VariantDef
 } from './instanced-multi-mesh';
 
 export type { VariantDef, SubMeshDef, InstancedMultiMeshParams } from './instanced-multi-mesh';
@@ -31,11 +33,16 @@ const NORMAL_VARYING = 'vColorNormal';
 export class InstancedColorMesh extends InstancedMultiMesh {
     private readonly _scratch = new Float32Array(20);
 
-    constructor(parent: THREE.Object3D, params: InstancedMultiMeshParams) {
-        super(parent, params);
+    constructor(
+        parent: THREE.Object3D,
+        geometry: Shareable<THREE.BufferGeometry>,
+        variants: VariantDef[],
+        params: InstancedMultiMeshParams
+    ) {
+        super(parent, geometry, variants, InstancedColorMesh.instanceBufferLayout(), params);
     }
 
-    protected instanceBufferLayout(): InstanceBufferLayout {
+    static instanceBufferLayout(): InstanceBufferLayout {
         return { schema: COLOR_INSTANCE_SCHEMA, buffers: [{ floatsPerInstance: 20 }] };
     }
 

@@ -4,7 +4,9 @@ use crate::{
     math::{
         hex::{HexFlatDir, HexPointyDir, LatticeMesher},
         prng::{Pcg32, SplitMix64},
-        quadrangulation::{AnchorIndex, QuadIndex, Quadrangulation, VertexIndex},
+        quadrangulation::{
+            AnchorIndex, QuadEdge, QuadFilter, QuadIndex, Quadrangulation, Rot4Idx, VertexIndex, VertexRepulsion,
+        },
     },
     world::{
         base_layer::{Base, BaseLayer},
@@ -45,9 +47,14 @@ pub struct Chunk {
 impl Chunk {
     pub fn new(parent_seed: &SplitMix64, id: ChunkId, generation: u64) -> Self {
         let mut rng_streams = ChunkRngStreams::new(parent_seed.create_seed(id.id_64()));
-        let topology = LatticeMesher::new(SUBDIVISION_BASE)
+        let mut topology = LatticeMesher::new(SUBDIVISION_BASE)
             .with_size(CHUNK_WORLD_SIZE)
             .generate(&mut rng_streams.mesh);
+        VertexRepulsion::new(0.5, 100).apply(&mut topology);
+
+        /*let topology = CdtMesher::new(SUBDIVISION_BASE, 300)
+        .with_size(CHUNK_WORLD_SIZE)
+        .generate(&mut rng_streams.mesh);*/
 
         let mut quad_to_tile = IdxVec::from_elem(TileIndex::NONE, topology.quad_count());
         let mut tile_to_quad = IdxVec::with_capacity(topology.finite_quad_count());
@@ -186,13 +193,17 @@ impl Chunk {
     pub fn tile_geometries(&self) -> TileGeometries {
         let tile_count = self.mesh.finite_quad_count();
         let mut tile_distortions = Vec::with_capacity(tile_count * 8);
+        let mut tile_edge_blends = Vec::with_capacity(tile_count * 4);
         for qi in self.mesh.finite_quad_index_iter() {
             for &qv in self.mesh.quad_vertices(qi) {
                 tile_distortions.push(self.mesh[qv].position.x);
                 tile_distortions.push(self.mesh[qv].position.y);
             }
+            for c in 0..4 {
+                tile_edge_blends.push(tile_edge_blend(&self.mesh, qi, c));
+            }
         }
-        TileGeometries::new(tile_distortions, self.generation())
+        TileGeometries::new(tile_distortions, tile_edge_blends, self.generation())
     }
 
     /// Returns VertexIndex values along specified hex edge (inclusive of both corners)
@@ -205,6 +216,34 @@ impl Chunk {
         // assume anchor points are corresponding to hex corners in correct  order
         self.mesh.anchor_vertex(AnchorIndex::new(corner_idx as usize))
     }
+}
+
+/// Blend factor `a` for tile `qi`'s edge `c` (connecting `quad_vertices(qi)[c]` to `[c+1]`) such that
+/// `mid = a * start + (1 - a) * end` lands where the dual graph crosses this edge.
+/// Chunk-boundary edges and degenerate cases keep the straight-line midpoint (0.5).
+fn tile_edge_blend(mesh: &Quadrangulation, qi: QuadIndex, c: usize) -> f32 {
+    let twin = mesh.edge_twin(QuadEdge::new(qi, Rot4Idx::new(c)));
+    if mesh.is_infinite_quad(twin.quad) {
+        return 0.5;
+    }
+
+    let verts = mesh.quad_vertices(qi);
+    let start = mesh[verts[c]].position;
+    let end = mesh[verts[(c + 1) % 4]].position;
+    let center_self = mesh.dual_p(qi).expect("finite quad must have a dual point");
+    let center_neighbor = mesh.dual_p(twin.quad).expect("finite quad must have a dual point");
+
+    // Intersection of line (start, end) with line (center_self, center_neighbor), solved for t along
+    // the edge (mid = start + t * (end - start)); t = cross(center_self - start, d2) / cross(d1, d2).
+    let d1 = end - start;
+    let d2 = center_neighbor - center_self;
+    let denom = d1.x * d2.y - d1.y * d2.x;
+    if denom.abs() < 1e-6 {
+        return 0.5;
+    }
+    let to_center = center_self - start;
+    let t = (to_center.x * d2.y - to_center.y * d2.x) / denom;
+    (1.0 - t).clamp(0.0, 1.0)
 }
 
 impl LayerKind for Base {

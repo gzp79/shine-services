@@ -56,17 +56,22 @@ export function asWiredPolygonMesh(source: WiredPolygonMeshSource): WiredPolygon
 
 export type TileDistortionSource = {
     tile_distortions(): Float32Array | undefined;
+    tile_edge_blends(): Float32Array | undefined;
 };
-
 
 export type TileDistortionLike = {
     readonly distortions: Float32Array;
+    // Per-tile-edge blend factor `a`, 4 per tile: `mid = a * cpStart + (1 - a) * cpEnd`.
+    readonly edgeBlends: Float32Array;
 };
 
 export function asTileDistortion(source: TileDistortionSource): TileDistortionLike {
     return {
         get distortions() {
             return fresh(source.tile_distortions());
+        },
+        get edgeBlends() {
+            return fresh(source.tile_edge_blends());
         }
     };
 }

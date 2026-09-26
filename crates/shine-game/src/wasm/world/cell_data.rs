@@ -136,6 +136,11 @@ impl WasmTileGeometries {
         self.0.tile_distortions().map(|v| unsafe { Float32Array::view(v) })
     }
 
+    /// Per-tile-edge blend factor (4 per tile); currently always 0.5, see `TileGeometries::tile_edge_blends`.
+    pub fn tile_edge_blends(&self) -> Option<Float32Array> {
+        self.0.tile_edge_blends().map(|v| unsafe { Float32Array::view(v) })
+    }
+
     /// Number of tiles (`tile_distortions().length / 8`), `undefined` if the source chunk changed.
     pub fn tile_count(&self) -> Option<usize> {
         self.0.tile_count()

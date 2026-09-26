@@ -119,13 +119,14 @@ const HEIGHT_SHAPES: { name: string; rows: [string, string] }[] = [
 
 // One geometry per height present in the shape (at most two: low and high), each merging the
 // quarters sharing that height. Kept separate so they can carry distinct colors as submeshes.
-function buildHeightBoxShape(rows: [string, string]): Segment[] {
+// `boxSegments` subdivides every face of every quarter-box equally (1 = the original flat-faced tile).
+function buildHeightBoxShape(rows: [string, string], boxSegments: number): Segment[] {
     const byHeight = new Map<number, THREE.BufferGeometry[]>();
     for (let line = 0; line < 2; line++) {
         for (let col = 0; col < 2; col++) {
             const height = rows[line][col] === 'x' ? LOW : HIGH;
             const row = 1 - line; // top text row = far (higher y) footprint row
-            const box = new THREE.BoxGeometry(0.5, 0.5, height);
+            const box = new THREE.BoxGeometry(0.5, 0.5, height, boxSegments, boxSegments, boxSegments);
             box.translate(col * 0.5 + 0.25, row * 0.5 + 0.25, height / 2);
             const boxes = byHeight.get(height) ?? [];
             boxes.push(box);
@@ -139,11 +140,18 @@ function buildHeightBoxShape(rows: [string, string]): Segment[] {
     });
 }
 
-function buildHeightBoxes(): ModelSet {
-    return packModelSet(HEIGHT_SHAPES.map((s) => ({ name: s.name, segments: buildHeightBoxShape(s.rows) })));
+function buildHeightBoxes(boxSegments = 1): ModelSet {
+    return packModelSet(
+        HEIGHT_SHAPES.map((s) => ({ name: s.name, segments: buildHeightBoxShape(s.rows, boxSegments) }))
+    );
+}
+
+function buildHeightBoxesHiRes(): ModelSet {
+    return buildHeightBoxes(5);
 }
 
 export const PROCEDURAL_ASSETS: Record<string, ProceduralGenerator> = {
     'generated-shapes': buildShapes,
-    'generated-tile': buildHeightBoxes
+    'generated-tile': buildHeightBoxes,
+    'generated-tile-hires': buildHeightBoxesHiRes
 };

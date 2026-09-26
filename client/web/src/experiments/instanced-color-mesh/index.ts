@@ -102,9 +102,10 @@ export class InstancedColorMeshExp extends Experiment {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const maxDim: number = (renderer.backend as any).device?.limits?.maxTextureDimension2D ?? 8192;
 
-        this.mesh = new InstancedColorMesh(this.scene, {
-            geometry: own(geometry),
-            variants: [
+        this.mesh = new InstancedColorMesh(
+            this.scene,
+            own(geometry),
+            [
                 {
                     parts: [
                         {
@@ -133,9 +134,11 @@ export class InstancedColorMeshExp extends Experiment {
                     ]
                 }
             ],
-            instanceCountHint: 1,
-            pageSizeHint: maxDim
-        });
+            {
+                instanceCountHint: 1,
+                pageSizeHint: maxDim
+            }
+        );
 
         const gui = this.debugPanel.root();
         gui.add(this.params, 'a')

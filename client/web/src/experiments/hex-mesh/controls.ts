@@ -23,11 +23,11 @@ function defaultFilter(type: FilterType): FilterEntry {
         case 'Laplacian':
             return { type, enabled: true, strength: 0.5, iterations: 50 };
         case 'Jitter':
-            return { type, enabled: true, amplitude: 1 };
+            return { type, enabled: true, amplitude: 0.1 };
         case 'QuadRelax':
             return { type, enabled: true, quality: 0.25, strength: 0.5, iterations: 50 };
         case 'VertexRepulsion':
-            return { type, enabled: true, strength: 1.0, iterations: 100 };
+            return { type, enabled: true, strength: 0.5, iterations: 100 };
         default:
             return { type: 'None', enabled: false };
     }
@@ -210,7 +210,7 @@ export function createControls(
                     folder.add(entry, 'iterations', 1, 200, 1).name('iterations').onChange(onChange);
                     break;
                 case 'Jitter':
-                    folder.add(entry, 'amplitude', 0, 5, 0.01).name('amplitude').onChange(onChange);
+                    folder.add(entry, 'amplitude', 0, 0.2, 0.001).name('amplitude').onChange(onChange);
                     break;
                 case 'QuadRelax':
                     folder.add(entry, 'quality', 0, 1, 0.01).name('min quality').onChange(onChange);

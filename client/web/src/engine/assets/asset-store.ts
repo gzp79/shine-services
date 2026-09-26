@@ -9,7 +9,7 @@ export class AssetStore {
     private readonly cache = new Map<string, Promise<ModelSet>>();
 
     // Takes a builder so construction is free — the catalog manifest is fetched on first use.
-    constructor(private readonly catalogBuilder: AssetCatalogBuilder) { }
+    constructor(private readonly catalogBuilder: AssetCatalogBuilder) {}
 
     async list(): Promise<AssetInfo[]> {
         return (await this.getCatalog()).list();
@@ -45,7 +45,7 @@ export class AssetStore {
                         for (const part of model.parts) part.material.dispose();
                     }
                 })
-                .catch(() => { });
+                .catch(() => {});
         }
         this.cache.clear();
     }

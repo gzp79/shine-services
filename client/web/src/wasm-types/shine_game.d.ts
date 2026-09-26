@@ -158,6 +158,10 @@ export class TileGeometries {
     tile_count(): number | undefined;
     tile_distortions(): Float32Array | undefined;
     /**
+     * Per-tile-edge blend factor (4 per tile); currently always 0.5, see `TileGeometries::tile_edge_blends`.
+     */
+    tile_edge_blends(): Float32Array | undefined;
+    /**
      * Whether the source chunk is unchanged; `false` means every accessor returns `undefined`.
      */
     valid(): boolean;
@@ -257,7 +261,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly memory_info: () => any;
     readonly __wbg_cdtmesh_free: (a: number, b: number) => void;
     readonly __wbg_hexmesh_free: (a: number, b: number) => void;
     readonly __wbg_wiredpolygonmeshhandle_free: (a: number, b: number) => void;
@@ -276,6 +279,28 @@ export interface InitOutput {
     readonly wiredpolygonmeshhandle_vertices: (a: number) => any;
     readonly wiredpolygonmeshhandle_wire_indices: (a: number) => any;
     readonly wiredpolygonmeshhandle_wire_ranges: (a: number) => any;
+    readonly hex_distance: (a: number, b: number, c: number, d: number) => number;
+    readonly hex_flat_from_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_flat_neighbor: (a: number, b: number, c: number) => [number, number];
+    readonly hex_flat_to_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_pointy_from_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_pointy_to_position: (a: number, b: number, c: number) => [number, number];
+    readonly hex_ring: (a: number, b: number, c: number) => [number, number];
+    readonly hex_pointy_neighbor: (a: number, b: number, c: number) => [number, number];
+    readonly __wbg_world_free: (a: number, b: number) => void;
+    readonly start: () => void;
+    readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly wasmworld_const_cell_world_size: (a: number) => number;
+    readonly wasmworld_const_chunk_world_size: (a: number) => number;
+    readonly wasmworld_corner_cells: (a: number, b: number, c: number, d: number) => number;
+    readonly wasmworld_edge_cells: (a: number, b: number, c: number, d: number) => number;
+    readonly wasmworld_hex_vertices: (a: number, b: number, c: number) => [number, number];
+    readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
+    readonly wasmworld_inner_cells: (a: number, b: number, c: number) => number;
+    readonly wasmworld_new: () => number;
+    readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
+    readonly wasmworld_tile_geometries: (a: number, b: number, c: number) => number;
+    readonly wasmworld_update_base_layer: (a: number, b: number, c: number, d: any) => [number, number, number];
     readonly __wbg_changelog_free: (a: number, b: number) => void;
     readonly __wbg_cornercells_free: (a: number, b: number) => void;
     readonly __wbg_edgecells_free: (a: number, b: number) => void;
@@ -301,29 +326,9 @@ export interface InitOutput {
     readonly wasminnercells_vertices: (a: number) => any;
     readonly wasmtilegeometries_tile_count: (a: number) => number;
     readonly wasmtilegeometries_tile_distortions: (a: number) => any;
+    readonly wasmtilegeometries_tile_edge_blends: (a: number) => any;
     readonly wasmtilegeometries_valid: (a: number) => number;
-    readonly __wbg_world_free: (a: number, b: number) => void;
-    readonly hex_distance: (a: number, b: number, c: number, d: number) => number;
-    readonly hex_flat_from_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_flat_neighbor: (a: number, b: number, c: number) => [number, number];
-    readonly hex_flat_to_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_pointy_from_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_pointy_to_position: (a: number, b: number, c: number) => [number, number];
-    readonly hex_ring: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_chunk_world_offset: (a: number, b: number, c: number, d: number, e: number) => [number, number];
-    readonly wasmworld_const_cell_world_size: (a: number) => number;
-    readonly wasmworld_const_chunk_world_size: (a: number) => number;
-    readonly wasmworld_corner_cells: (a: number, b: number, c: number, d: number) => number;
-    readonly wasmworld_edge_cells: (a: number, b: number, c: number, d: number) => number;
-    readonly wasmworld_hex_vertices: (a: number, b: number, c: number) => [number, number];
-    readonly wasmworld_init_chunk: (a: number, b: number, c: number) => void;
-    readonly wasmworld_inner_cells: (a: number, b: number, c: number) => number;
-    readonly wasmworld_new: () => number;
-    readonly wasmworld_remove_chunk: (a: number, b: number, c: number) => void;
-    readonly wasmworld_tile_geometries: (a: number, b: number, c: number) => number;
-    readonly wasmworld_update_base_layer: (a: number, b: number, c: number, d: any) => [number, number, number];
-    readonly hex_pointy_neighbor: (a: number, b: number, c: number) => [number, number];
-    readonly start: () => void;
+    readonly memory_info: () => any;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

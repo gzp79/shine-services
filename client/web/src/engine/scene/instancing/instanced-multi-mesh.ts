@@ -60,6 +60,16 @@ export class InstanceData {
         return this.texel(bufIdx, Math.floor(fi / 4))[SWIZZLE[fi % 4]];
     }
 
+    /** Reads a single float at absolute float index `floatIndex`. */
+    floatAt(bufIdx: number, floatIndex: number) {
+        return this.float(bufIdx, floatIndex);
+    }
+
+    /** Reads a vec2 starting at absolute float index `floatIndex`. */
+    vec2At(bufIdx: number, floatIndex: number) {
+        return vec2(this.float(bufIdx, floatIndex), this.float(bufIdx, floatIndex + 1));
+    }
+
     vec2(bufIdx: number, i: number) {
         const s = i * 2;
         return vec2(this.float(bufIdx, s), this.float(bufIdx, s + 1));
@@ -100,8 +110,6 @@ export type VariantDef = {
 };
 
 export type InstancedMultiMeshParams = {
-    geometry: Shareable<THREE.BufferGeometry>;
-    variants: VariantDef[];
     instanceCountHint?: number;
     // Strip height for wide-texture mode. When set, the texture grows in width
     // (adding strips) rather than height, keeping height <= pageSizeHint.
@@ -169,11 +177,16 @@ export abstract class InstancedMultiMesh {
     private readonly keyVariant = new Map<number, number>();
     private readonly attachments = new Map<string, InstancedMeshAttachment>();
 
-    protected constructor(parent: THREE.Object3D, params: InstancedMultiMeshParams) {
+    protected constructor(
+        parent: THREE.Object3D,
+        geometry: Shareable<THREE.BufferGeometry>,
+        variants: VariantDef[],
+        layout: InstanceBufferLayout,
+        params: InstancedMultiMeshParams
+    ) {
         parent.add(this.group);
-        this.sourceGeo = params.geometry;
+        this.sourceGeo = geometry;
         this.stripHeight = params.pageSizeHint ?? 0;
-        const layout = this.instanceBufferLayout();
         const hint = Math.max(1, params.instanceCountHint ?? DEFAULT_INSTANCE_HINT);
 
         const texelsPerBuffer = layout.buffers.map((b) => {
@@ -182,7 +195,7 @@ export abstract class InstancedMultiMesh {
             return b.floatsPerInstance / 4;
         });
 
-        params.variants.forEach((variantDef, variantIndex) => {
+        variants.forEach((variantDef, variantIndex) => {
             const instanceBuffer = new InstanceBuffer(hint, texelsPerBuffer, this.stripHeight);
             const instanceData = this._makeInstanceData(instanceBuffer.textures, texelsPerBuffer, layout.schema);
             const subMeshes: SubMesh[] = [];
@@ -226,7 +239,6 @@ export abstract class InstancedMultiMesh {
         return new InstanceData(textures, this.stripHeight, this.stripHeight > 0 ? texelsPerBuffer : null, schema);
     }
 
-    protected abstract instanceBufferLayout(): InstanceBufferLayout;
     protected abstract createMaterial(
         mat: MeshStandardNodeMaterial,
         instanceData: InstanceData

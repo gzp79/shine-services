@@ -1,11 +1,15 @@
 import { BaseLayerOp, InnerCells, TileGeometries, World } from '#wasm';
 import * as THREE from 'three';
 import { ReadonlyBitSet, asBitSet } from '../../bit-set';
-import { toModelSet } from '../../engine/assets/model-set';
+import { type ModelSet, toModelSet } from '../../engine/assets/model-set';
 import { loadGltf } from '../../engine/loaders/gltf-loader';
 import type { SceneContext } from '../../engine/scene';
 import { InstancedNormalLineAttachment } from '../../engine/scene/instancing/instanced-normal-line-attachment';
-import { InstancedTileSet } from '../../engine/scene/instancing/instanced-tile-set';
+import {
+    InstancedTileSet,
+    TILE_DISTORTION_METHODS,
+    type TileDistortionMethod
+} from '../../engine/scene/instancing/instanced-tile-set';
 import { WireMesh } from '../../engine/scene/wire-mesh';
 import { fireAndForget } from '../../engine/utils';
 import { asPolygonMesh, asTileDistortion, asTileOutlineMesh } from '../../mesh/polygon-mesh';
@@ -22,7 +26,12 @@ export class TileChunk extends Experiment {
     private tileNode: InstancedTileSet | null = null;
     private readonly chunkGroup: THREE.Group;
     private readonly assetPicker: AssetSourcePicker;
-    private readonly params = { q: 0, r: 0 };
+    private readonly params: { q: number; r: number; method: TileDistortionMethod } = {
+        q: 0,
+        r: 0,
+        method: TILE_DISTORTION_METHODS[0]
+    };
+    private currentModelSet: ModelSet | null = null;
     private readonly displayParams = {
         showMeshes: true,
         showCells: true,
@@ -80,6 +89,10 @@ export class TileChunk extends Experiment {
             'randomize'
         ).name('Random Chunk');
 
+        gui.add(this.params, 'method', [...TILE_DISTORTION_METHODS])
+            .name('Distortion Method')
+            .onChange(() => this.replaceTileSet(this.currentModelSet));
+
         gui.add({ random: () => this.switchRandomCell() }, 'random').name('Switch Random Cell');
         gui.add({ clear: () => this.updateBaseLayer({ op: 'clear', value: 0 }) }, 'clear').name('Clear');
         gui.add({ fill: () => this.updateBaseLayer({ op: 'clear', value: 1 }) }, 'fill').name('Fill');
@@ -106,7 +119,9 @@ export class TileChunk extends Experiment {
             });
 
         this.assetPicker = new AssetSourcePicker(gui, this.assets, {
-            onNone: () => this.replaceTileSet(undefined),
+            onNone: () => {
+                this.replaceTileSet(null);
+            },
             onAsset: (name) => fireAndForget(this.loadAsset(name)),
             onFile: (url) => fireAndForget(this.loadFile(url))
         });
@@ -123,11 +138,7 @@ export class TileChunk extends Experiment {
     private async loadAsset(name: string): Promise<void> {
         try {
             const modelSet = await this.assets.loadModelSet(name);
-            const next = InstancedTileSet.fromModelSet(this.chunkGroup, modelSet, {
-                instanceCountHint: INSTANCE_COUNT_HINT,
-                height: TILE_HEIGHT
-            });
-            this.replaceTileSet(next);
+            this.replaceTileSet(modelSet);
         } catch (err) {
             console.error(`[TileChunk] failed to load asset "${name}":`, err);
         }
@@ -136,22 +147,24 @@ export class TileChunk extends Experiment {
     private async loadFile(url: string): Promise<void> {
         try {
             const modelSet = toModelSet(await loadGltf(url), 'owned');
-            const next = InstancedTileSet.fromModelSet(this.chunkGroup, modelSet, {
-                instanceCountHint: INSTANCE_COUNT_HINT,
-                height: TILE_HEIGHT
-            });
-            this.replaceTileSet(next);
+            this.replaceTileSet(modelSet);
         } catch (err) {
             console.error('Failed to load glTF:', err);
         }
     }
 
-    // `undefined` drops the current tile set: the chunk keeps its cells/wires but renders no tiles.
-    private replaceTileSet(next: InstancedTileSet | undefined): void {
+    // `null` drops the current tile set: the chunk keeps its cells/wires but renders no tiles.
+    private replaceTileSet(modelSet: ModelSet | null): void {
         this.tileNode?.dispose(); // cascades to the attached 'normals' debug helper, if any
-        this.tileNode = next ?? null;
+        this.tileNode = null;
         this.rebuildVariantVisibilityFolder();
-        if (this.tileNode) {
+        this.currentModelSet = modelSet;
+        if (this.currentModelSet) {
+            this.tileNode = InstancedTileSet.fromModelSet(this.chunkGroup, this.currentModelSet, {
+                instanceCountHint: INSTANCE_COUNT_HINT,
+                height: TILE_HEIGHT,
+                method: this.params.method
+            });
             this.tileNode.group.visible = this.displayParams.showMeshes;
             if (this.displayParams.showNormals) this.attachNormalsDebug();
             this.updateBaseLayer({ op: 'sync' }, true);
@@ -235,7 +248,7 @@ export class TileChunk extends Experiment {
             if (!cellIds || cellIds.length === 0) continue;
 
             const cell = cellIds[Math.floor(Math.random() * cellIds.length)]!;
-            const value = 1;//Math.round(Math.random());
+            const value = 1; //Math.round(Math.random());
             this.updateBaseLayer({ op: 'setCell', cell, value });
         }
     }
