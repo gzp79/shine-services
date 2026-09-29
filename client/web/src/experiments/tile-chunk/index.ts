@@ -19,7 +19,8 @@ import { QuadrantLabels } from './quadrant-labels';
 
 const TILE_HEIGHT = 80;
 const INSTANCE_COUNT_HINT = 2048;
-const INITIAL_ASSET = 'generated-tile';
+const INITIAL_ASSET = 'generated-tile-hires';
+const INITIAL_FILLED_CELL_COUNT = 30;
 
 export class TileChunk extends Experiment {
     private readonly world: World;
@@ -218,6 +219,7 @@ export class TileChunk extends Experiment {
         if (this.displayParams.showQuadrants) this.quadrantLabels.show();
         else this.quadrantLabels.hide();
 
+        this.fillRandomCells(INITIAL_FILLED_CELL_COUNT);
         this.updateBaseLayer({ op: 'sync' }, true);
     }
 
@@ -242,8 +244,12 @@ export class TileChunk extends Experiment {
     }
 
     private switchRandomCell(): void {
+        this.fillRandomCells(10);
+    }
+
+    private fillRandomCells(count: number): void {
         if (!this.innerCells) return;
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < count; i++) {
             const cellIds = this.innerCells.cell_ids();
             if (!cellIds || cellIds.length === 0) continue;
 
