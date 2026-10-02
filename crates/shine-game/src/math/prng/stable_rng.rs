@@ -1,16 +1,6 @@
-use std::{cell::RefCell, rc::Rc};
-
 /// Minimal RNG trait for deterministic, cross-platform random generation.
 pub trait StableRng {
     fn next_u32(&mut self) -> u32;
-
-    /// Wraps this RNG in a `Rc<RefCell<Self>>` for shared access.
-    fn into_rc(self) -> Rc<RefCell<Self>>
-    where
-        Self: Sized,
-    {
-        Rc::new(RefCell::new(self))
-    }
 }
 
 pub trait StableRngExt: StableRng {
@@ -46,11 +36,5 @@ impl<T: StableRng + ?Sized> StableRngExt for T {}
 impl<T: StableRng + ?Sized> StableRng for Box<T> {
     fn next_u32(&mut self) -> u32 {
         (**self).next_u32()
-    }
-}
-
-impl<T: StableRng + ?Sized> StableRng for Rc<RefCell<T>> {
-    fn next_u32(&mut self) -> u32 {
-        self.borrow_mut().next_u32()
     }
 }

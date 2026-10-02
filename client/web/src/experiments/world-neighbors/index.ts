@@ -1,16 +1,22 @@
-import { generate_world_neighbors } from '#wasm';
+import { World } from '#wasm';
 import * as THREE from 'three';
 import type { SceneContext } from '../../engine/scene';
 import { Experiment } from '../experiment';
 import { createControls, defaultParams } from './controls';
-import { buildChunkHexagons, buildEdgeMeshes, buildInteriorMeshes, buildVertexMeshes } from './mesh-builder';
+import {
+    buildChunkHexagons,
+    buildCornerMeshes,
+    buildEdgeMeshes,
+    buildInteriorMeshes,
+    neighborChunkIds
+} from './mesh-builder';
 
 export class WorldNeighbors extends Experiment {
     private params = defaultParams();
     private hexagons: THREE.Group | null = null;
     private interiorGroup: ReturnType<typeof buildInteriorMeshes> | null = null;
     private edgeGroup: ReturnType<typeof buildEdgeMeshes> | null = null;
-    private vertexGroup: ReturnType<typeof buildVertexMeshes> | null = null;
+    private cornerGroup: ReturnType<typeof buildCornerMeshes> | null = null;
     constructor(context: SceneContext) {
         super(context, { title: 'World Neighbors' });
 
@@ -37,8 +43,8 @@ export class WorldNeighbors extends Experiment {
         if (this.edgeGroup) {
             for (let i = 0; i < 6; i++) this.edgeGroup.setIndividualVisible(i, this.params.showEdges[i]);
         }
-        if (this.vertexGroup) {
-            for (let i = 0; i < 6; i++) this.vertexGroup.setIndividualVisible(i, this.params.showVertices[i]);
+        if (this.cornerGroup) {
+            for (let i = 0; i < 6; i++) this.cornerGroup.setIndividualVisible(i, this.params.showCorners[i]);
         }
     }
 
@@ -63,31 +69,32 @@ export class WorldNeighbors extends Experiment {
             this.edgeGroup.dispose();
             this.edgeGroup = null;
         }
-        if (this.vertexGroup) {
-            this.scene.remove(this.vertexGroup.group);
-            this.vertexGroup.dispose();
-            this.vertexGroup = null;
+        if (this.cornerGroup) {
+            this.scene.remove(this.cornerGroup.group);
+            this.cornerGroup.dispose();
+            this.cornerGroup = null;
         }
     }
 
     private regenerate() {
         this.disposeScene();
+        using world = new World();
         try {
-            const wasmData = generate_world_neighbors(this.params.centerQ, this.params.centerR);
+            const center = { q: this.params.centerQ, r: this.params.centerR };
+            for (const id of neighborChunkIds(center)) world.init_chunk(id.q, id.r);
 
-            this.hexagons = buildChunkHexagons(wasmData);
+            this.hexagons = buildChunkHexagons(world, center);
             this.scene.add(this.hexagons);
 
-            this.interiorGroup = buildInteriorMeshes(wasmData);
+            this.interiorGroup = buildInteriorMeshes(world, center);
             this.scene.add(this.interiorGroup.group);
 
-            this.edgeGroup = buildEdgeMeshes(wasmData);
+            this.edgeGroup = buildEdgeMeshes(world, center);
             this.scene.add(this.edgeGroup.group);
 
-            this.vertexGroup = buildVertexMeshes(wasmData);
-            this.scene.add(this.vertexGroup.group);
+            this.cornerGroup = buildCornerMeshes(world, center);
+            this.scene.add(this.cornerGroup.group);
 
-            wasmData.free();
             this.applyDisplay();
         } catch (e) {
             console.error('World neighbors generation failed:', e);

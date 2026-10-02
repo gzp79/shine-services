@@ -1,40 +1,112 @@
 use crate::{
-    indexed::TypedIndex,
+    define_typed_index, impl_typed_index_conversions,
+    indexed::{IdxVec, TypedIndex},
     math::{
         hex::{HexFlatDir, HexPointyDir, LatticeMesher},
         prng::{Pcg32, SplitMix64},
-        quadrangulation::{AnchorIndex, Quadrangulation, VertexIndex},
+        quadrangulation::{
+            AnchorIndex, QuadEdge, QuadFilter, QuadIndex, Quadrangulation, Rot4Idx, VertexIndex, VertexRepulsion,
+        },
     },
-    world::{ChunkId, InnerCells, CHUNK_WORLD_SIZE, SUBDIVISION_BASE},
+    world::{
+        base_layer::{Base, BaseLayer},
+        generation::Generation,
+        ChunkId, InnerCells, Layer, LayerKind, TileGeometries, CHUNK_WORLD_SIZE, SUBDIVISION_BASE,
+    },
 };
-use std::{cell::RefCell, rc::Rc};
+
+define_typed_index!(TileIndex, u32, "Dense, chunk-local tile id (finite quads only).");
+impl_typed_index_conversions!(TileIndex);
+
+define_typed_index!(CellIndex, u32, "Dense, chunk-local cell id (finite vertices only).");
+impl_typed_index_conversions!(CellIndex);
 
 /// Stable random streams for different aspects of chunk generation.
 /// Streams are cheap, create a new one for each aspect to ensure deterministic independence.
+/// Derived from the chunk id so generation is reproducible; consumed during construction only.
 pub struct ChunkRngStreams {
-    pub mesh: Rc<RefCell<Pcg32>>,
+    pub mesh: Pcg32,
 }
 
 impl ChunkRngStreams {
     pub fn new(mut seed: SplitMix64) -> Self {
-        let mesh = Rc::new(RefCell::new(seed.generate_stream()));
-        Self { mesh }
+        Self { mesh: seed.generate_stream() }
     }
 }
 
 pub struct Chunk {
-    pub rng_streams: ChunkRngStreams,
-    pub mesh: Quadrangulation,
+    generation: Generation,
+    mesh: Quadrangulation,
+    quad_to_tile: IdxVec<QuadIndex, TileIndex>,
+    tile_to_quad: IdxVec<TileIndex, QuadIndex>,
+    vert_to_cell: IdxVec<VertexIndex, CellIndex>,
+    cell_to_vert: IdxVec<CellIndex, VertexIndex>,
+    base_layer: Option<BaseLayer>,
 }
 
 impl Chunk {
-    pub fn new(parent_seed: &SplitMix64, id: ChunkId) -> Self {
-        let rng_streams = ChunkRngStreams::new(parent_seed.create_seed(id.id_64()));
-        let topology = LatticeMesher::new(SUBDIVISION_BASE, rng_streams.mesh.clone())
+    pub fn new(parent_seed: &SplitMix64, id: ChunkId, generation: u64) -> Self {
+        let mut rng_streams = ChunkRngStreams::new(parent_seed.create_seed(id.id_64()));
+        let mut topology = LatticeMesher::new(SUBDIVISION_BASE)
             .with_size(CHUNK_WORLD_SIZE)
-            .generate();
+            .generate(&mut rng_streams.mesh);
+        VertexRepulsion::new(0.5, 100).apply(&mut topology);
 
-        Self { rng_streams, mesh: topology }
+        /*let topology = CdtMesher::new(SUBDIVISION_BASE, 300)
+        .with_size(CHUNK_WORLD_SIZE)
+        .generate(&mut rng_streams.mesh);*/
+
+        let mut quad_to_tile = IdxVec::from_elem(TileIndex::NONE, topology.quad_count());
+        let mut tile_to_quad = IdxVec::with_capacity(topology.finite_quad_count());
+        for qi in topology.finite_quad_index_iter() {
+            let ti = tile_to_quad.push(qi);
+            quad_to_tile[qi] = ti;
+        }
+
+        let mut vert_to_cell = IdxVec::from_elem(CellIndex::NONE, topology.vertex_count());
+        let mut cell_to_vert = IdxVec::with_capacity(topology.finite_vertex_count());
+        for vi in topology.finite_vertex_index_iter() {
+            let ci = cell_to_vert.push(vi);
+            vert_to_cell[vi] = ci;
+        }
+
+        let base_layer = BaseLayer::new(tile_to_quad.len(), 0);
+
+        Self {
+            generation: Generation::new(generation),
+            mesh: topology,
+            quad_to_tile,
+            tile_to_quad,
+            vert_to_cell,
+            cell_to_vert,
+            base_layer: Some(base_layer),
+        }
+    }
+
+    pub fn generation(&self) -> &Generation {
+        &self.generation
+    }
+
+    pub fn mesh(&self) -> &Quadrangulation {
+        &self.mesh
+    }
+
+    /// Dense `QuadIndex -> TileIndex` map, `TileIndex::NONE` for ghost (infinite) quads.
+    pub fn quad_to_tile(&self) -> &IdxVec<QuadIndex, TileIndex> {
+        &self.quad_to_tile
+    }
+
+    pub fn tile_to_quad(&self) -> &IdxVec<TileIndex, QuadIndex> {
+        &self.tile_to_quad
+    }
+
+    /// Dense `VertexIndex -> CellIndex` map, `CellIndex::NONE` for infinite (ghost) vertices.
+    pub fn vert_to_cell(&self) -> &IdxVec<VertexIndex, CellIndex> {
+        &self.vert_to_cell
+    }
+
+    pub fn cell_to_vert(&self) -> &IdxVec<CellIndex, VertexIndex> {
+        &self.cell_to_vert
     }
 
     /// Flat (real) quad vertex positions [x, y, x, y, ...]
@@ -46,6 +118,17 @@ impl Chunk {
             flat.push(p.y);
         }
         flat
+    }
+
+    pub fn hex_vertices(&self) -> Vec<f32> {
+        let mut vertices = Vec::with_capacity(12);
+        for i in 0..6 {
+            let vi = self.mesh.anchor_vertex(AnchorIndex::new(i));
+            let p = self.mesh.p(vi);
+            vertices.push(p.x);
+            vertices.push(p.y);
+        }
+        vertices
     }
 
     /// Flat (real) quad indices [a, b, c, d, ...].
@@ -80,24 +163,13 @@ impl Chunk {
 
         let mut indices = Vec::with_capacity(site_count * 4); // 4 quads per vertex on average
         let mut ranges = Vec::with_capacity(site_count * 2);
-        let mut sites = Vec::with_capacity(site_count);
-        let mut tiles = Vec::with_capacity(tile_count);
-        let mut tile_distortions = Vec::with_capacity(tile_count * 8);
+        let mut cell_ids = Vec::with_capacity(site_count);
 
         let mut vertices = Vec::with_capacity(tile_count * 2);
-        let mut quad_map: std::collections::HashMap<crate::math::quadrangulation::QuadIndex, u32> =
-            std::collections::HashMap::new();
         for qi in self.mesh.finite_quad_index_iter() {
-            if let Some(center) = self.mesh.dual_p(qi) {
-                quad_map.insert(qi, (vertices.len() / 2) as u32);
-                vertices.push(center.x);
-                vertices.push(center.y);
-                tiles.push(qi.into_index() as u32);
-                for &qv in self.mesh.quad_vertices(qi) {
-                    tile_distortions.push(self.mesh[qv].position.x);
-                    tile_distortions.push(self.mesh[qv].position.y);
-                }
-            }
+            let center = self.mesh.dual_p(qi).expect("finite quad must have a dual point");
+            vertices.push(center.x);
+            vertices.push(center.y);
         }
 
         for vi in self.mesh.finite_vertex_index_iter() {
@@ -106,23 +178,32 @@ impl Chunk {
             }
 
             ranges.push(indices.len() as u32);
-            sites.push(vi.into_index() as u32);
+            cell_ids.push(self.vert_to_cell[vi].into_index() as u32);
 
             for qv in self.mesh.vertex_ring_ccw(vi) {
-                indices.push(*quad_map.get(&qv.quad).unwrap());
+                indices.push(self.quad_to_tile[qv.quad].into_index() as u32);
             }
 
             ranges.push(indices.len() as u32);
         }
 
-        InnerCells {
-            vertices,
-            indices,
-            ranges,
-            sites,
-            tiles,
-            tile_distortions,
+        InnerCells::new(vertices, indices, ranges, cell_ids, self.generation())
+    }
+
+    pub fn tile_geometries(&self) -> TileGeometries {
+        let tile_count = self.mesh.finite_quad_count();
+        let mut tile_distortions = Vec::with_capacity(tile_count * 8);
+        let mut tile_edge_blends = Vec::with_capacity(tile_count * 4);
+        for qi in self.mesh.finite_quad_index_iter() {
+            for &qv in self.mesh.quad_vertices(qi) {
+                tile_distortions.push(self.mesh[qv].position.x);
+                tile_distortions.push(self.mesh[qv].position.y);
+            }
+            for c in 0..4 {
+                tile_edge_blends.push(tile_edge_blend(&self.mesh, qi, c));
+            }
         }
+        TileGeometries::new(tile_distortions, tile_edge_blends, self.generation())
     }
 
     /// Returns VertexIndex values along specified hex edge (inclusive of both corners)
@@ -134,5 +215,41 @@ impl Chunk {
     pub fn boundary_corner_vertex(&self, corner_idx: HexPointyDir) -> VertexIndex {
         // assume anchor points are corresponding to hex corners in correct  order
         self.mesh.anchor_vertex(AnchorIndex::new(corner_idx as usize))
+    }
+}
+
+/// Blend factor `a` for tile `qi`'s edge `c` (connecting `quad_vertices(qi)[c]` to `[c+1]`) such that
+/// `mid = a * start + (1 - a) * end` lands where the dual graph crosses this edge.
+/// Chunk-boundary edges and degenerate cases keep the straight-line midpoint (0.5).
+fn tile_edge_blend(mesh: &Quadrangulation, qi: QuadIndex, c: usize) -> f32 {
+    let twin = mesh.edge_twin(QuadEdge::new(qi, Rot4Idx::new(c)));
+    if mesh.is_infinite_quad(twin.quad) {
+        return 0.5;
+    }
+
+    let verts = mesh.quad_vertices(qi);
+    let start = mesh[verts[c]].position;
+    let end = mesh[verts[(c + 1) % 4]].position;
+    let center_self = mesh.dual_p(qi).expect("finite quad must have a dual point");
+    let center_neighbor = mesh.dual_p(twin.quad).expect("finite quad must have a dual point");
+
+    // Intersection of line (start, end) with line (center_self, center_neighbor), solved for t along
+    // the edge (mid = start + t * (end - start)); t = cross(center_self - start, d2) / cross(d1, d2).
+    let d1 = end - start;
+    let d2 = center_neighbor - center_self;
+    let denom = d1.x * d2.y - d1.y * d2.x;
+    if denom.abs() < 1e-6 {
+        return 0.5;
+    }
+    let to_center = center_self - start;
+    let t = (to_center.x * d2.y - to_center.y * d2.x) / denom;
+    (1.0 - t).clamp(0.0, 1.0)
+}
+
+impl LayerKind for Base {
+    type Component = u32;
+
+    fn field(chunk: &mut Chunk) -> &mut Option<Layer<u32>> {
+        &mut chunk.base_layer
     }
 }

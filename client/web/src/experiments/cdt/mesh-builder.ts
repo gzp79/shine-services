@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ManagedMesh } from '../../engine/resources/managed-mesh';
-import type { WasmCdtMesh } from '../../wasm-types/shine_game';
+import type { CdtMesh } from '../../wasm-types/shine_game';
 
 const FILL_COLOR = new THREE.Color(0.82, 0.85, 0.88);
 const EDGE_COLOR = 0x555555;
@@ -35,7 +35,7 @@ function circumcircle(
     return { x: ux, y: uy, radius };
 }
 
-export function buildCircumcenterMesh(cdt: WasmCdtMesh, tri: number): CdtMeshGroup | null {
+export function buildCircumcenterMesh(cdt: CdtMesh, tri: number): CdtMeshGroup | null {
     const vertices = cdt.vertices();
     const triangles = cdt.triangles();
 
@@ -132,7 +132,7 @@ export function buildCircumcenterMesh(cdt: WasmCdtMesh, tri: number): CdtMeshGro
     return { group, dispose };
 }
 
-export function buildCdtMesh(cdt: WasmCdtMesh): CdtMeshGroup {
+export function buildCdtMesh(cdt: CdtMesh): CdtMeshGroup {
     const vertices = cdt.vertices();
     const triangles = cdt.triangles();
     const constraints = cdt.constraints();

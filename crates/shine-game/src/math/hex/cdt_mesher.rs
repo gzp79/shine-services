@@ -9,11 +9,7 @@ use crate::{
     },
 };
 use glam::{ivec2, IVec2, Vec2};
-use std::{
-    cell::RefCell,
-    collections::{BTreeSet, HashMap},
-    rc::Rc,
-};
+use std::collections::{BTreeSet, HashMap};
 use tracing::info_span;
 
 /// Integer resolution for CDT grid.
@@ -34,8 +30,6 @@ fn axial_to_cdt_pos(p: AxialCoord) -> IVec2 {
 
 /// Generates a quad mesh inside a hexagon using CDT triangulation.
 pub struct CdtMesher {
-    /// Source of randomness.
-    rng: Rc<RefCell<dyn StableRng>>,
     /// Number of random interior points to add inside the hex boundary, in addition to the boundary vertices.
     interior_points: u32,
     /// The circumradius of the hex boundary, which controls the overall scale of the output mesh.
@@ -48,7 +42,7 @@ pub struct CdtMesher {
 
 impl CdtMesher {
     /// Create a new CDT mesher.
-    pub fn new(subdivision: u32, interior_points: u32, rng: Rc<RefCell<dyn StableRng>>) -> Self {
+    pub fn new(subdivision: u32, interior_points: u32) -> Self {
         let patch_radius = 2u32.pow(subdivision - 1);
         debug_assert!(DENSE_RADIUS.is_multiple_of(patch_radius));
         let grid_step = (DENSE_RADIUS / patch_radius) as i32;
@@ -56,7 +50,6 @@ impl CdtMesher {
         Self {
             interior_points,
             size: 1.0,
-            rng,
             patch_radius,
             grid_step,
         }
@@ -69,13 +62,13 @@ impl CdtMesher {
     }
 
     /// Generate the CDT-based quad mesh.
-    pub fn generate(&mut self) -> Quadrangulation {
+    pub fn generate(&mut self, rng: &mut dyn StableRng) -> Quadrangulation {
         let _span = info_span!("CdtMesher::generate").entered();
 
         let mut all_points = Vec::new();
         let corner_indices = self.create_boundary_points(&mut all_points);
         let boundary_count = all_points.len();
-        self.create_interior_points(&mut all_points);
+        self.create_interior_points(rng, &mut all_points);
 
         let triangles = {
             let _span = info_span!("CdtMesher::triangulate").entered();
@@ -144,7 +137,7 @@ impl CdtMesher {
         corner_indices
     }
 
-    fn create_interior_points(&mut self, points: &mut Vec<AxialCoord>) {
+    fn create_interior_points(&self, rng: &mut dyn StableRng, points: &mut Vec<AxialCoord>) {
         let _span = info_span!("CdtMesher::create_interior_points").entered();
         if self.interior_points == 0 {
             points.push(AxialCoord::ORIGIN);
@@ -157,7 +150,6 @@ impl CdtMesher {
         let max_attempts = self.interior_points + slack;
 
         let mut seen: BTreeSet<AxialCoord> = BTreeSet::new();
-        let mut rng = self.rng.borrow_mut();
         let mut attempts = 0u32;
         while seen.len() < self.interior_points as usize && attempts < max_attempts {
             attempts += 1;
@@ -256,7 +248,7 @@ mod tests {
     #[test]
     fn boundary_points_form_convex_hull() {
         for subdivision in 1u32..10 {
-            let mesher = CdtMesher::new(subdivision, 0, crate::math::prng::XorShift32::new(1).into_rc());
+            let mesher = CdtMesher::new(subdivision, 0);
 
             let mut points = Vec::new();
             mesher.create_boundary_points(&mut points);

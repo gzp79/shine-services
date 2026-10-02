@@ -5,7 +5,7 @@ import { EventDispatcher } from '../../engine/events';
 import type { WorldCursor } from '../avatar/world-cursor';
 import type { GameSystem } from '../game-system';
 import { ChunkId } from '../world/chunk-id';
-import type { World } from '../world/world';
+import type { GameWorld } from '../world/world';
 
 /// Approximatelly 5 chunk away from the world reference
 const REPOSITION_THRESHOLD = 25 * ChunkConst.WORLD_SIZE * ChunkConst.WORLD_SIZE;
@@ -32,7 +32,7 @@ export class WorldReferenceSystem implements GameSystem {
 
     constructor(
         private readonly worldCursor: WorldCursor,
-        private readonly world: World,
+        private readonly world: GameWorld,
         events: EventTarget,
         private readonly debugPanel: DebugPanel | null
     ) {

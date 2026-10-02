@@ -2,10 +2,7 @@
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use shine_game::math::{
-    hex::CdtMesher,
-    prng::{SequenceRng, StableRng},
-};
+use shine_game::math::{hex::CdtMesher, prng::SequenceRng};
 use std::fmt;
 
 #[derive(Arbitrary)]
@@ -33,7 +30,7 @@ impl fmt::Debug for CdtMeshInput {
             "let interior_point_count = {};",
             self.normalized_interior_point_count()
         )?;
-        writeln!(f, "let rng = SequenceRng::new(vec!(&{:?})).into_rc();", self.rng_bytes)?;
+        writeln!(f, "let mut rng = SequenceRng::new(vec!(&{:?}));", self.rng_bytes)?;
 
         Ok(())
     }
@@ -43,8 +40,8 @@ impl fmt::Debug for CdtMeshInput {
 fuzz_target!(|input: CdtMeshInput| {
     let subdivision = input.normalized_subdivision();
     let interior_point_count = input.normalized_interior_point_count();
-    let rng = SequenceRng::new(input.rng_bytes).into_rc();
+    let mut rng = SequenceRng::new(input.rng_bytes);
 
-    let mesh = CdtMesher::new(subdivision, interior_point_count, rng).generate();
-    mesh.topology.validate().expect("CDT mesh topology should be valid");
+    let mesh = CdtMesher::new(subdivision, interior_point_count).generate(&mut rng);
+    mesh.validator().validate().expect("CDT mesh topology should be valid");
 });

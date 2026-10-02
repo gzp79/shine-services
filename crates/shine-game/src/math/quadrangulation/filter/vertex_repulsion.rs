@@ -30,7 +30,7 @@ impl QuadFilter for VertexRepulsion {
                 }
                 let pi = mesh.p(vi);
 
-                // Pass 1: compute separate average lengths for edges (+1) and diagonals (+2).
+                // Pass 1: compute separate average lengths for edges and diagonals.
                 // The separate averages are kept so their natural length ratio is preserved rather than mixed.
                 let mut sum_edge = 0.0f32;
                 let mut count_edge = 0u32;

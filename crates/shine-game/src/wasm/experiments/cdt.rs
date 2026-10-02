@@ -10,7 +10,7 @@ use js_sys::{Float32Array, Uint32Array};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "CdtMesh")]
 pub struct WasmCdtMesh {
     vertices: Vec<f32>,
     triangles: Vec<u32>,

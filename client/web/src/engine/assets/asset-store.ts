@@ -36,6 +36,17 @@ export class AssetStore {
     }
 
     dispose(): void {
+        for (const pending of this.cache.values()) {
+            pending
+                .then((modelSet) => {
+                    // The store owns every cached ModelSet, hence it is responsible for disposing their GPU resources.
+                    modelSet.geometry.dispose();
+                    for (const model of modelSet.models) {
+                        for (const part of model.parts) part.material.dispose();
+                    }
+                })
+                .catch(() => {});
+        }
         this.cache.clear();
     }
 
@@ -45,6 +56,7 @@ export class AssetStore {
 
     private async decodeModelSet(name: string): Promise<ModelSet> {
         const catalog = await this.getCatalog();
-        return toModelSet(await loadGltf(catalog.url(name)), 'shared');
+        const generated = await catalog.generate?.(name);
+        return generated ?? toModelSet(await loadGltf(catalog.url(name)), 'shared');
     }
 }

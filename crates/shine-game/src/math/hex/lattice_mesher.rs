@@ -8,17 +8,11 @@ use crate::{
     },
 };
 use glam::Vec2;
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
+use std::collections::{HashMap, HashSet};
 
 /// Generates a quad mesh by triangulating axial hex coordinates, then randomly
 /// merging triangle pairs into quads, and finally subdividing all faces.
 pub struct LatticeMesher {
-    /// Source of randomness.
-    rng: Rc<RefCell<dyn StableRng>>,
     /// The circumradius of the hex boundary, which controls the overall scale of the output mesh.
     size: f32,
     /// The radius of the (pointy) hex-grid patch forming the interior of the mesh.
@@ -30,13 +24,12 @@ pub struct LatticeMesher {
 }
 
 impl LatticeMesher {
-    pub fn new(subdivision: u32, rng: Rc<RefCell<dyn StableRng>>) -> Self {
+    pub fn new(subdivision: u32) -> Self {
         let size = 1.0;
         let patch_radius = 2u32.pow(subdivision - 1); // -1: there is an extra subdivision after merging triangles into quads
         let patch_size = size * SQRT_3 / 3. / patch_radius as f32;
 
         Self {
-            rng,
             size: 1.0,
             patch_radius,
             patch_size,
@@ -51,7 +44,7 @@ impl LatticeMesher {
         self
     }
 
-    pub fn generate(&mut self) -> Quadrangulation {
+    pub fn generate(&mut self, rng: &mut dyn StableRng) -> Quadrangulation {
         // 1. Find the vertex positions
         // In the final mesh the verties are made of the axial coordinate (position) and midpoints between them.
         // We can compute the positions of all axial coordinates upfront, and store them in a dense array indexed by the indexer.
@@ -121,7 +114,7 @@ impl LatticeMesher {
 
         // Fisher-Yates shuffle
         for i in (1..interior_edges.len()).rev() {
-            let j = (self.rng.next_u32() as usize) % (i + 1);
+            let j = (rng.next_u32() as usize) % (i + 1);
             interior_edges.swap(i, j);
         }
 
