@@ -1,5 +1,5 @@
 import * as wasm from '#wasm';
-import type { AssetCatalog } from './engine/assets/catalog';
+import { ASSET_KINDS, type AssetCatalog, type AssetKind } from './engine/assets/catalog';
 import { PROCEDURAL_ASSETS } from './engine/assets/procedural';
 import { createRoutedScene } from './index';
 
@@ -10,11 +10,33 @@ const ASSET_URL = 'https://assets.local.scytta.com:8093';
 const ASSET_PLATFORM = 'web';
 const ASSET_MODULE = 'models';
 
-type Manifest = Record<string, string>;
+interface ManifestEntry {
+    path: string;
+    kind: AssetKind;
+}
+type Manifest = Record<string, ManifestEntry>;
+
+// Raw manifest JSON before kind validation: same shape, but kind is whatever the server sent.
+type RawManifest = Record<string, { path: string; kind: string }>;
+
+function isAssetKind(kind: string): kind is AssetKind {
+    return (ASSET_KINDS as readonly string[]).includes(kind);
+}
+
+// Entries with an unrecognized kind are dropped rather than surfaced with a bogus kind — an older
+// client shouldn't fail hard just because the manifest knows about a newer asset kind.
+function validatedManifest(raw: RawManifest): Manifest {
+    const manifest: Manifest = {};
+    for (const [name, entry] of Object.entries(raw)) {
+        if (isAssetKind(entry.kind)) manifest[name] = { path: entry.path, kind: entry.kind };
+        else console.warn(`[AssetCatalog] skipping asset "${name}" with unknown kind "${entry.kind}"`);
+    }
+    return manifest;
+}
 
 // Resolves the shine-assets manifest up front so url() is synchronous afterwards.
 // Protocol: latest.json -> version, {version}/{platform}/{module}/assets.json ->
-// name -> relative blob path, blob at {baseUrl}/{relativeBlobPath}.
+// name -> { path, kind }, blob at {baseUrl}/{relativeBlobPath}.
 // The asset service is dev infra, not core to an experiment: if it's unreachable, degrade to a
 // procedural-only catalog with a console warning rather than taking the whole page down.
 async function buildDefaultCatalog(): Promise<AssetCatalog> {
@@ -22,20 +44,24 @@ async function buildDefaultCatalog(): Promise<AssetCatalog> {
     let manifest: Manifest;
     try {
         const version = (await fetchJson<{ version: string }>(`${base}/latest.json`)).version;
-        manifest = await fetchJson<Manifest>(`${base}/${version}/${ASSET_PLATFORM}/${ASSET_MODULE}/assets.json`);
+        const raw = await fetchJson<RawManifest>(`${base}/${version}/${ASSET_PLATFORM}/${ASSET_MODULE}/assets.json`);
+        manifest = validatedManifest(raw);
     } catch (err) {
         console.warn('[AssetCatalog] asset service unreachable, falling back to procedural-only assets:', err);
         manifest = {};
     }
 
     return {
-        list: () => [...Object.keys(PROCEDURAL_ASSETS), ...Object.keys(manifest)].map((name) => ({ name })),
+        list: () => [
+            ...Object.entries(PROCEDURAL_ASSETS).map(([name, asset]) => ({ name, kind: asset.kind })),
+            ...Object.entries(manifest).map(([name, entry]) => ({ name, kind: entry.kind }))
+        ],
         url: (name) => {
-            const path = manifest[name];
-            if (path === undefined) throw new Error(`[AssetCatalog] unknown asset "${name}"`);
-            return `${base}/${path}`;
+            const entry = manifest[name];
+            if (entry === undefined) throw new Error(`[AssetCatalog] unknown asset "${name}"`);
+            return `${base}/${entry.path}`;
         },
-        generate: async (name) => PROCEDURAL_ASSETS[name]?.()
+        generate: async (name) => PROCEDURAL_ASSETS[name]?.generate()
     };
 }
 

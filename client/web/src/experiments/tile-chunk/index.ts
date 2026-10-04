@@ -119,7 +119,7 @@ export class TileChunk extends Experiment {
                 else this.tileNode?.detach('normals');
             });
 
-        this.assetPicker = new AssetSourcePicker(gui, this.assets, {
+        this.assetPicker = new AssetSourcePicker(gui, this.assets, ['tile-3d'], {
             onNone: () => {
                 this.replaceTileSet(null);
             },

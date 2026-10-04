@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ASSET_KINDS } from '../../engine/assets/catalog';
 import { type ModelSet } from '../../engine/assets/model-set';
 import type { SceneContext } from '../../engine/scene';
 import { fireAndForget } from '../../engine/utils';
@@ -16,7 +17,7 @@ export class AssetViewer extends Experiment {
     constructor(context: SceneContext) {
         super(context, { title: 'Asset Viewer' });
 
-        this.assetPicker = new AssetSourcePicker(this.debugPanel.root(), this.assets, {
+        this.assetPicker = new AssetSourcePicker(this.debugPanel.root(), this.assets, [...ASSET_KINDS], {
             onNone: () => this.clearModel(),
             onAsset: (name) => fireAndForget(this.loadAsset(name)),
             onFile: (url) => fireAndForget(this.loadFile(url))
