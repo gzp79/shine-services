@@ -1,7 +1,11 @@
 import type { ModelSet } from './model-set';
 
+export const ASSET_KINDS = ['model', 'tile-3d', 'texture-ui'] as const;
+export type AssetKind = (typeof ASSET_KINDS)[number];
+
 export interface AssetInfo {
     name: string;
+    kind: AssetKind;
 }
 
 export interface AssetCatalog {

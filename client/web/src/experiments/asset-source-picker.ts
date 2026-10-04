@@ -1,5 +1,6 @@
 import type GUI from 'lil-gui';
 import type { AssetStore } from '../engine/assets/asset-store';
+import type { AssetKind } from '../engine/assets/catalog';
 
 const NONE = 'none';
 const FILE = 'file';
@@ -29,6 +30,7 @@ export class AssetSourcePicker {
     constructor(
         private readonly gui: GUI,
         private readonly store: AssetStore,
+        private readonly kindFilter: AssetKind[],
         private readonly handlers: AssetSourceHandlers
     ) {
         this.fileInput = document.createElement('input');
@@ -45,7 +47,8 @@ export class AssetSourcePicker {
     }
 
     async populate(): Promise<void> {
-        this.names = (await this.store.list()).map((a) => a.name);
+        const assets = await this.store.list();
+        this.names = assets.filter((a) => this.kindFilter.includes(a.kind)).map((a) => a.name);
         this.refresh();
     }
 

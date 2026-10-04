@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { color } from 'three/tsl';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { share } from '../resources/ownership';
+import type { AssetKind } from './catalog';
 import { type ModelSet } from './model-set';
 
 // Procedurally generated assets. A generator produces a ModelSet on demand — the same result a
@@ -10,6 +11,11 @@ import { type ModelSet } from './model-set';
 // This is the single place procedural assets are named.
 
 export type ProceduralGenerator = () => ModelSet;
+
+export interface ProceduralAsset {
+    generate: ProceduralGenerator;
+    kind: AssetKind;
+}
 
 function makeMaterial(hex: number): MeshStandardNodeMaterial {
     const m = new MeshStandardNodeMaterial({ roughness: 0.6, metalness: 0.2, side: THREE.DoubleSide });
@@ -150,8 +156,8 @@ function buildHeightBoxesHiRes(): ModelSet {
     return buildHeightBoxes(5);
 }
 
-export const PROCEDURAL_ASSETS: Record<string, ProceduralGenerator> = {
-    'generated-shapes': buildShapes,
-    'generated-tile': buildHeightBoxes,
-    'generated-tile-hires': buildHeightBoxesHiRes
+export const PROCEDURAL_ASSETS: Record<string, ProceduralAsset> = {
+    'generated-shapes': { kind: 'model', generate: buildShapes },
+    'generated-tile': { kind: 'tile-3d', generate: buildHeightBoxes },
+    'generated-tile-hires': { kind: 'tile-3d', generate: buildHeightBoxesHiRes }
 };
