@@ -104,15 +104,15 @@ axum-extra = { version = "0.12" }
 axum-server = { version = "0.8", features = ["tls-rustls"] }
 tera = { version = "2.0", features = ["glob_fs"] }
 validator = { version = "0.21", features = ["derive"] }
-utoipa = { version = "5.4", features = [
+utoipa = { version = "6.0", features = [
 	"axum_extras",
 	"uuid",
 	"chrono",
 	"debug",
 	"url",
 ] }
-utoipa-axum = "0.2"
-utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
+utoipa-axum = "0.3"
+utoipa-swagger-ui = { version = "10.0", features = ["axum"] }
 
 ############################# WASM #############################
 tracing-web = "0.1"
