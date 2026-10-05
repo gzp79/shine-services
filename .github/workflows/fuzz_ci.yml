@@ -3,12 +3,8 @@ name: Fuzz CI
 on:
   push:
     branches: [main]
-    paths:
-      - "crates/shine-game/**"
   pull_request:
     branches: [main]
-    paths:
-      - "crates/shine-game/**"
   workflow_dispatch:
 
 concurrency:
