@@ -150,7 +150,7 @@ impl<'a, T: Tile> LayerBuilder<'a, T> {
         let vi = chunk.cell_to_vert()[cell];
         chunk.mesh().vertex_ring_ccw(vi).filter_map(move |qv| {
             let tile = chunk.quad_to_tile()[qv.quad];
-            (!tile.is_none()).then(|| (tile, qv.local))
+            (!tile.is_none()).then_some((tile, qv.local))
         })
     }
 

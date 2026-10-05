@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(js_name = "ChangeLog")]
 pub struct WasmChangeLog(ChangeLog<u32>);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = "ChangeLog")]
 impl WasmChangeLog {
     /// All tile values in the layer, dense per tile id.
     pub fn values(&self) -> Uint32Array {

@@ -95,7 +95,7 @@ fuzz_target!(|input: ConstrainedInput| {
     for &(a, b) in &edges {
         builder.add_constraint_edge(vertices[a], vertices[b], 1);
         builder
-            .check()
+            .validate()
             .expect("builder check failed after adding constraint edge");
     }
 });

@@ -30,15 +30,13 @@ config = "0.15"
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-rmp-serde = "1.3"
-lz4_flex = "0.13"
 
 time = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 iso8601-duration = "0.2"
 uuid = { version = "1.22", features = ["v4", "serde"] }
 url = { version = "2.5", features = ["serde"] }
-base64 = "0.22"
+base64 = "0.23"
 hex = "0.4"
 serde_urlencoded = "0.7"
 bytes = "1.11"
@@ -53,14 +51,14 @@ fixedbitset = "0.5"
 harsh = "0.2"
 primal-check = "0.3"
 
-glam = { version = "0.33", features = ["serde"] }
+glam = { version = "0.34", features = ["serde"] }
 itertools = "0.15"
 smallbox = "0.8"
 
 ############################# PROC MACRO #############################
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = "2.0"
+syn = "3.0"
 
 ############################# RUNTIME #############################
 pin-project = "1.1"
@@ -69,7 +67,7 @@ futures-channel = "0.3"
 async-trait = "0.1"
 tokio = { version = "1.50" }
 blocking = { version = "1.6" }
-serial_test = "3.2"
+serial_test = "4.0"
 talc = "5.1"
 lock_api = "0.4"
 
@@ -85,7 +83,7 @@ bb8-postgres = "0.9"
 tokio-postgres = "0.7"
 tokio-postgres-rustls = "0.14"
 postgres-from-row = "0.5"
-refinery = { version = "0.9", features = ["tokio-postgres"] }
+refinery = { version = "0.10", features = ["tokio-postgres"] }
 
 ############################# AZURE #############################
 azure_core = { version = "1.1" }
@@ -105,16 +103,16 @@ axum = "0.8"
 axum-extra = { version = "0.12" }
 axum-server = { version = "0.8", features = ["tls-rustls"] }
 tera = { version = "2.0", features = ["glob_fs"] }
-validator = { version = "0.20", features = ["derive"] }
-utoipa = { version = "5.4", features = [
+validator = { version = "0.21", features = ["derive"] }
+utoipa = { version = "6.0", features = [
 	"axum_extras",
 	"uuid",
 	"chrono",
 	"debug",
 	"url",
 ] }
-utoipa-axum = "0.2"
-utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
+utoipa-axum = "0.3"
+utoipa-swagger-ui = { version = "10.0", features = ["axum"] }
 
 ############################# WASM #############################
 tracing-web = "0.1"
@@ -123,7 +121,7 @@ console_error_panic_hook = "0.1"
 js-sys = "0.3"
 web-sys = "0.3"
 # fixed version to be consistent with the installed wasm-bindgen-cli version
-wasm-bindgen = "=0.2.114"
+wasm-bindgen = "=0.2.129"
 wasm-bindgen-futures = "0.4"
 wasm-bindgen-test = "0.3"
 serde-wasm-bindgen = "0.6"

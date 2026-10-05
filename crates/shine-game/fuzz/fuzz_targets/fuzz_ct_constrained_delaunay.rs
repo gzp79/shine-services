@@ -3,7 +3,7 @@
 use arbitrary::Arbitrary;
 use glam::IVec2;
 use libfuzzer_sys::fuzz_target;
-use shine_game::math::triangulation::{GeometryChecker, Triangulation};
+use shine_game::math::triangulation::Triangulation;
 use std::fmt;
 
 const MAX1_X: i32 = 100;
@@ -95,7 +95,7 @@ fuzz_target!(|input: ConstrainedInput| {
     for &(a, b) in &edges {
         builder.add_constraint_edge(vertices[a], vertices[b], 1);
         builder
-            .check()
+            .validate()
             .expect("builder check failed after adding constraint edge");
     }
 
@@ -103,7 +103,9 @@ fuzz_target!(|input: ConstrainedInput| {
     builder
         .validate()
         .expect("builder check failed after delaunay refinement");
-    GeometryChecker::new(builder.tri())
-        .check_delaunay()
+    builder
+        .tri()
+        .validator()
+        .validate_delaunay()
         .expect("Delaunay condition failed after refinement");
 });

@@ -18,7 +18,7 @@ pub struct WasmCdtMesh {
     error: Option<String>,
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = "CdtMesh")]
 impl WasmCdtMesh {
     pub fn vertices(&self) -> Float32Array {
         unsafe { Float32Array::view(&self.vertices) }
