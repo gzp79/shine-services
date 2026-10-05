@@ -60,7 +60,7 @@ pub struct WasmHexMesh {
     mesh: Quadrangulation,
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = "HexMesh")]
 impl WasmHexMesh {
     pub fn world_size(&self) -> f32 {
         self.world_size
