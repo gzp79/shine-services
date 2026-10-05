@@ -1,0 +1,62 @@
+name: Fuzz CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/shine-game/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "crates/shine-game/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  FUZZ_MAX_TOTAL_TIME: 20
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup nightly Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-fuzz-${{ hashFiles('crates/shine-game/fuzz/Cargo.lock') }}
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Build fuzz targets
+        working-directory: crates/shine-game
+        run: cargo fuzz build
+
+      - name: Fuzz targets
+        working-directory: crates/shine-game
+        run: |
+          for target in $(cargo fuzz list); do
+            echo "::group::Fuzzing $target"
+            cargo fuzz run "$target" -- -max_total_time=${{ env.FUZZ_MAX_TOTAL_TIME }}
+            echo "::endgroup::"
+          done
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts
+          path: crates/shine-game/fuzz/artifacts/
