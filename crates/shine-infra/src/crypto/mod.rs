@@ -1,18 +1,12 @@
-mod optimus;
-pub use self::optimus::*;
-
-mod id_encoder;
-pub use self::id_encoder::*;
-mod optimus_id_encoder;
-pub use self::optimus_id_encoder::*;
-mod harsh_id_encoder;
-pub use self::harsh_id_encoder::*;
-mod prefixed_id_encoder;
-pub use self::prefixed_id_encoder::*;
 mod data_protection;
-pub use self::data_protection::*;
+mod harsh_id_encoder;
+mod id_encoder;
+mod optimus;
+mod optimus_id_encoder;
+mod prefixed_id_encoder;
 
 pub mod random;
 
-mod fingerprint;
-pub use self::fingerprint::*;
+pub use self::{
+    data_protection::*, harsh_id_encoder::*, id_encoder::*, optimus::*, optimus_id_encoder::*, prefixed_id_encoder::*,
+};

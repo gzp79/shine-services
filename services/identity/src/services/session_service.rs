@@ -5,8 +5,8 @@ use crate::{
 use chrono::Utc;
 use ring::rand::SystemRandom;
 use shine_infra::{
-    crypto::hash_fingerprint,
     session::SessionKey,
+    telemetry::secret_tag,
     web::extracts::{ClientFingerprint, SiteInfo},
 };
 use uuid::Uuid;
@@ -42,7 +42,7 @@ where
         let fingerprint = fingerprint.to_string();
         let session_key = SessionKey::new_random(&self.random)?;
         let session_key_hash = hash_key(&session_key);
-        tracing::Span::current().record("session_fp", hash_fingerprint(&session_key_hash));
+        tracing::Span::current().record("session_fp", secret_tag(&session_key_hash));
 
         let mut db = self.db.create_context().await?;
         let session = db
@@ -70,7 +70,7 @@ where
         is_linked: bool,
     ) -> Result<Option<Session>, SessionError> {
         let session_key_hash = hash_key(session_key);
-        tracing::Span::current().record("session_fp", hash_fingerprint(&session_key_hash));
+        tracing::Span::current().record("session_fp", secret_tag(&session_key_hash));
         let mut db = self.db.create_context().await?;
         db.update_session_user_by_hash(&session_key_hash, identity, roles, is_linked)
             .await
@@ -85,7 +85,7 @@ where
 
         let key_hashes = db.find_all_session_hashes_by_user(identity.id).await?;
         for key_hash in key_hashes {
-            log::debug!("Updating session user info for: {}", hash_fingerprint(&key_hash));
+            log::debug!("Updating session user info for: {}", secret_tag(&key_hash));
             db.update_session_user_by_hash(&key_hash, identity, roles, is_linked)
                 .await?;
         }
@@ -103,7 +103,7 @@ where
     #[tracing::instrument(level = "debug", skip_all, fields(session_fp = tracing::field::Empty))]
     pub async fn find(&self, user_id: Uuid, session_key: &SessionKey) -> Result<Option<Session>, SessionError> {
         let session_key_hash = hash_key(session_key);
-        tracing::Span::current().record("session_fp", hash_fingerprint(&session_key_hash));
+        tracing::Span::current().record("session_fp", secret_tag(&session_key_hash));
         let mut db = self.db.create_context().await?;
         db.find_session_by_hash(user_id, &session_key_hash).await
     }
@@ -112,7 +112,7 @@ where
     #[tracing::instrument(level = "debug", skip_all, fields(session_fp = tracing::field::Empty))]
     pub async fn remove(&self, user_id: Uuid, session_key: &SessionKey) -> Result<(), SessionError> {
         let session_key_hash = hash_key(session_key);
-        tracing::Span::current().record("session_fp", hash_fingerprint(&session_key_hash));
+        tracing::Span::current().record("session_fp", secret_tag(&session_key_hash));
         let mut db = self.db.create_context().await?;
         db.delete_session_by_hash(user_id, &session_key_hash).await
     }
@@ -130,7 +130,7 @@ fn hash_key(key: &SessionKey) -> String {
     // there is no need for a complex hash as key has a big entropy already
     // and it'd be too expensive to invert the hashing.
     let hash = key.key_hash();
-    log::debug!("Hashing session key -> [{}]", hash_fingerprint(&hash));
+    log::debug!("Hashing session key -> [{}]", secret_tag(&hash));
     hash
 }
 

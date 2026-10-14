@@ -5,7 +5,7 @@ use crate::{
 use chrono::Duration;
 use ring::digest;
 use shine_infra::{
-    crypto::hash_fingerprint,
+    telemetry::secret_tag,
     web::extracts::{ClientFingerprint, SiteInfo},
 };
 use thiserror::Error as ThisError;
@@ -28,7 +28,7 @@ impl<DB: IdentityDb> TokenService<DB> {
         Self { db }
     }
 
-    #[tracing::instrument(level = "debug", skip_all, fields(token_fp = hash_fingerprint(token_hash)))]
+    #[tracing::instrument(level = "debug", skip_all, fields(token_fp = secret_tag(token_hash)))]
     pub async fn find_by_hash(&self, token_hash: &str) -> Result<Option<TokenInfo>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.find_by_hash(token_hash).await
@@ -48,7 +48,7 @@ impl<DB: IdentityDb> TokenService<DB> {
     ) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         let token_hash = hash_token(token);
-        tracing::Span::current().record("token_fp", hash_fingerprint(&token_hash));
+        tracing::Span::current().record("token_fp", secret_tag(&token_hash));
         ctx.test_token(allowed_kinds, &token_hash).await
     }
 
@@ -60,7 +60,7 @@ impl<DB: IdentityDb> TokenService<DB> {
     ) -> Result<Option<(Identity, TokenInfo)>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         let token_hash = hash_token(token);
-        tracing::Span::current().record("token_fp", hash_fingerprint(&token_hash));
+        tracing::Span::current().record("token_fp", secret_tag(&token_hash));
         ctx.take_token(allowed_kinds, &token_hash).await
     }
 
@@ -68,11 +68,11 @@ impl<DB: IdentityDb> TokenService<DB> {
     pub async fn delete(&self, kind: TokenKind, token: &str) -> Result<Option<()>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         let token_hash = hash_token(token);
-        tracing::Span::current().record("token_fp", hash_fingerprint(&token_hash));
+        tracing::Span::current().record("token_fp", secret_tag(&token_hash));
         ctx.delete_token_by_hash(kind, &token_hash).await
     }
 
-    #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id, token_fp = hash_fingerprint(token_hash)))]
+    #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id, token_fp = secret_tag(token_hash)))]
     pub async fn delete_by_user(&self, user_id: Uuid, token_hash: &str) -> Result<Option<()>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.delete_token_by_user(user_id, token_hash).await
@@ -129,6 +129,6 @@ impl<DB: IdentityDb> TokenService<DB> {
 fn hash_token(token: &str) -> String {
     let hash = digest::digest(&digest::SHA256, token.as_bytes());
     let hash = hex::encode(hash);
-    log::debug!("Hashing token -> [{}]", hash_fingerprint(&hash));
+    log::debug!("Hashing token -> [{}]", secret_tag(&hash));
     hash
 }

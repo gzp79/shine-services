@@ -7,6 +7,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
+use opentelemetry::StringValue;
 use redis::{
     aio::{ConnectionLike, MultiplexedConnection},
     Arg, AsyncConnectionConfig, Client, Cmd, ErrorKind, Pipeline, RedisFuture, Value,
@@ -49,30 +50,39 @@ impl RedisConnection {
     }
 }
 
-fn redis_command_name(cmd: &Cmd) -> String {
+fn redis_command_name(cmd: &Cmd) -> StringValue {
     match cmd.args_iter().next() {
-        Some(Arg::Simple(name)) => String::from_utf8_lossy(name).to_ascii_uppercase(),
-        _ => "UNKNOWN".to_string(),
+        Some(Arg::Simple(name)) => {
+            std::str::from_utf8(name).map_or_else(|_| "UNKNOWN".into(), |name| name.to_ascii_uppercase().into())
+        }
+        _ => "UNKNOWN".into(),
     }
 }
 
-/// Commands that park on the server until data arrives; their duration is wait time, not latency.
-fn is_blocking_command(name: &str, cmd: &Cmd) -> bool {
-    match name {
-        "BLPOP" | "BRPOP" | "BRPOPLPUSH" | "BLMOVE" | "BLMPOP" | "BZPOPMIN" | "BZPOPMAX" | "BZMPOP" => true,
-        "XREAD" | "XREADGROUP" => cmd
-            .args_iter()
-            .any(|arg| matches!(arg, Arg::Simple(a) if a.eq_ignore_ascii_case(b"BLOCK"))),
-        _ => false,
+/// Commands that (may) park on the server until data arrives. Not supported: they would stall every other
+/// command on the shared multiplexed connection, and their duration would be recorded as db latency.
+fn assert_not_blocking(name: &str) {
+    if matches!(
+        name,
+        "BLPOP"
+            | "BRPOP"
+            | "BRPOPLPUSH"
+            | "BLMOVE"
+            | "BLMPOP"
+            | "BZPOPMIN"
+            | "BZPOPMAX"
+            | "BZMPOP"
+            | "XREAD"
+            | "XREADGROUP"
+    ) {
+        panic!("Blocking redis command {name} is not supported on pooled connections, use a dedicated connection with its own instrumentation");
     }
 }
 
 impl ConnectionLike for RedisConnection {
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
         let name = redis_command_name(cmd);
-        if is_blocking_command(&name, cmd) {
-            return self.client.req_packed_command(cmd);
-        }
+        assert_not_blocking(name.as_str());
         let span = tracing::trace_span!(
             "redis",
             otel.name = name.as_str(),
