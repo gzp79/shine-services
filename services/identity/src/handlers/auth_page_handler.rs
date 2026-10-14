@@ -46,15 +46,14 @@ impl<'a> AuthPageHandler<'a> {
     where
         E: Into<AuthError>,
     {
-        let error = error.into();
-        let error_dump = format!("{error:#?}");
-        let problem: Problem = self.problem_config.transform(error);
-
+        // Log the problem (sanitized by the conversion, with sensitive details), not the raw error
+        let problem = Problem::from(error.into());
         if problem.status.is_server_error() {
-            log::error!("Page Error: {error_dump} ({}, {})", problem.status, problem.ty);
+            log::error!("Page Error: {problem:#?}");
         } else {
-            log::warn!("Page Error: {error_dump} ({}, {})", problem.status, problem.ty);
+            log::warn!("Page Error: {problem:#?}");
         }
+        let problem = self.problem_config.transform(problem);
 
         let mut target_url = error_url.unwrap_or(&self.settings.error_url).to_owned();
 

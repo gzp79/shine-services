@@ -13,7 +13,7 @@ pub const CONSOLE_TARGET: &str = "otel::console";
 
 /// Request span for the console log, a compact counterpart of the span of [`make_span_from_request`].
 pub fn make_console_span<B>(req: &Request<B>) -> Span {
-    info_span!(target: CONSOLE_TARGET, "request", method = %req.method(), uri = %req.uri())
+    info_span!(target: CONSOLE_TARGET, "request", method = %req.method(), path = req.uri().path())
 }
 
 #[inline]
