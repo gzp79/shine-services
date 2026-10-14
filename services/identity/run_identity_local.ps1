@@ -3,4 +3,8 @@ $env:RUST_BACKTRACE = "full"
 ${env:SHINE--SERVICE--TLS--CERT} = "..\..\certificates\scytta.crt"
 ${env:SHINE--SERVICE--TLS--KEY} = "..\..\certificates\scytta.key"
 ${env:SHINE--SERVICE--PORT} = "8443"
+${env:SHINE--TELEMETRY--METRICS--TYPE} = "otlp"
+${env:SHINE--TELEMETRY--METRICS--ENDPOINT} = "http://localhost:4317"
+${env:SHINE--TELEMETRY--TRACING--TYPE} = "otlp"
+${env:SHINE--TELEMETRY--TRACING--ENDPOINT} = "http://localhost:4317"
 cargo run -p shine-identity --release -- test

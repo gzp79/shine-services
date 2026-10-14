@@ -52,6 +52,7 @@ where
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn get_user_info(&self, user_id: Uuid) -> Result<Option<UserInfo>, Problem> {
         // get the version first as newer role is fine, but a deprecated role set is not ok
         // this order ensures the role and other data are at least as fresh as the version
@@ -71,6 +72,7 @@ where
         Ok(Some(UserInfo { identity, roles, is_linked }))
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn create_user_session(
         &self,
         identity: &Identity,
@@ -84,7 +86,7 @@ where
         };
 
         // Create session
-        log::debug!("Creating session for identity: {identity:#?}");
+        log::debug!("Creating session for identity: {}", identity.id);
         let (user_session, user_session_key) = self
             .session_service
             .create(identity, roles, is_linked, fingerprint, site_info)
@@ -103,6 +105,7 @@ where
         }))
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn refresh_user_session(&self, user_id: Uuid) -> Result<(), Problem> {
         match self.get_user_info(user_id).await {
             Ok(Some(user_info)) => {

@@ -45,6 +45,7 @@ impl<DB: IdentityDb> UserService<DB> {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn create(&self, id: Uuid, name: &str, email: Option<(&Email, bool)>) -> Result<Identity, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         let identity = ctx.create_user(id, name, email).await?;
@@ -55,16 +56,19 @@ impl<DB: IdentityDb> UserService<DB> {
         Ok(identity)
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn find_by_id(&self, id: Uuid) -> Result<Option<Identity>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.find_by_id(id).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn find_by_email(&self, email: &Email) -> Result<Option<Identity>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.find_by_email(email).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn update(
         &self,
         id: Uuid,
@@ -82,11 +86,13 @@ impl<DB: IdentityDb> UserService<DB> {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn delete_guests(&self, cutoff: DateTime<Utc>, limit: usize) -> Result<Vec<Uuid>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.delete_guests(cutoff, limit as i64).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn delete(&self, id: Uuid) -> Result<(), IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.cascaded_delete(id).await?;
@@ -95,6 +101,7 @@ impl<DB: IdentityDb> UserService<DB> {
         Ok(())
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn search(
         &self,
         user_ids: Option<&[Uuid]>,
@@ -107,6 +114,7 @@ impl<DB: IdentityDb> UserService<DB> {
             .await
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn generate_name(&self) -> Result<String, IdentityError> {
         let id = {
             let mut ctx = self.db.create_context().await?;
@@ -117,6 +125,7 @@ impl<DB: IdentityDb> UserService<DB> {
         Ok(id)
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn create_with_retry(
         &self,
         name: Option<&str>,
@@ -149,6 +158,7 @@ impl<DB: IdentityDb> UserService<DB> {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn create_linked_user(
         &self,
         name: Option<&str>,

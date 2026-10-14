@@ -4,7 +4,7 @@ use axum::{
 };
 use opentelemetry::{propagation::Extractor, Context};
 use std::{borrow::Cow, error::Error as StdError};
-use tracing::{field::Empty, trace_span, Span};
+use tracing::{field::Empty, info_span, Span};
 
 pub const TRACING_TARGET: &str = "otel::tracing";
 
@@ -84,10 +84,15 @@ pub fn make_span_from_request<B>(req: &Request<B>) -> Span {
         .extensions()
         .get::<MatchedPath>()
         .map_or_else(|| "", |mp| mp.as_str());
-    let name = format!("[{http_method}] {route}");
+
+    // Unmatched requests (404, ...) have no route; fall back to the raw path to keep the span name informative.
+    let name = format!(
+        "{http_method} {}",
+        if route.is_empty() { req.uri().path() } else { route }
+    );
     let name = name.trim();
 
-    trace_span!(
+    info_span!(
         target: TRACING_TARGET,
         "HTTP request",
         http.request.method = %http_method,
@@ -98,11 +103,11 @@ pub fn make_span_from_request<B>(req: &Request<B>) -> Span {
         server.address = http_host(req),
         user_agent.original = user_agent(req),
         url.path = req.uri().path(),
-        url.query = req.uri().query(),
         url.scheme = url_scheme(req.uri()),
         otel.name = %name,
         otel.kind = ?opentelemetry::trace::SpanKind::Server,
         otel.status_code = Empty, // set on response
+        enduser.id = Empty, // set when the user is authenticated, see record_user_id
         trace_id = Empty, // set on response
         //request_id = Empty, // set
         exception.message = Empty, // set on response
@@ -116,6 +121,25 @@ pub fn update_span_from_response<B>(span: &Span, response: &Response<B>) {
 
     if status.is_server_error() {
         span.record("otel.status_code", "ERROR");
+    }
+}
+
+/// Header carrying the trace id of the request, to find the trace of a response.
+pub const TRACE_ID_HEADER: &str = "x-trace-id";
+
+/// Add the trace id of the span to the response. Nothing is added if the span is not sampled/exported.
+pub fn add_trace_id_header<B>(span: &Span, response: &mut Response<B>) {
+    use opentelemetry::trace::TraceContextExt as _;
+    use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+
+    let trace_id = span.context().span().span_context().trace_id();
+    if trace_id != opentelemetry::trace::TraceId::INVALID {
+        if let Ok(value) = header::HeaderValue::from_str(&trace_id.to_string()) {
+            span.record("trace_id", trace_id.to_string());
+            response
+                .headers_mut()
+                .insert(header::HeaderName::from_static(TRACE_ID_HEADER), value);
+        }
     }
 }
 
@@ -140,4 +164,10 @@ where
             update_span_from_error(span, err);
         }
     }
+}
+
+/// Tag the current request span with the authenticated user.
+/// Must be called while the request span is current (for example in extractors and handlers).
+pub fn record_user_id(user_id: uuid::Uuid) {
+    Span::current().record("enduser.id", tracing::field::display(user_id));
 }

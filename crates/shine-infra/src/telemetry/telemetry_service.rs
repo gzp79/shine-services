@@ -1,3 +1,4 @@
+use crate::telemetry::otel_http::TRACING_TARGET;
 use crate::telemetry::{Metering, OtelLayer, TelemetryBuildError, TelemetryConfig, TelemetryError, Tracing};
 use opentelemetry::{
     global,
@@ -14,7 +15,12 @@ use opentelemetry_sdk::{
 use std::sync::{Arc, RwLock};
 use tracing::{Dispatch, Subscriber};
 use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::{filter::EnvFilter, layer::SubscriberExt, registry::LookupSpan, reload, Layer};
+use tracing_subscriber::{
+    filter::{filter_fn, EnvFilter},
+    layer::SubscriberExt,
+    registry::LookupSpan,
+    reload, Layer,
+};
 
 #[derive(Debug, Clone)]
 pub struct DynConfig {
@@ -144,7 +150,12 @@ impl TelemetryService {
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
         log::debug!("Registering console log tracing layer...");
-        let console_layer = tracing_subscriber::fmt::Layer::new().compact();
+
+        // The HTTP request span carries many attributes meant for the trace backend; keep them out of the console prefix.
+        let console_layer = tracing_subscriber::fmt::Layer::new()
+            .compact()
+            .with_filter(filter_fn(|meta| !(meta.is_span() && meta.target() == TRACING_TARGET)));
+
         Ok(console_layer)
     }
 

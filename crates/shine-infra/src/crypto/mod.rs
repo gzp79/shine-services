@@ -13,3 +13,6 @@ mod data_protection;
 pub use self::data_protection::*;
 
 pub mod random;
+
+mod fingerprint;
+pub use self::fingerprint::*;

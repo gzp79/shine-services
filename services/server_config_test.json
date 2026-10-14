@@ -19,8 +19,7 @@
     "enableConsoleLog": true,
     "defaultLevel": "INFO,shine_core=TRACE,shine_infra=TRACE,shine_identity=TRACE,shine_builder=TRACE",
     "metrics": {
-      "type": "otlp",
-      "endpoint": "grpc://localhost:4317"
+      "type": "none"
     },
     "tracing": {
       "type": "none"

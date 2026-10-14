@@ -105,7 +105,7 @@ impl CaptchaValidator {
         let idempotency_key = Uuid::new_v4().to_string();
 
         let (secret, token) = if self.0.secret == TEST_SECRET {
-            log::warn!("Using test-secret for captcha validation for token {token}");
+            log::warn!("Using test-secret for captcha validation");
             match token {
                 TEST_TOKEN_PASS => {
                     log::info!("Test token 'pass': calling Cloudflare with the always-passing test secret");

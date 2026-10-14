@@ -56,6 +56,7 @@ where
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn establish(
         &self,
         identity: Identity,
@@ -80,7 +81,7 @@ where
                 } else {
                     None
                 };
-                log::debug!("Creating access token for identity: {identity:#?}");
+                log::debug!("Creating access token for identity: {}", identity.id);
                 let (token, token_info) = match self
                     .token_service
                     .create_with_retry(

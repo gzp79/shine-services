@@ -19,6 +19,7 @@ impl<DB: IdentityDb> RoleService<DB> {
         Self { db, events }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn add_role(&self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         if let Some(roles) = ctx.add_role(user_id, role).await? {
@@ -30,11 +31,13 @@ impl<DB: IdentityDb> RoleService<DB> {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn get_roles(&self, user_id: Uuid) -> Result<Option<Vec<String>>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         ctx.get_roles(user_id).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn delete_role(&self, user_id: Uuid, role: &str) -> Result<Option<Vec<String>>, IdentityError> {
         let mut ctx = self.db.create_context().await?;
         if let Some(roles) = ctx.delete_role(user_id, role).await? {

@@ -47,6 +47,7 @@ where
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn delete_user(
         &self,
         auth_session: AuthSession,
@@ -98,6 +99,7 @@ where
         self.page_handler.redirect(response_session, redirect_url, None)
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn purge_guests(&self, cutoff: DateTime<Utc>, limit: usize) -> Result<PurgeGuestsResult, IdentityError> {
         let deleted_ids = self.user_service.delete_guests(cutoff, limit).await?;
         let deleted = deleted_ids.len();

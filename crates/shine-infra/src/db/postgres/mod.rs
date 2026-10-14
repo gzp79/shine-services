@@ -21,6 +21,25 @@ pub use self::{
     query_builder::{AndWhere, QueryBuilder},
 };
 
+#[doc(hidden)]
+pub use tracing as __tracing;
+
+/// Create a trace-level span for a SQL command, parented to the current (repository) span.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __pg_span {
+    ($id:ident, $op:literal, $stmt:expr) => {
+        $crate::db::postgres::__tracing::trace_span!(
+            "pg",
+            otel.name = concat!(stringify!($id), "::", $op),
+            otel.kind = "client",
+            db.system = "postgresql",
+            db.operation.name = $op,
+            db.query.text = %$stmt,
+        )
+    };
+}
+
 /// Create a prepared SQL statements
 #[macro_export]
 macro_rules! pg_prepared_statement {
@@ -71,7 +90,7 @@ macro_rules! pg_query {
     // The two row-returning shapes differ only in how a single row is turned into the output type;
     // this internal rule defines query/query_one/query_opt once, given `$row => $extract` as the
     // per-row conversion (a fragment, not a closure, so `$row`'s type is fixed at each use site).
-    (@row_queries $id:ident, [$($pid:ident: $pty:ty),*], $rty:ty, $row:ident => $extract:expr) => {
+    (@row_queries $id:ident, $stmt:expr, [$($pid:ident: $pty:ty),*], $rty:ty, $row:ident => $extract:expr) => {
         impl $id {
             #[allow(clippy::too_many_arguments)]
             #[allow(dead_code)]
@@ -83,9 +102,12 @@ macro_rules! pg_query {
             where
                 T: $crate::db::postgres::PgRawConnection
             {
-                let statement = self.statement(client).await?;
-                let rows = client.query(&statement, &[$($pid,)*]).await?;
-                rows.into_iter().map(|$row| $extract).collect::<Result<Vec<_>,_>>()
+                let span = $crate::__pg_span!($id, "query", $stmt);
+                $crate::db::postgres::__tracing::Instrument::instrument(async {
+                    let statement = self.statement(client).await?;
+                    let rows = client.query(&statement, &[$($pid,)*]).await?;
+                    rows.into_iter().map(|$row| $extract).collect::<Result<Vec<_>,_>>()
+                }, span).await
             }
 
             #[allow(clippy::too_many_arguments)]
@@ -98,9 +120,12 @@ macro_rules! pg_query {
             where
                 T: $crate::db::postgres::PgRawConnection
             {
-                let statement = self.statement(client).await?;
-                let $row = client.query_one(&statement, &[$($pid,)*]).await?;
-                $extract
+                let span = $crate::__pg_span!($id, "query_one", $stmt);
+                $crate::db::postgres::__tracing::Instrument::instrument(async {
+                    let statement = self.statement(client).await?;
+                    let $row = client.query_one(&statement, &[$($pid,)*]).await?;
+                    $extract
+                }, span).await
             }
 
             #[allow(clippy::too_many_arguments)]
@@ -113,11 +138,14 @@ macro_rules! pg_query {
             where
                 T: $crate::db::postgres::PgRawConnection
             {
-                let statement = self.statement(client).await?;
-                client.query_opt(&statement, &[$($pid,)*])
-                    .await?
-                    .map(|$row| $extract)
-                    .transpose()
+                let span = $crate::__pg_span!($id, "query_opt", $stmt);
+                $crate::db::postgres::__tracing::Instrument::instrument(async {
+                    let statement = self.statement(client).await?;
+                    client.query_opt(&statement, &[$($pid,)*])
+                        .await?
+                        .map(|$row| $extract)
+                        .transpose()
+                }, span).await
             }
         }
     };
@@ -128,7 +156,7 @@ macro_rules! pg_query {
         sql = $stmt:expr ) => {
 
         $crate::pg_prepared_statement!($id => $stmt, [$($pid:$pty),*]);
-        $crate::pg_query!(@row_queries $id, [$($pid: $pty),*], $rty,
+        $crate::pg_query!(@row_queries $id, $stmt, [$($pid: $pty),*], $rty,
             row => row.try_get(&stringify!($rid)));
     };
 
@@ -138,7 +166,7 @@ macro_rules! pg_query {
         sql = $stmt:expr ) => {
 
         $crate::pg_prepared_statement!($id => $stmt, [$($pid:$pty),*]);
-        $crate::pg_query!(@row_queries $id, [$($pid: $pty),*], $oty,
+        $crate::pg_query!(@row_queries $id, $stmt, [$($pid: $pty),*], $oty,
             row => <$oty as postgres_from_row::FromRow>::try_from_row(&row));
     };
 
@@ -159,8 +187,11 @@ macro_rules! pg_query {
             where
                 T: $crate::db::postgres::PgRawConnection
             {
-                let statement = self.statement(client).await?;
-                client.execute(&statement, &[$($pid,)*]).await
+                let span = $crate::__pg_span!($id, "execute", $stmt);
+                $crate::db::postgres::__tracing::Instrument::instrument(async {
+                    let statement = self.statement(client).await?;
+                    client.execute(&statement, &[$($pid,)*]).await
+                }, span).await
             }
         }
     };

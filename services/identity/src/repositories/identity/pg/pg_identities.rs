@@ -182,7 +182,7 @@ impl PgIdentitiesStatements {
 }
 
 impl Identities for PgIdentityDbContext<'_> {
-    #[instrument(skip(self))]
+    #[instrument(skip_all, fields(user_id = %user_id))]
     async fn create_user(
         &mut self,
         user_id: Uuid,
@@ -250,7 +250,7 @@ impl Identities for PgIdentityDbContext<'_> {
         })
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip_all, fields(user_id = %id))]
     async fn find_by_id(&mut self, id: Uuid) -> Result<Option<Identity>, IdentityError> {
         let row = self
             .stmts_identities
@@ -262,7 +262,7 @@ impl Identities for PgIdentityDbContext<'_> {
         row.map(|r| r.into_identity(self.email_protection)).transpose()
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     async fn find_by_email(&mut self, email: &Email) -> Result<Option<Identity>, IdentityError> {
         let email_hash = email.hash();
         let row = self
@@ -275,7 +275,7 @@ impl Identities for PgIdentityDbContext<'_> {
         row.map(|r| r.into_identity(self.email_protection)).transpose()
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip_all, fields(user_id = %id))]
     async fn update(
         &mut self,
         id: Uuid,
@@ -318,7 +318,7 @@ impl Identities for PgIdentityDbContext<'_> {
                 return Err(IdentityError::NameConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_email_hash") => {
-                log::info!("Conflicting email: {email:?}, rolling back user update");
+                log::info!("Conflicting email: {id}, rolling back user update");
                 return Err(IdentityError::EmailConflict);
             }
             Err(err) => return Err(PgError::from(err).into()),
@@ -327,7 +327,7 @@ impl Identities for PgIdentityDbContext<'_> {
         Ok(Some(identity_row.into_identity(self.email_protection)?))
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip_all, fields(user_id = %id))]
     async fn cascaded_delete(&mut self, id: Uuid) -> Result<(), IdentityError> {
         self.stmts_identities
             .cascaded_delete
@@ -337,7 +337,7 @@ impl Identities for PgIdentityDbContext<'_> {
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip_all)]
     async fn delete_guests(&mut self, cutoff: DateTime<Utc>, limit: i64) -> Result<Vec<Uuid>, IdentityError> {
         let rows = self
             .stmts_identities

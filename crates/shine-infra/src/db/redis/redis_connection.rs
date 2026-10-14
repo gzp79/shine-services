@@ -9,12 +9,14 @@ use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
 use redis::{
     aio::{ConnectionLike, MultiplexedConnection},
-    AsyncConnectionConfig, Client, Cmd, ErrorKind, Pipeline, RedisFuture, Value,
+    Arg, AsyncConnectionConfig, Client, Cmd, ErrorKind, Pipeline, RedisFuture, Value,
 };
 use std::{
     ops::{Deref, DerefMut},
     time::Duration,
 };
+
+use tracing::Instrument;
 
 pub use shine_infra_macros::RedisJsonValue;
 
@@ -47,9 +49,23 @@ impl RedisConnection {
     }
 }
 
+fn redis_command_name(cmd: &Cmd) -> String {
+    match cmd.args_iter().next() {
+        Some(Arg::Simple(name)) => String::from_utf8_lossy(name).to_uppercase(),
+        _ => "UNKNOWN".to_string(),
+    }
+}
+
 impl ConnectionLike for RedisConnection {
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
-        self.client.req_packed_command(cmd)
+        let span = tracing::info_span!(
+            target: "otel::tracing",
+            "redis",
+            otel.name = %redis_command_name(cmd),
+            otel.kind = "client",
+            db.system = "redis",
+        );
+        Box::pin(self.client.req_packed_command(cmd).instrument(span))
     }
 
     fn req_packed_commands<'a>(
@@ -58,7 +74,14 @@ impl ConnectionLike for RedisConnection {
         offset: usize,
         count: usize,
     ) -> RedisFuture<'a, Vec<Value>> {
-        self.client.req_packed_commands(cmd, offset, count)
+        let span = tracing::info_span!(
+            target: "otel::tracing",
+            "redis",
+            otel.name = "PIPELINE",
+            otel.kind = "client",
+            db.system = "redis",
+        );
+        Box::pin(self.client.req_packed_commands(cmd, offset, count).instrument(span))
     }
 
     fn get_db(&self) -> i64 {

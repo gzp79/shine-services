@@ -293,7 +293,10 @@ where
             .and_then(|session| serde_json::from_str::<TokenCookie>(session.value()).ok());
 
         log::debug!(
-            "Auth sessions before validation:\n  user:{user:#?}\n  external_login_cookie:{external_login_cookie:#?}\n  token_cookie:{token_cookie:#?}\n",
+            "Auth sessions before validation: user:{:?}, external_login_cookie:{}, token_cookie:{}",
+            user.as_ref().map(|u| u.user_id),
+            external_login_cookie.is_some(),
+            token_cookie.is_some()
         );
 
         // Perform cross-validation
@@ -327,7 +330,10 @@ where
         }
 
         log::debug!(
-            "Auth sessions after validation:\n  user:{user:#?}\n  external_login_cookie:{external_login_cookie:#?}\n  token_cookie:{token_cookie:#?}\n",
+            "Auth sessions after validation: user:{:?}, external_login_cookie:{}, token_cookie:{}",
+            user.as_ref().map(|u| u.user_id),
+            external_login_cookie.is_some(),
+            token_cookie.is_some()
         );
 
         Ok(Self::new(meta, token_cookie, user, external_login_cookie))
@@ -387,7 +393,10 @@ impl IntoResponseParts for AuthSession {
         });
 
         log::debug!(
-            "Auth sessions set headers:\n  session_cookie:{session_cookie:#?}\n  external_login_cookie:{external_login_cookie:#?}\n  token_cookie:{token_cookie:#?}",
+            "Auth sessions set headers: session_cookie:{}, external_login_cookie:{}, token_cookie:{}",
+            session_cookie.is_some(),
+            external_login_cookie.is_some(),
+            token_cookie.is_some()
         );
 
         let session = create_jar(

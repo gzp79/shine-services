@@ -5,6 +5,7 @@ use crate::{
 use chrono::Utc;
 use ring::rand::SystemRandom;
 use shine_infra::{
+    crypto::hash_fingerprint,
     session::SessionKey,
     web::extracts::{ClientFingerprint, SiteInfo},
 };
@@ -28,6 +29,7 @@ where
 
     /// Creates a new session for the given user. This is the only place where the generated raw session key is accessible in the server,
     /// all the other raw keys are provided by the client and are not stored.
+    #[tracing::instrument(level = "debug", skip_all, fields(session_fp = tracing::field::Empty))]
     pub async fn create(
         &self,
         identity: &Identity,
@@ -40,6 +42,7 @@ where
         let fingerprint = fingerprint.to_string();
         let session_key = SessionKey::new_random(&self.random)?;
         let session_key_hash = hash_key(&session_key);
+        tracing::Span::current().record("session_fp", hash_fingerprint(&session_key_hash));
 
         let mut db = self.db.create_context().await?;
         let session = db
@@ -58,6 +61,7 @@ where
 
     #[cfg(test)]
     /// Update the user information of a single session.
+    #[tracing::instrument(level = "debug", skip_all, fields(session_fp = tracing::field::Empty))]
     pub async fn update_user_info(
         &self,
         session_key: &SessionKey,
@@ -66,6 +70,7 @@ where
         is_linked: bool,
     ) -> Result<Option<Session>, SessionError> {
         let session_key_hash = hash_key(session_key);
+        tracing::Span::current().record("session_fp", hash_fingerprint(&session_key_hash));
         let mut db = self.db.create_context().await?;
         db.update_session_user_by_hash(&session_key_hash, identity, roles, is_linked)
             .await
@@ -74,12 +79,13 @@ where
     /// Update the user information in all the session of a user
     /// This is not an atomic operation, if new sessions are created they are not touched, but they should
     /// have the new value already.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn update_all(&self, identity: &Identity, roles: &[String], is_linked: bool) -> Result<(), SessionError> {
         let mut db = self.db.create_context().await?;
 
         let key_hashes = db.find_all_session_hashes_by_user(identity.id).await?;
         for key_hash in key_hashes {
-            log::debug!("Updating session user info for: {key_hash}");
+            log::debug!("Updating session user info for: {}", hash_fingerprint(&key_hash));
             db.update_session_user_by_hash(&key_hash, identity, roles, is_linked)
                 .await?;
         }
@@ -88,25 +94,31 @@ where
     }
 
     /// Get all the active session of the given user.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn find_all(&self, user_id: Uuid) -> Result<Vec<Session>, SessionError> {
         let mut db = self.db.create_context().await?;
         db.find_all_sessions_by_user(user_id).await
     }
 
+    #[tracing::instrument(level = "debug", skip_all, fields(session_fp = tracing::field::Empty))]
     pub async fn find(&self, user_id: Uuid, session_key: &SessionKey) -> Result<Option<Session>, SessionError> {
         let session_key_hash = hash_key(session_key);
+        tracing::Span::current().record("session_fp", hash_fingerprint(&session_key_hash));
         let mut db = self.db.create_context().await?;
         db.find_session_by_hash(user_id, &session_key_hash).await
     }
 
     /// Remove an active session of the given user.
+    #[tracing::instrument(level = "debug", skip_all, fields(session_fp = tracing::field::Empty))]
     pub async fn remove(&self, user_id: Uuid, session_key: &SessionKey) -> Result<(), SessionError> {
         let session_key_hash = hash_key(session_key);
+        tracing::Span::current().record("session_fp", hash_fingerprint(&session_key_hash));
         let mut db = self.db.create_context().await?;
         db.delete_session_by_hash(user_id, &session_key_hash).await
     }
 
     /// Remove all the active session of the given user.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn remove_all(&self, user_id: Uuid) -> Result<(), SessionError> {
         let mut db = self.db.create_context().await?;
         db.delete_all_sessions_by_user(user_id).await
@@ -118,7 +130,7 @@ fn hash_key(key: &SessionKey) -> String {
     // there is no need for a complex hash as key has a big entropy already
     // and it'd be too expensive to invert the hashing.
     let hash = key.key_hash();
-    log::debug!("Hashing session key: {key:?} -> [{hash}]");
+    log::debug!("Hashing session key -> [{}]", hash_fingerprint(&hash));
     hash
 }
 

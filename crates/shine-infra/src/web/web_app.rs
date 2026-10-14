@@ -11,7 +11,7 @@ use crate::{
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
-    http::{header, Method},
+    http::{header, Method, Request},
     routing::Router,
     Extension,
 };
@@ -21,7 +21,7 @@ use std::{env, fmt::Debug, fs, future::Future, net::SocketAddr, time::Duration a
 use tokio::{net::TcpListener, runtime::Runtime, signal, time::sleep};
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
-    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
+    trace::{DefaultOnResponse, TraceLayer},
 };
 use tracing::{instrument, level_filters::LevelFilter, Level};
 use tracing_log::LogTracer;
@@ -181,6 +181,7 @@ fn create_cors_layer(allowed_origins: &[String]) -> Result<CorsLayer, AnyError> 
             Method::OPTIONS,
         ])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
+        .expose_headers([header::HeaderName::from_static(crate::telemetry::TRACE_ID_HEADER)])
         .allow_credentials(true);
     Ok(cors)
 }
@@ -242,8 +243,9 @@ async fn create_web_app<A: WebApplication>(
     } else {
         None
     };
+
     let log_layer = TraceLayer::new_for_http()
-        .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+        .make_span_with(|_: &Request<_>| tracing::Span::current())
         .on_response(DefaultOnResponse::new().level(Level::INFO));
 
     // Register built-in status providers
@@ -287,8 +289,8 @@ async fn create_web_app<A: WebApplication>(
             .layer(tower::util::option_layer(powered_by_layer))
             .layer(SecurityHeaders::default())
             .layer(cors_layer)
-            .layer(telemetry_service.create_layer())
             .layer(log_layer)
+            .layer(telemetry_service.create_layer())
             .with_state(app_state),
         shutdown_hooks,
     ))

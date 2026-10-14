@@ -121,7 +121,7 @@ where
             tracing::Span::none()
         };
         let future = {
-            let _ = span.enter();
+            let _guard = span.enter();
             self.inner.call(req)
         };
         ResponseFuture {
@@ -152,7 +152,7 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let _guard = this.span.enter();
-        let result = ready!(this.inner.poll(cx));
+        let mut result = ready!(this.inner.poll(cx));
 
         if let Some(meters) = this.meters.as_ref() {
             let ep_attribute = [
@@ -170,6 +170,9 @@ where
         }
 
         otel_http::update_span_from_response_or_error(this.span, &result);
+        if let Ok(response) = &mut result {
+            otel_http::add_trace_id_header(this.span, response);
+        }
         Poll::Ready(result)
     }
 }

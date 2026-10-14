@@ -47,6 +47,7 @@ where
     /// Creates the user then delegates token minting and session setup to
     /// `CredentialHandler`. The auth_session must already have its prior state
     /// cleared by the caller.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn register_guest(
         &self,
         auth_session: AuthSession,

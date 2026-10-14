@@ -41,6 +41,7 @@ where
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn logout(
         &self,
         auth_session: AuthSession,
@@ -72,7 +73,7 @@ where
                 false => {
                     log::debug!("Removing remember me token for user, if cookie is present {user_id}");
                     if let Some(token) = auth_session.access().map(|t| t.key.clone()) {
-                        log::debug!("Removing token {token} for user {user_id}");
+                        log::debug!("Removing token for user {user_id}");
                         if let Err(err) = self.token_service.delete(TokenKind::Access, &token).await {
                             return self.page_handler.error(auth_session, err, error_url);
                         }

@@ -47,6 +47,7 @@ where
     ///
     /// Validates that the email in the token matches the user's email and the captcha,
     /// then updates the user's email verification status.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn authenticate_with_email_token(
         &self,
         remember_me: bool,
@@ -118,6 +119,7 @@ where
     ///
     /// Query tokens are single-use and are consumed immediately.
     /// Handles both SingleAccess and EmailAccess token types.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn authenticate_with_query_token(
         &self,
         state: &AppState,
@@ -205,6 +207,7 @@ where
     ///
     /// Header tokens are multi-use Persistent tokens.
     /// Single-access tokens in headers are rejected.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn authenticate_with_header_token(
         &self,
         state: &AppState,
@@ -313,6 +316,7 @@ where
     ///
     /// Cookie tokens are Access tokens that get rotated for security.
     /// Implements token rotation to prevent replay attacks.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn authenticate_with_cookie_token(
         &self,
         state: &AppState,
@@ -436,6 +440,7 @@ where
     ///
     /// Used when the user has a valid session but no access token.
     /// This is the session refresh flow.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn authenticate_with_refresh_session(
         &self,
         state: &AppState,
@@ -487,6 +492,7 @@ where
     /// 2. Authorization header (persistent token)
     /// 3. Cookie token (access token with rotation)
     /// 4. Session refresh (existing session, no token)
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn authenticate_user(
         &self,
         state: &AppState,

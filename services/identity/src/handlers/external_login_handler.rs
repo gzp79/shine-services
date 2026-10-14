@@ -51,6 +51,7 @@ where
     ///
     /// Links an external provider account to an existing authenticated user.
     /// Expects user_session to be present in auth_session.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn complete_external_link(
         &self,
         auth_session: AuthSession,
@@ -87,6 +88,7 @@ where
     ///
     /// Handles both registration (new user) and login (existing linked user).
     /// Creates access token if create_token is true, and establishes user session.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub async fn complete_external_login(
         &self,
         auth_session: AuthSession,
