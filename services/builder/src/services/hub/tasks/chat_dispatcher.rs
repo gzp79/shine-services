@@ -2,7 +2,7 @@ use super::connection_tracker::{spawn_connection_loop_with_wake, ConnectionConsu
 use crate::{
     models::messages::{ChatBatch, ChatComment, HubMessage},
     repositories::chat_comments::StoredChatComment,
-    services::{ChatService, HubService},
+    services::{hub_metrics, ChatService, HubService},
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -10,6 +10,7 @@ use std::{
     time::Duration,
 };
 use tokio::{sync::Notify, task::JoinHandle};
+use tracing::{info_span, Instrument};
 use uuid::Uuid;
 
 /// Max entries read from the stream in a single tick. Bounds the per-tick query and fan-out; a
@@ -65,6 +66,8 @@ impl ChatDispatcher {
 }
 
 impl ConnectionConsumer for ChatDispatcher {
+    const NAME: &'static str = "hub chat dispatch";
+
     async fn on_tick(&mut self, tracker: &ConnectionTracker) {
         self.reconcile(tracker);
 
@@ -91,35 +94,42 @@ impl ConnectionConsumer for ChatDispatcher {
             .map(|entry| (parse_stream_id(&entry.stream_id), entry))
             .collect();
 
-        for (connection_id, cursor) in self.cursors.iter_mut() {
-            let cursor_id = parse_stream_id(cursor);
-            let fresh = batch.iter().filter(|(id, _)| *id > cursor_id);
+        let span = info_span!("chat deliver", hub.comments = batch.len());
+        async {
+            for (connection_id, cursor) in self.cursors.iter_mut() {
+                let cursor_id = parse_stream_id(cursor);
+                let fresh = batch.iter().filter(|(id, _)| *id > cursor_id);
 
-            let mut last_id = None;
-            let comments: Vec<ChatComment> = fresh
-                .map(|(_, entry)| {
-                    last_id = Some(entry.stream_id.clone());
-                    ChatComment {
-                        id: entry.stream_id.clone(),
-                        user_id: entry.user_id,
-                        text: entry.text.clone(),
-                    }
-                })
-                .collect();
-            let Some(last_id) = last_id else {
-                continue;
-            };
+                let mut last_id = None;
+                let comments: Vec<ChatComment> = fresh
+                    .map(|(_, entry)| {
+                        last_id = Some(entry.stream_id.clone());
+                        ChatComment {
+                            id: entry.stream_id.clone(),
+                            user_id: entry.user_id,
+                            text: entry.text.clone(),
+                        }
+                    })
+                    .collect();
+                let Some(last_id) = last_id else {
+                    continue;
+                };
 
-            if let Err(err) = self
-                .hub_service
-                .send_to_connection(*connection_id, HubMessage::Chat(ChatBatch { comments }))
-                .await
-            {
-                log::error!("[{connection_id}] Failed to deliver chat batch: {err:#?}");
-                continue;
+                let delivered = comments.len() as u64;
+                if let Err(err) = self
+                    .hub_service
+                    .send_to_connection(*connection_id, HubMessage::Chat(ChatBatch { comments }))
+                    .await
+                {
+                    log::error!("[{connection_id}] Failed to deliver chat batch: {err:#?}");
+                    continue;
+                }
+                hub_metrics().chat_delivered.add(delivered, &[]);
+                *cursor = last_id;
             }
-            *cursor = last_id;
         }
+        .instrument(span)
+        .await
     }
 }
 

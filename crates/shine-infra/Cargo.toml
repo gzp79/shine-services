@@ -52,7 +52,7 @@ tracing-opentelemetry = { version = "0.34", features = [
 ] }
 tracing-opentelemetry-instrumentation-sdk = "0.42"
 
-opentelemetry = "0.33"
+opentelemetry = { workspace = true }
 opentelemetry-semantic-conventions = "0.33"
 opentelemetry_sdk = { version = "0.33", features = [
     "rt-tokio",

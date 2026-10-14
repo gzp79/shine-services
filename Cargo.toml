@@ -75,6 +75,7 @@ lock_api = "0.4"
 tracing = "0.1"
 tracing-log = "0.2"
 tracing-subscriber = { version = "0.3", default-features = false }
+opentelemetry = "0.33"
 
 ############################# DB #############################
 bb8 = "0.9"

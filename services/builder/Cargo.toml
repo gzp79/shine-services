@@ -22,6 +22,10 @@ futures = { workspace = true }
 futures-channel = { workspace = true }
 tokio = { workspace = true }
 
+############################# TRACING #############################
+tracing = { workspace = true }
+opentelemetry = { workspace = true }
+
 ############################# DB #############################
 bb8 = { workspace = true }
 redis = { workspace = true, features = [

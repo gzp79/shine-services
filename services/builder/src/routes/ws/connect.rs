@@ -2,7 +2,7 @@ use crate::{
     app_state::AppState,
     models::messages::{HubEvent, HubMessage, TopicKey},
     routes::ws::message::{ChatWireComment, WSMessageRequest, WSMessageResponse},
-    services::{ChatService, HubService},
+    services::{hub_metrics, label, ChatService, HubService},
 };
 use axum::{
     extract::{
@@ -21,6 +21,7 @@ use shine_infra::{
     },
 };
 use tokio::sync::mpsc;
+use tracing::{info_span, Instrument, Span};
 
 /// Per-WS-client egress buffer capacity. A client that lets this many broadcast messages queue
 /// without draining them is considered too slow, and the hub drops its subscription — closing the
@@ -63,7 +64,8 @@ pub async fn connect(
 
     let hub_service = state.hub_service().clone();
     let chat_service = state.chat_service().clone();
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, hub_service, chat_service)))
+    let request_span_id = Span::current().id();
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, hub_service, chat_service, request_span_id)))
 }
 
 fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
@@ -84,7 +86,15 @@ fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
     }
 }
 
-async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubService, chat_service: ChatService) {
+/// The socket may live for hours, so no span is kept open for the connection. The short lived `ws open`, `ws message`
+/// and `ws close` spans are separate traces, `ws open` is linked to the upgrade request.
+async fn handle_socket(
+    socket: WebSocket,
+    user: CurrentUser,
+    hub_service: HubService,
+    chat_service: ChatService,
+    request_span_id: Option<tracing::Id>,
+) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let current_user_id = user.user_id;
 
@@ -92,7 +102,11 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubSer
 
     // Register the connection now that the upgrade has completed. If registration fails there is no
     // live connection to keep, so close the socket without emitting a disconnect for it.
-    let connection_id = match hub_service.request_connection(current_user_id, user.key, tx, vec![TopicKey::Hub]) {
+    let open_span = info_span!(parent: None, "ws open", enduser.id = %current_user_id);
+    open_span.follows_from(request_span_id);
+    let connection_id = match open_span
+        .in_scope(|| hub_service.request_connection(current_user_id, user.key, tx, vec![TopicKey::Hub]))
+    {
         Ok(connection_id) => connection_id,
         Err(err) => {
             log::error!("[{current_user_id}] Failed to register connection: {err:#?}");
@@ -103,6 +117,8 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubSer
         }
     };
 
+    // end the span, the connection itself is not traced
+    drop(open_span);
     log::info!("[{current_user_id}] Connected to the hub");
 
     let mut recv_task = {
@@ -113,13 +129,31 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubSer
                     let msg = match serde_json::from_str::<WSMessageRequest>(&text) {
                         Ok(WSMessageRequest::Chat { text }) => Some(text),
                         Err(_) => {
+                            hub_metrics()
+                                .ws_messages_received
+                                .add(1, &[label("kind", "unknown"), label("outcome", "invalid")]);
                             log::error!("[{current_user_id}] Received invalid message: {text}");
                             None
                         }
                     };
 
                     if let Some(text) = msg {
-                        if let Err(err) = chat_service.append_comment(current_user_id, &text).await {
+                        let span = info_span!(
+                            parent: None,
+                            "ws message",
+                            enduser.id = %current_user_id,
+                            ws.connection_id = %connection_id,
+                            ws.message.kind = "chat"
+                        );
+                        let appended = chat_service
+                            .append_comment(current_user_id, &text)
+                            .instrument(span)
+                            .await;
+                        let outcome = if appended.is_ok() { "ok" } else { "append_failed" };
+                        hub_metrics()
+                            .ws_messages_received
+                            .add(1, &[label("kind", "chat"), label("outcome", outcome)]);
+                        if let Err(err) = appended {
                             log::error!("[{current_user_id}] Failed to append chat message: {err:#?}");
                         }
                     }
@@ -176,7 +210,9 @@ async fn handle_socket(socket: WebSocket, user: CurrentUser, hub_service: HubSer
     }
 
     log::info!("{current_user_id}] Disconnecting from hub");
-    if let Err(err) = hub_service.request_disconnection(current_user_id, connection_id) {
+    let close_span =
+        info_span!(parent: None, "ws close", enduser.id = %current_user_id, ws.connection_id = %connection_id);
+    if let Err(err) = close_span.in_scope(|| hub_service.request_disconnection(current_user_id, connection_id)) {
         log::error!("[{current_user_id}] Failed to send disconnect command: {err:#?}");
     }
 }

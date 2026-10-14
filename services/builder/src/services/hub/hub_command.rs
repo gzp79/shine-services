@@ -25,3 +25,16 @@ pub enum ControlCommand {
     },
     Shutdown,
 }
+
+impl ControlCommand {
+    /// Short name for tracing.
+    pub fn name(&self) -> &'static str {
+        match self {
+            ControlCommand::ConnectUser { .. } => "connect_user",
+            ControlCommand::DisconnectUser { .. } => "disconnect_user",
+            ControlCommand::DropConnection { .. } => "drop_connection",
+            ControlCommand::HubRegistryChanged { .. } => "hub_registry_changed",
+            ControlCommand::Shutdown => "shutdown",
+        }
+    }
+}

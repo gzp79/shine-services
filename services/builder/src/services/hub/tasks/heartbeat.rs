@@ -1,5 +1,8 @@
 use super::connection_tracker::{spawn_connection_loop, ConnectionConsumer, ConnectionTracker};
-use crate::{repositories::hub_registry::HubConnection, services::HubService};
+use crate::{
+    repositories::hub_registry::HubConnection,
+    services::{hub_metrics, label, HubService},
+};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
@@ -18,6 +21,8 @@ impl Heartbeat {
 }
 
 impl ConnectionConsumer for Heartbeat {
+    const NAME: &'static str = "hub heartbeat";
+
     async fn on_tick(&mut self, tracker: &ConnectionTracker) {
         let connections: Vec<HubConnection> = tracker
             .connections()
@@ -44,6 +49,9 @@ impl ConnectionConsumer for Heartbeat {
 
         for HubConnection { user_id, connection_id } in stale {
             log::info!("[{user_id}] heartbeat-found-inactive; requesting hub disconnect");
+            hub_metrics()
+                .connections_dropped
+                .add(1, &[label("reason", "heartbeat_inactive")]);
             if let Err(err) = self.hub_service.request_disconnection(user_id, connection_id) {
                 log::error!("[{user_id}] Failed to send heartbeat disconnect command: {err:#?}");
             }

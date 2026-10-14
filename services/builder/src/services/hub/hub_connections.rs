@@ -1,7 +1,13 @@
-use crate::models::messages::{HubMessage, ToTopic, TopicKey};
+use crate::{
+    models::messages::{HubMessage, ToTopic, TopicKey},
+    services::hub::hub_metrics::{hub_metrics, label},
+};
 use shine_infra::session::SessionKey;
 use std::collections::HashMap;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{
+    mpsc::{self, error::TrySendError},
+    RwLock,
+};
 use uuid::Uuid;
 
 struct Connection {
@@ -16,6 +22,23 @@ struct Registry {
     users: HashMap<Uuid, Uuid>,
     /// connection_id → the connection's channel and topics.
     connections: HashMap<Uuid, Connection>,
+}
+
+/// Non-blocking send to a connection, recording the outcome. Returns false when the connection is dead.
+fn try_send(tx: &mpsc::Sender<HubMessage>, message: HubMessage) -> bool {
+    let kind = match &message {
+        HubMessage::Hub(_) => "hub",
+        HubMessage::Chat(_) => "chat",
+    };
+    let (outcome, ok) = match tx.try_send(message) {
+        Ok(()) => ("ok", true),
+        Err(TrySendError::Full(_)) => ("full", false),
+        Err(TrySendError::Closed(_)) => ("closed", false),
+    };
+    hub_metrics()
+        .messages_sent
+        .add(1, &[label("kind", kind), label("outcome", outcome)]);
+    ok
 }
 
 /// The registry of addressable, live user connections.
@@ -40,9 +63,12 @@ impl Connections {
     ) {
         let mut registry = self.registry.write().await;
         registry.users.insert(user_id, connection_id);
-        registry
+        let replaced = registry
             .connections
             .insert(connection_id, Connection { session_key, tx, topics });
+        if replaced.is_none() {
+            hub_metrics().connections.add(1, &[]);
+        }
     }
 
     /// Removes a user's connection, returning the removed connection id.
@@ -54,7 +80,9 @@ impl Connections {
             }
         }
         let removed = registry.users.remove(&user_id)?;
-        registry.connections.remove(&removed);
+        if registry.connections.remove(&removed).is_some() {
+            hub_metrics().connections.add(-1, &[]);
+        }
         Some(removed)
     }
 
@@ -67,7 +95,9 @@ impl Connections {
             .find(|(_, cid)| **cid == connection_id)
             .map(|(u, _)| *u)?;
         registry.users.remove(&user_id);
-        registry.connections.remove(&connection_id);
+        if registry.connections.remove(&connection_id).is_some() {
+            hub_metrics().connections.add(-1, &[]);
+        }
         Some((user_id, connection_id))
     }
 
@@ -85,9 +115,9 @@ impl Connections {
         let Some(data) = registry.connections.get(&connection_id) else {
             return Ok(());
         };
-        match data.tx.try_send(message) {
-            Ok(()) => Ok(()),
-            Err(_) => Err(connection_id),
+        match try_send(&data.tx, message) {
+            true => Ok(()),
+            false => Err(connection_id),
         }
     }
 
@@ -101,9 +131,9 @@ impl Connections {
         let Some(data) = registry.connections.get(&connection_id) else {
             return Ok(());
         };
-        match data.tx.try_send(message) {
-            Ok(()) => Ok(()),
-            Err(_) => Err(connection_id),
+        match try_send(&data.tx, message) {
+            true => Ok(()),
+            false => Err(connection_id),
         }
     }
 
@@ -117,7 +147,7 @@ impl Connections {
             if !data.topics.contains(&topic) {
                 continue;
             }
-            if data.tx.try_send(message.clone()).is_err() {
+            if !try_send(&data.tx, message.clone()) {
                 dead.push(*connection_id);
             }
         }

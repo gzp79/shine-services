@@ -1,6 +1,9 @@
 use crate::{
     models::messages::{HubEvent, HubMessage, TopicKey},
-    services::HubService,
+    services::{
+        hub::hub_metrics::{hub_metrics, label},
+        HubService,
+    },
 };
 use shine_infra::session::SessionKey;
 use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
@@ -9,6 +12,7 @@ use tokio::{
     task::JoinHandle,
     time,
 };
+use tracing::{info_span, Instrument};
 use uuid::Uuid;
 
 pub type TrackedConnection = (Uuid, SessionKey);
@@ -55,6 +59,9 @@ impl ConnectionTracker {
 
 /// A periodic consumer of the connection view, providing only the per-tick work.
 pub trait ConnectionConsumer: Send + 'static {
+    /// Name of the consumer, used for the span of each tick.
+    const NAME: &'static str;
+
     fn on_tick(&mut self, tracker: &ConnectionTracker) -> impl Future<Output = ()> + Send;
 }
 
@@ -81,6 +88,20 @@ pub async fn spawn_connection_loop_with_wake<C: ConnectionConsumer>(
 ) -> JoinHandle<()> {
     let subscription = service.subscribe(vec![TopicKey::Hub]).await;
     tokio::spawn(run_connection_loop(subscription, interval, Some(wake), consumer))
+}
+
+/// Every tick is a trace of its own, named after the consumer, so the work of the background tasks is not orphaned.
+fn tick_span<C: ConnectionConsumer>() -> tracing::Span {
+    info_span!(parent: None, "hub tick", otel.name = C::NAME)
+}
+
+/// Runs a single tick in its own span and measures its duration.
+async fn run_tick<C: ConnectionConsumer>(consumer: &mut C, tracker: &ConnectionTracker) {
+    let start = std::time::Instant::now();
+    consumer.on_tick(tracker).instrument(tick_span::<C>()).await;
+    hub_metrics()
+        .tick_duration
+        .record(start.elapsed().as_secs_f64(), &[label("consumer", C::NAME)]);
 }
 
 /// Drives a self-contained loop that event-sources its own [`ConnectionTracker`] from
@@ -114,10 +135,10 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
             // live connection expire.
             biased;
             _ = ticker.tick() => {
-                consumer.on_tick(&tracker).await;
+                run_tick(&mut consumer, &tracker).await;
             }
             _ = woken => {
-                consumer.on_tick(&tracker).await;
+                run_tick(&mut consumer, &tracker).await;
             }
             message = subscription.recv() => match message {
                 Some(message) => {
@@ -152,6 +173,8 @@ mod tests {
     }
 
     impl ConnectionConsumer for Probe {
+        const NAME: &'static str = "probe";
+
         async fn on_tick(&mut self, tracker: &ConnectionTracker) {
             let _ = self.tx.send(tracker.connections().len());
         }

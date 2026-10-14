@@ -1,7 +1,7 @@
 use crate::{
     db::{
         redis::{RedisError, RedisListener},
-        CnsParamError,
+        time_db_operation, CnsParamError,
     },
     health::StatusProvider,
 };
@@ -65,7 +65,11 @@ impl ConnectionLike for RedisConnection {
             otel.kind = "client",
             db.system = "redis",
         );
-        Box::pin(self.client.req_packed_command(cmd).instrument(span))
+        Box::pin(time_db_operation(
+            "redis",
+            redis_command_name(cmd),
+            self.client.req_packed_command(cmd).instrument(span),
+        ))
     }
 
     fn req_packed_commands<'a>(
@@ -81,7 +85,11 @@ impl ConnectionLike for RedisConnection {
             otel.kind = "client",
             db.system = "redis",
         );
-        Box::pin(self.client.req_packed_commands(cmd, offset, count).instrument(span))
+        Box::pin(time_db_operation(
+            "redis",
+            "PIPELINE",
+            self.client.req_packed_commands(cmd, offset, count).instrument(span),
+        ))
     }
 
     fn get_db(&self) -> i64 {
