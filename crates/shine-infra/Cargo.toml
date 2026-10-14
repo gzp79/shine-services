@@ -46,25 +46,25 @@ tracing = { workspace = true }
 tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["std", "registry", "env-filter", "fmt", "ansi", "json"] }
 
-tracing-opentelemetry = { version = "0.33", features = [
+tracing-opentelemetry = { version = "0.34", features = [
     "metrics",
     "tracing-log",
 ] }
-tracing-opentelemetry-instrumentation-sdk = "0.38"
+tracing-opentelemetry-instrumentation-sdk = "0.42"
 
-opentelemetry = "0.32"
-opentelemetry-semantic-conventions = "0.32"
-opentelemetry_sdk = { version = "0.32", features = [
+opentelemetry = "0.33"
+opentelemetry-semantic-conventions = "0.33"
+opentelemetry_sdk = { version = "0.33", features = [
     "rt-tokio",
     "metrics",
     "trace",
 ] }
-opentelemetry-stdout = { version = "0.32", features = ["logs", "trace"] }
-opentelemetry-otlp = { version = "0.32", features = [
+opentelemetry-stdout = { version = "0.33", features = ["logs", "trace"] }
+opentelemetry-otlp = { version = "0.33", features = [
     "tokio",
     "grpc-tonic",
 ], optional = true }
-opentelemetry-application-insights = { version = "0.45", optional = true }
+opentelemetry-application-insights = { version = "0.46", optional = true }
 
 
 ############################# DB #############################

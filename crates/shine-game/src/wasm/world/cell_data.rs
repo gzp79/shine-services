@@ -23,7 +23,7 @@ pub enum CornerSide {
 #[wasm_bindgen(js_name = "InnerCells")]
 pub struct WasmInnerCells(InnerCells);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = "InnerCells")]
 impl WasmInnerCells {
     /// Whether the source chunk is unchanged; `false` means every accessor returns `undefined`.
     pub fn valid(&self) -> bool {
@@ -57,7 +57,7 @@ impl From<InnerCells> for WasmInnerCells {
 #[wasm_bindgen(js_name = "EdgeCells")]
 pub struct WasmEdgeCells(EdgeCells);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = "EdgeCells")]
 impl WasmEdgeCells {
     /// Whether the source chunk is unchanged; `false` means every accessor returns `undefined`.
     pub fn valid(&self) -> bool {
@@ -91,7 +91,7 @@ impl From<EdgeCells> for WasmEdgeCells {
 #[wasm_bindgen(js_name = "CornerCells")]
 pub struct WasmCornerCells(CornerCells);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = "CornerCells")]
 impl WasmCornerCells {
     /// Whether the source chunk is unchanged; `false` means every accessor returns `undefined`.
     pub fn valid(&self) -> bool {
@@ -125,7 +125,7 @@ impl From<CornerCells> for WasmCornerCells {
 #[wasm_bindgen(js_name = "TileGeometries")]
 pub struct WasmTileGeometries(TileGeometries);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = "TileGeometries")]
 impl WasmTileGeometries {
     /// Whether the source chunk is unchanged; `false` means every accessor returns `undefined`.
     pub fn valid(&self) -> bool {

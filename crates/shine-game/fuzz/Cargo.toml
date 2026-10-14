@@ -10,7 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }
-glam = { version = "0.32" }
+glam = { version = "0.34" }
 
 [dependencies.shine-game]
 path = ".."

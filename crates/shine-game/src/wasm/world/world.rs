@@ -43,7 +43,7 @@ pub struct WasmWorld {
     world: World,
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = "World")]
 impl WasmWorld {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
