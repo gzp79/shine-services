@@ -1,7 +1,6 @@
 use opentelemetry::{
     global,
     metrics::{Counter, Histogram, UpDownCounter},
-    KeyValue,
 };
 use std::sync::LazyLock;
 
@@ -81,8 +80,4 @@ impl HubMetrics {
                 .build(),
         }
     }
-}
-
-pub fn label(key: &'static str, value: &'static str) -> KeyValue {
-    KeyValue::new(key, value)
 }

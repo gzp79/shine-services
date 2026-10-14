@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 use tokio::{sync::Notify, task::JoinHandle};
-use tracing::{debug_span, Instrument};
+use tracing::{trace_span, Instrument};
 use uuid::Uuid;
 
 /// Max entries read from the stream in a single tick. Bounds the per-tick query and fan-out; a
@@ -68,7 +68,7 @@ impl ChatDispatcher {
 impl ConnectionConsumer for ChatDispatcher {
     const NAME: &'static str = "hub chat dispatch";
 
-    #[tracing::instrument(level = "debug", name = "hub chat dispatch", parent = None, skip_all)]
+    #[tracing::instrument(level = "trace", name = "hub chat dispatch", skip_all)]
     async fn on_tick(&mut self, tracker: &ConnectionTracker) {
         self.reconcile(tracker);
 
@@ -95,7 +95,7 @@ impl ConnectionConsumer for ChatDispatcher {
             .map(|entry| (parse_stream_id(&entry.stream_id), entry))
             .collect();
 
-        let span = debug_span!("chat deliver", hub.comments = batch.len());
+        let span = trace_span!("chat deliver", hub.comments = batch.len());
         async {
             for (connection_id, cursor) in self.cursors.iter_mut() {
                 let cursor_id = parse_stream_id(cursor);

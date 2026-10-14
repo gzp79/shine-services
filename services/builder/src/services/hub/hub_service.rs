@@ -1,4 +1,4 @@
-use crate::services::hub::hub_metrics::{hub_metrics, label};
+use crate::services::hub::hub_metrics::hub_metrics;
 use crate::{
     models::{
         messages::{HubEvent, HubMessage, TopicKey},
@@ -17,7 +17,7 @@ use crate::{
 };
 use opentelemetry::trace::SpanContext;
 use shine_infra::session::{CurrentUserService, SessionKey};
-use shine_infra::telemetry::{current_span_context, link_span};
+use shine_infra::telemetry::{current_span_context, label, link_span};
 use std::collections::VecDeque;
 use std::time::Instant;
 use std::{sync::Arc, time::Duration};

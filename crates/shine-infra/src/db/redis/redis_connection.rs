@@ -1,16 +1,18 @@
 use crate::{
     db::{
-        redis::{RedisError, RedisListener},
+        redis::{
+            redis_commands::{assert_not_blocking, redis_command_name},
+            RedisError, RedisListener,
+        },
         time_db_operation, CnsParamError,
     },
     health::StatusProvider,
 };
 use async_trait::async_trait;
 use bb8::{ManageConnection, Pool as BB8Pool, PooledConnection, RunError};
-use opentelemetry::StringValue;
 use redis::{
     aio::{ConnectionLike, MultiplexedConnection},
-    Arg, AsyncConnectionConfig, Client, Cmd, ErrorKind, Pipeline, RedisFuture, Value,
+    AsyncConnectionConfig, Client, Cmd, ErrorKind, Pipeline, RedisFuture, Value,
 };
 use std::{
     ops::{Deref, DerefMut},
@@ -50,44 +52,17 @@ impl RedisConnection {
     }
 }
 
-fn redis_command_name(cmd: &Cmd) -> StringValue {
-    match cmd.args_iter().next() {
-        Some(Arg::Simple(name)) => {
-            std::str::from_utf8(name).map_or_else(|_| "UNKNOWN".into(), |name| name.to_ascii_uppercase().into())
-        }
-        _ => "UNKNOWN".into(),
-    }
-}
-
-/// Commands that (may) park on the server until data arrives. Not supported: they would stall every other
-/// command on the shared multiplexed connection, and their duration would be recorded as db latency.
-fn assert_not_blocking(name: &str) {
-    if matches!(
-        name,
-        "BLPOP"
-            | "BRPOP"
-            | "BRPOPLPUSH"
-            | "BLMOVE"
-            | "BLMPOP"
-            | "BZPOPMIN"
-            | "BZPOPMAX"
-            | "BZMPOP"
-            | "XREAD"
-            | "XREADGROUP"
-    ) {
-        panic!("Blocking redis command {name} is not supported on pooled connections, use a dedicated connection with its own instrumentation");
-    }
-}
-
 impl ConnectionLike for RedisConnection {
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
         let name = redis_command_name(cmd);
-        assert_not_blocking(name.as_str());
-        let span = tracing::trace_span!(
+        assert_not_blocking(name);
+        let span = tracing::debug_span!(
             "redis",
-            otel.name = name.as_str(),
+            otel.name = name,
             otel.kind = "client",
-            db.system = "redis"
+            db.system = "redis",
+            db.operation.name = name,
+            db.query.text = name,
         );
         Box::pin(time_db_operation(
             "redis",
@@ -102,12 +77,24 @@ impl ConnectionLike for RedisConnection {
         offset: usize,
         count: usize,
     ) -> RedisFuture<'a, Vec<Value>> {
-        let span = tracing::trace_span!(
+        let names: Vec<&'static str> = cmd.cmd_iter().map(redis_command_name).collect();
+        for name in &names {
+            assert_not_blocking(name);
+        }
+        let span = tracing::debug_span!(
             "redis",
             otel.name = "PIPELINE",
             otel.kind = "client",
             db.system = "redis",
+            db.operation.name = "PIPELINE",
+            db.operation.batch.size = names.len(),
+            db.query.text = tracing::field::Empty,
         );
+        // Command names only: arguments carry keys and user data.
+        if !span.is_disabled() {
+            let text = names.join("; ");
+            span.record("db.query.text", text);
+        }
         Box::pin(time_db_operation(
             "redis",
             "PIPELINE",

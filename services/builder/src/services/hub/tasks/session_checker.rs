@@ -29,7 +29,7 @@ impl SessionChecker {
 impl ConnectionConsumer for SessionChecker {
     const NAME: &'static str = "hub session check";
 
-    #[tracing::instrument(level = "info", name = "hub session check", parent = None, skip_all)]
+    #[tracing::instrument(level = "debug", name = "hub session check", skip_all)]
     async fn on_tick(&mut self, tracker: &ConnectionTracker) {
         for (user_id, (connection_id, session_key)) in tracker.connections().iter().map(|(u, c)| (*u, *c)) {
             match self.session_service.get_current_user(user_id, session_key).await {

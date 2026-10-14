@@ -20,7 +20,7 @@ impl Heartbeat {
 impl ConnectionConsumer for Heartbeat {
     const NAME: &'static str = "hub heartbeat";
 
-    #[tracing::instrument(level = "info", name = "hub heartbeat", parent = None, skip_all)]
+    #[tracing::instrument(level = "debug", name = "hub heartbeat", skip_all)]
     async fn on_tick(&mut self, tracker: &ConnectionTracker) {
         let connections: Vec<HubConnection> = tracker
             .connections()

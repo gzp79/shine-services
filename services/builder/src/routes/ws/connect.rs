@@ -2,7 +2,7 @@ use crate::{
     app_state::AppState,
     models::messages::{HubEvent, HubMessage, TopicKey},
     routes::ws::message::{ChatWireComment, WSMessageRequest, WSMessageResponse},
-    services::{hub_metrics, label, ChatService, HubService},
+    services::{hub_metrics, ChatService, HubService},
 };
 use axum::{
     extract::{
@@ -15,6 +15,7 @@ use axum::{
 use futures::{SinkExt, StreamExt};
 use shine_infra::{
     session::{CheckedCurrentUser, CurrentUser},
+    telemetry::label,
     web::{
         extracts::{Origin, TargetHost},
         responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},

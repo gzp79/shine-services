@@ -1,3 +1,4 @@
+mod redis_commands;
 mod redis_connection;
 mod redis_error;
 mod redis_listener;

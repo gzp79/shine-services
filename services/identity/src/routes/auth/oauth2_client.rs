@@ -133,13 +133,11 @@ impl OAuth2Client {
 
         let name_id = id_mapping.get("name").map(|s| s.as_str()).unwrap_or("name");
         let name = user_info.get(name_id).and_then(|v| v.as_str()).map(ToOwned::to_owned);
-        log::debug!("{name_id} - {name:?}");
         let email_id = id_mapping.get("email").map(|s| s.as_str()).unwrap_or("email");
         let email = user_info
             .get(email_id)
             .and_then(|v| v.as_str())
             .and_then(|e| Email::new(e).ok());
-        log::debug!("{email_id} - {email:?}");
 
         let mut external_user_info = ExternalUserInfo {
             provider: provider.to_string(),

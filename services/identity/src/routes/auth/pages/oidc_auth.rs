@@ -77,8 +77,6 @@ pub async fn oidc_auth(
         return page;
     }
 
-    log::debug!("Query: {query:#?}");
-
     // 5. Business logic - OIDC authentication
     let auth_code = AuthorizationCode::new(query.code);
     let auth_csrf_state = query.state;

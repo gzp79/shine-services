@@ -1,8 +1,8 @@
 use crate::{
     models::messages::{HubMessage, ToTopic, TopicKey},
-    services::hub::hub_metrics::{hub_metrics, label},
+    services::hub::hub_metrics::hub_metrics,
 };
-use shine_infra::session::SessionKey;
+use shine_infra::{session::SessionKey, telemetry::label};
 use std::collections::HashMap;
 use tokio::sync::{
     mpsc::{self, error::TrySendError},

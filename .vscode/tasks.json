@@ -129,7 +129,8 @@
           "SHINE--TELEMETRY--METRICS--TYPE": "otlp",
           "SHINE--TELEMETRY--METRICS--ENDPOINT": "http://localhost:4317",
           "SHINE--TELEMETRY--TRACING--TYPE": "otlp",
-          "SHINE--TELEMETRY--TRACING--ENDPOINT": "http://localhost:4317"
+          "SHINE--TELEMETRY--TRACING--ENDPOINT": "http://localhost:4317",
+          "SHINE--TELEMETRY--DEFAULT_LEVEL": "INFO,shine=DEBUG"
         }
       },
       "problemMatcher": ["$rustc"],
@@ -164,7 +165,8 @@
           "SHINE--TELEMETRY--METRICS--TYPE": "otlp",
           "SHINE--TELEMETRY--METRICS--ENDPOINT": "http://localhost:4317",
           "SHINE--TELEMETRY--TRACING--TYPE": "otlp",
-          "SHINE--TELEMETRY--TRACING--ENDPOINT": "http://localhost:4317"
+          "SHINE--TELEMETRY--TRACING--ENDPOINT": "http://localhost:4317",
+          "SHINE--TELEMETRY--DEFAULT_LEVEL": "INFO,shine=DEBUG"
         }
       },
       "problemMatcher": ["$rustc"],

@@ -24,12 +24,11 @@ pub use self::{
 #[doc(hidden)]
 pub use tracing as __tracing;
 
-/// Create a trace-level span for a SQL command, parented to the current (repository) span.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __pg_span {
     ($id:ident, $op:literal, $stmt:expr) => {
-        $crate::db::postgres::__tracing::trace_span!(
+        $crate::db::postgres::__tracing::debug_span!(
             "pg",
             otel.name = concat!(stringify!($id), "::", $op),
             otel.kind = "client",
@@ -40,7 +39,6 @@ macro_rules! __pg_span {
     };
 }
 
-/// Run a SQL command in a trace-level span and record its duration.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __pg_traced {

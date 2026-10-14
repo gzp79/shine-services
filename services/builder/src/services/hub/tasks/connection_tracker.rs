@@ -1,11 +1,8 @@
 use crate::{
     models::messages::{HubEvent, HubMessage, TopicKey},
-    services::{
-        hub::hub_metrics::{hub_metrics, label},
-        HubService,
-    },
+    services::{hub::hub_metrics::hub_metrics, HubService},
 };
-use shine_infra::session::SessionKey;
+use shine_infra::{session::SessionKey, telemetry::label};
 use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, Notify},

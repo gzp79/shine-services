@@ -64,7 +64,7 @@ impl AppConfig {
     }
 
     fn default_auth_check_interval() -> u64 {
-        60
+        1
     }
 }
 

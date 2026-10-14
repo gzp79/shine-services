@@ -7,4 +7,5 @@ ${env:SHINE--TELEMETRY--METRICS--TYPE} = "otlp"
 ${env:SHINE--TELEMETRY--METRICS--ENDPOINT} = "http://localhost:4317"
 ${env:SHINE--TELEMETRY--TRACING--TYPE} = "otlp"
 ${env:SHINE--TELEMETRY--TRACING--ENDPOINT} = "http://localhost:4317"
+${env:SHINE--TELEMETRY--DEFAULT_LEVEL} = "INFO,shine=DEBUG"
 cargo run -p shine-identity --release -- test
