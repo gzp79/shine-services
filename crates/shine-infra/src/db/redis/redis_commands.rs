@@ -61,6 +61,10 @@ const KNOWN_COMMANDS: &[&str] = &[
     "XTRIM",
     "XLEN",
     "PUBLISH",
+    "WATCH",
+    "UNWATCH",
+    "MULTI",
+    "EXEC",
     "EVAL",
     "EVALSHA",
     "SCRIPT",
@@ -80,8 +84,12 @@ pub fn redis_command_name(cmd: &Cmd) -> &'static str {
         .unwrap_or("OTHER")
 }
 
+fn is_blocking(name: &str) -> bool {
+    BLOCKING_COMMANDS.contains(&name)
+}
+
 pub fn assert_not_blocking(name: &str) {
-    if BLOCKING_COMMANDS.contains(&name) {
+    if is_blocking(name) {
         panic!("Blocking redis command {name} is not supported on pooled connections, use a dedicated connection with its own instrumentation");
     }
 }
@@ -99,8 +107,8 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Blocking redis command BLPOP")]
-    fn blocking_command_is_rejected() {
-        assert_not_blocking(redis_command_name(&redis::cmd("blpop")));
+    fn blocking_commands_are_detected() {
+        assert!(is_blocking(redis_command_name(&redis::cmd("blpop"))));
+        assert!(!is_blocking(redis_command_name(&redis::cmd("get"))));
     }
 }

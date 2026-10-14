@@ -24,21 +24,28 @@ struct Registry {
     connections: HashMap<Uuid, Connection>,
 }
 
-/// Non-blocking send to a connection, recording the outcome. Returns false when the connection is dead.
-fn try_send(tx: &mpsc::Sender<HubMessage>, message: HubMessage) -> bool {
+/// A connection found dead during a send.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeadConnection {
+    pub connection_id: Uuid,
+    pub reason: &'static str,
+}
+
+/// Non-blocking send to a connection, recording the outcome. `Err` carries the drop reason of a dead connection.
+fn try_send(tx: &mpsc::Sender<HubMessage>, message: HubMessage) -> Result<(), &'static str> {
     let kind = match &message {
         HubMessage::Hub(_) => "hub",
         HubMessage::Chat(_) => "chat",
     };
-    let (outcome, ok) = match tx.try_send(message) {
-        Ok(()) => ("ok", true),
-        Err(TrySendError::Full(_)) => ("full", false),
-        Err(TrySendError::Closed(_)) => ("closed", false),
+    let (outcome, result) = match tx.try_send(message) {
+        Ok(()) => ("ok", Ok(())),
+        Err(TrySendError::Full(_)) => ("full", Err("slow_consumer")),
+        Err(TrySendError::Closed(_)) => ("closed", Err("dead_channel")),
     };
     hub_metrics()
         .messages_sent
         .add(1, &[label("kind", kind), label("outcome", outcome)]);
-    ok
+    result
 }
 
 /// The registry of addressable, live user connections.
@@ -109,21 +116,18 @@ impl Connections {
         Some((connection_id, data.session_key))
     }
 
-    /// Sends a message to one connection. `Err` carries the id of a dead connection to prune.
-    pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<(), Uuid> {
+    /// Sends a message to one connection. `Err` carries the dead connection to prune.
+    pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<(), DeadConnection> {
         let registry = self.registry.read().await;
         let Some(data) = registry.connections.get(&connection_id) else {
             return Ok(());
         };
-        match try_send(&data.tx, message) {
-            true => Ok(()),
-            false => Err(connection_id),
-        }
+        try_send(&data.tx, message).map_err(|reason| DeadConnection { connection_id, reason })
     }
 
-    /// Sends a message to the user's active connection. `Err` carries the id of a dead connection to prune.
+    /// Sends a message to the user's active connection. `Err` carries the dead connection to prune.
     #[allow(dead_code)]
-    pub async fn send_to_user(&self, user_id: Uuid, message: HubMessage) -> Result<(), Uuid> {
+    pub async fn send_to_user(&self, user_id: Uuid, message: HubMessage) -> Result<(), DeadConnection> {
         let registry = self.registry.read().await;
         let Some(&connection_id) = registry.users.get(&user_id) else {
             return Ok(());
@@ -131,14 +135,11 @@ impl Connections {
         let Some(data) = registry.connections.get(&connection_id) else {
             return Ok(());
         };
-        match try_send(&data.tx, message) {
-            true => Ok(()),
-            false => Err(connection_id),
-        }
+        try_send(&data.tx, message).map_err(|reason| DeadConnection { connection_id, reason })
     }
 
-    /// Broadcasts a message to every topic-matching connection. `Err` carries the ids of dead connections to prune.
-    pub async fn broadcast(&self, message: HubMessage) -> Result<(), Vec<Uuid>> {
+    /// Broadcasts a message to every topic-matching connection. `Err` carries the dead connections to prune.
+    pub async fn broadcast(&self, message: HubMessage) -> Result<(), Vec<DeadConnection>> {
         let topic = message.topic();
         let mut dead = Vec::new();
 
@@ -147,8 +148,11 @@ impl Connections {
             if !data.topics.contains(&topic) {
                 continue;
             }
-            if !try_send(&data.tx, message.clone()) {
-                dead.push(*connection_id);
+            if let Err(reason) = try_send(&data.tx, message.clone()) {
+                dead.push(DeadConnection {
+                    connection_id: *connection_id,
+                    reason,
+                });
             }
         }
 
@@ -221,8 +225,13 @@ mod tests {
             .await;
 
         assert!(users.send_to_connection(conn_id, chat("1")).await.is_ok()); // fills capacity 1
-        assert_eq!(users.send_to_connection(conn_id, chat("2")).await, Err(conn_id));
-        // full → dead
+        assert_eq!(
+            users.send_to_connection(conn_id, chat("2")).await,
+            Err(DeadConnection {
+                connection_id: conn_id,
+                reason: "slow_consumer"
+            })
+        );
     }
 
     #[test]
@@ -234,7 +243,13 @@ mod tests {
             .register_connection(Uuid::new_v4(), conn_id, key(), tx, vec![TopicKey::Chat])
             .await;
         drop(rx);
-        assert_eq!(users.send_to_connection(conn_id, chat("1")).await, Err(conn_id));
+        assert_eq!(
+            users.send_to_connection(conn_id, chat("1")).await,
+            Err(DeadConnection {
+                connection_id: conn_id,
+                reason: "dead_channel"
+            })
+        );
     }
 
     #[test]

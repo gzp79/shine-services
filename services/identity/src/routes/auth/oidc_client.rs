@@ -101,7 +101,7 @@ impl OIDCUserInfoExtractor for CoreClient {
         }
         .normalized();
 
-        log::info!("Extracted external user info: {external_user_info:#?}");
+        log::trace!("Extracted external user info: {external_user_info:#?}");
 
         Ok(external_user_info)
     }

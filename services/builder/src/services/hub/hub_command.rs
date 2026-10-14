@@ -20,6 +20,7 @@ pub enum ControlCommand {
     },
     DropConnection {
         connection_id: Uuid,
+        reason: &'static str,
     },
     HubRegistryChanged {
         user_id: Uuid,
@@ -54,7 +55,7 @@ impl ControlCommand {
         match self {
             ControlCommand::ConnectUser { connection_id, .. }
             | ControlCommand::DisconnectUser { connection_id, .. }
-            | ControlCommand::DropConnection { connection_id } => Some(*connection_id),
+            | ControlCommand::DropConnection { connection_id, .. } => Some(*connection_id),
             ControlCommand::HubRegistryChanged { .. } | ControlCommand::Shutdown => None,
         }
     }

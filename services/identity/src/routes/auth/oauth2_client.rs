@@ -118,7 +118,7 @@ impl OAuth2Client {
                 response.text().await.unwrap_or_default(),
             )));
         };
-        log::info!("external user info: {user_info:?}");
+        log::trace!("external user info: {user_info:?}");
 
         let external_id_id = id_mapping.get("id").map(|s| s.as_str()).unwrap_or("id");
         let external_id = user_info
@@ -129,7 +129,7 @@ impl OAuth2Client {
                 _ => None,
             })
             .ok_or(OAuth2Error::MissingExternalId)?;
-        log::debug!("{external_id_id} - {external_id:?}");
+        log::trace!("{external_id_id} - {external_id:?}");
 
         let name_id = id_mapping.get("name").map(|s| s.as_str()).unwrap_or("name");
         let name = user_info.get(name_id).and_then(|v| v.as_str()).map(ToOwned::to_owned);
@@ -156,7 +156,7 @@ impl OAuth2Client {
         }
 
         external_user_info = external_user_info.normalized();
-        log::info!("Extracted external user info: {external_user_info:#?}");
+        log::trace!("Extracted external user info: {external_user_info:#?}");
 
         Ok(external_user_info)
     }
@@ -197,7 +197,7 @@ impl OAuth2Client {
                     response.text().await.unwrap_or_default(),
                 )));
             };
-            log::info!("{email_info:?}");
+            log::trace!("{email_info:?}");
 
             external_user_info.email = email_info
                 .into_iter()

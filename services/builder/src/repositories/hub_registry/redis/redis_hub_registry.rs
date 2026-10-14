@@ -1,7 +1,7 @@
 use crate::models::HubError;
 use crate::repositories::hub_registry::{redis::RedisHubConnectionDbContext, HubConnection, HubRegistry};
 use redis::{aio::transaction_async, AsyncCommands};
-use shine_infra::db::redis::RedisError;
+use shine_infra::db::redis::{RedisConnection, RedisError};
 use uuid::Uuid;
 
 const HUB_CONNECTION_KEYSPACE: &str = "hub-connection:";
@@ -71,7 +71,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
     async fn heartbeat_connection(&mut self, user_id: Uuid, connection_id: Uuid) -> Result<bool, HubError> {
         let key = self.to_redis_key(user_id);
         let ttl_seconds = self.ttl_seconds as i64;
-        let client = (*self.client).clone();
+        let client = RedisConnection::clone(&self.client);
 
         let updated = transaction_async(client, &[&key], |mut con, mut pipe| {
             let key = key.clone();
@@ -171,7 +171,7 @@ impl HubRegistry for RedisHubConnectionDbContext<'_> {
 
     async fn remove_connection_if_active(&mut self, user_id: Uuid, connection_id: Uuid) -> Result<bool, HubError> {
         let key = self.to_redis_key(user_id);
-        let client = (*self.client).clone();
+        let client = RedisConnection::clone(&self.client);
 
         let removed = transaction_async(client, &[&key], |mut con, mut pipe| {
             let key = key.clone();

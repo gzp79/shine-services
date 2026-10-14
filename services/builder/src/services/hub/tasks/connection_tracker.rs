@@ -76,7 +76,7 @@ pub async fn spawn_connection_loop<C: ConnectionConsumer>(
 }
 
 /// Like [`spawn_connection_loop`], but the loop also runs an extra `on_tick` whenever `wake` is
-/// notified. The loop notifies `wake` itself on each new connection.
+/// notified.
 pub async fn spawn_connection_loop_with_wake<C: ConnectionConsumer>(
     service: &HubService,
     interval: Duration,
@@ -97,8 +97,7 @@ async fn run_tick<C: ConnectionConsumer>(consumer: &mut C, tracker: &ConnectionT
 }
 
 /// Drives a self-contained loop that event-sources its own [`ConnectionTracker`] from
-/// `subscription` and invokes `consumer.on_tick` every `interval` and on each `wake` (also notified
-/// on a new connection). A closed
+/// `subscription` and invokes `consumer.on_tick` every `interval` and on each `wake`. A closed
 /// subscription or a `Shutdown` event ends the loop.
 pub async fn run_connection_loop<C: ConnectionConsumer>(
     mut subscription: mpsc::UnboundedReceiver<HubMessage>,
@@ -135,13 +134,8 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
             }
             message = subscription.recv() => match message {
                 Some(message) => {
-                    let connected = matches!(message, HubMessage::Hub(HubEvent::UserConnected { .. }));
                     if tracker.apply(message) {
                         break;
-                    }
-                    // Serve a new connection without waiting for the next periodic tick.
-                    if let (true, Some(wake)) = (connected, &wake) {
-                        wake.notify_one();
                     }
                 }
                 // Channel closed without a Shutdown event: stop instead of busy-looping.

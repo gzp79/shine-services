@@ -33,9 +33,9 @@ pub struct Problem {
     pub instance: Option<Url>,
     #[serde(rename = "detail")]
     pub detail: String,
-
     #[serde(rename = "extension")]
     pub extension: JsonValue,
+
     // This property is returned only if service configuration allows it
     #[serde(rename = "sensitive")]
     pub sensitive: JsonValue,

@@ -23,10 +23,10 @@ use tracing::Instrument;
 
 pub use shine_infra_macros::RedisJsonValue;
 
-/// A pooled connection paired with a clone of the manager's `RedisListener` — mirrors
-/// `PGConnection`'s relationship to `PGListener`. Regular commands go through the
-/// `MultiplexedConnection` (via `ConnectionLike`/`Deref`/`DerefMut`); `listen` delegates
+/// A pooled connection paired with a clone of the manager's `RedisListener`.
+/// Regular commands go through the `MultiplexedConnection`, `listen` delegates
 /// to the listener, which owns its own dedicated connection, independent of this pooled one.
+#[derive(Clone)]
 pub struct RedisConnection {
     listener: RedisListener,
     client: MultiplexedConnection,

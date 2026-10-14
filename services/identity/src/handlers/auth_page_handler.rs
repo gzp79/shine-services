@@ -46,12 +46,14 @@ impl<'a> AuthPageHandler<'a> {
     where
         E: Into<AuthError>,
     {
-        // Log the problem (sanitized by the conversion, with sensitive details), not the raw error
+        // Log the problem, not the raw error: the conversion keeps only service-side details in `sensitive`
         let problem = Problem::from(error.into());
         if problem.status.is_server_error() {
             log::error!("Page Error: {problem:#?}");
+        } else if problem.status.is_client_error() {
+            log::info!("Page Error: {problem:#?}");
         } else {
-            log::warn!("Page Error: {problem:#?}");
+            log::debug!("Page redirect: {problem:#?}");
         }
         let problem = self.problem_config.transform(problem);
 

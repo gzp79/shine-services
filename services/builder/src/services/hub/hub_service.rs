@@ -8,7 +8,7 @@ use crate::{
     services::{
         hub::{
             hub_command::ControlCommand,
-            hub_connections::Connections,
+            hub_connections::{Connections, DeadConnection},
             hub_subscribers::Subscribers,
             tasks::{ChatDispatcher, Heartbeat, SessionChecker},
         },
@@ -93,9 +93,9 @@ impl HubService {
     }
 
     /// Prunes any connection found dead during an egress send.
-    fn drop_dead(&self, dead: impl IntoIterator<Item = Uuid>) -> Result<(), HubError> {
-        for connection_id in dead {
-            self.send_control(ControlCommand::DropConnection { connection_id })?;
+    fn drop_dead(&self, dead: impl IntoIterator<Item = DeadConnection>) -> Result<(), HubError> {
+        for DeadConnection { connection_id, reason } in dead {
+            self.send_control(ControlCommand::DropConnection { connection_id, reason })?;
         }
         Ok(())
     }
@@ -334,14 +334,12 @@ impl HubService {
                 .await;
                 true
             }
-            ControlCommand::DropConnection { connection_id } => {
+            ControlCommand::DropConnection { connection_id, reason } => {
                 // A producer found this connection's channel dead during an off-loop send. Prune it
                 // here so all mutation stays on the loop. Force-remove by id (a fresh reconnect that
                 // replaced it has a different id and its channel would not be dead).
                 if let Some((user_id, _)) = self.inner.connections.remove_connection_by_id(connection_id).await {
-                    hub_metrics()
-                        .connections_dropped
-                        .add(1, &[label("reason", "dead_channel")]);
+                    hub_metrics().connections_dropped.add(1, &[label("reason", reason)]);
                     if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
                         log::error!("[{user_id}] Failed to remove dropped connection from registry (TTL will clean up): {err:#?}");
                     }
@@ -440,11 +438,9 @@ impl HubService {
             self.inner.subscribers.publish(message.clone()).await;
 
             if let Err(dead) = self.inner.connections.broadcast(message).await {
-                for connection_id in dead {
+                for DeadConnection { connection_id, reason } in dead {
                     if let Some((user_id, _)) = self.inner.connections.remove_connection_by_id(connection_id).await {
-                        hub_metrics()
-                            .connections_dropped
-                            .add(1, &[label("reason", "dead_channel")]);
+                        hub_metrics().connections_dropped.add(1, &[label("reason", reason)]);
                         if let Err(err) = self.remove_registry_connection(user_id, connection_id).await {
                             log::error!(
                                 "[{user_id}] Failed to remove dead connection from registry (TTL will clean up): {err:#?}"
