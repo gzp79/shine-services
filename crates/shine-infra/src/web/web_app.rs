@@ -11,7 +11,7 @@ use crate::{
 };
 use anyhow::{anyhow, Error as AnyError};
 use axum::{
-    http::{header, Method, Request},
+    http::{header, Method},
     routing::Router,
     Extension,
 };
@@ -244,8 +244,13 @@ async fn create_web_app<A: WebApplication>(
         None
     };
 
-    let log_layer = TraceLayer::new_for_http()
-        .make_span_with(|_: &Request<_>| tracing::Span::current())
+    // Each request has 2 spans:
+    // - a trace-backend-only span (OpenTelemetry attributes)
+    // - a console-only span (method, uri, access log)
+    // Keeping them apart lets each output have its own fields and filters.
+    let trace_layer = telemetry_service.create_layer();
+    let console_layer = TraceLayer::new_for_http()
+        .make_span_with(crate::telemetry::make_console_span)
         .on_response(DefaultOnResponse::new().level(Level::INFO));
 
     // Register built-in status providers
@@ -289,8 +294,9 @@ async fn create_web_app<A: WebApplication>(
             .layer(tower::util::option_layer(powered_by_layer))
             .layer(SecurityHeaders::default())
             .layer(cors_layer)
-            .layer(log_layer)
-            .layer(telemetry_service.create_layer())
+            // trace_layer must be inside console_layer: the trace span is the current span in the handlers
+            .layer(trace_layer)
+            .layer(console_layer)
             .with_state(app_state),
         shutdown_hooks,
     ))

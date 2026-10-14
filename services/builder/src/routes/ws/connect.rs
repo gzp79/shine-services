@@ -21,7 +21,11 @@ use shine_infra::{
     },
 };
 use tokio::sync::mpsc;
-use tracing::{info_span, Instrument, Span};
+use tracing::{
+    field::{display, Empty},
+    info_span, instrument, Instrument, Span,
+};
+use uuid::Uuid;
 
 /// Per-WS-client egress buffer capacity. A client that lets this many broadcast messages queue
 /// without draining them is considered too slow, and the hub drops its subscription — closing the
@@ -64,8 +68,8 @@ pub async fn connect(
 
     let hub_service = state.hub_service().clone();
     let chat_service = state.chat_service().clone();
-    let request_span_id = Span::current().id();
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, hub_service, chat_service, request_span_id)))
+    let request_span = Span::current();
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, hub_service, chat_service, request_span)))
 }
 
 fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
@@ -86,39 +90,25 @@ fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
     }
 }
 
-/// The socket may live for hours, so no span is kept open for the connection. The short lived `ws open`, `ws message`
-/// and `ws close` spans are separate traces, `ws open` is linked to the upgrade request.
 async fn handle_socket(
     socket: WebSocket,
     user: CurrentUser,
     hub_service: HubService,
     chat_service: ChatService,
-    request_span_id: Option<tracing::Id>,
+    request_span: Span,
 ) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let current_user_id = user.user_id;
 
     let (tx, mut rx) = mpsc::channel::<HubMessage>(WS_CLIENT_CHANNEL_CAPACITY);
 
-    // Register the connection now that the upgrade has completed. If registration fails there is no
-    // live connection to keep, so close the socket without emitting a disconnect for it.
-    let open_span = info_span!(parent: None, "ws open", enduser.id = %current_user_id);
-    open_span.follows_from(request_span_id);
-    let connection_id = match open_span
-        .in_scope(|| hub_service.request_connection(current_user_id, user.key, tx, vec![TopicKey::Hub]))
-    {
-        Ok(connection_id) => connection_id,
-        Err(err) => {
-            log::error!("[{current_user_id}] Failed to register connection: {err:#?}");
-            if let Err(err) = ws_sender.close().await {
-                log::error!("[{current_user_id}] Failed to close websocket after failed registration: {err:#?}");
-            }
-            return;
+    let Some(connection_id) = open_connection(request_span, &hub_service, user, tx) else {
+        // There is no live connection to keep, so close the socket without emitting a disconnect for it.
+        if let Err(err) = ws_sender.close().await {
+            log::error!("[{current_user_id}] Failed to close websocket after failed registration: {err:#?}");
         }
+        return;
     };
-
-    // end the span, the connection itself is not traced
-    drop(open_span);
     log::info!("[{current_user_id}] Connected to the hub");
 
     let mut recv_task = {
@@ -209,10 +199,45 @@ async fn handle_socket(
         }
     }
 
-    log::info!("{current_user_id}] Disconnecting from hub");
-    let close_span =
-        info_span!(parent: None, "ws close", enduser.id = %current_user_id, ws.connection_id = %connection_id);
-    if let Err(err) = close_span.in_scope(|| hub_service.request_disconnection(current_user_id, connection_id)) {
-        log::error!("[{current_user_id}] Failed to send disconnect command: {err:#?}");
+    log::info!("[{current_user_id}] Disconnecting from hub");
+    close_connection(&hub_service, current_user_id, connection_id);
+}
+
+/// Registers the connection in the hub, now that the upgrade has completed.
+#[instrument(
+    name = "ws open",
+    parent = &request_span,
+    skip_all,
+    fields(enduser.id = %user.user_id, ws.connection_id = Empty)
+)]
+fn open_connection(
+    request_span: Span,
+    hub_service: &HubService,
+    user: CurrentUser,
+    tx: mpsc::Sender<HubMessage>,
+) -> Option<Uuid> {
+    let user_id = user.user_id;
+    match hub_service.request_connection(user_id, user.key, tx, vec![TopicKey::Hub]) {
+        Ok(connection_id) => {
+            Span::current().record("ws.connection_id", display(connection_id));
+            Some(connection_id)
+        }
+        Err(err) => {
+            log::error!("[{user_id}] Failed to register connection: {err:#?}");
+            None
+        }
+    }
+}
+
+/// Removes the connection from the hub.
+#[instrument(
+    name = "ws close",
+    parent = None,
+    skip_all,
+    fields(enduser.id = %user_id, ws.connection_id = %connection_id)
+)]
+fn close_connection(hub_service: &HubService, user_id: Uuid, connection_id: Uuid) {
+    if let Err(err) = hub_service.request_disconnection(user_id, connection_id) {
+        log::error!("[{user_id}] Failed to send disconnect command: {err:#?}");
     }
 }

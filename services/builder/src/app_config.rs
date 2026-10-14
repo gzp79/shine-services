@@ -22,7 +22,8 @@ pub struct ChatConfig {
     /// Room stream inactivity TTL in seconds.
     #[serde(default = "ChatConfig::default_stream_ttl_seconds")]
     pub stream_ttl_seconds: u64,
-    /// Interval in seconds between chat dispatcher sync ticks.
+    /// Interval in seconds between chat dispatcher sync ticks. Only a safety net, the dispatcher is woken on every
+    /// chat message and new connection.
     #[serde(default = "ChatConfig::default_sync_interval_seconds")]
     pub sync_interval_seconds: u64,
 }
@@ -37,7 +38,7 @@ impl ChatConfig {
     }
 
     fn default_sync_interval_seconds() -> u64 {
-        1
+        10
     }
 }
 

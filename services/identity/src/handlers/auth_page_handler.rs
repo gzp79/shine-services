@@ -47,15 +47,13 @@ impl<'a> AuthPageHandler<'a> {
         E: Into<AuthError>,
     {
         let error = error.into();
-        let error_text = error.to_string();
+        let error_dump = format!("{error:#?}");
         let problem: Problem = self.problem_config.transform(error);
 
-        // Client errors (4xx) are expected in normal use, only server errors are real errors.
-        // Only the error message is logged, the debug dump may contain user data.
         if problem.status.is_server_error() {
-            log::error!("Page Error: {error_text} ({}, {})", problem.status, problem.ty);
+            log::error!("Page Error: {error_dump} ({}, {})", problem.status, problem.ty);
         } else {
-            log::warn!("Page Error: {error_text} ({}, {})", problem.status, problem.ty);
+            log::warn!("Page Error: {error_dump} ({}, {})", problem.status, problem.ty);
         }
 
         let mut target_url = error_url.unwrap_or(&self.settings.error_url).to_owned();

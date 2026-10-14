@@ -6,7 +6,15 @@ use opentelemetry::{propagation::Extractor, Context};
 use std::{borrow::Cow, error::Error as StdError};
 use tracing::{field::Empty, info_span, Span};
 
+/// Target of spans exported to the trace backend only, they are hidden from the console log.
 pub const TRACING_TARGET: &str = "otel::tracing";
+/// Target of spans shown in the console log only, they are not exported to the trace backend.
+pub const CONSOLE_TARGET: &str = "otel::console";
+
+/// Request span for the console log, a compact counterpart of the span of [`make_span_from_request`].
+pub fn make_console_span<B>(req: &Request<B>) -> Span {
+    info_span!(target: CONSOLE_TARGET, "request", method = %req.method(), uri = %req.uri())
+}
 
 #[inline]
 #[must_use]
@@ -85,12 +93,7 @@ pub fn make_span_from_request<B>(req: &Request<B>) -> Span {
         .get::<MatchedPath>()
         .map_or_else(|| "", |mp| mp.as_str());
 
-    // Unmatched requests (404, ...) have no route; fall back to the raw path to keep the span name informative.
-    let name = format!(
-        "{http_method} {}",
-        if route.is_empty() { req.uri().path() } else { route }
-    );
-    let name = name.trim();
+    let name = format!("{http_method} {}", if route.is_empty() { "<unmatched>" } else { route });
 
     info_span!(
         target: TRACING_TARGET,
@@ -132,10 +135,11 @@ pub fn add_trace_id_header<B>(span: &Span, response: &mut Response<B>) {
     use opentelemetry::trace::TraceContextExt as _;
     use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
-    let trace_id = span.context().span().span_context().trace_id();
-    if trace_id != opentelemetry::trace::TraceId::INVALID {
-        if let Ok(value) = header::HeaderValue::from_str(&trace_id.to_string()) {
-            span.record("trace_id", trace_id.to_string());
+    let span_context = span.context().span().span_context().clone();
+    if span_context.is_valid() && span_context.is_sampled() {
+        let trace_id = span_context.trace_id().to_string();
+        if let Ok(value) = header::HeaderValue::from_str(&trace_id) {
+            span.record("trace_id", trace_id);
             response
                 .headers_mut()
                 .insert(header::HeaderName::from_static(TRACE_ID_HEADER), value);
@@ -163,6 +167,23 @@ where
         Err(err) => {
             update_span_from_error(span, err);
         }
+    }
+}
+
+/// Span context of the current span, to correlate work done later (see [`link_span`]) without keeping the span alive.
+pub fn current_span_context() -> opentelemetry::trace::SpanContext {
+    use opentelemetry::trace::TraceContextExt as _;
+    use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+
+    Span::current().context().span().span_context().clone()
+}
+
+/// Link the span to another span (of any trace) it was caused by.
+pub fn link_span(span: &Span, origin: opentelemetry::trace::SpanContext) {
+    use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+
+    if origin.is_valid() {
+        span.add_link(origin);
     }
 }
 

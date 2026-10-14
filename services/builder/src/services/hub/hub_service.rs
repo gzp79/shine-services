@@ -15,12 +15,14 @@ use crate::{
         ChatService,
     },
 };
+use opentelemetry::trace::SpanContext;
 use shine_infra::session::{CurrentUserService, SessionKey};
+use shine_infra::telemetry::{current_span_context, link_span};
 use std::collections::VecDeque;
 use std::time::Instant;
 use std::{sync::Arc, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{info_span, Instrument, Span};
+use tracing::{info_span, Instrument};
 use uuid::Uuid;
 
 /// Cadence configuration for the hub's periodic connection consumers.
@@ -38,7 +40,7 @@ pub struct HubStats {
 }
 
 struct Inner {
-    control_tx: mpsc::UnboundedSender<(ControlCommand, Span, Instant)>,
+    control_tx: mpsc::UnboundedSender<(ControlCommand, SpanContext, Instant)>,
     connections: Connections,
     subscribers: Subscribers,
     hub_registry: RedisHubConnectionDb,
@@ -86,7 +88,7 @@ impl HubService {
     fn send_control(&self, command: ControlCommand) -> Result<(), HubError> {
         self.inner
             .control_tx
-            .send((command, Span::current(), Instant::now()))
+            .send((command, current_span_context(), Instant::now()))
             .map_err(|_| HubError::SendCommandFailed)
     }
 
@@ -119,7 +121,21 @@ impl HubService {
 
     /// Requests removal of a connection, only if `connection_id` still matches the user's active one.
     pub fn request_disconnection(&self, user_id: Uuid, connection_id: Uuid) -> Result<(), HubError> {
-        self.send_control(ControlCommand::DisconnectUser { user_id, connection_id })
+        self.send_control(ControlCommand::DisconnectUser {
+            user_id,
+            connection_id,
+            drop_reason: None,
+        })
+    }
+
+    /// Like [`Self::request_disconnection`], for a disconnect forced by the hub; counted as a dropped
+    /// connection with the given reason once the connection is actually removed.
+    pub fn request_drop(&self, user_id: Uuid, connection_id: Uuid, reason: &'static str) -> Result<(), HubError> {
+        self.send_control(ControlCommand::DisconnectUser {
+            user_id,
+            connection_id,
+            drop_reason: Some(reason),
+        })
     }
 
     /// Requests hub shutdown.
@@ -133,7 +149,7 @@ impl HubService {
     }
 
     /// Sends an egress message to a specific connection.
-    #[tracing::instrument(level = "debug", skip_all, fields(connection_id = %connection_id))]
+    #[tracing::instrument(level = "debug", skip_all, fields(ws.connection_id = %connection_id))]
     pub async fn send_to_connection(&self, connection_id: Uuid, message: HubMessage) -> Result<(), HubError> {
         self.drop_dead(
             self.inner
@@ -146,7 +162,7 @@ impl HubService {
 
     /// Sends an egress message to a user's active connection.
     #[allow(dead_code)] // part of the hub egress API; not yet wired to a caller
-    #[tracing::instrument(level = "debug", skip_all, fields(user_id = %user_id))]
+    #[tracing::instrument(level = "debug", skip_all, fields(enduser.id = %user_id))]
     pub async fn send_to_user(&self, user_id: Uuid, message: HubMessage) -> Result<(), HubError> {
         self.drop_dead(self.inner.connections.send_to_user(user_id, message).await.err())
     }
@@ -182,7 +198,7 @@ impl HubService {
     /// Starts the command loop, the sole writer of connection state.
     fn start_dispatcher(
         service: HubService,
-        mut control_rx: mpsc::UnboundedReceiver<(ControlCommand, Span, Instant)>,
+        mut control_rx: mpsc::UnboundedReceiver<(ControlCommand, SpanContext, Instant)>,
         background_tasks: Vec<JoinHandle<()>>,
     ) {
         tokio::spawn(async move {
@@ -193,7 +209,15 @@ impl HubService {
                     .command_queue_delay
                     .record(queued_at.elapsed().as_secs_f64(), &[label("command", name)]);
 
-                let span = info_span!(parent: &origin, "hub command", hub.command = name);
+                // Linked, not parented: the queued command must not keep the originating request span open.
+                let span = info_span!(
+                    parent: None,
+                    "hub command",
+                    hub.command = name,
+                    enduser.id = command.user_id().map(display),
+                    ws.connection_id = command.connection_id().map(display)
+                );
+                link_span(&span, origin);
                 let start = Instant::now();
                 let keep_running = service.process(command).instrument(span).await;
                 metrics.commands.add(1, &[label("command", name)]);
@@ -278,7 +302,11 @@ impl HubService {
                 .await;
                 true
             }
-            ControlCommand::DisconnectUser { user_id, connection_id } => {
+            ControlCommand::DisconnectUser {
+                user_id,
+                connection_id,
+                drop_reason,
+            } => {
                 // Only removes the entry when `connection_id` still matches the active
                 // connection, so a stale disconnect can never tear down a fresh reconnect.
                 let Some(removed_connection_id) = self
@@ -290,6 +318,9 @@ impl HubService {
                     return true;
                 };
 
+                if let Some(reason) = drop_reason {
+                    hub_metrics().connections_dropped.add(1, &[label("reason", reason)]);
+                }
                 if let Err(err) = self.remove_registry_connection(user_id, removed_connection_id).await {
                     // Best-effort: publish UserDisconnected regardless so the socket and trackers
                     // never wedge, and let the registry TTL clean up the stale row.

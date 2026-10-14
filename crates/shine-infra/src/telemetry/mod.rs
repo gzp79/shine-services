@@ -6,7 +6,7 @@ mod telemetry_router;
 mod telemetry_service;
 
 pub use self::{
-    otel_http::{record_user_id, TRACE_ID_HEADER},
+    otel_http::{current_span_context, link_span, make_console_span, record_user_id, TRACE_ID_HEADER},
     otel_layer::*,
     telemetry_config::*,
     telemetry_error::*,

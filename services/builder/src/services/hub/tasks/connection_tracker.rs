@@ -12,7 +12,6 @@ use tokio::{
     task::JoinHandle,
     time,
 };
-use tracing::{debug_span, Instrument};
 use uuid::Uuid;
 
 pub type TrackedConnection = (Uuid, SessionKey);
@@ -59,9 +58,10 @@ impl ConnectionTracker {
 
 /// A periodic consumer of the connection view, providing only the per-tick work.
 pub trait ConnectionConsumer: Send + 'static {
-    /// Name of the consumer, used for the span of each tick.
+    /// Name of the consumer, used for the metrics of each tick.
     const NAME: &'static str;
 
+    /// The work of a tick.
     fn on_tick(&mut self, tracker: &ConnectionTracker) -> impl Future<Output = ()> + Send;
 }
 
@@ -79,7 +79,7 @@ pub async fn spawn_connection_loop<C: ConnectionConsumer>(
 }
 
 /// Like [`spawn_connection_loop`], but the loop also runs an extra `on_tick` whenever `wake` is
-/// notified.
+/// notified. The loop notifies `wake` itself on each new connection.
 pub async fn spawn_connection_loop_with_wake<C: ConnectionConsumer>(
     service: &HubService,
     interval: Duration,
@@ -90,23 +90,18 @@ pub async fn spawn_connection_loop_with_wake<C: ConnectionConsumer>(
     tokio::spawn(run_connection_loop(subscription, interval, Some(wake), consumer))
 }
 
-/// Every tick is a trace of its own (debug level, as ticks are periodic), named after the consumer, so the work of the
-/// background tasks is not orphaned.
-fn tick_span<C: ConnectionConsumer>() -> tracing::Span {
-    debug_span!(parent: None, "hub tick", otel.name = C::NAME)
-}
-
-/// Runs a single tick in its own span and measures its duration.
+/// Runs a single tick and measures its duration.
 async fn run_tick<C: ConnectionConsumer>(consumer: &mut C, tracker: &ConnectionTracker) {
     let start = std::time::Instant::now();
-    consumer.on_tick(tracker).instrument(tick_span::<C>()).await;
+    consumer.on_tick(tracker).await;
     hub_metrics()
         .tick_duration
         .record(start.elapsed().as_secs_f64(), &[label("consumer", C::NAME)]);
 }
 
 /// Drives a self-contained loop that event-sources its own [`ConnectionTracker`] from
-/// `subscription` and invokes `consumer.on_tick` every `interval` and on each `wake`. A closed
+/// `subscription` and invokes `consumer.on_tick` every `interval` and on each `wake` (also notified
+/// on a new connection). A closed
 /// subscription or a `Shutdown` event ends the loop.
 pub async fn run_connection_loop<C: ConnectionConsumer>(
     mut subscription: mpsc::UnboundedReceiver<HubMessage>,
@@ -143,8 +138,13 @@ pub async fn run_connection_loop<C: ConnectionConsumer>(
             }
             message = subscription.recv() => match message {
                 Some(message) => {
+                    let connected = matches!(message, HubMessage::Hub(HubEvent::UserConnected { .. }));
                     if tracker.apply(message) {
                         break;
+                    }
+                    // Serve a new connection without waiting for the next periodic tick.
+                    if let (true, Some(wake)) = (connected, &wake) {
+                        wake.notify_one();
                     }
                 }
                 // Channel closed without a Shutdown event: stop instead of busy-looping.

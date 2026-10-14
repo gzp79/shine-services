@@ -232,7 +232,7 @@ impl Identities for PgIdentityDbContext<'_> {
                 return Err(IdentityError::NameConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_email_hash") => {
-                log::info!("Conflicting email: {user_id}, rolling back user creation");
+                log::info!("Email conflict for user {user_id}, rolling back user creation");
                 return Err(IdentityError::EmailConflict);
             }
             Err(err) => {
@@ -318,7 +318,7 @@ impl Identities for PgIdentityDbContext<'_> {
                 return Err(IdentityError::NameConflict);
             }
             Err(err) if err.is_constraint("identities", "idx_email_hash") => {
-                log::info!("Conflicting email: {id}, rolling back user update");
+                log::info!("Email conflict for user {id}, rolling back user update");
                 return Err(IdentityError::EmailConflict);
             }
             Err(err) => return Err(PgError::from(err).into()),

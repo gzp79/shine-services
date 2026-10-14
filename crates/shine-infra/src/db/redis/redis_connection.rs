@@ -51,23 +51,37 @@ impl RedisConnection {
 
 fn redis_command_name(cmd: &Cmd) -> String {
     match cmd.args_iter().next() {
-        Some(Arg::Simple(name)) => String::from_utf8_lossy(name).to_uppercase(),
+        Some(Arg::Simple(name)) => String::from_utf8_lossy(name).to_ascii_uppercase(),
         _ => "UNKNOWN".to_string(),
+    }
+}
+
+/// Commands that park on the server until data arrives; their duration is wait time, not latency.
+fn is_blocking_command(name: &str, cmd: &Cmd) -> bool {
+    match name {
+        "BLPOP" | "BRPOP" | "BRPOPLPUSH" | "BLMOVE" | "BLMPOP" | "BZPOPMIN" | "BZPOPMAX" | "BZMPOP" => true,
+        "XREAD" | "XREADGROUP" => cmd
+            .args_iter()
+            .any(|arg| matches!(arg, Arg::Simple(a) if a.eq_ignore_ascii_case(b"BLOCK"))),
+        _ => false,
     }
 }
 
 impl ConnectionLike for RedisConnection {
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
-        let span = tracing::info_span!(
-            target: "otel::tracing",
+        let name = redis_command_name(cmd);
+        if is_blocking_command(&name, cmd) {
+            return self.client.req_packed_command(cmd);
+        }
+        let span = tracing::trace_span!(
             "redis",
-            otel.name = %redis_command_name(cmd),
+            otel.name = name.as_str(),
             otel.kind = "client",
-            db.system = "redis",
+            db.system = "redis"
         );
         Box::pin(time_db_operation(
             "redis",
-            redis_command_name(cmd),
+            name,
             self.client.req_packed_command(cmd).instrument(span),
         ))
     }
@@ -78,8 +92,7 @@ impl ConnectionLike for RedisConnection {
         offset: usize,
         count: usize,
     ) -> RedisFuture<'a, Vec<Value>> {
-        let span = tracing::info_span!(
-            target: "otel::tracing",
+        let span = tracing::trace_span!(
             "redis",
             otel.name = "PIPELINE",
             otel.kind = "client",

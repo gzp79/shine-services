@@ -1,4 +1,4 @@
-use opentelemetry::{global, metrics::Histogram, KeyValue};
+use opentelemetry::{global, metrics::Histogram, KeyValue, StringValue};
 use std::{future::Future, sync::LazyLock, time::Instant};
 
 static DB_OPERATION_DURATION: LazyLock<Histogram<f64>> = LazyLock::new(|| {
@@ -11,7 +11,11 @@ static DB_OPERATION_DURATION: LazyLock<Histogram<f64>> = LazyLock::new(|| {
 
 /// Run a database operation and record its duration. The operation name must have a low cardinality
 /// (statement name, redis command), never any query parameter.
-pub async fn time_db_operation<T, E, F>(system: &'static str, operation: impl AsRef<str>, future: F) -> Result<T, E>
+pub async fn time_db_operation<T, E, F>(
+    system: &'static str,
+    operation: impl Into<StringValue>,
+    future: F,
+) -> Result<T, E>
 where
     F: Future<Output = Result<T, E>>,
 {
@@ -21,7 +25,7 @@ where
         start.elapsed().as_secs_f64(),
         &[
             KeyValue::new("db.system", system),
-            KeyValue::new("db.operation", operation.as_ref().to_owned()),
+            KeyValue::new("db.operation", operation.into()),
             KeyValue::new("outcome", if result.is_ok() { "ok" } else { "error" }),
         ],
     );
