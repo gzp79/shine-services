@@ -12,7 +12,7 @@ use tokio::{
     task::JoinHandle,
     time,
 };
-use tracing::{info_span, Instrument};
+use tracing::{debug_span, Instrument};
 use uuid::Uuid;
 
 pub type TrackedConnection = (Uuid, SessionKey);
@@ -90,9 +90,10 @@ pub async fn spawn_connection_loop_with_wake<C: ConnectionConsumer>(
     tokio::spawn(run_connection_loop(subscription, interval, Some(wake), consumer))
 }
 
-/// Every tick is a trace of its own, named after the consumer, so the work of the background tasks is not orphaned.
+/// Every tick is a trace of its own (debug level, as ticks are periodic), named after the consumer, so the work of the
+/// background tasks is not orphaned.
 fn tick_span<C: ConnectionConsumer>() -> tracing::Span {
-    info_span!(parent: None, "hub tick", otel.name = C::NAME)
+    debug_span!(parent: None, "hub tick", otel.name = C::NAME)
 }
 
 /// Runs a single tick in its own span and measures its duration.
