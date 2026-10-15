@@ -15,12 +15,13 @@ use rand::{rng, RngExt};
 use serde::{Deserialize, Serialize};
 use shine_infra::{
     session::{CheckedCurrentUser, CurrentUser, SessionCookie},
-    telemetry::record_user_id,
+    telemetry::{record_user_id, RequestSpan},
     web::WebAppConfig,
 };
 use std::{convert::Infallible, sync::Arc};
 use thiserror::Error as ThisError;
 use time::{Duration, OffsetDateTime};
+use tracing::Span;
 use url::Url;
 use uuid::Uuid;
 
@@ -169,20 +170,23 @@ impl AuthSessionMeta {
 #[derive(Clone)]
 pub struct AuthSession {
     meta: Arc<AuthSessionMeta>,
+    request_span: Span,
     access: Option<TokenCookie>,
     session: Option<CurrentUser>,
     external_login: Option<ExternalLoginCookie>,
 }
 
 impl AuthSession {
-    pub fn new(
+    fn new(
         meta: Arc<AuthSessionMeta>,
+        request_span: Span,
         access: Option<TokenCookie>,
         session: Option<CurrentUser>,
         external_login: Option<ExternalLoginCookie>,
     ) -> Self {
         Self {
             meta,
+            request_span,
             access,
             session,
             external_login,
@@ -197,6 +201,7 @@ impl AuthSession {
     pub fn with_session(self, session: Option<CurrentUser>) -> Self {
         Self {
             meta: self.meta,
+            request_span: self.request_span,
             access: self.access,
             session,
             external_login: self.external_login,
@@ -222,6 +227,7 @@ impl AuthSession {
     pub fn with_access(self, access: Option<TokenCookie>) -> Self {
         Self {
             meta: self.meta,
+            request_span: self.request_span,
             access,
             session: self.session,
             external_login: self.external_login,
@@ -248,6 +254,7 @@ impl AuthSession {
     pub fn with_external_login(self, external_login: Option<ExternalLoginCookie>) -> Self {
         Self {
             meta: self.meta,
+            request_span: self.request_span,
             access: self.access,
             session: self.session,
             external_login,
@@ -262,6 +269,7 @@ impl AuthSession {
     pub fn cleared(self) -> Self {
         Self {
             meta: self.meta,
+            request_span: self.request_span,
             access: None,
             session: None,
             external_login: None,
@@ -337,7 +345,8 @@ where
             token_cookie.is_some()
         );
 
-        Ok(Self::new(meta, token_cookie, user, external_login_cookie))
+        let request_span = RequestSpan::from_extensions(&parts.extensions);
+        Ok(Self::new(meta, request_span, token_cookie, user, external_login_cookie))
     }
 }
 
@@ -383,13 +392,14 @@ impl IntoResponseParts for AuthSession {
     fn into_response_parts(self, res: ResponseParts) -> Result<ResponseParts, Self::Error> {
         let Self {
             meta,
+            request_span,
             session: user_session,
             external_login: external_login_cookie,
             access: token_cookie,
         } = self;
 
         if let Some(user) = &user_session {
-            record_user_id(user.user_id);
+            record_user_id(&request_span, user.user_id);
         }
 
         let session_cookie = user_session.as_ref().map(|u| SessionCookie {

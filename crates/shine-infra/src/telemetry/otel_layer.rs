@@ -100,7 +100,7 @@ where
     }
 
     fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
-        let req = req;
+        let mut req = req;
 
         let route = req
             .extensions()
@@ -120,6 +120,7 @@ where
         } else {
             tracing::Span::none()
         };
+        req.extensions_mut().insert(otel_http::RequestSpan(span.clone()));
         let future = {
             let _guard = span.enter();
             self.inner.call(req)

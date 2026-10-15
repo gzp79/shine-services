@@ -109,7 +109,10 @@ where
             .get_current_user(session_cookie.user_id, session_cookie.key)
             .await
             .map_err(|err| ErrorResponse::new(&problem_config, err))?;
-        crate::telemetry::record_user_id(current_user.user_id);
+        crate::telemetry::record_user_id(
+            &crate::telemetry::RequestSpan::from_extensions(&parts.extensions),
+            current_user.user_id,
+        );
         Ok(CheckedCurrentUser(current_user))
     }
 }

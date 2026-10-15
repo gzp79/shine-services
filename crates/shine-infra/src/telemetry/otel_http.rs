@@ -1,6 +1,6 @@
 use axum::{
     extract::MatchedPath,
-    http::{header, HeaderMap, Method, Request, Response, Uri, Version},
+    http::{header, Extensions, HeaderMap, Method, Request, Response, Uri, Version},
 };
 use opentelemetry::{propagation::Extractor, Context};
 use std::{borrow::Cow, error::Error as StdError};
@@ -187,8 +187,22 @@ pub fn link_span(span: &Span, origin: opentelemetry::trace::SpanContext) {
     }
 }
 
-/// Tag the current request span with the authenticated user.
-/// Must be called while the request span is current (for example in extractors and handlers).
-pub fn record_user_id(user_id: uuid::Uuid) {
-    Span::current().record("enduser.id", tracing::field::display(user_id));
+/// The span of [`make_span_from_request`], stored in the request extensions so it can be updated
+/// regardless of which span is current.
+#[derive(Clone)]
+pub struct RequestSpan(pub Span);
+
+impl RequestSpan {
+    /// The request span from the extensions, or a disabled span if the request is not traced.
+    pub fn from_extensions(extensions: &Extensions) -> Span {
+        extensions
+            .get::<RequestSpan>()
+            .map(|RequestSpan(span)| span.clone())
+            .unwrap_or_else(Span::none)
+    }
+}
+
+/// Tag the request span (see [`RequestSpan`]) with the authenticated user.
+pub fn record_user_id(request_span: &Span, user_id: uuid::Uuid) {
+    request_span.record("enduser.id", tracing::field::display(user_id));
 }
