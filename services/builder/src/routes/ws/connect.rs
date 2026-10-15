@@ -13,9 +13,10 @@ use axum::{
     Extension,
 };
 use futures::{SinkExt, StreamExt};
+use opentelemetry::trace::SpanContext;
 use shine_infra::{
     session::{CheckedCurrentUser, CurrentUser},
-    telemetry::label,
+    telemetry::{current_span_context, label, link_span},
     web::{
         extracts::{Origin, TargetHost},
         responses::{IntoProblemResponse, Problem, ProblemConfig, ProblemResponse},
@@ -69,8 +70,8 @@ pub async fn connect(
 
     let hub_service = state.hub_service().clone();
     let chat_service = state.chat_service().clone();
-    let request_span = Span::current();
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, hub_service, chat_service, request_span)))
+    let span_context = current_span_context();
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, user, hub_service, chat_service, span_context)))
 }
 
 fn event_to_wire_message(message: HubMessage) -> Option<WSMessageResponse> {
@@ -96,14 +97,14 @@ async fn handle_socket(
     user: CurrentUser,
     hub_service: HubService,
     chat_service: ChatService,
-    request_span: Span,
+    span_context: SpanContext,
 ) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let current_user_id = user.user_id;
 
     let (tx, mut rx) = mpsc::channel::<HubMessage>(WS_CLIENT_CHANNEL_CAPACITY);
 
-    let Some(connection_id) = open_connection(request_span, &hub_service, user, tx) else {
+    let Some(connection_id) = open_connection(span_context, &hub_service, user, tx) else {
         // There is no live connection to keep, so close the socket without emitting a disconnect for it.
         if let Err(err) = ws_sender.close().await {
             log::error!("[{current_user_id}] Failed to close websocket after failed registration: {err:#?}");
@@ -123,7 +124,7 @@ async fn handle_socket(
                             hub_metrics()
                                 .ws_messages_received
                                 .add(1, &[label("kind", "unknown"), label("outcome", "invalid")]);
-                            log::error!("[{current_user_id}] Received invalid message: {text}");
+                            log::trace!("[{current_user_id}] Received invalid message: {text}");
                             None
                         }
                     };
@@ -205,18 +206,20 @@ async fn handle_socket(
 }
 
 /// Registers the connection in the hub, now that the upgrade has completed.
+/// Linked to the upgrade request, not parented, so the request span ends with the 101 response.
 #[instrument(
     name = "ws open",
-    parent = &request_span,
+    parent = None,
     skip_all,
     fields(enduser.id = %user.user_id, ws.connection_id = Empty)
 )]
 fn open_connection(
-    request_span: Span,
+    span_context: SpanContext,
     hub_service: &HubService,
     user: CurrentUser,
     tx: mpsc::Sender<HubMessage>,
 ) -> Option<Uuid> {
+    link_span(&Span::current(), span_context);
     let user_id = user.user_id;
     match hub_service.request_connection(user_id, user.key, tx, vec![TopicKey::Hub]) {
         Ok(connection_id) => {

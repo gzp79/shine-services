@@ -56,7 +56,7 @@ impl ConnectionLike for RedisConnection {
     fn req_packed_command<'a>(&'a mut self, cmd: &'a Cmd) -> RedisFuture<'a, Value> {
         let name = redis_command_name(cmd);
         assert_not_blocking(name);
-        let span = tracing::debug_span!(
+        let span = tracing::trace_span!(
             "redis",
             otel.name = name,
             otel.kind = "client",
@@ -77,23 +77,23 @@ impl ConnectionLike for RedisConnection {
         offset: usize,
         count: usize,
     ) -> RedisFuture<'a, Vec<Value>> {
-        let names: Vec<&'static str> = cmd.cmd_iter().map(redis_command_name).collect();
-        for name in &names {
-            assert_not_blocking(name);
-        }
-        let span = tracing::debug_span!(
+        let span = tracing::trace_span!(
             "redis",
             otel.name = "PIPELINE",
             otel.kind = "client",
             db.system = "redis",
             db.operation.name = "PIPELINE",
-            db.operation.batch.size = names.len(),
+            db.operation.batch.size = tracing::field::Empty,
             db.query.text = tracing::field::Empty,
         );
+        for name in cmd.cmd_iter().map(redis_command_name) {
+            assert_not_blocking(name);
+        }
         // Command names only: arguments carry keys and user data.
         if !span.is_disabled() {
-            let text = names.join("; ");
-            span.record("db.query.text", text);
+            let names: Vec<&str> = cmd.cmd_iter().map(redis_command_name).collect();
+            span.record("db.operation.batch.size", names.len());
+            span.record("db.query.text", names.join("; "));
         }
         Box::pin(time_db_operation(
             "redis",

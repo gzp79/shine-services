@@ -66,8 +66,6 @@ impl ChatDispatcher {
 }
 
 impl ConnectionConsumer for ChatDispatcher {
-    const NAME: &'static str = "hub chat dispatch";
-
     #[tracing::instrument(level = "trace", name = "hub chat dispatch", skip_all)]
     async fn on_tick(&mut self, tracker: &ConnectionTracker) {
         self.reconcile(tracker);

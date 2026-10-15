@@ -55,9 +55,6 @@ impl ConnectionTracker {
 
 /// A periodic consumer of the connection view, providing only the per-tick work.
 pub trait ConnectionConsumer: Send + 'static {
-    /// Name of the consumer, used for the metrics of each tick.
-    const NAME: &'static str;
-
     /// The work of a tick.
     fn on_tick(&mut self, tracker: &ConnectionTracker) -> impl Future<Output = ()> + Send;
 }
@@ -87,13 +84,14 @@ pub async fn spawn_connection_loop_with_wake<C: ConnectionConsumer>(
     tokio::spawn(run_connection_loop(subscription, interval, Some(wake), consumer))
 }
 
-/// Runs a single tick and measures its duration.
+/// Runs a single tick and measures its duration, labelled by the consumer's type name.
 async fn run_tick<C: ConnectionConsumer>(consumer: &mut C, tracker: &ConnectionTracker) {
     let start = std::time::Instant::now();
     consumer.on_tick(tracker).await;
+    let name = std::any::type_name::<C>().rsplit("::").next().unwrap_or_default();
     hub_metrics()
         .tick_duration
-        .record(start.elapsed().as_secs_f64(), &[label("consumer", C::NAME)]);
+        .record(start.elapsed().as_secs_f64(), &[label("consumer", name)]);
 }
 
 /// Drives a self-contained loop that event-sources its own [`ConnectionTracker`] from
@@ -165,8 +163,6 @@ mod tests {
     }
 
     impl ConnectionConsumer for Probe {
-        const NAME: &'static str = "probe";
-
         async fn on_tick(&mut self, tracker: &ConnectionTracker) {
             let _ = self.tx.send(tracker.connections().len());
         }

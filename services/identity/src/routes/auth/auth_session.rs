@@ -15,6 +15,7 @@ use rand::{rng, RngExt};
 use serde::{Deserialize, Serialize};
 use shine_infra::{
     session::{CheckedCurrentUser, CurrentUser, SessionCookie},
+    telemetry::record_user_id,
     web::WebAppConfig,
 };
 use std::{convert::Infallible, sync::Arc};
@@ -386,18 +387,16 @@ impl IntoResponseParts for AuthSession {
             external_login: external_login_cookie,
             access: token_cookie,
         } = self;
+
+        if let Some(user) = &user_session {
+            record_user_id(user.user_id);
+        }
+
         let session_cookie = user_session.as_ref().map(|u| SessionCookie {
             user_id: u.user_id,
             fingerprint: u.fingerprint.clone(),
             key: u.key,
         });
-
-        log::debug!(
-            "Auth sessions set headers: session_cookie:{}, external_login_cookie:{}, token_cookie:{}",
-            session_cookie.is_some(),
-            external_login_cookie.is_some(),
-            token_cookie.is_some()
-        );
 
         let session = create_jar(
             &meta.session_settings,
