@@ -281,16 +281,19 @@ impl HubService {
                 // connection tracker drops it. Same-id re-registration is not a replacement.
                 if let Some((old_connection_id, _)) = self.inner.connections.find_active(user_id).await {
                     if old_connection_id != connection_id {
-                        Self::record_drop(user_id, old_connection_id, "replaced");
-                        self.inner
+                        if let Some(removed_connection_id) = self
+                            .inner
                             .connections
                             .remove_connection(user_id, Some(old_connection_id))
+                            .await
+                        {
+                            Self::record_drop(user_id, removed_connection_id, "replaced");
+                            self.publish(HubEvent::UserDisconnected {
+                                user_id,
+                                connection_id: removed_connection_id,
+                            })
                             .await;
-                        self.publish(HubEvent::UserDisconnected {
-                            user_id,
-                            connection_id: old_connection_id,
-                        })
-                        .await;
+                        }
                     }
                 }
 

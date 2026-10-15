@@ -124,8 +124,9 @@ impl ConnectionConsumer for ChatDispatcher {
                         hub_metrics().chat_delivered.add(delivered, &[]);
                         *cursor = last_id;
                     }
-                    // Unknown or dead connection: nothing delivered, the cursor stays until reconcile drops it.
-                    Ok(false) => {}
+                    // Unknown or dead connection: nothing to deliver to, but advance the cursor so it does not
+                    // pin `oldest` and starve the other connections until reconcile drops it.
+                    Ok(false) => *cursor = last_id,
                     Err(err) => tracing::error!("[{connection_id}] Failed to deliver chat batch: {err:#?}"),
                 }
             }

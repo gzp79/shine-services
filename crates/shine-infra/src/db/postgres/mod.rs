@@ -47,8 +47,12 @@ macro_rules! __pg_traced {
         let span = $crate::__pg_span!($id, $op, $stmt);
         $crate::db::postgres::__tracing::Instrument::instrument(
             async {
-                let $statement = $prepare.await?;
-                $crate::db::time_db_operation("postgresql", concat!(stringify!($id), "::", $op), $body).await
+                let prepared = $prepare.await;
+                $crate::db::time_db_operation("postgresql", concat!(stringify!($id), "::", $op), async {
+                    let $statement = prepared?;
+                    $body.await
+                })
+                .await
             },
             span,
         )

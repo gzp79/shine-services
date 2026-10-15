@@ -17,8 +17,8 @@ use std::sync::{Arc, RwLock};
 use tracing::{Dispatch, Subscriber};
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{
-    filter::{filter_fn, EnvFilter},
-    layer::SubscriberExt,
+    filter::{filter_fn, EnvFilter, LevelFilter},
+    layer::{Filter, SubscriberExt},
     registry::LookupSpan,
     reload, Layer,
 };
@@ -35,7 +35,7 @@ trait DynHandle: Send + Sync {
 
 struct WrapHandle<L, S>
 where
-    L: Layer<S> + From<EnvFilter> + Send + Sync + 'static,
+    L: From<EnvFilter> + Send + Sync + 'static,
     S: Subscriber,
 {
     handle: reload::Handle<L, S>,
@@ -44,7 +44,7 @@ where
 
 impl<L, S> DynHandle for WrapHandle<L, S>
 where
-    L: Layer<S> + From<EnvFilter> + Send + Sync + 'static,
+    L: From<EnvFilter> + Send + Sync + 'static,
     S: Subscriber,
 {
     fn set_configuration(&mut self, mut new_config: DynConfig) -> Result<(), String> {
@@ -118,7 +118,7 @@ impl TelemetryService {
         Ok(())
     }
 
-    fn tracing_fixed_filter<S>(&mut self, config: &TelemetryConfig) -> Result<impl Layer<S>, TelemetryBuildError>
+    fn tracing_fixed_filter<S>(&mut self, config: &TelemetryConfig) -> Result<impl Filter<S>, TelemetryBuildError>
     where
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
@@ -129,7 +129,7 @@ impl TelemetryService {
         Ok(env_filter)
     }
 
-    fn tracing_dyn_filter<S>(&mut self, config: &TelemetryConfig) -> Result<impl Layer<S>, TelemetryBuildError>
+    fn tracing_dyn_filter<S>(&mut self, config: &TelemetryConfig) -> Result<impl Filter<S>, TelemetryBuildError>
     where
         S: Subscriber + for<'a> LookupSpan<'a> + Send + Sync + 'static,
     {
@@ -220,7 +220,11 @@ impl TelemetryService {
     ) -> Result<(), TelemetryBuildError> {
         use tracing_subscriber::registry;
 
-        let log_metrics = self.metrics.as_ref().map(|m| LogMetricsLayer::new(&m.meter));
+        // Kept out of the (reconfigurable) sink filter, so the counts do not depend on the log verbosity.
+        let log_metrics = self
+            .metrics
+            .as_ref()
+            .map(|m| LogMetricsLayer::new(&m.meter).with_filter(LevelFilter::WARN));
 
         if matches!(config.tracing, Tracing::None) {
             tracing::warn!("Trace is disabled");
@@ -228,17 +232,17 @@ impl TelemetryService {
             if config.enable_console_log {
                 if config.allow_reconfigure {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_dyn_filter(config)?)
-                            .with(self.tracing_console_log(config)?)
-                            .with(log_metrics),
+                        registry().with(log_metrics).with(
+                            self.tracing_console_log(config)?
+                                .with_filter(self.tracing_dyn_filter(config)?),
+                        ),
                     )?;
                 } else {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_fixed_filter(config)?)
-                            .with(self.tracing_console_log(config)?)
-                            .with(log_metrics),
+                        registry().with(log_metrics).with(
+                            self.tracing_console_log(config)?
+                                .with_filter(self.tracing_fixed_filter(config)?),
+                        ),
                     )?;
                 }
             } else {
@@ -248,36 +252,36 @@ impl TelemetryService {
             match (config.enable_console_log, config.allow_reconfigure) {
                 (true, true) => {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_dyn_filter(config)?)
-                            .with(self.tracing_console_log(config)?)
-                            .with(self.tracing_ot(config, resource, scope)?)
-                            .with(log_metrics),
+                        registry().with(log_metrics).with(
+                            self.tracing_console_log(config)?
+                                .and_then(self.tracing_ot(config, resource, scope)?)
+                                .with_filter(self.tracing_dyn_filter(config)?),
+                        ),
                     )?;
                 }
                 (true, false) => {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_fixed_filter(config)?)
-                            .with(self.tracing_console_log(config)?)
-                            .with(self.tracing_ot(config, resource, scope)?)
-                            .with(log_metrics),
+                        registry().with(log_metrics).with(
+                            self.tracing_console_log(config)?
+                                .and_then(self.tracing_ot(config, resource, scope)?)
+                                .with_filter(self.tracing_fixed_filter(config)?),
+                        ),
                     )?;
                 }
                 (false, true) => {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_dyn_filter(config)?)
-                            .with(self.tracing_ot(config, resource, scope)?)
-                            .with(log_metrics),
+                        registry().with(log_metrics).with(
+                            self.tracing_ot(config, resource, scope)?
+                                .with_filter(self.tracing_dyn_filter(config)?),
+                        ),
                     )?;
                 }
                 (false, false) => {
                     Self::set_global_tracing_pipeline(
-                        registry()
-                            .with(self.tracing_fixed_filter(config)?)
-                            .with(self.tracing_ot(config, resource, scope)?)
-                            .with(log_metrics),
+                        registry().with(log_metrics).with(
+                            self.tracing_ot(config, resource, scope)?
+                                .with_filter(self.tracing_fixed_filter(config)?),
+                        ),
                     )?;
                 }
             }
